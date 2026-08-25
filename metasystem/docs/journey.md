@@ -622,3 +622,37 @@ turn, give implementers a lawful way to verify, and register a
 delegate roster that matches its name. The question this goal
 carried is answered: Devin does delegate under ACP. What remains is
 finishing the cage around the moment it chooses not to.
+
+## The seam closes over every runtime
+
+Three slices, three days, two machines. Machine one cut the seam:
+one delegate-session contract, ACP-shaped, that the core sees
+instead of runtime names — and the honesty law that a partial
+implementation registers as a read-side port, never as a driver.
+Machine two finished it: first the native driver, where the wire's
+own event pump earned every capability boolean it declared through
+six rounds of critique that killed the comfortable version twice;
+then the emulators, where honesty ran the other direction.
+
+The emulator slice began with a lie already on disk: claude's probe
+declared native events while its adapter ran the blocking mode —
+aspirational capability, consumed by selection, checked by nothing.
+The slice's answer was not to soften the declaration but to make it
+true: the dispatch argv streams now, the stream is a single-writer
+artifact, the result document is derived byte-for-byte so no
+consumer notices, and an implication test pins the declaration to
+the argv at the exact joint that lied. Around it grew the
+projection law — post-hoc events in a namespace that can never
+impersonate a live wire, loss counted and visible, ceilings that
+error instead of truncating — and the discovery that asks, for CLI
+runtimes, truthfully exist only at the turn boundary, in the
+orchestrator's return, where adjudication owns them.
+
+What the seam teaches is older than the seam: the difference
+between a capability and a claim is a proof at the joint. The
+registry expects, the driver declares, the join panics on drift;
+the probe declares, the builder complies, the test pins the
+implication. Runtime names still exist below the seam — they name
+kinds, prefix namespaces, key registries — but above it the core
+now plans around declared truth, and the residues left behind are
+recorded debts with names, not assumptions with none.
