@@ -145,11 +145,12 @@ func runAdapterClaudeCommand(args []string) int {
 	schema := flags.String("schema", "", "return schema file (compacted into the argv)")
 	settings := flags.String("settings", "", "settings file (adapter turns)")
 	session := flags.String("session", "", "session to resume (optional)")
+	outputMode := flags.String("output-mode", "json", "output shape: json (blocking, the host's mode) or stream-json (the dispatch stream; --verbose rides along)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *model == "" || *schema == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-command --model M --schema F [--record F] [--settings F] [--session SID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-command --model M --schema F [--record F] [--settings F] [--session SID] [--output-mode json|stream-json]")
 		return 2
 	}
 	budget, turns, err := adapter.ClaudeBudget(os.LookupEnv)
@@ -170,7 +171,7 @@ func runAdapterClaudeCommand(args []string) int {
 		fmt.Fprintf(os.Stderr, "schema is not valid JSON: %v\n", err)
 		return 1
 	}
-	command, err := adapter.BuildClaudeCommand(*record, *model, compacted.String(), *settings, *session, budget, turns)
+	command, err := adapter.BuildClaudeCommand(*record, *model, compacted.String(), *settings, *session, budget, turns, *outputMode)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -178,6 +179,25 @@ func runAdapterClaudeCommand(args []string) int {
 	for _, token := range command {
 		fmt.Print(token)
 		os.Stdout.Write([]byte{0})
+	}
+	return 0
+}
+
+// runAdapterClaudeDeriveResult relays `adapter claude-derive-result`:
+// a streamed round's claude-result.json derived from the stream's
+// last result-typed line, raw bytes verbatim; a stream without one
+// is the missing-result failure.
+func runAdapterClaudeDeriveResult(args []string) int {
+	flags := flag.NewFlagSet("adapter claude-derive-result", flag.ContinueOnError)
+	stream := flags.String("stream", "", "the round's claude-stream.jsonl")
+	result := flags.String("result", "", "claude-result.json destination")
+	if flags.Parse(args) != nil || *stream == "" || *result == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-derive-result --stream F --result F")
+		return 2
+	}
+	if err := adapter.ClaudeDeriveResult(*stream, *result); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	return 0
 }

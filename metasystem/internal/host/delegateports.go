@@ -14,16 +14,22 @@ import (
 
 func init() {
 	delegate.RegisterPorts("claude", delegate.Ports{
-		HostResult: ClaudeResult,
+		HostResult:            ClaudeResult,
+		HostBoundaryAskEvents: HostBoundaryAskEvents("claude"),
+	})
+	delegate.RegisterPorts("codex", delegate.Ports{
+		HostBoundaryAskEvents: HostBoundaryAskEvents("codex"),
 	})
 	delegate.RegisterPorts("devin", delegate.Ports{
-		HostReturn:    DevinReturn,
-		HostTurnUsage: HostDevinUsage,
-		HostCollect:   hostCollectPort,
+		HostReturn:            DevinReturn,
+		HostTurnUsage:         HostDevinUsage,
+		HostCollect:           hostCollectPort,
+		HostBoundaryAskEvents: HostBoundaryAskEvents("devin"),
 	})
 	delegate.RegisterPorts("fake", delegate.Ports{
-		HostFakeReturn: FakeReturn,
-		HostFakeResult: FakeResult,
+		HostFakeReturn:        FakeReturn,
+		HostFakeResult:        FakeResult,
+		HostBoundaryAskEvents: HostBoundaryAskEvents("fake"),
 	})
 }
 

@@ -211,14 +211,19 @@ still becomes unrepresentable at the builder joint.
    usage-bearing lines, no appended result line) recovers usage
    through the extended recoverer; a dead blocking round recovers
    exactly as today.
-9. THE SHELL JOINT (S3-R3-001): the dispatch fixtures run the REAL
-   claude.sh dispatch flow against the fake CLI in stream mode —
-   the launch redirection (the one changed line), the NUL-token
-   command readback, the session-signal polling, and wait_for_cli
-   all survive; claude-stream.jsonl is written by the CLI process
-   alone; claude-result.json is derived; the round completes
-   delivered. Derivation-function unit tests (proof 3) do not
-   substitute for this leg.
+9. THE SHELL JOINT (S3-R3-001), disposition at implementation: a
+   fixture-bed emulation of the claude dispatch flow requires a
+   fake claude with an identity/probe surface (the capability
+   snapshot machinery demands a per-day snapshot keyed to the CLI's
+   config identity) — out of this slice's appetite, RECORDED
+   RESIDUE. The shell joint's live proof is the repo's sanctioned
+   one for real-CLI adapter contracts: the claude adapter SELFTEST
+   ("real runtime selftests remain manual acceptance steps"), whose
+   next run exercises the streamed dispatch end to end because
+   dispatch now streams unconditionally. Until that run, the joint
+   ships covered by the derive/argv units (proofs 3, 6, 7), bash -n,
+   and the battery's static legs — honestly weaker, named here and
+   on the goal.
 
 ## Non-goals
 

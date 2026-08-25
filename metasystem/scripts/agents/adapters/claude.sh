@@ -118,7 +118,10 @@ supervise() { # dispatch|follow-up and supervisor args
   # an invalid budget, 4 an invalid turn limit.
   local -a claude_args
   local command_file="$round_dir/claude-command.nul"
-  claude_args=(--record "$record" --model "$requested_model" --schema "$schema" --settings "$settings_file")
+  # The dispatch turn streams (acp-adapter-seam slice three): the
+  # probe's nativeEvents declaration finally matches the argv. The
+  # host launcher keeps blocking json and is untouched.
+  claude_args=(--record "$record" --model "$requested_model" --schema "$schema" --settings "$settings_file" --output-mode stream-json)
   [[ "$verb" == dispatch ]] || claude_args+=(--session "$requested_session")
   command_status=0
   "$ms" adapter claude-command "${claude_args[@]}" >"$command_file" 2>>"$log" || command_status=$?
@@ -137,7 +140,7 @@ supervise() { # dispatch|follow-up and supervisor args
     export METASYSTEM_CLAUDE_SESSION_SIGNAL="$signal_file"
     export METASYSTEM_CLAUDE_EVENTS="$events"
     while IFS= read -r assignment; do export "${assignment?}"; done < <(job_git_quarantine_env "$workspace")
-    exec "${command[@]}" <"$prompt" >"$result_file" 2>>"$log"
+    exec "${command[@]}" <"$prompt" >"$round_dir/claude-stream.jsonl" 2>>"$log"
   ) &
   cli_pid=$!
   register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
@@ -157,6 +160,11 @@ supervise() { # dispatch|follow-up and supervisor args
     sleep 0.02
   done
   wait_for_cli "$cli_pid"
+  # Derive the blocking-shaped result document from the stream; a
+  # stream with no result-typed line takes the missing-result path
+  # (an empty result_file downstream, exactly the old empty-stdout
+  # shape).
+  "$ms" adapter claude-derive-result --stream "$round_dir/claude-stream.jsonl" --result "$result_file" 2>>"$log" || : >"$result_file"
   cp "$result_file" "$raw" 2>/dev/null || : >"$raw"
   "$ms" adapter claude-append-result --result "$result_file" --events "$events"
   claude_usage "$result_file" "$usage_file"

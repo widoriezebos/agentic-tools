@@ -48,7 +48,7 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 			"workspaceRoot": "/ws",
 			"permissions": {"requested": {"writeRoots": [], "readRoots": ["/ws", "/extra/docs"]}}
 		}`)
-		command, err := BuildClaudeCommand(record, "sonnet", `{"s":1}`, "/tmp/settings.json", "", "5.00", "50")
+		command, err := BuildClaudeCommand(record, "sonnet", `{"s":1}`, "/tmp/settings.json", "", "5.00", "50", "json")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 			"workspaceRoot": "/ws",
 			"permissions": {"requested": {"writeRoots": ["/ws"]}}
 		}`)
-		command, err := BuildClaudeCommand(record, "sonnet", "{}", "/tmp/settings.json", "sess-9", "5.00", "50")
+		command, err := BuildClaudeCommand(record, "sonnet", "{}", "/tmp/settings.json", "sess-9", "5.00", "50", "stream-json")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,6 +80,8 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 			"--permission-mode acceptEdits",
 			"--tools Bash,Edit,Write,Read,Glob,Grep,NotebookEdit",
 			"--resume sess-9",
+			"--output-format stream-json",
+			"--verbose",
 		} {
 			if !strings.Contains(joined, fragment) {
 				t.Fatalf("argv lost %q: %s", fragment, joined)
@@ -90,7 +92,7 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 		}
 	})
 	t.Run("host mode is acceptEdits with no settings", func(t *testing.T) {
-		command, err := BuildClaudeCommand("", "opus", "{}", "", "", "5.00", "50")
+		command, err := BuildClaudeCommand("", "opus", "{}", "", "", "5.00", "50", "")
 		if err != nil {
 			t.Fatal(err)
 		}

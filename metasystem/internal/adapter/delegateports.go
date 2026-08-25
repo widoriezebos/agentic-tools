@@ -18,18 +18,22 @@ func init() {
 	delegate.RegisterPorts("claude", delegate.Ports{
 		Usage:       ClaudeUsage,
 		ResultField: ClaudeResultField,
+		Events:      RuntimeEvents("claude"),
 	})
 	delegate.RegisterPorts("codex", delegate.Ports{
-		Usage: CodexUsage,
+		Usage:  CodexUsage,
+		Events: RuntimeEvents("codex"),
 	})
 	delegate.RegisterPorts("devin", delegate.Ports{
 		TurnUsage: DevinTurnUsage,
 		Settle:    DevinSettle,
 		Collect:   collectPort,
+		Events:    RuntimeEvents("devin"),
 	})
 	delegate.RegisterPorts("fake", delegate.Ports{
 		Usage:  func(_, outputPath string) error { return WriteFakeUsage(outputPath) },
 		Return: WriteFakeReturn,
+		Events: RuntimeEvents("fake"),
 	})
 }
 

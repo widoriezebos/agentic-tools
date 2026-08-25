@@ -1,8 +1,13 @@
 package adapter
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -243,7 +248,11 @@ func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, 
 // read root; anything else means acceptEdits with the full tools. Host mode
 // (recordPath empty) is the orchestrator's own turn: acceptEdits with the
 // full tools, no settings file, no add-dirs.
-func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget, turns string) ([]string, error) {
+// ClaudeOutputModes are the two argv output shapes: "json" (the
+// blocking single document — the host launcher's mode, unchanged)
+// and "stream-json" (the dispatch stream; the CLI refuses print-mode
+// stream-json without --verbose, so the flag rides along).
+func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget, turns, outputMode string) ([]string, error) {
 	permissionMode := "acceptEdits"
 	tools := claudeFullTools
 	var addDirs []string
@@ -263,8 +272,15 @@ func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget
 			}
 		}
 	}
+	switch outputMode {
+	case "", "json":
+		outputMode = "json"
+	case "stream-json":
+	default:
+		return nil, fmt.Errorf("claude output mode %q is not one of json, stream-json", outputMode)
+	}
 	command := []string{
-		"claude", "-p", "--output-format", "json", "--model", model,
+		"claude", "-p", "--output-format", outputMode, "--model", model,
 		"--json-schema", schemaJSON,
 		"--permission-mode", permissionMode,
 		"--tools", tools,
@@ -280,5 +296,46 @@ func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget
 	if session != "" {
 		command = append(command, "--resume", session)
 	}
+	if outputMode == "stream-json" {
+		command = append(command, "--verbose")
+	}
 	return command, nil
+}
+
+// ClaudeDeriveResult writes claude-result.json from a streamed
+// round: the LAST result-typed line of the stream artifact, raw
+// bytes verbatim — every existing consumer reads exactly the
+// document the blocking mode would have produced. A stream without
+// a result-typed line is the missing-result failure: an error, and
+// no document is invented from partial events.
+func ClaudeDeriveResult(streamPath, resultPath string) error {
+	data, err := os.ReadFile(streamPath)
+	if err != nil {
+		return err
+	}
+	var last []byte
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 0, 64*1024), MaxEventArtifactBytes+1)
+	for scanner.Scan() {
+		raw := bytes.TrimSpace(scanner.Bytes())
+		if len(raw) == 0 {
+			continue
+		}
+		var head struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &head); err != nil {
+			continue
+		}
+		if head.Type == "result" {
+			last = append(last[:0], raw...)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if len(last) == 0 {
+		return fmt.Errorf("stream %s carries no result-typed line; the turn has no result document", filepath.Base(streamPath))
+	}
+	return os.WriteFile(resultPath, append(last, '\n'), 0o644)
 }

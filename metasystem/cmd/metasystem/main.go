@@ -131,6 +131,7 @@ func families() []family {
 				{"codex-usage", "extract Codex usage from its event stream", runAdapterCodexUsage},
 				{"codex-command", "build the Codex delegate argv (NUL-terminated)", runAdapterCodexCommand},
 				{"claude-command", "build the Claude argv (NUL-terminated)", runAdapterClaudeCommand},
+				{"claude-derive-result", "derive claude-result.json from a streamed round", runAdapterClaudeDeriveResult},
 				{"claude-settings", "build the Claude job settings from a record", runAdapterClaudeSettings},
 				{"claude-usage", "extract Claude usage from its result", runAdapterClaudeUsage},
 				{"claude-result-field", "read a Claude result field with modelUsage collapse", runAdapterClaudeResultField},

@@ -84,6 +84,26 @@ type Ports struct {
 	HostCollect    func(in HostCollectInputs) (verdict []byte, delivered bool, err error)
 	HostFakeReturn func(turnPath, statePath, outputPath, behavior, root string) error
 	HostFakeResult func(resultPath, session, rawPath, returnPath, outcome string) error
+
+	// Events projects the round's native event artifacts into the
+	// seam's Event vocabulary, post hoc (acp-adapter-seam slice
+	// three). Nil = the runtime records no projectable events;
+	// callers refuse by name. Bounded (the owner's exported
+	// ceiling; over-ceiling is an error, never silent truncation),
+	// Seq is the 1-based ordinal in the projected list, Params are
+	// the line's raw bytes verbatim, and skipped unparseable lines
+	// surface as one final <runtime>/lines-skipped event carrying
+	// {"skipped":<count>}.
+	Events func(roundDir string) ([]Event, error)
+	// HostBoundaryAskEvents projects the accepted host return's
+	// askCandidates as events — kind
+	// <runtime>/boundary-ask-candidate, params the candidate
+	// verbatim, Seq the 1-based candidate ordinal. CLI runtimes
+	// cannot ask mid-turn; the turn boundary is where an emulated
+	// ask truthfully lives, and answering stays with mission
+	// adjudication (no delegate.Ask synthesis: ids are
+	// adjudication's to allocate).
+	HostBoundaryAskEvents func(acceptedReturnPath string) ([]Event, error)
 }
 
 var (
@@ -125,6 +145,8 @@ func RegisterPorts(key string, p Ports) {
 	merge("HostCollect", merged.HostCollect != nil, p.HostCollect != nil, func() { merged.HostCollect = p.HostCollect })
 	merge("HostFakeReturn", merged.HostFakeReturn != nil, p.HostFakeReturn != nil, func() { merged.HostFakeReturn = p.HostFakeReturn })
 	merge("HostFakeResult", merged.HostFakeResult != nil, p.HostFakeResult != nil, func() { merged.HostFakeResult = p.HostFakeResult })
+	merge("Events", merged.Events != nil, p.Events != nil, func() { merged.Events = p.Events })
+	merge("HostBoundaryAskEvents", merged.HostBoundaryAskEvents != nil, p.HostBoundaryAskEvents != nil, func() { merged.HostBoundaryAskEvents = p.HostBoundaryAskEvents })
 	portSets[key] = merged
 }
 

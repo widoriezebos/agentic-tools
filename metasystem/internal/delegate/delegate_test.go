@@ -53,6 +53,20 @@ func TestPortMergeAndCollision(t *testing.T) {
 	mustPanic(t, "field collision", func() {
 		RegisterPorts(key, Ports{Usage: func(_, _ string) error { return nil }})
 	})
+	// Slice three's two fields obey the same law: explicit merge
+	// branch, collision panic, nil-refusal by absence.
+	RegisterPorts(key, Ports{Events: func(string) ([]Event, error) { return nil, nil }})
+	RegisterPorts(key, Ports{HostBoundaryAskEvents: func(string) ([]Event, error) { return nil, nil }})
+	p, err = PortsFor(key)
+	if err != nil || p.Events == nil || p.HostBoundaryAskEvents == nil {
+		t.Fatalf("slice-three fields must survive the merge: %v", err)
+	}
+	mustPanic(t, "Events collision", func() {
+		RegisterPorts(key, Ports{Events: func(string) ([]Event, error) { return nil, nil }})
+	})
+	mustPanic(t, "HostBoundaryAskEvents collision", func() {
+		RegisterPorts(key, Ports{HostBoundaryAskEvents: func(string) ([]Event, error) { return nil, nil }})
+	})
 	if _, err := PortsFor("no-such-runtime"); err == nil ||
 		!strings.Contains(err.Error(), "no ports registered") {
 		t.Fatalf("an unregistered ports lookup must refuse by name: %v", err)
