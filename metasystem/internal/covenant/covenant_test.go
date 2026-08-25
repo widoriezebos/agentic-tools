@@ -62,6 +62,10 @@ func TestLoadRefusals(t *testing.T) {
 			rows := d["requirements"].([]any)
 			d["requirements"] = append(rows, rows[0])
 		}, "appears twice"},
+		"id outside the identity grammar": {func(d map[string]any) {
+			row := d["requirements"].([]any)[0].(map[string]any)
+			row["id"] = "criterion one"
+		}, "identity grammar"},
 		"missing proof": {func(d map[string]any) {
 			row := d["requirements"].([]any)[0].(map[string]any)
 			row["proof"] = ""

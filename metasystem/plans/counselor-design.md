@@ -43,12 +43,17 @@ authority; the custody architecture is unchanged by its existence.
   register, the human's past rulings, the margin history. What the
   counselor knows about THIS app survives every upgrade untouched.
 
-The memory files are app-owned but not guardrail-classed by default:
-writing them is the counselor's bookkeeping, done on the coordinator
-seat with the human, and forcing the warden's lane onto bookkeeping
-would teach the system to resent its own counsel. The human may add
-them to the net deliberately. (Design-critique question for slice one:
-confirm or refute this default.)
+Custody of the memory files (RULED, slice-one design chain, codex
+r2-F1, Wido's rulings recorded on the goal 2026-08-24): the evidence
+table is GATE-DEFINING INPUT — the traceability gate takes proof
+identity and declared dependencies from it — so it stays
+guardrail-classed with the covenant, exactly as the inception closure
+law lands it; a doctored table could otherwise make the gate greener
+than the tree allows, and the warden's lane, not file-presence
+checking, is the laundering defense. The counselor still has no pen:
+its bookkeeping is proposals the human lands through the existing
+lanes. The accepted-risk register's custody stays UNDECIDED until it
+has a format and a consumer (slice 3).
 
 ## The six drift signals
 
@@ -105,10 +110,18 @@ confirm or refute this default.)
 ## The carving (each slice independently deployable)
 
 1. THE LIVING EVIDENCE TABLE + TRACEABILITY GATE — re-derive the
-   inception-born table against the current tree on demand (proofs
-   still present, still invocable, statuses recomputed); the gate
-   refuses covenant rows whose proof the table cannot find. Folds
-   guardrail-adequacy slice one.
+   inception-born table against the current tree on demand: every
+   covenant requirement backed by a matching table row (one identity
+   namespace), every DECLARED dependency present and symlink-safe,
+   and dishonest statuses refused (a covenant-backed planned-floating
+   row is intent guaranteed by nothing). Recorded statuses are
+   carried as claims, labeled unverified. Folds guardrail-adequacy
+   slice one. (Amended 2026-08-24 with Wido's confirmation: the
+   original "statuses recomputed" — proving "observed" happened
+   recently against the current tree — needs observation metadata
+   (tree digest, timestamp, run evidence) that nothing records yet;
+   it moves to a later named slice under this roof, alongside signal
+   2's machinery.)
 2. THE DRIFT BRIEF — signals 1, 4, and 5 composed into one
    plain-English document on demand: the ledger-vs-covenant diff,
    margin trends, identity coverage.

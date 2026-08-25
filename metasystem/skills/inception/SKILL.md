@@ -81,28 +81,59 @@ app-doctrine goal's, not yours.
 
 ## Step 4 — The evidence table, before any net is authored
 
-This is the interview's spine, and it outlives the interview. For every
-criterion, one row:
+This is the interview's spine, and it outlives the interview. The
+canonical format — the engine's `covenant evidence` gate parses
+exactly this shape, so it is law, not style:
 
-| criterion | proof id | exact command or selector | evidence source | status |
+```markdown
+# Covenant evidence — <app name>
+
+| criterion id | criterion | proof id | kind | exact command | repo deps | evidence source | status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | The app greets the caller by name | greets | repo | bash gate.sh | gate.sh,src/app.py | gate.sh runs the entrypoint and inspects output | observed |
+| 2 | Costs stay under the monthly cap | cost-cap | external | tools/cost-report.sh | tools/cost-report.sh | provider billing dashboard, checked at sittings | referenced-not-run |
+| 3 | Contradictions reconcile within one cycle | reconcile | repo | (planned) | | no executable proof yet; goal reconcile-proof | planned-floating |
+
+Wired: 2. Floating: 1.
+```
+
+One table with this header and ONE count line per file — competing
+candidates refuse. Escape a literal pipe in a cell as `\|`. The count
+formula: Wired counts `observed` and `referenced-not-run` rows,
+Floating counts `planned-floating` rows.
+
+`criterion id` is the identity: grammar `[A-Za-z0-9._-]+`, unique
+across every row, and the SAME id the covenant's requirement carries —
+one namespace, assigned here, never re-invented there. `kind` says
+where the evidence lives: `repo` rows declare their `repo deps` (comma
+separated, repository-relative, no symlinks anywhere in the path; the
+FIRST entry is the proof's entrypoint file); `external` rows name
+their evidence source and MAY declare local adapter deps, which are
+checked like any other. A `planned-floating` row has command exactly
+`(planned)` and no deps — its whole meaning is that no executable
+proof exists yet. Never launder a floating row into a guarantee:
+floating rows become backlog goals in step 6, and the row says so.
 
 Status is exactly one of: `observed` (you or the human ran it against
 the CURRENT tree during this interview and saw the result),
 `referenced-not-run` (it exists and is invocable, but was not exercised
 now — the honest retrofit default for anything paid or slow), or
-`planned-floating` (no executable proof exists yet). Never launder a
-floating row into a guarantee: floating rows become backlog goals in
-step 6, and the row says so.
+`planned-floating` (no executable proof exists yet). The evidence gate
+treats recorded statuses as claims on file — it verifies traceability
+and declared deps, never that "observed" happened.
 
-Persist the table as `docs/covenant-evidence.md` — app-owned, under the
-same never-overwritten law as the covenant. It is the record a future
-net review re-derives against the tree; give it stable IDs and exact
-commands so a machine can.
+Persist the table as `docs/covenant-evidence.md` — app-owned,
+guardrail-classed with the covenant (it is gate-defining input), under
+the same never-overwritten law. The HUMAN authors the deps here and at
+every later sitting, display-then-confirm; the evidence gate verifies
+DECLARED dependencies only — an omitted or over-broad dep is the
+sitting's subject, never mechanically caught.
 
 Total coverage is the table's law: every confirmed criterion maps to
 a covenant requirement row or to an EXPLICIT deferred gap the human
-accepted by name — never silently dropped. Display the wired-versus-
-floating counts whenever you show the table.
+accepted by name — never silently dropped (deferred criteria stay
+table-only rows, lawfully orphaned until their goal lands them).
+Display the wired-versus-floating counts whenever you show the table.
 
 ## Step 4b — The configuration, interviewed
 
@@ -120,9 +151,11 @@ Author the proposed `covenant.json` (schema v1: identity, requirements,
 battery, budgets, guards, guardrails — the reader refuses anything
 else) with these disciplines:
 
-- Every requirement row cites a criterion ID in `ref` and names a proof
-  from the table in `proof`. A proof name that appears nowhere in the
-  table is an invented proof; do not write it.
+- Every requirement row's `id` IS the criterion id from the table —
+  one namespace, matched exactly by the `covenant evidence` gate —
+  and `ref` describes the criterion in English with no identity role.
+  `proof` names the table row's proof id. A proof name that appears
+  nowhere in the table is an invented proof; do not write it.
 - The battery is the ONE command that earns green. Define what green
   means BEFORE observing the current score — a threshold chosen after
   peeking is laundering. For a retrofit, preserve the accepted

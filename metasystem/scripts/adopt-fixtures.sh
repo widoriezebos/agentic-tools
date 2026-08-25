@@ -407,6 +407,34 @@ PLAN
   grep -q 'metasystem.conf' "$tmp/conf-placeholder.out" \
     || { echo "adopt: placeholder failure did not name metasystem.conf" >&2; exit 1; }
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
+  # The covenant evidence gate rides the same green validate (counselor
+  # slice one): a fully valid covenant + canonical table + present deps
+  # must pass, and the run must PROVE the gate fired, not skipped.
+  printf '#!/usr/bin/env bash\nprintf "metric=greets=0\\n"\n' >"$tgt/gate.sh"
+  mkdir -p "$tgt/src"
+  printf 'print("hello")\n' >"$tgt/src/app.py"
+  cat >"$tgt/covenant.json" <<'COVENANT'
+{
+  "schemaVersion": 1,
+  "identity": {"name": "adopt-bed", "entryPoint": "bash gate.sh", "sourcePaths": ["src/"]},
+  "requirements": [
+    {"id": "1", "ref": "criterion 1: the app greets by name", "proof": "greets"}
+  ],
+  "battery": {"command": "bash gate.sh", "metric": "greets", "direction": "max", "threshold": ">=1"},
+  "budgets": [],
+  "guards": [],
+  "guardrails": ["gate.sh", "docs/covenant-evidence.md"]
+}
+COVENANT
+  cat >"$tgt/docs/covenant-evidence.md" <<'EVIDENCE'
+# Covenant evidence — adopt-bed
+
+| criterion id | criterion | proof id | kind | exact command | repo deps | evidence source | status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | The app greets by name | greets | repo | bash gate.sh | gate.sh,src/app.py | gate.sh runs the entrypoint | observed |
+
+Wired: 1. Floating: 0.
+EVIDENCE
   # Capture, never discard: the receipt-stats flake's nested firings kept
   # dying invisibly behind this redirect (2026-08-14, evidence 51987/94210).
   # Digest equality before the nested run: the staged payload must be the
@@ -431,6 +459,36 @@ PLAN
   fi
   grep -Fq 'go gate: PASSED' "$tmp/adopt-filled.out" \
     || { echo "adopt: filled target did not run the go gate" >&2; exit 1; }
+  grep -Fq 'covenant evidence gate passed' "$tmp/adopt-filled.out" \
+    || { echo "adopt: the covenant evidence gate did not fire in the green run" >&2; exit 1; }
+  # The red half: remove exactly the one criterion/proof pair the
+  # covenant cites and the same validation must refuse, NAMING the
+  # missing pair — then the table restores byte-for-byte so the later
+  # fixtures keep judging the green bed.
+  cp "$tgt/docs/covenant-evidence.md" "$tmp/evidence-green-reference.md"
+  sed 's/| greets |/| salutes |/' "$tgt/docs/covenant-evidence.md" >"$tgt/docs/covenant-evidence.md.new"
+  mv "$tgt/docs/covenant-evidence.md.new" "$tgt/docs/covenant-evidence.md"
+  if bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/evidence-red.out" 2>&1; then
+    echo "adopt: validation passed while the covenant cited a proof the table does not record" >&2
+    exit 1
+  fi
+  grep -Fq 'bound to proof greets in the covenant but records proof salutes' "$tmp/evidence-red.out" \
+    || { echo "adopt: the evidence refusal did not name the missing pair" >&2; tail -5 "$tmp/evidence-red.out" >&2; exit 1; }
+  cp "$tmp/evidence-green-reference.md" "$tgt/docs/covenant-evidence.md"
+  # A malformed entry at the covenant's home must REFUSE, never read
+  # as absent: a dangling symlink is the shape only no-follow presence
+  # detection sees (directory and FIFO refusals are the engine's,
+  # pinned by its unit tests on the same branch).
+  mv "$tgt/covenant.json" "$tmp/covenant-green-reference.json"
+  ln -s covenant-that-does-not-exist.json "$tgt/covenant.json"
+  if bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/evidence-symlink.out" 2>&1; then
+    echo "adopt: validation passed while the covenant home held a dangling symlink" >&2
+    exit 1
+  fi
+  grep -q "symlink" "$tmp/evidence-symlink.out" \
+    || { echo "adopt: the symlinked covenant refusal did not name the symlink" >&2; tail -5 "$tmp/evidence-symlink.out" >&2; exit 1; }
+  rm "$tgt/covenant.json"
+  mv "$tmp/covenant-green-reference.json" "$tgt/covenant.json"
 
   echo drift >>"$tgt/.claude/agents/verify.md"
   if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/profile-drift.out" 2>&1; then
@@ -626,7 +684,15 @@ fi
 mkdir -p "$tmp/adopt-covenant/docs"
 printf '{"identity": {"name": "the-app"}, "guardrails": ["goldens/", "gate.sh"]}\n' >"$tmp/adopt-covenant/covenant.json"
 printf '# the-app doctrine\npatterns the delegates honor\n' >"$tmp/adopt-covenant/docs/app-doctrine.md"
-printf '| criterion | proof id | command | source | status |\n' >"$tmp/adopt-covenant/docs/covenant-evidence.md"
+cat >"$tmp/adopt-covenant/docs/covenant-evidence.md" <<'EVIDENCE'
+# Covenant evidence — the-app
+
+| criterion id | criterion | proof id | kind | exact command | repo deps | evidence source | status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | The score holds | score | repo | bash gate.sh | gate.sh | gate.sh emits the metric | observed |
+
+Wired: 1. Floating: 0.
+EVIDENCE
 printf '#!/usr/bin/env bash\nprintf "metric=score=1\\n"\n' >"$tmp/adopt-covenant/gate.sh"
 for f in covenant.json docs/app-doctrine.md docs/covenant-evidence.md gate.sh; do
   mkdir -p "$tmp/adopt-covenant-reference/$(dirname "$f")"

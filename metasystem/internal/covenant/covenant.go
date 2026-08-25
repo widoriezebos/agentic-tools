@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -23,6 +24,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
+
+// requirementIDPattern is the shared identity grammar: requirement ids
+// and the evidence table's criterion ids are one namespace.
+var requirementIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Covenant is the parsed, validated covenant document.
 type Covenant struct {
@@ -274,6 +279,12 @@ func Parse(data []byte, label string) (*Covenant, error) {
 		var r Requirement
 		if r.ID, err = requiredString(row, fmt.Sprintf("requirements[%d]", index), "id"); err != nil {
 			return nil, err
+		}
+		// The id is the criterion id — one namespace with the evidence
+		// table, matched exactly by the traceability gate — so it
+		// carries the shared identity grammar, not free text.
+		if !requirementIDPattern.MatchString(r.ID) {
+			return nil, fail("requirement id %q is outside the identity grammar [A-Za-z0-9._-]+; the id is the criterion id the evidence table matches", r.ID)
 		}
 		if seen[r.ID] {
 			return nil, fail("requirement id %q appears twice; every row is one distinct promise", r.ID)

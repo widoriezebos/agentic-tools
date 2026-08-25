@@ -272,6 +272,17 @@ not paths.
   (the lane fact rides inside the record's own digest). The warden
   edits nothing — product or guardrail; what it refuses stays refused
   and what it finds becomes work.
+- **Living evidence table** — the app-owned record
+  (`docs/covenant-evidence.md`, born at the inception interview) that
+  joins every covenant criterion to its proof: criterion id, proof id,
+  evidence kind, declared repo deps, evidence source, status. It is
+  gate-defining input and guardrail-classed with the covenant. The
+  `covenant evidence` verb is its traceability gate: every requirement
+  backed by a matching row, every declared dependency present via a
+  symlink-refusing held-handle walk, and a covenant-backed
+  `planned-floating` row refused. Recorded statuses are claims on
+  file — the gate never re-verifies "observed"; that needs observation
+  metadata a later counselor slice records.
 
 ## The backlog: what the fleet works on
 

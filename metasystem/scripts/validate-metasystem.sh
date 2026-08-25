@@ -285,6 +285,28 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   fi
 fi
 
+# The covenant evidence gate (counselor slice one): where an app has
+# declared its covenant, every requirement must be backed by the
+# evidence table and every declared dependency must be present. This
+# guarantees validation/CI refusal, not mission admission — the wall
+# does not bind the evidence table. Runs after the engine rebuild so
+# the judging binary is the tree's own; absent covenant, pre-inception
+# repositories skip silently.
+# The presence test must see ANY directory entry without following it
+# (-e follows symlinks and calls a dangling one absent): a directory,
+# FIFO, or symlink at the covenant's home is the engine's to refuse by
+# name, never validation's to skip silently.
+if [[ -e covenant.json || -L covenant.json ]]; then
+  if [[ -x bin/metasystem ]]; then
+    bin/metasystem covenant evidence --root "$root" \
+      || { echo "the covenant evidence gate refused; the table and the covenant disagree" >&2; exit 1; }
+    echo "covenant evidence gate passed"
+  else
+    echo "covenant.json present but bin/metasystem is not executable — the evidence gate cannot run" >&2
+    exit 1
+  fi
+fi
+
 
 # python3 remains a suite-host dependency for exactly one fixture: the
 # dispatch fixtures' TTY escalation driver needs a real pty, which shell

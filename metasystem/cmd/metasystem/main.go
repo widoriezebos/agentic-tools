@@ -300,6 +300,7 @@ func families() []family {
 			summary: "the app's covenant: the versioned declaration binding intent to proofs",
 			verbs: []verb{
 				{"validate", "structural check of a covenant document (shape only; adequacy is never a parser's to prove)", runCovenantValidate},
+				{"evidence", "the traceability gate: every requirement backed by the evidence table, declared deps present (statuses stay claims)", runCovenantEvidence},
 			},
 		},
 		{
