@@ -197,11 +197,14 @@ fi
 if [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
   early_evidence_rc=0
   bin/metasystem covenant evidence --root "$root" || early_evidence_rc=$?
-  if [[ $early_evidence_rc == 1 ]]; then
-    echo "the covenant evidence gate refused; the table and the covenant disagree" >&2
-    exit 1
-  fi
-  [[ $early_evidence_rc == 0 ]] && echo "covenant evidence gate passed (pre-rebuild)"
+  case "$early_evidence_rc" in
+    0) echo "covenant evidence gate passed (pre-rebuild)" ;;
+    2|127) echo "covenant evidence gate deferred: the present engine predates the verb; the post-rebuild gate judges" ;;
+    *)
+      echo "the covenant evidence gate refused (exit $early_evidence_rc); the table and the covenant disagree" >&2
+      exit 1
+      ;;
+  esac
 fi
 if (( ! delegate_scope )) && (( metasystem_go_source )); then
   # The witness-producing gate (D33): when the gate-input roots are clean
@@ -211,8 +214,10 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   # force, or any refusal fall back to the plain worktree gate, no
   # witness, exactly as before. The machinery lives in the sourced
   # helper so standalone battery stages (adopt-fixtures) arm the same
-  # witness instead of re-proving identical bytes per nested run.
-  source scripts/agents/witness-gate.sh
+  # witness instead of re-proving identical bytes per nested run. The
+  # fallback is FORCED here: canonical validation always runs a real
+  # gate when the witness cannot arm, immune to ambient state.
+  WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
     # decision verb, and when the outer run's witness matches this tree
@@ -924,6 +929,9 @@ track_armed_supervision() { # repository
 }
 validation_cleanup() {
   [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
+  # The witness dies with the run (D33's lifecycle): the armed state
+  # dir must never outlive the validation that produced it.
+  [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
     [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
