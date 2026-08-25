@@ -220,14 +220,30 @@ for bad in "" $'main\nevil'; do
     || { echo "static re-proof fixture: the mirror accepted an unlawful branch name (rc=$sync_rc)" >&2; exit 1; }
 done
 # A TAG shadowing the branch name plus a stale tracking ref must not
-# select what lands: the mirror fetches the branch head by full ref,
-# so transport receives origin's true head, never the tag's target.
-git -C "$origin_bare" update-ref refs/tags/main "$(git -C "$origin_bare" rev-parse refs/heads/main)"
-stale=$(git -C "$fixture_root" rev-parse HEAD^ 2>/dev/null || git -C "$fixture_root" rev-parse HEAD)
+# select what lands. Advance origin ALONE, then leave the tag and
+# transport at the prior head and force the tracking ref one commit
+# further back. A no-op, the tag, and the stale ref are therefore all
+# distinguishable from origin's true branch head.
+printf 'origin advances\n' >"$fixture_root/internal/red/origin-advances.txt"
+git -C "$fixture_root" add internal/red/origin-advances.txt
+git -C "$fixture_root" commit -qm "origin advances beyond its mirrors"
+true_head=$(git -C "$fixture_root" rev-parse HEAD)
+git -C "$fixture_root" push -q origin refs/heads/main:refs/heads/main
+git -C "$origin_bare" update-ref refs/tags/main "$pushed_head"
+stale=$(git -C "$fixture_root" rev-parse "$pushed_head^")
 git -C "$fixture_root" update-ref refs/remotes/origin/main "$stale"
-( cd "$fixture_root" && bash "$sync" main >/dev/null ) \
+[[ "$true_head" != "$pushed_head" && "$stale" != "$pushed_head" \
+  && "$(git -C "$origin_bare" rev-parse refs/heads/main)" == "$true_head" \
+  && "$(git -C "$origin_bare" rev-parse refs/tags/main)" == "$pushed_head" \
+  && "$(git -C "$transport_bare" rev-parse refs/heads/main)" == "$pushed_head" ]] \
+  || { echo "static re-proof fixture: the tag-plus-stale-ref bed is not discriminating" >&2; exit 1; }
+# No argument exercises the mirror's sole lawful default while the
+# discriminating bed proves which main ref it transports.
+( cd "$fixture_root" && bash "$sync" >/dev/null ) \
   || { echo "static re-proof fixture: the mirror refused a lawful sync" >&2; exit 1; }
-[[ "$(git -C "$transport_bare" rev-parse main)" == "$(git -C "$origin_bare" rev-parse refs/heads/main)" ]] \
+[[ "$(git -C "$fixture_root" rev-parse refs/remotes/origin/main)" == "$true_head" ]] \
+  || { echo "static re-proof fixture: the mirror did not fetch origin's true branch head" >&2; exit 1; }
+[[ "$(git -C "$transport_bare" rev-parse refs/heads/main)" == "$true_head" ]] \
   || { echo "static re-proof fixture: the mirror pushed something other than origin's branch head" >&2; exit 1; }
 git -C "$fixture_root" remote remove origin
 git -C "$fixture_root" remote remove transport
