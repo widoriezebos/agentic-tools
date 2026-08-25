@@ -17,6 +17,19 @@ import (
 	"time"
 )
 
+// coordinationPath reports whether a numstat path is coordination
+// state at ANY nesting depth: the goal ledger, the receipts log, and
+// generated artifacts weigh nothing, because no proof consumes them
+// and bookkeeping must never summon the battery.
+func coordinationPath(path string) bool {
+	for _, segment := range []string{"plans/goals/", "artifacts/"} {
+		if strings.HasPrefix(path, segment) || strings.Contains(path, "/"+segment) {
+			return true
+		}
+	}
+	return path == "plans/receipts.log" || strings.HasSuffix(path, "/plans/receipts.log")
+}
+
 // WeightState is the accumulator, machine-local under artifacts/.
 type WeightState struct {
 	Accumulated int64  `json:"accumulated"`
@@ -38,10 +51,10 @@ func LandingWeight(numstat string) int64 {
 			continue
 		}
 		path := fields[len(fields)-1]
-		switch {
-		case strings.HasPrefix(path, "plans/goals/"),
-			path == "plans/receipts.log",
-			strings.HasPrefix(path, "artifacts/"):
+		// Coordination paths are excluded wherever the metasystem root
+		// sits in the repository: git emits toplevel-relative paths,
+		// so a nested checkout prefixes every row.
+		if coordinationPath(path) {
 			continue
 		}
 		perFile := int64(1)

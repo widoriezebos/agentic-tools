@@ -20,6 +20,10 @@ func TestLandingWeight(t *testing.T) {
 		{"goal ledger weighs nothing", "12\t0\tplans/goals/counselor.md", 0},
 		{"receipts weigh nothing", "1\t0\tplans/receipts.log", 0},
 		{"artifacts weigh nothing", "5\t5\tartifacts/agents/battery-weight.json", 0},
+		{"nested goal ledger weighs nothing", "12\t0\tmetasystem/plans/goals/counselor.md", 0},
+		{"nested receipts weigh nothing", "1\t0\tmetasystem/plans/receipts.log", 0},
+		{"nested artifacts weigh nothing", "5\t5\tmetasystem/artifacts/agents/battery-weight.json", 0},
+		{"a product plans file still weighs", "4\t0\tmetasystem/plans/counselor-design.md", 1},
 		{"mixed landing", strings.Join([]string{
 			"10\t2\tinternal/covenant/covenant.go",
 			"40\t0\tinternal/covenant/covenant_test.go",

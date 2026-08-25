@@ -214,14 +214,6 @@ fi
 # The landing is both remotes or it is not a landing (--push): agents
 # remembered this rule around the tooling until one push was missed;
 # now the wrapper owns it. Origin first; transport only if declared.
-# Every landing folds its measured weight into the battery
-# accumulator; the due line is a NUDGE toward the milestone battery
-# (findings fix forward), and weight bookkeeping never refuses a
-# landing that already concluded.
-git -C "$root" show --numstat --format= HEAD 2>/dev/null \
-  | "$ms" gate weight-add --root "$root" --commit "$(git -C "$root" rev-parse --short HEAD)" \
-  || echo "battery-weight bookkeeping skipped (non-fatal)" >&2
-
 if (( push_after )); then
   branch=$(git -C "$root" symbolic-ref --short HEAD) || {
     echo "landing push refused: HEAD is not on a branch" >&2
@@ -241,3 +233,11 @@ if (( push_after )); then
     }
   fi
 fi
+
+# The landing weighed LAST, after every remote the caller asked for
+# has accepted it — a failed push exits above and adds nothing. The
+# due line is a NUDGE toward the milestone battery (findings fix
+# forward), and weight bookkeeping never refuses a concluded landing.
+git -C "$root" show --numstat --format= HEAD 2>/dev/null \
+  | "$ms" gate weight-add --root "$root" --commit "$(git -C "$root" rev-parse --short HEAD)" \
+  || echo "battery-weight bookkeeping skipped (non-fatal)" >&2

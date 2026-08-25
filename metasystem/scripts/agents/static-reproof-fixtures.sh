@@ -113,6 +113,29 @@ git -C "$fixture_root" add scripts/agents/go-gate.sh
 [[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes green" ]] \
   || { echo "static re-proof fixture: the green-gate commit did not land" >&2; exit 1; }
 
+# Weight bookkeeping is NON-FATAL by proof, not by inspection: with
+# the stub engine refusing the weight verb outright, a lawful commit
+# still concludes.
+cat >"$fixture_root/bin/metasystem" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "lease require-holder") echo '{}' ;;
+  "proc started-at") echo 1 ;;
+  "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
+  "lease commit-token") : ;;
+  "gate weight-add") echo "stub weight refusal" >&2; exit 1 ;;
+  *) : ;;
+esac
+exit 0
+SH
+chmod +x "$fixture_root/bin/metasystem"
+printf 'weight-refused\n' >>"$fixture_root/README"
+git -C "$fixture_root" add README
+"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes despite weight refusal" \
+  || { echo "static re-proof fixture: a weight bookkeeping failure refused a lawful landing" >&2; exit 1; }
+[[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes despite weight refusal" ]] \
+  || { echo "static re-proof fixture: the weight-refusal commit did not land" >&2; exit 1; }
+
 # Leg 4 (IL28-R1-1): a gate input differing between index and worktree
 # refuses — the proof must bind the bytes the commit records, and a
 # staged-red/worktree-repaired divergence is exactly what it cannot bind.
