@@ -86,6 +86,14 @@ Before promoting any draft:
       survives both. The test: a different machine claims it and
       executes without consulting the author. The coordinator
       rewrites script-shaped next-steps at intake.
+- [ ] The ROSTER is named before work starts: who implements, who
+      critiques — and they are never the same session, and neither is
+      the coordinator, who briefs, verifies, and lands (Wido's ruling
+      2026-08-25). The metasystem's delivery roles apply to work ON
+      the metasystem exactly as they apply to every app; a rule that
+      exists for the system's outputs binds the system's own work
+      UNPROMPTED — the human reminding us is the failure, not the
+      mechanism.
 
 ## The drop rule
 
