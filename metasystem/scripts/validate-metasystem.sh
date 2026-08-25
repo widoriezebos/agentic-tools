@@ -2458,5 +2458,12 @@ elif (( delegate_scope )); then
   echo "orchestrator still owes these process-visibility sections:"
   printf -- '- %s\n' "${delegate_skipped_sections[@]}"
 else
+  # A green full battery is the milestone that resets the feature-
+  # weight window; bookkeeping never overrules the verdict above.
+  if [[ -x bin/metasystem ]]; then
+    bin/metasystem gate weight-reset --root "$root" \
+      --commit "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" 2>/dev/null \
+      || true
+  fi
   echo "metasystem validation passed"
 fi
