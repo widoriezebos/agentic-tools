@@ -39,6 +39,10 @@ trap 'rm -rf "$tmp"' EXIT
 fixture_root="$tmp/metasystem"
 mkdir -p "$fixture_root/scripts/agents" "$fixture_root/bin" "$fixture_root/artifacts/agents/mains"
 cp "$wrapper" "$fixture_root/scripts/agents/commit.sh"
+# The push leg mirrors transport through the sync script, so the bed
+# carries it — a wrapper dependency absent from the bed reads as a
+# wrapper defect and turns this fixture red for the wrong reason.
+cp "$root/scripts/agents/sync-transport.sh" "$fixture_root/scripts/agents/sync-transport.sh"
 # A permissive audit stub: the audit legs belong to the real suite; these
 # legs prove the gate coupling.
 cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'

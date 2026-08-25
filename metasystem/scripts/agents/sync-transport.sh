@@ -22,7 +22,7 @@ printf '%s' "$branch" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$' || {
   exit 2
 }
 
-git fetch origin -- "$branch" --quiet
+git fetch --quiet origin -- "$branch"
 git rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null || {
   echo "sync-transport refused: origin has no branch '$branch'" >&2
   exit 1
