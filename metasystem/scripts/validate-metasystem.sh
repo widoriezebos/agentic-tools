@@ -216,7 +216,12 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   # helper so standalone battery stages (adopt-fixtures) arm the same
   # witness instead of re-proving identical bytes per nested run. The
   # fallback is FORCED here: canonical validation always runs a real
-  # gate when the witness cannot arm, immune to ambient state.
+  # gate when the witness cannot arm, immune to ambient state. The
+  # narrow trap guards the window between arming and the full cleanup
+  # trap far below — any early exit still takes the witness with it
+  # (the later validation_cleanup trap replaces this one and repeats
+  # the removal).
+  trap '[[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"' EXIT
   WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a

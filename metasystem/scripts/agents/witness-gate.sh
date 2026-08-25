@@ -18,10 +18,13 @@
 # against HEAD, no ratchet seed, no gate force, not a delivery
 # contract — dirty or forced runs fall back, never half-arm.
 
-case "${WITNESS_GATE_FALLBACK:-plain}" in
+# The fallback is an EXPLICIT choice: unset and empty refuse exactly
+# like a typo, and the message avoids every bash-4 substitution — this
+# checkout resolves bash 3.2, where ${VAR@Q} is itself a fatal error.
+case "${WITNESS_GATE_FALLBACK:-}" in
   plain|none) ;;
   *)
-    echo "witness-gate refused: WITNESS_GATE_FALLBACK must be plain or none, not ${WITNESS_GATE_FALLBACK@Q}" >&2
+    echo "witness-gate refused: WITNESS_GATE_FALLBACK must be set to plain or none (got '${WITNESS_GATE_FALLBACK:-unset}')" >&2
     return 1 2>/dev/null || exit 1
     ;;
 esac
