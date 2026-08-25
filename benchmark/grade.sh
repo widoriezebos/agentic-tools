@@ -36,4 +36,48 @@ git -C "$kit_top" archive "$tree" | tar -x -C "$scratch"
 grader_rel=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["grader"]["path"].rstrip("/"))' "$scratch/case.json")
 grader=$scratch/$grader_rel/grade.sh
 [[ -x "$grader" ]] || { echo "grade refused: case $case_ref ships no executable grader at $grader_rel/grade.sh" >&2; exit 2; }
-exec "$grader" "$target"
+
+# Stage the produced repository for the grader with non-regular
+# files excluded (KI-42): a live mission's ACP transport leaves its
+# fifo pair in the round artifacts, and a named pipe cannot be
+# copied by the grader's own evidence walk — the whole grading step
+# died on it (bm-2dc rep 2, 2026-08-24). The registered grader is
+# immutable (versions.lock), so the KIT stages: regular files,
+# directories, and symlinks ride; fifos, sockets, and devices are
+# skipped WITH A LOGGED NOTE — never silently (the kit's no-silent-
+# caps rule). The stage is a copy, so the evidence itself is never
+# touched.
+stage=$scratch/staged-target
+skipped=$(python3 - "$target" "$stage" <<'STAGEPY'
+import os, shutil, stat, sys
+source, stage = sys.argv[1], sys.argv[2]
+skipped = []
+for root, dirs, files in os.walk(source):
+    rel = os.path.relpath(root, source)
+    dest_dir = os.path.join(stage, rel) if rel != "." else stage
+    os.makedirs(dest_dir, exist_ok=True)
+    for name in list(dirs):
+        src = os.path.join(root, name)
+        if os.path.islink(src):
+            os.symlink(os.readlink(src), os.path.join(dest_dir, name))
+            dirs.remove(name)
+    for name in files:
+        src = os.path.join(root, name)
+        dst = os.path.join(dest_dir, name)
+        mode = os.lstat(src).st_mode
+        if stat.S_ISLNK(mode):
+            os.symlink(os.readlink(src), dst)
+        elif stat.S_ISREG(mode):
+            shutil.copy2(src, dst)
+        else:
+            skipped.append(os.path.join(rel, name) if rel != "." else name)
+for path in skipped:
+    print(path)
+STAGEPY
+) || { echo "grade refused: staging the produced repository failed" >&2; exit 1; }
+if [[ -n "$skipped" ]]; then
+  count=$(printf '%s\n' "$skipped" | grep -c .)
+  echo "grade note: $count non-regular file(s) excluded from the staged evidence (named pipes/sockets/devices):" >&2
+  printf '%s\n' "$skipped" | sed 's/^/  /' >&2
+fi
+exec "$grader" "$stage"

@@ -338,6 +338,11 @@ for part in metasystem benchmark; do
   rm -f "$part_archive"
 done
 git -C "$srcrepo" init -q
+# Machine-pinning enrollment (2026-08-24): adoption refuses an
+# unenrolled source, and this scratch snapshot is its own machine —
+# a fixture machine publishes a fixture nickname through the same
+# front door every real machine uses.
+git -C "$srcrepo" config metasystem.goal.machine kit-fixture
 git -C "$srcrepo" add .
 git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm snapshot
   # Benchmark provisioning owns the complete bridge from a held-out spec kit

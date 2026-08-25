@@ -322,6 +322,11 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   server_out="$round_dir/acp-$attempt_nonce-out"
   server_in="$round_dir/acp-$attempt_nonce-in"
   mkfifo "$server_out" "$server_in" || { fail_pending acp_fifo_setup setup; return 1; }
+  # Transport hygiene (KI-42): the fifo pair is wire plumbing, not
+  # evidence — a named pipe left in the round dir breaks any later
+  # evidence-tree copy (the benchmark grader died on one). Both
+  # endpoints dead ⇒ the pair is inert and removed at every exit.
+  acp_fifo_cleanup() { rm -f -- "$server_out" "$server_in"; }
   # Redirection order is the deadlock contract: the server opens
   # stdout FIRST (pairing the client's read-side-first open), then
   # stdin (pairing the client's write side).
@@ -330,7 +335,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   # helper (issue #12) — the binary ignores argv0, the classifier reads it.
   ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec -a devin-delegate-acp "$(command -v devin)" acp >"$server_out" <"$server_in" 2>>"$log" ) &
   server_pid=$!
-  register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
+  register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; acp_fifo_cleanup; fail_pending custody_registration handshake; return 1; }
 
   local -a turn_args
   turn_args=(
@@ -345,7 +350,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   [[ "$verb" != follow-up ]] || turn_args+=(--load-session "$requested_session")
   "$ms" "${turn_args[@]}" >"$outcome_file" 2>>"$log" &
   client_pid=$!
-  register_cli_custody "$client_pid" || { terminate_cli_child "$client_pid"; terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
+  register_cli_custody "$client_pid" || { terminate_cli_child "$client_pid"; terminate_cli_child "$server_pid"; acp_fifo_cleanup; fail_pending custody_registration handshake; return 1; }
   printf '{"type":"acp-launched","server_pid":%s,"client_pid":%s,"mode":"%s"}\n' \
     "$server_pid" "$client_pid" "$mode" >>"$events"
 
@@ -358,6 +363,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
       if ! record_handshake "$session_from_wire" "" ""; then
         terminate_cli_child "$client_pid"
         terminate_cli_child "$server_pid"
+        acp_fifo_cleanup
         return 1
       fi
       handshake_done=1
@@ -367,6 +373,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
     fi
     if (( ! handshake_done )) && ! kill -0 "$server_pid" 2>/dev/null; then
       terminate_cli_child "$client_pid"
+      acp_fifo_cleanup
       fail_pending acp_server_died handshake
       return 1
     fi
@@ -376,6 +383,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   done
   wait_for_cli "$client_pid"
   terminate_cli_child "$server_pid" || true
+  acp_fifo_cleanup
   printf 'acp client exit status=%s\n' "$cli_status" >>"$log"
 
   # Terminal-writer discipline (critique F7): before the handshake

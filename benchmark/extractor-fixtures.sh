@@ -473,21 +473,34 @@ else:
     # The five auth* legs are distinct causes of one gate: the hardened
     # delegation floor refuses empty, sham, replayed, unapplied, and
     # superseded authorization evidence alike.
-    gate_name = "delegationFloorMet" if variant.startswith("auth") else variant
-    assert scorecard["runValidity"]["valid"] is False, scorecard["runValidity"]
-    assert gates[gate_name] is False, gates
-    expected_false = {gate_name}
-    if variant == "everyJobTerminal":
-        # The same sole implementer cannot be both non-terminal and satisfy the
-        # completed-and-certified delegation floor.
-        expected_false.add("delegationFloorMet")
-    if variant == "evidenceSetComplete":
-        # The missing ledger now refuses at the AUTHORITY (state-verify
-        # takes the ledger as an input), voiding state and every
-        # state-derived gate - the correct fail-closed cascade.
-        expected_false.update({"fencesEnforced", "delegationFloorMet", "rosterPinned"})
-        assert any("authority verification refused" in reason for reason in scorecard["runValidity"]["reasons"]), scorecard["runValidity"]
-    assert {name for name, value in gates.items() if value is not True} == expected_false, gates
+    # The measurement bar (Wido's flip ruling, landed 8dcb90a):
+    # delegationFloor is a REPORTED METRIC, not a validity gate — the
+    # delegation and auth* variants therefore leave the run VALID and
+    # show up in mechanicalBehaviorMetrics; only the transport-health
+    # variants still fail validity.
+    metrics = {m["name"]: m for m in scorecard["mechanicalBehaviorMetrics"]}
+    if variant == "delegationFloorMet" or variant.startswith("auth"):
+        assert scorecard["runValidity"]["valid"] is True, scorecard["runValidity"]
+        assert all(value is True for value in gates.values()), gates
+        floor = metrics["delegationFloor"]
+        assert any(not item["met"] for item in floor["streams"]), floor
+    else:
+        assert scorecard["runValidity"]["valid"] is False, scorecard["runValidity"]
+        assert gates[variant] is False, gates
+        expected_false = {variant}
+        if variant == "evidenceSetComplete":
+            # The missing ledger refuses at the AUTHORITY (state-verify
+            # takes the ledger as an input), voiding state and every
+            # state-derived gate - the correct fail-closed cascade.
+            expected_false.update({"fencesEnforced", "rosterPinned"})
+            assert any("authority verification refused" in reason for reason in scorecard["runValidity"]["reasons"]), scorecard["runValidity"]
+        assert {name for name, value in gates.items() if value is not True} == expected_false, gates
+        if variant == "everyJobTerminal":
+            # The same sole implementer cannot be both non-terminal and
+            # satisfy the completed-and-consumed delegation floor: the
+            # METRIC reports the miss even though validity does not.
+            floor = metrics["delegationFloor"]
+            assert any(not item["met"] for item in floor["streams"]), floor
 assert Path(sys.argv[1]).with_suffix(".md").is_file()
 PY
 done
