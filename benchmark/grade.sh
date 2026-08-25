@@ -48,33 +48,8 @@ grader=$scratch/$grader_rel/grade.sh
 # caps rule). The stage is a copy, so the evidence itself is never
 # touched.
 stage=$scratch/staged-target
-skipped=$(python3 - "$target" "$stage" <<'STAGEPY'
-import os, shutil, stat, sys
-source, stage = sys.argv[1], sys.argv[2]
-skipped = []
-for root, dirs, files in os.walk(source):
-    rel = os.path.relpath(root, source)
-    dest_dir = os.path.join(stage, rel) if rel != "." else stage
-    os.makedirs(dest_dir, exist_ok=True)
-    for name in list(dirs):
-        src = os.path.join(root, name)
-        if os.path.islink(src):
-            os.symlink(os.readlink(src), os.path.join(dest_dir, name))
-            dirs.remove(name)
-    for name in files:
-        src = os.path.join(root, name)
-        dst = os.path.join(dest_dir, name)
-        mode = os.lstat(src).st_mode
-        if stat.S_ISLNK(mode):
-            os.symlink(os.readlink(src), dst)
-        elif stat.S_ISREG(mode):
-            shutil.copy2(src, dst)
-        else:
-            skipped.append(os.path.join(rel, name) if rel != "." else name)
-for path in skipped:
-    print(path)
-STAGEPY
-) || { echo "grade refused: staging the produced repository failed" >&2; exit 1; }
+skipped=$(python3 "$kit/stage_evidence.py" "$target" "$stage") \
+  || { echo "grade refused: staging the produced repository failed" >&2; exit 1; }
 if [[ -n "$skipped" ]]; then
   count=$(printf '%s\n' "$skipped" | grep -c .)
   echo "grade note: $count non-regular file(s) excluded from the staged evidence (named pipes/sockets/devices):" >&2

@@ -431,10 +431,23 @@ print(Path(sys.argv[2]).resolve() / manifest["grader"]["path"] / "grade.sh")
 PY
 )
   [[ -x "$grader" ]] || die 1 "cohort grading refused: held-out grader is not executable: $grader"
+  # Stage the target for the held-out grader with non-regular files
+  # excluded and loudly noted (KI-42; benchmark/stage_evidence.py is
+  # the one implementation, shared with grade.sh) — the registered
+  # grader stays immutable and the evidence untouched.
+  grader_stage=$(mktemp -d) || die 1 "cohort grading refused: no scratch space for the staged evidence"
+  staged_skips=$("$kit/stage_evidence.py" "$target" "$grader_stage/repo") \
+    || die 1 "cohort grading refused: staging the produced repository failed"
+  : >"$mission_root/grader.err"
+  if [[ -n "$staged_skips" ]]; then
+    { echo "grade note: non-regular file(s) excluded from the staged evidence:";
+      printf '%s\n' "$staged_skips" | sed 's/^/  /'; } >>"$mission_root/grader.err"
+  fi
   grader_tmp=$mission_root/.grader.out.$$
   set +e
-  "$grader" "$target" >"$grader_tmp" 2>"$mission_root/grader.err"
+  "$grader" "$grader_stage/repo" >"$grader_tmp" 2>>"$mission_root/grader.err"
   grader_code=$?
+  rm -rf -- "$grader_stage"
   set -e
   if ((grader_code != 0)); then
     die 1 "cohort grading failed for repetition $repetition: see $mission_root/grader.err"
