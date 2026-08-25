@@ -224,8 +224,11 @@ if (( push_after )); then
     exit 1
   }
   if git -C "$root" remote | grep -qx transport; then
-    git -C "$root" push transport "$branch" || {
-      echo "landing push failed at transport with origin already pushed; resolve (force-with-lease is YOUR call) and push transport" >&2
+    # Transport receives origin's ref, never the local branch: the
+    # mirror sync cannot carry a commit origin has not accepted, so a
+    # pre-review local chain cannot leak through this leg.
+    bash "$root/scripts/agents/sync-transport.sh" "$branch" || {
+      echo "landing push failed at transport with origin already pushed; resolve and rerun scripts/agents/sync-transport.sh" >&2
       exit 1
     }
   fi

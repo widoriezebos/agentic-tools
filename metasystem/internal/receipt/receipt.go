@@ -186,12 +186,15 @@ func Add(opts Options) Result {
 	recheck.MaxAgeSet, recheck.MaxReceiptsSet = false, false
 	recheck.MaxAgeDays, recheck.MaxReceipts = "", ""
 	if after := Check(recheck); after.Code != 0 {
-		// The note names ITS repository: nested fixture repos emit this
-		// line into outer suite logs, and an unnamed note was misread
-		// as the template's own cadence (retro-2026-08-25, IL-32).
+		// The note names ITS repository absolutely: nested fixture
+		// repositories emit this line into outer suite logs, and a
+		// noteworthy path must never read as "due in .".
+		home := filepath.Dir(filepath.Dir(opts.File))
+		if abs, err := filepath.Abs(home); err == nil {
+			home = abs
+		}
 		result.Err = append(result.Err, fmt.Sprintf(
-			"note: a metasystem retro is due in %s — run skills/retro (scripts/receipt.sh check for details)",
-			filepath.Dir(filepath.Dir(opts.File))))
+			"note: a metasystem retro is due in %s — run skills/retro (scripts/receipt.sh check for details)", home))
 	}
 	return result
 }

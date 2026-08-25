@@ -89,6 +89,15 @@ func TestAddSanitizesAndNotesDueRetro(t *testing.T) {
 	if len(result.Err) != 1 || !strings.Contains(result.Err[0], "a metasystem retro is due") {
 		t.Fatalf("missing retro note: %+v", result.Err)
 	}
+	// The note names its repository by ABSOLUTE path: nested repos emit
+	// this line into outer logs, and "due in ." identifies nothing.
+	wantHome, err := filepath.Abs(opts.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Err[0], "due in "+wantHome) {
+		t.Fatalf("the due note must name its repository absolutely: %q", result.Err[0])
+	}
 }
 
 func TestCorrectLifecycle(t *testing.T) {
