@@ -186,8 +186,12 @@ func Add(opts Options) Result {
 	recheck.MaxAgeSet, recheck.MaxReceiptsSet = false, false
 	recheck.MaxAgeDays, recheck.MaxReceipts = "", ""
 	if after := Check(recheck); after.Code != 0 {
-		result.Err = append(result.Err,
-			"note: a metasystem retro is due — run skills/retro (scripts/receipt.sh check for details)")
+		// The note names ITS repository: nested fixture repos emit this
+		// line into outer suite logs, and an unnamed note was misread
+		// as the template's own cadence (retro-2026-08-25, IL-32).
+		result.Err = append(result.Err, fmt.Sprintf(
+			"note: a metasystem retro is due in %s — run skills/retro (scripts/receipt.sh check for details)",
+			filepath.Dir(filepath.Dir(opts.File))))
 	}
 	return result
 }

@@ -79,6 +79,13 @@ Before promoting any draft:
 - [ ] Origin is honest (`human` for Wido's asks — they carry his
       authority gates; `main` otherwise).
 - [ ] It does not duplicate or belong inside an existing item.
+- [ ] The next step states INTENT, CONSTRAINTS, and FREEDOMS — never
+      a script of the how (IL-31, the mission-command discipline). A
+      goal written as steps binds its executor to the author's
+      context and goes stale the moment reality shifts; intent
+      survives both. The test: a different machine claims it and
+      executes without consulting the author. The coordinator
+      rewrites script-shaped next-steps at intake.
 
 ## The drop rule
 
