@@ -932,7 +932,10 @@ track_armed_supervision() { # repository
   done
   armed_supervision_repos+=("$repo")
 }
+validation_cleanup_started=0
 validation_cleanup() {
+  (( validation_cleanup_started )) && return 0
+  validation_cleanup_started=1
   [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
   # The witness dies with the run (D33's lifecycle): the armed state
   # dir must never outlive the validation that produced it.
@@ -972,7 +975,17 @@ validation_cleanup() {
   fi
   rm -rf "$tmp" 2>/dev/null || { sleep 1; rm -rf "$tmp" 2>/dev/null || true; }
 }
+on_signal() {
+  local signal=$1
+  (( validation_cleanup_started )) && return 0
+  validation_exit_status=$((128 + signal))
+  validation_cleanup
+  trap - EXIT
+  exit "$validation_exit_status"
+}
 trap 'validation_exit_status=$?; validation_cleanup' EXIT
+trap 'on_signal 2' INT
+trap 'on_signal 15' TERM
 
 # IL-3: prove the audit's fallback with a PATH that contains its ordinary POSIX
 # tools but deliberately contains no rg binary.

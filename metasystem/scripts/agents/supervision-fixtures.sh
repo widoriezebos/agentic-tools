@@ -16,12 +16,81 @@ fixture_harness_roots=()
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
+assert_scratch_scoped_announcement_calls() {
+  local actual expected
+  actual=$(awk '
+    BEGIN {
+      helper = "become_" "main"
+      lease = "lea" "se"
+      announce = "ann" "ounce"
+      word_left = "(^|[^[:alnum:]_])"
+      word_right = "([^[:alnum:]_]|$)"
+    }
+    function helper_occurrences(text, file, line_number,    scan, hit, token_at, tail, root) {
+      scan = text
+      while (match(scan, word_left helper word_right)) {
+        hit = substr(scan, RSTART, RLENGTH)
+        token_at = index(hit, helper)
+        tail = substr(scan, RSTART + token_at - 1 + length(helper))
+        root = ""
+        if (tail ~ /^[[:space:]]/) {
+          sub(/^[[:space:]]+/, "", tail)
+          root = tail
+          sub(/[[:space:];&|].*$/, "", root)
+        }
+        print file ":" line_number ":call:" root
+        scan = substr(scan, RSTART + token_at - 1 + length(helper))
+      }
+    }
+    function direct_occurrences(text, file, line_number,    scan, occurrence_start, occurrence_length, tail, command, root) {
+      scan = text
+      while (match(scan, word_left lease "[[:space:]]+" announce word_right)) {
+        occurrence_start = RSTART
+        occurrence_length = RLENGTH
+        tail = substr(scan, occurrence_start + occurrence_length)
+        command = tail
+        sub(/[;&|].*$/, "", command)
+        root = ""
+        if (match(command, /(^|[[:space:]])--root[[:space:]]+[^[:space:];&|]+/)) {
+          root = substr(command, RSTART, RLENGTH)
+          sub(/^.*--root[[:space:]]+/, "", root)
+        }
+        print file ":" line_number ":direct:" root
+        scan = substr(scan, occurrence_start + occurrence_length)
+      }
+    }
+    {
+      file = substr(FILENAME, length(source_prefix) + 1)
+      helper_occurrences($0, file, FNR)
+      direct_occurrences($0, file, FNR)
+    }
+  ' source_prefix="$source_root/" \
+    "$source_root/scripts/agents/supervision-fixtures.sh" \
+    "$source_root/scripts/validate-metasystem.sh" | LC_ALL=C sort)
+  expected=$(printf '%s\n' \
+    'scripts/agents/supervision-fixtures.sh:1039:call:announced' \
+    'scripts/agents/supervision-fixtures.sh:1109:call:"$repo"' \
+    'scripts/agents/supervision-fixtures.sh:1220:call:"$foreign/repo/metasystem"' \
+    'scripts/agents/supervision-fixtures.sh:1310:direct:"$stop_root"' \
+    'scripts/agents/supervision-fixtures.sh:1315:direct:"$stop_root"' \
+    'scripts/agents/supervision-fixtures.sh:566:call:' \
+    'scripts/agents/supervision-fixtures.sh:568:direct:"$repo"' \
+    'scripts/agents/supervision-fixtures.sh:946:call:"$gate_repo"')
+  [[ "$actual" == "$expected" ]] || {
+    echo "announcement call sites are not exactly scratch-scoped:" >&2
+    printf '%s\n' "$actual" >&2
+    return 1
+  }
+}
+assert_scratch_scoped_announcement_calls
+
 process_started_at() {
   "$ms" proc started-at --pid "$1"
 }
 
 process_identity_alive() { # pid, start
-  "$ms" proc alive --pid "$1" --start-time "$2" --root "$repo" >/dev/null 2>&1
+  "$ms" proc alive --pid "$1" --start-time "$2" \
+    --root "${repo:-$source_root}" >/dev/null 2>&1
 }
 
 wait_until() { # name, shell predicate...
@@ -184,7 +253,10 @@ wait_for_child_exit() { # name, child pid
   return "$result"
 }
 
+cleanup_started=0
 cleanup() {
+  (( cleanup_started )) && return 0
+  cleanup_started=1
   local harness_path tuple pid start
   if [[ -n "${operator_harness:-}" && -x "$operator_harness/scripts/agents/arm-supervision.sh" ]]; then
     if declare -p operator_env >/dev/null 2>&1; then
@@ -224,7 +296,16 @@ cleanup() {
     rm -rf "$tmp"
   fi
 }
+on_signal() {
+  local signal=$1
+  (( cleanup_started )) && return 0
+  cleanup
+  trap - EXIT
+  exit $((128 + signal))
+}
 trap cleanup EXIT
+trap 'on_signal 2' INT
+trap 'on_signal 15' TERM
 
 make_repo() { # destination
   local repo=$1 evidence=$tmp/evidence-$(basename "$repo")
@@ -431,6 +512,10 @@ operator_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "
 operator_driver=$!
 operator_driver_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "$operator_driver")
 owned_pids+=("$operator_driver:$operator_driver_start")
+if [[ "${METASYSTEM_SUITE_TEST_PAUSE_AT:-}" == post-owned-pids ]]; then
+  echo "supervision fixture test pause: post-owned-pids" >&2
+  sleep 5
+fi
 wait_for_child_exit "nested ordinary operator arming" "$operator_driver"
 grep -Eq "(^|[[:space:]])ARMED repo=$operator_scope([[:space:]]|$)" "$tmp/operator-arm.out" \
   || { cat "$tmp/operator-arm.out" >&2; exit 1; }
@@ -801,6 +886,9 @@ inventory_has "$last" UNTRACKED "$custody_pid" \
 set_custody_process "$repo/artifacts/agents/jobs/owned.json" "$custody_start" \
   "$(json_field "$repo/artifacts/agents/jobs/owned.json" instanceTag)"
 wait_for_census "S4-2 child custody exact join" inventory_has CUSTODY "$custody_pid"
+identity_staged=$(mktemp "$(dirname "$identity_fixture")/.identities.XXXXXX")
+printf '{}\n' >"$identity_staged"
+mv "$identity_staged" "$identity_fixture"
 
 # CENSUS-FAILED covers total enumeration failure and unresolved scope, while a
 # process-table race that has already exited is a named exclusion (S4-6).
@@ -991,6 +1079,12 @@ stop_owned_pid "supervision owner for takeover" "$owner_before" "$owner_start"
 wait_until "proven-dead owner" bash -c '! "$1" proc alive --pid "$2" --start-time "$3" --root "$4" >/dev/null 2>&1' _ "$census_engine" "$owner_before" "$owner_start" "$repo"
 printf '[]\n' >"$process_fixture"
 release_checkout "$repo"
+if [[ -n "${METASYSTEM_SUITE_DEBUG_TAKEOVER_CLASS:-}" ]]; then
+  takeover_class=$("$census_engine" lease classify --root "$repo" --caller-pid $$)
+  echo "takeover-point classification: $takeover_class" >&2
+  [[ "$("$ms" json get --value "$takeover_class" --field class)" == MAIN ]] \
+    || { echo "takeover-point caller is not class MAIN" >&2; exit 1; }
+fi
 "$arm" --repo "$repo" --session takeover --pid "$$" --start-time "$(process_started_at "$$")" --tag takeover-main >/dev/null
 new_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 [[ "$new_owner" != "$owner_before" ]] || { echo "stale supervision lock was not taken over" >&2; exit 1; }
@@ -1205,10 +1299,10 @@ printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
 # truth: the announced main IS the runtime process. So when this
 # suite runs under an agent, announce THAT ancestor as the
 # sandbox's main (the writes authenticate through it and the run's
-# recorded owner equals the hook's derived main). From a terminal
-# there is no runtime ancestor and no announcement: the writes pass
-# as HUMAN and the run's null coordinates match the hook's empty
-# main — the shape this leg always had.
+# recorded owner equals the hook's derived main). Without a runtime
+# ancestor, the suite shell announces itself so detached runs carry
+# the same holder-authenticated identity through the goal and run
+# control-plane writes.
 stop_main_identity=$("$stop_root/bin/metasystem" proc find-ancestor \
   --repo "$stop_root" --pid $$ --runtime claude 2>/dev/null || true)
 if [[ -n "$stop_main_identity" ]]; then
@@ -1216,6 +1310,11 @@ if [[ -n "$stop_main_identity" ]]; then
   "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
     --session stop-hook-main --pid "$stop_main_pid" \
     --start "$(process_started_at "$stop_main_pid")" \
+    --tag fixture-stop-hook --runtime claude >/dev/null
+else
+  "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
+    --session stop-hook-main --pid $$ \
+    --start "$(process_started_at $$)" \
     --tag fixture-stop-hook --runtime claude >/dev/null
 fi
 "$stop_root/bin/metasystem" goal open --root "$stop_root" \
