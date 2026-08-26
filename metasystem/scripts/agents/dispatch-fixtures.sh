@@ -672,6 +672,63 @@ happy_enforcement_rel=$("$engine" json get --file "$happy_record" --field permis
   || { echo "happy snapshot envelope enforcement changed shape" >&2; exit 1; }
 [[ "$("$engine" json get --file "$happy_record" --field input.delivery)" == stdin ]] \
   || { echo "happy input was not delivered on stdin" >&2; exit 1; }
+
+# Review roles default to a zero-write envelope in the live checkout even
+# when repository configuration grants the same role writes for a quarantined
+# worktree. An explicit live-checkout selection gets a custody-specific
+# refusal, while --worktree keeps the configured write grant.
+conf_edit "$agent_repo/metasystem.conf" replace-line-first \
+  '^dispatch[.]permissions[.]design-critic=.*$' \
+  'dispatch.permissions.design-critic=workspace'
+review_default_brief="$agent_fixture/review-default.md"
+make_agent_brief "$review_default_brief" design
+run_agent_fixture review-default review-default "$agent_dispatch" dispatch \
+  --role design-critic --brief "$review_default_brief" --job-id review-default --wait
+review_default_effective="$agent_repo/artifacts/agents/review-default/rounds/1/effective-permissions.json"
+[[ "$("$engine" json get --file "$review_default_effective" --field writeRoots)" == '[]' \
+   && "$("$engine" json get --file "$review_default_effective" --field tools)" == read-only ]] \
+  || { echo "a live-checkout review did not receive the zero-write effective envelope" >&2; cat "$review_default_effective" >&2; exit 1; }
+
+review_follow_message="$agent_fixture/review-follow.md"
+cp "$agent_repo/scripts/agents/templates/follow-up.md" "$review_follow_message"
+run_agent_fixture review-default-follow-up review-default-r2 "$agent_dispatch" follow-up \
+  --job review-default --message "$review_follow_message" --wait
+review_follow_effective="$agent_repo/artifacts/agents/review-default/rounds/2/effective-permissions.json"
+[[ "$("$engine" json get --file "$review_follow_effective" --field writeRoots)" == '[]' \
+   && "$("$engine" json get --file "$review_follow_effective" --field tools)" == read-only ]] \
+  || { echo "a live-checkout review follow-up did not inherit the zero-write effective envelope" >&2; cat "$review_follow_effective" >&2; exit 1; }
+
+agent_fails review-live-write 'design-critic live-checkout write refusal' \
+  "$agent_dispatch" dispatch --role design-critic --brief "$review_default_brief" \
+  --workspace "$agent_repo" --job-id review-live-write
+grep -Fq 'incident class: critic-workspace-custody' "$agent_fixture/review-live-write.out" \
+  && grep -Fq 'pass --worktree' "$agent_fixture/review-live-write.out" \
+  || { echo "the live-checkout review refusal did not name the incident class and override flag" >&2; cat "$agent_fixture/review-live-write.out" >&2; exit 1; }
+review_live_record="$agent_repo/artifacts/agents/jobs/review-live-write.json"
+[[ ! -e "$agent_repo/artifacts/agents/review-live-write" \
+   && ! -e "$agent_repo/artifacts/agents/jobs/review-live-write.log" \
+   && ! -e "$agent_repo/artifacts/agents/hb/review-live-write" ]] \
+  || { echo "the writable live-review refusal launched or prepared an adapter process" >&2; exit 1; }
+for process_field in pid pidStartedAt pgid instanceTag custodyProcesses; do
+  if "$engine" json get --file "$review_live_record" --field "$process_field" >/dev/null 2>&1; then
+    echo "the writable live-review refusal recorded process or custody field: $process_field" >&2
+    exit 1
+  fi
+done
+
+run_agent_fixture review-worktree review-worktree "$agent_dispatch" dispatch \
+  --role design-critic --brief "$review_default_brief" --job-id review-worktree --worktree --wait
+review_worktree_record="$agent_repo/artifacts/agents/jobs/review-worktree.json"
+review_worktree_root=$("$engine" json get --file "$review_worktree_record" --field workspaceRoot)
+review_worktree_effective="$agent_repo/artifacts/agents/review-worktree/rounds/1/effective-permissions.json"
+review_worktree_writes=$("$engine" json get --file "$review_worktree_effective" --field writeRoots)
+[[ "$review_worktree_writes" == *"$review_worktree_root"* \
+   && "$("$engine" json get --file "$review_worktree_effective" --field tools)" == runtime-default ]] \
+  || { echo "a quarantined review worktree lost its configured write grant" >&2; cat "$review_worktree_effective" >&2; exit 1; }
+conf_edit "$agent_repo/metasystem.conf" replace-line-first \
+  '^dispatch[.]permissions[.]design-critic=.*$' \
+  'dispatch.permissions.design-critic=none'
+
 happy_input_bytes=$("$engine" json get --file "$happy_record" --field input.bytes)
 [[ "$happy_input_bytes" =~ ^[0-9]+$ ]] && (( happy_input_bytes > 0 )) \
   || { echo "happy input bytes are not positive: $happy_input_bytes" >&2; exit 1; }
@@ -760,6 +817,11 @@ make_agent_brief "$code_brief" implement
 review_target_brief="$agent_fixture/review-target.md"
 make_agent_brief "$review_target_brief" implement
 run_agent_fixture review-target review-target "$agent_dispatch" dispatch --role implementer --brief "$review_target_brief" --job-id review-target --worktree --wait
+review_target_effective="$agent_repo/artifacts/agents/review-target/rounds/1/effective-permissions.json"
+review_target_root=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/review-target.json" --field workspaceRoot)
+[[ "$("$engine" json get --file "$review_target_effective" --field writeRoots)" == *"$review_target_root"* \
+   && "$("$engine" json get --file "$review_target_effective" --field tools)" == runtime-default ]] \
+  || { echo "the implementer role lost its existing writable worktree envelope" >&2; cat "$review_target_effective" >&2; exit 1; }
 run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --permissions none --job-id flag-runtime --wait
 flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
 [[ "$("$engine" json get --file "$flag_runtime_record" --field runtime)" == fake \

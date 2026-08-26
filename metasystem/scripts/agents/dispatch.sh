@@ -476,7 +476,14 @@ resolve_mission() { # explicit id; prints mission|lease|turn or ||
 
 expand_permissions() { # requested value, workspace root, worktree flag, output
   local requested=$1 workspace=$2 is_worktree=$3 output=$4 source preset network_floor
-  if [[ -f "$requested" ]]; then source=$requested; preset=custom; else source="$root/scripts/agents/permissions/$requested.json"; preset=$requested; fi
+  case "$requested" in
+    "$root/scripts/agents/permissions/"*.json)
+      source=$requested; preset=${requested##*/}; preset=${preset%.json}
+      ;;
+    *)
+      if [[ -f "$requested" ]]; then source=$requested; preset=custom; else source="$root/scripts/agents/permissions/$requested.json"; preset=$requested; fi
+      ;;
+  esac
   [[ -f "$source" ]] || die 1 "unknown permissions preset or envelope file: $requested"
   # A repository may deny network to every delegate regardless of preset. A
   # benchmark target sets this, because an agent that can reach the internet can
@@ -487,6 +494,19 @@ expand_permissions() { # requested value, workspace root, worktree flag, output
   "$ms" job expand-permissions --source "$source" --repo "$repo_scope" \
     --workspace "$workspace" --worktree "$is_worktree" --preset "$preset" \
     --network-floor "$network_floor" --output "$output"
+}
+
+permission_envelope_requests_writes() { # preset name or envelope file
+  local requested=$1 source write_roots
+  if [[ -f "$requested" ]]; then source=$requested; else source="$root/scripts/agents/permissions/$requested.json"; fi
+  [[ -f "$source" ]] || return 1
+  write_roots=$("$ms" json get --file "$source" --field writeRoots 2>/dev/null) || return 1
+  [[ "$write_roots" == \[*\] ]] || return 1
+  [[ "$write_roots" != '[]' ]]
+}
+
+is_review_role() { # role
+  [[ "$1" == code-critic || "$1" == design-critic || "$1" == warden ]]
 }
 
 select_snapshot() { # runtime, role, requested envelope, output json
@@ -827,7 +847,7 @@ reap_one() { # job
 
 dispatch_job() {
   local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= steward_intent= steward_mode=0 steward_tuple=
-  local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
+  local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
   local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json
@@ -840,7 +860,7 @@ dispatch_job() {
       --model) [[ $# -ge 2 ]] || { usage; exit 2; }; model_override=$2; shift 2 ;;
       --job-id) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --reviews) [[ $# -ge 2 ]] || { usage; exit 2; }; reviews=$2; shift 2 ;;
-      --workspace) [[ $# -ge 2 ]] || { usage; exit 2; }; workspace=$2; shift 2 ;;
+      --workspace) [[ $# -ge 2 ]] || { usage; exit 2; }; workspace=$2; workspace_selected=1; shift 2 ;;
       --worktree) use_worktree=1; shift ;;
       --permissions) [[ $# -ge 2 ]] || { usage; exit 2; }; permissions_override=$2; shift 2 ;;
       --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission_override=$2; shift 2 ;;
@@ -1021,6 +1041,12 @@ dispatch_job() {
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
   fi
   permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default none)}
+  if is_review_role "$role" && (( use_worktree == 0 && workspace_selected == 0 )) && [[ -z "$permissions_override" ]]; then
+    # A review launched in the coordinator's checkout gets no pen by
+    # default, even when repository configuration grants that role a
+    # writable envelope for quarantined worktree dispatches.
+    permission_name="$root/scripts/agents/permissions/none.json"
+  fi
   if [[ "$role" == warden ]]; then
     # The warden holds the no-pen seat: its write authority is bound by
     # the role, never by a caller flag, a config key, or a file that
@@ -1028,6 +1054,10 @@ dispatch_job() {
     # by its absolute repository path.
     [[ -z "$permissions_override" ]] || die 2 "the warden role dispatches with the zero-write preset; --permissions cannot change it"
     permission_name="$root/scripts/agents/permissions/none.json"
+  fi
+  if is_review_role "$role" && (( use_worktree == 0 )) && [[ "$workspace" == "$repo_scope" ]] \
+      && permission_envelope_requests_writes "$permission_name"; then
+    die 2 "$role live-checkout write refusal (incident class: critic-workspace-custody): a review role could modify product bytes in the coordinator's tree; pass --worktree to keep its writes quarantined"
   fi
   permission_json=$(mktemp "$record_locks/permissions.XXXXXX")
   expand_permissions "$permission_name" "$workspace" "$use_worktree" "$permission_json"
