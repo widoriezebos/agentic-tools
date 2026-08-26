@@ -38,7 +38,7 @@ assert_scratch_scoped_announcement_calls() {
           root = tail
           sub(/[[:space:];&|].*$/, "", root)
         }
-        print file ":" line_number ":call:" root
+        print file ":call:" root
         scan = substr(scan, RSTART + token_at - 1 + length(helper))
       }
     }
@@ -55,7 +55,7 @@ assert_scratch_scoped_announcement_calls() {
           root = substr(command, RSTART, RLENGTH)
           sub(/^.*--root[[:space:]]+/, "", root)
         }
-        print file ":" line_number ":direct:" root
+        print file ":direct:" root
         scan = substr(scan, occurrence_start + occurrence_length)
       }
     }
@@ -67,15 +67,21 @@ assert_scratch_scoped_announcement_calls() {
   ' source_prefix="$source_root/" \
     "$source_root/scripts/agents/supervision-fixtures.sh" \
     "$source_root/scripts/validate-metasystem.sh" | LC_ALL=C sort)
+  # The allowlist keys on (file, kind, root) — NEVER line numbers,
+  # which rot under any unrelated edit above a call site (found live
+  # 2026-08-25: the perl removal shifted this very file and broke the
+  # nested adopt validation). Multiplicity still guards: sort keeps
+  # duplicates, so a second call with an allowlisted root shape still
+  # mismatches the exact inventory.
   expected=$(printf '%s\n' \
-    'scripts/agents/supervision-fixtures.sh:1039:call:announced' \
-    'scripts/agents/supervision-fixtures.sh:1109:call:"$repo"' \
-    'scripts/agents/supervision-fixtures.sh:1220:call:"$foreign/repo/metasystem"' \
-    'scripts/agents/supervision-fixtures.sh:1310:direct:"$stop_root"' \
-    'scripts/agents/supervision-fixtures.sh:1315:direct:"$stop_root"' \
-    'scripts/agents/supervision-fixtures.sh:566:call:' \
-    'scripts/agents/supervision-fixtures.sh:568:direct:"$repo"' \
-    'scripts/agents/supervision-fixtures.sh:946:call:"$gate_repo"')
+    'scripts/agents/supervision-fixtures.sh:call:announced' \
+    'scripts/agents/supervision-fixtures.sh:call:"$repo"' \
+    'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo/metasystem"' \
+    'scripts/agents/supervision-fixtures.sh:direct:"$stop_root"' \
+    'scripts/agents/supervision-fixtures.sh:direct:"$stop_root"' \
+    'scripts/agents/supervision-fixtures.sh:call:' \
+    'scripts/agents/supervision-fixtures.sh:direct:"$repo"' \
+    'scripts/agents/supervision-fixtures.sh:call:"$gate_repo"' | LC_ALL=C sort)
   [[ "$actual" == "$expected" ]] || {
     echo "announcement call sites are not exactly scratch-scoped:" >&2
     printf '%s\n' "$actual" >&2
@@ -498,7 +504,8 @@ if [[ -n "${METASYSTEM_SUPERVISION_OPERATOR_FIXTURE_FAKE:-}" ]] \
   operator_identity_fixture=$tmp/operator-identities.json
   printf '[]\n' >"$operator_process_fixture"
   printf '{}\n' >"$operator_identity_fixture"
-  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s/^watch\.interval-sec=.*$/watch.interval-sec=1/m' "$operator_harness/metasystem.conf"
+  conf_edit "$operator_harness/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=fake'
+  conf_edit "$operator_harness/metasystem.conf" replace-line-first '^watch[.]interval-sec=.*$' 'watch.interval-sec=1'
   operator_env=(env METASYSTEM_CENSUS_PROCESS_FILE="$operator_process_fixture"
     METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$operator_identity_fixture")
 fi
@@ -756,8 +763,8 @@ grep -Fq 'live census writer already owns' "$tmp/second-writer.out" \
 # over-interval scan as a supervision defect instead of silently looping it.
 warning_repo=$tmp/warning-repo
 make_repo "$warning_repo"
-perl -0pi -e 's/(^  signature\)\n)/$1    sleep 1.1\n/m' \
-  "$warning_repo/scripts/agents/adapters/fake.sh"
+conf_edit "$warning_repo/scripts/agents/adapters/fake.sh" insert-after-first \
+  '^  signature[)]$' '    sleep 1.1'
 warning_supervision=$warning_repo/artifacts/agents/supervision
 warning_process_fixture=$warning_repo/processes.json
 warning_identity_fixture=$warning_repo/identities.json
@@ -981,7 +988,7 @@ cp "$state" "$gate_repo/artifacts/agents/supervision/state.json"
 cp "$last" "$gate_repo/artifacts/agents/supervision/last-census.json"
 gate_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
 cp "$gate_repo/artifacts/agents/supervision/state.json" "$tmp/gate-state.json"
-perl -0pi -e 's/^watch\.stale-min=.*$/watch.stale-min=21/m' "$gate_repo/metasystem.conf"
+conf_edit "$gate_repo/metasystem.conf" replace-line-first '^watch[.]stale-min=.*$' 'watch.stale-min=21'
 [[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
   || { echo "S4-3: relevant configuration did not alter the fingerprint" >&2; exit 1; }
 git -C "$gate_repo" show HEAD:metasystem.conf >"$gate_repo/metasystem.conf"
@@ -1008,7 +1015,7 @@ assert_stale_shape census-window-boundary 20
 set_gate_census 21 10 "$gate_fingerprint"
 dispatch_fails stale-census 'census verdict is stale'
 assert_stale_shape stale-census 20
-perl -0pi -e 's/^watch\.interval-sec=.*$/watch.interval-sec=200/m' "$gate_repo/metasystem.conf"
+conf_edit "$gate_repo/metasystem.conf" replace-line-first '^watch[.]interval-sec=.*$' 'watch.interval-sec=200'
 capped_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
 set_gate_census 180 200 "$capped_fingerprint"
 dispatch_fails capped-census-window 'census verdict is stale'

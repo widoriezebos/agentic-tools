@@ -6,6 +6,98 @@
 # - this file is the only owner of harness cap values; and
 # - load scaling is extra headroom, never the reason an idle run passes.
 
+# Fixture configuration edits use one Bash 3.2-compatible AWK path. The
+# adjacent temporary file keeps a failed edit away from the source, and the
+# original mode is restored before the completed file is renamed into place.
+conf_edit() { # file, action, pattern, optional replacement; or file, awk, awk arguments
+  local file=$1 action=$2 pattern=${3-} replacement=${4-}
+  local staged mode line_count final_byte final_terminated=0 status=0
+  if mode=$(stat -f '%Lp' "$file" 2>/dev/null); then
+    :
+  elif mode=$(stat -c '%a' "$file" 2>/dev/null); then
+    :
+  else
+    echo "conf_edit: cannot read mode for $file" >&2
+    return 1
+  fi
+  line_count=$(awk 'END { print NR + 0 }' "$file") || return 1
+  final_byte=$(tail -c 1 "$file"; printf x) || return 1
+  [[ "$final_byte" == $'\nx' ]] && final_terminated=1
+  staged=$(mktemp "$(dirname "$file")/.conf-edit.XXXXXX") || return 1
+  if [[ "$action" == awk ]]; then
+    shift 2
+    awk -v conf_edit_line_count="$line_count" \
+      -v conf_edit_final_terminated="$final_terminated" \
+      "$@" "$file" >"$staged" || status=$?
+  else
+    awk -v action="$action" -v pattern="$pattern" -v replacement="$replacement" \
+      -v line_count="$line_count" -v final_terminated="$final_terminated" '
+      function replace_literal(text, needle, value,    output, position) {
+        if (needle == "") return text
+        output = ""
+        while ((position = index(text, needle)) != 0) {
+          output = output substr(text, 1, position - 1) value
+          text = substr(text, position + length(needle))
+        }
+        return output text
+      }
+      function emit(text, terminated) {
+        printf "%s", text
+        if (terminated) printf "%s", ORS
+      }
+      BEGIN {
+        if (action != "replace-line-first" && action != "replace-lines" &&
+            action != "delete-line-first" && action != "delete-lines" &&
+            action != "insert-after-first" && action != "insert-after" &&
+            action != "replace-literal") {
+          print "conf_edit: unknown action: " action > "/dev/stderr"
+          exit 2
+        }
+      }
+      {
+        record_terminated = (FNR < line_count || final_terminated)
+        matches = (action == "replace-literal" ? 0 : ($0 ~ pattern))
+        if (action == "replace-literal") {
+          $0 = replace_literal($0, pattern, replacement)
+        } else if (matches && (action == "delete-lines" ||
+                   (action == "delete-line-first" && !changed)) &&
+                   record_terminated) {
+          changed = 1
+          next
+        } else if (matches && (action == "replace-lines" ||
+                   (action == "replace-line-first" && !changed))) {
+          changed = 1
+          $0 = replacement
+        }
+        emit($0, record_terminated)
+        if (matches && (action == "insert-after" ||
+            (action == "insert-after-first" && !changed && record_terminated))) {
+          changed = 1
+          emit(replacement, 1)
+        }
+      }
+    ' "$file" >"$staged" || status=$?
+  fi
+  if [[ $status -ne 0 ]]; then
+    rm -f "$staged"
+    return "$status"
+  fi
+  if chmod "$mode" "$staged"; then
+    :
+  else
+    status=$?
+    rm -f "$staged"
+    return "$status"
+  fi
+  if mv "$staged" "$file"; then
+    return 0
+  else
+    status=$?
+    rm -f "$staged"
+    return "$status"
+  fi
+}
+
 harness_fixture_base_cap() { # named harness cap
   local name=$1 base
   case "$name" in

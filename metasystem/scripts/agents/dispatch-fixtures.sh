@@ -230,14 +230,14 @@ runner_git() {
   git -C "$runner_repo" -c core.hooksPath=/dev/null "$@"
 }
 
-perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$runner_evidence"'|m' \
-  "$runner_repo/metasystem.conf"
+conf_edit "$runner_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
+  "evidence.root=$runner_evidence"
 agent_selftest_repo="$agent_fixture/selftest-repo"
 agent_selftest_evidence="$agent_fixture/selftest-evidence"
 cp -R "$agent_repo" "$agent_selftest_repo"
 agent_selftest_repo=$(cd "$agent_selftest_repo" && pwd -P)
-perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$agent_selftest_evidence"'|m' \
-  "$agent_selftest_repo/metasystem.conf"
+conf_edit "$agent_selftest_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
+  "evidence.root=$agent_selftest_evidence"
 
 agent_fixture_cap_sec=$(harness_fixture_cap agent-command)
 agent_status_cap_sec=$(harness_fixture_cap agent-status)
@@ -567,13 +567,13 @@ cp "$no_tier_conf" "$agent_repo/metasystem.conf"
 [[ $(grep -Fc 'INFO: model tiers are absent; dispatch overrides therefore always escalate' "$agent_fixture/no-tier-validate.out") -eq 1 ]] \
   || { echo "tier-absence validation fixture did not emit its one informational line" >&2; exit 1; }
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.one=fake:fake-model/m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.one=fake:fake-model'
 agent_fails malformed-tier-key 'not a supported model tier key' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=fake-model/m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1=fake-model'
 agent_fails malformed-tier-member 'not runtime-qualified' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^role\.design-critic\.runtime=.*$/role.design-critic.runtime=ghost/m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^role[.]design-critic[.]runtime=.*$' 'role.design-critic.runtime=ghost'
 agent_fails invalid-role-runtime 'outside metasystem.runtimes' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'mode.refactor.role.implementer.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
@@ -582,19 +582,20 @@ cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'role.default.model.ghost=ghost-model\n' >>"$agent_repo/metasystem.conf"
 agent_fails invalid-model-runtime 'outside metasystem.runtimes' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=ghost/m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=ghost'
 agent_fails unsupported-runtime 'unsupported runtime' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=/m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1='
 agent_fails unmapped-model 'appears in 0 model tiers' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^model\.tier\.2=.*$/model.tier.2=fake:fake-model/m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]2=.*$' 'model.tier.2=fake:fake-model'
 agent_fails duplicate-model-tier 'appears in 2 model tiers' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^role\.design-critic\.model\.fake=.*\n//m; s/^role\.default\.model\.fake=.*\n//m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]design-critic[.]model[.]fake=.*$'
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]default[.]model[.]fake=.*$'
 agent_fails missing-runtime-model 'has no model.fake value' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$agent_repo"'/evidence|m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' "evidence.root=$agent_repo/evidence"
 agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 
@@ -746,12 +747,12 @@ agent_fails ranked-costlier 'higher (tier 1 -> tier 2)' "$agent_dispatch" dispat
 
 # The recorded default is a real fallback, while its absence refuses.
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^role\.verifier\.runtime=.*\n//m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]verifier[.]runtime=.*$'
 verifier_brief="$agent_fixture/verifier.md"
 make_agent_brief "$verifier_brief" verify
 run_agent_fixture default-role default-role "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none --job-id default-role --wait
 cp "$agent_repo/metasystem.conf" "$agent_fixture/no-role.conf"
-perl -0pi -e 's/^role\.default\.runtime=.*\n//m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]default[.]runtime=.*$'
 agent_fails no-role-default 'neither a runtime entry nor role.default.runtime' "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 code_brief="$agent_fixture/code.md"
@@ -929,7 +930,7 @@ make_agent_brief "$net_floor" design
 run_agent_fixture net-floor net-floor "$agent_dispatch" dispatch --role design-critic --brief "$net_floor" --job-id net-floor --wait
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-floor.json" --field permissions.requested.network)" == deny ]] \
   || { echo "the repository network floor did not narrow the preset" >&2; exit 1; }
-perl -0pi -e 's/^dispatch\.permissions\.network=deny\n//m' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^dispatch[.]permissions[.]network=deny$'
 agent_fails invalid-network-floor 'must be deny or allow' \
   env METASYSTEM_DISPATCH_PERMISSIONS_NETWORK=sometimes "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id bad-floor
 
@@ -1383,7 +1384,18 @@ grep -Fq '$(touch should-not-exist)' "$agent_repo/artifacts/agents/malicious-arg
 # main assignment; fake remains the only registered fixture adapter.
 "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null
 cp "$no_tier_conf" "$agent_repo/metasystem.conf"
-perl -0pi -e 's/^role\.(code-critic|investigator)\.runtime=fake$/role.$1.runtime=main/mg' "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" awk '
+  /^role[.](code-critic|investigator)[.]runtime=fake$/ {
+    role = $0
+    sub(/^role[.]/, "", role)
+    sub(/[.]runtime=fake$/, "", role)
+    $0 = "role." role ".runtime=main"
+  }
+  {
+    printf "%s%s", $0, \
+      (FNR < conf_edit_line_count || conf_edit_final_terminated ? ORS : "")
+  }
+'
 # The template now ships code-critic entries (C-2), so the conf snapshot
 # already carries role.code-critic.model.fake from the roster rewrite;
 # appending it again was a duplicate-key failure.
@@ -1446,8 +1458,8 @@ envelope.dispatch-allow=fake:fake-escalated,fake:fake-model
 sealed.version=1
 ```
 EOF
-perl -0pi -e 's/FIXTURE_DISPATCH_CAP_MIN/'"$fixture_dispatch_envelope_cap_min"'/g' \
-  "$agent_repo/plans/mission-mission-alpha.contract.md"
+conf_edit "$agent_repo/plans/mission-mission-alpha.contract.md" replace-literal \
+  FIXTURE_DISPATCH_CAP_MIN "$fixture_dispatch_envelope_cap_min"
 # The digest a human approval signs: Approval lines removed, every line
 # stripped of trailing spaces/tabs, trailing blank lines dropped. This is
 # contractCanonicalSignedBytes (internal/mission/contract.go), verified

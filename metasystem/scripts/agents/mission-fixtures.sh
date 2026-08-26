@@ -152,7 +152,8 @@ envelope.dependencies=jq
 exposure=EUR:10
 ```
 CONTRACT
-perl -0pi -e 's/FIXTURE_JOB_CAP_MIN/'"$mission_job_cap_min"'/g; s/FIXTURE_TURN_CAP_MIN/'"$mission_turn_cap_min"'/g' "$base"
+conf_edit "$base" replace-literal FIXTURE_JOB_CAP_MIN "$mission_job_cap_min"
+conf_edit "$base" replace-literal FIXTURE_TURN_CAP_MIN "$mission_turn_cap_min"
 
 "$root/scripts/assert-mission.sh" --file "$base" >/dev/null
 
@@ -184,10 +185,8 @@ grep -Fq 'envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol' "$dispatch_
 
 contract=$repo/plans/mission-alpha.contract.md
 cp "$base" "$contract"
-sed -i.bak '/stream.primary=/a\
-stream.secondary=Preserve the evidence contract.
-' "$contract"
-rm "$contract.bak"
+conf_edit "$contract" insert-after '^stream[.]primary=' \
+  'stream.secondary=Preserve the evidence contract.'
 contract_sha=$("$root/scripts/assert-mission.sh" --seal --file "$contract")
 printf '\nApproval: name=Human; date=2026-08-04; contract-sha256=%s\n' "$contract_sha" >>"$contract"
 git -C "$repo" add plans/mission-alpha.contract.md
@@ -297,8 +296,10 @@ cp "$root/scripts/metasystem-config.sh" "$root/scripts/assert-mission.sh" \
   "$root/scripts/assert-return-complete.sh" "$root/scripts/assert-stop-loss.sh" \
   "$root/scripts/assert-turn-prompt.sh" "$repo/scripts/"
 cp "$root/metasystem.conf" "$repo/metasystem.conf"
-perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$fixture_root/runner-evidence"'|m; s/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m' \
-  "$repo/metasystem.conf"
+conf_edit "$repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
+  "evidence.root=$fixture_root/runner-evidence"
+conf_edit "$repo/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' \
+  'metasystem.runtimes=fake'
 cat >"$repo/scripts/agents/arm-supervision.sh" <<'ARM'
 #!/usr/bin/env bash
 set -euo pipefail

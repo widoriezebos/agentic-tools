@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$source_root/scripts/agents/fixture-budget.sh"
 tmp=$(mktemp -d)
 armed_repo=
 passed=()
@@ -313,7 +314,7 @@ grep -Fq 'ordinary-blocking-job' "$tmp/ordinary-establish.out" \
   || { cat "$tmp/ordinary-establish.out" >&2; exit 1; }
 
 # AUTH-R2-008 attacks the local override layer with the exact noncanonical key.
-perl -0pi -e 's/^metasystem\.runtimes=fake$/metasystem.runtimes=fake,devin/m' "$harness/metasystem.conf"
+conf_edit "$harness/metasystem.conf" replace-line-first '^metasystem[.]runtimes=fake$' 'metasystem.runtimes=fake,devin'
 printf 'cap.min.devin.swe-1.7=250\n' >"$harness/metasystem.conf.local"
 if "$harness/scripts/metasystem-config.sh" validate >"$tmp/noncanonical.out" 2>&1; then
   echo "AUTH-R2-008: noncanonical local cap key was accepted" >&2

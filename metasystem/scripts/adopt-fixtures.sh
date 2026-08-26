@@ -10,6 +10,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"
+source scripts/agents/fixture-budget.sh
 # Every adoption in this harness runs from a STERILE SNAPSHOT source
 # under whatever ancestry invoked the suite — agent or terminal. Genesis
 # no longer cares which: a non-holder is admitted for exactly the
@@ -100,7 +101,10 @@ copy_tree_without_artifacts() { # source root, destination
   rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
-  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg; s/^validate\.extra-suites=.*\n//mg' "$adopted/metasystem.conf"
+  conf_edit "$adopted/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes='
+  conf_edit "$adopted/metasystem.conf" delete-lines '^role[.].*$'
+  conf_edit "$adopted/metasystem.conf" delete-lines '^mode[.].*[.]role[.].*$'
+  conf_edit "$adopted/metasystem.conf" delete-lines '^validate[.]extra-suites=.*$'
   fill_harness_conf "$adopted/metasystem.conf" "$tmp/adopted-evidence"
   bash "$adopted/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-pruned.log" 2>&1 || {
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2
@@ -570,7 +574,24 @@ EVIDENCE
 
   tier_src="$tmp/adopt-tier-src"
   cp -R "$srcrepo/." "$tier_src"
-  perl -0pi -e 's/^(.*\.model\.claude)=.*$/$1=claude-model/mg; s/^(.*\.model\.codex)=.*$/$1=codex-model/mg; s/^(.*\.model\.devin)=.*$/$1=devin-model/mg' "$tier_src/metasystem.conf"
+  conf_edit "$tier_src/metasystem.conf" awk '
+    function replace_last(text, token, value,    rest, offset, position, found) {
+      rest = text
+      while ((position = index(rest, token)) != 0) {
+        found = offset + position
+        offset += position
+        rest = substr(rest, position + 1)
+      }
+      if (found) return substr(text, 1, found - 1) value
+      return text
+    }
+    {
+      $0 = replace_last($0, ".model.claude=", ".model.claude=claude-model")
+      $0 = replace_last($0, ".model.codex=", ".model.codex=codex-model")
+      $0 = replace_last($0, ".model.devin=", ".model.devin=devin-model")
+      printf "%s%s", $0, (FNR < conf_edit_line_count || conf_edit_final_terminated ? ORS : "")
+    }
+  '
   printf '\nmodel.tier.1=claude:claude-model,codex:codex-model,devin:devin-model\n' >>"$tier_src/metasystem.conf"
   git -C "$tier_src" add metasystem.conf
   git -C "$tier_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm tier-fixture
