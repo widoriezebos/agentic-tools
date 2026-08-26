@@ -9,6 +9,34 @@ real_engine=$root/bin/metasystem
 [[ -x "$real_engine" ]] \
   || { echo "gate-run-freeze fixture: real engine absent; run the Go gate first" >&2; exit 1; }
 export BATTERY_REAL_ENGINE=$real_engine
+
+# Print one top-level element per line from the engine's compact rendering of
+# a JSON array. The walk is depth- and string-aware, so commas in nested values
+# or quoted strings do not split an inventory row.
+json_elements() { # compact JSON array
+  printf '%s' "$1" | awk '
+    {
+      n = length($0)
+      if (n < 2 || substr($0, 1, 1) != "[") exit 1
+      depth = 0; instring = 0; escaped = 0; start = 2
+      for (i = 2; i < n; i++) {
+        ch = substr($0, i, 1)
+        if (instring) {
+          if (escaped) escaped = 0
+          else if (ch == "\\") escaped = 1
+          else if (ch == "\"") instring = 0
+        } else if (ch == "\"") instring = 1
+        else if (ch == "{" || ch == "[") depth++
+        else if (ch == "}" || ch == "]") depth--
+        else if (ch == "," && depth == 0) {
+          print substr($0, start, i - start)
+          start = i + 1
+        }
+      }
+      if (n > 2) print substr($0, start, n - start)
+    }'
+}
+
 tmp=$(mktemp -d)
 enumeration_pid=
 publication_failure_bystander=
@@ -81,11 +109,8 @@ case "$family/$verb" in
       open) echo 'fixture reset write failed' >&2; exit 1 ;;
       appendix-pending)
         state=$root/artifacts/agents/battery-weight.json
-        envelope=$(python3 - "$state" <<'PY'
-import json,sys
-print(json.load(open(sys.argv[1]))["checkpoint"]["repairDestination"])
-PY
-        )
+        envelope=$("$BATTERY_REAL_ENGINE" json get --file "$state" \
+          --field checkpoint.repairDestination)
         chmod 500 "$envelope"
         set +e
         "$BATTERY_REAL_ENGINE" gate weight-reset --root "$root" "$@"
@@ -119,6 +144,46 @@ metasystem=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 checkout=$(cd "$metasystem/.." && pwd -P)
 [[ -z "${BATTERY_VALIDATION_LOG_MARKER:-}" ]] || printf '%s\n' "$BATTERY_VALIDATION_LOG_MARKER"
 validator_child=
+json_elements() { # compact JSON array
+  printf '%s' "$1" | awk '
+    {
+      n = length($0)
+      if (n < 2 || substr($0, 1, 1) != "[") exit 1
+      depth = 0; instring = 0; escaped = 0; start = 2
+      for (i = 2; i < n; i++) {
+        ch = substr($0, i, 1)
+        if (instring) {
+          if (escaped) escaped = 0
+          else if (ch == "\\") escaped = 1
+          else if (ch == "\"") instring = 0
+        } else if (ch == "\"") instring = 1
+        else if (ch == "{" || ch == "[") depth++
+        else if (ch == "}" || ch == "]") depth--
+        else if (ch == "," && depth == 0) {
+          print substr($0, start, i - start)
+          start = i + 1
+        }
+      }
+      if (n > 2) print substr($0, start, n - start)
+    }'
+}
+census_has_validator() { # report, validator pid, checkout root, excluded live root
+  local report=$1 wanted_pid=$2 checkout_root=$3 live_root=$4
+  local inventory row row_pid row_cwd matched=0
+  [[ "$("$BATTERY_REAL_ENGINE" json get --file "$report" --field verdict \
+    --default __MISSING__)" == SUCCESS ]] || return 1
+  inventory=$("$BATTERY_REAL_ENGINE" json get --file "$report" --field inventory) \
+    || return 1
+  while IFS= read -r row; do
+    row_pid=$("$BATTERY_REAL_ENGINE" json get --value "$row" --field pid) || return 1
+    row_cwd=$("$BATTERY_REAL_ENGINE" json get --value "$row" --field cwd) || return 1
+    [[ "$row_cwd" != "$live_root"* ]] || return 1
+    if [[ "$row_pid" == "$wanted_pid" && "$row_cwd" == "$checkout_root"* ]]; then
+      matched=1
+    fi
+  done < <(json_elements "$inventory")
+  [[ $matched == 1 ]]
+}
 cleanup_validator() {
   [[ -z "$validator_child" ]] || kill "$validator_child" 2>/dev/null || true
   [[ -z "$validator_child" ]] || wait "$validator_child" 2>/dev/null || true
@@ -177,25 +242,15 @@ fi
 validator_child=$!
 [[ -z "${BATTERY_VALIDATOR_CHILD_PID_PATH:-}" ]] || printf '%s\n' "$validator_child" >"$BATTERY_VALIDATOR_CHILD_PID_PATH"
 for ((attempt=0; attempt<400; attempt++)); do
-  if python3 - "$metasystem/artifacts/agents/supervision/last-census.json" "$validator_child" "$checkout" "$BATTERY_LIVE_ROOT" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-assert report["verdict"] == "SUCCESS", report
-rows=report["inventory"]
-assert any(row["pid"] == int(sys.argv[2]) and row["cwd"].startswith(sys.argv[3]) for row in rows), rows
-assert all(not row["cwd"].startswith(sys.argv[4]) for row in rows), rows
-PY
+  if census_has_validator \
+    "$metasystem/artifacts/agents/supervision/last-census.json" \
+    "$validator_child" "$checkout" "$BATTERY_LIVE_ROOT"
   then break; fi
   sleep 0.01
 done
-python3 - "$metasystem/artifacts/agents/supervision/last-census.json" "$validator_child" "$checkout" "$BATTERY_LIVE_ROOT" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-assert report["verdict"] == "SUCCESS", report
-rows=report["inventory"]
-assert any(row["pid"] == int(sys.argv[2]) and row["cwd"].startswith(sys.argv[3]) for row in rows), rows
-assert all(not row["cwd"].startswith(sys.argv[4]) for row in rows), rows
-PY
+census_has_validator \
+  "$metasystem/artifacts/agents/supervision/last-census.json" \
+  "$validator_child" "$checkout" "$BATTERY_LIVE_ROOT"
 [[ ! -f "$BATTERY_LIVE_REGISTRY" ]] || ! grep -Fq "$checkout" "$BATTERY_LIVE_REGISTRY"
 touch "$BATTERY_READY"
 for _ in $(seq 1 2000); do [[ -e "$BATTERY_RELEASE" ]] && exit 0; sleep 0.01; done
@@ -420,25 +475,22 @@ done
 ! kill -0 "$publication_failure_launch_pid" 2>/dev/null
 [[ -e "$publication_failure_hold" && ! -e "$publication_failure_validator_pid_path" \
    && ! -e "$publication_failure_child_pid_path" && ! -e "$publication_failure_clone_path" ]]
-publication_failure_started=$(python3 -c 'import time; print(time.monotonic())')
+publication_failure_started=$(date +%s)
 kill -TERM "$publication_failure_pid"
 rm -f -- "$publication_failure_hold"
 set +e
 wait "$publication_failure_pid"
 publication_failure_rc=$?
 set -e
-publication_failure_ended=$(python3 -c 'import time; print(time.monotonic())')
+publication_failure_ended=$(date +%s)
 [[ $publication_failure_rc == 130 ]]
-if ! python3 - "$publication_failure_started" "$publication_failure_ended" <<'PY'
-import sys
-elapsed = float(sys.argv[2]) - float(sys.argv[1])
-assert elapsed < 4.0, "publication-failure finalizer took %.3fs" % elapsed
-print("gate-run-freeze publication-failure finalizer elapsed %.3fs" % elapsed)
-PY
-then
+publication_failure_elapsed=$((publication_failure_ended - publication_failure_started))
+if (( publication_failure_elapsed >= 3 )); then
+  echo "gate-run-freeze fixture: publication-failure finalizer took ${publication_failure_elapsed}s" >&2
   cat "$tmp/publication-failure.err" >&2
   exit 1
 fi
+echo "gate-run-freeze publication-failure finalizer elapsed ${publication_failure_elapsed}s"
 kill -0 "$publication_failure_bystander" 2>/dev/null
 [[ ! -e "$publication_failure_signal" ]]
 publication_failure_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/publication-failure.out" "$tmp/publication-failure.err" | tail -1)
@@ -561,16 +613,10 @@ revocation_race_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' \
    && -f "$revocation_race_envelope/teardown.json" \
    && ! -e "$revocation_race_envelope/reset.json" ]]
 grep -Fq 'No such file or directory' "$revocation_race_envelope/validation.log"
-python3 - "$revocation_race_stall/exit-observed" "$revocation_race_envelope/teardown.json" <<'PY'
-import os, sys
-
-wrapper_exit = os.stat(sys.argv[1]).st_mtime_ns
-teardown_completion = os.stat(sys.argv[2]).st_mtime_ns
-assert wrapper_exit < teardown_completion, (
-    "wrapper exit was not observed before teardown completion: "
-    f"exit={wrapper_exit} teardown={teardown_completion}"
-)
-PY
+[[ "$(find "$revocation_race_envelope/teardown.json" \
+  -newer "$revocation_race_stall/exit-observed" -print)" \
+  == "$revocation_race_envelope/teardown.json" ]] \
+  || { echo "gate-run-freeze fixture: wrapper exit was not observed before teardown completion" >&2; exit 1; }
 ! grep -Fq "$revocation_race_validation_marker" "$revocation_race_envelope/validation.log"
 grep -Fq 'clone=removed' "$tmp/revocation-race.err"
 if [[ "${BATTERY_REVOCATION_RACE_FIXTURE_ONLY:-0}" == 1 ]]; then
@@ -745,24 +791,42 @@ for _ in $(seq 1 400); do
   sleep 0.01
 done
 ! kill -0 "$recycled_pid_departed" 2>/dev/null
-python3 - "$recycled_pid_identity" "$recycled_pid_fabricated" <<'PY'
-from datetime import datetime, timedelta
-import json, sys
-
-identity = json.loads(sys.argv[1])
-stamp = identity["startedAt"]
-started = datetime.fromisoformat(stamp.replace("Z", "+00:00")) + timedelta(seconds=1)
-identity["startedAt"] = started.isoformat(timespec="microseconds")
-if stamp.endswith("Z"):
-    identity["startedAt"] = identity["startedAt"].replace("+00:00", "Z")
-identity["startedAtUnix"] += 1
-identity["startedAtUnixMicro"] += 1_000_000
-if identity["startTicks"] > 0:
-    identity["startTicks"] += 1
-with open(sys.argv[2], "w") as output:
-    json.dump(identity, output, separators=(",", ":"))
-    output.write("\n")
-PY
+recycled_pid_argv=$("$real_engine" json get --value "$recycled_pid_identity" --field argv)
+recycled_pid_boot=$("$real_engine" json get --value "$recycled_pid_identity" --field bootId)
+recycled_pid_liveness=$("$real_engine" json get --value "$recycled_pid_identity" --field liveness)
+recycled_pid_probe_pid=$("$real_engine" json get --value "$recycled_pid_identity" --field pid)
+recycled_pid_stamp=$("$real_engine" json get --value "$recycled_pid_identity" --field startedAt)
+recycled_pid_started_micro=$("$real_engine" json get --value "$recycled_pid_identity" --field startedAtUnixMicro)
+[[ "$recycled_pid_probe_pid" == "$recycled_pid_sentinel" && "$recycled_pid_liveness" == alive ]]
+recycled_pid_fabricated_started=$((recycled_pid_started + 1))
+recycled_pid_fabricated_micro=$((recycled_pid_started_micro + 1000000))
+recycled_pid_fabricated_ticks=$recycled_pid_ticks
+if (( recycled_pid_fabricated_ticks > 0 )); then
+  recycled_pid_fabricated_ticks=$((recycled_pid_fabricated_ticks + 1))
+fi
+if recycled_pid_date=$(date -r "$recycled_pid_fabricated_started" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null) \
+  && recycled_pid_zone=$(date -r "$recycled_pid_fabricated_started" '+%z' 2>/dev/null); then
+  :
+elif recycled_pid_date=$(date -d "@$recycled_pid_fabricated_started" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null) \
+  && recycled_pid_zone=$(date -d "@$recycled_pid_fabricated_started" '+%z' 2>/dev/null); then
+  :
+else
+  echo "gate-run-freeze fixture: could not format fabricated process identity timestamp" >&2
+  exit 1
+fi
+if [[ "$recycled_pid_stamp" == *Z ]]; then
+  printf -v recycled_pid_fabricated_stamp '%s.%06dZ' \
+    "$recycled_pid_date" "$((recycled_pid_fabricated_micro % 1000000))"
+else
+  printf -v recycled_pid_fabricated_stamp '%s.%06d%s:%s' \
+    "$recycled_pid_date" "$((recycled_pid_fabricated_micro % 1000000))" \
+    "${recycled_pid_zone%??}" "${recycled_pid_zone#???}"
+fi
+printf '{"argv":%s,"bootId":"%s","liveness":"%s","pid":%s,"startTicks":%s,"startedAt":"%s","startedAtUnix":%s,"startedAtUnixMicro":%s}\n' \
+  "$recycled_pid_argv" "$recycled_pid_boot" "$recycled_pid_liveness" \
+  "$recycled_pid_probe_pid" "$recycled_pid_fabricated_ticks" \
+  "$recycled_pid_fabricated_stamp" "$recycled_pid_fabricated_started" \
+  "$recycled_pid_fabricated_micro" >"$recycled_pid_fabricated"
 mv "$recycled_pid_fabricated" "$recycled_pid_publication"
 [[ "$("$real_engine" json get --file "$recycled_pid_publication" --field pid)" == "$recycled_pid_sentinel" ]]
 [[ "$("$real_engine" json get --file "$recycled_pid_publication" --field startedAtUnix)" != "$recycled_pid_started" ]]
@@ -855,14 +919,10 @@ preclone_fail_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/preclone-fail
    && -f "$preclone_fail_envelope/clone.log" && ! -s "$preclone_fail_envelope/clone.log" ]]
 grep -Fq 'fixture run-directory creation failed' "$tmp/preclone-fail.err"
 grep -Fq '"result":"run-directory-not-created"' "$preclone_fail_envelope/teardown.json"
-python3 - "$preclone_fail_envelope/report.json" "$subject" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-assert report["subjectSHA"] == sys.argv[2]
-assert report["setupExit"] != 0
-assert report["validationExit"] == -1
-assert report["verdict"] == "bootstrap-failed"
-PY
+[[ "$("$real_engine" json get --file "$preclone_fail_envelope/report.json" --field subjectSHA)" == "$subject" ]]
+[[ "$("$real_engine" json get --file "$preclone_fail_envelope/report.json" --field setupExit)" != 0 ]]
+[[ "$("$real_engine" json get --file "$preclone_fail_envelope/report.json" --field validationExit)" == -1 ]]
+[[ "$("$real_engine" json get --file "$preclone_fail_envelope/report.json" --field verdict)" == bootstrap-failed ]]
 
 # Clone failures publish the same run-scoped core evidence before the temporary
 # run directory is removed.
@@ -891,14 +951,10 @@ clone_fail_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/clone-fail.out" 
 [[ -n "$clone_fail_envelope" && -f "$clone_fail_envelope/report.json" \
    && -f "$clone_fail_envelope/outcome.json" && -f "$clone_fail_envelope/teardown.json" \
    && -f "$clone_fail_envelope/clone.log" ]]
-python3 - "$clone_fail_envelope/report.json" "$subject" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-assert report["subjectSHA"] == sys.argv[2]
-assert report["setupExit"] != 0
-assert report["validationExit"] == -1
-assert report["verdict"] == "bootstrap-failed"
-PY
+[[ "$("$real_engine" json get --file "$clone_fail_envelope/report.json" --field subjectSHA)" == "$subject" ]]
+[[ "$("$real_engine" json get --file "$clone_fail_envelope/report.json" --field setupExit)" != 0 ]]
+[[ "$("$real_engine" json get --file "$clone_fail_envelope/report.json" --field validationExit)" == -1 ]]
+[[ "$("$real_engine" json get --file "$clone_fail_envelope/report.json" --field verdict)" == bootstrap-failed ]]
 grep -Fq 'fixture clone creation failed' "$clone_fail_envelope/clone.log"
 if [[ "${BATTERY_BOOTSTRAP_FIXTURE_ONLY:-0}" == 1 ]]; then
   echo "gate-run-freeze bootstrap fixture passed"
@@ -1102,12 +1158,13 @@ live_registry_home=$tmp/live-registry
 METASYSTEM_SUPERVISION_REGISTRY_HOME=$live_registry_home BATTERY_TEARDOWN_CALL=$live_arm_call \
   "$repo/metasystem/scripts/agents/arm-supervision.sh" --repo "$repo"
 [[ -f "$repo/metasystem/artifacts/agents/supervision/lock.d/owner.json" ]]
-python3 - "$repo/metasystem/artifacts/agents/supervision/last-census.json" "$isolated_clone" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-assert report["verdict"] == "SUCCESS", report
-assert all(not row["cwd"].startswith(sys.argv[2]) for row in report["inventory"]), report["inventory"]
-PY
+live_census=$repo/metasystem/artifacts/agents/supervision/last-census.json
+[[ "$("$real_engine" json get --file "$live_census" --field verdict)" == SUCCESS ]]
+live_census_inventory=$("$real_engine" json get --file "$live_census" --field inventory)
+while IFS= read -r live_census_row; do
+  live_census_cwd=$("$real_engine" json get --value "$live_census_row" --field cwd)
+  [[ "$live_census_cwd" != "$isolated_clone"* ]]
+done < <(json_elements "$live_census_inventory")
 grep -Fq "$repo/metasystem" "$live_registry"
 ! grep -Fq "$isolated_clone" "$live_registry"
 METASYSTEM_SUPERVISION_REGISTRY_HOME=$live_registry_home BATTERY_TEARDOWN_CALL=$live_arm_call \
@@ -1135,24 +1192,29 @@ envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/first.out")
 [[ -f "$envelope/report.json" && -f "$envelope/outcome.json" \
    && -f "$envelope/reset.json" && -f "$envelope/teardown.json" \
    && -f "$envelope/supervision-registry.jsonl" && -f "$envelope/last-census.json" ]]
-python3 - "$envelope/report.json" "$subject" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-required={"runId","subjectSHA","surfaceProjection","surfacePolicyVersion","surfaceDigest","toolchainIdentity",
-          "startedAt","endedAt","validationExit","copyResult","copyDigestManifest",
-          "verdict","validationLog","failureArtifacts"}
-assert required <= set(report), sorted(required-set(report))
-assert report["subjectSHA"] == sys.argv[2]
-assert report["surfaceProjection"] == "LANDING"
-assert report["validationExit"] == 0 and report["copyResult"] == "verified"
-PY
-python3 - "$envelope/supervision-registry.jsonl" "$isolated_clone/metasystem" "$repo" <<'PY'
-import json,sys
-rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-assert rows, "real supervision registry is empty"
-assert any(row.get("event") == "relaunched" and row.get("checkoutPath") == sys.argv[2] for row in rows), rows
-assert all(row.get("checkoutPath") != sys.argv[3] for row in rows), rows
-PY
+for report_field in runId subjectSHA surfaceProjection surfacePolicyVersion \
+  surfaceDigest toolchainIdentity startedAt endedAt validationExit copyResult \
+  copyDigestManifest verdict validationLog failureArtifacts; do
+  "$real_engine" json get --file "$envelope/report.json" --field "$report_field" >/dev/null
+done
+[[ "$("$real_engine" json get --file "$envelope/report.json" --field subjectSHA)" == "$subject" ]]
+[[ "$("$real_engine" json get --file "$envelope/report.json" --field surfaceProjection)" == LANDING ]]
+[[ "$("$real_engine" json get --file "$envelope/report.json" --field validationExit)" == 0 ]]
+[[ "$("$real_engine" json get --file "$envelope/report.json" --field copyResult)" == verified ]]
+registry_row_count=0
+registry_relaunch_found=0
+while IFS= read -r registry_row; do
+  [[ -n "$registry_row" ]] || continue
+  registry_row_count=$((registry_row_count + 1))
+  registry_event=$("$real_engine" json get --value "$registry_row" --field event --default '')
+  registry_checkout=$("$real_engine" json get --value "$registry_row" --field checkoutPath --default '')
+  if [[ "$registry_event" == relaunched \
+    && "$registry_checkout" == "$isolated_clone/metasystem" ]]; then
+    registry_relaunch_found=1
+  fi
+  [[ "$registry_checkout" != "$repo" ]]
+done <"$envelope/supervision-registry.jsonl"
+[[ $registry_row_count -gt 0 && $registry_relaunch_found == 1 ]]
 [[ -s "$envelope/copy-digests.nul" ]]
 grep -Fq -- "--repo $isolated_clone --shutdown" "$teardown_call"
 [[ ! -e "$isolated_clone" ]]
@@ -1186,13 +1248,9 @@ set -e
 setup_fail_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/setup-fail.out" "$tmp/setup-fail.err" | tail -1)
 [[ -f "$setup_fail_envelope/report.json" && -f "$setup_fail_envelope/outcome.json" \
    && -f "$setup_fail_envelope/teardown.json" ]]
-python3 - "$setup_fail_envelope/report.json" <<'PY'
-import json,sys
-report=json.load(open(sys.argv[1]))
-assert report["setupExit"] != 0
-assert report["validationExit"] == -1
-assert report["verdict"] == "setup-failed"
-PY
+[[ "$("$real_engine" json get --file "$setup_fail_envelope/report.json" --field setupExit)" != 0 ]]
+[[ "$("$real_engine" json get --file "$setup_fail_envelope/report.json" --field validationExit)" == -1 ]]
+[[ "$("$real_engine" json get --file "$setup_fail_envelope/report.json" --field verdict)" == setup-failed ]]
 grep -Fq 'clone=removed' "$tmp/setup-fail.err"
 
 # A pre-publication reset failure leaves the checkpoint open. The already
@@ -1212,12 +1270,11 @@ reset_open_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/reset-open.out" 
 [[ -f "$reset_open_envelope/report.json" && -f "$reset_open_envelope/outcome.json" \
    && ! -e "$reset_open_envelope/reset.json" ]]
 grep -Fq 'green/reset-unrecorded' "$reset_open_envelope/outcome.json"
-python3 - "$repo/metasystem/artifacts/agents/battery-weight.json" <<'PY'
-import json,sys
-state=json.load(open(sys.argv[1]))
-assert state.get("checkpoint") is not None
-assert state.get("pendingReset") is None
-PY
+weight_state=$repo/metasystem/artifacts/agents/battery-weight.json
+[[ "$("$real_engine" json get --file "$weight_state" --field checkpoint \
+  --default __MISSING__)" != __MISSING__ ]]
+[[ "$("$real_engine" json get --file "$weight_state" --field pendingReset \
+  --default __MISSING__)" == __MISSING__ ]]
 rm -f -- "$repo/metasystem/artifacts/agents/battery-weight.json" \
   "$repo/metasystem/artifacts/agents/battery-weight.flock"
 
