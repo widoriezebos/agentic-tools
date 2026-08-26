@@ -333,6 +333,72 @@ subject=$(git -C "$repo" rev-parse HEAD)
 git init --bare -q "$remote"
 git -C "$repo" remote add origin "$remote"
 
+run_nested_failure_copy_fixture() {
+  local nested_failure_tree nested_no_rg_bin command_name red_subject red_envelope copied_command
+  local rejected_link symlink_subject symlink_runs symlink_rc symlink_retained
+  nested_failure_tree=$repo/metasystem/artifacts/agents/suite-failures/nested-validation-failure
+  nested_no_rg_bin=$nested_failure_tree/no-rg-bin
+  mkdir -p "$nested_no_rg_bin"
+  for command_name in cat find grep sort tr wc; do
+    cp "$(command -v "$command_name")" "$nested_no_rg_bin/$command_name"
+    chmod +x "$nested_no_rg_bin/$command_name"
+  done
+  printf 'nested validation failure\n' >"$nested_failure_tree/validation.log"
+  git -C "$repo" add -f -- metasystem/artifacts/agents/suite-failures/nested-validation-failure
+  git -C "$repo" commit -qm nested-validation-failure
+  red_subject=$(git -C "$repo" rev-parse HEAD)
+  BATTERY_FAKE_ARM_NOOP=1 \
+    "$repo/metasystem/scripts/agents/milestone-battery.sh" \
+      --subject "$red_subject" --evidence-root "$evidence" --force-red \
+      >"$tmp/red.out" 2>"$tmp/red.err" || true
+  red_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/red.out" "$tmp/red.err" | tail -1)
+  [[ -n "$red_envelope" && -f "$red_envelope/report.json" \
+     && -f "$red_envelope/abandoned.json" && -s "$red_envelope/copy-digests.nul" ]]
+  [[ -f "$red_envelope/outcome.json" ]]
+  [[ -f "$red_envelope/failure-artifacts/suite-failures/forced-red/failure.txt" ]]
+  [[ -f "$red_envelope/failure-artifacts/suite-failures/nested-validation-failure/validation.log" ]]
+  tr '\0' '\n' <"$red_envelope/copy-digests.nul" >"$tmp/red-digests.txt"
+  for command_name in cat find grep sort tr wc; do
+    copied_command=$red_envelope/failure-artifacts/suite-failures/nested-validation-failure/no-rg-bin/$command_name
+    [[ -x "$copied_command" && ! -L "$copied_command" ]]
+    grep -Fqx "failure-artifacts/suite-failures/nested-validation-failure/no-rg-bin/$command_name" \
+      "$tmp/red-digests.txt"
+  done
+  [[ "$("$real_engine" json get --file "$red_envelope/report.json" --field verdict)" == red ]]
+  [[ "$("$real_engine" json get --file "$red_envelope/report.json" --field copyDigestManifest)" == copy-digests.nul ]]
+  [[ ! -e "$red_envelope/reset.json" ]]
+
+  # Symlink evidence remains terminal and names the rejected entry so an
+  # operator can locate the artifact that prevented verified publication.
+  rejected_link=$nested_failure_tree/no-rg-bin/rg
+  ln -s grep "$rejected_link"
+  git -C "$repo" add -f -- metasystem/artifacts/agents/suite-failures/nested-validation-failure
+  git -C "$repo" commit -qm nested-validation-symlink
+  symlink_subject=$(git -C "$repo" rev-parse HEAD)
+  symlink_runs=$tmp/symlink-runs
+  mkdir -p "$symlink_runs"
+  set +e
+  TMPDIR="$symlink_runs" BATTERY_FAKE_ARM_NOOP=1 \
+    "$repo/metasystem/scripts/agents/milestone-battery.sh" \
+      --subject "$symlink_subject" --evidence-root "$evidence" --force-red \
+      >"$tmp/symlink.out" 2>"$tmp/symlink.err"
+  symlink_rc=$?
+  set -e
+  [[ $symlink_rc != 0 ]]
+  grep -Fq 'milestone battery evidence copy refused symlink:' "$tmp/symlink.err"
+  grep -Fq 'failure-artifacts/suite-failures/nested-validation-failure/no-rg-bin/rg' \
+    "$tmp/symlink.err"
+  symlink_retained=$(sed -n 's/.* path=\([^ ]*\) envelope=.*/\1/p' "$tmp/symlink.err" | tail -1)
+  [[ "$symlink_retained" == "$symlink_runs"/*/subject && -d "$symlink_retained" ]]
+  rm -rf -- "${symlink_retained%/subject}"
+}
+
+if [[ "${BATTERY_NESTED_FAILURE_COPY_FIXTURE_ONLY:-0}" == 1 ]]; then
+  run_nested_failure_copy_fixture
+  echo "gate-run-freeze nested-failure copy fixture passed"
+  exit 0
+fi
+
 # The validator publishes its process group before entering the clone. The
 # hold keeps the controller between launch and its PID assignments while a
 # same-group descendant starts, making the launching state deterministic.
@@ -1227,14 +1293,9 @@ first_validator_child_pid=$(cat "$validator_child_pid_path")
 [[ "$(git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p')" == "$inventory_before" ]]
 [[ "$(shasum -a 256 "$repo/metasystem/bin/metasystem" | awk '{print $1}')" == "$live_binary_before" ]]
 
-# Forced red copies its artifact before teardown and abandons without reset.
-"$repo/metasystem/scripts/agents/milestone-battery.sh" --subject "$subject" --evidence-root "$evidence" --force-red \
-  >"$tmp/red.out" 2>"$tmp/red.err" || true
-red_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/red.out" "$tmp/red.err" | tail -1)
-[[ -n "$red_envelope" && -f "$red_envelope/abandoned.json" ]]
-[[ -f "$red_envelope/outcome.json" ]]
-[[ -f "$red_envelope/failure-artifacts/suite-failures/forced-red/failure.txt" ]]
-[[ ! -e "$red_envelope/reset.json" ]]
+# A red envelope accepts a retained nested validation tree when its PATH tools
+# are regular executables, and its digest manifest covers the copied evidence.
+run_nested_failure_copy_fixture
 
 # A controller setup failure still publishes a complete minimal envelope from
 # the EXIT controller and removes the clone only after teardown.json lands.

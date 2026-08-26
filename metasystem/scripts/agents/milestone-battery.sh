@@ -334,7 +334,7 @@ atomic_json_int() { # file field integer
 }
 
 publish_stage_one() { # setup exit, validation exit, verdict
-  local stage_setup=$1 stage_validation=$2 initial_verdict=$3 relative digest actual expected
+  local stage_setup=$1 stage_validation=$2 initial_verdict=$3 relative digest actual expected rejected_link
   mkdir -p "$envelope_parent" || return 1
   [[ ! -e "$envelope" ]] || { stage_published=1; return 0; }
   rm -rf -- "$stage" 2>/dev/null || true
@@ -358,7 +358,11 @@ publish_stage_one() { # setup exit, validation exit, verdict
     mkdir -p "$stage/failure-artifacts/gate-failures"
     cp -R "$clone_metasystem/artifacts/agents/gate-failures/." "$stage/failure-artifacts/gate-failures/" || return 1
   fi
-  if find "$stage" -type l -print -quit | grep -q .; then return 1; fi
+  rejected_link=$(find "$stage" -type l -print -quit) || return 1
+  if [[ -n "$rejected_link" ]]; then
+    printf 'milestone battery evidence copy refused symlink: %s\n' "$rejected_link" >&2
+    return 1
+  fi
   : >"$stage/copy-digests.nul"
   while IFS= read -r -d '' relative; do
     relative=${relative#./}

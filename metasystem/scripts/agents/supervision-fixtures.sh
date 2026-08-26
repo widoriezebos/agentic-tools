@@ -493,13 +493,42 @@ operator_env=(env -u METASYSTEM_CENSUS_PROCESS_FILE -u METASYSTEM_FAKE_PROCESS_I
   -u METASYSTEM_FAKE_AGENT_ANCESTOR_PID -u METASYSTEM_AGENT_RUNTIME
   -u METASYSTEM_SESSION_ID -u METASYSTEM_INSTANCE_TAG -u METASYSTEM_WATCH_INTERVAL_SEC
   -u METASYSTEM_CENSUS_LOG_MAX_BYTES -u METASYSTEM_CENSUS_MAX_INTERVAL_SHARE_PERCENT)
-if [[ -n "${METASYSTEM_SUPERVISION_OPERATOR_FIXTURE_FAKE:-}" ]] \
+if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
+  conf_edit "$operator_harness/metasystem.conf" replace-line-first \
+    '^metasystem[.]runtimes=.*$' 'metasystem.runtimes='
+  printf 'metasystem.runtimes=codex\n' >"$operator_harness/metasystem.conf.local"
+fi
+# Census reads the committed configuration directly, so process-source
+# selection reads the same file without applying local or environment layers.
+operator_runtimes=$(awk '
+  {
+    separator = index($0, "=")
+    if (!separator) next
+    name = substr($0, 1, separator - 1)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+    if (name != "metasystem.runtimes") next
+    matches++
+    value = substr($0, separator + 1)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+  }
+  END {
+    if (matches != 1) exit 1
+    printf "%s", value
+  }
+' "$operator_harness/metasystem.conf")
+if [[ -z "$operator_runtimes" ]] \
+    || [[ -n "${METASYSTEM_SUPERVISION_OPERATOR_FIXTURE_FAKE:-}" ]] \
     || ! ps -p "$$" -o lstart= >/dev/null 2>&1 \
     || ! ps -axo pid=,ppid=,pgid=,lstart=,command= >/dev/null 2>&1; then
   # Restricted execution sandboxes may prohibit ps entirely. Keep the nested
-  # path/registry regression active through the existing restricted-CI source;
-  # hosts with an ordinary process table always take the unconstructed branch.
-  echo "nested ordinary operator fixture: real process source unavailable; using restricted-CI identity source" >&2
+  # path/registry regression active through the restricted-CI source. A copied
+  # configuration without runtime signatures requires the same deterministic
+  # source; configured hosts with an ordinary process table use the real source.
+  if [[ -z "$operator_runtimes" ]]; then
+    echo "nested ordinary operator fixture: copied configuration lists no runtimes; using restricted-CI identity source" >&2
+  else
+    echo "nested ordinary operator fixture: real process source unavailable; using restricted-CI identity source" >&2
+  fi
   operator_process_fixture=$tmp/operator-processes.json
   operator_identity_fixture=$tmp/operator-identities.json
   printf '[]\n' >"$operator_process_fixture"
@@ -508,6 +537,15 @@ if [[ -n "${METASYSTEM_SUPERVISION_OPERATOR_FIXTURE_FAKE:-}" ]] \
   conf_edit "$operator_harness/metasystem.conf" replace-line-first '^watch[.]interval-sec=.*$' 'watch.interval-sec=1'
   operator_env=(env METASYSTEM_CENSUS_PROCESS_FILE="$operator_process_fixture"
     METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$operator_identity_fixture")
+fi
+if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
+  [[ -z "$operator_runtimes" ]]
+  [[ "$(env -u METASYSTEM_METASYSTEM_RUNTIMES \
+    "$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
+  grep -Fqx 'metasystem.runtimes=fake' "$operator_harness/metasystem.conf"
+  [[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
+  echo "nested ordinary operator empty-runtime source fixture passed"
+  exit 0
 fi
 operator_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "$$")
 (
@@ -523,7 +561,8 @@ if [[ "${METASYSTEM_SUITE_TEST_PAUSE_AT:-}" == post-owned-pids ]]; then
   echo "supervision fixture test pause: post-owned-pids" >&2
   sleep 5
 fi
-wait_for_child_exit "nested ordinary operator arming" "$operator_driver"
+wait_for_child_exit "nested ordinary operator arming" "$operator_driver" \
+  || { operator_driver_rc=$?; cat "$tmp/operator-arm.out" >&2; exit "$operator_driver_rc"; }
 grep -Eq "(^|[[:space:]])ARMED repo=$operator_scope([[:space:]]|$)" "$tmp/operator-arm.out" \
   || { cat "$tmp/operator-arm.out" >&2; exit 1; }
 [[ -s "$operator_harness/artifacts/agents/supervision/last-census.json" ]] \

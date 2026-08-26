@@ -1007,7 +1007,8 @@ trap 'on_signal 15' TERM
 no_rg_bin="$tmp/no-rg-bin"
 mkdir -p "$no_rg_bin"
 for command_name in cat find grep sort tr wc; do
-  ln -s "$(command -v "$command_name")" "$no_rg_bin/$command_name"
+  cp "$(command -v "$command_name")" "$no_rg_bin/$command_name"
+  chmod +x "$no_rg_bin/$command_name"
 done
 env PATH="$no_rg_bin" /bin/bash scripts/audit-metasystem.sh . >"$tmp/audit-no-rg.out"
 
