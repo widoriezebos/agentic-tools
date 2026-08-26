@@ -23,7 +23,15 @@ harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 arm=$script_dir/arm-supervision.sh
 [[ -x "$ms" && -x "$arm" ]] || exit 0
-"$ms" runtime list | grep -Fxq "$runtime" || exit 2
+registered_runtimes=$("$ms" runtime list) || {
+  runtime_list_rc=$?
+  echo "supervision hook refused: runtime registry query failed (exit $runtime_list_rc)" >&2
+  exit "$runtime_list_rc"
+}
+grep -Fxq "$runtime" <<<"$registered_runtimes" || {
+  echo "supervision hook refused: runtime '$runtime' is not registered" >&2
+  exit 2
+}
 
 payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
 trap 'rm -f "$payload"' EXIT

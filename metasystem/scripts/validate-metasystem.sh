@@ -632,6 +632,7 @@ for link in \
   scripts/agents/enumerate-suite-fixtures.sh \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
+  scripts/agents/supervision-hook-fixtures.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/return-schema-fixtures.sh \
@@ -686,6 +687,7 @@ fi
 if section_selected supervision-and-census-fixtures \
   && delegate_process_section "supervision and census fixtures" \
   && ! delivery_contract_skip "supervision and census fixtures"; then
+  scripts/agents/supervision-hook-fixtures.sh
   scripts/agents/supervision-fixtures.sh
 fi
 if section_selected supervisor-fingerprint-heal-harness \
@@ -713,6 +715,7 @@ bash -n scripts/agents/enumerate-suite-fixtures.sh
 bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
+bash -n scripts/agents/supervision-hook-fixtures.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
 bash -n scripts/agents/return-schema-fixtures.sh
