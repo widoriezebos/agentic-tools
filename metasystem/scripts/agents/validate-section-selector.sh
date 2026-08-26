@@ -17,6 +17,7 @@ suite-host-prerequisites	suite host prerequisites
 metasystem-audit	metasystem audit
 gate-fail-open-tripwire	Go gate fail-open tripwire
 witness-gate-fixtures	witness gate fixtures
+land-fixtures	landing chain fixtures
 static-contract-audits	static contract audits
 supervision-and-census-fixtures	supervision and census fixtures
 supervisor-fingerprint-heal-harness	supervisor fingerprint heal harness

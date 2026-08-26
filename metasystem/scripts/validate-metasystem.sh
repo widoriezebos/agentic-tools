@@ -624,6 +624,7 @@ for link in \
   scripts/metasystem-config.sh \
   scripts/agents/dispatch.sh \
   scripts/agents/commit.sh \
+  scripts/agents/land.sh \
   scripts/agents/second-session.sh \
   scripts/agents/arm-supervision.sh \
   scripts/agents/fixture-budget.sh \
@@ -644,6 +645,7 @@ for link in \
   scripts/agents/battery.conf.local.template \
   scripts/agents/gate-run-freeze-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
+  scripts/agents/land-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
@@ -732,6 +734,8 @@ bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/milestone-battery.sh
 bash -n scripts/agents/gate-run-freeze-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
+bash -n scripts/agents/land.sh
+bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
@@ -2490,6 +2494,9 @@ if section_selected gate-run-freeze-fixtures && (( template_mode )); then
 fi
 if section_selected witness-gate-fixtures && (( template_mode )); then
   bash scripts/agents/witness-gate-fixtures.sh
+fi
+if section_selected land-fixtures && (( template_mode )); then
+  bash scripts/agents/land-fixtures.sh
 fi
 
 if section_selected watch-background-jobs-fixtures; then

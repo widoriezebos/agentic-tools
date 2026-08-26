@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# Each named command owns its output file and its captured status. Errexit is
+# deliberately absent because the driver, not an implicit shell branch, must
+# decide whether a push rejection is retryable and which exit code reaches the
+# caller.
+set -uo pipefail
+
+usage() {
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--staged-only | <pathspec>...] [--allow-new-plan] [--skip-transport]" >&2
+}
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
+cd "$root" || exit $?
+
+message_source=
+staged_only=0
+allow_new_plan=0
+skip_transport=0
+pathspecs=()
+
+while (( $# )); do
+  case "$1" in
+    -m)
+      [[ $# -ge 2 && -z "$message_source" ]] || { usage; exit 2; }
+      message_source=$2
+      shift 2
+      ;;
+    --staged-only)
+      staged_only=1
+      shift
+      ;;
+    --allow-new-plan)
+      allow_new_plan=1
+      shift
+      ;;
+    --skip-transport)
+      skip_transport=1
+      shift
+      ;;
+    --)
+      shift
+      while (( $# )); do
+        pathspecs+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "land refused: unknown option: $1" >&2
+      usage
+      exit 2
+      ;;
+    *)
+      pathspecs+=("$1")
+      shift
+      ;;
+  esac
+done
+
+[[ -n "$message_source" ]] || { usage; exit 2; }
+if (( staged_only && ${#pathspecs[@]} > 0 )); then
+  echo "land refused: --staged-only cannot be combined with pathspecs" >&2
+  exit 2
+fi
+if (( ! staged_only && ${#pathspecs[@]} == 0 )); then
+  echo "land refused: name pathspecs or choose --staged-only" >&2
+  exit 2
+fi
+
+message_file=$message_source
+owned_message=
+if [[ "$message_source" == - ]]; then
+  owned_message=$(mktemp "${TMPDIR:-/tmp}/metasystem-land-message.XXXXXX") || exit $?
+  cat >"$owned_message" || { rc=$?; rm -f -- "$owned_message"; exit "$rc"; }
+  message_file=$owned_message
+elif [[ ! -f "$message_source" || ! -r "$message_source" ]]; then
+  echo "land refused: commit message file is not readable: $message_source" >&2
+  exit 2
+fi
+
+step_output=$(mktemp "${TMPDIR:-/tmp}/metasystem-land-step.XXXXXX") || {
+  rc=$?
+  [[ -z "$owned_message" ]] || rm -f -- "$owned_message"
+  exit "$rc"
+}
+cleanup() {
+  rm -f -- "$step_output"
+  [[ -z "$owned_message" ]] || rm -f -- "$owned_message"
+}
+trap cleanup EXIT
+
+step_name=
+run_step() { # name, command...
+  step_name=$1
+  shift
+  printf '== STEP: %s\n' "$step_name"
+  : >"$step_output"
+  "$@" >"$step_output" 2>&1
+  step_rc=$?
+  if (( step_rc == 0 )); then
+    echo "-- ok"
+    return 0
+  fi
+  return "$step_rc"
+}
+
+fail_step() { # exit code
+  local rc=$1
+  printf '!! STEP FAILED: %s (exit %s)\n' "$step_name" "$rc" >&2
+  tail -n 40 "$step_output" >&2
+  exit "$rc"
+}
+
+run_required_step() { # name, command...
+  run_step "$@"
+  local rc=$?
+  (( rc == 0 )) || fail_step "$rc"
+}
+
+branch=
+verify_checks() {
+  branch=$(git symbolic-ref --quiet --short HEAD) || {
+    echo "land refused: HEAD is not on a branch" >&2
+    return 2
+  }
+  if (( staged_only )); then
+    git diff --cached --check --
+    return $?
+  fi
+  if ! git diff --cached --quiet --; then
+    echo "land refused: pathspec mode requires an empty index; use --staged-only for an existing staged set" >&2
+    return 2
+  fi
+  git diff --check -- "${pathspecs[@]}"
+}
+
+stage_changes() {
+  local untracked
+  if (( ! staged_only )); then
+    git add -- "${pathspecs[@]}" || return $?
+  fi
+  if git diff --cached --quiet --; then
+    echo "land refused: the caller-selected staging set is empty" >&2
+    return 2
+  fi
+  if ! git diff --quiet --; then
+    echo "land refused: unstaged changes remain after staging; rebase requires a clean tree after commit" >&2
+    return 2
+  fi
+  untracked=$(git ls-files --others --exclude-standard) || return $?
+  if [[ -n "$untracked" ]]; then
+    echo "land refused: untracked paths remain after staging; rebase requires a clean tree after commit" >&2
+    printf '  %s\n' "$untracked" >&2
+    return 2
+  fi
+}
+
+commit_changes() {
+  bash "$root/scripts/agents/commit.sh" -F "$message_file"
+}
+
+require_clean_after_commit() {
+  local status
+  status=$(git status --porcelain --untracked-files=normal) || return $?
+  if [[ -n "$status" ]]; then
+    echo "land refused: commit succeeded but the tree is not clean, so rebase will not start" >&2
+    printf '%s\n' "$status" >&2
+    return 1
+  fi
+}
+
+fetch_origin() {
+  git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+}
+
+rebase_origin() {
+  git rebase "refs/remotes/origin/$branch"
+}
+
+push_origin() {
+  LC_ALL=C git push --porcelain origin "refs/heads/$branch:refs/heads/$branch"
+}
+
+push_was_moving_origin_rejection() {
+  LC_ALL=C grep -Eq '\[rejected\].*\((non-fast-forward|fetch first)\)|non-fast-forward|fetch first|cannot lock ref .*is at .*but expected' "$step_output"
+}
+
+# Only the flag grants the hook acknowledgment. An inherited shell setting is
+# not evidence that this landing's caller chose to include a new plan.
+unset METASYSTEM_ALLOW_NEW_PLAN
+if (( allow_new_plan )); then
+  export METASYSTEM_ALLOW_NEW_PLAN=1
+fi
+
+run_required_step "verify checks" verify_checks
+run_required_step "stage caller paths" stage_changes
+run_required_step "commit" commit_changes
+run_required_step "verify clean after commit" require_clean_after_commit
+run_required_step "fetch origin" fetch_origin
+run_required_step "rebase onto origin/$branch" rebase_origin
+
+push_attempt=1
+push_limit=3
+while (( push_attempt <= push_limit )); do
+  run_step "push origin (attempt $push_attempt of $push_limit)" push_origin
+  push_rc=$?
+  if (( push_rc == 0 )); then
+    break
+  fi
+  if ! push_was_moving_origin_rejection || (( push_attempt == push_limit )); then
+    fail_step "$push_rc"
+  fi
+  printf -- '-- retryable rejection: %s (exit %s)\n' "$step_name" "$push_rc"
+  tail -n 40 "$step_output"
+  printf -- '-- origin moved during push; fetching and rebasing before retry %s of %s\n' \
+    "$((push_attempt + 1))" "$push_limit"
+  run_required_step "fetch origin after push attempt $push_attempt" fetch_origin
+  run_required_step "rebase onto origin/$branch after push attempt $push_attempt" rebase_origin
+  push_attempt=$((push_attempt + 1))
+done
+
+if (( ! skip_transport )); then
+  run_required_step "sync transport" bash "$root/scripts/agents/sync-transport.sh" "$branch"
+fi
