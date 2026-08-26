@@ -3,9 +3,9 @@
 - State: queued
 - Intent: Validation suites run under process-group custody: killing a suite reaps its whole tree, and gate locks carry pids and self-clean when their owner dies (2026-08-24 collateral: orphaned go-gate child blocked the next battery)
 - Origin: human
-- Next step: LAYERS ONE AND TWO LANDED 50d7e6d (codex-built, conformance-green, certified; attended S4-1..16 green): the census identity override dies with its leg, the stop-hook leg announces the suite shell when no runtime ancestor exists, both suites reap on INT/TERM, and the announce scanner guards non-scratch call sites. RESIDUE (appetite spent at the declared line): a fully detached run now travels past BOTH previously-red layers and ends SILENTLY mid-suite around the unwatched-run stop-hook leg — no refusal, no green marker (evidence: session scratchpad supfix-final-proof.log, 2026-08-25). The next claimant starts at that leg with an xtrace; each peeled layer so far was one ambient-identity assumption, and the acceptance (fully detached green suite) still stands. Related: steward-owned-execution (detached execution is its world), KI-43 (mechanism section now diagnosed and landed).
+- Next step: APPETITE RENEWED (coordinator, 2026-08-26, per R-12 under Wido's approved handling): fresh 6h token for the next layer — the silent mid-suite end at the unwatched-run stop-hook leg on fully detached runs; claimant starts with an xtrace at that leg per m2's handoff (evidence supfix-final-proof.log). Queue position: after witness-law-extension. Previous breach was lawful appetite exhaustion, layers one and two landed at 50d7e6d.
 - OpenedAt: 2026-08-24T13:24:00Z
-- Revision: 6
+- Revision: 7
 - Labels: custody
 
 History:
@@ -15,4 +15,5 @@ History:
 - 2026-08-25T20:37:49Z MYR0WR78CKJCBA44FK4G0Q2H18-m2-bc1be9cb edit actor=m2+mac-coordinator targets=suite-custody
 - 2026-08-25T20:38:00Z N4007V77HVS7GE7XVD19QS0Z59-m2-bc1be9cb release actor=m2+mac-coordinator targets=suite-custody
 - 2026-08-26T05:39:45Z YW1MGYSDSX5SAH5D7QW79G8XC2-m2-bc1be9cb edit actor=m2+mac-coordinator targets=suite-custody
-Integrity: sha256=5cc2c35679eb8937ebd6be56608f65b240c42a2486e137a60c2dbfc17f8b4d3d
+- 2026-08-26T11:08:46Z RSESH98DRSBWW7APMNCCBEE6H8-m1-bf243850 edit actor=m1+coordinator targets=suite-custody
+Integrity: sha256=622e3e42f2b5f23b55d8f471c05e222f917eef9b9b1a303970478bf3ba4f42cd
