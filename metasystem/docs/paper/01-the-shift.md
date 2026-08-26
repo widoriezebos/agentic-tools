@@ -1,31 +1,43 @@
 # 1. The Shift
 
-Thesis: the unit of engineering ownership is moving from the
-deliverable to the delivery system.
+Thesis: for software delivered repeatedly or carrying material risk,
+engineering ownership is moving from the deliverable to the delivery
+system.
 
 ## The ladder we have been climbing
-Compilers, version control, CI, infrastructure as code, deployment
-pipelines: each generation moved a daily human activity into machinery
-built and owned by engineers. Each move was resisted, then became
-invisible. Agentic engineering is the next rung, and it is different
-in one way only: the activity being absorbed is engineering itself.
 
-## What "building the system that builds the app" means
-Not automation of steps, but ownership inversion: the application
-becomes an output the system produces, reproduces, and repairs, while
-human attention concentrates on the system's laws, proofs, and intent.
-A concrete day looks like: the human states intent and constraints,
-machinery designs, critiques, builds, proves, and lands; the human is
-interrupted only for rulings that are genuinely theirs.
+This section will trace how compilers, version control, continuous
+integration, infrastructure as code, and deployment pipelines moved
+repeated human work into machinery engineers built once and improved.
+It will argue that agentic engineering is the next rung because the
+activity being absorbed is construction itself.
+
+## What “building the system that builds the application” means
+
+The application becomes an output that machinery can produce,
+reproduce, check, release, and repair. Human attention moves to intent,
+to laws — machine-enforced rules that can refuse a change — and to the
+evidence needed for consequential decisions; the legal metaphor names
+authority, not a copy of a human court.
+
+## A concrete day
+
+A human states the outcome and constraints; machinery proposes,
+criticizes, builds, checks, and releases a change; the human is
+interrupted only for decisions reserved to human authority. This
+example will make the ownership shift visible before later chapters
+separate each part of the system.
 
 ## Why now
-Agents can carry a full construction loop, but they are unreliable in
-ways humans are not. The naive response is supervision of every step —
-which cancels the gains. The correct response is the same one
-engineering always gives: build a system whose structure makes the
-unreliability survivable. That system is the new artifact.
+
+Agents can carry a construction loop but fail through silent stopping,
+drift, and plausible wrongness. This section will argue that the useful
+response is structural: make those failures observable and survivable
+without requiring a human to supervise every step.
 
 ## What this paper is and is not
-A paper about vision, concepts, and principles — deliberately not a
-tool description, framework, or vendor story. Everything here has been
-lived in a working implementation, but the ideas stand alone.
+
+This is a standalone paper about vision, concepts, and principles, not
+a description of a particular tool, framework, vendor, or
+implementation. Its claims must remain understandable without private
+experience and testable across different applications and settings.

@@ -1,33 +1,37 @@
 # 2. Back to Intent
 
-Thesis: most of what we call "software engineering process" is not
-engineering; it is accommodation of human limits. Return to intent
-before rebuilding anything.
+Thesis: begin with the outcome people need, because inherited process
+can hide both that outcome and its defects.
 
 ## What delivering software actually requires
-Five irreducible activities: deciding what to build (intent), making
-it (construction), knowing it works (proof), keeping it working
-(care), and getting better at all of the above (learning). Everything
-else is scaffolding for a particular kind of worker.
 
-## An archaeology of ceremony
-Each ceremony maps to the human limit it compensates: standups exist
-because human state is invisible; sprints because human attention
-needs batching and rhythm; estimation because human labor is the
-scarce resource being allocated; code review because trust must be
-established between minds and knowledge must spread between them;
-documentation because human memory decays and people leave; meetings
-because human bandwidth is narrow and lossy; retrospectives because
-human learning needs a ritual to happen at all.
-
-## Ceremonies encode invariants worth keeping
-Behind each form sits a real invariant: work must be visible; changes
-need independent scrutiny before they are trusted; knowledge must
-survive the departure of any individual; effort must be bounded. The
-invariants survive the medium change. The forms do not.
+The chapter will separate five activities: deciding what to build
+(intent), making it (construction), determining whether it works
+(verification), keeping it working (care), and improving all four
+(learning). Chapter 4, rather than this chapter, will examine the
+ceremonies historically wrapped around those activities.
 
 ## Intent as the durable interface
-When construction is cheap, the expensive things are knowing what you
-want and knowing that you got it. Intent — stated plainly, with
-constraints and freedoms — becomes the primary human artifact, and the
-question "does this serve the intent" becomes the system's root test.
+
+When construction becomes cheaper, knowing what people need and
+whether they received it becomes more important. Intent will mean a
+versioned statement of the desired outcome, its constraints, its
+freedoms, and observable signs of success — not a task list or a claim
+that every requirement is already known.
+
+## Intent can be wrong
+
+Intent may be ambiguous, internally contradictory, incomplete, based
+on tacit assumptions, or rejected by what happens after release. The
+section will cover elicitation, tests for ambiguous language,
+surfacing conflicting constraints, and explicit success measures, then
+argue that intent must be versioned and revised when live evidence
+disproves it.
+
+## From stated desire to a checkable claim
+
+The system must translate plain-language intent into examples,
+boundaries, and observations that people can challenge before work
+begins. Translation can expose uncertainty but cannot settle a value
+disagreement or make a weak intent true, so unresolved questions stay
+visible and return to the people with authority to decide them.

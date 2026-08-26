@@ -1,31 +1,50 @@
-# 8. The Living System
+# 9. The Living System
 
-Thesis: a system of mortal workers must supply its own liveness,
-identity, and containment.
+Thesis: a system of mortal workers operating in a hostile world must
+provide liveness, identity, isolation, and bounded authority.
 
-## Silent death and the dead-man's switch
-Absence of output must be made distinguishable from patience:
-heartbeats, watchdogs, freshness of work products rather than
-self-reported status. Status fields lie; evidence of recent work does
-not. Every wait carries a deadline and an owner.
+## Silent death and deadlines
 
-## Identity: never trust a number
-Process identifiers are recycled; names are ambient; only verified
-identity (the process plus its provable birth) may authorize
-consequential acts — especially destructive ones. The rule
-generalizes: any reference into the live world must be checked at use,
-not at recording.
+Recent work products and independently observed heartbeats will
+distinguish progress from a worker that has silently stopped. Every
+wait has a deadline and an owner, and a timed-out task leaves enough
+state for safe retry or recovery.
+
+## Identity must be checked at use
+
+Names and recycled process numbers are not sufficient authority for a
+consequential action. The system must verify both the subject and its
+current claim to the resource at the moment of use, especially before
+stopping a process, replacing data, or releasing a change.
 
 ## Isolation by construction
-Proofs run against isolated copies of the world so that live work and
-proof can never share fate: the expensive validation cannot be killed
-by ongoing work, and ongoing work is never frozen by validation.
-Blast radius is a design input: the question "what can this process
-harm if it is wrong" is answered by construction, not by hope.
+
+Checks run against isolated copies so that active work cannot alter
+their result and a long check cannot freeze unrelated work. Each
+worker receives only the resources and permissions its task requires,
+making the possible harm of a mistake a design choice rather than a
+hope.
 
 ## Safe against itself
-The system's own workers are its chief hazard: they overwrite, they
-kill the wrong process, they force proofs through. Guardrails are
-therefore aimed inward — wrappers that refuse dangerous shapes,
-teardown that will not signal what it cannot prove it owns, retention
-over destruction whenever ownership is unprovable.
+
+Well-meaning workers can overwrite data, stop the wrong process, or
+try to bypass a failed check. Protective wrappers must refuse
+dangerous action shapes, and uncertain ownership must lead to
+retention and escalation rather than destruction.
+
+## The hostile world
+
+The threat model includes malicious input, hostile generated code,
+compromised tools or dependencies, stolen secrets, and tampering with
+records or test results. From it follow trust boundaries (points where
+data crosses between differently trusted components), least authority
+(only the permissions a task requires), containment, provenance (a
+traceable source and history), and verification independent of the
+component making the claim.
+
+## The change, continued
+
+The session-expiry worker receives access to an isolated test store but
+not production secrets or permission to release. Dependency sources,
+test results, and the identity of the accepted change remain traceable,
+and a stopped migration cannot be mistaken for a completed one.

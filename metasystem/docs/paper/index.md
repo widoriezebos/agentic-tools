@@ -7,51 +7,52 @@ human ceremony into a medium that does not need it.
 
 ## The story arc
 
-**Act I — The shift (chapters 1-2).** Engineering attention has moved
+**Act I — The shift (chapters 1–2).** Engineering attention has moved
 up a level before: assembly to compilers, servers to infrastructure as
-code, manual testing to CI. Each time, the thing engineers touched
-daily became the output of machinery they built once. Agentic
-engineering is the same move applied to engineering itself. To make
-that move well we must first separate what software delivery actually
-requires — intent, construction, proof, care, learning — from the
-ceremonies humans invented to do those things with human minds.
+code, manual testing to continuous integration. Agentic engineering
+extends that move to engineering itself, but it begins by separating
+what delivery requires — intent, construction, evidence, care, and
+learning — from the ceremonies humans invented around those needs.
+Intent becomes the durable interface, while its ambiguity, conflict,
+and capacity to be wrong become design problems in their own right.
 
-**Act II — The medium and the trap (chapters 3-4).** Agentic labor has
-radically different characteristics: communication is nearly free,
-parallelism is nearly free, memory is nothing but records, failure is
-silent by default, plausibility is not correctness, and verification —
-not generation — is the scarce resource. The default industry path is
-to make agents perform our ceremonies (standups, sprints, reviews,
-estimates). That is skeuomorphism, and it forfeits the shift's value.
-Some ceremonies encode real invariants; the work is to extract the
-invariant and discard the form.
+**Act II — The medium and the trap (chapters 3–4).** Agentic labor has
+different limits: some costs fall, others change shape, memory exists
+only in records, failure is silent by default, plausible work can be
+wrong, and trustworthy judgment remains scarce. Copying standups,
+sprints, reviews, and estimates into this medium preserves familiar
+forms instead of the conditions they protected. Ceremony archaeology
+therefore asks which practices to discard, replace with machinery,
+adapt, or retain as deliberately human acts.
 
-**Act III — The principles and the machinery (chapters 5-9).** What a
-system that builds systems must be built on: intent as the only
-sacred input; proof over trust; records as the only memory; laws that
-refuse rather than guidelines that advise; economy as law; human
-sovereignty at defined points. From the principles, the machinery:
-adversarial convergence and discriminating tests; roles derived from
-first principles rather than copied from the org chart — separations
-of stance, authority, and custody, not job titles; ledgers instead of
-meetings; liveness, identity, and isolation for a system of mortal
-workers.
+**Act III — The principles and the machinery (chapters 5–10).** A
+short statement of the principles comes first: serve revisable intent,
+prefer evidence to trust, keep durable records, enforce important
+rules, spend in proportion to risk, and reserve named decisions for
+humans. Later chapters elaborate the machinery: bounded proof,
+independent roles derived from actual hazards, coordination through
+records, liveness and protection against hostile conditions, and care
+of software after release. One ordinary change — adding an expiry date
+to user sessions — continues through every chapter to keep the
+principles concrete.
 
 **Act IV — The economy, the learning loop, the human (chapters
-10-12).** Machine engineering has a real economy — spend must map to
-outcomes, expensive proofs run on accumulated weight, budgets are
-stop-laws, and the question "what is this process paying for this
-week" is asked by the system itself. The system learns the way
-aviation and finance learned: near-misses recorded, lessons compiled
-into guards, every failure leaving evidence. The human becomes
-legislator, judge, and intent-holder — the one who writes the laws,
-rules on the exceptions, and owns the why.
+11–13).** A shared risk model ties verification effort and total cost
+to consequence, novelty, exposure, and accumulated change, including
+the cost of judging parallel attempts. Incidents can produce new
+automatic checks, but those checks need evidence, owners, tests,
+expiry, and a named route for challenge. Humans govern values and
+exceptions through precisely bounded authority, including delegation
+and challenge when several people hold conflicting intent.
 
-**Act V — The proof and the horizon (chapters 13-14).** The strongest
-evidence such a system can offer is building and improving itself
-under its own laws. And the horizon: when applications become cheap,
-the delivery system becomes the asset, and engineering becomes the
-discipline of writing laws, designing proofs, and judging evidence.
+**Act V — The transition, the stress test, and the horizon (chapters
+14–16).** Existing teams reach the new model by inferring current
+intent, running old and new controls together, transferring authority
+only as evidence earns it, and preserving rollback. Self-application
+then tests the distinctive case of machinery changing its own
+safeguards; it is necessary but cannot establish external validity by
+itself. The horizon asks what engineering becomes when delivery
+systems, within clear economic limits, become the durable asset.
 
 ## Chapters
 
@@ -64,8 +65,10 @@ discipline of writing laws, designing proofs, and judging evidence.
 7. [Roles from First Principles](07-roles-from-first-principles.md)
 8. [Memory and Coordination](08-memory-and-coordination.md)
 9. [The Living System](09-the-living-system.md)
-10. [The Economy of Machine Engineering](10-economy.md)
-11. [A System That Learns](11-learning-systems.md)
-12. [The Human Role](12-the-human-role.md)
-13. [Self-Application](13-self-application.md)
-14. [What Engineering Becomes](14-outlook.md)
+10. [Care](10-care.md)
+11. [The Economy of Machine Engineering](11-economy.md)
+12. [A System That Learns](12-learning-systems.md)
+13. [The Human Role](13-the-human-role.md)
+14. [The Transition](14-the-transition.md)
+15. [Self-Application](15-self-application.md)
+16. [What Engineering Becomes](16-outlook.md)

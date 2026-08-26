@@ -1,55 +1,72 @@
 # 7. Roles from First Principles
 
-Thesis: roles in a machine engineering system are not job titles
-inherited from the org chart. They are derived separations of stance,
-authority, and custody — created only where the system's laws require
-two things one mind cannot honestly hold at once.
+Thesis: roles are temporary combinations of stance and permission,
+derived from hazards rather than copied from an organization chart.
 
-## Why human organizations have roles
-Human roles derive overwhelmingly from scarcity and its consequences:
-one person cannot do everything (specialization), know everything
-(handoffs between experts), or watch everything (span of control,
-management); careers need ladders and departments need borders. These
-are accommodations of finite, expensive, slowly-trained people.
+## The premise: only some limits were removed
 
-## Those reasons died; these survive
-When any worker can be instantiated with any skill briefing, roles
-born of scarcity dissolve. What survives is structural, and there are
-five reasons a role may exist at all:
-independence (judgment must be uncontaminated by authorship);
-authority (the power to accept, refuse, or destroy must be narrower
-than the power to produce); custody (mortal workers need a continuity
-holder who binds work to records and proofs); stance (refutation is a
-posture, not a skill — someone must be briefed to attack); and
-translation (the human interface needs a voice with no stake in the
-story it tells).
+Cheap copying and fresh instantiation reduce the need for roles based
+on working hours, career ladders, handoffs between scarce specialists,
+or one manager’s span of attention. They do not remove scarce judgment,
+incomplete context, authority, or the need for an independent view, so
+the derivation begins with those surviving limits.
 
-## The derived archetypes
-Sketches, not titles. The intent-holder: human, source of purpose and
-rulings. The custodian: briefs work, binds results to proofs and
-records, lands what converges; never builds or critiques, so its
-verification stays honest. The builder: constructs; instantiated
-fresh per task; holds no authority to accept its own work. The
-critic: briefed to refute, fresh context mandatory, plural and
-diverse by default because independence is cheap. The watchkeeper:
-liveness, deadlines, dead-man switches — exists because silent death
-exists. The narrator: the plain-language account; deliberately
-powerless, because a reporter that can act can cover. The counselor:
-raises precedent and law at the moment of relevance, so learning is
-consulted rather than remembered.
+## Hazards determine required separations
 
-## Roles are configurations, not headcount
-A role is a briefing plus an authority set, instantiated when needed
-and destroyed after. A "team" is a configuration chosen per goal —
-five critics with different lenses for a risky change, one for a
-trivial one. Nothing about a role persists except its definition and
-its records.
+Authorship creates commitment to a solution, so acceptance needs an
+independent stance; destructive action creates a blast radius, so its
+authority must be narrower than construction; mortal workers create
+continuity risk, so custody of records must outlive them. Silent death
+requires a liveness watcher, and explanations that shape human
+decisions require a reporter whose account can be checked against the
+record.
+
+## Prohibited combinations
+
+A builder may not accept its own work, a critic may not quietly change
+the work it is judging, and a liveness watcher may not erase the
+records needed to diagnose a stopped worker. The custodian may not
+build or critique the change it accepts, and the narrator may not alter
+state or authorize action; these prohibitions protect independence
+rather than mimic job boundaries.
+
+## Why the custodian may accept a change
+
+The custodian holds continuity: it binds the exact proposed change to
+the required records and evidence, checks that every required gate has
+passed, and then performs the narrowly authorized acceptance action.
+It cannot waive a failed gate or judge its own construction, so this
+authority closes the chain of custody without turning custody into
+creative or reviewing power.
+
+## Why the narrator is deliberately powerless
+
+The narrator turns records into a plain-language account but has no
+permission to change those records, accept work, or conceal an action
+by performing it. Its influence is made inspectable by linking every
+claim to source records, while decisions remain with roles whose
+authority is explicit.
+
+## Illustrative configurations, not titles
+
+A configuration may include a human intent-holder, a builder, one or
+more independent critics, a custodian, a liveness watcher, a narrator,
+and a rule adviser that retrieves relevant laws and precedents but
+cannot decide. These are examples: low-risk work may combine compatible
+functions, while high-risk work adds independent people or machines
+where the hazard requires them.
 
 ## The anti-mimicry test
-For any proposed role, name which of the five surviving reasons it
-serves. If the honest answer is "that is how humans organize," delete
-it. Roles that fail the test: the agent product manager (intent is
-human by law), the agent scrum master (there is no ceremony to
-facilitate), the agent middle manager (span of control is not a
-machine limit). The org chart is not a template; it is the fossil
-record of human constraints.
+
+For every proposed role, name the hazard it controls, the permission it
+needs, and the permissions it must not have. A role whose only defense
+is “that is how humans organize” is removed; a separation stays only
+while evidence shows that it protects a real condition.
+
+## The change, continued
+
+For session expiry, a builder changes storage and authentication, an
+independent critic tries bypass and clock-boundary cases, and a
+custodian accepts only the exact version those checks covered. A
+narrator can explain the result to the responsible human but cannot
+release it or soften a failed check.

@@ -1,42 +1,65 @@
 # 5. First Principles
 
-Thesis: a small set of laws, consistently enforced, replaces the
-ceremony stack.
+Thesis: a small set of principles defines the system; later chapters
+will supply their mechanisms, limits, and counterarguments.
 
-## Intent is the only sacred input
-Everything else — designs, plans, even the laws themselves — is
-negotiable machinery in service of intent. Intent arrives from humans,
-in plain language, with constraints and freedoms attached.
+## What the legal metaphor means — and where it stops
 
-## Proof over trust
-No claim of completion is accepted on fluency. Work is bound to
-mechanical evidence: tests that fail on broken implementations,
-verification that distinguishes fixed from unfixed, gates that refuse
-rather than advise. Trust is a property of proofs, not of workers.
+A law in this paper is a machine-enforced rule with authority to refuse
+an action; a legislator is the person or group authorized to change
+such a rule; a judge is a person authorized to decide a named
+exception; and a precedent is a recorded ruling used in later cases.
+An appeal is a named route for asking another authorized human or body
+to reconsider a decision. The metaphor describes authority and
+continuity, but software has no moral agency and enforcement cannot
+resolve political or value disagreement.
 
-## Records are the only memory
-Anything not written to a durable, structured record does not exist.
-Session memory, chat history, and good intentions all evaporate;
-ledgers, journals, and evidence envelopes survive. Corollary: the
-system must remain correct if every worker is replaced mid-flight with
-a fresh one reading only the records.
+## Intent is controlling and revisable
 
-## Laws refuse; guidelines advise; only laws count
-A rule that depends on a worker choosing to follow it will be violated
-at the worst moment. Invariants live in machinery that physically
-refuses violations — at commit, at landing, at teardown — with clear,
-plain-language refusal messages.
+The system exists to serve human intent rather than its own process,
+but intent is neither infallible nor fixed. Chapter 2 defines how it is
+tested and revised, while Chapter 13 defines who may bind conflicting
+human intentions.
 
-## Economy is law
-Every process must pay for itself in delivered intent, and the system
-itself asks the question. Budgets and appetites are enforced stop
-conditions, not estimates.
+## Evidence over trust
 
-## The human is sovereign at named points
-Irreversible acts, value judgments, and law changes are reserved to
-humans by construction — and everything else deliberately is not.
+Claims of completion must be tied to observations that distinguish
+working from broken behavior. The paper will reserve proof for a
+bounded demonstration under stated assumptions and use evidence for
+the broader records on which practical judgment depends.
 
-## Honest failure is a feature
-The system prefers a loud, evidenced refusal over a silent success it
-cannot prove. Every failure leaves an envelope: what ran, what it saw,
-what it concluded.
+## Records are the only durable memory
+
+Work must survive the loss of any worker through durable records of
+intent, state, decisions, and results. Chapter 8 will show how those
+records coordinate work without pretending that recorded state can
+settle human disagreement.
+
+## Important rules refuse
+
+A condition that must always hold belongs at the point of action, where
+machinery can refuse a violation and explain why. Chapters 6 and 12
+will distinguish these enforced rules from advice and govern the rules
+themselves.
+
+## Spend and human authority are designed
+
+Verification effort and construction effort must be proportional to
+risk, and budgets must stop work rather than merely describe hopes.
+Irreversible acts, value judgments, and changes to governing rules stay
+with explicitly authorized humans.
+
+## Honest failure leaves a record
+
+The system should prefer a clear refusal with supporting evidence to a
+success it cannot justify. Failures, near-misses, and uncertainty must
+remain available for care and learning rather than vanish with the
+worker that encountered them.
+
+## The change, continued
+
+For the request “add an expiry date to user sessions,” these principles
+first force concrete questions: expiry after creation or inactivity,
+which users are affected, and what observable result counts as
+success. The request, its answers, the change, the checks, the spending
+limit, and any human ruling all become connected records.
