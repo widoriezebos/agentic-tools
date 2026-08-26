@@ -31,23 +31,31 @@ family from the 2026-08-24 collateral day so the group lists as one.
   as contradictory; a final set equal to current follows the
   existing no-change-edit behavior exactly (the builder matches
   editDeltas' shipped semantics and pins it in a fixture); the
-  history delta records the label set change like any field delta,
-  and concurrent publishers resolve through the existing reconcile
-  conflict law — labels add no new merge machinery.
+  goal HISTORY records the edit entry exactly as the shipped
+  grammar does (verb+actor+targets — it has no field deltas, r2-004;
+  the label change is visible in the file diff, not the history
+  line). CONCURRENCY (r2-003): no new merge machinery means the
+  existing conflict law decides — a concurrent publisher's
+  last-publish wins whole-field exactly as Blocked behaves, and a
+  lost additive edit is re-run by its author; the design accepts
+  this honestly rather than inventing set-merge.
 - NEXT-FILTER LAW (r1-006): --label narrows the RECOMMENDATION
   CANDIDATE SET only. It never alters the claim quota, blocker
   gating, arc ordering, or the continue-your-claimed-goal rule — a
   held claim still answers first regardless of any filter, and a
-  filter that empties the candidate set reports exactly the empty
-  recommendation, never an unclaim.
+  filter that empties the candidate set reports the DISTINCT
+  message "no goal matches --label <x>" (r2-005: never the
+  backlog-empty wording, which means something else).
 - File format: a `- Labels: a, b` line, absent when empty (existing
   files parse as zero labels — no migration). MAP PRECEDENT
   (r1-002): Labels follows the BLOCKED field's handling in the
   closed publish/reconcile map — a list field carried
   absent-when-empty, hand edits flowing through goal reconcile's
   lawful republication (never Pinned's hand-edit refusal, never
-  Arc's dedicated-verb shape); the builder mirrors Blocked's map
-  code paths one-for-one.
+  Arc's dedicated-verb shape). r2-002: Blocked's carriage preserves
+  raw content — so the builder mirrors Blocked's CARRIAGE only and
+  adds the canonical-sort-dedup step at the VERB-WRITE layer (and
+  reconcile's republication), never inside the map code.
 - PARSE/CANONICALIZE SPLIT (r1-003): the parser preserves the raw
   order and duplicates it reads (so reconcile can OBSERVE a
   noncanonical hand edit and republish it canonically, and the
@@ -66,8 +74,8 @@ family from the 2026-08-24 collateral day so the group lists as one.
   unsorted line canonicalizes on the next lawful verb, not on read.
 - Unlabeled goals are untouched bytes (no migration churn on the
   ledger).
-- The label grammar is the goal-id grammar — one grammar, no new
-  regexes.
+- (r2-001 fold: the earlier one-grammar constraint is DELETED —
+  labelRe above is the single authority.)
 
 ## Acceptance (fast tests)
 
@@ -89,3 +97,14 @@ family from the 2026-08-24 collateral day so the group lists as one.
    continuous-self-improvement, goal-labels itself,
    critic-workspace-custody) labeled `custody` via the new flag,
    and `goal list --label custody` shows exactly the family.
+
+## Failsafe disposition (design-critic-20260826t043647z-ea77)
+
+r2-001 folded (stale one-grammar constraint deleted) · r2-002
+folded (carriage mirrored, canonicalization layered at verb writes)
+· r2-003 folded (whole-field last-publish-wins, honestly stated) ·
+r2-004 folded (history claim corrected to the shipped grammar) ·
+r2-005 folded (distinct empty-filter message).
+
+LANDED AT THE FAILSAFE: rounds ran 6 → 5, all folded in text, no
+open residue. Build begins.
