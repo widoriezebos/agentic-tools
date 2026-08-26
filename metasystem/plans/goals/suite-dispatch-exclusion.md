@@ -5,8 +5,10 @@
 - Origin: human
 - Next step: Appetite: 2h. Extend the existing gate-run guard into a checkout execution guard both battery.sh and dispatch.sh take: second arrival WAITS (bounded, with a progress note) instead of refusing or colliding. Acceptance: launch a battery while a critic job runs — the battery queues, both finish green, no OWNED-ELSEWHERE.
 - OpenedAt: 2026-08-24T13:24:10Z
-- Revision: 1
+- Revision: 2
+- Labels: custody
 
 History:
 - 2026-08-24T13:24:10Z 91G0JQGVX472YYPWYGFNSTE0X8-m2-bc1be9cb open actor=human:wido targets=suite-dispatch-exclusion
-Integrity: sha256=746ec8adef1c08e08bef5da66aaadaa92fb98084570378e11583804e5041d647
+- 2026-08-26T05:39:59Z YF8FSAZXD494Z8BQ9GFBQB97JC-m2-bc1be9cb edit actor=m2+mac-coordinator targets=suite-dispatch-exclusion
+Integrity: sha256=6ebe7ec154726e08e3e7e2bbb6cad14e299e1fa6ed52e2cbffbe342e35148928
