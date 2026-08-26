@@ -31,19 +31,24 @@ var procfsMounts = "/proc/self/mounts"
 // logged and appended to the registry.
 func runSuperviseOwnerLoop(args []string) int {
 	flags := flag.NewFlagSet("supervise owner", flag.ContinueOnError)
+	registryDefault, registryDefaultErr := defaultRegistryPath()
 	repo := flags.String("repo", "", "checkout root")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "owner instance tag")
 	intervalSec := flags.Int("interval", 60, "base observation interval seconds")
 	fingerprint := flags.String("fingerprint", "", "supervision fingerprint the armer computed; published in state.json and matched against the watcher's census verdicts")
 	watcherCap := flags.Int("watcher-cap", 0, "derived watcher cap ceiling in minutes; published as derivedWatcherCapMin and loaded into the watcher heartbeat attestation")
-	registryPath := flags.String("registry", defaultRegistryPath(), "machine-wide registry file")
+	registryPath := flags.String("registry", registryDefault, "machine-wide registry file")
 	gate := flags.String("gate", "", "start-gate file: wait for it to appear, then delete it, before supervising (the armer publishes the lock, then signals the gate — avoids the lock/pid chicken-and-egg)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *repo == "" || *tag == "" {
 		fmt.Fprintln(os.Stderr, "supervise owner: --repo and --tag are required")
+		return 2
+	}
+	if registryDefaultErr != nil && *registryPath == registryDefault {
+		fmt.Fprintln(os.Stderr, registryDefaultErr)
 		return 2
 	}
 	// Restricted procfs breaks the three-way liveness guarantee (a live
@@ -200,10 +205,18 @@ func kernelProbe(prober identity.Prober) lock.Probe {
 	}
 }
 
-func defaultRegistryPath() string {
+const supervisionRegistryHomeEnv = "METASYSTEM_SUPERVISION_REGISTRY_HOME"
+
+func defaultRegistryPath() (string, error) {
+	if override := os.Getenv(supervisionRegistryHomeEnv); override != "" {
+		if !filepath.IsAbs(override) {
+			return override, fmt.Errorf("%s must name an absolute run-scoped home", supervisionRegistryHomeEnv)
+		}
+		return filepath.Join(override, ".metasystem", "armed-checkouts.jsonl"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".metasystem/armed-checkouts.jsonl"
+		return ".metasystem/armed-checkouts.jsonl", nil
 	}
-	return filepath.Join(home, ".metasystem", "armed-checkouts.jsonl")
+	return filepath.Join(home, ".metasystem", "armed-checkouts.jsonl"), nil
 }

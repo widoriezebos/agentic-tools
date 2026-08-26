@@ -63,87 +63,128 @@ done
 # non-Go adopted checkout the fast gate skips itself; a damaged or
 # unbuildable tree refuses the commit.
 #
-# The proofs read the WORKING TREE, so they bind the prospective commit
-# only while the index and the worktree agree on every input they
-# consume. The closure is INVERTED (IL28-R5-4/5): everything under the
-# module prefix is a proof input — the gate and audit read the tree —
-# except the paths no proof consumes (plans/, bin/, artifacts/) and
-# machine-local overrides that are never committed content
-# (metasystem.conf.local); a committed toplevel go.work would steer the
-# build and is in scope unprefixed. Untracked and IGNORED inputs count
-# too — the toolchain consumes them while the commit omits them — and
-# every enumeration uses --full-name so nested-prefix layouts share one
-# path space (IL28-R5-3). A staged gitlink inside the scope would make
-# the tools read a nested checkout the committed tree does not carry
-# (IL28-R5-6) and refuses.
+# The proofs read the WORKING TREE, so they bind the prospective commit only
+# while the index and working tree agree on the LANDING projection. The
+# proof-built engine owns that projection, including nested-prefix handling;
+# a policy edit is therefore judged by the policy in the prospective bytes.
+# Untracked and ignored projected inputs count because the tools can consume
+# them while the commit omits them. A staged gitlink in the projection still
+# refuses because it exposes a nested checkout the commit records only as an
+# object id.
 prefix=$(git -C "$root" rev-parse --show-prefix)
-# The prefix is interpolated into extended regexes, so its metacharacters
-# are escaped literally (IL28-R6-3) — a lawful directory name must never
-# silently disable the closure.
-prefix_re=$(printf '%s' "$prefix" | sed 's/[][\.|$(){}?+*^]/\\&/g')
-# At the repository toplevel (empty prefix) everything is in scope; the
-# alternation form would leave an empty branch some greps refuse.
-if [[ -n "$prefix_re" ]]; then
-  gate_scope_re="^(${prefix_re}|go\.work$|go\.work\.sum$)"
-else
-  gate_scope_re="^"
-fi
-# plans/ is exempt EXCEPT the three plan files the audit itself reads
-# (IL28-R6-1); bin/, artifacts/, and the never-committed local override
-# stay out of scope entirely.
-gate_exempt_re="^${prefix_re}((plans|bin|artifacts)/|metasystem\.conf\.local$)"
-audit_plans_re="^${prefix_re}plans/(README|instruction-ledger|known-issues)\.md$"
-enumerate_inputs() {
-  git -C "$root" diff --name-only --
-  git -C "$root" ls-files --others --exclude-standard --full-name
-  git -C "$root" ls-files --others -i --exclude-standard --full-name
-}
-unbound_gate_inputs() {
-  enumerate_inputs | grep -E "$gate_scope_re" | grep -Ev "$gate_exempt_re" || true
-  enumerate_inputs | grep -E "$audit_plans_re" || true
-}
-unbound=$(unbound_gate_inputs)
-if [[ -n "$unbound" ]]; then
-  echo "agent commit refused: the static re-proof reads the working tree, and these gate inputs are not what the commit would record:" >&2
-  printf '  %s\n' $unbound >&2
-  echo "stage, stash, or remove them so the proof binds the bytes the commit records" >&2
-  exit 1
-fi
-gitlinks=$(git -C "$root" ls-files -s | awk '$1 == "160000"' | cut -f2 | grep -E "$gate_scope_re" | grep -Ev "$gate_exempt_re" || true)
-if [[ -n "$gitlinks" ]]; then
-  echo "agent commit refused: a staged gitlink inside the proof scope carries a nested checkout the committed tree does not record:" >&2
-  printf '  %s\n' $gitlinks >&2
-  exit 1
-fi
-# A SYMLINK at a proof-input path makes the proofs follow bytes the
-# committed tree records only as a target string (IL28-R6-4): refused at
-# the critical input names. Skill-registration symlinks stay lawful —
-# following them is the audit's sanctioned mechanism.
-symlinked=$(git -C "$root" ls-files -s | awk '$1 == "120000"' | cut -f2 \
-  | grep -E "$gate_scope_re" | grep -Ev "$gate_exempt_re" \
-  | grep -E '(^|/)((AGENTS|wow)\.md$|.*\.go$|go\.(mod|sum|work)$|docs/project-rules\.md$|metasystem\.conf$|scripts/)' || true)
-if [[ -n "$symlinked" ]]; then
-  echo "agent commit refused: a critical proof input is a symlink; the proofs would follow bytes the committed tree does not record:" >&2
-  printf '  %s\n' $symlinked >&2
-  exit 1
-fi
-# assume-unchanged and skip-worktree entries hide index/worktree
-# divergence from every diff the closure runs (IL28-R6-2): in scope,
-# they refuse — the proof cannot bind what git will not show it.
-hidden=$(git -C "$root" ls-files -v | awk '$1 ~ /^[a-z]$|^S$/' | cut -d' ' -f2- \
-  | grep -E "$gate_scope_re" | grep -Ev "$gate_exempt_re" || true)
-if [[ -n "$hidden" ]]; then
-  echo "agent commit refused: assume-unchanged or skip-worktree entries hide proof inputs from the divergence closure:" >&2
-  printf '  %s\n' $hidden >&2
-  exit 1
-fi
-# The INDEX TREE is captured before the proofs run and re-checked after
-# (IL28-R5-2): bytes staged mid-proof were never judged and refuse. A
-# conflicted index cannot write a tree and refuses first.
+toplevel=$(git -C "$root" rev-parse --show-toplevel)
+
+# The INDEX TREE is captured before either proof and checked again afterward.
+# A conflicted index cannot be represented as the one tree being judged.
 proved_tree=$(git -C "$root" write-tree) || {
   echo "agent commit refused: the index cannot be proved as a tree (unmerged entries?)" >&2
   exit 1
 }
+
+# Build the prospective policy owner without touching bin/metasystem. The same
+# proof engine later runs the audit and weighs the landing, so a stale live
+# binary cannot classify any prospective byte.
+proof_engine=$(mktemp "${TMPDIR:-/tmp}/metasystem-proof-engine.XXXXXX")
+trap 'rm -f -- "$proof_engine" "$token"' EXIT
+"$root/scripts/agents/go-gate.sh" --fast --proof-out "$proof_engine" 1>&2 || {
+  echo "agent commit refused: the static re-proof failed (go-gate.sh --fast)" >&2
+  exit 1
+}
+policy_engine=$proof_engine
+if [[ -s "$proof_engine" ]]; then
+  chmod +x "$proof_engine"
+else
+  # Adopted non-Go checkouts carry the committed engine binary but no source
+  # from which the fast gate could build a proof artifact. They cannot carry a
+  # prospective policy edit, so their own bundled engine remains the policy
+  # owner; source checkouts always take the proof-built branch above.
+  policy_engine=$root/bin/metasystem
+  [[ -x "$policy_engine" ]] || {
+    echo "agent commit refused: no behavior-surface policy engine is available" >&2
+    exit 1
+  }
+fi
+
+enumerate_inputs_nul() {
+  git -C "$toplevel" diff --no-renames --name-only -z --
+  git -C "$toplevel" ls-files --others --exclude-standard --full-name -z
+  git -C "$toplevel" ls-files --others -i --exclude-standard --full-name -z
+}
+select_landing_nul() {
+  "$policy_engine" behavior-surface select --projection LANDING --prefix "$prefix" --nul
+}
+show_nul_paths() { # file
+  while IFS= read -r -d '' selected; do printf '  %q\n' "$selected" >&2; done <"$1"
+}
+
+unbound_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-unbound.XXXXXX")
+enumerate_inputs_nul | select_landing_nul >"$unbound_file"
+if [[ -s "$unbound_file" ]]; then
+  echo "agent commit refused: the LANDING comparison found projected working-tree bytes that are not what the commit would record at its index endpoint:" >&2
+  show_nul_paths "$unbound_file"
+  rm -f "$unbound_file"
+  echo "stage, stash, or remove them so the proof binds the bytes the commit records" >&2
+  exit 1
+fi
+rm -f "$unbound_file"
+
+gitlinks_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-gitlinks.XXXXXX")
+git -C "$toplevel" ls-files -s -z | {
+  while IFS= read -r -d '' record; do
+    metadata=${record%%$'\t'*}; path=${record#*$'\t'}
+    [[ ${metadata%% *} == 160000 ]] && printf '%s\0' "$path"
+  done
+  # No matches is the lawful empty set, not a failed producer under pipefail.
+  true
+} | select_landing_nul >"$gitlinks_file"
+if [[ -s "$gitlinks_file" ]]; then
+  echo "agent commit refused: a staged gitlink inside the proof scope carries a nested checkout the committed tree does not record:" >&2
+  show_nul_paths "$gitlinks_file"
+  rm -f "$gitlinks_file"
+  exit 1
+fi
+rm -f "$gitlinks_file"
+# A SYMLINK at a proof-input path makes the proofs follow bytes the
+# committed tree records only as a target string (IL28-R6-4): refused at
+# the critical input names. Skill-registration symlinks stay lawful —
+# following them is the audit's sanctioned mechanism.
+symlinked_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-symlinks.XXXXXX")
+git -C "$toplevel" ls-files -s -z | while IFS= read -r -d '' record; do
+  metadata=${record%%$'\t'*}; path=${record#*$'\t'}
+  [[ ${metadata%% *} == 120000 ]] || continue
+  relative=$path
+  [[ -z "$prefix" ]] || relative=${path#"$prefix"}
+  case "$relative" in
+    AGENTS.md|*/AGENTS.md|wow.md|*/wow.md|*.go|go.mod|go.sum|go.work|go.work.sum|docs|*/docs|docs/*|*/docs/*|docs/project-rules.md|*/docs/project-rules.md|metasystem.conf|*/metasystem.conf|cmd|*/cmd|cmd/*|*/cmd/*|internal|*/internal|internal/*|*/internal/*|scripts|*/scripts|scripts/*|*/scripts/*)
+      printf '%s\0' "$path" ;;
+  esac
+done | select_landing_nul >"$symlinked_file"
+if [[ -s "$symlinked_file" ]]; then
+  echo "agent commit refused: a critical proof input is a symlink; the proofs would follow bytes the committed tree does not record:" >&2
+  show_nul_paths "$symlinked_file"
+  rm -f "$symlinked_file"
+  exit 1
+fi
+rm -f "$symlinked_file"
+# assume-unchanged and skip-worktree entries hide index/worktree
+# divergence from every diff the closure runs (IL28-R6-2): in scope,
+# they refuse — the proof cannot bind what git will not show it.
+hidden_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-hidden.XXXXXX")
+git -C "$toplevel" ls-files -v -z | {
+  while IFS= read -r -d '' record; do
+    marker=${record%% *}; path=${record#* }
+    [[ "$marker" == S || "$marker" =~ ^[a-z]$ ]] && printf '%s\0' "$path"
+  done
+  # No matches is the lawful empty set, not a failed producer under pipefail.
+  true
+} | select_landing_nul >"$hidden_file"
+if [[ -s "$hidden_file" ]]; then
+  echo "agent commit refused: assume-unchanged or skip-worktree entries hide proof inputs from the divergence closure:" >&2
+  show_nul_paths "$hidden_file"
+  rm -f "$hidden_file"
+  exit 1
+fi
+rm -f "$hidden_file"
 # The proof's progress chatter is diagnostics, never landing output:
 # callers own this wrapper's stdout (benchmark provisioning's
 # three-human-steps contract reads it), so both proofs speak on stderr.
@@ -152,23 +193,12 @@ proved_tree=$(git -C "$root" write-tree) || {
 # checkout fingerprints the live binary, and a commit-time swap under
 # an armed watch broke the benchmark target's preflight the day this
 # boundary first met one.
-proof_engine=$(mktemp "${TMPDIR:-/tmp}/metasystem-proof-engine.XXXXXX")
-trap 'rm -f -- "$proof_engine"' EXIT
-"$root/scripts/agents/go-gate.sh" --fast --proof-out "$proof_engine" 1>&2 || {
-  echo "agent commit refused: the static re-proof failed (go-gate.sh --fast)" >&2
-  exit 1
-}
 # The audit proof runs on the freshly PROOF-built engine with its
 # override knobs cleared (IL28-R4-4): a stale exported cap or
 # placeholder waiver is exactly the long-lived environment escape the
 # boundary forbids. On a non-Go adopted checkout the fast gate skips
 # without building, and the audit runs on the checkout's own engine.
-audit_engine="$proof_engine"
-if [[ -s "$audit_engine" ]]; then
-  chmod +x "$audit_engine"
-else
-  audit_engine="$root/bin/metasystem"
-fi
+audit_engine=$policy_engine
 env -u METASYSTEM_MAX_ALWAYS_LOADED_WORDS -u METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS \
   METASYSTEM_BIN="$audit_engine" \
   "$root/scripts/audit-metasystem.sh" "$root" 1>&2 || {
@@ -179,10 +209,14 @@ settled_tree=$(git -C "$root" write-tree) || {
   echo "agent commit refused: the index cannot be re-proved as a tree" >&2
   exit 1
 }
-if [[ "$settled_tree" != "$proved_tree" ]] || [[ -n "$(unbound_gate_inputs)" ]]; then
+settled_unbound=$(mktemp "${TMPDIR:-/tmp}/metasystem-settled-unbound.XXXXXX")
+enumerate_inputs_nul | select_landing_nul >"$settled_unbound"
+if [[ "$settled_tree" != "$proved_tree" ]] || [[ -s "$settled_unbound" ]]; then
+  rm -f "$settled_unbound"
   echo "agent commit refused: the index or a gate input moved while the proof ran; re-stage and retry" >&2
   exit 1
 fi
+rm -f "$settled_unbound"
 # The proof binds THE INDEX; the postcondition proves the commit
 # recorded exactly that tree. This replaces any argument grammar
 # (IL28-R2-2, IL28-R3-2, IL28-R4-1, IL28-R4-5): whatever selected
@@ -238,6 +272,7 @@ fi
 # has accepted it — a failed push exits above and adds nothing. The
 # due line is a NUDGE toward the milestone battery (findings fix
 # forward), and weight bookkeeping never refuses a concluded landing.
-git -C "$root" show --numstat --format= HEAD 2>/dev/null \
-  | "$ms" gate weight-add --root "$root" --commit "$(git -C "$root" rev-parse --short HEAD)" \
+git -C "$root" show --no-renames --numstat -z --format= HEAD 2>/dev/null \
+  | "$policy_engine" gate weight-add --root "$root" --prefix "$prefix" \
+      --commit "$(git -C "$root" rev-parse --short HEAD)" \
   || echo "battery-weight bookkeeping skipped (non-fatal)" >&2

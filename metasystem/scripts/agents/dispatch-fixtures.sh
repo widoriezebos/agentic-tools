@@ -2402,7 +2402,6 @@ selftest_proven=$("$engine" json get --file "$selftest_newest" --field provenBeh
 agent_supervision_repo=
 unset METASYSTEM_CENSUS_PROCESS_FILE METASYSTEM_FAKE_PROCESS_IDENTITY_FILE \
   METASYSTEM_MISSION_PROCESS_IDENTITY_FILE
-export METASYSTEM_SKIP_AGENT_FIXTURES=1
 
 # ---------------------------------------------------------------------------
 # The steward's continuation path, end to end: a provably dead worker's

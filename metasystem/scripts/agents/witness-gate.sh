@@ -29,11 +29,28 @@ case "${WITNESS_GATE_FALLBACK:-}" in
     ;;
 esac
 witness_state=
-witness_roots_status=$(git status --porcelain -- cmd internal go.mod go.sum scripts/agents 2>/dev/null) \
-  && witness_roots_clean=1 || witness_roots_clean=0
-# A failed git status must read as INELIGIBLE, never as clean: an empty
-# answer from a non-repository is silence, not cleanliness.
-[[ -n "$witness_roots_status" ]] && witness_roots_clean=0
+# Ask the prospective source engine for ENGINE membership. This replaces the
+# last separate copy of D33's positive closure; a policy edit is itself inside
+# ENGINE and therefore decides eligibility under its own prospective bytes.
+witness_prefix_status=0
+witness_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null) || witness_prefix_status=$?
+witness_git_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || witness_prefix_status=$?
+witness_roots_bytes=
+if [[ $witness_prefix_status == 0 ]]; then
+  witness_roots_bytes=$(
+    {
+      git -C "$witness_git_root" diff --no-renames --name-only -z HEAD -- &&
+      git -C "$witness_git_root" ls-files --others --exclude-standard --full-name -z &&
+      git -C "$witness_git_root" ls-files --others -i --exclude-standard --full-name -z
+    } | go run ./cmd/metasystem behavior-surface select \
+          --projection ENGINE --prefix "$witness_prefix" --nul \
+      | wc -c
+  ) && witness_roots_clean=1 || witness_roots_clean=0
+else
+  witness_roots_clean=0
+fi
+# A failed Git/policy pipeline is INELIGIBLE, never an empty-clean answer.
+[[ "${witness_roots_bytes//[[:space:]]/}" == 0 ]] || witness_roots_clean=0
 if (( ! ${delivery_contract:-0} )) && (( witness_roots_clean )) \
   && [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]]; then
   witness_state=$(mktemp -d)

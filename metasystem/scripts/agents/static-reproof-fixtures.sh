@@ -57,11 +57,34 @@ case "$1 $2" in
   "proc started-at") echo 1 ;;
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token") : ;;
+  "behavior-surface select")
+    while IFS= read -r -d '' path; do
+      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|plans/receipts.log|metasystem.conf.local) ;;
+        *) printf '%s\0' "$path" ;;
+      esac
+    done ;;
   *) : ;;
 esac
 exit 0
 SH
 chmod +x "$fixture_root/bin/metasystem"
+cat >"$fixture_root/scripts/agents/proof-engine.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ -z "${STATIC_REPROOF_POLICY_ENGINE_MARKER:-}" ]] || : >"$STATIC_REPROOF_POLICY_ENGINE_MARKER"
+case "$1 $2" in
+  "behavior-surface select")
+    while IFS= read -r -d '' path; do
+      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|plans/receipts.log|metasystem.conf.local) ;;
+        *) printf '%s\0' "$path" ;;
+      esac
+    done ;;
+  "gate weight-add") echo "proof-engine weight refusal" >&2; exit 1 ;;
+  *) : ;;
+esac
+SH
+chmod +x "$fixture_root/scripts/agents/proof-engine.sh"
+export STATIC_REPROOF_POLICY_ENGINE_MARKER="$tmp/proof-engine-used"
 
 git -C "$fixture_root" init -q -b main
 # Beds enroll a fixture nickname: publishing surfaces refuse without
@@ -104,7 +127,17 @@ git -C "$fixture_root" diff --cached --quiet && {
 # Leg 3: a green fast gate lets the commit conclude.
 cat >"$fixture_root/scripts/agents/go-gate.sh" <<'SH'
 #!/usr/bin/env bash
-exit 0
+set -euo pipefail
+proof_out=
+while (($#)); do
+  case "$1" in
+    --proof-out) proof_out=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ -n "$proof_out" ]]
+cp "$(cd "$(dirname "$0")" && pwd -P)/proof-engine.sh" "$proof_out"
+chmod +x "$proof_out"
 SH
 chmod +x "$fixture_root/scripts/agents/go-gate.sh"
 git -C "$fixture_root" add scripts/agents/go-gate.sh
@@ -112,10 +145,12 @@ git -C "$fixture_root" add scripts/agents/go-gate.sh
   || { echo "static re-proof fixture: a green fast gate blocked the commit" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes green" ]] \
   || { echo "static re-proof fixture: the green-gate commit did not land" >&2; exit 1; }
+[[ -f "$STATIC_REPROOF_POLICY_ENGINE_MARKER" ]] \
+  || { echo "static re-proof fixture: the proof-built policy engine branch was not exercised" >&2; exit 1; }
 
-# Weight bookkeeping is NON-FATAL by proof, not by inspection: with
-# the stub engine refusing the weight verb outright, a lawful commit
-# still concludes.
+# Weight bookkeeping is NON-FATAL by proof, not by inspection. The
+# proof-built engine refuses the weight verb; the live stub below is stale and
+# cannot replace the prospective policy owner.
 cat >"$fixture_root/bin/metasystem" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -123,6 +158,12 @@ case "$1 $2" in
   "proc started-at") echo 1 ;;
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token") : ;;
+  "behavior-surface select")
+    while IFS= read -r -d '' path; do
+      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|plans/receipts.log|metasystem.conf.local) ;;
+        *) printf '%s\0' "$path" ;;
+      esac
+    done ;;
   "gate weight-add") echo "stub weight refusal" >&2; exit 1 ;;
   *) : ;;
 esac
@@ -321,5 +362,27 @@ stamped=$(git -C "$fixture_root" log -1 --format=%B)
 machine_line=$(grep '^Machine: ' <<<"$stamped" | head -1)
 [[ "$machine_line" == "Machine: fixture-machine+"* ]] \
   || { echo "static re-proof fixture: the landing's Machine trailer is not the enrolled nickname: ${machine_line:-absent}" >&2; exit 1; }
+
+# Leg 11: replacing a whole projected directory with one staged symlink must
+# refuse just like a symlink at a critical leaf. Git records only the target
+# text while the proof can follow an external directory tree.
+directory_target=$tmp/projected-directory-target
+subdirectory_target=$tmp/projected-subdirectory-target
+mkdir "$directory_target" "$subdirectory_target"
+printf 'external proof input\n' >"$directory_target/project-rules.md"
+printf 'package gaterun\n' >"$subdirectory_target/weight.go"
+ln -s "$directory_target" "$fixture_root/docs"
+ln -s "$subdirectory_target" "$fixture_root/internal/gaterun"
+git -C "$fixture_root" add docs internal/gaterun
+set +e
+directory_symlink=$($fixture_root/scripts/agents/commit.sh __lease-held human -m "must refuse directory symlink" 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: a staged directory-level symlink did not refuse the commit" >&2; exit 1; }
+grep -Fq "docs" <<<"$directory_symlink" \
+  || { echo "static re-proof fixture: the directory symlink refusal did not name the path: $directory_symlink" >&2; exit 1; }
+grep -Fq "internal/gaterun" <<<"$directory_symlink" \
+  || { echo "static re-proof fixture: the projected subdirectory symlink refusal did not name the path: $directory_symlink" >&2; exit 1; }
 
 echo "static re-proof fixtures: PASSED"

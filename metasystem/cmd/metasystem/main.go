@@ -187,6 +187,18 @@ func families() []family {
 			},
 		},
 		{
+			name:    "behavior-surface",
+			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
+			verbs: []verb{
+				{"policy", "print the embedded versioned policy", runBehaviorSurfacePolicy},
+				{"classify", "classify one path and optionally report projection membership", runBehaviorSurfaceClassify},
+				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
+				{"list", "list existing members of one projection", runBehaviorSurfaceList},
+				{"digest", "print a projection-scoped digest report naming its endpoint", runBehaviorSurfaceDigest},
+				{"skip-allowed", "exit 0 only for a policy-declared delivery-contract skip family", runBehaviorSurfaceSkipAllowed},
+			},
+		},
+		{
 			name:    "gate",
 			summary: "gate-run markers: know when a gate is in flight",
 			verbs: []verb{
@@ -195,7 +207,9 @@ func families() []family {
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"weight-add", "fold a landing's measured weight into the battery accumulator (numstat on stdin)", runGateWeightAdd},
 				{"weight-check", "exit 1 when accumulated feature weight makes the milestone battery worth running", runGateWeightCheck},
-				{"weight-reset", "reset the accumulator after a green milestone battery", runGateWeightReset},
+				{"weight-checkpoint", "checkpoint the accumulator for one isolated milestone battery", runGateWeightCheckpoint},
+				{"weight-abandon", "terminalize a non-green checkpoint without subtracting weight", runGateWeightAbandon},
+				{"weight-reset", "consume one green battery checkpoint and publish reset.json", runGateWeightReset},
 			},
 		},
 		{

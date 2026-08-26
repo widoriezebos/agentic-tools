@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "enginePaths": [
+    "cmd/**",
+    "internal/**",
+    "scripts/agents/**",
+    "go.mod",
+    "go.sum"
+  ],
+  "payloadRoots": [
+    ".gitattributes",
+    ".gitignore",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "cmd/**",
+    "docs/**",
+    "go.mod",
+    "go.sum",
+    "internal/**",
+    "metasystem.conf",
+    "optional-skills/**",
+    "plans/README.md",
+    "scripts/**",
+    "skills/**",
+    "wow.md"
+  ],
+  "coordinationPaths": [
+    "artifacts/**",
+    "plans/goals/**",
+    "plans/goals.md",
+    "plans/goals-accepted.json",
+    "plans/receipts.log"
+  ],
+  "repositoryOperationalDataPaths": [
+    "benchmark/__pycache__/**",
+    "benchmark/results/**",
+    "benchmark/specs/bm-1/grader/__pycache__/**",
+    "benchmark/specs/bm-2/grader/__pycache__/**",
+    "benchmark/specs/bm-2d/grader/__pycache__/**",
+    "benchmark/specs/bm-2dc/grader/__pycache__/**",
+    "benchmark/specs/bm-2s/grader/__pycache__/**",
+    "benchmark/trials-root.local",
+    "evidence/**"
+  ],
+  "tailoredPaths": {
+    "configuration": [
+      "docs/project-rules.md",
+      "metasystem.conf",
+      "metasystem.conf.local",
+      "optional-skills/**"
+    ],
+    "registrations": [
+      ".agents/**",
+      ".claude/**",
+      ".devin/**"
+    ],
+    "ignore-files": [
+      ".gitattributes",
+      ".gitignore"
+    ],
+    "fresh-ledgers": [
+      "plans/goals/**",
+      "plans/goals.md",
+      "plans/goals-accepted.json",
+      "plans/instruction-ledger.md",
+      "plans/known-issues.md",
+      "plans/receipts.log"
+    ]
+  },
+  "nonRepositoryPaths": [
+    ".git/**",
+    "bin/**",
+    "metasystem.conf.local"
+  ],
+  "deliveryContractSkips": [
+    "witness-engine-gate",
+    "supervision-go-fixtures",
+    "gate-fence-fixtures",
+    "gate-fail-open-tripwire",
+    "supervision and census fixtures",
+    "supervisor fingerprint heal harness",
+    "mission-fixtures",
+    "conformance-fixtures",
+    "goal-cli-fixtures",
+    "telemetry-census-fixtures",
+    "return-schema-fixtures",
+    "authority-regression-fixtures",
+    "pre-commit-guard-fixtures",
+    "static-reproof-fixtures",
+    "project-extra-suites",
+    "record-protocol-fixtures",
+    "evidence-segment-fixtures",
+    "lease-succession-fixtures",
+    "flight-recorder-fixtures",
+    "acp-fixtures",
+    "delegate-caps-fixtures",
+    "adapter-deadline-fixtures",
+    "dispatcher, adapter selftest, and mission-runner process fixtures"
+  ]
+}

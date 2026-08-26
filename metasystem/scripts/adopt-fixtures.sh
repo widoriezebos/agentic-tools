@@ -616,7 +616,7 @@ EVIDENCE
   sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
   mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
   fill_harness_conf "$tmp/adopt-copy/metasystem.conf" "$tmp/adopt-copy-evidence"
-  bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >"$tmp/nested-copied-skills.log" 2>&1 \
+  bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-copied-skills.log" 2>&1 \
     || { echo "adopt: copied-skills target failed validation" >&2; tail -20 "$tmp/nested-copied-skills.log" >&2; exit 1; }
   echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
   if bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >/dev/null 2>&1; then

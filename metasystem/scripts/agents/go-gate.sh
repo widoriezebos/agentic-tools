@@ -111,23 +111,31 @@ fi
 # METASYSTEM_GATE_WITNESS and skip re-proving byte-identical content.
 # Everything here fails toward the full gate: any doubt, run it all.
 
-# The digest covers what the gate consumes: the sorted (path, kind, mode,
-# content) manifest of the engine inputs, the gate script itself, and the
-# toolchain identity. git hash-object works outside a repository, so the
-# same computation runs in snapshots and staged targets.
-gate_input_digest() {
+# The engine built from the judged bytes owns every byte projection. Its JSON
+# report names the policy version, projection, and endpoint; version equality
+# is checked explicitly beside digest equality. Toolchain identity is an
+# independent equality witness and is never mixed into a byte digest.
+gate_surface_identity() { # ENGINE|PAYLOAD, endpoint, optional source path manifest -> version digest
+  local report digest version manifest=${3:-} manifest_args=()
+  [[ -z "$manifest" ]] || manifest_args=(--paths-from "$manifest")
+  report=$(go run ./cmd/metasystem behavior-surface digest \
+    --root "$root" --projection "$1" --endpoint "$2" "${manifest_args[@]+"${manifest_args[@]}"}") || return 1
+  digest=$(printf '%s\n' "$report" | sed -n 's/.*"surfaceDigest":"\([a-f0-9]*\)".*/\1/p')
+  version=$(printf '%s\n' "$report" | sed -n 's/.*"policyVersion":\([0-9][0-9]*\).*/\1/p')
+  [[ "$digest" =~ ^[a-f0-9]{64}$ && "$version" =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s %s\n' "$version" "$digest"
+}
+
+gate_surface_digest() { # compatibility for the build stamp path
+  local version digest
+  read -r version digest < <(gate_surface_identity "$@") || return 1
+  printf '%s\n' "$digest"
+}
+
+gate_toolchain_identity() {
   {
     go version
     go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
-    find cmd internal scripts/agents go.mod go.sum \( -type f -o -type l \) 2>/dev/null \
-      | LC_ALL=C sort | while IFS= read -r entry; do
-        if [[ -L "$entry" ]]; then
-          printf '%s L - %s\n' "$entry" "$(readlink "$entry")"
-        else
-          mode=$(stat -c '%a' "$entry" 2>/dev/null || stat -f '%Lp' "$entry")
-          printf '%s F %s %s\n' "$entry" "$mode" "$(git hash-object "$entry")"
-        fi
-      done
   } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
 }
 
@@ -168,15 +176,37 @@ witness_acceptable() {
   dir_mode=$(stat -c '%a' "$canonical_root" 2>/dev/null || stat -f '%Lp' "$canonical_root")
   file_mode=$(stat -c '%a' "$canonical_witness" 2>/dev/null || stat -f '%Lp' "$canonical_witness")
   [[ "$dir_mode" == 700 && "$file_mode" == 600 ]] || { echo "witness permissions are not 0700/0600" >&2; return 3; }
-  local recorded_run recorded_digest
+  local recorded_run recorded_version recorded_digest recorded_payload recorded_toolchain recorded_manifest
   recorded_run=$(sed -n 's/.*"runId":"\([^"]*\)".*/\1/p' "$canonical_witness")
-  recorded_digest=$(sed -n 's/.*"digest":"\([^"]*\)".*/\1/p' "$canonical_witness")
-  [[ "$recorded_run" == "$run" && -n "$recorded_digest" ]] || { echo "witness run identity mismatch" >&2; return 3; }
+  recorded_version=$(sed -n 's/.*"policyVersion":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
+  recorded_digest=$(sed -n 's/.*"engineDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  recorded_payload=$(sed -n 's/.*"payloadDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  recorded_toolchain=$(sed -n 's/.*"toolchainIdentity":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  recorded_manifest=$(sed -n 's/.*"payloadManifest":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  [[ "$recorded_run" == "$run" && "$recorded_version" =~ ^[1-9][0-9]*$ && -n "$recorded_digest" && -n "$recorded_payload" && -n "$recorded_toolchain" && -n "$recorded_manifest" ]] \
+    || { echo "witness run or projection identity is incomplete" >&2; return 3; }
+  [[ "$recorded_manifest" != */* && "$recorded_manifest" != .* ]] \
+    || { echo "witness payload manifest name is unsafe" >&2; return 3; }
+  local payload_manifest="$canonical_root/$recorded_manifest"
+  [[ ! -L "$payload_manifest" && -f "$payload_manifest" ]] \
+    || { echo "witness payload manifest is not a plain regular file" >&2; return 3; }
+  local manifest_mode
+  manifest_mode=$(stat -c '%a' "$payload_manifest" 2>/dev/null || stat -f '%Lp' "$payload_manifest")
+  [[ "$manifest_mode" == 600 ]] || { echo "witness payload manifest permission is not 0600" >&2; return 3; }
   local refusal
   if refusal=$(witness_refusal); then echo "witness refused here: $refusal" >&2; return 3; fi
-  local local_digest
-  local_digest=$(gate_input_digest)
-  [[ "$local_digest" == "$recorded_digest" ]] || { echo "witness digest mismatch (theirs ${recorded_digest:0:8}, ours ${local_digest:0:8})" >&2; return 3; }
+  local local_version local_digest local_payload_version local_payload local_toolchain
+  read -r local_version local_digest < <(gate_surface_identity ENGINE "delivery endpoint $root") || return 3
+  read -r local_payload_version local_payload < <(gate_surface_identity PAYLOAD "delivery endpoint $root" "$payload_manifest") || return 3
+  local_toolchain=$(gate_toolchain_identity) || return 3
+  [[ "$local_version" == "$recorded_version" && "$local_payload_version" == "$recorded_version" ]] \
+    || { echo "behavior-surface policy version mismatch between outer snapshot and delivery endpoint (theirs $recorded_version, ours ENGINE=$local_version PAYLOAD=$local_payload_version)" >&2; return 3; }
+  [[ "$local_digest" == "$recorded_digest" ]] \
+    || { echo "ENGINE surface digest mismatch between outer snapshot and delivery endpoint (theirs ${recorded_digest:0:8}, ours ${local_digest:0:8})" >&2; return 3; }
+  [[ "$local_payload" == "$recorded_payload" ]] \
+    || { echo "PAYLOAD surface digest mismatch between outer snapshot and delivery endpoint (theirs ${recorded_payload:0:8}, ours ${local_payload:0:8})" >&2; return 3; }
+  [[ "$local_toolchain" == "$recorded_toolchain" ]] \
+    || { echo "toolchain identity mismatch between outer snapshot and delivery endpoint (theirs ${recorded_toolchain:0:8}, ours ${local_toolchain:0:8})" >&2; return 3; }
   echo "$recorded_digest"
   return 0
 }
@@ -194,14 +224,18 @@ fi
 
 if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
   if digest=$(witness_acceptable); then
-    # Compilation and the self-gating proof stay real: the binary is
-    # rebuilt from the accepted content and stamped with its digest.
-    METASYSTEM_BUILD_STAMP="witness-${digest:0:12}" bash scripts/agents/go-build.sh \
-      || { echo "go gate: build failed under an accepted witness" >&2; exit 1; }
-    echo "go gate: PASSED (outer witness ${digest:0:8}, this boundary)"
-    exit 0
+    if "$root/bin/metasystem" behavior-surface skip-allowed --family witness-engine-gate >/dev/null 2>&1; then
+      # Compilation and the self-gating proof stay real: the binary is
+      # rebuilt from the accepted content and stamped with its digest.
+      METASYSTEM_BUILD_STAMP="witness-${digest:0:12}" bash scripts/agents/go-build.sh \
+        || { echo "go gate: build failed under an accepted witness" >&2; exit 1; }
+      echo "go gate: PASSED (outer witness ${digest:0:8}, this boundary)"
+      exit 0
+    fi
+    echo "go gate: witness acceptable, but the behavior-surface policy does not authorize witness-engine-gate; running the full gate" >&2
+  else
+    echo "go gate: witness not accepted; running the full gate" >&2
   fi
-  echo "go gate: witness not accepted; running the full gate" >&2
 fi
 
 # Rebuilding bin/metasystem while a FOREIGN gate run is live would swap the
@@ -282,8 +316,21 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
 # digest describes bytes nothing above mutates, and the stamp exports
 # before every build that consumes it.
 witness_digest=
+witness_payload_digest=
+witness_policy_version=
+witness_toolchain_identity=
+witness_payload_manifest=
 if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off && ! witness_refusal >/dev/null; then
-  witness_digest=$(gate_input_digest)
+  witness_payload_manifest="${METASYSTEM_GATE_WITNESS_WRITE%.json}.payload-paths.nul"
+  umask 077
+  go run ./cmd/metasystem behavior-surface list --root "$root" --projection PAYLOAD --nul \
+    >"$witness_payload_manifest"
+  chmod 600 "$witness_payload_manifest"
+  read -r witness_policy_version witness_digest < <(gate_surface_identity ENGINE "outer snapshot $root")
+  read -r witness_payload_version witness_payload_digest < <(gate_surface_identity PAYLOAD "outer snapshot $root" "$witness_payload_manifest")
+  [[ "$witness_payload_version" == "$witness_policy_version" ]] \
+    || { echo "go gate: behavior-surface projections reported different policy versions" >&2; exit 1; }
+  witness_toolchain_identity=$(gate_toolchain_identity)
   export METASYSTEM_BUILD_STAMP="witness-${witness_digest:0:12}"
   # A fresh snapshot has no bin/metasystem yet, and the binary-driven
   # fixtures (preflight and friends) SKIP without it — the gate installs
@@ -374,10 +421,26 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off; then
   if refusal=$(witness_refusal); then
     echo "go gate: witness not written ($refusal)" >&2
   else
-    [[ -n "$witness_digest" ]] || witness_digest=$(gate_input_digest)
+    if [[ -z "$witness_digest" ]]; then
+      read -r witness_policy_version witness_digest < <(gate_surface_identity ENGINE "outer snapshot $root")
+    fi
+    if [[ -z "$witness_payload_manifest" ]]; then
+      witness_payload_manifest="${METASYSTEM_GATE_WITNESS_WRITE%.json}.payload-paths.nul"
+      umask 077
+      go run ./cmd/metasystem behavior-surface list --root "$root" --projection PAYLOAD --nul \
+        >"$witness_payload_manifest"
+      chmod 600 "$witness_payload_manifest"
+    fi
+    if [[ -z "$witness_payload_digest" ]]; then
+      read -r witness_payload_version witness_payload_digest < <(gate_surface_identity PAYLOAD "outer snapshot $root" "$witness_payload_manifest")
+      [[ "$witness_payload_version" == "$witness_policy_version" ]] \
+        || { echo "go gate: behavior-surface projections reported different policy versions" >&2; exit 1; }
+    fi
+    [[ -n "$witness_toolchain_identity" ]] || witness_toolchain_identity=$(gate_toolchain_identity)
     umask 077
-    printf '{"digest":"%s","runId":"%s","passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
-      "$witness_digest" "${METASYSTEM_GATE_WITNESS_RUN:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
+      "$witness_policy_version" "$witness_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
+      "${METASYSTEM_GATE_WITNESS_RUN:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
     chmod 600 "$METASYSTEM_GATE_WITNESS_WRITE"
     echo "go gate: witness written (${witness_digest:0:8})"

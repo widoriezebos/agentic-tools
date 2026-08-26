@@ -90,9 +90,11 @@ Three tiers, imports point strictly downward:
 
 1. **Foundations** — packages with no metasystem imports:
    `atomicfile`, `boundedexec`, `identity`, `wiredoc`, `jsonedit`,
-   `lock`, `gaterun`.
+   `lock`.
 2. **Domain packages** — the decision owners under `internal/`,
-   importing foundations and each other sparingly.
+   importing foundations and each other sparingly. `gaterun` is in this tier:
+   weight transactions compose `atomicfile`, `behaviorsurface`, and
+   `identity`.
 3. **`cmd/metasystem`** — flag parsing and routing only; one file per
    verb family; no logic worth testing lives here.
 
@@ -113,6 +115,7 @@ One line per package; the package doc is the full story.
 | `audit` | the shipped instruction-asset audit and the development-time coverage ratchet |
 | `authority` | the control-plane authority matrix: may this classified caller write in this mode |
 | `boundedexec` | running external commands under a time bound |
+| `behaviorsurface` | the versioned ENGINE, LANDING, and PAYLOAD byte projections plus delivery-contract skip set |
 | `capability` | selecting and validating the capability snapshot for one dispatch identity |
 | `census` | classifying the machine's processes: announced, custody, or untracked |
 | `config` | conf reading at three depths: hot-path ConfValue, layered Get, domain Validate |
@@ -120,7 +123,7 @@ One line per package; the package doc is the full story.
 | `dispatch` | the delegate-job control plane: record CAS spine, attestation, envelopes, mission proof, mirroring, close, critique policy, owner lock, briefs, usage |
 | `events` | the flight-recorder emitter |
 | `evidence` | the durable-evidence collector: mirrored chains, residue pruning, archive aging |
-| `gaterun` | gate-run markers: is a gate in flight |
+| `gaterun` | gate-run markers plus milestone-battery weight and checkpoint transactions |
 | `hooks` | self-check that the repo runs under its own metasystem |
 | `host` | per-turn host work around one CLI invocation: envelopes, usage, return extraction |
 | `identity` | provable process identity: pid plus start time, never claims |
@@ -155,6 +158,7 @@ it does; this table adds where the decisions live.
 | `host` | `host`, `usage` |
 | `audit` | `audit` |
 | `gate` | `gaterun` |
+| `behavior-surface` | `behaviorsurface` |
 | `report` | `report` |
 | `receipt` | `receipt` |
 | `schema` | `returnschema` |

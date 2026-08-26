@@ -32,33 +32,49 @@ Keep reviews small and cheap:
 - Commit messages state intent and observable effect. Follow the project's authorship convention for agent-written changes.
 - Credentials and secrets never enter commits, logs, plans, or handoff notes. If one leaks into history, escalate immediately. Removal is a human-reserved decision.
 
-## The Landing Battery, Tiered
+## The Milestone Battery, Weight-Triggered
 
-Verification is tiered so iteration stays fast and the guarantee stays
-whole. While a change is still moving (a review loop, a fix round),
-run the TOUCHED-SURFACE tier: the changed packages' tests plus the
-fixture legs the diff touches — minutes, not hours. The FULL battery
-runs ONCE, on the exact final bytes, before anything pushes, and in
-the template checkout it is ONE command: `scripts/validate-metasystem.sh`
-— template mode already runs the adoption and dispatch fixture suites
-inside it, so running those again afterward doubles the cost and
-proves nothing new (measured: the doubled protocol cost 3h22 where the
-single run costs ~1h40). Nothing lands without the full battery; only
-its cadence is tiered, never its existence.
+Verification is tiered so ordinary landings stay fast and accumulated change
+still receives the expensive proof. While a change is moving, and at its
+landing boundary, run the TOUCHED-SURFACE tier: the changed packages' tests,
+the fixture legs the diff touches, and the static proof built from the
+prospective landing. The landing wrapper weighs exactly the behavior-surface
+policy's `LANDING` projection. Coordination-only changes weigh zero; the due
+line is a scheduling nudge, never a landing refusal.
 
-Two rules keep the full battery's wall clock honest:
+When accumulated feature weight reaches the configured threshold, run the
+FULL milestone battery once with:
 
-- One suite run, not two. The engine gate (`scripts/agents/go-gate.sh`)
-  runs the race suite with coverage; a separate plain `go test ./...`
-  before it proves nothing the gate does not re-prove. Run the gate.
-- One proof per tree, transferred where the law allows. The witness
-  gate (`scripts/agents/witness-gate.sh`, D33) proves clean-HEAD bytes
-  once; nested DELIVERY-CONTRACT validations verify by digest instead
-  of re-running the race suite. Plain nested validations refuse the
-  witness by design today — extending acceptance to any
-  digest-matching nested run is its own designed change, not a flag to
-  flip. A dirty tree falls back to full re-proving, so the transfer
-  never weakens what a landing must show.
+```sh
+scripts/agents/milestone-battery.sh
+```
+
+That command records the current commit, creates an independent local clone
+detached at it, builds and validates with that clone's own engine and the
+shared Go cache, and reports the exact subject commit it judged. Live goal
+writes, commits, rebases, checkouts, configuration edits, and supervision use
+different state and cannot change the recorded subject. The clone receives
+only the committed generic battery configuration; the live `conf.local` and
+the live supervision registry are not copied.
+
+Every outcome publishes a run-scoped evidence envelope to the durable
+evidence home before teardown. A green run then consumes only the accumulator
+portion it checkpointed, preserving landings that arrived during validation.
+A red or aborted run abandons its checkpoint and resets nothing. Evidence-copy
+failure retains the clone and forbids reset; reset-appendix publication is
+repairable from the accumulator on the next weight read. Findings from a
+milestone battery fix forward.
+
+Two rules keep its wall clock and proof transfer honest:
+
+- One suite run, not two. The engine gate (`scripts/agents/go-gate.sh`) runs
+  the race suite with coverage; a separate plain `go test ./...` before it
+  proves nothing the gate does not re-prove.
+- One proof per byte projection. The versioned behavior-surface owner names
+  `ENGINE`, `LANDING`, and `PAYLOAD` separately. Nested delivery-contract
+  validation may skip only the policy's enumerated families, and only when
+  both `PAYLOAD` digest equality and independent toolchain identity equality
+  hold. A mismatch runs the omitted proof instead of accepting reuse.
 
 ## Review Guide in Reports
 

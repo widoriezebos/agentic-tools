@@ -7,6 +7,7 @@ usage() {
 
 delegate_scope=0
 delivery_contract=0
+delivery_reuse=0
 case ${1:-} in
   '') ;;
   --delegate-scope) [[ $# -eq 1 ]] || { usage; exit 2; }; delegate_scope=1 ;;
@@ -23,7 +24,6 @@ case ${1:-} in
     # before the later scope blocks, and a witness is honored only when
     # the gate can see it arrived under the contract.
     export METASYSTEM_DELIVERY_CONTRACT=1
-    export METASYSTEM_SKIP_AGENT_FIXTURES=1
     ;;
   -h|--help) usage; exit 0 ;;
   *) usage; exit 2 ;;
@@ -37,7 +37,9 @@ delegate_owed_sections=(
 delegate_skipped_sections=()
 delivery_skipped=()
 delivery_contract_skip() { # family or section name; returns 0 = skip it
-  (( delivery_contract )) || return 1
+  (( delivery_contract && delivery_reuse )) || return 1
+  local policy_engine=${engine:-$root/bin/metasystem}
+  "$policy_engine" behavior-surface skip-allowed --family "$1" >/dev/null 2>&1 || return 1
   delivery_skipped+=("$1")
   return 0
 }
@@ -232,10 +234,13 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
       || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
     if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]] \
       && bash scripts/agents/go-gate.sh --witness-check-only >/dev/null 2>&1; then
+      delivery_reuse=1
       delivery_stamp=$(go version -m bin/metasystem | sed -n 's/.*BuildStamp=\(witness-[a-f0-9]*\).*/\1/p' | head -1)
-      delivery_recorded=$(sed -n 's/.*"digest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
+      delivery_recorded=$(sed -n 's/.*"engineDigest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
       [[ -n "$delivery_stamp" && "$delivery_stamp" == "witness-${delivery_recorded:0:12}" ]] \
         || { echo "delivery contract: binary stamp ${delivery_stamp:-absent} does not match the witness digest" >&2; exit 1; }
+    else
+      echo "delivery contract: payload or toolchain equality was not proven; every validation family will run" >&2
     fi
   fi
   # The engine-seam tripwire and the Go-vs-python census conformance
@@ -555,6 +560,9 @@ for link in \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/static-reproof-fixtures.sh \
+  scripts/agents/milestone-battery.sh \
+  scripts/agents/battery.conf.local.template \
+  scripts/agents/gate-run-freeze-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
@@ -594,13 +602,13 @@ done
 # so their supervisors and dispatch jobs cannot share lifecycle state. They
 # name S4-1 through S4-10 at their owning checks and contain no uncapped
 # process wait (IL-1).
-if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" || $delegate_scope -eq 1 ]]; then
-  if delegate_process_section "supervision and census fixtures" && ! delivery_contract_skip "supervision and census fixtures"; then
-    scripts/agents/supervision-fixtures.sh
-  fi
-  if delegate_process_section "supervisor fingerprint heal harness" && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
-    scripts/agents/fingerprint-harness.sh --iterations 2
-  fi
+if delegate_process_section "supervision and census fixtures" && ! delivery_contract_skip "supervision and census fixtures"; then
+  scripts/agents/supervision-fixtures.sh
+fi
+if delegate_process_section "supervisor fingerprint heal harness" && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
+  scripts/agents/fingerprint-harness.sh --iterations 2
+fi
+if ! delivery_contract_skip mission-fixtures; then
   scripts/agents/mission-fixtures.sh
 fi
 
@@ -629,6 +637,8 @@ bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
+bash -n scripts/agents/milestone-battery.sh
+bash -n scripts/agents/gate-run-freeze-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
@@ -674,7 +684,7 @@ if [[ -n "$extra_suites" ]]; then
       echo "declared extra suite is missing or not executable: $extra (validate.extra-suites is a promise; clean the key or restore the suite)" >&2
       exit 1
     fi
-    delivery_contract_skip "extra-suite-$(basename "$extra")" || bash "$extra"       || { echo "declared extra suite failed: $extra" >&2; exit 1; }
+    delivery_contract_skip project-extra-suites || bash "$extra"       || { echo "declared extra suite failed: $extra" >&2; exit 1; }
   done
 fi
 delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
@@ -1842,20 +1852,9 @@ done
 # process-lifecycle runs while a direct adopted-repository validation still
 # exercises the full contract.
 if delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
-  && ! delivery_contract_skip "dispatcher, adapter selftest, and mission-runner process fixtures" \
-  && [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
+  && ! delivery_contract_skip "dispatcher, adapter selftest, and mission-runner process fixtures"; then
   # Extracted to the sub-suite shape (script-validate-4/D35).
   bash scripts/agents/dispatch-fixtures.sh
-  # Nested runs spawned later must not re-enter the agent fixtures this
-  # outer run just owned — the export lived at the block's tail and is the
-  # ORCHESTRATOR's to make (a child's export dies with it).
-  export METASYSTEM_SKIP_AGENT_FIXTURES=1
-fi
-if (( delegate_scope )); then
-  # Nested adopted-copy validations exercise the same static and grammar
-  # checks, but must not re-enter process-owning fixtures after this outer run
-  # has deliberately left them to the orchestrator.
-  export METASYSTEM_SKIP_AGENT_FIXTURES=1
 fi
 
 # The shipped Stop hook must stay rooted and surface via JSON output: hooks
@@ -2345,6 +2344,7 @@ fi
 # adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
 if (( template_mode )); then
   bash scripts/adopt-fixtures.sh
+  bash scripts/agents/gate-run-freeze-fixtures.sh
 fi
 
 # watch-background-jobs: all four reportable states plus baseline suppression.
@@ -2463,8 +2463,12 @@ scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/de
 
 if (( delivery_contract )); then
   echo "metasystem delivery contract validated"
-  echo "engine-behavior families skipped behind the outer run's digest equality:"
-  printf -- '- %s\n' ${delivery_skipped[@]+"${delivery_skipped[@]}"}
+  if (( delivery_reuse )); then
+    echo "validation families skipped behind PAYLOAD and toolchain equality under the behavior-surface policy:"
+    printf -- '- %s\n' ${delivery_skipped[@]+"${delivery_skipped[@]}"}
+  else
+    echo "no validation family was skipped because PAYLOAD and toolchain equality was not proven"
+  fi
 elif (( delegate_scope )); then
   [[ ${#delegate_skipped_sections[@]} -eq ${#delegate_owed_sections[@]} ]] \
     || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
@@ -2476,12 +2480,8 @@ elif (( delegate_scope )); then
   echo "orchestrator still owes these process-visibility sections:"
   printf -- '- %s\n' "${delegate_skipped_sections[@]}"
 else
-  # A green full battery is the milestone that resets the feature-
-  # weight window; bookkeeping never overrules the verdict above.
-  if [[ -x bin/metasystem ]]; then
-    bin/metasystem gate weight-reset --root "$root" \
-      --commit "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" 2>/dev/null \
-      || true
-  fi
+  # The isolated milestone controller owns checkpoint consumption against the
+  # real checkout. A direct validation proves this tree but has no transaction
+  # identity and therefore resets nothing.
   echo "metasystem validation passed"
 fi
