@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Goal verbs and commits refuse mechanically while a registered gate run is live on the checkout, outside the run's own chain — the ledger freeze during batteries becomes machinery (IL-29, retro-2026-08-25)
 - Origin: main
-- Next step: ACCEPTANCE PLAN (Wido-agreed 2026-08-26): (1) model.fake sweep lands (all fake-runtime beds declare their model); (2) ONE enumeration pass — every suite section run continue-on-failure via the new enumeration mode in the suite runner, landings held, output = the complete defect list as a durable record; (3) codex batch-fixes the list; (4) ONE isolated battery run = the real acceptance. Run history: r1 red 13m python ratchet (fixed 2c572e4); r2 evidence-incomplete 57m empty-runtime census + symlink evidence copy (fixed 5d24167, retention path proven live); r3 red 32m model.fake supervision bed (fixed 9f71930); r4 red 32m same class in the adopt bed (sweep in flight). Battery machinery itself: correct in all four runs.
+- Next step: WIDO'S CONDITIONAL WORD (2026-08-26, 'Approved in full'): conclude this goal and the battery set WITHOUT further ask the moment the acceptance battery runs green. Plan unchanged: sweep lands -> enumeration pass -> batch fix -> one green battery -> conclude -> witness-law-extension.
 - OpenedAt: 2026-08-25T12:31:23Z
-- Revision: 10
+- Revision: 11
 - Claimed: machine=m1 lineage=coordinator at=2026-08-25T14:12:28Z
 
 History:
@@ -19,4 +19,5 @@ History:
 - 2026-08-25T19:07:00Z E6W4188S3NA6MQ4TN3616EB3W9-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
 - 2026-08-26T06:57:06Z 3ZKHDYNT8MPXHRXZZG8YSG3RB6-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
 - 2026-08-26T11:05:21Z BVEKGPGJW36Q8RJRRS07NE5CKR-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
-Integrity: sha256=d9be18fbea7e4ebbf9239a86a79aa8e30f563095bfaee0a2b98b686117ece5d8
+- 2026-08-26T11:08:11Z 1300S4WATSH19JEGGMS3K3PW03-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
+Integrity: sha256=b8c27daf9907a421c36f13eaf9f563ae74e87f073c5b01297ee56c9a62eb0876
