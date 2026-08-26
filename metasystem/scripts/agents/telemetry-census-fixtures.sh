@@ -26,7 +26,7 @@ dispatch="$fixture_root/scripts/agents/dispatch.sh"
 # the ambient ancestry classifies UNTRUSTED in this sandbox, so this
 # shell announces itself as the sandbox's main — what a starting
 # main does; a terminal run passed as HUMAN and still does.
-printf 'metasystem.runtimes=fake\n' > "$fixture_root/metasystem.conf"
+printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$fixture_root/metasystem.conf"
 "$fixture_root/bin/metasystem" lease announce --root "$fixture_root" \
   --session telemetry-census --pid $$ \
   --start "$("$fixture_root/bin/metasystem" proc started-at --pid $$)" \
@@ -85,7 +85,7 @@ run_model_case one-key actual-model '{"actual-model": {}}'
 # supervision fixtures, whose census freshness gate reads it.)
 census_checkout="$tmp/census-checkout"
 mkdir -p "$census_checkout/scripts/agents/adapters"
-printf 'metasystem.runtimes=fake\n' >"$census_checkout/metasystem.conf"
+printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' >"$census_checkout/metasystem.conf"
 printf '#!/usr/bin/env bash\ncase "$1" in signature) echo "match metasystem-fake-runtime-marker" ;; esac\n' \
   >"$census_checkout/scripts/agents/adapters/fake.sh"
 chmod +x "$census_checkout/scripts/agents/adapters/fake.sh"

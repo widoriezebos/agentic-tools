@@ -318,7 +318,7 @@ fi
 ARM
 chmod +x "$repo/metasystem/scripts/agents/arm-supervision.sh"
 
-printf 'evidence.root=<placeholder>\nmetasystem.runtimes=fake\n' >"$repo/metasystem/metasystem.conf"
+printf 'evidence.root=<placeholder>\nmetasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' >"$repo/metasystem/metasystem.conf"
 printf 'subject ledger\n' >"$repo/metasystem/plans/goals.md"
 printf 'subject receipts\n' >"$repo/metasystem/plans/receipts.log"
 printf 'metasystem.conf.local\nbin/\nartifacts/\n*.secret\n' >"$repo/metasystem/.gitignore"

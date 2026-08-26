@@ -175,6 +175,7 @@ cp metasystem.conf "$agent_repo/"
 # only harness-specific overrides ride --set.
 "$root/bin/metasystem" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
   --set evidence.root="$agent_evidence" \
+  --set role.default.model.fake=fake-model \
   --set watch.interval-sec=5 \
   --set census.log-max-bytes=4096 \
   --set role.investigator.runtime=fake \
@@ -573,7 +574,22 @@ cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 conf_edit "$agent_repo/metasystem.conf" replace-line-first '^model[.]tier[.]1=.*$' 'model.tier.1=fake-model'
 agent_fails malformed-tier-member 'not runtime-qualified' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-conf_edit "$agent_repo/metasystem.conf" replace-line-first '^role[.]design-critic[.]runtime=.*$' 'role.design-critic.runtime=ghost'
+# An adopted repository may rely on role.default.runtime while the template
+# carries this role-specific key. Replace or append so both shapes gain one
+# explicit invalid binding, then prove resolution sees it before validation.
+if grep -q '^role[.]design-critic[.]runtime=' "$agent_repo/metasystem.conf"; then
+  conf_edit "$agent_repo/metasystem.conf" replace-line-first '^role[.]design-critic[.]runtime=.*$' 'role.design-critic.runtime=ghost'
+else
+  printf 'role.design-critic.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
+fi
+invalid_role_runtime=$("$agent_config" get --key role.design-critic.runtime) || {
+  echo "invalid-role-runtime precondition failed: could not resolve role.design-critic.runtime after config mutation" >&2
+  exit 1
+}
+[[ "$invalid_role_runtime" == ghost ]] || {
+  echo "invalid-role-runtime precondition failed: role.design-critic.runtime resolved to '$invalid_role_runtime', expected 'ghost'" >&2
+  exit 1
+}
 agent_fails invalid-role-runtime 'outside metasystem.runtimes' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 printf 'mode.refactor.role.implementer.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
@@ -2477,6 +2493,7 @@ cp -R "$agent_repo" "$steward_repo"
 steward_repo=$(cd "$steward_repo" && pwd -P)
 rm -rf "$steward_repo/artifacts"
 "$steward_repo/bin/metasystem" config tailor --conf "$steward_repo/metasystem.conf" --runtimes fake \
+  --set role.default.model.fake=fake-model \
   --set role.steward-continuation.runtime=fake
 git -C "$steward_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid add -A
 git -C "$steward_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm steward-base

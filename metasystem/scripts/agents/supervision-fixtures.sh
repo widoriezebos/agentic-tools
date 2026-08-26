@@ -536,6 +536,7 @@ if [[ -z "$operator_runtimes" ]] \
   printf '[]\n' >"$operator_process_fixture"
   printf '{}\n' >"$operator_identity_fixture"
   conf_edit "$operator_harness/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=fake'
+  printf 'role.default.model.fake=fake-model\n' >>"$operator_harness/metasystem.conf"
   conf_edit "$operator_harness/metasystem.conf" replace-line-first '^watch[.]interval-sec=.*$' 'watch.interval-sec=1'
   operator_env=(env METASYSTEM_CENSUS_PROCESS_FILE="$operator_process_fixture"
     METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$operator_identity_fixture")
@@ -1260,7 +1261,7 @@ cp "$ms" "$foreign/repo/metasystem/bin/metasystem"
 # conf the engine now refuses THAT first (agnosticism B1's
 # leaked-fixture fence) and the foreign-owner rule below would never
 # be exercised.
-printf 'metasystem.runtimes=fake\n' > "$foreign/repo/metasystem/metasystem.conf"
+printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$foreign/repo/metasystem/metasystem.conf"
 # Third wrong-reason refusal, same lesson as the two above: the
 # caller must BE this sandbox's announced main. Ambient ancestry
 # answers agent under an agent-run suite, and require-holder then
@@ -1308,7 +1309,7 @@ cp "$ms" "$stop_root/bin/metasystem"
 # The fixture-identity env rides this run: the sandbox needs the
 # fake-mode conf or the engine's leaked-fixture fence (agnosticism B1)
 # refuses classification before the hook logic under test runs.
-printf 'metasystem.runtimes=fake\n' > "$stop_root/metasystem.conf"
+printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$stop_root/metasystem.conf"
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking

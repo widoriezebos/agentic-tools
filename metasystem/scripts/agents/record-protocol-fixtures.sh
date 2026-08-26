@@ -20,7 +20,7 @@ dispatch="$fixture_root/scripts/agents/dispatch.sh"
 # suite the ambient ancestry classifies UNTRUSTED in this sandbox,
 # so this shell announces itself as the sandbox's main — what a
 # starting main does; a terminal run passed as HUMAN and still does.
-printf 'metasystem.runtimes=fake\n' > "$fixture_root/metasystem.conf"
+printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$fixture_root/metasystem.conf"
 "$fixture_root/bin/metasystem" lease announce --root "$fixture_root" \
   --session record-protocol --pid $$ \
   --start "$("$fixture_root/bin/metasystem" proc started-at --pid $$)" \

@@ -1,64 +1,71 @@
 # 14. The Transition
 
-Thesis: existing teams should transfer work and authority gradually,
-using evidence from their current system rather than pretending to
-start from a clean design.
+Consider an established team receiving the session-expiry request while releases still depend on a familiar chain of tickets, code review, manual checks, and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may carry an unwritten warning about shared devices, an approval required by policy, or the only reliable way to reverse a failed session migration.
+
+The transition begins inside that uncertainty. The proposed delivery system first earns knowledge, then verification work, and only later authority. Existing protection remains until its purpose and a possible replacement are understood. Where no condition survives, the ceremony is removed with a recorded reason. This is a transfer from a running system, not a clean start.
 
 ## Begin with the existing system
 
-Running behavior, production data, tests, policies, incident history,
-and current ceremonies all contain clues about intent and protected
-conditions. These clues produce hypotheses, not truth: users and
-authorized stakeholders must confirm where observed behavior is a
-requirement, an accident, or a known defect.
+Before changing session behavior, a builder traces what the application actually does. New sessions last twelve hours, an older mobile client renews them differently, administrators receive a shorter limit, and a nightly task removes abandoned records. A test expects the twelve-hour value. A support guide tells people that closing the browser signs them out, although observation shows that this is not always true. None of these facts alone establishes intent.
+
+Running behavior, production measures, tests, policies, incident history, and current ceremonies are evidence of prior decisions. They also contain accidents, stale assumptions, and known defects. The twelve-hour test may protect a deliberate promise or merely freeze the behavior present when the test was written. The manual release step may preserve an important separation of authority or may remain because nobody has examined it since releases became reversible.
+
+The team writes hypotheses that authorized stakeholders and users can challenge. It asks whether existing sessions change immediately, whether administrators share the policy, what closing a browser means, and which interruptions are unacceptable. Reports and live behavior inform those questions without answering their value choices. The relevant intent-holders confirm requirements, identify defects, and record what remains unknown.
+
+This work is not an attempt to recover one perfect specification from history. No such document may ever have existed. It is a controlled conversion of scattered evidence into revisable intent. Where the evidence conflicts, the conflict stays visible until the responsible authority rules. That prevents the new system from giving accidental behavior the force of law merely because it is observable.
 
 ## Establish a measurable baseline
 
-Before replacing a practice, record what it costs and what outcome it
-appears to protect, including missed failures and recovery time. The
-baseline makes later claims of improvement testable and exposes areas
-where current protection is unknown rather than assumed.
+The current team takes two days to prepare and release an ordinary authentication change. A reviewer spends several hours reconstructing which paths it touches. Manual checks find some regressions, while production incidents show that sleeping devices and delayed responses have escaped in the past. Recovery usually takes forty minutes after the release owner decides to reverse. These facts form a baseline only when their sources and uncertainty are recorded.
+
+The baseline connects cost to protected outcomes. It measures elapsed delivery time and human attention, but also failures found before release, failures missed, the number of people exposed, time to containment, success of reversal, repeated sign-ins, lost work, and unresolved support reports. Activity counts alone cannot show whether the old process is safe. A quick release that harms users is not an efficient reference point, and an expensive review that never catches a relevant fault may not be protection.
+
+Some entries are blank. The team has never measured whether responsive readers are ejected or whether reversal restores rewritten sessions. That absence belongs in the baseline because present protection is unknown. A new measure earns value only if it distinguishes an outcome the team cares about.
+
+The baseline makes later claims testable. If the new path finds clock-boundary failures earlier but doubles recovery time, the trade is visible. If it lowers routine review effort while more people lose work, the transfer has failed. If both paths miss the same background-refresh error, coexistence has revealed a shared blind spot rather than agreement.
 
 ## Coexist before replacement
 
-New machinery first observes or operates beside the current process,
-with separate records showing agreement, disagreement, cost, and
-missed cases. Coexistence is temporary but useful: it reveals gaps in
-inferred intent and permits comparison without granting unearned
-authority.
+For the first expiry candidate, the new builder traces behavior and raises the three interpretations for one ruling, but it does not bypass the current request and approval path. Its independent examination runs beside the existing manual checks. Its release plan is compared with the runbook. Each path records what it would accept, refuse, or ask a responsible authority to decide.
+
+The paths agree that existing sessions need coverage and disagree about a late background response. The old checklist misses that case; the new examination catches it but overlooks an administrative exception known to support. Neither can replace the other yet. Together they expose missing intent and checks while the current authority boundary limits harm.
+
+This side-by-side operation is coexistence. It keeps separate records of agreement, disagreement, cost, delay, and missed cases. Separation prevents mutual influence from looking like independent confirmation. Neither path receives credit for a failure revealed only by the other.
+
+Coexistence should have a declared purpose and end condition. Without them, the team can acquire two permanent processes, each justified by the existence of the other. The purpose here is to test inferred intent, discriminating checks, recovery, and reporting across a stated set of authentication changes. The end condition is evidence sufficient to decide which protections can transfer, which require more work, and which were never real.
 
 ## Transfer verification and authority progressively
 
-Start with reversible, low-risk work; widen scope only after the new
-checks can distinguish working from broken behavior, records support
-recovery, and live outcomes meet the baseline. Authority transfers
-separately from task execution, so machinery may propose or test a change
-long before it may release, destroy, or waive anything.
+After several low-risk changes, the new checks reproduce known failures, permit legitimate behavior, bind results to the candidate, and preserve recovery state. The responsible authority then lets them satisfy part of the old manual verification and still authorizes release. Construction has moved; release authority has not.
+
+That separation is deliberate. Machinery may earn permission to propose a change before it earns permission to test it against sensitive data. It may earn permission to test before it may accept the result. It may accept a low-risk candidate before it may expose users, and it may release to a small group before it may expand further. Each permission moves only after evidence covers the action and consequence that permission controls.
+
+The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary, and includes behavior not previously tested. During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. Authorized release first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
+
+Scope widens from reversible, familiar, limited work because failures are cheaper to study and contain. That evidence does not authorize an irreversible migration or policy waiver. Authority follows demonstrated protection across the relevant risk range.
 
 ## Retain, replace, or discard according to the surviving condition
 
-The archaeology described in Chapter 4 first asks whether an invariant —
-a condition that must remain true — still survives. If none survives,
-discard the ceremony and record what was examined and why no replacement
-is needed; do not drop it silently. Replacement evidence is required
-only when a condition does remain and a new mechanism is proposed to
-serve it: until that mechanism demonstrably protects the condition,
-retain the ceremony, including any tacit knowledge, negotiation,
-accountability, or independent human scrutiny it carries.
+The weekly authentication meeting appears to be a status ceremony. Closer observation shows that a support representative uses it to raise lockout patterns that no technical measure records, while a security representative explains new threats. The meeting carries discovery and negotiation, not merely status. Until another practice reliably brings that evidence and those people into the decision, removing the meeting would remove a protected condition that the new machinery does not yet serve.
+
+The archaeology described in Chapter 4 asks for that condition before choosing a form. A durable live record may replace a daily status recital. A repeatable independent check may replace a manual test when it catches the same failures and permits valid cases. A discussion that exposes conflicting values remains human even when machinery prepares its evidence.
+
+There is also a deletion branch. Chapter 4 already established the sprint case in which no protected condition survives and the cadence is discarded. Transition does not repeat that archaeology. It confirms that the recorded decision still applies, removes the ceremony without replacement, and preserves the evidence and authority for the deletion. Without that record, simplification would be indistinguishable from neglect.
+
+Replacement evidence is required only when a protected condition remains. In that case, the old practice stays until the proposed mechanism demonstrates equal or better protection across a declared period and range of risk. The team may adapt the old practice while learning; it must not claim that a new dashboard preserves negotiation, accountability, or independent scrutiny merely because it has the same inputs on a screen.
 
 ## Make rollback part of adoption
 
-Every transferred responsibility needs a tested route back to the last
-safe process, data state, and authority boundary. If comparison exposes
-harm, unexplained divergence, or a missing appeal path, the system
-narrows authority, restores the previous protection, and keeps the
-evidence needed for another attempt.
+During a limited release, the new path reports healthy sign-in rates while support receives credible reports of lost work. The measures disagree, and the new appeal path has not yet routed those reports to the release authority. The system narrows its own permission, restores the previous release procedure and session behavior, and preserves both sets of evidence.
+
+That response was designed before authority moved. Every transferred responsibility has a tested route back to the last safe process, data state, and authority boundary. Reversing the application alone is insufficient if sessions have been irreversibly rewritten. Restoring the old runbook is insufficient if the people named in it no longer hold authority. A rollback therefore identifies what can be restored automatically, what requires compensating action, and which responsible authority may order it.
+
+Rollback contains harm and restores known protection while the team examines the divergence. The next attempt may add the missing user signal, narrow exposure, or retain human release authority longer. The failed comparison remains available for learning.
 
 ## Finish by removing proven duplication
 
-Coexistence that never ends becomes the double ceremony the transition
-was meant to avoid. Retire the old practice explicitly either when the
-record shows that no protected condition survives or when a replacement
-has demonstrated equal or better protection across a declared period
-and risk range. Retain the decision record and continue watching the
-live outcome when a replacement has taken over.
+After a declared period, the new examination has caught every failure found by the old session checklist, found additional boundary failures, permitted legitimate administrative cases, and supported faster recovery across the agreed risk range. The responsible authority explicitly retires that checklist. Its history and retirement reason remain available, but builders no longer perform it for reassurance.
+
+Other practices end differently. The fixed batching ceremony is removed because Chapter 4's established deletion decision still holds. The cross-functional discussion remains because it continues to expose conflicting intent. Human release approval narrows to unfamiliar or high-consequence changes, while authorized release handles established low-risk cases within observed bounds. Transition finishes responsibility by responsibility, not through one declaration that the new system is ready.
+
+The team has now handled the session-expiry change without pretending to start over. It inferred intent from imperfect evidence, established what the old path did and missed, ran old and new verification beside each other, reserved the hidden value choices for one responsible authority's ruling, and moved release power only as evidence earned it. It also kept a tested way back. Once duplication no longer protects anything, it removes it with a record. The destination is not two systems forever; it is one governed path whose authority has been learned in the presence of the system it replaces.

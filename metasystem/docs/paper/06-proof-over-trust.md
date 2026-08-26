@@ -1,88 +1,79 @@
 # 6. Proof over Trust
 
-Thesis: bounded proof and well-grounded evidence, not fluent claims,
-organize machine engineering.
+In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
+
+The difference between the explanation and the observation sets the organizing principle for machine engineering. Fluent claims can guide inquiry, but bounded proof and well-grounded evidence authorize consequential action. The aim is an honest account of what one exact result has and has not demonstrated.
 
 ## Evidence, proof, and the boundary between them
 
-Evidence is a traceable observation such as a test result, production
-measure, or independent review; proof is the narrower claim that a
-conclusion follows within stated boundaries and assumptions. This
-distinction will prevent a passing check from being presented as
-mathematical or universal certainty.
+A check sets a clock to one second after expiry, sends a request, and observes rejection. That result is evidence: a traceable observation relevant to the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is evidence of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition, and observable result.
 
-## Gates, not guidelines
+Proof is narrower. Within a controlled clock, a specified session state, a stated definition of activity, and the exact candidate examined, the check may demonstrate that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision, or user merely because the check passed.
 
-A gate is a check placed at the action it controls, with power to refuse
-that exact change and explain the refusal in plain language. The
-chapter will show why advice drifts when workers may ignore it, while a
-gate remains effective only if it binds the bytes and environment that
-will actually be released.
+The distinction prevents exaggeration without denying a bounded demonstration. Practical decisions use evidence; some pieces can prove a precise claim under stated conditions.
+
+## Enforced rules, not guidelines
+
+The first candidate reaches a release step with the late-response check failing. A guide beside the work says that all session checks should pass. The builder can still proceed if the guide has no power. When the same condition sits at the release action and refuses the candidate, the missing protection becomes effective rather than advisory.
+
+This is an enforced rule in the vocabulary established by Chapter 1. It controls a named action, judges the exact candidate presented for that action, and explains a refusal in plain language. “Release refused: a response received after expiry restores access” is governable. “Policy failed” is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
+
+Binding to the exact candidate matters. Evidence from an earlier version cannot authorize a later revision, even when the difference looks harmless. Release evidence must also bind to the environment; one configuration cannot authorize another that changes the behavior. An enforced rule remains trustworthy only while its evidence refers to what will act on users and no actor can bypass it without the named authority.
 
 ## Discriminating tests
 
-A useful test must fail on a relevant broken version, not merely pass
-on the proposed version. The section will cover known-bad fixtures,
-mutation or fault injection, trustworthy sources for expected results,
-and the need to preserve the test’s own provenance — its traceable
-source and change history.
+A test passes on the repaired candidate. The independent examiner then runs it against the earlier candidate that revives the expired session. If the test also passes there, it does not distinguish the claimed protection from its known failure. The passing result measures only the test's ability to agree with both versions.
 
-## Independent critics look for faults
+A discriminating test must fail on a relevant broken version and pass on the supported one. A preserved known-bad candidate can provide that comparison. Where no natural example exists, the independent examiner can introduce a small fault, such as reversing the expiry comparison or allowing refresh to extend the session, and confirm that the test detects it. The fault does not show that every fault will be found; it shows that this test responds to the behavior it claims to protect.
 
-Each new critic receives the authorized intent, relevant constraints,
-the builder’s finished work, and the resulting evidence, but not the
-builder’s reasoning trace or path to the work. Judging the work rather
-than the worker’s process preserves an independent view; Chapter 8
-explains how access to one durable record is limited by role to protect
-that fresh context. Repeated rounds stop when a bounded search finds no
-new material issue, a budget forces escalation, or a human must decide
-an open question. Stopping is explicit rather than a product of fatigue.
+Expected results need their own source. The rule that background refresh does not extend a session comes from the responsible authority's ruling, not from the builder's candidate and not from a test generator guessing what seems sensible. The test keeps that source and its own change history. This traceable origin is its provenance. Without it, a changed test can silently make a broken candidate look correct by changing the expected answer to match the implementation.
+
+## Independent examiners look for faults
+
+An independent examiner asked “does this solution look correct?” after reading the builder's full argument may follow the same path and admire the same choices. An independent examiner given the authorized intent, relevant constraints, finished candidate, and resulting evidence can instead begin from the claims that must survive and look for ways to break them. The object of judgment is the work, not the builder's story about reaching it.
+
+Each new independent examiner therefore receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That boundary protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a fresh machine instance that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority, but it cannot manufacture independence after the fact. Chapter 8 develops how one durable record can support both continuity and appropriately limited access.
+
+The independent examiner's stance is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests, and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision, not the moment a tireless process happens to stop speaking.
 
 ## Four questions set verification depth
 
-Verification depth is set by how severe the harm would be if the work
-were wrong, how unfamiliar the approach is, how many users or systems it
-can affect, and how much change has accumulated since the last broad
-check. The same four questions govern spending in Chapter 11, and the
-price of parallel attempts includes comparing and judging them rather
-than producing alternatives alone. A one-line authorization change can
-therefore require human review and deep testing while a large batch of
-low-impact text changes can use cheap automated checks.
+Changing a comma in internal help text and reversing one comparison in account authorization can each alter one line. Line count says little about the evidence either change deserves. The authorization error can expose every signed-in account; the text change may be immediately reversible and affect no behavior.
+
+Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Consequence sets the strength of evidence. Novelty widens challenge beyond checks shaped by the old design. Broad exposure raises the cost of one missed fault. Accumulation catches interactions among modest changes.
+
+Chapter 11 applies the same questions to production, comparison, and marginal-spending decisions.
 
 ## What proof cannot prove
 
-Proof cannot establish more than its boundary, expected-result source,
-and assumptions allow: green tests can encode the same mistaken rule
-as the implementation, and a fixed set of test cases cannot cover every
-situation the software will meet. Intent alignment, unknown effects, and
-whether a result is acceptable to affected people therefore remain
-questions for live evidence and judgment.
+Every session check passes, but both the candidate and the checks define a visible page as proof of human activity. An unattended computer with the page open therefore stays signed in forever. The tests accurately demonstrate behavior under their rule. The rule is the mistake.
+
+No proof exceeds its boundary, source of expected results, and assumptions. A test derived from the same mistaken interpretation as the candidate can make agreement look like correctness. Several independent examiners using the same model or data can repeat one blind spot. A fixed set of cases cannot cover every network delay, assistive technology, future browser, or user behavior the service will meet.
+
+The response is bounded language, not despair. The system records what was examined, which expected results came from authorized intent, which sources were independent, and which assumptions remain. Live observation then tests the result against situations the controlled examination did not include. Evidence can challenge intent as well as construction. Whether a burden on affected people is acceptable remains a judgment, not a fact that more passing checks can settle.
 
 ## Evidence that triggers human review
 
-Machine evidence can suffice for reversible, well-understood changes
-with strong tests that distinguish working from broken behavior and low
-risk under the four questions above. It must trigger human review for
-value judgments, irreversible or high-consequence actions, unfamiliar
-weakly tested work, and cases where builders, critics, or test generators
-may share a model, data source, or assumption. These are the evidence
-conditions that require review; Chapter 13 owns reviewer authority,
-accountability, and appeal.
+A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure, and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. Requiring a person to repeat the same inspection adds delay without adding an independent source of judgment.
+
+A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests, or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners, and test generators may share a model, data source, or assumption that could produce correlated agreement. These are evidentiary triggers, not job titles or calendar stages. Chapter 13 owns who has authority to perform that review, how accountability is assigned, and how an appeal proceeds.
+
+Low risk does not mean no control. A path authorized by enforced rules still needs traceable intent, evidence tied to the exact candidate, and a way to reverse the result. Human review is not a substitute for those protections. It is an additional independent judgment required by named conditions.
 
 ## Repair a mistaken classification
 
-Evidence found after release may show that work was wrongly classified
-as not requiring human review. Treat that missed trigger as both an
-incident and a defect in the classification rule: repair the harm first,
-then test and revise the rule without assuming every lesson can become
-an automatic refusal.
+In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. Authorized release contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it. Together those acts form care.
+
+The second problem is the classification itself. The rule failed to recognize that the activity signal involved a value choice and broad exposure. That missed trigger is treated as a defect, not as bad luck. Its record includes the evidence available before release, the evidence found afterward, and the reason the earlier rule did not escalate.
+
+Repair then tests a revised classification against this case and against cases that should remain on the path governed by automatic checks. A rule that sends every harmless wording change to a person may prevent one miss by making the system unusable. Some lessons can become an automatic refusal; others remain guidance for an independent examiner because their meaning depends on context. The aim is a better boundary, not an ever-growing collection of permanent enforced rules.
 
 ## The change, continued
 
-For session expiry, a discriminating test first demonstrates that an
-expired session still works before the change and fails afterward,
-while boundary tests cover small differences between clocks and existing
-sessions. Because a one-line comparison in authentication can affect
-every signed-in user and cause severe harm if reversed, the four risk
-questions call for independent human review even though only one line
-changed.
+Chapter 1 already records the ruling, named checks, refused candidate, and one human interruption. Here those facts set an evidentiary task: determine which observations distinguish supported behavior from the known failure.
+
+The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison deliberately and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary, and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.
+
+The responsible authority's recorded ruling remains the source of expected behavior; neither the builder nor the independent examiner may infer a more convenient answer. Each result binds to the exact candidate so the refused version cannot borrow the repaired version's authority.
+
+The four risk questions make the depth decision clear. Authentication failure can expose accounts or lock every signed-in user out; the consequence is severe. The boundary behavior is subtle enough to be unfamiliar in important cases. Every current session may be exposed. Related changes to warnings, uploads, and restoration have accumulated around the expiry rule. Independent human review is therefore triggered even if the final repair is a one-line comparison. Small construction is not small consequence, and a fluent claim is not proof of either.

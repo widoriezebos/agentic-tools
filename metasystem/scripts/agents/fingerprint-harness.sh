@@ -126,6 +126,7 @@ cp "$source_root/metasystem.conf" "$repo/"
 # only harness-specific overrides ride --set.
 "$ms" config tailor --conf "$repo/metasystem.conf" --runtimes fake \
   --set evidence.root="$tmp/evidence" \
+  --set role.default.model.fake=fake-model \
   --set watch.interval-sec=1 \
   --set role.investigator.runtime=fake \
   --set model.tier.1=fake:fake-model

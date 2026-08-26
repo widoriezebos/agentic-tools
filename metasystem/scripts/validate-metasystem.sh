@@ -2,12 +2,13 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope|--delivery-contract]" >&2
+  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope|--delivery-contract|--enumerate --report <path>]" >&2
 }
 
 delegate_scope=0
 delivery_contract=0
 delivery_reuse=0
+enumeration_section=
 case ${1:-} in
   '') ;;
   --delegate-scope) [[ $# -eq 1 ]] || { usage; exit 2; }; delegate_scope=1 ;;
@@ -25,9 +26,21 @@ case ${1:-} in
     # the gate can see it arrived under the contract.
     export METASYSTEM_DELIVERY_CONTRACT=1
     ;;
+  --enumerate)
+    exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agents/enumerate-suite.sh" "${@:2}"
+    ;;
+  --enumeration-section)
+    [[ "${METASYSTEM_ENUMERATION_DRIVER:-0}" == 1 && $# -eq 2 ]] \
+      || { usage; exit 2; }
+    enumeration_section=$2
+    ;;
   -h|--help) usage; exit 0 ;;
   *) usage; exit 2 ;;
 esac
+
+section_selected() { # stable section identifier
+  [[ -z "$enumeration_section" || "$enumeration_section" == "$1" ]]
+}
 
 delegate_owed_sections=(
   "supervision and census fixtures"
@@ -172,7 +185,7 @@ fi
 # fail-open): wherever a metasystem.conf exists the key must too, and
 # source delivery without the module is a damaged payload — a deleted
 # go.mod must not read as "no engine expected".
-if [[ -f metasystem.conf ]]; then
+if section_selected engine-delivery-contract && [[ -f metasystem.conf ]]; then
   engine_delivery=$(sed -n 's/^metasystem\.engine-delivery=//p' metasystem.conf | head -1)
   [[ -n "$engine_delivery" ]] \
     || { echo "metasystem.engine-delivery is required in metasystem.conf; a missing key reads as damage, not as a mode" >&2; exit 1; }
@@ -184,7 +197,8 @@ fi
 
 metasystem_go_source=0
 grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
-if (( ! metasystem_go_source )) && [[ -f internal/missionrunner/stoploss.go || -f internal/mission/ledger.go ]]; then
+if section_selected engine-delivery-contract && (( ! metasystem_go_source )) \
+  && [[ -f internal/missionrunner/stoploss.go || -f internal/mission/ledger.go ]]; then
   echo "metasystem Go source present but go.mod does not declare the metasystem module — damaged template" >&2
   exit 1
 fi
@@ -196,7 +210,8 @@ fi
 # means the present binary predates the verb — deferred, because the
 # LATE gate after the rebuild still enforces on the proven engine, and
 # that late run remains the guarantee this early run only accelerates.
-if [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
+if section_selected covenant-evidence-pre-rebuild \
+  && [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
   early_evidence_rc=0
   bin/metasystem covenant evidence --root "$root" || early_evidence_rc=$?
   case "$early_evidence_rc" in
@@ -208,7 +223,7 @@ if [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
       ;;
   esac
 fi
-if (( ! delegate_scope )) && (( metasystem_go_source )); then
+if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go_source )); then
   # The witness-producing gate (D33): when the gate-input roots are clean
   # against HEAD, the full gate runs inside an extracted HEAD snapshot —
   # the exact bytes adoption stages — and its witness is handed to the
@@ -243,16 +258,24 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
       echo "delivery contract: payload or toolchain equality was not proven; every validation family will run" >&2
     fi
   fi
-  # The engine-seam tripwire and the Go-vs-python census conformance
-  # harnesses (signature, fingerprint, run) retired with the migration:
-  # the python reference no longer exists to diff against, and the Go
-  # packages carry their own unit coverage under the go gate above.
-  # Owner-alone Go supervision fixtures drive the running binary.
-  delivery_contract_skip supervision-go-fixtures || bash scripts/agents/supervision-go-fixtures.sh
+fi
 
-  # The gate fence, live: this suite's own marker never blocks (this shell
-  # is the registered run's chain), a foreign live run blocks both the
-  # fence and a standalone go-gate rebuild, and a dead run stops blocking.
+# The engine-seam tripwire and the Go-vs-python census conformance
+# harnesses (signature, fingerprint, run) retired with the migration:
+# the python reference no longer exists to diff against, and the Go
+# packages carry their own unit coverage under the go gate above.
+# Owner-alone Go supervision fixtures drive the running binary.
+if section_selected supervision-go-fixtures && (( ! delegate_scope )) \
+  && (( metasystem_go_source )); then
+  delivery_contract_skip supervision-go-fixtures \
+    || bash scripts/agents/supervision-go-fixtures.sh
+fi
+
+# The gate fence, live: this suite's own marker never blocks (this shell
+# is the registered run's chain), a foreign live run blocks both the
+# fence and a standalone go-gate rebuild, and a dead run stops blocking.
+if section_selected gate-fence-fixtures && (( ! delegate_scope )) \
+  && (( metasystem_go_source )); then
   if ! delivery_contract_skip gate-fence-fixtures; then
   bin/metasystem gate fence --root "$root" --self-pid $$ \
     || { echo "the suite's own gate marker blocked its fence" >&2; exit 1; }
@@ -286,7 +309,8 @@ fi
 # (-e follows symlinks and calls a dangling one absent): a directory,
 # FIFO, or symlink at the covenant's home is the engine's to refuse by
 # name, never validation's to skip silently.
-if [[ -e covenant.json || -L covenant.json ]]; then
+if section_selected covenant-evidence-post-rebuild \
+  && [[ -e covenant.json || -L covenant.json ]]; then
   if [[ -x bin/metasystem ]]; then
     bin/metasystem covenant evidence --root "$root" \
       || { echo "the covenant evidence gate refused; the table and the covenant disagree" >&2; exit 1; }
@@ -302,8 +326,10 @@ fi
 # dispatch fixtures' TTY escalation driver needs a real pty, which shell
 # cannot open. Say so up front, loudly, instead of dying mid-suite with a
 # cryptic 127. The PRODUCT does not need python at all.
-command -v python3 >/dev/null 2>&1 \
-  || { echo "validate-metasystem: python3 is required by the TTY escalation fixture (the metasystem itself does not need it)" >&2; exit 1; }
+if section_selected suite-host-prerequisites; then
+  command -v python3 >/dev/null 2>&1 \
+    || { echo "validate-metasystem: python3 is required by the TTY escalation fixture (the metasystem itself does not need it)" >&2; exit 1; }
+fi
 source scripts/agents/fixture-budget.sh
 
 # The engine does the structural JSON work below; helpers use the absolute
@@ -442,7 +468,9 @@ fixture_watcher_config_cap_min=$(harness_fixture_semantic_cap watcher-config-min
 fixture_watcher_nonfiring_cap_min=$(harness_fixture_semantic_cap watcher-nonfiring-minutes)
 fixture_watcher_firing_cap_min=$(harness_fixture_semantic_cap watcher-firing-minutes)
 
-scripts/audit-metasystem.sh .
+if section_selected metasystem-audit; then
+  scripts/audit-metasystem.sh .
+fi
 
 # The gate's own integrity (go-production-grade B8): a gofmt that cannot run
 # must refuse the gate, not pass it silently. The shim exits before any
@@ -451,7 +479,8 @@ scripts/audit-metasystem.sh .
 # Under the delivery contract the gate is a digest check plus rebuild —
 # it never runs gofmt, so this tripwire's subject does not exist there;
 # the outer run's full gate keeps it (D33).
-if [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
+if section_selected gate-fail-open-tripwire \
+  && [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
   && ! delivery_contract_skip gate-fail-open-tripwire; then
   gofmt_shim_dir=$(mktemp -d)
   printf '#!/usr/bin/env bash\necho "shim: gofmt is broken" >&2\nexit 7\n' >"$gofmt_shim_dir/gofmt"
@@ -466,6 +495,19 @@ if [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
   rm -rf "$gofmt_shim_dir"
 fi
 
+# The template distinction is shared by later fixture sections. Computing it
+# has no side effects; the checks that consume it remain separately enumerable.
+template_mode=0
+[[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
+if (( delivery_contract )); then
+  # A delivery run is never the orchestrating template — wherever it
+  # runs, adoption fixtures and the other template-only blocks belong to
+  # the FULL suite that spawned it. (The contract env exports happen at
+  # flag parse, ahead of the gate hook.)
+  template_mode=0
+fi
+
+if section_selected static-contract-audits; then
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
 # A skill directory without a SKILL.md is invisible to the find, so check for
@@ -490,15 +532,6 @@ done
 # each skill present is still validated by the loop above. In adopted mode,
 # any profile a remaining skill does provide must be registered without drift;
 # project-added skills are not required to invent profiles they never shipped.
-template_mode=0
-[[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
-if (( delivery_contract )); then
-  # A delivery run is never the orchestrating template — wherever it
-  # runs, adoption fixtures and the other template-only blocks belong to
-  # the FULL suite that spawned it. (The contract env exports happen at
-  # flag parse, ahead of the gate hook.)
-  template_mode=0
-fi
 if (( ! template_mode )); then
   scripts/metasystem-config.sh validate
 fi
@@ -551,6 +584,9 @@ for link in \
   scripts/agents/second-session.sh \
   scripts/agents/arm-supervision.sh \
   scripts/agents/fixture-budget.sh \
+  scripts/agents/enumerate-suite.sh \
+  scripts/agents/validate-section-selector.sh \
+  scripts/agents/enumerate-suite-fixtures.sh \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
@@ -596,19 +632,24 @@ for link in \
   scripts/agents/check-preamble-quotes.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
+fi
 
 # Section 3.11 and retained watch-list round S4 have one bounded fixture suite.
 # Process-owning groups run serially and use separate temporary repositories,
 # so their supervisors and dispatch jobs cannot share lifecycle state. They
 # name S4-1 through S4-10 at their owning checks and contain no uncapped
 # process wait (IL-1).
-if delegate_process_section "supervision and census fixtures" && ! delivery_contract_skip "supervision and census fixtures"; then
+if section_selected supervision-and-census-fixtures \
+  && delegate_process_section "supervision and census fixtures" \
+  && ! delivery_contract_skip "supervision and census fixtures"; then
   scripts/agents/supervision-fixtures.sh
 fi
-if delegate_process_section "supervisor fingerprint heal harness" && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
+if section_selected supervisor-fingerprint-heal-harness \
+  && delegate_process_section "supervisor fingerprint heal harness" \
+  && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
   scripts/agents/fingerprint-harness.sh --iterations 2
 fi
-if ! delivery_contract_skip mission-fixtures; then
+if section_selected mission-fixtures && ! delivery_contract_skip mission-fixtures; then
   scripts/agents/mission-fixtures.sh
 fi
 
@@ -616,11 +657,15 @@ fi
 # Validation covers only their static adapter contract.
 # The external-dependency ratchet (os-dependency-reduction): an
 # undeclared interpreter in metasystem scripts refuses here.
+if section_selected shell-and-dependency-audits; then
 bash scripts/agents/dependency-ratchet.sh --self-test >/dev/null
 bash scripts/agents/dependency-ratchet.sh >/dev/null
 bash -n scripts/agents/dependency-ratchet.sh
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
+bash -n scripts/agents/enumerate-suite.sh
+bash -n scripts/agents/validate-section-selector.sh
+bash -n scripts/agents/enumerate-suite-fixtures.sh
 bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
@@ -657,20 +702,37 @@ bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
-delivery_contract_skip conformance-fixtures || bash scripts/agents/conformance-fixtures.sh
-delivery_contract_skip goal-cli-fixtures || bash scripts/agents/goal-cli-fixtures.sh
-delivery_contract_skip telemetry-census-fixtures || bash scripts/agents/telemetry-census-fixtures.sh
-delivery_contract_skip return-schema-fixtures || bash scripts/agents/return-schema-fixtures.sh
-bash scripts/agents/config-identity-fixtures.sh
+fi
+if section_selected conformance-fixtures; then
+  delivery_contract_skip conformance-fixtures || bash scripts/agents/conformance-fixtures.sh
+fi
+if section_selected goal-cli-fixtures; then
+  delivery_contract_skip goal-cli-fixtures || bash scripts/agents/goal-cli-fixtures.sh
+fi
+if section_selected telemetry-census-fixtures; then
+  delivery_contract_skip telemetry-census-fixtures || bash scripts/agents/telemetry-census-fixtures.sh
+fi
+if section_selected return-schema-fixtures; then
+  delivery_contract_skip return-schema-fixtures || bash scripts/agents/return-schema-fixtures.sh
+fi
+if section_selected config-identity-fixtures; then
+  bash scripts/agents/config-identity-fixtures.sh
+fi
 # worktree-lease-fixtures.py retired with the python lease helper: it
 # monkeypatched that module's internals (started_at, live, classify, ...),
 # which cannot be expressed against the Go engine and is owned by
 # internal/lease's unit tests under the go gate. The cross-process
 # behavioral coverage it also carried (succession, lock contention)
 # lives in scripts/agents/lease-succession-fixtures.sh below.
-delivery_contract_skip authority-regression-fixtures || bash scripts/agents/authority-regression-fixtures.sh
-delivery_contract_skip pre-commit-guard-fixtures || bash scripts/agents/pre-commit-guard-fixtures.sh
-delivery_contract_skip static-reproof-fixtures || bash scripts/agents/static-reproof-fixtures.sh
+if section_selected authority-regression-fixtures; then
+  delivery_contract_skip authority-regression-fixtures || bash scripts/agents/authority-regression-fixtures.sh
+fi
+if section_selected pre-commit-guard-fixtures; then
+  delivery_contract_skip pre-commit-guard-fixtures || bash scripts/agents/pre-commit-guard-fixtures.sh
+fi
+if section_selected static-reproof-fixtures; then
+  delivery_contract_skip static-reproof-fixtures || bash scripts/agents/static-reproof-fixtures.sh
+fi
 # PROJECT-DECLARED extra suites (born from the bm-2d rep-1 lesson: a
 # sibling artifact's checks lived in no battery, and engine drift landed
 # green three times in one weekend). The metasystem names nothing beyond
@@ -678,7 +740,7 @@ delivery_contract_skip static-reproof-fixtures || bash scripts/agents/static-rep
 # DECLARE companion suites in its own configuration, and a declaration is
 # a promise: a declared suite that is missing or red refuses the run.
 extra_suites=$(scripts/metasystem-config.sh get --key validate.extra-suites --default "" 2>/dev/null || true)
-if [[ -n "$extra_suites" ]]; then
+if section_selected project-extra-suites && [[ -n "$extra_suites" ]]; then
   for extra in $extra_suites; do
     if [[ ! -x "$extra" ]]; then
       echo "declared extra suite is missing or not executable: $extra (validate.extra-suites is a promise; clean the key or restore the suite)" >&2
@@ -687,14 +749,35 @@ if [[ -n "$extra_suites" ]]; then
     delivery_contract_skip project-extra-suites || bash "$extra"       || { echo "declared extra suite failed: $extra" >&2; exit 1; }
   done
 fi
-delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
-delivery_contract_skip evidence-segment-fixtures || bash scripts/agents/evidence-segment-fixtures.sh
-bash scripts/agents/second-session-fixtures.sh
-delivery_contract_skip lease-succession-fixtures || bash scripts/agents/lease-succession-fixtures.sh
-delivery_contract_skip flight-recorder-fixtures || bash scripts/agents/flight-recorder-fixtures.sh
-delivery_contract_skip acp-fixtures || bash scripts/agents/acp-fixtures.sh
-delivery_contract_skip delegate-caps-fixtures || bash scripts/agents/delegate-caps-fixtures.sh
-delivery_contract_skip adapter-deadline-fixtures || bash scripts/agents/adapter-deadline-fixtures.sh
+if section_selected record-protocol-fixtures; then
+  delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
+fi
+if section_selected evidence-segment-fixtures; then
+  delivery_contract_skip evidence-segment-fixtures || bash scripts/agents/evidence-segment-fixtures.sh
+fi
+if section_selected second-session-fixtures; then
+  bash scripts/agents/second-session-fixtures.sh
+fi
+if section_selected lease-succession-fixtures; then
+  delivery_contract_skip lease-succession-fixtures || bash scripts/agents/lease-succession-fixtures.sh
+fi
+if section_selected flight-recorder-fixtures; then
+  delivery_contract_skip flight-recorder-fixtures || bash scripts/agents/flight-recorder-fixtures.sh
+fi
+if section_selected acp-fixtures; then
+  delivery_contract_skip acp-fixtures || bash scripts/agents/acp-fixtures.sh
+fi
+if section_selected delegate-caps-fixtures; then
+  delivery_contract_skip delegate-caps-fixtures || bash scripts/agents/delegate-caps-fixtures.sh
+fi
+if section_selected adapter-deadline-fixtures; then
+  delivery_contract_skip adapter-deadline-fixtures || bash scripts/agents/adapter-deadline-fixtures.sh
+fi
+if section_selected enumeration-mode-fixtures; then
+  enumeration_fixture_output=$(bash scripts/agents/enumerate-suite-fixtures.sh 2>&1) \
+    || { printf '%s\n' "$enumeration_fixture_output" >&2; exit 1; }
+fi
+if section_selected runtime-contract-audits; then
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
@@ -908,10 +991,12 @@ if (( ! template_mode )); then
     fi
   done
 fi
+fi
 
 tmp=$(mktemp -d)
 agent_supervision_repo=
 
+if section_selected runtime-contract-audits; then
 # The fake runtime is the only sandbox this suite owns. Its probe drives the
 # denied write and network-call paths and reports the observed nonzero status;
 # real adapters are inspected only for their declarations above.
@@ -930,6 +1015,7 @@ fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
 [[ "$(canonical_json "$(cat "$fake_probe_result")")" == \
    "$(canonical_json '{"writeRoots": {"observed": "denied", "exitStatus": 77}, "network": {"observed": "denied", "exitStatus": 77}}')" ]] \
   || { echo "fake envelope probe did not observe both denials with status 77" >&2; cat "$fake_probe_result" >&2; exit 1; }
+fi
 
 # Every fixture repository this suite arms, so cleanup can stop all of them.
 # A single variable was tracked before, reassigned as the suite moved between
@@ -1002,6 +1088,7 @@ trap 'validation_exit_status=$?; validation_cleanup' EXIT
 trap 'on_signal 2' INT
 trap 'on_signal 15' TERM
 
+if section_selected agent-protocol-fixtures; then
 # IL-3: prove the audit's fallback with a PATH that contains its ordinary POSIX
 # tools but deliberately contains no rg binary.
 no_rg_bin="$tmp/no-rg-bin"
@@ -1845,6 +1932,7 @@ for field in jobId round runtime sessionId; do
   grep -Fq "$.${field} identity mismatch" "$tmp/identity-$field.out" \
     || { echo "job-aware return checker did not name the $field mismatch" >&2; exit 1; }
 done
+fi
 
 # Dispatcher and fake-adapter fixtures run in a minimal adopted-mode Git
 # repository. Keeping their artifacts outside this checkout proves that the
@@ -1852,12 +1940,14 @@ done
 # adoption validations inherit the skip after this block, avoiding duplicate
 # process-lifecycle runs while a direct adopted-repository validation still
 # exercises the full contract.
-if delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
+if section_selected dispatcher-adapter-and-mission-runner-fixtures \
+  && delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
   && ! delivery_contract_skip "dispatcher, adapter selftest, and mission-runner process fixtures"; then
   # Extracted to the sub-suite shape (script-validate-4/D35).
   bash scripts/agents/dispatch-fixtures.sh
 fi
 
+if section_selected workflow-tooling-fixtures; then
 # The shipped Stop hook must stay rooted and surface via JSON output: hooks
 # run in the session's cwd, receipt.sh resolves its ledger from there, and a
 # non-blocking exit code shows only a first-line hook-error notice.
@@ -2341,13 +2431,17 @@ if LC_ALL=C grep -q $'\r' "$rfile_crlf"; then
   echo "receipt sanitizer left a carriage return in the log" >&2
   exit 1
 fi
+fi
 
 # adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
-if (( template_mode )); then
+if section_selected adoption-fixtures && (( template_mode )); then
   bash scripts/adopt-fixtures.sh
+fi
+if section_selected gate-run-freeze-fixtures && (( template_mode )); then
   bash scripts/agents/gate-run-freeze-fixtures.sh
 fi
 
+if section_selected watch-background-jobs-fixtures; then
 # watch-background-jobs: all four reportable states plus baseline suppression.
 # The state file is pre-created because a MISSING state file auto-baselines on
 # first run (the 2026-08-03 hardening); an existing empty state means armed.
@@ -2461,8 +2555,11 @@ scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/de
   echo "watch-background-jobs: post-arming job not reported under its scope's default state" >&2; exit 1; }
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
+fi
 
-if (( delivery_contract )); then
+if [[ -n "$enumeration_section" ]]; then
+  :
+elif (( delivery_contract )); then
   echo "metasystem delivery contract validated"
   if (( delivery_reuse )); then
     echo "validation families skipped behind PAYLOAD and toolchain equality under the behavior-surface policy:"

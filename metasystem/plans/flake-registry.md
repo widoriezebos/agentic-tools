@@ -28,3 +28,9 @@ Remove an entry when its leg is fixed or three quiet months pass.
   If a named leg in these packages reds within 30 days, join it to
   this row. Lesson applied: gate runs capture output to a file first —
   an rc without its evidence cannot be diagnosed.
+
+## goal-txn-rejected-publishes (first sighting 2026-08-26)
+- Test: internal/goal TestValidationRefusalIsRejectedByName (txn_test.go:287, "a rejected transaction publishes nothing").
+- Sightings: 1 (2026-08-26 12:22Z, nested go gate inside the adopt bed, package runtime 229s under three concurrent work lanes; evidence artifacts/agents/suite-failures/20260826T122246Z-adopt-28021).
+- Mechanism hypothesis: timing-sensitive transaction assertion under heavy load in adopted-mode nested gates; passes 3x in 1.4s on the same tree unloaded.
+- Owner: flake protocol — a FIX goal at three sightings inside thirty days.

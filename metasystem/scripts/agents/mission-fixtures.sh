@@ -300,6 +300,7 @@ conf_edit "$repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$fixture_root/runner-evidence"
 conf_edit "$repo/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' \
   'metasystem.runtimes=fake'
+printf 'role.default.model.fake=fake-model\n' >>"$repo/metasystem.conf"
 cat >"$repo/scripts/agents/arm-supervision.sh" <<'ARM'
 #!/usr/bin/env bash
 set -euo pipefail
