@@ -563,6 +563,25 @@ func Refuse(repo, mission, reason string) (string, error) {
 	return writeBatchedAsk(repo, mission, []string{reason})
 }
 
+// RefuseBudgetCap raises the recovery ask owed after an applied budget-cap
+// timeout. Wall-clock truncation names the mission-wide wall fence; every
+// other timeout names the per-job cap. A failed ask write is both emitted and
+// returned because the terminal job verdict has already landed.
+func RefuseBudgetCap(repo, missionID, job string, capResolution map[string]any, emit func(string)) error {
+	reason := "job-cap-min"
+	if truncatedBy, _ := capResolution["truncatedBy"].(string); truncatedBy == "wall-clock" {
+		reason = "wall-clock-hours"
+	}
+	if _, err := Refuse(repo, missionID, reason); err != nil {
+		wrapped := fmt.Errorf("raise mission fence ask for mission %s after applied budget-cap reap of job %s: %w", missionID, job, err)
+		if emit != nil {
+			emit(fmt.Sprintf("FENCE-ASK-FAILED mission=%s job=%s error=%v", missionID, job, err))
+		}
+		return wrapped
+	}
+	return nil
+}
+
 // The provenance a terminal job's aggregate entry carries
 // (plans/patience-orphan-usage.md): the adapter reported the usage, the
 // aggregator derived it from a provably dead round's event stream, the group

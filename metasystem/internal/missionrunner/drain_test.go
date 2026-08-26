@@ -71,6 +71,18 @@ func writeJob(t *testing.T, engine *Engine, job string, fields map[string]any) s
 	return path
 }
 
+func assertRunnerFenceAsk(t *testing.T, engine *Engine, reason string) {
+	t.Helper()
+	askPath := filepath.Join(engine.Root, "artifacts", "agents", "missions", engine.Mission, "asks", "fence-bound.json")
+	ask, err := os.ReadFile(askPath)
+	if err != nil {
+		t.Fatalf("budget-cap reap wrote no mission fence ask: %v", err)
+	}
+	if !strings.Contains(string(ask), "`"+reason+"`") {
+		t.Fatalf("mission fence ask omitted %q: %s", reason, ask)
+	}
+}
+
 func TestRunnerReapRefusals(t *testing.T) {
 	now := time.Now()
 	running := func() map[string]any {
@@ -125,6 +137,7 @@ func TestRunnerReapRefusesRecordThatOutranTheCompare(t *testing.T) {
 	now := time.Now()
 	path := writeJob(t, engine, "job-a", map[string]any{
 		"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
+		"capDeadline": isoAt(now.Add(-time.Minute)),
 	})
 	doc := readTestDoc(t, path)
 	facts, err := dispatch.ComputeReapFacts(path, dispatch.HandshakeBackstopGraceSec, now)
@@ -143,6 +156,10 @@ func TestRunnerReapRefusesRecordThatOutranTheCompare(t *testing.T) {
 	}
 	if _, stamped := after["error"]; stamped {
 		t.Fatalf("no verdict may land on a lost compare: %v", after)
+	}
+	askPath := filepath.Join(engine.Root, "artifacts", "agents", "missions", engine.Mission, "asks", "fence-bound.json")
+	if _, err := os.Stat(askPath); !os.IsNotExist(err) {
+		t.Fatalf("a void budget-cap verdict must not raise a mission fence ask: %v", err)
 	}
 }
 
@@ -164,6 +181,23 @@ func TestRunnerReapVerdicts(t *testing.T) {
 		if ended, _ := after["endedAt"].(string); ended == "" {
 			t.Fatalf("a terminal verdict must stamp endedAt: %v", after)
 		}
+		assertRunnerFenceAsk(t, engine, "job-cap-min")
+	})
+
+	t.Run("a wall-clock-truncated budget raises the wall-clock fence ask", func(t *testing.T) {
+		engine := reapFixture(t, "job-a")
+		engine.custodianFn = fixedCustodian(identity.Dead)
+		path := writeJob(t, engine, "job-a", map[string]any{
+			"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
+			"capDeadline":   isoAt(now.Add(-time.Minute)),
+			"capResolution": map[string]any{"truncatedBy": "wall-clock"},
+		})
+		engine.reapReservedRecords(now)
+		after := readTestDoc(t, path)
+		if after["status"] != "timeout" || after["error"] != "budget-cap" {
+			t.Fatalf("wall-clock-truncated budget expiry must still land timeout: %v", after)
+		}
+		assertRunnerFenceAsk(t, engine, "wall-clock-hours")
 	})
 
 	t.Run("a dead custodian otherwise books failed process-lost", func(t *testing.T) {
@@ -252,6 +286,38 @@ func TestRunnerReapVerdicts(t *testing.T) {
 			t.Fatalf("a live dispatcher must never be raced: %v", after)
 		}
 	})
+}
+
+func TestRunnerReapReportsMissionFenceAskFailure(t *testing.T) {
+	now := time.Now()
+	engine := reapFixture(t, "job-a")
+	engine.custodianFn = fixedCustodian(identity.Dead)
+	path := writeJob(t, engine, "job-a", map[string]any{
+		"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
+		"capDeadline": isoAt(now.Add(-time.Minute)),
+	})
+	asksPath := filepath.Join(engine.Root, "artifacts", "agents", "missions", engine.Mission, "asks")
+	if err := os.WriteFile(asksPath, []byte("blocks mission ask directory creation"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := engine.reapReservedRecords(now)
+	if err == nil || !strings.Contains(err.Error(), "demo") || !strings.Contains(err.Error(), "job-a") {
+		t.Fatalf("fence ask failure did not return the mission and job: %v", err)
+	}
+	if after := readTestDoc(t, path); after["status"] != "timeout" || after["error"] != "budget-cap" {
+		t.Fatalf("the applied reap verdict must survive a fence ask failure: %v", after)
+	}
+	events, readErr := os.ReadFile(filepath.Join(engine.Root, "artifacts", "agents", "events.jsonl"))
+	if readErr != nil {
+		t.Fatalf("fence ask failure emitted no runner event: %v", readErr)
+	}
+	stream := string(events)
+	for _, want := range []string{"FENCE-ASK-FAILED", `"missionId":"demo"`, `"jobId":"job-a"`} {
+		if !strings.Contains(stream, want) {
+			t.Fatalf("fence ask failure event omitted %s: %s", want, stream)
+		}
+	}
 }
 
 func TestDrainDeadlinePerRecordClocks(t *testing.T) {

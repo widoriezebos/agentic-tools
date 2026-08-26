@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // The reaper's per-interval job sweep. This reaper holds NO kill
@@ -35,6 +35,8 @@ import (
 // ReaperConfig drives one reap pass. Custody liveness is supplied as a function
 // so the production path binds the kernel prober while tests bind a fake table.
 type ReaperConfig struct {
+	// Repo is the repository root used for mission fence recovery asks.
+	Repo string
 	// JobsDir holds the job records (<repo>/artifacts/agents/jobs).
 	JobsDir string
 	// Now is the wall clock (injectable for tests).
@@ -103,8 +105,9 @@ func (cfg ReaperConfig) reapOne(path string) error {
 			if at, err := time.Parse(time.RFC3339, created); err == nil && now.Sub(at) > dispatch.AbandonedSetupGrace {
 				// No process ever existed for a reservation husk, so the
 				// patch claims no death.
-				return cfg.transition(path, record, status, "failed", "abandoned-setup",
+				_, err := cfg.transition(path, record, status, "failed", "abandoned-setup",
 					map[string]any{"error": "abandoned-setup", "phase": "supervision"})
+				return err
 			}
 		}
 		return nil
@@ -126,8 +129,9 @@ func (cfg ReaperConfig) reapOne(path string) error {
 		// nothing but this pass will ever conclude it. No death is
 		// claimed — cancelled-before-launch is its own honest shape.
 		if phase, _ := record["phase"].(string); phase == "cancelling" {
-			return cfg.transition(path, record, status, "cancelled", "cancel-honored",
+			_, err := cfg.transition(path, record, status, "cancelled", "cancel-honored",
 				map[string]any{"error": nil, "phase": "supervision"})
+			return err
 		}
 		return nil
 	}
@@ -174,31 +178,42 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// explicit stop is the truer cause of this death.
 	if phase, _ := record["phase"].(string); phase == "cancelling" {
 		patch["error"] = nil
-		return cfg.transition(path, record, status, "cancelled", "cancel-honored", patch)
+		_, err := cfg.transition(path, record, status, "cancelled", "cancel-honored", patch)
+		return err
 	}
 	// Among dead-custodian records the budget still outranks loss, so this
 	// reaper and the dispatch ladder read the same verdict from one expired
 	// record.
 	if status == "running" && dispatch.CapExpired(record, now) {
 		patch["error"] = "budget-cap"
-		return cfg.transition(path, record, status, "timeout", "budget-cap", patch)
+		applied, err := cfg.transition(path, record, status, "timeout", "budget-cap", patch)
+		if err != nil || !applied {
+			return err
+		}
+		missionID, _ := record["mission"].(string)
+		if missionID == "" {
+			return nil
+		}
+		resolution, _ := record["capResolution"].(map[string]any)
+		return mission.RefuseBudgetCap(cfg.Repo, missionID, jobIDFor(record, path), resolution, cfg.Emit)
 	}
 	patch["error"] = "process-lost"
-	return cfg.transition(path, record, status, "failed", "process-lost", patch)
+	_, err = cfg.transition(path, record, status, "failed", "process-lost", patch)
+	return err
 }
 
 // transition lands the verdict through the injected compare-and-swap owner.
 // A refused swap means the record moved on (a completion landed after this
 // pass's read); the verdict is void and nothing is emitted.
-func (cfg ReaperConfig) transition(path string, record map[string]any, from, to, reason string, patch map[string]any) error {
+func (cfg ReaperConfig) transition(path string, record map[string]any, from, to, reason string, patch map[string]any) (bool, error) {
 	applied, err := cfg.Apply(jobIDFor(record, path), from, to, patch)
 	if err != nil {
-		return fmt.Errorf("apply reap verdict for %s: %w", path, err)
+		return false, fmt.Errorf("apply reap verdict for %s: %w", path, err)
 	}
 	if applied && cfg.Emit != nil {
 		cfg.Emit(fmt.Sprintf("%s job=%s status=%s->%s", strings.ToUpper(reason), jobIDFor(record, path), from, to))
 	}
-	return nil
+	return applied, nil
 }
 
 func jobIDFor(record map[string]any, path string) string {

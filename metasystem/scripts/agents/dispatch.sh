@@ -716,7 +716,7 @@ mirror_record() { # job
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag facts budget_expired patch root_id mission record_epoch lease_epoch refusal_reason truncated_by
+  local job=$1 record="$jobs/$1.json" status pid tag facts budget_expired patch root_id mission record_epoch lease_epoch refusal_reason refusal_error truncated_by
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -801,7 +801,10 @@ reap_one_locked() { # job
       truncated_by=$(json_field "$record" capResolution.truncatedBy 2>/dev/null || true)
       refusal_reason=job-cap-min
       [[ "$truncated_by" == wall-clock ]] && refusal_reason=wall-clock-hours
-      mission_fence refuse --repo "$root" --mission "$mission" --reason "$refusal_reason" >/dev/null || true
+      if ! refusal_error=$(mission_fence refuse --repo "$root" --mission "$mission" --reason "$refusal_reason" 2>&1 >/dev/null); then
+        refusal_error=${refusal_error//$'\n'/ }
+        printf 'MISSION-FENCE-ASK-FAILED mission=%s job=%s error=%s\n' "$mission" "$job" "$refusal_error" >&2
+      fi
       aggregate_mission_usage "$record" || true
     fi
     mirror_record "$job" || true

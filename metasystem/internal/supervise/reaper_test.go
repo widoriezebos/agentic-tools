@@ -193,15 +193,17 @@ func TestReaperPassCoreTransitions(t *testing.T) {
 // expected-status compare refuses and the completion survives.
 func TestReaperPassVoidsVerdictWhenRecordMovesOn(t *testing.T) {
 	dir := t.TempDir()
+	repo := t.TempDir()
 	now := time.Unix(1786000000, 0).UTC()
 	job := writeJobRecord(t, dir, "raced", map[string]any{
-		"jobId": "raced", "status": "running",
+		"jobId": "raced", "status": "running", "mission": "mission-raced",
 		"pid": 333, "pidStartedAt": 7, "instanceTag": "job-raced",
-		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond), "capMin": 60,
+		"capDeadline": now.Add(-1 * time.Minute).Format(isoSecond),
 	})
 	var emitted []string
 	apply := casApplier(t, dir)
 	cfg := ReaperConfig{
+		Repo:      repo,
 		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
@@ -226,6 +228,10 @@ func TestReaperPassVoidsVerdictWhenRecordMovesOn(t *testing.T) {
 	}
 	if len(emitted) != 0 {
 		t.Fatalf("a void verdict must not be emitted, got %v", emitted)
+	}
+	askPath := filepath.Join(repo, "artifacts", "agents", "missions", "mission-raced", "asks", "fence-bound.json")
+	if _, err := os.Stat(askPath); !os.IsNotExist(err) {
+		t.Fatalf("a void verdict must not raise a mission fence ask: %v", err)
 	}
 }
 
@@ -362,6 +368,89 @@ func TestReaperPassHonorsCapDeadline(t *testing.T) {
 	}
 	if got := readStatus(t, job); got["status"] != "timeout" || got["error"] != "budget-cap" {
 		t.Fatalf("cap-deadline job: want timeout/budget-cap, got %v/%v", got["status"], got["error"])
+	}
+}
+
+func TestReaperBudgetCapRaisesMissionFenceAsk(t *testing.T) {
+	now := time.Unix(1786000000, 0).UTC()
+	for _, test := range []struct {
+		name          string
+		capResolution map[string]any
+		wantReason    string
+	}{
+		{name: "job cap", capResolution: map[string]any{"truncatedBy": nil}, wantReason: "job-cap-min"},
+		{name: "wall clock", capResolution: map[string]any{"truncatedBy": "wall-clock"}, wantReason: "wall-clock-hours"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := t.TempDir()
+			jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+			missionID := "mission-budget-cap"
+			writeJobRecord(t, jobs, "mission-job", map[string]any{
+				"jobId": "mission-job", "status": "running", "mission": missionID,
+				"pid": 555, "pidStartedAt": 9, "instanceTag": "job-mission",
+				"capDeadline":   now.Add(-1 * time.Minute).Format(isoSecond),
+				"capResolution": test.capResolution,
+			})
+			cfg := ReaperConfig{
+				Repo:      repo,
+				JobsDir:   jobs,
+				Now:       func() time.Time { return now },
+				Custodian: func(int64, int64, string) identity.Liveness { return identity.Dead },
+				Survivors: func(string, int64, int64) (bool, bool) { return false, true },
+				Apply:     casApplier(t, jobs),
+			}
+			if err := cfg.ReaperPass(); err != nil {
+				t.Fatalf("reaper pass: %v", err)
+			}
+			askPath := filepath.Join(repo, "artifacts", "agents", "missions", missionID, "asks", "fence-bound.json")
+			ask, err := os.ReadFile(askPath)
+			if err != nil {
+				t.Fatalf("budget-cap reap wrote no mission fence ask: %v", err)
+			}
+			if !strings.Contains(string(ask), "`"+test.wantReason+"`") {
+				t.Fatalf("mission fence ask omitted %q: %s", test.wantReason, ask)
+			}
+		})
+	}
+}
+
+func TestReaperBudgetCapReportsMissionFenceAskFailure(t *testing.T) {
+	now := time.Unix(1786000000, 0).UTC()
+	jobs := t.TempDir()
+	jobPath := writeJobRecord(t, jobs, "mission-job", map[string]any{
+		"jobId": "mission-job", "status": "running", "mission": "mission-budget-cap",
+		"pid": 555, "pidStartedAt": 9, "instanceTag": "job-mission",
+		"capDeadline": now.Add(-1 * time.Minute).Format(isoSecond),
+	})
+	blockedRepo := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockedRepo, []byte("blocks mission ask directory creation"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var emitted []string
+	cfg := ReaperConfig{
+		Repo:      blockedRepo,
+		JobsDir:   jobs,
+		Now:       func() time.Time { return now },
+		Custodian: func(int64, int64, string) identity.Liveness { return identity.Dead },
+		Survivors: func(string, int64, int64) (bool, bool) { return false, true },
+		Apply:     casApplier(t, jobs),
+		Emit:      func(line string) { emitted = append(emitted, line) },
+	}
+	err := cfg.ReaperPass()
+	if err == nil || !strings.Contains(err.Error(), "mission-budget-cap") || !strings.Contains(err.Error(), "mission-job") {
+		t.Fatalf("fence ask failure did not return the mission and job: %v", err)
+	}
+	if got := readStatus(t, jobPath); got["status"] != "timeout" || got["error"] != "budget-cap" {
+		t.Fatalf("the applied reap verdict must survive a fence ask failure: %v/%v", got["status"], got["error"])
+	}
+	found := false
+	for _, line := range emitted {
+		if strings.Contains(line, "FENCE-ASK-FAILED") && strings.Contains(line, "mission=mission-budget-cap") && strings.Contains(line, "job=mission-job") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("fence ask failure was not emitted with its mission and job: %v", emitted)
 	}
 }
 

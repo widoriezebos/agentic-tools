@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // The finite drain and the runner's mission-scoped reap.
@@ -82,7 +83,9 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 			// exactly as the drain always ran it (budget wind-downs stay
 			// with the code that owns process lifecycles — the runner has
 			// no kill authority).
-			e.reapReservedRecords(time.Now())
+			if err := e.reapReservedRecords(time.Now()); err != nil {
+				return nil, err
+			}
 			for _, record := range active {
 				e.dispatchReap(dispatchScript, jobRecordID(record))
 			}
@@ -110,7 +113,9 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 			// must not park the drain while this branch — the one
 			// that concludes a marked dead group cancelled — never
 			// saw the record's current phase.
-			e.reapReservedRecords(time.Now())
+			if err := e.reapReservedRecords(time.Now()); err != nil {
+				return nil, err
+			}
 			lastReap = time.Now()
 			live = activeJobRecords(e.Root, e.Mission)
 			if len(live) == 0 {
@@ -185,8 +190,9 @@ func recordDrainDue(doc map[string]any, now time.Time) time.Time {
 // record the mission's fence reservations name. Facts that cannot be read
 // prove nothing, and a record the CAS finds advanced is left alone this
 // pass — the deadline, not the loop, decides the outcome.
-func (e *Engine) reapReservedRecords(now time.Time) {
+func (e *Engine) reapReservedRecords(now time.Time) error {
 	reserved := reservedJobIDs(e.Root, e.Mission)
+	var firstErr error
 	for _, record := range activeJobRecords(e.Root, e.Mission) {
 		job := jobRecordID(record)
 		if !reserved[job] {
@@ -198,8 +204,11 @@ func (e *Engine) reapReservedRecords(now time.Time) {
 		if err != nil {
 			continue
 		}
-		e.applyReapVerdict(job, record.doc, facts)
+		if err := e.applyReapVerdict(job, record.doc, facts); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
+	return firstErr
 }
 
 // applyReapVerdict maps one candidate's proven facts to its terminal
@@ -210,7 +219,7 @@ func (e *Engine) reapReservedRecords(now time.Time) {
 // a custodian that is not provably dead reaps nothing (Unknown never acts);
 // a proven-dead custodian books budget expiry first (timeout/budget-cap on a
 // running record) and process loss otherwise.
-func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch.ReapFacts) {
+func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch.ReapFacts) error {
 	switch facts.Status {
 	case "pending-setup":
 		if facts.SetupAbandoned {
@@ -229,12 +238,12 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 					"error": nil, "phase": "supervision",
 				})
 			}
-			return
+			return nil
 		}
 		start, _ := jsonInt(doc["pidStartedAt"])
 		tag, _ := doc["instanceTag"].(string)
 		if e.custodian(pid, start, tag) != identity.Dead {
-			return
+			return nil
 		}
 		// A dead custodian is only HALF the proof groupDeathProvenAt
 		// claims: a tagged survivor means the group lives, and this
@@ -242,7 +251,7 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 		// that can wind it down. Indeterminacy defers the same way.
 		recPgid, _ := jsonInt(doc["pgid"])
 		if alive, certain := e.taggedSurvivors(tag, pid, recPgid); !certain || alive {
-			return
+			return nil
 		}
 		// A cancel marks the record before it kills: a dead marked
 		// group is that cancel's outcome here exactly as in the
@@ -252,42 +261,61 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 				"error": nil, "phase": "supervision",
 				"groupDeathProvenAt": nowISO(),
 			})
-			return
+			return nil
 		}
 		if facts.Status == "running" && facts.BudgetExpired {
-			e.reapCAS(job, "running", "timeout", map[string]any{
+			applied, _ := e.reapCAS(job, "running", "timeout", map[string]any{
 				"error": "budget-cap", "phase": "supervision",
 				"groupDeathProvenAt": nowISO(),
 			})
-			return
+			if !applied {
+				return nil
+			}
+			missionID, _ := doc["mission"].(string)
+			if missionID == "" {
+				return nil
+			}
+			resolution, _ := doc["capResolution"].(map[string]any)
+			return mission.RefuseBudgetCap(e.Root, missionID, job, resolution, func(line string) {
+				e.emit("job-refused", line, map[string]string{
+					"missionId": missionID, "jobId": job, "reasonClass": "fence-ask",
+				})
+			})
 		}
 		e.reapCAS(job, facts.Status, "failed", map[string]any{
 			"error": "process-lost", "phase": "supervision",
 			"groupDeathProvenAt": nowISO(),
 		})
 	}
+	return nil
 }
 
 // reapCAS lands one reap verdict through the existing record CAS under the
 // record lock — lawful transitions only. A lost compare means the record
 // advanced under someone else's authority and is left exactly as it is.
-func (e *Engine) reapCAS(job, expect, target string, patch map[string]any) {
+func (e *Engine) reapCAS(job, expect, target string, patch map[string]any) (bool, error) {
 	source, err := os.CreateTemp("", "mission-reap-patch.*.json")
 	if err != nil {
-		return
+		return false, err
 	}
 	sourcePath := source.Name()
 	source.Close()
 	defer os.Remove(sourcePath)
 	if err := atomicWriteJSON(sourcePath, patch); err != nil {
-		return
+		return false, err
 	}
-	if _, err := dispatch.RecordCAS(e.Root, job, expect, target, sourcePath); err == nil {
-		verdict, _ := patch["error"].(string)
-		e.emit("mission-reap", fmt.Sprintf("job %s reaped %s -> %s (%s)", job, expect, target, verdict), map[string]string{
-			"missionId": e.Mission, "jobId": job, "verdict": verdict,
-		})
+	observed, err := dispatch.RecordCAS(e.Root, job, expect, target, sourcePath)
+	if observed != "" {
+		return false, nil
 	}
+	if err != nil {
+		return false, err
+	}
+	verdict, _ := patch["error"].(string)
+	e.emit("mission-reap", fmt.Sprintf("job %s reaped %s -> %s (%s)", job, expect, target, verdict), map[string]string{
+		"missionId": e.Mission, "jobId": job, "verdict": verdict,
+	})
+	return true, nil
 }
 
 // taggedSurvivors runs the group-death half of the reap proof through

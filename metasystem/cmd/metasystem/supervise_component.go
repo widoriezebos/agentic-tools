@@ -236,6 +236,7 @@ func runPass(repo string, self identity.Ref) {
 // wins, and the stale verdict is void.
 func setupReaper(repo string) func() {
 	cfg := supervise.ReaperConfig{
+		Repo:      repo,
 		JobsDir:   supervise.JobsDir(repo),
 		Now:       func() time.Time { return time.Now().UTC() },
 		Custodian: kernelCustodian(repo),
