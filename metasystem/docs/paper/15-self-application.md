@@ -30,9 +30,9 @@ than allowing the system to justify itself.
 
 The test exposes whether a gate can judge a proposed change to that
 gate, whether verification survives the work it checks, and whether a
-guard can catch the guard-builder’s regression. Passing shows internal
-consistency under unusually difficult conditions; it does not show that
-the principles fit other domains or serve users well.
+safeguard can catch a regression introduced by its own builder. Passing
+shows internal consistency under unusually difficult conditions; it does
+not show that the principles fit other domains or serve users well.
 
 ## Falsifiability and independent support
 

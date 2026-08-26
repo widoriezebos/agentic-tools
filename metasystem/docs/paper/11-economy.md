@@ -11,13 +11,14 @@ evidence that the protection is worth its cost. A process that cannot
 do so is reduced, redesigned, or stopped with a recorded reason rather
 than continued by tradition.
 
-## The shared risk model
+## Four risk questions govern verification and spending
 
-The same model introduced in Chapter 6 sets both verification depth and
-spending: consequence if wrong, novelty, exposure, and accumulated
-change since the last broad check. These factors are considered
+Chapter 6 and this chapter use the same four questions: how severe the
+harm would be if the work were wrong, how unfamiliar the approach is,
+how many users or systems it can affect, and how much change has
+accumulated since the last broad check. The answers are considered
 together rather than collapsed into lines changed, elapsed time, or a
-single opaque score.
+single unexplained score.
 
 ## Budgets are enforced stop rules
 
@@ -31,26 +32,26 @@ because previous spending created attachment.
 Several independent attempts can expose disagreement and improve a
 decision, but each additional attempt consumes comparison, testing,
 and human or machine judgment. Parallel work is worthwhile only when
-its expected information or solution value exceeds both generation and
-selection costs.
+its expected information or solution value exceeds the cost of both
+producing the alternatives and deciding among them.
 
 ## Small changes can be risky; large changes can be routine
 
-A one-line change to an authorization condition can have high
-consequence and exposure and therefore justify deep tests and mandatory
-human review. A bulk correction to low-impact text can touch thousands
-of lines yet remain suitable for cheap automated checks; verification
-follows risk, not size.
+A one-line change to an authorization condition can cause severe harm
+across many users or systems and therefore justify deep tests and
+mandatory human review. A bulk correction to low-impact text can touch
+thousands of lines yet remain suitable for cheap automated checks;
+verification follows risk, not size.
 
-## When not to build the system
+## When the machinery is not worth its cost
 
-The break-even test compares the cost of building, operating, and
-verifying delivery machinery with its expected reuse, avoided harm,
-and learning value. One-off prototypes, disposable explorations,
-small low-risk tools, and short-lived software can rationally use much
-less machinery, especially when manual judgment is cheaper and clearer.
+Compare the cost of building, operating, and verifying delivery
+machinery with its expected reuse, avoided harm, and learning value.
+One-off prototypes, disposable explorations, small low-risk tools, and
+short-lived software can rationally use much less machinery, especially
+when manual judgment is cheaper and clearer.
 
-## The smallest-machinery rule
+## Use no more machinery than the work needs
 
 Choose the smallest delivery mechanism that protects the relevant
 outcome at the expected level of reuse and risk, then add structure only
@@ -67,8 +68,9 @@ that the delivery system has earned its keep.
 
 ## The change, continued
 
-Session expiry is a small code change with high exposure, so its budget
-reserves more for verification and rollout observation than for
-generation. Multiple proposed implementations are requested only if
-their expected design insight is worth the cost of comparing them; the
-one-line-versus-bulk contrast keeps that decision tied to risk.
+Session expiry is a small code change that can affect every signed-in
+user, so its budget reserves more for verification and watching the
+gradual release than for producing the change. Multiple proposed
+implementations are requested only if they are likely to reveal a
+meaningful design difference worth the cost of comparing them. This
+judgment follows the possible harm, not the change’s small size.

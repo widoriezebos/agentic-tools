@@ -37,10 +37,11 @@ to user sessions — continues through every chapter to keep the
 principles concrete.
 
 **Act IV — The economy, the learning loop, the human (chapters
-11–13).** A shared risk model ties verification effort and total cost
-to consequence, novelty, exposure, and accumulated change, including
-the cost of judging parallel attempts. Incidents can produce new
-automatic checks, but those checks need evidence, owners, tests,
+11–13).** Four shared questions tie verification effort and total cost
+to how severe the harm could be, how unfamiliar the approach is, how
+many users or systems it can affect, and how much change has accumulated,
+including the cost of judging parallel attempts. Incidents can produce
+new automatic checks, but those checks need evidence, owners, tests,
 expiry, and a named route for challenge. Humans govern values and
 exceptions through precisely bounded authority, including delegation
 and challenge when several people hold conflicting intent.

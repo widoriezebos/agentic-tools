@@ -46,8 +46,11 @@ themselves.
 
 Verification effort and construction effort must be proportional to
 risk, and budgets must stop work rather than merely describe hopes.
-Irreversible acts, value judgments, and changes to governing rules stay
-with explicitly authorized humans.
+Machinery may gather information and test claims, but value rulings,
+irreversible acts, changes to governing rules, and accountability always
+terminate in explicitly authorized humans. This boundary is
+unconditional; Chapter 13 defines the people and appeal paths that carry
+it.
 
 ## Honest failure leaves a record
 

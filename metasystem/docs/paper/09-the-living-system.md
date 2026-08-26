@@ -23,14 +23,17 @@ Checks run against isolated copies so that active work cannot alter
 their result and a long check cannot freeze unrelated work. Each
 worker receives only the resources and permissions its task requires,
 making the possible harm of a mistake a design choice rather than a
-hope.
+hope. Chapter 8 applies the same least-authority rule to which parts of
+the shared record each role may read while retaining the full history
+for recovery and audit.
 
 ## Safe against itself
 
 Well-meaning workers can overwrite data, stop the wrong process, or
-try to bypass a failed check. Protective wrappers must refuse
-dangerous action shapes, and uncertain ownership must lead to
-retention and escalation rather than destruction.
+try to bypass a failed check. Safety checks placed where actions occur
+must refuse attempts to act on an unknown or overly broad target, and
+uncertain ownership must lead to retention and escalation rather than
+destruction.
 
 ## The hostile world
 
@@ -38,9 +41,9 @@ The threat model includes malicious input, hostile generated code,
 compromised tools or dependencies, stolen secrets, and tampering with
 records or test results. From it follow trust boundaries (points where
 data crosses between differently trusted components), least authority
-(only the permissions a task requires), containment, provenance (a
-traceable source and history), and verification independent of the
-component making the claim.
+(only the permissions a task requires), limits on how far harm can
+spread, provenance (a traceable source and history), and verification
+independent of the component making the claim.
 
 ## The change, continued
 

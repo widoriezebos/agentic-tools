@@ -39,13 +39,15 @@ deliberate human retention are all legitimate outcomes.
 
 ## Four worked cases
 
-A fixed sprint cadence will illustrate discard when it protects no
-remaining condition; a status meeting will become a machine-produced
-record of live work; and code review will adapt into independent
-attempts to find faults tied to test results. A review that elicits
-tacit concerns or decides safety, fairness, or accountability will be
-retained as a human act until another mechanism demonstrably protects
-the same condition.
+A fixed sprint cadence will illustrate a recorded discard: archaeology
+finds no remaining condition, so the cadence is removed and the record
+explains why no replacement is needed. A status meeting will become a
+machine-produced record of live work, while code review will adapt into
+independent attempts to find faults tied to test results. Machinery may
+replace information gathering and scrutiny. It may not replace value
+rulings or accountability: decisions about safety, fairness, and other
+value conflicts terminate in authorized humans, full stop — with no
+conditions or carve-outs — as Chapters 5 and 13 make explicit.
 
 ## What cannot first be extracted
 

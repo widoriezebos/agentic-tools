@@ -16,7 +16,10 @@ The judge is the human authorized to resolve an escalated value
 conflict, accept specified risk, approve an irreversible act, or decide
 an exception the machinery may not decide. The system prepares a clear
 question and evidence, but the person’s accountability and reasons stay
-attached to the ruling.
+attached to the ruling. Machinery may gather information and scrutinize
+the options, but it may never make the value ruling or assume
+accountability: that authority terminates in an authorized human without
+condition, as Chapter 5 requires.
 
 ## Intent-holder: authority over purpose
 
@@ -25,22 +28,17 @@ domain, along with constraints and freedoms rather than a hidden task
 list. The role can be shared or delegated, and it must remain open to
 evidence that the stated intent is ambiguous, conflicting, or harmful.
 
-## Correlated blind spots and the human safety layer
+## Reviewer: authority, accountability, and appeal
 
-Machine evidence is enough when a change is reversible, familiar,
-well-covered by discriminating checks, and low on the shared risk
-factors. Independent human review remains mandatory for high
-consequence, weakly testable, novel, irreversible, or value-laden
-decisions, and when machine builders and critics may share data,
-models, tools, or assumptions.
-
-## When the system failed to ask
-
-People must be able to challenge a released decision, stop exposure,
-and reach an authorized reviewer even when the system classified the
-work as routine. Each missed escalation becomes an incident that tests
-the classification rule, the evidence used, and the appeal path rather
-than being dismissed as exceptional human rescue.
+Chapter 6 owns the evidence that triggers human review and the repair of
+a mistaken classification; this chapter owns what a reviewer may decide
+once review or appeal begins. An explicitly authorized reviewer,
+independent of the work’s construction, may demand more evidence, stop a
+decision from affecting more people, and accept or refuse within a
+recorded scope. The reviewer’s identity, decision, reasons, and
+accountability remain attached to the record. People must be able to
+challenge a released decision and reach another authorized human or body
+even when the system had classified the work as routine.
 
 ## Multi-human governance
 
@@ -50,7 +48,7 @@ governance record names who has binding authority for each decision,
 how that authority was delegated, its scope and expiry, and the route
 of appeal to another accountable human or body.
 
-## State conflict is not value resolution
+## Ordering records cannot settle values
 
 Machinery can prevent simultaneous writes, order proposals, and enforce
 an authorized ruling. It cannot determine whether privacy outweighs
@@ -70,6 +68,7 @@ from becoming abdication.
 
 For session expiry, security may want a short lifetime while support
 and accessibility representatives warn about repeated sign-ins. Their
-conflict is recorded and routed to the person with binding product-risk
-authority, whose decision, delegation, reasons, and appeal route remain
-visible; a state-update mechanism cannot choose the value tradeoff.
+conflict is recorded and routed to the person authorized to make that
+decision about the product’s risk, whose decision, delegation, reasons,
+and appeal route remain visible; a rule for ordering record changes
+cannot choose the value tradeoff.

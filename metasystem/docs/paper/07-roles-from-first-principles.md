@@ -5,21 +5,22 @@ derived from hazards rather than copied from an organization chart.
 
 ## The premise: only some limits were removed
 
-Cheap copying and fresh instantiation reduce the need for roles based
-on working hours, career ladders, handoffs between scarce specialists,
-or one manager’s span of attention. They do not remove scarce judgment,
-incomplete context, authority, or the need for an independent view, so
-the derivation begins with those surviving limits.
+Cheap copying and starting a new worker without the previous worker’s
+private context reduce the need for roles based on working hours, career
+ladders, handoffs between scarce specialists, or one manager’s span of
+attention. They do not remove scarce judgment, incomplete context,
+authority, or the need for an independent view, so the derivation begins
+with those surviving limits.
 
 ## Hazards determine required separations
 
 Authorship creates commitment to a solution, so acceptance needs an
-independent stance; destructive action creates a blast radius, so its
-authority must be narrower than construction; mortal workers create
-continuity risk, so custody of records must outlive them. Silent death
-requires a liveness watcher, and explanations that shape human
-decisions require a reporter whose account can be checked against the
-record.
+independent stance; destructive action can damage data and systems
+beyond its immediate target, so its authority must be narrower than
+construction; mortal workers create continuity risk, so custody of
+records must outlive them. Silent death requires a liveness watcher, and
+explanations that shape human decisions require a reporter whose account
+can be checked against the record.
 
 ## Prohibited combinations
 

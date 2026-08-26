@@ -3,27 +3,50 @@
 Thesis: durable records replace private memory and make coordination
 recoverable, but they do not replace human deliberation.
 
-## A durable record at the center of work
+## One authoritative record, with access limited by role
 
-Goals, claims, states, decisions, and results live in a structured,
-history-preserving record with controlled state changes. Every worker
-and authorized human can read the same current state and trace how it
-was reached without reconstructing it from meetings or chat history.
+Goals, claims, states, decisions, and results live in one structured,
+history-preserving record: the only source allowed to determine the
+current state of work. The record is complete enough for recovery and
+audit, but that does not mean everyone may read all of it; each role
+sees only what its task requires. This is how Chapter 6 gives critics a
+fresh context and how Chapter 9 applies least authority to information
+as well as actions. Access follows the active role, so a person or
+machine with broader access in another role may not carry it into the
+narrower critic role.
+
+## What each role may read
+
+Builders may read the authorized intent and constraints, relevant work
+materials and prior rulings, evidence needed to construct and check the
+change, and their own recorded path so another builder can recover.
+Critics may read the authorized intent and acceptance criteria, relevant
+system context, the builder’s finished work or output, and the resulting
+evidence; they may not read the builder’s reasoning trace or path to the
+work. Custodians may read the exact finished output, required test and
+critique results, human rulings, and state history needed to accept or
+reverse it. Auditors — people or machines charged with reconstructing
+past work — may read the full retained history, including reasoning,
+role and access decisions, evidence, and state changes, but that
+read-only view grants no authority to alter or accept work.
 
 ## Handoff by record
 
 Every unit of work must be resumable from its recorded intent, current
-state, evidence, open questions, and next authorized action. The test
-is concrete: stop a worker at any moment and require a fresh one to
-continue safely without asking what happened.
+state, evidence, open questions, and next authorized action. The test is
+concrete: stop a builder, critic, custodian, or auditor at any moment and
+require a replacement in the same role to continue safely from the
+records that role may read. Information hidden from one role is retained
+for recovery within the originating role and for later audit rather than
+erased.
 
 ## Coordination is not agreement
 
-Atomic state changes can prevent two workers from overwriting one
-another and can record which proposal superseded another. They cannot
-decide whether security should outweigh convenience or which
-stakeholder should prevail; Chapter 13 assigns those value conflicts
-to authorized human governance.
+Recording each state change completely before another begins can prevent
+two workers from overwriting one another and can show which proposal
+replaced another. It cannot decide whether security should outweigh
+convenience or which stakeholder should prevail; Chapter 13 assigns
+those value conflicts to authorized human governance.
 
 ## Two audiences, one source
 
@@ -44,6 +67,9 @@ database lookup as judgment.
 
 The session-expiry record links the original request, the decision to
 expire from last activity, the affected interfaces, each attempted
-implementation, the checks run, and the accepted version. If a worker
-stops halfway through migrating existing sessions, another can see the
-last safe state and continue or reverse it.
+implementation, the checks run, and the accepted version. A critic sees
+the finished change and its evidence but not the builder’s path; a
+custodian sees what it needs to bind the accepted version to its checks,
+while an auditor can reconstruct the whole history. If a worker stops
+halfway through migrating existing sessions, a replacement builder can
+see the last safe state and continue or reverse it.
