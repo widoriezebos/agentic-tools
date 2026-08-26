@@ -68,3 +68,27 @@ pursued at all). RECORD REPAIR done this round: the freeze brief and
 obligation table now persist at plans/gate-run-freeze-{brief,
 obligations}.md (they had lived only in a session scratchpad — the
 critic could not verify EVD/INT compliance; now it can).
+
+## Round 2 amendments (adopted; round 3 decides)
+A1 CONTROLLER IDENTITY: the same-controller predicate is proven by
+live process ancestry against the controller's recorded exact
+identity (pid + start, the fence.go machinery) — run-id stays
+correlation only; borrowed env never qualifies.
+A2 PRODUCER PLACEMENT: the isolated clone's ROOT validation is the
+witness producer; savings apply only to its NESTED validations.
+Controller-produced witnesses are out; RUN-08/RUN-09/SUR-17 bind
+(no copy-back, producer inside the detached clone).
+A3 PROSPECTIVE POLICY AUTHORITY: skip authorization comes from an
+engine built from the consuming bytes (or the prospective source
+engine), never the pre-existing binary (SUR-17/20/21).
+A4 RUN CLASSIFICATION: a FULL battery = root-owned full engine proof
++ descendant-only deduplication; a root that imports proof is
+WITNESS-ASSISTED. The classification is recorded structurally and
+carried to weight reset; conclusion acceptance binds to FULL
+mechanically (or the conclusion rule is explicitly procedural —
+round 3 decides which).
+A5 FIXTURES: every refusal an isolated leg (ancestry, explicit
+consume scope, policy version, stale-binary policy, toolchain,
+foreign run-id, foreign root, deleted witness, broken-proof full
+fallback, reset provenance); each fallback leg must fail on a defect
+only the skipped proof could catch.
