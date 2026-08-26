@@ -73,6 +73,95 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	}
 }
 
+func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+
+	res, err := Open(verbReq(a, "01J5X00000000000000000Q500", "mac-a"), "labeled", "Grouped work.", "main", "Go.", "zeta", "alpha", "zeta")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open with labels: %+v %v", res, err)
+	}
+	tree, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(tree.Live["labeled"].Labels, ","); got != "alpha,zeta" {
+		t.Fatalf("open stores a sorted, deduplicated field: %q", got)
+	}
+
+	labels, err := ApplyLabelDelta(tree.Live["labeled"].Labels, []string{"beta", "alpha"}, []string{"zeta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err = Edit(verbReq(a, "01J5X00000000000000000Q510", "mac-a"), "labeled", EditFields{Labels: &labels})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("edit labels: %+v %v", res, err)
+	}
+	tree, err = loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := tree.Live["labeled"]
+	if got := strings.Join(edited.Labels, ","); got != "alpha,beta" {
+		t.Fatalf("edit replaces the whole canonical field: %q", got)
+	}
+	if last := edited.History[len(edited.History)-1]; last.Verb != "edit" || len(last.Targets) != 1 {
+		t.Fatalf("label changes use the existing field-agnostic edit history grammar: %+v", last)
+	}
+
+	unchanged, err := ApplyLabelDelta(edited.Labels, []string{"alpha"}, []string{"absent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err = Edit(verbReq(a, "01J5X00000000000000000Q520", "mac-a"), "labeled", EditFields{Labels: &unchanged})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("an equal final set follows the shipped edit behavior: %+v %v", res, err)
+	}
+	if _, err := ApplyLabelDelta(edited.Labels, []string{"alpha"}, []string{"alpha"}); err == nil || !strings.Contains(err.Error(), "both --label and --unlabel") {
+		t.Fatalf("a contradictory edit refuses by name: %v", err)
+	}
+	firstFinal, err := ApplyLabelDelta(edited.Labels, []string{"first"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastFinal, err := ApplyLabelDelta(edited.Labels, []string{"last"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err = Edit(verbReq(a, "01J5X00000000000000000Q525", "mac-a"), "labeled", EditFields{Labels: &firstFinal}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("first whole-field publisher: %+v %v", res, err)
+	}
+	if res, err = Edit(verbReq(a, "01J5X00000000000000000Q526", "mac-a"), "labeled", EditFields{Labels: &lastFinal}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("last whole-field publisher: %+v %v", res, err)
+	}
+	tree, err = loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(tree.Live["labeled"].Labels, ","); got != "alpha,beta,last" {
+		t.Fatalf("the last publisher replaces the whole field instead of set-merging: %q", got)
+	}
+	if _, err := Open(verbReq(a, "01J5X00000000000000000Q530", "mac-a"), "bad-label", "Bad.", "main", "Stop.", "Bad_Label"); err == nil || !strings.Contains(err.Error(), labelRe.String()) {
+		t.Fatalf("open refuses the one grammar: %v", err)
+	}
+}
+
+func TestOpenClaimCarriesLabels(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	res, err := OpenClaim(verbReq(a, "01J5X00000000000000000Q540", "mac-a"), "held-label", "Claimed at creation.", "main", "Go.", "custody")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --claim with labels: %+v %v", res, err)
+	}
+	tree, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tree.Live["held-label"]; got.State != StateClaimed || strings.Join(got.Labels, ",") != "custody" {
+		t.Fatalf("the atomic open and claim carries labels: %+v", got)
+	}
+}
+
 func TestSameGoalClaimRaceOneWinnerNamed(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)

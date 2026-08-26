@@ -143,6 +143,12 @@ func ValidateTree(t *TreeGoals) []Problem {
 				addf("%s: blockedBy names a goal that does not exist: %s", where, dep)
 			}
 		}
+		canonical, err := canonicalLabels(f.Labels)
+		if err != nil {
+			addf("%s: %v", where, err)
+		} else if strings.Join(canonical, ",") != strings.Join(f.Labels, ",") {
+			addf("%s: Labels must be sorted and deduplicated on a published tree", where)
+		}
 	})
 	// Acyclicity over the COMPOSED blocked graph (live and done
 	// edges together): a cycle anywhere wedges the frontier.

@@ -214,6 +214,13 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if row.Fields.Blocked != nil {
 			f.Blocked = append([]string(nil), (*row.Fields.Blocked)...)
 		}
+		if row.Fields.Labels != nil {
+			labels, err := canonicalLabels(*row.Fields.Labels)
+			if err != nil {
+				return nil, err
+			}
+			f.Labels = labels
+		}
 		touch(f, r, "open", []string{row.Id})
 		t.Live[row.Id] = f
 		changes := []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}
@@ -355,6 +362,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if row.Base.Blocked != nil && strings.Join(f.Blocked, ",") != strings.Join(*row.Base.Blocked, ",") {
 			return nil, conflict("blockedBy", "the fetched tip's edges moved past the hand edit's base")
 		}
+		if row.Base.Labels != nil && strings.Join(f.Labels, ",") != strings.Join(*row.Base.Labels, ",") {
+			return nil, conflict("labels", "the fetched tip's labels moved past the hand edit's base")
+		}
 		if row.Fields.Intent != nil {
 			f.Intent = *row.Fields.Intent
 		}
@@ -363,6 +373,13 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		}
 		if row.Fields.Blocked != nil {
 			f.Blocked = append([]string(nil), (*row.Fields.Blocked)...)
+		}
+		if row.Fields.Labels != nil {
+			labels, err := canonicalLabels(*row.Fields.Labels)
+			if err != nil {
+				return nil, err
+			}
+			f.Labels = labels
 		}
 		editDisplaced := ""
 		if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
@@ -523,6 +540,9 @@ func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
 		}
 		if row.Fields.Blocked != nil {
 			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "blockedBy", New: strings.Join(*row.Fields.Blocked, ",")})
+		}
+		if row.Fields.Labels != nil {
+			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "labels", New: strings.Join(*row.Fields.Labels, ",")})
 		}
 	}
 	return in

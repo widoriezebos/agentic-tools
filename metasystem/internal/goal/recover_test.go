@@ -38,7 +38,7 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 	opid := Opid("01J5X00000000000000000Q000", "mac-a", "lin-1")
 	strandEntry(t, a, opid, PhaseCreated, Intent{
 		Verb: "open", Targets: []string{"orphaned"},
-		Args: map[string]string{"intent": "The dead owner's work.", "origin": "main", "next": "Continue."},
+		Args: map[string]string{"intent": "The dead owner's work.", "origin": "main", "next": "Continue.", "labels": "custody,recovery"},
 	})
 	// The pushed-block gate: a CREATED stranded entry does not block,
 	// but recovery still completes it (dead owner + created =
@@ -65,7 +65,7 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	orphaned := p.Tree.Live["orphaned"]
-	if orphaned == nil || orphaned.Intent != "The dead owner's work." {
+	if orphaned == nil || orphaned.Intent != "The dead owner's work." || strings.Join(orphaned.Labels, ",") != "custody,recovery" {
 		t.Fatal("the recovered open is on the canonical branch")
 	}
 	if orphaned.History[0].Opid != opid {
@@ -75,6 +75,30 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 	entry, err := ReadEntry(a, opid)
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeConfirmed {
 		t.Fatalf("the recovered entry confirms: %+v %v", entry, err)
+	}
+}
+
+func TestRecoveryCompletesOpenClaimWithLabels(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	opid := Opid("01J5X00000000000000000Q005", "mac-a", "lin-1")
+	strandEntry(t, a, opid, PhaseCreated, Intent{
+		Verb: "open-claim", Targets: []string{"recovered-claim"},
+		Args: map[string]string{
+			"intent": "The dead owner's claimed work.", "origin": "main",
+			"next": "Continue.", "labels": "custody,recovery",
+		},
+	})
+	if _, err := Recover(endpointFor(a)); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := p.Tree.Live["recovered-claim"]
+	if f == nil || f.State != StateClaimed || f.Claimed == nil || strings.Join(f.Labels, ",") != "custody,recovery" {
+		t.Fatalf("recovery carries the atomic claim and labels: %+v", f)
 	}
 }
 
@@ -424,7 +448,11 @@ func TestRecoveryReplaysALiveHumanEditsJournaledIntent(t *testing.T) {
 	editReq := verbReq(a, "01J5X00000000000000000Q320", "mac-a")
 	editReq.Actor.Human = "wido"
 	next := "Recovered by the human's own hand."
-	liveReq := editRequest(editReq, "hand-held", EditFields{NextStep: &next})
+	labels := []string{"recovered", "custody"}
+	liveReq, err := editRequest(editReq, "hand-held", EditFields{NextStep: &next, Labels: &labels})
+	if err != nil {
+		t.Fatal(err)
+	}
 	strandEntryAt(t, a, liveReq.Opid, "mac-a", PhaseCreated, liveReq.Intent)
 	if _, err := Recover(endpointFor(a)); err != nil {
 		t.Fatal(err)
@@ -434,7 +462,7 @@ func TestRecoveryReplaysALiveHumanEditsJournaledIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := p.Tree.Live["hand-held"]
-	if f == nil || f.NextStep != next {
+	if f == nil || f.NextStep != next || strings.Join(f.Labels, ",") != "custody,recovered" {
 		t.Fatalf("the recovered live edit landed its field: %+v", f)
 	}
 	last := f.History[len(f.History)-1]

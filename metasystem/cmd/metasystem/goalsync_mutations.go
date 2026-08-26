@@ -67,8 +67,17 @@ func printSyncResult(res goal.PublishResult, err error) int {
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin string
 	lineage, digest                                                 string
+	labels, unlabels                                                repeatedStrings
 	claim, refreshOnly                                              bool
 	keep                                                            int
+}
+
+type repeatedStrings []string
+
+func (v *repeatedStrings) String() string { return fmt.Sprint([]string(*v)) }
+func (v *repeatedStrings) Set(value string) error {
+	*v = append(*v, value)
+	return nil
 }
 
 func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
@@ -86,11 +95,23 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.pin, "pin", "", "the machine nickname a goal is pinned to (\"-\" clears)")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
+	fs.Var(&f.labels, "label", "label token (repeatable)")
+	fs.Var(&f.unlabels, "unlabel", "label token to remove (repeatable; edit only)")
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
 	fs.BoolVar(&f.refreshOnly, "refresh-only", false, "complete a died refresh")
 	fs.IntVar(&f.keep, "keep", 10, "archive entries to keep")
 	if fs.Parse(args) != nil {
 		return nil, false
+	}
+	if name != "open" && name != "edit" {
+		if len(f.labels) > 0 {
+			fmt.Fprintf(os.Stderr, "goal %s does not take --label\n", name)
+			return nil, false
+		}
+		if len(f.unlabels) > 0 {
+			fmt.Fprintf(os.Stderr, "goal %s does not take --unlabel\n", name)
+			return nil, false
+		}
 	}
 	return f, true
 }
@@ -121,14 +142,18 @@ func trySyncMutation(name string, args []string) (int, bool) {
 	}
 	switch name {
 	case "open":
+		if len(f.unlabels) > 0 {
+			fmt.Fprintln(os.Stderr, "goal open does not accept --unlabel; remove labels with goal edit")
+			return 2, true
+		}
 		if !need(f.id, "id") || !need(f.intent, "intent") || !need(f.next, "next") {
 			return 2, true
 		}
 		if f.claim {
-			res, err := goal.OpenClaim(req, f.id, f.intent, f.origin, f.next)
+			res, err := goal.OpenClaim(req, f.id, f.intent, f.origin, f.next, f.labels...)
 			return printSyncResult(res, err), true
 		}
-		res, err := goal.Open(req, f.id, f.intent, f.origin, f.next)
+		res, err := goal.Open(req, f.id, f.intent, f.origin, f.next, f.labels...)
 		return printSyncResult(res, err), true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {
@@ -263,6 +288,21 @@ var (
 		}
 		if f.next != "" {
 			fields.NextStep = &f.next
+		}
+		if len(f.labels) > 0 || len(f.unlabels) > 0 {
+			p, err := goal.Project(req.Endpoint, false, time.Now())
+			if err != nil {
+				return goal.PublishResult{}, err
+			}
+			current, exists := p.Tree.Live[f.id]
+			if !exists {
+				return goal.PublishResult{}, fmt.Errorf("goal %s is not live; the archive edits through reopen", f.id)
+			}
+			labels, err := goal.ApplyLabelDelta(current.Labels, f.labels, f.unlabels)
+			if err != nil {
+				return goal.PublishResult{}, err
+			}
+			fields.Labels = &labels
 		}
 		return goal.Edit(req, f.id, fields)
 	}, "id")

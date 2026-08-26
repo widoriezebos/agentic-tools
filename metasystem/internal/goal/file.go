@@ -28,6 +28,7 @@ type GoalFile struct {
 	OpenedAt string // ISO 8601, written once at open
 	Revision uint64 // 1 at creation, +1 per verb write
 	Blocked  []string
+	Labels   []string
 	Arc      string
 	// Pinned names the ONE machine that may claim this goal — set when
 	// the work needs a setup, network, or resource only that machine
@@ -176,6 +177,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Pinned != "" && !validPinnedNickname(f.Pinned) {
 		addProblem("Pinned %q is not a machine nickname (one word, no whitespace of any kind)", f.Pinned)
 	}
+	for _, label := range f.Labels {
+		if !labelRe.MatchString(label) {
+			addProblem("label %q must match %s", label, labelRe.String())
+		}
+	}
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
@@ -239,6 +245,12 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		if value != "" && value != "-" {
 			for _, id := range strings.Split(value, ",") {
 				f.Blocked = append(f.Blocked, strings.TrimSpace(id))
+			}
+		}
+	case "Labels":
+		if value != "" && value != "-" {
+			for _, label := range strings.Split(value, ",") {
+				f.Labels = append(f.Labels, strings.TrimSpace(label))
 			}
 		}
 	case "Arc":
@@ -352,6 +364,9 @@ func RenderFile(f *GoalFile) []byte {
 	fmt.Fprintf(&b, "- Revision: %d\n", f.Revision)
 	if len(f.Blocked) > 0 {
 		fmt.Fprintf(&b, "- BlockedBy: %s\n", strings.Join(f.Blocked, ", "))
+	}
+	if len(f.Labels) > 0 {
+		fmt.Fprintf(&b, "- Labels: %s\n", strings.Join(f.Labels, ", "))
 	}
 	if f.Arc != "" {
 		fmt.Fprintf(&b, "- Arc: %s\n", f.Arc)

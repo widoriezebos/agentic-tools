@@ -131,4 +131,124 @@ grep -q "\"identity\": \"$identity\"" <<<"$rerun_out" \
 recover_out=$("$ms" goal recover --root "$clone")
 [[ $? -eq 0 ]] || { echo "goal recover refused a healthy journal: $recover_out" >&2; exit 1; }
 
+# 6. Label writes are canonical whole fields. Open accepts repeated
+# labels, sorts and deduplicates them, while an unlabeled open keeps
+# the field absent.
+export METASYSTEM_OWNER_LINEAGE=fixture-lineage
+open_labels=$("$ms" goal open --root "$clone" --id labeled-one \
+  --intent "First labeled goal." --next "Continue." \
+  --label beta --label alpha --label beta)
+grep -q '"outcome":"confirmed"' <<<"$open_labels" \
+  || { echo "goal open with labels did not confirm: $open_labels" >&2; exit 1; }
+"$ms" goal open --root "$clone" --id plain-goal \
+  --intent "An unlabeled goal." --next "Continue." >/dev/null
+labels_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$labels_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one.md"
+grep -q '^- Labels: alpha, beta$' "$tmp/labeled-one.md" \
+  || { echo "open did not store sorted, deduplicated labels" >&2; cat "$tmp/labeled-one.md" >&2; exit 1; }
+git -C "$clone" cat-file -p "$labels_tip:plans/goals/plain-goal.md" >"$tmp/plain-goal.md"
+if grep -q '^- Labels:' "$tmp/plain-goal.md"; then
+  echo "an unlabeled open wrote a Labels line" >&2; exit 1
+fi
+
+# 7. Edit computes one replacement field from adds and removes. An
+# equal final set follows the shipped edit behavior and still records
+# an edit; contradictory and malformed tokens refuse with the grammar.
+"$ms" goal edit --root "$clone" --id labeled-one \
+  --label shared --unlabel beta >/dev/null
+edit_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$edit_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one-edited.md"
+grep -q '^- Labels: alpha, shared$' "$tmp/labeled-one-edited.md" \
+  || { echo "label add/remove produced the wrong whole field" >&2; cat "$tmp/labeled-one-edited.md" >&2; exit 1; }
+revision_before=$(sed -n 's/^- Revision: //p' "$tmp/labeled-one-edited.md")
+"$ms" goal edit --root "$clone" --id labeled-one --label alpha >/dev/null
+noop_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$noop_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one-noop.md"
+revision_after=$(sed -n 's/^- Revision: //p' "$tmp/labeled-one-noop.md")
+[[ "$revision_after" -eq $((revision_before + 1)) ]] \
+  || { echo "an equal final label set did not follow existing edit behavior" >&2; exit 1; }
+if contradiction=$("$ms" goal edit --root "$clone" --id labeled-one \
+  --label alpha --unlabel alpha 2>&1); then
+  echo "a contradictory label edit succeeded" >&2; exit 1
+fi
+grep -q 'both --label and --unlabel' <<<"$contradiction" \
+  || { echo "the contradictory edit did not name its refusal: $contradiction" >&2; exit 1; }
+if bad_label=$("$ms" goal open --root "$clone" --id bad-label \
+  --intent "Must refuse." --next "Stop." --label Bad_Label 2>&1); then
+  echo "a malformed label succeeded" >&2; exit 1
+fi
+grep -Fq 'must match ^[a-z][a-z0-9-]{0,31}$' <<<"$bad_label" \
+  || { echo "the malformed label refusal did not name the grammar: $bad_label" >&2; exit 1; }
+if orphan_label=$("$ms" goal claim --root "$clone" --id plain-goal --label x 2>&1); then
+  echo "goal claim silently accepted an orphan --label flag" >&2; exit 1
+fi
+[[ "$orphan_label" == "goal claim does not take --label" ]] \
+  || { echo "the orphan label refusal did not name the verb: $orphan_label" >&2; exit 1; }
+
+# 8. List filters use AND across repeated labels and leave zero-label
+# goals lawful but absent from a filtered result.
+"$ms" goal open --root "$clone" --id labeled-two \
+  --intent "Second labeled goal." --next "Continue." \
+  --label shared --label alpha >/dev/null
+one_filter=$("$ms" goal list --root "$clone" --pretty --label shared)
+grep -q '^  labeled-one' <<<"$one_filter" && grep -q '^  labeled-two' <<<"$one_filter" \
+  || { echo "one-label list filtering lost a match: $one_filter" >&2; exit 1; }
+if grep -q '^  plain-goal' <<<"$one_filter"; then
+  echo "a zero-label goal appeared in a filtered list" >&2; exit 1
+fi
+two_filters=$("$ms" goal list --root "$clone" --pretty --label alpha --label shared)
+grep -q '^  labeled-one' <<<"$two_filters" && grep -q '^  labeled-two' <<<"$two_filters" \
+  || { echo "two-label AND filtering lost a match: $two_filters" >&2; exit 1; }
+"$ms" goal open --root "$clone" --id and-a \
+  --intent "Carries only a." --next "Continue." --label a >/dev/null
+"$ms" goal open --root "$clone" --id and-ab \
+  --intent "Carries a and b." --next "Continue." --label a --label b >/dev/null
+and_probe=$("$ms" goal list --root "$clone" --pretty --label a --label b)
+and_ids=$(sed -n 's/^  \([a-z][a-z0-9-]*\)$/\1/p' <<<"$and_probe")
+[[ "$and_ids" == "and-ab" ]] \
+  || { echo "the two-label list filter did not return exactly the goal carrying both labels: $and_probe" >&2; exit 1; }
+
+# 9. A published canonical file survives fetch and a clean reconcile
+# byte-for-byte. A later raw unsorted, duplicated hand edit remains raw
+# when parsed from disk and reconcile republishes it canonically.
+git -C "$clone" fetch -q origin
+git -C "$clone" reset -q --hard origin/main
+before_roundtrip=$(shasum -a 256 "$clone/plans/goals/labeled-one.md" | cut -d' ' -f1)
+clean_reconcile=$("$ms" goal reconcile --root "$clone" --by wido)
+grep -q '"rows":0' <<<"$clean_reconcile" \
+  || { echo "the clean label round trip mapped a delta: $clean_reconcile" >&2; exit 1; }
+after_roundtrip=$(shasum -a 256 "$clone/plans/goals/labeled-one.md" | cut -d' ' -f1)
+[[ "$before_roundtrip" == "$after_roundtrip" ]] \
+  || { echo "publish/fetch/reconcile changed canonical label bytes" >&2; exit 1; }
+perl -0pi -e 's/^- Labels: alpha, shared$/- Labels: shared, alpha, shared/m' \
+  "$clone/plans/goals/labeled-one.md"
+grep -q '^- Labels: shared, alpha, shared$' "$clone/plans/goals/labeled-one.md" \
+  || { echo "the raw hand-edit fixture was not formed" >&2; exit 1; }
+hand_reconcile=$("$ms" goal reconcile --root "$clone" --by wido)
+grep -q '"rows":1' <<<"$hand_reconcile" \
+  || { echo "the raw label hand edit did not map to one edit: $hand_reconcile" >&2; exit 1; }
+grep -q '^- Labels: alpha, shared$' "$clone/plans/goals/labeled-one.md" \
+  || { echo "reconcile did not canonicalize the raw label field" >&2; exit 1; }
+
+# 10. A held claim answers first even when it misses the filter. Once
+# released, an empty filtered candidate set uses the distinct message.
+held_next=$("$ms" goal next --root "$clone" --label absent)
+grep -q '^continue your claimed goal: ship-widget$' <<<"$held_next" \
+  || { echo "a label filter hid the held claim: $held_next" >&2; exit 1; }
+"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+empty_next=$("$ms" goal next --root "$clone" --label absent)
+[[ "$empty_next" == "no goal matches --label absent" ]] \
+  || { echo "the empty filtered candidate message is not distinct: $empty_next" >&2; exit 1; }
+
+# 11. The atomic open-and-claim path carries labels after the quota is
+# free, completing the command-line carriage leg.
+open_claim=$("$ms" goal open --root "$clone" --id claimed-label \
+  --intent "Claimed with its group." --next "Continue." --claim --label custody)
+grep -q '"outcome":"confirmed"' <<<"$open_claim" \
+  || { echo "open --claim with a label did not confirm: $open_claim" >&2; exit 1; }
+claim_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$claim_tip:plans/goals/claimed-label.md" >"$tmp/claimed-label.md"
+grep -q '^- Labels: custody$' "$tmp/claimed-label.md" \
+  || { echo "open --claim dropped its label" >&2; cat "$tmp/claimed-label.md" >&2; exit 1; }
+
 echo "goal CLI fixtures: PASSED"

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -414,6 +415,91 @@ func validId(id string) bool {
 	}
 	for _, r := range id {
 		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+var labelRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+
+// ValidateLabels applies the ledger's one label grammar at every
+// command boundary that accepts label tokens.
+func ValidateLabels(labels []string) error {
+	for _, label := range labels {
+		if !labelRe.MatchString(label) {
+			return fmt.Errorf("label %q must match %s", label, labelRe.String())
+		}
+	}
+	return nil
+}
+
+// canonicalLabels is the verb-write form: sorted and deduplicated.
+// Parsing deliberately does not call it because reconcile must see a
+// hand edit's raw order and duplicates.
+func canonicalLabels(labels []string) ([]string, error) {
+	if err := ValidateLabels(labels); err != nil {
+		return nil, err
+	}
+	set := make(map[string]struct{}, len(labels))
+	for _, label := range labels {
+		set[label] = struct{}{}
+	}
+	canonical := make([]string, 0, len(set))
+	for label := range set {
+		canonical = append(canonical, label)
+	}
+	sort.Strings(canonical)
+	return canonical, nil
+}
+
+// ApplyLabelDelta builds the edit verb's whole replacement field.
+// Publishing that field follows the same last-publisher-wins rule as
+// BlockedBy; a lost additive edit is explicitly rerun by its author.
+func ApplyLabelDelta(current, adds, removes []string) ([]string, error) {
+	if err := ValidateLabels(adds); err != nil {
+		return nil, err
+	}
+	if err := ValidateLabels(removes); err != nil {
+		return nil, err
+	}
+	removeSet := make(map[string]struct{}, len(removes))
+	for _, label := range removes {
+		removeSet[label] = struct{}{}
+	}
+	for _, label := range adds {
+		if _, contradictory := removeSet[label]; contradictory {
+			return nil, fmt.Errorf("label %q cannot be both --label and --unlabel in one edit", label)
+		}
+	}
+	set := make(map[string]struct{}, len(current)+len(adds))
+	for _, label := range current {
+		set[label] = struct{}{}
+	}
+	for _, label := range adds {
+		set[label] = struct{}{}
+	}
+	for label := range removeSet {
+		delete(set, label)
+	}
+	final := make([]string, 0, len(set))
+	for label := range set {
+		final = append(final, label)
+	}
+	return canonicalLabels(final)
+}
+
+// MatchesLabels reports AND membership across every required label.
+func MatchesLabels(labels, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	have := make(map[string]struct{}, len(labels))
+	for _, label := range labels {
+		have[label] = struct{}{}
+	}
+	for _, label := range required {
+		if _, found := have[label]; !found {
 			return false
 		}
 	}

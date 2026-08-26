@@ -100,7 +100,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			}
 			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
 				Intent: &edited.Intent, NextStep: &edited.NextStep,
-				Blocked: &edited.Blocked,
+				Blocked: &edited.Blocked, Labels: &edited.Labels,
 			}})
 		case "removed":
 			return nil, fmt.Errorf("%s: hand-deleting goal files is unmappable; done and prune are verbs", d.Path)
@@ -268,6 +268,13 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		baseBlocked := append([]string(nil), base.Blocked...)
 		fields.Blocked = &blocked
 		baseFields.Blocked = &baseBlocked
+		editNeeded = true
+	}
+	if strings.Join(edited.Labels, ",") != strings.Join(base.Labels, ",") {
+		labels := append([]string(nil), edited.Labels...)
+		baseLabels := append([]string(nil), base.Labels...)
+		fields.Labels = &labels
+		baseFields.Labels = &baseLabels
 		editNeeded = true
 	}
 	// Arc IS on the closed surface: a membership change maps

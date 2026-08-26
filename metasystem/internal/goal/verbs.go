@@ -225,18 +225,26 @@ func donePath(id string) string { return goalsPrefix + "done/" + id + ".md" }
 
 // Open adds a queued goal. Goal-free clears in the same commit when
 // it was declared.
-func Open(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, error) {
-	return Publish(r.Endpoint, openRequest(r, id, intent, origin, nextStep))
+func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) (PublishResult, error) {
+	req, err := openRequest(r, id, intent, origin, nextStep, labels)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, req)
 }
 
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
+func openRequest(r VerbRequest, id, intent, origin, nextStep string, labels []string) (PublishRequest, error) {
+	canonical, err := canonicalLabels(labels)
+	if err != nil {
+		return PublishRequest{}, err
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "open", Targets: []string{id}, Args: intentArgs(r, map[string]string{
-			"intent": intent, "origin": origin, "next": nextStep,
+			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","),
 		})},
 		Message: "goal open " + id,
 		Mutate: func(tip string) ([]Change, error) {
@@ -255,7 +263,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequ
 			}
 			f := &GoalFile{
 				Id: id, State: StateQueued, Intent: intent, Origin: origin,
-				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0,
+				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0, Labels: canonical,
 			}
 			touch(f, r, "open", []string{id})
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
@@ -272,7 +280,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequ
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	}
+	}, nil
 }
 
 // Claim takes ownership of a queued goal for the actor's pair.
@@ -704,17 +712,29 @@ type EditFields struct {
 	Intent   *string
 	NextStep *string
 	Blocked  *[]string
+	Labels   *[]string
 }
 
 // Edit applies field deltas to one live goal.
 func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
-	return Publish(r.Endpoint, editRequest(r, id, fields))
+	req, err := editRequest(r, id, fields)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, req)
 }
 
 // editRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
+func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, error) {
+	if fields.Labels != nil {
+		canonical, err := canonicalLabels(*fields.Labels)
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		fields.Labels = &canonical
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields), Args: intentArgs(r, nil)},
@@ -764,11 +784,14 @@ func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
 			if fields.Blocked != nil {
 				f.Blocked = append([]string(nil), (*fields.Blocked)...)
 			}
+			if fields.Labels != nil {
+				f.Labels = append([]string(nil), (*fields.Labels)...)
+			}
 			touchDisplaced(f, r, "edit", []string{id}, displaced)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	}
+	}, nil
 }
 
 // DeclareFree declares the absence of intent: no queued or claimed
@@ -892,21 +915,29 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 
 // OpenClaim opens a goal already claimed by the actor — one commit,
 // the claim guards holding trivially on a goal with no blockers.
-func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, error) {
+func OpenClaim(r VerbRequest, id, intent, origin, nextStep string, labels ...string) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("open --claim is agent-only: humans direct agents; bare open leaves the goal queued")
 	}
-	return Publish(r.Endpoint, openClaimRequest(r, id, intent, origin, nextStep))
+	req, err := openClaimRequest(r, id, intent, origin, nextStep, labels)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, req)
 }
 
 // openClaimRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
+func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, labels []string) (PublishRequest, error) {
+	canonical, err := canonicalLabels(labels)
+	if err != nil {
+		return PublishRequest{}, err
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: intentArgs(r, map[string]string{
-			"intent": intent, "origin": origin, "next": nextStep,
+			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","),
 		})},
 		Message: "goal open --claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
@@ -926,6 +957,7 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string) Publis
 			f := &GoalFile{
 				Id: id, State: StateClaimed, Intent: intent, Origin: origin,
 				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0,
+				Labels:  canonical,
 				Claimed: &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()},
 			}
 			touch(f, r, "open-claim", []string{id})
@@ -942,7 +974,7 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string) Publis
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	}
+	}, nil
 }
 
 // Prune deletes archived goals outside the retention closure: every
@@ -1633,6 +1665,9 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 	}
 	if fields.Blocked != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "blockedBy", New: strings.Join(*fields.Blocked, ",")})
+	}
+	if fields.Labels != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "labels", New: strings.Join(*fields.Labels, ",")})
 	}
 	return deltas
 }

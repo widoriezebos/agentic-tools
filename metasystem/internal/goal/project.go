@@ -149,7 +149,7 @@ type NextVerdict struct {
 }
 
 // Next computes the frontier for one machine from a projection.
-func Next(p Projection, machine string) NextVerdict {
+func Next(p Projection, machine string, requiredLabels ...string) NextVerdict {
 	v := NextVerdict{}
 	t := p.Tree
 	// An arc claims as one unit, so one member pinned elsewhere makes
@@ -169,6 +169,9 @@ func Next(p Projection, machine string) NextVerdict {
 				v.Claimed = append(v.Claimed, id)
 			}
 		case StateQueued:
+			if !MatchesLabels(f.Labels, requiredLabels) {
+				continue
+			}
 			// A goal pinned to another machine — or any member of an
 			// arc with such a member — is invisible to this machine's
 			// frontier: it can never claim it, so reporting it ready

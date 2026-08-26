@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -250,11 +251,21 @@ func runGoalList(args []string) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	pretty := flags.Bool("pretty", false, "a human table instead of JSON")
+	var labels repeatedStrings
+	flags.Var(&labels, "label", "label token required on every listed goal (repeatable)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if err := goal.ValidateLabels(labels); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if converted(*root) {
-		return listSynced(*root, *pretty)
+		return listSynced(*root, *pretty, labels...)
+	}
+	if len(labels) > 0 {
+		fmt.Fprintln(os.Stderr, "goal list --label reads the synced backlog; this checkout still carries the legacy ledger")
+		return 1
 	}
 	store := &goal.Store{Root: *root}
 	ledger, problems, err := store.ReadLedger()
@@ -300,7 +311,7 @@ func converted(root string) bool {
 
 // listSynced prints the accepted world: the same JSON idea as the
 // legacy list, grouped by state, with the projection's banners.
-func listSynced(root string, pretty bool) int {
+func listSynced(root string, pretty bool, requiredLabels ...string) int {
 	e, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -314,11 +325,16 @@ func listSynced(root string, pretty bool) int {
 	grouped := map[string][]*goal.GoalFile{}
 	for _, id := range goal.SortedGoalIds(p.Tree.Live) {
 		f := p.Tree.Live[id]
+		if !goal.MatchesLabels(f.Labels, requiredLabels) {
+			continue
+		}
 		grouped[f.State] = append(grouped[f.State], f)
 	}
 	var done []*goal.GoalFile
 	for _, id := range goal.SortedGoalIds(p.Tree.Done) {
-		done = append(done, p.Tree.Done[id])
+		if f := p.Tree.Done[id]; goal.MatchesLabels(f.Labels, requiredLabels) {
+			done = append(done, f)
+		}
 	}
 	if pretty {
 		for _, banner := range p.Banners {
@@ -400,7 +416,7 @@ func runGoalShow(args []string) int {
 }
 
 // nextSynced prints the frontier line for this machine.
-func nextSynced(root string) int {
+func nextSynced(root string, requiredLabels ...string) int {
 	e, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -421,7 +437,7 @@ func nextSynced(root string) int {
 	for _, banner := range p.Banners {
 		fmt.Println(banner)
 	}
-	v := goal.Next(p, machine)
+	v := goal.Next(p, machine, requiredLabels...)
 	switch {
 	case len(v.Claimed) > 0:
 		fmt.Println("continue your claimed goal: " + v.Claimed[0])
@@ -429,6 +445,8 @@ func nextSynced(root string) int {
 		fmt.Println("next ready goal: " + v.Ready[0])
 	case len(v.Blocked) > 0:
 		fmt.Println("all queued goals are blocked; the first is " + v.Blocked[0])
+	case len(requiredLabels) > 0:
+		fmt.Println("no goal matches --label " + strings.Join(requiredLabels, " --label "))
 	default:
 		fmt.Println("the backlog is empty; open a goal or rest")
 	}
@@ -440,11 +458,21 @@ func nextSynced(root string) int {
 func runGoalNext(args []string) int {
 	flags := flag.NewFlagSet("goal next", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
+	var labels repeatedStrings
+	flags.Var(&labels, "label", "label token required on recommendation candidates (repeatable)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if err := goal.ValidateLabels(labels); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if converted(*root) {
-		return nextSynced(*root)
+		return nextSynced(*root, labels...)
+	}
+	if len(labels) > 0 {
+		fmt.Fprintln(os.Stderr, "goal next --label reads the synced backlog; this checkout still carries the legacy ledger")
+		return 1
 	}
 	store := &goal.Store{Root: *root}
 	ledger, problems, err := store.ReadLedger()

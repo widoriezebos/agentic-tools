@@ -44,6 +44,29 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	}
 }
 
+func TestLabelsParseRawAndUnlabeledFilesStayUnchanged(t *testing.T) {
+	f := claimedGolden()
+	unlabeled := string(RenderFile(f))
+	if strings.Contains(unlabeled, "- Labels:") {
+		t.Fatal("an unlabeled goal does not gain a Labels line")
+	}
+
+	f.Labels = []string{"zeta", "alpha", "zeta"}
+	parsed, problems := ParseFile(RenderFile(f))
+	if len(problems) != 0 {
+		t.Fatalf("raw lawful labels parse: %v", problems)
+	}
+	if got := strings.Join(parsed.Labels, ","); got != "zeta,alpha,zeta" {
+		t.Fatalf("parsing preserves hand-written order and duplicates, got %q", got)
+	}
+
+	f.Labels = []string{"Bad_Label"}
+	_, problems = ParseFile(RenderFile(f))
+	if !problemsContain(problems, `must match ^[a-z][a-z0-9-]{0,31}$`) {
+		t.Fatalf("the one label grammar refuses by name: %v", problems)
+	}
+}
+
 func TestGoldenArchivedFileCarriesExplicitDoneState(t *testing.T) {
 	done := &GoalFile{
 		Id:       "custody-death-proof",

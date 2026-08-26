@@ -68,6 +68,38 @@ func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {
 	}
 }
 
+func TestReconcileObservesRawLabelsAndPublishesCanonicalLabels(t *testing.T) {
+	a, _ := reconcileBed(t)
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.Labels = []string{"zeta", "alpha", "zeta"}
+	})
+	onDisk, err := os.ReadFile(filepath.Join(a, "plans", "goals", "editable.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, problems := ParseFile(onDisk)
+	if len(problems) != 0 || strings.Join(parsed.Labels, ",") != "zeta,alpha,zeta" {
+		t.Fatalf("parse preserves the raw hand edit before reconcile: labels=%v problems=%v", parsed.Labels, problems)
+	}
+
+	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P020"))
+	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
+		t.Fatalf("reconcile labels: %+v %v", res, err)
+	}
+	tree, err := loadTree(a, res.Publish.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := tree.Live["editable"]
+	if labels := strings.Join(got.Labels, ","); labels != "alpha,zeta" {
+		t.Fatalf("reconcile republishes the canonical label field: %q", labels)
+	}
+	last := got.History[len(got.History)-1]
+	if last.Verb != "edit" || last.Actor != "human:wido" {
+		t.Fatalf("the existing edit history grammar records the reconciliation: %+v", last)
+	}
+}
+
 func TestReconcileConflictNamesGoalAndField(t *testing.T) {
 	a, tip := reconcileBed(t)
 	_ = tip

@@ -161,9 +161,9 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	cascade := in.Args["cascade"] == "arc"
 	switch in.Verb {
 	case "open":
-		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"]), nil
+		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], commaValues(in.Args["labels"]))
 	case "open-claim":
-		return openClaimRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"]), nil
+		return openClaimRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], commaValues(in.Args["labels"]))
 	case "claim":
 		if cascade {
 			return claimArcRequest(r, target), nil
@@ -202,18 +202,14 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 				// origin delta is a pre-fold journal's residue.
 				return PublishRequest{}, fmt.Errorf("the stored intent rewrites Origin, which is immutable; close this entry by hand")
 			case "blockedBy":
-				var blocked []string
-				if value != "" {
-					for _, dep := range strings.Split(value, ",") {
-						if trimmed := strings.TrimSpace(dep); trimmed != "" {
-							blocked = append(blocked, trimmed)
-						}
-					}
-				}
+				blocked := commaValues(value)
 				fields.Blocked = &blocked
+			case "labels":
+				labels := commaValues(value)
+				fields.Labels = &labels
 			}
 		}
-		return editRequest(r, target, fields), nil
+		return editRequest(r, target, fields)
 	case "steal":
 		if r.Actor.Human == "" {
 			return PublishRequest{}, fmt.Errorf("the stored steal carries no human (--by); it cannot be replayed")
@@ -246,6 +242,16 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 func actorFromEntry(entry Entry) Actor {
 	by := entry.Intent.Args["by"]
 	return Actor{Machine: entry.Machine, Lineage: entry.Lineage, Human: by}
+}
+
+func commaValues(value string) []string {
+	var values []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	return values
 }
 
 func timeNowUTC() time.Time { return time.Now().UTC() }

@@ -44,6 +44,32 @@ func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 	}
 }
 
+func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
+	held := vGoal("held", StateClaimed)
+	held.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: "2026-08-20T10:05:00Z"}
+	held.Labels = []string{"other"}
+	one := vGoal("one", StateQueued)
+	one.Labels = []string{"alpha", "shared"}
+	two := vGoal("two", StateQueued)
+	two.Labels = []string{"beta", "shared"}
+	p := Projection{Tree: &TreeGoals{Live: map[string]*GoalFile{
+		"held": held, "one": one, "two": two,
+	}, Done: map[string]*GoalFile{}}}
+
+	v := Next(p, "mac-a", "alpha")
+	if len(v.Claimed) != 1 || v.Claimed[0] != "held" || len(v.Ready) != 1 || v.Ready[0] != "one" {
+		t.Fatalf("the held claim remains first while the candidate set narrows: %+v", v)
+	}
+	v = Next(p, "other-machine", "shared", "beta")
+	if len(v.Claimed) != 0 || len(v.Ready) != 1 || v.Ready[0] != "two" {
+		t.Fatalf("repeated labels combine with AND: %+v", v)
+	}
+	v = Next(p, "other-machine", "absent")
+	if len(v.Claimed) != 0 || len(v.Ready) != 0 || len(v.Blocked) != 0 {
+		t.Fatalf("an empty filtered candidate set is distinguishable: %+v", v)
+	}
+}
+
 func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 	repo := soloLedgerRepo(t)
 	e := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}
