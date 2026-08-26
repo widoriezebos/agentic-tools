@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The gate family tracks gate runs: a running gate registers a marker so the
@@ -56,6 +57,34 @@ func runGateFence(args []string) int {
 	}
 	if len(holders) > 0 {
 		return 1
+	}
+	return 0
+}
+
+// runGateControllerDescendant accepts only a consuming process below one
+// exact live controller identity. Exit 3 is a proof refusal rather than a
+// usage or mechanical failure.
+func runGateControllerDescendant(args []string) int {
+	flags := flag.NewFlagSet("gate controller-descendant", flag.ContinueOnError)
+	consumerPID := flags.Int64("consumer-pid", 0, "witness-consuming process pid")
+	controllerPID := flags.Int64("controller-pid", 0, "recorded controller pid")
+	controllerStartedAt := flags.Int64("controller-started-at", 0, "recorded controller start time in epoch seconds")
+	controllerStartTicks := flags.Int64("controller-start-ticks", 0, "recorded controller start ticks")
+	controllerBootID := flags.String("controller-boot-id", "", "recorded controller boot identity")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *consumerPID <= 0 || *controllerPID <= 0 || *controllerStartedAt <= 0 || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem gate controller-descendant --consumer-pid P --controller-pid P --controller-started-at SECONDS [--controller-start-ticks T --controller-boot-id ID]")
+		return 2
+	}
+	controller := identity.Ref{
+		Pid: *controllerPID, StartedAtSec: *controllerStartedAt,
+		StartTicks: *controllerStartTicks, BootID: *controllerBootID,
+	}
+	if err := gaterun.ControllerDescendant(*consumerPID, controller); err != nil {
+		fmt.Fprintln(os.Stderr, "gate controller-descendant:", err)
+		return 3
 	}
 	return 0
 }

@@ -228,14 +228,14 @@ func TestCheckpointResetPreservesConcurrentAddsAndProvenance(t *testing.T) {
 	if state.PostCheckpointSinceUTC != post {
 		t.Fatalf("later add replaced first post-checkpoint time: %+v", state)
 	}
-	state, report, err := WeightReset(root, "run-1")
+	state, report, err := WeightReset(root, "run-1", FullRun)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Accumulated != 1 || state.Landings != 2 || state.SinceUTC != post {
 		t.Fatalf("concurrent additions were not preserved: %+v", state)
 	}
-	if state.LastCommit != "newest" || report.Subject != "subject" || report.LastCommit != "newest" {
+	if state.LastCommit != "newest" || report.Subject != "subject" || report.LastCommit != "newest" || report.RunClass != FullRun {
 		t.Fatalf("reset confused subject with newest landing: state=%+v report=%+v", state, report)
 	}
 	if state.Generation != 6 || report.ResetGeneration != 5 {
@@ -244,7 +244,7 @@ func TestCheckpointResetPreservesConcurrentAddsAndProvenance(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(envelope, "reset.json")); err != nil {
 		t.Fatal(err)
 	}
-	staleState, _, err := WeightReset(root, "run-1")
+	staleState, _, err := WeightReset(root, "run-1", FullRun)
 	if !errors.Is(err, ErrStaleCheckpoint) {
 		t.Fatalf("consumed checkpoint reset did not refuse stale: %v", err)
 	}
@@ -260,12 +260,43 @@ func TestFullResetRestartsWindowWithoutChangingLastCommit(t *testing.T) {
 	add(t, root, "landing", "1\t0\tdocs/a.md\x00")
 	openCheckpoint(t, root, "run", "subject", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
 	now = now.Add(time.Hour)
-	state, _, err := WeightReset(root, "run")
+	state, _, err := WeightReset(root, "run", FullRun)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Accumulated != 0 || state.Landings != 0 || state.SinceUTC != now.Format(time.RFC3339) || state.LastCommit != "landing" {
 		t.Fatalf("full reset violated state ownership: %+v", state)
+	}
+}
+
+func TestWitnessAssistedRunCannotResetAndAbandonsWithoutSubtracting(t *testing.T) {
+	root, envelope := t.TempDir(), t.TempDir()
+	add(t, root, "landing", "1\t0\tdocs/a.md\x00")
+	openCheckpoint(t, root, "assisted", "subject", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
+	before, _, err := WeightCheck(root, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := WeightReset(root, "assisted", WitnessAssistedRun); !errors.Is(err, ErrResetRequiresFull) {
+		t.Fatalf("witness-assisted reset did not refuse by class: %v", err)
+	}
+	afterRefusal, _, err := WeightCheck(root, 60)
+	if err != nil || afterRefusal.Generation != before.Generation || afterRefusal.Accumulated != before.Accumulated || afterRefusal.Checkpoint == nil {
+		t.Fatalf("class refusal mutated or terminalized the checkpoint: before=%+v after=%+v err=%v", before, afterRefusal, err)
+	}
+	result, err := WeightAbandon(root, "assisted", "witness-assisted", false)
+	if err != nil || result.WeightPreserved != before.Accumulated {
+		t.Fatalf("witness-assisted abandonment did not preserve weight: %+v %v", result, err)
+	}
+	terminal, _, err := WeightCheck(root, 60)
+	if err != nil || terminal.Checkpoint != nil || terminal.Accumulated != before.Accumulated || terminal.Landings != before.Landings {
+		t.Fatalf("witness-assisted terminalization subtracted weight: %+v %v", terminal, err)
+	}
+	if _, err := os.Stat(filepath.Join(envelope, "reset.json")); !os.IsNotExist(err) {
+		t.Fatalf("witness-assisted run published reset evidence: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(envelope, "abandoned.json")); err != nil {
+		t.Fatalf("witness-assisted run did not publish abandonment evidence: %v", err)
 	}
 }
 
@@ -733,7 +764,7 @@ func TestResetWriteFailureLeavesCheckpointOpen(t *testing.T) {
 	openCheckpoint(t, root, "run", "one", t.TempDir(), 1, weightProber{1: alive(1, 10, 0, "")})
 	priorWriter := writeWeightState
 	writeWeightState = func(string, WeightState) error { return errors.New("injected reset write") }
-	_, _, err := WeightReset(root, "run")
+	_, _, err := WeightReset(root, "run", FullRun)
 	writeWeightState = priorWriter
 	if err == nil {
 		t.Fatal("injected reset write passed")
@@ -763,7 +794,7 @@ func TestDurabilityUnknownResetStateReportsFailureAndRepairs(t *testing.T) {
 	}
 	t.Cleanup(func() { writeWeightState = priorWriter })
 
-	if _, _, err := WeightReset(root, "run"); err == nil {
+	if _, _, err := WeightReset(root, "run", FullRun); err == nil {
 		t.Fatal("durability-unknown reset reported success")
 	}
 	writeWeightState = priorWriter
@@ -789,7 +820,7 @@ func TestMissingResetAppendixRepairsOnReadWithoutSecondSubtraction(t *testing.T)
 	openCheckpoint(t, root, "run", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
 	priorPublisher := publishWeightAppendix
 	publishWeightAppendix = func(string, any) error { return errors.New("injected appendix failure") }
-	state, _, err := WeightReset(root, "run")
+	state, _, err := WeightReset(root, "run", FullRun)
 	if state.PendingReset == nil {
 		t.Fatalf("failed appendix lost replay data: %+v", state)
 	}
@@ -825,7 +856,7 @@ func TestConflictingResetAppendixLeavesRepairForRetry(t *testing.T) {
 	openCheckpoint(t, root, "run", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
 	priorPublisher := publishWeightAppendix
 	publishWeightAppendix = func(string, any) error { return errors.New("injected first publication failure") }
-	if _, _, err := WeightReset(root, "run"); err == nil {
+	if _, _, err := WeightReset(root, "run", FullRun); err == nil {
 		t.Fatal("fixture reset unexpectedly published")
 	}
 	publishWeightAppendix = priorPublisher
@@ -869,7 +900,7 @@ func TestPublishedAppendixWithPendingCleanupRepairsBeforeNextCheckpoint(t *testi
 		}
 		return priorWriter(root, state)
 	}
-	state, _, err := WeightReset(root, "run")
+	state, _, err := WeightReset(root, "run", FullRun)
 	writeWeightState = priorWriter
 	if state.PendingReset == nil || err == nil {
 		t.Fatalf("cleanup failure did not retain repair record: %+v %v", state, err)
@@ -898,7 +929,7 @@ func TestPartialResetWithoutPostTimestampFallsBackToResetTime(t *testing.T) {
 	if err := os.WriteFile(weightPath(root), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	reset, _, err := WeightReset(root, "legacy")
+	reset, _, err := WeightReset(root, "legacy", FullRun)
 	if err != nil || reset.SinceUTC != now.Format(time.RFC3339) || reset.Accumulated != 1 {
 		t.Fatalf("fallback reset time not adopted: %+v %v", reset, err)
 	}

@@ -246,8 +246,14 @@ func runBehaviorSurfaceList(args []string) int {
 func runBehaviorSurfaceSkipAllowed(args []string) int {
 	flags := flag.NewFlagSet("behavior-surface skip-allowed", flag.ContinueOnError)
 	family := flags.String("family", "", "validation family name")
-	if flags.Parse(args) != nil || *family == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface skip-allowed --family NAME")
+	scopeName := flags.String("scope", "", "WITNESS or DELIVERY proof scope")
+	if flags.Parse(args) != nil || *family == "" || *scopeName == "" || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface skip-allowed --scope WITNESS|DELIVERY --family NAME")
+		return 2
+	}
+	scope, err := behaviorsurface.ParseSkipScope(*scopeName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 	policy, err := behaviorsurface.Load()
@@ -255,8 +261,8 @@ func runBehaviorSurfaceSkipAllowed(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if !policy.SkipAllowed(*family) {
-		fmt.Fprintf(os.Stderr, "behavior-surface policy version %d does not authorize skip family %q\n", policy.Version, *family)
+	if !policy.SkipAllowed(scope, *family) {
+		fmt.Fprintf(os.Stderr, "behavior-surface policy version %d does not authorize %s skip family %q\n", policy.Version, scope, *family)
 		return 3
 	}
 	return 0

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "enginePaths": [
     "cmd/**",
     "internal/**",
@@ -72,8 +72,10 @@
     "bin/**",
     "metasystem.conf.local"
   ],
+  "witnessSkips": [
+    "witness-engine-gate"
+  ],
   "deliveryContractSkips": [
-    "witness-engine-gate",
     "supervision-go-fixtures",
     "gate-fence-fixtures",
     "gate-fail-open-tripwire",

@@ -141,19 +141,28 @@ func runGateWeightReset(args []string) int {
 	flags := flag.NewFlagSet("gate weight-reset", flag.ContinueOnError)
 	root := flags.String("root", "", "real checkout root containing the accumulator")
 	runID := flags.String("run-id", "", "the checkpointed battery run")
+	runClassName := flags.String("run-class", "", "root-owned run class: FULL or WITNESS-ASSISTED")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *root == "" || *runID == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-reset --root R --run-id ID")
+	if *root == "" || *runID == "" || *runClassName == "" || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-reset --root R --run-id ID --run-class FULL|WITNESS-ASSISTED")
 		return 2
 	}
-	_, result, err := gaterun.WeightReset(*root, *runID)
+	runClass, err := gaterun.ParseRunClass(*runClassName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	_, result, err := gaterun.WeightReset(*root, *runID, runClass)
 	if result.RunID != "" {
 		printJSON(result)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, gaterun.ErrResetRequiresFull) {
+			return 3
+		}
 		var pending *gaterun.ResetAppendixPendingError
 		if errors.As(err, &pending) {
 			return 4

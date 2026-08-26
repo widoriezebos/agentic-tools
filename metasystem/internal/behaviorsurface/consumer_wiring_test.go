@@ -171,23 +171,23 @@ esac
 func TestEveryEffectiveDeliverySkipIsPolicyOwned(t *testing.T) {
 	policy := mustPolicy(t)
 	const witnessEngineGate = "witness-engine-gate"
-	if !policy.SkipAllowed(witnessEngineGate) {
+	if !policy.SkipAllowed(WitnessScope, witnessEngineGate) {
 		t.Fatalf("the witnessed engine-gate omission is absent from policy: %q", witnessEngineGate)
 	}
 	goGate, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	consult := `"$root/bin/metasystem" behavior-surface skip-allowed --family witness-engine-gate`
-	if !strings.Contains(string(goGate), consult) {
+	consult := `--scope WITNESS --family witness-engine-gate`
+	if !strings.Contains(string(goGate), `go run ./cmd/metasystem behavior-surface skip-allowed`) || !strings.Contains(string(goGate), consult) {
 		t.Fatalf("the witness fast path does not consult its declared skip family: %q", witnessEngineGate)
 	}
 	for _, family := range policy.DeliveryContractSkips {
-		if !policy.SkipAllowed(family) {
+		if !policy.SkipAllowed(DeliveryScope, family) {
 			t.Errorf("declared family was not accepted: %q", family)
 		}
 	}
-	if policy.SkipAllowed("not-declared") {
+	if policy.SkipAllowed(DeliveryScope, "not-declared") {
 		t.Fatal("undeclared validation family was accepted")
 	}
 }

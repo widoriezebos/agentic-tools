@@ -459,7 +459,8 @@ EVIDENCE
   # exact content the outer witness gate proved (D33) — when a witness is
   # armed, the check-only probe IS that comparison.
   if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
-    ( cd "$tgt" && METASYSTEM_DELIVERY_CONTRACT=1 bash scripts/agents/go-gate.sh --witness-check-only >/dev/null ) \
+    ( cd "$tgt" && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
+        bash scripts/agents/go-gate.sh --witness-check-only >/dev/null ) \
       || { echo "adopt: staged payload digest does not match the witness-gated tree" >&2; exit 1; }
   fi
   bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/adopt-filled.out" 2>&1 || {

@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Run classification belongs to the validation root. Capture inherited proof
+# before any producer can arm a witness, then revoke the output capability so
+# descendant validations cannot publish over the root's artifact.
+witness_present_at_validation_entry=0
+[[ -z "${METASYSTEM_GATE_WITNESS:-}" ]] || witness_present_at_validation_entry=1
+witness_engine_reused=0
+battery_run_class_out=${METASYSTEM_BATTERY_RUN_CLASS_OUT:-}
+battery_run_class_writer=${METASYSTEM_BATTERY_ROOT_CLASS_WRITER:-0}
+unset METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER \
+  METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE METASYSTEM_GATE_WITNESS_WRITE \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_PID METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID
+if [[ -n "$battery_run_class_out" && "$battery_run_class_writer" != 1 ]]; then
+  echo "battery run-class output is reserved for the isolated validation root" >&2
+  exit 1
+fi
+
 usage() {
   echo "Usage: scripts/validate-metasystem.sh [--delegate-scope|--delivery-contract|--enumerate --report <path>]" >&2
 }
@@ -52,7 +69,7 @@ delivery_skipped=()
 delivery_contract_skip() { # family or section name; returns 0 = skip it
   (( delivery_contract && delivery_reuse )) || return 1
   local policy_engine=${engine:-$root/bin/metasystem}
-  "$policy_engine" behavior-surface skip-allowed --family "$1" >/dev/null 2>&1 || return 1
+  "$policy_engine" behavior-surface skip-allowed --scope DELIVERY --family "$1" >/dev/null 2>&1 || return 1
   delivery_skipped+=("$1")
   return 0
 }
@@ -70,6 +87,24 @@ cd "$root"
 # root, never the caller's working directory — a nested adopted-copy run
 # inherited the template's cwd and believed itself the template.
 metasystem_here=$(pwd -P)
+
+publish_battery_run_class() { # FULL|WITNESS-ASSISTED
+  [[ -n "$battery_run_class_out" ]] || return 0
+  case "$1" in FULL|WITNESS-ASSISTED) ;; *) return 1 ;; esac
+  [[ "$battery_run_class_out" == /* && ! -e "$battery_run_class_out" \
+    && ! -L "$battery_run_class_out" ]] || return 1
+  local class_parent class_name class_stage
+  class_parent=${battery_run_class_out%/*}
+  class_name=${battery_run_class_out##*/}
+  [[ -n "$class_name" && -d "$class_parent" && ! -L "$class_parent" ]] || return 1
+  class_parent=$(cd "$class_parent" && pwd -P) || return 1
+  class_stage=$class_parent/.${class_name}.stage.$$
+  [[ ! -e "$class_stage" && ! -L "$class_stage" ]] || return 1
+  umask 077
+  printf '%s\n' "$1" >"$class_stage" || return 1
+  chmod 600 "$class_stage" || return 1
+  mv "$class_stage" "$battery_run_class_out"
+}
 
 # Disk-hygiene headroom guard (backlog item 19, slice 1): make a full
 # disk NAME ITSELF before the suite assumes space. The ENOSPC incident
@@ -248,7 +283,8 @@ if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go
     [[ "$(bin/metasystem json get --value '{"ok":1}' --field ok)" == 1 ]] \
       || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
     if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]] \
-      && bash scripts/agents/go-gate.sh --witness-check-only >/dev/null 2>&1; then
+      && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
+        bash scripts/agents/go-gate.sh --witness-check-only >/dev/null 2>&1; then
       delivery_reuse=1
       delivery_stamp=$(go version -m bin/metasystem | sed -n 's/.*BuildStamp=\(witness-[a-f0-9]*\).*/\1/p' | head -1)
       delivery_recorded=$(sed -n 's/.*"engineDigest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
@@ -259,6 +295,13 @@ if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go
     fi
   fi
 fi
+
+validation_run_class=FULL
+if (( witness_present_at_validation_entry && witness_engine_reused )); then
+  validation_run_class=WITNESS-ASSISTED
+fi
+publish_battery_run_class "$validation_run_class" \
+  || { echo "validation root could not publish its run class" >&2; exit 1; }
 
 # The engine-seam tripwire and the Go-vs-python census conformance
 # harnesses (signature, fingerprint, run) retired with the migration:
@@ -599,6 +642,7 @@ for link in \
   scripts/agents/milestone-battery.sh \
   scripts/agents/battery.conf.local.template \
   scripts/agents/gate-run-freeze-fixtures.sh \
+  scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
@@ -684,6 +728,7 @@ bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/milestone-battery.sh
 bash -n scripts/agents/gate-run-freeze-fixtures.sh
+bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
@@ -2439,6 +2484,9 @@ if section_selected adoption-fixtures && (( template_mode )); then
 fi
 if section_selected gate-run-freeze-fixtures && (( template_mode )); then
   bash scripts/agents/gate-run-freeze-fixtures.sh
+fi
+if section_selected witness-gate-fixtures && (( template_mode )); then
+  bash scripts/agents/witness-gate-fixtures.sh
 fi
 
 if section_selected watch-background-jobs-fixtures; then

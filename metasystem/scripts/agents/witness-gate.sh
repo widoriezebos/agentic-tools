@@ -16,7 +16,8 @@
 # the proven snapshot, and leaves $witness_state set — the CALLER owns
 # removing that directory at exit. Eligibility: gate-input roots clean
 # against HEAD, no ratchet seed, no gate force, not a delivery
-# contract — dirty or forced runs fall back, never half-arm.
+# contract — dirty or forced runs fall back, never half-arm. A witness that
+# existed at entry is consumed or refused; it is never replaced in place.
 
 # The fallback is an EXPLICIT choice: unset and empty refuse exactly
 # like a typo, and the message avoids every bash-4 substitution — this
@@ -29,6 +30,24 @@ case "${WITNESS_GATE_FALLBACK:-}" in
     ;;
 esac
 witness_state=
+witness_engine_reused=0
+witness_input=${METASYSTEM_GATE_WITNESS:-}
+if [[ -n "$witness_input" ]]; then
+  if METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE \
+      bash scripts/agents/go-gate.sh --witness-check-only >/dev/null 2>&1; then
+    METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE bash scripts/agents/go-gate.sh
+    witness_engine_reused=1
+  else
+    # A refused inherited witness cannot become acceptable later in this root
+    # and silently change its run class. The fallback runs with the entire
+    # handoff scrubbed, so it is a real proof or no proof by explicit choice.
+    unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT METASYSTEM_GATE_WITNESS_RUN
+    if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
+      METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE bash scripts/agents/go-gate.sh
+    fi
+  fi
+  return 0 2>/dev/null || exit 0
+fi
 # Ask the prospective source engine for ENGINE membership. This replaces the
 # last separate copy of D33's positive closure; a policy edit is itself inside
 # ENGINE and therefore decides eligibility under its own prospective bytes.
@@ -58,6 +77,16 @@ if (( ! ${delivery_contract:-0} )) && (( witness_roots_clean )) \
   witness_snap=$(mktemp -d)
   chmod 700 "$witness_snap"
   witness_run="run-$$-$RANDOM"
+  witness_controller_pid=$$
+  witness_controller_started_at=
+  witness_controller_start_ticks=
+  witness_controller_boot_id=
+  if read -r witness_controller_started_at witness_controller_start_ticks witness_controller_boot_id \
+      < <(go run ./cmd/metasystem proc started-at --pid $$ --emit pair); then
+    [[ "$witness_controller_boot_id" == - ]] && witness_controller_boot_id=
+  else
+    witness_roots_clean=0
+  fi
   witness_toplevel=$(git rev-parse --show-toplevel)
   witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
   if [[ -n "$witness_prefix" ]]; then
@@ -65,9 +94,14 @@ if (( ! ${delivery_contract:-0} )) && (( witness_roots_clean )) \
   else
     git -C "$witness_toplevel" archive HEAD | tar -x -C "$witness_snap"
   fi
-  if ( cd "$witness_snap" \
+  if (( witness_roots_clean )) && ( cd "$witness_snap" \
       && METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
-         METASYSTEM_GATE_WITNESS_RUN="$witness_run" bash scripts/agents/go-gate.sh ) \
+         METASYSTEM_GATE_WITNESS_RUN="$witness_run" \
+         METASYSTEM_GATE_WITNESS_CONTROLLER_PID="$witness_controller_pid" \
+         METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT="$witness_controller_started_at" \
+         METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS="$witness_controller_start_ticks" \
+         METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID="$witness_controller_boot_id" \
+         bash scripts/agents/go-gate.sh ) \
     && [[ -f "$witness_state/witness.json" ]]; then
     # Clean roots mean the snapshot's binary IS this tree's binary.
     # Stage beside the target and rename over it (go-build.sh's

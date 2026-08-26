@@ -15,6 +15,16 @@ if [[ ${BATTERY_FIXTURE_SEAMS:-0} != 1 ]]; then
     BATTERY_VALIDATOR_LAUNCH_PID_FILE BATTERY_VALIDATOR_PUBLICATION_STALL_DIR
 fi
 
+# A battery root never imports an ambient proof. The isolated validation may
+# produce a witness for its descendants, but proof variables from the launcher
+# cannot cross the clone boundary or choose the root's classification channel.
+unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
+  METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE \
+  METASYSTEM_GATE_WITNESS_WRITE METASYSTEM_GATE_WITNESS_CONTROLLER_PID \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID \
+  METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER
+
 usage() {
   cat <<'USAGE' >&2
 Usage: scripts/agents/milestone-battery.sh [--subject <commit>]
@@ -114,6 +124,8 @@ if [[ ${1:-} != __isolated_controller ]]; then
     printf '{"policyVersion":0,"projection":"LANDING","endpoint":"unavailable","surfaceDigest":"unavailable"}\n' \
       >"$bootstrap_stage/surface.json" || return 1
     printf 'unavailable\n' >"$bootstrap_stage/toolchain.txt" || return 1
+    printf 'FULL\n' >"$bootstrap_stage/run-class.txt" || return 1
+    chmod 600 "$bootstrap_stage/run-class.txt" || return 1
     printf '%s\n' "$subject" >"$bootstrap_stage/subject.sha" || return 1
     printf '{"setup":%d,"validation":-1}\n' "$bootstrap_exit" >"$bootstrap_stage/exit-codes.json" || return 1
     ended_at=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf 'unavailable')
@@ -132,7 +144,7 @@ if [[ ${1:-} != __isolated_controller ]]; then
       [[ "$actual" == "$expected" ]] || { exec 7<&-; return 1; }
     done
     exec 7<&-
-    printf '{"runId":"%s","subjectSHA":"%s","surfaceProjection":"LANDING","surfacePolicyVersion":0,"surfaceDigest":"unavailable","toolchainIdentity":"unavailable","startedAt":"%s","endedAt":"%s","setupExit":%d,"validationExit":-1,"copyResult":"verified","copyDigestManifest":"copy-digests.nul","verdict":"bootstrap-failed","cloneLog":"clone.log","validationLog":"validation.log","failureArtifacts":"failure-artifacts"}\n' \
+    printf '{"runId":"%s","subjectSHA":"%s","runClass":"FULL","surfaceProjection":"LANDING","surfacePolicyVersion":0,"surfaceDigest":"unavailable","toolchainIdentity":"unavailable","startedAt":"%s","endedAt":"%s","setupExit":%d,"validationExit":-1,"copyResult":"verified","copyDigestManifest":"copy-digests.nul","verdict":"bootstrap-failed","cloneLog":"clone.log","validationLog":"validation.log","failureArtifacts":"failure-artifacts"}\n' \
       "$run_id" "$subject" "$bootstrap_started_at" "$ended_at" "$bootstrap_exit" \
       >"$bootstrap_stage/report.json" || return 1
     mv "$bootstrap_stage" "$envelope" || return 1
@@ -140,7 +152,7 @@ if [[ ${1:-} != __isolated_controller ]]; then
   }
   publish_bootstrap_outcome() { # setup exit
     local bootstrap_exit=$1 tmp=$envelope/.outcome.$$.json
-    printf '{"runId":"%s","subject":"%s","verdict":"bootstrap-failed","setupExit":%d,"validationExit":-1,"resetExit":-1}\n' \
+    printf '{"runId":"%s","subject":"%s","runClass":"FULL","verdict":"bootstrap-failed","setupExit":%d,"validationExit":-1,"resetExit":-1}\n' \
       "$run_id" "$subject" "$bootstrap_exit" >"$tmp" || return 1
     mv "$tmp" "$envelope/outcome.json"
   }
@@ -274,6 +286,7 @@ validation_log=$run_dir/validation.log
 checkpoint_json=$run_dir/checkpoint.json
 surface_json=$run_dir/surface.json
 toolchain_file=$run_dir/toolchain.txt
+run_class_file=$run_dir/run-class.txt
 controller_engine=$run_dir/metasystem
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ended_at=
@@ -283,6 +296,7 @@ reset_rc=-1
 surface_digest=unavailable
 surface_policy_version=0
 toolchain_identity=unavailable
+run_class=FULL
 final_verdict=setup-failed
 checkpoint_open=0
 terminalized=0
@@ -333,13 +347,38 @@ atomic_json_int() { # file field integer
   "$controller_engine" json set --file "$1" --int "$2=$3" >/dev/null
 }
 
+write_default_run_class() {
+  [[ ! -e "$run_class_file" && ! -L "$run_class_file" ]] || return 0
+  local class_stage=$run_dir/.run-class.$$.stage
+  umask 077
+  printf 'FULL\n' >"$class_stage" || return 1
+  chmod 600 "$class_stage" || return 1
+  mv "$class_stage" "$run_class_file"
+}
+
+read_run_class() {
+  local class_mode class_lines class_bytes
+  [[ ! -L "$run_class_file" && -f "$run_class_file" ]] || return 1
+  class_mode=$(stat -c '%a' "$run_class_file" 2>/dev/null || stat -f '%Lp' "$run_class_file")
+  [[ "$class_mode" == 600 ]] || return 1
+  class_lines=$(wc -l <"$run_class_file" | tr -d '[:space:]')
+  [[ "$class_lines" == 1 ]] || return 1
+  class_bytes=$(wc -c <"$run_class_file" | tr -d '[:space:]')
+  IFS= read -r run_class <"$run_class_file" || return 1
+  case "$run_class:$class_bytes" in FULL:5|WITNESS-ASSISTED:17) return 0 ;; *) return 1 ;; esac
+}
+
 publish_stage_one() { # setup exit, validation exit, verdict
   local stage_setup=$1 stage_validation=$2 initial_verdict=$3 relative digest actual expected rejected_link
+  if [[ ! -e "$run_class_file" ]]; then
+    write_default_run_class || return 1
+  fi
+  read_run_class || return 1
   mkdir -p "$envelope_parent" || return 1
   [[ ! -e "$envelope" ]] || { stage_published=1; return 0; }
   rm -rf -- "$stage" 2>/dev/null || true
   mkdir "$stage" || return 1
-  cp "$setup_log" "$validation_log" "$checkpoint_json" "$surface_json" "$toolchain_file" "$stage/" \
+  cp "$setup_log" "$validation_log" "$checkpoint_json" "$surface_json" "$toolchain_file" "$run_class_file" "$stage/" \
     || return 1
   printf '%s\n' "$subject" >"$stage/subject.sha" || return 1
   printf '{"setup":%d,"validation":%d}\n' "$stage_setup" "$stage_validation" >"$stage/exit-codes.json" || return 1
@@ -376,8 +415,8 @@ publish_stage_one() { # setup exit, validation exit, verdict
     [[ "$actual" == "$expected" ]] || { exec 7<&-; return 1; }
   done
   exec 7<&-
-  printf '{"runId":"%s","subjectSHA":"%s","surfaceProjection":"LANDING","surfacePolicyVersion":%d,"surfaceDigest":"%s","toolchainIdentity":"%s","startedAt":"%s","endedAt":"%s","setupExit":%d,"validationExit":%d,"copyResult":"verified","copyDigestManifest":"copy-digests.nul","verdict":"%s","validationLog":"validation.log","failureArtifacts":"failure-artifacts"}\n' \
-    "$run_id" "$subject" "$surface_policy_version" "$surface_digest" "$toolchain_identity" \
+  printf '{"runId":"%s","subjectSHA":"%s","runClass":"%s","surfaceProjection":"LANDING","surfacePolicyVersion":%d,"surfaceDigest":"%s","toolchainIdentity":"%s","startedAt":"%s","endedAt":"%s","setupExit":%d,"validationExit":%d,"copyResult":"verified","copyDigestManifest":"copy-digests.nul","verdict":"%s","validationLog":"validation.log","failureArtifacts":"failure-artifacts"}\n' \
+    "$run_id" "$subject" "$run_class" "$surface_policy_version" "$surface_digest" "$toolchain_identity" \
     "$started_at" "$ended_at" "$stage_setup" "$stage_validation" "$initial_verdict" >"$stage/report.json" \
     || return 1
   mv "$stage" "$envelope" || return 1
@@ -641,13 +680,14 @@ publish_outcome() {
     printf '{}\n' >"$tmp" || return 1
     atomic_json_field "$tmp" runId "$run_id" || return 1
     atomic_json_field "$tmp" subject "$subject" || return 1
+    atomic_json_field "$tmp" runClass "$run_class" || return 1
     atomic_json_field "$tmp" verdict "$final_verdict" || return 1
     atomic_json_int "$tmp" setupExit "$setup_exit" || return 1
     atomic_json_int "$tmp" validationExit "$validation_exit" || return 1
     atomic_json_int "$tmp" resetExit "$reset_rc" || return 1
   else
-    printf '{"runId":"%s","subject":"%s","verdict":"%s","setupExit":%d,"validationExit":%d,"resetExit":%d}\n' \
-      "$run_id" "$subject" "$final_verdict" "$setup_exit" "$validation_exit" "$reset_rc" >"$tmp" || return 1
+    printf '{"runId":"%s","subject":"%s","runClass":"%s","verdict":"%s","setupExit":%d,"validationExit":%d,"resetExit":%d}\n' \
+      "$run_id" "$subject" "$run_class" "$final_verdict" "$setup_exit" "$validation_exit" "$reset_rc" >"$tmp" || return 1
   fi
   mv "$tmp" "$envelope/outcome.json"
 }
@@ -897,10 +937,11 @@ else
     "$3" proc probe --pid "$$" >"$1" || exit
     mv "$1" "$2" || exit
     cd "$4" || exit
-    exec bash scripts/validate-metasystem.sh
+    exec env METASYSTEM_BATTERY_RUN_CLASS_OUT="$6" \
+      METASYSTEM_BATTERY_ROOT_CLASS_WRITER=1 bash scripts/validate-metasystem.sh
   ' validator-launch "$validator_pgid_stage" "$validator_pgid_file" \
     "$controller_engine" "$clone_metasystem" \
-    "${BATTERY_VALIDATOR_PUBLICATION_STALL_DIR:-}" \
+    "${BATTERY_VALIDATOR_PUBLICATION_STALL_DIR:-}" "$run_class_file" \
     >"$validation_log" 2>&1 &
   # Trap delivery between the asynchronous command and the PID assignments is
   # a distinct ownership state. A configured hold file keeps that window open
@@ -942,6 +983,14 @@ fi
 ended_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 final_verdict=red
 [[ $validation_exit == 0 ]] && final_verdict=green
+if [[ $validation_exit == 0 ]] && ! read_run_class; then
+  printf 'validation root did not publish a valid 0600 FULL/WITNESS-ASSISTED class artifact\n' >>"$validation_log"
+  validation_exit=98
+  final_verdict=red
+fi
+if [[ $validation_exit == 0 && "$run_class" == WITNESS-ASSISTED ]]; then
+  final_verdict=witness-assisted
+fi
 
 if ! publish_stage_one "$setup_exit" "$validation_exit" "$final_verdict"; then
   retain_clone=1
@@ -956,8 +1005,18 @@ if [[ $validation_exit != 0 ]]; then
   exit 1
 fi
 
+if [[ "$run_class" == WITNESS-ASSISTED ]]; then
+  reset_rc=3
+  if abandon_checkpoint witness-assisted; then
+    final_verdict=witness-assisted
+  else
+    final_verdict=witness-assisted/abandonment-unrecorded
+  fi
+  exit 1
+fi
+
 reset_rc=0
-"$controller_engine" gate weight-reset --root "$real_metasystem" --run-id "$run_id" \
+"$controller_engine" gate weight-reset --root "$real_metasystem" --run-id "$run_id" --run-class "$run_class" \
   >"$run_dir/reset-command.json" 2>>"$setup_log" || reset_rc=$?
 case "$reset_rc" in
   0) terminalized=1; checkpoint_open=0; final_verdict=green; exit 0 ;;

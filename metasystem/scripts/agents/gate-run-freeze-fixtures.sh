@@ -42,10 +42,15 @@ enumeration_pid=
 publication_failure_bystander=
 recycled_pid_sentinel=
 publication_retention_launch_pid=
+assisted_pid=
 cleanup() {
   if [[ -n "$enumeration_pid" ]]; then
     kill "$enumeration_pid" 2>/dev/null || true
     wait "$enumeration_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$assisted_pid" ]]; then
+    kill -KILL "$assisted_pid" 2>/dev/null || true
+    wait "$assisted_pid" 2>/dev/null || true
   fi
   if [[ -d "$tmp" ]]; then
     while IFS= read -r owner; do
@@ -140,6 +145,26 @@ chmod +x "$repo/metasystem/scripts/agents/go-build.sh"
 cat >"$repo/metasystem/scripts/validate-metasystem.sh" <<'VALIDATE'
 #!/usr/bin/env bash
 set -euo pipefail
+class_out=${METASYSTEM_BATTERY_RUN_CLASS_OUT:-}
+class_writer=${METASYSTEM_BATTERY_ROOT_CLASS_WRITER:-0}
+[[ "$class_writer" == 1 && "$class_out" == /* ]]
+for witness_var in METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
+  METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE \
+  METASYSTEM_GATE_WITNESS_WRITE METASYSTEM_GATE_WITNESS_CONTROLLER_PID \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID; do
+  [[ -z "${!witness_var:-}" ]]
+done
+unset METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER
+class_stage=${class_out}.stage.$$
+case "${BATTERY_FAKE_RUN_CLASS:-FULL}" in
+  FULL|WITNESS-ASSISTED) fixture_run_class=${BATTERY_FAKE_RUN_CLASS:-FULL} ;;
+  *) exit 2 ;;
+esac
+umask 077
+printf '%s\n' "$fixture_run_class" >"$class_stage"
+chmod 600 "$class_stage"
+mv "$class_stage" "$class_out"
 metasystem=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 checkout=$(cd "$metasystem/.." && pwd -P)
 [[ -z "${BATTERY_VALIDATION_LOG_MARKER:-}" ]] || printf '%s\n' "$BATTERY_VALIDATION_LOG_MARKER"
@@ -1193,6 +1218,12 @@ BATTERY_READY=$ready BATTERY_RELEASE=$release BATTERY_CLONE_PATH=$clone_path \
 BATTERY_REGISTRY_PATH=$registry_path BATTERY_EXPECT_HOME="${HOME:-}" \
 BATTERY_LIVE_ROOT=$repo BATTERY_LIVE_REGISTRY=$live_registry \
 BATTERY_TEARDOWN_CALL=$teardown_call BATTERY_OWNER_PID_PATH=$owner_pid_path \
+METASYSTEM_GATE_WITNESS=/borrowed/witness.json \
+METASYSTEM_GATE_WITNESS_ROOT=/borrowed METASYSTEM_GATE_WITNESS_RUN=borrowed-run \
+METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE \
+METASYSTEM_GATE_WITNESS_WRITE=/borrowed/write.json \
+METASYSTEM_GATE_WITNESS_CONTROLLER_PID=1 METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT=1 \
+METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS=1 METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID=borrowed \
   "$repo/metasystem/scripts/agents/milestone-battery.sh" --subject "$subject" \
     --evidence-root "$evidence" >"$tmp/first.out" 2>"$tmp/first.err" &
 first_pid=$!
@@ -1257,8 +1288,9 @@ grep -Fq "subject=$subject" "$tmp/first.out"
 envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/first.out")
 [[ -f "$envelope/report.json" && -f "$envelope/outcome.json" \
    && -f "$envelope/reset.json" && -f "$envelope/teardown.json" \
+   && -f "$envelope/run-class.txt" \
    && -f "$envelope/supervision-registry.jsonl" && -f "$envelope/last-census.json" ]]
-for report_field in runId subjectSHA surfaceProjection surfacePolicyVersion \
+for report_field in runId subjectSHA runClass surfaceProjection surfacePolicyVersion \
   surfaceDigest toolchainIdentity startedAt endedAt validationExit copyResult \
   copyDigestManifest verdict validationLog failureArtifacts; do
   "$real_engine" json get --file "$envelope/report.json" --field "$report_field" >/dev/null
@@ -1267,6 +1299,10 @@ done
 [[ "$("$real_engine" json get --file "$envelope/report.json" --field surfaceProjection)" == LANDING ]]
 [[ "$("$real_engine" json get --file "$envelope/report.json" --field validationExit)" == 0 ]]
 [[ "$("$real_engine" json get --file "$envelope/report.json" --field copyResult)" == verified ]]
+[[ "$(cat "$envelope/run-class.txt")" == FULL ]]
+[[ "$("$real_engine" json get --file "$envelope/report.json" --field runClass)" == FULL ]]
+[[ "$("$real_engine" json get --file "$envelope/outcome.json" --field runClass)" == FULL ]]
+[[ "$("$real_engine" json get --file "$envelope/reset.json" --field runClass)" == FULL ]]
 registry_row_count=0
 registry_relaunch_found=0
 while IFS= read -r registry_row; do
@@ -1292,6 +1328,61 @@ first_validator_child_pid=$(cat "$validator_child_pid_path")
 ! kill -0 "$first_validator_child_pid" 2>/dev/null
 [[ "$(git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p')" == "$inventory_before" ]]
 [[ "$(shasum -a 256 "$repo/metasystem/bin/metasystem" | awk '{print $1}')" == "$live_binary_before" ]]
+
+# The root classification, not a green exit alone, controls checkpoint
+# consumption. This fixture seam makes the otherwise-complete root report
+# imported proof and pins the non-subtracting terminal path.
+printf '1\t0\tdocs/witness-assisted.md\0' | "$real_engine" gate weight-add \
+  --root "$repo/metasystem" --commit witness-assisted >/dev/null
+assisted_weight_before=$("$real_engine" json get \
+  --file "$repo/metasystem/artifacts/agents/battery-weight.json" --field accumulated)
+assisted_ready=$tmp/assisted-ready
+assisted_release=$tmp/assisted-release
+assisted_clone_path=$tmp/assisted-clone-path
+assisted_registry_path=$tmp/assisted-registry-path
+assisted_teardown_call=$tmp/assisted-teardown-call
+assisted_owner_pid_path=$tmp/assisted-owner-pid
+assisted_validator_pid_path=$tmp/assisted-validator-pid
+assisted_validator_child_pid_path=$tmp/assisted-validator-child-pid
+BATTERY_FAKE_RUN_CLASS=WITNESS-ASSISTED \
+BATTERY_READY=$assisted_ready BATTERY_RELEASE=$assisted_release \
+BATTERY_CLONE_PATH=$assisted_clone_path BATTERY_REGISTRY_PATH=$assisted_registry_path \
+BATTERY_TEARDOWN_CALL=$assisted_teardown_call BATTERY_OWNER_PID_PATH=$assisted_owner_pid_path \
+BATTERY_VALIDATOR_PID_PATH=$assisted_validator_pid_path \
+BATTERY_VALIDATOR_CHILD_PID_PATH=$assisted_validator_child_pid_path \
+  "$repo/metasystem/scripts/agents/milestone-battery.sh" --subject "$subject" \
+    --evidence-root "$evidence" >"$tmp/assisted.out" 2>"$tmp/assisted.err" &
+assisted_pid=$!
+for _ in $(seq 1 2000); do
+  [[ -e "$assisted_ready" ]] && break
+  kill -0 "$assisted_pid" 2>/dev/null || break
+  sleep 0.01
+done
+[[ -e "$assisted_ready" ]] \
+  || { echo "gate-run-freeze fixture: witness-assisted validator never started" >&2; exit 1; }
+touch "$assisted_release"
+set +e
+wait "$assisted_pid"
+assisted_rc=$?
+set -e
+assisted_pid=
+[[ $assisted_rc == 1 ]]
+assisted_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' \
+  "$tmp/assisted.out" "$tmp/assisted.err" | tail -1)
+[[ -f "$assisted_envelope/report.json" && -f "$assisted_envelope/outcome.json" \
+   && -f "$assisted_envelope/run-class.txt" && -f "$assisted_envelope/abandoned.json" \
+   && ! -e "$assisted_envelope/reset.json" ]]
+[[ "$(cat "$assisted_envelope/run-class.txt")" == WITNESS-ASSISTED ]]
+[[ "$("$real_engine" json get --file "$assisted_envelope/report.json" --field runClass)" == WITNESS-ASSISTED ]]
+[[ "$("$real_engine" json get --file "$assisted_envelope/outcome.json" --field runClass)" == WITNESS-ASSISTED ]]
+[[ "$("$real_engine" json get --file "$repo/metasystem/artifacts/agents/battery-weight.json" --field accumulated)" \
+   == "$assisted_weight_before" ]]
+[[ "$("$real_engine" json get --file "$repo/metasystem/artifacts/agents/battery-weight.json" \
+  --field checkpoint --default __MISSING__)" == __MISSING__ ]]
+if [[ "${BATTERY_RUN_CLASS_FIXTURE_ONLY:-0}" == 1 ]]; then
+  echo "gate-run-freeze run-class fixture passed"
+  exit 0
+fi
 
 # A red envelope accepts a retained nested validation tree when its PATH tools
 # are regular executables, and its digest manifest covers the copied evidence.

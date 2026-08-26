@@ -92,3 +92,19 @@ consume scope, policy version, stale-binary policy, toolchain,
 foreign run-id, foreign root, deleted witness, broken-proof full
 fallback, reset provenance); each fallback leg must fail on a defect
 only the skipped proof could catch.
+
+## Conclusion and FULL acceptance rule
+
+`goal done` remains procedurally bound rather than mechanically coupled to a
+battery certificate. A conclusion that relies on milestone-battery acceptance
+must cite a FULL run. Human-authorized and non-battery conclusions keep their
+existing authority and blocker checks; adding a goal-to-battery association or
+certificate protocol is outside this witness extension.
+
+A FULL battery is one whose isolated validation root performs the full engine
+proof itself. Witness deduplication used only by descendants under that same
+controller does not change the root's FULL class. A root that imports engine
+proof is WITNESS-ASSISTED. Both classes publish their root-owned classification
+in run evidence, but only FULL may consume the battery-weight checkpoint.
+WITNESS-ASSISTED terminalizes by abandonment and subtracts no accumulated
+weight.

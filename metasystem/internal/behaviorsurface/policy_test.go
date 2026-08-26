@@ -19,11 +19,13 @@ func mustPolicy(t *testing.T) Policy {
 
 func TestPolicyVersionAndDeclaredSkipSet(t *testing.T) {
 	policy := mustPolicy(t)
-	if policy.Version != 1 {
-		t.Fatalf("delivery-contract skip policy changed without updating this version fixture: %d", policy.Version)
+	if policy.Version != 2 {
+		t.Fatalf("skip policy changed without updating this version fixture: %d", policy.Version)
 	}
-	want := []string{
-		"witness-engine-gate",
+	if want := []string{"witness-engine-gate"}; !reflect.DeepEqual(policy.WitnessSkips, want) {
+		t.Fatalf("witness skip set changed without a policy-version fixture update:\n got %q\nwant %q", policy.WitnessSkips, want)
+	}
+	wantDelivery := []string{
 		"supervision-go-fixtures", "gate-fence-fixtures", "gate-fail-open-tripwire",
 		"supervision and census fixtures", "supervisor fingerprint heal harness", "mission-fixtures",
 		"conformance-fixtures", "goal-cli-fixtures", "telemetry-census-fixtures", "return-schema-fixtures",
@@ -33,11 +35,32 @@ func TestPolicyVersionAndDeclaredSkipSet(t *testing.T) {
 		"delegate-caps-fixtures", "adapter-deadline-fixtures",
 		"dispatcher, adapter selftest, and mission-runner process fixtures",
 	}
-	if !reflect.DeepEqual(policy.DeliveryContractSkips, want) {
-		t.Fatalf("delivery-contract skip set changed without a policy-version fixture update:\n got %q\nwant %q", policy.DeliveryContractSkips, want)
+	if !reflect.DeepEqual(policy.DeliveryContractSkips, wantDelivery) {
+		t.Fatalf("delivery-contract skip set changed without a policy-version fixture update:\n got %q\nwant %q", policy.DeliveryContractSkips, wantDelivery)
 	}
-	if policy.SkipAllowed("not-declared") {
+	if !policy.SkipAllowed(WitnessScope, "witness-engine-gate") {
+		t.Fatal("the witness scope did not authorize its engine gate")
+	}
+	if policy.SkipAllowed(DeliveryScope, "witness-engine-gate") {
+		t.Fatal("the delivery scope borrowed the witness-only engine gate")
+	}
+	if policy.SkipAllowed(WitnessScope, "mission-fixtures") {
+		t.Fatal("the witness scope borrowed a delivery-only family")
+	}
+	if policy.SkipAllowed("", "not-declared") {
 		t.Fatal("an unlisted validation family was authorized to skip")
+	}
+	for _, test := range []struct {
+		value string
+		want  SkipScope
+	}{{"witness", WitnessScope}, {"DELIVERY", DeliveryScope}} {
+		got, err := ParseSkipScope(test.value)
+		if err != nil || got != test.want {
+			t.Errorf("ParseSkipScope(%q) = %q, %v; want %q", test.value, got, err, test.want)
+		}
+	}
+	if _, err := ParseSkipScope(""); err == nil {
+		t.Fatal("an absent skip scope was accepted")
 	}
 }
 
@@ -360,12 +383,19 @@ func TestPayloadManifestIgnoresProjectExtrasButRequiresEverySourcePath(t *testin
 }
 
 func TestUnsupportedPolicyVersionRefuses(t *testing.T) {
-	bad := strings.Replace(string(policyBytes), `"version": 1`, `"version": 999`, 1)
+	bad := strings.Replace(string(policyBytes), `"version": 2`, `"version": 999`, 1)
 	if _, err := loadPolicy([]byte(bad)); err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unsupported policy version did not refuse: %v", err)
 	}
 	if _, err := loadPolicy(append(policyBytes, []byte(` {}`)...)); err == nil {
 		t.Fatal("trailing policy content was accepted")
+	}
+}
+
+func TestSkipFamilyCannotBelongToBothProofScopes(t *testing.T) {
+	bad := strings.Replace(string(policyBytes), `"deliveryContractSkips": [`, `"deliveryContractSkips": ["witness-engine-gate",`, 1)
+	if _, err := loadPolicy([]byte(bad)); err == nil || !strings.Contains(err.Error(), "both") {
+		t.Fatalf("cross-scope skip family did not refuse: %v", err)
 	}
 }
 

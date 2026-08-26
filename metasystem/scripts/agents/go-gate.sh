@@ -107,8 +107,8 @@ fi
 # ---- The boundary-scoped gate witness (D33) ----------------------------
 # One validation run, one gate: the outer suite runs this gate inside an
 # extracted git-archive-HEAD snapshot with METASYSTEM_GATE_WITNESS_WRITE
-# set; nested delivery-contract runs hand the resulting witness back via
-# METASYSTEM_GATE_WITNESS and skip re-proving byte-identical content.
+# set; descendant validations under that controller hand the resulting
+# witness back and skip re-proving byte-identical ENGINE content.
 # Everything here fails toward the full gate: any doubt, run it all.
 
 # The engine built from the judged bytes owns every byte projection. Its JSON
@@ -164,8 +164,12 @@ witness_fenced_off() { # seed and force runs never read or write witnesses
 # regular file, 0600, under the 0700 controller state dir.
 witness_acceptable() {
   local witness=${METASYSTEM_GATE_WITNESS:-} state_root=${METASYSTEM_GATE_WITNESS_ROOT:-} run=${METASYSTEM_GATE_WITNESS_RUN:-}
+  local consumer_scope=${METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE:-}
   [[ -n "$witness" && -n "$state_root" && -n "$run" ]] || { echo "witness handoff incomplete" >&2; return 3; }
-  [[ "${METASYSTEM_DELIVERY_CONTRACT:-0}" == 1 ]] || { echo "witness honored only in delivery-contract runs" >&2; return 3; }
+  case "$consumer_scope" in
+    ENGINE|DELIVERY) ;;
+    *) echo "witness consumer scope must be explicitly ENGINE or DELIVERY" >&2; return 3 ;;
+  esac
   ! witness_fenced_off || { echo "seed or force run; witness fenced off" >&2; return 3; }
   local canonical_root canonical_witness
   canonical_root=$(cd "$state_root" 2>/dev/null && pwd -P) || { echo "witness state root unreadable" >&2; return 3; }
@@ -177,38 +181,67 @@ witness_acceptable() {
   file_mode=$(stat -c '%a' "$canonical_witness" 2>/dev/null || stat -f '%Lp' "$canonical_witness")
   [[ "$dir_mode" == 700 && "$file_mode" == 600 ]] || { echo "witness permissions are not 0700/0600" >&2; return 3; }
   local recorded_run recorded_version recorded_digest recorded_payload recorded_toolchain recorded_manifest
+  local controller_pid controller_started_at controller_start_ticks controller_boot_id
   recorded_run=$(sed -n 's/.*"runId":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_version=$(sed -n 's/.*"policyVersion":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
   recorded_digest=$(sed -n 's/.*"engineDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_payload=$(sed -n 's/.*"payloadDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_toolchain=$(sed -n 's/.*"toolchainIdentity":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_manifest=$(sed -n 's/.*"payloadManifest":"\([^"]*\)".*/\1/p' "$canonical_witness")
-  [[ "$recorded_run" == "$run" && "$recorded_version" =~ ^[1-9][0-9]*$ && -n "$recorded_digest" && -n "$recorded_payload" && -n "$recorded_toolchain" && -n "$recorded_manifest" ]] \
+  controller_pid=$(sed -n 's/.*"controller":{"pid":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
+  controller_started_at=$(sed -n 's/.*"controller":{"pid":[0-9][0-9]*,"startedAtSec":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
+  controller_start_ticks=$(sed -n 's/.*"controller":{"pid":[0-9][0-9]*,"startedAtSec":[0-9][0-9]*,"startTicks":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
+  controller_boot_id=$(sed -n 's/.*"controller":{"pid":[0-9][0-9]*,"startedAtSec":[0-9][0-9]*,"startTicks":[0-9][0-9]*,"bootId":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  [[ "$recorded_run" == "$run" && "$recorded_version" =~ ^[1-9][0-9]*$ \
+    && "$recorded_digest" =~ ^[a-f0-9]{64}$ && "$recorded_toolchain" =~ ^[a-f0-9]{64}$ \
+    && "$controller_pid" =~ ^[1-9][0-9]*$ && "$controller_started_at" =~ ^[1-9][0-9]*$ \
+    && "$controller_start_ticks" =~ ^[0-9]+$ ]] \
     || { echo "witness run or projection identity is incomplete" >&2; return 3; }
-  [[ "$recorded_manifest" != */* && "$recorded_manifest" != .* ]] \
-    || { echo "witness payload manifest name is unsafe" >&2; return 3; }
-  local payload_manifest="$canonical_root/$recorded_manifest"
-  [[ ! -L "$payload_manifest" && -f "$payload_manifest" ]] \
-    || { echo "witness payload manifest is not a plain regular file" >&2; return 3; }
-  local manifest_mode
-  manifest_mode=$(stat -c '%a' "$payload_manifest" 2>/dev/null || stat -f '%Lp' "$payload_manifest")
-  [[ "$manifest_mode" == 600 ]] || { echo "witness payload manifest permission is not 0600" >&2; return 3; }
+  if (( controller_start_ticks > 0 )); then
+    [[ -n "$controller_boot_id" ]] || { echo "witness controller pair identity is incomplete" >&2; return 3; }
+  else
+    [[ -z "$controller_boot_id" ]] || { echo "witness controller pair identity is malformed" >&2; return 3; }
+  fi
+  go run ./cmd/metasystem gate controller-descendant --consumer-pid $$ \
+    --controller-pid "$controller_pid" --controller-started-at "$controller_started_at" \
+    --controller-start-ticks "$controller_start_ticks" --controller-boot-id "$controller_boot_id" \
+    >/dev/null 2>&1 \
+    || { echo "witness consumer is not descended from its exact live controller identity" >&2; return 3; }
   local refusal
   if refusal=$(witness_refusal); then echo "witness refused here: $refusal" >&2; return 3; fi
-  local local_version local_digest local_payload_version local_payload local_toolchain
-  read -r local_version local_digest < <(gate_surface_identity ENGINE "delivery endpoint $root") || return 3
-  read -r local_payload_version local_payload < <(gate_surface_identity PAYLOAD "delivery endpoint $root" "$payload_manifest") || return 3
+  local local_version local_digest local_payload_version local_payload local_toolchain payload_manifest
+  read -r local_version local_digest < <(gate_surface_identity ENGINE "witness consumer $root") || return 3
   local_toolchain=$(gate_toolchain_identity) || return 3
-  [[ "$local_version" == "$recorded_version" && "$local_payload_version" == "$recorded_version" ]] \
-    || { echo "behavior-surface policy version mismatch between outer snapshot and delivery endpoint (theirs $recorded_version, ours ENGINE=$local_version PAYLOAD=$local_payload_version)" >&2; return 3; }
+  [[ "$local_version" == "$recorded_version" ]] \
+    || { echo "behavior-surface policy version mismatch between witness and consumer (theirs $recorded_version, ours ENGINE=$local_version)" >&2; return 3; }
   [[ "$local_digest" == "$recorded_digest" ]] \
-    || { echo "ENGINE surface digest mismatch between outer snapshot and delivery endpoint (theirs ${recorded_digest:0:8}, ours ${local_digest:0:8})" >&2; return 3; }
-  [[ "$local_payload" == "$recorded_payload" ]] \
-    || { echo "PAYLOAD surface digest mismatch between outer snapshot and delivery endpoint (theirs ${recorded_payload:0:8}, ours ${local_payload:0:8})" >&2; return 3; }
+    || { echo "ENGINE surface digest mismatch between witness and consumer (theirs ${recorded_digest:0:8}, ours ${local_digest:0:8})" >&2; return 3; }
   [[ "$local_toolchain" == "$recorded_toolchain" ]] \
-    || { echo "toolchain identity mismatch between outer snapshot and delivery endpoint (theirs ${recorded_toolchain:0:8}, ours ${local_toolchain:0:8})" >&2; return 3; }
+    || { echo "toolchain identity mismatch between witness and consumer (theirs ${recorded_toolchain:0:8}, ours ${local_toolchain:0:8})" >&2; return 3; }
+  if [[ "$consumer_scope" == DELIVERY ]]; then
+    [[ "$recorded_payload" =~ ^[a-f0-9]{64}$ && -n "$recorded_manifest" ]] \
+      || { echo "witness PAYLOAD identity is incomplete" >&2; return 3; }
+    [[ "$recorded_manifest" != */* && "$recorded_manifest" != .* ]] \
+      || { echo "witness payload manifest name is unsafe" >&2; return 3; }
+    payload_manifest="$canonical_root/$recorded_manifest"
+    [[ ! -L "$payload_manifest" && -f "$payload_manifest" ]] \
+      || { echo "witness payload manifest is not a plain regular file" >&2; return 3; }
+    local manifest_mode
+    manifest_mode=$(stat -c '%a' "$payload_manifest" 2>/dev/null || stat -f '%Lp' "$payload_manifest")
+    [[ "$manifest_mode" == 600 ]] || { echo "witness payload manifest permission is not 0600" >&2; return 3; }
+    read -r local_payload_version local_payload < <(gate_surface_identity PAYLOAD "delivery consumer $root" "$payload_manifest") || return 3
+    [[ "$local_payload_version" == "$recorded_version" ]] \
+      || { echo "behavior-surface policy version mismatch between witness and delivery PAYLOAD (theirs $recorded_version, ours $local_payload_version)" >&2; return 3; }
+    [[ "$local_payload" == "$recorded_payload" ]] \
+      || { echo "PAYLOAD surface digest mismatch between witness and delivery consumer (theirs ${recorded_payload:0:8}, ours ${local_payload:0:8})" >&2; return 3; }
+  fi
   echo "$recorded_digest"
   return 0
+}
+
+witness_engine_skip_authorized() {
+  go run ./cmd/metasystem behavior-surface skip-allowed \
+    --scope WITNESS --family witness-engine-gate >/dev/null 2>&1
 }
 
 # The probe exit: parsed above with the other arguments — the strict
@@ -218,13 +251,18 @@ witness_acceptable() {
 # outer gate armed one).
 if [[ "$gate_witness_check_only" == 1 ]]; then
   digest=$(witness_acceptable) || exit 3
+  if [[ "${METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE:-}" == ENGINE ]]; then
+    witness_engine_skip_authorized \
+      || { echo "behavior-surface policy does not authorize the witness ENGINE gate" >&2; exit 3; }
+  fi
   echo "witness acceptable: ${digest:0:8}"
   exit 0
 fi
 
 if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
-  if digest=$(witness_acceptable); then
-    if "$root/bin/metasystem" behavior-surface skip-allowed --family witness-engine-gate >/dev/null 2>&1; then
+  if [[ "${METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE:-}" == ENGINE ]] \
+    && digest=$(witness_acceptable); then
+    if witness_engine_skip_authorized; then
       # Compilation and the self-gating proof stay real: the binary is
       # rebuilt from the accepted content and stamped with its digest.
       METASYSTEM_BUILD_STAMP="witness-${digest:0:12}" bash scripts/agents/go-build.sh \
@@ -232,7 +270,7 @@ if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
       echo "go gate: PASSED (outer witness ${digest:0:8}, this boundary)"
       exit 0
     fi
-    echo "go gate: witness acceptable, but the behavior-surface policy does not authorize witness-engine-gate; running the full gate" >&2
+    echo "go gate: witness acceptable, but the prospective behavior-surface policy does not authorize witness-engine-gate; running the full gate" >&2
   else
     echo "go gate: witness not accepted; running the full gate" >&2
   fi
@@ -438,9 +476,22 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off; then
     fi
     [[ -n "$witness_toolchain_identity" ]] || witness_toolchain_identity=$(gate_toolchain_identity)
     umask 077
-    printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
+    [[ "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID:-}" =~ ^[1-9][0-9]*$ \
+      && "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT:-}" =~ ^[1-9][0-9]*$ \
+      && "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS:-}" =~ ^[0-9]+$ ]] \
+      || { echo "go gate: witness controller identity is incomplete" >&2; exit 1; }
+    if (( METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS > 0 )); then
+      [[ -n "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" ]] \
+        || { echo "go gate: witness controller pair identity is incomplete" >&2; exit 1; }
+    else
+      [[ -z "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" ]] \
+        || { echo "go gate: witness controller pair identity is malformed" >&2; exit 1; }
+    fi
+    printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
       "$witness_policy_version" "$witness_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
-      "${METASYSTEM_GATE_WITNESS_RUN:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
+      "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
+      "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
     chmod 600 "$METASYSTEM_GATE_WITNESS_WRITE"
     echo "go gate: witness written (${witness_digest:0:8})"

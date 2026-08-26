@@ -65,16 +65,27 @@ failure retains the clone and forbids reset; reset-appendix publication is
 repairable from the accumulator on the next weight read. Findings from a
 milestone battery fix forward.
 
+The isolated validation root publishes one structural run class. `FULL` means
+that root performed the complete engine proof itself; witness reuse by its
+descendants is only deduplication and does not change the class.
+`WITNESS-ASSISTED` means the root imported engine proof. Only `FULL` consumes
+the weight checkpoint. A witness-assisted run abandons the checkpoint without
+subtracting weight, and a conclusion that relies on milestone-battery
+acceptance must procedurally cite a `FULL` run.
+
 Two rules keep its wall clock and proof transfer honest:
 
 - One suite run, not two. The engine gate (`scripts/agents/go-gate.sh`) runs
   the race suite with coverage; a separate plain `go test ./...` before it
   proves nothing the gate does not re-prove.
 - One proof per byte projection. The versioned behavior-surface owner names
-  `ENGINE`, `LANDING`, and `PAYLOAD` separately. Nested delivery-contract
-  validation may skip only the policy's enumerated families, and only when
-  both `PAYLOAD` digest equality and independent toolchain identity equality
-  hold. A mismatch runs the omitted proof instead of accepting reuse.
+  `ENGINE`, `LANDING`, and `PAYLOAD` separately. Any explicit `ENGINE`
+  consumer descended from the witness's exact live controller may skip only
+  the policy's witness-engine family when policy version, `ENGINE` digest, and
+  independent toolchain identity match. Delivery reuse is a separate policy
+  scope: it additionally requires `PAYLOAD` equality and a rebuilt-binary
+  stamp before an enumerated delivery family may skip. A mismatch runs the
+  omitted proof instead of accepting reuse.
 
 ## Review Guide in Reports
 

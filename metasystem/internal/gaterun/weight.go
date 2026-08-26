@@ -29,7 +29,27 @@ var (
 	ErrCheckpointLive    = errors.New("battery checkpoint runner is still alive")
 	ErrCheckpointUnknown = errors.New("battery checkpoint runner liveness is unknown")
 	ErrStaleCheckpoint   = errors.New("battery checkpoint is stale or already terminal")
+	ErrResetRequiresFull = errors.New("battery weight reset requires a FULL run")
 )
+
+// RunClass records whether the validation root proved the engine itself or
+// imported witness proof. Descendant deduplication does not change FULL.
+type RunClass string
+
+const (
+	FullRun            RunClass = "FULL"
+	WitnessAssistedRun RunClass = "WITNESS-ASSISTED"
+)
+
+func ParseRunClass(value string) (RunClass, error) {
+	class := RunClass(value)
+	switch class {
+	case FullRun, WitnessAssistedRun:
+		return class, nil
+	default:
+		return "", fmt.Errorf("unknown battery run class %q", value)
+	}
+}
 
 // RunnerIdentity is the complete process identity used for supersession.
 type RunnerIdentity struct {
@@ -62,17 +82,18 @@ type WeightCheckpoint struct {
 // ResetResult is both the reset command's report and reset.json's content.
 // Subject comes from the checkpoint; LastCommit remains landing-owned.
 type ResetResult struct {
-	RunID                 string `json:"runId"`
-	Subject               string `json:"subject"`
-	CheckpointGeneration  uint64 `json:"checkpointGeneration"`
-	ResetGeneration       uint64 `json:"resetGeneration"`
-	ResetAtUTC            string `json:"resetAtUtc"`
-	CheckpointAccumulated int64  `json:"checkpointAccumulated"`
-	CheckpointLandings    int64  `json:"checkpointLandings"`
-	RemainingAccumulated  int64  `json:"remainingAccumulated"`
-	RemainingLandings     int64  `json:"remainingLandings"`
-	RemainingSinceUTC     string `json:"remainingSinceUtc"`
-	LastCommit            string `json:"lastCommit"`
+	RunID                 string   `json:"runId"`
+	Subject               string   `json:"subject"`
+	RunClass              RunClass `json:"runClass,omitempty"`
+	CheckpointGeneration  uint64   `json:"checkpointGeneration"`
+	ResetGeneration       uint64   `json:"resetGeneration"`
+	ResetAtUTC            string   `json:"resetAtUtc"`
+	CheckpointAccumulated int64    `json:"checkpointAccumulated"`
+	CheckpointLandings    int64    `json:"checkpointLandings"`
+	RemainingAccumulated  int64    `json:"remainingAccumulated"`
+	RemainingLandings     int64    `json:"remainingLandings"`
+	RemainingSinceUTC     string   `json:"remainingSinceUtc"`
+	LastCommit            string   `json:"lastCommit"`
 }
 
 // PendingReset retains everything needed to repair reset.json after the
@@ -330,6 +351,9 @@ func validatePendingReset(state WeightState, pending PendingReset) error {
 	result := pending.Result
 	if !filepath.IsAbs(pending.Destination) || result.RunID == "" || result.Subject == "" {
 		return fmt.Errorf("pending reset repair identity is incomplete")
+	}
+	if result.RunClass != "" && result.RunClass != FullRun {
+		return fmt.Errorf("pending reset carries a non-FULL run class")
 	}
 	// Landings lawfully advance the state's generation past the reset
 	// while its appendix is pending, so the reset must sit in the
@@ -727,9 +751,12 @@ func WeightAbandon(root, runID, reason string, bestEffortAppendix bool) (Abandon
 // WeightReset consumes exactly the named checkpoint. LastCommit is not
 // touched: it always names the newest landing, including one added during the
 // battery.
-func WeightReset(root, runID string) (WeightState, ResetResult, error) {
+func WeightReset(root, runID string, runClass RunClass) (WeightState, ResetResult, error) {
 	if runID == "" {
 		return WeightState{}, ResetResult{}, fmt.Errorf("reset requires run id")
+	}
+	if runClass != FullRun {
+		return WeightState{}, ResetResult{}, ErrResetRequiresFull
 	}
 	lock, err := acquireWeightLock(root)
 	if err != nil {
@@ -763,7 +790,7 @@ func WeightReset(root, runID string) (WeightState, ResetResult, error) {
 	next.PostCheckpointSinceUTC = ""
 	next.Generation++
 	result := ResetResult{
-		RunID: runID, Subject: checkpoint.Subject,
+		RunID: runID, Subject: checkpoint.Subject, RunClass: runClass,
 		CheckpointGeneration: checkpoint.OpenedGeneration, ResetGeneration: next.Generation,
 		ResetAtUTC: resetAt, CheckpointAccumulated: checkpoint.Accumulated,
 		CheckpointLandings: checkpoint.Landings, RemainingAccumulated: next.Accumulated,

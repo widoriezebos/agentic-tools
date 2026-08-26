@@ -195,7 +195,7 @@ func families() []family {
 				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
 				{"list", "list existing members of one projection", runBehaviorSurfaceList},
 				{"digest", "print a projection-scoped digest report naming its endpoint", runBehaviorSurfaceDigest},
-				{"skip-allowed", "exit 0 only for a policy-declared delivery-contract skip family", runBehaviorSurfaceSkipAllowed},
+				{"skip-allowed", "exit 0 only for a family declared under the caller's witness or delivery scope", runBehaviorSurfaceSkipAllowed},
 			},
 		},
 		{
@@ -205,11 +205,12 @@ func families() []family {
 				{"register", "record that this process is a running gate", runGateRegister},
 				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
+				{"controller-descendant", "exit 0 only when a consumer descends from one exact live controller identity", runGateControllerDescendant},
 				{"weight-add", "fold a landing's measured weight into the battery accumulator (numstat on stdin)", runGateWeightAdd},
 				{"weight-check", "exit 1 when accumulated feature weight makes the milestone battery worth running", runGateWeightCheck},
 				{"weight-checkpoint", "checkpoint the accumulator for one isolated milestone battery", runGateWeightCheckpoint},
 				{"weight-abandon", "terminalize a non-green checkpoint without subtracting weight", runGateWeightAbandon},
-				{"weight-reset", "consume one green battery checkpoint and publish reset.json", runGateWeightReset},
+				{"weight-reset", "consume one FULL green battery checkpoint and publish reset.json", runGateWeightReset},
 			},
 		},
 		{

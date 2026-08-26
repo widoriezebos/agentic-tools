@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-const SupportedVersion = 1
+const SupportedVersion = 2
 
 // Projection names one deliberately bounded byte claim.
 type Projection string
@@ -42,6 +42,15 @@ const (
 	NonRepository   Class = "NON_REPOSITORY"
 )
 
+// SkipScope names the equality claim that may authorize an omission.
+// WITNESS is ENGINE plus toolchain equality; DELIVERY adds PAYLOAD equality.
+type SkipScope string
+
+const (
+	WitnessScope  SkipScope = "WITNESS"
+	DeliveryScope SkipScope = "DELIVERY"
+)
+
 // Policy is the machine-readable behavior-surface declaration. Pattern
 // grammar is intentionally small: an exact toplevel-relative path or a
 // directory prefix ending in /**.
@@ -55,10 +64,11 @@ type Policy struct {
 	RepositoryOperationalDataPaths []string            `json:"repositoryOperationalDataPaths"`
 	TailoredPaths                  map[string][]string `json:"tailoredPaths"`
 	NonRepositoryPaths             []string            `json:"nonRepositoryPaths"`
+	WitnessSkips                   []string            `json:"witnessSkips"`
 	DeliveryContractSkips          []string            `json:"deliveryContractSkips"`
 }
 
-//go:embed policy.v1.json
+//go:embed policy.v2.json
 var policyBytes []byte
 
 // Load returns the policy embedded in this engine build. This makes a
@@ -111,12 +121,25 @@ func (p Policy) validate() error {
 			seen[pattern] = true
 		}
 	}
-	seenSkips := make(map[string]bool)
-	for _, family := range p.DeliveryContractSkips {
-		if family == "" || strings.ContainsRune(family, '\x00') || seenSkips[family] {
-			return fmt.Errorf("behavior-surface deliveryContractSkips has invalid or duplicate family %q", family)
+	seenScopes := make(map[string]string)
+	for _, skipSet := range []struct {
+		name     string
+		families []string
+	}{
+		{name: "witnessSkips", families: p.WitnessSkips},
+		{name: "deliveryContractSkips", families: p.DeliveryContractSkips},
+	} {
+		seenSkips := make(map[string]bool)
+		for _, family := range skipSet.families {
+			if family == "" || strings.ContainsRune(family, '\x00') || seenSkips[family] {
+				return fmt.Errorf("behavior-surface %s has invalid or duplicate family %q", skipSet.name, family)
+			}
+			if priorScope, exists := seenScopes[family]; exists {
+				return fmt.Errorf("behavior-surface skip family %q is declared in both %s and %s", family, priorScope, skipSet.name)
+			}
+			seenSkips[family] = true
+			seenScopes[family] = skipSet.name
 		}
-		seenSkips[family] = true
 	}
 	return nil
 }
@@ -140,6 +163,17 @@ func ParseProjection(value string) (Projection, error) {
 		return projection, nil
 	default:
 		return "", fmt.Errorf("unknown behavior-surface projection %q", value)
+	}
+}
+
+// ParseSkipScope validates the proof scope named by a skip consumer.
+func ParseSkipScope(value string) (SkipScope, error) {
+	scope := SkipScope(strings.ToUpper(value))
+	switch scope {
+	case WitnessScope, DeliveryScope:
+		return scope, nil
+	default:
+		return "", fmt.Errorf("unknown behavior-surface skip scope %q", value)
 	}
 }
 
@@ -263,10 +297,20 @@ func (p Policy) Includes(projection Projection, name, prefix string) (bool, erro
 	}
 }
 
-// SkipAllowed reports whether payload plus toolchain equality may authorize
-// omission of this exact validation family.
-func (p Policy) SkipAllowed(family string) bool {
-	for _, declared := range p.DeliveryContractSkips {
+// SkipAllowed reports whether the named equality claim may authorize omission
+// of this exact validation family. Callers cannot borrow a stronger scope by
+// omitting the distinction.
+func (p Policy) SkipAllowed(scope SkipScope, family string) bool {
+	var declaredFamilies []string
+	switch scope {
+	case WitnessScope:
+		declaredFamilies = p.WitnessSkips
+	case DeliveryScope:
+		declaredFamilies = p.DeliveryContractSkips
+	default:
+		return false
+	}
+	for _, declared := range declaredFamilies {
 		if family == declared {
 			return true
 		}
