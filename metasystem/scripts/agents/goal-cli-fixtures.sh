@@ -9,6 +9,7 @@ set -euo pipefail
 # synthesized claim record, not collapse to the literal "session".
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$root/scripts/agents/fixture-budget.sh"
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "goal-cli fixtures: bin/metasystem is not built" >&2; exit 1; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-goal-cli.XXXXXX")
@@ -220,8 +221,8 @@ grep -q '"rows":0' <<<"$clean_reconcile" \
 after_roundtrip=$(shasum -a 256 "$clone/plans/goals/labeled-one.md" | cut -d' ' -f1)
 [[ "$before_roundtrip" == "$after_roundtrip" ]] \
   || { echo "publish/fetch/reconcile changed canonical label bytes" >&2; exit 1; }
-perl -0pi -e 's/^- Labels: alpha, shared$/- Labels: shared, alpha, shared/m' \
-  "$clone/plans/goals/labeled-one.md"
+conf_edit "$clone/plans/goals/labeled-one.md" replace-line-first \
+  '^- Labels: alpha, shared$' '- Labels: shared, alpha, shared'
 grep -q '^- Labels: shared, alpha, shared$' "$clone/plans/goals/labeled-one.md" \
   || { echo "the raw hand-edit fixture was not formed" >&2; exit 1; }
 hand_reconcile=$("$ms" goal reconcile --root "$clone" --by wido)
