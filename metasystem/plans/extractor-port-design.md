@@ -2,6 +2,17 @@
 
 Working Mode: design
 
+STATUS: PARKED 2026-08-26 after the single critique round
+(design-critic-20260826t040859z-a81a, NINE material incl. the
+critical EPC-01: the python-removal premise is false for an
+extractor-only port — python3 pervades the kit: pairs.py,
+compare.py, system-fingerprint.py, provision and staging blocks —
+and the true cost is a multi-slice arc with Go/Python JSON
+byte-equality and a general schema validator underneath). The
+decision (port the whole kit vs declare python3 a kit-scoped
+dependency) is Wido's, drafted for his return; the ratchet slice
+proceeds either way and pins whichever ruling lands.
+
 Owner: m2 coordinator brief. Appetite 3h within the claimed item.
 Critique loop: ONE design round (the port is a translation with an
 oracle, not an invention — the calibrated light shape), failsafe at
