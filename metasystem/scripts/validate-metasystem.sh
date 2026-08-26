@@ -606,6 +606,11 @@ fi
 
 # Real runtime selftests spend model calls and remain manual acceptance steps.
 # Validation covers only their static adapter contract.
+# The external-dependency ratchet (os-dependency-reduction): an
+# undeclared interpreter in metasystem scripts refuses here.
+bash scripts/agents/dependency-ratchet.sh --self-test >/dev/null
+bash scripts/agents/dependency-ratchet.sh >/dev/null
+bash -n scripts/agents/dependency-ratchet.sh
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
 bash -n scripts/agents/witness-gate.sh
