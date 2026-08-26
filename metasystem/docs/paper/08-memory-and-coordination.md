@@ -9,11 +9,16 @@ Goals, claims, states, decisions, and results live in one structured,
 history-preserving record: the only source allowed to determine the
 current state of work. The record is complete enough for recovery and
 audit, but that does not mean everyone may read all of it; each role
-sees only what its task requires. This is how Chapter 6 gives critics a
-fresh context and how Chapter 9 applies least authority to information
-as well as actions. Access follows the active role, so a person or
-machine with broader access in another role may not carry it into the
-narrower critic role.
+sees only what its task requires. This is how Chapter 9 applies least
+authority to information as well as actions. But access rules restrict
+what a mind may read next; they cannot erase what it has already
+absorbed. Least authority and fresh perspective are therefore two
+different guarantees: permissions provide the first, and only a
+different mind provides the second. When Chapter 6 demands a critic
+with fresh context, the system must supply a distinct person or a
+freshly instantiated worker that has never seen the builder's path —
+which machine workers make cheap to provide and humans, whose exposure
+cannot be revoked, largely cannot.
 
 ## What each role may read
 

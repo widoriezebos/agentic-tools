@@ -322,12 +322,14 @@ make_repo() { # destination
   cp "$source_root/scripts/metasystem-config.sh" "$repo/scripts/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
   # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
-  # only harness-specific overrides ride --set. The old rewrite's
-  # model.tier clauses never matched: the shipped conf carries no tier
-  # lines, and this harness never grew an append. Investigator stays
-  # main here, as before.
+  # only harness-specific overrides ride --set. The default fake model
+  # keeps a role-free adopted source complete when tailoring adds the
+  # default fake runtime. The old rewrite's model.tier clauses never
+  # matched: the shipped conf carries no tier lines, and this harness
+  # never grew an append. Investigator stays main here, as before.
   "$ms" config tailor --conf "$repo/metasystem.conf" --runtimes fake \
     --set evidence.root="$evidence" \
+    --set role.default.model.fake=fake-model \
     --set watch.interval-sec=1 \
     --set census.log-max-bytes=350
   git -C "$repo" init -q -b main
