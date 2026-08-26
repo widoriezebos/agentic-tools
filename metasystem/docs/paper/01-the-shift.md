@@ -30,23 +30,7 @@ Human responsibility does not disappear. The responsible authority decides outco
 
 ## A hypothetical day
 
-The following day describes a possible end state, not common practice
-today. It follows one small change — the session-expiry request from
-the opening of this chapter — through a working day on the other side
-of the shift, and it is worth meeting the cast before the clock
-starts. Four roles appear, and none of them is a job title. The
-responsible authority is the person who owns the outcome: they say
-what the change must achieve, rule on the questions that turn out to
-be value choices, and answer for the result. The builder is the
-machinery that constructs: it reads the system, proposes a design,
-and turns recorded intent into working code and checks. The
-independent examination is machinery too, but with the opposite
-stance: it has never seen the builder's reasoning and is briefed to
-break the candidate, not to approve it. And behind both stand
-enforced rules — checks wired into the system itself that refuse a
-forbidden action outright rather than advise against it. The human
-appears exactly twice in what follows. Everything between those two
-moments is the system doing what it was built to do.
+The following day describes a possible end state, not common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices, and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and authorized release limit what the machinery may do.
 
 At 8:40, the responsible authority for account security records an outcome: sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using. No design or task list is prescribed.
 
