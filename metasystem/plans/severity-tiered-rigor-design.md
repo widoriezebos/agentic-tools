@@ -18,3 +18,22 @@ SEE SESSION RECORD: round-1 verdict delivered 2026-08-26 ~13:20; re-run design r
 
 ## Minimal slice one (4h appetite, hard stop + raise)
 rigorClass + structured facts + reopening trigger required on every material finding (missing/malformed → UNPROVEN); first all-bounded round recorded on the chain root with finding ids; max two further rounds; severe overrides the bounded deadline but keeps the existing second-exhaustion stop; job critique-exhaustion refuses at either boundary with critique-round.sh routed through it; zero-material code-landing rule preserved; bounded exhaustion's only outcome is a loud human raise. Residual landing, cheap unblocks, debt automation, near-miss promotion: LATER slices.
+
+## Round 2 record (one-more-round; round 3 of 3 decides)
+Slice-one scope as written is NOT buildable: prescriptions 3 and 6
+need code-level grammar first. Five new findings bind round 3:
+(1) dispatch.sh:1261-1308 strand/collide window — exhaustion decided
+after pending-setup exists but before the cleanup trap; (2) empty
+finding IDs are schema-valid and dropped by openMaterialIDs —
+the exhaustion test then sees no open IDs (schema :45,
+critique.go:103-118,218-223); (3) naive schema-required rigorClass
+livelocks via protocol-error rounds that never count toward the cap
+(dispatch.sh:1237-1246, critique.go:182-190); (4) the canonical
+register needs a digest/version precondition or an atomic
+register-update verb — RecordCAS compares only status
+(critique.go:174-182, record.go:283-346); (5) critique-round.sh never
+implemented its recorded stop-mechanism contract (only model/effort
+options; no exhaustion consultation). Round 3 must pin: the
+classification/default grammar at code level; malformed rounds
+cap-binding; the driver migration choice; the exact-tree certificate;
+atomic register mutation; the honest slice split (8 and 9 stay later).
