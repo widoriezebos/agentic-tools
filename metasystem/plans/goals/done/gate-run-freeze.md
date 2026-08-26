@@ -1,12 +1,12 @@
 # gate-run-freeze
 
-- State: claimed
+- State: done
 - Intent: Goal verbs and commits refuse mechanically while a registered gate run is live on the checkout, outside the run's own chain — the ledger freeze during batteries becomes machinery (IL-29, retro-2026-08-25)
 - Origin: main
 - Next step: WIDO'S CONDITIONAL WORD (2026-08-26, 'Approved in full'): conclude this goal and the battery set WITHOUT further ask the moment the acceptance battery runs green. Plan unchanged: sweep lands -> enumeration pass -> batch fix -> one green battery -> conclude -> witness-law-extension.
+- Concluded: GREEN acceptance: run five green against b60a880 (envelope 20260826T161238Z, ~1h47 wall clock — the first honest number for the isolated battery). Five-run arc: python ratchet, empty-runtime census, symlink evidence-copy (retention path proven live), model.fake in eight beds, ghost-leg discrimination — all fixture debt excavated and fixed forward; the battery machinery itself correct in every run. Ten critique rounds to AGREE on the build; Wido's carve-out ruling; weight mechanism live and reset on green. Concluded under Wido's conditional word of 2026-08-26.
 - OpenedAt: 2026-08-25T12:31:23Z
-- Revision: 11
-- Claimed: machine=m1 lineage=coordinator at=2026-08-25T14:12:28Z
+- Revision: 12
 
 History:
 - 2026-08-25T12:31:23Z 1JP1BD1SMAH7M1DE9A2EBSH2XQ-m1-bf243850 open actor=m1+coordinator targets=gate-run-freeze
@@ -20,4 +20,5 @@ History:
 - 2026-08-26T06:57:06Z 3ZKHDYNT8MPXHRXZZG8YSG3RB6-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
 - 2026-08-26T11:05:21Z BVEKGPGJW36Q8RJRRS07NE5CKR-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
 - 2026-08-26T11:08:11Z 1300S4WATSH19JEGGMS3K3PW03-m1-bf243850 edit actor=m1+coordinator targets=gate-run-freeze
-Integrity: sha256=b8c27daf9907a421c36f13eaf9f563ae74e87f073c5b01297ee56c9a62eb0876
+- 2026-08-26T18:10:12Z P31GZABXNN10F36KT1K8XQCJBZ-m1-bf243850 done actor=m1+coordinator targets=gate-run-freeze
+Integrity: sha256=730ad8de9577089aced4f67572c85a54dc4c624e548acc3682b97e2469e65bd7
