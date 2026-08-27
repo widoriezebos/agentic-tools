@@ -10,13 +10,13 @@ What we are discussing now is not new. Programmers once allocated registers and 
 
 Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control took over the remembering and the comparing. It did not decide which change was right; it made history durable so people could.
 
-A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code turned the desired state into a description that machinery can compare with reality and apply again.
+A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code turned the desired state into a description that machinery can compare with reality and then implement.
 
 Testing followed the same pattern. A release team once clicked through the application by hand, every cycle consuming the same attention. Continuous integration moved repeatable checks next to the change. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
 
 This ladder shows that machinery can absorb bounded, repeatable work. It does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
-One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can reach. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger: machinery absorbs more of construction and delivery, while engineering ownership moves to the design and governance of the machinery that performs them.
+One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can achieve. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger: machinery absorbs more of construction and delivery, while engineering ownership moves to the design and governance of the machinery that performs them.
 
 ## The new object of ownership
 
@@ -32,7 +32,7 @@ Human responsibility does not disappear. The responsible authority decides outco
 
 The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and authorized release limit what the machinery may do.
 
-At 8:40, the responsible authority for account security records an outcome: sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using. No design or task list is prescribed.
+At 8:40, the responsible authority for account security records an outcome: "sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using". No design or task list is prescribed.
 
 A builder traces current behavior. It finds where sessions begin, which events extend them, how expiry appears to a user and what the service can observe. Before turning the request into checks, it leaves three interpretations for one human ruling: whether silent reading counts as active work, whether background refresh counts and whether a user-started upload may outlive the ordinary session.
 
