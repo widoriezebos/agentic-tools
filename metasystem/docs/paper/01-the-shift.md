@@ -6,7 +6,7 @@ For consequential or repeatedly delivered software, this paper proposes a shift 
 
 ## The ladder already climbed
 
-The history is observable, and its lesson is limited. Application programmers once allocated registers and calculated jump targets by hand. Compilers absorbed those named operations. The toolchain now performs them repeatedly across changes, while programmers work in languages closer to the problem.
+What we are discussing now is not new. Programmers once allocated registers and calculated jump targets by hand. Compilers then took care of all of that.
 
 Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control put memory, comparison and much reconciliation into machinery. It did not decide which change was right. It made history durable and differences visible so that people could make that decision with better evidence.
 
@@ -16,7 +16,7 @@ Testing followed the same pattern. A release team gathered around a checklist an
 
 This ladder shows that machinery can absorb bounded, repeatable work. It does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
-One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capacity reaches across more of construction and delivery than a fixed transformation or checklist could reach. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger: machinery absorbs more of construction and delivery, while engineering ownership moves to the design and governance of the machinery that performs them.
+One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can reach. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger: machinery absorbs more of construction and delivery, while engineering ownership moves to the design and governance of the machinery that performs them.
 
 ## The new object of ownership
 
@@ -24,13 +24,13 @@ Suppose every sensitive data export must leave an audit trail. A team can place 
 
 The application then stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. The durable asset includes what the system needs to do those things again: a statement of the intended outcome, boundaries on action, checks that separate a supported claim from a guess, and records of what happened.
 
-Some boundaries need authority. A suggestion may be ignored; an enforced rule can refuse a change. This paper calls the governing rules laws; "enforced rule" names a law implemented at the action it can stop. The legal metaphor identifies who may decide, what may be refused and how a decision may be challenged. It does not imply a machine court or copied legal ceremony. A law here is a rule with enough authority to stop action when a named condition has not been met.
+Some boundaries need authority. A suggestion may be ignored; an enforced rule can refuse a change. This paper calls the governing rules laws; "enforced rule" names a law implemented at the action it can stop. The legal metaphor identifies who may decide, what may be refused and how a decision may be challenged. It does not imply a 'machine court' or mimiced legal ceremony. A law here is a rule with enough authority to stop action when a named condition has not been met.
 
 Human responsibility does not disappear. The responsible authority decides outcomes and constraints, resolves conflicts of value, accepts accountability, rules on exceptions and decides how much evidence a consequence requires. A governed delivery system carries construction and delivery within those boundaries. Engineering ownership centers on designing that loop, assigning its authority, examining its evidence and changing it when experience shows that it is wrong.
 
 ## A hypothetical day
 
-The following day describes a possible end state that is not common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and authorized release limit what the machinery may do.
+The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and authorized release limit what the machinery may do.
 
 At 8:40, the responsible authority for account security records an outcome: sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using. No design or task list is prescribed.
 
@@ -58,7 +58,7 @@ An independent examiner remains necessary to challenge claims when evidence cann
 
 ## The question before the design
 
-This paper makes a design argument. It does not claim that such systems are already normal. Its claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained, and does human authority remain real where it is needed?
+This paper makes a design argument. It does not claim that such systems are already possible. Its claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained and does human authority remain real where it is needed?
 
 Scope also counts. A disposable script with little consequence may not justify elaborate production machinery. Software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk. The direction of ownership does not require every project to use the same amount of machinery.
 
