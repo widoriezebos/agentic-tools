@@ -50,7 +50,7 @@ Five parallel builders can explore the session change quickly. They also create 
 
 Construction and verification receive explicit budgets proportional to risk. A budget is not a hope recorded beside the work. When it is exhausted, machinery stops, records what it learned and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure and accumulated change rather than to line count or confidence.
 
-Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules and accountability always end with responsible authorities. This boundary is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
+Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always end with responsible authorities. This boundary is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
 
 ## Failure leaves a record
 

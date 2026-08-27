@@ -52,7 +52,7 @@ Spending follows possible harm, uncertainty, reach and accumulated change rather
 
 ## When the machinery is not worth its cost
 
-A person writes a disposable program to compare two local data files once, examines the result and throws the program away. Building durable role separation, continuous observation, an acceptance custodian and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low and any mistake is easy to notice and reverse.
+A person writes a disposable program to compare two local data files once, examines the result and throws the program away. Building durable role separation, continuous observation, an acceptance custodian and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low, and any mistake is easy to notice and reverse.
 
 This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost. The possibility of automation alone does not justify it.
 
@@ -70,7 +70,7 @@ The proposed shift in engineering ownership is directional; it does not carry th
 
 ## Measuring the system, not activity
 
-At the end of the expiry change, a report says that three candidates were produced, eleven checks ran and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
+At the end of the expiry change, a report says that three candidates were produced, eleven checks ran, and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
 
 Useful measures connect total spend and delay to delivered intent, escaped harm, recovery time and learning that remains available for later work. They show how much construction and examination cost, how long required judgment waited, how often harmful behavior escaped, how quickly protected outcomes returned and whether a repeated change becomes cheaper without becoming less safe.
 

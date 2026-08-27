@@ -50,7 +50,7 @@ Security representatives ask for a short lifetime. Support staff report that fre
 
 The disagreement is recorded before construction continues. The record names the affected domains, the people whose interests are represented, the points of agreement, the unresolved tradeoff and the evidence each claim uses. It then names who has binding authority for the decision, how that authority was delegated, its scope and expiry, and the route to another accountable human or body on appeal.
 
-The structure may use one responsible executive, a standing group or several authorities protecting different domains. The form can vary. The condition does not: conflicting intent is visible, binding power is explicit, accountability remains human and challenge can reach a human authority outside the disputed decision.
+The structure may use one responsible executive, a standing group or several authorities protecting different domains. The form can vary. The condition does not: conflicting intent is visible, binding power is explicit, accountability remains human, and challenge can reach a human authority outside the disputed decision.
 
 Delegation does not dissolve responsibility. The delegating authority answers for the boundary, and the delegate answers for decisions within it. If nobody can identify the human with the duty to decide, machinery must not infer authority from seniority, activity or access. It stops.
 
@@ -72,4 +72,4 @@ Protecting attention makes human authority usable. Machinery remains bounded by 
 
 Chapter 1 supplies the ruling and its one human interruption. This chapter turns that event into a governance record: the responsible authority for account access, the source and scope of any delegation, the evidence and reasons, the person accountable for the balance and the human appeal route all remain attached to the decision.
 
-An independent reviewer may demand evidence, stop exposure, accept or refuse only within recorded authority and must answer for that decision. Representatives and affected users can challenge it through the named appeal route. Builders construct, independent examiners challenge, enforced rules refuse unsupported progress, authorized release controls exposure and the responsible authority retains the judgment that machinery cannot supply. No additional human interruption is assumed.
+An independent reviewer may demand evidence, stop exposure, accept or refuse only within recorded authority and must answer for that decision. Representatives and affected users can challenge it through the named appeal route. Builders construct, independent examiners challenge, enforced rules refuse unsupported progress, authorized release controls exposure, and the responsible authority retains the judgment that machinery cannot supply. No additional human interruption is assumed.

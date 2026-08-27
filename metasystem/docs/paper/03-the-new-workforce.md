@@ -2,7 +2,7 @@
 
 A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.
 
-That contrast sets up this chapter. Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work and new failure modes become important. The proposed delivery system must be derived from those actual properties rather than from either wonder or fear about the machinery.
+That contrast sets up this chapter. Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The proposed delivery system must be derived from those actual properties rather than from either wonder or fear about the machinery.
 
 ## What falls or changes shape
 
@@ -12,7 +12,7 @@ A second attempt also becomes easier to start. There is no need to wait for the 
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
-Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction and tools can stop. What falls away is fatigue; cost and failure stay. Across these cases, the observable shift is precise: copying, starting and repeating become cheaper, while selection, coordination, judgment and payment remain.
+Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay. Across these cases, the observable shift is precise: copying, starting and repeating become cheaper, while selection, coordination, judgment and payment remain.
 
 ## What actually goes away
 
@@ -28,7 +28,7 @@ A builder reaches a useful observation, then its session ends before the observa
 
 Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely. To an observer, all four can look like patience. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
-A third builder returns a polished account and a plausible candidate. Its explanation is orderly, the names sound right and the check it selected passes. A boundary case later shows that the candidate revives an expired session. Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
+A third builder returns a polished account and a plausible candidate. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session. Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
 
 An independent examiner then receives the builder's conclusion and repeats it in gentler words. The independent examiner may be biased by the supplied framing or may favor a response that appears cooperative. The pattern is agreement-seeking. Asking for examination does not create independence if every independent examiner starts from the same reasoning or is rewarded only for producing a smooth consensus.
 

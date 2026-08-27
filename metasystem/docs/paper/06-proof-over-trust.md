@@ -34,7 +34,7 @@ An independent examiner asked "does this solution look correct?" after reading t
 
 Each new independent examiner receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That boundary protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a newly started machine worker that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority, but it cannot manufacture independence after the fact. Chapter 8 develops how one durable record can support both continuity and appropriately limited access.
 
-The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation or an open question requires a human ruling. Stopping is a recorded decision rather than the moment a tireless process happens to stop speaking.
+The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision rather than the moment a tireless process happens to stop speaking.
 
 ## Four questions set verification depth
 
@@ -62,7 +62,7 @@ Low risk does not mean no control. A path authorized by enforced rules still nee
 
 ## Repair a mistaken classification
 
-In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. Authorized release contains or reverses the change, the builder repairs the defect and the responsible authority handles any value or rule change revealed by it. Together those acts form care.
+In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. Authorized release contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it. Together those acts form care.
 
 The second problem is the classification itself. The rule failed to recognize that the activity signal involved a value choice and broad exposure. That missed trigger is treated as a defect rather than bad luck. Its record includes the evidence available before release, the evidence found afterward and the reason the earlier rule did not escalate.
 

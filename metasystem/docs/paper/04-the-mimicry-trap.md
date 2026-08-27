@@ -1,6 +1,6 @@
 # 4. The Mimicry Trap
 
-Imagine that at nine each morning, six machine workers receive a prompt called "standup." Each produces three tidy sentences about yesterday, today and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach and none has challenged the assumption that a background refresh proves a user is active. The ceremony is present, but the protection is not.
+Imagine that at nine each morning, six machine workers receive a prompt called "standup." Each produces three tidy sentences about yesterday, today and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach, and none has challenged the assumption that a background refresh proves a user is active. The ceremony is present, but the protection is not.
 
 This is the mimicry trap. A familiar process is copied onto a workforce with different limits, so the result looks controlled while the need that once justified the process goes unexamined. Avoiding the trap does not require rejecting history. It requires reading each inherited practice as evidence about the problem it was built to solve.
 
@@ -38,7 +38,7 @@ Attention then follows the old problems. Managers ask whether each worker report
 
 ## Find the need, then choose
 
-Consider an inherited approval meeting. First ask what event made it necessary. Perhaps information was scattered, two groups held conflicting goals or a consequential action needed a named authority. Next ask whether that need remains. A common record may solve scattered information; it cannot settle a conflict of values or accept accountability. Then ask what observable evidence would show that a replacement works. If work is meant to be visible, can a reader see current state, last progress, deadline and failure without asking the worker? If scrutiny is meant to find faults, does the replacement reject a known-bad candidate?
+Consider an inherited approval meeting. First ask what event made it necessary. Perhaps information was scattered, two groups held conflicting goals, or a consequential action needed a named authority. Next ask whether that need remains. A common record may solve scattered information; it cannot settle a conflict of values or accept accountability. Then ask what observable evidence would show that a replacement works. If work is meant to be visible, can a reader see current state, last progress, deadline and failure without asking the worker? If scrutiny is meant to find faults, does the replacement reject a known-bad candidate?
 
 Only after those questions is a choice made about the form. When no need remains, discard the form and record why. When meeting the need is mechanical and its success observable, machinery can replace the form. When the need remains but the old form fits it poorly, adapt the form. When the act contains a value ruling or accountability that machinery cannot hold, keep it as an explicitly human act.
 
@@ -60,4 +60,4 @@ Three people enter a review believing they agree that a session warning should b
 
 Some ceremonies hold unspoken knowledge and create the encounter in which disagreement becomes visible. The need they serve cannot be fully named in advance because discovery is part of the act. The method must name what remains unknown and preserve a human place for negotiation. Machinery can prepare examples, expose conflicting statements, record rulings and later enforce what can be made checkable. It cannot automate the disagreement away by turning the surrounding paperwork into a form.
 
-The proposed end state is work in which every retained form has a stated reason, every mechanical replacement is answerable to observable evidence and every human act is reserved because human authority or discovery is actually required. That is a stricter use of process than mimicry, and it does not abolish process.
+The proposed end state is work in which every retained form has a stated reason, every mechanical replacement is answerable to observable evidence, and every human act is reserved because human authority or discovery is actually required. That is a stricter use of process than mimicry, and it does not abolish process.

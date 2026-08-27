@@ -8,7 +8,7 @@ This is a proposal; it does not claim to be a forecast. The observed history in 
 
 ## The organization follows the shift
 
-A company wants to change how accounts establish trust. The request may travel through a product queue, application team, security review, test group, release group and operations rotation. Each reconstructs part of the context. In the proposed arrangement, a team holds an account-access intent domain and its delivery system. Its durable responsibility includes behavior, governing rules, release evidence, live measures of harm and authority paths for judgment and appeal.
+A company wants to change how accounts establish trust. The request may travel through a product queue, application team, security review, test group, release group and operations rotation. Each reconstructs part of the context. In the proposed arrangement, a team holds an account-access intent domain and its delivery system. Its durable responsibility includes behavior, governing rules, release evidence, live measures of harm, and authority paths for judgment and appeal.
 
 An intent domain is a bounded area of purpose for which named people may decide outcomes and priorities. It need not match a department or a code repository. Account access may cross web, mobile, support, identity and recovery systems because users experience one outcome across all of them. Organizing around that outcome can make responsibility clearer than organizing around a permanent queue of construction tasks.
 
@@ -22,7 +22,7 @@ This shift does not remove construction knowledge. A person who governs a builde
 
 The request "make sessions expire sooner" is cheap to write and expensive to clarify. Someone must expose whether the limit begins at creation or last activity, whether passive reading counts, which sessions already in progress change and what happens to unfinished work. As construction becomes cheaper, this ability to turn purpose into observable outcomes becomes more valuable.
 
-Writing checkable intent is not writing a longer specification. It states the result, constraints, affected people, freedoms left to construction and observations of success or harm. It also invites contradiction. If evidence shows that the timeout locks out a class of users, the intent may need revision.
+Writing checkable intent is not writing a longer specification. It states the result, constraints, affected people, freedoms left to construction, and observations of success or harm. It also invites contradiction. If evidence shows that the timeout locks out a class of users, the intent may need revision.
 
 Verification judgment becomes scarce for a related reason. Machinery can generate many candidates and many passing checks. The difficult work is choosing checks that fail on a relevant broken version, detecting when builder and independent examiner share an assumption and deciding how much independent evidence the consequence calls for. More generated work can increase this burden because alternatives must be compared, not just produced.
 

@@ -6,7 +6,7 @@ The transition begins inside that uncertainty. The proposed delivery system firs
 
 ## Begin with the existing system
 
-Before changing session behavior, a builder traces what the application actually does. New sessions last twelve hours, an older mobile client renews them differently, administrators receive a shorter limit and a nightly task removes abandoned records. A test expects the twelve-hour value. A support guide tells people that closing the browser signs them out, although observation shows that this is not always true. None of these facts alone establishes intent.
+Before changing session behavior, a builder traces what the application actually does. New sessions last twelve hours, an older mobile client renews them differently, administrators receive a shorter limit, and a nightly task removes abandoned records. A test expects the twelve-hour value. A support guide tells people that closing the browser signs them out, although observation shows that this is not always true. None of these facts alone establishes intent.
 
 Running behavior, production measures, tests, policies, incident history and current ceremonies are evidence of prior decisions. They also contain accidents, stale assumptions and known defects. The twelve-hour test may protect an intentional promise or may only freeze the behavior present when the test was written. The manual release step may preserve an important separation of authority or may remain because nobody has examined it since releases became reversible.
 
