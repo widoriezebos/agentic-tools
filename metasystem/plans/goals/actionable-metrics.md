@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
-- Next step: Appetite: 6h across three slices (slice one 2h + ruled ~30-45min provenance delta). POSITION 2026-08-27 ~09:20 m1: R1-01 RULED by Wido in-session — forward-only provenance (job records optional goalId at record-create, RECEIPT rows goal=, critique-round.sh --goal; history stays unattributed, attribution coverage printed). Design v2+ruling at plans/actionable-metrics-design.md, all 17 round-1 findings dispositioned. Critique ROUND 2 of 3 IN FLIGHT on chain actionable-metrics (failsafe round 3; verdict lands at artifacts/agents/critiques/actionable-metrics/r2-output.md). On the verdict: adjudicate + fold; if material findings remain and are not all fixture-expressible, round 3 decides; then brief codex to BUILD slice one (obligations O1-O13).
+- Next step: Appetite: 6h across three slices (slice one 2h + ruled provenance delta; build clock started 2026-08-27 ~09:40). POSITION m1: design CONVERGED AND LANDED 883f920 (both remotes) — two critique rounds (16 then 15 material, all 31 dispositioned in plans/actionable-metrics-design.md), the declared early-close fired at round 2 with every finding fixture-expressible; Wido ruled twice in-session: forward-only provenance (job goalId, receipt goal=, critique-round --goal) and built_by= on receipts. CODEX IS BUILDING slice one NOW in the working tree (internal/metrics + metrics report CLI + provenance additions + fixtures O1-O20; no commits — coordinator reviews). On its return: verify focused tests, MANDATORY code-critique (fresh codex chain to AGREE — the early-close makes it non-optional), then land via land.sh with receipt, then slices two/three per the design. Collateral backlogged this session: steward-marks-retired-ledger, goal-git-stderr-pollution.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 5
+- Revision: 6
 - Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
 
 History:
@@ -14,4 +14,5 @@ History:
 - 2026-08-27T06:27:40Z 0H55GVBST6T9DWJHEFZ9ATNDVC-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T06:45:15Z C7CEEPHWEN6W49F0DF5KD79AQ5-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T07:02:07Z 3B85PG4FKZB9J7W6DBSW10DQEV-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=66598b29bb2ff79feac8fdd759b4cccb30f9204cf31b9d692364aa76e5f48ab0
+- 2026-08-27T09:54:13Z X528JNY4YP4AWR96Q5JH3FPFDF-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=2d56359e718429a4f6b5eb2aa8d65a76b8bfb2836942f6c8c43dec857ae2f205
