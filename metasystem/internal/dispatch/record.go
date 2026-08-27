@@ -62,6 +62,7 @@ var immutableFields = map[string]bool{
 	"branch": true, "startedAt": true, "claimEpoch": true, "mainId": true,
 	"capMin": true, "capDeadline": true, "capResolution": true,
 	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
+	"goalId": true,
 }
 
 // The only fields a terminal record still accepts: its evidence mirror, the
@@ -215,7 +216,8 @@ func RecordSetup(root, job, sourcePath string) error {
 			asString(record["jobId"]) != job ||
 			asString(record["status"]) != "pending" ||
 			!sameValue(record["claimEpoch"], current["claimEpoch"]) ||
-			!sameValue(record["mainId"], current["mainId"]) {
+			!sameValue(record["mainId"], current["mainId"]) ||
+			!sameValue(record["goalId"], current["goalId"]) {
 			return refuse(1, "invalid setup transition for %s", job)
 		}
 		return writeRecord(recordPath, record)

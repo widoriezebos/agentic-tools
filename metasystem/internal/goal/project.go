@@ -10,16 +10,59 @@ package goal
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // Projection is one read of the accepted world.
 type Projection struct {
-	Tip     string
-	Tree    *TreeGoals
-	Banners []string
+	Tip             string
+	Tree            *TreeGoals
+	Banners         []string
+	AppetiteBanners []AppetiteBanner
+}
+
+// AppetiteBand is the computed checkpoint state of one standing claim.
+type AppetiteBand string
+
+const (
+	BandWithin         AppetiteBand = "WITHIN-BAND"
+	BandBreachEscalate AppetiteBand = "BREACH-ESCALATE"
+	BandBreachStop     AppetiteBand = "BREACH-STOP"
+)
+
+// AppetiteBanner retains the goal and claimant coordinates beside the human
+// text so callers can filter without parsing a sentence.
+type AppetiteBanner struct {
+	GoalId    string
+	Machine   string
+	Lineage   string
+	Band      AppetiteBand
+	Text      string
+	Elapsed   time.Duration
+	Appetite  time.Duration
+	Remaining time.Duration
+}
+
+// CurrentAppetiteBanners is the read-only surface shared by commands and
+// hooks. A legacy checkout has no synced claim events and is silently empty.
+func CurrentAppetiteBanners(root string, now time.Time) ([]AppetiteBanner, error) {
+	if !NewWorld(root) {
+		return nil, nil
+	}
+	endpoint, err := ResolveEndpoint(root)
+	if err != nil {
+		return nil, err
+	}
+	projection, err := Project(endpoint, false, now)
+	if err != nil {
+		return nil, err
+	}
+	return projection.AppetiteBanners, nil
 }
 
 // StaleThreshold is how old an accepted tree may grow before the
@@ -64,17 +107,15 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 		}
 	}
 
-	// Appetite breaches are COMPUTED at read time from ledger data
-	// alone (the claim's At stamp and the Appetite: token opening the
-	// next step), so every machine's read sees the same escalation
-	// with no extra writes — the steward's covenant tick and every
-	// coordinator's goal next surface identical banners.
+	// Appetite checkpoints are computed from the claim-time snapshot and
+	// authority-bearing history. Current prose alone is never authority.
+	grace := config.AppetiteOverrunGracePercent(filepath.Join(e.Root, "metasystem.conf"))
 	for _, id := range sortedGoalIds(tree.Live) {
 		f := tree.Live[id]
 		if f.State != StateClaimed || f.Claimed == nil {
 			continue
 		}
-		appetite, declared := ParseAppetite(f.NextStep)
+		appetite, declared := effectiveAppetite(e, tip, f)
 		if !declared {
 			continue
 		}
@@ -82,10 +123,13 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 		if tErr != nil {
 			continue
 		}
-		if age := now.Sub(claimedAt); age > appetite {
-			p.Banners = append(p.Banners, fmt.Sprintf(
-				"APPETITE BREACH: %s claimed %s ago against an appetite of %s (%s+%s) — the covenant says pause it and raise it with Wido",
-				id, age.Round(time.Minute), appetite, f.Claimed.Machine, f.Claimed.Lineage))
+		remaining, _ := latestRemainingAfterClaim(f)
+		age := now.Sub(claimedAt)
+		band := EvaluateAppetiteBand(age, appetite, remaining, grace)
+		if band != BandWithin {
+			banner := appetiteBanner(id, f.Claimed, band, age, appetite, remaining, grace)
+			p.AppetiteBanners = append(p.AppetiteBanners, banner)
+			p.Banners = append(p.Banners, banner.Text)
 		}
 	}
 
@@ -120,24 +164,188 @@ func ParseAppetite(nextStep string) (time.Duration, bool) {
 	if sp := strings.IndexAny(rest, " \t.,;"); sp >= 0 {
 		token = rest[:sp]
 	}
-	if len(token) < 2 {
+	return ParseWorkingDuration(token)
+}
+
+// ParseWorkingDuration accepts one or more positive integer day, hour, and
+// minute segments. A working day is eight hours; seconds and fractions are not
+// part of the ledger grammar.
+func ParseWorkingDuration(value string) (time.Duration, bool) {
+	if value == "" {
 		return 0, false
 	}
-	unit := token[len(token)-1]
-	value := token[:len(token)-1]
-	n, err := strconv.Atoi(value)
-	if err != nil || n <= 0 {
-		return 0, false
+	var total time.Duration
+	for i := 0; i < len(value); {
+		start := i
+		for i < len(value) && value[i] >= '0' && value[i] <= '9' {
+			i++
+		}
+		if start == i || i >= len(value) {
+			return 0, false
+		}
+		n, err := strconv.ParseInt(value[start:i], 10, 64)
+		if err != nil || n <= 0 {
+			return 0, false
+		}
+		var unit time.Duration
+		switch value[i] {
+		case 'm':
+			unit = time.Minute
+		case 'h':
+			unit = time.Hour
+		case 'd':
+			unit = 8 * time.Hour
+		default:
+			return 0, false
+		}
+		if time.Duration(n) > (time.Duration(1<<63-1)-total)/unit {
+			return 0, false
+		}
+		total += time.Duration(n) * unit
+		i++
 	}
-	switch unit {
-	case 'm':
-		return time.Duration(n) * time.Minute, true
-	case 'h':
-		return time.Duration(n) * time.Hour, true
-	case 'd':
-		return time.Duration(n) * 8 * time.Hour, true
+	return total, total > 0
+}
+
+// FormatWorkingDuration is the canonical token stored in claim and estimate
+// events. It preserves the working-day convention and never emits seconds.
+func FormatWorkingDuration(value time.Duration) string {
+	minutes := int64(value / time.Minute)
+	if minutes <= 0 {
+		return ""
+	}
+	days := minutes / (8 * 60)
+	minutes %= 8 * 60
+	hours := minutes / 60
+	minutes %= 60
+	var b strings.Builder
+	if days > 0 {
+		fmt.Fprintf(&b, "%dd", days)
+	}
+	if hours > 0 {
+		fmt.Fprintf(&b, "%dh", hours)
+	}
+	if minutes > 0 {
+		fmt.Fprintf(&b, "%dm", minutes)
+	}
+	return b.String()
+}
+
+// EvaluateAppetiteBand owns the checkpoint math. Forecasts add a STOP path;
+// they never subtract the measured elapsed-time path.
+func EvaluateAppetiteBand(elapsed, appetite, remaining time.Duration, gracePercent int) AppetiteBand {
+	if appetite <= 0 || elapsed < 0 {
+		return BandWithin
+	}
+	// Build the grace term without multiplying a Duration by up to 200;
+	// accepted durations can approach the int64 ceiling. Saturating preserves
+	// the intended comparison instead of wrapping a very large appetite.
+	grace := time.Duration(gracePercent)
+	extra := (appetite/100)*grace + (appetite%100)*grace/100
+	maxDuration := time.Duration(1<<63 - 1)
+	limit := maxDuration
+	if extra <= maxDuration-appetite {
+		limit = appetite + extra
+	}
+	// Subtract from the already-proven limit instead of adding remaining to
+	// elapsed; the latter can overflow for a large honest estimate.
+	if elapsed > limit || (remaining > 0 && remaining > limit-elapsed) {
+		return BandBreachStop
+	}
+	if elapsed > appetite {
+		return BandBreachEscalate
+	}
+	return BandWithin
+}
+
+func appetiteBanner(id string, claim *ClaimRecord, band AppetiteBand, elapsed, appetite, remaining time.Duration, grace int) AppetiteBanner {
+	used := FormatWorkingDuration(elapsed.Round(time.Minute))
+	if used == "" {
+		used = "under 1m"
+	}
+	text := ""
+	switch band {
+	case BandBreachEscalate:
+		text = fmt.Sprintf("BREACH-ESCALATE: goal %s has used %s against its %s claim appetite (%s+%s); Wido decides whether to continue with an adjusted appetite or abandon it",
+			id, used, FormatWorkingDuration(appetite), claim.Machine, claim.Lineage)
+	case BandBreachStop:
+		reason := fmt.Sprintf("%s elapsed", used)
+		if remaining > 0 {
+			reason += fmt.Sprintf(" plus a %s remaining estimate", FormatWorkingDuration(remaining))
+		}
+		text = fmt.Sprintf("BREACH-STOP: goal %s has %s against its %s appetite and %d percent grace band (%s+%s); new dispatch rounds wait for Wido's word or a goal estimate showing the work within-band",
+			id, reason, FormatWorkingDuration(appetite), grace, claim.Machine, claim.Lineage)
+	}
+	return AppetiteBanner{GoalId: id, Machine: claim.Machine, Lineage: claim.Lineage,
+		Band: band, Text: text, Elapsed: elapsed, Appetite: appetite, Remaining: remaining}
+}
+
+func claimHistoryIndex(f *GoalFile) int {
+	if f.Claimed == nil {
+		return -1
+	}
+	for i := len(f.History) - 1; i >= 0; i-- {
+		if f.History[i].At == f.Claimed.At && f.History[i].Verb != "edit" && f.History[i].Verb != "estimate" {
+			return i
+		}
+	}
+	return -1
+}
+
+func latestRemainingAfterClaim(f *GoalFile) (time.Duration, bool) {
+	for i := len(f.History) - 1; i > claimHistoryIndex(f); i-- {
+		h := f.History[i]
+		if h.Verb == "estimate" && h.Remaining != "" {
+			return ParseWorkingDuration(h.Remaining)
+		}
 	}
 	return 0, false
+}
+
+// effectiveAppetite starts from the claim snapshot, then recognizes only the
+// latest human-attributed edit after that claim. The accepted Git revision
+// carrying that event supplies the Next-step bytes to re-parse; later claimant
+// edits therefore cannot borrow the human actor's authority.
+func effectiveAppetite(e Endpoint, tip string, f *GoalFile) (time.Duration, bool) {
+	base, ok := ParseWorkingDuration(f.Claimed.Appetite)
+	if !ok {
+		return 0, false
+	}
+	claimIndex := claimHistoryIndex(f)
+	var humanEdit *HistoryLine
+	for i := len(f.History) - 1; i > claimIndex; i-- {
+		h := &f.History[i]
+		if h.Verb == "edit" && strings.HasPrefix(h.Actor, "human:") {
+			humanEdit = h
+			break
+		}
+	}
+	if humanEdit == nil {
+		return base, true
+	}
+	out, err := goalGit(e.Root, nil, "rev-list", tip, "--", livePath(f.Id))
+	if err != nil {
+		return base, true
+	}
+	for _, commit := range strings.Fields(out) {
+		data, showErr := goalGit(e.Root, nil, "show", commit+":"+livePath(f.Id))
+		if showErr != nil {
+			continue
+		}
+		revision, problems := ParseFile([]byte(data))
+		if len(problems) > 0 || len(revision.History) == 0 {
+			continue
+		}
+		last := revision.History[len(revision.History)-1]
+		if last.Opid != humanEdit.Opid {
+			continue
+		}
+		if raised, declared := ParseAppetite(revision.NextStep); declared {
+			return raised, true
+		}
+		return base, true
+	}
+	return base, true
 }
 
 // NextVerdict is the frontier read the dispatcher and the steward

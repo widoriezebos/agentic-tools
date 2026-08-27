@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The end-of-turn verdict on a converted checkout: this machine's
@@ -33,6 +34,27 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	}
 	if second.ShouldBlock || !strings.Contains(second.Display, "ship-it") {
 		t.Fatalf("the repeat surfaces as display, not a block: %+v", second)
+	}
+}
+
+func TestTurnVerdictCarriesCurrentAppetiteBanner(t *testing.T) {
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"stopped": {
+			Id: "stopped", State: "claimed", Intent: "Stop at the checkpoint", Origin: "main",
+			NextStep: "Appetite: 1h bounded work.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z", Appetite: "1h"},
+		},
+	})
+	store := &Store{Root: root, Now: func() time.Time {
+		return time.Date(2026, 8, 23, 2, 16, 0, 0, time.UTC)
+	}}
+	verdict, err := store.TurnVerdict(ScanResult{}, "banner-session", "", "main-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdict.Banners) != 1 || !strings.Contains(verdict.Banners[0], "BREACH-STOP") ||
+		!strings.Contains(verdict.Display, "BREACH-STOP") {
+		t.Fatalf("turn verdict omitted the current appetite banner: %+v", verdict)
 	}
 }
 

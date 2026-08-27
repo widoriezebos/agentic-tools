@@ -37,7 +37,7 @@ projection is brief-context only, internal/dispatch/servinggoal.go:9),
 receipts carry no work-item, builder, or commit id, critique chains
 are named freely, and landings only name their lander.
 
-WIDO RULED: FORWARD-ONLY PROVENANCE. Four small additive contract
+WIDO RULED: FORWARD-ONLY PROVENANCE. Three small additive contract
 changes land inside slice one:
 
 - Job records gain an optional `goalId`, declared by an explicit
@@ -53,12 +53,13 @@ changes land inside slice one:
   `coordinator | delegate | mixed` (RULED on R2-04): the builder
   fact, distinct from `delegate=` which lists every delegate
   involved, critics included. Old rows print "builder unrecorded".
-- critique-round.sh gains a `--goal` argument, recorded as a `goal`
-  file in the chain directory. The file is CREATE-ONLY at the
-  chain's FIRST round (R2-09): a later `--goal` that mismatches the
-  standing file refuses; a chain without the file at round 1 stays
-  unattributed forever — attribution is never acquired
-  retroactively.
+
+The script-side chain-attribution writer was STRIPPED at the second
+critique exhaustion under Wido's 2026-08-27 ruling, after five
+consecutive rounds of material findings in that region. Chain
+attribution returns when critique rounds route through the job
+machinery; the severity-tiered-rigor design already prescribes
+retiring the script driver.
 
 Historical records stay unattributed; per-goal process metrics
 compute over exactly-matching attributed records and print
@@ -306,7 +307,8 @@ sources) — threshold — paired action — owner — scope label (D-E).
    per concluded goal: wall-hours = sum of endedAt−startedAt over
    ALL attributed job records (D-H), any role; critique rounds =
    sum over attributed critic chains (job records with critic roles
-   grouped by root, plus F3 chains carrying the goal file) of
+   grouped by root, plus F3 chains carrying a readable exact-goal
+   decision) of
    max(0, rounds−1) (R2-10); corrections from metric 3's law;
    payload = insertions+deletions summed over the goal's attributed
    landing commits (the R2-03 join). SPEND = wall-hours /
@@ -408,9 +410,9 @@ sources) — threshold — paired action — owner — scope label (D-E).
   <iso8601>] [--goal <id>]` (D-I defaults); the nine computations
   with D-C coverage; D-B file interface; D-D typed thresholds with
   the validity contract; D-J invocation fast path + sweep + atomic
-  writes; D-K self-exclusion; the four ruled provenance additions
+  writes; D-K self-exclusion; the three ruled provenance additions
   (job goalId through the full lifecycle, receipt goal= and
-  built_by=, critique-round --goal create-only); fixtures per
+  built_by=); fixtures per
   obligations.
 - Slice two (2h): watch wiring — the steward tick computes the
   period report and queues crossings as incidents in a new
@@ -464,10 +466,11 @@ sources) — threshold — paired action — owner — scope label (D-E).
 - O13 Provenance lifecycle: a job reserved with --goal carries
   goalId on the terminal record AND on a follow-up child's record
   (R2-02); a receipt row with goal= and built_by= parses while old
-  rows without them still parse; a critique chain's goal file is
-  create-only — a mismatched later --goal refuses, and a chain
-  without it at round 1 reports unattributed (R2-09); metrics
-  attribute on exact goal-id match only.
+  rows without them still parse; the critique-chain reader accepts
+  exact `goal <id>` and explicit `unattributed` decisions, treats an
+  absent decision as historical-unattributed, and sends unreadable
+  or malformed decisions to REJECTED by name; metrics attribute on
+  exact goal-id match only.
 - O14 Self-exclusion: a fixture commit touching only plans/metrics/
   with its metrics-report receipt row changes NO metric value
   (D-K, R2-05).
@@ -527,7 +530,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
 | R2-06 | accept | lost names no counterpart; confirmed-late is eventual success (journal.go:337). | Metric 8: threshold on displaced=/steal only; O11 rewritten |
 | R2-07 | accept | reconcilepub.go:289 and recover.go:155 conclude goals without the CLI verb. | D-J sweep guarantee; O20 |
 | R2-08 | accept | Round-1 Q3 adoption said atomic; the fold dropped it. | D-J atomic tmp+rename (frontier.go:251 precedent); O12 |
-| R2-09 | accept | An unbound chain file rewrites history retroactively. | Create-only chain file law; O13 |
+| R2-09 | accept; later superseded by the strip | Late attribution binding rewrites history retroactively. | Writer stripped under Wido's 2026-08-27 second-exhaustion ruling; reader behavior remains in O13 |
 | R2-10 | accept | Rounds/roles/zero-denominator each admitted multiple readings. | Metric 1 equations pinned |
 | R2-11 | accept | usage.go:8,19 groups dimensions deliberately; collapsing them is meaningless. | Metric 9 dimensioned; O19 |
 | R2-12 | accept | Typed defaults without a bad-override contract change firing behavior. | D-D validity contract; O17 |

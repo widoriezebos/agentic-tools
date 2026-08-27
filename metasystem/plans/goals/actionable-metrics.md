@@ -1,12 +1,11 @@
 # actionable-metrics
 
-- State: claimed
+- State: queued
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
-- Next step: Appetite: 6h across three slices (slice one open, ~2h in incl. the zombie incident). ORDERING RULING (Wido 2026-08-27): slices two and three queue BEHIND the delegate-job-liveness custody arc — its honest job records are slice two's input. POSITION m1: slice-one residual fix pass running as direct codex exec (sol/xhigh, monitored; 6 items: F-3 exact-match regression red test, F-13 NaN guard, F-4 O1 asserts, F-5 O12 both routes, F-9 unknown-goal, F-6 verify + F-14 O15 asserts; companion lane distrusted after double-fire + zombie — direct codex exec only this slice). On green: recompute diff, code-critique ROUND 2 of 3 on chain actionable-metrics-code, land via land.sh (METASYSTEM_OWNER_LINEAGE=coordinator exported) + receipt with the new goal= built_by= keys once landed. Records: design plans/actionable-metrics-design.md (883f920), dispositions plans/actionable-metrics-code-critique.md.
+- Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 10
-- Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
+- Revision: 16
 
 History:
 - 2026-08-25T20:18:07Z CE1KNSABESNHJ68SZ8957XZ4V0-m2-bc1be9cb open actor=human:wido targets=actionable-metrics
@@ -19,4 +18,10 @@ History:
 - 2026-08-27T11:00:49Z BB2QZK29P05VHNMBJ5P9E04DQS-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:28:45Z 28M83WX17EBE0VJWCD20275QZQ-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:38:44Z FPF2PW9HPE5THQVV32ZR45SBH6-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=c801ee59adf5c81c95b9fa42ddcdae38c212b34000013e59507be3fc2fb7873d
+- 2026-08-27T11:55:59Z N6YNJ1M5BS448GBR88AN8D4961-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+- 2026-08-27T12:21:39Z 2X2NFSS2QK1C3WJACG47XGPY9R-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+- 2026-08-27T13:06:59Z X8CDNRGJSVYYDNVSG13BZ9X1VM-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+- 2026-08-27T13:31:40Z DGXA2E9329FJE1SPSFBRA36391-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+- 2026-08-27T14:08:23Z VSZZ85V5T2XF1N28DD0F9GYDAD-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+- 2026-08-27T14:08:30Z JD3XFW7JEJW586YFA939XNJB80-m1-bf243850 release actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=486b2ccbe30151a35683df23b164fd36a50390e5e90e623172770d3e09a692e2

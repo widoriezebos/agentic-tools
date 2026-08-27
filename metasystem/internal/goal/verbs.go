@@ -79,6 +79,14 @@ func touch(f *GoalFile, r VerbRequest, verb string, targets []string) {
 	})
 }
 
+func newClaimRecord(f *GoalFile, machine, lineage, at string) *ClaimRecord {
+	record := &ClaimRecord{Machine: machine, Lineage: lineage, At: at}
+	if appetite, ok := ParseAppetite(f.NextStep); ok {
+		record.Appetite = FormatWorkingDuration(appetite)
+	}
+	return record
+}
+
 // ownPair reports whether a claim names the actor's machine AND
 // lineage — the pair is the ownership key, never the
 // machine alone: a second lineage on the machine is a stranger.
@@ -334,7 +342,7 @@ func claimRequest(r VerbRequest, id string) PublishRequest {
 				}
 			}
 			f.State = StateClaimed
-			f.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+			f.Claimed = newClaimRecord(f, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 			touch(f, r, "claim", []string{id})
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
@@ -345,6 +353,55 @@ func claimRequest(r VerbRequest, id string) PublishRequest {
 // Release returns the actor's claimed goal to the queue.
 func Release(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseRequest(r, id))
+}
+
+// Estimate records the claimant's current remaining-work estimate as a
+// ledger event. It changes no goal prose and carries no human override.
+func Estimate(r VerbRequest, id, remaining string) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("estimate is claimant-only and does not take --by")
+	}
+	duration, ok := ParseWorkingDuration(remaining)
+	if !ok {
+		return PublishResult{}, fmt.Errorf("remaining estimate %q is not a positive working duration (for example 2h30m)", remaining)
+	}
+	return Publish(r.Endpoint, estimateRequest(r, id, FormatWorkingDuration(duration)))
+}
+
+func estimateRequest(r VerbRequest, id, remaining string) PublishRequest {
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "estimate", Targets: []string{id}, Args: intentArgs(r, map[string]string{
+			"remaining": remaining,
+		})},
+		Message: "goal estimate " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live; nothing to estimate", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateClaimed || f.Claimed == nil {
+				return nil, fmt.Errorf("goal %s is %s, not claimed; only its claimant records a remaining estimate", id, f.State)
+			}
+			if !ownPair(f.Claimed, r.Actor) {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; only that pair records its remaining estimate", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			f.Revision++
+			f.History = append(f.History, HistoryLine{
+				At: r.stamp(), Opid: r.opid(), Verb: "estimate", Actor: r.Actor.historyActor(),
+				Targets: []string{id}, Keep: -1, Remaining: remaining,
+			})
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
 }
 
 // releaseRequest builds the verb's complete transaction request — the
@@ -674,7 +731,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 						return nil, err
 					}
 					f.State = StateClaimed
-					f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
+					f.Claimed = newClaimRecord(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp())
 				case standing.State == StateParked && standing.Parked != nil:
 					if r.Actor.Human == "" {
 						return nil, fmt.Errorf("goal %s rejoins arc %s, which is parked; reopening into a parked arc is a human act", id, f.Arc)
@@ -903,7 +960,7 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 					continue // uniformity is validated; ride over strays defensively
 				}
 				displaced := pairMarker(m.Claimed)
-				m.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+				m.Claimed = newClaimRecord(m, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 				touchDisplaced(m, r, "steal", targets, displaced)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
@@ -957,9 +1014,9 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, labels
 			f := &GoalFile{
 				Id: id, State: StateClaimed, Intent: intent, Origin: origin,
 				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0,
-				Labels:  canonical,
-				Claimed: &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()},
+				Labels: canonical,
 			}
+			f.Claimed = newClaimRecord(f, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 			touch(f, r, "open-claim", []string{id})
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
 			if t.Root != nil && t.Root.Free != nil {
@@ -1163,7 +1220,7 @@ func claimArcRequest(r VerbRequest, id string) PublishRequest {
 					return nil, err
 				}
 				m.State = StateClaimed
-				m.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+				m.Claimed = newClaimRecord(m, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 				touch(m, r, "claim", targets)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
@@ -1633,7 +1690,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					return nil, err
 				}
 				f.State = StateClaimed
-				f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
+				f.Claimed = newClaimRecord(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp())
 			case standing.State == StateParked && standing.Parked != nil:
 				if r.Actor.Human == "" {
 					return nil, fmt.Errorf("arc %s is parked; a parked arc's membership edits are human acts", arc)

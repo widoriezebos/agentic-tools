@@ -9,7 +9,7 @@ Usage:
       [--model <model>] [--job-id <id>] [--reviews <implementer-job-id>]
       [--workspace <dir> | --worktree]
       [--permissions <preset|envelope-file>] [--mission <id>]
-      [--stream <mission-stream-id>]
+      [--stream <mission-stream-id>] [--goal <goal-id>]
       [--approve-escalation] [--wait] [--cap-min N]
   scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
   scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
@@ -860,7 +860,7 @@ reap_one() { # job
 }
 
 dispatch_job() {
-  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= steward_intent= steward_mode=0 steward_tuple=
+  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= goal= steward_intent= steward_mode=0 steward_tuple=
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
@@ -879,6 +879,7 @@ dispatch_job() {
       --permissions) [[ $# -ge 2 ]] || { usage; exit 2; }; permissions_override=$2; shift 2 ;;
       --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission_override=$2; shift 2 ;;
       --stream) [[ $# -ge 2 ]] || { usage; exit 2; }; stream=$2; shift 2 ;;
+      --goal) [[ $# -ge 2 ]] || { usage; exit 2; }; goal=$2; shift 2 ;;
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
       --approve-escalation) approve_escalation=1; shift ;;
       --serving-goal) serving_goal=1; shift ;;
@@ -890,7 +891,7 @@ dispatch_job() {
   if [[ -n "$steward_intent" ]]; then
     # The unattended continuation: every launch input comes from the
     # consumed authorization; nothing here is caller-selectable.
-    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews$mode_override$stream$cap_override" && $use_worktree -eq 0 && $serving_goal -eq 0 && $wait -eq 0 && $approve_escalation -eq 0 ]] \
+    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews$mode_override$stream$goal$cap_override" && $use_worktree -eq 0 && $serving_goal -eq 0 && $wait -eq 0 && $approve_escalation -eq 0 ]] \
       || die 2 "--steward-intent admits no other selection flags; the authorization decides"
     # An inherited mission scope would refuse or rescope the detached
     # continuation; the authorization is the whole context.
@@ -908,7 +909,25 @@ dispatch_job() {
     steward_mode=1
   fi
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
+  [[ -z "$goal" ]] || valid_id "$goal" || die 2 "invalid goal id: $goal"
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
+  # The goal engine prints every current checkpoint and returns the one
+  # structured STOP code only when this coordinator's exact machine+lineage
+  # owns the stopped claim. This runs before reservation: a refused round
+  # leaves no job husk and another goal's breach remains advisory here.
+  local appetite_output appetite_rc=0 appetite_lineage=${METASYSTEM_OWNER_LINEAGE:-}
+  local -a appetite_args=(--root "$root")
+  [[ -z "$appetite_lineage" ]] || appetite_args+=(--stop-lineage "$appetite_lineage")
+  set +e
+  appetite_output=$("$ms" goal banners "${appetite_args[@]}" 2>&1)
+  appetite_rc=$?
+  set -e
+  [[ -z "$appetite_output" ]] || printf '%s\n' "$appetite_output" >&2
+  case "$appetite_rc" in
+    0) ;;
+    9) die 1 "dispatch refused by the BREACH-STOP banner above; the two exits are Wido's word or goal estimate --remaining showing the work within-band" ;;
+    *) die 1 "dispatch refused because current appetite banners could not be evaluated" ;;
+  esac
   checkout_execution_guard_acquire "dispatch ${job:-$role}" \
     || die 1 "dispatch refused: checkout execution guard acquisition failed"
   trap 'checkout_execution_guard_release || true' EXIT
@@ -1011,7 +1030,7 @@ dispatch_job() {
   report_plan_drift
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
-    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal"
   # INVARIANT (kept in shell by ruling, plans/go-surface-consolidation.md):
   # the reservation is TWO-PHASE — this record-create must land before any
   # of the setup below so a second dispatcher cannot prepare the same job
@@ -1117,7 +1136,7 @@ dispatch_job() {
     --handshake-budget "$handshake_budget" --approval-name "$approval_name" \
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
-    --reviews "$reviews" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+    --reviews "$reviews" --goal "$goal" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   rm -f "$cap_resolution"
   finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
 }
@@ -1200,6 +1219,9 @@ watch_job() { # --job <id>
     echo "watch: no job record for $job — it never existed here or was reaped" >&2
     exit 5
   fi
+  # The blocking Go waiter owns the existing poll cadence. Surface the current
+  # checkpoint at entry without creating a second ticker or polling loop.
+  "$ms" goal banners --root "$root"
   # The Go core blocks to terminal and holds the waiter record the turn
   # verdict reads; exit codes ride through verbatim.
   "$ms" job watch --root "$root" --job "$job" --caller-pid $$
@@ -1222,7 +1244,7 @@ record_critique_exhaustions() { # manifest
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
+  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json
   while (($#)); do
     case "$1" in
@@ -1266,6 +1288,7 @@ follow_up() {
   session=$(json_field "$latest" sessionId 2>/dev/null || true)
   [[ -n "$session" && "$session" != null ]] || die 1 "follow-up has no resumable session id; use the fresh-context embed fallback"
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
+  goal=$(json_field "$latest" goalId 2>/dev/null || true); [[ "$goal" == null ]] && goal=
   workspace=$(json_field "$latest" workspaceRoot)
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
@@ -1284,7 +1307,7 @@ follow_up() {
   fi
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
-    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
   rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then

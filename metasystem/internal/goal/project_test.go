@@ -165,7 +165,7 @@ func TestAppetiteBreachBannersEveryRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, b := range early.Banners {
-		if strings.Contains(b, "APPETITE BREACH") {
+		if strings.Contains(b, "BREACH-") {
 			t.Fatalf("no breach inside the appetite: %v", early.Banners)
 		}
 	}
@@ -176,11 +176,137 @@ func TestAppetiteBreachBannersEveryRead(t *testing.T) {
 	}
 	found := false
 	for _, b := range late.Banners {
-		if strings.Contains(b, "APPETITE BREACH") && strings.Contains(b, "hungry") && strings.Contains(b, "raise it with Wido") {
+		if strings.Contains(b, "BREACH-STOP") && strings.Contains(b, "hungry") && strings.Contains(b, "Wido's word") {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("the breach banners with the covenant's words: %v", late.Banners)
+	}
+}
+
+func TestAppetiteBandMath(t *testing.T) {
+	appetite := 4 * time.Hour
+	for _, tc := range []struct {
+		name      string
+		elapsed   time.Duration
+		remaining time.Duration
+		want      AppetiteBand
+	}{
+		{"within", 4 * time.Hour, 0, BandWithin},
+		{"measured escalation", 4*time.Hour + time.Minute, 0, BandBreachEscalate},
+		{"grace edge remains escalation", 5 * time.Hour, 0, BandBreachEscalate},
+		{"measured stop", 5*time.Hour + time.Minute, 0, BandBreachStop},
+		{"estimate cannot clear measured stop", 5*time.Hour + time.Minute, time.Minute, BandBreachStop},
+		{"estimate at edge", 3 * time.Hour, 2 * time.Hour, BandWithin},
+		{"estimate tightens to stop", 3 * time.Hour, 2*time.Hour + time.Minute, BandBreachStop},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := EvaluateAppetiteBand(tc.elapsed, appetite, tc.remaining, 25); got != tc.want {
+				t.Fatalf("band = %s, want %s", got, tc.want)
+			}
+		})
+	}
+	if got := EvaluateAppetiteBand(time.Hour, time.Hour, time.Minute, 0); got != BandBreachStop {
+		t.Fatalf("zero grace must still honor the estimate stop path: %s", got)
+	}
+	maxDuration := time.Duration(1<<63 - 1)
+	if got := EvaluateAppetiteBand(maxDuration, maxDuration, 0, 100); got != BandWithin {
+		t.Fatalf("large duration overflow changed the measured band: %s", got)
+	}
+	if got := EvaluateAppetiteBand(maxDuration, maxDuration, time.Nanosecond, 100); got != BandBreachStop {
+		t.Fatalf("large duration overflow hid the estimate stop path: %s", got)
+	}
+}
+
+func TestWorkingDurationGrammar(t *testing.T) {
+	for token, want := range map[string]time.Duration{
+		"30m":   30 * time.Minute,
+		"2h30m": 2*time.Hour + 30*time.Minute,
+		"1d2h":  10 * time.Hour,
+	} {
+		got, ok := ParseWorkingDuration(token)
+		if !ok || got != want || FormatWorkingDuration(got) != token {
+			t.Fatalf("duration %s parsed as %v, %v and formatted %s", token, got, ok, FormatWorkingDuration(got))
+		}
+	}
+	for _, token := range []string{"", "0h", "2.5h", "2h30", "1s"} {
+		if _, ok := ParseWorkingDuration(token); ok {
+			t.Fatalf("invalid duration %q was accepted", token)
+		}
+	}
+}
+
+func TestClaimSnapshotAndHumanEditAuthority(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if _, err := Open(verbReq(a, "01J5X00000000000000000AC00", "mac-a"), "authority-appetite", "Bounded.", "main", "Appetite: 2h start."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Claim(verbReq(a, "01J5X00000000000000000AC10", "mac-a"), "authority-appetite"); err != nil {
+		t.Fatal(err)
+	}
+	project := func(at time.Time) AppetiteBand {
+		t.Helper()
+		p, err := Project(endpointFor(a), false, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(p.AppetiteBanners) == 0 {
+			return BandWithin
+		}
+		return p.AppetiteBanners[0].Band
+	}
+	at := time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC)
+	if got := project(at); got != BandBreachStop {
+		t.Fatalf("claim snapshot should stop at three hours: %s", got)
+	}
+	claimantNext := "Appetite: 20h claimant prose cannot move authority."
+	if _, err := Edit(verbReq(a, "01J5X00000000000000000AC20", "mac-a"), "authority-appetite", EditFields{NextStep: &claimantNext}); err != nil {
+		t.Fatal(err)
+	}
+	if got := project(at); got != BandBreachStop {
+		t.Fatalf("claimant edit moved the threshold: %s", got)
+	}
+	humanReq := verbReq(a, "01J5X00000000000000000AC30", "mac-a")
+	humanReq.Actor.Human = "wido"
+	humanNext := "Appetite: 6h Wido raises it."
+	if _, err := Edit(humanReq, "authority-appetite", EditFields{NextStep: &humanNext}); err != nil {
+		t.Fatal(err)
+	}
+	if got := project(at); got != BandWithin {
+		t.Fatalf("human edit did not raise the threshold: %s", got)
+	}
+	claimantAgain := "Appetite: 30m claimant prose still cannot move authority."
+	if _, err := Edit(verbReq(a, "01J5X00000000000000000AC40", "mac-a"), "authority-appetite", EditFields{NextStep: &claimantAgain}); err != nil {
+		t.Fatal(err)
+	}
+	if got := project(at); got != BandWithin {
+		t.Fatalf("later claimant edit displaced the human revision: %s", got)
+	}
+}
+
+func TestEstimateUsesTheLatestClaimantEvent(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if _, err := Open(verbReq(a, "01J5X00000000000000000AD00", "mac-a"), "estimate-appetite", "Estimate.", "main", "Appetite: 4h start."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Claim(verbReq(a, "01J5X00000000000000000AD10", "mac-a"), "estimate-appetite"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Estimate(verbReq(a, "01J5X00000000000000000AD20", "mac-a"), "estimate-appetite", "2h1m"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Project(endpointFor(a), false, time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC))
+	if err != nil || len(p.AppetiteBanners) != 1 || p.AppetiteBanners[0].Band != BandBreachStop {
+		t.Fatalf("estimate should tighten to STOP: %+v %v", p.AppetiteBanners, err)
+	}
+	if _, err := Estimate(verbReq(a, "01J5X00000000000000000AD30", "mac-a"), "estimate-appetite", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	p, err = Project(endpointFor(a), false, time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC))
+	if err != nil || len(p.AppetiteBanners) != 0 {
+		t.Fatalf("latest within-band estimate should clear only the forecast stop: %+v %v", p.AppetiteBanners, err)
 	}
 }

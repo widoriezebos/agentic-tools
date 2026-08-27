@@ -616,6 +616,71 @@ conf_edit "$agent_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$
 agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 
+# Appetite STOP is pair-scoped at dispatch entry. This isolated copy migrates
+# a two-goal legacy backlog to local synced mode, creates a deterministic old
+# claim, and proves refusal happens before supervision or any job reservation.
+appetite_dispatch_repo="$agent_fixture/appetite-dispatch-repo"
+cp -R "$agent_repo" "$appetite_dispatch_repo"
+mkdir -p "$appetite_dispatch_repo/plans"
+cat >"$appetite_dispatch_repo/plans/goals.md" <<'APPETITE_LEDGER'
+# Goals
+
+## Current goal: fixture-serving — Seed the migrated current goal
+- Origin: human
+- Next step: Release this claim after migration.
+
+## Queued goal: appetite-other — Remain claimable during another goal's STOP
+- Origin: main
+- Next step: Claim this queued goal.
+APPETITE_LEDGER
+appetite_ledger=$(cat "$appetite_dispatch_repo/plans/goals.md" && printf x) && appetite_ledger=${appetite_ledger%x}
+"$engine" json object ledger="$appetite_ledger" \
+  sha256="$(shasum -a 256 "$appetite_dispatch_repo/plans/goals.md" | cut -d' ' -f1)" \
+  >"$appetite_dispatch_repo/plans/goals-accepted.json"
+"$engine" json set --file "$appetite_dispatch_repo/plans/goals-accepted.json" --int schemaVersion=1
+git -C "$appetite_dispatch_repo" -c core.hooksPath=/dev/null add plans
+git -C "$appetite_dispatch_repo" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'appetite fixture legacy goals'
+git -C "$appetite_dispatch_repo" config metasystem.goal.machine appetite-machine
+git -C "$appetite_dispatch_repo" config goal.sync-remote local
+appetite_source_digest=$("$appetite_dispatch_repo/bin/metasystem" goal source-digest --root "$appetite_dispatch_repo")
+METASYSTEM_OWNER_LINEAGE=appetite-fixture \
+  "$appetite_dispatch_repo/bin/metasystem" goal migrate --root "$appetite_dispatch_repo" \
+    --source-digest "$appetite_source_digest" --sync-mode local --by wido >/dev/null
+git -C "$appetite_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+METASYSTEM_OWNER_LINEAGE=appetite-fixture \
+  "$appetite_dispatch_repo/bin/metasystem" goal release --root "$appetite_dispatch_repo" --id fixture-serving >/dev/null
+METASYSTEM_OWNER_LINEAGE=appetite-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:00:00Z \
+  "$appetite_dispatch_repo/bin/metasystem" goal open --root "$appetite_dispatch_repo" \
+    --id dispatch-appetite --intent "Exercise dispatch appetite refusal." \
+    --next "Appetite: 1h stop before reserving a new round." --claim >/dev/null
+appetite_brief="$agent_fixture/appetite.md"
+make_agent_brief "$appetite_brief" design
+set +e
+env METASYSTEM_OWNER_LINEAGE=appetite-fixture \
+  "$appetite_dispatch_repo/scripts/agents/dispatch.sh" dispatch \
+    --role design-critic --brief "$appetite_brief" --job-id appetite-stop \
+    >"$agent_fixture/appetite-stop.out" 2>&1
+appetite_stop_rc=$?
+set -e
+(( appetite_stop_rc != 0 )) \
+  || { echo "stopped-goal dispatch unexpectedly passed" >&2; exit 1; }
+grep -Fq 'dispatch refused by the BREACH-STOP banner above' "$agent_fixture/appetite-stop.out" \
+  || { echo "appetite dispatch did not print its STOP banner" >&2; cat "$agent_fixture/appetite-stop.out" >&2; exit 1; }
+grep -Fq "the two exits are Wido's word or goal estimate --remaining showing the work within-band" \
+  "$agent_fixture/appetite-stop.out" \
+  || { echo "appetite dispatch refusal did not name both exits" >&2; cat "$agent_fixture/appetite-stop.out" >&2; exit 1; }
+[[ ! -e "$appetite_dispatch_repo/artifacts/agents/jobs/appetite-stop.json" ]] \
+  || { echo "appetite-refused dispatch created a job record" >&2; exit 1; }
+git -C "$appetite_dispatch_repo" config metasystem.goal.machine appetite-other-machine
+appetite_other_claim=$(METASYSTEM_OWNER_LINEAGE=appetite-other \
+  "$appetite_dispatch_repo/bin/metasystem" goal claim --root "$appetite_dispatch_repo" --id appetite-other)
+grep -Fq '"outcome":"confirmed"' <<<"$appetite_other_claim" \
+  || { echo "another goal's lawful claim was refused: $appetite_other_claim" >&2; exit 1; }
+grep -q '^BREACH-STOP: goal dispatch-appetite ' <<<"$appetite_other_claim" \
+  || { echo "another goal's claim did not print the standing appetite STOP" >&2; exit 1; }
+
 # All remaining dispatch fixtures run behind a real armed fake-runtime set.
 # The explicit synthetic process table is fixture-only and keeps this test
 # deterministic in restricted environments where ps enumeration is denied.

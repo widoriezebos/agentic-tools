@@ -15,6 +15,53 @@ import (
 	"time"
 )
 
+// METASYSTEM_GOAL_NOW is the deterministic clock seam used by the goal CLI
+// fixtures. Production callers leave it unset and receive the wall clock.
+func goalCommandNow() (time.Time, error) {
+	raw := os.Getenv("METASYSTEM_GOAL_NOW")
+	if raw == "" {
+		return time.Now().UTC(), nil
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("METASYSTEM_GOAL_NOW must be an RFC3339 timestamp: %v", err)
+	}
+	return parsed.UTC(), nil
+}
+
+func goalBannerRows(root, id string) ([]goal.AppetiteBanner, error) {
+	now, err := goalCommandNow()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := goal.CurrentAppetiteBanners(root, now)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return rows, nil
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		if row.GoalId == id {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered, nil
+}
+
+func printGoalBanners(root, id string) bool {
+	rows, err := goalBannerRows(root, id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return false
+	}
+	for _, row := range rows {
+		fmt.Println(row.Text)
+	}
+	return true
+}
+
 // The goal family: the doctrine commands humans and agents type.
 // Mutations classify the caller and run the same authority matrix every
 // record-writer path runs (holder-only), then hand the goal package a
@@ -137,6 +184,9 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	fmt.Println(result.Message)
 	for _, dropped := range result.Dropped {
 		fmt.Println("dropped: " + dropped)
+	}
+	if name == "done" && len(values) > 0 {
+		return reportAfterConfirmedDone(0, *root, values[0], os.Stderr)
 	}
 	return 0
 }
@@ -395,7 +445,12 @@ func runGoalShow(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	p, err := goal.Project(e, false, time.Now())
+	now, err := goalCommandNow()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	p, err := goal.Project(e, false, now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -409,9 +464,53 @@ func runGoalShow(args []string) int {
 		}
 		state = "archived"
 	}
+	var banners []string
+	for _, banner := range p.AppetiteBanners {
+		if banner.GoalId == *id {
+			banners = append(banners, banner.Text)
+		}
+	}
 	printJSON(map[string]any{
-		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": f,
+		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": f, "banners": banners,
 	})
+	return 0
+}
+
+// runGoalBanners is deliberately silent when no appetite checkpoint is
+// active. --stop-lineage is the dispatcher's structured refusal query: it
+// still prints every current banner, then exits 9 only for this machine and
+// lineage's BREACH-STOP claim.
+func runGoalBanners(args []string) int {
+	flags := flag.NewFlagSet("goal banners", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "optional goal id filter")
+	stopLineage := flags.String("stop-lineage", "", "exit 9 when this machine+lineage owns a BREACH-STOP goal")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	rows, err := goalBannerRows(*root, *id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	machine := ""
+	if *stopLineage != "" && len(rows) > 0 {
+		machine, err = goal.ResolveMachine(*root)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	stop := false
+	for _, row := range rows {
+		fmt.Println(row.Text)
+		if row.Band == goal.BandBreachStop && row.Machine == machine && row.Lineage == *stopLineage {
+			stop = true
+		}
+	}
+	if stop {
+		return 9
+	}
 	return 0
 }
 
@@ -427,7 +526,12 @@ func nextSynced(root string, requiredLabels ...string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	p, err := goal.Project(e, false, time.Now())
+	now, err := goalCommandNow()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	p, err := goal.Project(e, false, now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -512,7 +616,12 @@ func runReportTurnVerdict(args []string) int {
 		return 2
 	}
 	scan := report.Scan(*root)
-	verdict, err := (&goal.Store{Root: *root}).TurnVerdict(scan, *session, *watchdog, *mainId)
+	now, err := goalCommandNow()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	verdict, err := (&goal.Store{Root: *root, Now: func() time.Time { return now }}).TurnVerdict(scan, *session, *watchdog, *mainId)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

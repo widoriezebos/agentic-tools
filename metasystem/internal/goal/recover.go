@@ -169,6 +169,12 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			return claimArcRequest(r, target), nil
 		}
 		return claimRequest(r, target), nil
+	case "estimate":
+		remaining := in.Args["remaining"]
+		if _, ok := ParseWorkingDuration(remaining); !ok {
+			return PublishRequest{}, fmt.Errorf("the stored estimate carries an invalid remaining duration %q; close it by hand", remaining)
+		}
+		return estimateRequest(r, target, remaining), nil
 	case "release":
 		if cascade {
 			return releaseArcRequest(r, target), nil

@@ -22,7 +22,7 @@ func validateRepo(t *testing.T, confBody string) []string {
 	body := strings.ReplaceAll(confBody, "@EVIDENCE@", evidence)
 	body = strings.ReplaceAll(body, "@REPO@", repo)
 	putFile(t, conf, body)
-	tiersAbsent, problems, err := Validate(conf, repo)
+	tiersAbsent, _, problems, err := Validate(conf, repo)
 	if err != nil {
 		t.Fatalf("hard error: %v", err)
 	}
@@ -62,12 +62,36 @@ func TestValidateTiersAbsentInfo(t *testing.T) {
 		"evidence.root="+evidence+"\n"+
 		"role.default.runtime=fake\n"+
 		"role.default.model.fake=fake-model\n")
-	tiersAbsent, problems, err := Validate(conf, repo)
+	tiersAbsent, appetiteGraceAbsent, problems, err := Validate(conf, repo)
 	if err != nil || len(problems) != 0 {
 		t.Fatalf("unexpected: err=%v problems=%v", err, problems)
 	}
 	if !tiersAbsent {
 		t.Fatal("expected tiersAbsent when no model.tier.* is configured")
+	}
+	if !appetiteGraceAbsent {
+		t.Fatal("expected appetiteGraceAbsent when no appetite grace is configured")
+	}
+}
+
+func TestValidateEmptyAppetiteGraceIsMalformedNotAbsent(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "x\n")
+	conf := filepath.Join(repo, "metasystem.conf")
+	body := strings.ReplaceAll(validConf, "@EVIDENCE@", t.TempDir()) + "appetite.overrun-grace-percent=\n"
+	putFile(t, conf, body)
+	_, absent, problems, err := Validate(conf, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if absent {
+		t.Fatal("a present empty appetite grace is malformed, not absent")
+	}
+	if !hasProblem(problems, "appetite.overrun-grace-percent must be an integer between 0 and 100") {
+		t.Fatalf("empty appetite grace was not rejected: %v", problems)
 	}
 }
 
@@ -77,6 +101,16 @@ func TestValidateRejections(t *testing.T) {
 		conf   string
 		expect string
 	}{
+		{
+			name:   "appetite grace malformed",
+			conf:   validConf + "appetite.overrun-grace-percent=25%\n",
+			expect: "appetite.overrun-grace-percent must be an integer between 0 and 100",
+		},
+		{
+			name:   "appetite grace over 100",
+			conf:   validConf + "appetite.overrun-grace-percent=101\n",
+			expect: "appetite.overrun-grace-percent must be an integer between 0 and 100",
+		},
 		{
 			name:   "duplicate key",
 			conf:   validConf + "metasystem.version=2\n",
@@ -179,7 +213,7 @@ func TestValidateRegistrationMissing(t *testing.T) {
 		"evidence.root="+evidence+"\n"+
 		"role.default.runtime=fake\n"+
 		"role.default.model.fake=fake-model\n")
-	_, problems, err := Validate(conf, repo)
+	_, _, problems, err := Validate(conf, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,8 +225,17 @@ func TestValidateRegistrationMissing(t *testing.T) {
 // TestValidateUnreadable reports a hard error when the committed file cannot be
 // read.
 func TestValidateUnreadable(t *testing.T) {
-	if _, _, err := Validate(filepath.Join(t.TempDir(), "absent.conf"), t.TempDir()); err == nil {
+	if _, _, _, err := Validate(filepath.Join(t.TempDir(), "absent.conf"), t.TempDir()); err == nil {
 		t.Fatal("expected a hard error for an unreadable configuration")
+	}
+}
+
+func TestValidateAppetiteGraceRange(t *testing.T) {
+	for _, value := range []string{"0", "25", "100"} {
+		problems := validateRepo(t, validConf+"appetite.overrun-grace-percent="+value+"\n")
+		if len(problems) != 0 {
+			t.Fatalf("legal appetite grace %s rejected: %v", value, problems)
+		}
 	}
 }
 
