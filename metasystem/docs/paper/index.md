@@ -3,7 +3,7 @@
 Working title, with subtitle: **engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering:
 moving human attention from building the application to building the
 system that builds the application - and about refusing to carry
-human ceremony into a medium that does not need it.
+human ceremony into a workforce that does not need it.
 
 ## The story arc
 
@@ -16,14 +16,14 @@ learning - from the ceremonies humans invented around those needs.
 Intent becomes the durable interface, while its ambiguity, conflict,
 and capacity to be wrong become design problems in their own right.
 
-**Act II - The medium and the trap (chapters 3-4).** Agentic labor has
+**Act II - The workforce and the trap (chapters 3-4).** Agentic labor has
 different limits: some costs fall, others change shape, memory exists
 only in records, failure is silent by default, plausible work can be
 wrong, and trustworthy judgment remains scarce. Copying standups,
-sprints, reviews, and estimates into this medium preserves familiar
-forms instead of the conditions they protected. Ceremony archaeology
-therefore asks which practices to discard, replace with machinery,
-adapt, or retain as deliberately human acts.
+sprints, reviews, and estimates into this workforce preserves familiar
+forms instead of the conditions they protected. Chapter 4 asks, ceremony
+by ceremony, which practices to discard, which to replace with
+machinery, which to adapt, and which to keep as explicitly human acts.
 
 **Act III - The principles and the machinery (chapters 5-10).** A
 short statement of the principles comes first: serve revisable intent,
@@ -59,7 +59,7 @@ systems, within clear economic limits, become the durable asset.
 
 1. [The Shift](01-the-shift.md)
 2. [Back to Intent](02-back-to-intent.md)
-3. [The New Medium](03-the-new-medium.md)
+3. [The New Workforce](03-the-new-workforce.md)
 4. [The Mimicry Trap](04-the-mimicry-trap.md)
 5. [First Principles](05-first-principles.md)
 6. [Proof over Trust](06-proof-over-trust.md)
