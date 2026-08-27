@@ -60,6 +60,6 @@ An independent examiner remains necessary to challenge claims when evidence cann
 
 This paper makes a design argument. It does not claim that such systems are already normal. Its claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained, and does human authority remain real where it is needed?
 
-Scope also counts. A disposable script with little consequence may not justify elaborate production machinery. Software released repeatedly, changed by many hands or trusted with money, identity, safety, or essential work may justify much more. The investment depends on repetition and risk. The direction of ownership does not require every project to use the same amount of machinery.
+Scope also counts. A disposable script with little consequence may not justify elaborate production machinery. Software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk. The direction of ownership does not require every project to use the same amount of machinery.
 
 The historical ladder establishes only that bounded work can move into tools. Iterative tool use extends that to a broader construction-and-delivery loop. Neither premise says what delivery must contain. Before choosing the machinery, the unresolved question is this: what does software delivery actually require apart from the process inherited to organize it?
