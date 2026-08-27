@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
-- Next step: Appetite: 6h across three slices (slice one open, ~5h in — appetite pressure real; slices two/three queue behind delegate-job-liveness). POSITION m1 ~16:45: ROUND 4 = 5 material (trajectory 14-8-4-5, second budget round 1 of 3 spent) — four of five cluster in the bash attribution-lock machinery added across fix rounds (steal-of-live-owner, aging-vs-slow-publisher, PID reuse, unscaled waits): the machinery-climbing-its-own-ladder signal, so the adjudication CUTS THE GENERATING CAUSE — the lock is DELETED for a lock-free single decision file created by atomic exclusive ln (stage complete content, link into place; death-in-gap leaves nothing or a complete decision; no recovery machinery exists). Fifth finding (rejected effective provenance still usable for period Rework/Delegates) fixed alongside + fixture waits brought under the cap-scale contract. Dispositions in plans/actionable-metrics-code-critique.md round-4 section. Simplification pass IN FLIGHT (direct codex exec, monitored). Rounds 5-6 remain; second exhaustion = hard stop on Wido. On AGREE: land + receipt.
+- Next step: Appetite: 6h across three slices (slice one open, ~6h in — original whole-goal appetite now consumed by slice one alone, breach visible; slices two/three queue behind delegate-job-liveness). POSITION m1 ~17:45: ROUND 5 = 4 material (trajectory 14-8-4-5-4) but KIND changed — the critic certifies the hard-link attribution protocol SOUND; findings are proof-depth (fixture never forces the collision; bare unscaled waits) and edges (validator follows symlinks, NUL-normalization; landing attribution misses the rejected-provenance exclusion — the one Go fix). All four accepted, dispositions in plans/actionable-metrics-code-critique.md. Wido's step-back doctrine applied: his failure-to-make-progress condition NOT met (progress real), so the strip of chain attribution is PRE-COMMITTED as the round-6 branch instead — any attribution-region material finding in round 6 removes it from slice one (it returns free when severity routes critique through job machinery). Final fix pass IN FLIGHT (direct codex exec, monitored). ROUND 6 IS THE LAST: zero unrefuted material lands via land.sh + receipt; any material = second exhaustion, hard stop on Wido. Bonus live proof this hour: the new create-only refusal fired correctly on the chain's own old-format decision (translated, redispatched).
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 13
+- Revision: 14
 - Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
 
 History:
@@ -22,4 +22,5 @@ History:
 - 2026-08-27T11:55:59Z N6YNJ1M5BS448GBR88AN8D4961-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T12:21:39Z 2X2NFSS2QK1C3WJACG47XGPY9R-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T13:06:59Z X8CDNRGJSVYYDNVSG13BZ9X1VM-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=4856a648bd2643f333fcbda65affaf0925ae10505eb4c67607f3835336d6ae2a
+- 2026-08-27T13:31:40Z DGXA2E9329FJE1SPSFBRA36391-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=40ab2f2d2b210071ca008bcd6e70454d34a8f299a5a67d3d859aee62f97dab70
