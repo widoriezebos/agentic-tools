@@ -14,7 +14,7 @@ A manager deciding between two projects asks how long each will take. The answer
 
 A developer finishes a change that looks correct to its author. Another developer reads it, finds an unchecked boundary, and learns how that part of the application works. Code review adds a second perspective while spreading knowledge that would otherwise remain with one person. Its protected conditions are scrutiny independent enough to find faults and continuity beyond the original author.
 
-When the person who understands a service leaves, the next person reconstructs its assumptions from incidents and old messages. Documentation reduces that loss by putting decisions, behavior, and operating knowledge somewhere more durable than memory. What it protects is recoverable context; the document shape and the writing moment are incidental.
+When the person who understands a service leaves, the next person reconstructs its assumptions from incidents and old messages. Documentation reduces that loss by putting decisions, behavior, and operating knowledge somewhere more durable than memory. What it protects is recoverable context; the document's format and the time of writing are incidental.
 
 After the same release failure happens twice, a team stops normal work and asks why its process has not learned. The retrospective creates protected time to compare expectation with outcome and change future behavior. Its contribution is a learning loop with authority to alter the system; the meeting invitation is not the point.
 

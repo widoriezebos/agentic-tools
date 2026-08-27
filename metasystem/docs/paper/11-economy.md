@@ -82,4 +82,4 @@ Applied to the change already established in Chapter 1, spending follows recorde
 
 The system requests another implementation only when a truly different design is likely to reveal information worth the cost of comparison. It stops repeated attempts at the agreed limit and sends an exception to the named authority. It expands the live release only while the remaining budget can still observe and contain harm.
 
-The change still has a cost; machinery makes that cost explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: enough construction, judgment, evidence, and care to make the intended outcome worth its total cost, and no more machinery than that.
+The change still has a cost; machinery makes spending explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: enough construction, judgment, evidence, and care to make the intended outcome worth its total cost, and no more machinery than that.

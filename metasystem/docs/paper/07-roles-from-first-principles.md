@@ -40,7 +40,7 @@ At the end of examination, the session record names an exact candidate. It also 
 
 The custodian holds that link. It verifies that the candidate presented for acceptance is the one the independent examiner challenged, that every required result belongs to that candidate, and that every enforced rule has passed. It then performs only the authorized acceptance action. It cannot waive a refusal, reinterpret a human ruling, repair a test, or substitute a later version. If any required fact is missing, it leaves the candidate unaccepted.
 
-That authority involves no creative judgment. The custodian decides no product value and makes no claim about the design beyond what the required record establishes. Its narrow acceptance power closes custody without allowing custody to become construction or review.
+That authority involves no creative judgment. The custodian decides no product value and makes no claim about the design beyond what the required record establishes. Its narrow acceptance power completes the chain of custody without allowing the custodian to construct or review the candidate.
 
 ## Why the narrator has no power
 

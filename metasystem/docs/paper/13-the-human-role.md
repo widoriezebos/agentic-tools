@@ -24,7 +24,7 @@ The human authorized to resolve that named case acts as a judge in the same limi
 
 The record keeps the judge's identity, authority, reasons, evidence, scope, and expiry attached to the decision. That attachment is not ceremonial. If the exception causes harm, the organization must be able to determine who had the duty to decide, what that person knew, and whether the decision exceeded its authority. If later evidence changes the balance, another responsible authority must be able to reconsider it.
 
-Machinery may assemble the strongest case on each side, expose missing evidence, and test whether an option violates an existing constraint. It may never make the value ruling or assume accountability. The authority ends with a responsible authority, without condition. Better models, more complete records, or a long history of correct recommendations can improve the preparation of judgment; none turns responsibility into a machine property.
+Machinery may assemble the strongest case on each side, expose missing evidence, and test whether an option violates an existing constraint. It may never make the value ruling or assume accountability. Final decision-making power remains with a responsible authority, without condition. Better models, more complete records, or a long history of correct recommendations can improve the preparation of judgment; none turns responsibility into a machine property.
 
 ## Intent-holder: authority over purpose
 

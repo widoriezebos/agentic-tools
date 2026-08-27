@@ -34,7 +34,7 @@ A builder learns that existing sessions need separate treatment to adopt the new
 
 Intent, current state, decisions, candidate identity, checks, refusals, and observed results must live in durable records. Another authorized actor should be able to continue without guessing what the missing worker knew. The records also allow an independent examiner to receive the evidence it needs without receiving the builder's entire path of reasoning.
 
-This principle does not claim that a record settles disagreement. Two authorities can read the same facts and choose different values. Chapter 8 develops records as the basis of continuity and coordination while keeping access appropriate to each role and substantive conflict with responsible authorities.
+This principle does not claim that a record settles disagreement. Two authorities can read the same facts and choose different values. Chapter 8 develops records as the basis of continuity and coordination while limiting access by role and leaving substantive conflicts to responsible authorities.
 
 ## Important rules refuse
 
