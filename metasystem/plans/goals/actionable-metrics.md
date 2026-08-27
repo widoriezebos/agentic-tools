@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
-- Next step: Appetite: 6h across three slices (slice one open; slices two/three queue behind delegate-job-liveness per Wido's ordering). POSITION m1 ~15:00: code-critique ROUND 2 returned 8 material (falling from 14; r2-output.md) — ALL ACCEPTED: F-3 completion in Waiting+Cost, the F-7-refutation enforcement (drop lifecycle time-bounding of attributed records in Overhead/Cost — declaration only), Cost timing-less zero, terminal-only timing rejection, O2 forbids-zero assert, attribution-lock stale-owner recovery, trailing-garbage JSON rejection, gofmt data.go (residual pass's GOFMT_RC=0 was false — noted in dispositions). Dispositions updated in plans/actionable-metrics-code-critique.md. Fix pass IN FLIGHT via direct codex exec (sol/xhigh, monitored). On green under MY execution: code-critique ROUND 3 of 3 (final budget round) on chain actionable-metrics-code; zero unrefuted material = land via land.sh (lineage exported) + receipt. NOTE: paper-session now runs in worktree agentic-tools-paper branch paper (Wido-directed, no backlog participation) — my landing unaffected.
+- Next step: Appetite: 6h across three slices (slice one open, ~4h in; slices two/three queue behind delegate-job-liveness). POSITION m1 ~15:45: code-critique ROUND 3 = 4 material (falling 14->8->4; r3-output.md) — FIRST BUDGET EXHAUSTED per the round-budget law; exhaustion recorded in plans/actionable-metrics-code-critique.md with the open set enumerated (F3-1 journal helper still lifecycle-bounds attribution; F3-2 lock steal can remove a live new owner; F3-3 non-atomic owner publication strands on death-in-gap; F3-4 receipt corrections smuggle invalid provenance past all buckets). All four ACCEPTED, none refutable; focused successor fix pass IN FLIGHT (direct codex exec, sol/xhigh, monitored) opening the SECOND three-round budget (rounds 4-6) on chain actionable-metrics-code. Second exhaustion = hard stop on Wido, no third budget. Six of eight round-2 fixes confirmed by the critic; verification green under coordinator execution before this pass. On round-4+ AGREE: land via land.sh (lineage exported) + receipt.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 11
+- Revision: 12
 - Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
 
 History:
@@ -20,4 +20,5 @@ History:
 - 2026-08-27T11:28:45Z 28M83WX17EBE0VJWCD20275QZQ-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:38:44Z FPF2PW9HPE5THQVV32ZR45SBH6-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:55:59Z N6YNJ1M5BS448GBR88AN8D4961-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=e66a8c47a767e5563de19ee44ace1448d76b69f9e64e838ed9ea7c4c5bbb0450
+- 2026-08-27T12:21:39Z 2X2NFSS2QK1C3WJACG47XGPY9R-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=de78492cbd0101fae77c1e28f7d8fbae06eb0f17352ec5a065196b5826428f1c
