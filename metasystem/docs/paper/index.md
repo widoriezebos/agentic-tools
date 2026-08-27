@@ -1,9 +1,6 @@
-# The System That Builds the System
+# The Metasystem: the System That Builds the System
 
-Working title, with subtitle: **engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering:
-moving human attention from building the application to building the
-system that builds the application — and about refusing to carry
-human ceremony into a medium that does not need it.
+**engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering: moving human attention from building the application to building the system that builds the application — and about refusing to carry human ceremony into a medium that does not need it.
 
 ## The story arc
 
