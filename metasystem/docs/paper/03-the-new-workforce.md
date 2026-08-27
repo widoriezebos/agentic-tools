@@ -63,4 +63,4 @@ The properties above produce a design brief. The table summarizes relationships 
 | Computation is metered | Cheap candidates can still create expensive verification | Set budgets from risk and stop or escalate when they are exhausted |
 | Machine judgment can share one blind spot | Several agreeing results can still be wrong | Use independent examination and reserve named questions for responsible authorities |
 
-The table does not describe a world without human limits or economic limits. It distinguishes which limits have moved and which new ones govern the work. That distinction is enough to expose the next trap: preserving a familiar process after the condition that justified it has changed.
+The table does not describe a world without human limits or economic limits. It distinguishes which limits have moved and which new ones govern the work. That distinction is enough to expose the next trap: preserving a familiar process after the need that justified it has changed.
