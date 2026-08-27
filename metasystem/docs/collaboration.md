@@ -123,3 +123,19 @@ When a reserved or ambiguous decision blocks progress, ask with a recommendation
 ## Emergencies
 
 The human may explicitly suspend gates and checks for a declared emergency. Suspension is always their explicit call; never infer it from urgency. Record what was skipped in the receipt or handoff note, and reconcile (run the skipped verification, backfill the ledgers) as the first task after the incident.
+
+## Coordinator session capacity
+
+The Claude Code harness caps each session at 200 spawned subagents
+(a runaway-loop backstop). A continuous coordinator session dispatches
+an agent for every build, critique, and fix round, so 200 is roughly
+one working day — hitting the cap mid-queue stalls lawful work
+(first sighting 2026-08-27 01:30, five idle hours). Launch
+coordinator sessions with the limit raised:
+
+    export CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION=2000
+
+Put it in the shell profile of any machine that runs a coordinator.
+The variable is read at session start; a capped session cannot raise
+it from inside — there, dispatch codex work directly through the
+companion CLI, which the cap does not govern.
