@@ -6,7 +6,7 @@ This is the mimicry trap. A familiar process is copied onto a workforce with dif
 
 ## The need behind each ceremony
 
-The reasons that follow are recurring observations from human software work, not a claim that every team uses each practice. A developer works for a day on a difficult change while the rest of the team cannot see whether the work is moving or stuck. A short daily meeting forces private state into the open. The standup serves a need that outlives it: visible progress, visible blockage and a chance to coordinate before hidden delay becomes expensive. The circle of people speaking in turn is only the form.
+What follows are recurring observations from human software work; not every team uses each practice. A developer works for a day on a difficult change while the rest of the team cannot see whether the work is moving or stuck. A short daily meeting forces private state into the open. The standup serves a need that outlives it: visible progress, visible blockage and a chance to coordinate before hidden delay becomes expensive. The circle of people speaking in turn is only the form.
 
 A team with ten people and more requests than attention chooses a small batch for the next two weeks. The fixed interval gives people a stable horizon, limits interruption and creates a regular moment to reconsider priority. The sprint answers a need: protecting scarce human attention from constant reshuffling. Its cadence is only a means.
 

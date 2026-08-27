@@ -2,7 +2,7 @@
 
 In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
 
-The difference between the explanation and the observation sets the organizing principle for machine engineering. Convincing claims can guide inquiry, but bounded proof and well-grounded evidence authorize consequential action. The aim is an accurate account of what one exact result has and has not demonstrated.
+That difference between explanation and observation is the organizing principle: convincing claims can guide inquiry, but bounded proof and well-grounded evidence authorize consequential action. The aim is an accurate account of what one exact result has and has not demonstrated.
 
 ## Evidence, proof and the boundary between them
 
@@ -10,13 +10,13 @@ A check sets a clock to one second after expiry, sends a request and observes re
 
 Proof is narrower. Within a controlled clock, a specified session state, a stated definition of activity and the exact candidate examined, the check may demonstrate that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision or user just because the check passed.
 
-The distinction prevents exaggeration without denying a bounded demonstration. Practical decisions use evidence; some pieces can prove a precise claim under stated conditions.
+Practical decisions use evidence; some pieces can prove a precise claim under stated conditions.
 
 ## Enforced rules instead of guidelines
 
 The first candidate reaches a release step with the late-response check failing. A guide beside the work says that all session checks should pass. The builder can still proceed if the guide has no power. When the same condition sits at the release action and refuses the candidate, the missing protection becomes effective rather than advisory.
 
-This is an enforced rule in the vocabulary established by Chapter 1. It controls a named action, judges the exact candidate presented for that action and explains a refusal in plain language. "Release refused: a response received after expiry restores access" is governable. "Policy failed" is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
+This is an enforced rule. It controls a named action, judges the exact candidate presented for that action and explains a refusal in plain language. "Release refused: a response received after expiry restores access" is governable. "Policy failed" is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
 
 Binding to the exact candidate is essential. Evidence from an earlier version cannot authorize a later revision, even when the difference looks harmless. Release evidence must also bind to the environment; one configuration cannot authorize another that changes the behavior. An enforced rule remains trustworthy only while its evidence refers to what will act on users and no actor can bypass it without the named authority.
 

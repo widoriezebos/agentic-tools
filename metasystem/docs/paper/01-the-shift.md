@@ -2,17 +2,17 @@
 
 An engineer receives a small request on Thursday morning: change how long a user stays signed in. The request is one sentence; the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behavior, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but responsibility spans the path from desire to dependable behavior.
 
-For consequential or repeatedly delivered software, this paper proposes a shift in ownership. Machinery absorbs more of construction and delivery. Engineering ownership moves toward designing and governing that machinery. The application remains what people use, but its means of production and care becomes a primary engineering object.
+For consequential or repeatedly delivered software, this paper proposes a shift in ownership: machinery absorbs more of construction and delivery, and engineering moves toward designing and governing that machinery. The application remains what people use; the system that produces and cares for it becomes a primary engineering object.
 
 ## The ladder already climbed
 
 What we are discussing now is not new. Programmers once allocated registers and calculated jump targets by hand. Compilers then took care of all of that.
 
-Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control put memory, comparison and much reconciliation into machinery. It did not decide which change was right. It made history durable and differences visible so that people could make that decision with better evidence.
+Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control took over the remembering and the comparing. It did not decide which change was right; it made history durable so people could.
 
-A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code moved the desired state into a repeatable description. Machinery could compare that description with reality and create the environment again.
+A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code turned the desired state into a description that machinery can compare with reality and apply again.
 
-Testing followed the same pattern. A release team gathered around a checklist and clicked through the application by hand. Every cycle consumed the same attention. Continuous integration moved repeatable checks next to the change, where every revision could be built and tested. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
+Testing followed the same pattern. A release team once clicked through the application by hand, every cycle consuming the same attention. Continuous integration moved repeatable checks next to the change. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
 
 This ladder shows that machinery can absorb bounded, repeatable work. It does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
@@ -60,6 +60,6 @@ An independent examiner remains necessary to challenge claims when evidence cann
 
 This paper makes a design argument. It does not claim that such systems are already common practice. Its claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained and does human authority remain real where it is needed?
 
-Scope also counts. A disposable script with little consequence may not justify elaborate production machinery. Software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk. The direction of ownership does not require every project to use the same amount of machinery.
+Scope also counts. A disposable script may not justify elaborate production machinery; software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk, and not every project needs the same amount of machinery.
 
-The historical ladder establishes only that bounded work can move into tools. Iterative tool use extends that to a broader construction-and-delivery loop. Neither premise says what delivery must contain. Before choosing the machinery, the unresolved question is this: what does software delivery actually require apart from the process inherited to organize it?
+The historical ladder establishes only that bounded work can move into tools. Iterative tool use extends that to a broader construction-and-delivery loop. Neither premise says what delivery must contain. Before we choose machinery, one question is still open: what does software delivery actually require, apart from the process inherited to organize it?

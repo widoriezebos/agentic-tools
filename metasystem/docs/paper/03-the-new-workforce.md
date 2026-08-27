@@ -2,7 +2,7 @@
 
 A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.
 
-That contrast sets up this chapter. Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The proposed delivery system must be derived from those actual properties rather than from either wonder or fear about the machinery.
+Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be derived from those actual properties rather than from wonder or fear about the machinery.
 
 ## What falls or changes shape
 
@@ -12,7 +12,7 @@ A second attempt also becomes easier to start. There is no need to wait for the 
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
-Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay. Across these cases, the observable shift is precise: copying, starting and repeating become cheaper, while selection, coordination, judgment and payment remain.
+Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay. The shift is precise: copying, starting and repeating become cheaper, while selection, coordination, judgment and payment remain.
 
 ## What actually goes away
 
@@ -34,7 +34,7 @@ An independent examiner then receives the builder's conclusion and repeats it in
 
 Long attempts introduce another failure. A builder begins with the authorized request, follows a nearby problem, improves that problem and returns with a result that no longer serves the original outcome. Nothing in the final work is obviously absurd; its direction moved. This paper calls that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
 
-Even the identity of an active attempt can be unclear. A delayed message may come from the original worker, a retry or a replacement. Two apparent attempts may share the same hidden context. A resumed worker may look fresh while retaining the assumption an independent examiner was meant to challenge. Identity itself becomes uncertain. Where independence or custody is at stake, the system needs evidence of which actor performed which action, what context it received and which exact candidate it judged.
+Even the identity of an active attempt can be unclear. A delayed message may come from the original worker, a retry or a replacement. Two apparent attempts may share the same hidden context. A resumed worker may look fresh while retaining the assumption an independent examiner was meant to challenge. Where independence or custody is at stake, the system needs evidence of which actor performed which action, what context it received and which exact candidate it judged.
 
 Every retry, copied context, tool call, test and competing candidate also consumes a measured resource. Computation is metered: some effort becomes cheap enough to repeat, but never free. And an extra candidate creates a second cost that the meter may not show directly: trustworthy comparison. A budget that counts production but not judging encourages a pile of plausible alternatives without a way to choose among them.
 
@@ -50,7 +50,7 @@ Verification supplies that support through discriminating tests, independent att
 
 ## Consequences in one view
 
-The properties above produce a design brief. The table summarizes relationships already made concrete; it does not claim that one mechanism settles every case.
+The table summarizes the design brief; it does not claim that one mechanism settles every case.
 
 | Change in the workforce | Failure that remains or appears | System property that follows |
 | --- | --- | --- |

@@ -62,9 +62,9 @@ These are limits of the concept rather than promised features awaiting implement
 
 ## Closing
 
-The argument begins with a small request whose consequences exceed its wording. It returns first to intent: state the desired outcome, expose ambiguity, record conflict and revise the purpose when reality shows it to be wrong. It examines inherited ceremony next: identify the need a practice served, then retain, adapt, replace or explicitly discard the form according to that need.
+We began with a small request whose consequences exceed its wording. We returned to intent: state the desired outcome, expose ambiguity, record conflict and revise the purpose when reality shows it to be wrong. We examined inherited ceremony: identify the need a practice served, then retain, adapt, replace or explicitly discard the form according to that need.
 
-It then designs for the workforce that actually performs the work. Builders construct within narrow permissions. Independent examiners challenge finished claims. Durable records preserve state without pretending to settle values. Enforced rules refuse unsupported action. Authorized release limits exposure and reverses when observations leave its bounds. Care brings production evidence back into intent, checks and policy. Learning changes future behavior without turning every past surprise into a permanent law.
+We then designed for the workforce that actually performs the work. Builders construct within narrow permissions. Independent examiners challenge finished claims. Durable records preserve state without pretending to settle values. Enforced rules refuse unsupported action. Authorized release limits exposure and reverses when observations leave its bounds. Care brings production evidence back into intent, checks and policy. Learning changes future behavior without turning every past surprise into a permanent law.
 
 Finally, the machinery is held to rules it cannot evade when it changes itself. That test is necessary and insufficient. The larger proposal must win support across different applications, organizations, consequences and costs. Where it fails, the evidence should change the design or reject the investment.
 

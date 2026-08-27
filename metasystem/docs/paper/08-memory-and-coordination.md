@@ -2,7 +2,7 @@
 
 Halfway through preparing existing sessions for the new expiry rule, a builder stops. No farewell appears. No colleague remembers the last command, because there is no colleague watching over its shoulder. The next builder must determine whether any session was changed, which candidate was in use, which decisions already bind the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
 
-The system keeps memory outside its workers, because any worker can disappear. Intent, decisions, claims, actions, results and current state become durable records as the work proceeds. That memory also coordinates workers that do not share a conversation or a working day. It can show where work is, who may act next and what evidence an action must preserve. It cannot decide which human value should prevail. Durable records replace private memory and make coordination recoverable, but deliberation remains a separate act.
+The system keeps memory outside its workers, because any worker can disappear. Intent, decisions, claims, actions, results and current state become durable records as the work proceeds. That memory also coordinates workers that do not share a conversation or a working day. It can show where work is, who may act next and what evidence an action must preserve. It cannot decide which human value should prevail.
 
 ## One authoritative record, with access limited by role
 

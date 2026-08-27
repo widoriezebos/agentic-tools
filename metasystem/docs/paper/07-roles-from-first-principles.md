@@ -1,12 +1,12 @@
 # 7. Roles from First Principles
 
-Chapter 1 already records the ruling, construction, independent challenge, refusal, release and account. Their consequence here is a distribution of power. Giving all of those functions to one capable actor would let the same actor form a theory, defend it, approve it and describe its success.
+Chapter 1's day records the ruling, construction, independent challenge, refusal, release and account. Here they become a distribution of power. Giving all of those functions to one capable actor would let the same actor form a theory, defend it, approve it and describe its success.
 
 Copying a familiar software department into machinery is not the answer. A role in this system is a temporary combination of two things: the actor's relation to the work (constructing it, challenging it, preserving its history or explaining it) and its permissions (what it may read, change, accept, stop or release). The combination exists because a particular hazard requires it, and it lasts only as long as that hazard does. A hazard here is a specific way the work can go wrong: a builder judging its own claim, a worker stopping in silence, a convincing account steering a decision. Risk, as Chapters 6 and 11 use it, sets verification depth and spending through four questions: severity, novelty, exposure and accumulated change. Hazards decide which roles must exist and stay separate.
 
 ## The premise: only some limits were removed
 
-Chapter 6 establishes contextual independence and the fresh perspective it requires. The authority consequence begins here: a new machine worker can take a temporary role without a reporting line or a permanent title, but prior exposure can still disqualify it from serving as the independent examiner.
+Chapter 6 establishes contextual independence and the fresh perspective it requires. Here that becomes an authority question: a new machine worker can take a temporary role without a reporting line or a permanent title, but prior exposure can still disqualify it from serving as the independent examiner.
 
 Those properties weaken several old reasons for roles. Working hours no longer require one shift to hand work to another. A career ladder need not determine who performs a check. Scarcity among specialists counts for less when a bounded capability can be supplied when needed. One manager's span of attention no longer sets the number of active attempts.
 

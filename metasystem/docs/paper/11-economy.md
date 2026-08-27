@@ -58,7 +58,7 @@ This is the break-even question. On one side sit the costs of building and chang
 
 One-off prototypes, disposable explorations, small low-risk tools and short-lived software often fall below that point. Manual construction and judgment can be cheaper and clearer. A prototype that begins handling identity, money, private data or a decision people depend on can cross the point even before it is large. Repetition also changes the answer. A small release performed hundreds of times can justify durable controls that no single release would repay.
 
-The argument allows a rational decision not to build the system. It does not exempt small work from thought. Even the disposable comparison needs enough care to match its consequence. It refuses to make the most elaborate machinery the default measure of seriousness.
+The argument allows a rational decision not to build the system, without exempting small work from thought: even the disposable comparison needs care to match its consequence.
 
 ## Use no more machinery than the work needs
 

@@ -1,8 +1,8 @@
 # 2. Back to Intent
 
-The request from Thursday morning belongs to Chapter 1's hypothetical day. It says to change how long a user stays signed in. It does not say whether the change is complete when new behavior exists on a builder's machine, when a check passes, when every user receives it or when the service has lived with it without causing harm. Those moments are related, but they are not the same. Treating them as one activity makes a short request look complete long before a dependable outcome exists.
+The request from Thursday morning says to change how long a user stays signed in. It does not say whether the change is complete when new behavior exists on a builder's machine, when a check passes, when every user receives it or when the service has lived with it without causing harm. Those moments are not the same, and treating them as one makes a short request look complete long before a dependable outcome exists.
 
-The observed history in Chapter 1 shows that tools can absorb bounded work. It does not decide which parts of delivery remain necessary when the old division of labor changes. This chapter proposes a simpler starting point: describe what must happen for a human need to become dependable behavior, apart from the process used to arrange the work.
+Chapter 1's ladder shows that tools can absorb bounded work, not which parts of delivery remain necessary when the old division of labor changes. So we start simpler: describe what must happen for a human need to become dependable behavior, apart from the process used to arrange the work.
 
 ## What delivering software actually requires
 
@@ -10,13 +10,13 @@ A person first has to decide what better means. For the session change, better m
 
 A builder then has to alter the application. It traces how sessions begin, what extends them, where expiry is checked and what the user sees afterward. It chooses among possible designs and produces a candidate. That is construction. A candidate can be elegant and still serve the wrong outcome, so construction cannot certify itself just by ending.
 
-The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These observations determine whether the candidate supports the claims made for it. That activity is verification. It includes automatic checks and independent examination, but it is not identical to either one. Its purpose is to find out what the evidence supports saying about the candidate.
+The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These observations determine whether the candidate supports the claims made for it. That activity is verification: finding out what the evidence supports saying about the candidate. It includes automatic checks and independent examination but is not identical to either.
 
 Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. Care is a distributed activity: authorized release observes live behavior and contains harm or restores earlier behavior within its bounds; the builder repairs what breaks; and the responsible authority decides revisions or actions outside delegated bounds.
 
 Finally, the experience must change what happens next. A missed boundary may become a stronger check. A confusing request may lead to a better way of stating success. A rule that produces false refusals may need revision or removal. That is learning: improving intent, construction, verification and care from recorded experience.
 
-These five activities are an analytical claim. They do not describe how organizations already arrange work. They can overlap, and one actor may perform several when consequence is low. They are separated here because each answers a different question. What should happen? What candidate could make it happen? What supports the claim that it does? What keeps the result dependable? What should change after experience? A delivery design may distribute those questions in many ways, but it cannot omit one without leaving a corresponding obligation unanswered.
+These five activities are an analytical claim; they do not describe how organizations already arrange work. They can overlap, and one actor may perform several when consequence is low. They are separated here because each answers a different question. What should happen? What candidate could make it happen? What supports the claim that it does? What keeps the result dependable? What should change after experience? A delivery design may distribute those questions in many ways, but it cannot omit one without leaving a corresponding obligation unanswered.
 
 ## Intent as the durable interface
 
@@ -28,7 +28,7 @@ This paper calls that record intent. Intent is the durable interface between the
 
 Versioning is needed because a statement can change while work is under way. If the responsible authority rules that a user-started upload may finish under a narrow continuation, the earlier statement and the ruling must remain distinguishable. The candidate, checks and release decision then bind to the later version. Without that connection, a passing result may answer a question nobody is still asking.
 
-As construction becomes easier to repeat, this interface becomes more important. Ten candidates produced against an unclear outcome do not create ten times the progress. They create ten results to judge against the same uncertainty. Cheaper construction increases the value of knowing what is being attempted and what evidence would make the attempt useful.
+As construction becomes easier to repeat, this interface becomes more important: ten candidates produced against an unclear outcome are not ten times the progress, just ten results to judge against the same uncertainty.
 
 ## Intent can be wrong
 
@@ -36,7 +36,7 @@ A support team asks for a warning before sign-out because users report lost work
 
 Other defects are quieter. "Active work" may include typing, silent reading, a background refresh or just keeping a page visible. "Existing sessions" may mean sessions created before release, sessions on every device or only sessions that contact the service again. "No disruption" may conceal an impossible promise. Asking for examples at the edge exposes these meanings: what happens to a reader who does nothing, a reader who responds, a sleeping laptop and an upload already in progress? Asking what observation would reveal failure exposes weak success language: fewer complaints may reflect fewer users rather than a safer session policy.
 
-Drawing out intent means turning unspoken expectations into statements people can inspect. It includes asking for counterexamples, naming affected people, comparing constraints and stating measures that could disconfirm the desired result. Machinery can help by finding ambiguous terms, generating boundary cases and showing where two constraints cannot both hold. It cannot decide which value should win. When shorter sessions protect accounts but interrupt legitimate reading, the choice returns to a responsible authority with the power to bind it.
+Drawing out intent means turning unspoken expectations into statements people can inspect. It includes asking for counterexamples, naming affected people, comparing constraints and stating measures that could prove the desired result wrong. Machinery can help by finding ambiguous terms, generating boundary cases and showing where two constraints cannot both hold. It cannot decide which value should win. When shorter sessions protect accounts but interrupt legitimate reading, the choice returns to a responsible authority with the power to bind it.
 
 Even a clear and internally consistent intent can be wrong. After release, responsive users may be signed out because the chosen signal does not reflect how they work. The outcome may protect the service while harming the people it was meant to protect. Live evidence then challenges not only the candidate but the statement that authorized it. The record must allow the responsible authority to revise the intent, connect the new decision to the evidence and show which earlier candidates and checks no longer support the current claim.
 

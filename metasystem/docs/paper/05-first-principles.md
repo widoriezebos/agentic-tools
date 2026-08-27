@@ -2,7 +2,7 @@
 
 A candidate reaches the release boundary with a persuasive explanation and a passing check. The explanation says the session change is safe. The check never tried a late background response, and the candidate can still revive an expired session. If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
 
-The chapters that follow will give those principles mechanisms, limits and counterarguments. This chapter states them briefly so that the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
+Later chapters give these principles mechanisms, limits and counterarguments. Here we state them briefly, so the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
 
 ## What the legal metaphor means and where it stops
 
