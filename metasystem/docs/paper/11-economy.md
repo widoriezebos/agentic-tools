@@ -6,7 +6,7 @@ Machine engineering has an economy because construction, examination, judgment, 
 
 ## Value before process
 
-Suppose every session change waits for a weekly meeting. The meeting may once have protected a real condition: the security authority, support representative, and release owner needed one place to discover conflicting concerns. If the same concerns now become visible in the recorded intent and reach the named authority when a ruling is required, the meeting's recurrence no longer justifies its cost.
+Suppose every session change waits for a weekly meeting. The meeting may once have served a real need: the security authority, support representative, and release owner needed one place to discover conflicting concerns. If the same concerns now become visible in the recorded intent and reach the named authority when a ruling is required, the meeting's recurrence no longer justifies its cost.
 
 Every continuing process must name the outcome it protects. It must also produce evidence that its protection is worth the time, delay, attention, and machinery it consumes. A human discussion may remain the least costly way to resolve a value conflict. An automatic refusal may be cheaper and more dependable for a repeated condition.
 

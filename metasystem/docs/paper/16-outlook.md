@@ -62,7 +62,7 @@ These are limits of the concept rather than promised features awaiting implement
 
 ## Closing
 
-The argument begins with a small request whose consequences exceed its wording. It returns first to intent: state the desired outcome, expose ambiguity, record conflict, and revise the purpose when reality shows it to be wrong. It examines inherited ceremony next: identify the condition a practice protects, then retain, adapt, replace, or explicitly discard the form according to that condition.
+The argument begins with a small request whose consequences exceed its wording. It returns first to intent: state the desired outcome, expose ambiguity, record conflict, and revise the purpose when reality shows it to be wrong. It examines inherited ceremony next: identify the need a practice served, then retain, adapt, replace, or explicitly discard the form according to that need.
 
 It then designs for the workforce that actually performs the work. Builders construct within narrow permissions. Independent examiners challenge finished claims. Durable records preserve state without pretending to settle values. Enforced rules refuse unsupported action. Authorized release limits exposure and reverses when observations leave its bounds. Care brings production evidence back into intent, checks, and policy. Learning changes future behavior without turning every past surprise into a permanent law.
 

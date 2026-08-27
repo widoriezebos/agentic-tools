@@ -2,7 +2,7 @@
 
 Consider an established team receiving the session-expiry request while releases still depend on a familiar chain of tickets, code review, manual checks, and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may carry an unwritten warning about shared devices, an approval required by policy, or the only reliable way to reverse a failed session migration.
 
-The transition begins inside that uncertainty. The proposed delivery system first builds knowledge, then takes over verification work, and only later receives authority. Existing protection remains until its purpose and a possible replacement are understood. Where no condition survives, the ceremony is removed with a recorded reason. This is a transfer from a running system rather than a clean start.
+The transition begins inside that uncertainty. The proposed delivery system first builds knowledge, then takes over verification work, and only later receives authority. Existing protection remains until its purpose and a possible replacement are understood. Where no need survives, the ceremony is removed with a recorded reason. This is a transfer from a running system rather than a clean start.
 
 ## Begin with the existing system
 
@@ -44,9 +44,9 @@ The session-expiry change begins high on several risk dimensions: a small compar
 
 Scope widens from reversible, familiar, limited work because failures are cheaper to study and contain. That evidence does not authorize an irreversible migration or policy waiver. Authority follows demonstrated protection across the relevant risk range.
 
-## Retain, replace, or discard according to the surviving condition
+## Retain, replace, or discard according to the surviving need
 
-The weekly authentication meeting appears to be a status ceremony. Closer observation shows that a support representative uses it to raise lockout patterns that no technical measure records, while a security representative explains new threats. The meeting carries discovery and negotiation, not just status. Until another practice reliably brings that evidence and those people into the decision, removing the meeting would leave a need the new machinery does not yet serve.
+The weekly authentication meeting appears to be a status ceremony. Closer observation shows that a support representative uses it to raise lockout patterns that no technical measure records, while a security representative explains new threats. The meeting carries discovery and negotiation, not just status. Until another practice reliably brings that evidence and those people into the decision, removing the meeting would leave the need for discovery and negotiation unmet.
 
 The method described in Chapter 4 asks for that need before choosing a form. A durable live record may replace a daily status recital. A repeatable independent check may replace a manual test when it catches the same failures and permits valid cases. A discussion that exposes conflicting values remains human even when machinery prepares its evidence.
 
