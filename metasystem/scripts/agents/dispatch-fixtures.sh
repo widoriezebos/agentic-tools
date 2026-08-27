@@ -179,6 +179,7 @@ cp metasystem.conf "$agent_repo/"
   --set watch.interval-sec=5 \
   --set census.log-max-bytes=4096 \
   --set role.investigator.runtime=fake \
+  --set role.default.model.fake=fake-model \
   --set model.tier.1=fake:fake-model \
   --set model.tier.2=fake:fake-premium
 git -C "$agent_repo" init -q -b main

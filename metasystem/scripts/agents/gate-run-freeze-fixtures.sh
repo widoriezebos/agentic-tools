@@ -85,6 +85,7 @@ mkdir -p "$repo/metasystem/scripts/agents/adapters" "$repo/metasystem/bin" \
 cp "$root/scripts/agents/milestone-battery.sh" "$repo/metasystem/scripts/agents/"
 cp "$root/scripts/agents/battery.conf.local.template" "$repo/metasystem/scripts/agents/"
 cp "$root/scripts/agents/dispatch.sh" "$repo/metasystem/scripts/agents/"
+cp "$root/scripts/agents/checkout-execution-guard.sh" "$repo/metasystem/scripts/agents/"
 cp "$root/scripts/watch-background-jobs.sh" "$repo/metasystem/scripts/"
 printf '# fixture fingerprint input\n' >"$repo/metasystem/scripts/agents/adapters/runtime-common.sh"
 cat >"$repo/metasystem/scripts/agents/adapters/fake.sh" <<'ADAPTER'

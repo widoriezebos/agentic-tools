@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -112,6 +113,8 @@ func runSuperviseLaunchDetached(args []string) int {
 	flags := flag.NewFlagSet("supervise launch-detached", flag.ContinueOnError)
 	log := flags.String("log", "", "log file the child's output appends to (default /dev/null)")
 	cwd := flags.String("cwd", "", "working directory for the child (optional)")
+	executionGuardRoot := flags.String("execution-guard-root", "", "checkout whose execution guard registers the detached child")
+	executionGuardOwner := flags.String("execution-guard-owner", "", "human-readable execution guard member name")
 	var env []string
 	flags.Func("env", "KEY=VALUE to add to the child's environment (repeatable)", func(value string) error {
 		env = append(env, value)
@@ -153,6 +156,18 @@ func runSuperviseLaunchDetached(args []string) int {
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if *executionGuardRoot != "" || *executionGuardOwner != "" {
+		if *executionGuardRoot == "" || *executionGuardOwner == "" {
+			_ = cmd.Process.Kill()
+			fmt.Fprintln(os.Stderr, "supervise launch-detached: --execution-guard-root and --execution-guard-owner are required together")
+			return 2
+		}
+		if err := gaterun.RegisterSpawnedExecutionGuardMember(*executionGuardRoot, int64(cmd.Process.Pid), *executionGuardOwner); err != nil {
+			_ = cmd.Process.Kill()
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	fmt.Println(cmd.Process.Pid)
 	// The child is its own session; it is not waited on here.

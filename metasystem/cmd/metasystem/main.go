@@ -206,6 +206,8 @@ func families() []family {
 				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"controller-descendant", "exit 0 only when a consumer descends from one exact live controller identity", runGateControllerDescendant},
+				{"guard-acquire", "wait for exclusive checkout execution or join the caller's owning chain", runGateGuardAcquire},
+				{"guard-release", "release the invoking process's checkout execution membership", runGateGuardRelease},
 				{"weight-add", "fold a landing's measured weight into the battery accumulator (numstat on stdin)", runGateWeightAdd},
 				{"weight-check", "exit 1 when accumulated feature weight makes the milestone battery worth running", runGateWeightCheck},
 				{"weight-checkpoint", "checkpoint the accumulator for one isolated milestone battery", runGateWeightCheckpoint},

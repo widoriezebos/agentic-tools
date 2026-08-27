@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // Identity names a lock holder by kernel facts, never by claims.
@@ -30,6 +32,7 @@ type Identity struct {
 	Pid          int64  `json:"pid"`
 	PidStartedAt int64  `json:"pidStartedAt"`
 	Tag          string `json:"instanceTag,omitempty"`
+	Label        string `json:"label,omitempty"`
 }
 
 // Liveness is the three-way answer the takeover rule requires: only a
@@ -97,6 +100,8 @@ type Options struct {
 	// Codec renders and parses the owner file; nil means the default
 	// Identity JSON.
 	Codec OwnerCodec
+	// OnStale reports a dead holder after its lock was actually removed.
+	OnStale func(Identity)
 }
 
 // Lock is a held lock. Release it exactly once.
@@ -170,8 +175,12 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 				// (the two-winners race the unit test replays). The
 				// kernel releases the fence if a remover dies holding
 				// it.
-				if err := removeIfHolderWith(path, holder, opts.Probe, opts.Codec); err != nil {
+				removed, err := removeIfHolderWithResult(path, holder, opts.Probe, opts.Codec)
+				if err != nil {
 					return nil, fmt.Errorf("lock: takeover removal: %w", err)
+				}
+				if removed && opts.OnStale != nil {
+					opts.OnStale(holder)
 				}
 				continue
 			case Alive, Unknown:
@@ -233,14 +242,43 @@ func ReleaseNamed(path string, self Identity, codec OwnerCodec) error {
 	if codec == nil {
 		codec = identityJSON{}
 	}
-	holder, err := readOwnerWith(path, codec)
-	if err != nil {
-		return fmt.Errorf("lock: release verification: %w", err)
+	return withMutationFence(path, func() error {
+		holder, err := readOwnerWith(path, codec)
+		if err != nil {
+			return fmt.Errorf("lock: release verification: %w", err)
+		}
+		if holder != self {
+			return fmt.Errorf("lock %s no longer names this holder (found pid %d started %d)", path, holder.Pid, holder.PidStartedAt)
+		}
+		return removeLock(path)
+	})
+}
+
+// TransferNamed atomically replaces the owner file while the lock directory
+// remains present. The current identity is verified inside the mutation fence,
+// so a process can hand a lock to a long-lived child without exposing an
+// ownerless or unlocked interval.
+func TransferNamed(path string, current, successor Identity, codec OwnerCodec) error {
+	if codec == nil {
+		codec = identityJSON{}
 	}
-	if holder != self {
-		return fmt.Errorf("lock %s no longer names this holder (found pid %d started %d)", path, holder.Pid, holder.PidStartedAt)
-	}
-	return removeLock(path)
+	return withMutationFence(path, func() error {
+		holder, err := readOwnerWith(path, codec)
+		if err != nil {
+			return fmt.Errorf("lock: transfer verification: %w", err)
+		}
+		if holder != current {
+			return fmt.Errorf("lock %s no longer names the transferring holder (found pid %d started %d)", path, holder.Pid, holder.PidStartedAt)
+		}
+		owner, err := codec.Encode(successor)
+		if err != nil {
+			return fmt.Errorf("lock: successor encoding: %w", err)
+		}
+		if err := atomicfile.WriteVolatile(filepath.Join(path, ownerFile), string(owner)); err != nil {
+			return fmt.Errorf("lock: successor publication: %w", err)
+		}
+		return nil
+	})
 }
 
 func populatePrivate(path string, self Identity, codec OwnerCodec) (string, error) {
@@ -304,8 +342,9 @@ func withMutationFence(path string, action func() error) error {
 // removeIfHolder removes the lock only if, inside the mutation fence,
 // it still names the identity proven dead. A lock that vanished or
 // changed hands is left alone — the caller loops and reassesses.
-func removeIfHolderWith(path string, deadHolder Identity, probe Probe, codec OwnerCodec) error {
-	return withMutationFence(path, func() error {
+func removeIfHolderWithResult(path string, deadHolder Identity, probe Probe, codec OwnerCodec) (bool, error) {
+	removed := false
+	err := withMutationFence(path, func() error {
 		current, err := readOwnerWith(path, codec)
 		if os.IsNotExist(err) {
 			return nil // already removed or replaced-in-flight
@@ -316,8 +355,18 @@ func removeIfHolderWith(path string, deadHolder Identity, probe Probe, codec Own
 		if current != deadHolder || probe(current) != Dead {
 			return nil // someone else's lock now; never touch it
 		}
-		return removeLock(path)
+		if err := removeLock(path); err != nil {
+			return err
+		}
+		removed = true
+		return nil
 	})
+	return removed, err
+}
+
+func removeIfHolderWith(path string, deadHolder Identity, probe Probe, codec OwnerCodec) error {
+	_, err := removeIfHolderWithResult(path, deadHolder, probe, codec)
+	return err
 }
 
 // removeIfOwnerless removes an ownerless directory only if it is

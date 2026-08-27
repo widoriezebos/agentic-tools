@@ -461,7 +461,7 @@ mkdir -p "$operator_scope"
 mkdir -p "$operator_harness"
 (cd "$source_root" && for entry in * .[!.]*; do
   [[ -e "$entry" ]] || continue
-  [[ "$entry" == artifacts ]] && continue
+  [[ "$entry" == artifacts || "$entry" == .git || "$entry" == metasystem.conf.local ]] && continue
   cp -R "$entry" "$operator_harness/"
 done)
 operator_scope=$(cd "$operator_scope" && pwd -P)

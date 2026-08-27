@@ -32,6 +32,7 @@ repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) \
 repo_scope=$(cd "$repo_scope" && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 config="$root/scripts/metasystem-config.sh"
+source "$root/scripts/agents/checkout-execution-guard.sh"
 agents="$root/artifacts/agents"
 jobs="$agents/jobs"
 heartbeats="$agents/hb"
@@ -562,6 +563,7 @@ write_prompt() { # path job role runtime model round mission content
 
 launch_adapter() { # runtime verb job tag
   local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
+  local adapter_command
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
   mkdir -p "$heartbeats"
   # No spawn for a record that already left pending (a cancel can
@@ -569,9 +571,21 @@ launch_adapter() { # runtime verb job tag
   # ownership CAS below, but not starting at all is cheaper than
   # starting and killing.
   [[ "$(json_field "$jobs/$job.json" status)" == pending ]] || return 1
-  pid=$("$ms" supervise launch-detached --cwd "$root" \
-    --env "GIT_AUTHOR_NAME=$job" --env "GIT_AUTHOR_EMAIL=$job@metasystem.invalid" -- \
-    "$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag") || return 1
+  adapter_command=("$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag")
+  if (( checkout_execution_guard_held )); then
+    adapter_command=("$root/scripts/agents/checkout-execution-guard.sh" run-member \
+      --root "$checkout_execution_guard_root" --engine "$checkout_execution_guard_engine" -- "${adapter_command[@]}")
+  fi
+  if (( checkout_execution_guard_held )); then
+    pid=$("$ms" supervise launch-detached --cwd "$root" \
+      --execution-guard-root "$checkout_execution_guard_root" --execution-guard-owner "dispatch job $job" \
+      --env "GIT_AUTHOR_NAME=$job" --env "GIT_AUTHOR_EMAIL=$job@metasystem.invalid" -- \
+      "${adapter_command[@]}") || return 1
+  else
+    pid=$("$ms" supervise launch-detached --cwd "$root" \
+      --env "GIT_AUTHOR_NAME=$job" --env "GIT_AUTHOR_EMAIL=$job@metasystem.invalid" -- \
+      "${adapter_command[@]}") || return 1
+  fi
   cap=$(dispatch_fixture_wait_cap 5)
   started=$SECONDS
   deadline=$((SECONDS + cap))
@@ -895,6 +909,15 @@ dispatch_job() {
   fi
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
+  checkout_execution_guard_acquire "dispatch ${job:-$role}" \
+    || die 1 "dispatch refused: checkout execution guard acquisition failed"
+  trap 'checkout_execution_guard_release || true' EXIT
+  if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
+    checkout_execution_guard_fixture_wait
+    checkout_execution_guard_release
+    trap - EXIT
+    return 0
+  fi
   if [[ "$role" == code-critic || "$role" == warden ]]; then
     [[ -n "$reviews" ]] || die 2 "$role dispatch requires --reviews <implementer-job-id>"
     valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
@@ -1000,7 +1023,7 @@ dispatch_job() {
   acquire_chain_lock "$job"
   exit_cleanup_job=$job
   exit_cleanup_chain=$job
-  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
   acquire_cap_authority_lock
   [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
 
@@ -1146,7 +1169,8 @@ finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, 
   local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
-  release_chain_lock "$chain"; trap - EXIT
+  release_chain_lock "$chain"
+  trap 'checkout_execution_guard_release || true' EXIT
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
     --job "$job" --tag "metasystem-job-$job" || {
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"

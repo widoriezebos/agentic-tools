@@ -83,6 +83,15 @@ delegate_process_section() { # human-readable section name
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
+source scripts/agents/checkout-execution-guard.sh
+checkout_execution_guard_acquire "validate-metasystem.sh"
+trap 'checkout_execution_guard_release || true' EXIT
+if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
+  checkout_execution_guard_fixture_wait
+  checkout_execution_guard_release
+  trap - EXIT
+  exit 0
+fi
 # Captured AFTER the cd above: the sentinel must describe the suite's own
 # root, never the caller's working directory — a nested adopted-copy run
 # inherited the template's cwd and believed itself the template.
@@ -273,7 +282,7 @@ if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go
   # trap far below — any early exit still takes the witness with it
   # (the later validation_cleanup trap replaces this one and repeats
   # the removal).
-  trap '[[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"' EXIT
+  trap '[[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"; checkout_execution_guard_release || true' EXIT
   WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
@@ -339,6 +348,8 @@ if section_selected gate-fence-fixtures && (( ! delegate_scope )) \
     || { echo "a dead foreign gate run kept blocking the fence" >&2; exit 1; }
   echo "gate fence fixtures passed"
   fi
+  delivery_contract_skip checkout-execution-guard-fixtures \
+    || bash scripts/agents/checkout-execution-guard-fixtures.sh
 fi
 
 # The covenant evidence gate (counselor slice one): where an app has
@@ -623,6 +634,7 @@ for link in \
   metasystem.conf \
   scripts/metasystem-config.sh \
   scripts/agents/dispatch.sh \
+  scripts/agents/checkout-execution-guard.sh \
   scripts/agents/commit.sh \
   scripts/agents/land.sh \
   scripts/agents/second-session.sh \
@@ -646,6 +658,7 @@ for link in \
   scripts/agents/gate-run-freeze-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/land-fixtures.sh \
+  scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
@@ -736,6 +749,8 @@ bash -n scripts/agents/gate-run-freeze-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/land.sh
 bash -n scripts/agents/land-fixtures.sh
+bash -n scripts/agents/checkout-execution-guard.sh
+bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
@@ -1089,6 +1104,7 @@ validation_cleanup_started=0
 validation_cleanup() {
   (( validation_cleanup_started )) && return 0
   validation_cleanup_started=1
+  checkout_execution_guard_release || true
   [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
   # The witness dies with the run (D33's lifecycle): the armed state
   # dir must never outlive the validation that produced it.

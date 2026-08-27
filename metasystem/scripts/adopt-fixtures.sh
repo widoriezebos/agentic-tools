@@ -92,13 +92,16 @@ copy_tree_without_artifacts() { # source root, destination
   mkdir -p "$to"
   (cd "$from" && for entry in * .[!.]*; do
     [[ -e "$entry" ]] || continue
-    [[ "$entry" == artifacts ]] && continue
+    [[ "$entry" == artifacts || "$entry" == .git || "$entry" == metasystem.conf.local ]] && continue
     cp -R "$entry" "$to/"
   done)
 }
 
   copy_tree_without_artifacts "$root" "$adopted"
   rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
+  # A real adopted installation sits inside the app's git repository; the
+  # copy must too, or entrypoints that verify repo scope refuse to start.
+  git -C "$adopted" init -q -b main
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
   conf_edit "$adopted/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' 'metasystem.runtimes='

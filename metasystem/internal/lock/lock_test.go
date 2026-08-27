@@ -235,6 +235,28 @@ func TestAcquireRequiresProbe(t *testing.T) {
 	}
 }
 
+func TestTransferNamedKeepsTheLockAndChangesOnlyTheOwner(t *testing.T) {
+	path := lockPath(t)
+	first := Identity{Pid: 41, PidStartedAt: 410, Tag: "first", Label: "suite"}
+	second := Identity{Pid: 42, PidStartedAt: 420, Tag: "same-chain", Label: "dispatch"}
+	if _, err := Acquire(path, first, Options{Wait: time.Second, Probe: alive}); err != nil {
+		t.Fatal(err)
+	}
+	if err := TransferNamed(path, Identity{Pid: 99}, second, nil); err == nil {
+		t.Fatal("a process that did not own the lock transferred it")
+	}
+	if err := TransferNamed(path, first, second, nil); err != nil {
+		t.Fatalf("transfer: %v", err)
+	}
+	holder, err := Holder(path)
+	if err != nil || holder != second {
+		t.Fatalf("holder after transfer: %+v err=%v", holder, err)
+	}
+	if err := ReleaseNamed(path, second, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTakeoverRaceHasOneWinner(t *testing.T) {
 	path := lockPath(t)
 	if _, err := Acquire(path, Identity{Pid: 1, PidStartedAt: 1}, Options{Wait: time.Second, Probe: alive}); err != nil {
@@ -269,5 +291,43 @@ func TestTakeoverRaceHasOneWinner(t *testing.T) {
 	}
 	if holder, _ := Holder(path); fmt.Sprintf("%d", holder.Pid) == "1" {
 		t.Fatal("nobody took over a provably dead holder")
+	}
+}
+
+type refusingCodec struct{}
+
+func (refusingCodec) Encode(Identity) ([]byte, error) { return nil, errors.New("no encoding") }
+func (refusingCodec) Decode(data []byte) (Identity, error) {
+	return identityJSON{}.Decode(data)
+}
+
+func TestTransferNamedSurfacesCodecAndAbsenceFailures(t *testing.T) {
+	path := lockPath(t)
+	if err := TransferNamed(path, Identity{Pid: 7}, Identity{Pid: 8}, nil); err == nil {
+		t.Fatal("transferring an absent lock succeeded")
+	}
+	first := Identity{Pid: 41, PidStartedAt: 410, Tag: "first"}
+	if _, err := Acquire(path, first, Options{Wait: time.Second, Probe: alive}); err != nil {
+		t.Fatal(err)
+	}
+	if err := TransferNamed(path, first, Identity{Pid: 42}, refusingCodec{}); err == nil {
+		t.Fatal("a codec that cannot encode still transferred the owner")
+	}
+	holder, err := Holder(path)
+	if err != nil || holder != first {
+		t.Fatalf("failed transfer disturbed the holder: %+v err=%v", holder, err)
+	}
+	if err := ReleaseNamed(path, first, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAcquireSurfacesOwnerEncodingFailure(t *testing.T) {
+	path := lockPath(t)
+	if _, err := Acquire(path, Identity{Pid: 9, PidStartedAt: 90}, Options{Wait: 50 * time.Millisecond, Probe: alive, Codec: refusingCodec{}}); err == nil {
+		t.Fatal("an unencodable owner acquired the lock")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("failed acquisition left lock state behind")
 	}
 }

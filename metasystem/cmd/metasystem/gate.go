@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -103,6 +104,51 @@ func runGateCheck(args []string) int {
 		fmt.Println("1")
 	} else {
 		fmt.Println("0")
+	}
+	return 0
+}
+
+func runGateGuardAcquire(args []string) int {
+	flags := flag.NewFlagSet("gate guard-acquire", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	owner := flags.String("owner", "", "human-readable guard owner")
+	waitSeconds := flags.Int64("wait-sec", 0, "bounded wait in seconds")
+	progressSeconds := flags.Int64("progress-sec", 0, "progress-note interval in seconds")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *owner == "" || *waitSeconds <= 0 || *progressSeconds <= 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem gate guard-acquire --root R --owner NAME --wait-sec N --progress-sec N")
+		return 2
+	}
+	// The invoking process is a kernel fact, not a caller-selectable flag.
+	result, err := gaterun.AcquireExecutionGuard(*root, int64(os.Getppid()), *owner,
+		time.Duration(*waitSeconds)*time.Second, time.Duration(*progressSeconds)*time.Second, os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if result == gaterun.GuardJoined {
+		fmt.Println("joined")
+	} else {
+		fmt.Println("acquired")
+	}
+	return 0
+}
+
+func runGateGuardRelease(args []string) int {
+	flags := flag.NewFlagSet("gate guard-release", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem gate guard-release --root R")
+		return 2
+	}
+	if err := gaterun.ReleaseExecutionGuard(*root, int64(os.Getppid())); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	return 0
 }

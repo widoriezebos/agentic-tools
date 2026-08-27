@@ -20,6 +20,7 @@ mkdir -p "$fixture_root/scripts/agents" "$fixture_root/artifacts/agents/jobs" \
   "$fixture_root/artifacts/agents/record-locks" "$fixture_root/bin"
 git -C "$cas_repository" init -q -b main
 cp "$root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/"
+cp "$root/scripts/agents/checkout-execution-guard.sh" "$fixture_root/scripts/agents/"
 cp "$root/bin/metasystem" "$fixture_root/bin/metasystem"
 dispatch="$fixture_root/scripts/agents/dispatch.sh"
 # The record CAS is a control-plane write. Under an agent-run suite

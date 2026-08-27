@@ -121,6 +121,7 @@ harness_fixture_base_cap() { # named harness cap
     runner-git-lock) base=8 ;;
     go-owner-wait) base=8 ;;
     go-owner-crashloop) base=30 ;;
+    checkout-execution-guard) base=10 ;;
     *) echo "unknown fixture cap: $name" >&2; return 1 ;;
   esac
   printf '%s\n' "$base"
