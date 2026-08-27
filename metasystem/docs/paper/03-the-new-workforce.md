@@ -28,7 +28,7 @@ A builder reaches a useful observation, then its session ends before the observa
 
 Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely. To an observer, all four can look like patience. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
-A third builder returns a polished account and a plausible candidate. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session. Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
+A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session. Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
 
 An independent examiner then receives the builder's conclusion and repeats it in gentler words. The independent examiner may be biased by the supplied framing or may favor a response that appears cooperative. The pattern is agreement-seeking. Asking for examination does not create independence if every independent examiner starts from the same reasoning or is rewarded only for producing a smooth consensus.
 
