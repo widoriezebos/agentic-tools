@@ -10,9 +10,9 @@ This is the proposed human role in governed delivery. Final human authority does
 
 A new check now proposes to refuse any security timeout that depends on a civil-clock jump. The check has passed its own tests, but passing tests does not grant it authority. Someone must decide that future builders may be stopped by it, define which work it governs and provide a route for changing or repealing it. The builder who wants the check is not entitled to grant that power just by adding it.
 
-The person or authorized group that may create, change and repeal such enforced rules acts as the legislator in this paper's limited vocabulary. Its permission includes defining who may exercise the same power, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A temporary incident body may receive power to tighten one release condition without receiving a permanent right to rewrite all delivery rules.
+The person or authorized group that may create, change and repeal such enforced rules acts as the legislator. Its permission includes defining who may exercise the same power, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A temporary incident body may receive power to tighten one release condition without receiving a permanent right to rewrite all delivery rules.
 
-The legal word names authority to make a rule that machinery enforces at the point of action. It does not give software governance the legitimacy, institutions or reach of public law. A private permission cannot borrow moral authority from its name, and the organization remains answerable to law outside the delivery system.
+The word gives software governance none of the legitimacy, institutions or reach of public law. A private permission cannot borrow moral authority from its name, and the organization remains answerable to law outside the delivery system.
 
 Because enforced rules can stop action, their authorship and limits stay visible. A refusal identifies the rule, its authority, its supporting evidence and the available challenge. An ownerless rule is reviewed or withdrawn rather than allowed to govern by inertia.
 
@@ -20,7 +20,7 @@ Because enforced rules can stop action, their authorship and limits stay visible
 
 An upload has reached its final seconds when the ordinary session expires. The standing ruling permits a limited continuation, but an unusual recovery operation will take much longer and cannot be restarted without loss. The machinery can show the data at risk, the security exposure, the possible alternatives and whether reversal remains possible. It cannot decide that this case deserves an exception.
 
-The human authorized to resolve that named case acts as a judge in the same limited sense. The permission may cover an escalated value conflict, acceptance of specified risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
+The human authorized to resolve that named case acts as the judge. The permission may cover an escalated value conflict, acceptance of specified risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
 
 The record keeps the judge's identity, authority, reasons, evidence, scope and expiry attached to the decision. That attachment is not ceremonial. If the exception causes harm, the organization must be able to determine who had the duty to decide, what that person knew and whether the decision exceeded its authority. If later evidence changes the balance, another responsible authority must be able to reconsider it.
 
