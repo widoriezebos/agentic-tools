@@ -42,11 +42,15 @@ func syncReq(root, by, lineageFlag string) (goal.VerbRequest, error) {
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
+	now, err := goalCommandNow()
+	if err != nil {
+		return goal.VerbRequest{}, err
+	}
 	return goal.VerbRequest{
 		Endpoint: e,
 		Actor:    goal.Actor{Machine: machine, Lineage: lineage, Human: by},
 		Ulid:     ulid,
-		Now:      time.Now().UTC(),
+		Now:      now,
 	}, nil
 }
 
@@ -66,7 +70,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin string
-	lineage, digest                                                 string
+	lineage, digest, remaining                                      string
 	labels, unlabels                                                repeatedStrings
 	claim, refreshOnly                                              bool
 	keep                                                            int
@@ -95,6 +99,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.pin, "pin", "", "the machine nickname a goal is pinned to (\"-\" clears)")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
+	fs.StringVar(&f.remaining, "remaining", "", "the claimant's current remaining-work estimate")
 	fs.Var(&f.labels, "label", "label token (repeatable)")
 	fs.Var(&f.unlabels, "unlabel", "label token to remove (repeatable; edit only)")
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
@@ -112,6 +117,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 			fmt.Fprintf(os.Stderr, "goal %s does not take --unlabel\n", name)
 			return nil, false
 		}
+	}
+	if name != "estimate" && f.remaining != "" {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --remaining\n", name)
+		return nil, false
 	}
 	return f, true
 }
@@ -254,6 +263,10 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 				fmt.Fprintf(os.Stderr, "goal %s needs --pin (a machine nickname, or - to clear)\n", name)
 				return 2
 			}
+			if r == "remaining" && f.remaining == "" {
+				fmt.Fprintf(os.Stderr, "goal %s needs --remaining\n", name)
+				return 2
+			}
 		}
 		req, err := syncReq(f.root, f.by, f.lineage)
 		if err != nil {
@@ -261,7 +274,11 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 			return 1
 		}
 		res, runErr := run(req, f)
-		return printSyncResult(res, runErr)
+		code := printSyncResult(res, runErr)
+		if code == 0 && (name == "claim" || name == "estimate") {
+			printGoalBanners(f.root, "")
+		}
+		return code
 	}
 }
 
@@ -272,6 +289,9 @@ var (
 		}
 		return goal.Claim(req, f.id)
 	}, "id")
+	runGoalEstimate = runSyncOnly("estimate", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goal.Estimate(req, f.id, f.remaining)
+	}, "id", "remaining")
 	runGoalRelease = runSyncOnly("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		if f.arc != "" {
 			return goal.ReleaseArc(req, f.id)

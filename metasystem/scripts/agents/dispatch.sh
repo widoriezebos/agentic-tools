@@ -909,6 +909,23 @@ dispatch_job() {
   fi
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
+  # The goal engine prints every current checkpoint and returns the one
+  # structured STOP code only when this coordinator's exact machine+lineage
+  # owns the stopped claim. This runs before reservation: a refused round
+  # leaves no job husk and another goal's breach remains advisory here.
+  local appetite_output appetite_rc=0 appetite_lineage=${METASYSTEM_OWNER_LINEAGE:-}
+  local -a appetite_args=(--root "$root")
+  [[ -z "$appetite_lineage" ]] || appetite_args+=(--stop-lineage "$appetite_lineage")
+  set +e
+  appetite_output=$("$ms" goal banners "${appetite_args[@]}" 2>&1)
+  appetite_rc=$?
+  set -e
+  [[ -z "$appetite_output" ]] || printf '%s\n' "$appetite_output" >&2
+  case "$appetite_rc" in
+    0) ;;
+    9) die 1 "dispatch refused by the BREACH-STOP banner above; the two exits are Wido's word or goal estimate --remaining showing the work within-band" ;;
+    *) die 1 "dispatch refused because current appetite banners could not be evaluated" ;;
+  esac
   checkout_execution_guard_acquire "dispatch ${job:-$role}" \
     || die 1 "dispatch refused: checkout execution guard acquisition failed"
   trap 'checkout_execution_guard_release || true' EXIT
@@ -1200,6 +1217,9 @@ watch_job() { # --job <id>
     echo "watch: no job record for $job — it never existed here or was reaped" >&2
     exit 5
   fi
+  # The blocking Go waiter owns the existing poll cadence. Surface the current
+  # checkpoint at entry without creating a second ticker or polling loop.
+  "$ms" goal banners --root "$root"
   # The Go core blocks to terminal and holds the waiter record the turn
   # verdict reads; exit codes ride through verbatim.
   "$ms" job watch --root "$root" --job "$job" --caller-pid $$

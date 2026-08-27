@@ -710,3 +710,20 @@ became law: appetite breaches now escalate to the human by ruling,
 with a configured grace band while waiting, and the next costly
 run will be harvested for every defect it holds instead of
 surrendering at the first.
+
+## The appetite grows teeth
+
+The seventeen-hour breach that sat invisible in a listing nobody
+runs became machinery within a day of the ruling it earned. An
+appetite now stamps itself into the ledger at claim time; the
+meter is cumulative across release and re-claim, so walking away
+and coming back resets nothing; and once a goal has breached, its
+price is frozen — only a human's signed word re-prices it, and the
+claimant's own prose goes dead to the math. Past the configured
+grace band the dispatcher refuses new rounds for that goal, fail-
+closed, while the banner rides every surface where work actually
+happens: claim, dispatch, commit, the watch's progress notes, the
+end of every turn. The certifying critic earned its round by
+finding the one sequence that slipped the first build — edit,
+release, re-claim — and the fix made the ledger, not the prose,
+the only voice that counts.

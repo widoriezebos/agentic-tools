@@ -45,6 +45,9 @@ type ClaimRecord struct {
 	Machine string
 	Lineage string
 	At      string
+	// Appetite is the parsed duration in force when this claim began.
+	// Later prose cannot rewrite this authority-bearing snapshot.
+	Appetite string
 }
 
 // ParkRecord is the pause record of a parked goal.
@@ -71,6 +74,9 @@ type HistoryLine struct {
 	Ack       bool
 	Keep      int // -1 when absent; prune's root-record line only
 	Reason    string
+	// Remaining is present only on estimate events and is the claimant's
+	// honest estimate at that revision.
+	Remaining string
 }
 
 // States, closed.
@@ -185,6 +191,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
+	if f.Claimed != nil && f.Claimed.Appetite != "" {
+		if _, ok := ParseWorkingDuration(f.Claimed.Appetite); !ok {
+			addProblem("Claimed appetite=%q is not a positive working duration", f.Claimed.Appetite)
+		}
+	}
 	if f.State == StateParked && f.Parked == nil {
 		addProblem("parked without a Parked record")
 	}
@@ -258,12 +269,12 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	case "Pinned":
 		f.Pinned = value
 	case "Claimed":
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, nil, "")
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"appetite"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
 		}
-		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"]}
+		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Appetite: rec["appetite"]}
 	case "Parked":
 		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"}, "because")
 		if err != nil {
@@ -375,7 +386,11 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Pinned: %s\n", f.Pinned)
 	}
 	if f.Claimed != nil {
-		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s\n", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
+		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
+		if f.Claimed.Appetite != "" {
+			fmt.Fprintf(&b, " appetite=%s", f.Claimed.Appetite)
+		}
+		b.WriteByte('\n')
 	}
 	if f.Parked != nil {
 		line := fmt.Sprintf("- Parked: by=%s at=%s", f.Parked.By, f.Parked.At)
@@ -480,6 +495,14 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, fmt.Errorf("keep= wants an integer: %q", tok)
 			}
 			h.Keep = n
+		case strings.HasPrefix(tok, "remaining="):
+			if err := dup("remaining"); err != nil {
+				return h, err
+			}
+			h.Remaining = strings.TrimPrefix(tok, "remaining=")
+			if _, ok := ParseWorkingDuration(h.Remaining); !ok {
+				return h, fmt.Errorf("remaining= wants a positive working duration: %q", tok)
+			}
 		default:
 			return h, fmt.Errorf("unknown History key %q", tok)
 		}
@@ -508,6 +531,9 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.Keep >= 0 {
 		fmt.Fprintf(&b, " keep=%d", h.Keep)
+	}
+	if h.Remaining != "" {
+		b.WriteString(" remaining=" + h.Remaining)
 	}
 	if h.Reason != "" {
 		b.WriteString(" reason=" + h.Reason)

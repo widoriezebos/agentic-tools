@@ -494,7 +494,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				return nil, err
 			}
 			f.State = StateClaimed
-			f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
+			f.Claimed = newClaimRecord(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp())
 		case standing.State == StateParked && standing.Parked != nil:
 			// A queued or parked incoming member parks with the arc's
 			// record — a human act, which a reconcile always is.

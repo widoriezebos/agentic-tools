@@ -252,4 +252,68 @@ git -C "$clone" cat-file -p "$claim_tip:plans/goals/claimed-label.md" >"$tmp/cla
 grep -q '^- Labels: custody$' "$tmp/claimed-label.md" \
   || { echo "open --claim dropped its label" >&2; cat "$tmp/claimed-label.md" >&2; exit 1; }
 
+# 12. Appetite checkpoints use a deterministic command clock. The claim
+# snapshots 4h; claimant prose cannot move it, a human-attributed edit can,
+# and the latest estimate adds and can then clear only the forecast STOP.
+"$ms" goal release --root "$clone" --id claimed-label >/dev/null
+export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
+"$ms" goal open --root "$clone" --id appetite-check \
+  --intent "Exercise appetite checkpoints." \
+  --next "Appetite: 4h run the bounded work." --claim >/dev/null
+claim_appetite_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$claim_appetite_tip:plans/goals/appetite-check.md" >"$tmp/appetite-claim.md"
+grep -q '^- Claimed: .* appetite=4h$' "$tmp/appetite-claim.md" \
+  || { echo "claim did not snapshot the parsed appetite" >&2; cat "$tmp/appetite-claim.md" >&2; exit 1; }
+
+export METASYSTEM_GOAL_NOW=2026-08-20T03:00:00Z
+[[ -z $("$ms" goal banners --root "$clone") ]] \
+  || { echo "within-band appetite emitted a banner" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=2026-08-20T04:30:00Z
+escalate=$("$ms" goal banners --root "$clone")
+grep -q '^BREACH-ESCALATE: goal appetite-check ' <<<"$escalate" \
+  || { echo "the grace band did not escalate: $escalate" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
+stop=$("$ms" goal banners --root "$clone")
+grep -q '^BREACH-STOP: goal appetite-check ' <<<"$stop" \
+  || { echo "past-grace work did not stop: $stop" >&2; exit 1; }
+show_stop=$("$ms" goal show --root "$clone" --id appetite-check)
+grep -q 'BREACH-STOP: goal appetite-check ' <<<"$show_stop" \
+  || { echo "goal show did not carry the touched goal's STOP banner: $show_stop" >&2; exit 1; }
+measured_estimate=$("$ms" goal estimate --root "$clone" --id appetite-check --remaining 1m)
+grep -q '^BREACH-STOP: goal appetite-check ' <<<"$measured_estimate" \
+  || { echo "a small estimate cleared a measured STOP: $measured_estimate" >&2; exit 1; }
+
+"$ms" goal edit --root "$clone" --id appetite-check \
+  --next "Appetite: 20h claimant prose has no authority." >/dev/null
+claimant_stop=$("$ms" goal banners --root "$clone")
+grep -q '^BREACH-STOP: goal appetite-check ' <<<"$claimant_stop" \
+  || { echo "claimant edit moved the claim-time threshold: $claimant_stop" >&2; exit 1; }
+"$ms" goal edit --root "$clone" --id appetite-check --by wido \
+  --next "Appetite: 8h Wido raises the appetite." >/dev/null
+[[ -z $("$ms" goal banners --root "$clone") ]] \
+  || { echo "human appetite raise did not return within-band" >&2; exit 1; }
+
+estimate_stop=$("$ms" goal estimate --root "$clone" --id appetite-check --remaining 6h)
+grep -q '^BREACH-STOP: goal appetite-check ' <<<"$estimate_stop" \
+  || { echo "remaining estimate did not tighten to STOP: $estimate_stop" >&2; exit 1; }
+estimate_within=$("$ms" goal estimate --root "$clone" --id appetite-check --remaining 4h)
+if grep -q 'BREACH-STOP' <<<"$estimate_within"; then
+  echo "a latest within-band estimate did not clear the forecast STOP: $estimate_within" >&2; exit 1
+fi
+
+# A stopped claim elsewhere is a banner, not a backlog-wide claim refusal.
+"$ms" goal estimate --root "$clone" --id appetite-check --remaining 6h >/dev/null
+other="$tmp/other"
+env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git clone -q "$origin" "$other"
+git -C "$other" config metasystem.goal.machine fixture-other
+mkdir -p "$other/scripts/agents"
+cp "$root/scripts/agents/pre-commit-guard.sh" "$other/scripts/agents/"
+other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
+  "$ms" goal claim --root "$other" --id plain-goal)
+grep -q '"outcome":"confirmed"' <<<"$other_claim" \
+  || { echo "another goal's STOP refused a lawful claim: $other_claim" >&2; exit 1; }
+grep -q '^BREACH-STOP: goal appetite-check ' <<<"$other_claim" \
+  || { echo "claim elsewhere did not surface the standing STOP: $other_claim" >&2; exit 1; }
+unset METASYSTEM_GOAL_NOW
+
 echo "goal CLI fixtures: PASSED"

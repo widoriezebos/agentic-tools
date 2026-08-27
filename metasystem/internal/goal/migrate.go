@@ -338,7 +338,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 			return nil, err
 		}
 		// The legacy Current IS this machine's claim.
-		f.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+		f.Claimed = newClaimRecord(f, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 		carryNotes(f, *c)
 		place(f)
 	}

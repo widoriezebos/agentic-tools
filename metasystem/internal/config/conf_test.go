@@ -35,6 +35,27 @@ func TestConfValue(t *testing.T) {
 	}
 }
 
+func TestAppetiteOverrunGracePercent(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	for _, tc := range []struct {
+		content string
+		want    int
+	}{
+		{"", 25},
+		{"appetite.overrun-grace-percent=0\n", 0},
+		{"appetite.overrun-grace-percent=100\n", 100},
+		{"appetite.overrun-grace-percent=101\n", 25},
+		{"appetite.overrun-grace-percent=nope\n", 25},
+	} {
+		if err := os.WriteFile(conf, []byte(tc.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := AppetiteOverrunGracePercent(conf); got != tc.want {
+			t.Fatalf("content %q resolved %d, want %d", tc.content, got, tc.want)
+		}
+	}
+}
+
 func joinStrings(lines []string) string {
 	out := ""
 	for i, l := range lines {
