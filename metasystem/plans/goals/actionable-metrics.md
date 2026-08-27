@@ -1,12 +1,11 @@
 # actionable-metrics
 
-- State: claimed
+- State: queued
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
 - Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 15
-- Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
+- Revision: 16
 
 History:
 - 2026-08-25T20:18:07Z CE1KNSABESNHJ68SZ8957XZ4V0-m2-bc1be9cb open actor=human:wido targets=actionable-metrics
@@ -24,4 +23,5 @@ History:
 - 2026-08-27T13:06:59Z X8CDNRGJSVYYDNVSG13BZ9X1VM-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T13:31:40Z DGXA2E9329FJE1SPSFBRA36391-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T14:08:23Z VSZZ85V5T2XF1N28DD0F9GYDAD-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=c5956eb4350e94be882720ffc96582d666729d0d36867402a668048a4012c4d1
+- 2026-08-27T14:08:30Z JD3XFW7JEJW586YFA939XNJB80-m1-bf243850 release actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=486b2ccbe30151a35683df23b164fd36a50390e5e90e623172770d3e09a692e2
