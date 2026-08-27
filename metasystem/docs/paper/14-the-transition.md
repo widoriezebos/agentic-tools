@@ -1,6 +1,6 @@
 # 14. The Transition
 
-Consider an established team receiving the session-expiry request while releases still depend on a familiar chain of tickets, code review, manual checks and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may carry an unwritten warning about shared devices, an approval required by policy or the only reliable way to reverse a failed session migration.
+Consider an established team receiving the session-expiry request while releases still depend on a familiar chain of tickets, code review, manual checks and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may hide an unwritten warning about shared devices, an approval required by policy or the only reliable way to reverse a failed session migration.
 
 The transition begins inside that uncertainty. The proposed delivery system first builds knowledge, then takes over verification work and only later receives authority. Existing protection remains until its purpose and a possible replacement are understood. Where no need survives, the ceremony is removed with a recorded reason. This is a transfer from a running system rather than a clean start.
 
@@ -38,7 +38,7 @@ Coexistence should have a declared purpose and end condition. Without them, the 
 
 After several low-risk changes, the new checks reproduce known failures, permit legitimate behavior, bind results to the candidate and preserve recovery state. The responsible authority then lets them satisfy part of the old manual verification and still authorizes release. Construction has moved; release authority has not.
 
-That separation is intentional. Machinery may receive permission to propose a change before it receives permission to test against sensitive data. It may receive permission to test before it may accept the result. It may accept a low-risk candidate before it may expose users, and it may release to a small group before it may expand further. Each permission moves only after evidence covers the action and consequence that permission controls.
+That separation is intentional. Machinery may receive permission to propose a change before it receives permission to test against sensitive data. It may receive permission to test before it may accept the result. It may accept a low-risk candidate before it may expose users, and it may release to a small group before it may expand further. Each permission is transferred only after evidence shows that the machinery can perform the action and contain its consequences.
 
 The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary and includes behavior not previously tested. During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. Authorized release first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
 
@@ -68,4 +68,4 @@ After a declared period, the new examination has caught every failure found by t
 
 Other practices end differently. The fixed batching ceremony is removed because Chapter 4's established deletion decision still holds. The cross-functional discussion remains because it continues to expose conflicting intent. Human release approval narrows to unfamiliar or high-consequence changes, while authorized release handles established low-risk cases within observed bounds. The transition completes one responsibility at a time; no single declaration makes the new system ready.
 
-Once duplication no longer protects anything, the team removes it with a record. The destination is not two systems forever; it is one governed path whose authority has been learned in the presence of the system it replaces.
+Once duplication no longer protects anything, the team removes it with a record. The destination is not two systems forever; it is one governed path that received its authority piece by piece while the old one still ran.

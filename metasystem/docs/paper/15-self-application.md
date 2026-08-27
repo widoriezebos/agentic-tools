@@ -60,6 +60,6 @@ The comparisons must define what they include and make omitted effects visible. 
 
 After the new release rule passes, it can govern a later change to the delivery system. It still cannot decide why the organization exists, which people deserve protection or whether the session-expiry policy is just. Those questions arrive from observable effects and accountable human intent. The system can reveal conflict, test consequences and refuse actions outside existing authority. It cannot grant itself a purpose.
 
-That is where the recursion ends. Rules govern changes to rules, prior states govern the acceptance of proposed states, and external checks or named human authority cover boundaries that cannot judge themselves. Beneath that chain remain people who answer for purpose and a world that can contradict their assumptions. Both can require the system to change; neither is made correct by appearing in its records.
+That is where the recursion ends. Rules govern changes to rules, prior states govern the acceptance of proposed states, and where a mechanism cannot judge its own replacement, an external check or a named human authority steps in. Beneath that chain remain people who answer for purpose and a world that can contradict their assumptions. Both can require the system to change; neither is made correct by appearing in its records.
 
 A system that builds the system must pass this examination. A paper about that system must still face evidence from somewhere else.

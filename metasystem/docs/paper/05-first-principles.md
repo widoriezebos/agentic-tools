@@ -2,7 +2,7 @@
 
 A candidate reaches the release boundary with a persuasive explanation and a passing check. The explanation says the session change is safe. The builder's own check never tried a late background response, and the candidate can still revive an expired session. If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
 
-Later chapters give these principles mechanisms, limits and counterarguments. Here we state them briefly, so the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
+Later chapters develop these principles: their mechanisms, their limits, the arguments against them. Here we state them briefly, so the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
 
 ## What the legal metaphor means and where it stops
 
@@ -54,6 +54,6 @@ Some decisions cannot be bought with more computation. Machinery may gather info
 
 ## Failure leaves a record
 
-An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. Calling the work complete would hide the only result that counts. Stopping with the conflicting observations, the attempted cases and the exhausted budget gives the next authorized decision something real to use.
+An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. Calling the work complete would hide the only result that counts. Stopping with the conflicting observations, the attempted cases and the exhausted budget gives whoever makes the next authorized decision something real to use.
 
 The system should prefer a clear refusal supported by evidence to a success it cannot justify. Failure, near-miss (a dangerous path stopped before observed harm) and uncertainty are outcomes in their own right, and they are recorded as such. They remain connected to the intent and candidate so that care can repair immediate harm and learning can improve later work. A worker may disappear; the fact that it failed and what it learned must not disappear with it.

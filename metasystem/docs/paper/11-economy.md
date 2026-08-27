@@ -14,7 +14,7 @@ Avoided disclosure, preserved trust, faster recovery and clearer accountability 
 
 ## Four risk questions govern verification and spending
 
-Before the session change begins, a budget must decide where one more unit of effort is most valuable. A second builder could produce another design. A fresh independent examiner could search for a different failure. More release observation could expose rare lockouts.
+Before the session change begins, someone must decide where one more unit of effort is most valuable. A second builder could produce another design. A fresh independent examiner could search for a different failure. More release observation could expose rare lockouts.
 
 The same four questions that set evidence depth in Chapter 6 govern the spending side here: how severe the harm would be if the work were wrong, how unfamiliar the approach is, how many users or systems it can affect and how much change has accumulated since the last broad check. The answers stay separate rather than collapsing into an unexplained score.
 
@@ -26,7 +26,7 @@ They direct marginal spending, meaning the next unit of time or attention. The s
 
 Suppose a builder makes two unsuccessful attempts to prevent delayed responses from reviving an expired session. A third attempt begins to repeat the first with different wording. Without a prior limit, every earlier expense becomes an argument for spending a little more: stopping now would seem to waste what has already been invested.
 
-Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision. A live release expands only while the remaining budget can still observe and contain harm.
+Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision. A live release expands only while enough budget remains to observe and contain harm.
 
 When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that.
 
@@ -72,6 +72,6 @@ The proposed shift in engineering ownership is directional; it does not carry th
 
 Suppose the closing report says that three candidates were produced, eleven checks ran, and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
 
-Useful measures connect total spend and delay to delivered intent, escaped harm, recovery time and learning that remains available for later work. They show how much construction and examination cost, how long required judgment waited, how often harmful behavior escaped, how quickly protected outcomes returned and whether a repeated change becomes cheaper without becoming less safe.
+Useful measures connect total spend and delay to delivered intent, harm that escaped the controls, recovery time and learning that stays available for later work. They show how much construction and examination cost, how long required judgment waited, how often harmful behavior escaped, how quickly protected outcomes returned and whether a repeated change becomes cheaper without becoming less safe.
 
 Activity measures still help diagnose waste. Rising attempts with unchanged outcomes may expose a weak builder or unclear intent. Growing examination time may reveal accumulated complexity. But counts of generated code, messages or attempts measure activity; they do not measure value. The economic account closes only when activity connects to an outcome the system exists to protect.
