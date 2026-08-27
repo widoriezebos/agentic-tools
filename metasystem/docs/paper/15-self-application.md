@@ -42,7 +42,7 @@ The proposed clock rule is tested first against the retained broken cases. It re
 
 This sequence can reveal several structural defects. An enforced rule that cannot judge a proposed change to itself without using the proposal becomes visible. Evidence that disappears when its producer stops becomes visible. A builder able to weaken the independent examination or alter a retained failure case becomes visible. A recovery path that restores code but not authority becomes visible. These failures are the point of the exercise: they test the delivery system under the unusual pressure of being both means and object of change.
 
-Passing shows that, under the stated cases and assumptions, the system preserves an older basis for judgment, maintains required separation, and can recover from the candidate it is examining. That is useful evidence of internal consistency. It does not show that the clock rule protects users in every environment. It does not show that the organization has assigned authority wisely. It does not show that governed delivery improves cost or harm outside this system.
+Passing shows that, under the stated cases and assumptions, the system preserves an older basis for judgment, maintains required separation, and can recover from the candidate it is examining. That is useful evidence of internal consistency. It leaves open whether the clock rule protects users in every environment, whether the organization has assigned authority wisely, and whether governed delivery improves cost or harm outside this system.
 
 Self-application is a necessary but insufficient test. Failure directly contradicts a system's claim that its rules bind important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
 
@@ -54,7 +54,7 @@ The paper's claims are explicitly falsifiable. Repeated failures across independ
 
 Support must come from reproducible evidence across different teams, risk levels, applications, and operating conditions. It must include negative results, unsuccessful transitions, and comparisons with simpler approaches. Evidence gathered by the system about itself may contribute one case, but it cannot be the only case. Independent examiners must be able to inspect the assumptions, measures, missed harms, and selection of examples.
 
-The comparisons also need fair boundaries. A reduction in release time does not support the thesis if user harm moves into support queues that are not measured. A lower incident count is weak evidence if fewer incidents are detected. A successful high-risk release does not establish that the machinery is economical for a disposable script. The proposition stands or falls on delivered intent, contained harm, accountable authority, recovery, and total cost under declared conditions.
+The comparisons also need boundaries that keep included and omitted effects visible. A reduction in release time does not support the thesis if user harm moves into support queues that are not measured. A lower incident count is weak evidence if fewer incidents are detected. A successful high-risk release does not establish that the machinery is economical for a disposable script. The proposition stands or falls on delivered intent, contained harm, accountable authority, recovery, and total cost under declared conditions.
 
 ## The recursion has a floor
 

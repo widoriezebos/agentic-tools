@@ -10,7 +10,7 @@ A person first has to decide what better means. For the session change, better m
 
 A builder then has to alter the application. It traces how sessions begin, what extends them, where expiry is checked, and what the user sees afterward. It chooses among possible designs and produces a candidate. That is construction. A candidate can be elegant and still serve the wrong outcome, so construction cannot certify itself just by ending.
 
-The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These observations determine whether the candidate supports the claims made for it. That activity is verification. It includes automatic checks and independent examination, but it is not identical to either one. Its purpose is to find out what can be claimed about the candidate.
+The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These observations determine whether the candidate supports the claims made for it. That activity is verification. It includes automatic checks and independent examination, but it is not identical to either one. Its purpose is to find out what the evidence supports saying about the candidate.
 
 Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. Care is a distributed activity: authorized release observes live behavior and contains harm or restores earlier behavior within its bounds; the builder repairs what breaks; and the responsible authority decides revisions or actions outside delegated bounds.
 
@@ -32,7 +32,7 @@ As construction becomes easier to repeat, this interface becomes more important.
 
 ## Intent can be wrong
 
-A support team asks for a warning before sign-out because users report lost work. The security authority asks for no warning because any extension could keep an unattended account open. Both requests sound precise. Together they conflict unless the warning requires direct action and has a bounded duration. Nothing is wrong with construction here. The defect is an unresolved relationship between two desired outcomes.
+A support team asks for a warning before sign-out because users report lost work. The security authority asks for no warning because any extension could keep an unattended account open. Both requests sound precise. Together they conflict unless the warning requires direct action and has a bounded duration. Construction cannot resolve this conflict. The defect is an unresolved relationship between two desired outcomes.
 
 Other defects are quieter. "Active work" may include typing, silent reading, a background refresh, or just keeping a page visible. "Existing sessions" may mean sessions created before release, sessions on every device, or only sessions that contact the service again. "No disruption" may conceal an impossible promise. Asking for examples at the edge exposes these meanings: what happens to a reader who does nothing, a reader who responds, a sleeping laptop, and an upload already in progress? Asking what observation would reveal failure exposes weak success language: fewer complaints may reflect fewer users rather than a safer session policy.
 

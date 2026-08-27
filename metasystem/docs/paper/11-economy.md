@@ -2,11 +2,11 @@
 
 Chapter 1's session change is cheap to construct and expensive to decide. Production, comparison, independent examination, human judgment, gradual release, observation, and recovery all consume finite resources. Cheap construction does not make dependable delivery free.
 
-Machine engineering has an economy because construction, examination, judgment, operation, and delay all consume finite resources. More attempts can improve a result or just create more alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend, and stop where they do not.
+Machine engineering has an economy because construction, examination, judgment, operation, and delay all consume finite resources. More attempts can improve a result or multiply the alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend, and stop where they do not.
 
 ## Value before process
 
-Suppose every session change waits for a weekly meeting. The meeting may once have protected a real condition: the security authority, support representative, and release owner needed one place to discover conflicting concerns. If the same concerns now become visible in the recorded intent and reach the named authority when a ruling is required, the meeting no longer justifies its cost just by recurring.
+Suppose every session change waits for a weekly meeting. The meeting may once have protected a real condition: the security authority, support representative, and release owner needed one place to discover conflicting concerns. If the same concerns now become visible in the recorded intent and reach the named authority when a ruling is required, the meeting's recurrence no longer justifies its cost.
 
 Every continuing process must name the outcome it protects. It must also produce evidence that its protection is worth the time, delay, attention, and machinery it consumes. A human discussion may remain the least costly way to resolve a value conflict. An automatic refusal may be cheaper and more dependable for a repeated condition.
 
@@ -40,7 +40,7 @@ The price of parallel work includes more than generation. Every additional attem
 
 Parallel attempts are worth their cost when disagreement itself has value. They can reveal that the chosen design depends on an assumption no single builder noticed. They can explore truly different responses to a high-consequence problem. They can also increase confidence when independent paths reach the same bounded result. They are not worth it when several versions differ only in surface form or when the acceptance criteria already make one routine construction obvious.
 
-The decision comes before broad generation. The system estimates the information or solution value of another attempt and compares it with both production and judgment cost. If no one has the budget or authority to decide among five candidates, producing five just creates unfinished work.
+The decision comes before broad generation. The system estimates the information or solution value of another attempt and compares it with both production and judgment cost. If no one has the budget or authority to decide among five candidates, producing five only piles up unfinished work.
 
 ## Small changes can be risky; large changes can be routine
 
@@ -54,7 +54,7 @@ Spending follows possible harm, uncertainty, reach, and accumulated change rathe
 
 A person writes a disposable program to compare two local data files once, examines the result, and throws the program away. Building durable role separation, continuous observation, an acceptance custodian, and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low, and any mistake is easy to notice and reverse.
 
-This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records, and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery, and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost; that automation is possible is not by itself a reason.
+This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records, and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery, and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost. The possibility of automation alone does not justify it.
 
 One-off prototypes, disposable explorations, small low-risk tools, and short-lived software often fall below that point. Manual construction and judgment can be cheaper and clearer. A prototype that begins handling identity, money, private data, or a decision people depend on can cross the point even before it is large. Repetition also changes the answer. A small release performed hundreds of times can justify durable controls that no single release would repay.
 
@@ -82,4 +82,4 @@ Applied to the change already established in Chapter 1, spending follows recorde
 
 The system requests another implementation only when a truly different design is likely to reveal information worth the cost of comparison. It stops repeated attempts at the agreed limit and sends an exception to the named authority. It expands the live release only while the remaining budget can still observe and contain harm.
 
-Machinery does not make the change free. It makes spending explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: enough construction, judgment, evidence, and care to make the intended outcome worth its total cost, and no more machinery than that.
+The change still has a cost; machinery makes that cost explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: enough construction, judgment, evidence, and care to make the intended outcome worth its total cost, and no more machinery than that.
