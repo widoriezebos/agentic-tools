@@ -2,11 +2,11 @@
 
 Chapter 1's session change is cheap to construct and expensive to decide. Production, comparison, independent examination, human judgment, gradual release, observation, and recovery all consume finite resources. Cheap construction does not make dependable delivery free.
 
-Machine engineering has an economy because construction, examination, judgment, operation, and delay all consume finite resources. More attempts can improve a result or merely create more alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend, and stop where they do not.
+Machine engineering has an economy because construction, examination, judgment, operation, and delay all consume finite resources. More attempts can improve a result or just create more alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend, and stop where they do not.
 
 ## Value before process
 
-Suppose every session change waits for a weekly meeting. The meeting may once have protected a real condition: the security authority, support representative, and release owner needed one place to discover conflicting concerns. If the same concerns now become visible in the recorded intent and reach the named authority when a ruling is required, the meeting no longer earns its cost merely by recurring.
+Suppose every session change waits for a weekly meeting. The meeting may once have protected a real condition: the security authority, support representative, and release owner needed one place to discover conflicting concerns. If the same concerns now become visible in the recorded intent and reach the named authority when a ruling is required, the meeting no longer justifies its cost just by recurring.
 
 Every continuing process must name the outcome it protects. It must also produce evidence that its protection is worth the time, delay, attention, and machinery it consumes. A human discussion may remain the least costly way to resolve a value conflict. An automatic refusal may be cheaper and more dependable for a repeated condition.
 
@@ -28,19 +28,19 @@ A builder makes two unsuccessful attempts to prevent delayed responses from revi
 
 Work begins instead with explicit limits on time, attempts, and total spend. It names the person or authority that may approve an exception and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision.
 
-When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information, or abandon the outcome. It does not quietly authorize another attempt. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that.
+When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information, or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that.
 
-This boundary also makes failure legible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent, or cost model is wrong and needs examination of its own.
+This boundary also makes failure visible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent, or cost model is wrong and needs examination of its own.
 
 ## Parallel attempts include the cost of judging
 
 Two builders propose different session designs. One records a fixed expiry time and grants uploads a narrow continuation. The other keeps a separate activity history and derives expiry when each request arrives. Producing both may be cheap. Deciding between them requires each to be understood, challenged, compared against the ruling, and examined for reversal and live behavior.
 
-The price of parallel work therefore includes more than generation. Every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence, and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
+The price of parallel work includes more than generation. Every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence, and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
 
-Parallel attempts earn their cost when disagreement itself has value. They can reveal that the chosen design depends on an assumption no single builder noticed. They can explore genuinely different responses to a high-consequence problem. They can also increase confidence when independent paths reach the same bounded result. They do not earn their cost when several versions differ only in surface form or when the acceptance criteria already make one routine construction obvious.
+Parallel attempts are worth their cost when disagreement itself has value. They can reveal that the chosen design depends on an assumption no single builder noticed. They can explore truly different responses to a high-consequence problem. They can also increase confidence when independent paths reach the same bounded result. They are not worth it when several versions differ only in surface form or when the acceptance criteria already make one routine construction obvious.
 
-The decision comes before broad generation. The system estimates the information or solution value of another attempt and compares it with both production and judgment cost. If no one has the budget or authority to decide among five candidates, producing five is not cheap abundance. It is unfinished work.
+The decision comes before broad generation. The system estimates the information or solution value of another attempt and compares it with both production and judgment cost. If no one has the budget or authority to decide among five candidates, producing five just creates unfinished work.
 
 ## Small changes can be risky; large changes can be routine
 
@@ -54,11 +54,11 @@ Spending follows possible harm, uncertainty, reach, and accumulated change rathe
 
 A person writes a disposable program to compare two local data files once, examines the result, and throws the program away. Building durable role separation, continuous observation, an acceptance custodian, and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low, and any mistake is easy to notice and reverse.
 
-This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records, and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery, and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost, not merely when automation is possible.
+This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records, and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery, and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost; that automation is possible is not by itself a reason.
 
 One-off prototypes, disposable explorations, small low-risk tools, and short-lived software often fall below that point. Manual construction and judgment can be cheaper and clearer. A prototype that begins handling identity, money, private data, or a decision people depend on can cross the point even before it is large. Repetition also changes the answer. A small release performed hundreds of times can justify durable controls that no single release would repay.
 
-The argument allows a rational decision not to build the system. It does not exempt small work from thought. Even the disposable comparison needs enough care to match its consequence. It simply refuses to make the most elaborate machinery the default measure of seriousness.
+The argument allows a rational decision not to build the system. It does not exempt small work from thought. Even the disposable comparison needs enough care to match its consequence. It refuses to make the most elaborate machinery the default measure of seriousness.
 
 ## Use no more machinery than the work needs
 
@@ -66,7 +66,7 @@ A team facing the first low-risk version of a tool may need only recorded intent
 
 The smallest sufficient mechanism protects the relevant outcome at the expected level of risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost, or a valuable learning opportunity. It is removed when its protected condition disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
 
-The proposed shift in engineering ownership is therefore directional, not universal in weight. Repeated or consequential software makes the system that builds and cares for it a durable asset. A script used once may need almost none of that asset. Both choices can follow the same economic discipline.
+The proposed shift in engineering ownership is directional; it does not carry the same weight everywhere. Repeated or consequential software makes the system that builds and cares for it a durable asset. A script used once may need almost none of that asset. Both choices can follow the same economic discipline.
 
 ## Measuring the system, not activity
 
@@ -74,12 +74,12 @@ At the end of the expiry change, a report says that three candidates were produc
 
 Useful measures connect total spend and delay to delivered intent, escaped harm, recovery time, and learning that remains available for later work. They show how much construction and examination cost, how long required judgment waited, how often harmful behavior escaped, how quickly protected outcomes returned, and whether a repeated change becomes cheaper without becoming less safe.
 
-Activity measures still help diagnose waste. Rising attempts with unchanged outcomes may expose a weak builder or unclear intent. Growing examination time may reveal accumulated complexity. But counts of generated code, messages, or attempts are means, not value. The economic account closes only when activity connects to an outcome the system exists to protect.
+Activity measures still help diagnose waste. Rising attempts with unchanged outcomes may expose a weak builder or unclear intent. Growing examination time may reveal accumulated complexity. But counts of generated code, messages, or attempts measure activity; they do not measure value. The economic account closes only when activity connects to an outcome the system exists to protect.
 
 ## The change, continued
 
 Applied to the change already established in Chapter 1, spending follows recorded consequence and reach rather than the size of the edit. Its budget reserves more for independent examination, the responsible authority's ruling, gradual release, observation, and rollback capacity than for producing the candidate.
 
-The system requests another implementation only when a genuinely different design is likely to reveal information worth the cost of comparison. It stops repeated attempts at the agreed limit and sends an exception to the named authority. It expands the live release only while the remaining budget can still observe and contain harm.
+The system requests another implementation only when a truly different design is likely to reveal information worth the cost of comparison. It stops repeated attempts at the agreed limit and sends an exception to the named authority. It expands the live release only while the remaining budget can still observe and contain harm.
 
-The resulting cost story is not that machinery makes the change free. Machinery makes spending explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: not maximum machinery, but enough construction, judgment, evidence, and care to make the intended outcome worth its total cost.
+Machinery does not make the change free. It makes spending explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: enough construction, judgment, evidence, and care to make the intended outcome worth its total cost, and no more machinery than that.

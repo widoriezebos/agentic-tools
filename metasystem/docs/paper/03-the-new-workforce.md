@@ -46,7 +46,7 @@ Suppose five builders produce five solutions to the session problem before lunch
 
 Generation becomes cheap faster than trustworthy judgment does. That asymmetry shapes the whole proposed system. Candidates are plentiful; the scarce result is a well-supported decision that one exact candidate serves the authorized intent within known bounds.
 
-Verification supplies that warrant through discriminating tests, independent attempts to find faults, and observations of actual behavior. These methods also cost time and computation, and some conclusions still require human judgment. The design consequence is to organize generation around the evidence needed to reject attractive mistakes, stop unproductive searches, and direct scarce human attention to questions that machinery cannot decide. Making generation artificially scarce is not the goal.
+Verification supplies that support through discriminating tests, independent attempts to find faults, and observations of actual behavior. These methods also cost time and computation, and some conclusions still require human judgment. The design consequence is to organize generation around the evidence needed to reject attractive mistakes, stop unproductive searches, and direct scarce human attention to questions that machinery cannot decide. Making generation artificially scarce is not the goal.
 
 ## Consequences in one view
 
@@ -57,7 +57,7 @@ The properties above produce a design brief. The table summarizes relationships 
 | Recorded context is cheap to copy | Relevant context can be omitted or buried | Give each actor bounded, traceable context and preserve the authoritative source |
 | Fresh attempts are easy to start | Attempts can share assumptions and multiply judging work | Preserve contextual independence where it is needed and price comparison as well as production |
 | Work can continue outside human hours | A stopped attempt can look like a patient one | Record progress, deadlines, and explicit completion or failure |
-| Human fatigue and attachment leave a bounded attempt | Fluency, drift, and agreement-seeking remain | Judge observable results rather than confidence or persistence |
+| Human fatigue and attachment leave a bounded attempt | Convincing mistakes, drift, and agreement-seeking remain | Judge observable results rather than confidence or persistence |
 | A worker's session can end without continuity | Useful state and reasons can disappear | Keep intent, state, decisions, and results in durable records |
 | Tools can act repeatedly | Mistakes can repeat quickly and reach real systems | Narrow permissions and place enforced refusal at consequential actions |
 | Computation is metered | Cheap candidates can still create expensive verification | Set budgets from risk and stop or escalate when they are exhausted |

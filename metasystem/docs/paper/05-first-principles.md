@@ -32,7 +32,7 @@ Trust in a capable builder can guide where to look. It cannot authorize a conseq
 
 A builder learns that existing sessions need separate treatment to adopt the new limit, records nothing, and disappears when its session ends. The next builder sees the request but not the discovery. The system has memory only in the conversational sense, which is no memory once that conversation is gone.
 
-Intent, current state, decisions, candidate identity, checks, refusals, and observed results must therefore live in durable records. Another authorized actor should be able to continue without guessing what the missing worker knew. The records also allow an independent examiner to receive the evidence it needs without receiving the builder's entire path of reasoning.
+Intent, current state, decisions, candidate identity, checks, refusals, and observed results must live in durable records. Another authorized actor should be able to continue without guessing what the missing worker knew. The records also allow an independent examiner to receive the evidence it needs without receiving the builder's entire path of reasoning.
 
 This principle does not claim that a record settles disagreement. Two authorities can read the same facts and choose different values. Chapter 8 develops records as the basis of continuity and coordination while keeping access appropriate to each role and substantive conflict with responsible authorities.
 
@@ -48,7 +48,7 @@ An important rule is not automatically permanent or correct. A rule can encode a
 
 Five parallel builders can explore the session change quickly. They also create five candidates to examine, five sets of evidence to compare, and five opportunities to share the same mistaken assumption. An open-ended instruction to "keep trying" can consume computation and scarce judgment without bringing the decision closer.
 
-Construction and verification therefore receive explicit budgets proportional to risk. A budget is not a hope recorded beside the work. When it is exhausted, machinery stops, records what it learned, and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure, and accumulated change rather than to line count or confidence.
+Construction and verification receive explicit budgets proportional to risk. A budget is not a hope recorded beside the work. When it is exhausted, machinery stops, records what it learned, and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure, and accumulated change rather than to line count or confidence.
 
 Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives, and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always end with responsible authorities. This boundary is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
 

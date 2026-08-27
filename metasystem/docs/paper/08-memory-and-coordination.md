@@ -26,7 +26,7 @@ The custodian sees a narrower conclusion. It receives the exact finished candida
 
 An auditor has a different purpose. When an incident or challenge requires reconstruction, the auditor may read the full retained history: the builder's path, the independent examiner's findings, decisions about roles and access, state changes, evidence, and acceptance. That breadth does not grant power to alter the history or accept the work. Read access answers what happened. Authority answers what may happen next. The two remain distinct.
 
-All of these views draw on one preserved history; none of them is a separate record. Information hidden from an independent examiner is not destroyed; it remains available to a replacement builder and to a later auditor. Recovery, independence, and audit can therefore coexist without pretending that every actor must know everything.
+All of these views draw on one preserved history; none of them is a separate record. Information hidden from an independent examiner is not destroyed; it remains available to a replacement builder and to a later auditor. Recovery, independence, and audit can all coexist without pretending that every actor must know everything.
 
 ## Handoff by record
 
@@ -40,13 +40,13 @@ The test also exposes what must be recorded before an action completes. A builde
 
 Two builders propose different ways to protect an upload while ending the ordinary session. The record can ensure that they do not overwrite each other's candidates. It can show which proposal arrived first, preserve both, and require an authorized choice before either becomes current. None of those operations decides whether uninterrupted work is worth a wider security exception.
 
-Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority, and show which proposal replaced which. It cannot resolve a conflict of values or decide which stakeholder has the stronger claim. When security, usability, legal obligation, or accountability conflict, a responsible authority must deliberate and bind the decision. Chapter 13 develops that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
+Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority, and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation, or accountability conflict, a responsible authority must weigh the choice and bind the decision. Chapter 13 develops that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
 
 ## Two audiences, one source
 
 At 4:30, machinery needs to know the exact accepted candidate and whether every required check passed. The responsible authority needs a readable account of the ruling, refusal, accepted result, and production bounds. Presenting the responsible authority with raw state changes would hide the decision in detail. Presenting machinery with a polished summary would hide the exact state in prose.
 
-The system therefore produces two views from one source. Structured fields allow machinery to determine state and enforce permissions. A readable account lets a person understand the outcome, exceptions, failures, and consequences. Every material sentence in that account remains linked to the record from which it was drawn. The human view may compress; it may not create a second truth.
+The system produces two views from one source. Structured fields allow machinery to determine state and enforce permissions. A readable account lets a person understand the outcome, exceptions, failures, and consequences. Every material sentence in that account remains linked to the record from which it was drawn. The human view may compress; it may not create a second truth.
 
 ## Decisions, precedents, and institutional memory
 

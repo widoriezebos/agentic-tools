@@ -2,7 +2,7 @@
 
 Imagine that at nine each morning, six machine workers receive a prompt called "standup." Each produces three tidy sentences about yesterday, today, and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach, and none has challenged the assumption that a background refresh proves a user is active. The ceremony is present, but the protection is not.
 
-This is the mimicry trap. A familiar process is copied into a medium with different limits, so the result looks controlled while the condition that once justified the process remains unexamined. Avoiding the trap does not require rejecting history. It requires reading each inherited practice as evidence about the problem it was built to solve.
+This is the mimicry trap. A familiar process is copied onto a workforce with different limits, so the result looks controlled while the condition that once justified the process remains unexamined. Avoiding the trap does not require rejecting history. It requires reading each inherited practice as evidence about the problem it was built to solve.
 
 ## What each ceremony protected
 
@@ -32,7 +32,7 @@ A ceremony cannot justify itself by being recognizable. The relevant question is
 
 Suppose every machine worker must write a morning report, attend a planning exchange, estimate its attempt, and produce a closing summary. Most of the information already exists in the work record. Rewriting it consumes computation and creates several versions of state that can disagree. A responsible authority must either read them all or accept that some reports exist only because the process asks for them.
 
-The greater cost is misplaced confidence. A polished review summary can look like scrutiny even when its author received the builder's reasoning and repeated the same assumption. An estimate can make uncertain exploration look controlled without limiting spend. A retrospective can collect fluent lessons that never change a check, permission, or decision. The copied form becomes an empty performance when no observation can distinguish performing the ceremony from protecting its condition.
+The greater cost is misplaced confidence. A polished review summary can look like scrutiny even when its author received the builder's reasoning and repeated the same assumption. An estimate can make uncertain exploration look controlled without limiting spend. A retrospective can collect polished lessons that never change a check, permission, or decision. The copied form becomes an empty performance when no observation can distinguish performing the ceremony from protecting its condition.
 
 Attention then follows the old problems. Managers ask whether each worker reported on time while a stopped attempt has no deadline or terminal record. Reviewers count approvals while every independent examiner shares the same source of expected results. Planners optimize a cadence while weak verification allows a plausible mistake to approach release. Mimicry is expensive not just because it adds steps, but because those steps can conceal the failure modes of the new workforce.
 
@@ -42,7 +42,7 @@ Consider an inherited approval meeting. First ask what event made it necessary. 
 
 Only after those questions is a choice made about the form. When no protected condition remains, discard it and record why. When the condition is mechanical and observable, machinery can replace the form. When the condition remains but the old form fits poorly, adapt it. When the act contains a value ruling or accountability that machinery cannot hold, keep it as an explicitly human act.
 
-The evidence standard applies to removal as well as replacement. A team should not delete a practice merely because it feels old. It should identify the condition, show that the condition no longer exists or is protected elsewhere, and observe the result. Nor should it demand a replacement for a condition that is really gone. That would preserve process for its own sake.
+The evidence standard applies to removal as well as replacement. A team should not delete a practice just because it feels old. It should identify the condition, show that the condition no longer exists or is protected elsewhere, and observe the result. Nor should it demand a replacement for a condition that is really gone. That would preserve process for its own sake.
 
 ## Four worked cases
 
@@ -56,8 +56,8 @@ The fourth case ends differently. A shorter session limit protects unattended ac
 
 ## What cannot first be extracted
 
-Three people enter a review believing they agree that a session warning should be "accessible." One means that a screen reader announces it. Another means that every user receives enough time to act. The third means that the security limit must not be extended at all. The meeting does not merely execute an existing rule. It reveals that the shared word concealed incompatible intentions.
+Three people enter a review believing they agree that a session warning should be "accessible." One means that a screen reader announces it. Another means that every user receives enough time to act. The third means that the security limit must not be extended at all. The meeting does more than execute an existing rule. It reveals that the shared word concealed incompatible intentions.
 
-Some ceremonies hold unspoken knowledge and create the encounter in which disagreement becomes visible. Their protection cannot be fully extracted in advance because discovery is part of the act. The method must therefore name what remains unknown and preserve a human place for negotiation. Machinery can prepare examples, expose conflicting statements, record rulings, and later enforce what can be made checkable. It cannot automate the disagreement away by turning the surrounding paperwork into a form.
+Some ceremonies hold unspoken knowledge and create the encounter in which disagreement becomes visible. Their protection cannot be fully extracted in advance because discovery is part of the act. The method must name what remains unknown and preserve a human place for negotiation. Machinery can prepare examples, expose conflicting statements, record rulings, and later enforce what can be made checkable. It cannot automate the disagreement away by turning the surrounding paperwork into a form.
 
 The proposed end state is work in which every retained form has a stated reason, every mechanical replacement is answerable to observable evidence, and every human act is reserved because human authority or discovery is actually required. That is a stricter use of process than mimicry, and it does not abolish process.

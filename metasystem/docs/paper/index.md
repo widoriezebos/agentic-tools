@@ -43,13 +43,13 @@ many users or systems it can affect, and how much change has accumulated,
 including the cost of judging parallel attempts. Incidents can produce
 new automatic checks, but those checks need evidence, owners, tests,
 expiry, and a named route for challenge. Humans govern values and
-exceptions through precisely bounded authority, including delegation
+exceptions through clearly bounded authority, including delegation
 and challenge when several people hold conflicting intent.
 
 **Act V - The transition, the stress test, and the horizon (chapters
 14-16).** Existing teams reach the new model by inferring current
 intent, running old and new controls together, transferring authority
-only as evidence earns it, and preserving rollback. Self-application
+only as evidence justifies it, and preserving rollback. Self-application
 then tests the distinctive case of machinery changing its own
 safeguards; it is necessary but cannot establish external validity by
 itself. The horizon asks what engineering becomes when delivery

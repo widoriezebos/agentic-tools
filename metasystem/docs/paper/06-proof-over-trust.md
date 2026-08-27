@@ -8,7 +8,7 @@ The difference between the explanation and the observation sets the organizing p
 
 A check sets a clock to one second after expiry, sends a request, and observes rejection. That result is evidence: a traceable observation relevant to the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is evidence of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition, and observable result.
 
-Proof is narrower. Within a controlled clock, a specified session state, a stated definition of activity, and the exact candidate examined, the check may demonstrate that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision, or user merely because the check passed.
+Proof is narrower. Within a controlled clock, a specified session state, a stated definition of activity, and the exact candidate examined, the check may demonstrate that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision, or user just because the check passed.
 
 The distinction prevents exaggeration without denying a bounded demonstration. Practical decisions use evidence; some pieces can prove a precise claim under stated conditions.
 
@@ -46,7 +46,7 @@ Chapter 11 applies the same questions to production, comparison, and marginal-sp
 
 ## What proof cannot prove
 
-Every session check passes, but both the candidate and the checks define a visible page as proof of human activity. An unattended computer with the page open therefore stays signed in forever. The tests accurately demonstrate behavior under their rule. The rule is the mistake.
+Every session check passes, but both the candidate and the checks define a visible page as proof of human activity. An unattended computer with the page open then stays signed in forever. The tests accurately demonstrate behavior under their rule. The rule is the mistake.
 
 No proof exceeds its boundary, source of expected results, and assumptions. A test derived from the same mistaken interpretation as the candidate can make agreement look like correctness. Several independent examiners using the same model or data can repeat one blind spot. A fixed set of cases cannot cover every network delay, assistive technology, future browser, or user behavior the service will meet.
 
@@ -72,7 +72,7 @@ Repair then tests a revised classification against this case and against cases t
 
 Chapter 1 already records the ruling, named checks, refused candidate, and one human interruption. Here those facts set an evidentiary task: determine which observations distinguish supported behavior from the known failure.
 
-The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison deliberately and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary, and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.
+The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison on purpose and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary, and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.
 
 The responsible authority's recorded ruling remains the source of expected behavior; neither the builder nor the independent examiner may infer a more convenient answer. Each result binds to the exact candidate so the refused version cannot borrow the repaired version's authority.
 
