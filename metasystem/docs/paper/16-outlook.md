@@ -4,6 +4,8 @@ At the end of the hypothetical session-expiry change, the application contains a
 
 The next session change begins from that capability, leaving the blank ticket and private recollection behind. If similar work recurs and the consequences are large enough, the means of producing and caring for the software becomes an asset in its own right. Engineering attention can then move toward the intent, rules, evidence, authority and learning that shape many application changes.
 
+The asset has two halves. One is generic: enforced rules, independent examination, durable records, budgets, gradual release and the roles of Chapter 7 work for any application. The other half is what those mechanisms have accumulated for one application: its recorded intent and rulings, its discriminating checks and tested floors, its baselines and precedents. The generic half can be copied to the next product; the specific half cannot, because it is the application's own history made operational. Every metasystem (the title's word for the whole) is specific to the application it builds, and most of its value lives in that specific half.
+
 This is a proposal; it does not claim to be a forecast. The observed history in the opening chapter shows bounded, repeatable work moving into compilers, version control, infrastructure descriptions and automatic tests. It does not prove that a governed delivery loop works in every domain. The thesis is conditional: where reuse and risk justify the investment, machinery can absorb more construction and delivery while people govern purpose and limits. What follows is an end state to test; nothing makes it inevitable.
 
 ## The organization follows the shift
