@@ -22,7 +22,7 @@ The baseline connects cost to protected outcomes. It measures elapsed delivery t
 
 Some entries are blank. The team has never measured whether responsive readers are ejected or whether reversal restores rewritten sessions. That absence belongs in the baseline because present protection is unknown. A new measure is valuable only if it distinguishes an outcome the team cares about.
 
-The baseline makes later claims testable. If the new path finds clock-boundary failures earlier but doubles recovery time, the trade is visible. If it lowers routine review effort while more people lose work, the transfer has failed. If both paths miss the same background-refresh error, coexistence has revealed a shared blind spot rather than agreement.
+The baseline makes later claims testable. If the new path finds clock-boundary failures earlier but doubles recovery time, the trade is visible. If it lowers routine review effort while more people lose work, the transfer has failed. If both paths miss the same background-refresh error, running them side by side has revealed a shared blind spot rather than agreement.
 
 ## Coexist before replacement
 

@@ -40,7 +40,7 @@ Changing a comma in internal help text and reversing one comparison in account a
 
 Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Consequence sets the strength of evidence. Novelty widens challenge beyond checks shaped by the old design. Broad exposure raises the cost of one missed fault. Accumulation catches interactions among modest changes.
 
-Chapter 11 applies the same questions to production, comparison and marginal-spending decisions.
+Chapter 11 applies the same questions to production, comparison and the decision whether the next unit of effort is worth spending.
 
 ## What proof cannot prove
 

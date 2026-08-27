@@ -8,7 +8,7 @@ Copying a familiar software department into machinery is not the answer. A role 
 
 Chapter 6 establishes contextual independence and the fresh perspective it requires. Here that becomes an authority question: a new machine worker can take a temporary role without a reporting line or a permanent title, but prior exposure can still disqualify it from serving as the independent examiner.
 
-Those properties weaken several old reasons for roles. Working hours no longer require one shift to hand work to another. A career ladder need not determine who performs a check. Scarcity among specialists counts for less when a bounded capability can be supplied when needed. One manager's span of attention no longer sets the number of active attempts.
+Several constraints that once justified separate roles have weakened. Working hours no longer require one shift to hand work to another. A career ladder need not determine who performs a check. Scarcity among specialists counts for less when a bounded capability can be supplied when needed. One manager's span of attention no longer sets the number of active attempts.
 
 Other limits remain. The meaning of "active work" still needs judgment. The application still contains more context than any one attempt can safely consider. Permission to alter live accounts still creates danger. An independent examiner can still share the builder's mistaken assumption. A worker can still stop without saying so. A persuasive explanation can still distort a decision. Cheap copying removes some causes of organization, but it does not remove scarce judgment, incomplete knowledge, authority, workers that can disappear or the need for a truly independent view.
 
@@ -22,7 +22,7 @@ Now suppose the change must update existing sessions. Construction needs permiss
 
 The candidate and its evidence also need to survive the actors that produced them. A builder can stop. An independent examiner can be replaced. A responsible authority can return the next day. If the meaning and state of the work live only in any one of them, their absence becomes loss of custody. Because every worker can disappear, records need ownership that outlives the current worker, and an actor must be responsible for preserving the chain between intent, candidate, evidence and acceptance.
 
-Two further hazards arise around the work rather than inside the candidate. A stopped worker may just look slow unless another actor observes whether it is alive and making progress. A technically complete record may be unreadable to the person who must rule on an exception. Silent death requires a liveness watcher. The hazard of misleading translation requires a narrator whose account remains checkable against the record.
+Two further hazards arise around the work rather than inside the candidate. A stopped worker may just look slow unless another actor observes whether it is alive and making progress. A technically complete record may be unreadable to the person who must rule on an exception. Silent death requires a liveness watcher. The hazard of a misleading retelling requires a narrator whose account remains checkable against the record.
 
 ## Prohibited combinations
 
@@ -46,7 +46,7 @@ That authority involves no creative judgment. The custodian decides no product v
 
 At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that account. The account has influence because it shapes what the responsible authority notices and may shape a later decision.
 
-That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the account states a material result, the responsible authority can reach the exact observation supporting it. Translation becomes inspectable, while authority remains with actors whose powers are named.
+That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the account states a material result, the responsible authority can reach the exact observation supporting it. The retelling becomes inspectable, while authority remains with actors whose powers are named.
 
 ## Configurations rather than job titles
 

@@ -30,7 +30,7 @@ Human responsibility does not disappear. The responsible authority decides outco
 
 ## A hypothetical day
 
-The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and authorized release limit what the machinery may do.
+The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and an authorized release mechanism limit what the machinery may do.
 
 At 8:40, the responsible authority for account security records an outcome: "sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using". No design or task list is prescribed.
 
