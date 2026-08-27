@@ -14,7 +14,7 @@ The metaphor stops at that boundary. Software has no moral agency, cannot accept
 
 ## Intent is controlling and revisable
 
-A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work. The system exists to serve that human intent rather than the builder's preferred design or the process's desire to finish.
+A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work. The system exists to serve that human intent. Neither the builder's preferred design nor the chance to finish sooner outranks it.
 
 Intent controls construction, checks, release and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. Chapter 2 makes intent versioned, challengeable and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a binding decision.
 

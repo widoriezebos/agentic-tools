@@ -38,7 +38,7 @@ The independent examiner's job is active fault-finding. It tries boundary times,
 
 Changing a comma in internal help text and reversing one comparison in account authorization can each alter one line. Line count says little about the evidence either change deserves. The authorization error can expose every signed-in account; the text change may be immediately reversible and affect no behavior.
 
-Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Consequence sets the strength of evidence. Novelty widens challenge beyond checks shaped by the old design. Broad exposure raises the cost of one missed fault. Accumulation catches interactions among modest changes.
+Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Consequence sets the strength of evidence. Novelty widens challenge beyond checks shaped by the old design. Broad exposure raises the cost of one missed fault. Accumulation justifies a broad examination that catches interactions among modest changes.
 
 Chapter 11 applies the same questions to production, comparison and the decision whether the next unit of effort is worth spending.
 
