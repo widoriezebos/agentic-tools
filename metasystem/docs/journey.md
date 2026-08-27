@@ -683,3 +683,30 @@ did the work itself and skipped the authorization gate. The cage
 held twice; the delegation it was built to encourage has still to
 be chosen. That is not the record we hoped to write, but it is the
 record that happened, measured by a ruler that finally fits it.
+
+## The checkout stops being a battleground
+
+A battery and a dispatched critic once fought over the same
+checkout and the battery went red for it. The answer landed as a
+guard both entrypoints take on arrival: the second visitor queues
+with progress notes, membership is proven by walking the caller's
+live process ancestry — a readable token proves nothing here — and
+the door stays held until the last registered member is gone, not
+merely the first process that knocked. An engine too old to know
+the verb passes with one loud sentence instead of wedging the
+bootstrap, because a guard that cannot be adopted is a guard that
+never ships.
+
+The fixture that certified it launches the real validation suite
+and the real dispatcher as processes, and that honesty was the
+expensive part: seven latent harness defects surfaced, one per
+costly run, from partial repo-copies missing a new dependency to a
+sterile snapshot that had been quietly passing on the operator's
+local configuration for who knows how long. Two of the seven were
+found and fixed the same night by the other machine, working the
+same ground independently — convergence that cost double and
+taught the fleet it needs a coexistence law. The overrun itself
+became law: appetite breaches now escalate to the human by ruling,
+with a configured grace band while waiting, and the next costly
+run will be harvested for every defect it holds instead of
+surrendering at the first.
