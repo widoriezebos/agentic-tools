@@ -1,6 +1,6 @@
 # 5. First Principles
 
-A candidate reaches the release boundary with a persuasive explanation and a passing check. The explanation says the session change is safe. The check never tried a late background response, and the candidate can still revive an expired session. If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
+A candidate reaches the release boundary with a persuasive explanation and a passing check. The explanation says the session change is safe. The builder's own check never tried a late background response, and the candidate can still revive an expired session. If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
 
 Later chapters give these principles mechanisms, limits and counterarguments. Here we state them briefly, so the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
 
@@ -8,7 +8,7 @@ Later chapters give these principles mechanisms, limits and counterarguments. He
 
 Suppose release is forbidden unless the exact candidate has passed a reversal check. A builder cannot waive the condition by explaining that the change is small. Authorized release cannot ignore it because the day is nearly over. The rule has power at the action it controls: it refuses release and says what evidence is absent.
 
-This paper calls such an enforced rule a law. The term names authority; it adds no ceremony. A legislator is the person or group authorized to change the rule. A judge is a person authorized to decide a named exception. A precedent is a recorded ruling that later cases may use, and an appeal is a named route for asking another authorized person or body to reconsider a decision. These terms describe permissions and continuity; they do not prescribe job titles. One person may hold several permissions, and an organization may distribute one permission across a body.
+Chapter 1 called such an enforced rule a law. The term names authority; it adds no ceremony. A legislator is the person or group authorized to change the rule. A judge is a person authorized to decide a named exception. A precedent is a recorded ruling that later cases may use, and an appeal is a named route for asking another authorized person or body to reconsider a decision. These terms describe permissions and continuity; they do not prescribe job titles. One person may hold several permissions, and an organization may distribute one permission across a body.
 
 The metaphor stops at that boundary. Software has no moral agency, cannot accept accountability and cannot make a political disagreement disappear by enforcing one side. A law can refuse an unauthorized action. It cannot decide whether a rule is just. A recorded precedent can make a ruling visible. It cannot make the ruling wise. Value and political disagreement remain with people who have the authority and responsibility to decide them.
 
@@ -57,11 +57,3 @@ Some decisions cannot be bought with more computation. Machinery may gather info
 An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. Calling the work complete would hide the only result that counts. Stopping with the conflicting observations, the attempted cases and the exhausted budget gives the next authorized decision something real to use.
 
 The system should prefer a clear refusal supported by evidence to a success it cannot justify. Failure, near-miss and uncertainty are outcomes in their own right, and they are recorded as such. They remain connected to the intent and candidate so that care can repair immediate harm and learning can improve later work. A worker may disappear; the fact that it failed and what it learned must not disappear with it.
-
-## The change, continued
-
-Chapter 1 already records the three-part ruling, the named checks, the refused candidate, the bounded release and one human interruption. What they add here is an allocation among principles rather than another account of the day.
-
-The ruling belongs to controlling, revisable intent because it settles choices that evidence cannot make. The checks and preserved known-bad candidate belong to evidence over trust because they distinguish a supported claim from assurance. The refusal belongs to the principle that important rules refuse. Binding each decision and result to the exact candidate supplies durable memory, while explicit budgets make spend a governed choice rather than an open-ended request to continue.
-
-Human authority owns the value ruling and any exception; machinery owns no accountability by accumulation of evidence. The refused attempt stays on record as a failure. Together these allocations make the application a governed output that can be reconstructed, challenged, released, cared for and revised without asking anyone to trust a confident recital.

@@ -12,7 +12,7 @@ A second attempt also becomes easier to start. There is no need to wait for the 
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
-Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay. The shift is precise: copying, starting and repeating become cheaper, while selection, coordination, judgment and payment remain.
+Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay.
 
 ## What actually goes away
 

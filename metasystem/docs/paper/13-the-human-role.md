@@ -4,7 +4,7 @@ Chapter 1 already records the single 9:12 interruption and the three-part ruling
 
 The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.
 
-This is the proposed human role in governed delivery. Final human authority does not require continuous presence. It means that identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one.
+This is the proposed human role in governed delivery. Final human authority does not require continuous presence. It means that identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one. The umbrella term for these people is the responsible authority; this chapter names the specific capacities: intent-holder for purpose, legislator for enforceable rules, judge for named exceptions, reviewer for authorized review.
 
 ## Legislator: authority over enforceable rules
 
@@ -24,11 +24,11 @@ The human authorized to resolve that named case acts as a judge in the same limi
 
 The record keeps the judge's identity, authority, reasons, evidence, scope and expiry attached to the decision. That attachment is not ceremonial. If the exception causes harm, the organization must be able to determine who had the duty to decide, what that person knew and whether the decision exceeded its authority. If later evidence changes the balance, another responsible authority must be able to reconsider it.
 
-Machinery may assemble the strongest case on each side, expose missing evidence and test whether an option violates an existing constraint. It may never make the value ruling or assume accountability. Final decision-making power remains with a responsible authority, without condition. Better models, more complete records or a long history of correct recommendations can improve the preparation of judgment; none turns responsibility into a machine property.
+Machinery may assemble the strongest case on each side, expose missing evidence and test whether an option violates an existing constraint. Final decision-making power remains with a responsible authority, without condition. Better models, more complete records or a long history of correct recommendations can improve the preparation of judgment; none turns responsibility into a machine property.
 
 ## Intent-holder: authority over purpose
 
-The request "sign users out after thirty minutes without activity" arrives from the responsible authority for account-access outcomes. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. The same authority may not bind an unrelated medical-record rule or promise another organization's resources.
+The 8:40 outcome (sign users out after thirty minutes without activity) comes from the responsible authority for account-access outcomes. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. The same authority may not bind an unrelated medical-record rule or promise another organization's resources.
 
 An intent-holder is the person or authorized group allowed to bind purpose and priorities within a stated domain. The role supplies outcomes, constraints and real freedoms rather than hiding a task list inside a desired result. Its authority can be delegated: an account-security lead may decide timeout risk while an accessibility body decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
 
@@ -36,9 +36,9 @@ Intent remains answerable to evidence. The authorized person can be wrong about 
 
 ## Reviewer: authority, accountability and appeal
 
-Before the expiry candidate reaches more users, an independent reviewer sees that one comparison touches every active account and that the tests share a time source with the implementation. The reviewer asks for a second clock source and a sleeping-device case, then holds expansion until the new evidence arrives. This is a decision within the reviewer's recorded permission, and authorized release may not ignore it.
+Before the expiry candidate reaches more users, an independent reviewer sees that one comparison touches every active account and that the tests share a time source with the implementation. The reviewer asks for a sleeping-device case run against a second, independent clock source, then holds expansion until the new evidence arrives. This is a decision within the reviewer's recorded permission, and authorized release may not ignore it.
 
-Chapter 6 defines the evidentiary triggers that begin human review and treats a missed trigger as a defect; this chapter defines what the reviewer may do once review or appeal begins. An explicitly authorized reviewer, independent of construction, may demand more evidence, narrow or stop exposure, accept a candidate within scope or refuse it. The authorization states which consequences and actions the reviewer controls. It does not grant a general right to rewrite intent or enforced rules.
+Chapter 6 defines the evidentiary triggers that begin human review and treats a missed trigger as a defect; this chapter defines what the reviewer may do once review or appeal begins. An explicitly authorized reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance itself. The authorization states which consequences and actions the reviewer controls. It does not grant a general right to rewrite intent or enforced rules.
 
 The reviewer's identity, decision, reasons and accountability remain with the record. A bare approval cannot explain which risk was accepted, while an unexplained refusal cannot be distinguished from preference or delay. "A human reviewed it" is not an accountable safety claim.
 
@@ -70,6 +70,4 @@ Protecting attention makes human authority usable. Machinery remains bounded by 
 
 ## The change, continued
 
-Chapter 1 supplies the ruling and its one human interruption. This chapter turns that event into a governance record: the responsible authority for account access, the source and scope of any delegation, the evidence and reasons, the person accountable for the balance and the human appeal route all remain attached to the decision.
-
-An independent reviewer may demand evidence, stop exposure, accept or refuse only within recorded authority and must answer for that decision. Representatives and affected users can challenge it through the named appeal route. Builders construct, independent examiners challenge, enforced rules refuse unsupported progress, authorized release controls exposure, and the responsible authority retains the judgment that machinery cannot supply. The human review that this change's risk triggers is the reviewer's own recorded work; the responsible authority is not interrupted again.
+The human review that this change's risk triggers is the reviewer's own recorded work; during Thursday's construction and release, the responsible authority is interrupted only once, at 9:12. The rulings that production evidence later forces (the shared-device restoration and the reauthentication burden) arrive through care and learning, not as interruptions of that day.

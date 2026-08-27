@@ -2,7 +2,7 @@
 
 Chapter 1's session change is cheap to construct and expensive to decide. Production, comparison, independent examination, human judgment, gradual release, observation and recovery all consume finite resources. Cheap construction does not make dependable delivery free.
 
-Machine engineering has an economy because construction, examination, judgment, operation and delay all consume finite resources. More attempts can improve a result or multiply the alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend and stop where they do not.
+Machine engineering has an economy. More attempts can improve a result or multiply the alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend and stop where they do not.
 
 ## Value before process
 
@@ -24,9 +24,9 @@ They direct marginal spending, meaning the next unit of time or attention. The s
 
 ## Budgets are enforced stop rules
 
-A builder makes two unsuccessful attempts to prevent delayed responses from reviving an expired session. A third attempt begins to repeat the first with different wording. Without a prior limit, every earlier expense becomes an argument for spending a little more: stopping now would seem to waste what has already been invested.
+Suppose a builder makes two unsuccessful attempts to prevent delayed responses from reviving an expired session. A third attempt begins to repeat the first with different wording. Without a prior limit, every earlier expense becomes an argument for spending a little more: stopping now would seem to waste what has already been invested.
 
-Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision.
+Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision. A live release expands only while the remaining budget can still observe and contain harm.
 
 When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that.
 
@@ -36,7 +36,7 @@ This boundary also makes failure visible. A stopped attempt is not disguised as 
 
 Two builders propose different session designs. One records a fixed expiry time and grants uploads a narrow continuation. The other keeps a separate activity history and derives expiry when each request arrives. Producing both may be cheap. Deciding between them requires each to be understood, challenged, compared against the ruling and examined for reversal and live behavior.
 
-The price of parallel work includes more than generation. Every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
+Chapter 3's asymmetry returns as a price: every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
 
 Parallel attempts are worth their cost when disagreement itself has value. They can reveal that the chosen design depends on an assumption no single builder noticed. They can explore truly different responses to a high-consequence problem. They can also increase confidence when independent paths reach the same bounded result. They are not worth it when several versions differ only in surface form or when the acceptance criteria already make one routine construction obvious.
 
@@ -48,7 +48,7 @@ The final repair to session expiry may change a single comparison: a response re
 
 A correction to thousands of low-impact help pages can be much larger while remaining routine. Its effects are visible, reversible and separated from money, identity and essential work. Automatic checks may establish that links still resolve and protected text remains untouched at far lower cost than a person reading every changed line.
 
-Spending follows possible harm, uncertainty, reach and accumulated change rather than line count or elapsed construction time. Size can influence cost, but it is not a substitute for risk. Treating it as one would lavish attention on bulky harmless work while letting a compact authorization mistake pass cheaply.
+Spending follows possible harm, unfamiliarity, reach and accumulated change rather than line count or elapsed construction time. Size can influence cost, but it is not a substitute for risk. Treating it as one would lavish attention on bulky harmless work while letting a compact authorization mistake pass cheaply.
 
 ## When the machinery is not worth its cost
 
@@ -70,16 +70,8 @@ The proposed shift in engineering ownership is directional; it does not carry th
 
 ## Measuring the system, not activity
 
-At the end of the expiry change, a report says that three candidates were produced, eleven checks ran, and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
+Suppose the closing report says that three candidates were produced, eleven checks ran, and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
 
 Useful measures connect total spend and delay to delivered intent, escaped harm, recovery time and learning that remains available for later work. They show how much construction and examination cost, how long required judgment waited, how often harmful behavior escaped, how quickly protected outcomes returned and whether a repeated change becomes cheaper without becoming less safe.
 
 Activity measures still help diagnose waste. Rising attempts with unchanged outcomes may expose a weak builder or unclear intent. Growing examination time may reveal accumulated complexity. But counts of generated code, messages or attempts measure activity; they do not measure value. The economic account closes only when activity connects to an outcome the system exists to protect.
-
-## The change, continued
-
-Applied to the change already established in Chapter 1, spending follows recorded consequence and reach rather than the size of the edit. Its budget reserves more for independent examination, the responsible authority's ruling, gradual release, observation and rollback capacity than for producing the candidate.
-
-The system requests another implementation only when a truly different design is likely to reveal information worth the cost of comparison. It stops repeated attempts at the agreed limit and sends an exception to the named authority. It expands the live release only while the remaining budget can still observe and contain harm.
-
-The change still has a cost; machinery makes spending explicit and movable. The change receives attention in proportion to its possible consequence and reach, while routine construction remains cheap. That is the economy the shift requires: enough construction, judgment, evidence and care to make the intended outcome worth its total cost, and no more machinery than that.

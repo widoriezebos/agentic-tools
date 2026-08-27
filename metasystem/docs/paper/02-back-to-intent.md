@@ -6,13 +6,13 @@ Chapter 1's ladder shows that tools can absorb bounded work, not which parts of 
 
 ## What delivering software actually requires
 
-A person first has to decide what better means. For the session change, better might mean reducing the time an unattended account remains usable without interrupting someone who is present and working. That choice comes before any construction. It also contains a tension: security improves when the service signs people out sooner, while continuity improves when their work survives. Deciding the outcome and its acceptable limits is the activity this paper calls intent.
+A person first has to decide what better means. For the session change, better might mean reducing the time an unattended account remains usable without interrupting someone who is present and working. That choice comes before any construction. It also contains a tension: security improves when the service signs people out sooner, while continuity improves when their work survives. Deciding the outcome and its acceptable limits is the activity this paper calls forming intent.
 
 A builder then has to alter the application. It traces how sessions begin, what extends them, where expiry is checked and what the user sees afterward. It chooses among possible designs and produces a candidate. That is construction. A candidate can be elegant and still serve the wrong outcome, so construction cannot certify itself just by ending.
 
 The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These observations determine whether the candidate supports the claims made for it. That activity is verification: finding out what the evidence supports saying about the candidate. It includes automatic checks and independent examination but is not identical to either.
 
-Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. Care is a distributed activity: authorized release observes live behavior and contains harm or restores earlier behavior within its bounds; the builder repairs what breaks; and the responsible authority decides revisions or actions outside delegated bounds.
+Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. That continuing obligation is the activity this paper calls care; Chapter 10 develops how it is shared.
 
 Finally, the experience must change what happens next. A missed boundary may become a stronger check. A confusing request may lead to a better way of stating success. A rule that produces false refusals may need revision or removal. That is learning: improving intent, construction, verification and care from recorded experience.
 
@@ -50,4 +50,4 @@ Examples alone are not enough. Boundaries name where behavior changes: before ex
 
 Translation can reveal uncertainty, but it cannot manufacture agreement. If the words do not determine whether passive reading counts as activity, the system leaves that question visible. If two authorities supply incompatible constraints, it records the conflict; it does not pick one on its own. The unresolved question returns to the person or body authorized to decide it. Only the resulting ruling becomes controlling intent.
 
-The answer to Chapter 1's closing question turns out to be compact. Apart from inherited process, delivery requires intent, construction, verification, care and learning. Intent is the durable interface among them, but it remains revisable and answerable to evidence. The design problem that follows is how to arrange these necessary activities for a workforce with different limits, rather than how to reproduce the old workflow with new workers.
+That answers Chapter 1's closing question. The design problem that follows is how to arrange these necessary activities for a workforce with different limits, rather than how to reproduce the old workflow with new workers.

@@ -4,7 +4,7 @@ A builder proposes a faster release rule. The current enforced rule requires an 
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by machinery outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
-This stress test is necessary for the paper's proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. Success is not sufficient evidence for the wider thesis. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization. Self-application can expose a contradiction. It cannot prove external validity.
+This stress test is necessary for the paper's proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
 
 ## The distinctive self-change problem
 
@@ -20,7 +20,7 @@ This arrangement does not assume that the older version is perfect. It assumes o
 
 At some beginning, no prior delivery-system record exists. A named human authority establishes the first bounded rules: which changes require independent examination, which actions may affect live users, what evidence must survive and how the earlier state can be restored. The first version cannot cite a history it does not have. It records the assumptions and human authorization on which it begins.
 
-From then on, version one judges the adoption of version two; version two, once independently accepted, may judge version three. Each self-change is bound to the prior rule set that authorized it. The evidence includes the exact old and proposed versions, the checks each performed, the human rulings involved, the resulting state and the recovery route. A later rule may change future requirements, but it cannot retroactively make its own adoption valid.
+From then on, version one supplies the basis for judging version two: its checks, its protected cases and its authority rules govern the adoption, and the humans it names authorize the result. Version two, accepted that way, does the same for version three. Each self-change is bound to the prior rule set that authorized it. The evidence includes the exact old and proposed versions, the checks each performed, the human rulings involved, the resulting state and the recovery route. A later rule may change future requirements, but it cannot retroactively make its own adoption valid.
 
 That sequence is the bootstrap: a limited starting authority followed by a chain in which each accepted state authorizes the next. Its records must be protected from the candidate. So must the last safe version and the means of restoring it. A proposal that can rewrite the only recovery copy or alter the evidence after examination has not passed a self-application test; it has removed the test's independence.
 
@@ -30,7 +30,7 @@ Recovery also needs to cover authority and data, not only program files. If a ca
 
 The builder of the faster release rule argues that the ordinary review requirement should not apply because the work only changes delivery machinery. That argument reverses the risk. A defect in one application feature may affect one path; a defect in an enforced rule may admit many later defects. So the rule governing independent examination applies to its own replacement unless an authorized exception explicitly supplies an equal or stronger boundary.
 
-Workers changing the system receive only the permissions needed for that work. A builder may propose a new authority rule but may not enact it. An independent examiner may attack the proposal but may not repair it and accept the repair itself. An authorized custodian may bind the accepted candidate to its evidence but may not waive a failed check. These separations follow from the opportunities for self-approval created by the work.
+Workers changing the system receive only the permissions needed for that work. A builder may propose a new authority rule but may not enact it. An independent examiner may attack the proposal but may not repair it and accept the repair itself. An authorized custodian may bind the accepted candidate to its evidence but may not waive a failed check.
 
 Sometimes the current rule cannot safely judge its replacement. A new identity mechanism may change the very evidence by which the old mechanism recognizes an authorized actor. In that case, pretending that the ordinary path still applies creates false confidence. A check outside both mechanisms, or a named human authority with protected evidence and a tested recovery path, supplies the boundary. The exception does not let the system justify itself. It makes the missing independence explicit and assigns it elsewhere.
 
@@ -38,7 +38,7 @@ The same discipline governs emergency maintenance. A failed delivery service may
 
 ## What self-application can reveal
 
-The proposed clock rule is tested first against the retained broken cases. It refuses the local-time comparison, permits display formatting and detects the newly introduced interface. The current release rule verifies those results before the proposed rule receives authority. A separate independent examiner then changes the proposed rule in a way expected to fail and confirms that the surrounding examination catches the regression. Finally, a rehearsal restores the prior rule set and authority record.
+The proposed clock rule is tested first against the retained broken cases. It refuses the local-time comparison, permits display formatting and detects the newly introduced interface. The current release rule verifies those results before the authority it names grants the proposed rule its power. A separate independent examiner then changes the proposed rule in a way expected to fail and confirms that the surrounding examination catches the regression. Finally, a rehearsal restores the prior rule set and authority record.
 
 This sequence can expose several structural defects: an enforced rule that can judge its replacement only by relying on that replacement, evidence that disappears when its producer stops, a builder able to weaken the independent examination or alter a retained failure case, and a recovery path that restores code but not authority. These failures are the point of the exercise: they test the delivery system under the unusual pressure of being both means and object of change.
 
@@ -62,4 +62,4 @@ After the new release rule passes, it can govern a later change to the delivery 
 
 That is where the recursion ends. Rules govern changes to rules, prior states govern the acceptance of proposed states, and external checks or named human authority cover boundaries that cannot judge themselves. Beneath that chain remain people who answer for purpose and a world that can contradict their assumptions. Both can require the system to change; neither is made correct by appearing in its records.
 
-Self-application is a severe internal examination whose failure falsifies an important claim and whose success leaves the larger claims open; it is never self-justification. A system that builds the system must pass it. A paper about that system must still face evidence from somewhere else.
+A system that builds the system must pass this examination. A paper about that system must still face evidence from somewhere else.

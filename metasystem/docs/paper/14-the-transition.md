@@ -30,7 +30,7 @@ For the first expiry candidate, the new builder traces behavior and raises the t
 
 The paths agree that existing sessions need coverage and disagree about a late background response. The old checklist misses that case; the new examination catches it but overlooks an administrative exception known to the support team. Neither can replace the other yet. Together they expose missing intent and checks while the current authority boundary limits harm.
 
-This side-by-side operation is coexistence. It keeps separate records of agreement, disagreement, cost, delay and missed cases. Separation prevents mutual influence from looking like independent confirmation. Neither path receives credit for a failure revealed only by the other.
+This side-by-side operation is coexistence. It keeps separate records of agreement, disagreement, cost, delay and missed cases. Each path records its result before seeing the other's, so mutual influence cannot look like independent confirmation. Neither path receives credit for a failure revealed only by the other.
 
 Coexistence should have a declared purpose and end condition. Without them, the team can acquire two permanent processes, each justified by the existence of the other. The purpose here is to test inferred intent, discriminating checks, recovery and reporting across a stated set of authentication changes. The end condition is evidence sufficient to decide which protections can transfer, which require more work and which were never real.
 
@@ -68,4 +68,4 @@ After a declared period, the new examination has caught every failure found by t
 
 Other practices end differently. The fixed batching ceremony is removed because Chapter 4's established deletion decision still holds. The cross-functional discussion remains because it continues to expose conflicting intent. Human release approval narrows to unfamiliar or high-consequence changes, while authorized release handles established low-risk cases within observed bounds. The transition completes one responsibility at a time; no single declaration makes the new system ready.
 
-The team has now handled the session-expiry change without pretending to start over. It inferred intent from imperfect evidence, established what the old path did and missed, ran old and new verification beside each other, reserved the hidden value choices for one responsible authority's ruling and moved release power only as evidence justified it. It also kept a tested way back. Once duplication no longer protects anything, it removes it with a record. The destination is not two systems forever; it is one governed path whose authority has been learned in the presence of the system it replaces.
+Once duplication no longer protects anything, the team removes it with a record. The destination is not two systems forever; it is one governed path whose authority has been learned in the presence of the system it replaces.

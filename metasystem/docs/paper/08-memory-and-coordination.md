@@ -14,7 +14,7 @@ One source does not mean one view for everyone. The record must be complete enou
 
 Access limits have a hard boundary. They can prevent a mind from reading something next; they cannot remove what that mind has already learned. A person who built the session change does not become independent by receiving a new label and losing access to the earlier notes. A machine worker that has already absorbed the builder's sequence of ideas and failed attempts cannot supply a fresh view even if later permissions hide that sequence. Role-scoped access provides least authority. Only a fresh mind provides a fresh perspective.
 
-When Chapter 6 requires independent examination free from the builder's path, the independent examiner must be a distinct person or a newly started machine worker that has never received that path. Machine workers make this separation inexpensive because a new mind can begin with selected context. Human exposure is largely permanent. Once a person knows the path, access rules can limit what they do with later information, but they cannot restore the perspective they had before knowing it.
+When Chapter 6 requires independent examination free from the builder's path, the independent examiner must be a distinct person or a newly started machine worker that has never received that path. Machine workers make this separation inexpensive because a new mind can begin with selected context. Human exposure is largely permanent.
 
 ## What each role may read
 
@@ -52,10 +52,4 @@ The system produces two views from one source. Structured fields allow machinery
 
 Months later, another change must decide whether a long-running export may continue after a session ends. The earlier upload ruling is relevant: a user-started operation received a separate, limited continuation without reviving the session. Retrieving that ruling can expose a useful distinction and prevent the new decision from beginning in ignorance.
 
-The stored ruling is a precedent, meaning a prior decision and its reasons kept to inform a later one. It is not automatically binding. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Institutional memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends at that boundary.
-
-## The change, continued
-
-Chapter 1 supplies the events; this chapter supplies their custody. The authoritative record links current intent, candidate identity, evidence, refusal, acceptance and live state without turning a readable account into a second source of truth.
-
-Each role receives a view sufficient for its next authorized action. If a builder or independent examiner stops, a replacement can distinguish completed from proposed work and continue or reverse from the last safe state. The custodian can bind only the exact examined candidate, the auditor can reconstruct the chain, and the narrator can explain it without altering it. Work survives because memory and handoff belong to the system rather than to any one worker.
+The stored ruling is a precedent: a prior decision kept with its reasons to inform a later one, not to bind it automatically. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Institutional memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends at that boundary.

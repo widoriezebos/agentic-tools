@@ -46,7 +46,7 @@ An enforced rule refuses that candidate. No person is asked to inspect a convinc
 
 In the afternoon, authorized release sends the candidate to a small part of live traffic. It compares expiry, sign-in, upload and error behavior with the authorized bounds. It expands only while observations remain inside them. Otherwise it restores the previous behavior. If policy reserves release for a responsible authority, it pauses with the evidence ready.
 
-At 4:30, the responsible authority receives an account of what changed, the interpretation they supplied, the refused candidate, the checks that passed, the exact version released and the observed behavior. Their day contained one interruption, where the request concealed security and usability choices. A builder proposed and constructed. An independent examiner challenged. Enforced rules refused unsupported progress. Authorized release expanded or reversed within its bounds. The responsible authority supplied the reserved judgment and remained accountable for it.
+At 4:30, the responsible authority receives an account of what changed, the interpretation they supplied, the refused candidate, the checks that passed, the exact version released and the observed behavior. Their day contained one interruption, where the request concealed security and usability choices.
 
 ## Why this premise is important
 
@@ -54,7 +54,7 @@ The shift does not depend on machinery writing one plausible patch. It depends o
 
 Those failures produce specific rules. Because silent stopping makes waiting look like work, progress needs a durable record and each active attempt needs a visible deadline. Because several attempts can share the same mistaken assumption, a proposal needs challenge grounded independently of the builder's account. Because a plausible mistake can cross from code into user harm, permissions must be narrow enough to contain what construction and release may do. Because evidence cannot resolve the value choice hidden in "active work," that choice needs a named human authority before it becomes a check.
 
-An independent examiner remains necessary to challenge claims when evidence cannot settle a question, when values or accountability are at stake or when possible harm requires judgment independent of the delivery loop. The aim is a design in which human attention goes to the decisions that require human authority, while repeatable construction and delivery proceed within limits people can inspect and change. That is different from removing people from consequential work.
+Independent challenge remains necessary when evidence cannot settle a question, when values or accountability are at stake or when possible harm requires judgment independent of the delivery loop. The aim is a design in which human attention goes to the decisions that require human authority, while repeatable construction and delivery proceed within limits people can inspect and change. That is different from removing people from consequential work.
 
 ## The question before the design
 

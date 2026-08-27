@@ -22,7 +22,7 @@ Now suppose the change must update existing sessions. Construction needs permiss
 
 The candidate and its evidence also need to survive the actors that produced them. A builder can stop. An independent examiner can be replaced. A responsible authority can return the next day. If the meaning and state of the work live only in any one of them, their absence becomes loss of custody. Because every worker can disappear, records need ownership that outlives the current worker, and an actor must be responsible for preserving the chain between intent, candidate, evidence and acceptance.
 
-Two further hazards arise around the work rather than inside the candidate. A stopped worker may just look slow unless another actor observes whether it is alive and making progress. A technically complete record may be unreadable to the person who must rule on an exception. Silent death requires a liveness watcher. The risk of misleading translation requires a narrator whose account remains checkable against the record. Each role follows a cause: commitment requires independent challenge, destructive reach requires narrow authority, worker loss requires custody, silence requires observation, and consequential explanation requires traceable translation.
+Two further hazards arise around the work rather than inside the candidate. A stopped worker may just look slow unless another actor observes whether it is alive and making progress. A technically complete record may be unreadable to the person who must rule on an exception. Silent death requires a liveness watcher. The hazard of misleading translation requires a narrator whose account remains checkable against the record.
 
 ## Prohibited combinations
 
@@ -61,9 +61,3 @@ Suppose someone proposes a coordinator because every engineering team has one. T
 This is the anti-mimicry test. Every role must trace back through permission and separation to a real hazard. A liveness watcher survives the test because silent stopping is observable, because the watcher needs permission to detect and sometimes replace stopped work and because it must not erase the evidence of failure. A narrator survives because human decisions need readable accounts, because it needs read access to source records and because changing state would let it conceal the very actions it explains.
 
 A role fails when its only defense is familiarity. It also fails when its stated hazard is better controlled by an enforced rule, a durable record or a narrower permission. The test does not ask whether a role resembles a human job. It asks whether removing the role destroys a necessary condition and whether combining it with another function recreates the hazard. A separation stays only while evidence shows that it protects something real.
-
-## The change, continued
-
-Applied to the case already established in Chapter 1, the separations are prohibitions. The builder may not accept its own claim. The independent examiner may not repair the candidate it judges. The custodian may bind only the exact examined version to its evidence. A liveness watcher may replace stopped work without erasing its record, and the narrator may explain the result without changing or releasing it.
-
-The responsible authority owns the value ruling and remains accountable for it; authorized release owns only the exposure allowed by its bounds. No organization chart produces this arrangement. Commitment, destructive reach, worker loss, silence and the influence of explanation do.

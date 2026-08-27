@@ -1,6 +1,6 @@
 # 9. The Living System
 
-The session-expiry change is under examination when one worker goes quiet. It has not reported failure. Its last message sounds plausible, and the work it promised should take only a few minutes. At the same time, another worker prepares to replace session data, while a third examines code assembled from sources outside the system. Treating all three as reliable because they began with good instructions would make silence, confusion and hostile material look like ordinary work.
+The session-expiry change is under way when the migration worker goes quiet. It has not reported failure; its last message sounds plausible, and the work it promised should take only a few minutes. At the same time, another worker prepares to replace session data, while a third examines code assembled from sources outside the system. Treating all three as reliable because they began with good instructions would make silence, confusion and hostile material look like ordinary work.
 
 A delivery system is living in a limited but important sense. Its workers start, act, wait, stop and are replaced while the application and its surroundings continue to change. Workers can disappear at any moment, and the world in which they act is not automatically friendly. Such a system needs to know whether work is alive, who is acting, where effects can spread and what authority exists at the instant of action. These protections belong to the environment around the workers, because a failed or compromised worker cannot be trusted to provide them for itself.
 
@@ -51,11 +51,3 @@ These possibilities define the hostile world. Harm can enter through user input,
 Such a crossing is a trust boundary. Material that crosses it is treated according to its source and possible effect; how convincing it sounds does not enter into it. An outside dependency arrives with a traceable source and change history. Generated code receives no authority just because it compiles. Test results remain tied to the tool, candidate and conditions that produced them. Claims made by a component are checked by something outside that component when the consequence requires independence.
 
 Least authority limits what a compromised part can reach. Isolation limits how far the harm can spread. A traceable source and history make substitution and tampering visible. Independent verification prevents a tool from authorizing itself by reporting its own success. None of these measures proves that the world is safe. Together they turn an unlimited trust assumption into named boundaries that can refuse, contain and expose hostile action.
-
-## The change, continued
-
-The builder of the session-expiry change receives the authorized ruling, relevant application material and isolated session data. It does not receive live secrets or release authority. The independent examiner challenges an exact candidate against its own copy, controlled clock and session states. Its result cannot be changed by ongoing construction.
-
-When the migration worker stops, the liveness watcher sees both the missing heartbeat and the absence of a new work product. The deadline expires under a named owner. Before replacing the worker, the system checks its current identity and preserves its last state. A replacement continues or reverses from that record; silence cannot become completion.
-
-Sources for dependencies, the checking tools, their results, the accepted candidate and the release authority remain traceable. An enforced rule refuses a target that is unknown, too broad or no longer owned by the acting worker. The change stays alive not because every worker behaves perfectly, but because liveness, identity, isolation and bounded authority surround the work.

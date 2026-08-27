@@ -32,7 +32,7 @@ Incidents create another skill: turning experience into a measured change in fut
 
 Plain explanation remains essential. A responsible authority deciding whether to shorten sessions needs a bounded question, credible alternatives and a traceable account of likely effects. Affected people challenging the decision need to understand what happened and where appeal goes. Producing more internal detail is not explanation. The skill is to connect each material claim to evidence in language the person bearing responsibility can use.
 
-Human attention remains scarce throughout. The system should not spend it on routine approvals performed for show or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, changes to governing rules, weak or correlated evidence and accountability. Deciding where human judgment is mandatory (and designing reliable machinery for the rest) becomes a central engineering act.
+Human attention remains scarce throughout. The system should not spend it on routine approvals performed for show or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, severe possible harm, changes to governing rules, weak or correlated evidence and accountability. Deciding where human judgment is mandatory (and designing reliable machinery for the rest) becomes a central engineering act.
 
 ## What must not be lost
 
@@ -70,4 +70,4 @@ Finally, the machinery is held to rules it cannot evade when it changes itself. 
 
 The hypothetical day in the opening chapter is neither a promise nor a destination for every team. It is a testable picture of attention spent differently. Machinery carries more repeated construction and delivery. People remain responsible for purpose, value, governing authority, exception, appeal and judgment that evidence cannot supply.
 
-What engineering becomes depends on where that arrangement proves useful. For repeated or consequential software, the durable achievement may be more than an application that works today. It may be a governed system capable of producing, examining, releasing, caring for and revising that application tomorrow. People stay part of the work. The aim is engineering in which machinery does more of what can be made dependable, while human authority becomes clearer wherever purpose and responsibility begin.
+What engineering becomes depends on where that arrangement proves useful. For repeated or consequential software, the durable achievement may be more than an application that works today. It may be a governed system capable of producing, examining, releasing, caring for and revising that application tomorrow.
