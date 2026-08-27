@@ -4,7 +4,7 @@ A candidate reaches the release boundary with a persuasive explanation and a pas
 
 The chapters that follow will give those principles mechanisms, limits, and counterarguments. This chapter states them briefly so that the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
 
-## What the legal metaphor means - and where it stops
+## What the legal metaphor means, and where it stops
 
 Suppose release is forbidden unless the exact candidate has passed a reversal check. A builder cannot waive the condition by explaining that the change is small. Authorized release cannot ignore it because the day is nearly over. The rule has power at the action it controls: it refuses release and says what evidence is absent.
 
@@ -24,7 +24,7 @@ The principle says that machinery acts under the current authorized intent, whil
 
 After the builder revises the candidate, it reports that expiry is now final. An independent examination sends the late response again and observes that access remains closed. The observation supports the claim in a way the builder's assurance cannot, because it distinguishes the repaired behavior from the earlier failure.
 
-Completion claims must be tied to such observations. This paper uses evidence for the traceable results on which practical judgment depends: test outcomes, independent findings, release observations, and records of reversal. It reserves proof for a narrower statement - a conclusion demonstrated within named boundaries and assumptions. A boundary check can prove how an exact candidate behaves under its controlled clock. It cannot prove that every real clock, network delay, or human situation has been anticipated.
+Completion claims must be tied to such observations. This paper uses evidence for the traceable results on which practical judgment depends: test outcomes, independent findings, release observations, and records of reversal. It reserves proof for a narrower statement: a conclusion demonstrated within named boundaries and assumptions. A boundary check can prove how an exact candidate behaves under its controlled clock. It cannot prove that every real clock, network delay, or human situation has been anticipated.
 
 Trust in a capable builder can guide where to look. It cannot authorize a consequence. Chapter 6 develops the evidence required to separate a supported claim from a convincing one.
 
