@@ -24,7 +24,7 @@ Adoption can still be proportionate. A narrowly understood recurrence with sever
 
 ## Test the enforced rule itself
 
-The new check first runs without refusing anything. It marks proposed changes that it would have stopped and records why. One mark reveals a false alarm: a user-facing calendar legitimately converts a timestamp to local time after the security decision has already been made. Another reveals a gap: a helper hides the same unsafe comparison behind a different name. The trial turns two abstract concerns - overreach and evasion - into observed cases before the check controls delivery.
+The new check first runs without refusing anything. It marks proposed changes that it would have stopped and records why. One mark reveals a false alarm: a user-facing calendar legitimately converts a timestamp to local time after the security decision has already been made. Another reveals a gap: a helper hides the same unsafe comparison behind a different name. The trial turns two abstract concerns (overreach and evasion) into observed cases before the check controls delivery.
 
 The enforced rule is then revised and examined independently of its author. The independent examiner supplies changes that must be blocked and changes that must be permitted. It also tests interaction with existing rules, because two individually sensible refusals can make all valid work impossible when combined. Gradual activation follows: warning, refusal in an isolated setting, refusal for a limited class of live changes, and wider authority only while the observations remain inside stated bounds.
 
