@@ -12,7 +12,7 @@
 
 **Part IV: The economy, the learning loop, the human (chapters 11-13).** Four shared questions tie verification effort and total cost to how severe the harm could be, how unfamiliar the approach is, how many users or systems it can affect and how much change has accumulated, including the cost of judging parallel attempts. Incidents can produce new automatic checks, but those checks need evidence, owners, tests, expiry and a named route for challenge. Humans govern values and exceptions through clearly bounded authority, including delegation and challenge when several people hold conflicting intent.
 
-**Part V: The transition, the stress test and the horizon (chapters 14-16).** Existing teams reach the new model by inferring current intent, running old and new controls together, transferring authority only as evidence justifies it and preserving rollback. Self-application then tests the distinctive case of machinery changing its own safeguards; it is necessary but cannot establish external validity by itself. The horizon asks what engineering becomes when delivery systems, within clear economic limits, become the durable asset.
+**Part V: The transition, the stress test and the horizon (chapters 14-16).** Existing teams reach the new model by inferring current intent, running old and new controls together, transferring authority only as evidence justifies it and preserving rollback as an option. Self-application then tests the distinctive case of machinery changing its own safeguards; it is necessary but cannot establish external validity by itself. The horizon asks what engineering becomes when delivery systems, within clear economic limits, become the durable asset.
 
 ## Chapters
 
