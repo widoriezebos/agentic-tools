@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
-- Next step: Appetite: 6h across three slices (slice one open, ~4h in; slices two/three queue behind delegate-job-liveness). POSITION m1 ~15:45: code-critique ROUND 3 = 4 material (falling 14->8->4; r3-output.md) — FIRST BUDGET EXHAUSTED per the round-budget law; exhaustion recorded in plans/actionable-metrics-code-critique.md with the open set enumerated (F3-1 journal helper still lifecycle-bounds attribution; F3-2 lock steal can remove a live new owner; F3-3 non-atomic owner publication strands on death-in-gap; F3-4 receipt corrections smuggle invalid provenance past all buckets). All four ACCEPTED, none refutable; focused successor fix pass IN FLIGHT (direct codex exec, sol/xhigh, monitored) opening the SECOND three-round budget (rounds 4-6) on chain actionable-metrics-code. Second exhaustion = hard stop on Wido, no third budget. Six of eight round-2 fixes confirmed by the critic; verification green under coordinator execution before this pass. On round-4+ AGREE: land via land.sh (lineage exported) + receipt.
+- Next step: Appetite: 6h across three slices (slice one open, ~5h in — appetite pressure real; slices two/three queue behind delegate-job-liveness). POSITION m1 ~16:45: ROUND 4 = 5 material (trajectory 14-8-4-5, second budget round 1 of 3 spent) — four of five cluster in the bash attribution-lock machinery added across fix rounds (steal-of-live-owner, aging-vs-slow-publisher, PID reuse, unscaled waits): the machinery-climbing-its-own-ladder signal, so the adjudication CUTS THE GENERATING CAUSE — the lock is DELETED for a lock-free single decision file created by atomic exclusive ln (stage complete content, link into place; death-in-gap leaves nothing or a complete decision; no recovery machinery exists). Fifth finding (rejected effective provenance still usable for period Rework/Delegates) fixed alongside + fixture waits brought under the cap-scale contract. Dispositions in plans/actionable-metrics-code-critique.md round-4 section. Simplification pass IN FLIGHT (direct codex exec, monitored). Rounds 5-6 remain; second exhaustion = hard stop on Wido. On AGREE: land + receipt.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 12
+- Revision: 13
 - Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
 
 History:
@@ -21,4 +21,5 @@ History:
 - 2026-08-27T11:38:44Z FPF2PW9HPE5THQVV32ZR45SBH6-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:55:59Z N6YNJ1M5BS448GBR88AN8D4961-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T12:21:39Z 2X2NFSS2QK1C3WJACG47XGPY9R-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=de78492cbd0101fae77c1e28f7d8fbae06eb0f17352ec5a065196b5826428f1c
+- 2026-08-27T13:06:59Z X8CDNRGJSVYYDNVSG13BZ9X1VM-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=4856a648bd2643f333fcbda65affaf0925ae10505eb4c67607f3835336d6ae2a
