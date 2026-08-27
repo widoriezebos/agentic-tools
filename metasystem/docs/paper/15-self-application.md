@@ -48,7 +48,7 @@ Self-application is a necessary but insufficient test. Failure directly contradi
 
 ## Falsifiability and independent support
 
-Consider three organizations that adopt the proposed principles for different applications. They record more checks, clearer authority and successful self-changes, yet escaped harm repeatedly rises and total delivery cost remains higher than under simpler controls. If the comparison covers similar risk and does not just count a difficult transition period, that result weighs against the thesis. The proposal cannot preserve itself by calling every failure incomplete adoption.
+Consider three organizations that adopt the proposed principles for different applications. They record more checks, clearer authority and successful self-changes, yet escaped harm repeatedly rises, and total delivery cost remains higher than under simpler controls. If the comparison covers similar risk and does not just count a difficult transition period, that result weighs against the thesis. The proposal cannot preserve itself by calling every failure incomplete adoption.
 
 The paper's claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations (because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority) count against them. Retained human ceremonies that outperform proposed replacements at serving the same need, across comparable cases and costs, count against the claim that those replacements are better.
 

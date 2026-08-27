@@ -26,7 +26,7 @@ They direct marginal spending, meaning the next unit of time or attention. The s
 
 A builder makes two unsuccessful attempts to prevent delayed responses from reviving an expired session. A third attempt begins to repeat the first with different wording. Without a prior limit, every earlier expense becomes an argument for spending a little more: stopping now would seem to waste what has already been invested.
 
-Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision.
+Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision.
 
 When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that.
 
