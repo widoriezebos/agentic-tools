@@ -57,7 +57,7 @@ The table summarizes the design brief; it does not claim that one mechanism sett
 | Recorded context is cheap to copy | Relevant context can be omitted or buried | Give each actor bounded, traceable context and preserve the authoritative source |
 | Fresh attempts are easy to start | Attempts can share assumptions and multiply judging work | Preserve contextual independence where it is needed and price comparison as well as production |
 | Work can continue outside human hours | A stopped attempt can look like a patient one | Record progress, deadlines and explicit completion or failure |
-| Human fatigue and attachment leave a bounded attempt | Convincing mistakes, drift and agreement-seeking remain | Judge observable results rather than confidence or persistence |
+| Fatigue and attachment are absent from a single bounded attempt | Convincing mistakes, drift and agreement-seeking remain | Judge observable results rather than confidence or persistence |
 | A worker's session can end without continuity | Useful state and reasons can disappear | Keep intent, state, decisions and results in durable records |
 | Tools can act repeatedly | Mistakes can repeat quickly and reach real systems | Narrow permissions and place enforced refusal at consequential actions |
 | Computation is metered | Cheap candidates can still create expensive verification | Set budgets from risk and stop or escalate when they are exhausted |
