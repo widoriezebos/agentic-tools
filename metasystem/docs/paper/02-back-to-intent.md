@@ -50,4 +50,4 @@ Examples alone are not enough. Boundaries name where behavior changes: before ex
 
 Turning words into checks can reveal uncertainty, but it cannot manufacture agreement. If the words do not determine whether passive reading counts as activity, the system leaves that question visible. If two authorities supply incompatible constraints, it records the conflict; it does not pick one on its own. The unresolved question returns to the person or body authorized to decide it. Only the resulting ruling becomes controlling intent.
 
-That answers Chapter 1's closing question. The design problem that follows is how to arrange these necessary activities for a workforce with different limits, rather than how to reproduce the old workflow with new workers.
+Chapter 1 asked what software delivery actually requires, apart from the process inherited to organize it. The five activities are the answer. What remains is a design problem: arrange them for a workforce whose limits differ from ours, rather than copy the old workflow onto new workers.
