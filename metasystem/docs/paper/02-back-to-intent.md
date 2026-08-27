@@ -10,7 +10,7 @@ A person first has to decide what better means. For the session change, better m
 
 A builder then has to alter the application. It traces how sessions begin, what extends them, where expiry is checked and what the user sees afterward. It chooses among possible designs and produces a candidate. That is 'construction'. A candidate can be elegant and still serve the wrong outcome, so construction cannot certify itself just by ending.
 
-The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These observations determine whether the candidate supports the claims made for it. That activity is 'verification': finding out what the evidence supports saying about the candidate. It includes automatic checks and independent examination but is not identical to either.
+The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These cases determine whether the candidate supports the claims made for it. That activity is 'verification': finding out what the evidence supports saying about the candidate. It includes automatic checks and independent examination but is not identical to either.
 
 Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. That continuing obligation is the activity this paper calls 'care'; Chapter 10 develops how it is shared.
 

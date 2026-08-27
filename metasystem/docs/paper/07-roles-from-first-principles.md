@@ -46,7 +46,7 @@ That authority involves no creative judgment. The custodian decides no product v
 
 At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that account. The account has influence because it shapes what the responsible authority notices and may shape a later decision.
 
-That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the account states a material result, the responsible authority can reach the exact observation supporting it. The retelling becomes inspectable, while authority remains with actors whose powers are named.
+That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the account states a material result, the responsible authority can reach the exact observation supporting it. The account becomes inspectable, while authority remains with actors whose powers are named.
 
 ## Configurations rather than job titles
 

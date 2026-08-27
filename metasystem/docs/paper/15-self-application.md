@@ -54,7 +54,7 @@ The paper's claims are explicitly falsifiable. Repeated failures across independ
 
 Support must come from reproducible evidence across different teams, risk levels, applications and operating conditions. It must include negative results, unsuccessful transitions and comparisons with simpler approaches. Evidence gathered by the system about itself may contribute one case, but it cannot be the only case. Independent examiners must be able to inspect the assumptions, measures, missed harms and selection of examples.
 
-The comparisons must define what they include and make omitted effects visible. A reduction in release time does not support the thesis if user harm moves into support queues that are not measured. A lower incident count is weak evidence if fewer incidents are detected. A successful high-risk release does not establish that the machinery is economical for a disposable script. The proposition stands or falls on delivered intent, contained harm, accountable authority, recovery and total cost under declared conditions.
+The comparisons must define what they include and make omitted effects visible. A reduction in release time does not support the thesis if user harm moves into support queues that are not measured. A lower incident count is weak evidence if fewer incidents are detected. A successful high-risk release does not establish that the machinery is economical for a disposable script. The thesis stands or falls on delivered intent, contained harm, accountable authority, recovery and total cost under declared conditions.
 
 ## The recursion has a floor
 

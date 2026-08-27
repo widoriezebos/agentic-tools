@@ -12,7 +12,7 @@ Before version control, a change could mean copying a directory, naming it with 
 
 A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code turned the desired state into a description that machinery can compare with reality and then implement.
 
-Testing followed the same pattern. A release team once clicked through the application by hand, every cycle consuming the same attention. Continuous integration moved repeatable checks next to the change. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
+Testing followed the same pattern. A release team once clicked through the application by hand from a checklist, every cycle consuming the same attention. Continuous integration moved repeatable checks next to the change. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
 
 This ladder shows that machinery can absorb bounded, repeatable work. It does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
@@ -22,7 +22,7 @@ One further premise is needed now. Machinery can increasingly carry an iterative
 
 Suppose every sensitive data export must leave an audit trail. A team can place that requirement in a review guide. It can also make the rule enforceable: a change affecting exports cannot proceed unless it produces the required record and passes the relevant checks.
 
-The application then stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. The durable asset includes what the system needs to do those things again: a statement of the intended outcome, boundaries on action, checks that separate a supported claim from a guess, and records of what happened. The title's word for that governed system is the metasystem. Part of it is generic machinery; the rest is specific to this application. Chapter 16 returns to the difference.
+The application then stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. What the system needs to do those things again becomes a durable asset: a statement of the intended outcome, boundaries on action, checks that separate a supported claim from a guess, and records of what happened. The title's word for that governed system is the metasystem. Part of it is generic machinery; the rest is specific to this application. Chapter 16 returns to the difference.
 
 Some boundaries need authority. A suggestion may be ignored; an enforced rule can refuse a change. This paper calls the governing rules laws; "enforced rule" names a law implemented at the action it can stop. The legal metaphor identifies who may decide, what may be refused and how a decision may be challenged. It does not imply a 'machine court' or mimicked legal ceremony. A law here is a rule with enough authority to stop action when a named condition has not been met.
 
