@@ -1,6 +1,6 @@
 # 14. The Transition
 
-Picture a team I have seen many times: the session-expiry request arrives while releases still depend on a familiar chain of tickets, code review, manual checks and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may hide an unwritten warning about shared devices, an approval required by policy or the only reliable way to reverse a failed session migration.
+Picture a kind of team I have seen many times: the session-expiry request arrives while releases still depend on a familiar chain of tickets, code review, manual checks and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may hide an unwritten warning about shared devices, an approval required by policy or the only reliable way to reverse a failed session migration.
 
 The transition begins inside that uncertainty. The proposed delivery system first builds knowledge, then takes over verification work and only later receives authority. Existing protection remains until its purpose and a possible replacement are understood. Where no need survives, the ceremony is removed with a recorded reason. This is a transfer from a running system rather than a clean start.
 
