@@ -58,7 +58,7 @@ An independent examiner remains necessary to challenge claims when evidence cann
 
 ## The question before the design
 
-This paper makes a design argument. It does not claim that such systems are already possible. Its claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained and does human authority remain real where it is needed?
+This paper makes a design argument. It does not claim that such systems are already common practice. Its claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained and does human authority remain real where it is needed?
 
 Scope also counts. A disposable script with little consequence may not justify elaborate production machinery. Software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk. The direction of ownership does not require every project to use the same amount of machinery.
 
