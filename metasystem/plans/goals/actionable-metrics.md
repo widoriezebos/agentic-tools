@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
-- Next step: Appetite: 6h across three slices (slice one open; ~1h45 in incl. incident). POSITION m1 ~13:35: correction pass INCIDENT — the codex-companion resume task double-fired, then the live task ZOMBIED at ~25min (status running, log+work-products stale 16-18min, no codex process; my monitor's zombie detector caught it; task cancelled). Bytes audit: 7 of 12 accepted fixes fully IN (repo-root payload scope, timing rejection, chain-race marker, truncation law, unreadable-file rejection, threshold parse capture, O15 setup); RESIDUAL 6 items now running as a FRESH direct codex exec (sol/xhigh, workspace-write, monitored): the F-3 exact-match regression (TestO13MetricsAttributeOnlyExactGoalID red — prefix-like id attributed), F-13 NaN guard, F-4 O1 all-nine coverage asserts, F-5 O12 both done routes, F-9 unknown-goal unavailable report, F-6 disable-path verify + F-14 O15 asserts. Companion lane distrusted for the rest of this slice — direct codex exec only. On green: recompute diff, code-critique ROUND 2 of 3 on chain actionable-metrics-code, land via land.sh (lineage exported) + receipt.
+- Next step: Appetite: 6h across three slices (slice one open, ~2h in incl. the zombie incident). ORDERING RULING (Wido 2026-08-27): slices two and three queue BEHIND the delegate-job-liveness custody arc — its honest job records are slice two's input. POSITION m1: slice-one residual fix pass running as direct codex exec (sol/xhigh, monitored; 6 items: F-3 exact-match regression red test, F-13 NaN guard, F-4 O1 asserts, F-5 O12 both routes, F-9 unknown-goal, F-6 verify + F-14 O15 asserts; companion lane distrusted after double-fire + zombie — direct codex exec only this slice). On green: recompute diff, code-critique ROUND 2 of 3 on chain actionable-metrics-code, land via land.sh (METASYSTEM_OWNER_LINEAGE=coordinator exported) + receipt with the new goal= built_by= keys once landed. Records: design plans/actionable-metrics-design.md (883f920), dispositions plans/actionable-metrics-code-critique.md.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 9
+- Revision: 10
 - Claimed: machine=m1 lineage=coordinator at=2026-08-27T06:15:27Z
 
 History:
@@ -18,4 +18,5 @@ History:
 - 2026-08-27T10:47:16Z 1Y3H33SJ2ATHGR78G9JPPHAM2F-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:00:49Z BB2QZK29P05VHNMBJ5P9E04DQS-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
 - 2026-08-27T11:28:45Z 28M83WX17EBE0VJWCD20275QZQ-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
-Integrity: sha256=3b927dc68eafcc65bcc3752af652233557d85413ecd474b3d97e823ea6f044b3
+- 2026-08-27T11:38:44Z FPF2PW9HPE5THQVV32ZR45SBH6-m1-bf243850 edit actor=m1+coordinator targets=actionable-metrics
+Integrity: sha256=c801ee59adf5c81c95b9fa42ddcdae38c212b34000013e59507be3fc2fb7873d
