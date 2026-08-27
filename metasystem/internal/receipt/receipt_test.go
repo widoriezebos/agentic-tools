@@ -49,6 +49,48 @@ func TestAddAppendsOneLine(t *testing.T) {
 	}
 }
 
+func TestO13ReceiptProvenanceParsesWithOldRows(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "implement", "shipped"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("old-shape add failed: %+v", result)
+	}
+	opts.Now = func() time.Time { return fixedNow().Add(time.Second) }
+	opts.Goal = "goal-a"
+	opts.BuiltBy = "delegate"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("provenance add failed: %+v", result)
+	}
+	data, err := os.ReadFile(opts.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 || strings.Contains(lines[0], "|goal=") || strings.Contains(lines[0], "|built_by=") {
+		t.Fatalf("old row changed shape: %q", lines)
+	}
+	if !strings.Contains(lines[1], "|goal=goal-a|built_by=delegate|") {
+		t.Fatalf("new row lost provenance: %q", lines[1])
+	}
+	stats := Stats(Options{File: opts.File, All: true})
+	if stats.Code != 0 || len(stats.Out) == 0 || stats.Out[0] != "receipts=2" {
+		t.Fatalf("mixed old/new rows did not parse: %+v", stats)
+	}
+}
+
+func TestReceiptMetricsReportTypeAndBuilderValidation(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "metrics-report", "shipped"
+	opts.BuiltBy = "coordinator"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("metrics report receipt failed: %+v", result)
+	}
+	opts.BuiltBy = "critic"
+	if result := Add(opts); result.Code != 2 || result.Err[0] != "invalid --built-by: critic" {
+		t.Fatalf("invalid builder accepted: %+v", result)
+	}
+}
+
 func TestAddValidation(t *testing.T) {
 	cases := []struct {
 		mutate func(*Options)

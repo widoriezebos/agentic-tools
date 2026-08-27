@@ -38,6 +38,9 @@ func (r JobRecord) Role() string { return r.text("role") }
 // ParentJob is the chain parent ("" for a root).
 func (r JobRecord) ParentJob() string { return r.text("parentJob") }
 
+// GoalID is the optional goal this job was reserved for.
+func (r JobRecord) GoalID() string { return r.text("goalId") }
+
 // EndedAt is the terminal timestamp ("" while the job runs).
 func (r JobRecord) EndedAt() string { return r.text("endedAt") }
 

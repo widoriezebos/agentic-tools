@@ -8,7 +8,7 @@ import (
 func TestJobRecordLens(t *testing.T) {
 	record := JobRecordOf(map[string]any{
 		"status": "running", "jobId": "j1", "role": "implementer",
-		"parentJob": "root-1", "endedAt": nil, "error": nil,
+		"parentJob": "root-1", "goalId": "goal-a", "endedAt": nil, "error": nil,
 		"round": json.Number("3"),
 	})
 	if record.Status() != "running" || record.JobID() != "j1" || record.Role() != "implementer" {
@@ -16,6 +16,9 @@ func TestJobRecordLens(t *testing.T) {
 	}
 	if record.ParentJob() != "root-1" {
 		t.Fatal("parent lost")
+	}
+	if record.GoalID() != "goal-a" {
+		t.Fatal("goal provenance lost")
 	}
 	if record.EndedAt() != "" || record.ErrorText() != "" {
 		t.Fatal("null must read as the zero value")

@@ -38,6 +38,8 @@ type Options struct {
 	Corrections string
 	StopLoss    string
 	Delegates   []string
+	Goal        string
+	BuiltBy     string
 	Note        string
 
 	RefEpoch string
@@ -120,15 +122,33 @@ func (o *Options) cadence(key, flagValue string, flagSet bool, def string) (int6
 }
 
 var (
-	epochRe = regexp.MustCompile(`^[0-9]+$`)
-	sha1Re  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	fieldRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	epochRe  = regexp.MustCompile(`^[0-9]+$`)
+	sha1Re   = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	fieldRe  = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	goalIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
+
+// ValidGoalValue reports whether an optional receipt goal has the ledger's
+// identifier shape.
+func ValidGoalValue(value string) bool {
+	return value == "" || goalIDRe.MatchString(value)
+}
+
+// ValidBuiltByValue reports whether an optional receipt builder names one of
+// the supported classifications.
+func ValidBuiltByValue(value string) bool {
+	switch value {
+	case "", "coordinator", "delegate", "mixed":
+		return true
+	default:
+		return false
+	}
+}
 
 // Add implements `receipt add`.
 func Add(opts Options) Result {
 	switch opts.Type {
-	case "implement", "refactor", "improve", "review", "design", "investigate", "other":
+	case "implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "other":
 	default:
 		return fail(2, "invalid --type: %s", opts.Type)
 	}
@@ -149,6 +169,12 @@ func Add(opts Options) Result {
 	}
 	if !epochRe.MatchString(opts.Corrections) {
 		return fail(2, "invalid --corrections: %s", opts.Corrections)
+	}
+	if !ValidGoalValue(opts.Goal) {
+		return fail(2, "invalid --goal: %s", opts.Goal)
+	}
+	if !ValidBuiltByValue(opts.BuiltBy) {
+		return fail(2, "invalid --built-by: %s", opts.BuiltBy)
 	}
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return fail(2, "cannot create receipt directory: %v", err)
@@ -173,9 +199,16 @@ func Add(opts Options) Result {
 	class = noPipes(sanitize(class))
 	stream = noPipes(sanitize(stream))
 	now := opts.now().UTC()
-	line := fmt.Sprintf("%d|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|delegate=%s|critique_waived=%s|waiver_stream=%s|note=%s\n",
+	line := fmt.Sprintf("%d|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|delegate=%s",
 		now.Unix(), now.Format("2006-01-02T15:04:05Z"), opts.Type, opts.Outcome, noPipes(skills), opts.Verify,
-		opts.Corrections, opts.StopLoss, delegate, class, stream, noPipes(note))
+		opts.Corrections, opts.StopLoss, delegate)
+	if opts.Goal != "" {
+		line += "|goal=" + opts.Goal
+	}
+	if opts.BuiltBy != "" {
+		line += "|built_by=" + opts.BuiltBy
+	}
+	line += fmt.Sprintf("|critique_waived=%s|waiver_stream=%s|note=%s\n", class, stream, noPipes(note))
 	if err := appendLine(opts.File, line); err != nil {
 		return fail(2, "cannot write receipt file: %v", err)
 	}
@@ -212,6 +245,12 @@ func Correct(opts Options) Result {
 	}
 	if opts.Reason == "" {
 		return fail(2, "correct requires a nonempty --reason")
+	}
+	if opts.Field == "goal" && !ValidGoalValue(opts.NowValue) {
+		return fail(2, "invalid corrected goal value: %s", opts.NowValue)
+	}
+	if opts.Field == "built_by" && !ValidBuiltByValue(opts.NowValue) {
+		return fail(2, "invalid corrected built_by value: %s", opts.NowValue)
 	}
 	data, err := os.ReadFile(opts.File)
 	if err != nil {
@@ -331,7 +370,7 @@ func Stats(opts Options) Result {
 			out = append(out, fmt.Sprintf("outcome_%s=%d", outcome, count))
 		}
 	}
-	for _, kind := range []string{"implement", "refactor", "improve", "review", "design", "investigate", "other"} {
+	for _, kind := range []string{"implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "other"} {
 		if count, present := types[kind]; present {
 			out = append(out, fmt.Sprintf("type_%s=%d", kind, count))
 		}

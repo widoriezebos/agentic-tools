@@ -86,7 +86,7 @@ func nullableEpoch(value string) (any, error) {
 // BuildSetup writes the pending-setup reservation record: the minimal husk
 // that reserves a job id before the full record is assembled. A non-empty
 // parent marks a follow-up reservation.
-func BuildSetup(output, job, role, parent, mainID, claimEpoch string) error {
+func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
@@ -99,6 +99,7 @@ func BuildSetup(output, job, role, parent, mainID, claimEpoch string) error {
 		"error":      nil,
 		"mainId":     nullableString(mainID),
 		"claimEpoch": epoch,
+		"goalId":     nullableString(goalID),
 		"createdAt":  nowISO(),
 	}
 	if parent != "" {
@@ -169,6 +170,7 @@ type BuildRecordParams struct {
 	RequestedPair   string
 	CostDirection   string
 	Reviews         string
+	GoalID          string
 	MainID          string
 	ClaimEpoch      string
 }
@@ -249,6 +251,7 @@ func BuildRecord(p BuildRecordParams) error {
 		"round":              1,
 		"parentJob":          nil,
 		"reviews":            nullableString(p.Reviews),
+		"goalId":             nullableString(p.GoalID),
 		"status":             "pending",
 		"phase":              "handshake",
 		"error":              nil,
@@ -378,6 +381,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"stream":             parent["stream"],
 		"runtime":            parent["runtime"],
 		"reviews":            parent["reviews"],
+		"goalId":             parent["goalId"],
 		"workspaceRoot":      parent["workspaceRoot"],
 		"baseSha":            parent["baseSha"],
 		"branch":             parent["branch"],

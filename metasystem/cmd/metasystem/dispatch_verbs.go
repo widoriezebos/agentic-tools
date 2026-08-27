@@ -134,6 +134,7 @@ func runDispatchBuildSetup(args []string) int {
 	parent := flags.String("parent", "", "parent job id for a follow-up reservation")
 	mainID := flags.String("main-id", "", "dispatching main id")
 	claimEpoch := flags.String("claim-epoch", "", "worktree-lease claim epoch")
+	goalID := flags.String("goal", "", "goal id this job serves")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -141,7 +142,7 @@ func runDispatchBuildSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, and --role are required")
 		return 2
 	}
-	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch))
+	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID))
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
@@ -201,6 +202,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.RequestedPair, "requested-pair", "", "requested runtime:model pair")
 	flags.StringVar(&p.CostDirection, "cost-direction", "", "displayed escalation cost direction")
 	flags.StringVar(&p.Reviews, "reviews", "", "implementer job id under review (optional)")
+	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	if flags.Parse(args) != nil {

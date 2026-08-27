@@ -189,7 +189,8 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			return 2, true
 		}
 		res, err := goal.Done(req, f.id, f.conclude)
-		return printSyncResult(res, err), true
+		code := printSyncResult(res, err)
+		return reportAfterConfirmedDone(code, f.root, f.id, os.Stderr), true
 	case "reopen":
 		if !need(f.id, "id") {
 			return 2, true

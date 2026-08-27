@@ -185,6 +185,9 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	for _, dropped := range result.Dropped {
 		fmt.Println("dropped: " + dropped)
 	}
+	if name == "done" && len(values) > 0 {
+		return reportAfterConfirmedDone(0, *root, values[0], os.Stderr)
+	}
 	return 0
 }
 

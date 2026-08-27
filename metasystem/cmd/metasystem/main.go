@@ -239,6 +239,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "metrics",
+			summary: "actionable process, proof, lifecycle, delegation, collision, and cost measures",
+			verbs: []verb{
+				{"report", "compute and atomically publish a period or per-goal report", runMetricsReport},
+			},
+		},
+		{
 			name:    "schema",
 			summary: "role-return schema materialization",
 			verbs: []verb{

@@ -362,7 +362,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	})
 
 	setup := filepath.Join(tmp, "setup.json")
-	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7"); err != nil {
+	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7", ""); err != nil {
 		t.Fatalf("BuildSetup: %v", err)
 	}
 	if err := RecordCreate(root, "job-b", setup); err != nil {

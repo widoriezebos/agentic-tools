@@ -49,6 +49,8 @@ func runReceipt(args []string) int {
 		opts.Delegates = append(opts.Delegates, value)
 		return nil
 	})
+	flags.StringVar(&opts.Goal, "goal", "", "goal id this receipt belongs to")
+	flags.StringVar(&opts.BuiltBy, "built-by", "", "builder classification: coordinator, delegate, or mixed")
 	flags.StringVar(&opts.Note, "note", "", "free-text note")
 	flags.StringVar(&opts.RefEpoch, "ref-epoch", "", "corrected line's epoch")
 	flags.StringVar(&opts.RefSHA1, "ref-sha1", "", "corrected line's sha1")
