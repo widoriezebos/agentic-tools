@@ -21,7 +21,7 @@ different limits: some costs fall, others change shape, memory exists
 only in records, failure is silent by default, plausible work can be
 wrong, and trustworthy judgment remains scarce. Copying standups,
 sprints, reviews, and estimates into this workforce preserves familiar
-forms instead of the conditions they protected. Chapter 4 asks, ceremony
+forms instead of the needs they served. Chapter 4 asks, ceremony
 by ceremony, which practices to discard, which to replace with
 machinery, which to adapt, and which to keep as explicitly human acts.
 

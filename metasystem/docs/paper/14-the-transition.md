@@ -46,13 +46,13 @@ Scope widens from reversible, familiar, limited work because failures are cheape
 
 ## Retain, replace, or discard according to the surviving condition
 
-The weekly authentication meeting appears to be a status ceremony. Closer observation shows that a support representative uses it to raise lockout patterns that no technical measure records, while a security representative explains new threats. The meeting carries discovery and negotiation, not just status. Until another practice reliably brings that evidence and those people into the decision, removing the meeting would remove a protected condition that the new machinery does not yet serve.
+The weekly authentication meeting appears to be a status ceremony. Closer observation shows that a support representative uses it to raise lockout patterns that no technical measure records, while a security representative explains new threats. The meeting carries discovery and negotiation, not just status. Until another practice reliably brings that evidence and those people into the decision, removing the meeting would leave a need the new machinery does not yet serve.
 
-The method described in Chapter 4 asks for that condition before choosing a form. A durable live record may replace a daily status recital. A repeatable independent check may replace a manual test when it catches the same failures and permits valid cases. A discussion that exposes conflicting values remains human even when machinery prepares its evidence.
+The method described in Chapter 4 asks for that need before choosing a form. A durable live record may replace a daily status recital. A repeatable independent check may replace a manual test when it catches the same failures and permits valid cases. A discussion that exposes conflicting values remains human even when machinery prepares its evidence.
 
-There is also a deletion branch. Chapter 4 already established the sprint case in which no protected condition survives and the cadence is discarded. Transition does not repeat that analysis. It confirms that the recorded decision still applies, removes the ceremony without replacement, and preserves the evidence and authority for the deletion. Without that record, simplification would be indistinguishable from neglect.
+There is also a deletion branch. Chapter 4 already established the sprint case in which no need survives and the cadence is discarded. Transition does not repeat that analysis. It confirms that the recorded decision still applies, removes the ceremony without replacement, and preserves the evidence and authority for the deletion. Without that record, simplification would be indistinguishable from neglect.
 
-Replacement evidence is required only when a protected condition remains. In that case, the old practice stays until the proposed mechanism demonstrates equal or better protection across a declared period and range of risk. The team may adapt the old practice while learning; it must not claim that a new dashboard preserves negotiation, accountability, or independent scrutiny just because it has the same inputs on a screen.
+Replacement evidence is required only when the need remains. In that case, the old practice stays until the proposed mechanism demonstrably serves that need as well or better across a declared period and range of risk. The team may adapt the old practice while learning; it must not claim that a new dashboard preserves negotiation, accountability, or independent scrutiny just because it has the same inputs on a screen.
 
 ## Make rollback part of adoption
 

@@ -64,7 +64,7 @@ The argument allows a rational decision not to build the system. It does not exe
 
 A team facing the first low-risk version of a tool may need only recorded intent, a discriminating check, and a reversible release. Later, the tool gains users and begins storing private information. The cost balance changes, and independent examination, narrower authority, durable custody, and production care become justified.
 
-The smallest sufficient mechanism protects the relevant outcome at the expected level of risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost, or a valuable learning opportunity. It is removed when its protected condition disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
+The smallest sufficient mechanism protects the relevant outcome at the expected level of risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost, or a valuable learning opportunity. It is removed when the need it served disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
 
 The proposed shift in engineering ownership is directional; it does not carry the same weight everywhere. Repeated or consequential software makes the system that builds and cares for it a durable asset. A script used once may need almost none of that asset. Both choices can follow the same economic discipline.
 

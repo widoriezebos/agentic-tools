@@ -36,7 +36,7 @@ Months later, a new session implementation arrives. It is faster and simpler, bu
 
 Such a floor preserves a minimum behavior; it does not set a permanent direction. A dependency may remain below a known vulnerable version. An expired session may remain unable to revive. A recovery path may remain demonstrable before release. These are conditions that later work must either satisfy or challenge through the named appeal route.
 
-The floor is not a ratchet under every measure. Shorter session lifetimes are not automatically safer when repeated sign-ins lock people out or destroy work. More tests are not automatically better when they repeat one assumption and consume attention needed elsewhere. Even a well-tested floor can be repealed when its protected condition no longer exists or a better mechanism replaces it. The record makes such a change reviewable instead of impossible.
+The floor is not a ratchet under every measure. Shorter session lifetimes are not automatically safer when repeated sign-ins lock people out or destroy work. More tests are not automatically better when they repeat one assumption and consume attention needed elsewhere. Even a well-tested floor can be repealed when the condition it protects no longer exists or a better mechanism replaces it. The record makes such a change reviewable instead of impossible.
 
 ## Near-misses widen the evidence base
 
