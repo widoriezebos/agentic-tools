@@ -8,17 +8,17 @@ The chapters that follow will give those principles mechanisms, limits, and coun
 
 Suppose release is forbidden unless the exact candidate has passed a reversal check. A builder cannot waive the condition by explaining that the change is small. Authorized release cannot ignore it because the day is nearly over. The rule has power at the action it controls: it refuses release and says what evidence is absent.
 
-This paper calls such an enforced rule a law. The term names authority, not ceremony. A legislator is the person or group authorized to change the rule. A judge is a person authorized to decide a named exception. A precedent is a recorded ruling that later cases may use, and an appeal is a named route for asking another authorized person or body to reconsider a decision. These terms describe permissions and continuity; they do not prescribe job titles. One person may hold several permissions, and an organization may distribute one permission across a body.
+This paper calls such an enforced rule a law. The term names authority; it adds no ceremony. A legislator is the person or group authorized to change the rule. A judge is a person authorized to decide a named exception. A precedent is a recorded ruling that later cases may use, and an appeal is a named route for asking another authorized person or body to reconsider a decision. These terms describe permissions and continuity; they do not prescribe job titles. One person may hold several permissions, and an organization may distribute one permission across a body.
 
 The metaphor stops at that boundary. Software has no moral agency, cannot accept accountability, and cannot make a political disagreement disappear by enforcing one side. A law can refuse an unauthorized action. It cannot decide whether a rule is just. A recorded precedent can make a ruling visible. It cannot make the ruling wise. Value and political disagreement remain with people who have the authority and responsibility to decide them.
 
 ## Intent is controlling and revisable
 
-A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work. The system exists to serve that human intent, not the builder's preferred design or the process's desire to finish.
+A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work. The system exists to serve that human intent rather than the builder's preferred design or the process's desire to finish.
 
-Intent controls construction, checks, release, and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. Chapter 2 therefore makes intent versioned, challengeable, and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a binding decision.
+Intent controls construction, checks, release, and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. Chapter 2 makes intent versioned, challengeable, and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a binding decision.
 
-The principle is not "obey the first requirement." It is that machinery acts under the current authorized intent, while evidence can challenge both the candidate and the intent itself. A revision produces a new controlling record; it does not silently rewrite the purpose of work already performed.
+The principle says that machinery acts under the current authorized intent, while evidence can challenge both the candidate and the intent itself. "Obey the first requirement" would be a different and worse principle. A revision produces a new controlling record; the purpose of work already performed is never rewritten in place.
 
 ## Evidence over trust
 
@@ -26,7 +26,7 @@ After the builder revises the candidate, it reports that expiry is now final. An
 
 Completion claims must be tied to such observations. This paper uses evidence for the traceable results on which practical judgment depends: test outcomes, independent findings, release observations, and records of reversal. It reserves proof for a narrower statement - a conclusion demonstrated within named boundaries and assumptions. A boundary check can prove how an exact candidate behaves under its controlled clock. It cannot prove that every real clock, network delay, or human situation has been anticipated.
 
-Trust in a capable builder can guide where to look. It cannot authorize a consequence. Chapter 6 develops the evidence required to separate a warranted claim from a fluent one.
+Trust in a capable builder can guide where to look. It cannot authorize a consequence. Chapter 6 develops the evidence required to separate a supported claim from a convincing one.
 
 ## Records are the only durable memory
 
@@ -42,7 +42,7 @@ A release guide says that live observation should distinguish an expected rise i
 
 When violation of a condition would make an action unacceptable, the condition belongs where that action can be refused. The refusal must identify the exact candidate, the unmet condition, and the route by which work may continue. Otherwise enforcement becomes an unexplained obstacle rather than a governable protection.
 
-Important does not mean permanent or automatically correct. A rule can encode a bad proxy, outlive its purpose, or cause harm through false refusals. Chapters 6 and 12 develop how evidence supports enforced rules and how those rules are tested, challenged, revised, or repealed. The principle here is narrower: a condition that must hold cannot depend on every worker choosing to remember it.
+An important rule is not automatically permanent or correct. A rule can encode a bad proxy, outlive its purpose, or cause harm through false refusals. Chapters 6 and 12 develop how evidence supports enforced rules and how those rules are tested, challenged, revised, or repealed. The principle here is narrower: a condition that must hold cannot depend on every worker choosing to remember it.
 
 ## Spend and human authority are designed
 
@@ -50,18 +50,18 @@ Five parallel builders can explore the session change quickly. They also create 
 
 Construction and verification therefore receive explicit budgets proportional to risk. A budget is not a hope recorded beside the work. When it is exhausted, machinery stops, records what it learned, and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure, and accumulated change rather than to line count or confidence.
 
-Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives, and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always terminate in responsible authorities. This boundary is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
+Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives, and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always end with responsible authorities. This boundary is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
 
-## Honest failure leaves a record
+## Failure leaves a record
 
-An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. Calling the work complete would hide the only result that matters. Stopping with the conflicting observations, the attempted cases, and the exhausted budget gives the next authorized decision something real to use.
+An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. Calling the work complete would hide the only result that counts. Stopping with the conflicting observations, the attempted cases, and the exhausted budget gives the next authorized decision something real to use.
 
-The system should prefer a clear refusal supported by evidence to a success it cannot justify. Failure, near-miss, and uncertainty are outcomes, not missing paperwork. They remain connected to the intent and candidate so that care can repair immediate harm and learning can improve later work. A worker may disappear; the fact that it failed and what it learned must not disappear with it.
+The system should prefer a clear refusal supported by evidence to a success it cannot justify. Failure, near-miss, and uncertainty are outcomes in their own right, and they are recorded as such. They remain connected to the intent and candidate so that care can repair immediate harm and learning can improve later work. A worker may disappear; the fact that it failed and what it learned must not disappear with it.
 
 ## The change, continued
 
-Chapter 1 already records the three-part ruling, the named checks, the refused candidate, the bounded release, and one human interruption. Their consequence here is an allocation among principles, not another account of the day.
+Chapter 1 already records the three-part ruling, the named checks, the refused candidate, the bounded release, and one human interruption. What they add here is an allocation among principles rather than another account of the day.
 
 The ruling belongs to controlling, revisable intent because it settles choices that evidence cannot make. The checks and preserved known-bad candidate belong to evidence over trust because they distinguish a supported claim from assurance. The refusal belongs to the principle that important rules refuse. Binding each decision and result to the exact candidate supplies durable memory, while explicit budgets make spend a governed choice rather than an open-ended request to continue.
 
-Human authority owns the value ruling and any exception; machinery owns no accountability by accumulation of evidence. The refused attempt remains an honest recorded failure. Together these allocations make the application a governed output that can be reconstructed, challenged, released, cared for, and revised without asking anyone to trust a confident recital.
+Human authority owns the value ruling and any exception; machinery owns no accountability by accumulation of evidence. The refused attempt stays on record as a failure. Together these allocations make the application a governed output that can be reconstructed, challenged, released, cared for, and revised without asking anyone to trust a confident recital.
