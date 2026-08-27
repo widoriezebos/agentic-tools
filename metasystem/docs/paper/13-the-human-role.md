@@ -4,13 +4,13 @@ Chapter 1 already records the single 9:12 interruption and the three-part ruling
 
 The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.
 
-This is the proposed human role in governed delivery. Final human authority does not require continuous presence. It means that identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one. The umbrella term for these people is the responsible authority; this chapter names the specific capacities: intent-holder for purpose, legislator for enforceable rules, judge for named exceptions, reviewer for authorized review.
+This is the proposed human role in governed delivery. Final human authority does not require continuous presence. It means that identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one. The umbrella term for these people is the responsible authority; this chapter takes each capacity in turn.
 
 ## Legislator: authority over enforceable rules
 
 A new check now proposes to refuse any security timeout that depends on a civil-clock jump. The check has passed its own tests, but passing tests does not grant it authority. Someone must decide that future builders may be stopped by it, define which work it governs and provide a route for changing or repealing it. The builder who wants the check is not entitled to grant that power just by adding it.
 
-The person or authorized group that may create, change and repeal such enforced rules acts as the legislator. Its permission includes defining who may exercise the same power, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A temporary incident body may receive power to tighten one release condition without receiving a permanent right to rewrite all delivery rules.
+That power to create, change and repeal enforced rules is the legislator's. It includes defining who may exercise it, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A temporary incident body may receive power to tighten one release condition without receiving a permanent right to rewrite all delivery rules.
 
 The word gives software governance none of the legitimacy, institutions or reach of public law. A private permission cannot borrow moral authority from its name, and the organization remains answerable to law outside the delivery system.
 
@@ -20,7 +20,7 @@ Because enforced rules can stop action, their authorship and limits stay visible
 
 An upload has reached its final seconds when the ordinary session expires. The standing ruling permits a limited continuation, but an unusual recovery operation will take much longer and cannot be restarted without loss. The machinery can show the data at risk, the security exposure, the possible alternatives and whether reversal remains possible. It cannot decide that this case deserves an exception.
 
-The human authorized to resolve that named case acts as the judge. The permission may cover an escalated value conflict, acceptance of specified risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
+Resolving that named case is the judge's work. The permission may cover an escalated value conflict, acceptance of specified risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
 
 The record keeps the judge's identity, authority, reasons, evidence, scope and expiry attached to the decision. That attachment is not ceremonial. If the exception causes harm, the organization must be able to determine who had the duty to decide, what that person knew and whether the decision exceeded its authority. If later evidence changes the balance, another responsible authority must be able to reconsider it.
 

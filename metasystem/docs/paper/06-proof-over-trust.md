@@ -6,9 +6,9 @@ That difference between explanation and observation is the organizing principle:
 
 ## Evidence, proof and the boundary between them
 
-A check sets a clock to one second after expiry, sends a request and observes rejection. That result is evidence: a traceable observation relevant to the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is evidence of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition and observable result.
+A check sets a clock to one second after expiry, sends a request and observes rejection. That result is evidence for the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is evidence of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition and observable result.
 
-Proof is narrower. Within a controlled clock, a specified session state, a stated definition of activity and the exact candidate examined, the check may demonstrate that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision or user just because the check passed.
+What this check can prove is narrower. Within its controlled clock, a specified session state, a stated definition of activity and the exact candidate examined, it demonstrates that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision or user just because the check passed.
 
 ## Enforced rules instead of guidelines
 
