@@ -1,6 +1,6 @@
 # The Metasystem: the System That Builds the System
 
-**Engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering: moving human attention from building the application to building the system that builds the application, and about refusing to carry human ceremony into a workforce that does not need it.
+**Engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering: moving human attention from building the application to building the system that builds the application (and about refusing to carry human ceremony into a workforce that does not need it).
 
 ## The paper in five parts
 
