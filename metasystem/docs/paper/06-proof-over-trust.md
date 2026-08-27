@@ -16,7 +16,7 @@ The distinction prevents exaggeration without denying a bounded demonstration. P
 
 The first candidate reaches a release step with the late-response check failing. A guide beside the work says that all session checks should pass. The builder can still proceed if the guide has no power. When the same condition sits at the release action and refuses the candidate, the missing protection becomes effective rather than advisory.
 
-This is an enforced rule in the vocabulary established by Chapter 1. It controls a named action, judges the exact candidate presented for that action, and explains a refusal in plain language. “Release refused: a response received after expiry restores access” is governable. “Policy failed” is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
+This is an enforced rule in the vocabulary established by Chapter 1. It controls a named action, judges the exact candidate presented for that action, and explains a refusal in plain language. "Release refused: a response received after expiry restores access" is governable. "Policy failed" is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
 
 Binding to the exact candidate matters. Evidence from an earlier version cannot authorize a later revision, even when the difference looks harmless. Release evidence must also bind to the environment; one configuration cannot authorize another that changes the behavior. An enforced rule remains trustworthy only while its evidence refers to what will act on users and no actor can bypass it without the named authority.
 
@@ -30,7 +30,7 @@ Expected results need their own source. The rule that background refresh does no
 
 ## Independent examiners look for faults
 
-An independent examiner asked “does this solution look correct?” after reading the builder's full argument may follow the same path and admire the same choices. An independent examiner given the authorized intent, relevant constraints, finished candidate, and resulting evidence can instead begin from the claims that must survive and look for ways to break them. The object of judgment is the work, not the builder's story about reaching it.
+An independent examiner asked "does this solution look correct?" after reading the builder's full argument may follow the same path and admire the same choices. An independent examiner given the authorized intent, relevant constraints, finished candidate, and resulting evidence can instead begin from the claims that must survive and look for ways to break them. The object of judgment is the work, not the builder's story about reaching it.
 
 Each new independent examiner therefore receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That boundary protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a fresh machine instance that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority, but it cannot manufacture independence after the fact. Chapter 8 develops how one durable record can support both continuity and appropriately limited access.
 

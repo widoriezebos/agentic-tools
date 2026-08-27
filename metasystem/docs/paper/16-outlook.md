@@ -20,7 +20,7 @@ This shift does not remove construction knowledge. A person who governs a builde
 
 ## New scarcities, new skills
 
-The request “make sessions expire sooner” is cheap to write and expensive to clarify. Someone must expose whether the limit begins at creation or last activity, whether passive reading counts, which sessions already in progress change, and what happens to unfinished work. As construction becomes cheaper, this ability to turn purpose into observable outcomes becomes more valuable.
+The request "make sessions expire sooner" is cheap to write and expensive to clarify. Someone must expose whether the limit begins at creation or last activity, whether passive reading counts, which sessions already in progress change, and what happens to unfinished work. As construction becomes cheaper, this ability to turn purpose into observable outcomes becomes more valuable.
 
 Writing checkable intent is not writing a longer specification. It states the result, constraints, affected people, freedoms left to construction, and observations of success or harm. It also invites contradiction. If evidence shows that the timeout locks out a class of users, the intent may need revision.
 
@@ -32,7 +32,7 @@ Incidents create another skill: turning experience into a measured change in fut
 
 Plain explanation remains essential. A responsible authority deciding whether to shorten sessions needs a bounded question, credible alternatives, and a traceable account of likely effects. Affected people challenging the decision need to understand what happened and where appeal goes. Producing more internal detail is not explanation. The skill is to connect each material claim to evidence in language the person bearing responsibility can use.
 
-Human attention remains scarce throughout. The system should not spend it on routine approval theater or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, changes to governing rules, weak or correlated evidence, and accountability. Deciding where human judgment is mandatory—and designing reliable machinery for the rest—becomes a central engineering act.
+Human attention remains scarce throughout. The system should not spend it on routine approval theater or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, changes to governing rules, weak or correlated evidence, and accountability. Deciding where human judgment is mandatory - and designing reliable machinery for the rest - becomes a central engineering act.
 
 ## What must not be lost
 
@@ -40,13 +40,13 @@ A user is repeatedly signed out and cannot complete important work. The release 
 
 Four protections follow from that failure. Accountability terminates in identifiable humans. Affected people have a route to challenge consequential decisions. Records make the decision, authority, evidence, and reasons understandable. Reversibility exists wherever the world permits it, with compensating action and explicit human acceptance where it does not.
 
-These protections are conditions under which delegated action remains legitimate and correctable. A machine cannot bear blame, represent an affected community, or decide that one person’s security warrants another’s burden. Anonymous group approval cannot supply accountability merely because people participated. An unexplained record cannot support meaningful appeal.
+These protections are conditions under which delegated action remains legitimate and correctable. A machine cannot bear blame, represent an affected community, or decide that one person's security warrants another's burden. Anonymous group approval cannot supply accountability merely because people participated. An unexplained record cannot support meaningful appeal.
 
 Pressure will test these boundaries. A faster path may omit a reviewer. A cheaper record may discard dissent. A broad permission may simplify recovery. A persuasive recommendation may tempt an authority to approve without understanding. The governing design must make those choices visible and refuse them where the protected condition requires refusal. Efficiency is evidence only when responsibility, challenge, and harm remain in view.
 
 ## Open problems
 
-One organization’s delivery system produces evidence that a second organization must rely on. The second cannot inspect every tool, rule, and dependency behind it, yet a simple badge of approval may conceal important differences in risk. How evidence travels across organizational boundaries without becoming either an unreadable archive or an unsupported claim remains open.
+One organization's delivery system produces evidence that a second organization must rely on. The second cannot inspect every tool, rule, and dependency behind it, yet a simple badge of approval may conceal important differences in risk. How evidence travels across organizational boundaries without becoming either an unreadable archive or an unsupported claim remains open.
 
 Federation and portable evidence require independent systems to recognize identity, provenance, scope, and assurance without surrendering judgment. Common standards may help, but can freeze weak assumptions or favor those able to shape them. The paper proposes no settled format.
 

@@ -4,7 +4,7 @@ A builder proposes a faster release rule. The current enforced rule requires an 
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by machinery outside the candidate. A change to an enforced rule, the identity check, or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must therefore survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
-This stress test is necessary for the paper’s proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. Success is not sufficient evidence for the wider thesis. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice, or fail in another organization. Self-application can expose a contradiction. It cannot prove external validity.
+This stress test is necessary for the paper's proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. Success is not sufficient evidence for the wider thesis. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice, or fail in another organization. Self-application can expose a contradiction. It cannot prove external validity.
 
 ## The distinctive self-change problem
 
@@ -22,7 +22,7 @@ At some beginning, no prior delivery-system record exists. A named human authori
 
 From then on, version one judges the adoption of version two; version two, once independently accepted, may judge version three. Each self-change is bound to the prior rule set that authorized it. The evidence includes the exact old and proposed versions, the checks each performed, the human rulings involved, the resulting state, and the recovery route. A later rule may change future requirements, but it cannot retroactively make its own adoption valid.
 
-That sequence is the bootstrap: a limited starting authority followed by a chain in which each accepted state authorizes the next. Its records must be protected from the candidate. So must the last safe version and the means of restoring it. A proposal that can rewrite the only recovery copy or alter the evidence after examination has not passed a self-application test; it has removed the test’s independence.
+That sequence is the bootstrap: a limited starting authority followed by a chain in which each accepted state authorizes the next. Its records must be protected from the candidate. So must the last safe version and the means of restoring it. A proposal that can rewrite the only recovery copy or alter the evidence after examination has not passed a self-application test; it has removed the test's independence.
 
 Recovery also needs to cover authority and data, not only program files. If a candidate wrongly grants itself release permission, restoring its code while leaving that grant active does not return to the prior boundary. If a new record format loses earlier decisions, restarting the old worker does not restore memory. The bootstrap record therefore identifies the full state that must survive and the authorized person who may order recovery when automatic reversal is unsafe.
 
@@ -44,13 +44,13 @@ This sequence can reveal several structural defects. An enforced rule that canno
 
 Passing shows that, under the stated cases and assumptions, the system preserves an older basis for judgment, maintains required separation, and can recover from the candidate it is examining. That is useful evidence of internal consistency. It does not show that the clock rule protects users in every environment. It does not show that the organization has assigned authority wisely. It does not show that governed delivery improves cost or harm outside this system.
 
-Self-application is therefore a necessary but insufficient test. Failure directly contradicts a system’s claim that its rules bind important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
+Self-application is therefore a necessary but insufficient test. Failure directly contradicts a system's claim that its rules bind important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
 
 ## Falsifiability and independent support
 
 Consider three organizations that adopt the proposed principles for different applications. They record more checks, clearer authority, and successful self-changes, yet escaped harm repeatedly rises and total delivery cost remains higher than under simpler controls. If the comparison covers similar risk and does not merely count a difficult transition period, that result weighs against the thesis. The proposal cannot preserve itself by calling every failure incomplete adoption.
 
-The paper’s claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations—because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority—count against them. Retained human ceremonies that outperform proposed replacements on the same protected condition, across comparable cases and costs, count against the claim that those replacements are better.
+The paper's claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations - because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority - count against them. Retained human ceremonies that outperform proposed replacements on the same protected condition, across comparable cases and costs, count against the claim that those replacements are better.
 
 Support must come from reproducible evidence across different teams, risk levels, applications, and operating conditions. It must include negative results, unsuccessful transitions, and comparisons with simpler approaches. Evidence gathered by the system about itself may contribute one case, but it cannot be the only case. Independent examiners must be able to inspect the assumptions, measures, missed harms, and selection of examples.
 

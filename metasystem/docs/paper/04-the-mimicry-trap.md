@@ -1,6 +1,6 @@
 # 4. The Mimicry Trap
 
-Imagine that at nine each morning, six machine workers receive a prompt called “standup.” Each produces three tidy sentences about yesterday, today, and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach, and none has challenged the assumption that a background refresh proves a user is active. The ceremony is present. The protection is not.
+Imagine that at nine each morning, six machine workers receive a prompt called "standup." Each produces three tidy sentences about yesterday, today, and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach, and none has challenged the assumption that a background refresh proves a user is active. The ceremony is present. The protection is not.
 
 This is the mimicry trap. A familiar process is copied into a medium with different limits, so the result looks controlled while the condition that once justified the process remains unexamined. Avoiding the trap does not require rejecting history. It requires reading each inherited practice as evidence about the problem it was built to solve.
 
@@ -22,7 +22,7 @@ This is ceremony archaeology: begin with a concrete practice, recover the human 
 
 ## Why mimicry is attractive
 
-An auditor asks how a release was reviewed. “It passed code review” fits an established form. A manager asks when work will arrive. “It is in the next sprint” fits a familiar calendar. Both answers are recognizable, and recognizability has real value. It helps people know where to ask, gives authorities a place to intervene, and makes accountability easier to describe.
+An auditor asks how a release was reviewed. "It passed code review" fits an established form. A manager asks when work will arrive. "It is in the next sprint" fits a familiar calendar. Both answers are recognizable, and recognizability has real value. It helps people know where to ask, gives authorities a place to intervene, and makes accountability easier to describe.
 
 Familiarity also leaves people in a reassuring position: a machine proposes each step and a person approves it. That arrangement can be appropriate when the person is deciding a reserved question or the consequences require independent human judgment. It is less convincing when the approval consists of glancing at a fluent report of evidence the person cannot reproduce. The visible human remains, but the claimed scrutiny may not.
 
@@ -56,7 +56,7 @@ The fourth case ends differently. A shorter session limit protects unattended ac
 
 ## What cannot first be extracted
 
-Three people enter a review believing they agree that a session warning should be “accessible.” One means that a screen reader announces it. Another means that every user receives enough time to act. The third means that the security limit must not be extended at all. The meeting does not merely execute an existing rule. It reveals that the shared word concealed incompatible intentions.
+Three people enter a review believing they agree that a session warning should be "accessible." One means that a screen reader announces it. Another means that every user receives enough time to act. The third means that the security limit must not be extended at all. The meeting does not merely execute an existing rule. It reveals that the shared word concealed incompatible intentions.
 
 Some ceremonies hold tacit knowledge and create the encounter in which disagreement becomes visible. Their protection cannot be fully extracted in advance because discovery is part of the act. The method must therefore name what remains unknown and preserve a human place for negotiation. Machinery can prepare examples, expose conflicting statements, record rulings, and later enforce what can be made checkable. It cannot automate the disagreement away by turning the surrounding paperwork into a form.
 

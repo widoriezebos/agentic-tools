@@ -2,21 +2,21 @@
 
 Working title, with subtitle: **engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering:
 moving human attention from building the application to building the
-system that builds the application — and about refusing to carry
+system that builds the application - and about refusing to carry
 human ceremony into a medium that does not need it.
 
 ## The story arc
 
-**Act I — The shift (chapters 1–2).** Engineering attention has moved
+**Act I - The shift (chapters 1-2).** Engineering attention has moved
 up a level before: assembly to compilers, servers to infrastructure as
 code, manual testing to continuous integration. Agentic engineering
 extends that move to engineering itself, but it begins by separating
-what delivery requires — intent, construction, evidence, care, and
-learning — from the ceremonies humans invented around those needs.
+what delivery requires - intent, construction, evidence, care, and
+learning - from the ceremonies humans invented around those needs.
 Intent becomes the durable interface, while its ambiguity, conflict,
 and capacity to be wrong become design problems in their own right.
 
-**Act II — The medium and the trap (chapters 3–4).** Agentic labor has
+**Act II - The medium and the trap (chapters 3-4).** Agentic labor has
 different limits: some costs fall, others change shape, memory exists
 only in records, failure is silent by default, plausible work can be
 wrong, and trustworthy judgment remains scarce. Copying standups,
@@ -25,19 +25,19 @@ forms instead of the conditions they protected. Ceremony archaeology
 therefore asks which practices to discard, replace with machinery,
 adapt, or retain as deliberately human acts.
 
-**Act III — The principles and the machinery (chapters 5–10).** A
+**Act III - The principles and the machinery (chapters 5-10).** A
 short statement of the principles comes first: serve revisable intent,
 prefer evidence to trust, keep durable records, enforce important
 rules, spend in proportion to risk, and reserve named decisions for
 humans. Later chapters elaborate the machinery: bounded proof,
 independent roles derived from actual hazards, coordination through
 records, liveness and protection against hostile conditions, and care
-of software after release. One ordinary change — adding an expiry date
-to user sessions — continues through every chapter to keep the
+of software after release. One ordinary change - adding an expiry date
+to user sessions - continues through every chapter to keep the
 principles concrete.
 
-**Act IV — The economy, the learning loop, the human (chapters
-11–13).** Four shared questions tie verification effort and total cost
+**Act IV - The economy, the learning loop, the human (chapters
+11-13).** Four shared questions tie verification effort and total cost
 to how severe the harm could be, how unfamiliar the approach is, how
 many users or systems it can affect, and how much change has accumulated,
 including the cost of judging parallel attempts. Incidents can produce
@@ -46,8 +46,8 @@ expiry, and a named route for challenge. Humans govern values and
 exceptions through precisely bounded authority, including delegation
 and challenge when several people hold conflicting intent.
 
-**Act V — The transition, the stress test, and the horizon (chapters
-14–16).** Existing teams reach the new model by inferring current
+**Act V - The transition, the stress test, and the horizon (chapters
+14-16).** Existing teams reach the new model by inferring current
 intent, running old and new controls together, transferring authority
 only as evidence earns it, and preserving rollback. Self-application
 then tests the distinctive case of machinery changing its own

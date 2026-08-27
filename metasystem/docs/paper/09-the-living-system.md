@@ -6,11 +6,11 @@ A delivery system is living in a limited but important sense. Its workers start,
 
 ## Silent death and deadlines
 
-At 10:03, the migration worker last records the set of existing sessions it intends to update. At 10:04, an independent signal confirms that the worker is still running. By 10:09, neither the intended update nor another signal appears. A status that still says “working” cannot distinguish slow progress from a stopped worker.
+At 10:03, the migration worker last records the set of existing sessions it intends to update. At 10:04, an independent signal confirms that the worker is still running. By 10:09, neither the intended update nor another signal appears. A status that still says "working" cannot distinguish slow progress from a stopped worker.
 
 The system therefore observes two things. It looks for recent work products that change the recorded state of the task, and it looks for a heartbeat, a small independently observed sign that the worker is still able to act. Neither is sufficient alone. A worker can remain alive while making no progress, and a finished work product can remain visible after its worker has died. Together they allow a liveness watcher to distinguish activity, waiting, and silence more honestly.
 
-Every wait also has a deadline and an owner. The deadline says when uncertainty must stop being treated as normal delay. The owner is the actor authorized to decide what follows: retry, replacement, reversal, or human escalation. “Wait until it finishes” is not an operating rule unless someone can say when the wait ends and who acts then.
+Every wait also has a deadline and an owner. The deadline says when uncertainty must stop being treated as normal delay. The owner is the actor authorized to decide what follows: retry, replacement, reversal, or human escalation. "Wait until it finishes" is not an operating rule unless someone can say when the wait ends and who acts then.
 
 Timeout does not mean blind repetition. Before work begins, it records enough state to make a later attempt safe. The session migration identifies which version it is changing, what has already completed, and which action remains. If the worker stops, the replacement can continue from the last complete state or reverse it. Silent death becomes a contained interruption rather than an ambiguous result.
 

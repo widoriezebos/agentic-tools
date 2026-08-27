@@ -6,7 +6,7 @@ The system therefore keeps memory outside its mortal workers. Intent, decisions,
 
 ## One authoritative record, with access limited by role
 
-Consider the first session-expiry candidate. One account says it is ready. Another says a delayed background response revives an expired session. A third says the candidate was repaired, but the evidence belongs to the earlier version. If all three accounts can determine the state of the work, “ready” has no stable meaning. Release can follow whichever story an actor happens to read.
+Consider the first session-expiry candidate. One account says it is ready. Another says a delayed background response revives an expired session. A third says the candidate was repaired, but the evidence belongs to the earlier version. If all three accounts can determine the state of the work, "ready" has no stable meaning. Release can follow whichever story an actor happens to read.
 
 The remedy is one authoritative record: a structured, history-preserving source that alone determines the current state. For the case established in Chapter 1, it binds every state transition to the actor, authority, exact candidate, and evidence that support it. Earlier states remain visible to authorized readers rather than being rewritten to make the final path look clean. A private note can help a worker think, but it cannot make a candidate accepted or an enforced rule passed until the relevant fact enters the authoritative record.
 
@@ -30,7 +30,7 @@ These views are not separate records. They are selected views of the same preser
 
 ## Handoff by record
 
-Suppose the builder stops after it has identified the sessions that need a new expiry time but before it has changed them. The replacement must not infer progress from a half-written explanation. It needs the authorized intent, the last completed state, the exact actions already taken, the evidence those actions produced, the open question, and the next action it is permitted to perform. If the record says only “migration in progress,” safe continuation is impossible.
+Suppose the builder stops after it has identified the sessions that need a new expiry time but before it has changed them. The replacement must not infer progress from a half-written explanation. It needs the authorized intent, the last completed state, the exact actions already taken, the evidence those actions produced, the open question, and the next action it is permitted to perform. If the record says only "migration in progress," safe continuation is impossible.
 
 This gives handoff a concrete test. Stop any builder, independent examiner, custodian, or auditor at any moment and ask a replacement in the same role to continue from the records that role may read. The replacement should be able to distinguish completed work from proposed work, identify unresolved questions, and either continue or reverse without private instruction from its predecessor. A handoff succeeds when the record carries the work, not when two actors overlap long enough to exchange a convincing story.
 

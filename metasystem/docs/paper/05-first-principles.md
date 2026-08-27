@@ -4,7 +4,7 @@ A candidate reaches the release boundary with a persuasive explanation and a pas
 
 The chapters that follow will give those principles mechanisms, limits, and counterarguments. This chapter states them briefly so that the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
 
-## What the legal metaphor means — and where it stops
+## What the legal metaphor means - and where it stops
 
 Suppose release is forbidden unless the exact candidate has passed a reversal check. A builder cannot waive the condition by explaining that the change is small. Authorized release cannot ignore it because the day is nearly over. The rule has power at the action it controls: it refuses release and says what evidence is absent.
 
@@ -18,13 +18,13 @@ A builder finds an easy way to sign every user out after thirty minutes from sig
 
 Intent controls construction, checks, release, and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. Chapter 2 therefore makes intent versioned, challengeable, and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a binding decision.
 
-The principle is not “obey the first requirement.” It is that machinery acts under the current authorized intent, while evidence can challenge both the candidate and the intent itself. A revision produces a new controlling record; it does not silently rewrite the purpose of work already performed.
+The principle is not "obey the first requirement." It is that machinery acts under the current authorized intent, while evidence can challenge both the candidate and the intent itself. A revision produces a new controlling record; it does not silently rewrite the purpose of work already performed.
 
 ## Evidence over trust
 
 After the builder revises the candidate, it reports that expiry is now final. An independent examination sends the late response again and observes that access remains closed. The observation supports the claim in a way the builder's assurance cannot, because it distinguishes the repaired behavior from the earlier failure.
 
-Completion claims must be tied to such observations. This paper uses evidence for the traceable results on which practical judgment depends: test outcomes, independent findings, release observations, and records of reversal. It reserves proof for a narrower statement—a conclusion demonstrated within named boundaries and assumptions. A boundary check can prove how an exact candidate behaves under its controlled clock. It cannot prove that every real clock, network delay, or human situation has been anticipated.
+Completion claims must be tied to such observations. This paper uses evidence for the traceable results on which practical judgment depends: test outcomes, independent findings, release observations, and records of reversal. It reserves proof for a narrower statement - a conclusion demonstrated within named boundaries and assumptions. A boundary check can prove how an exact candidate behaves under its controlled clock. It cannot prove that every real clock, network delay, or human situation has been anticipated.
 
 Trust in a capable builder can guide where to look. It cannot authorize a consequence. Chapter 6 develops the evidence required to separate a warranted claim from a fluent one.
 
@@ -38,7 +38,7 @@ This principle does not claim that a record settles disagreement. Two authoritie
 
 ## Important rules refuse
 
-A release guide says that live observation should distinguish an expected rise in sign-ins from a broken sign-in loop. Under pressure, a worker may treat “should” as optional. The same condition placed at the release boundary prevents expansion until the observation exists. The first is advice. The second is an enforced rule.
+A release guide says that live observation should distinguish an expected rise in sign-ins from a broken sign-in loop. Under pressure, a worker may treat "should" as optional. The same condition placed at the release boundary prevents expansion until the observation exists. The first is advice. The second is an enforced rule.
 
 When violation of a condition would make an action unacceptable, the condition belongs where that action can be refused. The refusal must identify the exact candidate, the unmet condition, and the route by which work may continue. Otherwise enforcement becomes an unexplained obstacle rather than a governable protection.
 
@@ -46,7 +46,7 @@ Important does not mean permanent or automatically correct. A rule can encode a 
 
 ## Spend and human authority are designed
 
-Five parallel builders can explore the session change quickly. They also create five candidates to examine, five sets of evidence to compare, and five opportunities to share the same mistaken assumption. An open-ended instruction to “keep trying” can consume computation and scarce judgment without bringing the decision closer.
+Five parallel builders can explore the session change quickly. They also create five candidates to examine, five sets of evidence to compare, and five opportunities to share the same mistaken assumption. An open-ended instruction to "keep trying" can consume computation and scarce judgment without bringing the decision closer.
 
 Construction and verification therefore receive explicit budgets proportional to risk. A budget is not a hope recorded beside the work. When it is exhausted, machinery stops, records what it learned, and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure, and accumulated change rather than to line count or confidence.
 
