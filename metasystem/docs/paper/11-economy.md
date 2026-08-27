@@ -28,6 +28,8 @@ Suppose a builder makes two unsuccessful attempts to prevent delayed responses f
 
 Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision. A live release expands only while enough budget remains to observe and contain harm.
 
+This inverts the estimate: instead of asking how long the work will take, a budget states how much the outcome is worth spending. Some teams call that limit an appetite. The need Chapter 4 found behind estimates (a decision with visible cost and uncertainty) is met at the stop rule, where the uncertainty becomes explicit.
+
 When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that.
 
 This boundary also makes failure visible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent or cost model is wrong and needs examination of its own.
