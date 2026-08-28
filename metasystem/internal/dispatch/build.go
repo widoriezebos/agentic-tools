@@ -83,24 +83,52 @@ func nullableEpoch(value string) (any, error) {
 	return epoch, nil
 }
 
-// BuildSetup writes the pending-setup reservation record: the minimal husk
-// that reserves a job id before the full record is assembled. A non-empty
-// parent marks a follow-up reservation.
-func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string) error {
+// nullableGoalRevision keeps explicit no-goal reservations distinct from a
+// goal-bound reservation whose revision was lost. Bound records must carry a
+// positive revision; unbound records carry JSON null.
+func nullableGoalRevision(goalID string, revision uint64) (any, error) {
+	if goalID == "" {
+		if revision != 0 {
+			return nil, fmt.Errorf("goalRevision requires a goalId")
+		}
+		return nil, nil
+	}
+	if revision == 0 {
+		return nil, fmt.Errorf("goal-bound reservation requires a positive goalRevision")
+	}
+	return revision, nil
+}
+
+// BuildSetup writes the pending-setup reservation record that reserves a job
+// id before the full record is assembled. Cap authority is already final when
+// this record is built, so publication immediately creates a complete
+// attempt-and-minute spending fact. A non-empty parent marks a follow-up.
+func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
 	}
+	revision, err := nullableGoalRevision(goalID, goalRevision)
+	if err != nil {
+		return err
+	}
+	authority, err := readCapAuthority(capResolution)
+	if err != nil {
+		return err
+	}
 	record := map[string]any{
-		"jobId":      job,
-		"role":       role,
-		"status":     "pending-setup",
-		"phase":      "setup",
-		"error":      nil,
-		"mainId":     nullableString(mainID),
-		"claimEpoch": epoch,
-		"goalId":     nullableString(goalID),
-		"createdAt":  nowISO(),
+		"jobId":        job,
+		"operationId":  job,
+		"role":         role,
+		"status":       "pending-setup",
+		"phase":        "setup",
+		"error":        nil,
+		"mainId":       nullableString(mainID),
+		"claimEpoch":   epoch,
+		"goalId":       nullableString(goalID),
+		"goalRevision": revision,
+		"capMin":       authority.capMin,
+		"createdAt":    nowISO(),
 	}
 	if parent != "" {
 		record["parentJob"] = parent
@@ -125,6 +153,10 @@ func readCapAuthority(path string) (capAuthority, error) {
 	source, ok := value["source"].(map[string]any)
 	if !ok {
 		return capAuthority{}, fmt.Errorf("cap resolution has no source object")
+	}
+	capMinutes, ok := JobRecordOf(value).CapMinutes()
+	if !ok || capMinutes == 0 {
+		return capAuthority{}, fmt.Errorf("cap resolution has no positive capMin")
 	}
 	return capAuthority{capMin: value["capMin"], deadline: value["capDeadline"], source: source}, nil
 }
@@ -171,6 +203,7 @@ type BuildRecordParams struct {
 	CostDirection   string
 	Reviews         string
 	GoalID          string
+	GoalRevision    uint64
 	MainID          string
 	ClaimEpoch      string
 }
@@ -200,6 +233,10 @@ func BuildRecord(p BuildRecordParams) error {
 		return fmt.Errorf("invalid capability fallbacks: %v", err)
 	}
 	epoch, err := nullableEpoch(p.ClaimEpoch)
+	if err != nil {
+		return err
+	}
+	revision, err := nullableGoalRevision(p.GoalID, p.GoalRevision)
 	if err != nil {
 		return err
 	}
@@ -243,6 +280,7 @@ func BuildRecord(p BuildRecordParams) error {
 	}
 	record := map[string]any{
 		"jobId":              p.Job,
+		"operationId":        p.Job,
 		"role":               p.Role,
 		"mission":            nullableString(p.Mission),
 		"missionIncarnation": incarnation,
@@ -252,6 +290,7 @@ func BuildRecord(p BuildRecordParams) error {
 		"parentJob":          nil,
 		"reviews":            nullableString(p.Reviews),
 		"goalId":             nullableString(p.GoalID),
+		"goalRevision":       revision,
 		"status":             "pending",
 		"phase":              "handshake",
 		"error":              nil,
@@ -318,6 +357,7 @@ type BuildFollowRecordParams struct {
 	ClaimEpoch      string
 	CapResolution   string
 	Root            string // dispatching checkout root, for mission provenance
+	GoalRevision    uint64
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -367,6 +407,19 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return err
 	}
+	goalID, _ := parent["goalId"].(string)
+	if goalID != "" {
+		if _, ok := JobRecordOf(parent).GoalRevision(); !ok {
+			return fmt.Errorf("parent goal-bound record is revisionless; dispatch a fresh revision-bound chain")
+		}
+		if JobRecordOf(parent).OperationID() == "" {
+			return fmt.Errorf("parent goal-bound record has no reservation operation identifier; dispatch a fresh revision-bound chain")
+		}
+	}
+	revision, err := nullableGoalRevision(goalID, p.GoalRevision)
+	if err != nil {
+		return err
+	}
 	var session any
 	if p.ResumeMode == "resumed" {
 		var present bool
@@ -382,11 +435,13 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"runtime":            parent["runtime"],
 		"reviews":            parent["reviews"],
 		"goalId":             parent["goalId"],
+		"goalRevision":       revision,
 		"workspaceRoot":      parent["workspaceRoot"],
 		"baseSha":            parent["baseSha"],
 		"branch":             parent["branch"],
 		"requestedModel":     parent["requestedModel"],
 		"jobId":              p.Job,
+		"operationId":        p.Job,
 		"round":              p.Round,
 		"parentJob":          p.ParentJob,
 		"status":             "pending",

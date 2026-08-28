@@ -65,7 +65,6 @@ func runConfigTailor(args []string) int {
 		return 2
 	}
 	var settings []validate.ConfSetting
-	setKeys := map[string]bool{}
 	for _, assignment := range sets {
 		key, value, found := strings.Cut(assignment, "=")
 		if !found || strings.TrimSpace(key) == "" {
@@ -74,19 +73,10 @@ func runConfigTailor(args []string) int {
 		}
 		key = strings.TrimSpace(key)
 		settings = append(settings, validate.ConfSetting{Key: key, Value: value})
-		setKeys[key] = true
 	}
 	if err := validate.TailorConf(*conf, selected); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
-	}
-	if _, found, err := config.ConfLookup(*conf, "appetite.overrun-grace-percent"); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	} else if !found && !setKeys["appetite.overrun-grace-percent"] {
-		settings = append(settings, validate.ConfSetting{
-			Key: "appetite.overrun-grace-percent", Value: fmt.Sprint(config.DefaultAppetiteOverrunGracePercent),
-		})
 	}
 	if len(settings) > 0 {
 		if err := validate.SetConfKeys(*conf, settings); err != nil {
@@ -146,7 +136,7 @@ func runConfigValidate(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	tiersAbsent, appetiteGraceAbsent, problems, err := config.Validate(*conf, *repo)
+	tiersAbsent, problems, err := config.Validate(*conf, *repo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -156,9 +146,6 @@ func runConfigValidate(args []string) int {
 	}
 	if tiersAbsent {
 		fmt.Println("INFO: model tiers are absent; dispatch overrides therefore always escalate")
-	}
-	if appetiteGraceAbsent {
-		fmt.Println("INFO: appetite.overrun-grace-percent is absent; using the built-in 25 percent grace band")
 	}
 	if len(problems) > 0 {
 		return 1

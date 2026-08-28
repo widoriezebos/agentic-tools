@@ -63,11 +63,18 @@ parsing, role file existence, the code-critic `--reviews` rules
 rule that `--approve-escalation` requires an interactive TTY
 (d.sh:830-832).
 
-**2. Brief mode (engine).** `job brief-mode` (BriefMode, brief.go:13)
+**2. Goal admission (engine).** `job goal-admission` evaluates every
+claim owned by the dispatching machine and lineage at the one
+pre-reservation seam. A structured claim uses its four structured
+limits. A claimed goal without that tuple receives a typed refusal
+naming its exact goal record. Refusal creates no job record and does
+not act on already admitted jobs.
+
+**3. Brief mode (engine).** `job brief-mode` (BriefMode, brief.go:13)
 extracts the one filled Working Mode header; a `--mode` override may
 agree with the brief but not contradict it (d.sh:833-834).
 
-**3. Roster, tiers, escalation classification (engine).**
+**4. Roster, tiers, escalation classification (engine).**
 `job resolve-roster` returns the roster pair, the requested pair, the
 cost direction, and whether escalation approval is required
 (d.sh:840-854). The shell keeps only the approval ladder
@@ -76,40 +83,28 @@ cost direction, and whether escalation approval is required
 envelope allowing the exact pair, checked by
 `mission contract-envelope-allows` (d.sh:425-427, 862).
 
-**4. Mission resolution (engine decides validity).**
+**5. Mission resolution (engine decides validity).**
 `resolve_mission` (d.sh:450-467) reconciles `--mission` with inherited
 `METASYSTEM_MISSION_ID`/`_LEASE`/`_TURN` environment — disagreement is
 fatal, partial inheritance is fatal — then `job validate-mission`
 (ValidateMission, mission.go:21) proves the mission has a live,
 matching lease.
 
-**5. Census freshness (engine).** Before any state is created,
+**6. Census freshness (engine).** Before any state is created,
 `require_fresh_census` (d.sh:104-111) runs `job census-fresh`: the
 freshness window and the fingerprint match are both the engine's
 judgment. This runs before the job id is reserved, deliberately — a
 stale census used to cost the caller their chosen job id as well as
 their dispatch (d.sh:877-881).
 
-**6. The two-phase reservation (engine writes, shell sequences —
-by ruling).** `job build-setup` renders the pending-setup document and
-`__record-create` (RecordCreate, record.go:157) lands it under the
-per-record flock (withRecordLock, record.go:105). The INVARIANT
-comment at d.sh:886-890 records a standing ruling: the reservation is
-two-phase — record-create must land before any setup below, so a
-second dispatcher cannot prepare the same job id — and must not be
-merged into one verb.
-
 **7. Locks (engine protocol, shell holds them).** The chain lock
 (d.sh:321-332) and the repository-wide cap-authority lock
 (d.sh:365-384) are both `job owner-lock` claims — one protocol
 (OwnerLockClaim, ownerlock.go:88): a directory rename publishes the
 lock and its owner in one step, a provably dead holder's husk is
-healed, an unprovable one is kept. From this point an EXIT trap
-guarantees that a non-zero exit fails the pending-setup husk and
-releases both locks (d.sh:897); `fail_setup_husk` (d.sh:149-176)
-classifies the refusal for the flight recorder, CASes the reservation
-to failed, and releases the job's mission-fence slot so a refused
-dispatch cannot keep counting against `fence.jobs`.
+healed, an unprovable one is kept. The EXIT trap releases authorization
+if failure occurs before publication; after publication it instead
+fails the pending-setup husk and releases both locks.
 
 **8. Cap authorization (engine).** `authorize_job_cap`
 (d.sh:949-967): a mission job first refuses any unsigned cap override
@@ -118,20 +113,30 @@ fence itself (`mission fence-authorize-cap`, internal/mission); a
 non-mission job resolves through `job resolve-cap`'s precedence chain.
 Either way the shell then enforces one inequality the engine reported:
 the cap must stay below the live watcher's attested ceiling
-(`job watcher-ceiling`, d.sh:964-966).
+(`job watcher-ceiling`, d.sh:964-966). This decision completes before
+the reservation record is built or published.
 
-**9. Workspace (plumbing).** `--worktree` creates
+**9. The two-phase reservation (engine writes, shell sequences —
+by ruling).** `job build-setup` reads the final cap resolution and
+renders a pending-setup record whose immutable `capMin`, operation ID,
+goal ID, and goal revision are already complete. `__record-create`
+(RecordCreate, record.go) publishes that spending fact under the
+per-record lock before workspace or adapter setup. A crash before
+publication consumes nothing; a crash afterward retains the attempt
+and reserved minutes even if setup is later terminalized.
+
+**10. Workspace (plumbing).** `--worktree` creates
 `artifacts/agents/worktrees/<job>` on a fresh `agent/<job>` branch;
 otherwise the workspace is the repository scope or the named directory
 (d.sh:906-913).
 
-**10. Permission envelope (engine).** `job expand-permissions`
+**11. Permission envelope (engine).** `job expand-permissions`
 (ExpandPermissions, envelope.go:14) expands the preset or envelope
 file against the workspace, honoring the repository-wide network floor
 `dispatch.permissions.network`, which only ever narrows
 (d.sh:469-482).
 
-**11. Capability snapshot (engine, with one shell-owned retry).**
+**12. Capability snapshot (engine, with one shell-owned retry).**
 `job snapshot-select` matches runtime, role, adapter config identity,
 and the requested envelope (d.sh:484-515). The shell self-heals
 exactly one case — a genuine MISS (absent or stale snapshot) triggers
@@ -139,17 +144,17 @@ one adapter probe and one re-select — and deliberately refuses to
 retry a policy refusal, because a fresh probe would launder an
 unenforceable envelope field away (d.sh:498-514).
 
-**12. Payload and prompt (plumbing).** Input size gate from
+**13. Payload and prompt (plumbing).** Input size gate from
 `dispatch.max-inline-input-kb` (d.sh:969-976), brief hash, the
 `artifacts/agents/<job>/rounds/1/prompt.md` assembly from the role
 file plus brief (d.sh:525-533, 921-926).
 
-**13. Full record (engine).** `job build-record` renders the complete
+**14. Full record (engine).** `job build-record` renders the complete
 record document; `__record-setup` (RecordSetup, record.go:179) may
 fill the reservation only while main identity and claim epoch still
 match it (d.sh:928-938, 986-988).
 
-**14. Launch (engine launches, shell stamps the deadline).** Locks are
+**15. Launch (engine launches, shell stamps the deadline).** Locks are
 released first — the launch itself runs outside them (d.sh:989-991).
 `launch_adapter` (d.sh:535-573) starts the runtime adapter through
 `supervise launch-detached` (cmd/metasystem/supervise_arming.go:112):
@@ -163,7 +168,7 @@ run early and overwrite the dispatcher's own verdict (d.sh:554-563).
 Only after that patch lands does the start gate file open
 (d.sh:571-572).
 
-**15. The handshake window (adapter reports, engine judges).**
+**16. The handshake window (adapter reports, engine judges).**
 `await_handshake` (d.sh:575-600) polls the record until the deadline —
 the one from the record, so waiter and backstop work from ONE number
 (d.sh:579-584). The transition itself comes from the adapter side:
@@ -178,7 +183,7 @@ adapter-initiated: rc.sh:85 calls `__register-custody`, and
 under the record lock so registration can never race a status
 transition (d.sh:1275-1285).
 
-**16. Waiting, if asked (shell loop, engine verdicts).** With
+**17. Waiting, if asked (shell loop, engine verdicts).** With
 `--wait`, `wait_for_job` (d.sh:602-625) loops: read status, run a full
 lease-held reap pass (`__reap-held`), sleep 100ms. The reap on every
 iteration is the surprise worth knowing: the waiting dispatcher IS the

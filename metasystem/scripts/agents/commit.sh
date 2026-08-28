@@ -28,11 +28,6 @@ else
   "$ms" lease require-holder --root "$root" --caller-pid "$$" >/dev/null
 fi
 
-# Appetite checkpoints are advisory at landing: the wrapper surfaces the
-# current banner before its proof preflight but never substitutes for Wido's
-# dispatch decision.
-"$ms" goal banners --root "$root" || true
-
 push_after=0
 if [[ ${1:-} == --push ]]; then
   push_after=1

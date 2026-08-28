@@ -44,7 +44,13 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 		Verb: "open", Actor: machine + "+coordinator", Targets: []string{"any"}, Keep: -1,
 	}}
 	for id, f := range files {
-		f.History = history
+		f.History = append([]HistoryLine(nil), history...)
+		if f.Claimed != nil && f.Claimed.Revision == 2 {
+			f.History = append(f.History, HistoryLine{
+				At: f.Claimed.At, Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-00000001",
+				Verb: "claim", Actor: f.Claimed.Machine + "+" + f.Claimed.Lineage, Targets: []string{id}, Keep: -1,
+			})
+		}
 		write("plans/goals/"+id+".md", RenderFile(f))
 	}
 	run("commit", "-q", "-m", "serving bed")
@@ -52,17 +58,17 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 	return root
 }
 
-func TestServingProjectionConvertedClaimCarriesAppetite(t *testing.T) {
+func TestServingProjectionConvertedClaimCarriesOnlyIdentityAndIntent(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"ship-it": {
 			Id: "ship-it", State: "claimed", Intent: "Ship the whole thing", Origin: "main",
-			NextStep: "Appetite: 4h — land it in pieces.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			NextStep: "Land it in pieces.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		},
 	})
-	id, intent, appetite, ok := (&Store{Root: root}).ServingProjection()
-	if !ok || id != "ship-it" || intent != "Ship the whole thing" || appetite != "4h" {
-		t.Fatalf("this machine's claim serves with its appetite: %q %q %q %v", id, intent, appetite, ok)
+	id, intent, ok := (&Store{Root: root}).ServingProjection()
+	if !ok || id != "ship-it" || intent != "Ship the whole thing" {
+		t.Fatalf("this machine's claim did not serve its identity and intent: %q %q %v", id, intent, ok)
 	}
 }
 
@@ -70,25 +76,11 @@ func TestServingProjectionForeignClaimServesNothing(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"theirs": {
 			Id: "theirs", State: "claimed", Intent: "Someone else's", Origin: "main",
-			NextStep: "Appetite: 2h — elsewhere.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			NextStep: "Work elsewhere.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &ClaimRecord{Machine: "bed-m2", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		},
 	})
-	if _, _, _, ok := (&Store{Root: root}).ServingProjection(); ok {
+	if _, _, ok := (&Store{Root: root}).ServingProjection(); ok {
 		t.Fatal("a foreign claim must serve nothing here")
-	}
-}
-
-func TestServingProjectionProseNextStepServesWithoutAppetite(t *testing.T) {
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
-		"loose": {
-			Id: "loose", State: "claimed", Intent: "Prose only", Origin: "main",
-			NextStep: "Just do the thing when possible.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
-			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
-		},
-	})
-	id, _, appetite, ok := (&Store{Root: root}).ServingProjection()
-	if !ok || id != "loose" || appetite != "" {
-		t.Fatalf("a prose next step serves with no appetite token: %q %q %v", id, appetite, ok)
 	}
 }

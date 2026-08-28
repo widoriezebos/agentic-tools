@@ -1,6 +1,9 @@
 package dispatch
 
 import (
+	"encoding/json"
+	"strconv"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -32,6 +35,10 @@ func (r JobRecord) Status() string { return r.text("status") }
 // JobID is the record's job identity.
 func (r JobRecord) JobID() string { return r.text("jobId") }
 
+// OperationID is the immutable reservation identity used for attempt
+// accounting. Replaying the same operation does not mint another attempt.
+func (r JobRecord) OperationID() string { return r.text("operationId") }
+
 // Role is the dispatched role.
 func (r JobRecord) Role() string { return r.text("role") }
 
@@ -40,6 +47,37 @@ func (r JobRecord) ParentJob() string { return r.text("parentJob") }
 
 // GoalID is the optional goal this job was reserved for.
 func (r JobRecord) GoalID() string { return r.text("goalId") }
+
+func (r JobRecord) uint64Field(key string) (uint64, bool) {
+	value, present := r.doc.Get(key)
+	if !present {
+		return 0, false
+	}
+	switch number := value.(type) {
+	case json.Number:
+		parsed, err := strconv.ParseUint(number.String(), 10, 64)
+		return parsed, err == nil
+	case float64:
+		if number < 0 || number != float64(uint64(number)) {
+			return 0, false
+		}
+		return uint64(number), true
+	case uint64:
+		return number, true
+	case int64:
+		if number < 0 {
+			return 0, false
+		}
+		return uint64(number), true
+	}
+	return 0, false
+}
+
+// GoalRevision is the exact claimed-goal revision this reservation spends.
+func (r JobRecord) GoalRevision() (uint64, bool) { return r.uint64Field("goalRevision") }
+
+// CapMinutes is the immutable reserved runtime cap.
+func (r JobRecord) CapMinutes() (uint64, bool) { return r.uint64Field("capMin") }
 
 // EndedAt is the terminal timestamp ("" while the job runs).
 func (r JobRecord) EndedAt() string { return r.text("endedAt") }

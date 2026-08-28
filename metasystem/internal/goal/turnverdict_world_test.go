@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // The end-of-turn verdict on a converted checkout: this machine's
@@ -16,7 +15,7 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"ship-it": {
 			Id: "ship-it", State: "claimed", Intent: "Ship the whole thing", Origin: "main",
-			NextStep: "Appetite: 4h — land it in pieces.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			NextStep: "Land it in pieces.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		},
 	})
@@ -25,7 +24,7 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !first.ShouldBlock || !strings.Contains(first.Display, "land it in pieces") {
+	if !first.ShouldBlock || !strings.Contains(first.Display, "Land it in pieces") {
 		t.Fatalf("the claimed goal must block once with its next step: %+v", first)
 	}
 	second, err := store.TurnVerdict(ScanResult{}, "world-session", "", "main-1")
@@ -37,38 +36,17 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	}
 }
 
-func TestTurnVerdictCarriesCurrentAppetiteBanner(t *testing.T) {
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
-		"stopped": {
-			Id: "stopped", State: "claimed", Intent: "Stop at the checkpoint", Origin: "main",
-			NextStep: "Appetite: 1h bounded work.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
-			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z", Appetite: "1h"},
-		},
-	})
-	store := &Store{Root: root, Now: func() time.Time {
-		return time.Date(2026, 8, 23, 2, 16, 0, 0, time.UTC)
-	}}
-	verdict, err := store.TurnVerdict(ScanResult{}, "banner-session", "", "main-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(verdict.Banners) != 1 || !strings.Contains(verdict.Banners[0], "BREACH-STOP") ||
-		!strings.Contains(verdict.Display, "BREACH-STOP") {
-		t.Fatalf("turn verdict omitted the current appetite banner: %+v", verdict)
-	}
-}
-
 // A queue nobody here claimed prods once toward promotion, naming the
 // oldest queued goal.
 func TestTurnVerdictConvertedQueueProdsOnce(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"older": {
 			Id: "older", State: "queued", Intent: "First in line", Origin: "main",
-			NextStep: "Appetite: 1h — soon.", OpenedAt: "2026-08-20T00:00:00Z", Revision: 1,
+			NextStep: "Work this first.", OpenedAt: "2026-08-20T00:00:00Z", Revision: 1,
 		},
 		"newer": {
 			Id: "newer", State: "queued", Intent: "Second", Origin: "main",
-			NextStep: "Appetite: 1h — later.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 1,
+			NextStep: "Work this later.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 1,
 		},
 	})
 	store := &Store{Root: root}

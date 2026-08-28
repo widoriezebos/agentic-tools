@@ -28,7 +28,10 @@ import (
 )
 
 func stewardCensusFor(repo string) steward.WorkerCensus {
-	return steward.LiveWorkerCensus{MetasystemRoot: repo}
+	return steward.RuntimeWorkerCensus{
+		MetasystemRoot: repo,
+		ProcessFile:    os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"),
+	}
 }
 
 // runStewardHealth prints every role on one line and returns the aggregate
@@ -274,10 +277,6 @@ func runStewardAuthorizeDispatch(args []string) int {
 		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: intent %s already launched; a replay authorizes nothing\n", *nonce)
 		return 1
 	}
-	if !it.Notified {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: intent %s was never delivered to the operator\n", *nonce)
-		return 1
-	}
 	if err := steward.VerifyStagedDigests(*repo, it); err != nil {
 		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
 		return 1
@@ -306,10 +305,9 @@ func runStewardAuthorizeDispatch(args []string) int {
 }
 
 // runStewardRevive drives one revival end to end: stage the exact
-// launch bytes, mint the intent under the lock, deliver the
-// notification, then complete through the critical section with the
-// real dispatcher as the launch. Safe to re-run: an undelivered
-// intent resumes at its gate, a consumed one refuses.
+// launch bytes, mint the intent under the lock, then complete through the
+// critical section with the real dispatcher as the launch. Recovery heals
+// before alerting; a consumed intent refuses on replay.
 func runStewardRevive(args []string) int {
 	flags := flag.NewFlagSet("steward revive", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
@@ -387,6 +385,16 @@ func runStewardRevive(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
 		return 1
+	}
+	// A concurrent runner may consume, launch, and stamp this exact intent
+	// before this caller enters the critical section. Report that completed
+	// handoff as the successful launch it was; an unstamped consumption still
+	// remains an unknown outcome and is not promoted.
+	if !outcome.Launched && strings.Contains(outcome.Reason, "intent is not live") {
+		if consumed, consumedErr := steward.ConsumedIntent(*repo, nonce); consumedErr == nil && consumed.LaunchStamped {
+			outcome.Launched = true
+			outcome.Reason = "intent was launched by a concurrent reviver"
+		}
 	}
 	fmt.Printf("launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
 	if !outcome.Launched {

@@ -617,11 +617,8 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 	if endpoint, endpointErr := goal.ResolveEndpoint(repo); endpointErr == nil {
 		_, _ = goal.Project(endpoint, true, time.Now())
 	}
-	if goalId, goalIntent, goalAppetite, ok := (&goal.Store{Root: repo}).ServingProjection(); ok {
+	if goalId, goalIntent, ok := (&goal.Store{Root: repo}).ServingProjection(); ok {
 		block := "## Serving goal\n" + goalId + " — " + goalIntent
-		if goalAppetite != "" {
-			block += "\nAppetite: " + goalAppetite
-		}
 		blocks = append(blocks, struct {
 			name    string
 			content string

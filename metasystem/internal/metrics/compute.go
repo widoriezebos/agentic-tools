@@ -281,17 +281,17 @@ func computeOverhead(w world, period Period, goalID string, limits thresholds) m
 		if receiptCounts.Rejected > 0 {
 			row.Details = append(row.Details, rejectedAttributionBucket("receipts", receiptCounts.Rejected))
 		}
-		appetite, appetiteOK := goal.ParseAppetite(record.File.NextStep)
+		budget := record.File.Budget
 		parts := []string{id}
-		if !appetiteOK {
-			row.Details = append(row.Details, detail{Text: "no parseable appetite: goal=" + id})
+		if budget == nil {
+			row.Details = append(row.Details, detail{Text: "no structured elapsed budget: goal=" + id})
 		}
 		if timedJobs == 0 {
 			parts = append(parts, "wall_hours=unavailable", "spend=unavailable (no timed attributed jobs)")
 			row.Details = append(row.Details, detail{Text: "no timed attributed jobs: goal=" + id})
-		} else if appetiteOK {
+		} else if budget != nil {
 			parts = append(parts, "wall_hours="+formatHours(wall))
-			spend := wall.Hours() / appetite.Hours()
+			spend := wall.Hours() / budget.ElapsedDuration().Hours()
 			parts = append(parts, "spend="+formatFloat(spend))
 			if spendJudgment == nil || spend < limits.Spend.Min || spend > limits.Spend.Max {
 				copy := spend
@@ -650,11 +650,8 @@ func computeDebt(w world, period Period, goalID string, limits thresholds) metri
 			anchor, _ = time.Parse(time.RFC3339, file.Parked.At)
 			kind = "parked"
 		case file.State == goal.StateQueued:
-			if _, ok := goal.ParseAppetite(file.NextStep); ok {
-				continue
-			}
 			anchor, _ = time.Parse(time.RFC3339, file.OpenedAt)
-			kind = "queued-unsized opened-at anchor"
+			kind = "queued opened-at anchor"
 		}
 		if kind == "" || anchor.IsZero() || anchor.After(period.Instant) {
 			continue

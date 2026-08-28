@@ -4,61 +4,60 @@ How work enters, moves through, and leaves the backlog. Born from the
 2026-08-22 ruling set after a script-sized task absorbed a full night
 inside a review loop nobody was measuring.
 
-## Appetite
+## Structured budget
 
-Every backlog item carries an appetite: how much the work is WORTH,
-agreed between Wido and the coordinator before the item is ready.
-It is recorded as a plain `Appetite:` line at the start of the
-goal's next step — a convention, not grammar; no engine change.
+A queued or draft goal carries no machine budget. The complete budget
+arrives when a human chooses to claim the goal: `goal claim` and
+`goal open --claim` require all four values, and `goal set-budget`
+repairs or revises an existing claim. The machinery never supplies a
+default because limits are a human value judgment.
 
-The appetite acts at every stage:
+The four limits are:
 
-1. **Intake** — no item is promoted without one.
-2. **Design input** — the design is scoped TO the appetite. If no
-   honest design fits, that goes to Wido; the appetite never
-   silently stretches.
-3. **Post-design check** — does the designed shape still fit?
-4. **Implementation cadence** — effort spent is compared against the
-   appetite at regular intervals, not only when someone notices.
-5. **Breach** — a blown appetite STOPS the item: paused on the
-   backlog, raised with Wido. Other work continues if possible;
-   otherwise block and wait.
+1. **Elapsed time** — a positive working duration such as `4h` or
+   `1d`; one working day is eight hours.
+2. **Attempts** — the maximum number of admitted job reservations for
+   the claimed goal revision.
+3. **Reserved job minutes** — the maximum sum of reservation caps for
+   that revision.
+4. **Active jobs** — the maximum number of concurrent non-terminal
+   reservations for that revision.
 
-The standing ceiling: nothing sized over eight hours starts without
-a discussion with Wido first.
+All four fields form one tuple. Partial tuples and numeric defaults do
+not exist. Before a dispatch publishes a job reservation, admission
+projects spending from authoritative job records. Equality at any
+limit closes admission because a further reservation would exceed the
+budget. Unknown evidence and a claimed goal without a budget also
+close admission, naming the exact record that needs repair. No refused
+dispatch creates a job record.
 
-**Slicing is the way (Wido's ruling, 2026-08-22).** Slicing is not
-an appetite mechanism — it is the delivery law: large pieces of
+Health judges claimed goals only. A claimed goal without the tuple is
+dead under `claimed-goal-appetite` and names this remedy:
+`metasystem goal set-budget --root . --id <id> --elapsed-limit ...
+--attempt-limit ... --reserved-job-minutes-limit ...
+--active-job-limit ...`. Text beginning with `Appetite:` in a queued
+goal's next step is ordinary human prose. No parser or enforcement path
+reads it.
+
+**Slicing is the way (Wido's ruling, 2026-08-22).** Slicing is the
+delivery law: large pieces of
 work are NEVER built in one go. They are split into iterative,
 independently DEPLOYABLE pieces — each slice lands whole, works on
 its own, and leaves the system better — and the backlog carries the
 next slice plus a note naming the remainder, sliced when its turn
-comes. The appetite is a different instrument: it sizes the WORTH
-of a feature. A well-sliced piece still carries its own appetite;
-a blown appetite still pauses and raises. The two laws compose,
-they do not substitute.
+comes. The structured budget limits one claimed revision; slicing
+governs how anything large gets delivered. The two laws compose.
 
-**The appetite is machine-enforced, as covenant.** Its recorded form
-opens the goal's next step with a duration token — `Appetite: 4h`,
-`Appetite: 1d` (a day is eight working hours), `Appetite: 30m` —
-prose welcome after the token. Every read of the backlog (goal next,
-goal list) computes claim-age against the appetite and BANNERS a
-breach on every machine; the steward's tick queues the same breach
-to Wido's notification channel. A steward instruction — breach or
-otherwise — is binding on the agent that receives it: covenant, not
-advice.
-
-**Reviews carry appetites and threat models.** A review brief
-declares its round budget and its threat model up front; a TRUE
-finding outside that threat model closes as `out-of-scope` in the
-dispositions (citing the scope as evidence) — accepted as fact,
-rejected as work. The closure validator enforces both the citation
-and the evidence-carrying refutation rule.
+**Reviews carry round budgets and threat models.** A review brief
+declares both up front; a TRUE finding outside that threat model
+closes as `out-of-scope` in the dispositions (citing the scope as
+evidence) — accepted as fact, rejected as work. The closure validator
+enforces both the citation and the evidence-carrying refutation rule.
 
 ## Drafts and promotion
 
 Items are shaped in `plans/goals-drafts/` — free-form files, no
-grammar, no appetite required. "Draft" is the status name. The
+grammar, no budget required. "Draft" is the status name. The
 backlog itself holds only ready items: promotion (`goal open`) is
 the coordinator's explicit intake act, performed after the checklist
 below passes. Delete the draft file in the same change that
@@ -73,9 +72,8 @@ Before promoting any draft:
       works on its own, and leaves the system better. Anything
       larger is sliced first — the item carries its next slice, a
       note names the remainder.
-- [ ] The appetite is agreed with Wido and recorded.
-- [ ] The item fits the appetite as understood today — anything that
-      smells bigger goes back to shaping or to Wido.
+- [ ] The item is small enough to claim as one deployable slice; its
+      structured budget will be supplied as one complete tuple at claim.
 - [ ] Origin is honest (`human` for Wido's asks — they carry his
       authority gates; `main` otherwise).
 - [ ] It does not duplicate or belong inside an existing item.
@@ -119,7 +117,7 @@ genuinely claimable work.
 
 ## Coordinator ownership
 
-Backlog order — priorities, appetites, item shape, intake — is the
+Backlog order — priorities, item shape, intake — is the
 coordinator's standing responsibility on every machine. Disorder is
 fixed by discussing it with Wido: never reordered by fiat, never
 silently tolerated.

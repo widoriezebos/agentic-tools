@@ -34,6 +34,7 @@ type GoalFile struct {
 	// the work needs a setup, network, or resource only that machine
 	// has. Empty means any machine may claim.
 	Pinned  string
+	Budget  *Budget
 	Claimed *ClaimRecord
 	Parked  *ParkRecord
 	Legacy  []string // LegacyNotes: verbatim non-field prose from migration
@@ -45,9 +46,10 @@ type ClaimRecord struct {
 	Machine string
 	Lineage string
 	At      string
-	// Appetite is the parsed duration in force when this claim began.
-	// Later prose cannot rewrite this authority-bearing snapshot.
-	Appetite string
+	// Revision is the exact goal revision whose work this claim began.
+	// Zero is tolerated only for legacy records written before revision
+	// binding existed.
+	Revision uint64
 }
 
 // ParkRecord is the pause record of a parked goal.
@@ -74,9 +76,6 @@ type HistoryLine struct {
 	Ack       bool
 	Keep      int // -1 when absent; prune's root-record line only
 	Reason    string
-	// Remaining is present only on estimate events and is the claimant's
-	// honest estimate at that revision.
-	Remaining string
 }
 
 // States, closed.
@@ -191,10 +190,16 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
-	if f.Claimed != nil && f.Claimed.Appetite != "" {
-		if _, ok := ParseWorkingDuration(f.Claimed.Appetite); !ok {
-			addProblem("Claimed appetite=%q is not a positive working duration", f.Claimed.Appetite)
+	if err := f.ValidateClaimRevision(); err != nil {
+		addProblem("BUDGET_UNKNOWN %v", err)
+	}
+	if f.Budget != nil {
+		if err := f.Budget.Validate(); err != nil {
+			addProblem("Budget: %v", err)
 		}
+	}
+	if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision == 0 && f.Budget != nil {
+		addProblem("Budget: a structured tuple requires a revision-bound claim record")
 	}
 	if f.State == StateParked && f.Parked == nil {
 		addProblem("parked without a Parked record")
@@ -212,6 +217,28 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("done without Concluded")
 	}
 	return f, problems
+}
+
+// ValidateClaimRevision proves that a revision-bound claim names one event in
+// this goal's history and uses that event's timestamp as its elapsed origin.
+// A revisionless claim has no binding to validate; structured admission
+// refuses it rather than guessing which history event began the work.
+func (f *GoalFile) ValidateClaimRevision() error {
+	if f == nil || f.Claimed == nil || f.Claimed.Revision == 0 {
+		return nil
+	}
+	revision := f.Claimed.Revision
+	if revision > f.Revision {
+		return fmt.Errorf("claimed revision=%d does not exist in goal Revision=%d", revision, f.Revision)
+	}
+	if revision > uint64(len(f.History)) {
+		return fmt.Errorf("claimed revision=%d has no History event; the goal records %d event(s)", revision, len(f.History))
+	}
+	event := f.History[revision-1]
+	if event.At != f.Claimed.At {
+		return fmt.Errorf("claimed at=%s contradicts History revision=%d at=%s", f.Claimed.At, revision, event.At)
+	}
+	return nil
 }
 
 // validStamp is the one timestamp form the grammar admits.
@@ -268,13 +295,31 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.Arc = value
 	case "Pinned":
 		f.Pinned = value
+	case "Budget":
+		budget, err := parseBudgetRecord(value)
+		if err != nil {
+			addProblem("Budget: %v", err)
+			return
+		}
+		f.Budget = &budget
 	case "Claimed":
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"appetite"}, "")
+		// appetite= has no budget authority. Discarding it keeps the claim
+		// readable so admission can name the record whose structured tuple is
+		// missing; the value never enters GoalFile.
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "appetite"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
 		}
-		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Appetite: rec["appetite"]}
+		var revision uint64
+		if rec["revision"] != "" {
+			revision, err = strconv.ParseUint(rec["revision"], 10, 64)
+			if err != nil || revision == 0 {
+				addProblem("Claimed revision=%q is not a positive integer", rec["revision"])
+				return
+			}
+		}
+		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision}
 	case "Parked":
 		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"}, "because")
 		if err != nil {
@@ -385,10 +430,14 @@ func RenderFile(f *GoalFile) []byte {
 	if f.Pinned != "" {
 		fmt.Fprintf(&b, "- Pinned: %s\n", f.Pinned)
 	}
+	if f.Budget != nil {
+		fmt.Fprintf(&b, "- Budget: elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d\n",
+			f.Budget.ElapsedLimit, f.Budget.AttemptLimit, f.Budget.ReservedJobMinutesLimit, f.Budget.ActiveJobLimit)
+	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
-		if f.Claimed.Appetite != "" {
-			fmt.Fprintf(&b, " appetite=%s", f.Claimed.Appetite)
+		if f.Claimed.Revision > 0 {
+			fmt.Fprintf(&b, " revision=%d", f.Claimed.Revision)
 		}
 		b.WriteByte('\n')
 	}
@@ -495,14 +544,6 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, fmt.Errorf("keep= wants an integer: %q", tok)
 			}
 			h.Keep = n
-		case strings.HasPrefix(tok, "remaining="):
-			if err := dup("remaining"); err != nil {
-				return h, err
-			}
-			h.Remaining = strings.TrimPrefix(tok, "remaining=")
-			if _, ok := ParseWorkingDuration(h.Remaining); !ok {
-				return h, fmt.Errorf("remaining= wants a positive working duration: %q", tok)
-			}
 		default:
 			return h, fmt.Errorf("unknown History key %q", tok)
 		}
@@ -531,9 +572,6 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.Keep >= 0 {
 		fmt.Fprintf(&b, " keep=%d", h.Keep)
-	}
-	if h.Remaining != "" {
-		b.WriteString(" remaining=" + h.Remaining)
 	}
 	if h.Reason != "" {
 		b.WriteString(" reason=" + h.Reason)

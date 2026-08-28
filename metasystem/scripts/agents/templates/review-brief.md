@@ -9,11 +9,8 @@ citing this section — accepted as fact, rejected as work. Example:
 "two trusted operators, no adversaries; accidents and crashes are
 in scope, hostile inputs are not.">
 
-Appetite: <the work's worth in hours/days — findings whose fixes
-exceed it pause and go to the human>
-
 Scope: <the files, behaviors, or contracts under review — and
-what is explicitly OUT>
+what is explicitly OUT, including any agreed ceiling on fix work>
 
 Return format: numbered findings, most severe first, each with
 file, rule, and the concrete failure it causes; or AGREE with

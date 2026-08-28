@@ -137,47 +137,41 @@ from top-level help and operator docs.
    never silently tolerated); aggregate exit codes 0 healthy,
    1 unhealthy, 2 unknown-present. Repeated failure of one role
    within a window escalates past auto-restart to Wido.
-   CHECKS ARE BOOTSTRAP-HONEST (R1-02): at slice-one time health
-   checks what EXISTS — the prose-prefix appetite until slice two
-   replaces it, the current arming scripts as remedies until `up`
-   exists — and each later slice updates the check and the remedy
-   it owns. The check list: steward runner; supervision owner;
+   CHECKS ARE BOOTSTRAP-HONEST (R1-02): health checks the current
+   structured law and names the current remedies. Claimed goals
+   without all four budget fields are dead; queued goals are not
+   judged. The check list: steward runner; supervision owner;
    repo watcher; census freshness; narrator freshness; session
    main; hook freshness (R1-03: the hook writes an invocation
    stamp; health flags a stale or silently-failing hook — the
-   common failure domain gets its own check); claimed-goal
-   appetite; dead-process non-terminal jobs; snapshot ages.
+   common failure domain gets its own check); claimed-goal budget
+   (published under the stable `claimed-goal-appetite` role name);
+   dead-process non-terminal jobs; snapshot ages.
 
 3. `metasystem goal …`
-   a. STRUCTURED APPETITE (R1-11, R1-12 lifecycle made total):
-      `goal open` takes `--appetite` (mandatory for agent actors;
-      open --claim keeps its atomicity because the appetite rides
-      the same command); `goal set-appetite` covers existing
-      goals; legacy claimed goals without the field are flagged
-      unhealthy by health until set (grace, not wedge). Breach
-      computes from claim age against the field and feeds the
-      TYPED bands that already exist (BREACH-ESCALATE /
-      BREACH-STOP, internal/goal/project.go) — the fixture proves
-      an overdue structured claim drives unhealthy + heartbeat +
-      notification on the next tick.
-   b. THE BUDGET ACTUALLY STOPS (R1-04, ch. 11): BREACH-ESCALATE
-      notifies and marks the chat line. BREACH-STOP is enforced:
-      the engine PARKS the claim in a typed state carrying a
-      typed stop reason, the tick winds down the goal's live
-      delegate jobs through the existing cancel transactions, and
-      the goal records its stop-state (what works, what does not,
-      the open uncertainty — typed fields, prose only for the
-      human summary). The coordinator switches items; only a
-      human-authority act un-parks past a stop.
+   a. STRUCTURED BUDGET (R1-11, R1-12 as revised by Ruling N):
+      `goal claim` and `goal open --claim` take one complete tuple:
+      elapsed limit, attempt limit, reserved-job-minutes limit, and
+      active-job limit. `goal set-budget` repairs or revises a
+      claimed goal. Queued goals have no budget, and the machinery
+      never invents one.
+   b. THE BUDGET ACTUALLY STOPS (R1-04, ch. 11): before publishing
+      a reservation, dispatch admission projects spending from the
+      authoritative job records. Equality at any limit refuses the
+      next reservation with typed breach evidence. Missing or
+      unknown evidence also refuses and names the exact record;
+      refusal creates no job record. Health marks a budgetless
+      claimed goal dead and prints the exact `goal set-budget`
+      remedy. There is no prose parser, grace band, standing banner,
+      parked stop state, or legacy fallback.
    c. RULE RECORDS ARE TYPED AND GOVERNED (R1-09, ch. 12): a
       small authoritative store (one engine-owned file) holds each
       enforced rule: id, scope, adoption evidence, must-stop and
       must-permit test references, refusal evidence shape, owner,
       review-by, withdrawal route, and TRIAL MODE — every new rule
       runs observe-only (logging would-refuse) for its trial
-      before it may refuse. The 4h ceiling, claim-requires-
-      appetite, and mandatory-fields enter as the first three
-      records, in observe-only first like everything else.
+      before it may refuse. Budget-tuple completeness and mandatory
+      fields enter as enforced code under the later lean mandate.
 
 4. `metasystem delegate`
    `--role <role> --brief <file> --goal <id|none-explicit>`; also
@@ -288,10 +282,10 @@ typed stop-state, and raises.
   stamp; mutual watching (watcher re-arms steward, tick checks
   watcher); the boot-level `up --if-down` entry; iPhone push with
   episode dedup.
-- S2 — APPETITE THAT STOPS (≤4h): the structured field + open/
-  set-appetite lifecycle + typed bands wiring + BREACH-STOP
-  enforcement (park, wind-down, typed stop-state) + the rule-
-  record store with the first three rules in observe-only.
+- S2 — STRUCTURED BUDGET ADMISSION (≤4h): the complete four-field
+  tuple + claim/open-claim/set-budget lifecycle + revision binding +
+  pre-reservation refusal at every limit boundary + budgetless-claim
+  health and admission remedies.
 - S3 — UP (≤4h): idempotent arming, dead-owner takeover, advisor
   outcome, session-start hook call; health's remedies switch to
   name it.
@@ -315,15 +309,15 @@ forward from v1 unchanged.
 | OSD-R1-01 | accepted | Recorded acceptance bound to tree hash; engine-of-record judges; rehearsed recovery named |
 | OSD-R1-02 | accepted | Bootstrap-honest checks; mutual watching via the existing watcher; slices re-partitioned |
 | OSD-R1-03 | accepted | Hook freshness check; three rings; boot-level resumer restored; push episode semantics |
-| OSD-R1-04 | accepted | BREACH-STOP enforced: park + wind-down + typed stop-state |
+| OSD-R1-04 | accepted, revised by Ruling N | Structured breach evidence closes dispatch admission; prose stop-state machinery is deleted |
 | OSD-R1-05 | accepted | land: mandatory candidate selection; operation-id phases; receipt fields as flags |
 | OSD-R1-06 | accepted | v1's collapse REVERSED: typed outcome enum stays; headline grouping only for humans |
 | OSD-R1-07 | accepted | Triage is S0b, before all consumers |
 | OSD-R1-08 | accepted | S0a isolation slice; health split; delegate split per custody partition; per-slice contents listed |
 | OSD-R1-09 | accepted | Typed rule-record store; observe-only trials; must-stop/must-permit refs |
 | OSD-R1-10 | accepted, RULED A | Process-ancestry proof for all human authority |
-| OSD-R1-11 | accepted | Structured appetite wired to the typed bands; fixture named |
-| OSD-R1-12 | accepted | open --appetite keeps open-claim atomic; legacy grace via health |
+| OSD-R1-11 | accepted, revised by Ruling N | Four-field structured budget wired directly to admission boundaries |
+| OSD-R1-12 | accepted, revised by Ruling N | Open-claim keeps tuple assignment atomic; budgetless claims receive typed refusal and health remedy |
 | OSD-R1-13 | accepted | delegate gains --follow-up and --cancel; closure internal |
 | OSD-R1-14 | accepted | health/watch totality: unknown owned, exit codes, timeouts, zombie verdicts |
 | OSD-R1-15 | accepted | Receipt family KEPT; land absorbs only add |
@@ -441,7 +435,8 @@ continuous operation, with the human's acts as the only sync
 points: enrollment, genesis acceptance, per-slice approvals):
 L1 S0a isolation (2h) · L2 triage-and-apply plan · L3 health core
 · L4 rings (chat line, mutual watching, alerts) · L5 budget schema
-+ revision binding · L6 breach-stop enforcement · L7 up · L8
++ revision binding + dispatch-admission enforcement · L6 retired by
+Ruling N · L7 up · L8
 enrollment + authority proof · L9 genesis acceptance + landing
 acceptance check · L10-L12 custody applied from wip (identity/
 claim/occupancy; group custody + progress; call-site migration) ·
@@ -484,3 +479,57 @@ its lawful authority (probe, restart, reassign, kill-and-relaunch)
 before anything reaches the human, per Ruling L. Hand-watching a
 delegated pass from the chat is the bootstrap exception and dies
 with L13's landing.
+
+
+## RULING N — LEGACY DIES WITH ITS REPLACEMENT (Wido, 2026-08-28)
+
+"We have to kill legacy as part of this. I want clean code,
+always. And kill all legacy paths in favor of the new." When a
+landing replaces a law, the same landing deletes
+the replaced path: no parallel legacy code, no compatibility
+branches kept for records the old law once governed. Surviving
+records are migrated where the machinery can do so lawfully, or
+refused with a typed remedy naming the exact command — never
+accommodated by a second code path. Carrying any old path to the
+final deletion landing now requires a named reason (a replacement
+that genuinely needs observed soak); "we might still need it" is
+not a reason. First application: the prose-appetite enforcement
+dies inside L5 itself, replaced by the structured budget law.
+
+
+## RULING O — CONFIGURATION MATCHES HAZARD (Wido, 2026-08-28 evening)
+
+"Every pass burns maximal reasoning effort even on mechanical
+fixture sweeps... none of that is physics. YOU CAN DO BETTER THAN
+THAT." Grounded in paper ch.7: a role configuration exists because
+a hazard requires it, and it lasts only as long as the hazard
+does. Rigor that does not trace to a hazard is waste, and waste is
+slowness. Binding NOW on the coordinator's own conduct and
+MECHANICAL at L13 (the delegate verb enforces it at admission).
+
+THE CONFIGURATION LAW. Every delegated task carries a hazard
+class, and the class fixes its minimum AND maximum lawful
+configuration:
+
+- MECHANICAL (fixture sweeps, path moves, dead-code deletion,
+  test speedups, rename/migration plumbing): one builder at
+  ordinary effort; examination is AUTOMATIC (the area's own tests
+  + the custodian's single full gate); no independent critique
+  round. The builder runs only the changed area's fast tests.
+- DESIGN-BEARING (new laws, verbs, schemas, enforcement seams):
+  builder at maximal effort; ONE independent critique round at
+  maximal effort; corrections at ordinary effort unless a
+  correction is itself design-bearing.
+- DESTRUCTIVE-REACH (recovery, custody, kill paths, record
+  migration, anything hard to reverse): design-bearing
+  configuration PLUS a live proof on the real machine before
+  landing (the L4 Ring 2 pattern).
+
+The full verification gauntlet runs EXACTLY ONCE per landing, at
+the custodian's gate. Disjoint landings build in parallel
+worktrees — the paper removes the span-of-attention limit;
+seriality must also trace to a real dependency or it is waste.
+Over-configuration is refused the same as under-configuration:
+both fail the anti-mimicry test. The class table is data, revised
+by ruling; the economist backlog item builds the role that senses
+misclassification and acts.

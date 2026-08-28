@@ -44,6 +44,7 @@ process_instance_tag=
 cap_authority_lock_held=0
 exit_cleanup_job=
 exit_cleanup_chain=
+exit_cleanup_authorization=
 # Flight-recorder witness (docs/design/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
@@ -176,6 +177,12 @@ fail_setup_husk() { # job id
   if [[ -n "${mission:-}" ]]; then
     mission_fence release-job --repo "$root" --mission "$mission" --job "$husk_job" >/dev/null 2>&1 || true
   fi
+}
+
+release_unpublished_authorization() { # job id
+  local authorized_job=$1
+  [[ -n "$authorized_job" && -n "${mission:-}" ]] || return 0
+  mission_fence release-job --repo "$root" --mission "$mission" --job "$authorized_job" >/dev/null 2>&1 || true
 }
 
 record_setup() { # job, complete source json
@@ -398,6 +405,22 @@ release_cap_authority_lock() {
   owner_lock release "$agents/supervision/cap-authority.lock.d" "$$" "$process_instance_tag" || status=$?
   (( status == 4 )) && die 1 "refusing to release another owner's cap-authority lock"
   cap_authority_lock_held=0
+}
+
+require_goal_admission() {
+  local output result=0 lineage=${METASYSTEM_OWNER_LINEAGE:-}
+  local -a args=(--root "$root")
+  [[ -z "$lineage" ]] || args+=(--stop-lineage "$lineage")
+  set +e
+  output=$("$ms" job goal-admission "${args[@]}" 2>&1)
+  result=$?
+  set -e
+  [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+  case "$result" in
+    0) return 0 ;;
+    9) die 1 "dispatch refused by the goal admission verdict above; supply or revise the governing structured budget before another round" ;;
+    *) die 1 "dispatch refused because the governing goal admission could not be evaluated" ;;
+  esac
 }
 
 config_get() { "$config" get "$@"; }
@@ -864,7 +887,7 @@ dispatch_job() {
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
-  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json
+  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json goal_revision=0
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -911,23 +934,9 @@ dispatch_job() {
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -z "$goal" ]] || valid_id "$goal" || die 2 "invalid goal id: $goal"
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
-  # The goal engine prints every current checkpoint and returns the one
-  # structured STOP code only when this coordinator's exact machine+lineage
-  # owns the stopped claim. This runs before reservation: a refused round
-  # leaves no job husk and another goal's breach remains advisory here.
-  local appetite_output appetite_rc=0 appetite_lineage=${METASYSTEM_OWNER_LINEAGE:-}
-  local -a appetite_args=(--root "$root")
-  [[ -z "$appetite_lineage" ]] || appetite_args+=(--stop-lineage "$appetite_lineage")
-  set +e
-  appetite_output=$("$ms" goal banners "${appetite_args[@]}" 2>&1)
-  appetite_rc=$?
-  set -e
-  [[ -z "$appetite_output" ]] || printf '%s\n' "$appetite_output" >&2
-  case "$appetite_rc" in
-    0) ;;
-    9) die 1 "dispatch refused by the BREACH-STOP banner above; the two exits are Wido's word or goal estimate --remaining showing the work within-band" ;;
-    *) die 1 "dispatch refused because current appetite banners could not be evaluated" ;;
-  esac
+  # Goal admission applies the structured limits before reservation, so a
+  # refusal creates no job and never acts on jobs already admitted.
+  require_goal_admission
   checkout_execution_guard_acquire "dispatch ${job:-$role}" \
     || die 1 "dispatch refused: checkout execution guard acquisition failed"
   trap 'checkout_execution_guard_release || true' EXIT
@@ -1028,28 +1037,38 @@ dispatch_job() {
   # their chosen name as well as their dispatch.
   require_fresh_census
   report_plan_drift
-  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
-  "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
-    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal"
-  # INVARIANT (kept in shell by ruling, plans/go-surface-consolidation.md):
-  # the reservation is TWO-PHASE — this record-create must land before any
-  # of the setup below so a second dispatcher cannot prepare the same job
-  # id, and the observable pending-setup status feeds the cleanup trap. Do
-  # not merge the phases into one verb.
-  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
-  rm -f "$setup_json"
+  if [[ -n "$goal" ]]; then
+    goal_revision=$("$ms" job goal-revision --root "$root" --goal "$goal") \
+      || die 1 "cannot bind job $job to accepted goal $goal revision"
+  fi
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
-  exit_cleanup_job=$job
   exit_cleanup_chain=$job
-  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
-  acquire_cap_authority_lock
+  exit_cleanup_job=
+  exit_cleanup_authorization=
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
+  [[ ! -e "$jobs/$job.json" ]] || die 1 "job id collision: $job"
   [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
 
+  acquire_cap_authority_lock
   cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
   [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  exit_cleanup_authorization=$job
   authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
+
+  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
+  "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal" \
+    --goal-revision "$goal_revision" --cap-resolution "$cap_resolution"
+  # Reservation remains two-phase: the final cap is authorized first, then
+  # record-create publishes the spending fact before workspace or adapter
+  # setup. A second dispatcher cannot prepare the same job id, and a crash
+  # after publication leaves an accountable pending-setup record.
+  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
+  exit_cleanup_job=$job
+  exit_cleanup_authorization=
+  rm -f "$setup_json"
 
   if (( use_worktree )); then
     workspace="$worktrees/$job"
@@ -1136,7 +1155,8 @@ dispatch_job() {
     --handshake-budget "$handshake_budget" --approval-name "$approval_name" \
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
-    --reviews "$reviews" --goal "$goal" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+    --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" \
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   rm -f "$cap_resolution"
   finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
 }
@@ -1219,9 +1239,6 @@ watch_job() { # --job <id>
     echo "watch: no job record for $job — it never existed here or was reaped" >&2
     exit 5
   fi
-  # The blocking Go waiter owns the existing poll cadence. Surface the current
-  # checkpoint at entry without creating a second ticker or polling loop.
-  "$ms" goal banners --root "$root"
   # The Go core blocks to terminal and holds the waiter record the turn
   # verdict reads; exit codes ride through verbatim.
   "$ms" job watch --root "$root" --job "$job" --caller-pid $$
@@ -1245,7 +1262,7 @@ record_critique_exhaustions() { # manifest
 
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json goal_revision=0
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -1258,6 +1275,7 @@ follow_up() {
   lease_entry_check
   require_fresh_census
   report_plan_drift
+  require_goal_admission
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
   acquire_chain_lock "$root_id"
   # The trap must reference a GLOBAL: when set -e unwinds the owning
@@ -1291,6 +1309,10 @@ follow_up() {
   goal=$(json_field "$latest" goalId 2>/dev/null || true); [[ "$goal" == null ]] && goal=
   workspace=$(json_field "$latest" workspaceRoot)
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
+  if [[ -n "$goal" ]]; then
+    goal_revision=$("$ms" job goal-revision --root "$root" --goal "$goal") \
+      || die 1 "cannot bind follow-up $child to accepted goal $goal revision"
+  fi
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   # Mission provenance refuses BEFORE the child reservation exists (round-4
   # critique R4-F1: a refusal after record-create strands the -rN husk and a
@@ -1305,10 +1327,22 @@ follow_up() {
       || die 1 "${incarnation_verdict:-mission chain incarnation check failed}"
     [[ -n "$mission_turn" ]] || die 2 "mission follow-up requires a runner turn (METASYSTEM_MISSION_TURN is not set); follow up from inside the mission host turn"
   fi
+  mkdir -p "$record_locks"
+  acquire_cap_authority_lock
+  exit_cleanup_job=
+  exit_cleanup_authorization=$child
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
-    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal"
+    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" \
+    --goal "$goal" --goal-revision "$goal_revision" --cap-resolution "$cap_resolution"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
+  exit_cleanup_job=$child
+  exit_cleanup_authorization=
   rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then
     # A critic's workspace is one of two different things, and treating them
@@ -1350,14 +1384,6 @@ follow_up() {
       record_critique_exhaustions "$exhaustion_patch"
     fi
   fi
-  exit_cleanup_job=$child
-  exit_cleanup_chain=$root_id
-  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
-  acquire_cap_authority_lock
-  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
-  model_key=$(canonical_model "$model")
-  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
@@ -1387,7 +1413,7 @@ follow_up() {
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution" \
-    --root "$root"
+    --root "$root" --goal-revision "$goal_revision"
   rm -f "$cap_resolution"
   finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
 }

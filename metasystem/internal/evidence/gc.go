@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 // now is the wall clock, overridable in tests so grace windows and archive
@@ -373,6 +374,7 @@ func removeMirroredLogs(jobsDir, chain string, files map[string]any) error {
 // history is the mirror, which already holds every record file.
 func pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64) error {
 	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
+	goalState := readGoalRevisionState(checkoutRoot)
 	matches, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	for _, recordPath := range matches {
 		record, err := readJSONObject(recordPath)
@@ -381,6 +383,9 @@ func pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot string, graceSecon
 		}
 		status, _ := record["status"].(string)
 		if !terminalStatuses[status] {
+			continue
+		}
+		if goalState.keepsSpendingFact(record) {
 			continue
 		}
 		stem := strings.TrimSuffix(filepath.Base(recordPath), ".json")
@@ -444,6 +449,78 @@ func pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot string, graceSecon
 		}
 	}
 	return nil
+}
+
+type goalRevisionState struct {
+	tree    *goal.TreeGoals
+	unknown bool
+}
+
+// readGoalRevisionState takes one accepted-ledger view for the entire GC pass.
+// A converted ledger that cannot be read makes deletion conservative; GC must
+// not turn an evidence outage into a budget refund.
+func readGoalRevisionState(checkoutRoot string) goalRevisionState {
+	if !goal.NewWorld(checkoutRoot) {
+		return goalRevisionState{}
+	}
+	endpoint, err := goal.ResolveEndpoint(checkoutRoot)
+	if err != nil {
+		return goalRevisionState{unknown: true}
+	}
+	projection, err := goal.Project(endpoint, false, now().UTC())
+	if err != nil {
+		return goalRevisionState{unknown: true}
+	}
+	return goalRevisionState{tree: projection.Tree}
+}
+
+// keepsSpendingFact reports whether a terminal job still contributes attempt
+// or reserved-minute spend to a goal revision that remains claimed. A proved
+// done, parked, queued, or superseded claim revision may age out normally.
+// Contradictory or unreadable bindings stay because deletion would erase the
+// exact record needed to repair BUDGET_UNKNOWN.
+func (s goalRevisionState) keepsSpendingFact(record map[string]any) bool {
+	if s.unknown {
+		return true
+	}
+	goalValue, hasGoal := record["goalId"]
+	if !hasGoal {
+		return s.hasClaimedGoal()
+	}
+	if goalValue == nil {
+		return false
+	}
+	goalID, ok := goalValue.(string)
+	if !ok || goalID == "" {
+		return s.hasClaimedGoal()
+	}
+	if s.tree == nil {
+		return false
+	}
+	file := s.tree.Live[goalID]
+	if file == nil {
+		return s.tree.Done[goalID] == nil
+	}
+	if file.State != goal.StateClaimed || file.Claimed == nil {
+		return false
+	}
+	revision, ok := dispatch.JobRecordOf(record).GoalRevision()
+	if !ok || revision == 0 || file.Claimed.Revision == 0 {
+		return true
+	}
+	return revision >= file.Claimed.Revision
+}
+
+func (s goalRevisionState) hasClaimedGoal() bool {
+	if s.tree == nil {
+		return false
+	}
+	for _, file := range s.tree.Live {
+		if file.State == goal.StateClaimed {
+			return true
+		}
+	}
+	return false
 }
 
 // sweepResidue clears the three residue classes that accumulate per terminal

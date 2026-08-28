@@ -74,6 +74,12 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 }
 
 func TestStateRootRefusesUnknownKindsAndInvalidInstallationFacts(t *testing.T) {
+	if got, err := RelativeRoot(Receipts); err != nil || got != "memory" {
+		t.Fatalf("RelativeRoot(%q) = %q, %v; want memory", Receipts, got, err)
+	}
+	if _, err := RelativeRoot(Kind("unknown")); err == nil {
+		t.Fatal("an unknown relative state kind must refuse")
+	}
 	if _, err := StateRoot(Kind("unknown")); err == nil {
 		t.Fatal("an unknown state kind must refuse")
 	}

@@ -8,13 +8,8 @@ package config
 
 import (
 	"os"
-	"strconv"
 	"strings"
 )
-
-// DefaultAppetiteOverrunGracePercent is the shipped fallback when an older
-// configuration has not yet materialized the appetite grace key.
-const DefaultAppetiteOverrunGracePercent = 25
 
 // parseSettings walks conf content applying THE line rule exactly once
 // (review foundations-7): a setting is a non-blank, non-comment line
@@ -59,18 +54,6 @@ func ConfValue(confPath, key, def string) string {
 	})
 	if !found {
 		return def
-	}
-	return value
-}
-
-// AppetiteOverrunGracePercent is the never-fails runtime reader for the
-// appetite grace band. Strict validation names malformed configuration; the
-// hot path retains the built-in bound instead of silently disabling it.
-func AppetiteOverrunGracePercent(confPath string) int {
-	raw := ConfValue(confPath, "appetite.overrun-grace-percent", strconv.Itoa(DefaultAppetiteOverrunGracePercent))
-	value, err := strconv.Atoi(raw)
-	if err != nil || value < 0 || value > 100 {
-		return DefaultAppetiteOverrunGracePercent
 	}
 	return value
 }

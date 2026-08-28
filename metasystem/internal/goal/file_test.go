@@ -16,7 +16,10 @@ func claimedGolden() *GoalFile {
 		Revision: 3,
 		Blocked:  []string{"wall-o15-head-accounting"},
 		Arc:      "",
-		Claimed:  &ClaimRecord{Machine: "mac-studio", Lineage: "session-a", At: "2026-08-20T00:35:00Z"},
+		Budget: &Budget{
+			ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2,
+		},
+		Claimed: &ClaimRecord{Machine: "mac-studio", Lineage: "session-a", At: "2026-08-20T00:35:00Z", Revision: 2},
 		History: []HistoryLine{
 			{At: "2026-08-20T00:31:00Z", Opid: "01J5X0000000000000000000A0-mac-studio-1a2b3c4d", Verb: "open", Actor: "mac-studio+session-a", Targets: []string{"backlog-git-sync"}, Keep: -1},
 			{At: "2026-08-20T00:35:00Z", Opid: "01J5X0000000000000000000B1-mac-studio-1a2b3c4d", Verb: "claim", Actor: "mac-studio+session-a", Targets: []string{"backlog-git-sync"}, Keep: -1},
@@ -38,6 +41,9 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	}
 	if parsed.Claimed == nil || parsed.Claimed.Machine != "mac-studio" {
 		t.Fatalf("claim record lost: %+v", parsed.Claimed)
+	}
+	if parsed.Claimed.Revision != 2 || parsed.Budget == nil || parsed.Budget.ReservedJobMinutesLimit != 240 {
+		t.Fatalf("budget tuple or claim-revision binding lost: claimed=%+v budget=%+v", parsed.Claimed, parsed.Budget)
 	}
 	if parsed.Revision != 3 || len(parsed.History) != 3 {
 		t.Fatalf("revision/history lost: rev=%d len=%d", parsed.Revision, len(parsed.History))
@@ -132,6 +138,38 @@ func TestStateRecordAgreementIsValidated(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("state/record divergence must refuse, got %v", problems)
+	}
+}
+
+func TestClaimRevisionMustExistAndKeepItsHistoryTimestamp(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*GoalFile)
+		want   string
+	}{
+		{
+			name: "revision does not exist",
+			mutate: func(f *GoalFile) {
+				f.Claimed.Revision = f.Revision + 1
+			},
+			want: "BUDGET_UNKNOWN claimed revision=4 does not exist in goal Revision=3",
+		},
+		{
+			name: "timestamp contradicts revision",
+			mutate: func(f *GoalFile) {
+				f.Claimed.At = "2026-08-20T00:36:00Z"
+			},
+			want: "BUDGET_UNKNOWN claimed at=2026-08-20T00:36:00Z contradicts History revision=2 at=2026-08-20T00:35:00Z",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := claimedGolden()
+			test.mutate(f)
+			_, problems := ParseFile(RenderFile(f))
+			if !problemsContain(problems, test.want) {
+				t.Fatalf("contradictory claim binding did not refuse by type and fact: %v", problems)
+			}
+		})
 	}
 }
 

@@ -66,6 +66,12 @@ func PrepareIntent(repoRoot, receiptFile string, it Intent) error {
 // survives a crash until it launches or cancels, without waking the operator
 // merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam) (ReviveOutcome, error) {
+	// The critical section: fence, verdict, consume, launch, stamp.
+	arb, err := AcquireArbitration(repoRoot)
+	if err != nil {
+		return ReviveOutcome{}, err
+	}
+	defer arb.Release()
 	intents, err := LiveIntents(repoRoot)
 	if err != nil {
 		return ReviveOutcome{}, err
@@ -74,6 +80,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	for i := range intents {
 		if intents[i].Nonce == nonce {
 			it = &intents[i]
+			break
 		}
 	}
 	if it == nil {
@@ -84,13 +91,6 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	// Their presence must not preserve an alert-before-heal path after upgrade.
 	_ = MarkDelivered(repoRoot, it.Nonce)
 	_ = MarkDelivered(repoRoot, "verdict-"+string(VerdictStalledDead))
-
-	// The critical section: fence, verdict, consume, launch, stamp.
-	arb, err := AcquireArbitration(repoRoot)
-	if err != nil {
-		return ReviveOutcome{}, err
-	}
-	defer arb.Release()
 
 	fence, err := ReadEnrollmentFence(repoRoot)
 	if err != nil {
@@ -165,6 +165,12 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 			w = Workers{Unprovable: 1}
 		}
 		workers = w
+	}
+	// Reconcile earlier continuations after the census and before the guard is
+	// computed. Dead continuations stop suppressing dispatch; live or uncertain
+	// ones remain active.
+	if _, err := ReapContinuations(repoRoot); err != nil {
+		return Decision{}, "", err
 	}
 	live, err := LiveIntents(repoRoot)
 	if err != nil {

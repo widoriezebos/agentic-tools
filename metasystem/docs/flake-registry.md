@@ -11,8 +11,9 @@ When a fixture leg fails:
    unreproducible, standalone-green", add it to the registry with
    its first sighting and continue.
 3. **Three sightings inside thirty days** promote the leg to a fix
-   goal on the backlog (appetite agreed at promotion, like any
-   item). The registry entry links the goal until it closes.
+   goal on the backlog. Its complete structured budget is supplied
+   if and when the goal is claimed. The registry entry links the goal
+   until it closes.
 4. Sightings are recorded in the SAME landing as the work that hit
    them — a flake nobody wrote down is a flake the next agent pays
    for again.

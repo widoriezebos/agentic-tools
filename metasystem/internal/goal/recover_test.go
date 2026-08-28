@@ -84,10 +84,10 @@ func TestRecoveryCompletesOpenClaimWithLabels(t *testing.T) {
 	opid := Opid("01J5X00000000000000000Q005", "mac-a", "lin-1")
 	strandEntry(t, a, opid, PhaseCreated, Intent{
 		Verb: "open-claim", Targets: []string{"recovered-claim"},
-		Args: map[string]string{
+		Args: mergeIntentArgs(map[string]string{
 			"intent": "The dead owner's claimed work.", "origin": "main",
 			"next": "Continue.", "labels": "custody,recovery",
-		},
+		}, budgetIntentArgs(testBudget())),
 	})
 	if _, err := Recover(endpointFor(a)); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,9 @@ func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	opid := Opid("01J5X00000000000000000Q020", "mac-a", "lin-1")
-	strandEntry(t, a, opid, PhasePushed, Intent{Verb: "claim", Targets: []string{"claimable"}})
+	strandEntry(t, a, opid, PhasePushed, Intent{
+		Verb: "claim", Targets: []string{"claimable"}, Args: budgetIntentArgs(testBudget()),
+	})
 
 	// The stranded push blocks ordinary mutations…
 	_, err := Open(verbReq(a, "01J5X00000000000000000Q030", "mac-a"), "blocked-out", "Waits.", "main", "Go.")
@@ -352,7 +354,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	claimOpid := Opid("01J5X00000000000000000Q160", "mac-a", "lin-1")
 	strandEntry(t, a, claimOpid, PhaseCreated, Intent{
 		Verb: "claim", Targets: []string{"rv-one"},
-		Args: map[string]string{"cascade": "arc"},
+		Args: mergeIntentArgs(map[string]string{"cascade": "arc"}, budgetIntentArgs(testBudget())),
 	})
 	if _, err := Recover(endpointFor(a)); err != nil {
 		t.Fatal(err)

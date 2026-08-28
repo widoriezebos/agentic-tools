@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -147,28 +146,6 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			return TickResult{}, err
 		}
 	}
-	// The appetite covenant rides the tick: breaches are computed
-	// from the synced ledger at read time (the projection banners
-	// them on every machine), and the steward's duty is the belt —
-	// the phone hears what every goal next already shows. A goal
-	// world that cannot be read skips silently HERE because the
-	// banners remain on the read path; the steward's own liveness
-	// invariant must not degrade on a goal-read hiccup.
-	if e, endpointErr := goal.ResolveEndpoint(repoRoot); endpointErr == nil {
-		if proj, projErr := goal.Project(e, false, time.Now()); projErr == nil {
-			for _, banner := range proj.Banners {
-				if !strings.Contains(banner, "APPETITE BREACH") {
-					continue
-				}
-				if err := QueueNotification(repoRoot, PendingNotification{
-					Nonce:   "appetite-" + shortBannerKey(banner),
-					Message: "steward covenant: " + banner,
-				}); err != nil {
-					return TickResult{}, err
-				}
-			}
-		}
-	}
 	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
 		return TickResult{}, err
 	}
@@ -239,19 +216,6 @@ func requestWatcherRepair(repoRoot string, health HealthVerdict, now time.Time) 
 		return supervise.RequestWatcherRestart(repoRoot, role.Reason, now)
 	}
 	return nil
-}
-
-// shortBannerKey keys one pending message per breached goal: the
-// goal id sits between "BREACH: " and " claimed".
-func shortBannerKey(banner string) string {
-	rest := banner
-	if i := strings.Index(rest, "BREACH: "); i >= 0 {
-		rest = rest[i+len("BREACH: "):]
-	}
-	if i := strings.Index(rest, " "); i >= 0 {
-		rest = rest[:i]
-	}
-	return rest
 }
 
 // degradedTick is every degraded early exit's one shape: the

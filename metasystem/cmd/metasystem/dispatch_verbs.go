@@ -135,14 +135,16 @@ func runDispatchBuildSetup(args []string) int {
 	mainID := flags.String("main-id", "", "dispatching main id")
 	claimEpoch := flags.String("claim-epoch", "", "worktree-lease claim epoch")
 	goalID := flags.String("goal", "", "goal id this job serves")
+	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this reservation serves")
+	capResolution := flags.String("cap-resolution", "", "final cap-resolution file")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *output == "" || *job == "" || *role == "" {
-		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, and --role are required")
+	if *output == "" || *job == "" || *role == "" || *capResolution == "" {
+		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, --role, and --cap-resolution are required")
 		return 2
 	}
-	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID))
+	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution))
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
@@ -203,6 +205,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.CostDirection, "cost-direction", "", "displayed escalation cost direction")
 	flags.StringVar(&p.Reviews, "reviews", "", "implementer job id under review (optional)")
 	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
+	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	if flags.Parse(args) != nil {
@@ -238,6 +241,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
+	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -248,6 +252,56 @@ func runDispatchBuildFollowRecord(args []string) int {
 	}
 	p.Signal = *signal
 	return recordExit(dispatchcore.BuildFollowRecord(p))
+}
+
+func runDispatchGoalRevision(args []string) int {
+	flags := flag.NewFlagSet("job goal-revision", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	goalID := flags.String("goal", "", "goal id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *goalID == "" {
+		fmt.Fprintln(os.Stderr, "job goal-revision: --root and --goal are required")
+		return 2
+	}
+	revision, err := dispatchcore.ResolveGoalRevision(*root, *goalID)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(revision)
+	return 0
+}
+
+func runDispatchGoalAdmission(args []string) int {
+	flags := flag.NewFlagSet("job goal-admission", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	stopLineage := flags.String("stop-lineage", "", "lineage whose owned claim may refuse admission")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" {
+		fmt.Fprintln(os.Stderr, "job goal-admission: --root is required")
+		return 2
+	}
+	now, err := goalCommandNow()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	verdict, err := dispatchcore.EvaluateGoalAdmission(*root, *stopLineage, now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, line := range dispatchcore.FormatGoalAdmission(verdict) {
+		fmt.Println(line)
+	}
+	if verdict.Refused() {
+		return 9
+	}
+	return 0
 }
 
 // runDispatchVerifyChainIncarnation relays the pre-authorization incarnation

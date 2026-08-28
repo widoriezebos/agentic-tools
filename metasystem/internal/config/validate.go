@@ -15,14 +15,13 @@ import (
 // floors, model tiers, role/model resolution, and the evidence root, checked
 // against the adopting repository at repoRoot. It returns every problem found
 // (each rendered without a prefix) rather than stopping at the first, plus
-// tiersAbsent signals that no model tier is configured, and
-// appetiteGraceAbsent signals that the built-in 25 percent appetite grace is
-// active because the durable key is absent. Both are valid states whose INFO
-// lines belong to the command surface. A non-nil err is a hard read failure.
-func Validate(confPath, repoRoot string) (tiersAbsent, appetiteGraceAbsent bool, problems []string, err error) {
+// tiersAbsent signals that no model tier is configured, a valid state whose
+// INFO line belongs to the command surface. A non-nil err is a hard read
+// failure.
+func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, err error) {
 	content, readErr := os.ReadFile(confPath)
 	if readErr != nil {
-		return false, false, nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
+		return false, nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
 	}
 	repo := resolvePath(repoRoot)
 
@@ -322,13 +321,6 @@ func Validate(confPath, repoRoot string) (tiersAbsent, appetiteGraceAbsent bool,
 			add("census.max-interval-share-percent must be an integer between 1 and 100, got %s", pyRepr(raw))
 		}
 	}
-	_, appetiteGracePresent := values["appetite.overrun-grace-percent"]
-	if raw, present := values["appetite.overrun-grace-percent"]; present {
-		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 || parsed > 100 {
-			add("appetite.overrun-grace-percent must be an integer between 0 and 100, got %s", pyRepr(raw))
-		}
-	}
-
 	// The evidence root is required, must be absolute, and must live outside the
 	// repository so job records never write inside the tree they observe.
 	evidence := values["evidence.root"]
@@ -357,7 +349,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent, appetiteGraceAbsent bool,
 		}
 	}
 
-	return len(tierKeys) == 0, !appetiteGracePresent, errs, nil
+	return len(tierKeys) == 0, errs, nil
 }
 
 var (

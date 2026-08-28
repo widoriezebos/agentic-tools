@@ -24,17 +24,17 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	// Claim under a human name refuses up front.
 	humanClaim := verbReq(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
-	if _, err := Claim(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "agent-only") {
+	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
 		t.Fatalf("humans cannot claim: %v", err)
 	}
-	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go."); err == nil || !strings.Contains(err.Error(), "agent-only") {
+	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
 		t.Fatalf("humans cannot open --claim: %v", err)
 	}
-	if _, err := ClaimArc(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "agent-only") {
+	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
 		t.Fatalf("humans cannot claim arcs: %v", err)
 	}
 
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 
@@ -43,7 +43,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	// lineage instead of pretending idempotence.
 	secondLineage := verbReq(a, "01J5X00000000000000000AK30", "mac-a")
 	secondLineage.Actor.Lineage = "lin-2"
-	res, err := Claim(secondLineage, "pair-keyed")
+	res, err := Claim(secondLineage, "pair-keyed", testBudget())
 	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "lineage lin-1") {
 		t.Fatalf("a second lineage refuses by name: %+v %v", res, err)
 	}
@@ -53,7 +53,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 		t.Fatalf("a second lineage cannot release the pair's claim: %+v %v", res, err)
 	}
 	// The pair itself replays idempotent-shaped.
-	res, err = Claim(verbReq(a, "01J5X00000000000000000AK40", "mac-a"), "pair-keyed")
+	res, err = Claim(verbReq(a, "01J5X00000000000000000AK40", "mac-a"), "pair-keyed", testBudget())
 	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already claimed by this pair") {
 		t.Fatalf("the pair's re-claim abandons by name: %+v %v", res, err)
 	}
@@ -108,7 +108,7 @@ func TestEditChecksAuthorityAndTheBlockerInvariant(t *testing.T) {
 			t.Fatalf("open %s: %+v %v", leg.id, res, err)
 		}
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000EA20", "mac-a"), "held"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000EA20", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 
@@ -162,7 +162,7 @@ func arcBed(t *testing.T, a, arc, prefix, code string) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := ClaimArc(verbReq(a, base+code+"90", "mac-a"), prefix+"-one"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := ClaimArc(verbReq(a, base+code+"90", "mac-a"), prefix+"-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 }
@@ -257,7 +257,7 @@ func TestSetArcComposesMovesUnderTheMatrix(t *testing.T) {
 	// A claimed standalone goal cannot join an arc: release first.
 	// (This leg runs before the bed claims the arc — the quota
 	// admits one claim per machine.)
-	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000MX00", "mac-a"), "solo-held", "Solo.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000MX00", "mac-a"), "solo-held", "Solo.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim: %+v %v", res, err)
 	}
 	res, err := SetArc(verbReq(a, "01J5X00000000000000000MX10", "mac-a"), "solo-held", "move-src")
@@ -415,7 +415,7 @@ func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	claimRes, err := ClaimArc(verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one")
+	claimRes, err := ClaimArc(verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one", testBudget())
 	if err != nil || claimRes.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim dest arc: %+v %v", claimRes, err)
 	}

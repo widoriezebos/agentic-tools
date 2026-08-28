@@ -29,39 +29,6 @@ func goalCommandNow() (time.Time, error) {
 	return parsed.UTC(), nil
 }
 
-func goalBannerRows(root, id string) ([]goal.AppetiteBanner, error) {
-	now, err := goalCommandNow()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := goal.CurrentAppetiteBanners(root, now)
-	if err != nil {
-		return nil, err
-	}
-	if id == "" {
-		return rows, nil
-	}
-	filtered := rows[:0]
-	for _, row := range rows {
-		if row.GoalId == id {
-			filtered = append(filtered, row)
-		}
-	}
-	return filtered, nil
-}
-
-func printGoalBanners(root, id string) bool {
-	rows, err := goalBannerRows(root, id)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return false
-	}
-	for _, row := range rows {
-		fmt.Println(row.Text)
-	}
-	return true
-}
-
 // The goal family: the doctrine commands humans and agents type.
 // Mutations classify the caller and run the same authority matrix every
 // record-writer path runs (holder-only), then hand the goal package a
@@ -464,53 +431,9 @@ func runGoalShow(args []string) int {
 		}
 		state = "archived"
 	}
-	var banners []string
-	for _, banner := range p.AppetiteBanners {
-		if banner.GoalId == *id {
-			banners = append(banners, banner.Text)
-		}
-	}
 	printJSON(map[string]any{
-		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": f, "banners": banners,
+		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": f,
 	})
-	return 0
-}
-
-// runGoalBanners is deliberately silent when no appetite checkpoint is
-// active. --stop-lineage is the dispatcher's structured refusal query: it
-// still prints every current banner, then exits 9 only for this machine and
-// lineage's BREACH-STOP claim.
-func runGoalBanners(args []string) int {
-	flags := flag.NewFlagSet("goal banners", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
-	id := flags.String("id", "", "optional goal id filter")
-	stopLineage := flags.String("stop-lineage", "", "exit 9 when this machine+lineage owns a BREACH-STOP goal")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	rows, err := goalBannerRows(*root, *id)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	machine := ""
-	if *stopLineage != "" && len(rows) > 0 {
-		machine, err = goal.ResolveMachine(*root)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	stop := false
-	for _, row := range rows {
-		fmt.Println(row.Text)
-		if row.Band == goal.BandBreachStop && row.Machine == machine && row.Lineage == *stopLineage {
-			stop = true
-		}
-	}
-	if stop {
-		return 9
-	}
 	return 0
 }
 
@@ -536,8 +459,8 @@ func nextSynced(root string, requiredLabels ...string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	// Escalation banners outrank orientation: an appetite breach is
-	// the covenant speaking, and it prints before anything else.
+	// Projection notices such as stale or single-machine state print before
+	// orientation so the caller sees the limits on the answer.
 	for _, banner := range p.Banners {
 		fmt.Println(banner)
 	}

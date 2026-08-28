@@ -493,8 +493,11 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			if err := pinRefusal(f, standing.Claimed.Machine, "the reconciled arc join"); err != nil {
 				return nil, err
 			}
+			if f.Budget == nil {
+				return nil, conflict("budget", "goal %s has no structured budget; run goal set-budget before joining a claimed arc", f.Id)
+			}
 			f.State = StateClaimed
-			f.Claimed = newClaimRecord(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp())
+			f.Claimed = newClaimRecord(standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1)
 		case standing.State == StateParked && standing.Parked != nil:
 			// A queued or parked incoming member parks with the arc's
 			// record — a human act, which a reconcile always is.

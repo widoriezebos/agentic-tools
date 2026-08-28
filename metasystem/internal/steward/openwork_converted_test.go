@@ -71,7 +71,7 @@ func TestConvertedClaimByThisMachineIsOwnedWork(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"fix-it": {
 			Id: "fix-it", State: "claimed", Intent: "Repair it", Origin: "main",
-			NextStep: "Appetite: 1h — do the repair.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			NextStep: "Do the repair.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 			History: bedHistory("fix-it", "claim"),
 		},
@@ -86,13 +86,13 @@ func TestConvertedForeignClaimAndQueueIsNotOwnedHere(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"theirs": {
 			Id: "theirs", State: "claimed", Intent: "Elsewhere", Origin: "main",
-			NextStep: "Appetite: 1h — elsewhere.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			NextStep: "Work elsewhere.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &goal.ClaimRecord{Machine: "bed-m2", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 			History: bedHistory("theirs", "claim"),
 		},
 		"waiting": {
 			Id: "waiting", State: "queued", Intent: "Awaits a claim", Origin: "main",
-			NextStep: "Appetite: 1h — someday.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
+			NextStep: "Work someday.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
 			History: bedHistory("waiting", "open"),
 		},
 	})

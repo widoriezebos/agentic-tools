@@ -107,6 +107,9 @@ resolve_existing_path() { # path
 }
 
 tmp=$(mktemp -d)
+# Every armed checkout in this bed shares a registry isolated to this run.
+# Standalone fixtures must not read or write the user's supervision registry.
+export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/supervision-home"
 agent_supervision_repo=
 armed_supervision_repos=()
 track_armed_supervision() { # repository
@@ -616,70 +619,91 @@ conf_edit "$agent_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$
 agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 
-# Appetite STOP is pair-scoped at dispatch entry. This isolated copy migrates
-# a two-goal legacy backlog to local synced mode, creates a deterministic old
-# claim, and proves refusal happens before supervision or any job reservation.
-appetite_dispatch_repo="$agent_fixture/appetite-dispatch-repo"
-cp -R "$agent_repo" "$appetite_dispatch_repo"
-mkdir -p "$appetite_dispatch_repo/plans"
-cat >"$appetite_dispatch_repo/plans/goals.md" <<'APPETITE_LEDGER'
+# A direct record write simulates a pre-law survivor. It has a claim but no
+# human-supplied structured budget, so admission must name the exact record and
+# refuse before supervision or any job reservation.
+budgetless_dispatch_repo="$agent_fixture/budgetless-dispatch-repo"
+cp -R "$agent_repo" "$budgetless_dispatch_repo"
+mkdir -p "$budgetless_dispatch_repo/plans"
+cat >"$budgetless_dispatch_repo/plans/goals.md" <<'BUDGETLESS_LEDGER'
 # Goals
 
 ## Current goal: fixture-serving — Seed the migrated current goal
 - Origin: human
 - Next step: Release this claim after migration.
 
-## Queued goal: appetite-other — Remain claimable during another goal's STOP
+## Queued goal: budgetless-survivor — Exercise missing-budget refusal
 - Origin: main
-- Next step: Claim this queued goal.
-APPETITE_LEDGER
-appetite_ledger=$(cat "$appetite_dispatch_repo/plans/goals.md" && printf x) && appetite_ledger=${appetite_ledger%x}
-"$engine" json object ledger="$appetite_ledger" \
-  sha256="$(shasum -a 256 "$appetite_dispatch_repo/plans/goals.md" | cut -d' ' -f1)" \
-  >"$appetite_dispatch_repo/plans/goals-accepted.json"
-"$engine" json set --file "$appetite_dispatch_repo/plans/goals-accepted.json" --int schemaVersion=1
-git -C "$appetite_dispatch_repo" -c core.hooksPath=/dev/null add plans
-git -C "$appetite_dispatch_repo" -c core.hooksPath=/dev/null \
-  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'appetite fixture legacy goals'
-git -C "$appetite_dispatch_repo" config metasystem.goal.machine appetite-machine
-git -C "$appetite_dispatch_repo" config goal.sync-remote local
-appetite_source_digest=$("$appetite_dispatch_repo/bin/metasystem" goal source-digest --root "$appetite_dispatch_repo")
-METASYSTEM_OWNER_LINEAGE=appetite-fixture \
-  "$appetite_dispatch_repo/bin/metasystem" goal migrate --root "$appetite_dispatch_repo" \
-    --source-digest "$appetite_source_digest" --sync-mode local --by wido >/dev/null
-git -C "$appetite_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
-METASYSTEM_OWNER_LINEAGE=appetite-fixture \
-  "$appetite_dispatch_repo/bin/metasystem" goal release --root "$appetite_dispatch_repo" --id fixture-serving >/dev/null
-METASYSTEM_OWNER_LINEAGE=appetite-fixture \
+- Next step: Wait for a human budget judgment.
+BUDGETLESS_LEDGER
+budgetless_ledger=$(cat "$budgetless_dispatch_repo/plans/goals.md" && printf x) && budgetless_ledger=${budgetless_ledger%x}
+"$engine" json object ledger="$budgetless_ledger" \
+  sha256="$(shasum -a 256 "$budgetless_dispatch_repo/plans/goals.md" | cut -d' ' -f1)" \
+  >"$budgetless_dispatch_repo/plans/goals-accepted.json"
+"$engine" json set --file "$budgetless_dispatch_repo/plans/goals-accepted.json" --int schemaVersion=1
+git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null add plans
+git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'budgetless fixture goals'
+git -C "$budgetless_dispatch_repo" config metasystem.goal.machine budgetless-machine
+git -C "$budgetless_dispatch_repo" config goal.sync-remote local
+budgetless_source_digest=$("$budgetless_dispatch_repo/bin/metasystem" goal source-digest --root "$budgetless_dispatch_repo")
+METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:00:00Z \
-  "$appetite_dispatch_repo/bin/metasystem" goal open --root "$appetite_dispatch_repo" \
-    --id dispatch-appetite --intent "Exercise dispatch appetite refusal." \
-    --next "Appetite: 1h stop before reserving a new round." --claim >/dev/null
-appetite_brief="$agent_fixture/appetite.md"
-make_agent_brief "$appetite_brief" design
+  "$budgetless_dispatch_repo/bin/metasystem" goal migrate --root "$budgetless_dispatch_repo" \
+    --source-digest "$budgetless_source_digest" --sync-mode local --by wido >/dev/null
+git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
+  "$budgetless_dispatch_repo/bin/metasystem" goal release --root "$budgetless_dispatch_repo" --id fixture-serving >/dev/null
+git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+
+budgetless_record="$budgetless_dispatch_repo/plans/goals/budgetless-survivor.md"
+budgetless_goal_tip=$(git -C "$budgetless_dispatch_repo" rev-parse refs/heads/metasystem/goals)
+budgetless_accepted_tip=$(git -C "$budgetless_dispatch_repo" rev-parse refs/metasystem/goals/accepted)
+[[ "$budgetless_goal_tip" == "$budgetless_accepted_tip" ]] \
+  || { echo "budgetless fixture started from unequal ledger refs" >&2; exit 1; }
+conf_edit "$budgetless_record" replace-line-first '^- State: queued$' '- State: claimed'
+conf_edit "$budgetless_record" replace-line-first '^- Revision: 1$' '- Revision: 2'
+conf_edit "$budgetless_record" insert-after-first '^- Revision: 2$' \
+  '- Claimed: machine=budgetless-machine lineage=budgetless-fixture at=2000-01-01T00:05:00Z'
+conf_edit "$budgetless_record" insert-after-first \
+  ' migrate actor=human:wido targets=budgetless-survivor$' \
+  '- 2000-01-01T00:05:00Z 00000000000000000000000000-budgetless-machine-1a2b3c4d claim actor=budgetless-machine+budgetless-fixture targets=budgetless-survivor'
+conf_edit "$budgetless_record" delete-line-first '^Integrity: sha256='
+budgetless_integrity=$("$engine" util sha256 --file "$budgetless_record")
+printf 'Integrity: sha256=%s\n' "$budgetless_integrity" >>"$budgetless_record"
+git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null add plans/goals/budgetless-survivor.md
+git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'simulate pre-law survivor'
+budgetless_survivor_tip=$(git -C "$budgetless_dispatch_repo" rev-parse HEAD)
+git -C "$budgetless_dispatch_repo" update-ref refs/heads/metasystem/goals \
+  "$budgetless_survivor_tip" "$budgetless_goal_tip"
+git -C "$budgetless_dispatch_repo" update-ref refs/metasystem/goals/accepted \
+  "$budgetless_survivor_tip" "$budgetless_accepted_tip"
 set +e
-env METASYSTEM_OWNER_LINEAGE=appetite-fixture \
-  "$appetite_dispatch_repo/scripts/agents/dispatch.sh" dispatch \
-    --role design-critic --brief "$appetite_brief" --job-id appetite-stop \
-    >"$agent_fixture/appetite-stop.out" 2>&1
-appetite_stop_rc=$?
+budgetless_admission=$(METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
+  "$budgetless_dispatch_repo/bin/metasystem" job goal-admission \
+    --root "$budgetless_dispatch_repo" --stop-lineage budgetless-fixture 2>&1)
+budgetless_admission_rc=$?
 set -e
-(( appetite_stop_rc != 0 )) \
-  || { echo "stopped-goal dispatch unexpectedly passed" >&2; exit 1; }
-grep -Fq 'dispatch refused by the BREACH-STOP banner above' "$agent_fixture/appetite-stop.out" \
-  || { echo "appetite dispatch did not print its STOP banner" >&2; cat "$agent_fixture/appetite-stop.out" >&2; exit 1; }
-grep -Fq "the two exits are Wido's word or goal estimate --remaining showing the work within-band" \
-  "$agent_fixture/appetite-stop.out" \
-  || { echo "appetite dispatch refusal did not name both exits" >&2; cat "$agent_fixture/appetite-stop.out" >&2; exit 1; }
-[[ ! -e "$appetite_dispatch_repo/artifacts/agents/jobs/appetite-stop.json" ]] \
-  || { echo "appetite-refused dispatch created a job record" >&2; exit 1; }
-git -C "$appetite_dispatch_repo" config metasystem.goal.machine appetite-other-machine
-appetite_other_claim=$(METASYSTEM_OWNER_LINEAGE=appetite-other \
-  "$appetite_dispatch_repo/bin/metasystem" goal claim --root "$appetite_dispatch_repo" --id appetite-other)
-grep -Fq '"outcome":"confirmed"' <<<"$appetite_other_claim" \
-  || { echo "another goal's lawful claim was refused: $appetite_other_claim" >&2; exit 1; }
-grep -q '^BREACH-STOP: goal dispatch-appetite ' <<<"$appetite_other_claim" \
-  || { echo "another goal's claim did not print the standing appetite STOP" >&2; exit 1; }
+[[ "$budgetless_admission_rc" -eq 9 ]] \
+  || { echo "budgetless claim admission returned $budgetless_admission_rc: $budgetless_admission" >&2; exit 1; }
+grep -Fq 'BUDGET_UNKNOWN record=plans/goals/budgetless-survivor.md goal=budgetless-survivor' <<<"$budgetless_admission" \
+  || { echo "budgetless refusal did not name the exact goal record: $budgetless_admission" >&2; exit 1; }
+budgetless_brief="$agent_fixture/budgetless.md"
+make_agent_brief "$budgetless_brief" design
+set +e
+env METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
+  "$budgetless_dispatch_repo/scripts/agents/dispatch.sh" dispatch \
+    --role design-critic --brief "$budgetless_brief" --job-id budgetless-refused \
+    >"$agent_fixture/budgetless-refused.out" 2>&1
+budgetless_dispatch_rc=$?
+set -e
+(( budgetless_dispatch_rc != 0 )) \
+  || { echo "budgetless-goal dispatch unexpectedly passed" >&2; exit 1; }
+grep -Fq 'BUDGET_UNKNOWN record=plans/goals/budgetless-survivor.md' "$agent_fixture/budgetless-refused.out" \
+  || { echo "budgetless dispatch did not print the typed refusal" >&2; cat "$agent_fixture/budgetless-refused.out" >&2; exit 1; }
+[[ ! -e "$budgetless_dispatch_repo/artifacts/agents/jobs/budgetless-refused.json" ]] \
+  || { echo "budgetless-refused dispatch created a job record" >&2; exit 1; }
 
 # All remaining dispatch fixtures run behind a real armed fake-runtime set.
 # The explicit synthetic process table is fixture-only and keeps this test
@@ -690,6 +714,110 @@ printf '[]\n' >"$agent_process_fixture"
 printf '{}\n' >"$agent_identity_fixture"
 export METASYSTEM_CENSUS_PROCESS_FILE="$agent_process_fixture"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
+
+# A structured claim enters through the public goal verb with the complete
+# tuple. Its first reservation is within every limit; that completed attempt
+# then closes the admission seam exactly at the attempt boundary.
+budget_dispatch_repo="$agent_fixture/budget-dispatch-repo"
+budget_dispatch_evidence="$agent_fixture/budget-dispatch-evidence"
+cp -R "$agent_repo" "$budget_dispatch_repo"
+conf_edit "$budget_dispatch_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
+  "evidence.root=$budget_dispatch_evidence"
+mkdir -p "$budget_dispatch_repo/plans"
+cat >"$budget_dispatch_repo/plans/goals.md" <<'BUDGET_LEDGER'
+# Goals
+
+## Queued goal: structured-budget — Exercise structured dispatch admission
+- Origin: main
+- Next step: Dispatch while the complete tuple remains within its limits.
+BUDGET_LEDGER
+budget_ledger=$(cat "$budget_dispatch_repo/plans/goals.md" && printf x) && budget_ledger=${budget_ledger%x}
+"$engine" json object ledger="$budget_ledger" \
+  sha256="$(shasum -a 256 "$budget_dispatch_repo/plans/goals.md" | cut -d' ' -f1)" \
+  >"$budget_dispatch_repo/plans/goals-accepted.json"
+"$engine" json set --file "$budget_dispatch_repo/plans/goals-accepted.json" --int schemaVersion=1
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null add plans
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'structured budget fixture goals'
+git -C "$budget_dispatch_repo" config metasystem.goal.machine budget-machine
+git -C "$budget_dispatch_repo" config goal.sync-remote local
+budget_source_digest=$("$budget_dispatch_repo/bin/metasystem" goal source-digest --root "$budget_dispatch_repo")
+METASYSTEM_OWNER_LINEAGE=budget-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:00:00Z \
+  "$budget_dispatch_repo/bin/metasystem" goal migrate --root "$budget_dispatch_repo" \
+    --source-digest "$budget_source_digest" --sync-mode local --by wido >/dev/null
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+budget_claim=$(METASYSTEM_OWNER_LINEAGE=budget-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:05:00Z \
+  "$budget_dispatch_repo/bin/metasystem" goal claim --root "$budget_dispatch_repo" --id structured-budget \
+    --elapsed-limit 1d --attempt-limit 1 --reserved-job-minutes-limit 10000 --active-job-limit 2)
+grep -Fq '"outcome":"confirmed"' <<<"$budget_claim" \
+  || { echo "the complete-tuple structured claim was refused: $budget_claim" >&2; exit 1; }
+budget_goal_revision=$("$budget_dispatch_repo/bin/metasystem" job goal-revision \
+  --root "$budget_dispatch_repo" --goal structured-budget)
+budget_brief="$agent_fixture/structured-budget.md"
+sed 's/^Working Mode:.*/Working Mode: design/' \
+  "$budget_dispatch_repo/scripts/agents/templates/brief.md" >"$budget_brief"
+track_armed_supervision "$budget_dispatch_repo"
+budget_main_start=$("$budget_dispatch_repo/bin/metasystem" proc started-at --pid "$$")
+METASYSTEM_AGENT_RUNTIME=fake "$budget_dispatch_repo/scripts/agents/arm-supervision.sh" \
+  --repo "$budget_dispatch_repo" --session budget-validator --pid "$$" \
+  --start-time "$budget_main_start" --tag metasystem-main-fake-budget-validator \
+  >"$agent_fixture/budget-arming.out"
+(
+  agent_repo=$budget_dispatch_repo
+  agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
+  agent_supervision_repo=$budget_dispatch_repo
+  export METASYSTEM_OWNER_LINEAGE=budget-fixture
+  export METASYSTEM_GOAL_NOW=2000-01-01T00:06:00Z
+  run_agent_fixture structured-budget-within structured-budget-within \
+    "$agent_dispatch" dispatch --role design-critic --brief "$budget_brief" \
+      --job-id structured-budget-within --goal structured-budget --wait
+)
+budget_within_record="$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within.json"
+[[ "$("$engine" json get --file "$budget_within_record" --field status)" == completed ]] \
+  || { echo "the within-limits structured dispatch did not complete" >&2; exit 1; }
+[[ "$("$engine" json get --file "$budget_within_record" --field goalId)" == structured-budget \
+   && "$("$engine" json get --file "$budget_within_record" --field goalRevision)" == "$budget_goal_revision" ]] \
+  || { echo "the within-limits dispatch did not bind the accepted structured goal revision" >&2; exit 1; }
+set +e
+budget_admission=$(METASYSTEM_OWNER_LINEAGE=budget-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z \
+  "$budget_dispatch_repo/bin/metasystem" job goal-admission \
+    --root "$budget_dispatch_repo" --stop-lineage budget-fixture 2>&1)
+budget_admission_rc=$?
+set -e
+[[ "$budget_admission_rc" -eq 9 ]] \
+  || { echo "the structured attempt boundary did not close admission (rc=$budget_admission_rc): $budget_admission" >&2; exit 1; }
+grep -Fq 'BUDGET_REFUSED: goal structured-budget' <<<"$budget_admission" \
+  && grep -Fq 'attemptLimit used=1 limit=1' <<<"$budget_admission" \
+  || { echo "the structured refusal did not name the exact attempt boundary: $budget_admission" >&2; exit 1; }
+(
+  agent_repo=$budget_dispatch_repo
+  agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
+  agent_supervision_repo=$budget_dispatch_repo
+  export METASYSTEM_OWNER_LINEAGE=budget-fixture
+  export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
+  agent_fails structured-budget-refused 'attemptLimit used=1 limit=1' \
+    "$agent_dispatch" dispatch --role design-critic --brief "$budget_brief" \
+      --job-id structured-budget-refused --goal structured-budget
+)
+[[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \
+  || { echo "the structured admission refusal created a job record" >&2; exit 1; }
+budget_follow_message="$agent_fixture/structured-budget-follow-up.md"
+cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow_message"
+(
+  agent_repo=$budget_dispatch_repo
+  agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
+  agent_supervision_repo=$budget_dispatch_repo
+  export METASYSTEM_OWNER_LINEAGE=budget-fixture
+  export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
+  agent_fails structured-budget-follow-up-refused 'attemptLimit used=1 limit=1' \
+    "$agent_dispatch" follow-up --job structured-budget-within --message "$budget_follow_message"
+)
+[[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within-r2.json" ]] \
+  || { echo "the structured follow-up refusal created a child reservation" >&2; exit 1; }
+
 agent_supervision_repo=$agent_repo
 track_armed_supervision "$agent_repo"
 agent_main_start=$("$agent_repo/bin/metasystem" proc started-at --pid "$$")
@@ -844,6 +972,8 @@ set -e
   || { echo "--serving-goal without a usable goal did not refuse exit 3 (rc=$sg_refused_rc)" >&2; cat "$agent_fixture/sg-refused.out" >&2; exit 1; }
 [[ ! -f "$agent_repo/artifacts/agents/jobs/sg-refused.json" ]] \
   || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
+# This serving goal is deliberately open but unclaimed. Admission therefore
+# needs no budget tuple, while --serving-goal must still project it lawfully.
 bin/metasystem goal open --root "$agent_repo" \
   --id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
@@ -1642,7 +1772,10 @@ git -C "$agent_repo" remote set-head origin -a >/dev/null
 # The lease holder has no private lifetime: its bounded teardown below is the
 # only event that ends it, so section growth cannot turn its lifetime into a cap.
 "$agent_repo/bin/metasystem" util hold --tag mission-lease-tag & mission_pid=$!
-mission_pgid=$(ps -p "$mission_pid" -o pgid= | tr -d ' ')
+mission_process=$(METASYSTEM_FAKE_AGENT_ANCESTOR_PID="$mission_pid" \
+  "$agent_repo/bin/metasystem" proc find-ancestor --repo "$agent_repo" \
+    --pid "$mission_pid" --runtime fake)
+mission_pgid=$("$engine" json get --value "$mission_process" --field pgid)
 mission_identity="$agent_fixture/mission-process-identity.json"
 mission_lease_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mission_lease_staged=$(mktemp "$agent_repo/artifacts/agents/missions/mission-alpha/.lease.XXXXXX")
@@ -1850,14 +1983,31 @@ agent_supervision_repo=
 # The minimal mission runner is exercised only through its fake host. The
 # repository, origin, supervision set, signed contracts, frozen gate, turn
 # records, state, and ledger are all real; only the model call is simulated.
-# Unlike the dispatch fixtures above, it owns an isolated repository armed
-# against real process sources so the census can observe each freshly
-# launched runner. This is scoped like the nested ordinary-operator fixture
-# in supervision-fixtures.sh.
+# It prefers real process sources so the census can observe each freshly
+# launched runner. A restricted host that denies process enumeration uses an
+# authorized empty census table; runner identity remains covered separately by
+# the mission-process identity fixture below.
 runner_process_env=(env -u METASYSTEM_CENSUS_PROCESS_FILE -u METASYSTEM_FAKE_PROCESS_IDENTITY_FILE)
 runner="$runner_repo/scripts/agents/mission-runner.sh"
 runner_origin="$agent_fixture/runner-origin.git"
 runner_mission_identity_fixture="$agent_fixture/runner-mission-process-identities.json"
+runner_real_census="$agent_fixture/runner-real-census.json"
+runner_real_census_ok=0
+if "${runner_process_env[@]}" "$runner_repo/bin/metasystem" proc census \
+    --root "$runner_repo" --repo "$runner_repo" --fingerprint runner-source-probe \
+    --interval 5 --output "$runner_real_census" >/dev/null 2>&1; then
+  [[ "$("$engine" json get --file "$runner_real_census" --field verdict)" == SUCCESS ]] \
+    && runner_real_census_ok=1
+fi
+if (( ! runner_real_census_ok )); then
+  runner_process_fixture="$agent_fixture/runner-processes.json"
+  runner_identity_fixture="$agent_fixture/runner-process-identities.json"
+  printf '[]\n' >"$runner_process_fixture"
+  printf '{}\n' >"$runner_identity_fixture"
+  runner_process_env=(env \
+    METASYSTEM_CENSUS_PROCESS_FILE="$runner_process_fixture" \
+    METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$runner_identity_fixture")
+fi
 mv "$runner_repo/scripts/agents/arm-supervision.sh" \
   "$runner_repo/scripts/agents/arm-supervision-real.sh"
 cat >"$runner_repo/scripts/agents/arm-supervision.sh" <<'ARM'
@@ -2269,8 +2419,8 @@ codex_host_tag=$("$engine" json get --file "$codex_turn_one_record" --field inst
   || { echo "codex host is not its own process-group leader" >&2; exit 1; }
 [[ "$codex_host_tag" == metasystem-host-* ]] \
   || { echo "codex host instance tag changed shape: $codex_host_tag" >&2; exit 1; }
-codex_host_command=$(ps -ww -p "$codex_host_pid" -o command=)
-[[ "$codex_host_command" == *"$codex_host_tag"* ]] \
+codex_host_process=$("$runner_repo/bin/metasystem" proc probe --pid "$codex_host_pid")
+[[ "$codex_host_process" == *"$codex_host_tag"* ]] \
   || { echo "codex host process did not carry its recorded instance tag" >&2; exit 1; }
 start_atomic_result_watcher "$codex_turn_one/result.json" codex-result-one
 codex_result_one_watcher=$atomic_result_watcher_pid
@@ -2574,6 +2724,12 @@ chmod 600 "$steward_repo/artifacts/agents/steward/identity.json"
 # A death proof needs a completed supervision census: arm the steward
 # repository's supervision like every other fixture repository, so
 # the empty worker set is PROVEN rather than unknown.
+steward_process_fixture="$agent_fixture/steward-processes.json"
+steward_identity_fixture="$agent_fixture/steward-process-identities.json"
+printf '[]\n' >"$steward_process_fixture"
+printf '{}\n' >"$steward_identity_fixture"
+export METASYSTEM_CENSUS_PROCESS_FILE="$steward_process_fixture"
+export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$steward_identity_fixture"
 track_armed_supervision "$steward_repo"
 # The announced main is a child that DIES: the census then proves an
 # empty worker set (a live announced main would be a live worker,

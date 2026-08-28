@@ -5,12 +5,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 // The pass runs against a frozen clock so grace windows and archive ages are
@@ -212,6 +215,58 @@ func TestPrunesMirroredRecordsPastTheGraceWindow(t *testing.T) {
 		if gone := os.IsNotExist(err); gone != wantGone {
 			t.Fatalf("%s: gone=%v, want %v", record, gone, wantGone)
 		}
+	}
+}
+
+func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
+	freezeClock(t)
+	root, evidenceRoot, _, jobs := checkout(t)
+	runGit := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	runGit("init", "-q", "-b", "main")
+	runGit("config", "user.name", "fixture")
+	runGit("config", "user.email", "fixture@example.invalid")
+	runGit("config", "goal.sync-remote", "local")
+	writeFile(t, filepath.Join(root, "plans", "goals", "backlog.md"), string(goal.RenderRoot(&goal.RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
+	})))
+	file := &goal.GoalFile{
+		Id: "bounded", State: goal.StateClaimed, Intent: "Keep the reservation spend", Origin: goal.OriginMain,
+		OpenedAt: "2026-08-10T08:00:00Z", Revision: 2,
+		Budget: &goal.Budget{
+			ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1,
+		},
+		Claimed: &goal.ClaimRecord{
+			Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-10T09:00:00Z", Revision: 2,
+		},
+		History: []goal.HistoryLine{
+			{At: "2026-08-10T08:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-m1-00000000", Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
+			{At: "2026-08-10T09:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-m1-00000001", Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
+		},
+	}
+	writeFile(t, filepath.Join(root, "plans", "goals", "bounded.md"), string(goal.RenderFile(file)))
+	runGit("add", "plans/goals")
+	runGit("commit", "-q", "-m", "current goal revision")
+	runGit("update-ref", goal.AcceptedRef, "HEAD")
+
+	recordPath := filepath.Join(jobs, "spent.json")
+	writeFile(t, recordPath, `{"jobId":"spent","operationId":"spent","goalId":"bounded","goalRevision":2,"capMin":30,"status":"completed"}`)
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "spent", "manifest.json"),
+		fmt.Sprintf(`{"updatedAt":"2026-08-10T08:00:00Z","files":{"jobs/spent.json":%s}}`, recordEntry(t, jobs, "spent.json")))
+
+	before := dispatch.ProjectBudget(root, file, testNow)
+	runGC(t, root, evidenceRoot)
+	if _, err := os.Stat(recordPath); err != nil {
+		t.Fatalf("GC deleted a current-revision spending fact: %v", err)
+	}
+	after := dispatch.ProjectBudget(root, file, testNow)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("budget projection changed across GC: before=%+v after=%+v", before, after)
 	}
 }
 

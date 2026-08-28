@@ -97,6 +97,13 @@ func StateRoot(kind Kind) (string, error) {
 	return filepath.Join(appRoot, filepath.FromSlash(relative)), nil
 }
 
+// RelativeRoot returns the repository-relative directory owned by kind.
+// Readers of historical Git trees use this form because an absolute runtime
+// location has no meaning inside a commit.
+func RelativeRoot(kind Kind) (string, error) {
+	return relativeRoot(kind)
+}
+
 func relativeRoot(kind Kind) (string, error) {
 	switch kind {
 	case Registers, Receipts:

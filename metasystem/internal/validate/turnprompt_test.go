@@ -233,19 +233,8 @@ func TestTurnPromptAcceptsRunnerRaisedAsks(t *testing.T) {
 	}
 }
 
-// The serving-goal block's widened grammar: one id-and-intent line,
-// optionally followed by exactly one appetite line — anything else in
-// the block refuses, because a mission host must never guess what the
-// second line means.
-func TestServingGoalBlockAcceptsTheAppetiteLine(t *testing.T) {
-	good := []string{"ship-it — Ship the whole thing", "Appetite: 4h"}
-	if len(good) == 2 && !servingGoalAppetite.MatchString(good[1]) {
-		t.Fatal("the canonical appetite line must match the widened grammar")
-	}
-	if servingGoalAppetite.MatchString("Deadline: tomorrow") {
-		t.Fatal("a non-appetite second line must refuse")
-	}
-	if !servingGoalLine.MatchString(good[0]) {
+func TestServingGoalBlockAcceptsTheIdentityAndIntentLine(t *testing.T) {
+	if !servingGoalLine.MatchString("ship-it — Ship the whole thing") {
 		t.Fatal("the id-and-intent line must keep matching")
 	}
 }

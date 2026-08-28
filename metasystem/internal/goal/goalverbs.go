@@ -799,42 +799,33 @@ func (s *Store) BaselineMatches() bool {
 // (mission) or refuse-loudly (dispatch --serving-goal).
 // ServingProjection is the mission prompt's goal line, routed on the
 // world: a converted checkout serves the goal THIS machine's enrolled
-// nickname has claimed (with its appetite token when the next step
-// carries one), a legacy checkout serves the Current goal. Absent,
+// nickname has claimed, while a legacy checkout serves the Current goal. Absent,
 // degraded, unclaimed, and goal-free states all answer ok=false — the
 // prompt omits the line and never blocks. The fetch is the caller's
 // concern; this reads what is accepted.
-func (s *Store) ServingProjection() (id, intent, appetite string, ok bool) {
+func (s *Store) ServingProjection() (id, intent string, ok bool) {
 	if NewWorld(s.Root) {
 		machine, err := ResolveMachine(s.Root)
 		if err != nil {
-			return "", "", "", false
+			return "", "", false
 		}
 		endpoint, err := ResolveEndpoint(s.Root)
 		if err != nil {
-			return "", "", "", false
+			return "", "", false
 		}
 		proj, err := Project(endpoint, false, time.Now())
 		if err != nil || proj.Tree == nil {
-			return "", "", "", false
+			return "", "", false
 		}
 		for goalId, f := range proj.Tree.Live {
 			if f.State == "claimed" && f.Claimed != nil && f.Claimed.Machine == machine {
-				token := ""
-				if _, has := ParseAppetite(f.NextStep); has {
-					rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(f.NextStep), "Appetite:"))
-					if sp := strings.IndexAny(rest, " \t.,;"); sp >= 0 {
-						rest = rest[:sp]
-					}
-					token = rest
-				}
-				return goalId, f.Intent, token, true
+				return goalId, f.Intent, true
 			}
 		}
-		return "", "", "", false
+		return "", "", false
 	}
 	id, intent, ok = s.CurrentProjection()
-	return id, intent, "", ok
+	return id, intent, ok
 }
 
 func (s *Store) CurrentProjection() (id, intent string, ok bool) {

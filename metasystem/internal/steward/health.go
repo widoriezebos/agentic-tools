@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -39,14 +40,15 @@ const (
 type HealthRole string
 
 const (
-	RoleStewardRunner       HealthRole = "steward-runner"
-	RoleSupervisionOwner    HealthRole = "supervision-owner"
-	RoleRepoWatcher         HealthRole = "repo-watcher"
-	RoleCensusFreshness     HealthRole = "census-freshness"
-	RoleNarratorFreshness   HealthRole = "narrator-freshness"
-	RoleSessionMain         HealthRole = "session-main"
-	RoleHookFreshness       HealthRole = "hook-freshness"
-	RoleClaimedGoalAppetite HealthRole = "claimed-goal-appetite"
+	RoleStewardRunner     HealthRole = "steward-runner"
+	RoleSupervisionOwner  HealthRole = "supervision-owner"
+	RoleRepoWatcher       HealthRole = "repo-watcher"
+	RoleCensusFreshness   HealthRole = "census-freshness"
+	RoleNarratorFreshness HealthRole = "narrator-freshness"
+	RoleSessionMain       HealthRole = "session-main"
+	RoleHookFreshness     HealthRole = "hook-freshness"
+	// Keep the published role name stable for existing health consumers.
+	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
 	RoleNonterminalJobs     HealthRole = "nonterminal-jobs"
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
 )
@@ -59,7 +61,7 @@ var healthRoleOrder = []HealthRole{
 	RoleNarratorFreshness,
 	RoleSessionMain,
 	RoleHookFreshness,
-	RoleClaimedGoalAppetite,
+	RoleClaimedGoalBudget,
 	RoleNonterminalJobs,
 	RoleCapabilitySnapshots,
 }
@@ -232,7 +234,7 @@ func evaluateHealthRoles(repoRoot string, now time.Time, prober identity.Prober,
 		checkNarratorFreshness(repoRoot, now),
 		checkSessionMain(repoRoot, prober),
 		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
-		checkClaimedGoalAppetites(repoRoot, now),
+		checkClaimedGoalBudgets(repoRoot, now),
 		checkNonterminalJobs(repoRoot, prober),
 		checkCapabilitySnapshots(repoRoot, now),
 	}
@@ -623,33 +625,106 @@ func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
 	return roleDead(RoleSessionMain, "no session main is announced", remedy)
 }
 
-func checkClaimedGoalAppetites(repoRoot string, now time.Time) RoleVerdict {
+func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 	if !goal.NewWorld(repoRoot) {
-		return roleAlive(RoleClaimedGoalAppetite, "the bootstrap ledger has no claimed-goal records")
+		return roleAlive(RoleClaimedGoalBudget, "the bootstrap ledger has no claimed-goal records")
 	}
 	endpoint, err := goal.ResolveEndpoint(repoRoot)
 	if err != nil {
-		return roleUnknown(RoleClaimedGoalAppetite, "the claimed-goal ledger endpoint is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
+		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger endpoint is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		return roleUnknown(RoleClaimedGoalAppetite, "the claimed-goal ledger is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
+		if unknown, ok := dispatch.GoalRecordBudgetUnknown(err); ok {
+			return roleUnknown(RoleClaimedGoalBudget,
+				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason),
+				"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
+		}
+		if id, malformed := malformedBudgetGoal(err); malformed {
+			return roleDead(RoleClaimedGoalBudget,
+				fmt.Sprintf("claimed goal %s has a malformed structured budget tuple", id), goalBudgetRemedy(id))
+		}
+		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
 	}
-	var broken []string
-	for id, file := range projection.Tree.Live {
+	var dead []string
+	var unknown []string
+	var known []string
+	ids := make([]string, 0, len(projection.Tree.Live))
+	for id := range projection.Tree.Live {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		file := projection.Tree.Live[id]
 		if file.State != goal.StateClaimed {
 			continue
 		}
-		if _, ok := goal.ParseAppetite(file.NextStep); !ok {
-			broken = append(broken, id)
+		if file.Budget == nil {
+			dead = append(dead, fmt.Sprintf("%s BUDGET_MISSING record=plans/goals/%s.md: claimed goal has no structured budget", id, id))
+			continue
 		}
+		budget := dispatch.ProjectBudget(repoRoot, file, now)
+		if budget.Status == dispatch.BudgetUnknown {
+			unknown = append(unknown, fmt.Sprintf("%s BUDGET_UNKNOWN record=%s reason=%s",
+				id, budget.Unknown.Record, budget.Unknown.Reason))
+			continue
+		}
+		if len(budget.Breaches) > 0 {
+			var fields []string
+			for _, breach := range budget.Breaches {
+				fields = append(fields, fmt.Sprintf("%s used=%s limit=%s", breach.Field, breach.Used, breach.Limit))
+			}
+			dead = append(dead, fmt.Sprintf("%s revision=%d BREACH %s", id, budget.GoalRevision, strings.Join(fields, ", ")))
+			continue
+		}
+		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d elapsed=%s/%s",
+			id, budget.GoalRevision, budget.Attempts, budget.Limits.AttemptLimit,
+			budget.ReservedJobMinutes, budget.Limits.ReservedJobMinutesLimit,
+			budget.ActiveJobs, budget.Limits.ActiveJobLimit,
+			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit))
 	}
-	sort.Strings(broken)
-	if len(broken) == 0 {
-		return roleAlive(RoleClaimedGoalAppetite, "every claimed goal starts with a parseable Appetite duration")
+	if len(dead) > 0 {
+		id := strings.Fields(dead[0])[0]
+		reasons := append(dead, unknown...)
+		return roleDead(RoleClaimedGoalBudget, strings.Join(reasons, "; "), goalBudgetRemedy(id))
 	}
-	remedy := fmt.Sprintf("metasystem goal edit --root %q --id %s --next %q", repoRoot, broken[0], "Appetite: 1h — describe the bounded next step")
-	return roleDead(RoleClaimedGoalAppetite, "claimed goals with broken Appetite prefixes: "+strings.Join(broken, ","), remedy)
+	if len(unknown) > 0 {
+		return roleUnknown(RoleClaimedGoalBudget, strings.Join(unknown, "; "),
+			"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
+	}
+	if len(known) == 0 {
+		return roleAlive(RoleClaimedGoalBudget, "there are no claimed goals")
+	}
+	return roleAlive(RoleClaimedGoalBudget, strings.Join(known, "; "))
+}
+
+func malformedBudgetGoal(err error) (string, bool) {
+	var parseErr *goal.TreeReadError
+	if !errors.As(err, &parseErr) {
+		return "", false
+	}
+	const prefix = "plans/goals/"
+	for _, problem := range parseErr.Problems {
+		text := string(problem)
+		if !strings.Contains(text, ": Budget:") || !strings.HasPrefix(text, prefix) {
+			continue
+		}
+		path := strings.SplitN(text, ":", 2)[0]
+		relative := strings.TrimPrefix(path, prefix)
+		if strings.HasPrefix(relative, "done/") || !strings.HasSuffix(relative, ".md") {
+			continue
+		}
+		file, _ := goal.ParseFile(parseErr.Files[path])
+		if file == nil || file.State != goal.StateClaimed {
+			continue
+		}
+		return strings.TrimSuffix(relative, ".md"), true
+	}
+	return "", false
+}
+
+func goalBudgetRemedy(id string) string {
+	return fmt.Sprintf("metasystem goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER", id)
 }
 
 func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {

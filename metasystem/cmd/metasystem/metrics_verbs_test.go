@@ -54,10 +54,10 @@ func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
 		writeMetricsFixtureGuard(t, root)
 		store := &goal.Store{Root: root}
 		caller := goal.Caller{Class: "HUMAN"}
-		if _, err := store.Open(caller, "legacy-goal", "Conclude through the legacy command.", "Appetite: 1h finish."); err != nil {
+		if _, err := store.Open(caller, "legacy-goal", "Conclude through the legacy command.", "Finish."); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.Open(caller, "legacy-next", "Succeed the concluded goal.", "Appetite: 1h continue."); err != nil {
+		if _, err := store.Open(caller, "legacy-next", "Succeed the concluded goal.", "Continue."); err != nil {
 			t.Fatal(err)
 		}
 		stageHumanTerminal(t, root, int64(os.Getppid()))
@@ -138,7 +138,7 @@ func syncedDoneFixture(t *testing.T) string {
 	}
 	file := &goal.GoalFile{
 		Id: "synced-goal", State: goal.StateQueued, Intent: "Conclude through the synced command.", Origin: goal.OriginMain,
-		NextStep: "Appetite: 1h finish.", OpenedAt: "2026-08-20T00:00:00Z", Revision: 1,
+		NextStep: "Finish.", OpenedAt: "2026-08-20T00:00:00Z", Revision: 1,
 		History: []goal.HistoryLine{{
 			At: "2026-08-20T00:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-machine-a-00000000",
 			Verb: "open", Actor: "machine-a+fixture", Targets: []string{"synced-goal"}, Keep: -1,

@@ -301,16 +301,15 @@ the engine's `metasystem goal` family (`internal/goal`).
 - **Claim** — one machine's exclusive hold on one goal (one claim per
   machine at a time). An **arc** is a set of goals that claim and move
   as a whole.
-- **Appetite** — the worth-sizing agreed between Wido and the
-  coordinator before a goal is ready: a duration token (`4h`, `1d`)
-  opening the goal's next step. It scopes the design, is re-checked as
-  effort accumulates, and a blown appetite stops the work and raises
-  the human. Breaches print as banners on every read and reach the
-  operator through the steward.
+- **Budget** — the complete four-field limit tuple supplied by a human
+  when a goal is claimed: elapsed duration, attempts, reserved job
+  minutes, and active jobs. Dispatch admission projects spending from
+  authoritative job records and refuses at a limit boundary. Claimed
+  goals without a tuple are unhealthy and refused; queued goals need
+  no budget.
 - **Slicing law** — large work is never embarked on in one piece; it is
-  split into iterative, independently deployable slices. Composes with
-  appetite: appetite sizes what a feature is worth, slicing governs how
-  anything big gets delivered.
+  split into iterative, independently deployable slices. Slicing
+  governs delivery shape; the budget limits one claimed revision.
 - **Draft** — a backlog item still being shaped, living in
   `plans/goals-drafts/`, invisible to the fleet until the coordinator
   promotes it through the intake checklist.
@@ -319,7 +318,7 @@ the engine's `metasystem goal` family (`internal/goal`).
   tells an agent is covenant, not advice.
 - **Review brief** — the contract a critique chain starts from
   (`scripts/agents/templates/review-brief.md`): round budget, threat
-  model, appetite, and scope, fixed before round one.
+  model, and scope, fixed before round one.
 - **Flake registry** — the shared table of known-flaky suite legs and
   the rerun protocol (`docs/flake-registry.md`): a listed leg earns one
   solo rerun, an unlisted failure is diagnosed first, three sightings

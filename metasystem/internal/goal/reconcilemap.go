@@ -98,6 +98,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.Pinned != "" {
 				return nil, fmt.Errorf("%s: a hand-created goal carries no pin; open it, then pin with set-pin", d.Path)
 			}
+			if edited.Budget != nil {
+				return nil, fmt.Errorf("%s: a hand-created goal carries no budget; open it, then use goal set-budget", d.Path)
+			}
 			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
 				Intent: &edited.Intent, NextStep: &edited.NextStep,
 				Blocked: &edited.Blocked, Labels: &edited.Labels,
@@ -242,6 +245,10 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 
 	if edited.Pinned != base.Pinned {
 		return nil, fmt.Errorf("%s: Pinned is written by the set-pin verb; a hand-edited pin has no reconcile grammar", p)
+	}
+	if (edited.Budget == nil) != (base.Budget == nil) ||
+		(edited.Budget != nil && *edited.Budget != *base.Budget) {
+		return nil, fmt.Errorf("%s: Budget is written by the set-budget verb; a hand-edited budget has no reconcile grammar", p)
 	}
 
 	// One edit for the field remainder, over the CLOSED surface.

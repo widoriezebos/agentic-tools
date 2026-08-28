@@ -388,7 +388,7 @@ A refusal names rule identifier/revision, candidate, scope, evidence, and typed 
 
 At `reviewAt`, the rule never auto-promotes or silently disappears. Health reports `RULE_REVIEW_DUE`, and scope changes refuse until a human records `HOLD`, `REVISE`, or `WITHDRAW`.
 
-Delete the requirement that the four-hour ceiling, claim-requires-appetite, and mandatory fields enter this store in observe-only mode.
+Delete the requirement that budget-tuple completeness and mandatory fields enter this store in observe-only mode.
 
 Those are already-authorized schema and budget invariants, not newly learned refusal rules. S8 therefore deploys the governance mechanism empty, removing S2’s contradiction.
 

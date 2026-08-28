@@ -362,8 +362,12 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	})
 
 	setup := filepath.Join(tmp, "setup.json")
-	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7", ""); err != nil {
+	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7", "", 0, capResolution); err != nil {
 		t.Fatalf("BuildSetup: %v", err)
+	}
+	setupRecord := readJSONFile(t, setup)
+	if setupRecord["capMin"].(json.Number).String() != "120" {
+		t.Fatalf("published reservation husk does not carry its final capMin: %v", setupRecord["capMin"])
 	}
 	if err := RecordCreate(root, "job-b", setup); err != nil {
 		t.Fatalf("RecordCreate from built setup: %v", err)
@@ -384,7 +388,8 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		t.Fatalf("RecordSetup from built record: %v", err)
 	}
 	record := readJSONFile(t, filepath.Join(root, "artifacts", "agents", "jobs", "job-b.json"))
-	if record["capMin"].(json.Number).String() != "120" || record["baseSha"] == "" {
+	if record["capMin"].(json.Number).String() != "120" || record["baseSha"] == "" ||
+		record["operationId"] != "job-b" || record["goalId"] != nil || record["goalRevision"] != nil {
 		t.Fatalf("built record identity = capMin %v baseSha %v", record["capMin"], record["baseSha"])
 	}
 

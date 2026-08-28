@@ -11,7 +11,7 @@ import (
 
 func TestReceiptCorrectVerbRejectsInvalidProvenanceValues(t *testing.T) {
 	root := t.TempDir()
-	ledger := filepath.Join(root, "plans", "receipts.log")
+	ledger := filepath.Join(root, "memory", "receipts.log")
 	if err := os.MkdirAll(filepath.Dir(ledger), 0o755); err != nil {
 		t.Fatal(err)
 	}

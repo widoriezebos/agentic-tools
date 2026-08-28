@@ -53,6 +53,23 @@ func (r VerbRequest) stamp() string {
 // loadTree parses one tip's whole ledger subtree; a tree that does
 // not parse refuses the verb by name (the verb never writes onto a
 // world it cannot read).
+// TreeReadError preserves the named parse problems for read-side consumers
+// that must distinguish a malformed budget from a mechanically unreadable
+// ledger.
+type TreeReadError struct {
+	Tip      string
+	Problems []Problem
+	Files    map[string][]byte
+}
+
+func (e *TreeReadError) Error() string {
+	lines := make([]string, len(e.Problems))
+	for i, problem := range e.Problems {
+		lines[i] = string(problem)
+	}
+	return fmt.Sprintf("the ledger tree at %s does not parse:\n%s", short(e.Tip), strings.Join(lines, "\n"))
+}
+
 func loadTree(root, tip string) (*TreeGoals, error) {
 	files, err := ReadCommitGoals(root, tip)
 	if err != nil {
@@ -60,11 +77,7 @@ func loadTree(root, tip string) (*TreeGoals, error) {
 	}
 	t, problems := ParseTreeFiles(files)
 	if len(problems) > 0 {
-		lines := make([]string, len(problems))
-		for i, p := range problems {
-			lines[i] = string(p)
-		}
-		return nil, fmt.Errorf("the ledger tree at %s does not parse:\n%s", short(tip), strings.Join(lines, "\n"))
+		return nil, &TreeReadError{Tip: tip, Problems: problems, Files: files}
 	}
 	return t, nil
 }
@@ -79,12 +92,35 @@ func touch(f *GoalFile, r VerbRequest, verb string, targets []string) {
 	})
 }
 
-func newClaimRecord(f *GoalFile, machine, lineage, at string) *ClaimRecord {
-	record := &ClaimRecord{Machine: machine, Lineage: lineage, At: at}
-	if appetite, ok := ParseAppetite(f.NextStep); ok {
-		record.Appetite = FormatWorkingDuration(appetite)
+func newClaimRecord(machine, lineage, at string, revision uint64) *ClaimRecord {
+	return &ClaimRecord{Machine: machine, Lineage: lineage, At: at, Revision: revision}
+}
+
+func suppliedBudget(values []Budget) (*Budget, error) {
+	if len(values) > 1 {
+		return nil, fmt.Errorf("a claim accepts one complete budget tuple")
 	}
-	return record
+	if len(values) == 0 {
+		return nil, nil
+	}
+	if err := values[0].Validate(); err != nil {
+		return nil, fmt.Errorf("invalid budget: %v", err)
+	}
+	budget := values[0]
+	return &budget, nil
+}
+
+func budgetForClaim(f *GoalFile, supplied *Budget) (Budget, error) {
+	if supplied != nil {
+		return *supplied, nil
+	}
+	if f.Budget == nil {
+		return Budget{}, fmt.Errorf("goal %s has no structured budget; supply the complete tuple on goal claim or run goal set-budget first", f.Id)
+	}
+	if err := f.Budget.Validate(); err != nil {
+		return Budget{}, fmt.Errorf("goal %s has an invalid structured budget: %v", f.Id, err)
+	}
+	return *f.Budget, nil
 }
 
 // ownPair reports whether a claim names the actor's machine AND
@@ -215,6 +251,17 @@ func intentArgs(r VerbRequest, args map[string]string) map[string]string {
 	return args
 }
 
+func mergeIntentArgs(left, right map[string]string) map[string]string {
+	merged := make(map[string]string, len(left)+len(right))
+	for key, value := range left {
+		merged[key] = value
+	}
+	for key, value := range right {
+		merged[key] = value
+	}
+	return merged
+}
+
 // opidLanded reports whether this operation's opid is already in
 // the file's History — the idempotent-success half of the
 // postcondition, per touched file.
@@ -294,20 +341,29 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, labels []st
 // Claim takes ownership of a queued goal for the actor's pair.
 // Claim is AGENT-ONLY: humans direct agents; no human
 // lineage exists, so no human claim row.
-func Claim(r VerbRequest, id string) (PublishResult, error) {
+func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
-	return Publish(r.Endpoint, claimRequest(r, id))
+	budget, err := suppliedBudget(budgets)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, claimRequest(r, id, budget))
 }
 
 // claimRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func claimRequest(r VerbRequest, id string) PublishRequest {
+
+func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
+	args := map[string]string(nil)
+	if supplied != nil {
+		args = budgetIntentArgs(*supplied)
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, nil)},
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, args)},
 		Message: "goal claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -341,9 +397,66 @@ func claimRequest(r VerbRequest, id string) PublishRequest {
 					return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
 				}
 			}
+			budget, err := budgetForClaim(f, supplied)
+			if err != nil {
+				return nil, err
+			}
 			f.State = StateClaimed
-			f.Claimed = newClaimRecord(f, r.Actor.Machine, r.Actor.Lineage, r.stamp())
+			f.Budget = &budget
 			touch(f, r, "claim", []string{id})
+			f.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision)
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
+}
+
+// SetBudget replaces the whole tuple. On claimed work it also starts the
+// claim record for the new revision, so elapsed time and job reservations
+// have one unambiguous revision boundary.
+func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
+	if err := budget.Validate(); err != nil {
+		return PublishResult{}, fmt.Errorf("invalid budget: %v", err)
+	}
+	return Publish(r.Endpoint, setBudgetRequest(r, id, budget))
+}
+
+func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "set-budget", Targets: []string{id}, Args: intentArgs(r, budgetIntentArgs(budget))},
+		Message: "goal set-budget " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live; the archive changes through reopen", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; changing another's budget is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			if f.State == StateParked && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is parked; changing a parked goal's budget is a human act", id)
+			}
+			bound := f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision > 0
+			if f.Budget != nil && *f.Budget == budget && (f.State != StateClaimed || bound) {
+				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
+			}
+			displaced := ""
+			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+				displaced = pairMarker(f.Claimed)
+			}
+			f.Budget = &budget
+			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
+			if f.State == StateClaimed && f.Claimed != nil {
+				f.Claimed = newClaimRecord(f.Claimed.Machine, f.Claimed.Lineage, r.stamp(), f.Revision)
+			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
@@ -353,55 +466,6 @@ func claimRequest(r VerbRequest, id string) PublishRequest {
 // Release returns the actor's claimed goal to the queue.
 func Release(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseRequest(r, id))
-}
-
-// Estimate records the claimant's current remaining-work estimate as a
-// ledger event. It changes no goal prose and carries no human override.
-func Estimate(r VerbRequest, id, remaining string) (PublishResult, error) {
-	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("estimate is claimant-only and does not take --by")
-	}
-	duration, ok := ParseWorkingDuration(remaining)
-	if !ok {
-		return PublishResult{}, fmt.Errorf("remaining estimate %q is not a positive working duration (for example 2h30m)", remaining)
-	}
-	return Publish(r.Endpoint, estimateRequest(r, id, FormatWorkingDuration(duration)))
-}
-
-func estimateRequest(r VerbRequest, id, remaining string) PublishRequest {
-	return PublishRequest{
-		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "estimate", Targets: []string{id}, Args: intentArgs(r, map[string]string{
-			"remaining": remaining,
-		})},
-		Message: "goal estimate " + id,
-		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
-			if err != nil {
-				return nil, err
-			}
-			f, exists := t.Live[id]
-			if !exists {
-				return nil, fmt.Errorf("goal %s is not live; nothing to estimate", id)
-			}
-			if opidLanded(f, r) {
-				return nil, AlreadyApplied{}
-			}
-			if f.State != StateClaimed || f.Claimed == nil {
-				return nil, fmt.Errorf("goal %s is %s, not claimed; only its claimant records a remaining estimate", id, f.State)
-			}
-			if !ownPair(f.Claimed, r.Actor) {
-				return nil, fmt.Errorf("goal %s is claimed by %s+%s; only that pair records its remaining estimate", id, f.Claimed.Machine, f.Claimed.Lineage)
-			}
-			f.Revision++
-			f.History = append(f.History, HistoryLine{
-				At: r.stamp(), Opid: r.opid(), Verb: "estimate", Actor: r.Actor.historyActor(),
-				Targets: []string{id}, Keep: -1, Remaining: remaining,
-			})
-			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
-		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	}
 }
 
 // releaseRequest builds the verb's complete transaction request — the
@@ -730,8 +794,11 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 					if err := pinRefusal(f, standing.Claimed.Machine, "rejoining the claimed arc"); err != nil {
 						return nil, err
 					}
+					if f.Budget == nil {
+						return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it rejoins a claimed arc", f.Id)
+					}
 					f.State = StateClaimed
-					f.Claimed = newClaimRecord(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp())
+					f.Claimed = newClaimRecord(standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1)
 				case standing.State == StateParked && standing.Parked != nil:
 					if r.Actor.Human == "" {
 						return nil, fmt.Errorf("goal %s rejoins arc %s, which is parked; reopening into a parked arc is a human act", id, f.Arc)
@@ -949,6 +1016,9 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
 					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; even a steal honors the pin — clear the pin, steal, then re-pin", member.Id, member.Pinned, r.Actor.Machine)
 				}
+				if member.Budget == nil {
+					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before stealing its claim", member.Id)
+				}
 			}
 			targets := make([]string, 0, len(members))
 			for _, m := range members {
@@ -960,8 +1030,8 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 					continue // uniformity is validated; ride over strays defensively
 				}
 				displaced := pairMarker(m.Claimed)
-				m.Claimed = newClaimRecord(m, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 				touchDisplaced(m, r, "steal", targets, displaced)
+				m.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			return ackDisplacements(t, r, changes), nil
@@ -972,11 +1042,14 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 
 // OpenClaim opens a goal already claimed by the actor — one commit,
 // the claim guards holding trivially on a goal with no blockers.
-func OpenClaim(r VerbRequest, id, intent, origin, nextStep string, labels ...string) (PublishResult, error) {
+func OpenClaim(r VerbRequest, id, intent, origin, nextStep string, budget Budget, labels ...string) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("open --claim is agent-only: humans direct agents; bare open leaves the goal queued")
 	}
-	req, err := openClaimRequest(r, id, intent, origin, nextStep, labels)
+	if err := budget.Validate(); err != nil {
+		return PublishResult{}, fmt.Errorf("invalid budget: %v", err)
+	}
+	req, err := openClaimRequest(r, id, intent, origin, nextStep, budget, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -986,16 +1059,16 @@ func OpenClaim(r VerbRequest, id, intent, origin, nextStep string, labels ...str
 // openClaimRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, labels []string) (PublishRequest, error) {
+func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget Budget, labels []string) (PublishRequest, error) {
 	canonical, err := canonicalLabels(labels)
 	if err != nil {
 		return PublishRequest{}, err
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: intentArgs(r, map[string]string{
-			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","),
-		})},
+		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: intentArgs(r, mergeIntentArgs(
+			map[string]string{"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ",")},
+			budgetIntentArgs(budget)))},
 		Message: "goal open --claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1014,10 +1087,10 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, labels
 			f := &GoalFile{
 				Id: id, State: StateClaimed, Intent: intent, Origin: origin,
 				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0,
-				Labels: canonical,
+				Labels: canonical, Budget: &budget,
 			}
-			f.Claimed = newClaimRecord(f, r.Actor.Machine, r.Actor.Lineage, r.stamp())
 			touch(f, r, "open-claim", []string{id})
+			f.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision)
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
 			if t.Root != nil && t.Root.Free != nil {
 				t.Root.Free = nil
@@ -1166,20 +1239,28 @@ func arcMembers(t *TreeGoals, id string) []*GoalFile {
 // under one claimant counting once against the quota. Every
 // member's blockers must be done; a standing foreign claim on any
 // member loses the whole cascade.
-func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
+func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
-	return Publish(r.Endpoint, claimArcRequest(r, id))
+	budget, err := suppliedBudget(budgets)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, claimArcRequest(r, id, budget))
 }
 
 // claimArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func claimArcRequest(r VerbRequest, id string) PublishRequest {
+func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
+	args := map[string]string{"cascade": "arc"}
+	if supplied != nil {
+		args = mergeIntentArgs(args, budgetIntentArgs(*supplied))
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, args)},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1219,9 +1300,14 @@ func claimArcRequest(r VerbRequest, id string) PublishRequest {
 				if err := pinRefusal(m, r.Actor.Machine, "the arc claim"); err != nil {
 					return nil, err
 				}
+				budget, err := budgetForClaim(m, supplied)
+				if err != nil {
+					return nil, err
+				}
 				m.State = StateClaimed
-				m.Claimed = newClaimRecord(m, r.Actor.Machine, r.Actor.Lineage, r.stamp())
+				m.Budget = &budget
 				touch(m, r, "claim", targets)
+				m.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
@@ -1689,8 +1775,11 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 				if err := pinRefusal(f, standing.Claimed.Machine, "joining the claimed arc"); err != nil {
 					return nil, err
 				}
+				if f.Budget == nil {
+					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it joins a claimed arc", f.Id)
+				}
 				f.State = StateClaimed
-				f.Claimed = newClaimRecord(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp())
+				f.Claimed = newClaimRecord(standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1)
 			case standing.State == StateParked && standing.Parked != nil:
 				if r.Actor.Human == "" {
 					return nil, fmt.Errorf("arc %s is parked; a parked arc's membership edits are human acts", arc)

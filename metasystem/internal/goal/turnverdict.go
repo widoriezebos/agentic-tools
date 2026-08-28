@@ -106,7 +106,6 @@ type Verdict struct {
 	Goal              *GoalFacts `json:"goal"`
 	LedgerStatus      string     `json:"ledgerStatus"`
 	Diagnostics       []string   `json:"diagnostics"`
-	Banners           []string   `json:"banners"`
 	Display           string     `json:"display"`
 	// SurfaceWatchdog answers the hook's --watchdog-surfaced digest: true
 	// exactly once per new digest per session, decided under the flock.
@@ -174,14 +173,6 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		prefix := s.decideRuns(&verdict, scan, session, mainId)
 		s.decide(&verdict, scan, session)
 		greens := s.decideGreens(scan, session)
-		if banners, bannerErr := CurrentAppetiteBanners(s.Root, s.now()); bannerErr == nil {
-			for _, banner := range banners {
-				verdict.Banners = append(verdict.Banners, banner.Text)
-			}
-			prefix = append(verdict.Banners, prefix...)
-		} else {
-			verdict.Diagnostics = append(verdict.Diagnostics, "appetite banners unavailable: "+bannerErr.Error())
-		}
 		verdict.Display = composeDisplay(prefix, verdict.Display, greens)
 		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
 

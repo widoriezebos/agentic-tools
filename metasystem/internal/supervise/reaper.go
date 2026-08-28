@@ -72,6 +72,13 @@ func (cfg ReaperConfig) ReaperPass() error {
 	if err != nil {
 		return fmt.Errorf("scan job records: %w", err)
 	}
+	return cfg.ReapPaths(paths)
+}
+
+// ReapPaths applies the same custody verdicts to a selected set of job
+// records. Callers use it when their authority covers only named jobs.
+func (cfg ReaperConfig) ReapPaths(paths []string) error {
+	paths = append([]string(nil), paths...)
 	sort.Strings(paths)
 	var firstErr error
 	for _, path := range paths {

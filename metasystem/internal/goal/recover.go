@@ -163,18 +163,31 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	case "open":
 		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], commaValues(in.Args["labels"]))
 	case "open-claim":
-		return openClaimRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], commaValues(in.Args["labels"]))
+		budget, err := budgetFromIntentArgs(in.Args)
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		return openClaimRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], budget, commaValues(in.Args["labels"]))
 	case "claim":
+		var budget *Budget
+		if in.Args["elapsedLimit"] != "" || in.Args["attemptLimit"] != "" ||
+			in.Args["reservedJobMinutesLimit"] != "" || in.Args["activeJobLimit"] != "" {
+			parsed, err := budgetFromIntentArgs(in.Args)
+			if err != nil {
+				return PublishRequest{}, err
+			}
+			budget = &parsed
+		}
 		if cascade {
-			return claimArcRequest(r, target), nil
+			return claimArcRequest(r, target, budget), nil
 		}
-		return claimRequest(r, target), nil
-	case "estimate":
-		remaining := in.Args["remaining"]
-		if _, ok := ParseWorkingDuration(remaining); !ok {
-			return PublishRequest{}, fmt.Errorf("the stored estimate carries an invalid remaining duration %q; close it by hand", remaining)
+		return claimRequest(r, target, budget), nil
+	case "set-budget":
+		budget, err := budgetFromIntentArgs(in.Args)
+		if err != nil {
+			return PublishRequest{}, err
 		}
-		return estimateRequest(r, target, remaining), nil
+		return setBudgetRequest(r, target, budget), nil
 	case "release":
 		if cascade {
 			return releaseArcRequest(r, target), nil

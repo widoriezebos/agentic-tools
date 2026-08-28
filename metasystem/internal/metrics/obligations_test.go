@@ -50,26 +50,26 @@ func TestO5EveryNamedGapLineAppearsWhenInputIsAbsent(t *testing.T) {
 	f := newFixtureRepo(t)
 	f.seedFullWorld()
 	file := &goal.GoalFile{
-		Id: "no-appetite", State: goal.StateDone, Intent: "No appetite fixture.", Origin: goal.OriginMain,
+		Id: "no-budget", State: goal.StateDone, Intent: "No budget fixture.", Origin: goal.OriginMain,
 		NextStep: "Do the work.", Conclude: "Done.", OpenedAt: "2026-08-17T00:00:00Z", Revision: 3,
 		History: []goal.HistoryLine{
-			{At: "2026-08-17T00:00:00Z", Opid: "01J5X00000000000000000P080-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"no-appetite"}, Keep: -1},
-			{At: "2026-08-18T00:00:00Z", Opid: "01J5X00000000000000000P090-machine-a-11111111", Verb: "claim", Actor: "machine-a+fixture", Targets: []string{"no-appetite"}, Keep: -1},
-			{At: "2026-08-22T00:00:00Z", Opid: "01J5X00000000000000000P100-machine-a-11111111", Verb: "done", Actor: "machine-a+fixture", Targets: []string{"no-appetite"}, Keep: -1},
+			{At: "2026-08-17T00:00:00Z", Opid: "01J5X00000000000000000P080-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"no-budget"}, Keep: -1},
+			{At: "2026-08-18T00:00:00Z", Opid: "01J5X00000000000000000P090-machine-a-11111111", Verb: "claim", Actor: "machine-a+fixture", Targets: []string{"no-budget"}, Keep: -1},
+			{At: "2026-08-22T00:00:00Z", Opid: "01J5X00000000000000000P100-machine-a-11111111", Verb: "done", Actor: "machine-a+fixture", Targets: []string{"no-budget"}, Keep: -1},
 		},
 	}
-	path := filepath.Join(f.root, "plans", "goals", "done", "no-appetite.md")
+	path := filepath.Join(f.root, "plans", "goals", "done", "no-budget.md")
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	accepted := f.commit("2026-08-27T00:00:00Z", "add no appetite goal", true)
+	accepted := f.commit("2026-08-27T00:00:00Z", "add no budget goal", true)
 	f.run("update-ref", goal.AcceptedRef, accepted)
 	periodResult, err := Report(weeklyOptions(f))
 	if err != nil {
 		t.Fatal(err)
 	}
 	periodReport := detailedReport(t, periodResult)
-	goalResult, err := Report(Options{Root: f.root, GoalID: "no-appetite", PeriodEnd: "2026-08-24T00:00:00Z"})
+	goalResult, err := Report(Options{Root: f.root, GoalID: "no-budget", PeriodEnd: "2026-08-24T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestO5EveryNamedGapLineAppearsWhenInputIsAbsent(t *testing.T) {
 	}
 	combined := periodReport + string(goalBytes)
 	for _, want := range []string{
-		"no parseable appetite", "no per-leg run-history record exists", "no classification surface exists",
+		"no structured elapsed budget", "no per-leg run-history record exists", "no classification surface exists",
 		"no residue register exists", "builder unrecorded", "partial cost coverage", "no transport-failure record exists",
 	} {
 		if !strings.Contains(combined, want) {
@@ -233,7 +233,7 @@ func TestPerGoalAttributionIsExactAndCoveredBySource(t *testing.T) {
 	postDone := time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)
 	file := &goal.GoalFile{
 		Id: "g", State: goal.StateDone, OpenedAt: opened.Format(time.RFC3339),
-		NextStep: "Appetite: 8h verify exact attribution.",
+		NextStep: "Verify exact attribution.",
 		History: []goal.HistoryLine{
 			{At: opened.Format(time.RFC3339), Opid: "open", Verb: "open"},
 			{At: claim.Format(time.RFC3339), Opid: "claim", Verb: "claim"},
@@ -551,12 +551,12 @@ func TestO14MetricsOnlyCommitAndReceiptAreSelfExcluded(t *testing.T) {
 	}
 	period := mustPeriod(t, weeklyOptions(f))
 	beforeValues := allValues(computeRows(before, period, "", loadThresholds(f.root)))
-	data, err := os.ReadFile(filepath.Join(f.root, "plans", "receipts.log"))
+	data, err := os.ReadFile(filepath.Join(f.root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	selfReceipt := "1772000000|2026-08-21T00:00:00Z|RECEIPT|type=metrics-report|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g1|built_by=coordinator|critique_waived=none|waiver_stream=none|note=report"
-	f.write("metasystem/plans/receipts.log", string(data)+selfReceipt+"\n")
+	f.write("metasystem/memory/receipts.log", string(data)+selfReceipt+"\n")
 	f.write("metasystem/plans/metrics/machine-a/2026-W34.md", "report\n")
 	f.commit("2026-08-21T00:00:00Z", "land metrics report", false)
 	after, err := loadWorld(f.root)
@@ -582,18 +582,19 @@ func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) 
 	f.seedFullWorld()
 	f.write("metasystem/unattributed.txt", "work\n")
 	unattributed := f.commit("2026-08-20T00:00:00Z", "unattributed landing", false)
-	data, err := os.ReadFile(filepath.Join(f.root, "plans", "receipts.log"))
+	data, err := os.ReadFile(filepath.Join(f.root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	rows := "1773000000|2026-08-20T01:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g1|built_by=delegate|critique_waived=none|waiver_stream=none|note=shared\n" +
 		"1773000001|2026-08-20T01:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g2|built_by=delegate|critique_waived=none|waiver_stream=none|note=shared\n"
-	f.write("metasystem/plans/receipts.log", string(data)+rows)
+	f.write("metasystem/memory/receipts.log", string(data)+rows)
 	f.write("metasystem/shared.txt", "shared\n")
 	sharedSHA := f.commit("2026-08-20T01:00:00Z", "shared landing", false)
 	g2 := &goal.GoalFile{
 		Id: "g2", State: goal.StateDone, Intent: "Share one landing.", Origin: goal.OriginMain,
-		NextStep: "Appetite: 2h share it.", Conclude: "Shared.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 3,
+		NextStep: "Share it.", Conclude: "Shared.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 3,
+		Budget: &goal.Budget{ElapsedLimit: "2h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1},
 		History: []goal.HistoryLine{
 			{At: "2026-08-01T00:00:00Z", Opid: "01J5X00000000000000000S000-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"g2"}, Keep: -1},
 			{At: "2026-08-10T00:00:00Z", Opid: "01J5X00000000000000000S010-machine-a-11111111", Verb: "claim", Actor: "machine-a+fixture", Targets: []string{"g2"}, Keep: -1},

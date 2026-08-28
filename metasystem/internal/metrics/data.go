@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 type jobRecord struct {
@@ -175,12 +176,14 @@ type gitFacts struct {
 }
 
 type rawCommit struct {
-	sha   string
-	email string
-	at    time.Time
-	paths []string
-	lines int
-	added []string
+	sha         string
+	parents     []string
+	email       string
+	at          time.Time
+	paths       []string
+	receiptPath string
+	lines       int
+	added       []string
 }
 
 func loadGitFacts(root string) (gitFacts, error) {
@@ -195,17 +198,30 @@ func loadGitFacts(root string) (gitFacts, error) {
 		return facts, fmt.Errorf("metrics report: cannot resolve checkout prefix: %w", err)
 	}
 	prefix = strings.TrimSpace(prefix)
-	facts.receiptPath = filepath.ToSlash(filepath.Join(prefix, "plans", "receipts.log"))
+	receiptRoot, err := stateroot.RelativeRoot(stateroot.Receipts)
+	if err != nil {
+		return facts, fmt.Errorf("metrics report: cannot resolve receipt state root: %w", err)
+	}
+	facts.receiptPath = filepath.ToSlash(filepath.Join(prefix, receiptRoot, "receipts.log"))
+	legacyReceiptPath := filepath.ToSlash(filepath.Join(prefix, "plans", "receipts.log"))
 	mainTip, err := gitCommand(gitRoot, "rev-parse", "--verify", "refs/heads/main")
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: no readable main branch: %w", err)
 	}
 	facts.mainTip = strings.TrimSpace(mainTip)
+	moveLog, err := gitCommand(gitRoot, "log", "--reverse", "--diff-filter=A", "--format=%H", facts.mainTip, "--", facts.receiptPath)
+	if err != nil {
+		return facts, fmt.Errorf("metrics report: cannot resolve receipt-home history: %w", err)
+	}
+	moveCommit := ""
+	if fields := strings.Fields(moveLog); len(fields) > 0 {
+		moveCommit = fields[0]
+	}
 	if blob, blobErr := gitCommand(gitRoot, "rev-parse", facts.mainTip+":"+facts.receiptPath); blobErr == nil {
 		facts.receiptBlob = strings.TrimSpace(blob)
 	}
 
-	log, err := gitCommand(gitRoot, "log", "--reverse", "--format=%x1e%H%x1f%ae%x1f%cI", "--numstat", facts.mainTip)
+	log, err := gitCommand(gitRoot, "log", "--topo-order", "--reverse", "--format=%x1e%H%x1f%P%x1f%ae%x1f%cI", "--numstat", facts.mainTip)
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: cannot read main history: %w", err)
 	}
@@ -218,16 +234,28 @@ func loadGitFacts(root string) (gitFacts, error) {
 		}
 		lines := strings.Split(block, "\n")
 		header := strings.Split(lines[0], "\x1f")
-		if len(header) != 3 {
+		if len(header) != 4 {
 			continue
 		}
-		stamp, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(header[2]))
+		stamp, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(header[3]))
 		if parseErr != nil {
 			facts.coverage.Rejected++
 			facts.coverage.Details = append(facts.coverage.Details, "commit="+header[0]+" invalid committer timestamp")
 			continue
 		}
-		commit := &rawCommit{sha: strings.TrimSpace(header[0]), email: strings.TrimSpace(header[1]), at: stamp.UTC()}
+		commit := &rawCommit{
+			sha: strings.TrimSpace(header[0]), parents: strings.Fields(header[1]),
+			email: strings.TrimSpace(header[2]), at: stamp.UTC(), receiptPath: legacyReceiptPath,
+		}
+		for _, parent := range commit.parents {
+			if ancestor := commits[parent]; ancestor != nil && ancestor.receiptPath == facts.receiptPath {
+				commit.receiptPath = facts.receiptPath
+				break
+			}
+		}
+		if commit.sha == moveCommit {
+			commit.receiptPath = facts.receiptPath
+		}
 		for _, line := range lines[1:] {
 			fields := strings.Split(line, "\t")
 			if len(fields) < 3 {
@@ -245,25 +273,27 @@ func loadGitFacts(root string) (gitFacts, error) {
 	}
 
 	if facts.receiptBlob != "" {
-		patches, patchErr := gitCommand(gitRoot, "log", "--reverse", "--format=%x1e%H", "-p", "--unified=0", facts.mainTip, "--", facts.receiptPath)
-		if patchErr == nil {
-			for _, block := range strings.Split(patches, "\x1e") {
-				block = strings.TrimLeft(block, "\r\n")
-				if block == "" {
-					continue
-				}
-				newline := strings.IndexByte(block, '\n')
-				if newline < 0 {
-					continue
-				}
-				sha := strings.TrimSpace(block[:newline])
-				commit := commits[sha]
-				if commit == nil {
-					continue
-				}
-				for _, line := range strings.Split(block[newline+1:], "\n") {
-					if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-						commit.added = append(commit.added, strings.TrimPrefix(line, "+"))
+		for _, receiptPath := range []string{legacyReceiptPath, facts.receiptPath} {
+			patches, patchErr := gitCommand(gitRoot, "log", "--reverse", "--format=%x1e%H", "-p", "--unified=0", facts.mainTip, "--", receiptPath)
+			if patchErr == nil {
+				for _, block := range strings.Split(patches, "\x1e") {
+					block = strings.TrimLeft(block, "\r\n")
+					if block == "" {
+						continue
+					}
+					newline := strings.IndexByte(block, '\n')
+					if newline < 0 {
+						continue
+					}
+					sha := strings.TrimSpace(block[:newline])
+					commit := commits[sha]
+					if commit == nil || commit.receiptPath != receiptPath || sha == moveCommit {
+						continue
+					}
+					for _, line := range strings.Split(block[newline+1:], "\n") {
+						if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+							commit.added = append(commit.added, strings.TrimPrefix(line, "+"))
+						}
 					}
 				}
 			}
@@ -280,7 +310,7 @@ func loadGitFacts(root string) (gitFacts, error) {
 		hasMetrics := false
 		for _, path := range commit.paths {
 			switch {
-			case path == facts.receiptPath:
+			case path == commit.receiptPath:
 			case strings.HasPrefix(path, metricsPrefix):
 				hasMetrics = true
 			default:

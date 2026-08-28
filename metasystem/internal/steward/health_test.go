@@ -160,7 +160,7 @@ func TestFindingDigestUsesStableRoleIdentity(t *testing.T) {
 	}
 }
 
-func TestClaimedGoalWithBrokenProseAppetiteIsNamed(t *testing.T) {
+func TestClaimedGoalWithoutStructuredBudgetIsDead(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"hungry-goal": {
 			Id: "hungry-goal", State: goal.StateClaimed, Intent: "Keep work bounded", Origin: goal.OriginMain,
@@ -169,9 +169,102 @@ func TestClaimedGoalWithBrokenProseAppetiteIsNamed(t *testing.T) {
 			History: bedHistory("hungry-goal", "claim"),
 		},
 	})
-	role := checkClaimedGoalAppetites(root, time.Now())
-	if role.Status != HealthDead || !strings.Contains(role.Reason, "hungry-goal") || !strings.Contains(role.Remedy, "goal edit") {
-		t.Fatalf("the broken claimed goal and its current remedy must be named: %+v", role)
+	role := checkClaimedGoalBudgets(root, time.Now())
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "BUDGET_MISSING record=plans/goals/hungry-goal.md") ||
+		!strings.Contains(role.Remedy, "goal set-budget --root . --id hungry-goal") {
+		t.Fatalf("the budgetless claimed goal and its current remedy must be named: %+v", role)
+	}
+}
+
+func structuredHealthGoal() *goal.GoalFile {
+	history := bedHistory("bounded-goal", "open")
+	history[0].At = "2026-08-28T07:00:00Z"
+	history = append(history,
+		goal.HistoryLine{
+			At: "2026-08-28T08:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-m1-00000001",
+			Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{"bounded-goal"}, Keep: -1,
+		},
+		goal.HistoryLine{
+			At: "2026-08-28T08:30:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000002",
+			Verb: "edit", Actor: "bed-m1+coordinator", Targets: []string{"bounded-goal"}, Keep: -1,
+		},
+	)
+	return &goal.GoalFile{
+		Id: "bounded-goal", State: goal.StateClaimed, Intent: "Keep work bounded", Origin: goal.OriginMain,
+		NextStep: "Finish the bounded slice.", OpenedAt: "2026-08-28T08:00:00Z", Revision: 3,
+		Budget: &goal.Budget{
+			ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1,
+		},
+		Claimed: &goal.ClaimRecord{
+			Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-28T08:00:00Z", Revision: 2,
+		},
+		History: history,
+	}
+}
+
+func writeHealthJob(t *testing.T, root, name, body string) {
+	t.Helper()
+	directory := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, name+".json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+
+	t.Run("within budget", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		role := checkClaimedGoalBudgets(root, now)
+		if role.Status != HealthAlive || !strings.Contains(role.Reason, "attempts=0/2") {
+			t.Fatalf("known structured budget was not judged: %+v", role)
+		}
+	})
+
+	t.Run("breach", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		writeHealthJob(t, root, "one", `{"jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
+		writeHealthJob(t, root, "two", `{"jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
+		role := checkClaimedGoalBudgets(root, now)
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "reservedJobMinutesLimit") ||
+			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "goal set-budget") {
+			t.Fatalf("structured breaches were not health-only evidence: %+v", role)
+		}
+	})
+
+	t.Run("budget unknown", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		writeHealthJob(t, root, "revisionless", `{"jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
+		role := checkClaimedGoalBudgets(root, now)
+		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "BUDGET_UNKNOWN") ||
+			!strings.Contains(role.Reason, "artifacts/agents/jobs/revisionless.json") {
+			t.Fatalf("unknown spending did not name its exact record: %+v", role)
+		}
+	})
+}
+
+func TestClaimedGoalMissingOrMalformedBudgetNamesSetBudget(t *testing.T) {
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name   string
+		budget *goal.Budget
+	}{
+		{name: "missing"},
+		{name: "malformed", budget: &goal.Budget{ElapsedLimit: "0h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := structuredHealthGoal()
+			file.Budget = test.budget
+			root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+			role := checkClaimedGoalBudgets(root, now)
+			if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
+				!strings.Contains(role.Remedy, "goal set-budget") {
+				t.Fatalf("%s tuple did not produce the typed remedy: %+v", test.name, role)
+			}
+		})
 	}
 }
 

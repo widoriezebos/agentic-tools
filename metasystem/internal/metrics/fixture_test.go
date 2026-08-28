@@ -41,9 +41,66 @@ func newFixtureRepo(t *testing.T) *fixtureRepo {
 	f.run("config", "user.email", "fixture@example.invalid")
 	f.run("config", "metasystem.goal.machine", "machine-a")
 	f.write("metasystem/metasystem.conf", "evidence.root="+f.evidence+"\n")
-	f.write("metasystem/plans/receipts.log", "")
+	f.write("metasystem/memory/receipts.log", "")
 	f.commit("2026-08-01T00:00:00Z", "fixture baseline", false)
 	return f
+}
+
+func TestReceiptHistoryUsesTheHomeOwnedByEachCommit(t *testing.T) {
+	t.Helper()
+	base := t.TempDir()
+	f := &fixtureRepo{
+		t: t, repo: filepath.Join(base, "repository"), evidence: filepath.Join(base, "evidence"),
+	}
+	f.root = filepath.Join(f.repo, "metasystem")
+	if err := os.MkdirAll(f.root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.run("init", "-q", "-b", "main")
+	f.run("config", "user.name", "Fixture")
+	f.run("config", "user.email", "fixture@example.invalid")
+	f.write("metasystem/metasystem.conf", "evidence.root="+f.evidence+"\n")
+
+	legacyReceipt := "1770000000|2026-08-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=legacy|built_by=coordinator"
+	f.write("metasystem/plans/receipts.log", legacyReceipt+"\n")
+	legacyCommit := f.commit("2026-08-01T00:00:00Z", "legacy receipt landing", false)
+
+	// The move copies the ledger; copied rows are not new landing attribution.
+	f.write("metasystem/memory/receipts.log", legacyReceipt+"\n")
+	if err := os.Remove(filepath.Join(f.root, "plans", "receipts.log")); err != nil {
+		t.Fatal(err)
+	}
+	moveCommit := f.commit("2026-08-02T00:00:00Z", "move receipt register", false)
+
+	currentReceipt := "1770000001|2026-08-03T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=current|built_by=coordinator"
+	f.write("metasystem/memory/receipts.log", legacyReceipt+"\n"+currentReceipt+"\n")
+	currentCommit := f.commit("2026-08-03T00:00:00Z", "current receipt landing", false)
+
+	facts, err := loadGitFacts(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.receiptPath != "metasystem/memory/receipts.log" {
+		t.Fatalf("current receipt path = %q", facts.receiptPath)
+	}
+	wantKeys := map[string]string{
+		legacyCommit:  receiptOriginalKey(legacyReceipt),
+		currentCommit: receiptOriginalKey(currentReceipt),
+	}
+	for _, landing := range facts.landings {
+		if landing.SHA == moveCommit && len(landing.ReceiptKeys) != 0 {
+			t.Fatalf("receipt copy was attributed as a new landing: %+v", landing)
+		}
+		if want, exists := wantKeys[landing.SHA]; exists {
+			if len(landing.ReceiptKeys) != 1 || landing.ReceiptKeys[0] != want {
+				t.Fatalf("commit %s receipt keys = %v, want %s", landing.SHA, landing.ReceiptKeys, want)
+			}
+			delete(wantKeys, landing.SHA)
+		}
+	}
+	if len(wantKeys) != 0 {
+		t.Fatalf("receipt-bearing commits were absent: %v", wantKeys)
+	}
 }
 
 func (f *fixtureRepo) run(args ...string) string {
@@ -105,14 +162,14 @@ func (f *fixtureRepo) seedFullWorld() {
 	f.t.Helper()
 	f.originalReceipt = "1770000000|2026-08-19T12:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=1|stop_loss=no|delegate=fake:model:j1|goal=g1|built_by=delegate|critique_waived=none|waiver_stream=none|note=landed"
 	oldReceipt := "1770000001|2026-08-19T13:00:00Z|RECEIPT|type=review|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|critique_waived=none|waiver_stream=none|note=old row"
-	f.write("metasystem/plans/receipts.log", f.originalReceipt+"\n"+oldReceipt+"\n")
+	f.write("metasystem/memory/receipts.log", f.originalReceipt+"\n"+oldReceipt+"\n")
 	f.write("metasystem/payload.txt", "one\ntwo\nthree\nfour\n")
 	f.commit("2026-08-19T12:00:00Z", "land g1", false)
 
 	digest := fmt.Sprintf("%x", sha1.Sum([]byte(f.originalReceipt)))
 	correction1 := "1771000000|2026-08-25T00:00:00Z|CORRECTION|ref_epoch=1770000000|ref_sha1=" + digest + "|field=corrections|was=1|now=2|reason=first"
 	correction2 := "1771000001|2026-08-25T00:01:00Z|CORRECTION|ref_epoch=1770000000|ref_sha1=" + digest + "|field=corrections|was=1|now=3|reason=last"
-	f.write("metasystem/plans/receipts.log", f.originalReceipt+"\n"+oldReceipt+"\n"+correction1+"\n"+correction2+"\n")
+	f.write("metasystem/memory/receipts.log", f.originalReceipt+"\n"+oldReceipt+"\n"+correction1+"\n"+correction2+"\n")
 	f.commit("2026-08-25T00:02:00Z", "project receipt corrections", false)
 
 	goalsDir := filepath.Join(f.root, "plans", "goals")
@@ -121,7 +178,8 @@ func (f *fixtureRepo) seedFullWorld() {
 	}
 	g1 := &goal.GoalFile{
 		Id: "g1", State: goal.StateDone, Intent: "Ship fixture work.", Origin: goal.OriginMain,
-		NextStep: "Appetite: 8h ship it.", Conclude: "Shipped.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 3,
+		NextStep: "Ship it.", Conclude: "Shipped.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 3,
+		Budget: &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 3, ReservedJobMinutesLimit: 480, ActiveJobLimit: 2},
 		History: []goal.HistoryLine{
 			history("2026-08-01T00:00:00Z", "01J5X00000000000000000P000-machine-a-11111111", "open"),
 			history("2026-08-05T00:00:00Z", "01J5X00000000000000000P010-machine-a-11111111", "claim"),
@@ -133,7 +191,7 @@ func (f *fixtureRepo) seedFullWorld() {
 	}
 	parked := &goal.GoalFile{
 		Id: "parked-old", State: goal.StateParked, Intent: "Parked debt.", Origin: goal.OriginMain,
-		NextStep: "Appetite: 1h revisit.", OpenedAt: "2026-06-01T00:00:00Z", Revision: 2,
+		NextStep: "Revisit.", OpenedAt: "2026-06-01T00:00:00Z", Revision: 2,
 		Parked: &goal.ParkRecord{By: "machine-a+fixture", At: "2026-07-01T00:00:00Z", Because: "waiting"},
 		History: []goal.HistoryLine{
 			{At: "2026-06-01T00:00:00Z", Opid: "01J5X00000000000000000P030-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"parked-old"}, Keep: -1},
@@ -141,13 +199,13 @@ func (f *fixtureRepo) seedFullWorld() {
 		},
 	}
 	queued := &goal.GoalFile{
-		Id: "queued-unsized", State: goal.StateQueued, Intent: "Unsized debt.", Origin: goal.OriginMain,
+		Id: "queued-no-budget", State: goal.StateQueued, Intent: "Queued debt.", Origin: goal.OriginMain,
 		NextStep: "Investigate later.", OpenedAt: "2026-07-01T00:00:00Z", Revision: 1,
-		History: []goal.HistoryLine{{At: "2026-07-01T00:00:00Z", Opid: "01J5X00000000000000000P050-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"queued-unsized"}, Keep: -1}},
+		History: []goal.HistoryLine{{At: "2026-07-01T00:00:00Z", Opid: "01J5X00000000000000000P050-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"queued-no-budget"}, Keep: -1}},
 	}
 	collision := &goal.GoalFile{
 		Id: "collision", State: goal.StateClaimed, Intent: "Collision fixture.", Origin: goal.OriginMain,
-		NextStep: "Appetite: 4h continue.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 2,
+		NextStep: "Continue.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 2,
 		Claimed: &goal.ClaimRecord{Machine: "machine-a", Lineage: "fixture", At: "2026-08-21T00:00:00Z"},
 		History: []goal.HistoryLine{
 			{At: "2026-08-01T00:00:00Z", Opid: "01J5X00000000000000000P060-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"collision"}, Keep: -1},
@@ -290,7 +348,7 @@ func TestO1EachMetricComputesValueAndCoverageFromCannedTree(t *testing.T) {
 		},
 		{
 			key:      "debt_age",
-			value:    "parked-old kind=parked age_days=54.000; queued-unsized kind=queued-unsized opened-at anchor age_days=54.000",
+			value:    "parked-old kind=parked age_days=54.000; queued-no-budget kind=queued opened-at anchor age_days=54.000",
 			coverage: []string{"source=goals found=4 usable=3 rejected=0 missing=0"},
 		},
 		{
@@ -421,7 +479,7 @@ func TestInvalidEffectiveReceiptProvenanceIsRejectedByOriginalRow(t *testing.T) 
 	builderReceipt := "1770000101|2026-08-19T12:01:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g1|built_by=delegate|critique_waived=none|waiver_stream=none|note=builder"
 	goalCorrection := "1770000200|2026-08-20T12:00:00Z|CORRECTION|ref_epoch=1770000100|ref_sha1=" + fmt.Sprintf("%x", sha1.Sum([]byte(goalReceipt))) + "|field=goal|was=g1|now=Invalid_goal|reason=corrupt"
 	builderCorrection := "1770000201|2026-08-20T12:01:00Z|CORRECTION|ref_epoch=1770000101|ref_sha1=" + fmt.Sprintf("%x", sha1.Sum([]byte(builderReceipt))) + "|field=built_by|was=delegate|now=critic|reason=corrupt"
-	f.write("metasystem/plans/receipts.log", strings.Join([]string{goalReceipt, builderReceipt, goalCorrection, builderCorrection}, "\n")+"\n")
+	f.write("metasystem/memory/receipts.log", strings.Join([]string{goalReceipt, builderReceipt, goalCorrection, builderCorrection}, "\n")+"\n")
 	invalidLanding := f.commit("2026-08-20T12:02:00Z", "hand-corrupt receipt provenance", false)
 
 	w, err := loadWorld(f.root)

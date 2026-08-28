@@ -244,7 +244,8 @@ empty_next=$("$ms" goal next --root "$clone" --label absent)
 # 11. The atomic open-and-claim path carries labels after the quota is
 # free, completing the command-line carriage leg.
 open_claim=$("$ms" goal open --root "$clone" --id claimed-label \
-  --intent "Claimed with its group." --next "Continue." --claim --label custody)
+  --intent "Claimed with its group." --next "Continue." --claim --label custody \
+  --elapsed-limit 4h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1)
 grep -q '"outcome":"confirmed"' <<<"$open_claim" \
   || { echo "open --claim with a label did not confirm: $open_claim" >&2; exit 1; }
 claim_tip=$(git -C "$origin" rev-parse main)
@@ -252,68 +253,61 @@ git -C "$clone" cat-file -p "$claim_tip:plans/goals/claimed-label.md" >"$tmp/cla
 grep -q '^- Labels: custody$' "$tmp/claimed-label.md" \
   || { echo "open --claim dropped its label" >&2; cat "$tmp/claimed-label.md" >&2; exit 1; }
 
-# 12. Appetite checkpoints use a deterministic command clock. The claim
-# snapshots 4h; claimant prose cannot move it, a human-attributed edit can,
-# and the latest estimate adds and can then clear only the forecast STOP.
+# 12. A queued goal needs no budget. At claim, the complete tuple becomes its
+# only budget; an Appetite-prefixed sentence remains inert human prose.
 "$ms" goal release --root "$clone" --id claimed-label >/dev/null
 export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
-"$ms" goal open --root "$clone" --id appetite-check \
-  --intent "Exercise appetite checkpoints." \
-  --next "Appetite: 4h run the bounded work." --claim >/dev/null
-claim_appetite_tip=$(git -C "$origin" rev-parse main)
-git -C "$clone" cat-file -p "$claim_appetite_tip:plans/goals/appetite-check.md" >"$tmp/appetite-claim.md"
-grep -q '^- Claimed: .* appetite=4h$' "$tmp/appetite-claim.md" \
-  || { echo "claim did not snapshot the parsed appetite" >&2; cat "$tmp/appetite-claim.md" >&2; exit 1; }
-
-export METASYSTEM_GOAL_NOW=2026-08-20T03:00:00Z
-[[ -z $("$ms" goal banners --root "$clone") ]] \
-  || { echo "within-band appetite emitted a banner" >&2; exit 1; }
-export METASYSTEM_GOAL_NOW=2026-08-20T04:30:00Z
-escalate=$("$ms" goal banners --root "$clone")
-grep -q '^BREACH-ESCALATE: goal appetite-check ' <<<"$escalate" \
-  || { echo "the grace band did not escalate: $escalate" >&2; exit 1; }
-export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
-stop=$("$ms" goal banners --root "$clone")
-grep -q '^BREACH-STOP: goal appetite-check ' <<<"$stop" \
-  || { echo "past-grace work did not stop: $stop" >&2; exit 1; }
-show_stop=$("$ms" goal show --root "$clone" --id appetite-check)
-grep -q 'BREACH-STOP: goal appetite-check ' <<<"$show_stop" \
-  || { echo "goal show did not carry the touched goal's STOP banner: $show_stop" >&2; exit 1; }
-measured_estimate=$("$ms" goal estimate --root "$clone" --id appetite-check --remaining 1m)
-grep -q '^BREACH-STOP: goal appetite-check ' <<<"$measured_estimate" \
-  || { echo "a small estimate cleared a measured STOP: $measured_estimate" >&2; exit 1; }
-
-"$ms" goal edit --root "$clone" --id appetite-check \
-  --next "Appetite: 20h claimant prose has no authority." >/dev/null
-claimant_stop=$("$ms" goal banners --root "$clone")
-grep -q '^BREACH-STOP: goal appetite-check ' <<<"$claimant_stop" \
-  || { echo "claimant edit moved the claim-time threshold: $claimant_stop" >&2; exit 1; }
-"$ms" goal edit --root "$clone" --id appetite-check --by wido \
-  --next "Appetite: 8h Wido raises the appetite." >/dev/null
-[[ -z $("$ms" goal banners --root "$clone") ]] \
-  || { echo "human appetite raise did not return within-band" >&2; exit 1; }
-
-estimate_stop=$("$ms" goal estimate --root "$clone" --id appetite-check --remaining 6h)
-grep -q '^BREACH-STOP: goal appetite-check ' <<<"$estimate_stop" \
-  || { echo "remaining estimate did not tighten to STOP: $estimate_stop" >&2; exit 1; }
-estimate_within=$("$ms" goal estimate --root "$clone" --id appetite-check --remaining 4h)
-if grep -q 'BREACH-STOP' <<<"$estimate_within"; then
-  echo "a latest within-band estimate did not clear the forecast STOP: $estimate_within" >&2; exit 1
+"$ms" goal open --root "$clone" --id budget-check \
+	--intent "Exercise structured budget admission." \
+	--next "Appetite: 4h is inert human prose, not a budget." --claim \
+	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 >/dev/null
+claim_budget_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$claim_budget_tip:plans/goals/budget-check.md" >"$tmp/budget-claim.md"
+grep -q '^- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1$' "$tmp/budget-claim.md" \
+  || { echo "claim did not store the complete budget tuple" >&2; cat "$tmp/budget-claim.md" >&2; exit 1; }
+grep -q '^- Claimed: .* revision=1' "$tmp/budget-claim.md" \
+  || { echo "claim did not bind its goal revision" >&2; cat "$tmp/budget-claim.md" >&2; exit 1; }
+if grep -q '^- Claimed: .* appetite=' "$tmp/budget-claim.md"; then
+  echo "claim froze inert prose into a budget field" >&2; cat "$tmp/budget-claim.md" >&2; exit 1
 fi
 
-# A stopped claim elsewhere is a banner, not a backlog-wide claim refusal.
-"$ms" goal estimate --root "$clone" --id appetite-check --remaining 6h >/dev/null
+export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
+set +e
+admission_within=$("$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
+admission_within_rc=$?
+set -e
+[[ "$admission_within_rc" -eq 0 ]] \
+  || { echo "the structured claim was refused while within all four limits: $admission_within" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=2026-08-20T08:00:00Z
+set +e
+admission_spent=$("$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
+admission_spent_rc=$?
+set -e
+[[ "$admission_spent_rc" -eq 9 ]] \
+  || { echo "the claim at its structured elapsed limit was not refused (rc=$admission_spent_rc): $admission_spent" >&2; exit 1; }
+grep -q 'BUDGET_REFUSED: goal budget-check revision=1 admission closed: elapsedLimit' <<<"$admission_spent" \
+  || { echo "the structured refusal did not name its exact limit: $admission_spent" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
+"$ms" goal set-budget --root "$clone" --id budget-check \
+  --elapsed-limit 8h --attempt-limit 3 --reserved-job-minutes-limit 180 --active-job-limit 2 >/dev/null
+rebudget_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$rebudget_tip:plans/goals/budget-check.md" >"$tmp/budget-rebudget.md"
+grep -q '^- Budget: elapsedLimit=1d attemptLimit=3 reservedJobMinutesLimit=180 activeJobLimit=2$' "$tmp/budget-rebudget.md" \
+  || { echo "set-budget did not replace the complete tuple" >&2; cat "$tmp/budget-rebudget.md" >&2; exit 1; }
+grep -q '^- Claimed: .* at=2026-08-20T05:01:00Z revision=2' "$tmp/budget-rebudget.md" \
+  || { echo "set-budget did not bind the new revision and elapsed origin" >&2; cat "$tmp/budget-rebudget.md" >&2; exit 1; }
+
+# A separate goal can claim only by supplying its own complete tuple.
 other="$tmp/other"
 env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git clone -q "$origin" "$other"
 git -C "$other" config metasystem.goal.machine fixture-other
 mkdir -p "$other/scripts/agents"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$other/scripts/agents/"
 other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
-  "$ms" goal claim --root "$other" --id plain-goal)
+  "$ms" goal claim --root "$other" --id plain-goal \
+    --elapsed-limit 2h --attempt-limit 1 --reserved-job-minutes-limit 30 --active-job-limit 1)
 grep -q '"outcome":"confirmed"' <<<"$other_claim" \
-  || { echo "another goal's STOP refused a lawful claim: $other_claim" >&2; exit 1; }
-grep -q '^BREACH-STOP: goal appetite-check ' <<<"$other_claim" \
-  || { echo "claim elsewhere did not surface the standing STOP: $other_claim" >&2; exit 1; }
+  || { echo "a complete-tuple claim did not confirm: $other_claim" >&2; exit 1; }
 unset METASYSTEM_GOAL_NOW
 
 echo "goal CLI fixtures: PASSED"

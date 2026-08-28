@@ -14,6 +14,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -29,6 +33,9 @@ type ReapReport struct {
 func ReapContinuations(repoRoot string) ([]ReapReport, error) {
 	active, err := ConsumedActive(repoRoot)
 	if err != nil {
+		return nil, err
+	}
+	if err := reconcileContinuationCustody(repoRoot, active); err != nil {
 		return nil, err
 	}
 	var reports []ReapReport
@@ -66,6 +73,68 @@ func ReapContinuations(repoRoot string) ([]ReapReport, error) {
 		reports = append(reports, ReapReport{Nonce: it.Nonce, JobId: it.JobId, Outcome: outcome})
 	}
 	return reports, nil
+}
+
+// reconcileContinuationCustody gives the existing job reaper only the jobs
+// represented by active continuation records. Its three-way custody proof
+// terminalizes dead jobs and leaves live or uncertain jobs untouched.
+func reconcileContinuationCustody(repoRoot string, active []Intent) error {
+	if len(active) == 0 {
+		return nil
+	}
+	authorization, err := fixtureauth.New(repoRoot)
+	if err != nil {
+		return err
+	}
+	paths := make([]string, 0, len(active))
+	for _, it := range active {
+		paths = append(paths, filepath.Join(repoRoot, "artifacts", "agents", "jobs", it.JobId+".json"))
+	}
+	cfg := supervise.ReaperConfig{
+		Repo:    repoRoot,
+		JobsDir: filepath.Join(repoRoot, "artifacts", "agents", "jobs"),
+		Now:     func() time.Time { return time.Now().UTC() },
+		Custodian: func(pid, start int64, tag string) identity.Liveness {
+			return identity.Custodian(pid, start, tag, authorization.Identity())
+		},
+		Apply: func(job, expect, target string, patch map[string]any) (bool, error) {
+			return applyContinuationReap(repoRoot, job, expect, target, patch)
+		},
+	}
+	return cfg.ReapPaths(paths)
+}
+
+// applyContinuationReap sends the custody verdict through the job record's
+// locked compare-and-swap owner. A record that moved on wins the race.
+func applyContinuationReap(repoRoot, job, expect, target string, patch map[string]any) (bool, error) {
+	encoded, err := json.Marshal(patch)
+	if err != nil {
+		return false, err
+	}
+	jobsDir := filepath.Join(repoRoot, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
+		return false, err
+	}
+	patchFile, err := os.CreateTemp(jobsDir, "continuation-reap-patch-*.tmp")
+	if err != nil {
+		return false, err
+	}
+	defer os.Remove(patchFile.Name())
+	if _, err := patchFile.Write(encoded); err != nil {
+		patchFile.Close()
+		return false, err
+	}
+	if err := patchFile.Close(); err != nil {
+		return false, err
+	}
+	observed, err := dispatch.RecordCAS(repoRoot, job, expect, target, patchFile.Name())
+	if observed != "" {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // closeContinuationChain marks the consumer-less job's chain closed —

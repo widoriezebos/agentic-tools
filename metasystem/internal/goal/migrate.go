@@ -337,8 +337,9 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		if err != nil {
 			return nil, err
 		}
-		// The legacy Current IS this machine's claim.
-		f.Claimed = newClaimRecord(f, r.Actor.Machine, r.Actor.Lineage, r.stamp())
+		// The legacy Current is this machine's claim. Migration cannot invent a
+		// budget, so a human must supply the complete tuple with set-budget.
+		f.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), 0)
 		carryNotes(f, *c)
 		place(f)
 	}

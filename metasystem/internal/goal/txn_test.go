@@ -23,9 +23,9 @@ func mustGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// twoClones builds the fixture spine: a local bare origin seeded
-// with one commit on main, and two independent clones.
-func twoClones(t *testing.T) (origin, a, b string) {
+// cloneBed builds the fixture spine with one required clone and an optional
+// second clone for tests that exercise concurrent publishers.
+func cloneBed(t *testing.T, second bool) (origin, a, b string) {
 	t.Helper()
 	origin = filepath.Join(t.TempDir(), "origin.git")
 	mustGit(t, t.TempDir(), "init", "-q", "--bare", "-b", "main", origin)
@@ -38,10 +38,24 @@ func twoClones(t *testing.T) (origin, a, b string) {
 	mustGit(t, seed, "commit", "-qm", "seed")
 	mustGit(t, seed, "push", "-q", "origin", "main")
 	a = filepath.Join(t.TempDir(), "clone-a")
-	b = filepath.Join(t.TempDir(), "clone-b")
 	mustGit(t, t.TempDir(), "clone", "-q", origin, a)
-	mustGit(t, t.TempDir(), "clone", "-q", origin, b)
+	if second {
+		b = filepath.Join(t.TempDir(), "clone-b")
+		mustGit(t, t.TempDir(), "clone", "-q", origin, b)
+	}
 	return origin, a, b
+}
+
+func oneClone(t *testing.T) (origin, clone string) {
+	t.Helper()
+	origin, clone, _ = cloneBed(t, false)
+	return origin, clone
+}
+
+// twoClones builds two independent publishers against the same bare origin.
+func twoClones(t *testing.T) (origin, a, b string) {
+	t.Helper()
+	return cloneBed(t, true)
 }
 
 func endpointFor(root string) Endpoint {
