@@ -28,7 +28,7 @@ Two further hazards arise around the work rather than inside the candidate. A st
 
 ## The roles
 
-Those hazards give the delivery system five working roles. Here is what each may do and may not do; the rest of the paper relies on these names.
+Those hazards give the delivery system six working roles. Here is what each may do and may not do; the rest of the paper relies on these names.
 
 A builder constructs a candidate against the recorded intent. It explores the application, chooses a design and changes only what its task permits it to change. It does not judge its own claim, accept its own work or authorize release.
 
@@ -36,11 +36,13 @@ An independent examiner judges a finished candidate without prior exposure to th
 
 A custodian keeps the records that connect intent, candidate, evidence and acceptance, so the work survives any single worker. When every required fact is present, it performs the acceptance action. It builds nothing and examines nothing.
 
+Authorized release moves an accepted candidate into production and stands watch over it. It exposes the change to a small part of live traffic first, compares what production reports against the bounds recorded with the intent, and expands, pauses, contains or restores within those bounds. It builds nothing, examines nothing and accepts nothing; its authority begins where the custodian's ends and reaches no further than its recorded bounds.
+
 A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
 
 A narrator turns the record into a report a person can act on: of everything the system writes, the one output made for people rather than machinery. It changes no state and makes no decision.
 
-Any of the five can be held by a person or by machinery; the configurations later in this chapter return to that choice. All five work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
+Any of the six can be held by a person or by machinery; the configurations later in this chapter return to that choice. All six work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
 ## Prohibited combinations
 
@@ -70,7 +72,7 @@ The role is easy to undervalue because it decides nothing. The decisions this pa
 
 ## Configurations rather than job titles
 
-A low-risk wording correction may need one builder, an automatic examination and a custodian that accepts the exact checked result. The same worker might later narrate an unrelated change. A session-expiry change needs more distance because it affects identity and every signed-in user. It can include a human who holds the intent, a builder, one or more independent examiners, a custodian, a liveness watcher and a narrator. An adviser may retrieve relevant enforced rules and earlier rulings, but retrieval does not grant power to decide what they mean in the new case.
+A low-risk wording correction may need one builder, an automatic examination and a custodian that accepts the exact checked result. The same worker might later narrate an unrelated change. A session-expiry change needs more distance because it affects identity and every signed-in user. It can include a human who holds the intent, a builder, one or more independent examiners, a custodian, authorized release, a liveness watcher and a narrator. An adviser may retrieve relevant enforced rules and earlier rulings, but retrieval does not grant power to decide what they mean in the new case.
 
 These are configurations; none of them is a job title. A human can serve as the independent examiner when consequence, shared machine assumptions or accountability requires human judgment. Several independent people or machines can examine the same candidate when the possible harm justifies the cost. On smaller work, compatible functions can be combined. The configuration changes with the hazards; the protections do not change just to keep every role occupied.
 
