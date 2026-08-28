@@ -2,9 +2,9 @@
 
 **Roles come from hazards, not from the organization chart.**
 
-Chapter 1's day records the ruling, construction, independent challenge, refusal, release and account. Here we turn them into a distribution of power. Giving all of those functions to one capable actor would let the same actor form a theory, defend it, approve it and describe its success.
+Chapter 1's day records the ruling, construction, independent challenge, refusal, release and report. Here we turn them into a distribution of power. Giving all of those functions to one capable actor would let the same actor form a theory, defend it, approve it and describe its success.
 
-Copying a familiar software department into machinery is not the answer. A role in this system is a temporary combination of two things: the actor's relation to the work (constructing it, challenging it, preserving its history or explaining it) and its permissions (what it may read, change, accept, stop or release). The combination exists because a particular hazard requires it, and it lasts only as long as that hazard does. A hazard here is a specific way the work can go wrong: a builder judging its own claim, a worker stopping in silence, a convincing account steering a decision. Risk, as Chapters 6 and 11 use it, sets verification depth and spending through four questions: severity, novelty, exposure and accumulated change. Hazards decide which roles must exist and stay separate. The two are handled differently. Risk shifts as the application evolves and runs, so it is weighed again for every change. A hazard is answered in the design, by the roles it requires.
+Copying a familiar software department into machinery is not the answer. A role in this system is a temporary combination of two things: the actor's relation to the work (constructing it, challenging it, preserving its history or explaining it) and its permissions (what it may read, change, accept, stop or release). The combination exists because a particular hazard requires it, and it lasts only as long as that hazard does. A hazard here is a specific way the work can go wrong: a builder judging its own claim, a worker stopping in silence, a convincing retelling steering a decision. Risk, as Chapters 6 and 11 use it, sets verification depth and spending through four questions: severity, novelty, exposure and accumulated change. Hazards decide which roles must exist and stay separate. The two are handled differently. Risk shifts as the application evolves and runs, so it is weighed again for every change. A hazard is answered in the design, by the roles it requires.
 
 ## The premise: only some limits were removed
 
@@ -38,7 +38,7 @@ A custodian keeps the records that connect intent, candidate, evidence and accep
 
 A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
 
-A narrator turns the record into an account a person can act on. It changes no state and makes no decision.
+A narrator turns the record into a report a person can act on. It changes no state and makes no decision.
 
 Any of the five can be held by a person or by machinery; the configurations later in this chapter return to that choice. All five work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
@@ -62,9 +62,9 @@ That authority involves no creative judgment. The custodian makes no product jud
 
 ## Why the narrator has no power
 
-At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that account. The account has influence because it shapes what the responsible authority notices and may shape a later decision.
+At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that report. The report has influence because it shapes what the responsible authority notices and may shape a later decision.
 
-That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the account states a material result, the responsible authority can reach the exact observation supporting it. The account becomes inspectable, while authority remains with actors whose powers are named.
+That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the report states a material result, the responsible authority can reach the exact observation supporting it. The report becomes inspectable, while authority remains with actors whose powers are named.
 
 ## Configurations rather than job titles
 
@@ -78,6 +78,6 @@ A role also does not dictate the shape of its machinery. What must exist is the 
 
 Suppose someone proposes a coordinator because every engineering team has one. The proposal is incomplete. It must name the hazard the coordinator controls, the permission needed to control it and the permissions that would compromise that protection. Perhaps the real hazard is two builders overwriting the same candidate. A rule that records state changes before replacement may control it without a coordinator. Perhaps the hazard is a value conflict between security and convenience. No scheduling role can resolve it; a responsible authority's ruling is required.
 
-This is the anti-mimicry test. Every role must trace back through permission and separation to a real hazard. A liveness watcher survives the test because silent stopping is observable, because the watcher needs permission to detect and sometimes replace stopped work and because it must not erase the evidence of failure. A narrator survives because human decisions need readable accounts, because it needs read access to source records and because changing state would let it conceal the very actions it explains.
+This is the anti-mimicry test. Every role must trace back through permission and separation to a real hazard. A liveness watcher survives the test because silent stopping is observable, because the watcher needs permission to detect and sometimes replace stopped work and because it must not erase the evidence of failure. A narrator survives because human decisions need readable reports, because it needs read access to source records and because changing state would let it conceal the very actions it explains.
 
 A role fails when its only defense is familiarity. It also fails when its stated hazard is better controlled by an enforced rule, a durable record or a narrower permission. The test does not ask whether a role resembles a human job. It asks whether removing the role destroys a necessary condition and whether combining it with another function recreates the hazard. A separation stays only while evidence shows that it protects something real.

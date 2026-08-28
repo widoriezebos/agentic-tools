@@ -46,9 +46,9 @@ Coordination orders actions and preserves their relationships. It can require th
 
 ## Two audiences, one source
 
-At 4:30, machinery needs to know the exact accepted candidate and whether every required check passed. The responsible authority needs a readable account of the ruling, refusal, accepted result and production bounds. Presenting the responsible authority with raw state changes would hide the decision in detail. Presenting machinery with a polished summary would hide the exact state in prose.
+At 4:30, machinery needs to know the exact accepted candidate and whether every required check passed. The responsible authority needs a readable report of the ruling, refusal, accepted result and production bounds. Presenting the responsible authority with raw state changes would hide the decision in detail. Presenting machinery with a polished summary would hide the exact state in prose.
 
-The system produces two views from one source. Structured fields allow machinery to determine state and enforce permissions. A readable account lets a person understand the outcome, exceptions, failures and consequences. Every material sentence in that account remains linked to the record from which it was drawn. The human view may compress; it may not create a second truth.
+The system produces two views from one source. Structured fields allow machinery to determine state and enforce permissions. A readable report lets a person understand the outcome, exceptions, failures and consequences. Every material sentence in that report remains linked to the record from which it was drawn. The human view may compress; it may not create a second truth.
 
 ## Decisions, precedents and institutional memory
 

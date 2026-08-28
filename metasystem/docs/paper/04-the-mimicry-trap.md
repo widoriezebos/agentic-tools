@@ -12,7 +12,7 @@ What follows are things I have seen in software teams; not every team uses each 
 
 A team with ten people and more requests than attention chooses a small batch for the next two weeks. The fixed interval gives people a stable horizon, limits interruption and creates a regular moment to reconsider priority. The sprint answers a need: protecting scarce human attention from constant reshuffling. Its cadence is only a means.
 
-A manager deciding between two projects asks how long each will take. The answers are imperfect, but they let people discuss commitments and competing claims on scarce people before expensive labor is assigned. Estimates help allocate scarce people and expose disagreement about scope. The need they serve is a decision made with a visible account of expected cost and uncertainty. The number itself is secondary.
+A manager deciding between two projects asks how long each will take. The answers are imperfect, but they let people discuss commitments and competing claims on scarce people before expensive labor is assigned. Estimates help allocate scarce people and expose disagreement about scope. The need they serve is a decision made with a visible statement of expected cost and uncertainty. The number itself is secondary.
 
 A developer finishes a change that looks correct to its author. Another developer reads it, finds an unchecked boundary and learns how that part of the application works. Code review adds a second perspective while spreading knowledge that would otherwise remain with one person. It serves two needs: scrutiny independent enough to find faults, and continuity beyond the original author.
 

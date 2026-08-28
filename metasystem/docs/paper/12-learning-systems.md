@@ -58,7 +58,7 @@ Other lessons may remain warnings because the event is rare, the signal is weak,
 
 ## Repair, learn and revisit
 
-When the clock failure appears, the first action is containment. Authorized release narrows exposure or restores the previous safe version while the responsible authority receives a clear account of possible user harm. A complete lesson is not made a condition of recovery. Delaying repair until every cause is known would make learning compete with care.
+When the clock failure appears, the first action is containment. Authorized release narrows exposure or restores the previous safe version while the responsible authority receives a clear report of possible user harm. A complete lesson is not made a condition of recovery. Delaying repair until every cause is known would make learning compete with care.
 
 After containment, the builder corrects the elapsed-time comparison, an independent examiner reproduces the old failure and challenges the repair, and an enforced rule binds the passing evidence to the exact candidate. The candidate lesson then follows its own path through evidence, ownership, testing, limited activation and appeal. One result becomes the clock rule. The question of acceptable reauthentication burden remains a human ruling with an owner and review date.
 
