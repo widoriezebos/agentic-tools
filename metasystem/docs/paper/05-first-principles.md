@@ -56,6 +56,6 @@ Some decisions cannot be bought with more computation. Machinery may gather info
 
 ## Failure leaves a record
 
-An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. Reporting the work as complete would bury that finding. The right end state records the conflicting observations, the cases that were tried and the budget that ran out, so that whoever is authorized to decide the next step starts from what actually happened.
+An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. The examination did not finish, and a report that says it did would bury that finding. The right end state records the conflicting observations, the cases that were tried and the budget that ran out, so that whoever is authorized to decide the next step starts from what actually happened.
 
 The system should prefer a clear refusal supported by evidence to a success it cannot justify. Failure, near-miss (a dangerous path stopped before observed harm) and uncertainty are outcomes in their own right, and they are recorded as such. They remain connected to the intent and candidate so that care can repair immediate harm and learning can improve later work. A worker may disappear; the fact that it failed and what it learned must not disappear with it.
