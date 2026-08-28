@@ -1,6 +1,6 @@
 # 1. The Shift
 
-**The proposal: engineering moves up a level, from building the application to governing the system that builds it.**
+**Engineering moves up a level, from building the application to governing the system that builds it.**
 
 An engineer receives a small request on Thursday morning: change how long a user stays signed in. The request is one sentence; the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behavior, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but responsibility spans the path from desire to dependable behavior.
 
