@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The metasystem gets a designed information architecture: {metasystem, app} × {documentation, memory} — four quadrants plus plans and records, each with its own place and laws; docs stays static documentation, memory is for memories, plans is for plans, and the app's documentation and memory remain separate from the metasystem's under the two-part update-safety law (Wido 2026-08-26, R-6/R-7/R-8)
 - Origin: human
-- Next step: DESIGN RATIFIED (Wido 2026-08-27 ~11:30): all four round-3 disputes resolved as recommended — (1) split INSTALL vs UPGRADE touch lists, rehearsal asserts the upgrade list; (2) write-tracer = before/after tree comparison incl. mtimes, write-then-restore out of scope BY DECLARATION, no OS tracer; (3) stateRoot() widened to ALL app-state kinds (goals, open-work, steward, evidence pointers), engine slice appetite 3h->5h; (4) tailored metasystem.conf lives at the app root (app-owned, upgrade-safe), vendored tree keeps pristine metasystem.conf.template, one config-reader resolution change. Open questions 1-3 default to draft positions unless he objects at slice review; Q4 (upgrade-workflow funding) still his to schedule. MIGRATION SLICES NOW QUEUED (~10.5h total with the widened engine slice): 1 memory/+stateRoot (2h), 2 records manifest (1.5h), 3 oracle+tracer (1h), 4 goal-engine archival (5h), 5 adopt seeding. Execute as normal certified landings after current claims; design doc plans/memory-architecture-design.md is the binding spec.
+- Next step: PAUSED BY WIDO (2026-08-28 ~00:20, 'pause all work until further notice') at the best possible freeze point: slice 1 is FULLY GREEN — certified (1 round + fix round), integrated with trusted-lane moves complete, unit suites green, audit green, and the full adopt suite PASSED (4h34m, the last unarmed-price run). The batch sits UNLANDED in the m2 working tree with the commit message drafted; landing is one commit.sh invocation away and happens only on Wido's resume word. Note for resume: rebase before landing (m1 active); proof-run-cost-and-liveness design was ratified same evening (tip 2c96297) and its build slices queue after this landing.
 - OpenedAt: 2026-08-26T07:55:52Z
-- Revision: 12
+- Revision: 13
 - Claimed: machine=m2 lineage=mac-coordinator at=2026-08-27T12:28:28Z
 
 History:
@@ -21,4 +21,5 @@ History:
 - 2026-08-27T11:08:41Z KQV9Y9M2E7HY1ZBP6ZBA32WC3X-m2-bc1be9cb release actor=m2+mac-coordinator targets=memory-architecture
 - 2026-08-27T11:34:41Z 4W0GHX3SG8MEG89XER1SPX2WTT-m2-bc1be9cb edit actor=human:wido targets=memory-architecture
 - 2026-08-27T12:28:28Z T1JFENRSTS3JXDH0DTF6B2HVY5-m2-bc1be9cb claim actor=m2+mac-coordinator targets=memory-architecture
-Integrity: sha256=eb8a8b3ccffcb5216ceec6a5422777d9bf1353d9181d1ea81bf32e53ea5fee1e
+- 2026-08-28T14:43:59Z KB5EV217XSZQ5TCNJSWTYGAEGG-m2-bc1be9cb edit actor=m2+mac-coordinator targets=memory-architecture
+Integrity: sha256=9f73721918cb59f82930237a159c7b5d3d1fc4ef94942f42a850d705db23b650
