@@ -76,7 +76,7 @@ These are configurations; none of them is a job title. A human can serve as the 
 
 The configuration is also where cost meets risk. Every role staffed for a change costs computation and judging; every role left out either has its hazard controlled another way (a rule, a record or a narrower permission) or its risk accepted for that change. Choosing the configuration is a spending decision, priced by the same four questions that set verification depth, and it is remade when risk shifts rather than inherited from the last change. Chapter 11 develops the economics: the right configuration is the smallest one that protects the outcome at stake.
 
-A role also does not dictate the shape of its machinery. What must exist is the relation and the permission boundary. A continuous hazard needs a standing observer: silence can begin at any moment, so a liveness watcher runs whenever workers do. An event-bound hazard needs no standing actor: durable records and enforced rules hold at all times, and the custodian receives its narrow acceptance permission only at the moment of acceptance. The separation is equally real in both shapes; only the machinery differs.
+A role also does not have to be a program that runs all the time. The liveness watcher is one: silence can begin at any moment while workers act, so something must always be watching. The custodian is not: the records and the rules that guard acceptance hold at all times, but the custodian itself acts only at the moment of acceptance, when one actor briefly holds the narrow permission to accept. Both roles are real and both separations are real; they differ only in when their machinery runs.
 
 ## The anti-mimicry test
 
