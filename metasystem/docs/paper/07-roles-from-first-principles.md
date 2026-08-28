@@ -76,7 +76,7 @@ These are configurations; none of them is a job title. A human can serve as the 
 
 The configuration is also where cost meets risk. Every role staffed for a change costs computation and judging; every role left out either has its hazard controlled another way (a rule, a record or a narrower permission) or its risk accepted for that change. Choosing the configuration is a spending decision, priced by the same four questions that set verification depth, and it is remade when risk shifts rather than inherited from the last change. Chapter 11 develops the economics: the right configuration is the smallest one that protects the outcome at stake.
 
-A role also does not have to be a program that runs all the time. The liveness watcher is one: silence can begin at any moment while workers act, so something must always be watching. The custodian is not: the records and the rules that guard acceptance hold at all times, but the custodian itself acts only at the moment of acceptance, when one actor briefly holds the narrow permission to accept. Both roles are real and both separations are real; they differ only in when their machinery runs.
+A role also does not have to be a program that runs all the time. The liveness watcher is one: silence can begin at any moment while workers act, so something must always be watching. The custodian is not: the records and the rules that guard acceptance hold at all times, but the custodian itself acts only at the moment of acceptance, when one actor briefly holds the narrow permission to accept. Both are real roles with real separations, whether their machinery runs all day or only for a moment.
 
 ## The anti-mimicry test
 
