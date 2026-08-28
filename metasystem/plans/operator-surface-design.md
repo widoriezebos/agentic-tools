@@ -335,3 +335,31 @@ forward from v1 unchanged.
 | OSD-R1-21 | accepted (not-material) | Ledger paths corrected |
 | OSD-R1-22 | noted | Goal statement confirmed against the paper |
 | OSD-R1-23 | noted | Preservation/removal judgments confirmed grounded |
+
+
+## ROUND 3 (FAILSAFE): 11 material — BUDGET EXHAUSTED, DESIGN OPEN, WORK HELD
+
+Trajectory 20→15→11. The declared three-round budget is spent with
+the open set enumerated: OSD-R3-01..11 (verbatim in
+artifacts/agents/critiques/operator-surface/r3-output.md). Nine are
+shape-level; the sharpest three are RULING INTERACTIONS only the
+human can settle: R3-01 (the first accepted base is circular —
+who accepts the base that judges the first acceptance), R3-02
+(Ruling F's session-start `up` runs UNDER an agent and therefore
+cannot satisfy Ruling C's agent-free terminal proof — enrollment
+and arming must be split into a rare human act and an ambient
+session act, if the human so rules), R3-03 (two-machine acceptance
+custody under Ruling E needs a per-operation vs append-only ref
+decision). The remainder: lock-order integration (04), dual-store
+reconciliation (05), stop-vs-dual-run authority (06), quiescence
+protocol (07), S0a prerequisites (08), retry-identity revision
+(09, fixture-expressible), slice-table calendar honesty (10),
+hook lastSuccess (11, fixture-expressible).
+
+STANDING ORDER (Wido, 2026-08-28, recorded here as binding design
+law): NO IMPLEMENTATION STARTS WITHOUT HIS EXPLICIT APPROVAL,
+under any circumstance — a closed design is never a start signal.
+The design work itself now waits on his choice of continuation:
+a successor critique budget (rounds 4-6, co-design pattern), a
+split by finding region, or his direct rulings on 01/02/03
+followed by a bounded fold.
