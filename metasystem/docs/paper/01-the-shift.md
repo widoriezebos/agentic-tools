@@ -8,7 +8,7 @@ For consequential or repeatedly delivered software, this paper proposes a shift 
 
 What we are discussing now is not new. Programmers once allocated registers and calculated jump targets by hand. Compilers then took care of all of that.
 
-Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control took over the remembering and the comparing. It did not decide which change was right; it made history durable so people could.
+Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control took over the remembering and the comparing. It did not decide which change was right; it made history durable so people could make that decision with better evidence.
 
 A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code turned the desired state into a description that machinery can compare with reality and then implement.
 
