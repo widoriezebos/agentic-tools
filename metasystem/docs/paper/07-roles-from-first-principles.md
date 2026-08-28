@@ -38,7 +38,7 @@ A custodian keeps the records that connect intent, candidate, evidence and accep
 
 A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
 
-A narrator turns the record into a report a person can act on. It changes no state and makes no decision.
+A narrator turns the record into a report a person can act on: of everything the system writes, the one output made for people rather than machinery. It changes no state and makes no decision.
 
 Any of the five can be held by a person or by machinery; the configurations later in this chapter return to that choice. All five work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
@@ -65,6 +65,8 @@ That authority involves no creative judgment. The custodian makes no product jud
 At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that report. The report has influence because it shapes what the responsible authority notices and may shape a later decision.
 
 That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the report states a material result, the responsible authority can reach the exact observation supporting it. The report becomes inspectable, while authority remains with actors whose powers are named.
+
+The role is easy to undervalue because it decides nothing. The decisions this paper reserves for people (value rulings, irreversible acts, rule changes and accountability) are only as good as the person's understanding of the situation, and every other record in the system is written for machinery to act on. The narration is what keeps the responsible authority able to rule. Without it, human authority exists in name only.
 
 ## Configurations rather than job titles
 
