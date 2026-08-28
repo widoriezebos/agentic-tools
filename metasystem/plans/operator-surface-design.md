@@ -359,7 +359,34 @@ hook lastSuccess (11, fixture-expressible).
 STANDING ORDER (Wido, 2026-08-28, recorded here as binding design
 law): NO IMPLEMENTATION STARTS WITHOUT HIS EXPLICIT APPROVAL,
 under any circumstance — a closed design is never a start signal.
-The design work itself now waits on his choice of continuation:
-a successor critique budget (rounds 4-6, co-design pattern), a
-split by finding region, or his direct rulings on 01/02/03
-followed by a bounded fold.
+CONTINUATION RULED (Wido: "agreed, do as proposed"):
+
+- RULING I (resolves R3-02): ENROLLMENT AND ARMING ARE SPLIT.
+  Enrollment is a rare HUMAN act performed once from Wido's
+  agent-free terminal — it records the terminal root identity that
+  Ruling C proofs walk to. Session-start `up` is AMBIENT: any
+  session arms watchers, announces itself, and acquires the
+  working lease WITHOUT claiming or requiring human authority; it
+  consults the standing enrollment, never creates one. Human-
+  authority verbs alone demand the agent-free ancestry.
+- RULING J (resolves R3-01): THE GENESIS BASE IS A HUMAN ACT.
+  Wido accepts the current landed tip as the first accepted base
+  by one recorded acceptance performed from his enrolled terminal
+  (the ch.15 bootstrap's "named human authority establishes the
+  first bounded rules", literally). Every later acceptance chains
+  from it; the bootstrap retrospective judges S0a..S4 against
+  this genesis basis, resolving the circularity.
+- RULING K (resolves R3-03): ACCEPTANCE CUSTODY IS PER-OPERATION
+  IMMUTABLE REFS — one protected ref per landing operation,
+  append-only by construction, no shared-ref race; a second
+  machine's concurrent acceptance simply exists beside the first,
+  and the branch CAS remains the single serialization point for
+  what actually lands. Retry identity stays with the operation id;
+  a lost CAS mints a NEW operation (new receipt, new acceptance)
+  as the resolutions file already prescribes.
+
+The remaining eight findings (R3-04..11) proceed under ONE
+successor critique budget (rounds 4-6) with the co-design pattern:
+codex drafts the resolutions to its own findings, the coordinator
+adjudicates, the failsafe judges. The no-implementation standing
+order remains in force throughout.
