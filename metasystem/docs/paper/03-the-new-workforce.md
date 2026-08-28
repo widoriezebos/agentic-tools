@@ -4,7 +4,7 @@
 
 A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.
 
-Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be built for what this workforce actually is, and not for wonder or fear about it.
+Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be built for what this workforce actually is, not for what people hope or fear it is.
 
 ## What falls or changes shape
 
@@ -28,7 +28,7 @@ Later role design should rely only on constraints that are really gone. Two role
 
 A builder reaches a useful observation, then its session ends before the observation enters a durable record. The next builder begins with the original request and repeats the same search. Memory existed during the attempt but did not survive it. Machine workers are stateless: continuity depends on records outside the worker, because the worker will not remember tomorrow.
 
-Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely. To an observer, all four can look like patience. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
+Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely. To an observer, all four look the same: a worker that needs more time. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
 A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session. Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
 

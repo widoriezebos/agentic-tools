@@ -30,11 +30,11 @@ Expected results need their own source. The rule that background refresh does no
 
 ## Independent examiners look for faults
 
-An independent examiner asked "does this solution look correct?" after reading the builder's full argument may follow the same path and admire the same choices. An independent examiner given the authorized intent, relevant constraints, finished candidate and resulting evidence can instead begin from the claims that must survive and look for ways to break them. The object of judgment is the work itself rather than the builder's story about reaching it.
+An independent examiner asked "does this solution look correct?" after reading the builder's full argument may follow the same path and accept the same choices. An independent examiner given the authorized intent, relevant constraints, finished candidate and resulting evidence can instead begin from the claims that must survive and look for ways to break them. The object of judgment is the work itself rather than the builder's story about reaching it.
 
 Each new independent examiner receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That boundary protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a newly started machine worker that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority (no more access than the task needs), but it cannot manufacture independence after the fact. Chapter 8 develops how one durable record can support both continuity and appropriately limited access.
 
-The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision rather than the moment a tireless process happens to stop speaking.
+The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision rather than the moment the process stops producing output.
 
 ## Four questions set verification depth
 
@@ -54,7 +54,7 @@ The answer to these limits is to claim only what was shown. The system records w
 
 ## Evidence that triggers human review
 
-A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. Requiring a person to repeat the same inspection adds delay without adding an independent source of judgment.
+A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. A person repeating the same inspection checks what the machine already checked. That adds delay and little protection.
 
 A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption that could make them agree for the same mistaken reason. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. Chapter 13 says who may perform that review, how accountability is assigned and how an appeal proceeds.
 
