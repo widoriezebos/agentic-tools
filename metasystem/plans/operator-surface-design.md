@@ -1,14 +1,15 @@
-# The Operator Surface — the claw-back design (2026-08-28)
+# The Operator Surface — the claw-back design (v2, 2026-08-28, after critique round 1)
 
 Working Mode: design
 
-Owner: m1 coordinator, ratified in direct discussion with Wido on
-the morning of 2026-08-28, immediately after the protective-
-mechanism breakdown. This document is the WHOLE design: what
-changes, and for every change, the reason — each reason traceable
-to a concrete failure of the preceding 48 hours or to a written law
-of this repository that was being violated. Nothing here is
-invented; it is the recorded philosophy, enforced.
+Owner: m1 coordinator, in direct discussion with Wido. Round 1 of
+the codex critique returned 20 material findings + 3 not-material
+(artifacts/agents/critiques/operator-surface/r1-output.md); ALL are
+dispositioned in the table at the bottom and folded into this v2.
+Two were ruled by Wido in-session: RULING A — human authority is
+proven by PROCESS ANCESTRY, never by a typed string; RULING B —
+the honest surface claim is SIX DAILY VERBS PLUS TWO LIFECYCLE
+FAMILIES. Round budget: 3; failsafe 3; round 2 attacks this v2.
 
 ## THE GOAL
 
@@ -18,372 +19,285 @@ evidence over trust, durable records, enforced rules that refuse,
 budgets that stop, and human authority at value decisions — and it
 restores the one property without which none of that vision can
 operate: A SURFACE ITS OWN OPERATOR CAN HOLD. The breakdown was
-not a failure of the vision. It was unmetered mechanism accreting
-past operability until the protections were conventions nobody
-could keep and machinery nobody could run. The goal of the
-claw-back, stated plainly: keep everything that demonstrably works
-(the goal ledger, the landing gates, the census and reaper
-machinery, the metrics family, and the custody internals preserved
-on the wip branch — the baby stays), delete or internalize what
-made the system inoperable (the bathwater goes, named line by line
-in the removal ledger), and re-earn trust in the machinery slice
-by slice under the current controls and Wido's word.
+not a failure of the vision; it was unmetered mechanism accreting
+past operability. The claw-back keeps everything that demonstrably
+works (the goal ledger, the landing gates, the census and reaper
+machinery, the metrics family, the custody internals on the wip
+branch), deletes or internalizes what made the system inoperable,
+and re-earns trust in the machinery slice by slice under the
+current controls and Wido's word.
 
 THE BOOTSTRAP POSTURE (binding until revoked): the current state
 cannot be relied on to run its own rescue. Until each protection
-demonstrably works again, THIS work uses only the minimal trusted
+demonstrably works again, this work uses only the minimal trusted
 core — direct delegation (plain codex execution, coordinator-
 monitored), the existing landing gate, the coordinator's own
-verification by execution, and Wido's explicit acceptance. No
-slice of this design depends on machinery this design has not yet
-repaired. Machinery re-enters the loop only after its own slice
-lands and proves itself live.
+verification by execution, and Wido's authenticated acceptance. No
+slice depends on machinery a later slice builds (round-1 findings
+02/07/08 caught three violations; the slice plan below is
+re-partitioned to honor this for real).
 
-The breakdown this answers (the evidence base):
-- The steward runner had been dead since ~2026-08-20 and the
-  narrator since 2026-08-23; nobody and nothing noticed until the
-  human did. The coordinator FOUND the corpse during a fact sweep
-  and recorded it as a design input instead of treating it as an
-  outage.
-- The coordinator's own goal-note edits destroyed the parseable
-  "Appetite:" prefix on the claimed goal, silently disarming the
-  breach banners for an entire overnight build (~16 delegate
-  passes, ~10 hours, zero alerts).
-- One dispatch required knowing an arming sequence, a lease model,
-  a census contract, and a driver script's hidden prerequisites;
-  the coordinator — the system's daily operator and co-author —
-  failed the sequence three times in one night.
-- The overnight build itself violated the slicing law: one
-  monolithic unlanded diff instead of independently deployable
-  slices.
-- Work was preserved but not lost: branch wip/custody-launch-machine
-  (3fec78a). Wido's ruling: that work MUST integrate into this
-  design when its turn comes — never discarded, never landed as-is.
+The breakdown evidence base, the two laws (NOTHING IS PROSE; ALL
+COMPLEXITY SHIELDED BEHIND MINIMAL EASY VERBS), and the Verb
+Contract (MANDATORY-IF-IMPORTANT, IDEMPOTENT, FORGIVING,
+SELF-VERIFYING, SELF-EVIDENT) carry forward from v1 unchanged in
+meaning; the mechanisms below are the corrected execution.
 
-The two failures underneath all five: meaning lived in PROSE that
-the machine could not read and the operator could silently break;
-and protection lived in CONVENTIONS the operator had to remember,
-with no mechanism watching the mechanisms.
+## HUMAN AUTHORITY IS PROCESS-PROVEN (RULING A; folds R1-01, R1-10)
 
-## The two laws of this design (Wido's words, made binding)
+`--by wido` was a string any agent could type: the override
+authority and the appeal route were self-granting, and Wido's
+slice acceptance was unrecorded prose. Corrected:
 
-1. NOTHING IS PROSE. Every value the system acts on is a typed
-   field owned by the Go engine. Human prose may exist for humans —
-   position notes, commit messages — but it carries ZERO machine
-   semantics. Why: the appetite alarm died because its trigger was
-   a prose convention inside a free-text field; a structured field
-   cannot be disarmed by a note.
-2. ALL COMPLEXITY SHIELDED BEHIND THE MINIMAL SET OF EASY VERBS.
-   The operator surface is six verbs; everything else is internal.
-   Why: the operator provably cannot hold the current surface — the
-   lease/arming/census/driver failures were not carelessness, they
-   were the predictable result of a surface larger than working
-   memory. A system its own author cannot operate intuitively is
-   broken regardless of how correct its internals are.
+- A HUMAN-AUTHORITY INVOCATION is valid only when the invoking
+  process provably descends from a session the human announced —
+  the generalization of the existing `proc acknowledge` pattern,
+  which already classifies the real parent and refuses agent
+  invokers. Agent ancestry → refusal by name. No passwords, no
+  nonce ceremony (Wido's choice): the process tree is the proof.
+- ACCEPTANCE IS A RECORD, NOT A CHAT LINE: Wido accepts a
+  safeguard slice via a human-authority verb that writes an
+  acceptance record binding HIS identity proof to the EXACT
+  candidate tree hash. `land` refuses a safeguard-slice landing
+  without a standing acceptance for the exact tree it is about to
+  commit. The chat remains where discussion happens; the record is
+  what the machine obeys.
+- THE JUDGE IS NOT THE CANDIDATE (R1-01's second half, ch. 15):
+  the landing gate for safeguard slices runs the ENGINE OF RECORD
+  — the binary built from the base commit, not from the candidate
+  — and battery controllers come from the base. The wip-branch
+  snapshot pattern is the named, rehearsed recovery route: code,
+  records, and authority state restorable from the last accepted
+  landing.
 
-## The Verb Contract (binds every verb, enforced once in the flag layer)
+## THE SURFACE (RULING B; folds R1-17, R1-18)
 
-- MANDATORY-IF-IMPORTANT: a field whose absence would silently
-  change behavior is required; the verb refuses, naming the field,
-  with a one-line example. Optional exists only for conveniences
-  with harmless defaults. Why: trial-and-error flag discovery is
-  how the coordinator mis-ran the system all week; and the
-  strictness law already says refusals guard invariants loudly —
-  a silently-defaulted important field is an invariant violation
-  waiting to happen.
-- IDEMPOTENT: every verb is safe to re-run, always. `up` on an
-  armed system reports "already armed", exit 0. `delegate` with
-  the same operation binds to the standing job. `land` after
-  success reports "already landed". A crash mid-verb leaves a
-  state the SAME verb completes on re-run. Why: the companion
-  double-fire, the arming join-a-corpse wedge, and the fixture
-  whack-a-mole were all non-idempotent seams; the goal-transaction
-  machinery already proved the cure (the operation id is the
-  truth, not the belief) — this generalizes it.
-- FORGIVING: no verb punishes benign variation; every refusal
-  names the violated invariant AND the remedy verb; a failed verb
-  cleans up what it started. Why: "strictness guards invariants,
-  never conveniences" is already written law; and the operator
-  inherited cleanup (leaked holds, stale locks, stranded payloads)
-  all week — cleanup is the verb's job.
-- SELF-VERIFYING: a verb probes its own effect before reporting
-  success — "armed" means the armed thing answered a probe.
-  Why: completion-claims-require-execution is standing doctrine
-  for the coordinator; the verbs must obey the same law.
-- SELF-EVIDENT: `--help` is a two-line contract plus one example.
-  Why: the current help surfaces are walls of lifecycle text the
-  operator demonstrably does not absorb.
+SIX DAILY VERBS — `up`, `health`, `goal`, `delegate`, `watch`,
+`land` — PLUS TWO LIFECYCLE FAMILIES that are operator-facing but
+not daily and are documented on their own page: `mission`
+(unattended missions: start, status, answer, taint resolution) and
+`run` (supervised arbitrary long commands — the only lawful home
+for batteries and non-agent runs; it stays because deleting it
+would orphan supervised runs, R1-18). Everything else the binary
+exposes is INTERNAL: reachable by plumbing and fixtures, absent
+from top-level help and operator docs.
 
-## The six verbs (the WHOLE operator surface)
-
-Chosen by replaying the operator's actual last 48 hours — every
-verb earns its place by a concrete pain, and two candidate verbs
-were REMOVED for the same reason:
+## THE SIX VERBS, corrected
 
 1. `metasystem up`
-   Arms everything, idempotently: supervision owner, watcher,
-   steward runner, session announcement, lease. Runs automatically
-   at session start (the hook calls it; a session can never again
-   operate unarmed without knowing).
-   WHY: acquiring the lease lawfully cost the operator ~40 minutes
-   and four attempts, including a join-against-a-dead-owner wedge
-   whose error message blamed the census. The arming ORDER was
-   knowledge; now it is code. Replaces the operator-facing use of
-   arm-supervision.sh, steward arm, and every lease incantation.
+   Arms everything idempotently: supervision owner, watcher,
+   steward runner, session announcement, lease — with dead-owner
+   takeover (absorbing the arming-dead-owner-takeover backlog
+   item). Session start runs it via the hook. SECOND-SESSION LAW
+   (R1-20): the lease has one holder; a second session's `up`
+   returns the typed outcome `advisor` — armed for reading, no
+   write authority, the holder named, a worktree suggested for
+   parallel work. No displacement, no guessing.
 
 2. `metasystem health`
-   The roles-alive verdict, computed in Go, typed per role:
-   alive | dead | unknown, each with a one-clause reason and — for
-   dead — the remedy AS AN EXECUTABLE VERB, never a sentence.
-   Roles: steward runner; supervision owner; repo watcher; census
-   freshness; narrator freshness; session main announced+alive;
-   every claimed goal's appetite present (structured — see below);
-   non-terminal job records whose recorded process is provably
-   dead; capability snapshot ages.
-   EVERY FAILURE CLASS HAS AN OWNER (the paper: every deadline has
-   an owner authorized to decide what follows): steward/narrator
-   dead → the tick auto-restarts (its own lawful authority);
-   supervision owner, watcher, stale arming → the coordinator runs
-   the named verb (`up`); anything the coordinator cannot restore
-   within one turn, and every repeated failure of the same role →
-   Wido, by alert. The verdict names the owner beside the remedy.
-   WHY: five days of dead watchdogs, discovered by accident. The
-   checks are exactly the failure inventory of the breakdown —
-   nothing speculative is checked.
+   The roles-alive verdict, typed per role: alive | dead |
+   unknown. TOTALITY (R1-14): every state has an owner and a
+   behavior — dead → the named remedy verb + the owner (tick
+   auto-restart / coordinator / Wido by alert); unknown → held one
+   interval, then escalates to Wido if it persists (unknown is
+   never silently tolerated); aggregate exit codes 0 healthy,
+   1 unhealthy, 2 unknown-present. Repeated failure of one role
+   within a window escalates past auto-restart to Wido.
+   CHECKS ARE BOOTSTRAP-HONEST (R1-02): at slice-one time health
+   checks what EXISTS — the prose-prefix appetite until slice two
+   replaces it, the current arming scripts as remedies until `up`
+   exists — and each later slice updates the check and the remedy
+   it owns. The check list: steward runner; supervision owner;
+   repo watcher; census freshness; narrator freshness; session
+   main; hook freshness (R1-03: the hook writes an invocation
+   stamp; health flags a stale or silently-failing hook — the
+   common failure domain gets its own check); claimed-goal
+   appetite; dead-process non-terminal jobs; snapshot ages.
 
-3. `metasystem goal …` (existing family, two changes)
-   a. APPETITE BECOMES A STRUCTURED FIELD: `goal set-appetite
-      --id X --appetite 4h`, stored beside State; claim requires
-      it; breach is computed by the engine from claim age against
-      the field. The next-step returns to pure human prose with no
-      machine meaning.
-      WHY: the alarm was disarmed by a note. A field cannot be.
-      Claim-requires-appetite also enforces Wido's 4-hour slice
-      ceiling mechanically (set-appetite refuses tokens above 4h
-      for non-human actors; the human may override with --by).
-      RULE RECORDS (every new refusal is a governed rule, per the
-      paper's learning-systems chapter — never a veto by reflex):
-      * THE 4H CEILING — stops: agent-sized slices above four
-        hours. Must remain possible: human-sized exceptions via
-        --by wido (the override IS the appeal route). Owner: Wido.
-        Review-by: 30 days or the first overridden refusal.
-        Side-effect signal: the Friction rate metric already
-        counts refusals — an overridden refusal is evidence of
-        miscalibration, watched by machinery that landed
-        yesterday.
-      * CLAIM-REQUIRES-APPETITE — stops: unsized claims. Must
-        remain possible: claiming immediately after set-appetite
-        in one breath (the verbs compose). Owner, review, appeal,
-        signal: as above.
-      * MANDATORY-IF-IMPORTANT FIELDS — stops: silently defaulted
-        behavior-changing inputs. Must remain possible: quick
-        no-goal probes via an EXPLICIT recorded value
-        (--goal none), never by omission. Owner, review, appeal,
-        signal: as above.
-   b. Nothing else changes. WHY: the goal family was the one
-      surface that worked intuitively all week.
+3. `metasystem goal …`
+   a. STRUCTURED APPETITE (R1-11, R1-12 lifecycle made total):
+      `goal open` takes `--appetite` (mandatory for agent actors;
+      open --claim keeps its atomicity because the appetite rides
+      the same command); `goal set-appetite` covers existing
+      goals; legacy claimed goals without the field are flagged
+      unhealthy by health until set (grace, not wedge). Breach
+      computes from claim age against the field and feeds the
+      TYPED bands that already exist (BREACH-ESCALATE /
+      BREACH-STOP, internal/goal/project.go) — the fixture proves
+      an overdue structured claim drives unhealthy + heartbeat +
+      notification on the next tick.
+   b. THE BUDGET ACTUALLY STOPS (R1-04, ch. 11): BREACH-ESCALATE
+      notifies and marks the chat line. BREACH-STOP is enforced:
+      the engine PARKS the claim in a typed state carrying a
+      typed stop reason, the tick winds down the goal's live
+      delegate jobs through the existing cancel transactions, and
+      the goal records its stop-state (what works, what does not,
+      the open uncertainty — typed fields, prose only for the
+      human summary). The coordinator switches items; only a
+      human-authority act un-parks past a stop.
+   c. RULE RECORDS ARE TYPED AND GOVERNED (R1-09, ch. 12): a
+      small authoritative store (one engine-owned file) holds each
+      enforced rule: id, scope, adoption evidence, must-stop and
+      must-permit test references, refusal evidence shape, owner,
+      review-by, withdrawal route, and TRIAL MODE — every new rule
+      runs observe-only (logging would-refuse) for its trial
+      before it may refuse. The 4h ceiling, claim-requires-
+      appetite, and mandatory-fields enter as the first three
+      records, in observe-only first like everything else.
 
-4. `metasystem delegate --role <role> --brief <file> --goal <id>`
-   The ONE launch verb for every delegated role — build, design
-   critique, code critique, investigation. Internally: record with
-   proven identity, caps, execution guard, launch, liveness
-   registration, and the return contract. `--goal` is mandatory
-   (provenance is not optional — the metrics arc proved attribution
-   cannot be reconstructed later). Critique rounds are delegations;
-   the standalone critique driver dies.
-   WHY: the operator hand-rolled sixteen codex launches overnight
-   with homemade zombie monitors because the lawful path had
-   un-holdable prerequisites. This was the single largest
-   operational pain of the entire period. INTEGRATION MANDATE
-   (Wido): the wip/custody-launch-machine branch supplies the
-   internals — platform-exact identity, the idempotent claim
-   (collapsed from nine outcomes to three the operator can think
-   in: started | already-running | refused-because), the liveness
-   triad, record custody. A keep/delete triage of that branch is
-   presented to Wido before this verb is built; the expected
-   default for machinery that exists only to satisfy a critique
-   finding is deletion, but the identity and custody core is
-   exactly what makes this verb honest.
+4. `metasystem delegate`
+   `--role <role> --brief <file> --goal <id|none-explicit>`; also
+   `--follow-up <job> --brief <file>` and `--cancel <job>`
+   (R1-13: corrections, cancellation, and chain accounting are
+   lifecycle, not luxuries; closure stays internal and automatic).
+   THE TYPED OUTCOMES STAY TYPED (R1-06, reversing v1's collapse —
+   the critic caught v1 violating "nothing is prose"): the
+   full outcome enum from the custody machine (won, in-progress,
+   bound, replayed-<status>, reconciling, and the named refusals)
+   is the verb's JSON output; the human-facing headline groups
+   them (started / already running / refused) but the machine
+   reads the enum, never a because-string. The operation identity
+   derives from (goal, role, brief hash) with `--op` for explicit
+   retry binding; the fingerprint law from the custody design
+   applies. GOAL REVISION BINDING (R1-19): delegate records the
+   goal's revision at launch; land refuses a candidate whose
+   goal revision moved unless a fresh human acceptance names the
+   new revision.
 
 5. `metasystem watch --job <id>`
-   Follow a delegate to its terminal state; on failure, SHOW the
-   evidence: the record, the log tail, the remedy. Zombie detection
-   (work-product freshness + process probe + timed verdict) is the
-   tick's job, not the watcher's — watch just displays truthfully.
-   WHY: the operator spelunked suite-failure directories by hand
-   all night; the digging becomes the verb's output.
+   Follow to terminal; on failure show the record, log tail, and
+   remedy. TOTAL UNCERTAINTY BEHAVIOR (R1-14): a bounded default
+   timeout; on a non-terminal record with a dead/indeterminate
+   process it reports the zombie verdict instead of waiting
+   forever; exit codes distinguish terminal-ok, terminal-failed,
+   timeout, and zombie-suspected.
 
-6. `metasystem land --message <file> --goal <id> --built-by <who>`
-   The landing as a verb: gate, commit, push both remotes, AND the
-   receipt row written atomically with the landing. `--goal` and
-   `--built-by` are mandatory.
-   WHY: the receipt was a separate post-landing ritual with its own
-   flags; separate rituals get skipped under pressure (and were).
-   Provenance becomes impossible to omit. The receipt verb
-   disappears from the operator surface.
+6. `metasystem land`
+   `--message <file> --goal <id> --built-by <who>` plus a
+   MANDATORY candidate selection: `--staged-only` or explicit
+   pathspecs (R1-05 — sweeping the tree by default is how
+   unrelated bytes get landed). ATOMIC BY OPERATION IDENTITY
+   (R1-05): land journals an operation id with phases
+   (gate → commit → push origin → push transport → receipt);
+   a rerun completes remaining phases idempotently; a crash
+   between phases is completed by the rerun, never repeated.
+   The receipt's important fields are land flags (type, outcome
+   mandatory; the rest defaulted harmlessly). Safeguard slices
+   additionally require the standing human acceptance record for
+   the exact tree (above).
 
-REMOVED from the earlier draft, with reasons — and per the
-archaeology standard, each removal names the observation that
-would REOPEN it:
-- A separate `receipt` verb — absorbed into `land`. Reopens if a
-  landing is ever observed without its receipt row.
-- A `why`/diagnose verb — `watch` owns failure evidence. Reopens
-  if the coordinator is ever again observed hand-reading
-  suite-failure directories because watch's output did not carry
-  the evidence.
-- (And for the internalized surfaces: the arming scripts reopen as
-  operator surface if `up` ever fails in a way only the raw
-  scripts can repair; the critique driver reopens if a critique
-  round ever cannot run as a delegation.)
+## THE HEARTBEAT AND ALERTS, corrected (folds R1-03)
 
-## The heartbeat and the alert path (Wido's ruling, verbatim intent)
+Three rings, no common silent failure:
+- RING 1, every turn, in the chat: the turn display carries the
+  one-line health verdict. The hook that renders it writes its own
+  invocation stamp; health checks that stamp, so a dead or
+  silently-failing hook is ITSELF a named unhealthy role — the
+  line's absence is no longer the only signal.
+- RING 2, every tick: the steward tick computes health, narrates,
+  and alerts on unhealthy via the platform notifier. MUTUAL
+  WATCHING lands with slice one using processes that exist today:
+  the supervision watcher checks the steward runner's freshness
+  and re-arms it; the tick checks the watcher; neither corpse can
+  go unnoticed because its peer names it (R1-02: the tick cannot
+  restart itself — the WATCHER holds that duty).
+- RING 3, boot-level: a minimal system scheduler entry (launchd/
+  cron) runs `up --if-down` hourly — the reboot/total-loss
+  recovery the v1 ledger wrongly deleted (R1-03). It is the
+  outermost ring and its absence is a health finding.
+- ALERTS TO WIDO: desktop banner via the notifier now; the
+  session pushes to his iPhone on unhealthy with alert-episode
+  dedup (one push per episode, cleared on healthy); his next chat
+  message is the acknowledgment; telegram/slack later through the
+  same notify seam.
 
-- THE HEARTBEAT IS PRIMARILY FOR THE COORDINATOR AND IT LIVES IN
-  THE CHAT: the turn-verdict display (the stop-hook surface that
-  already reaches every turn) carries one watchdog line, every
-  turn: "watchdog HH:MM: all 9 roles alive | goal X 2.1h/4h" or
-  the named failure with its remedy verb. The steward tick
-  computes it every interval; the turn display makes it
-  unmissable.
-  WHY: the coordinator is the one who ran blind. A heartbeat the
-  operator must go look for is a convention; a heartbeat in every
-  turn's display is a mechanism. The human reads the same chat, so
-  visibility is shared for free.
-  HABITUATION IS THE HEARTBEAT'S OWN FAILURE MODE and it gets a
-  named test, not a hope: every retro asks one question — did the
-  operator act on the last unhealthy heartbeat within one turn?
-  Two consecutive retros showing skimming force a channel
-  redesign. (The paper's discriminating-test standard applied to
-  the signal's CONSUMER, which is where the original failure
-  lived.)
-- ALERTS ESCALATE TO THE HUMAN: an unhealthy verdict (a) fires the
-  existing platform notifier (macOS desktop banner today), and
-  (b) the session pushes to the human's iPhone when it observes
-  unhealthy in its turn display. The notify-command seam stays the
-  single extension point for telegram/slack later.
-  WHY: interval-noise on the human's devices is wrong (his
-  ruling); silence-when-healthy plus loud-when-not is right — and
-  the chat heartbeat means silence can no longer hide a dead
-  watchdog, because the LINE ITSELF disappearing is the signal.
-- WHO WATCHES THE WATCHER: the supervision watcher and the steward
-  runner check each other each interval and re-arm each other via
-  `up`'s internals; a single corpse cannot go unnoticed because
-  its peer names it in the next heartbeat.
-  WHY: the steward died in silence for five days precisely because
-  it was the only thing that would have reported its own death.
+## THE REMOVAL LEDGER, corrected
 
-## The removal ledger — explicit, surface by surface
+As v1, with these reversals and corrections (R1-13/15/16/18/21):
+- KEEP the receipt family (correction, stats, check, retro) — the
+  retro learning loop consumes it; `land` absorbs only `add` for
+  landings. The retro skill keeps its instruments.
+- KEEP `proc acknowledge` as a HUMAN-AUTHORITY verb under Ruling A
+  — the human-reserved census judgment stays human; health's
+  untracked-process alert names it as the remedy.
+- KEEP the `run` family (lifecycle surface) and `mission` (per
+  Ruling B).
+- KEEP the claim-launch typed outcome machine intact (R1-06).
+- Path corrections: scripts/receipt.sh and
+  scripts/watch-background-jobs.sh (not scripts/agents/...).
+- Everything else in the v1 ledger stands: critique-round.sh
+  DELETED into delegate; arming/dispatch/land scripts
+  INTERNALIZED; the engine's other families INTERNAL.
 
-What exists today, what happens to it, what replaces it. DELETE
-means the file or verb ceases to exist. INTERNALIZE means it
-survives as plumbing a verb calls — the operator never types it,
-its name leaves the operator docs, and `--help` at the top level
-no longer shows it. KEEP means it remains operator-facing.
+## THE SLICES, re-partitioned (folds R1-02, R1-07, R1-08)
 
-Scripts:
+Bootstrap-ordered: every slice depends only on what exists when it
+builds. Each ≤4h with contents listed so the ceiling is checkable;
+each judged by the engine of record, accepted by Wido's recorded
+act, landed alone. A slice that exhausts 4h stops, records its
+typed stop-state, and raises.
 
-| Today | Disposition | Replaced by / reached via | Why this is simpler and more robust |
-| --- | --- | --- | --- |
-| scripts/agents/critique-round.sh | DELETE | `delegate --role design-critic\|code-critic` | A critique round IS a delegation; two launch paths meant two custody stories (this week: one custodial, one not). One path, one custody. The severity design already prescribed this driver's retirement — built once here. |
-| scripts/agents/receipt.sh (operator use) | DELETE from surface | `land` writes the receipt row atomically (`receipt add` becomes internal) | A separate post-landing ritual was skipped under pressure and delegate-written rows corrupted the ledger this week. Provenance becomes impossible to omit and impossible to write from the wrong hands. |
-| scripts/agents/arm-supervision.sh | INTERNALIZE | `up` | The arming ORDER was operator knowledge; the dead-owner wedge cost 40 minutes and blamed the wrong component. `up` encodes the order, takes over dead owners, and is idempotent. |
-| scripts/agents/dispatch.sh (dispatch/follow-up/status/watch/cancel/close/reap subcommands) | INTERNALIZE | `delegate` (launch+follow-up), `watch` (status/watch/evidence), `health`+tick (reap surfacing) | Sixteen hand-rolled launches with homemade zombie monitors in one night, because the lawful path had unholdable prerequisites. The prerequisites move inside the verb. |
-| scripts/agents/land.sh + commit.sh (operator use) | INTERNALIZE | `land` | Already the right shape; becomes a verb with mandatory --goal/--built-by and the receipt inside. commit.sh remains its internal engine. |
-| scripts/agents/watch-background-jobs.sh | INTERNALIZE | armed by `up`, watched by `health` | The watcher was running for the WRONG repo while this one ran blind; nobody could tell. `health` names it per-repo. |
-| scripts/agents/checkout-execution-guard.sh | INTERNALIZE | wrapped by `delegate` | Unchanged behavior; leaves the operator's vocabulary. |
-| scripts/agents/sync-transport.sh | INTERNALIZE | inside `land` | Already effectively internal. |
-| validate-metasystem.sh, battery.sh, milestone-battery.sh | KEEP (verification tools, not daily verbs) | invoked at milestones per the battery-cadence rule | Verification is not ceremony; these are the proof engines. Not part of the six because they are not daily-loop actions. |
-| adapters/*, emit-event.sh, evidence-gc.sh, enumerate-suite.sh, fixtures | Already internal | unchanged | Plumbing stays plumbing. |
+- S0a — TREE ISOLATION (≤2h): the dirty custody tree moves cleanly
+  to the wip branch (which already snapshots it); the primary tree
+  returns to landed main. Landings stop needing stash
+  choreography; custody work continues from the branch when its
+  turn comes. (R1-08's missing preparation slice.)
+- S0b — WIP TRIAGE (≤4h, document only): keep/adapt/delete over
+  the custody branch with reasons, reviewed and accepted by Wido
+  BEFORE any consumer builds (R1-07). Health's liveness checks and
+  delegate's internals both consume its verdicts.
+- S1a — HEALTH CORE (≤4h): the verb (checks that exist today,
+  including hook freshness), tick integration, narration, desktop
+  alert, aggregate exit codes, unknown-escalation. Fixtures kill
+  each role.
+- S1b — RINGS (≤4h): the chat line via the hook + invocation
+  stamp; mutual watching (watcher re-arms steward, tick checks
+  watcher); the boot-level `up --if-down` entry; iPhone push with
+  episode dedup.
+- S2 — APPETITE THAT STOPS (≤4h): the structured field + open/
+  set-appetite lifecycle + typed bands wiring + BREACH-STOP
+  enforcement (park, wind-down, typed stop-state) + the rule-
+  record store with the first three rules in observe-only.
+- S3 — UP (≤4h): idempotent arming, dead-owner takeover, advisor
+  outcome, session-start hook call; health's remedies switch to
+  name it.
+- S4 — HUMAN AUTHORITY (≤4h): the ancestry-proof seam for
+  --by/acceptance/acknowledge; the acceptance record; land's
+  acceptance check for safeguard slices.
+- S5+ — DELEGATE (split per the custody design's own partition,
+  consuming the S0b triage; typed outcomes, follow-up, cancel,
+  revision binding), then WATCH, then LAND (atomic phases,
+  receipt absorption). Each its own ≤4h slice, contents fixed at
+  S0b's close.
 
-Engine verb families (the binary exposes ~15 families, ~100+
-verbs today — the operator surface after this design is the goal
-family plus five new verbs; every other family is INTERNAL:
-reachable by plumbing and fixtures, absent from top-level help and
-operator documentation):
+Acceptance-gate, dual-running of old and new protections,
+habituation retro test, stop-states, and reopen-observations carry
+forward from v1 unchanged.
 
-| Today's family | Disposition | Operator replacement |
+## Round 1 dispositions (r1-output.md)
+
+| Finding | Disposition | Fold |
 | --- | --- | --- |
-| job (30 verbs: record-create/setup/cas, claim-launch, watch, reap-facts, custody, chain…) | INTERNAL | `delegate`, `watch`; the tick consumes reap-facts |
-| proc (11: probe, alive, classify, census, find-ancestor…) | INTERNAL | `health` presents the verdicts; `up` uses identity internally |
-| lease (require-holder, run-held…) | INTERNAL | `up` acquires; `health` reports holder state |
-| supervise (launch-detached, arming…) | INTERNAL | `up` |
-| steward (arm/tick/pending/revive…) | INTERNAL except none — the tick self-runs; `health` is the new operator window | `up`, `health` |
-| adapter, runtime, config, json, util, gate, report, validate | INTERNAL | already non-operator; unchanged |
-| receipt | INTERNAL | `land` |
-| goal | KEEP (with the structured-appetite change) | itself |
-| mission | KEEP (unattended missions; out of the daily loop) | itself, unchanged |
-
-Complexity removed outright (not moved — DELETED):
-
-| Complexity | Fate | Replaced by |
-| --- | --- | --- |
-| The nine-outcome claim-launch state machine (wip branch) | COLLAPSED to three | started \| already-running \| refused-because — the operator-thinkable set; the six refusal flavors become the `because` text with the invariant named |
-| The prose "Appetite:" convention | DELETED | the structured field; prose notes carry zero machine meaning |
-| Arming-order knowledge, lease vocabulary, census-classify semantics as operator concepts | DELETED as knowledge | `up` and `health` — the concepts still exist in code; no human needs them to operate |
-| Manual morning/cron work-resumption arrangements | DELETED | never-stop doctrine + session-start auto-`up` + the tick |
-| The capability-snapshot freshness ritual | DELETED as ritual | `health` checks ages; `delegate` re-probes stale snapshots itself (idempotent, forgiving) |
-| Two heartbeat/liveness half-mechanisms (hb files touched by supervisors, artificial log-touch — already removed in wip) | UNIFIED | one presence/progress law inside `health`'s triad |
-
-The one-page operator contract (the daily loop, the six verbs, the
-three laws: 4h slices; breaches raise and the coordinator switches
-items; land small) lands in docs/ as the FIRST page of the ways of
-working; everything longer becomes reference. The wip/custody-
-launch-machine branch is the PARTS INVENTORY for `delegate` and
-`health` internals (Wido: the invested tokens must not be
-worthless — and they are not: identity exactness, idempotent
-claims, custody records, and the liveness triad are precisely the
-hard parts of the two biggest verbs). The triage (keep / adapt /
-delete, with reasons) is its own reviewed document before verb
-four is built.
-
-## Build order (Wido's law: what protects against the biggest fuckup, first)
-
-Each slice ≤4h hard, landed alone. THE ACCEPTANCE GATE
-(self-application law): every slice is judged by the CURRENT
-controls — the existing landing gate and battery are the judge of
-the new machinery's adoption, never the new machinery itself; one
-independent code-critique chain at full rigor attacks the slice;
-and the slice lands only on Wido's explicit acceptance in the
-chat. Where an old and a new protection overlap, BOTH run together
-until the new one has a week of live evidence (the prose-appetite
-banner keeps running beside the structured field; the old arming
-path stays callable beside `up`) — authority transfers as evidence
-earns it, never at cutover. A slice that exhausts its 4h budget
-STOPS and records in the goal note what works, what does not, and
-the precise remaining uncertainty, then raises — an honest stopped
-slice is a first-class outcome, not a failure to hide.
-
-The slices:
-
-1. SLICE ONE — `health` + the chat heartbeat + the alert path.
-   Protects against: running blind (the biggest fuckup). Includes
-   the tick integration, the turn-display line, desktop alert,
-   session iPhone push on unhealthy, and failing-first fixtures
-   that kill each role and prove detection at the next tick.
-2. SLICE TWO — the structured appetite field + claim-requires-
-   appetite + the 4h ceiling. Protects against: the disarmed
-   alarm, permanently.
-3. SLICE THREE — `up` (idempotent arming incl. dead-owner
-   takeover, absorbing the arming-dead-owner-takeover backlog
-   item) + session-start auto-up + mutual watching.
-4. SLICE FOUR — the wip-branch triage document (keep/adapt/delete
-   with reasons), reviewed by Wido.
-5. SLICES FIVE+ — `delegate`, `watch`, `land` on the triaged
-   internals, one verb per slice.
-
-## What this design deliberately does NOT do
-
-- No new state machines, registries, or locks beyond what the wip
-  triage justifies piece by piece. Why: the overnight loop proved
-  mechanism-answering-critique climbs its own ladder.
-- No redesign of the goal ledger, the census, or the reapers. They
-  worked. Why: the claw-back touches only what failed the
-  operator.
-- No multi-round prose DESIGN loops for these slices: this
-  document is the design, and fixtures arbitrate. But CODE
-  critique runs at FULL rigor for every slice — these slices
-  change the system's safeguards, and the paper's
-  self-application chapter is explicit that safeguard changes
-  deserve more independent examination, not less (the earlier
-  draft cut critique down out of token-guilt; that was the
-  faster-release-rule builder's argument and it is withdrawn).
+| OSD-R1-01 | accepted | Recorded acceptance bound to tree hash; engine-of-record judges; rehearsed recovery named |
+| OSD-R1-02 | accepted | Bootstrap-honest checks; mutual watching via the existing watcher; slices re-partitioned |
+| OSD-R1-03 | accepted | Hook freshness check; three rings; boot-level resumer restored; push episode semantics |
+| OSD-R1-04 | accepted | BREACH-STOP enforced: park + wind-down + typed stop-state |
+| OSD-R1-05 | accepted | land: mandatory candidate selection; operation-id phases; receipt fields as flags |
+| OSD-R1-06 | accepted | v1's collapse REVERSED: typed outcome enum stays; headline grouping only for humans |
+| OSD-R1-07 | accepted | Triage is S0b, before all consumers |
+| OSD-R1-08 | accepted | S0a isolation slice; health split; delegate split per custody partition; per-slice contents listed |
+| OSD-R1-09 | accepted | Typed rule-record store; observe-only trials; must-stop/must-permit refs |
+| OSD-R1-10 | accepted, RULED A | Process-ancestry proof for all human authority |
+| OSD-R1-11 | accepted | Structured appetite wired to the typed bands; fixture named |
+| OSD-R1-12 | accepted | open --appetite keeps open-claim atomic; legacy grace via health |
+| OSD-R1-13 | accepted | delegate gains --follow-up and --cancel; closure internal |
+| OSD-R1-14 | accepted | health/watch totality: unknown owned, exit codes, timeouts, zombie verdicts |
+| OSD-R1-15 | accepted | Receipt family KEPT; land absorbs only add |
+| OSD-R1-16 | accepted | proc acknowledge kept as human-authority verb |
+| OSD-R1-17 | accepted, RULED B | Six daily + two lifecycle families |
+| OSD-R1-18 | accepted | run family kept as lifecycle surface |
+| OSD-R1-19 | accepted | Revision binding at delegate; land refuses stale revision without fresh acceptance |
+| OSD-R1-20 | accepted | up's advisor outcome for second sessions |
+| OSD-R1-21 | accepted (not-material) | Ledger paths corrected |
+| OSD-R1-22 | noted | Goal statement confirmed against the paper |
+| OSD-R1-23 | noted | Preservation/removal judgments confirmed grounded |
