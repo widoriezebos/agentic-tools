@@ -30,7 +30,7 @@ Two further hazards arise around the work rather than inside the candidate. A st
 
 Those hazards give the delivery system five working roles. Here is what each may do and may not do; the rest of the paper relies on these names.
 
-A builder constructs a candidate against the recorded intent. It explores the application, chooses a design and changes only its own working copy. It does not judge its own claim, accept its own work or touch live data.
+A builder constructs a candidate against the recorded intent. It explores the application, chooses a design and changes only what its task permits it to change. It does not judge its own claim, accept its own work or authorize release.
 
 An independent examiner judges a finished candidate without prior exposure to the builder's path. It starts from the claims that must survive and tries to break them. It does not change the candidate; repairs go back to a builder.
 
@@ -38,7 +38,7 @@ A custodian keeps the records that connect intent, candidate, evidence and accep
 
 A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
 
-A narrator turns the record into an account a person can act on, with every material claim pointing back to its source. It changes no state and makes no decision.
+A narrator turns the record into an account a person can act on. It changes no state and makes no decision.
 
 Any of the five can be held by a person or by machinery; the configurations later in this chapter return to that choice. All five work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
