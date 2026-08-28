@@ -727,3 +727,19 @@ end of every turn. The certifying critic earned its round by
 finding the one sequence that slipped the first build — edit,
 release, re-claim — and the fix made the ledger, not the prose,
 the only voice that counts.
+
+## The trees learn their names
+
+Four trees, four laws, landed in five slices across a freeze and a
+refactor: living registers accrete in memory, concluded history
+rests in records under nineteen area roofs, plans holds nothing
+but live intent, and docs stays the classical shelf it always was.
+The engine routes every state write through one mode-aware
+function, the ownership oracle answers for any path in one line,
+and adoption's writes are proven against an inventory computed
+from the source itself — the tracer's first real run caught five
+undeclared seeds, which is exactly the kind of first run you want.
+A concluded goal now archives with its integrity line intact, and
+reopening one is a git rename the ledger narrates. The architecture
+Wido asked for — intuitive, separate, upgrade-safe — is the
+repository's shape now, not a design document's promise.
