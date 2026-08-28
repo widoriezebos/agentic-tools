@@ -86,24 +86,33 @@ func nullableEpoch(value string) (any, error) {
 // BuildSetup writes the pending-setup reservation record: the minimal husk
 // that reserves a job id before the full record is assembled. A non-empty
 // parent marks a follow-up reservation.
-func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string) error {
+func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID, sessionKey, launchOpIDSuffix string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
 	}
+	instanceTag, err := reservationInstanceTag(job, launchOpIDSuffix)
+	if err != nil {
+		return err
+	}
 	record := map[string]any{
-		"jobId":      job,
-		"role":       role,
-		"status":     "pending-setup",
-		"phase":      "setup",
-		"error":      nil,
-		"mainId":     nullableString(mainID),
-		"claimEpoch": epoch,
-		"goalId":     nullableString(goalID),
-		"createdAt":  nowISO(),
+		"jobId":       job,
+		"role":        role,
+		"status":      "pending-setup",
+		"phase":       "setup",
+		"error":       nil,
+		"mainId":      nullableString(mainID),
+		"claimEpoch":  epoch,
+		"goalId":      nullableString(goalID),
+		"createdAt":   nowISO(),
+		"instanceTag": instanceTag,
 	}
 	if parent != "" {
 		record["parentJob"] = parent
+	}
+	if sessionKey != "" {
+		record["sessionKey"] = sessionKey
+		record["proofLevel"] = "proven"
 	}
 	return writeRecord(output, record)
 }
@@ -145,40 +154,59 @@ func (a capAuthority) resolutionField() map[string]any {
 // from. File-valued fields are read here so the record shape and its inputs
 // stay in one place.
 type BuildRecordParams struct {
-	Output          string
-	Job             string
-	Role            string
-	Mission         string
-	MissionTurn     string
-	Stream          string
-	Root            string // dispatching checkout root, for mission provenance
-	Runtime         string
-	Workspace       string
-	CapResolution   string // cap-resolution file
-	Model           string
-	Overridden      bool
-	Snapshot        string
-	InputBytes      int64
-	InputHash       string
-	Permissions     string // requested-permissions envelope file
-	Fallbacks       string // JSON array of capability fallbacks
-	Signal          bool
-	HandshakeBudget int64
-	ApprovalName    string
-	ApprovedAt      string
-	RosterPair      string
-	RequestedPair   string
-	CostDirection   string
-	Reviews         string
-	GoalID          string
-	MainID          string
-	ClaimEpoch      string
+	Output           string
+	Job              string
+	Role             string
+	Mission          string
+	MissionTurn      string
+	Stream           string
+	Root             string // dispatching checkout root, for mission provenance
+	Runtime          string
+	Workspace        string
+	CapResolution    string // cap-resolution file
+	Model            string
+	ReasoningEffort  string
+	Overridden       bool
+	Snapshot         string
+	InputBytes       int64
+	InputHash        string
+	Permissions      string // requested-permissions envelope file
+	Fallbacks        string // JSON array of capability fallbacks
+	Signal           bool
+	HandshakeBudget  int64
+	ApprovalName     string
+	ApprovedAt       string
+	RosterPair       string
+	RequestedPair    string
+	CostDirection    string
+	Reviews          string
+	GoalID           string
+	MainID           string
+	ClaimEpoch       string
+	LaunchOpIDSuffix string
+	LaunchMode       LaunchMode
+	ProductRoots     []string
+	OutputStream     string
 }
 
 // BuildRecord assembles the full pending record for a fresh dispatch: chain
 // identity, workspace pin (base SHA and branch read from the workspace),
 // permissions, cap authority, capability snapshot, and input digest.
 func BuildRecord(p BuildRecordParams) error {
+	if p.OutputStream == "" || !filepath.IsAbs(p.OutputStream) {
+		return fmt.Errorf("fresh dispatch requires an absolute child output stream")
+	}
+	if p.LaunchMode != LaunchModeWorktree && p.LaunchMode != LaunchModeSharedCheckout {
+		return fmt.Errorf("fresh dispatch launch mode must be worktree or shared-checkout")
+	}
+	productRoots := append([]string(nil), p.ProductRoots...)
+	if len(productRoots) == 0 {
+		productRoots = []string{resolvePath(p.Workspace)}
+	}
+	instanceTag, err := reservationInstanceTag(p.Job, p.LaunchOpIDSuffix)
+	if err != nil {
+		return err
+	}
 	base, err := gitOutput(p.Workspace, "rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("workspace is not a git worktree")
@@ -270,8 +298,11 @@ func BuildRecord(p BuildRecordParams) error {
 		"capResolution":                authority.resolutionField(),
 		"pid":                          nil,
 		"pidStartedAt":                 nil,
+		"pidStartedAtExactMicro":       nil,
+		"pidStartTicks":                nil,
+		"bootId":                       nil,
 		"pgid":                         nil,
-		"instanceTag":                  "metasystem-job-" + p.Job,
+		"instanceTag":                  instanceTag,
 		"custodyProcesses":             []any{},
 		"sessionId":                    nil,
 		"turnId":                       nullableString(p.MissionTurn),
@@ -296,28 +327,37 @@ func BuildRecord(p BuildRecordParams) error {
 		"runnerClosed":        false,
 		"critiqueExhaustions": []any{},
 	}
+	record["launchMode"] = p.LaunchMode
+	record["productRoots"] = stringValues(productRoots)
+	record["outputStream"] = resolvePath(p.OutputStream)
+	if p.ReasoningEffort != "" {
+		record["reasoningEffort"] = p.ReasoningEffort
+	}
 	return writeRecord(p.Output, record)
 }
 
 // BuildFollowRecordParams carries the inputs for a follow-up round record.
 type BuildFollowRecordParams struct {
-	Output          string
-	Parent          string // parent (latest) record file
-	Job             string
-	Round           int64
-	ParentJob       string
-	Snapshot        string
-	Fallbacks       string
-	Signal          bool
-	HandshakeBudget int64
-	ResumeMode      string
-	InputBytes      int64
-	InputHash       string
-	MissionTurn     string
-	MainID          string
-	ClaimEpoch      string
-	CapResolution   string
-	Root            string // dispatching checkout root, for mission provenance
+	Output           string
+	Parent           string // parent (latest) record file
+	Job              string
+	Round            int64
+	ParentJob        string
+	Snapshot         string
+	Fallbacks        string
+	Signal           bool
+	HandshakeBudget  int64
+	ResumeMode       string
+	InputBytes       int64
+	InputHash        string
+	MissionTurn      string
+	MainID           string
+	ClaimEpoch       string
+	CapResolution    string
+	Root             string // dispatching checkout root, for mission provenance
+	LaunchOpIDSuffix string
+	OutputStream     string
+	LaunchMode       LaunchMode
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -325,6 +365,16 @@ type BuildFollowRecordParams struct {
 // resume mode the launch will use. Only a resumed round carries the parent's
 // session id forward — a fresh-context round starts a new session.
 func BuildFollowRecord(p BuildFollowRecordParams) error {
+	if p.OutputStream == "" || !filepath.IsAbs(p.OutputStream) {
+		return fmt.Errorf("follow-up dispatch requires an absolute child output stream")
+	}
+	if p.LaunchMode != LaunchModeWorktree && p.LaunchMode != LaunchModeSharedCheckout {
+		return fmt.Errorf("follow-up launch mode must be worktree or shared-checkout")
+	}
+	instanceTag, err := reservationInstanceTag(p.Job, p.LaunchOpIDSuffix)
+	if err != nil {
+		return err
+	}
 	parent, err := readObject(p.Parent)
 	if err != nil {
 		return fmt.Errorf("cannot read the parent record: %v", err)
@@ -401,9 +451,12 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		},
 		"pid":                          nil,
 		"pidStartedAt":                 nil,
+		"pidStartedAtExactMicro":       nil,
+		"pidStartTicks":                nil,
+		"bootId":                       nil,
 		"pgid":                         nil,
 		"custodyProcesses":             []any{},
-		"instanceTag":                  "metasystem-job-" + p.Job,
+		"instanceTag":                  instanceTag,
 		"sessionId":                    session,
 		"turnId":                       nullableString(p.MissionTurn),
 		"capMin":                       authority.capMin,
@@ -426,5 +479,37 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"usage":     nil,
 		"mirror":    nil,
 	}
+	for _, field := range []string{"productRoots"} {
+		if value, present := parent[field]; present {
+			record[field] = value
+		}
+	}
+	if _, present := record["productRoots"]; !present {
+		record["productRoots"] = []any{}
+	}
+	if productRootsEmpty(record["productRoots"]) {
+		record["productRoots"] = []any{resolvePath(asString(parent["workspaceRoot"]))}
+	}
+	record["launchMode"] = p.LaunchMode
+	record["outputStream"] = resolvePath(p.OutputStream)
 	return writeRecord(p.Output, record)
+}
+
+func productRootsEmpty(value any) bool {
+	switch roots := value.(type) {
+	case []any:
+		return len(roots) == 0
+	case []string:
+		return len(roots) == 0
+	default:
+		return value == nil
+	}
+}
+
+func stringValues(values []string) []any {
+	items := make([]any, 0, len(values))
+	for _, value := range values {
+		items = append(items, value)
+	}
+	return items
 }

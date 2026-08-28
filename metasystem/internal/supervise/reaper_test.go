@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -341,6 +342,74 @@ func TestReaperPassDefersWhileTaggedSurvivorsLive(t *testing.T) {
 	}
 	if got := readStatus(t, job); got["status"] != "failed" || got["error"] != "process-lost" {
 		t.Fatalf("with the group provably dead the loss concludes: %v/%v", got["status"], got["error"])
+	}
+}
+
+func TestReaperPassUsesCompleteCustodyPredicate(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1786000000, 0).UTC()
+	job := writeJobRecord(t, dir, "cross-group", map[string]any{
+		"jobId": "cross-group", "status": "running",
+		"pid": 333, "pidStartedAt": 7, "instanceTag": "job-cross-group",
+	})
+	cfg := ReaperConfig{
+		JobsDir: dir, Now: func() time.Time { return now },
+		Death: func(map[string]any) dispatch.CustodyDeathResult {
+			return dispatch.CustodyDeathResult{Outcome: dispatch.CustodyDeathAlive, Reason: "custody-process-alive"}
+		},
+		Apply: casApplier(t, dir),
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readStatus(t, job); got["status"] != "running" || got["groupDeathProvenAt"] != nil {
+		t.Fatalf("complete custody predicate was bypassed: %+v", got)
+	}
+}
+
+func TestReaperPassRoutesDueIdentitylessReservationsToReconciliation(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1786000000, 0).UTC()
+	setup := writeJobRecord(t, dir, "identityless-setup", map[string]any{
+		"jobId": "identityless-setup", "status": "pending-setup", "fingerprint": "digest",
+		"instanceTag": "metasystem-job-identityless-setup-nonce", "pid": nil,
+		"reservationDeadline":        now.Add(-time.Minute).Format(isoSecond),
+		"reservationDeadlinePurpose": "wake-only",
+	})
+	pending := writeJobRecord(t, dir, "identityless-pending", map[string]any{
+		"jobId": "identityless-pending", "status": "pending", "fingerprint": "digest",
+		"instanceTag": "metasystem-job-identityless-pending-nonce", "pid": nil,
+		"startedAt": now.Add(-time.Hour).Format(isoSecond), "sessionEstablishedTimeoutSec": 60,
+	})
+	young := writeJobRecord(t, dir, "identityless-young", map[string]any{
+		"jobId": "identityless-young", "status": "pending", "fingerprint": "digest",
+		"instanceTag": "metasystem-job-identityless-young-nonce", "pid": nil,
+		"startedAt": now.Format(isoSecond), "sessionEstablishedTimeoutSec": 60,
+	})
+	called := map[string]int{}
+	deathCalled := 0
+	cfg := ReaperConfig{
+		JobsDir: dir, Now: func() time.Time { return now },
+		Reconcile: func(job string) (dispatch.ReconciliationResult, error) {
+			called[job]++
+			return dispatch.ReconciliationResult{Outcome: dispatch.ReconciliationDeferred}, nil
+		},
+		Death: func(map[string]any) dispatch.CustodyDeathResult {
+			deathCalled++
+			return dispatch.CustodyDeathResult{Outcome: dispatch.CustodyDeathProven}
+		},
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatal(err)
+	}
+	if called["identityless-setup"] != 1 || called["identityless-pending"] != 1 || called["identityless-young"] != 0 {
+		t.Fatalf("identityless routing = %+v", called)
+	}
+	if deathCalled != 0 {
+		t.Fatalf("identityless reservations entered custody death %d times", deathCalled)
+	}
+	if readStatus(t, setup)["status"] != "pending-setup" || readStatus(t, pending)["status"] != "pending" || readStatus(t, young)["status"] != "pending" {
+		t.Fatalf("a deferred reconciliation advanced a record")
 	}
 }
 

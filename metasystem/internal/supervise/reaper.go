@@ -51,6 +51,14 @@ type ReaperConfig struct {
 	// survivors is a live group). nil binds identity.TaggedSurvivors;
 	// tests bind a fake. certain=false defers like Unknown does.
 	Survivors func(tag string, exclude, pgid int64) (alive bool, certain bool)
+	// Death proves the complete recorded custody domain, including exact
+	// cross-group custody identities and pre-fork evidence. Production binds
+	// it; the older two probes above remain a narrow compatibility seam for
+	// existing table tests.
+	Death func(record map[string]any) dispatch.CustodyDeathResult
+	// Reconcile resolves a fingerprinted identityless reservation through
+	// nonce-global adoption. It writes through dispatch's locked record owner.
+	Reconcile func(job string) (dispatch.ReconciliationResult, error)
 	// Apply lands one terminal verdict through the locked job-record
 	// compare-and-swap owner: the transition happens only if the record still
 	// carries the expected status, so a completion landing after this
@@ -94,6 +102,7 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	status, _ := record["status"].(string)
 
 	now := cfg.Now()
+	facts := dispatch.ComputeReapFactsForRecord(record, dispatch.HandshakeBackstopGraceSec, now)
 
 	// A pending-setup record is a reservation husk: its creating dispatcher
 	// finishes setup in seconds, so one old enough has been abandoned by a
@@ -101,14 +110,16 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// drain can see it — while its fence reservation still consumes a
 	// concurrency slot. This reaper is the layer that must clear it.
 	if status == "pending-setup" {
-		if created, ok := record["createdAt"].(string); ok {
-			if at, err := time.Parse(time.RFC3339, created); err == nil && now.Sub(at) > dispatch.AbandonedSetupGrace {
-				// No process ever existed for a reservation husk, so the
-				// patch claims no death.
-				_, err := cfg.transition(path, record, status, "failed", "abandoned-setup",
-					map[string]any{"error": "abandoned-setup", "phase": "supervision"})
-				return err
-			}
+		if facts.ReconciliationDue && cfg.Reconcile != nil {
+			_, err := cfg.Reconcile(jobIDFor(record, path))
+			return err
+		}
+		if facts.SetupAbandoned {
+			// No process ever existed for a reservation husk, so the
+			// patch claims no death.
+			_, err := cfg.transition(path, record, status, "failed", "abandoned-setup",
+				map[string]any{"error": "abandoned-setup", "phase": "supervision"})
+			return err
 		}
 		return nil
 	}
@@ -133,38 +144,56 @@ func (cfg ReaperConfig) reapOne(path string) error {
 				map[string]any{"error": nil, "phase": "supervision"})
 			return err
 		}
-		return nil
-	}
-	start, _ := recordInt(record["pidStartedAt"])
-	tag, _ := record["instanceTag"].(string)
-	if verdict := cfg.Custodian(pid, start, tag); verdict != identity.Dead {
-		// The decline is a decision too: a running job past
-		// its cap whose custodian this reaper may not kill is exactly the
-		// state an operator needs to see. Said once per pass; the record
-		// itself stays with the kill-capable dispatch path.
-		if cfg.Emit != nil && status == "running" && dispatch.CapExpired(record, now) {
-			cfg.Emit(fmt.Sprintf("REAP-DECLINED job=%s cap expired, custodian %s; kill authority stays with dispatch",
-				jobIDFor(record, path), verdict))
+		if facts.ReconciliationDue && cfg.Reconcile != nil {
+			_, err := cfg.Reconcile(jobIDFor(record, path))
+			return err
 		}
 		return nil
 	}
-	// The custodian is dead, but groupDeathProvenAt claims the GROUP
-	// died — and this reaper has no kill authority to make that true.
-	// A tagged survivor (an orphaned child still carrying the
-	// instance tag) means the group lives: the verdict belongs to the
-	// kill-capable dispatch path, which winds the group down before
-	// it stamps. Indeterminacy defers the same way.
-	survivors := cfg.Survivors
-	if survivors == nil {
-		survivors = identity.TaggedSurvivors
-	}
-	recPgid, _ := recordInt(record["pgid"])
-	if alive, certain := survivors(tag, pid, recPgid); !certain || alive {
-		if cfg.Emit != nil {
-			cfg.Emit(fmt.Sprintf("REAP-DEFERRED job=%s custodian dead but the tagged group is not proven dead; kill authority stays with dispatch",
-				jobIDFor(record, path)))
+	if cfg.Death != nil {
+		death := cfg.Death(record)
+		if death.Outcome != dispatch.CustodyDeathProven {
+			if cfg.Emit != nil && death.Outcome == dispatch.CustodyDeathDeferred {
+				cfg.Emit(fmt.Sprintf("REAP-DEFERRED job=%s custody death is unproven: %s; kill authority stays with dispatch",
+					jobIDFor(record, path), death.Reason))
+			} else if cfg.Emit != nil && status == "running" && dispatch.CapExpired(record, now) {
+				cfg.Emit(fmt.Sprintf("REAP-DECLINED job=%s cap expired, custody is alive: %s; kill authority stays with dispatch",
+					jobIDFor(record, path), death.Reason))
+			}
+			return nil
 		}
-		return nil
+	} else {
+		start, _ := recordInt(record["pidStartedAt"])
+		tag, _ := record["instanceTag"].(string)
+		if verdict := cfg.Custodian(pid, start, tag); verdict != identity.Dead {
+			// The decline is a decision too: a running job past
+			// its cap whose custodian this reaper may not kill is exactly the
+			// state an operator needs to see. Said once per pass; the record
+			// itself stays with the kill-capable dispatch path.
+			if cfg.Emit != nil && status == "running" && dispatch.CapExpired(record, now) {
+				cfg.Emit(fmt.Sprintf("REAP-DECLINED job=%s cap expired, custodian %s; kill authority stays with dispatch",
+					jobIDFor(record, path), verdict))
+			}
+			return nil
+		}
+		// The custodian is dead, but groupDeathProvenAt claims the GROUP
+		// died — and this reaper has no kill authority to make that true.
+		// A tagged survivor (an orphaned child still carrying the
+		// instance tag) means the group lives: the verdict belongs to the
+		// kill-capable dispatch path, which winds the group down before
+		// it stamps. Indeterminacy defers the same way.
+		survivors := cfg.Survivors
+		if survivors == nil {
+			survivors = identity.TaggedSurvivors
+		}
+		recPgid, _ := recordInt(record["pgid"])
+		if alive, certain := survivors(tag, pid, recPgid); !certain || alive {
+			if cfg.Emit != nil {
+				cfg.Emit(fmt.Sprintf("REAP-DEFERRED job=%s custodian dead but the tagged group is not proven dead; kill authority stays with dispatch",
+					jobIDFor(record, path)))
+			}
+			return nil
+		}
 	}
 	patch := map[string]any{
 		"phase":              "supervision",

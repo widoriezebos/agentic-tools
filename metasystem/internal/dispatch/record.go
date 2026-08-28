@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"golang.org/x/sys/unix"
 )
@@ -59,10 +60,16 @@ func TerminalStatus(status string) bool { return terminalStatuses[status] }
 var immutableFields = map[string]bool{
 	"jobId": true, "role": true, "runtime": true, "round": true,
 	"parentJob": true, "reviews": true, "workspaceRoot": true, "baseSha": true,
-	"branch": true, "startedAt": true, "claimEpoch": true, "mainId": true,
+	"branch": true, "createdAt": true, "startedAt": true, "claimEpoch": true, "mainId": true,
 	"capMin": true, "capDeadline": true, "capResolution": true,
 	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
-	"goalId": true,
+	"goalId": true, "sessionKey": true, "proofLevel": true,
+	"fingerprintVersion": true, "fingerprint": true, "dispatchMode": true,
+	"resumedSessionId": true, "canonicalModelKey": true, "launchMode": true,
+	"permissionEnvelopeDigest": true, "productRoots": true, "capRequest": true,
+	"inputHash": true, "sessionOccupancyClaimGeneration": true,
+	"instanceTag": true, "outputStream": true, "productRootScopes": true,
+	"reasoningEffort": true,
 }
 
 // The only fields a terminal record still accepts: its evidence mirror, the
@@ -145,6 +152,41 @@ func withRecordLock(root, job string, fn func(recordPath string) error) error {
 	return fn(recordPath)
 }
 
+// withRecordSessionLock gives an indexed record the lock order shared by all
+// of its writers: the session lock first, then the record lock. Legacy records
+// have no session key and continue through the record lock alone.
+func withRecordSessionLock(root, job string, fn func(recordPath string, transaction *SessionIndexTransaction) error) error {
+	_, recordPath, _ := paths(root, job)
+	record, readErr := readObject(recordPath)
+	sessionKey := ""
+	if readErr == nil {
+		sessionKey = asString(record["sessionKey"])
+	}
+	if sessionKey == "" {
+		return withRecordLock(root, job, func(lockedPath string) error {
+			return fn(lockedPath, &SessionIndexTransaction{disabled: true})
+		})
+	}
+	return withSessionOccupancyLock(root, sessionKey, func(indexPath string) error {
+		transaction := sessionIndexTransactionAtPath(indexPath, sessionKey)
+		return withRecordLock(root, job, func(lockedPath string) error {
+			lockedRecord, err := readObject(lockedPath)
+			if err == nil && asString(lockedRecord["sessionKey"]) != sessionKey {
+				return fmt.Errorf("job record %s changed session identity while its lock was acquired", job)
+			}
+			return fn(lockedPath, transaction)
+		})
+	})
+}
+
+func sessionIndexTransactionAtPath(indexPath, sessionKey string) *SessionIndexTransaction {
+	index, _, err := readSessionOccupancyIndexPath(indexPath, sessionKey)
+	if err != nil {
+		return &SessionIndexTransaction{disabled: true}
+	}
+	return &SessionIndexTransaction{indexPath: indexPath, index: index}
+}
+
 // recordLockWait bounds record-lock acquisition, honoring the same env
 // override the lease lock's bound honors so fixtures tune one knob.
 func recordLockWait() time.Duration {
@@ -164,38 +206,87 @@ var freshRoundSuffixRe = regexp.MustCompile(`-r([0-9]+)$`)
 // cannot both win. The source must already carry the job's own id and the
 // pending-setup status.
 func RecordCreate(root, job, sourcePath string) error {
-	return withRecordLock(root, job, func(recordPath string) error {
-		if _, err := os.Stat(recordPath); err == nil {
-			return refuse(1, "job id collision: %s", job)
-		} else if !os.IsNotExist(err) {
-			return refuse(1, "cannot reserve job record %s: %v", job, err)
-		}
-		record, err := readObject(sourcePath)
-		if err != nil {
-			return refuse(1, "invalid initial record for %s: %v", job, err)
-		}
-		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
-			return refuse(1, "invalid initial record identity or status for %s", job)
-		}
-		// A FRESH chain root must not be named like a later round:
-		// round identity is the record's, never the id's, and a new
-		// job called <name>-r2 briefs its delegate as round 2 while the
-		// record says 1 — the return then dies on the identity mismatch
-		// after the tokens are spent. Rounds continue by resuming the
-		// chain; only resume records (parentJob set) may carry -rN ids
-		// beyond r1.
-		if record["parentJob"] == nil {
-			if m := freshRoundSuffixRe.FindStringSubmatch(job); m != nil {
-				// Fail CLOSED on an unparseable suffix: an
-				// overflow literal matches the regex, errs in Atoi, and
-				// would walk straight through the guard.
-				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
-					return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", m[1], job)
-				}
+	record, err := readObject(sourcePath)
+	if err != nil {
+		return refuse(1, "invalid initial record for %s: %v", job, err)
+	}
+	if err := validateInitialRecord(job, record); err != nil {
+		return err
+	}
+	sessionKey := asString(record["sessionKey"])
+	if sessionKey == "" {
+		return withRecordLock(root, job, func(recordPath string) error {
+			if _, err := os.Stat(recordPath); err == nil {
+				return refuse(1, "job id collision: %s", job)
+			} else if !os.IsNotExist(err) {
+				return refuse(1, "cannot reserve job record %s: %v", job, err)
+			}
+			return writeRecord(recordPath, record)
+		})
+	}
+	if asString(record["proofLevel"]) != "proven" {
+		return refuse(1, "indexed reservation %s must carry proven custody", job)
+	}
+	_, recordPath, _ := paths(root, job)
+	if _, statErr := os.Stat(recordPath); statErr == nil {
+		return refuse(1, "job id collision: %s", job)
+	} else if !os.IsNotExist(statErr) {
+		return refuse(1, "cannot reserve job record %s: %v", job, statErr)
+	}
+	store := IndexedSessionOccupancyReader{}
+	prepared, err := store.Prepare(root, sessionKey)
+	if err != nil {
+		return err
+	}
+	return store.Resolve(root, sessionKey, job, prepared, func(occupancy SessionOccupancy, transaction *SessionIndexTransaction) error {
+		return withRecordLock(root, job, func(lockedPath string) error {
+			if _, statErr := os.Stat(lockedPath); statErr == nil {
+				return refuse(1, "job id collision: %s", job)
+			} else if !os.IsNotExist(statErr) {
+				return refuse(1, "cannot reserve job record %s: %v", job, statErr)
+			}
+			if occupancy.Unprovable != nil {
+				return refuse(1, "session occupancy is unprovable for %s: %s", sessionKey, occupancy.Unprovable.Reason)
+			}
+			if occupancy.Busy != nil {
+				return refuse(1, "session %s is busy with %s", sessionKey, occupancy.Busy.OpID)
+			}
+			record["sessionOccupancyEvidence"] = sessionOccupancyEvidenceObjects(occupancy.FreeEvidence)
+			record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
+			generation, publishErr := transaction.publishBusy(classifySessionRecord(job, record))
+			if publishErr != nil {
+				return publishErr
+			}
+			if generation > 0 {
+				record["sessionOccupancyClaimGeneration"] = generation
+			}
+			return writeRecord(lockedPath, record)
+		})
+	})
+}
+
+func validateInitialRecord(job string, record map[string]any) error {
+	if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
+		return refuse(1, "invalid initial record identity or status for %s", job)
+	}
+	// A fresh chain root may use a round-styled suffix only for its first
+	// round. Continued rounds carry parentJob and are validated as resumes.
+	if record["parentJob"] == nil {
+		if match := freshRoundSuffixRe.FindStringSubmatch(job); match != nil {
+			if round, err := strconv.Atoi(match[1]); err != nil || round >= 2 {
+				return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", match[1], job)
 			}
 		}
-		return writeRecord(recordPath, record)
-	})
+	}
+	return nil
+}
+
+func sessionOccupancyEvidenceObjects(evidence []SessionOccupant) []any {
+	items := make([]any, 0, len(evidence))
+	for _, occupant := range evidence {
+		items = append(items, sessionOccupantObject(occupant))
+	}
+	return items
 }
 
 // RecordSetup completes a reservation: it swaps the pending-setup husk for the
@@ -203,7 +294,7 @@ func RecordCreate(root, job, sourcePath string) error {
 // pending-setup and the new record keeps the same job id, claim epoch, and
 // main id. This is the create/setup handshake that makes reservation atomic.
 func RecordSetup(root, job, sourcePath string) error {
-	return withRecordLock(root, job, func(recordPath string) error {
+	return withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		current, err := readObject(recordPath)
 		if err != nil {
 			return refuse(1, "cannot complete setup for job record %s: %v", job, err)
@@ -220,15 +311,77 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["goalId"], current["goalId"]) {
 			return refuse(1, "invalid setup transition for %s", job)
 		}
-		return writeRecord(recordPath, record)
+		for _, field := range []string{
+			"sessionKey", "proofLevel", "sessionOccupancyEvidence", "sessionOccupancyHealing",
+			"sessionOccupancyClaimGeneration", "fingerprintVersion", "fingerprint",
+			"dispatchMode", "resumedSessionId", "canonicalModelKey", "launchMode",
+			"permissionEnvelopeDigest", "productRoots", "capRequest", "inputHash",
+			"creatorLiveness", "reservationDeadline", "reservationDeadlinePurpose",
+			"createdAt", "instanceTag",
+		} {
+			if value, present := current[field]; present {
+				record[field] = value
+			}
+		}
+		if err := captureProgressLaunch(record); err != nil {
+			return refuse(1, "cannot complete progress setup for %s: %v", job, err)
+		}
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		return transaction.syncRecord(job, record)
 	})
+}
+
+func captureProgressLaunch(record map[string]any) error {
+	launchMode := asString(record["launchMode"])
+	if launchMode == "" {
+		return nil
+	}
+	workspace := asString(record["workspaceRoot"])
+	outputStream := asString(record["outputStream"])
+	if outputStream == "" || !filepath.IsAbs(outputStream) {
+		return fmt.Errorf("outputStream must be an absolute child-output path")
+	}
+	roots, err := recordProductRoots(record["productRoots"])
+	if err != nil {
+		return err
+	}
+	scopes, err := progress.CaptureProductRootScopes(launchMode, workspace, roots)
+	if err != nil {
+		return err
+	}
+	record["productRootScopes"] = scopes
+	return nil
+}
+
+func recordProductRoots(value any) ([]string, error) {
+	if value == nil {
+		return nil, fmt.Errorf("productRoots must be an array, including when empty")
+	}
+	if roots, ok := value.([]string); ok {
+		return append([]string(nil), roots...), nil
+	}
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("productRoots must be an array")
+	}
+	roots := make([]string, 0, len(raw))
+	for index, item := range raw {
+		root, ok := item.(string)
+		if !ok || root == "" {
+			return nil, fmt.Errorf("productRoots[%d] must be a non-empty path", index)
+		}
+		roots = append(roots, root)
+	}
+	return roots, nil
 }
 
 // RecordProtocolError stamps a job failed with a protocol violation. It is
 // idempotent: a record already failed with this exact violation is left
 // untouched. The job must be pending or running to accept the stamp.
 func RecordProtocolError(root, job, expect, violation, violationFile string) error {
-	return withRecordLock(root, job, func(recordPath string) error {
+	return withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, err := readObject(recordPath)
 		if err != nil {
 			return refuse(1, "cannot record protocol error for %s: %v", job, err)
@@ -270,7 +423,10 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 		if isFalsy(record["endedAt"]) {
 			record["endedAt"] = now
 		}
-		return writeRecord(recordPath, record)
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		return transaction.syncRecord(job, record)
 	})
 }
 
@@ -283,7 +439,7 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 //
 // The returned observed string is non-empty only on a lost compare.
 func RecordCAS(root, job, expect, target, patchPath string) (observed string, err error) {
-	err = withRecordLock(root, job, func(recordPath string) error {
+	err = withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
 			return refuse(1, "cannot update job record %s: %v", job, readErr)
@@ -326,6 +482,9 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if _, has := patch["status"]; has {
 			return refuse(1, "record patch must be an object and cannot contain status")
 		}
+		if validationErr := validateOwnershipPatch(record, patch); validationErr != nil {
+			return refuse(1, "%v", validationErr)
+		}
 		for field := range patch {
 			if immutableFields[field] {
 				return refuse(1, "record patch attempts to change immutable identity")
@@ -345,7 +504,10 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if terminalStatuses[target] && isFalsy(record["endedAt"]) {
 			record["endedAt"] = nowISO()
 		}
-		return writeRecord(recordPath, record)
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		return transaction.syncRecord(job, record)
 	})
 	return observed, err
 }
@@ -522,7 +684,7 @@ func nowISO() string {
 // failure (unreadable record, lock) returns an error for exit 1 — a
 // HARNESS failure that must never masquerade as delegate emptiness.
 func RepairClaim(root, job string) (observed string, err error) {
-	err = withRecordLock(root, job, func(recordPath string) error {
+	err = withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
 			return refuse(1, "cannot read job record %s: %v", job, readErr)
@@ -545,7 +707,10 @@ func RepairClaim(root, job string) (observed string, err error) {
 			return silentRefusal(3)
 		}
 		record["returnRepairs"] = 1
-		return writeRecord(recordPath, record)
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		return transaction.syncRecord(job, record)
 	})
 	return observed, err
 }

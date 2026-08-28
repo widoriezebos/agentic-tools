@@ -86,7 +86,7 @@ func TestCodexUsage(t *testing.T) {
 }
 
 func TestBuildCodexCommand(t *testing.T) {
-	dispatch, err := BuildCodexCommand("dispatch", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "workspace-write", "true", "", nil)
+	dispatch, err := BuildCodexCommand("dispatch", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "workspace-write", "true", "", "job-tag", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,13 +94,14 @@ func TestBuildCodexCommand(t *testing.T) {
 		"codex", "exec", "--json", "-m", "gpt-5-sol", "--sandbox", "workspace-write",
 		"-C", "/ws", "-c", `approval_policy="never"`,
 		"-c", "sandbox_workspace_write.network_access=true",
+		"-c", `metasystem_instance_tag="job-tag"`,
 		"--output-schema", "/schema.json", "-o", "/out.json", "-",
 	}
 	if strings.Join(dispatch, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("dispatch argv:\n got %q\nwant %q", dispatch, want)
 	}
 
-	resume, err := BuildCodexCommand("follow-up", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "read-only", "false", "sid-7", nil)
+	resume, err := BuildCodexCommand("follow-up", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "read-only", "false", "sid-7", "job-tag", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +111,21 @@ func TestBuildCodexCommand(t *testing.T) {
 			t.Fatalf("resume argv missing %q: %v", needle, resume)
 		}
 	}
-	if _, err := BuildCodexCommand("follow-up", "m", "", "s", "o", "read-only", "false", "", nil); err == nil {
+	if _, err := BuildCodexCommand("follow-up", "m", "", "s", "o", "read-only", "false", "", "job-tag", "", nil); err == nil {
 		t.Fatal("a follow-up without a session must be refused")
 	}
-	if _, err := BuildCodexCommand("nonsense", "m", "", "s", "o", "read-only", "false", "", nil); err == nil {
+	if _, err := BuildCodexCommand("nonsense", "m", "", "s", "o", "read-only", "false", "", "job-tag", "", nil); err == nil {
 		t.Fatal("an unknown verb must be refused")
+	}
+}
+
+func TestBuildCodexCommandCarriesReasoningEffort(t *testing.T) {
+	dispatch, err := BuildCodexCommand("dispatch", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "read-only", "false", "", "job-tag", "xhigh", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(dispatch, "\x00"), `model_reasoning_effort="xhigh"`) {
+		t.Fatalf("dispatch argv lacks reasoning effort: %v", dispatch)
 	}
 }
 
@@ -456,7 +467,7 @@ func hookCommandOf(t *testing.T, settings map[string]any) string {
 // resume — and outside-workspace filtering keeps inside roots out.
 func TestBuildCodexCommandCarriesExtraDirs(t *testing.T) {
 	extra := []string{"/repo/.git/worktrees/j", "/repo/.git/refs/heads/agent"}
-	dispatch, err := BuildCodexCommand("dispatch", "m", "/ws", "/s.json", "/o.json", "workspace-write", "false", "", extra)
+	dispatch, err := BuildCodexCommand("dispatch", "m", "/ws", "/s.json", "/o.json", "workspace-write", "false", "", "job-tag", "", extra)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +477,7 @@ func TestBuildCodexCommandCarriesExtraDirs(t *testing.T) {
 			t.Fatalf("dispatch argv lacks --add-dir %s: %v", dir, dispatch)
 		}
 	}
-	resume, err := BuildCodexCommand("follow-up", "m", "", "/s.json", "/o.json", "workspace-write", "false", "sess", extra)
+	resume, err := BuildCodexCommand("follow-up", "m", "", "/s.json", "/o.json", "workspace-write", "false", "sess", "job-tag", "", extra)
 	if err != nil {
 		t.Fatal(err)
 	}

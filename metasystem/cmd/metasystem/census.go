@@ -155,18 +155,20 @@ func runCensusAlive(args []string) int {
 	flags := flag.NewFlagSet("proc alive", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
 	start := flags.Int64("start-time", 0, "expected start epoch seconds")
+	startMicro := flags.Int64("start-micro", 0, "expected Darwin kernel start time in epoch microseconds")
 	startTicks := flags.Int64("start-ticks", 0, "expected start ticks (clock-step-immune pair; 0 = seconds only)")
 	bootID := flags.String("boot-id", "", "expected boot id (clock-step-immune pair)")
+	identityFile := flags.String("identity-file", "", "ownership patch or record carrying the expected identity")
 	root := flags.String("root", "", "checkout root (required; the fixture authority binds to it)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc alive --pid P --start-time S [--start-ticks T --boot-id B] --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem proc alive (--identity-file F | --pid P --start-time S [--start-micro U | --start-ticks T --boot-id B]) --root R")
 		return 2
 	}
-	if (*startTicks > 0) != (*bootID != "") {
-		fmt.Fprintln(os.Stderr, "proc alive: --start-ticks and --boot-id are both-or-neither")
+	if *identityFile != "" && (*pid != 0 || *start != 0 || *startMicro != 0 || *startTicks != 0 || *bootID != "") {
+		fmt.Fprintln(os.Stderr, "proc alive: --identity-file cannot be combined with explicit identity fields")
 		return 2
 	}
 	authorization, err := fixtureauth.New(*root)
@@ -174,7 +176,28 @@ func runCensusAlive(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	if census.AlivePair(*pid, *start, *startTicks, *bootID, authorization.Identity()) {
+	if *identityFile != "" {
+		alive, _, err := census.AliveRecordedFile(*identityFile, authorization.Identity())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "proc alive:", err)
+			return 2
+		}
+		if alive {
+			return 0
+		}
+		return 1
+	}
+	ref := identity.Ref{
+		Pid: *pid, StartedAtSec: *start, StartedAtUnixMicro: *startMicro,
+		StartTicks: *startTicks, BootID: *bootID,
+	}
+	mode := ref.Mode()
+	if *pid < 1 || *start < 1 || mode == identity.CompareInvalid ||
+		(mode != identity.CompareLegacySeconds && !ref.NativeExact()) {
+		fmt.Fprintln(os.Stderr, "proc alive: identity fields are partial, mixed, or not native to this platform")
+		return 2
+	}
+	if alive, _ := census.AliveRecorded(ref, authorization.Identity()); alive {
 		return 0
 	}
 	return 1

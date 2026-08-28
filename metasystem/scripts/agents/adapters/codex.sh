@@ -10,6 +10,7 @@ Usage:
   scripts/agents/adapters/codex.sh enforcement-map
   scripts/agents/adapters/codex.sh contract
   scripts/agents/adapters/codex.sh probe
+  scripts/agents/adapters/codex.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/codex.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
   scripts/agents/adapters/codex.sh follow-up --job <job-id> --start-gate <file>
@@ -92,9 +93,9 @@ codex_usage() { # events JSONL, output
 # The envelope-to-sandbox/network mapping is the engine's now
 # (script-adapters-06/D25, the KI-12 lesson): codex-command derives it from
 # --record or --permissions instead of receiving it pre-chewed.
-build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, envelope flag, envelope value, session
+build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, envelope flag, envelope value, session, effort
   local verb=$1 command_model=$2 command_workspace=$3 command_schema=$4 command_output=$5
-  local envelope_flag=$6 envelope_value=$7 command_session=${8:-} token
+  local envelope_flag=$6 envelope_value=$7 command_session=${8:-} command_effort=${9:-} token
   # `codex exec resume` has no --sandbox or -C flags: a resumed thread inherits
   # its cwd/config and takes supported per-turn overrides through -c only. The
   # argv (including the TOML-quoted model on the resume path) is assembled once
@@ -109,6 +110,8 @@ build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, 
       --workspace "$command_workspace" \
       --schema "$command_schema" \
       --output "$command_output" \
+      --instance-tag "$instance_tag" \
+      --reasoning-effort "$command_effort" \
       "$envelope_flag" "$envelope_value" \
       --session "$command_session"
   )
@@ -120,7 +123,7 @@ supervise() { # dispatch|follow-up and supervisor args
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
   local usage_file="$round_dir/usage.json"
-  local cli_pid event_session event_turn
+  local cli_pid event_session event_turn reasoning_effort
   local -a command
 
   record_actual_workspace_write_scope
@@ -130,8 +133,10 @@ supervise() { # dispatch|follow-up and supervisor args
   # The envelope decides sandbox and network — in the engine, from the
   # record itself (KI-12: a hard-coded value made the recorded field
   # decorative).
+  reasoning_effort=$(field "$record" reasoningEffort 2>/dev/null || true)
+  [[ "$reasoning_effort" != null ]] || reasoning_effort=
   build_codex_command "$verb" "$requested_model" "$workspace" "$schema" "$raw" \
-    --record "$record" "$requested_session"
+    --record "$record" "$requested_session" "$reasoning_effort"
   command=("${codex_cli_command[@]}")
 
   # The write boundary is the CLI's cwd. `codex exec` takes -C, but
@@ -142,6 +147,7 @@ supervise() { # dispatch|follow-up and supervisor args
   # pid, which custody registration depends on.
   local -a job_git_env=()
   while IFS= read -r assignment; do job_git_env+=("$assignment"); done < <(job_git_quarantine_env "$workspace")
+  mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   ( cd "$workspace" && exec env ${job_git_env[@]+"${job_git_env[@]}"} "${command[@]}" ) <"$prompt" >"$events" 2>>"$log" &
   cli_pid=$!
   register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
@@ -179,6 +185,10 @@ shift
 adapter_enforcement_map='{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}'
 
 case "$command_name" in
+  output-stream)
+    [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
+    printf '%s/events.jsonl\n' "${2%/}"
+    ;;
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' .codex/config.toml

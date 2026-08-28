@@ -1,0 +1,53 @@
+[
+  {
+    "name": "fresh-empty-roots",
+    "request": {
+      "sessionKey": "codex:session-alpha",
+      "dispatchMode": "fresh",
+      "resumedSessionId": "",
+      "runtime": "codex",
+      "canonicalModelKey": "gpt-5-6-sol",
+      "role": "implementer",
+      "launchMode": "worktree",
+      "permissionEnvelopeDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "productRoots": [],
+      "capMinutes": 120,
+      "inputHash": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "sha256": "ecf81cff5d8523399336d9ef2a9216e4926663ae5b27a04183698b01f5f8c03a"
+  },
+  {
+    "name": "follow-up-two-roots",
+    "request": {
+      "sessionKey": "claude:thread-7",
+      "dispatchMode": "follow-up",
+      "resumedSessionId": "runtime-session-123",
+      "runtime": "claude",
+      "canonicalModelKey": "claude-opus-4-8",
+      "role": "code-critic",
+      "launchMode": "shared-checkout",
+      "permissionEnvelopeDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "productRoots": ["/srv/repo/a", "/srv/repo/z"],
+      "capMinutes": 45,
+      "inputHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "sha256": "69c9bc6520ead738e63c02b625d3be928b68b2ba66d1980c8762cda43b72fee9"
+  },
+  {
+    "name": "utf8-framing",
+    "request": {
+      "sessionKey": "devin:werk-β",
+      "dispatchMode": "follow-up",
+      "resumedSessionId": "sessie-東京",
+      "runtime": "devin",
+      "canonicalModelKey": "modelo-n",
+      "role": "verifier",
+      "launchMode": "worktree",
+      "permissionEnvelopeDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "productRoots": ["/tmp/één", "/tmp/二"],
+      "capMinutes": 7,
+      "inputHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "sha256": "dea1ab6a22063591a79fea664ac04f3020ae1beb8cb0e9471bf0f66f29901bc7"
+  }
+]

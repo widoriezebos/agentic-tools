@@ -10,6 +10,7 @@ Usage:
   scripts/agents/adapters/claude.sh enforcement-map
   scripts/agents/adapters/claude.sh contract
   scripts/agents/adapters/claude.sh probe
+  scripts/agents/adapters/claude.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/claude.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
   scripts/agents/adapters/claude.sh follow-up --job <job-id> --start-gate <file>
@@ -135,6 +136,7 @@ supervise() { # dispatch|follow-up and supervisor args
   while IFS= read -r -d '' token; do command+=("$token"); done <"$command_file"
   (( ${#command[@]} > 0 )) || { fail_pending runtime_error handshake; return 1; }
 
+  mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   (
     cd "$workspace"
     export METASYSTEM_CLAUDE_SESSION_SIGNAL="$signal_file"
@@ -184,6 +186,10 @@ shift
 adapter_enforcement_map='{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}'
 
 case "$command_name" in
+  output-stream)
+    [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
+    printf '%s/claude-stream.jsonl\n' "${2%/}"
+    ;;
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' .claude/settings.json .claude/settings.local.json

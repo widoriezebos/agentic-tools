@@ -56,7 +56,7 @@ func TestRunGroupCustody(t *testing.T) {
 	}
 
 	check := func(p Process, wantClass, wantTagPrefix string) {
-		class, _, tag := classifyOwnership(p, nil, nil, owners)
+		class, _, tag, _ := classifyOwnership(p, nil, nil, owners)
 		if class != wantClass {
 			t.Fatalf("pid %d class %s want %s", p.Pid, class, wantClass)
 		}

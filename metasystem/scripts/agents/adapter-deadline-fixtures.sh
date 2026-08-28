@@ -66,8 +66,10 @@ case "\$mode" in
   cap|race|survivor) handshake_done=1; printf '{"jobId":"f4fix","status":"running","capDeadline":"2020-01-01T00:00:00Z"}\n' >"\$record" ;;
   handshake)         handshake_done=0; printf '{"jobId":"f4fix","status":"pending","handshakeDeadline":5}\n' >"\$record" ;;
   standdown)         handshake_done=1; printf '{"jobId":"f4fix","status":"running","handshakeDeadline":5}\n' >"\$record" ;;
+  presence)          handshake_done=1; printf '{"jobId":"f4fix","status":"running","capDeadline":"2099-01-01T00:00:00Z"}\n' >"\$record" ;;
 esac
 source "$source_root/scripts/agents/adapters/runtime-common.sh"
+if [[ "\$mode" == presence ]]; then printf 'supervisor started\n' >"\$log"; fi
 sleep 30 & child=\$!
 echo "\$child" >"\$dir/child.pid"
 METASYSTEM_HEARTBEAT_INTERVAL_MS=50 wait_for_cli "\$child"
@@ -163,5 +165,27 @@ child_pid=$(cat "$d/child.pid" 2>/dev/null || true)
 kill -KILL "$driver_pid" 2>/dev/null || true; wait "$driver_pid" 2>/dev/null || true; driver_pid=
 [[ -z "$child_pid" ]] || kill -KILL "$child_pid" 2>/dev/null || true; child_pid=
 pass_fixture ADPT-DL-005
+
+# ADPT-DL-006: a living supervisor refreshes its heartbeat while a hung child
+# emits nothing. Polling must leave the supervisor log untouched, because that
+# activity proves presence rather than child progress.
+d="$tmp/presence"; run_driver presence "$d"
+deadline=$((SECONDS + 5))
+until [[ -f "$d/child.pid" && -f "$d/hb" ]]; do
+  (( SECONDS < deadline )) || { echo "ADPT-DL-006: the presence driver did not start" >&2; exit 1; }
+  sleep 0.05
+done
+marker="$d/after-start"; touch "$marker"
+deadline=$((SECONDS + 3))
+until [[ "$d/hb" -nt "$marker" ]]; do
+  (( SECONDS < deadline )) || { echo "ADPT-DL-006: the live supervisor did not refresh its heartbeat" >&2; exit 1; }
+  sleep 0.05
+done
+[[ ! "$d/job.log" -nt "$marker" ]] \
+  || { echo "ADPT-DL-006: supervisor polling refreshed the shared log" >&2; exit 1; }
+child_pid=$(cat "$d/child.pid")
+kill "$child_pid" 2>/dev/null || true; child_pid=
+wait_driver 10 || { echo "ADPT-DL-006: the presence driver did not settle cleanly" >&2; exit 1; }
+pass_fixture ADPT-DL-006
 
 echo "adapter deadline fixtures passed (${#passed[@]} legs)"

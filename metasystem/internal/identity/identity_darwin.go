@@ -13,11 +13,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// KernelProber reads process identity from the darwin kernel:
-// start time from kern.proc.pid (microsecond resolution; linux reads
-// 10ms ticks — both are finer than the whole seconds every decision
-// compares) and argv from kern.procargs2 for REG-6's claim-consistency
-// factor.
+// KernelProber reads process identity from the Darwin kernel: start time from
+// kern.proc.pid at microsecond resolution and argv from kern.procargs2.
 type KernelProber struct{}
 
 // kinfoProc's layout: extern_proc begins the struct, and its first
@@ -26,7 +23,7 @@ type KernelProber struct{}
 const kinfoStartSecOffset = 0
 const kinfoStartUsecOffset = 8
 
-func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
+func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if pid < 1 {
 		return Exact{}, Unknown, fmt.Errorf("identity: invalid pid %d", pid)
 	}
@@ -51,12 +48,20 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 		return Exact{}, Unknown, fmt.Errorf("identity: pid %d start time is implausible (sec=%d usec=%d)", pid, sec, usec)
 	}
 	exact := Exact{Pid: pid, StartedAt: time.Unix(sec, int64(usec)*1000)}
-	// Argv is best-effort at probe time: a process we cannot read the
-	// argv of is still alive, and the KILL decision separately demands
-	// a readable, claim-consistent argv (REG-6) — absence there means
-	// no kill, not a guess. ArgvKnown carries the distinction between
-	// "read and empty-of-tag" and "unreadable" to consumers.
-	if argv, err := procArgs(pid); err == nil {
+	return exact, Alive, nil
+}
+
+func (KernelProber) ReadArgv(pid int64) ([]string, bool) {
+	argv, err := procArgs(pid)
+	return argv, err == nil
+}
+
+func (p KernelProber) Probe(pid int64) (Exact, Liveness, error) {
+	exact, state, err := p.ReadStart(pid)
+	if err != nil || state != Alive {
+		return exact, state, err
+	}
+	if argv, known := p.ReadArgv(pid); known {
 		exact.Argv = argv
 		exact.ArgvKnown = true
 	}

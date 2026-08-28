@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
 )
 
 // writeJSONFile marshals a value into dir/name and returns the path.
@@ -118,20 +121,25 @@ func TestChainUsageAggregatesAndDetectsUnchanged(t *testing.T) {
 func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
 	root := t.TempDir()
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	first := nativeTestExact(41, 1)
+	existing := exactIdentityFields(first.Ref())
+	existing["instanceTag"] = "metasystem-job-job-c"
 	writeJSONFile(t, jobs, "job-c.json", map[string]any{
 		"jobId": "job-c", "status": "running", "instanceTag": "metasystem-job-job-c",
-		"custodyProcesses": []any{map[string]any{"pid": 41, "pidStartedAt": 5, "instanceTag": "metasystem-job-job-c"}},
+		"custodyProcesses": []any{existing},
 	})
 	// The exact identity again collapses to one entry; a recycled pid with a
-	// different start time is a distinct process and keeps its own entry.
-	if err := CustodyAdd(root, "job-c", 41, 5); err != nil {
+	// different native start token is a distinct process and keeps its own entry.
+	group := func(int64) (int64, error) { return 41, nil }
+	if err := CustodyAdd(root, "job-c", 41, fixedStartReader{exact: first, state: identity.Alive}, group); err != nil {
 		t.Fatalf("CustodyAdd exact duplicate: %v", err)
 	}
 	record := readJSONFile(t, filepath.Join(jobs, "job-c.json"))
 	if items := record["custodyProcesses"].([]any); len(items) != 1 {
 		t.Fatalf("custody entries after duplicate = %d, want 1", len(items))
 	}
-	if err := CustodyAdd(root, "job-c", 41, 9); err != nil {
+	second := nativeTestExact(41, 2)
+	if err := CustodyAdd(root, "job-c", 41, fixedStartReader{exact: second, state: identity.Alive}, group); err != nil {
 		t.Fatalf("CustodyAdd recycled pid: %v", err)
 	}
 	record = readJSONFile(t, filepath.Join(jobs, "job-c.json"))
@@ -142,7 +150,7 @@ func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
 	writeJSONFile(t, jobs, "job-done.json", map[string]any{
 		"jobId": "job-done", "status": "completed", "instanceTag": "t",
 	})
-	err := CustodyAdd(root, "job-done", 1, 1)
+	err := CustodyAdd(root, "job-done", 1, fixedStartReader{exact: nativeTestExact(1, 1), state: identity.Alive})
 	var op *OpError
 	if err == nil || !asOpError(err, &op) || op.Code != 1 || op.Message != "" {
 		t.Fatalf("terminal custody add = %v, want silent exit 1", err)
@@ -235,6 +243,24 @@ func TestComputeReapFacts(t *testing.T) {
 	if facts, _ = ComputeReapFacts(fresh, 2, now); facts.SetupAbandoned {
 		t.Fatalf("fresh pending-setup marked abandoned")
 	}
+	wakeOnly := writeJSONFile(t, dir, "setup-wake-only.json", map[string]any{
+		"status": "pending-setup", "createdAt": iso(now.Add(-24 * time.Hour)), "pid": nil,
+		"fingerprint": "digest", "instanceTag": "metasystem-job-wake-only-nonce",
+		"reservationDeadline":        now.Add(-23 * time.Hour).Format(time.RFC3339),
+		"reservationDeadlinePurpose": "wake-only",
+	})
+	if facts, _ = ComputeReapFacts(wakeOnly, 2, now); facts.SetupAbandoned || !facts.ReconciliationDue {
+		t.Fatalf("a wake-only reservation did not route to reconciliation: %+v", facts)
+	}
+	wakeOnlyYoung := writeJSONFile(t, dir, "setup-wake-only-young.json", map[string]any{
+		"status": "pending-setup", "createdAt": iso(now), "pid": nil,
+		"fingerprint": "digest", "instanceTag": "metasystem-job-wake-only-young-nonce",
+		"reservationDeadline":        now.Add(time.Minute).Format(time.RFC3339),
+		"reservationDeadlinePurpose": "wake-only",
+	})
+	if facts, _ = ComputeReapFacts(wakeOnlyYoung, 2, now); facts.SetupAbandoned || facts.ReconciliationDue {
+		t.Fatalf("a young wake-only reservation advanced early: %+v", facts)
+	}
 
 	// Inside the launch-stamped handshake deadline the job is deferred; past
 	// it (plus grace) it is not.
@@ -246,11 +272,20 @@ func TestComputeReapFacts(t *testing.T) {
 		t.Fatalf("job inside its handshake deadline is not waiting")
 	}
 	overdue := writeJSONFile(t, dir, "overdue.json", map[string]any{
-		"status": "pending", "sessionEstablishedTimeoutSec": 30,
+		"status": "pending", "sessionEstablishedTimeoutSec": 30, "pid": nil,
+		"fingerprint": "digest", "instanceTag": "metasystem-job-overdue-nonce",
 		"handshakeDeadline": now.Unix() - 5, "startedAt": iso(now),
 	})
-	if facts, _ = ComputeReapFacts(overdue, 2, now); facts.HandshakeWaiting {
-		t.Fatalf("job past its handshake deadline still waiting")
+	if facts, _ = ComputeReapFacts(overdue, 2, now); facts.HandshakeWaiting || !facts.ReconciliationDue {
+		t.Fatalf("identityless job past its handshake deadline did not reconcile: %+v", facts)
+	}
+	cancelling := writeJSONFile(t, dir, "cancelling.json", map[string]any{
+		"status": "pending", "phase": "cancelling", "pid": nil,
+		"fingerprint": "digest", "instanceTag": "metasystem-job-cancelling-nonce",
+		"sessionEstablishedTimeoutSec": 30, "startedAt": iso(now.Add(-time.Hour)),
+	})
+	if facts, _ = ComputeReapFacts(cancelling, 2, now); facts.ReconciliationDue {
+		t.Fatalf("a cancellation marker was routed away from its non-death verdict: %+v", facts)
 	}
 
 	// A running job with a session is out of its handshake, and its budget
@@ -362,7 +397,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	})
 
 	setup := filepath.Join(tmp, "setup.json")
-	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7", ""); err != nil {
+	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7", "", "", "nonce1"); err != nil {
 		t.Fatalf("BuildSetup: %v", err)
 	}
 	if err := RecordCreate(root, "job-b", setup); err != nil {
@@ -372,10 +407,11 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	recordPath := filepath.Join(tmp, "record.json")
 	err := BuildRecord(BuildRecordParams{
 		Output: recordPath, Job: "job-b", Role: "implementer", Runtime: "fake",
-		Workspace: workspace, CapResolution: capResolution, Model: "m1",
+		Workspace: workspace, CapResolution: capResolution, Model: "m1", ReasoningEffort: "high",
 		Snapshot: "artifacts/agents/capabilities/x.json", InputBytes: 12, InputHash: "h",
 		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
-		MainID: "main-1", ClaimEpoch: "7",
+		MainID: "main-1", ClaimEpoch: "7", LaunchOpIDSuffix: "nonce1",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "events-1.jsonl"),
 	})
 	if err != nil {
 		t.Fatalf("BuildRecord: %v", err)
@@ -386,6 +422,46 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	record := readJSONFile(t, filepath.Join(root, "artifacts", "agents", "jobs", "job-b.json"))
 	if record["capMin"].(json.Number).String() != "120" || record["baseSha"] == "" {
 		t.Fatalf("built record identity = capMin %v baseSha %v", record["capMin"], record["baseSha"])
+	}
+	if record["instanceTag"] != "metasystem-job-job-b-nonce1" {
+		t.Fatalf("setup and full record did not keep one launch generation: %v", record["instanceTag"])
+	}
+	if record["reasoningEffort"] != "high" {
+		t.Fatalf("built record reasoning effort = %v", record["reasoningEffort"])
+	}
+	if roots, ok := record["productRoots"].([]any); !ok || len(roots) != 1 || roots[0] != resolvePath(workspace) || record["launchMode"] != string(LaunchModeSharedCheckout) {
+		t.Fatalf("shared-checkout default roots = %#v mode=%v, want workspace root %s for attribution only", record["productRoots"], record["launchMode"], resolvePath(workspace))
+	}
+	scopes, ok := record["productRootScopes"].([]any)
+	if !ok || len(scopes) != 1 {
+		t.Fatalf("shared-checkout default scopes = %#v, want one workspace scope", record["productRootScopes"])
+	}
+	scope := scopes[0].(map[string]any)
+	if scope["path"] != resolvePath(workspace) || scope["standing"] != progress.StandingAttributionOnly || scope["reason"] != progress.ReasonSharedCheckout {
+		t.Fatalf("shared-checkout default scope = %#v, want workspace attribution only", scope)
+	}
+	for _, field := range []string{"pidStartedAtExactMicro", "pidStartTicks", "bootId"} {
+		if value, present := record[field]; !present || value != nil {
+			t.Fatalf("new primary identity field %s = %v present=%v, want explicit null", field, value, present)
+		}
+	}
+
+	worktreePath := filepath.Join(tmp, "worktree-default.json")
+	worktreeParams := BuildRecordParams{
+		Output: worktreePath, Job: "job-worktree-default", Role: "implementer", Runtime: "fake",
+		Workspace: workspace, CapResolution: capResolution, Model: "m1",
+		Snapshot: "artifacts/agents/capabilities/x.json", InputBytes: 12, InputHash: "h",
+		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		MainID: "main-1", ClaimEpoch: "7", LaunchOpIDSuffix: "nonce3",
+		LaunchMode: LaunchModeWorktree, OutputStream: filepath.Join(tmp, "events-worktree.jsonl"),
+	}
+	if err := BuildRecord(worktreeParams); err != nil {
+		t.Fatalf("BuildRecord worktree default: %v", err)
+	}
+	worktreeRecord := readJSONFile(t, worktreePath)
+	worktreeRoots, ok := worktreeRecord["productRoots"].([]any)
+	if !ok || len(worktreeRoots) != 1 || worktreeRoots[0] != resolvePath(workspace) {
+		t.Fatalf("worktree default roots = %#v, want workspace root %s", worktreeRecord["productRoots"], resolvePath(workspace))
 	}
 
 	// The follow-up round inherits the parent identity and resumes its session.
@@ -399,7 +475,8 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		ParentJob: "job-b", Snapshot: "artifacts/agents/capabilities/x.json",
 		Fallbacks: "[]", Signal: true, HandshakeBudget: 20, ResumeMode: "resumed",
 		InputBytes: 3, InputHash: "h2", MainID: "main-1", ClaimEpoch: "7",
-		CapResolution: capResolution,
+		CapResolution: capResolution, LaunchOpIDSuffix: "nonce2",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "events-2.jsonl"),
 	})
 	if err != nil {
 		t.Fatalf("BuildFollowRecord: %v", err)
@@ -408,6 +485,39 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	if follow["sessionId"] != "sess-9" || follow["parentJob"] != "job-b" || follow["resumeMode"] != "resumed" {
 		t.Fatalf("follow record = sessionId %v parentJob %v resumeMode %v",
 			follow["sessionId"], follow["parentJob"], follow["resumeMode"])
+	}
+	if follow["instanceTag"] != "metasystem-job-job-b-r2-nonce2" {
+		t.Fatalf("follow-up record did not mint its own launch generation: %v", follow["instanceTag"])
+	}
+	followRoots, ok := follow["productRoots"].([]any)
+	if !ok || len(followRoots) != 1 || followRoots[0] != resolvePath(workspace) {
+		t.Fatalf("shared-checkout follow-up roots = %#v, want inherited workspace attribution", follow["productRoots"])
+	}
+
+	delete(parent, "productRoots")
+	parent["launchMode"] = string(LaunchModeWorktree)
+	writeRecord(parentPath, parent)
+	legacyFollowPath := filepath.Join(tmp, "legacy-worktree-follow.json")
+	err = BuildFollowRecord(BuildFollowRecordParams{
+		Output: legacyFollowPath, Parent: parentPath, Job: "job-b-r3", Round: 3,
+		ParentJob: "job-b-r2", Snapshot: "artifacts/agents/capabilities/x.json",
+		Fallbacks: "[]", Signal: true, HandshakeBudget: 20, ResumeMode: "resumed",
+		InputBytes: 3, InputHash: "h3", MainID: "main-1", ClaimEpoch: "7",
+		CapResolution: capResolution, LaunchOpIDSuffix: "nonce4",
+		LaunchMode: LaunchModeWorktree, OutputStream: filepath.Join(tmp, "events-3.jsonl"),
+	})
+	if err != nil {
+		t.Fatalf("BuildFollowRecord legacy worktree default: %v", err)
+	}
+	legacyFollow := readJSONFile(t, legacyFollowPath)
+	legacyRoots, ok := legacyFollow["productRoots"].([]any)
+	if !ok || len(legacyRoots) != 1 || legacyRoots[0] != resolvePath(workspace) {
+		t.Fatalf("legacy worktree follow-up roots = %#v, want inherited workspace default", legacyFollow["productRoots"])
+	}
+	for _, field := range []string{"pidStartedAtExactMicro", "pidStartTicks", "bootId"} {
+		if value, present := follow[field]; !present || value != nil {
+			t.Fatalf("follow-up primary identity field %s = %v present=%v, want explicit null", field, value, present)
+		}
 	}
 }
 
@@ -451,7 +561,8 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	base := BuildRecordParams{
 		Output: filepath.Join(tmp, "r.json"), Job: "j1", Role: "implementer",
 		Runtime: "fake", Workspace: workspace, CapResolution: capResolution,
-		Permissions: permissions, Fallbacks: "[]", Root: root,
+		Permissions: permissions, Fallbacks: "[]", Root: root, LaunchOpIDSuffix: "nonce1",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "mission-events-1.jsonl"),
 	}
 
 	partial := base
@@ -488,7 +599,8 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	follow := BuildFollowRecordParams{
 		Output: filepath.Join(tmp, "f.json"), Parent: parentPath, Job: "j1-r2",
 		Round: 2, ParentJob: "j1", Fallbacks: "[]", ResumeMode: "fresh-context",
-		CapResolution: capResolution, Root: root, MissionTurn: "m-one-t2",
+		CapResolution: capResolution, Root: root, MissionTurn: "m-one-t2", LaunchOpIDSuffix: "nonce2",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "mission-events-2.jsonl"),
 	}
 	if err := BuildFollowRecord(follow); err != nil {
 		t.Fatalf("same-incarnation follow-up refused: %v", err)

@@ -10,7 +10,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 	root := sandbox(t)
 	stage := t.TempDir()
 	setup := filepath.Join(stage, "root-setup.json")
-	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a"); err != nil {
+	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a", "", "nonce1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job", setup); err != nil {
@@ -49,12 +49,13 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		Output: followFile, Parent: filepath.Join(root, "artifacts", "agents", "jobs", "root-job.json"),
 		Job: "root-job-r2", Round: 2, ParentJob: "root-job", Fallbacks: "[]",
 		ResumeMode: "fresh-context", CapResolution: capFile, Root: root,
-		MainID: "main-1", ClaimEpoch: "5",
+		MainID: "main-1", ClaimEpoch: "5", LaunchOpIDSuffix: "nonce2",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(stage, "events-2.jsonl"),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	childSetup := filepath.Join(stage, "child-setup.json")
-	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a"); err != nil {
+	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", "", "nonce2"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job-r2", childSetup); err != nil {
@@ -82,7 +83,7 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 	root := sandbox(t)
 	stage := t.TempDir()
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a"); err != nil {
+	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", "", "nonce3"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "goal-bound", setup); err != nil {

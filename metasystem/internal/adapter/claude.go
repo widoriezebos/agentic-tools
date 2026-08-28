@@ -256,10 +256,15 @@ func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget
 	permissionMode := "acceptEdits"
 	tools := claudeFullTools
 	var addDirs []string
+	instanceTag := ""
 	if recordPath != "" {
 		record, err := readObject(recordPath)
 		if err != nil {
 			return nil, err
+		}
+		instanceTag, _ = record["instanceTag"].(string)
+		if instanceTag == "" {
+			return nil, fmt.Errorf("a Claude delegate command requires an instance tag")
 		}
 		permissions, _ := record["permissions"].(map[string]any)
 		requested, _ := permissions["requested"].(map[string]any)
@@ -288,6 +293,9 @@ func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget
 	}
 	if settings != "" {
 		command = append(command, "--settings", settings)
+	}
+	if instanceTag != "" {
+		command = append(command, "--name", instanceTag)
 	}
 	command = append(command, "--max-budget-usd", budget, "--max-turns", turns)
 	for _, dir := range addDirs {

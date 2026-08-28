@@ -13,6 +13,9 @@ Usage:
       [--approve-escalation] [--wait] [--cap-min N]
   scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
   scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
+  scripts/agents/dispatch.sh custodial-exec --job <job-id> --session <key>
+      --role design-critic|code-critic --input <file> --runtime <name>
+      --model <model> --effort <effort>
   scripts/agents/dispatch.sh status --job <job-id>
   scripts/agents/dispatch.sh watch --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
@@ -42,6 +45,12 @@ capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
 cap_authority_lock_held=0
+custodial_chain_lock_held=0
+custodial_permission_temp=
+custodial_snapshot_temp=
+custodial_cap_temp=
+custodial_record_temp=
+custodial_occupancy_temp=
 exit_cleanup_job=
 exit_cleanup_chain=
 # Flight-recorder witness (docs/design/flight-recorder.md). emit_event never fails.
@@ -141,17 +150,29 @@ record_cas() { # job, expected status, target status, patch file
   return "$cas_rc"
 }
 
+record_cas_preserve_patch() { # job, expected status, target status, patch file
+  # Launch ownership keeps its exact identity patch until a lost compare has
+  # re-proved that the just-launched process is still at the recorded pid.
+  "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4"
+}
+
 record_create() { # job, source json
   "$0" __record-create --job "$1" --source "$2" && emit_event dispatch job-created "jobId=$1" "summary=record created"
 }
 
-# A refusal between the reservation and the full record must not leave a
-# pending-setup husk holding a fence slot: the exiting dispatch fails its own
+# A setup refusal releases the mission slot it reserved. When claim-launch
+# already created a pending-setup record, the exiting dispatch also fails that
 # reservation. The compare-and-swap no-ops once the record advanced past
 # pending-setup, so a successful dispatch is untouched.
 fail_setup_husk() { # job id
   local husk_job=$1 husk_patch
-  [[ -n "$husk_job" && -f "$jobs/$husk_job.json" ]] || return 0
+  [[ -n "$husk_job" ]] || return 0
+  if [[ ! -f "$jobs/$husk_job.json" ]]; then
+    if [[ -n "${mission:-}" ]]; then
+      mission_fence release-job --repo "$root" --mission "$mission" --job "$husk_job" >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
   husk_patch=$(mktemp "${TMPDIR:-/tmp}/metasystem-husk-fail.XXXXXX")
   # Classify the refusal for the flight recorder: rep 1 of
   # bm-1-20260813t132947z needed mktemp file sizes as its primary
@@ -244,7 +265,7 @@ lock_owner_state() { # pid, tag -> live, dead, stale, or unknown
 }
 
 job_supervisor_matches() { # record
-  local record=$1 pid tag runtime proof heartbeat
+  local record=$1 pid pgid tag runtime heartbeat proof_pid proof_pgid proof_tag proof_source proof_time
   pid=$(json_field "$record" pid 2>/dev/null || true)
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   case "$(tag_state "$pid" "$tag")" in
@@ -256,10 +277,16 @@ job_supervisor_matches() { # record
   esac
   runtime=$(json_field "$record" runtime 2>/dev/null || true)
   [[ "$runtime" == fake ]] || return 1
-  process_exists "$pid" || return 1
-  proof=$(json_field "$record" ownershipProof 2>/dev/null || true)
+  "$ms" proc alive --identity-file "$record" --root "$root" >/dev/null 2>&1 || return 1
+  pgid=$(json_field "$record" pgid 2>/dev/null || true)
+  proof_pid=$(json_field "$record" ownershipProof.pid 2>/dev/null || true)
+  proof_pgid=$(json_field "$record" ownershipProof.pgid 2>/dev/null || true)
+  proof_tag=$(json_field "$record" ownershipProof.instanceTag 2>/dev/null || true)
+  proof_source=$(json_field "$record" ownershipProof.source 2>/dev/null || true)
+  proof_time=$(json_field "$record" ownershipProof.provenAt 2>/dev/null || true)
   heartbeat="$heartbeats/$(json_field "$record" jobId 2>/dev/null || true)"
-  [[ "$proof" == *"\"pid\":$pid"* && "$proof" == *"\"instanceTag\":\"$tag\""* && -f "$heartbeat" ]] || return 1
+  [[ "$proof_pid" == "$pid" && "$proof_pgid" == "$pgid" && "$proof_tag" == "$tag" \
+    && "$proof_source" == trusted-launcher && -n "$proof_time" && -f "$heartbeat" ]] || return 1
   [[ "$(json_field "$heartbeat" pid 2>/dev/null || true)" == "$pid" \
     && "$(json_field "$heartbeat" instanceTag 2>/dev/null || true)" == "$tag" ]]
 }
@@ -270,46 +297,44 @@ group_alive() { # pgid
   "$ms" proc group-exists --pgid "$pgid"
 }
 
-group_owned() { # record
-  local record=$1 pgid tag runtime proof
-  pgid=$(json_field "$record" pgid 2>/dev/null || true)
+group_owned() { # record, optional pgid
+  local record=$1 pgid=${2:-} tag
+  [[ -n "$pgid" ]] || pgid=$(json_field "$record" pgid 2>/dev/null || true)
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   [[ "$pgid" =~ ^[1-9][0-9]*$ && "$pgid" -gt 1 ]] || return 1
-  if ps -axo pgid=,command= 2>/dev/null | awk -v wanted="$pgid" -v tag="$tag" '
-    $1 == wanted { $1=""; sub(/^ +/, ""); if (index($0, tag)) found=1 }
-    END { exit !found }
-  '; then
-    return 0
-  fi
-  # The fake runtime runs under restricted CI sandboxes that may deny process
-  # table reads for detached sessions. Its trusted launcher records the exact
-  # pgid/tag pair before releasing the start gate, so fake-only fixtures can
-  # still exercise real group signals without weakening a real adapter.
-  runtime=$(json_field "$record" runtime 2>/dev/null || true)
-  proof=$(json_field "$record" ownershipProof 2>/dev/null || true)
-  [[ "$runtime" == fake && "$proof" == *"\"pgid\":$pgid"* && "$proof" == *"\"instanceTag\":\"$tag\""* ]]
+  "$ms" proc group-owned --pgid "$pgid" --tag "$tag" --root "$root" --record "$record"
 }
 
-wind_down_group() { # record
-  local record=$1 pgid tag until
-  pgid=$(json_field "$record" pgid 2>/dev/null || true)
-  tag=$(json_field "$record" instanceTag 2>/dev/null || true)
+wind_down_one_group() { # record, pgid
+  local record=$1 pgid=$2 until
   group_alive "$pgid" || return 0
-  group_owned "$record" || { echo "refusing to signal unowned process group $pgid" >&2; return 1; }
+  group_owned "$record" "$pgid" || { echo "refusing to signal unowned process group $pgid" >&2; return 1; }
   kill -TERM -- "-$pgid" 2>/dev/null || true
   until=$(( $(date +%s) + 2 ))
   while group_alive "$pgid" && (( $(date +%s) < until )); do sleep 0.05; done
   if group_alive "$pgid"; then
-    group_owned "$record" || { echo "lost ownership proof for process group $pgid" >&2; return 1; }
+    group_owned "$record" "$pgid" || { echo "lost ownership proof for process group $pgid" >&2; return 1; }
     kill -KILL -- "-$pgid" 2>/dev/null || true
   fi
-  # When this shell launched the supervisor directly, reap its terminal wait
-  # status now so a zombie group leader cannot masquerade as a live writer.
-  wait "$(json_field "$record" pid 2>/dev/null || true)" 2>/dev/null || true
   until=$(( $(date +%s) + 2 ))
   while group_alive "$pgid" && (( $(date +%s) < until )); do sleep 0.05; done
   group_alive "$pgid" && { echo "process group $pgid survived KILL" >&2; return 1; }
   return 0
+}
+
+wind_down_group() { # record
+  local record=$1 groups pgid refused=0
+  groups=$("$ms" job custody-groups --record "$record") || return 1
+  while IFS= read -r pgid; do
+    [[ -z "$pgid" ]] && continue
+    if ! wind_down_one_group "$record" "$pgid"; then
+      refused=1
+    fi
+  done <<<"$groups"
+  # When this shell launched the supervisor directly, reap its terminal wait
+  # status now so a zombie group leader cannot masquerade as a live writer.
+  wait "$(json_field "$record" pid 2>/dev/null || true)" 2>/dev/null || true
+  (( refused == 0 ))
 }
 
 # One primitive for both directory locks, because both got the same two rules
@@ -337,7 +362,24 @@ acquire_chain_lock() { # root id
   [[ -n "$pid" ]] || die 1 "chain lock has no owner lease: $dir"
   owner_state=$(lock_owner_state "$pid" "$tag")
   [[ "$owner_state" != unknown ]] || die 1 "chain lock owner liveness cannot be verified: $chain"
-  die 1 "chain is busy: $chain"
+	die 1 "chain is busy: $chain"
+}
+
+# A process-creating command queues behind the short chain section so a
+# repeated operation can be resolved by its launch claim. Mechanical lock
+# failures still refuse immediately; only a standing owner is waited out.
+acquire_launch_chain_lock() { # root id
+  local chain=$1 dir="$locks/$1.d" status
+  mkdir -p "$locks"
+  while true; do
+    status=0
+    owner_lock claim "$dir" "$$" "$process_instance_tag" || status=$?
+    case "$status" in
+      0) return 0 ;;
+      3) sleep 0.05 ;;
+      *) die 1 "cannot acquire launch chain lock: $chain" ;;
+    esac
+  done
 }
 
 release_chain_lock() { # root id
@@ -398,6 +440,19 @@ release_cap_authority_lock() {
   owner_lock release "$agents/supervision/cap-authority.lock.d" "$$" "$process_instance_tag" || status=$?
   (( status == 4 )) && die 1 "refusing to release another owner's cap-authority lock"
   cap_authority_lock_held=0
+}
+
+cleanup_custodial_temps() {
+  local path
+  for path in "$custodial_permission_temp" "$custodial_snapshot_temp" \
+      "$custodial_cap_temp" "$custodial_record_temp" "$custodial_occupancy_temp"; do
+    [[ -z "$path" ]] || rm -f -- "$path"
+  done
+  custodial_permission_temp=
+  custodial_snapshot_temp=
+  custodial_cap_temp=
+  custodial_record_temp=
+  custodial_occupancy_temp=
 }
 
 config_get() { "$config" get "$@"; }
@@ -562,8 +617,9 @@ write_prompt() { # path job role runtime model round mission content
 }
 
 launch_adapter() { # runtime verb job tag
-  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
+  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
   local adapter_command
+  local -a ownership_args
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
   mkdir -p "$heartbeats"
   # No spawn for a record that already left pending (a cancel can
@@ -589,32 +645,27 @@ launch_adapter() { # runtime verb job tag
   cap=$(dispatch_fixture_wait_cap 5)
   started=$SECONDS
   deadline=$((SECONDS + cap))
-  until pid_started=$("$ms" proc started-at --pid "$pid" 2>/dev/null); do
-    if (( SECONDS >= deadline )); then
-      elapsed=$((SECONDS - started))
-      echo "adapter start identity ceiling reached for $job (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
-      return 1
-    fi
-    sleep "$poll_sleep"
-  done
   patch=$(mktemp "$record_locks/launch.XXXXXX")
-  # The handshake deadline is stamped HERE, at launch, because that is when the
-  # dispatcher starts waiting. Derived from the record's creation time instead,
-  # the reaper's copy of the same deadline ran early by however long setup took,
-  # and the backstop then overwrote the dispatcher's own verdict.
+  # The handshake deadline is stamped at launch, because that is when the
+  # dispatcher starts waiting. Measuring from record creation would spend the
+  # budget during setup and let the reaper overwrite the dispatcher's verdict.
   handshake_budget=$(json_field "$jobs/$job.json" sessionEstablishedTimeoutSec 2>/dev/null || echo 0)
   proven_at=$(now_iso)
   handshake_deadline=
   if [[ "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
     handshake_deadline=$(( $(date +%s) + handshake_budget ))
   fi
-  {
-    printf '{"pid":%s,"pidStartedAt":%s,"pgid":%s,' "$pid" "$pid_started" "$pid"
-    printf '"ownershipProof":{"pid":%s,"pidStartedAt":%s,"pgid":%s,"instanceTag":"%s","provenAt":"%s","source":"trusted-launcher"}' \
-      "$pid" "$pid_started" "$pid" "$tag" "$proven_at"
-    [[ -z "$handshake_deadline" ]] || printf ',"handshakeDeadline":%s' "$handshake_deadline"
-    printf '}\n'
-  } >"$patch"
+  ownership_args=(job ownership-patch --root "$root" --output "$patch" --pid "$pid" --pgid "$pid" --instance-tag "$tag" --proven-at "$proven_at")
+  [[ -z "$handshake_deadline" ]] || ownership_args+=(--handshake-deadline "$handshake_deadline")
+  until "$ms" "${ownership_args[@]}" 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      echo "adapter start identity ceiling reached for $job (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
+      rm -f -- "$patch"
+      return 1
+    fi
+    sleep "$poll_sleep"
+  done
   # A lost ownership CAS means the record moved on under us (a
   # cancel concluded it mid-launch): the process this launch just
   # started must die NOW, not linger until its start-gate timeout —
@@ -623,18 +674,20 @@ launch_adapter() { # runtime verb job tag
   # can wait long enough for the gated adapter to time out and the
   # pid to be reused, so every signal re-proves the launch-captured
   # start identity first, the same ladder wind_down_group climbs.
-  if ! record_cas "$job" pending pending "$patch"; then
-    if [[ "$("$ms" proc started-at --pid "$pid" 2>/dev/null || true)" == "$pid_started" ]]; then
+  if ! record_cas_preserve_patch "$job" pending pending "$patch"; then
+    if "$ms" proc alive --identity-file "$patch" --root "$root" >/dev/null 2>&1; then
       kill -TERM -- "-$pid" 2>/dev/null || true
       local lost_until=$(( $(date +%s) + 2 ))
-      while [[ "$("$ms" proc started-at --pid "$pid" 2>/dev/null || true)" == "$pid_started" ]] \
+      while "$ms" proc alive --identity-file "$patch" --root "$root" >/dev/null 2>&1 \
         && (( $(date +%s) < lost_until )); do sleep 0.05; done
-      if [[ "$("$ms" proc started-at --pid "$pid" 2>/dev/null || true)" == "$pid_started" ]]; then
+      if "$ms" proc alive --identity-file "$patch" --root "$root" >/dev/null 2>&1; then
         kill -KILL -- "-$pid" 2>/dev/null || true
       fi
     fi
+    rm -f -- "$patch"
     return 1
   fi
+  rm -f -- "$patch"
   touch "$gate"
 }
 
@@ -750,7 +803,7 @@ mirror_record() { # job
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag facts budget_expired patch root_id mission record_epoch lease_epoch refusal_reason refusal_error truncated_by
+  local job=$1 record="$jobs/$1.json" status phase pid tag facts budget_expired patch root_id mission record_epoch lease_epoch refusal_reason refusal_error truncated_by
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -765,17 +818,27 @@ reap_one_locked() { # job
     *) return ;;
   esac
   # One verb call yields every record-only reap fact: pending-setup
-  # abandonment, the handshake window, and budget expiry. Budget expiry is the
-  # SAME decision code the supervision reaper runs, so the two can never
-  # disagree about one record.
+  # abandonment, the handshake window, reconciliation readiness, and budget
+  # expiry. Budget expiry is the SAME decision code the supervision reaper
+  # runs, so the two can never disagree about one record.
   facts=$("$ms" job reap-facts --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
-  if [[ "$status" == pending-setup ]]; then
-    # Abandoned pending-setup debris belongs to the Go reapers now
-    # (internal/supervise/reaper.go and missionrunner drain, D19): the
-    # dispatch-held single-shot reap launches nothing and leaves it.
+  pid=$(json_field "$record" pid 2>/dev/null || true)
+  phase=$(json_field "$record" phase 2>/dev/null || true)
+  # A cancellation that won before any process identity was published has no
+  # group to kill and no death to prove. Conclude the visible marker directly.
+  if [[ ( -z "$pid" || "$pid" == null ) && "$phase" == cancelling ]]; then
+    patch=$(mktemp "$record_locks/cancelled-before-launch.XXXXXX")
+    printf '{"error":null,"phase":"supervision"}\n' >"$patch"
+    record_cas "$job" "$status" cancelled "$patch" >/dev/null 2>&1 || true
+    mirror_record "$job" || true
     return 0
   fi
-  pid=$(json_field "$record" pid 2>/dev/null || true)
+  if [[ "$status" == pending-setup ]]; then
+    if [[ "$("$ms" json get --value "$facts" --field reconciliationDue)" == true ]]; then
+      "$ms" job reconcile-reservation --root "$root" --job "$job" >/dev/null
+    fi
+    return 0
+  fi
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   # A job is inside its handshake while it has no session, whether its record
   # still says pending or an adapter has already moved it to running. The
@@ -797,6 +860,15 @@ reap_one_locked() { # job
     if [[ -z "$pid" || "$pid" == null ]] || job_supervisor_matches "$record"; then
       return
     fi
+  fi
+  # Without a primary identity there is no process death to judge and no group
+  # to wind down. A due fingerprinted reservation belongs to nonce-wide
+  # reconciliation; a legacy identityless record remains deferred.
+  if [[ -z "$pid" || "$pid" == null ]]; then
+    if [[ "$("$ms" json get --value "$facts" --field reconciliationDue)" == true ]]; then
+      "$ms" job reconcile-reservation --root "$root" --job "$job" >/dev/null
+    fi
+    return 0
   fi
   # The cap is judged BEFORE process liveness. An expired budget is a fact of
   # the record alone (startedAt + capMin); whether the job's process happens to
@@ -864,7 +936,9 @@ dispatch_job() {
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
-  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json
+  local permission_name permission_json permission_digest snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_opid_suffix launch_mode
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 cap
+  local -a product_root_args=()
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -1022,39 +1096,27 @@ dispatch_job() {
     job="$role-$(date -u +%Y%m%dt%H%M%Sz)-$("$ms" util token-hex --bytes 2)"
   fi
   valid_id "$job" || die 2 "invalid job id: $job"
-  # Preconditions BEFORE the id is reserved. The reservation record exists to
-  # stop two mains racing one job id; a refusal after it left a pending-setup
-  # husk that burned that id permanently, so a stale census cost the caller
-  # their chosen name as well as their dispatch.
+  launch_opid_suffix=$("$ms" util token-hex --bytes 16)
+  # Preconditions before the id is reserved keep a refused launch from leaving
+  # a pending-setup husk that consumes the caller's chosen name.
   require_fresh_census
   report_plan_drift
-  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
-  "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
-    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal"
-  # INVARIANT (kept in shell by ruling, plans/go-surface-consolidation.md):
-  # the reservation is TWO-PHASE — this record-create must land before any
-  # of the setup below so a second dispatcher cannot prepare the same job
-  # id, and the observable pending-setup status feeds the cleanup trap. Do
-  # not merge the phases into one verb.
-  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
-  rm -f "$setup_json"
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
-  acquire_chain_lock "$job"
+  acquire_launch_chain_lock "$job"
   exit_cleanup_job=$job
   exit_cleanup_chain=$job
   trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
-  acquire_cap_authority_lock
-  [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
-
-  cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
-  model_key=$(canonical_model "$model")
-  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
+  # A payload without a reservation belongs to another operation. A payload
+  # beside a reservation is resolved by claim-launch as the same operation.
+  [[ -e "$jobs/$job.json" || ! -e "$agents/$job" ]] \
+    || die 1 "job payload collision: $job"
 
   if (( use_worktree )); then
+    launch_mode=worktree
     workspace="$worktrees/$job"
-    [[ ! -e "$workspace" ]] || die 1 "job worktree already exists: $workspace"
-    git -C "$repo_scope" worktree add -q -b "agent/$job" "$workspace" HEAD || die 1 "could not create job worktree"
+    if [[ ! -e "$jobs/$job.json" ]]; then
+      [[ ! -e "$workspace" ]] || die 1 "job worktree already exists: $workspace"
+      git -C "$repo_scope" worktree add -q -b "agent/$job" "$workspace" HEAD || die 1 "could not create job worktree"
     # QUARANTINE OBJECT STORE (issue #5): the delegate's git writes its
     # loose objects into a private directory INSIDE the worktree (the
     # sandbox already grants it) and reads the shared store through the
@@ -1068,17 +1130,19 @@ dispatch_job() {
     # conformance snapshot's add -A can never sweep loose objects into
     # the review (round-2 F1: at the worktree root they appeared
     # untracked and polluted the tree).
-    worktree_gitdir=$(git -C "$workspace" rev-parse --absolute-git-dir) \
-      || die 1 "could not resolve the worktree git dir"
-    quarantine="$worktree_gitdir/objects-quarantine"
-    mkdir -p "$quarantine" || die 1 "could not create the quarantine object store"
-    common_objects=$(git -C "$repo_scope" rev-parse --git-common-dir)/objects
-    [[ "$common_objects" = /* ]] || common_objects="$repo_scope/$common_objects"
-    mkdir -p "$common_objects/info"
-    grep -qxF "$quarantine" "$common_objects/info/alternates" 2>/dev/null \
-      || echo "$quarantine" >>"$common_objects/info/alternates" \
-      || die 1 "could not link the quarantine into the shared object store"
+      worktree_gitdir=$(git -C "$workspace" rev-parse --absolute-git-dir) \
+        || die 1 "could not resolve the worktree git dir"
+      quarantine="$worktree_gitdir/objects-quarantine"
+      mkdir -p "$quarantine" || die 1 "could not create the quarantine object store"
+      common_objects=$(git -C "$repo_scope" rev-parse --git-common-dir)/objects
+      [[ "$common_objects" = /* ]] || common_objects="$repo_scope/$common_objects"
+      mkdir -p "$common_objects/info"
+      grep -qxF "$quarantine" "$common_objects/info/alternates" 2>/dev/null \
+        || echo "$quarantine" >>"$common_objects/info/alternates" \
+        || die 1 "could not link the quarantine into the shared object store"
+    fi
   else
+    launch_mode=shared-checkout
     workspace=${workspace:-$repo_scope}
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
   fi
@@ -1103,6 +1167,7 @@ dispatch_job() {
   fi
   permission_json=$(mktemp "$record_locks/permissions.XXXXXX")
   expand_permissions "$permission_name" "$workspace" "$use_worktree" "$permission_json"
+  permission_digest=$(sha256_file "$permission_json")
   snapshot_json=$(mktemp "$record_locks/snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
   read_snapshot_fields "$snapshot_json"
@@ -1121,6 +1186,48 @@ dispatch_job() {
   input_bytes=$(enforce_inline_input_limit "$brief" brief)
   input_hash=$(sha256_file "$brief")
   payload="$agents/$job"; round_dir="$payload/rounds/1"
+
+  local output_stream
+  output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
+    || die 1 "$runtime adapter could not resolve its child output stream"
+
+  product_root_args=(--product-root "$workspace")
+  occupancy_preparation=$(mktemp "$record_locks/claim-occupancy.XXXXXX")
+  "$ms" job claim-occupancy-prepare --root "$root" --session "$runtime:$job" \
+    --output "$occupancy_preparation"
+
+  acquire_cap_authority_lock
+  cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  if [[ -e "$jobs/$job.json" && -n "$mission" ]]; then
+    cap=${cap_override:-$(json_field "$jobs/$job.json" capMin)}
+    "$ms" job cap-resolution --cap "$cap" --rule repeated-operation \
+      --origin existing-reservation --output "$cap_resolution"
+  else
+    authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
+  fi
+  cap=$(json_field "$cap_resolution" capMin)
+  claim_output=$("$ms" job claim-launch --root "$root" --opid "$job" \
+    --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
+    --runtime "$runtime" --model "$model" --role "$role" \
+    --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
+    "${product_root_args[@]+"${product_root_args[@]}"}" \
+    --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal" \
+    --creator-pid "$$" --occupancy-preparation "$occupancy_preparation") || claim_rc=$?
+  rm -f "$occupancy_preparation"
+  claim_outcome=$(json_value "$claim_output" outcome 2>/dev/null || true)
+  [[ -n "$claim_outcome" ]] \
+    || { printf '%s\n' "$claim_output" >&2; return 1; }
+  if [[ "$claim_outcome" != WON ]]; then
+    [[ ! -f "$jobs/$job.json" ]] || exit_cleanup_job=
+    printf '%s\n' "$claim_output"
+    return "$claim_rc"
+  fi
+  (( claim_rc == 0 )) || return "$claim_rc"
+  release_cap_authority_lock
+
   mkdir -p "$round_dir"
   cp "$brief" "$payload/brief.md"
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
@@ -1136,7 +1243,10 @@ dispatch_job() {
     --handshake-budget "$handshake_budget" --approval-name "$approval_name" \
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
-    --reviews "$reviews" --goal "$goal" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+    --reviews "$reviews" --goal "$goal" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" \
+    --launch-opid-suffix "$launch_opid_suffix" --launch-mode "$launch_mode" \
+    "${product_root_args[@]+"${product_root_args[@]}"}" \
+    --output-stream "$output_stream"
   rm -f "$cap_resolution"
   finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
 }
@@ -1185,13 +1295,14 @@ read_snapshot_fields() { # snapshot json — sets snapshot_path, fallbacks, sign
 }
 
 finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag
-  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch
+  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch tag
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
   release_chain_lock "$chain"
   trap 'checkout_execution_guard_release || true' EXIT
+  tag=$(json_field "$jobs/$job.json" instanceTag)
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
-    --job "$job" --tag "metasystem-job-$job" || {
+    --job "$job" --tag "$tag" || {
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
     lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
     rm -f "$patch"; return 3; }
@@ -1201,6 +1312,140 @@ finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, 
   # The exact waiter command (monitor facility, MON-04; backlog item 1
   # as the human wrote it): the agent never invents a polling loop.
   printf 'watch it with: scripts/agents/dispatch.sh watch --job %s\n' "$job" >&2
+}
+
+# Critique rounds use the same proven record, adapter, detached supervisor,
+# custody registration, and terminal writer as normal delegate jobs. This
+# narrow entry only supplies the critique driver's stable session key and
+# omits the regular dispatch command's roster and review-chain policy.
+custodial_exec() {
+  local job= session= role= input= runtime= model= effort=
+  local chain_key permission_json permission_digest snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap
+  local input_bytes input_hash payload round_dir output_stream cap_resolution model_key cap claim_output claim_rc claim_outcome occupancy_preparation
+  local record_json launch_opid_suffix tag patch watch_rc=0
+  while (($#)); do
+    case "$1" in
+      --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
+      --session) [[ $# -ge 2 ]] || { usage; exit 2; }; session=$2; shift 2 ;;
+      --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
+      --input) [[ $# -ge 2 ]] || { usage; exit 2; }; input=$2; shift 2 ;;
+      --runtime) [[ $# -ge 2 ]] || { usage; exit 2; }; runtime=$2; shift 2 ;;
+      --model) [[ $# -ge 2 ]] || { usage; exit 2; }; model=$2; shift 2 ;;
+      --effort) [[ $# -ge 2 ]] || { usage; exit 2; }; effort=$2; shift 2 ;;
+      *) usage; exit 2 ;;
+    esac
+  done
+  valid_id "$job" || die 2 "invalid critique job id: $job"
+  [[ -n "$session" && -f "$input" && -n "$model" && -n "$effort" ]] || { usage; exit 2; }
+  [[ "$role" == design-critic || "$role" == code-critic ]] \
+    || die 2 "critique role must be design-critic or code-critic"
+  case "$runtime" in
+    codex) ;;
+    fake)
+      [[ "${METASYSTEM_CRITIQUE_FIXTURE_RUNTIME:-}" == fake ]] \
+        || die 2 "the fake critique runtime is fixture-only"
+      ;;
+    *) die 2 "custodial critique rounds require the codex runtime" ;;
+  esac
+  [[ -x "$root/scripts/agents/adapters/$runtime.sh" ]] || die 1 "runtime adapter is not installed: $runtime"
+
+  lease_entry_check
+  require_fresh_census
+  report_plan_drift
+  checkout_execution_guard_acquire "custodial critique $job" \
+    || die 1 "custodial critique refused: checkout execution guard acquisition failed"
+  trap 'cleanup_custodial_temps; checkout_execution_guard_release || true' EXIT
+
+  mkdir -p "$jobs" "$record_locks" "$capabilities"
+  permission_json=$(mktemp "$record_locks/critique-permissions.XXXXXX")
+  custodial_permission_temp=$permission_json
+  expand_permissions "$root/scripts/agents/permissions/none.json" "$repo_scope" 0 "$permission_json"
+  permission_digest=$(sha256_file "$permission_json")
+  snapshot_json=$(mktemp "$record_locks/critique-snapshot.XXXXXX")
+  custodial_snapshot_temp=$snapshot_json
+  select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
+  read_snapshot_fields "$snapshot_json"
+  input_bytes=$(enforce_inline_input_limit "$input" brief)
+  input_hash=$(sha256_file "$input")
+  payload="$agents/$job"
+  round_dir="$payload/rounds/1"
+  [[ ! -e "$payload" ]] || die 1 "job payload collision: $job"
+  output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
+    || die 1 "$runtime adapter could not resolve its child output stream"
+
+  chain_key=$(printf '%s' "$session" | "$ms" util sha256)
+  chain_key="critique-${chain_key:0:24}"
+  acquire_chain_lock "$chain_key"
+  custodial_chain_lock_held=1
+  exit_cleanup_job=$job
+  exit_cleanup_chain=$chain_key
+  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; if (( custodial_chain_lock_held )); then release_chain_lock "$exit_cleanup_chain"; fi; cleanup_custodial_temps; checkout_execution_guard_release || true' EXIT
+  occupancy_preparation=$(mktemp "$record_locks/critique-claim-occupancy.XXXXXX")
+  custodial_occupancy_temp=$occupancy_preparation
+  "$ms" job claim-occupancy-prepare --root "$root" --session "$session" \
+    --output "$occupancy_preparation"
+  acquire_cap_authority_lock
+  cap_resolution=$(mktemp "$record_locks/critique-cap-resolution.XXXXXX")
+  custodial_cap_temp=$cap_resolution
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  authorize_job_cap "$job" "$role" "$runtime" "$model_key" "" "" critique "$cap_resolution"
+  cap=$(json_field "$cap_resolution" capMin)
+
+  claim_rc=0
+  claim_output=$("$ms" job claim-launch --root "$root" --opid "$job" \
+    --session "$session" --dispatch-mode fresh --resumed-session "" \
+    --runtime "$runtime" --model "$model" --role "$role" \
+    --launch-mode shared-checkout --permission-envelope-digest "$permission_digest" \
+    --product-root "$repo_scope" --cap-min "$cap" --conf "$root/metasystem.conf" \
+    --input-hash "$input_hash" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" \
+    --creator-pid "$$" \
+    --occupancy-preparation "$occupancy_preparation" --wait) || claim_rc=$?
+  rm -f "$occupancy_preparation"
+  custodial_occupancy_temp=
+  if (( claim_rc != 0 )); then
+    printf '%s\n' "$claim_output" >&2
+    return "$claim_rc"
+  fi
+  claim_outcome=$(json_value "$claim_output" outcome 2>/dev/null || true)
+  [[ "$claim_outcome" == WON ]] || die 1 "claim-launch returned an unexpected outcome: ${claim_outcome:-unreadable}"
+  release_cap_authority_lock
+
+  mkdir -p "$round_dir"
+  cp "$input" "$payload/brief.md"
+  write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 none "$input"
+  launch_opid_suffix=$("$ms" util token-hex --bytes 16)
+  record_json=$(mktemp "$record_locks/critique-record.XXXXXX")
+  custodial_record_temp=$record_json
+  "$ms" job build-record --output "$record_json" --job "$job" --role "$role" \
+    --root "$root" --runtime "$runtime" --workspace "$repo_scope" \
+    --cap-resolution "$cap_resolution" --model "$model" --reasoning-effort "$effort" \
+    --overridden false --snapshot "$snapshot_path" \
+    --input-bytes "$input_bytes" --input-hash "$input_hash" \
+    --permissions "$permission_json" --fallbacks "$fallbacks" --signal "$signal" \
+    --handshake-budget "$handshake_budget" \
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" \
+    --launch-opid-suffix "$launch_opid_suffix" \
+    --launch-mode shared-checkout --product-root "$repo_scope" --output-stream "$output_stream"
+  lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
+  cleanup_custodial_temps
+  release_chain_lock "$chain_key"
+  custodial_chain_lock_held=0
+
+  tag=$(json_field "$jobs/$job.json" instanceTag)
+  if ! lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb dispatch \
+      --job "$job" --tag "$tag"; then
+    patch=$(mktemp "$record_locks/critique-launch-failed.XXXXXX")
+    printf '{"error":"launch_failed"}\n' >"$patch"
+    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$job" \
+      --expect pending --status failed --patch "$patch" || true
+    rm -f "$patch"
+    return 3
+  fi
+  await_handshake "$job" "$handshake_budget" "$current_claim_epoch" || return 3
+  checkout_execution_guard_release
+  "$ms" job watch --root "$root" --job "$job" --caller-pid "$$" || watch_rc=$?
+  return "$watch_rc"
 }
 
 watch_job() { # --job <id>
@@ -1244,8 +1489,11 @@ record_critique_exhaustions() { # manifest
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json
+  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_opid_suffix launch_mode
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 cap resumed_for_claim input_bytes input_hash
+  local repeated_follow_up=0 parent_job fresh_context_temp=
+  local -a product_root_args=()
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -1259,7 +1507,7 @@ follow_up() {
   require_fresh_census
   report_plan_drift
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
-  acquire_chain_lock "$root_id"
+  acquire_launch_chain_lock "$root_id"
   # The trap must reference a GLOBAL: when set -e unwinds the owning
   # function, bash 5.x has already popped its locals when the EXIT trap
   # runs, and under set -u the trap dies on the expansion before releasing
@@ -1282,16 +1530,50 @@ follow_up() {
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
   latest=$(latest_chain_record "$root_id") || die 1 "cannot find the newest chain record"
   status=$(json_field "$latest" status); error=$(json_field "$latest" error 2>/dev/null || true)
-  if [[ "$status" == completed || ( "$status" == failed && "$error" == protocol_error ) ]]; then :; else
+  if [[ "$status" == completed || ( "$status" == failed && "$error" == protocol_error ) ]]; then
+    round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
+    [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
+  elif [[ "$status" == pending-setup || "$status" == pending || "$status" == running ]] \
+      && [[ "$(json_field "$latest" dispatchMode 2>/dev/null || true)" == follow-up ]]; then
+    repeated_follow_up=1
+    child=$(json_field "$latest" jobId)
+    round=$(json_field "$latest" round 2>/dev/null || true)
+    if [[ ! "$round" =~ ^([2-9]|[1-9][0-9]+)$ ]]; then
+      round=${child#"$root_id-r"}
+    fi
+    [[ "$round" =~ ^([2-9]|[1-9][0-9]+)$ && "$child" == "$root_id-r$round" ]] \
+      || die 1 "the active follow-up has no valid round identity"
+    parent_job=$(json_field "$latest" parentJob 2>/dev/null || true)
+    if [[ -z "$parent_job" || "$parent_job" == null ]]; then
+      if (( round == 2 )); then
+        parent_job=$root_id
+      else
+        parent_job="$root_id-r$((round - 1))"
+      fi
+    fi
+    valid_id "$parent_job" && [[ -f "$jobs/$parent_job.json" ]] \
+      || die 1 "the active follow-up has no readable parent record"
+    latest="$jobs/$parent_job.json"
+  else
     die 1 "follow-up requires the newest record to be completed or failed with protocol_error; use a fresh dispatch after pending, running, timeout, or process-lost"
   fi
   session=$(json_field "$latest" sessionId 2>/dev/null || true)
   [[ -n "$session" && "$session" != null ]] || die 1 "follow-up has no resumable session id; use the fresh-context embed fallback"
+  # The recorded parent session is part of every follow-up's identity. A
+  # runtime without native resume still derives its embedded context from that
+  # session, even though the adapter opens a new session for the child.
+  resumed_for_claim=$session
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
   goal=$(json_field "$latest" goalId 2>/dev/null || true); [[ "$goal" == null ]] && goal=
   workspace=$(json_field "$latest" workspaceRoot)
-  round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
-  [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
+  launch_mode=$(json_field "$latest" launchMode 2>/dev/null || true)
+  if [[ "$launch_mode" != worktree && "$launch_mode" != shared-checkout ]]; then
+    case "$workspace/" in
+      "$worktrees/"*) launch_mode=worktree ;;
+      *) launch_mode=shared-checkout ;;
+    esac
+  fi
+  launch_opid_suffix=$("$ms" util token-hex --bytes 16)
   # Mission provenance refuses BEFORE the child reservation exists (round-4
   # critique R4-F1: a refusal after record-create strands the -rN husk and a
   # retry collides). The verb's own stderr names the exact refusal — a
@@ -1305,11 +1587,6 @@ follow_up() {
       || die 1 "${incarnation_verdict:-mission chain incarnation check failed}"
     [[ -n "$mission_turn" ]] || die 2 "mission follow-up requires a runner turn (METASYSTEM_MISSION_TURN is not set); follow up from inside the mission host turn"
   fi
-  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
-  "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
-    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal"
-  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
-  rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then
     # A critic's workspace is one of two different things, and treating them
     # alike broke the second. A WORKTREE of this repository is synchronised to
@@ -1340,7 +1617,8 @@ follow_up() {
         || die 1 "design-critic follow-up cannot resolve the workspace commit"
     fi
   fi
-  if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]]; then
+  if (( repeated_follow_up == 0 )) \
+      && [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]]; then
     exhaustion_patch=$(mktemp "$record_locks/exhaustion.XXXXXX")
     if ! exhaustion_action=$(critique_exhaustion_action \
       "$root_id" "$role" "$latest" "$message" "$child" "$exhaustion_patch" 2>&1); then
@@ -1353,23 +1631,20 @@ follow_up() {
   exit_cleanup_job=$child
   exit_cleanup_chain=$root_id
   trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
-  acquire_cap_authority_lock
-  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
-  model_key=$(canonical_model "$model")
-  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
+  permission_digest=$(sha256_file "$permission_json")
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
   read_snapshot_fields "$snapshot_json"
-  payload="$agents/$root_id"; round_dir="$payload/rounds/$round"; mkdir -p "$round_dir"
+  payload="$agents/$root_id"; round_dir="$payload/rounds/$round"
   delivery_content=$message
   if [[ "$resume_cap" != true ]]; then
     resume_mode=fresh-context
     adapter_verb=dispatch
     parent_round=$(json_field "$latest" round)
-    delivery_content="$round_dir/fresh-context.md"
+    fresh_context_temp=$(mktemp "$record_locks/follow-context.XXXXXX")
+    delivery_content=$fresh_context_temp
     {
       printf '# Prior brief\n\n'; cat "$payload/brief.md"
       printf '\n\n# Prior return\n\n'; cat "$payload/rounds/$parent_round/return.json"
@@ -1378,7 +1653,59 @@ follow_up() {
   fi
   input_bytes=$(enforce_inline_input_limit "$delivery_content" message)
   input_hash=$(sha256_file "$delivery_content")
+  local output_stream
+  output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
+    || die 1 "$runtime adapter could not resolve its child output stream"
+
+  product_root_args=(--product-root "$workspace")
+  occupancy_preparation=$(mktemp "$record_locks/follow-claim-occupancy.XXXXXX")
+  "$ms" job claim-occupancy-prepare --root "$root" --session "$runtime:$session" \
+    --output "$occupancy_preparation"
+
+  acquire_cap_authority_lock
+  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  if (( repeated_follow_up )) && [[ -n "$mission" ]]; then
+    cap=$(json_field "$jobs/$child.json" capMin)
+    "$ms" job cap-resolution --cap "$cap" --rule repeated-operation \
+      --origin existing-reservation --output "$cap_resolution"
+  else
+    authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
+  fi
+  cap=$(json_field "$cap_resolution" capMin)
+  claim_output=$("$ms" job claim-launch --root "$root" --opid "$child" \
+    --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
+    --runtime "$runtime" --model "$model" --role "$role" \
+    --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
+    "${product_root_args[@]+"${product_root_args[@]}"}" \
+    --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal" \
+    --creator-pid "$$" --occupancy-preparation "$occupancy_preparation") || claim_rc=$?
+  rm -f "$occupancy_preparation"
+  claim_outcome=$(json_value "$claim_output" outcome 2>/dev/null || true)
+  if [[ -z "$claim_outcome" ]]; then
+    [[ -z "$fresh_context_temp" ]] || rm -f "$fresh_context_temp"
+    printf '%s\n' "$claim_output" >&2
+    return 1
+  fi
+  if [[ "$claim_outcome" != WON ]]; then
+    [[ -z "$fresh_context_temp" ]] || rm -f "$fresh_context_temp"
+    [[ ! -f "$jobs/$child.json" ]] || exit_cleanup_job=
+    printf '%s\n' "$claim_output"
+    return "$claim_rc"
+  fi
+  (( claim_rc == 0 )) || return "$claim_rc"
+  release_cap_authority_lock
+
+  mkdir -p "$round_dir"
+  if [[ -n "$fresh_context_temp" ]]; then
+    delivery_content="$round_dir/fresh-context.md"
+    mv "$fresh_context_temp" "$delivery_content"
+    fresh_context_temp=
+  fi
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
+
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
   "$ms" job build-follow-record --output "$record_json" --parent "$latest" \
     --job "$child" --round "$round" --parent-job "$(basename "${latest%.json}")" \
@@ -1387,7 +1714,8 @@ follow_up() {
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution" \
-    --root "$root"
+    --root "$root" --launch-opid-suffix "$launch_opid_suffix" \
+    --launch-mode "$launch_mode" --output-stream "$output_stream"
   rm -f "$cap_resolution"
   finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
 }
@@ -1511,15 +1839,14 @@ reap_jobs() {
 }
 
 internal_register_custody() {
-  local job= pid= started
+  local job= pid=
   while (($#)); do
     case "$1" in --job) job=$2; shift 2 ;; --pid) pid=$2; shift 2 ;; *) exit 2 ;; esac
   done
   valid_id "$job" && [[ "$pid" =~ ^[1-9][0-9]*$ && -f "$jobs/$job.json" ]] || exit 2
-  started=$("$ms" proc started-at --pid "$pid") || exit 1
-  # The read-dedupe-append-write runs under the record lock in one verb, so a
-  # custody registration can never race a status transition.
-  "$ms" job custody-add --root "$root" --job "$job" --pid "$pid" --pid-started "$started"
+  # The read-dedupe-append-write runs under the session and record locks in one
+  # verb, so custody registration cannot race a status or occupancy transition.
+  "$ms" job custody-add --root "$root" --job "$job" --pid "$pid"
 }
 
 internal_handshake() {
@@ -1544,7 +1871,7 @@ internal_handshake() {
 }
 
 internal_cancel() {
-  local job=$1 record="$jobs/$1.json" status patch
+  local job=$1 record="$jobs/$1.json" status patch cancel_pid cancel_pgid
   [[ -f "$record" ]] || exit 1
   process_instance_tag=${process_instance_tag:-$job}
   acquire_lifecycle_lock_until "$job" 5 || exit 1
@@ -1581,12 +1908,18 @@ internal_cancel() {
       *) release_lifecycle_lock "$job"; exit 0 ;;
     esac
   fi
-  wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }
-  patch=$(mktemp "$record_locks/cancel.XXXXXX")
-  # json_field renders a JSON null as the string "null": the death
-  # proof needs a REAL group id, so the predicate is numeric.
+  cancel_pid=$(json_field "$record" pid 2>/dev/null || true)
   cancel_pgid=$(json_field "$record" pgid 2>/dev/null || true)
-  if [[ "$cancel_pgid" =~ ^[0-9]+$ ]]; then
+  if [[ "$cancel_pgid" =~ ^[0-9]+$ && "$cancel_pgid" -gt 1 ]]; then
+    wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }
+  elif [[ "$cancel_pid" =~ ^[0-9]+$ && "$cancel_pid" -gt 0 ]]; then
+    release_lifecycle_lock "$job"
+    die 1 "cancel refused: $job has a recorded process but no primary process group"
+  fi
+  patch=$(mktemp "$record_locks/cancel.XXXXXX")
+  # json_field renders a JSON null as the string "null": a death stamp needs
+  # a real signalable group id, so the predicate is numeric and above one.
+  if [[ "$cancel_pgid" =~ ^[0-9]+$ && "$cancel_pgid" -gt 1 ]]; then
     printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
   else
     # No group was ever recorded: the record must not claim a death
@@ -1714,6 +2047,13 @@ internal_handshake_timeout() {
     || printf '%s handshake-timeout recorded, but the group did not wind down cleanly\n' "$(now_iso)" >>"$jobs/$job.log"
 }
 
+# Tests source the dispatch functions with process and signalling probes
+# replaced by deterministic fixtures. A sourced dispatcher never runs a public
+# command; production invocations continue through the command router below.
+if [[ ${BASH_SOURCE[0]} != "$0" ]]; then
+  return 0
+fi
+
 # Lock-owning public commands re-exec once so their lease tag is part of the
 # process command line and a contender can distinguish this process from PID
 # reuse. Internal adapter callbacks never acquire a chain lock.
@@ -1722,7 +2062,7 @@ if [[ ${1:-} == __lock-owner ]]; then
   process_instance_tag=$2; shift 2
 elif [[ ${1:-} != __* ]]; then
   public=${1:-dispatch}
-  [[ "$public" == dispatch || "$public" == follow-up || "$public" == close || "$public" == reap || "$public" == --* ]] && {
+  [[ "$public" == dispatch || "$public" == follow-up || "$public" == custodial-exec || "$public" == close || "$public" == reap || "$public" == --* ]] && {
     tag="metasystem-lock-$$-$(date +%s)"
     exec "$0" __lock-owner "$tag" "$@"
   }
@@ -1732,6 +2072,7 @@ command=${1:-}
 if [[ "$command" == --* ]]; then command=dispatch; else shift || true; fi
 case "$command" in
   dispatch) dispatch_job "$@" ;;
+  custodial-exec) custodial_exec "$@" ;;
   watch) watch_job "$@" ;;
   follow-up) follow_up "$@" ;;
   status) status_job "$@" ;;

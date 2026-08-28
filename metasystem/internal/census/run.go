@@ -32,11 +32,9 @@ type Process struct {
 	PPID    int64 `json:"ppid"`
 	PGID    int64 `json:"pgid"`
 	Started int64 `json:"pidStartedAt"`
-	// StartedExactMicro is the kernel-resolution birth token, ADDITIVE
-	// beside the whole-second join key (announcements and custody join
-	// on seconds; the exact token exists so a consumer can bind to THE
-	// process the census observed). Fixture rows may omit it;
-	// enumeration backfills seconds*1e6.
+	// StartedExactMicro is Darwin's kernel-resolution birth token beside the
+	// compatibility second. Fixture rows may omit it; enumeration backfills
+	// seconds*1e6 so an exact record cannot accidentally match weak fixture data.
 	StartedExactMicro int64 `json:"pidStartedAtExactMicro,omitempty"`
 	// The clock-step-immune pair; zero/empty on fixture rows.
 	StartTicks int64  `json:"pidStartTicks,omitempty"`
@@ -55,6 +53,7 @@ type InventoryItem struct {
 	Pid                    int64  `json:"pid"`
 	PidStartedAt           int64  `json:"pidStartedAt"`
 	PidStartedAtExactMicro int64  `json:"pidStartedAtExactMicro,omitempty"`
+	IdentityComparison     string `json:"identityComparison,omitempty"`
 	PGID                   int64  `json:"pgid"`
 	Runtime                string `json:"runtime"`
 	InstanceTag            any    `json:"instanceTag"`
@@ -234,7 +233,7 @@ func classifyProcess(process Process, runtime, repoReal string, custody, announc
 		}
 		return InventoryItem{}, false
 	}
-	classification, registry, tag := classifyOwnership(process, custody, announced, runOwners)
+	classification, registry, tag, comparison := classifyOwnership(process, custody, announced, runOwners)
 	cwd := resolvedCwd
 	if cwd == "" {
 		cwd = "UNRESOLVED-CWD"
@@ -246,7 +245,8 @@ func classifyProcess(process Process, runtime, repoReal string, custody, announc
 	return InventoryItem{
 		Key:   fmt.Sprintf("%s|%d|%d", registry, process.Pid, process.Started),
 		Class: classification, Registry: registry,
-		Pid: process.Pid, PidStartedAt: process.Started, PidStartedAtExactMicro: process.StartedExactMicro, PGID: process.PGID,
+		Pid: process.Pid, PidStartedAt: process.Started, PidStartedAtExactMicro: process.StartedExactMicro,
+		IdentityComparison: string(comparison), PGID: process.PGID,
 		Runtime: runtime, InstanceTag: tag, Cwd: cwd, Scope: scope, Argv: process.Argv,
 	}, true
 }
@@ -282,29 +282,37 @@ func assembleVerdict(label, fingerprint string, interval int, generation *int64,
 	}
 }
 
-// sameProcessIdentity joins a census-enumerated process to a durable
-// record: the clock-step-immune pair decides when both sides carry it
-// (the btime-derived second drifts on time-synced guests),
-// else the legacy seconds join stands.
-func sameProcessIdentity(process Process, item identityRecord) bool {
+// sameProcessIdentity joins a census observation to the exact representation
+// the durable record carries. Only records without an exact representation
+// use the labeled legacy seconds fallback.
+func sameProcessIdentity(process Process, item identityRecord) (bool, identity.ComparisonMode) {
+	mode := item.ref().Mode()
 	if item.Pid != process.Pid {
-		return false
+		return false, mode
 	}
-	if item.StartTicks > 0 && item.BootID != "" && process.StartTicks > 0 && process.BootID != "" {
-		return item.StartTicks == process.StartTicks && item.BootID == process.BootID
+	switch mode {
+	case identity.CompareDarwinMicroseconds:
+		return process.StartTicks == 0 && process.BootID == "" && process.StartedExactMicro > 0 &&
+			item.StartedExactMicro == process.StartedExactMicro, mode
+	case identity.CompareLinuxTicksBootID:
+		return process.StartTicks > 0 && process.BootID != "" &&
+			item.StartTicks == process.StartTicks && item.BootID == process.BootID, mode
+	case identity.CompareLegacySeconds:
+		return item.Started == process.Started, mode
+	default:
+		return false, mode
 	}
-	return item.Started == process.Started
 }
 
-func classifyOwnership(process Process, custody, announced []identityRecord, runOwners []runOwner) (string, string, any) {
+func classifyOwnership(process Process, custody, announced []identityRecord, runOwners []runOwner) (string, string, any, identity.ComparisonMode) {
 	for _, item := range custody {
-		if sameProcessIdentity(process, item) {
-			return "CUSTODY", item.Registry, item.InstanceTag
+		if same, mode := sameProcessIdentity(process, item); same {
+			return "CUSTODY", item.Registry, item.InstanceTag, mode
 		}
 	}
 	for _, item := range announced {
-		if sameProcessIdentity(process, item) {
-			return "ANNOUNCED", item.Registry, item.InstanceTag
+		if same, mode := sameProcessIdentity(process, item); same {
+			return "ANNOUNCED", item.Registry, item.InstanceTag, mode
 		}
 	}
 	// The RUN custody source: group-level, with
@@ -316,13 +324,13 @@ func classifyOwnership(process Process, custody, announced []identityRecord, run
 			continue
 		}
 		if owner.Draining {
-			return "CUSTODY", owner.Registry, "RUN " + owner.Id + " (draining)"
+			return "CUSTODY", owner.Registry, "RUN " + owner.Id + " (draining)", ""
 		}
 		if owner.LeaderVerified {
-			return "CUSTODY", owner.Registry, "RUN " + owner.Id
+			return "CUSTODY", owner.Registry, "RUN " + owner.Id, ""
 		}
 	}
-	return "UNTRACKED", "none", nil
+	return "UNTRACKED", "none", nil, ""
 }
 
 // runOwner is one live run record's custody claim, its leader proof
@@ -391,12 +399,20 @@ func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []ru
 }
 
 type identityRecord struct {
-	Pid         int64
-	Started     int64
-	StartTicks  int64  // clock-step-immune pair; 0 = legacy record
-	BootID      string // "" = legacy record
-	InstanceTag string
-	Registry    string
+	Pid               int64
+	Started           int64
+	StartedExactMicro int64
+	StartTicks        int64
+	BootID            string
+	InstanceTag       string
+	Registry          string
+}
+
+func (r identityRecord) ref() identity.Ref {
+	return identity.Ref{
+		Pid: r.Pid, StartedAtSec: r.Started, StartedAtUnixMicro: r.StartedExactMicro,
+		StartTicks: r.StartTicks, BootID: r.BootID,
+	}
 }
 
 func enumerateFixture(metasystemRoot, processFile string) ([]Process, error) {
@@ -503,36 +519,8 @@ func verifySupervisionSnapshot(ids map[string]identityRecord, probe identity.Fix
 // python checked pid_exists first for exactly this reason: supervision stop
 // verification must be able to observe a stopped process).
 func identityAlive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
-	return alivePair(pid, expectedStart, 0, "", probe)
-}
-
-// alivePair reports whether pid is alive AND its identity matches the
-// expected one, preferring the clock-step-immune pair (StartTicks+BootID)
-// over the btime-derived second when BOTH the caller and
-// the live process carry it. A caller with only a second (expectedTicks==0
-// and expectedBootID=="") gets the legacy seconds comparison verbatim, so
-// darwin (no pair) and old records are unchanged. The fixture identity file
-// carries no pair, so when it answers, its second is the only signal.
-func alivePair(pid, expectedStart, expectedTicks int64, expectedBootID string, probe identity.FixtureProbe) bool {
-	if _, state, err := kernelProbe(pid); err == nil && state == probeDead {
-		return false
-	}
-	if entry, ok := probeFixture(probe, pid); ok {
-		return entry.StartedAt == expectedStart
-	}
-	if expectedTicks > 0 && expectedBootID != "" {
-		// The pair decides; a btime step between recording expectedStart
-		// and this check no longer reads a live process as dead.
-		return identity.AliveRef(identity.KernelProber{}, identity.Ref{
-			Pid: pid, StartedAtSec: expectedStart,
-			StartTicks: expectedTicks, BootID: expectedBootID,
-		}) == identity.Alive
-	}
-	exact, state, err := kernelProbe(pid)
-	if err != nil || state != probeAlive {
-		return false
-	}
-	return exact == expectedStart
+	alive, _ := AliveRecorded(identity.Ref{Pid: pid, StartedAtSec: expectedStart}, probe)
+	return alive
 }
 
 func liveCustody(metasystemRoot string) []identityRecord {
@@ -580,9 +568,16 @@ func liveCustody(metasystemRoot string) []identityRecord {
 			for _, candidate := range candidates {
 				pid, pidOK := jsonInt(candidate["pid"])
 				started, startedOK := jsonInt(candidate["pidStartedAt"])
+				startedExactMicro, _ := jsonInt(candidate["pidStartedAtExactMicro"])
+				startTicks, _ := jsonInt(candidate["pidStartTicks"])
+				bootID, _ := candidate["bootId"].(string)
 				tag, _ := candidate["instanceTag"].(string)
 				if pidOK && startedOK && tag == recordTag {
-					records = append(records, identityRecord{Pid: pid, Started: started, InstanceTag: tag, Registry: path})
+					records = append(records, identityRecord{
+						Pid: pid, Started: started, StartedExactMicro: startedExactMicro,
+						StartTicks: startTicks, BootID: bootID,
+						InstanceTag: tag, Registry: path,
+					})
 				}
 			}
 		}

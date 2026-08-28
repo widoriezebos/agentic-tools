@@ -6,10 +6,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"golang.org/x/sys/unix"
 )
 
 // The dispatch family is the job-record lifecycle surface (internal/dispatch):
@@ -47,6 +53,132 @@ func runDispatchRecordCreate(args []string) int {
 		return 2
 	}
 	return recordExit(dispatchcore.RecordCreate(*root, *job, *source))
+}
+
+func runDispatchClaimLaunch(args []string) int {
+	flags := flag.NewFlagSet("job claim-launch", flag.ContinueOnError)
+	root := flags.String("root", "", "Git checkout root")
+	opid := flags.String("opid", "", "idempotent launch operation id")
+	session := flags.String("session", "", "namespaced session key")
+	dispatchMode := flags.String("dispatch-mode", "", "fresh or follow-up")
+	resumedSession := flags.String("resumed-session", "", "runtime session id resumed by a follow-up")
+	runtimeName := flags.String("runtime", "", "runtime name")
+	model := flags.String("model", "", "requested model name")
+	role := flags.String("role", "", "dispatch role")
+	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
+	permissionDigest := flags.String("permission-envelope-digest", "", "requested permission envelope SHA-256")
+	capMin := flags.String("cap-min", "", "requested cap minutes; omitted uses configured defaults")
+	conf := flags.String("conf", "", "configuration file used for cap defaults")
+	inputHash := flags.String("input-hash", "", "launch input SHA-256")
+	mainID := flags.String("main-id", "", "dispatching main id")
+	claimEpoch := flags.String("claim-epoch", "", "worktree-lease claim epoch")
+	goalID := flags.String("goal", "", "goal id this launch serves")
+	wait := flags.Bool("wait", false, "wait through the bounded same-operation reservation loop")
+	creatorPID := flags.Int64("creator-pid", 0, "long-lived launcher pid recorded for pending-setup liveness")
+	occupancyPreparationPath := flags.String("occupancy-preparation", "", "off-lock occupancy preparation hand-off")
+	var productRoots []string
+	flags.Func("product-root", "declared product root (repeatable)", func(value string) error {
+		productRoots = append(productRoots, value)
+		return nil
+	})
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" || *opid == "" || *session == "" || *dispatchMode == "" ||
+		*runtimeName == "" || *model == "" || *role == "" || *launchMode == "" ||
+		*permissionDigest == "" || *inputHash == "" {
+		fmt.Fprintln(os.Stderr, "job claim-launch: --root, --opid, --session, --dispatch-mode, --runtime, --model, --role, --launch-mode, --permission-envelope-digest, and --input-hash are required")
+		return 2
+	}
+	confPath := *conf
+	if confPath == "" {
+		confPath = filepath.Join(*root, "metasystem.conf")
+	}
+	modelKey := config.CanonicalModel(*model)
+	resolvedCap, _, _, err := dispatchcore.ResolveCap(confPath, *role, *runtimeName, modelKey, *capMin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	resumed := *resumedSession
+	startReader, err := dispatchStartReader(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	var occupancyPreparation *dispatchcore.SessionOccupancyPreparation
+	if *occupancyPreparationPath != "" {
+		prepared, readErr := dispatchcore.ReadClaimOccupancyPreparation(*occupancyPreparationPath, *session)
+		if readErr != nil {
+			fmt.Fprintln(os.Stderr, readErr)
+			return 1
+		}
+		occupancyPreparation = &prepared
+	}
+	result, err := dispatchcore.ClaimLaunch(dispatchcore.ClaimLaunchParams{
+		Root: *root, OpID: *opid,
+		MainID: *mainID, ClaimEpoch: *claimEpoch, GoalID: *goalID,
+		Request: dispatchcore.LaunchFingerprintRequest{
+			SessionKey: *session, DispatchMode: dispatchcore.DispatchMode(*dispatchMode),
+			ResumedSessionID: &resumed, Runtime: *runtimeName, Model: *model, Role: *role,
+			LaunchMode: dispatchcore.LaunchMode(*launchMode), PermissionEnvelopeDigest: *permissionDigest,
+			ProductRoots: productRoots, CapMinutes: resolvedCap, InputHash: *inputHash,
+		},
+		DefaultCapMinutes:    resolvedCap,
+		Wait:                 *wait,
+		OccupancyPreparation: occupancyPreparation,
+	}, dispatchcore.ClaimLaunchDependencies{
+		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{},
+		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
+			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
+				Scanner: commandTaggedProcessScanner{}, Creator: startReader,
+				Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
+			})
+		},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printJSON(result)
+	return dispatchcore.ClaimOutcomeExitCode(result.Outcome)
+}
+
+func runDispatchClaimOccupancyPrepare(args []string) int {
+	flags := flag.NewFlagSet("job claim-occupancy-prepare", flag.ContinueOnError)
+	root := flags.String("root", "", "Git checkout root")
+	session := flags.String("session", "", "namespaced session key")
+	output := flags.String("output", "", "transient occupancy preparation output")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" || *session == "" || *output == "" {
+		fmt.Fprintln(os.Stderr, "job claim-occupancy-prepare: --root, --session, and --output are required")
+		return 2
+	}
+	return recordExit(dispatchcore.WriteClaimOccupancyPreparation(*root, *session, *output))
+}
+
+type commandClaimProcessVerifier struct{}
+
+func (commandClaimProcessVerifier) Verify(pid int64, instanceTag string) identity.Verification {
+	return identity.VerifyProcess(identity.KernelProber{}, pid, func(argv []string) bool {
+		_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, instanceTag)
+		return matches
+	})
+}
+
+type commandTaggedProcessScanner struct{}
+
+func (commandTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
+	return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{
+		MatchesTag: positionedJobTag, ReservationCreatedAt: reservationCreatedAt,
+	})
+}
+
+func positionedJobTag(argv []string, tag string) bool {
+	_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
+	return matches
 }
 
 func runDispatchRecordSetup(args []string) int {
@@ -135,6 +267,8 @@ func runDispatchBuildSetup(args []string) int {
 	mainID := flags.String("main-id", "", "dispatching main id")
 	claimEpoch := flags.String("claim-epoch", "", "worktree-lease claim epoch")
 	goalID := flags.String("goal", "", "goal id this job serves")
+	session := flags.String("session", "", "namespaced session occupancy key")
+	launchSuffix := flags.String("launch-opid-suffix", "", "per-reservation launch operation suffix")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -142,7 +276,7 @@ func runDispatchBuildSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, and --role are required")
 		return 2
 	}
-	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID))
+	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *session, *launchSuffix))
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
@@ -188,6 +322,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.Workspace, "workspace", "", "job workspace root")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Model, "model", "", "requested model")
+	flags.StringVar(&p.ReasoningEffort, "reasoning-effort", "", "requested reasoning effort (optional)")
 	overridden := strictBool(flags, "overridden", "true", "false", "true when runtime or model was overridden")
 	flags.StringVar(&p.Snapshot, "snapshot", "", "capability snapshot path")
 	flags.Int64Var(&p.InputBytes, "input-bytes", 0, "brief size in bytes")
@@ -205,16 +340,24 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
+	flags.StringVar(&p.LaunchOpIDSuffix, "launch-opid-suffix", "", "per-reservation launch operation suffix")
+	flags.StringVar(&p.OutputStream, "output-stream", "", "child stdout event stream path")
+	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
+	flags.Func("product-root", "canonical declared product root (repeatable)", func(value string) error {
+		p.ProductRoots = append(p.ProductRoots, value)
+		return nil
+	})
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if p.Output == "" || p.Job == "" || p.Role == "" || p.Runtime == "" || p.Workspace == "" ||
-		p.CapResolution == "" || p.Permissions == "" || p.Fallbacks == "" {
-		fmt.Fprintln(os.Stderr, "job build-record: --output, --job, --role, --runtime, --workspace, --cap-resolution, --permissions, and --fallbacks are required")
+		p.CapResolution == "" || p.Permissions == "" || p.Fallbacks == "" || p.OutputStream == "" || *launchMode == "" {
+		fmt.Fprintln(os.Stderr, "job build-record: --output, --job, --role, --runtime, --workspace, --cap-resolution, --permissions, --fallbacks, --launch-mode, and --output-stream are required")
 		return 2
 	}
 	p.Overridden = *overridden
 	p.Signal = *signal
+	p.LaunchMode = dispatchcore.LaunchMode(*launchMode)
 	return recordExit(dispatchcore.BuildRecord(p))
 }
 
@@ -238,15 +381,19 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
+	flags.StringVar(&p.LaunchOpIDSuffix, "launch-opid-suffix", "", "per-reservation launch operation suffix")
+	flags.StringVar(&p.OutputStream, "output-stream", "", "child stdout event stream path")
+	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if p.Output == "" || p.Parent == "" || p.Job == "" || p.Round < 2 || p.ParentJob == "" ||
-		p.Fallbacks == "" || p.ResumeMode == "" || p.CapResolution == "" {
-		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --round (>=2), --parent-job, --fallbacks, --resume-mode, and --cap-resolution are required")
+		p.Fallbacks == "" || p.ResumeMode == "" || p.CapResolution == "" || p.OutputStream == "" || *launchMode == "" {
+		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --round (>=2), --parent-job, --fallbacks, --resume-mode, --cap-resolution, --launch-mode, and --output-stream are required")
 		return 2
 	}
 	p.Signal = *signal
+	p.LaunchMode = dispatchcore.LaunchMode(*launchMode)
 	return recordExit(dispatchcore.BuildFollowRecord(p))
 }
 
@@ -343,15 +490,127 @@ func runDispatchCustodyAdd(args []string) int {
 	root := flags.String("root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	pid := flags.Int64("pid", 0, "custody process id")
-	pidStarted := flags.Int64("pid-started", 0, "custody process kernel start time (epoch seconds)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *root == "" || *job == "" || *pid < 1 || *pidStarted < 1 {
-		fmt.Fprintln(os.Stderr, "job custody-add: --root, --job, --pid, and --pid-started are required")
+	if *root == "" || *job == "" || *pid < 1 {
+		fmt.Fprintln(os.Stderr, "job custody-add: --root, --job, and --pid are required")
 		return 2
 	}
-	return recordExit(dispatchcore.CustodyAdd(*root, *job, *pid, *pidStarted))
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	return recordExit(dispatchcore.CustodyAdd(*root, *job, *pid, reader))
+}
+
+func runDispatchPreforkMark(args []string) int {
+	flags := flag.NewFlagSet("job prefork-mark", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	job := flags.String("job", "", "job id")
+	tag := flags.String("tag", "", "reservation instance tag")
+	supervisor := flags.Int64("supervisor-pid", 0, "supervisor process id")
+	pgid := flags.Int64("intended-pgid", 0, "process group the child will join")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *job == "" || *tag == "" || *supervisor < 1 || *pgid < 2 {
+		fmt.Fprintln(os.Stderr, "job prefork-mark: --root, --job, --tag, --supervisor-pid, and --intended-pgid are required")
+		return 2
+	}
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	return recordExit(dispatchcore.WritePreforkMarker(*root, *job, *tag, *supervisor, *pgid, reader))
+}
+
+func runDispatchCustodyGroups(args []string) int {
+	flags := flag.NewFlagSet("job custody-groups", flag.ContinueOnError)
+	recordPath := flags.String("record", "", "job record")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *recordPath == "" {
+		fmt.Fprintln(os.Stderr, "job custody-groups: --record is required")
+		return 2
+	}
+	record, err := dispatchcore.ReadRecordObject(*recordPath)
+	if err != nil {
+		return recordExit(err)
+	}
+	groups, err := dispatchcore.CustodyGroupTargets(record, func(pid int64) (int64, error) {
+		group, groupErr := unix.Getpgid(int(pid))
+		return int64(group), groupErr
+	})
+	if err != nil {
+		return recordExit(err)
+	}
+	for _, group := range groups {
+		fmt.Println(group)
+	}
+	return 0
+}
+
+func runDispatchReconcileReservation(args []string) int {
+	flags := flag.NewFlagSet("job reconcile-reservation", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	job := flags.String("job", "", "job id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *job == "" {
+		fmt.Fprintln(os.Stderr, "job reconcile-reservation: --root and --job are required")
+		return 2
+	}
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	result, err := dispatchcore.ReconcileReservation(*root, *job, dispatchcore.ReconciliationDependencies{
+		Scanner: commandTaggedProcessScanner{}, Creator: reader,
+		Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
+	})
+	if err != nil {
+		return recordExit(err)
+	}
+	printJSON(result)
+	return 0
+}
+
+func runDispatchOwnershipPatch(args []string) int {
+	flags := flag.NewFlagSet("job ownership-patch", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	output := flags.String("output", "", "ownership patch output file")
+	pid := flags.Int64("pid", 0, "supervisor process id")
+	pgid := flags.Int64("pgid", 0, "supervisor process group id")
+	tag := flags.String("instance-tag", "", "recorded instance tag")
+	provenAt := flags.String("proven-at", "", "UTC proof timestamp")
+	handshakeDeadline := flags.Int64("handshake-deadline", 0, "optional handshake deadline epoch second")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *output == "" || *pid < 1 || *pgid < 2 || *tag == "" || *provenAt == "" {
+		fmt.Fprintln(os.Stderr, "job ownership-patch: --root, --output, --pid, --pgid, --instance-tag, and --proven-at are required")
+		return 2
+	}
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	return recordExit(dispatchcore.BuildOwnershipPatch(
+		*output, *pid, *pgid, *tag, *provenAt, *handshakeDeadline, reader,
+	))
+}
+
+func dispatchStartReader(root string) (identity.StartReader, error) {
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return nil, err
+	}
+	return identity.FixtureStartReader{
+		Kernel: identity.KernelProber{}, Fixture: authorization.Identity(),
+	}, nil
 }
 
 func runDispatchHandshakeEval(args []string) int {

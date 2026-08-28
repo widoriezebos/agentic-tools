@@ -42,6 +42,8 @@ func TestRunAdapterCodexCommandNULDelimited(t *testing.T) {
 		return runAdapterCodexCommand([]string{
 			"--verb", "dispatch", "--model", "gpt-5-sol", "--workspace", dir,
 			"--schema", "/s.json", "--output", "/o.json",
+			"--instance-tag", "job-tag",
+			"--reasoning-effort", "high",
 			"--sandbox", "workspace-write", "--network", "true",
 		})
 	})
@@ -54,6 +56,9 @@ func TestRunAdapterCodexCommandNULDelimited(t *testing.T) {
 	}
 	if !strings.Contains(out, "sandbox_workspace_write.network_access=true\x00") {
 		t.Fatalf("network access token missing: %q", out)
+	}
+	if !strings.Contains(out, "model_reasoning_effort=\"high\"\x00") {
+		t.Fatalf("reasoning effort token missing: %q", out)
 	}
 }
 
