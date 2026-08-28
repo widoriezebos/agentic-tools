@@ -62,6 +62,8 @@ The custodian holds that link. It verifies that the candidate presented for acce
 
 That authority involves no creative judgment. The custodian makes no product judgment and no claim about the design beyond what the required record establishes. Its narrow acceptance power completes the chain of custody without allowing the custodian to construct or review the candidate.
 
+Acceptance also ends the candidate's life as a proposal. What the custodian hands on is an accepted candidate; what runs after the releaser exposes it is a released version.
+
 ## Why the narrator has no power
 
 At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that report. The report has influence because it shapes what the responsible authority notices and may shape a later decision.
