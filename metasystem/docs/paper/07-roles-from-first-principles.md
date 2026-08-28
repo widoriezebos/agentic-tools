@@ -74,6 +74,8 @@ A low-risk wording correction may need one builder, an automatic examination and
 
 These are configurations; none of them is a job title. A human can serve as the independent examiner when consequence, shared machine assumptions or accountability requires human judgment. Several independent people or machines can examine the same candidate when the possible harm justifies the cost. On smaller work, compatible functions can be combined. The configuration changes with the hazards; the protections do not change just to keep every role occupied.
 
+The configuration is also where cost meets risk. Every role staffed for a change costs computation and judging; every role left out accepts a hazard for that change. Choosing the configuration is a spending decision, priced by the same four questions that set verification depth, and it is remade when risk shifts rather than inherited from the last change. Chapter 11 develops the economics: the right configuration is the smallest one that protects the outcome at stake.
+
 A role also does not dictate the shape of its machinery. What must exist is the relation and the permission boundary. A continuous hazard needs a standing observer: silence can begin at any moment, so a liveness watcher runs whenever workers do. An event-bound hazard needs no standing actor: durable records and enforced rules hold at all times, and the custodian receives its narrow acceptance permission only at the moment of acceptance. The separation is equally real in both shapes; only the machinery differs.
 
 ## The anti-mimicry test
