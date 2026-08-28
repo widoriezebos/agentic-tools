@@ -403,3 +403,48 @@ it. One new human ruling open: the iPhone delivery-receipt
 transport provider. The successor critique budget (rounds 4-6)
 judges this v4; the no-implementation standing order remains in
 force throughout.
+
+
+## THE LEAN MANDATE (Wido, 2026-08-28 evening — supersedes the 40-landing manifest)
+
+His ruling, verbatim intent: optimize where time is spent; BATTERY
+OUT (not interested — gates never run it; consistent with his
+standing battery-cadence override); TESTS YES, FAST (the
+per-landing gate runs gofmt, vet, and focused tests bounded at
+minutes, never nine-minute suites — a slow suite runs only when
+its own subsystem changes); BENCHMARK OUT; land the functionality
+tested-fast; the 158-hour from-scratch program is REFUSED; the
+functionality itself is WANTED, much faster.
+
+What the lean recount cuts and why it is honest:
+- The four T-transfer ceremonies with 7-day soaks each →
+  REPLACED by parity fixtures (the old path's must-stop and
+  must-permit cases run against the new path in the same landing)
+  plus ONE program-wide soak week during which old paths merely
+  remain callable. The comparison-record machinery is CUT.
+- Recovery bundles S4d-S4h (five landings) → ONE landing: the
+  git-snapshot recovery we practiced live this week, documented,
+  plus one destructive rehearsal. The full bundle manifest was
+  ch.15 gold-plating for a two-operator shop.
+- Custody S5a-S5g priced as fresh builds → APPLY the wip branch's
+  verified work through the triage (three landings, not seven).
+- The governed-rule store S8a/S8b → DEFERRED post-program; the
+  three blessed invariants land as plain enforced code with the
+  blessing recorded.
+- Phone-transport provisioning → DEFERRED; desktop banner + chat
+  line now.
+- Batteries/benchmarks → out of every gate, per the ruling.
+
+THE LEAN MANIFEST (~17 landings, ≤4h ceiling each, honest
+estimate at demonstrated pace ~2h average — three to five days of
+continuous operation, with the human's acts as the only sync
+points: enrollment, genesis acceptance, per-slice approvals):
+L1 S0a isolation (2h) · L2 triage-and-apply plan · L3 health core
+· L4 rings (chat line, mutual watching, alerts) · L5 budget schema
++ revision binding · L6 breach-stop enforcement · L7 up · L8
+enrollment + authority proof · L9 genesis acceptance + landing
+acceptance check · L10-L12 custody applied from wip (identity/
+claim/occupancy; group custody + progress; call-site migration) ·
+L13 delegate verb · L14 watch · L15 land verb (phases + receipt)
+· L16 recovery documented + rehearsed · L17 old-path deletions
+after the soak week. Fast-test law binds every landing's gate.
