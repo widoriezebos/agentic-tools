@@ -14,7 +14,7 @@ A builder then has to alter the application. It traces how sessions begin, what 
 
 The candidate then meets cases that can distinguish success from failure. A clock reaches the expiry boundary. A background response arrives late. A reader answers a warning. An upload crosses the limit. Existing sessions encounter the new rule. These cases determine whether the candidate supports the claims made for it. That activity is 'verification': finding out what the evidence supports saying about the candidate. It includes automatic checks and independent examination but is not identical to either.
 
-Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. That continuing obligation is the activity this paper calls 'care'; Chapter 10 develops how it is shared.
+Release does not end the obligation. Sign-ins may begin looping, uploads may fail, or a pattern that looked harmless in a controlled setting may interrupt real work. That continuing obligation is the activity this paper calls 'care'; Chapter 10 describes how it is shared.
 
 Finally, experience must change what happens next. A missed boundary may become a stronger check. A confusing request may lead to a better way of stating success. A rule that produces false refusals may need revision or removal. That is 'learning': improving intent, construction, verification and care from recorded experience.
 
