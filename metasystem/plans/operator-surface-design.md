@@ -29,8 +29,21 @@ no agent-signature process between invoker and terminal; D — the
 ch.15 bootstrap exception for S0a..S4 under his recorded chat
 word, retroactively re-judged by the first battery after S4.
 
+RULINGS E-H (Wido, on the v3 open items): E — protected custody =
+git refs for acceptance/provenance + the durable evidence root for
+recovery bundles; F — D121 STANDS, restated in his words: the
+metasystem starts its own supervision when it initializes (`up` at
+session start is the primary recovery), and an OS-level scheduler
+entry is strictly OPTIONAL, operator-owned, recovery-only; G —
+phone alerts use the delivery-receipt + agent-free-terminal
+acknowledgment shape (`health acknowledge-alert`), not session
+push; H — the four-field budget tuple is BLESSED (elapsed,
+attempts, reserved delegate-minutes, concurrent jobs — all
+mandatory on claim; wall-time alone missed sixteen parallel passes
+under one clock).
+
 Round budget: 3; failsafe 3; ROUND 3 (the failsafe) attacks v3 =
-this document + the resolutions file together.
+this document + the resolutions file together, under Rulings A-H.
 
 ## THE GOAL
 
