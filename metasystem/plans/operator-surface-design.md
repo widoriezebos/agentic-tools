@@ -385,8 +385,21 @@ CONTINUATION RULED (Wido: "agreed, do as proposed"):
   a lost CAS mints a NEW operation (new receipt, new acceptance)
   as the resolutions file already prescribes.
 
-The remaining eight findings (R3-04..11) proceed under ONE
-successor critique budget (rounds 4-6) with the co-design pattern:
-codex drafts the resolutions to its own findings, the coordinator
-adjudicates, the failsafe judges. The no-implementation standing
-order remains in force throughout.
+The remaining eight findings (R3-04..11) were resolved by the
+co-design pattern: codex drafted, the coordinator adjudicated
+ACCEPTED IN FULL — the v4 resolutions live in PART TWO of
+plans/operator-surface-v3-resolutions.md and supersede overlapping
+earlier text. Headlines: one ranked lock chain (chain →
+goal-revision → cap → lifecycle → occupancy → record); the budget
+journal DELETED (job reservations are the sole spending facts);
+BREACH-STOP shadowed during dual-run per the transition records;
+the total quiescence protocol pausing launches never
+design/adjudication; S0a prerequisites honest under Rulings D/J;
+revision in retry identity; hook lastSuccess semantics; and THE
+CALENDAR-HONEST MANIFEST: 40 landings, ~158 clean execution hours
+(~20 working days) plus ≥14 elapsed soak days across the T1-T4
+authority transfers — the human buys this knowingly or descopes
+it. One new human ruling open: the iPhone delivery-receipt
+transport provider. The successor critique budget (rounds 4-6)
+judges this v4; the no-implementation standing order remains in
+force throughout.

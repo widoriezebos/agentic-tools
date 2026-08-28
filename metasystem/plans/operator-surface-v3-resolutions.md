@@ -539,3 +539,274 @@ Deliberately unresolved for the human:
 - Choose and provision protected custody: recommended shape is protected Git refs for acceptance/provenance plus the configured durable evidence store for recovery bundles. The current `evidence.root` remains a placeholder.
 - Choose the concrete iPhone transport and acknowledgment shape. Recommendation: authenticated session push/next-user-message if the runtime exposes those events; otherwise use delivery receipt plus terminal acknowledgment.
 - Decide whether to supersede D121 and permit a metasystem-owned Ring 3. This draft recommends retaining D121 and using only an optional operator-owned recovery entry.
+# PART TWO — the round-3 resolutions (v4; codex as co-designer, adjudicated accepted in full)
+
+Resolutions for R3-04..11 under Rulings A-K. Notable: the budget journal is DELETED (job reservations are the sole spending facts, projected under the goal-revision lock); the lock order becomes one ranked chain; the slice manifest becomes calendar-honest at 40 landings / ~158 clean hours / ≥14 soak days.
+
+## R3-04
+
+R3-04, the launch/stop lock-order defect, is accepted.
+
+The global order is `chain → goal-revision admission/stop → cap authority → job lifecycle → session occupancy → job record`.
+
+The existing `chain → cap → occupancy → record` relative order is unchanged; absent lock classes are skipped, never reordered.
+
+Dispatch takes the goal-revision lock after any chain lock and holds it from the final fence and budget decision through reservation, spawn, and exact process-identity publication.
+
+The cap lock still covers only cap adjudication and reservation publication; it is released before spawn or adapter work.
+
+The stop custodian takes the goal-revision lock, atomically closes the launch fence, records its fence epoch, and releases the lock before scanning or cancelling anything.
+
+Cancellation starts at the lifecycle rank and may then take occupancy and record locks. It never holds or reacquires the goal-revision lock.
+
+`goal resume` takes the goal-revision lock alone to verify the terminal stop batch, create the new revision, and reopen admission.
+
+Every acquisition is bounded. Failure returns `LOCK_BUSY` with the requested rank, key, holder evidence when readable, and a retry instruction.
+
+A deterministic lock-order fixture pauses dispatch before reservation, after reservation, after spawn, and before identity publication while stop begins concurrently.
+
+Every fixture outcome must be either “fence first, launch refused” or “launch first, published job included in the stop scan”; timeout or inversion fails the fixture.
+
+A second fixture holds each lower-ranked lock and proves that an attempted higher-ranked acquisition refuses locally instead of waiting.
+
+## R3-05
+
+R3-05, the split ownership of budget and reservation state, is accepted.
+
+Delete the budget journal. It is a second store for facts already durably represented by delegate job reservations.
+
+The immutable reservation fields in each delegate job record are the sole spending facts: operation identifier, goal identifier, goal revision, and reserved runtime cap.
+
+Under the goal-revision admission lock, the budget owner projects:
+
+- attempts as the count of distinct reservation operation identifiers;
+- reserved job-minutes as the sum of their runtime caps;
+- active jobs as the count of non-terminal reservations;
+- elapsed time from the goal revision’s claim record.
+
+The goal record owns limits and the stop fence; it does not duplicate counters.
+
+The session occupancy index remains only a rebuildable performance projection. It has no budget authority and cannot make a reservation exist.
+
+A crash before job-record publication consumes nothing. A crash after publication consumes the attempt and reserved minutes even if spawn never occurs.
+
+An abandoned setup is terminalized by custody reconciliation, releasing only its active-job slot; attempts and reserved minutes are never refunded.
+
+A missing occupancy entry is rebuilt from job records. An orphaned occupancy entry is deleted. Neither condition produces permanent `BUDGET_UNKNOWN`.
+
+An unreadable, duplicate, revisionless, or contradictory authoritative job record does produce `BUDGET_UNKNOWN`, closes admission, and names the exact record requiring repair.
+
+The other honest shape is a prepare/commit budget journal with total crash reconciliation. It avoids projection scans but preserves two stores and several repair states.
+
+Recommendation: delete the journal; job records are already the durable bounded reservation ledger.
+
+The crash fixture interrupts before record publication, between record and occupancy publication, after publication before spawn, and during abandoned-setup reconciliation, then proves the projections above.
+
+## R3-06
+
+R3-06, the conflict between BREACH-STOP and dual-run authority, is accepted.
+
+During coexistence, the old protection is authoritative exactly as the transition contract says. The new four-field budget path is read-only and emits `WOULD_BREACH_STOP`.
+
+| Old decision | New decision | Authoritative behavior |
+| --- | --- | --- |
+| permit | permit | permit |
+| stop | stop | old path stops; new path records agreement |
+| stop | permit | old path stops; disagreement is retained |
+| permit | stop | permit; new path must not close a fence or cancel work |
+
+S2c therefore reaches `DUAL_RUN_READY`, not `ENFORCED`.
+
+Every paired decision is joined by candidate, goal revision, input-state digest, and observation generation. Unjoinable decisions are `TRANSITION_UNKNOWN`, never agreement.
+
+A new-only stop records the exact budget field, boundary, and projected stop batch without minting or consuming a stop capability.
+
+T2, the budget authority-transfer slice, may begin only after every mandatory fixture and live case passes, every disagreement is adjudicated, `notBefore` has elapsed, and all current revisions are lawful under the new projection.
+
+T2 closes launch admission, recomputes both decisions from the same quiescent state, consumes Wido’s recorded `RETIRE_OLD`, and lands one cleanup that deletes the old path and switch.
+
+Authority transfers only when that cleanup is accepted and activated. Before then the old path remains authoritative; afterward no dual path remains.
+
+A direct clean cutover is also honest and shortens the period in which new-only breaches are permitted, but it discards the ruled evidence-based transition.
+
+Recommendation: retain old authority during dual-run and make T2 the single transfer point.
+
+Fixtures exercise all four decision pairs, prove that only the old path mutates during coexistence, and prove that an incomplete cleanup cannot transfer authority.
+
+## R3-07
+
+R3-07, the incomplete quiescence lifecycle, is accepted.
+
+Quiescence is part of the existing activation/recovery journal; delete any separate quiescence store.
+
+Its ordered phases are `PREPARED → ADMISSION_CLOSED → DRAINING → QUIESCED → MUTATION_STARTED → VALIDATING → RESUMING → COMPLETE`.
+
+`DEFERRED` is terminal before candidate mutation. `RECOVERY_REQUIRED` is a held state after mutation may have occurred.
+
+The base controller closes one repository launch-admission epoch under a bounded admission lock before taking the drain census.
+
+The gate is consulted only by process-creating entrances: mission turn launch or resume, run start, delegate, and follow-up.
+
+Health, watch, status, design, critique, adjudication, and recovery work do not consult this gate. Quiescence pauses launches, never design or adjudication work.
+
+Once admission is closed, a mission completes its current turn and adjudication but cannot launch another turn. It records `QUIESCENCE_PAUSED`.
+
+Existing runs and delegates finish under their existing caps and lifecycle owners. Quiescence receives no authority to cancel base-owned work.
+
+The journal records the exact drain set and a mandatory absolute drain deadline. Continuously renewed work cannot enter because every renewal is a new launch.
+
+If the drain set becomes terminal, two identical censuses establish `QUIESCED`.
+
+If the deadline arrives before candidate mutation, admission is reopened atomically and the operation returns `QUIESCENCE_DEFERRED`, naming every blocker.
+
+A human may cancel named base work through its existing lifecycle verb and retry; quiescence itself never invents cancellation authority.
+
+After successful activation or verified recovery, `RESUMING` reopens admission and wakes missions paused by that operation.
+
+A crash before `MUTATION_STARTED` is automatically reconciled by reopening or continuing the drain. A crash afterward retains the fence and alerts.
+
+From `RECOVERY_REQUIRED`, Wido’s enrolled-terminal invocation may idempotently continue recovery; admission opens only after exact validation passes.
+
+Fixtures cover a launch racing fence closure, a mission cycle boundary, a long run reaching the drain deadline, pre-mutation crash reopening, post-mutation crash holding, and successful human recovery resumption.
+
+## R3-08
+
+R3-08, the false S0a bootstrap prerequisites, is accepted.
+
+Delete both the literal slice-digest placeholder and the claim that an existing repository-operation lock protects S0a.
+
+Before S0a, the coordinator records one concrete `BootstrapAuthorization` under Ruling D.
+
+It binds:
+
+- `genesisCommit=cbb1adb07712910df270c9c1335760054cd53160`;
+- the exact landed commit containing the final v4 slice manifest;
+- the manifest’s computed digest;
+- the S0a-through-S4 scope and first-pass execution ceiling;
+- the declared human maintenance window and starting writer-census digest.
+
+The canonical digest input is the versioned slice manifest, sorted by slice identifier, with each row’s behavior owner, prerequisites, duration ceiling, fixtures, transition dependency, and human gate.
+
+A template, missing value, mismatched design commit, or recomputation mismatch is not authorization.
+
+No machine-enforced repository-wide writer exclusion is claimed during S0a. Ruling D permits one explicit human maintenance window because the ordinary admission gate does not yet exist.
+
+S0a records visible writer identities and stable path/mode/blob manifests before preserving anything and immediately before cleanup.
+
+An unexpected writer, a moving manifest, or an ended maintenance window refuses before deletion. The record truthfully names `HUMAN_MAINTENANCE_WINDOW` as the exclusion basis.
+
+Ruling J’s genesis acceptance is not an S0a prerequisite: its enrolled-terminal recorder lands during S4.
+
+It is instead mandatory before the bootstrap retrospective and S5. Its subject must be the exact genesis commit above, and every later acceptance must name its protected ref.
+
+Building a repository-wide lock before S0a is the other honest shape, but it creates a new pre-bootstrap mechanism that itself needs authorization and proof.
+
+Recommendation: delete that requirement and use the bounded Ruling-D maintenance window.
+
+Fixtures refuse missing authorization, digest drift, base mismatch, an unexpected writer, and a moving manifest, proving no cleanup occurred in every refusal.
+
+## R3-09
+
+R3-09, the missing goal revision in retry identity, is accepted.
+
+Goal revision joins both default operation identity and the custody fingerprint.
+
+The default operation identity is derived from goal identifier, goal revision, dispatch mode, role, and brief digest.
+
+Fingerprint version 2 adds goal identifier and revision to the complete process-creating request encoding.
+
+An explicit operation identifier may replay only when its stored version-2 fingerprint matches, including the exact goal revision.
+
+Reusing an operation from another revision returns `REFUSED_OPID_MISMATCH` before busy-gate or budget admission.
+
+A legacy fingerprint without revision cannot replay claimed work and returns `REFUSED_UNPROVABLE_LEGACY`.
+
+Implicitly repeating the same role and brief after a revision change mints a revision-distinct operation and reservation.
+
+Named fixture `goal-revision-is-retry-identity` performs:
+
+1. Open goal G at revision 7 with a two-attempt, thirty-minute reservation budget.
+2. Dispatch a fifteen-minute job and record operation O7, one attempt, and fifteen reserved minutes.
+3. Replay O7 at revision 7 and prove no second reservation or charge appears.
+4. Create revision 8 with a fresh budget.
+5. Retry with explicit O7 and require `REFUSED_OPID_MISMATCH`, with both revisions unchanged.
+6. Repeat implicitly and require new operation O8, distinct from O7.
+7. Prove O8’s job binds revision 8 and only revision 8 gains one attempt and fifteen reserved minutes.
+8. Replay O8 after an interrupted launch and prove its reservation is not charged twice.
+
+The same fixture leg runs for fresh dispatch and follow-up.
+
+## R3-10
+
+R3-10, the incomplete and calendar-false slice table, is accepted.
+
+Delete every “25-slice” claim. The complete v4 manifest contains 40 landings:
+
+- S0a isolation; S0b triage; T0 transition records and comparison join.
+- S1a health evaluation; S1b hook evidence; S1c runner/watcher evidence; S1d alert episodes and desktop delivery; S1e phone delivery receipts.
+- T1 health authority transfer and old-path deletion.
+- S2a job-derived budget projection; S2b revision identity and legacy drain; S2c shadow stop capability/fence/cancellation; S2d stopped and resume states.
+- T2 budget authority transfer and old-path deletion.
+- S3a ambient `up` and advisor; S3b restricted recovery-only `up`.
+- S4a terminal enrollment and `HumanAuthorityProof`; S4b migration of human acts, including alert acknowledgment.
+- T3 human-authority transfer and old-path deletion; T3 must precede genesis acceptance.
+- S4c engine-of-record, immutable acceptance refs, and genesis acceptance.
+- S4d recovery-bundle construction and verification; S4e quiescence admission, drain, and resumption.
+- S4f restore journal and exact restoration; S4g validation and forward recovery.
+- S4h destructive rehearsal; S4i landing acceptance enforcement.
+- S5a–S5g the seven custody landings; S6 bounded watch.
+- S7a candidate and receipt; S7b rebase, judgment, and acceptance; S7c remote journal and reconstruction.
+- T4 landing authority transfer and old-path deletion.
+- S8a empty governed-rule store; S8b promotion, appeal, review, and withdrawal.
+
+S0a retains its two-hour ceiling; every other landing retains the four-hour ceiling.
+
+The clean first-pass execution ceiling is therefore 158 hours: 2 hours plus 39 four-hour landings, or 19.75 eight-hour working days before gates and interruption.
+
+That number excludes failed gates, recovery, reslicing, reacceptance, human availability, transport provisioning, and operational rehearsal.
+
+T1 through T4 each have their own seven-day `notBefore`. T3 and T4 cannot overlap under the dependency graph, so the program contains at least fourteen elapsed soak days.
+
+T1 and T2 may soak while later design, adjudication, and non-dependent work continue.
+
+The human is buying 40 independently reversible, fixture-owned behavior boundaries and four evidenced authority transfers—not a nominal 25-task quick build.
+
+The manifest and these dependencies are the canonical input to R3-08’s bootstrap digest.
+
+## R3-11
+
+R3-11, the hook success-state ambiguity, is accepted.
+
+Separate generic completion result from component-specific outcome.
+
+Every completion record carries `result=OK | ERROR | INDETERMINATE` and a mandatory component-owned `outcome`.
+
+Only `result=OK` advances `lastSuccess`. Every completed attempt advances `lastCompletion`.
+
+For the hook, successful stdout emission records `result=OK` and `outcome=EMITTED`.
+
+The hook never records `DISPLAYED`; client rendering remains unknowable.
+
+A write, engine-resolution, or emission failure records `result=ERROR` with a typed outcome and leaves `lastSuccess` unchanged.
+
+An unreadable or causally uncertain completion records `result=INDETERMINATE`, also without advancing success.
+
+Named fixture `hook-emission-advances-success` performs:
+
+1. Persist attempt N for turn generation G and prove attempt alone is unhealthy.
+2. Complete N as `OK/EMITTED` and prove `lastCompletion` and `lastSuccess` both advance.
+3. Prove health accepts generation G.
+4. Start generation G+1, complete it as `ERROR/EMIT_FAILED`, and prove only `lastCompletion` advances.
+5. Prove health rejects G+1 despite the prior successful timestamp.
+6. Retry G+1, complete as `OK/EMITTED`, and prove success and health recover.
+7. Assert that no record or output claims `DISPLAYED`.
+
+Evidence level: checked by reading the design, resolutions, failsafe verdict, custody lock contract, and cited implementation. The 40-slice/158-hour arithmetic was run; no fixture suite ran and no files changed. `goal next` was attempted and hit the recorded macOS `confstr()` object-name defect.
+
+Proposed receipt: `type=design`, `outcome=shipped`, `skills=design-critique`, `verify=skipped`, `corrections=8`, `stop-loss=no`, `built-by=mixed`, note “operator-surface v4 resolutions for R3-04 through R3-11 under Rulings A–K; read-only.”
+
+## Left for the human
+
+NEW HUMAN RULING REQUIRED: select the concrete iPhone transport that supplies authenticated delivery receipts; this design does not choose a provider, dependency, credentials, or spending tier.
+
+Operational acts already reserved to Wido remain: explicit implementation approval, protected-ref and durable-evidence provisioning, the S0a maintenance window, terminal enrollment, genesis acceptance, and T1–T4 retirement decisions.
