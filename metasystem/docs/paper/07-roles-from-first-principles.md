@@ -22,9 +22,25 @@ The first session-expiry candidate treats a delayed background response as fresh
 
 Now suppose the change must update existing sessions. Construction needs permission to prepare that update, but a mistake in applying it could sign out every user or damage stored state. The power to explore and construct is broad in what it may try and narrow in what it may touch, compared with the power to act on live data. Because of that destructive reach, permissions are also kept separate: permission to make a candidate does not imply permission to replace data, stop work or release the candidate. Authority narrows as an action becomes harder to reverse or affects more people.
 
-The candidate and its evidence also need to survive the actors that produced them. A builder can stop. An independent examiner can be replaced. A responsible authority can return the next day. If the meaning and state of the work live only in any one of them, the work is orphaned when that actor disappears. Because every worker can disappear, records need ownership that outlives the current worker, and an actor must be responsible for preserving the chain between intent, candidate, evidence and acceptance.
+The candidate and its evidence also need to survive the actors that produced them. A builder can stop. An independent examiner can be replaced. A responsible authority can return the next day. If the meaning and state of the work live only in any one of them, the work is orphaned when that actor disappears. Because every worker can disappear, records need ownership that outlives the current worker, and an actor must be responsible for preserving the chain between intent, candidate, evidence and acceptance. That actor is the custodian.
 
-Two further hazards arise around the work rather than inside the candidate. A stopped worker may just look slow unless another actor observes whether it is alive and making progress. A technically complete record may be unreadable to the person who must rule on an exception. Silent death requires a liveness watcher. The hazard of a misleading retelling requires a narrator whose account remains checkable against the record.
+Two further hazards arise around the work rather than inside the candidate. A stopped worker may just look slow unless another actor observes whether it is alive and making progress. A technically complete record may be unreadable to the person who must rule on an exception. Silent death requires a liveness watcher. A misleading retelling requires a narrator.
+
+## The roles
+
+Those hazards give the delivery system five working roles. Here is what each may do and may not do; the rest of the paper relies on these names.
+
+A builder constructs a candidate against the recorded intent. It explores the application, chooses a design and changes only its own working copy. It does not judge its own claim, accept its own work or touch live data.
+
+An independent examiner judges a finished candidate without prior exposure to the builder's path. It starts from the claims that must survive and tries to break them. It does not change the candidate; repairs go back to a builder.
+
+A custodian keeps the records that connect intent, candidate, evidence and acceptance, so the work survives any single worker. When every required fact is present, it performs the acceptance action. It builds nothing and examines nothing.
+
+A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
+
+A narrator turns the record into an account a person can act on, with every material claim pointing back to its source. It changes no state and makes no decision.
+
+Any of the five can be held by a person or by machinery; the configurations later in this chapter return to that choice. All five work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
 ## Prohibited combinations
 
