@@ -50,7 +50,7 @@ Every session check passes, but both the candidate and the checks define a visib
 
 No proof exceeds its boundary, source of expected results and assumptions. A test derived from the same mistaken interpretation as the candidate can make agreement look like correctness. Several independent examiners using the same model or data can repeat one blind spot. A fixed set of cases cannot cover every network delay, assistive technology, future browser or user behavior the service will meet.
 
-The response is careful language about what was shown, not despair. The system records what was examined, which expected results came from authorized intent, which sources were independent and which assumptions remain. Live observation then tests the result against situations the controlled examination did not include. Evidence can challenge intent as well as construction. Whether a burden on affected people is acceptable remains a judgment; more passing checks cannot settle it.
+The answer to these limits is to claim only what was shown. The system records what was examined, which expected results came from authorized intent, which sources were independent and which assumptions remain. Live observation then tests the result against situations the controlled examination did not include. Evidence can challenge intent as well as construction. Whether a burden on affected people is acceptable remains a judgment; more passing checks cannot settle it.
 
 ## Evidence that triggers human review
 
