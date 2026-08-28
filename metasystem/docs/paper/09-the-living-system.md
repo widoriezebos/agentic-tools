@@ -38,7 +38,7 @@ This is least authority: each task receives only the information, resources and 
 
 A well-meaning worker encounters a failed expiry check and decides that the check is obsolete. It attempts to remove the refusal and continue. Another worker sees two similar session stores and prepares to replace the broader one. Neither action requires malice. Confidence, stale context or an overly broad instruction is enough.
 
-Safety sits where the consequential action occurs. The refusal that protects release cannot depend on the builder agreeing with it. The action that replaces data checks the exact target, the current authority and the allowed reach before it begins. An unknown target, a target described too broadly or a missing ownership claim causes refusal.
+Protection is enforced where the action happens, not in the worker's judgment. The first worker cannot remove the refusal: changing an enforced rule requires the rule's authority, and a builder's confidence is not that authority. The second worker's replacement does not start on a loose description: it must name the exact store to be replaced, the authority that permits it and the limit of what it may touch. If the target is unknown, described too broadly or not owned by the task, the replacement is refused.
 
 When it cannot be sure, the system preserves the current state. If the system cannot prove that an abandoned copy is safe to delete, it keeps the copy and raises the question to the actor that owns the decision. If it cannot distinguish the timed-out worker from a new one, it stops neither. This can consume space or delay progress, but the cost is bounded and visible. Destruction after an uncertain guess may not be recoverable.
 
