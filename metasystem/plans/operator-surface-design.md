@@ -1,15 +1,36 @@
-# The Operator Surface — the claw-back design (v2, 2026-08-28, after critique round 1)
+# The Operator Surface — the claw-back design (v3, 2026-08-28, after critique round 2)
 
 Working Mode: design
 
-Owner: m1 coordinator, in direct discussion with Wido. Round 1 of
-the codex critique returned 20 material findings + 3 not-material
-(artifacts/agents/critiques/operator-surface/r1-output.md); ALL are
-dispositioned in the table at the bottom and folded into this v2.
-Two were ruled by Wido in-session: RULING A — human authority is
-proven by PROCESS ANCESTRY, never by a typed string; RULING B —
-the honest surface claim is SIX DAILY VERBS PLUS TWO LIFECYCLE
-FAMILIES. Round budget: 3; failsafe 3; round 2 attacks this v2.
+Owner: m1 coordinator, in direct discussion with Wido; codex as
+co-designer from round 2 onward (Wido's order: "you and codex
+design your way out"). ROUND 1: 20 material + 3 not — all folded
+into v2 (dispositions below). ROUND 2: 15 material (14 shape) —
+codex then DRAFTED the resolutions to its own findings under the
+four standing rulings, and the coordinator adjudicated the draft
+ACCEPTED IN FULL: the authoritative resolution text lives in
+plans/operator-surface-v3-resolutions.md, one section per finding,
+and SUPERSEDES this document's corresponding v2 sections (notably:
+the bootstrap epochs and retrospective seal; terminal-rooted
+human-authority proof; the rebase-before-acceptance landing
+protocol with CAS push; engine-of-record provenance; the
+stop-capability model; recovery bundles with rehearsal; the
+D121-respecting operator-owned Ring 3; generation-bound success
+evidence; receipt-in-candidate; the 25-slice bootstrap-honest
+partition; the DRAFT→OBSERVE→LIMITED→ENFORCED rule lifecycle; the
+four-field budget tuple with reserved-job-minutes; the eight-name
+surface routing table; evidence-based dual-run retirement; the
+total health/watch boundary table).
+
+WIDO'S STANDING RULINGS: A — human authority by process ancestry,
+never a string; B — six daily verbs + mission and run lifecycle
+families; C — the authority boundary is his INTERACTIVE TERMINAL,
+no agent-signature process between invoker and terminal; D — the
+ch.15 bootstrap exception for S0a..S4 under his recorded chat
+word, retroactively re-judged by the first battery after S4.
+
+Round budget: 3; failsafe 3; ROUND 3 (the failsafe) attacks v3 =
+this document + the resolutions file together.
 
 ## THE GOAL
 
