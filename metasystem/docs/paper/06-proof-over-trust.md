@@ -62,7 +62,7 @@ Low risk does not mean no control. A path authorized by enforced rules still nee
 
 ## Repair a mistaken classification
 
-In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. Authorized release contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it. Together those acts form care.
+In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. The releaser contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it. Together those acts form care.
 
 The classification is a problem of its own. The rule failed to recognize that the activity signal involved a value choice and broad exposure. That missed trigger is treated as a defect rather than bad luck. Its record includes the evidence available before release, the evidence found afterward and the reason the earlier rule did not escalate.
 

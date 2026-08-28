@@ -8,7 +8,7 @@ Later chapters develop these principles: their mechanisms, their limits, the arg
 
 ## What the legal metaphor means and where it stops
 
-Suppose release is forbidden unless the exact candidate has passed a rollback check. A builder cannot waive the condition by explaining that the change is small. Authorized release cannot ignore it because the day is nearly over. The rule has power at the action it controls: it refuses release and says what evidence is absent.
+Suppose release is forbidden unless the exact candidate has passed a rollback check. A builder cannot waive the condition by explaining that the change is small. The releaser cannot ignore it because the day is nearly over. The rule has power at the action it controls: it refuses release and says what evidence is absent.
 
 Chapter 1 called such an enforced rule a law. The term names authority; it adds no ceremony. A legislator is the person or group authorized to change the rule. A judge is a person authorized to decide a named exception. A precedent is a recorded ruling that later cases may use, and an appeal is a named route for asking another authorized person or group to reconsider a decision. These terms describe permissions and continuity; they do not prescribe job titles. One person may hold several permissions, and a group may hold one permission together.
 

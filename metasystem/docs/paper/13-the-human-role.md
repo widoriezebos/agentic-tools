@@ -38,7 +38,7 @@ Intent remains answerable to evidence. The authorized person can be wrong about 
 
 ## Reviewer: authority, accountability and appeal
 
-Before the expiry candidate reaches more users, an independent reviewer sees that one comparison touches every active account and that the tests share a time source with the implementation. The reviewer asks for a sleeping-device case run against a second, independent clock source, then holds expansion until the new evidence arrives. This is a decision within the reviewer's recorded permission, and authorized release may not ignore it.
+Before the expiry candidate reaches more users, an independent reviewer sees that one comparison touches every active account and that the tests share a time source with the implementation. The reviewer asks for a sleeping-device case run against a second, independent clock source, then holds expansion until the new evidence arrives. This is a decision within the reviewer's recorded permission, and the releaser may not ignore it.
 
 Chapter 6 defines the evidentiary triggers that begin human review and treats a missed trigger as a defect; this chapter defines what the reviewer may do once review or appeal begins. An explicitly authorized reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance itself. The authorization states which consequences and actions the reviewer controls. It does not grant a general right to rewrite intent or enforced rules.
 

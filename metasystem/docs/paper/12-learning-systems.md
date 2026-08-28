@@ -2,7 +2,7 @@
 
 **Recovering is not learning; a system has learned only when next time goes differently.**
 
-In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches a small share of live traffic on the weekend when clocks move forward. Most sessions behave as expected. A few expire at the wrong moment because one comparison uses local clock time while the rest use a continuous measure of elapsed time. Authorized release stops the expansion and restores the previous behavior. The immediate danger passes, but the delivery system has not yet learned anything. It has only recovered.
+In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches a small share of live traffic on the weekend when clocks move forward. Most sessions behave as expected. A few expire at the wrong moment because one comparison uses local clock time while the rest use a continuous measure of elapsed time. The releaser stops the expansion and restores the previous behavior. The immediate danger passes, but the delivery system has not yet learned anything. It has only recovered.
 
 Learning begins when experience changes what happens next time. That change needs discipline. A hurried ban on every use of local time may stop the known failure and also prevent legitimate work such as displaying an appointment in the user's time zone. A note in an incident report may avoid that damage and still be forgotten by the next builder. The useful lesson is a governed change to future behavior, supported by evidence and open to challenge.
 
@@ -58,7 +58,7 @@ Other lessons may remain warnings because the event is rare, the signal is weak,
 
 ## Repair, learn and revisit
 
-When the clock failure appears, the first action is containment. Authorized release narrows exposure or restores the previous safe version while the responsible authority receives a clear report of possible user harm. A complete lesson is not made a condition of recovery. Delaying repair until every cause is known would make learning compete with care.
+When the clock failure appears, the first action is containment. The releaser narrows exposure or restores the previous safe version while the responsible authority receives a clear report of possible user harm. A complete lesson is not made a condition of recovery. Delaying repair until every cause is known would make learning compete with care.
 
 After containment, the builder corrects the elapsed-time comparison, an independent examiner reproduces the old failure and challenges the repair, and an enforced rule binds the passing evidence to the exact candidate. The candidate lesson then follows its own path through evidence, ownership, testing, limited activation and appeal. One result becomes the clock rule. The question of acceptable reauthentication burden remains a human ruling with an owner and review date.
 

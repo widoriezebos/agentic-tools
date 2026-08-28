@@ -32,7 +32,7 @@ Human responsibility does not disappear. The responsible authority decides outco
 
 ## A hypothetical day
 
-The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and an authorized release mechanism limit what the machinery may do.
+The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and a releaser that acts only within authorized bounds limit what the machinery may do.
 
 At 8:40, the responsible authority for account security records an outcome: "sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using". No design or task list is prescribed.
 
@@ -46,7 +46,7 @@ The responsible authority returns to other work. The builder proposes a design a
 
 An enforced rule refuses that candidate. No person is asked to inspect a convincing explanation or notice the failure of the tests in some stream of output. The builder revises the design so that expiry is final and the upload has only its narrow permission. The examination repeats the new checks, runs the existing sign-in and account-recovery checks and verifies rollback. Results bind to the exact candidate; earlier evidence cannot authorize a later one. Another enforced rule refuses release unless live observation can distinguish an expected rise in sign-ins from a broken loop that ejects responsive users.
 
-In the afternoon, authorized release sends the candidate to a small part of live traffic. It compares expiry, sign-in, upload and error behavior with the authorized bounds. It expands only while observations remain inside them. Otherwise it restores the previous behavior. If policy reserves release for a responsible authority, it pauses with the evidence ready.
+In the afternoon, the releaser sends the candidate to a small part of live traffic. It compares expiry, sign-in, upload and error behavior with the authorized bounds. It expands only while observations remain inside them. Otherwise it restores the previous behavior. If policy reserves release for a responsible authority, it pauses with the evidence ready.
 
 At 4:30, the responsible authority receives a report of what changed, the interpretation they supplied, the refused candidate, the checks that passed, the exact version released and the observed behavior. Their day contained one interruption, where the initial request concealed security and usability choices.
 
