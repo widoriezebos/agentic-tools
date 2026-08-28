@@ -1,13 +1,13 @@
 # memory-architecture
 
-- State: claimed
+- State: done
 - Intent: The metasystem gets a designed information architecture: {metasystem, app} × {documentation, memory} — four quadrants plus plans and records, each with its own place and laws; docs stays static documentation, memory is for memories, plans is for plans, and the app's documentation and memory remain separate from the metasystem's under the two-part update-safety law (Wido 2026-08-26, R-6/R-7/R-8)
 - Origin: human
 - Next step: SLICE 1 LANDED bf7f035 (2026-08-28, pushed pre-freeze on Wido's word): registers in memory/, stateRoot() with the ratified table, all reroutes, no-new-paths guard — certified, full adopt suite green. PAUSED BY WIDO: m1 is running a major machinery refactor; NO further work until his resume word. ON RESUME, in order: (1) BATTERY DUE — weight 139/60 fired at this landing, run the milestone battery first; (2) pull-rebase + engine rebuild (two stale-engine incidents this batch prove the rule: every rebase demands a rebuild before proofs); (3) slices 2-5 per the ratified design (records manifest, oracle+tracer, goal-engine archival at 5h per widened dispute-3, adopt seeding); (4) then proof-run-cost-and-liveness build slices (design ratified 2c96297). Residue: parked disk-hygiene still cites plans/backlog-notes (human act to fix).
+- Concluded: All five slices landed (bf7f035, 68f86ff, c2adf5a, 52cb18c, and this): registers in memory/, history in records/ with concluded goals engine-archived, plans/ means plans, stateRoot() routes all state, the ownership oracle answers in one line, adoption seeds and proves all four trees via the computed-inventory tracer. Ratified design fully delivered; live cycle proof d74d688..c0b69c4; budget: well under (16h granted, ~11h wall across the freeze). Journey chapter this landing.
 - OpenedAt: 2026-08-26T07:55:52Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=2d attemptLimit=16 reservedJobMinutesLimit=600 activeJobLimit=2
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-28T21:07:24Z revision=15
 
 History:
 - 2026-08-26T07:55:52Z HJN0DYBSD3V473XKMC7ZM3DH8X-m2-bc1be9cb open actor=human:wido targets=memory-architecture
@@ -25,4 +25,5 @@ History:
 - 2026-08-28T14:43:59Z KB5EV217XSZQ5TCNJSWTYGAEGG-m2-bc1be9cb edit actor=m2+mac-coordinator targets=memory-architecture
 - 2026-08-28T14:57:55Z 4F9FWMJM8YR33VB3GSVAHRH12H-m2-bc1be9cb edit actor=m2+mac-coordinator targets=memory-architecture
 - 2026-08-28T21:07:24Z 2XM2X05KWRHQTT1THRGKW9CPBA-m2-bc1be9cb set-budget actor=human:wido targets=memory-architecture
-Integrity: sha256=e36500ed388ccbb42052f5242ce32a7f34ebadc7046dbb718bc228feb8456956
+- 2026-08-28T22:50:53Z W6P6NXEJ0PYDXZS4SQWN5YN2GH-m2-bc1be9cb done actor=human:wido targets=memory-architecture
+Integrity: sha256=ce50d6b436b6b86a1b4469f30ce37dad0b333efa52842a0eeb58a6793e5a44ef
