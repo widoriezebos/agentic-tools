@@ -4,7 +4,7 @@
 
 In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
 
-The gap between the explanation and the observation is the whole principle: a convincing claim can point you somewhere, but only evidence and bounded proof can justify an action with consequences. The aim is an accurate account of what one exact result has and has not shown.
+The gap between the explanation and the observation is the whole principle: a convincing claim can point you somewhere, but only well-grounded evidence and bounded proof can authorize an action with consequences. The aim is an accurate account of what one exact result has and has not shown.
 
 ## Evidence, proof and the boundary between them
 
@@ -56,7 +56,7 @@ The response is careful language about what was shown, not despair. The system r
 
 A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. Requiring a person to repeat the same inspection adds delay without adding an independent source of judgment.
 
-A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption and agree for that reason alone. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. Chapter 13 says who may perform that review, how accountability is assigned and how an appeal proceeds.
+A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption that could make them agree for the same mistaken reason. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. Chapter 13 says who may perform that review, how accountability is assigned and how an appeal proceeds.
 
 Low risk does not mean no control. A path authorized by enforced rules still needs traceable intent, evidence tied to the exact candidate and a way to reverse the result. Human review adds an independent judgment required by named conditions; it does not replace those protections.
 

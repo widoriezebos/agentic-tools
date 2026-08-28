@@ -42,7 +42,7 @@ This principle does not claim that a record settles disagreement. Two authoritie
 
 A release guide says that live observation should distinguish an expected rise in sign-ins from a broken sign-in loop. Under pressure, a worker may treat "should" as optional. The same condition placed at the release boundary prevents expansion until the observation exists. The first is advice. The second is an enforced rule.
 
-When breaking a condition would make an action unacceptable, put the condition where the action can be refused. The refusal must identify the exact candidate, the unmet condition and the route by which work may continue. Otherwise enforcement is an unexplained obstacle instead of a protection anyone can govern.
+When breaking a condition would make an action unacceptable, put the condition where the action can be refused. The refusal must identify the exact candidate, the unmet condition and the route by which work may continue. Otherwise enforcement is an unexplained obstacle instead of a protection whose reason and route forward are clear.
 
 An important rule is not automatically permanent or correct. A rule can encode a bad proxy, outlive its purpose or cause harm through false refusals. Chapters 6 and 12 develop how evidence supports enforced rules and how those rules are tested, challenged, revised or repealed. The principle here is narrower: a condition that must hold cannot depend on every worker choosing to remember it.
 

@@ -40,7 +40,7 @@ A well-meaning worker encounters a failed expiry check and decides that the chec
 
 Safety sits where the consequential action occurs. The refusal that protects release cannot depend on the builder agreeing with it. The action that replaces data checks the exact target, the current authority and the allowed reach before it begins. An unknown target, a target described too broadly or a missing ownership claim causes refusal.
 
-When it cannot be sure, the system keeps rather than deletes. If the system cannot prove that an abandoned copy is safe to delete, it keeps the copy and raises the question to the actor that owns the decision. If it cannot distinguish the timed-out worker from a new one, it stops neither. This can consume space or delay progress, but the cost is bounded and visible. Destruction after an uncertain guess may not be recoverable.
+When it cannot be sure, the system preserves the current state. If the system cannot prove that an abandoned copy is safe to delete, it keeps the copy and raises the question to the actor that owns the decision. If it cannot distinguish the timed-out worker from a new one, it stops neither. This can consume space or delay progress, but the cost is bounded and visible. Destruction after an uncertain guess may not be recoverable.
 
 The surrounding controls also protect records from the workers they describe. A builder cannot rewrite a failed result. A liveness watcher cannot erase the last state of the worker it replaces. A custodian cannot substitute an unchecked candidate during acceptance. The system assumes that ordinary actors can be wrong about their own work and makes that error survivable.
 

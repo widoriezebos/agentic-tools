@@ -28,7 +28,7 @@ Not every deviation justifies intervention. Ordinary variation remains within au
 
 ## Incidents begin with harm containment
 
-During expansion, support receives credible reports that people on a particular device lose unsaved work after the warning. The overall error rate remains normal, and the cause is not yet known. Waiting for a complete explanation would leave more people exposed while the diagnosis gets polished.
+During expansion, support receives credible reports that people on a particular device lose unsaved work after the warning. The overall error rate remains normal, and the cause is not yet known. Waiting for a complete explanation of the cause would leave more people exposed.
 
 This is an incident: an observed or credible threat to an outcome the system is responsible for protecting. The definition includes user harm that does not appear as a technical failure. A repeated sign-in loop is an incident even if every request returns a formally successful response. A session left open on a shared device is an incident even if no user reports it. Credible evidence of harm is enough to begin containment.
 

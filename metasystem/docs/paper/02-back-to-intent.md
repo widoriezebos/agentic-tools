@@ -18,7 +18,7 @@ Release does not end the obligation. Sign-ins may begin looping, uploads may fai
 
 Finally, experience must change what happens next. A missed boundary may become a stronger check. A confusing request may lead to a better way of stating success. A rule that produces false refusals may need revision or removal. That is 'learning': improving intent, construction, verification and care from recorded experience.
 
-These five activities are how the problem divides, not how teams divide the work. They can overlap, and one actor may perform several when consequence is low. They are separated here because each answers a different question. What should happen? What candidate could make it happen? What supports the claim that it does? What keeps the result dependable? What should change after experience? A delivery design may distribute those questions in many ways, but skipping one does not make it go away.
+These five activities are how the problem divides, not how teams divide the work. They can overlap, and one actor may perform several when consequence is low. They are separated here because each answers a different question. What should happen? What candidate could make it happen? What supports the claim that it does? What keeps the result dependable? What should change after experience? A delivery design may distribute those questions in many ways, but a skipped question stays unanswered, not gone.
 
 ## Intent as the durable interface
 

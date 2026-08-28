@@ -14,7 +14,7 @@ Running behavior, production measures, tests, policies, incident history and cur
 
 The team writes hypotheses that the responsible authorities, authorized representatives and users can challenge. It asks whether existing sessions change immediately, whether administrators share the policy, what closing a browser means and which interruptions are unacceptable. Reports and live behavior inform those questions without answering their value choices. The relevant intent-holders confirm requirements, identify defects and record what remains unknown.
 
-The work turns scattered evidence into revisable intent; it does not try to recover one perfect specification from history. No such document may ever have existed. Where the evidence conflicts, the conflict stays visible until the responsible authority rules. That prevents the new system from giving accidental behavior the force of law just because it is observable.
+The team turns scattered evidence into revisable intent in a controlled way; it does not try to recover one perfect specification from history. No such document may ever have existed. Where the evidence conflicts, the conflict stays visible until the responsible authority rules. That prevents the new system from giving accidental behavior the force of law just because it is observable.
 
 ## Establish a measurable baseline
 

@@ -2,9 +2,9 @@
 
 **Engineering moves up a level, from building the application to governing the system that builds it.**
 
-An engineer receives a small request on Thursday morning: change how long a user stays signed in. The request is one sentence; the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behavior, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but someone is responsible for everything between wanting it and depending on it.
+An engineer receives a small request on Thursday morning: change how long a user stays signed in. The request is one sentence; the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behavior, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but the responsibility covers everything between wanting it and depending on it.
 
-For consequential or repeatedly delivered software, this paper proposes a shift in ownership: machinery absorbs more of construction and delivery, and engineering moves toward designing and governing that machinery. The application remains what people use; the system that produces and cares for it becomes something to engineer in its own right.
+For consequential or repeatedly delivered software, this paper proposes a shift in ownership: machinery absorbs more of construction and delivery, and engineering moves toward designing and governing that machinery. The application remains what people use; the system that produces and cares for it becomes a primary object of engineering.
 
 ## The ladder already climbed
 
@@ -18,7 +18,7 @@ Testing followed the same pattern. A release team once clicked through the appli
 
 This ladder shows that machinery can absorb bounded, repeatable work. It does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
-One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can achieve. It still needs bounds, evidence, authority and care. That is the shift: machinery takes on more of the building and delivering, and engineers take ownership of the machinery doing it.
+One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can achieve. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger than the ladder suggests: machinery takes on more of the building and delivering, and engineers own the design and governance of the machinery doing it.
 
 ## The new object of ownership
 
@@ -28,7 +28,7 @@ The application then stops being a handcrafted object that machinery only packag
 
 Some boundaries need authority. A suggestion may be ignored; an enforced rule can refuse a change. This paper calls the governing rules laws; "enforced rule" names a law implemented at the action it can stop. The legal metaphor identifies who may decide, what may be refused and how a decision may be challenged. It does not imply a 'machine court' or mimicked legal ceremony. A law here is a rule with enough authority to stop action when a named condition has not been met.
 
-Human responsibility does not disappear. The responsible authority decides outcomes and constraints, resolves conflicts of value, accepts accountability, rules on exceptions and decides how much evidence a consequence requires. A governed delivery system builds and delivers within those boundaries. The engineering work is to design that loop, assign its authority, examine its evidence and change it when experience shows it is wrong.
+Human responsibility does not disappear. The responsible authority decides outcomes and constraints, resolves conflicts of value, accepts accountability, rules on exceptions and decides how much evidence a consequence requires. A governed delivery system builds and delivers within those boundaries. Engineers focus on designing that loop, assigning its authority, examining its evidence and changing it when experience shows it is wrong.
 
 ## A hypothetical day
 

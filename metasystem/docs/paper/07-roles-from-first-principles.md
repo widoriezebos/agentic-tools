@@ -8,7 +8,7 @@ Copying a familiar software department into machinery is not the answer. A role 
 
 ## The premise: only some limits were removed
 
-Chapter 6 establishes contextual independence and the fresh perspective it requires. Here that becomes an authority question: a new machine worker can take a temporary role without a reporting line or a permanent title, but prior exposure can still disqualify it from serving as the independent examiner.
+Chapter 6 establishes that a fresh perspective needs contextual independence: an examiner not already exposed to the builder's path. Here that becomes an authority question: a new machine worker can take a temporary role without a reporting line or a permanent title, but prior exposure can still disqualify it from serving as the independent examiner.
 
 Several constraints that once justified separate roles have weakened. Working hours no longer require one shift to hand work to another. A career ladder need not determine who performs a check. Scarcity among specialists counts for less when a bounded capability can be supplied when needed. One manager's span of attention no longer sets the number of active attempts.
 

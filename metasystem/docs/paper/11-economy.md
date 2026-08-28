@@ -40,7 +40,7 @@ This boundary also makes failure visible. A stopped attempt is not disguised as 
 
 Two builders propose different session designs. One records a fixed expiry time and grants uploads a narrow continuation. The other keeps a separate activity history and derives expiry when each request arrives. Producing both may be cheap. Deciding between them requires each to be understood, challenged, compared against the ruling and examined for reversal and live behavior.
 
-Chapter 3's asymmetry returns as a price: every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
+Chapter 3's production-versus-judging gap returns as a price: every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
 
 Parallel attempts are worth their cost when disagreement itself has value. They can reveal that the chosen design depends on an assumption no single builder noticed. They can explore truly different responses to a high-consequence problem. They can also increase confidence when independent paths reach the same bounded result. They are not worth it when several versions differ only in surface form or when the acceptance criteria already make one routine construction obvious.
 
@@ -68,7 +68,7 @@ The argument allows a rational decision not to build the system, without exempti
 
 A team facing the first low-risk version of a tool may need only recorded intent, a discriminating check and a reversible release. Later, the tool gains users and begins storing private information. The cost balance changes, and independent examination, narrower authority, durable custody and production care become justified.
 
-The right amount of machinery is the smallest that protects the outcome at the expected risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost or a valuable learning opportunity. It is removed when the need it served disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
+The right amount of machinery is the smallest that still protects the relevant outcome at the expected level of risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost or a valuable learning opportunity. It is removed when the need it served disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
 
 The proposed shift in engineering ownership is directional; it does not carry the same weight everywhere. Repeated or consequential software makes the system that builds and cares for it a durable asset. A script used once may need almost none of that asset. Both choices can follow the same economic discipline.
 
