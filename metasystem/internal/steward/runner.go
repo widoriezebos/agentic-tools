@@ -144,9 +144,23 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 // repo's own binary, verify the operator is reachable, and spawn the
 // detached runner unless one already lives. Idempotent.
 func Arm(repoRoot, binaryPath string) (string, error) {
+	return arm(repoRoot, binaryPath, false)
+}
+
+// Restart replaces a live runner before arming the repository again. It is
+// the repair path for a process that remains alive but no longer completes
+// ticks.
+func Restart(repoRoot, binaryPath string) (string, error) {
+	return arm(repoRoot, binaryPath, true)
+}
+
+func arm(repoRoot, binaryPath string, replace bool) (string, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return "", err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
+		top = resolved
 	}
 	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
 		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
@@ -188,7 +202,12 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 		return "", err
 	}
 	if rec, alive := liveRunner(top); alive {
-		return fmt.Sprintf("already armed (runner pid %d)", rec.Pid), nil
+		if !replace {
+			return fmt.Sprintf("already armed (runner pid %d)", rec.Pid), nil
+		}
+		if err := stopRunnerForReplacement(top, rec); err != nil {
+			return "", err
+		}
 	}
 	prior, _ := VerifyIdentity(RepoIdentityPath(top), top)
 	bin, err := filepath.Abs(binaryPath)
@@ -228,6 +247,38 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return "", fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(top))
+}
+
+func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
+	if err := os.WriteFile(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
+		return err
+	}
+	if err := syscall.Kill(int(runner.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+		return fmt.Errorf("stop runner pid %d for replacement: %w", runner.Pid, err)
+	}
+	// A stalled runner may itself be stopped, so let it receive the termination
+	// signal before deciding whether a hard stop is necessary.
+	_ = syscall.Kill(int(runner.Pid), syscall.SIGCONT)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, alive := liveRunner(repoRoot); !alive {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if current, alive := liveRunner(repoRoot); alive && current.Pid == runner.Pid {
+		if err := syscall.Kill(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return fmt.Errorf("kill stalled runner pid %d for replacement: %w", runner.Pid, err)
+		}
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, alive := liveRunner(repoRoot); !alive {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("runner pid %d remained alive after replacement stop", runner.Pid)
 }
 
 // canonicalGitPath resolves one git rev-parse answer to a canonical

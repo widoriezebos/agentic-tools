@@ -68,6 +68,9 @@ func DeliverPending(repoRoot string) (int, error) {
 	}
 	delivered := 0
 	for _, n := range pending {
+		if n.DeliveryOwner == healthDeliveryOwner {
+			continue
+		}
 		if err := Deliver(repoRoot, n.Message); err != nil {
 			return delivered, err
 		}

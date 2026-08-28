@@ -99,6 +99,15 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	if err != nil || !strings.Contains(again, "already armed") {
 		t.Fatalf("a second arm collapses onto the live runner: %q %v", again, err)
 	}
+	before, _ := liveRunner(root)
+	restarted, err := Restart(root, bin)
+	if err != nil || !strings.Contains(restarted, "armed") {
+		t.Fatalf("restart replaces an alive runner: %q %v", restarted, err)
+	}
+	after, alive := liveRunner(root)
+	if !alive || after.Pid == before.Pid {
+		t.Fatalf("restart must record a different live runner: before=%+v after=%+v", before, after)
+	}
 	if out, err := Disarm(root); err != nil || !strings.Contains(out, "disarmed") {
 		t.Fatalf("disarm ends it: %q %v", out, err)
 	}
@@ -123,6 +132,9 @@ func mustAbs(t *testing.T, p string) string {
 	a, err := filepath.Abs(p)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(a); resolveErr == nil {
+		a = resolved
 	}
 	return a
 }

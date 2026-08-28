@@ -2,10 +2,12 @@ package steward
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
@@ -48,12 +50,13 @@ type TickResult struct {
 	// and the long-outage noticing; Outage carries the mark itself.
 	ProviderOutage bool
 	Outage         outage.Mark
+	Health         HealthVerdict
 }
 
 // RunTick folds one observation into the persisted evidence and
 // returns the decision. The evidence store is written back before
 // returning, so a crash after the tick never replays its aging.
-func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
+func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickResult, returnErr error) {
 	cfg = cfg.withDefaults()
 
 	// One tick at a time per repository: the CLI seam and the
@@ -64,6 +67,40 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 		return TickResult{}, err
 	}
 	defer tickLock.Release()
+
+	selfExact, selfState, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || selfState != identity.Alive {
+		return TickResult{}, fmt.Errorf("the steward tick cannot read its own process identity")
+	}
+	generation, generationErr := installedGeneration(repoRoot)
+	if generationErr != nil {
+		// An unarmed manual tick remains useful for diagnosis, but generation
+		// zero can never satisfy the armed-runner health check.
+		generation = 0
+	}
+	tickAttempt, err := beginComponentAttempt(repoRoot, "steward-tick", generation, selfExact.Ref(), time.Now())
+	if err != nil {
+		return TickResult{}, fmt.Errorf("record tick attempt: %w", err)
+	}
+	tickCompleted := false
+	defer func() {
+		if result.Health.Schema == 0 {
+			if healthErr := completeTickHealth(repoRoot, &result, generation, selfExact.Ref()); healthErr != nil && returnErr == nil {
+				returnErr = healthErr
+			}
+		}
+		if tickCompleted {
+			return
+		}
+		evidence := "tick did not complete"
+		if returnErr != nil {
+			evidence = returnErr.Error()
+		}
+		if _, completeErr := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
+			ComponentError, "TICK_FAILED", evidence, time.Now()); completeErr != nil && returnErr == nil {
+			returnErr = fmt.Errorf("record failed tick completion: %w", completeErr)
+		}
+	}()
 
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.
@@ -137,10 +174,10 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 			}
 		}
 	}
-	if err := SaveEvidence(evPath, ev); err != nil {
+	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
 		return TickResult{}, err
 	}
-	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
+	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
 		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark}
 	// The running plain-English account rides every tick, strictly
 	// best-effort: the storyteller never fails the shift. What the
@@ -148,7 +185,46 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	// per building condition.
 	Narrate(repoRoot, result, cfg)
 	ReachTheHuman(repoRoot, noticings(result, cfg))
+	if err := completeTickHealth(repoRoot, &result, generation, selfExact.Ref()); err != nil {
+		return result, err
+	}
+	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
+		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, time.Now()); err != nil {
+		return result, fmt.Errorf("record tick completion: %w", err)
+	}
+	tickCompleted = true
 	return result, nil
+}
+
+// completeTickHealth performs the mandatory end of every tick: one durable
+// health observation, one durable narration line, and a queued alert whenever
+// the observation's dead or persistent-unknown boundary requires one.
+func completeTickHealth(repoRoot string, result *TickResult, generation int, process identity.Ref) error {
+	health, err := ObserveHealth(repoRoot, time.Now(), identity.KernelProber{})
+	if err != nil {
+		return fmt.Errorf("compute health: %w", err)
+	}
+	result.Health = health
+	narratorAttempt, err := beginComponentAttempt(repoRoot, "narrator", generation, process, time.Now())
+	if err != nil {
+		return fmt.Errorf("record narrator attempt: %w", err)
+	}
+	line := health.Line()
+	if err := NarrateHealthLine(repoRoot, line); err != nil {
+		_, _ = completeComponentAttempt(repoRoot, "narrator", generation, narratorAttempt.AttemptSeq,
+			ComponentError, "WRITE_FAILED", err.Error(), time.Now())
+		return fmt.Errorf("narrate health: %w", err)
+	}
+	if _, err := completeComponentAttempt(repoRoot, "narrator", generation, narratorAttempt.AttemptSeq,
+		ComponentOK, "EMITTED", line, time.Now()); err != nil {
+		return fmt.Errorf("record narrator completion: %w", err)
+	}
+	if health.ShouldAlert {
+		if err := QueueHealthNotification(repoRoot, health.FindingDigest, line); err != nil {
+			return fmt.Errorf("queue health alert: %w", err)
+		}
+	}
+	return nil
 }
 
 // shortBannerKey keys one pending message per breached goal: the

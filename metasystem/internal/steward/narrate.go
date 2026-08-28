@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -36,9 +37,23 @@ func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
 	if line == "" {
 		return
 	}
+	_ = appendNarrationLine(repoRoot, line)
+}
+
+// NarrateHealthLine durably appends the typed one-line health verdict. Unlike
+// the optional running account above, this line is a mandatory tick result: a
+// tick cannot claim success when its health narration did not land.
+func NarrateHealthLine(repoRoot, line string) error {
+	if strings.TrimSpace(line) == "" {
+		return fmt.Errorf("the health narration line is empty")
+	}
+	return appendNarrationLine(repoRoot, line)
+}
+
+func appendNarrationLine(repoRoot, line string) error {
 	path := NarrationPath(repoRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
+		return err
 	}
 	existing, _ := os.ReadFile(path)
 	lines := strings.Split(strings.TrimRight(string(existing), "\n"), "\n")
@@ -49,17 +64,14 @@ func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
 	if len(lines) > narrationCapLines {
 		lines = lines[len(lines)-narrationCapLines:]
 	}
-	staged, err := os.CreateTemp(filepath.Dir(path), ".narration-*")
+	durable, err := atomicfile.WriteText(path, strings.Join(lines, "\n")+"\n", repoRoot)
 	if err != nil {
-		return
+		return err
 	}
-	if _, err := staged.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
-		staged.Close()
-		os.Remove(staged.Name())
-		return
+	if !durable {
+		return fmt.Errorf("the narration was published with durability unknown")
 	}
-	staged.Close()
-	_ = os.Rename(staged.Name(), path)
+	return nil
 }
 
 // narrationLine composes the sentence: when, who, what the machine is

@@ -49,7 +49,7 @@ func TestStoreRoundTripsAndSurvivesFirstTick(t *testing.T) {
 		t.Fatalf("first tick loads the zero state: %+v %v", e, err)
 	}
 	e = Evidence{Marks: Marks{HeadOid: "abc", OpidDigest: "d"}, TicksSinceAdvance: 2, DryRevivals: 1}
-	if err := SaveEvidence(path, e); err != nil {
+	if err := SaveEvidence(dir, path, e); err != nil {
 		t.Fatal(err)
 	}
 	got, err := LoadEvidence(path)

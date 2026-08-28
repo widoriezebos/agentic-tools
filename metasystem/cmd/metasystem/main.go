@@ -367,12 +367,14 @@ func families() []family {
 			name:    "steward",
 			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
 			verbs: []verb{
+				{"health", "print the typed roles-alive verdict", runStewardHealth},
 				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
 				{"status", "the operator's view: evidence age, live intents, pending notifications", runStewardStatus},
 				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
 				{"revive", "one revival end to end: stage, mint, deliver, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
 				{"arm", "guard this repository: mint the identity, verify the notifier, spawn the detached runner", runStewardArm},
+				{"restart", "replace the runner and arm it again after a stalled pass", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 			},
@@ -483,6 +485,9 @@ func dispatch(args []string) int {
 		usage()
 		return 2
 	}
+	if args[0] == "health" {
+		return runStewardHealth(args[1:])
+	}
 	for _, fam := range families() {
 		if fam.name != args[0] {
 			continue
@@ -507,6 +512,7 @@ func dispatch(args []string) int {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: metasystem <family> <verb> [flags]")
+	fmt.Fprintln(os.Stderr, "       metasystem health --repo <checkout>")
 	for _, fam := range families() {
 		fmt.Fprintf(os.Stderr, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {

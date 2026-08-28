@@ -157,7 +157,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	// irreversible — before dispatch, so no crash window between
 	// launch and bookkeeping can spend attempts the cap never saw.
 	ev = RecordRevival(ev)
-	if err := SaveEvidence(EvidencePath(repoRoot), ev); err != nil {
+	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 		return ReviveOutcome{}, err
 	}
 	if err := launch(consumed); err != nil {

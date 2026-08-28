@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // Intent is one intervention's durable record.
@@ -283,9 +285,12 @@ func LiveIntents(repoRoot string) ([]Intent, error) {
 // PendingNotification is one undelivered operator message, durable
 // until delivery succeeds; retried every tick, never redispatching.
 type PendingNotification struct {
-	Nonce   string `json:"nonce"`
-	Message string `json:"message"`
+	Nonce         string `json:"nonce"`
+	Message       string `json:"message"`
+	DeliveryOwner string `json:"deliveryOwner,omitempty"`
 }
+
+const healthDeliveryOwner = "L4"
 
 func pendingDir(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "pending")
@@ -295,19 +300,45 @@ func pendingDir(repoRoot string) string {
 // attempt.
 func QueueNotification(repoRoot string, n PendingNotification) error {
 	dir := pendingDir(repoRoot)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	data, err := json.Marshal(n)
 	if err != nil {
 		return err
 	}
 	path := filepath.Join(dir, n.Nonce+".json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	durable, err := atomicfile.WriteText(path, string(append(data, '\n')), repoRoot)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if !durable {
+		return fmt.Errorf("pending notification %s was published with durability unknown", n.Nonce)
+	}
+	return nil
+}
+
+// QueueHealthNotification holds one notification for each distinct finding.
+// L4 replaces this holding seam with alert episodes, delivery attempts, and
+// human acknowledgments.
+func QueueHealthNotification(repoRoot, findingDigest, message string) error {
+	if !validEvidenceDigest(findingDigest) {
+		return fmt.Errorf("health finding digest is invalid")
+	}
+	wanted := PendingNotification{Nonce: findingDigest, Message: message, DeliveryOwner: healthDeliveryOwner}
+	path := filepath.Join(pendingDir(repoRoot), findingDigest+".json")
+	data, err := os.ReadFile(path)
+	if err == nil {
+		var existing PendingNotification
+		if unmarshalErr := json.Unmarshal(data, &existing); unmarshalErr != nil {
+			return fmt.Errorf("pending health notification %s is malformed: %w", findingDigest, unmarshalErr)
+		}
+		if existing.Nonce == findingDigest && existing.DeliveryOwner == healthDeliveryOwner {
+			return nil
+		}
+		return fmt.Errorf("health finding digest %s already names a different pending notification", findingDigest)
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return QueueNotification(repoRoot, wanted)
 }
 
 // PendingNotifications lists what still awaits delivery.

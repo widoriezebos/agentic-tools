@@ -77,3 +77,55 @@ func TestPendingQueueDrainsOnDeliveryAndHoldsOnFailure(t *testing.T) {
 		t.Fatalf("undelivered messages stay queued: %v", pending)
 	}
 }
+
+func TestHealthFindingsStayPendingByDistinctDigest(t *testing.T) {
+	root, sink := notifyRepo(t, "")
+	first := evidenceDigest("runner stale")
+	second := evidenceDigest("narrator stale")
+	if err := QueueHealthNotification(root, first, "HEALTH unhealthy — runner stale"); err != nil {
+		t.Fatal(err)
+	}
+	if err := QueueHealthNotification(root, first, "HEALTH unhealthy — runner stale"); err != nil {
+		t.Fatal(err)
+	}
+	if err := QueueHealthNotification(root, second, "HEALTH unhealthy — narrator stale"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DeliverPending(root); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := PendingNotifications(root)
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("one held notification per distinct finding must remain for L4: %v %v", pending, err)
+	}
+	for _, notification := range pending {
+		if notification.Nonce != first && notification.Nonce != second {
+			t.Fatalf("the finding digest is the notification nonce: %+v", notification)
+		}
+		if notification.DeliveryOwner != healthDeliveryOwner {
+			t.Fatalf("health delivery remains owned by L4: %+v", notification)
+		}
+	}
+	if data, err := os.ReadFile(sink); err == nil && len(data) > 0 {
+		t.Fatalf("L3 must not drain health notifications through the notifier: %q", data)
+	}
+	if err := QueueHealthNotification(root, first, "a later rendering of the same finding"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := PendingNotifications(root)
+	if err != nil || len(after) != 2 {
+		t.Fatalf("a repeated finding must retain the existing pending record: %v %v", after, err)
+	}
+	for _, notification := range after {
+		if notification.Nonce == first && notification.Message != "HEALTH unhealthy — runner stale" {
+			t.Fatalf("a repeated finding must not overwrite its pending notification: %+v", notification)
+		}
+	}
+	occupied := evidenceDigest("occupied nonce")
+	if err := QueueNotification(root, PendingNotification{Nonce: occupied, Message: "an unrelated pending message"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := QueueHealthNotification(root, occupied, "HEALTH unhealthy — another finding"); err == nil {
+		t.Fatal("a health finding must not overwrite a different pending notification")
+	}
+}

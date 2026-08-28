@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // Marks are the two durable identities progress is judged by.
@@ -69,19 +71,19 @@ func LoadEvidence(path string) (Evidence, error) {
 	return e, nil
 }
 
-// SaveEvidence persists atomically (write-then-rename), so a crashed
-// tick never leaves a torn store.
-func SaveEvidence(path string, e Evidence) error {
+// SaveEvidence publishes through the shared durability owner, so a tick does
+// not claim that its high-water result survived before the filesystem agrees.
+func SaveEvidence(repoRoot, path string, e Evidence) error {
 	data, err := json.MarshalIndent(e, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	durable, err := atomicfile.WriteText(path, string(append(data, '\n')), repoRoot)
+	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
+	if !durable {
+		return fmt.Errorf("steward evidence was published with durability unknown")
 	}
-	return os.Rename(tmp, path)
+	return nil
 }

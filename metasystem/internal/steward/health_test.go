@@ -1,0 +1,381 @@
+package steward
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+)
+
+type healthProbe map[int64]struct {
+	exact identity.Exact
+	state identity.Liveness
+	err   error
+}
+
+func (p healthProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if result, ok := p[pid]; ok {
+		return result.exact, result.state, result.err
+	}
+	return identity.Exact{}, identity.Unknown, errors.New("fixture has no process fact")
+}
+
+func TestHealthExitCodeArms(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		roles []RoleVerdict
+		want  int
+	}{
+		{name: "healthy", roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthAlive}}, want: 0},
+		{name: "dead outranks unknown", roles: []RoleVerdict{
+			{Role: RoleStewardRunner, Status: HealthUnknown},
+			{Role: RoleRepoWatcher, Status: HealthDead},
+		}, want: 1},
+		{name: "unknown", roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthUnknown}}, want: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			verdict := applyHealthObservation("/repo", HealthObservationState{}, test.roles, time.Now())
+			if got := verdict.ExitCode(); got != test.want {
+				t.Fatalf("exit code = %d, want %d: %+v", got, test.want, verdict)
+			}
+		})
+	}
+}
+
+func TestUnknownGraceAlertsOnSecondConsecutiveObservation(t *testing.T) {
+	unknown := []RoleVerdict{{Role: RoleCensusFreshness, Status: HealthUnknown, Reason: "census unreadable", Remedy: "repair"}}
+	first := applyHealthObservation("/repo", HealthObservationState{}, unknown, time.Now())
+	if first.ExitCode() != 2 || first.ShouldAlert {
+		t.Fatalf("the first unknown exits 2 without alerting: %+v", first)
+	}
+	second := applyHealthObservation("/repo", first.State, unknown, time.Now().Add(time.Minute))
+	if second.ExitCode() != 2 || !second.ShouldAlert || second.Roles[0].ConsecutiveUnknown != 2 {
+		t.Fatalf("the second consecutive unknown alerts: %+v", second)
+	}
+	reset := applyHealthObservation("/repo", second.State, []RoleVerdict{{Role: RoleCensusFreshness, Status: HealthAlive}}, time.Now().Add(2*time.Minute))
+	if reset.State.UnknownCounts[RoleCensusFreshness] != 0 {
+		t.Fatalf("an alive observation resets unknown grace: %+v", reset.State)
+	}
+}
+
+func TestHealthClockRegressionNeverReportsAlive(t *testing.T) {
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	originalObservation := now.Add(time.Minute)
+	previous := HealthObservationState{
+		Sequence: 4, ObservedAt: originalObservation, UnknownCounts: map[HealthRole]int{}, FailureCounts: map[HealthRole]int{},
+	}
+	verdict := applyHealthObservation("/repo", previous, []RoleVerdict{{
+		Role: RoleStewardRunner, Status: HealthAlive, Reason: "fresh",
+	}}, now)
+	if verdict.ExitCode() != 2 || verdict.Roles[0].Status != HealthUnknown ||
+		!strings.Contains(verdict.Roles[0].Reason, "CLOCK_REGRESSED") || verdict.Roles[0].Remedy == "" {
+		t.Fatalf("a backward clock movement is unknown, never alive: %+v", verdict)
+	}
+	if !verdict.State.ObservedAt.Equal(originalObservation) {
+		t.Fatalf("a regressed observation cannot replace the coherent clock anchor: %+v", verdict.State)
+	}
+	stillRegressed := applyHealthObservation("/repo", verdict.State, []RoleVerdict{{
+		Role: RoleStewardRunner, Status: HealthAlive, Reason: "fresh",
+	}}, now.Add(time.Second))
+	if stillRegressed.Roles[0].Status != HealthUnknown || !stillRegressed.State.ObservedAt.Equal(originalObservation) {
+		t.Fatalf("clock regression persists until UTC reaches the original observation: %+v", stillRegressed)
+	}
+	recovered := applyHealthObservation("/repo", stillRegressed.State, []RoleVerdict{{
+		Role: RoleStewardRunner, Status: HealthAlive, Reason: "fresh",
+	}}, originalObservation)
+	if recovered.Roles[0].Status != HealthAlive || !recovered.State.ObservedAt.Equal(originalObservation) {
+		t.Fatalf("an observation at the original timestamp clears the regression: %+v", recovered)
+	}
+}
+
+func TestFailureBreakerProjectsEveryObservationAndResets(t *testing.T) {
+	dead := []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Reason: "stale", Remedy: "restart"}}
+	state := HealthObservationState{}
+	for observation := 1; observation <= 5; observation++ {
+		verdict := applyHealthObservation("/repo", state, dead, time.Unix(int64(observation), 0))
+		role := verdict.Roles[0]
+		if role.ConsecutiveFailures != observation || verdict.State.FailureCounts[RoleStewardRunner] != observation {
+			t.Fatalf("failure observation %d was not persisted and projected: %+v", observation, verdict)
+		}
+		if observation < 5 && (verdict.ShouldAlert || role.FailureEscalation != "AUTO_HEAL_ELIGIBLE") {
+			t.Fatalf("failure observation %d remains below the breaker: %+v", observation, verdict)
+		}
+		if observation == 5 && (!verdict.ShouldAlert || role.FailureEscalation != "AUTO_HEAL_ENDED") {
+			t.Fatalf("failure five ends auto-heal and alerts: %+v", verdict)
+		}
+		state = verdict.State
+	}
+	unknown := applyHealthObservation("/repo", state, []RoleVerdict{{Role: RoleStewardRunner, Status: HealthUnknown}}, time.Unix(6, 0))
+	if unknown.State.FailureCounts[RoleStewardRunner] != 5 {
+		t.Fatalf("unknown neither increments nor resets the failure breaker: %+v", unknown.State)
+	}
+	alive := applyHealthObservation("/repo", unknown.State, []RoleVerdict{{Role: RoleStewardRunner, Status: HealthAlive}}, time.Unix(7, 0))
+	if alive.State.FailureCounts[RoleStewardRunner] != 0 {
+		t.Fatalf("one alive observation resets the failure breaker: %+v", alive.State)
+	}
+}
+
+func TestClaimedGoalWithBrokenProseAppetiteIsNamed(t *testing.T) {
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+		"hungry-goal": {
+			Id: "hungry-goal", State: goal.StateClaimed, Intent: "Keep work bounded", Origin: goal.OriginMain,
+			NextStep: "Finish whenever it is ready.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+			Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
+			History: bedHistory("hungry-goal", "claim"),
+		},
+	})
+	role := checkClaimedGoalAppetites(root, time.Now())
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "hungry-goal") || !strings.Contains(role.Remedy, "goal edit") {
+		t.Fatalf("the broken claimed goal and its current remedy must be named: %+v", role)
+	}
+}
+
+func TestNonterminalJobWithProvablyDeadProcessIsNamed(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "dead-job.json"), []byte(`{
+  "jobId":"dead-job",
+  "status":"running",
+  "pid":44001,
+  "pidStartedAt":100
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	role := checkNonterminalJobs(root, healthProbe{44001: {state: identity.Dead}})
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "dead-job") ||
+		!strings.Contains(role.Remedy, "dispatch.sh") || !strings.Contains(role.Remedy, "reap") {
+		t.Fatalf("the dead-process job and its current remedy must be named: %+v", role)
+	}
+}
+
+func TestSessionAnnouncementUsesCurrentSessionSchema(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "artifacts", "agents", "mains")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "session-one.json"), []byte(`{
+  "sessionId":"session-one",
+  "pid":44004,
+  "pidStartedAt":100
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	probe := healthProbe{44004: {exact: identity.Exact{Pid: 44004, StartedAt: time.Unix(100, 0)}, state: identity.Alive}}
+	role := checkSessionMain(root, probe)
+	if role.Status != HealthAlive || !strings.Contains(role.Reason, "session-one") {
+		t.Fatalf("the current sessionId announcement schema must prove an alive main: %+v", role)
+	}
+}
+
+func TestGenerationBoundComponentSuccess(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 44002, StartedAtSec: 100, StartTicks: 99, BootID: "boot-a"}
+	attempt, err := beginComponentAttempt(root, "steward-tick", 7, process, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !attempt.LastSuccess.IsZero() || !attempt.LastCompletion.IsZero() || attempt.AttemptSeq != 1 {
+		t.Fatalf("an attempt alone advances no success or completion: %+v", attempt)
+	}
+	ok, err := completeComponentAttempt(root, "steward-tick", 7, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "durable-results", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok.LastSuccess.Equal(now.Add(time.Second)) || !ok.LastCompletion.Equal(now.Add(time.Second)) {
+		t.Fatalf("an OK completion advances completion and success: %+v", ok)
+	}
+	sameGeneration, err := beginComponentAttempt(root, "steward-tick", 7, process, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedSameGeneration, err := completeComponentAttempt(root, "steward-tick", 7, sameGeneration.AttemptSeq,
+		ComponentError, "HEALTH_FAILED", "health read failed", now.Add(3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !failedSameGeneration.LastSuccess.Equal(ok.LastSuccess) || !failedSameGeneration.LastCompletion.Equal(now.Add(3*time.Second)) {
+		t.Fatalf("an ERROR completion preserves the prior success and advances only completion: %+v", failedSameGeneration)
+	}
+
+	next, err := beginComponentAttempt(root, "steward-tick", 8, process, now.Add(4*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Generation != 8 || !next.LastSuccess.IsZero() {
+		t.Fatalf("a new generation cannot inherit old success: %+v", next)
+	}
+	beforeCompletion := componentFreshness(root, "steward-tick", RoleStewardRunner, 8, time.Minute, now.Add(5*time.Second), "repair", nil, "fresh")
+	if beforeCompletion.Status != HealthDead || !strings.Contains(beforeCompletion.Reason, "no successful completion") {
+		t.Fatalf("a live process and an attempt alone cannot satisfy freshness: %+v", beforeCompletion)
+	}
+	failed, err := completeComponentAttempt(root, "steward-tick", 8, next.AttemptSeq, ComponentError, "HEALTH_FAILED", "read failed", now.Add(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.LastCompletion.IsZero() || !failed.LastSuccess.IsZero() {
+		t.Fatalf("an ERROR completion advances only completion: %+v", failed)
+	}
+}
+
+func TestFreshnessEqualityIsStale(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	window := 10 * time.Minute
+	process := identity.Ref{Pid: 44003, StartedAtSec: 100}
+	attempt, err := beginComponentAttempt(root, "narrator", 7, process, now.Add(-window-time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := completeComponentAttempt(root, "narrator", 7, attempt.AttemptSeq,
+		ComponentOK, "EMITTED", "line", now.Add(-window)); err != nil {
+		t.Fatal(err)
+	}
+	component := componentFreshness(root, "narrator", RoleNarratorFreshness, 7, window, now, "repair", nil, "fresh")
+	if component.Status != HealthDead || !strings.Contains(component.Reason, "stale") {
+		t.Fatalf("component age equal to its window is stale: %+v", component)
+	}
+
+	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "supervision"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	census := `{"verdict":"SUCCESS","generation":7,"intervalSec":60,"lastSuccess":"` + now.Add(-2*time.Minute).Format(time.RFC3339Nano) + `"}`
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "supervision", "last-census.json"), []byte(census), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	censusRole := checkCensusFreshness(root, now, map[string]any{"generation": 7}, nil)
+	if censusRole.Status != HealthDead || !strings.Contains(censusRole.Reason, "stale") {
+		t.Fatalf("census age equal to two recorded producer intervals is stale: %+v", censusRole)
+	}
+	census = `{"verdict":"SUCCESS","generation":7,"intervalSec":60,"lastSuccess":"` + now.Add(-2*time.Minute+time.Second).Format(time.RFC3339Nano) + `"}`
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "supervision", "last-census.json"), []byte(census), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	censusRole = checkCensusFreshness(root, now, map[string]any{"generation": 7}, nil)
+	if censusRole.Status != HealthAlive {
+		t.Fatalf("census age below two recorded producer intervals is fresh: %+v", censusRole)
+	}
+}
+
+func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	resident := identity.Ref{Pid: 44100, StartedAtSec: 100, StartTicks: 900, BootID: "boot-a"}
+	manual := identity.Ref{Pid: 44101, StartedAtSec: 101, StartTicks: 901, BootID: "boot-a"}
+	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoIdentity, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
+		RepoIdentity: repoIdentity, Generation: 3, InstallPath: "/fixture/metasystem", MintedAt: now.Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
+		Pid: resident.Pid, PidStartedAt: resident.StartedAtSec, StartTicks: resident.StartTicks, BootID: resident.BootID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := beginComponentAttempt(root, "steward-tick", 3, manual, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "manual", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	probe := healthProbe{resident.Pid: {
+		exact: identity.Exact{Pid: resident.Pid, StartedAt: time.Unix(resident.StartedAtSec, 0), StartTicks: resident.StartTicks, BootID: resident.BootID},
+		state: identity.Alive,
+	}}
+	wrongWriter := checkStewardRunner(root, now.Add(2*time.Second), probe)
+	if wrongWriter.Status != HealthDead || !strings.Contains(wrongWriter.Reason, "not resident runner") {
+		t.Fatalf("a manual tick cannot satisfy resident-runner freshness: %+v", wrongWriter)
+	}
+	residentAttempt, err := beginComponentAttempt(root, "steward-tick", 3, resident, now.Add(3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stillManual := checkStewardRunner(root, now.Add(4*time.Second), probe)
+	if stillManual.Status != HealthDead {
+		t.Fatalf("a resident attempt cannot adopt the manual tick's prior success: %+v", stillManual)
+	}
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, residentAttempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "resident", now.Add(5*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	current := checkStewardRunner(root, now.Add(6*time.Second), probe)
+	if current.Status != HealthAlive {
+		t.Fatalf("the resident runner's own completion satisfies freshness: %+v", current)
+	}
+}
+
+func TestOKCompletionRemainsPendingWhenPromotionDurabilityIsUnknown(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 44200, StartedAtSec: 100}
+	first, err := beginComponentAttempt(root, "narrator", 1, process, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstOK, err := completeComponentAttempt(root, "narrator", 1, first.AttemptSeq, ComponentOK, "EMITTED", "first", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := beginComponentAttempt(root, "narrator", 1, process, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalWriter := componentEvidenceWriter
+	defer func() { componentEvidenceWriter = originalWriter }()
+	writes := 0
+	componentEvidenceWriter = func(path, text, anchor string) (bool, error) {
+		writes++
+		durable, writeErr := originalWriter(path, text, anchor)
+		if writes == 2 && writeErr == nil {
+			return false, nil
+		}
+		return durable, writeErr
+	}
+	if _, err := completeComponentAttempt(root, "narrator", 1, second.AttemptSeq, ComponentOK, "EMITTED", "second", now.Add(3*time.Second)); err == nil {
+		t.Fatal("unknown promotion durability must fail loudly")
+	}
+	record, err := loadComponentEvidence(ComponentEvidencePath(root, "narrator"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Result == ComponentOK || record.Outcome != "DURABILITY_PENDING" || !record.LastSuccess.Equal(firstOK.LastSuccess) {
+		t.Fatalf("the visible completion must remain pending and preserve the prior success: %+v", record)
+	}
+	role := componentFreshness(root, "narrator", RoleNarratorFreshness, 1, time.Minute, now.Add(4*time.Second), "repair", nil, "fresh")
+	if role.Status != HealthUnknown || !strings.Contains(role.Reason, "durability") {
+		t.Fatalf("health cannot accept a durability-pending completion: %+v", role)
+	}
+}
+
+func TestForwardClockMovementExpiresComponentFreshness(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 44300, StartedAtSec: 100}
+	attempt, err := beginComponentAttempt(root, "narrator", 1, process, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := completeComponentAttempt(root, "narrator", 1, attempt.AttemptSeq, ComponentOK, "EMITTED", "line", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	role := componentFreshness(root, "narrator", RoleNarratorFreshness, 1, 2*time.Minute, now.Add(10*time.Minute), "repair", nil, "fresh")
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "stale") {
+		t.Fatalf("a forward clock movement expires freshness immediately: %+v", role)
+	}
+}

@@ -28,6 +28,28 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 	return steward.LiveWorkerCensus{MetasystemRoot: repo}
 }
 
+// runStewardHealth prints every role on one line and returns the aggregate
+// health code: zero healthy, one when any role is dead, two when unknown is
+// the worst result.
+func runStewardHealth(args []string) int {
+	flags := flag.NewFlagSet("health", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "health: --repo is required")
+		return 2
+	}
+	verdict, err := steward.ObserveHealth(*repo, time.Now(), nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "health: health evidence is unknown: %v\n", err)
+		return 2
+	}
+	fmt.Println(verdict.Line())
+	return verdict.ExitCode()
+}
+
 // runStewardTick is one scheduled observation: decide, persist the
 // aging, and print the decision as JSON for the tick script.
 func runStewardTick(args []string) int {
@@ -47,6 +69,9 @@ func runStewardTick(args []string) int {
 	}, stewardCensusFor(*repo))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward tick: %v\n", err)
+		if _, deliverErr := steward.DeliverPending(*repo); deliverErr != nil {
+			fmt.Fprintf(os.Stderr, "steward tick: notifications pending: %v\n", deliverErr)
+		}
 		return 1
 	}
 	// The tick is a FUNCTIONAL seam — an external ticker calling this
@@ -85,6 +110,7 @@ func runStewardTick(args []string) int {
 		"reason":    result.Decision.Reason,
 		"openWork":  result.OpenWork,
 		"evidence":  result.Evidence,
+		"health":    result.Health,
 		"reaped":    result.Reaped,
 		"delivered": delivered,
 		"revived":   revived,
@@ -294,6 +320,30 @@ func runStewardArm(args []string) int {
 	msg, err := steward.Arm(*repo, bin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
+		return 1
+	}
+	fmt.Println(msg)
+	return 0
+}
+
+func runStewardRestart(args []string) int {
+	flags := flag.NewFlagSet("steward restart", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward restart: --repo is required")
+		return 2
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
+		return 1
+	}
+	msg, err := steward.Restart(*repo, bin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
 		return 1
 	}
 	fmt.Println(msg)
