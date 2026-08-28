@@ -18,7 +18,7 @@ Testing followed the same pattern. A release team once clicked through the appli
 
 This ladder shows that machinery can absorb bounded, repeatable work. It does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
-One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can achieve. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger than the ladder suggests: machinery takes on more of the building and delivering, and engineers own the design and governance of the machinery doing it.
+One further premise is needed now. Machinery can increasingly carry an iterative tool-using loop: inspect an application, propose a change, act through tools, observe the result, run checks and revise the proposal. That capability goes beyond what a script or checklist can achieve. It still needs bounds, evidence, authority and care. The proposed shift is narrower and stronger: machinery takes on more of the building and delivering, and engineers own the design and governance of the machinery doing it.
 
 ## The new object of ownership
 
