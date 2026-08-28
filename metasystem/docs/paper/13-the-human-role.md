@@ -34,7 +34,7 @@ The 8:40 outcome (sign users out after thirty minutes without activity) comes fr
 
 An intent-holder is the person or authorized group allowed to bind purpose and priorities within a stated domain. The role supplies outcomes, constraints and real freedoms rather than hiding a task list inside a desired result. Its authority can be delegated: an account-security lead may decide timeout risk while an accessibility body decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
 
-Intent remains answerable to evidence. The authorized person can be wrong about user behavior, omit an affected group or state two conditions that cannot both be met. A builder that discovers such a conflict does not choose the more convenient interpretation. It records the conflict and returns a clear question to the relevant authority. Binding intent means having permission to resolve the purpose; it does not mean that the purpose becomes infallible.
+Intent remains answerable to evidence. The authorized person can be wrong about user behavior, omit an affected group or state two conditions that cannot both be met. A builder that discovers such a conflict does not choose the more convenient interpretation. It records the conflict and returns a clear question to the relevant authority. Binding intent means having the permission to settle what the purpose is; it does not make the purpose infallible.
 
 ## Reviewer: authority, accountability and appeal
 
@@ -60,7 +60,7 @@ Delegation does not dissolve responsibility. The delegating authority answers fo
 
 Two authorized proposals arrive seconds apart. One lowers the session limit; the other restores the longer limit to reduce lockouts. Machinery can preserve both, prevent them from overwriting each other and establish which proposal was recorded first. It cannot treat the later timestamp as a reason that privacy now outweighs accessibility.
 
-Ordering controls coordination; it cannot confer legitimacy. Once the responsible authority or body rules, machinery can enforce that ruling consistently and reject an older conflicting instruction. Before the ruling, it can display the conflict and prevent accidental progress. The cause of the stop is substantive disagreement, so the rule sends it to substantive authority rather than disguising it as a race between writes.
+Ordering controls coordination; it cannot make an outcome legitimate. Once the responsible authority or body rules, machinery can enforce that ruling consistently and reject an older conflicting instruction. Before the ruling, it can display the conflict and prevent accidental progress. The cause of the stop is substantive disagreement, so the rule sends it to substantive authority rather than disguising it as a race between writes.
 
 ## What humans should not do
 

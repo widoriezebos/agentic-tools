@@ -12,7 +12,7 @@ What follows are things I have seen in software teams; not every team uses each 
 
 A team with ten people and more requests than attention chooses a small batch for the next two weeks. The fixed interval gives people a stable horizon, limits interruption and creates a regular moment to reconsider priority. The sprint answers a need: protecting scarce human attention from constant reshuffling. Its cadence is only a means.
 
-A manager deciding between two projects asks how long each will take. The answers are imperfect, but they make commitments and contention discussable before expensive labor is assigned. Estimates help allocate scarce people and expose disagreement about scope. The need they serve is a decision made with a visible account of expected cost and uncertainty. The number itself is secondary.
+A manager deciding between two projects asks how long each will take. The answers are imperfect, but they let people discuss commitments and disagreements before expensive labor is assigned. Estimates help allocate scarce people and expose disagreement about scope. The need they serve is a decision made with a visible account of expected cost and uncertainty. The number itself is secondary.
 
 A developer finishes a change that looks correct to its author. Another developer reads it, finds an unchecked boundary and learns how that part of the application works. Code review adds a second perspective while spreading knowledge that would otherwise remain with one person. It serves two needs: scrutiny independent enough to find faults, and continuity beyond the original author.
 
@@ -20,7 +20,7 @@ When the person who understands a service leaves, the next person reconstructs i
 
 After the same release failure happens twice, a team stops normal work and asks why its process has not learned. The retrospective creates protected time to compare expectation with outcome and change future behavior. The need it serves is a learning loop with authority to alter the system; the meeting invitation is not the point.
 
-The method is the same each time: take a concrete practice, recover the human limit that produced it and name the need it served. The history is observed; the proposed approach is to keep meeting that need only where it still exists under the new workforce.
+The method is the same each time: take a concrete practice, recover the human limit that produced it and name the need it served. The practices are real history; the proposal is to keep meeting each need only where it still exists under the new workforce.
 
 ## Why mimicry is attractive
 
@@ -34,7 +34,7 @@ A ceremony cannot justify itself by being recognizable. The relevant question is
 
 Suppose every machine worker must write a morning report, attend a planning exchange, estimate its attempt and produce a closing summary. Most of the information already exists in the work record. Rewriting it consumes computation and creates several versions of state that can disagree. A responsible authority must either read them all or accept that some reports exist only because the process asks for them.
 
-The greater cost is misplaced confidence. A polished review summary can look like scrutiny even when its author received the builder's reasoning and repeated the same assumption. An estimate can make uncertain exploration look controlled without limiting spend. A retrospective can collect lessons that never change a check, permission or decision. The copied form becomes an empty performance when no observation can distinguish performing the ceremony from meeting the need behind it.
+The greater cost is misplaced confidence. A polished review summary can look like scrutiny even when its author received the builder's reasoning and repeated the same assumption. An estimate can make uncertain exploration look controlled without limiting spend. A retrospective can collect lessons that never change a check, permission or decision. The copied form becomes an empty performance when nothing observable tells you whether the need behind it is actually met.
 
 Attention then follows the old problems. Managers ask whether each worker reported on time while a stopped attempt has no deadline or terminal record. Reviewers count approvals while every independent examiner shares the same source of expected results. Planners optimize a cadence while weak verification allows a plausible mistake to approach release. Mimicry is expensive not just because it adds steps, but because those steps can conceal the failure modes of the new workforce.
 

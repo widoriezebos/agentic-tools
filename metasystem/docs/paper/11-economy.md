@@ -12,7 +12,7 @@ Suppose every session change waits for a weekly meeting. The meeting may once ha
 
 Every continuing process must name the outcome it protects. It must also produce evidence that its protection is worth the time, delay, attention and machinery it consumes. A human discussion may remain the least costly way to resolve a value conflict. An automatic refusal may be cheaper and more dependable for a repeated condition.
 
-Avoided disclosure, preserved trust, faster recovery and clearer accountability can resist exact pricing while still being concrete. The discipline is to state the protected value and examine whether the process contributes to it. When that connection disappears, the process is reduced, redesigned or stopped, and the reason is recorded so that a later incident can challenge the decision.
+Some protected values are hard to price exactly (avoided disclosure, preserved trust, faster recovery, clearer accountability) but they are still concrete. The discipline is to name the protected value and check whether the process actually contributes to it. When that connection disappears, the process is reduced, redesigned or stopped, and the reason is recorded so that a later incident can challenge the decision.
 
 ## Four risk questions govern verification and spending
 
@@ -20,7 +20,7 @@ Before the session change begins, someone must decide where one more unit of eff
 
 The same four questions that set evidence depth in Chapter 6 govern the spending side here: how severe the harm would be if the work were wrong, how unfamiliar the approach is, how many users or systems it can affect and how much change has accumulated since the last broad check. The answers stay separate rather than collapsing into an unexplained score.
 
-Consequence changes what the budget must be able to absorb. A change that can expose accounts needs room for independent judgment, controlled release and recovery even if the candidate is cheap to produce. Novelty changes the value of exploration. An unfamiliar approach may justify separate attempts or outside expertise because the first plausible design carries more uncertainty. Exposure changes the cost of learning from live use: broad reach makes a mistake expensive, so money and time move toward smaller stages, observation and response capacity. Accumulated change changes the value of a wider look. Many individually ordinary changes can move the application far enough that a broad examination becomes worth its cost.
+Severity changes what the budget must cover. A change that can expose accounts needs room for independent judgment, controlled release and recovery even if the candidate is cheap to produce. Novelty changes the value of exploration. An unfamiliar approach may justify separate attempts or outside expertise because the first plausible design carries more uncertainty. Exposure changes the cost of learning from live use: broad reach makes a mistake expensive, so money and time move toward smaller stages, observation and response capacity. Accumulated change changes the value of a wider look. Many individually ordinary changes can move the application far enough that a broad examination becomes worth its cost.
 
 They direct marginal spending, meaning the next unit of time or attention. The system asks whether that next unit is more valuable in construction, examination, human judgment, gradual release, care or not being spent at all.
 
@@ -44,7 +44,7 @@ Chapter 3's asymmetry returns as a price: every additional attempt creates a jud
 
 Parallel attempts are worth their cost when disagreement itself has value. They can reveal that the chosen design depends on an assumption no single builder noticed. They can explore truly different responses to a high-consequence problem. They can also increase confidence when independent paths reach the same bounded result. They are not worth it when several versions differ only in surface form or when the acceptance criteria already make one routine construction obvious.
 
-The decision comes before broad generation. The system estimates the information or solution value of another attempt and compares it with both production and judgment cost. If no one has the budget or authority to decide among five candidates, producing five only piles up unfinished work.
+The decision comes before broad generation. Estimate what another attempt could teach or solve; compare that with the cost of producing and judging it. If no one has the budget or authority to decide among five candidates, producing five only piles up unfinished work.
 
 ## Small changes can be risky; large changes can be routine
 
@@ -68,7 +68,7 @@ The argument allows a rational decision not to build the system, without exempti
 
 A team facing the first low-risk version of a tool may need only recorded intent, a discriminating check and a reversible release. Later, the tool gains users and begins storing private information. The cost balance changes, and independent examination, narrower authority, durable custody and production care become justified.
 
-The smallest sufficient mechanism protects the relevant outcome at the expected level of risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost or a valuable learning opportunity. It is removed when the need it served disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
+The right amount of machinery is the smallest that protects the outcome at the expected risk and reuse. Structure is added when evidence reveals a new hazard, a repeated cost or a valuable learning opportunity. It is removed when the need it served disappears or a cheaper protection proves dependable. This keeps the delivery system proportional instead of allowing it to become a product whose maintenance overwhelms the application it serves.
 
 The proposed shift in engineering ownership is directional; it does not carry the same weight everywhere. Repeated or consequential software makes the system that builds and cares for it a durable asset. A script used once may need almost none of that asset. Both choices can follow the same economic discipline.
 

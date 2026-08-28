@@ -28,13 +28,13 @@ Not every deviation justifies intervention. Ordinary variation remains within au
 
 ## Incidents begin with harm containment
 
-During expansion, support receives credible reports that people on a particular device lose unsaved work after the warning. The overall error rate remains normal, and the cause is not yet known. Waiting for a complete explanation would leave more people exposed while the investigation becomes elegant.
+During expansion, support receives credible reports that people on a particular device lose unsaved work after the warning. The overall error rate remains normal, and the cause is not yet known. Waiting for a complete explanation would leave more people exposed while the diagnosis gets polished.
 
 This is an incident: an observed or credible threat to an outcome the system is responsible for protecting. The definition includes user harm that does not appear as a technical failure. A repeated sign-in loop is an incident even if every request returns a formally successful response. A session left open on a shared device is an incident even if no user reports it. Credible evidence of harm is enough to begin containment.
 
 The first action limits exposure. Authorized release stops expansion, removes the affected group from the new behavior when that is safe or restores the earlier version. It preserves the exact released candidate, observations, reports and actions so that containment does not destroy the evidence needed for diagnosis. It notifies the people who hold responsibility for the affected outcome and states what is known, what remains uncertain and what has been done.
 
-Containment does not require a finished causal account. Its authority comes from the threatened outcome and the previously established bounds. Diagnosis continues after the immediate reach of the harm is limited. This order is important because explanations can take longer than users can safely wait.
+Containment does not wait for a finished explanation of the cause. Its authority comes from the threatened outcome and the previously established bounds. Diagnosis continues after the immediate reach of the harm is limited. This order is important because explanations can take longer than users can safely wait.
 
 ## Rollback and repair
 

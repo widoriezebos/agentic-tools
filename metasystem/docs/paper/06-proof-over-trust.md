@@ -4,7 +4,7 @@
 
 In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
 
-That difference between explanation and observation is the organizing principle: convincing claims can guide inquiry, but bounded proof and well-grounded evidence authorize consequential action. The aim is an accurate account of what one exact result has and has not demonstrated.
+The gap between the explanation and the observation is the whole principle: a convincing claim can point you somewhere, but only evidence and bounded proof can justify an action with consequences. The aim is an accurate account of what one exact result has and has not shown.
 
 ## Evidence, proof and the boundary between them
 
@@ -40,7 +40,7 @@ The independent examiner's job is active fault-finding. It tries boundary times,
 
 Changing a comma in internal help text and reversing one comparison in account authorization can each alter one line. Line count says little about the evidence either change deserves. The authorization error can expose every signed-in account; the text change may be immediately reversible and affect no behavior.
 
-Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Consequence sets the strength of evidence. Novelty widens challenge beyond checks shaped by the old design. Broad exposure raises the cost of one missed fault. Accumulation justifies a broad examination that catches interactions among modest changes.
+Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Severity decides how strong the evidence must be. Novelty calls for challenges beyond the checks that grew around the old design. Exposure raises the price of one missed fault. Accumulation justifies a broad examination that catches interactions among modest changes.
 
 Chapter 11 applies the same questions to production, comparison and the decision whether the next unit of effort is worth spending.
 
@@ -56,7 +56,7 @@ The response is careful language about what was shown, not despair. The system r
 
 A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. Requiring a person to repeat the same inspection adds delay without adding an independent source of judgment.
 
-A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption that could produce correlated agreement. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. Chapter 13 says who may perform that review, how accountability is assigned and how an appeal proceeds.
+A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption and agree for that reason alone. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. Chapter 13 says who may perform that review, how accountability is assigned and how an appeal proceeds.
 
 Low risk does not mean no control. A path authorized by enforced rules still needs traceable intent, evidence tied to the exact candidate and a way to reverse the result. Human review adds an independent judgment required by named conditions; it does not replace those protections.
 
@@ -70,7 +70,7 @@ Repair then tests a revised classification against this case and against cases t
 
 ## The change, continued
 
-Chapter 1 already records the ruling, named checks, refused candidate and one human interruption. Here those facts set an evidentiary task: determine which observations distinguish supported behavior from the known failure.
+Chapter 1 already records the ruling, named checks, refused candidate and one human interruption. Here those facts set the task: find the observations that tell supported behavior apart from the known failure.
 
 The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison on purpose and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.
 

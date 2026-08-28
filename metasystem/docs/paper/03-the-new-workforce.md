@@ -4,13 +4,13 @@
 
 A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.
 
-Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be derived from those actual properties rather than from wonder or fear about the machinery.
+Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be built for what this workforce actually is, and not for wonder or fear about it.
 
 ## What falls or changes shape
 
 When a new person joins a difficult change, someone spends hours explaining history, pointing to the relevant parts of the application and answering follow-up questions. A machine worker can receive a copied record in seconds. The cost of moving recorded context falls sharply. The cost of choosing the right context does not. A complete archive may bury the current constraint, while a narrow extract may omit the decision that explains it. Cheap copying is not the same as free knowledge.
 
-A second attempt also becomes easier to start. There is no need to wait for the first builder to finish or to recruit another person with an open schedule. Several candidates can be constructed at once. But each attempt consumes computation, may compete for tools or environments and produces another result an independent examiner must compare. Parallel construction lowers elapsed time only when coordination and judgment do not grow faster than the value of the alternatives.
+A second attempt also becomes easier to start. There is no need to wait for the first builder to finish or to recruit another person with an open schedule. Several candidates can be constructed at once. But each attempt consumes computation, may compete for tools or environments and produces another result an independent examiner must compare. Building in parallel saves time only if coordinating and judging the extra candidates costs less than they are worth.
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
@@ -46,9 +46,9 @@ These failures are real: seen in practice or easy to reproduce. Not every attemp
 
 Suppose five builders produce five solutions to the session problem before lunch. The organization still needs to know which solution preserves the authorized upload, refuses the late background response, handles existing sessions and can be reversed. Reading five persuasive explanations does not answer those questions. It only moves the unresolved work from construction to judgment.
 
-Generation becomes cheap faster than trustworthy judgment does. That asymmetry shapes the whole proposed system. Candidates are plentiful; the scarce result is a well-supported decision that one exact candidate serves the authorized intent within known bounds.
+Producing candidates gets cheap much faster than judging them does. That gap shapes the whole design. Anyone can have five candidates by lunch; what stays rare is a decision, backed by evidence, that one exact candidate does what was asked within known limits.
 
-Verification supplies that support through discriminating tests, independent attempts to find faults and observations of actual behavior. These methods also cost time and computation, and some conclusions still require human judgment. The design consequence is to organize generation around the evidence needed to reject attractive mistakes, stop unproductive searches and direct scarce human attention to questions that machinery cannot decide. Making generation artificially scarce is not the goal.
+Verification supplies that support through discriminating tests, independent attempts to find faults and observations of actual behavior. These methods also cost time and computation, and some conclusions still require human judgment. The point is not to make production scarce again. It is to aim production at evidence: enough to reject attractive mistakes, stop searches that go nowhere and save human attention for the questions machinery cannot decide.
 
 ## Consequences in one view
 
@@ -57,7 +57,7 @@ The table summarizes the design brief; it does not claim that one mechanism sett
 | Change in the workforce | Failure that remains or appears | System property that follows |
 | --- | --- | --- |
 | Recorded context is cheap to copy | Relevant context can be omitted or buried | Give each actor bounded, traceable context and preserve the authoritative source |
-| Fresh attempts are easy to start | Attempts can share assumptions and multiply judging work | Preserve contextual independence where it is needed and price comparison as well as production |
+| Fresh attempts are easy to start | Attempts can share assumptions and multiply judging work | Keep examiners genuinely fresh where it counts and budget the judging as well as the producing |
 | Work can continue outside human hours | A stopped attempt can look like a patient one | Record progress, deadlines and explicit completion or failure |
 | Fatigue and attachment are absent from a single bounded attempt | Convincing mistakes, drift and agreement-seeking remain | Judge observable results rather than confidence or persistence |
 | A worker's session can end without continuity | Useful state and reasons can disappear | Keep intent, state, decisions and results in durable records |
