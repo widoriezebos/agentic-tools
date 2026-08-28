@@ -16,6 +16,8 @@ Different sources reveal different parts of the result. Technical signals can co
 
 Each source keeps its limits visible. A fall in active sessions may show successful expiry or frustrated departure. A support spike may reflect a severe problem among a few people or a minor problem that is easy to report. Silence from users is not proof of success. The system links observations to their source, time, affected group and uncertainty, then compares them with the success and harm conditions recorded with the intent. Observation serves the outcome rather than producing a dashboard of convenient activity.
 
+None of this is invented after release. The conditions being watched were recorded with the intent, and the enforced rule from Chapter 1 refused release until live observation could tell an expected rise in sign-ins from a broken loop. The observations themselves are evidence like any other: bound to the exact released version, their source and their time, held in the same records that carry the rest of the work. That binding is what lets the rest of care act: containment, repair and revision each start from an observation someone can trace.
+
 ## Detect drift
 
 Three months after release, a browser update changes how sleeping pages resume. No session code changes. A response that used to arrive before expiry now arrives after it, and the application treats it differently. The behavior that passed examination in August can become wrong in November without a new candidate passing through the delivery loop.
