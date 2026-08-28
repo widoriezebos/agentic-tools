@@ -72,7 +72,7 @@ A low-risk wording correction may need one builder, an automatic examination and
 
 These are configurations; none of them is a job title. A human can serve as the independent examiner when consequence, shared machine assumptions or accountability requires human judgment. Several independent people or machines can examine the same candidate when the possible harm justifies the cost. On smaller work, compatible functions can be combined. The configuration changes with the hazards; the protections do not change just to keep every role occupied.
 
-A role also does not dictate the shape of its machinery. What must exist is the relation and the permission boundary. A continuous hazard needs a standing observer: silence can begin at any moment, so a liveness watcher runs all the time. An event-bound hazard needs machinery only at the event: custody can live in durable records and enforced rules, with an actor holding the narrow acceptance permission only at the moment of acceptance. The separation is equally real in both shapes; only the machinery differs.
+A role also does not dictate the shape of its machinery. What must exist is the relation and the permission boundary. A continuous hazard needs a standing observer: silence can begin at any moment, so a liveness watcher runs whenever workers do. An event-bound hazard needs no standing actor: durable records and enforced rules hold at all times, and the custodian receives its narrow acceptance permission only at the moment of acceptance. The separation is equally real in both shapes; only the machinery differs.
 
 ## The anti-mimicry test
 
