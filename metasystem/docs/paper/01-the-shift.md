@@ -54,7 +54,7 @@ The shift does not depend on machinery writing one plausible patch. It depends o
 
 From each of those failures we take a rule. Because silent stopping makes waiting look like work, progress needs a durable record and each active attempt needs a visible deadline. Because several attempts can share the same mistaken assumption, a proposal needs challenge grounded independently of the builder's account. Because a plausible mistake can cross from code into user harm, permissions must be narrow enough to contain what construction and release may do. Because evidence cannot resolve the value choice hidden in "active work," that choice needs a named human authority before it becomes a check.
 
-Some questions evidence cannot settle. Others involve values, accountability or possible harm, and need judgment from outside the delivery loop. Those calls stay with people. The aim is that people spend their attention where their authority is needed, while machinery does the repeatable work inside limits people can inspect and change. Nobody is removed from consequential work.
+Questions like that stay with people: choices between values, decisions someone must answer for, and risks big enough to want a judge from outside the machinery. The aim is that people spend their attention where their authority is needed, while machinery does the repeatable work inside limits people can inspect and change. Nobody is removed from consequential work.
 
 ## The question before the design
 
