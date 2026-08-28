@@ -40,7 +40,7 @@ Even the identity of an active attempt can be unclear. A delayed message may com
 
 Every retry, copied context, tool call, test and competing candidate also consumes a measured resource. Computation is metered: some effort becomes cheap enough to repeat, but never free. And an extra candidate creates a second cost that the meter may not show directly: trustworthy comparison. A budget that counts production but not judging encourages a pile of plausible alternatives without a way to choose among them.
 
-These failure modes are observed or easy to test for; the claim is not that every attempt shows all of them. The design thesis is that a delivery system should assume they can occur and make their consequences visible and bounded.
+These failures are real: seen in practice or easy to reproduce. Not every attempt has them all. A delivery system should assume any of them can happen, make them visible when they do and keep the damage contained.
 
 ## Generation is cheap, judgment is not
 
