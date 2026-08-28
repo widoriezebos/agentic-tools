@@ -1,12 +1,11 @@
 # delegate-job-liveness
 
-- State: claimed
+- State: queued
 - Intent: The live delegation lane comes back under metasystem custody, and delegated worker status must not lie. Evidence through 2026-08-27: at least six zombie/launch failures in two days — status fields raced or lied in four sightings 2026-08-26/27, then the correction pass for actionable-metrics double-fired at launch (a >10min first call retried, minting a duplicate resume whose id was handed back while the real task ran under another) and later zombied (status running 15+min after log, work products, and process were all dead; caught only by a coordinator's hand-rolled monitor applying the work-product-mtime + process-probe + timed-verdict triad). Root cause: the fleet's real lane (codex companion, raw codex exec) runs outside the job-record machinery entirely — no job record since 2026-08-12, no process identity, no idempotent launch, no cap, no reaper. Every protection exists in the metasystem dispatch lane and none of it applies to the lane in daily use (Wido approved this arc re-scope 2026-08-27)
 - Origin: human
 - Next step: Appetite: 4h — HARD SLICE CEILING PER WIDO 2026-08-28 (no slice ever exceeds 4h again); this appetite governs WHATEVER continues on this goal and its breach banner must stay armed (the previous NextStep edits destroyed the parseable prefix and silenced appetite protection for the whole overnight build — the coordinator's own defect). STATE: ALL WORK STOPPED under Wido's stop order. The overnight build (6 stages + ~10 correction passes, UNLANDED) is preserved untouched on branch wip/custody-launch-machine (3fec78a, pushed). Steward/narrator were dead since Aug 20/23 (runner pid 18121 dead; being re-armed). NOTHING RESUMES without Wido's explicit word.
 - OpenedAt: 2026-08-27T06:12:18Z
-- Revision: 15
-- Claimed: machine=m1 lineage=coordinator at=2026-08-27T14:09:04Z
+- Revision: 16
 
 History:
 - 2026-08-27T06:12:18Z E8F1PERWGM23AZ2B7JPCWP1BS6-m1-bf243850 open actor=human:wido targets=delegate-job-liveness
@@ -24,4 +23,5 @@ History:
 - 2026-08-28T02:45:15Z 1AP5BV6VASX3J88336NCRDFKEV-m1-bf243850 edit actor=m1+coordinator targets=delegate-job-liveness
 - 2026-08-28T04:42:46Z ARJHJFSQRG6H2C9PHNAY3B2TET-m1-bf243850 edit actor=m1+coordinator targets=delegate-job-liveness
 - 2026-08-28T05:41:55Z VVKVX853GSHBZW2YQF6RFR4ZJT-m1-bf243850 edit actor=m1+coordinator targets=delegate-job-liveness
-Integrity: sha256=c100c8ab012d4a46b47d5e64e66218b6bf2d361df516dc8ff5e1139fcf988799
+- 2026-08-28T05:47:56Z 3WRQ5RYNWS7Z3X7Z19DAA7C5ST-m1-bf243850 release actor=m1+coordinator targets=delegate-job-liveness
+Integrity: sha256=f2dc45e256ae0db0eccbb241b08d067f5e8845591b650d517e0238808530a6bf
