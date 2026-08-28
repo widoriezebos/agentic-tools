@@ -10,6 +10,35 @@ to a concrete failure of the preceding 48 hours or to a written law
 of this repository that was being violated. Nothing here is
 invented; it is the recorded philosophy, enforced.
 
+## THE GOAL
+
+This design serves the vision recorded in docs/paper — a system
+that governs the production of software through revisable intent,
+evidence over trust, durable records, enforced rules that refuse,
+budgets that stop, and human authority at value decisions — and it
+restores the one property without which none of that vision can
+operate: A SURFACE ITS OWN OPERATOR CAN HOLD. The breakdown was
+not a failure of the vision. It was unmetered mechanism accreting
+past operability until the protections were conventions nobody
+could keep and machinery nobody could run. The goal of the
+claw-back, stated plainly: keep everything that demonstrably works
+(the goal ledger, the landing gates, the census and reaper
+machinery, the metrics family, and the custody internals preserved
+on the wip branch — the baby stays), delete or internalize what
+made the system inoperable (the bathwater goes, named line by line
+in the removal ledger), and re-earn trust in the machinery slice
+by slice under the current controls and Wido's word.
+
+THE BOOTSTRAP POSTURE (binding until revoked): the current state
+cannot be relied on to run its own rescue. Until each protection
+demonstrably works again, THIS work uses only the minimal trusted
+core — direct delegation (plain codex execution, coordinator-
+monitored), the existing landing gate, the coordinator's own
+verification by execution, and Wido's explicit acceptance. No
+slice of this design depends on machinery this design has not yet
+repaired. Machinery re-enters the loop only after its own slice
+lands and proves itself live.
+
 The breakdown this answers (the evidence base):
 - The steward runner had been dead since ~2026-08-20 and the
   narrator since 2026-08-23; nobody and nothing noticed until the
