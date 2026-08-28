@@ -2,7 +2,7 @@
 
 The request from Thursday morning says to change how long a user stays signed in. It does not say whether the change is complete when new behavior exists on a builder's machine, when a check passes, when every user receives it or when the service has lived with it without causing harm. Those moments are not the same, and treating them as one makes a short request look complete long before a dependable outcome exists.
 
-Chapter 1's ladder shows that tools can absorb bounded work, not which parts of delivery remain necessary when the old division of labor changes. So we start simpler: describe what must happen on the way from a human need to dependable behavior, apart from the process used to arrange the work.
+Chapter 1's ladder shows that tools can absorb bounded work, not which parts of delivery remain necessary when the old division of labor changes. So we start simpler: describe what must happen on the way from a human need to dependable behavior, apart from the process humans currently use to arrange the work.
 
 ## What delivering software actually requires
 
