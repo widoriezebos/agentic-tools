@@ -8,7 +8,7 @@ The system keeps memory outside its workers, because any worker can disappear. I
 
 ## One authoritative record, with access limited by role
 
-Consider the first session-expiry candidate. One account says it is ready. Another says a delayed background response revives an expired session. A third says the candidate was repaired, but the evidence belongs to the earlier version. If all three accounts can determine the state of the work, "ready" has no stable meaning. Release can follow whichever story an actor happens to read.
+Consider the first session-expiry candidate. One report says it is ready. Another says a delayed background response revives an expired session. A third says the candidate was repaired, but the evidence belongs to the earlier version. If all three reports can determine the state of the work, "ready" has no stable meaning. Release can follow whichever story an actor happens to read.
 
 The remedy is one authoritative record: a structured, history-preserving source that alone determines the current state. For the case established in Chapter 1, it binds every state transition to the actor, authority, exact candidate and evidence that support it. Earlier states remain visible to authorized readers rather than being rewritten to make the final path look clean. A private note can help a worker think, but it cannot make a candidate accepted or an enforced rule passed until the relevant fact enters the authoritative record.
 
