@@ -84,8 +84,10 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 			}
 			t.Root = root
 		case strings.HasPrefix(rel, "done/") && strings.HasSuffix(rel, ".md") && !strings.Contains(strings.TrimPrefix(rel, "done/"), "/"):
-			// This legacy READ path is retained for the named reason
-			// "observed soak until m2 slice-5 landing deletes it".
+			// PERMANENT, not soak (named reason per Ruling N):
+			// historical git trees carry plans/goals/done immutably,
+			// and one uniform parser reads every tree in history.
+			// Engine WRITES never target this prefix.
 			parseDoneAt(t, p, data, addf)
 		case strings.HasSuffix(rel, ".md") && !strings.Contains(rel, "/"):
 			f, ok := parseGoalAt(p, data, addf)

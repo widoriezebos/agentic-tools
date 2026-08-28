@@ -255,6 +255,13 @@ cat >"$stage/memory/README.md" <<'SKELETON'
 
 This tree holds the living registers — records that accrete and are never finished (rulings, known issues, flakes, receipts, notes); static explanation belongs in docs/ and concluded history belongs in records/.
 SKELETON
+mkdir -p "$stage/records/goals"
+cat >"$stage/records/README.md" <<'SKELETON'
+# Records
+
+This tree holds concluded history — critique rounds, dispositions, facts, finished designs, concluded goals under records/goals/; append-only for agents and humans (the goal engine alone mutates records/goals/ under its ledger rules); live intent belongs in plans/ and living registers in memory/.
+SKELETON
+touch "$stage/records/goals/.gitkeep"
 cat >"$stage/memory/instruction-ledger.md" <<'SKELETON'
 # Instruction Ledger
 

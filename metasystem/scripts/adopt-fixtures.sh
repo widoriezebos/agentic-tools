@@ -830,7 +830,7 @@ if true; then  # template-gated by the orchestrator
       metasystem.conf|plans/goals-accepted.json|bin/metasystem) continue ;;
       .github/workflows/metasystem.yml) continue ;;
       memory/known-issues.md|memory/instruction-ledger.md) continue ;;
-      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md) continue ;;
+      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep) continue ;;
       .claude/*|.agents/*|.devin/*) continue ;;
       *) echo "adoption wrote outside the computed inventory ($tracer_runtime): $written" >&2; exit 1 ;;
     esac
