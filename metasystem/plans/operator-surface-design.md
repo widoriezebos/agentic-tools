@@ -243,24 +243,69 @@ would REOPEN it:
   WHY: the steward died in silence for five days precisely because
   it was the only thing that would have reported its own death.
 
-## What happens to everything else
+## The removal ledger — explicit, surface by surface
 
-- arm-supervision.sh, the lease verbs, critique-round.sh, and
-  dispatch.sh's operator surface become INTERNALS of `up` and
-  `delegate` (scripts may remain as plumbing the verbs call, per
-  the core-vs-plumbing boundary — decisions in Go, invocation in
-  shell). The operator never types them again.
-- The wip/custody-launch-machine branch is the PARTS INVENTORY for
-  `delegate` and `health` internals (Wido: the invested tokens
-  must not be worthless — and they are not: identity exactness,
-  idempotent claims, custody records, and the liveness triad are
-  precisely the hard parts of the two biggest verbs). The triage
-  (keep / adapt / delete, with reasons) is its own reviewed
-  document before verb four is built.
-- The one-page operator contract (the daily loop, the six verbs,
-  the three laws: 4h slices; breaches raise and the coordinator
-  switches items; land small) lands in docs/ as the FIRST page of
-  the ways of working; everything longer becomes reference.
+What exists today, what happens to it, what replaces it. DELETE
+means the file or verb ceases to exist. INTERNALIZE means it
+survives as plumbing a verb calls — the operator never types it,
+its name leaves the operator docs, and `--help` at the top level
+no longer shows it. KEEP means it remains operator-facing.
+
+Scripts:
+
+| Today | Disposition | Replaced by / reached via | Why this is simpler and more robust |
+| --- | --- | --- | --- |
+| scripts/agents/critique-round.sh | DELETE | `delegate --role design-critic\|code-critic` | A critique round IS a delegation; two launch paths meant two custody stories (this week: one custodial, one not). One path, one custody. The severity design already prescribed this driver's retirement — built once here. |
+| scripts/agents/receipt.sh (operator use) | DELETE from surface | `land` writes the receipt row atomically (`receipt add` becomes internal) | A separate post-landing ritual was skipped under pressure and delegate-written rows corrupted the ledger this week. Provenance becomes impossible to omit and impossible to write from the wrong hands. |
+| scripts/agents/arm-supervision.sh | INTERNALIZE | `up` | The arming ORDER was operator knowledge; the dead-owner wedge cost 40 minutes and blamed the wrong component. `up` encodes the order, takes over dead owners, and is idempotent. |
+| scripts/agents/dispatch.sh (dispatch/follow-up/status/watch/cancel/close/reap subcommands) | INTERNALIZE | `delegate` (launch+follow-up), `watch` (status/watch/evidence), `health`+tick (reap surfacing) | Sixteen hand-rolled launches with homemade zombie monitors in one night, because the lawful path had unholdable prerequisites. The prerequisites move inside the verb. |
+| scripts/agents/land.sh + commit.sh (operator use) | INTERNALIZE | `land` | Already the right shape; becomes a verb with mandatory --goal/--built-by and the receipt inside. commit.sh remains its internal engine. |
+| scripts/agents/watch-background-jobs.sh | INTERNALIZE | armed by `up`, watched by `health` | The watcher was running for the WRONG repo while this one ran blind; nobody could tell. `health` names it per-repo. |
+| scripts/agents/checkout-execution-guard.sh | INTERNALIZE | wrapped by `delegate` | Unchanged behavior; leaves the operator's vocabulary. |
+| scripts/agents/sync-transport.sh | INTERNALIZE | inside `land` | Already effectively internal. |
+| validate-metasystem.sh, battery.sh, milestone-battery.sh | KEEP (verification tools, not daily verbs) | invoked at milestones per the battery-cadence rule | Verification is not ceremony; these are the proof engines. Not part of the six because they are not daily-loop actions. |
+| adapters/*, emit-event.sh, evidence-gc.sh, enumerate-suite.sh, fixtures | Already internal | unchanged | Plumbing stays plumbing. |
+
+Engine verb families (the binary exposes ~15 families, ~100+
+verbs today — the operator surface after this design is the goal
+family plus five new verbs; every other family is INTERNAL:
+reachable by plumbing and fixtures, absent from top-level help and
+operator documentation):
+
+| Today's family | Disposition | Operator replacement |
+| --- | --- | --- |
+| job (30 verbs: record-create/setup/cas, claim-launch, watch, reap-facts, custody, chain…) | INTERNAL | `delegate`, `watch`; the tick consumes reap-facts |
+| proc (11: probe, alive, classify, census, find-ancestor…) | INTERNAL | `health` presents the verdicts; `up` uses identity internally |
+| lease (require-holder, run-held…) | INTERNAL | `up` acquires; `health` reports holder state |
+| supervise (launch-detached, arming…) | INTERNAL | `up` |
+| steward (arm/tick/pending/revive…) | INTERNAL except none — the tick self-runs; `health` is the new operator window | `up`, `health` |
+| adapter, runtime, config, json, util, gate, report, validate | INTERNAL | already non-operator; unchanged |
+| receipt | INTERNAL | `land` |
+| goal | KEEP (with the structured-appetite change) | itself |
+| mission | KEEP (unattended missions; out of the daily loop) | itself, unchanged |
+
+Complexity removed outright (not moved — DELETED):
+
+| Complexity | Fate | Replaced by |
+| --- | --- | --- |
+| The nine-outcome claim-launch state machine (wip branch) | COLLAPSED to three | started \| already-running \| refused-because — the operator-thinkable set; the six refusal flavors become the `because` text with the invariant named |
+| The prose "Appetite:" convention | DELETED | the structured field; prose notes carry zero machine meaning |
+| Arming-order knowledge, lease vocabulary, census-classify semantics as operator concepts | DELETED as knowledge | `up` and `health` — the concepts still exist in code; no human needs them to operate |
+| Manual morning/cron work-resumption arrangements | DELETED | never-stop doctrine + session-start auto-`up` + the tick |
+| The capability-snapshot freshness ritual | DELETED as ritual | `health` checks ages; `delegate` re-probes stale snapshots itself (idempotent, forgiving) |
+| Two heartbeat/liveness half-mechanisms (hb files touched by supervisors, artificial log-touch — already removed in wip) | UNIFIED | one presence/progress law inside `health`'s triad |
+
+The one-page operator contract (the daily loop, the six verbs, the
+three laws: 4h slices; breaches raise and the coordinator switches
+items; land small) lands in docs/ as the FIRST page of the ways of
+working; everything longer becomes reference. The wip/custody-
+launch-machine branch is the PARTS INVENTORY for `delegate` and
+`health` internals (Wido: the invested tokens must not be
+worthless — and they are not: identity exactness, idempotent
+claims, custody records, and the liveness triad are precisely the
+hard parts of the two biggest verbs). The triage (keep / adapt /
+delete, with reasons) is its own reviewed document before verb
+four is built.
 
 ## Build order (Wido's law: what protects against the biggest fuckup, first)
 
