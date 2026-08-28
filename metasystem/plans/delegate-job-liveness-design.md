@@ -16,7 +16,7 @@ carries its routed findings, and converges alone with its own
 critique loop:
 
 - SATELLITE 1 — the custodial launch machine (Lane A):
-  plans/custody-launch-machine-design.md. Routed: R4-01
+  records/misc/custody-launch-machine-design.md. Routed: R4-01
   (heartbeat-vs-progress), R4-02 (fingerprint/totality/atomic busy
   check), R4-07 (product-signal law for proven records in shared
   checkouts), R4-08 (group-generation identity), R4-12 (identity
@@ -47,7 +47,7 @@ Owner: m1 coordinator. The custody arc as Wido re-scoped and
 approved 2026-08-27 (high priority, ordered ahead of
 actionable-metrics slices two/three). Absorbs
 plans/goals-drafts/agent-liveness-contract.md on its intended
-trigger (F59). Facts: plans/delegate-job-liveness-facts.md (F1..F83
+trigger (F59). Facts: records/misc/delegate-job-liveness-facts.md (F1..F83
 at tip 3f57b04, round-1 and round-2 corrections folded — note the
 F30 darwin-identity correction and the F38/F39 cap-lock amendment).
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Go engine gate (plans/go-migration.md), stages ordered cheapest-first
+# The Go engine gate (records/misc/go-migration.md), stages ordered cheapest-first
 # by measured cost: gofmt, vet, staticcheck, the linux cross-builds, and
 # govulncheck — all seconds on a warm cache — run before the race-detector
 # suites, the build, and the coverage ratchet, which own the minutes. The
@@ -54,7 +54,7 @@ if [[ "$gate_fast" == 1 && ( -n "${METASYSTEM_GATE_WITNESS:-}" || -n "${METASYST
 fi
 
 # A checkout without a Go module has not adopted the Go engine yet (adopt.sh
-# ships it as a Phase 4 port, plans/go-migration.md). It runs pure
+# ships it as a Phase 4 port, records/misc/go-migration.md). It runs pure
 # shell/python, so the Go gate is a no-op there — SKIP, never fail. This is
 # what keeps an adopted target's own suite green before the engine arrives.
 # Identity, not existence: an adopted target may be an ordinary Go
@@ -384,7 +384,7 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off && ! wi
   go test -race -cover -count=1 -run NoSuchTestEver ./internal/... >/dev/null 2>&1 || true
 fi
 
-# The coverage floor is executable, not prose (plans/kill-shell.md, the
+# The coverage floor is executable, not prose (records/kill-shell/kill-shell.md, the
 # production-grade 0c ratchet pulled forward): the test output feeds the
 # audit verb, whose baseline only ever rises. The cmd package is exempt
 # with its reason recorded in the baseline file. The consult runs through

@@ -102,7 +102,7 @@ Keep the adjudication trail (finding, disposition, reasoning) with the design or
 
 ## Recorded Precedent: the Loop Protecting Its Own Redesign
 
-2026-08-11, the stop-loss redesign (`plans/stop-loss-last-defense.md`).
+2026-08-11, the stop-loss redesign (`records/stop-loss/stop-loss-last-defense.md`).
 Three rounds at xhigh produced 13, 14, and 14 material findings — 41
 accepted, zero refuted — including a hidden second fuse the author had
 missed, an oscillation hole in the author's own fix, and a whole half of
@@ -131,7 +131,7 @@ which is exactly what the parent could not do. And satellites are ordered
 by dependency on truth: the ones that make a signal honest precede the
 mechanisms that consume the signal, all standing on whatever shared
 ground-truth mapping the split named as a precondition. Reference case:
-the stop-loss split (`plans/stop-loss-satellites.md`), where the parent's
+the stop-loss split (`records/stop-loss/stop-loss-satellites.md`), where the parent's
 41 accepted findings route to one shipped core and four satellites.
 
 ## Ground the Facts Before the First Round

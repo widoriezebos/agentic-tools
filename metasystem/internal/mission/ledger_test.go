@@ -395,7 +395,7 @@ func TestParseLedgerEventsMarkerlessAndBareLines(t *testing.T) {
 }
 
 // The four Patience annotation forms round-trip through write and parse
-// (plans/patience-satellite-4.md): the chain kind
+// (records/patience/patience-satellite-4.md): the chain kind
 // lives in the durable bytes, so the prompt projection needs no second
 // source.
 func TestPatienceAnnotationsRoundTrip(t *testing.T) {

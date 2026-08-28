@@ -215,7 +215,7 @@ if [[ -x bin/metasystem ]]; then
   }
 fi
 
-# The Go engine gate runs first (plans/go-migration.md): gofmt, vet, the
+# The Go engine gate runs first (records/misc/go-migration.md): gofmt, vet, the
 # race unit suite, and the build. A broken binary fails here, before any
 # fixture tries to drive it. Skipped only in delegate scope (no toolchain
 # guarantee in a delegate sandbox, and it needs no process visibility).
@@ -913,7 +913,7 @@ done <<<"$adapter_population"
 # side-effect-free enforcement-map verb are both decoded and
 # canonicalized by the engine before comparison, for every runtime
 # declaring a static map. Devin's all-notEnforced row is the measured
-# truth (O-9/O-10 in plans/devin-support.md, demonstrated 2026-08-08):
+# truth (O-9/O-10 in records/misc/devin-support.md, demonstrated 2026-08-08):
 # its declaration lives in internal/runtimes with that provenance, and
 # changing it back requires evidence that enforcement returned.
 enforcement_population=$("$root/bin/metasystem" runtime list --with-adapter) \
@@ -2384,7 +2384,7 @@ scripts/receipt.sh check --max-age-days 0 --file "$tmp/receipts-aged.log" >/dev/
   exit 1
 }
 scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "$rfile" >/dev/null
-# The receipt-stats intermittent (plans/known-issue-receipt-stats-flake.md):
+# The receipt-stats intermittent (records/misc/known-issue-receipt-stats-flake.md):
 # the ledger is byte-perfect in every preserved failure yet a grep misses
 # roughly every other Mac suite run. This probe captures the failing
 # invocation itself — output, exit code, ledger bytes, environment — the

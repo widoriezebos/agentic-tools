@@ -4,17 +4,17 @@
 > commit): the drain narrative and false-stall surfaces (j) and the S13
 > drain step predate patience satellites 1 and 2 — the drain is now
 > finite with mission-scoped reaping and a drain-stalled park
-> (plans/patience-mission-reap-drain.md), and turn identity, faulted
+> (records/patience/patience-mission-reap-drain.md), and turn identity, faulted
 > measurement, and the capped outcome changed per
-> plans/patience-turn-identity.md. A satellite designing against this
+> records/patience/patience-turn-identity.md. A satellite designing against this
 > map must cross-check those two shipped designs first.
 
 
 Status: MAP, not design. This document records what the runner does today,
 step by step, with file:line anchors into the code as of the commit it was
-written against. It exists because `plans/stop-loss-satellites.md` names it
+written against. It exists because `records/stop-loss/stop-loss-satellites.md` names it
 as the precondition for all four satellite designs: the parent design
-(`plans/stop-loss-last-defense.md`) died in round 3 of critique because it
+(`records/stop-loss/stop-loss-last-defense.md`) died in round 3 of critique because it
 specified mechanisms against an assumed sequence — it assumed the runner
 dispatches critique roots (the host does), assumed the ledger tail carries
 lines it does not carry, and assumed conclude-time hooks that sit at the
@@ -203,7 +203,7 @@ and only refused at the *next* cycle's reserve). The prompt is, in order
 9. `## Landed Returns` — the delegate rounds whose return landed but which
    no concluded turn certified or superseded, one row per owned chain as
    `[chain-root, round-or-marker, return-path-or-none]`, capped at 20 rows
-   with an overflow summary (plans/patience-orphan-usage.md, landed.go).
+   with an overflow summary (records/patience/patience-orphan-usage.md, landed.go).
 10. `## This Turn` — the instruction template with cycle number and fence
    headroom (`cycles=<n>,jobs=<n>` from contract limits minus fence
    counters).

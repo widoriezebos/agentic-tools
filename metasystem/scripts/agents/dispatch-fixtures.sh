@@ -2260,13 +2260,13 @@ done
 grep -Fq -- '- Classification: contract-improved;' \
   "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
   || { echo "full mission cycle did not record runner-measured contract improvement" >&2; exit 1; }
-# The degenerate case, live (plans/patience-satellite-4.md): a mission
+# The degenerate case, live (records/patience/patience-satellite-4.md): a mission
 # whose contract carries no patience entries books no Patience line.
 if grep -q 'Patience' "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md"; then
   echo "an unconfigured mission booked a Patience line" >&2; exit 1
 fi
 
-# Patience floors, live (plans/patience-satellite-4.md): a sealed floor
+# Patience floors, live (records/patience/patience-satellite-4.md): a sealed floor
 # plus a seeded orphan chain — one mission-stamped, terminal, started,
 # unwitnessed record whose parent walk breaks — books the floor-independent
 # orphan report in the same append as the cycle line, and the NEXT prompt's

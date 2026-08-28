@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The canary: a cheap first verdict before the full suite
-# (plans/canary-validation.md). It composes checks that already exist as
+# (records/misc/canary-validation.md). It composes checks that already exist as
 # standalone invocables — the go gate and the per-domain fixture drivers —
 # so a change gets its likely-failure answer in seconds-to-minutes instead
 # of the full suite's price. THE CANARY IS NOT THE VERDICT: commits still

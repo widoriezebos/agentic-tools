@@ -1,6 +1,6 @@
 # Dispositions: benchmark-validity closure, round 7 — the exhaustion round
 
-All seven findings accepted and CARRIED OPEN to plans/mission-completion-protocol.md per the exhaustion contract; none are resolved by this design. The successor document enumerates every finding id verbatim.
+All seven findings accepted and CARRIED OPEN to records/misc/mission-completion-protocol.md per the exhaustion contract; none are resolved by this design. The successor document enumerates every finding id verbatim.
 
 | Finding id | Disposition | Reasoning and evidence | Amendment |
 | --- | --- | --- | --- |

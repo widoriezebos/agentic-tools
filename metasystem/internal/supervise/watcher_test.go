@@ -194,7 +194,7 @@ func TestWatcherPassWarnsWhenScanExceedsInterval(t *testing.T) {
 }
 
 // scanSeq is the census actor's monotonic "attempt" marker for attempt-based
-// fixture patience (plans/patience-attempts.md). It must (a) advance by one per
+// fixture patience (records/patience/patience-attempts.md). It must (a) advance by one per
 // successful publish, (b) stay monotonic across FRESH WatcherConfigs — the
 // fixtures drive census as repeated one-shot watcher-pass processes, so the
 // counter cannot live in the process; it is seeded from the published file —

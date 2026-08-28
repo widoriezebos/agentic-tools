@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shim (plans/kill-shell.md Phase A): the frontier's decisions live in the
+# Shim (records/kill-shell/kill-shell.md Phase A): the frontier's decisions live in the
 # engine; this file relays the historical calling convention. Pure-bash path
 # resolution: no external command may appear here.
 set -euo pipefail

@@ -112,7 +112,7 @@ wait_until() { # name, shell predicate...
   done
 }
 
-# --- Attempt-based patience for census waits (plans/patience-attempts.md) ------
+# --- Attempt-based patience for census waits (records/patience/patience-attempts.md) ------
 # `wait_until` above is wall-clock: correct for OS-event waits (a PID dying),
 # but load-fragile for waits on a CENSUS PASS's effect (KI-37). `wait_for_census`
 # measures patience in the census actor's ATTEMPTS (published scan passes,

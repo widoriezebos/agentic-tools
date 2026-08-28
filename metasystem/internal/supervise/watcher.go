@@ -84,7 +84,7 @@ func (cfg WatcherConfig) publish(verdict census.Verdict) error {
 	// a failed publish leaves the old file in place, so the next pass reads the
 	// same prior value and retries the same next value (no gap a stale in-flight
 	// pass could exploit). This is the census actor's "attempt" marker for
-	// attempt-based fixture patience (plans/patience-attempts.md). Single-writer
+	// attempt-based fixture patience (records/patience/patience-attempts.md). Single-writer
 	// is guaranteed by the census-writer lock the watcher-pass verb holds.
 	verdict.ScanSeq = lastPublishedScanSeq(path) + 1
 	encoded, err := json.MarshalIndent(verdict, "", "  ")

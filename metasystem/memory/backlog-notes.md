@@ -73,7 +73,7 @@
    repetitions incomparable. Design loop: it touches the turn-end and usage
    contracts. None of this makes inference faster; it makes slowness and
    death visible while they happen. CONSOLIDATED 2026-08-09 into
-   plans/adapter-streaming.md at the human's request (since folded into the flight-recorder stream, plans/flight-recorder.md, which owns sequencing) -- the full design draft
+   records/misc/adapter-streaming.md at the human's request (since folded into the flight-recorder stream, records/misc/flight-recorder.md, which owns sequencing) -- the full design draft
    (the abstract adapter interface, per-runtime transports, the liveness
    sidecar, ACP-per-turn with its probe questions) lives there; this entry is
    now just the queue marker.
@@ -167,7 +167,7 @@
    sharpening and I think we should implement it."
 8. **KI-23 acknowledged-process mechanism** — after the one-writer
    implementation lands (same files).
-9. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
+9. **Mission-completion protocol design** (records/misc/mission-completion-protocol.md,
    seven carried findings) — after the coexistence stream closes.
 10. **Benchmark kit halves** — schema-v2 alignment DONE 2026-08-09: every
    role return schema accepts schemaVersion/claimed/reviewedCommit/
@@ -194,7 +194,7 @@
    (no set -e/quoting/torn-string bug classes; exact kernel process start
    times shrink the REG-6 whole-second residual); protocol design stays
    language-independent and keeps the design loop. First component:
-   supervision (the ruling is recorded in plans/supervision-lifecycle.md,
+   supervision (the ruling is recorded in records/supervision/supervision-lifecycle.md,
    Implementation order). Candidates after that, only as they come up for
    rewrite: dispatch's record/CAS layer, the census, the registry tooling.
    THE CUT, refined 2026-08-09 (the human): the end state is TWO languages

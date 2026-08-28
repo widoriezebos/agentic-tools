@@ -8,7 +8,7 @@
 # (the TTY escalation driver — "the metasystem itself does not need
 # it"); perl left with the conf_edit landing and must not return.
 # The benchmark kit's python3 scope is a separate ruling (parked on
-# plans/extractor-port-design.md) and is not scanned here.
+# records/misc/extractor-port-design.md) and is not scanned here.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"

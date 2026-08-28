@@ -1,6 +1,6 @@
 package steward
 
-// The steward's verdict ladder (plans/idle-watchdog-design.md): given
+// The steward's verdict ladder (records/misc/idle-watchdog-design.md): given
 // one tick's snapshot of workers, open work, and progress high-water
 // marks, decide what this tick does. Death is a proof, not an
 // absence; unknown dominates dead; a live worker is never displaced —

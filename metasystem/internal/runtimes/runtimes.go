@@ -205,7 +205,7 @@ var declarations = []Declaration{
 		ExpectedCapabilities: []string{CapDeliveryRecollection, CapSelfTestProbe},
 		// Protocol 1 is verified live at devin 3000.4.25. The
 		// capability row is the native driver's declared surface
-		// (plans/acp-seam-s2-design.md, "The declaration, earned").
+		// (records/acp/acp-seam-s2-design.md, "The declaration, earned").
 		ExpectedACP: &ACPExpectation{
 			ExpectedProtocolVersion: 1,
 			ExpectedCapabilities: &ACPCapabilities{

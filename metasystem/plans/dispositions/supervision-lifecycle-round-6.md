@@ -6,7 +6,7 @@ from 18 to 10 and the kind narrowed again: decision-table priority,
 slot accounting, one missing invocation shape, gating semantics, one
 ordering rule, crash-recoverable repair, and terminal-path
 canonicalization. No reframes. All ten accepted and folded into
-`plans/supervision-lifecycle.md` and `plans/supervision-registry.md`.
+`records/supervision/supervision-lifecycle.md` and `records/supervision/supervision-registry.md`.
 
 | Finding id | Disposition | Reasoning and evidence | Amendment |
 | --- | --- | --- | --- |

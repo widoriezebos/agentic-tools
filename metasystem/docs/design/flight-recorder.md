@@ -1,7 +1,7 @@
 # The flight recorder: the event-stream contract
 
 The durable rules (D-1..D-8) of the per-checkout append-only event
-stream, promoted from `plans/flight-recorder.md` (which keeps the
+stream, promoted from `records/misc/flight-recorder.md` (which keeps the
 requirement history and landing order). `internal/events` implements
 the emitter; `scripts/agents/event-registry.json` is the closed event
 catalogue. A change to any D rule is a contract change, not a cleanup.

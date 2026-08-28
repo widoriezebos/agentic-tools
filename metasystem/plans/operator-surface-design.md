@@ -9,7 +9,7 @@ into v2 (dispositions below). ROUND 2: 15 material (14 shape) —
 codex then DRAFTED the resolutions to its own findings under the
 four standing rulings, and the coordinator adjudicated the draft
 ACCEPTED IN FULL: the authoritative resolution text lives in
-plans/operator-surface-v3-resolutions.md, one section per finding,
+records/misc/operator-surface-v3-resolutions.md, one section per finding,
 and SUPERSEDES this document's corresponding v2 sections (notably:
 the bootstrap epochs and retrospective seal; terminal-rooted
 human-authority proof; the rebase-before-acceptance landing
@@ -382,7 +382,7 @@ CONTINUATION RULED (Wido: "agreed, do as proposed"):
 The remaining eight findings (R3-04..11) were resolved by the
 co-design pattern: codex drafted, the coordinator adjudicated
 ACCEPTED IN FULL — the v4 resolutions live in PART TWO of
-plans/operator-surface-v3-resolutions.md and supersede overlapping
+records/misc/operator-surface-v3-resolutions.md and supersede overlapping
 earlier text. Headlines: one ranked lock chain (chain →
 goal-revision → cap → lifecycle → occupancy → record); the budget
 journal DELETED (job reservations are the sole spending facts);

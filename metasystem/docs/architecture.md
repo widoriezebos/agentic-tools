@@ -21,7 +21,7 @@ binary under its own go gate.
 ## The boundary: core versus plumbing
 
 Standing doctrine (human ruling, Wido, 2026-08-12, recorded in
-`plans/kill-shell.md`'s header): core functionality belongs in Go;
+`records/kill-shell/kill-shell.md`'s header): core functionality belongs in Go;
 plumbing — process launching, polling, signaling, environment glue,
 fixture drivers — remains in scripts, because that is what scripts are
 for. A Go programmer must never read the engine and find a shell script
@@ -81,7 +81,7 @@ files (the live, checkout-local security control; a runtime with an
 undeclared residual fails closed), and the delivery-contract evidence
 row is handwritten prose the audit cross-checks. The
 adoption/registration/installation contract is being generalized under
-goal runtime-integration-contracts (plans/agnosticism-audit-rulings.md
+goal runtime-integration-contracts (records/agnosticism/agnosticism-audit-rulings.md
 carries the split).
 
 ## Layering

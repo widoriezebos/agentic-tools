@@ -33,6 +33,7 @@
     "memory/receipts.log"
   ],
   "repositoryOperationalDataPaths": [
+    "artifacts/**",
     "benchmark/__pycache__/**",
     "benchmark/results/**",
     "benchmark/specs/bm-1/grader/__pycache__/**",

@@ -3,7 +3,7 @@
 Status: MAP, not design. This document records what `dispatch.sh` does
 today, step by step, with file:line anchors into the code as of commit
 `48442ef`. It exists because the core-vs-plumbing ruling (recorded in
-`plans/kill-shell.md`'s header) decided the delegate-job choreography
+`records/kill-shell/kill-shell.md`'s header) decided the delegate-job choreography
 stays shell permanently, and the mission path already learned what that
 costs without a sequence map: a reference design died of being written
 against an assumed sequence (`docs/design/mission-cycle-sequence.md`

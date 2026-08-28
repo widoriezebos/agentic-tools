@@ -1,6 +1,6 @@
 // The native ACP driver: acp.RunTurn conformed to the delegate
 // seam's complete-session contract (acp-adapter-seam slice two,
-// plans/acp-seam-s2-design.md — three critique rounds, landed at the
+// records/acp/acp-seam-s2-design.md — three critique rounds, landed at the
 // declared failsafe). The adapter keeps custody of process, pipes,
 // and journal; the driver only speaks. The event tap makes the
 // seam's EventStream real; asks stay policy-refused below the seam
@@ -445,7 +445,7 @@ func RegisterNative(runtime string, resolver func(tools string) (string, error))
 }
 
 // nativeDeclaration is the surface the native driver earns
-// (plans/acp-seam-s2-design.md, "The declaration, earned").
+// (records/acp/acp-seam-s2-design.md, "The declaration, earned").
 var nativeDeclaration = delegate.Declaration{
 	Resume:                   true,
 	SessionEstablishedSignal: true,

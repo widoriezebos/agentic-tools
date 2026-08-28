@@ -1,11 +1,11 @@
-- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix) — SHIPPED, both hosts green; hardened 2026-08-17 after its retroactive code review (plans/opus-window-review-dh.md part A, D95): fd-pinned measurement, ENOENT-only ascent (every other establish failure refuses), checked arithmetic and floor validation, the suite distinguishing measure-failure (refuse) from below-floor (advisory), a df bootstrap check on clean checkouts, and the documented rule that entries are per-path advisories (APFS volumes share a container pool across distinct device ids — never sum entries). Slice 2 attempt: a worktree observer (`janitor worktrees`) classifying the dispatch-owned-worktrees row by "job terminal + custody dead" — BUILT then REVERTED (D89). Its mandatory code critique (plans/wt-code-critique-r1.md, 5 structural) proved the verdict UNSOUND for any future reclaimer to trust: it classified as reclaimable three implementer worktrees still holding UNMERGED work (a modified dispatch.sh in caps-census-gate-order), because terminality is NOT a data-release proof — conformance review and merge read the worktree AFTER the job terminates. The corrected worktree-reclaim proof is captured below; the accumulation it surfaced (118 dirs / ~500MB) is recorded as KI-35, REPORT-ONLY: the earlier "safe manual cleanup" advice was WITHDRAWN (the dh review F13 — ignored data, committed-but-unmerged branches, and a repository-global prune made it unsafe); no manual bulk cleanup until the journaled reclaim exists.
+- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix) — SHIPPED, both hosts green; hardened 2026-08-17 after its retroactive code review (records/steward/opus-window-review-dh.md part A, D95): fd-pinned measurement, ENOENT-only ascent (every other establish failure refuses), checked arithmetic and floor validation, the suite distinguishing measure-failure (refuse) from below-floor (advisory), a df bootstrap check on clean checkouts, and the documented rule that entries are per-path advisories (APFS volumes share a container pool across distinct device ids — never sum entries). Slice 2 attempt: a worktree observer (`janitor worktrees`) classifying the dispatch-owned-worktrees row by "job terminal + custody dead" — BUILT then REVERTED (D89). Its mandatory code critique (records/misc/wt-code-critique-r1.md, 5 structural) proved the verdict UNSOUND for any future reclaimer to trust: it classified as reclaimable three implementer worktrees still holding UNMERGED work (a modified dispatch.sh in caps-census-gate-order), because terminality is NOT a data-release proof — conformance review and merge read the worktree AFTER the job terminates. The corrected worktree-reclaim proof is captured below; the accumulation it surfaced (118 dirs / ~500MB) is recorded as KI-35, REPORT-ONLY: the earlier "safe manual cleanup" advice was WITHDRAWN (the dh review F13 — ignored data, committed-but-unmerged branches, and a repository-global prune made it unsafe); no manual bulk cleanup until the journaled reclaim exists.
   Critiques r1 and r2 are folded into this text (12 and 15
   findings). The r3 verdict landed after the park: REVISE, 14
   findings (13 structural), preserved UNFOLDED at
-  plans/dh-critique-r3.md — trajectory 12, 15, 14, budget one
+  records/delegate-delivery/dh-critique-r3.md — trajectory 12, 15, 14, budget one
   exhausted without convergence.
 - Goal: disk-hygiene (parked; yielded to acp-transport under D81)
-- Next step (on resume): fold plans/dh-critique-r3.md first. The
+- Next step (on resume): fold records/delegate-delivery/dh-critique-r3.md first. The
   trajectory shows the same execution-heavy signature D81 rules
   on; on resume, weigh entering budget two against going straight
   to implementation-first with the r3 findings as the first
@@ -242,7 +242,7 @@ Only `released` (plus verification and minimum retention)
 authorizes deletion; `.evidence` removal requires an explicit
 ownership handoff from the evidence GC.
 
-## The worktree-reclaim proof (corrected by plans/wt-code-critique-r1.md)
+## The worktree-reclaim proof (corrected by records/misc/wt-code-critique-r1.md)
 
 The slice-2 attempt proved that "job terminal + custody dead" is
 NOT a sound proof that a dispatch worktree is disposable. A sound
@@ -290,7 +290,7 @@ reclaim of `artifacts/agents/worktrees/<job>` must hold ALL of:
    not procfs); a reclaimer must enforce/prove that, as supervision
    does.
 
-Additions the opus-window dh review (plans/opus-window-review-dh.md
+Additions the opus-window dh review (records/steward/opus-window-review-dh.md
 F9–F12) proved necessary beyond the original five:
 
 6. **Records must outlive the proof (F9).** Evidence GC prunes

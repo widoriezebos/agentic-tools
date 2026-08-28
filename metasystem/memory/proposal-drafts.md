@@ -24,14 +24,14 @@ accidental).
 ## Cluster proposals (A-list debts, grouped)
 
 D-2. HUMAN SURFACE, the unstarted family —
-plans/human-surface-design.md F-1/F-2/F-3/F-5 (one-command signing,
+records/misc/human-surface-design.md F-1/F-2/F-3/F-5 (one-command signing,
 prose-first mission flow, batch signing, refusal-message sweep);
 F-4's "blocked by KI-18" is fossil (the fix shipped). An accepted
 2026-08-06 design, zero execution. Proposal: ONE goal
 (human-surface-execution) with the four features as slices, or an
 explicit drop if the seal-flow rework superseded it. ~6-8h arc.
 
-D-3. FLIGHT RECORDER's owed tail — plans/flight-recorder.md: two
+D-3. FLIGHT RECORDER's owed tail — records/misc/flight-recorder.md: two
 queued legs with carried findings (FR2-008..015), the never-run
 core code-critique, missing job-verdict/job-created events on some
 flows, and the absent judgment layer (cycle-measured). Proposal:
@@ -39,7 +39,7 @@ one goal (flight-recorder-completion), slices per leg; the missing
 events are measurement debt that actionable-metrics will feel.
 
 D-4. ACP FLIP prerequisites that the flip outran —
-plans/acp-transport-design.md: supervise_acp shell fixture
+records/acp/acp-transport-design.md: supervise_acp shell fixture
 (success/handshake-failure/cancellation/cleanup — acp-fixtures
 covers the verb, not devin.sh's branch), transport-keyed snapshot
 identity, the D82 Mac-half cohort, and slice-B's four declared
@@ -87,7 +87,7 @@ delegates), the 0.019→0.981 confirming re-run "with the human
 present". Proposal: a fifteen-minute batch ruling session — each is
 schedule-or-drop; none should keep living in prose.
 
-D-10. RECEIPT-STATS FLAKE — plans/known-issue-receipt-stats-flake.md
+D-10. RECEIPT-STATS FLAKE — records/misc/known-issue-receipt-stats-flake.md
 says STILL OPEN + instrumented, but it is in NEITHER register.
 Proposal: register it now (flake registry row, first sighting from
 the file's own evidence) so the three-strike law applies; the

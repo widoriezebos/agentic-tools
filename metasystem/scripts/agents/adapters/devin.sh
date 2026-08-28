@@ -248,7 +248,7 @@ devin_transport() {
 }
 
 # The ACP transport path: the script owns fifos, custody, and
-# killing; `acp turn` owns the wire (plans/acp-transport-design.md).
+# killing; `acp turn` owns the wire (records/acp/acp-transport-design.md).
 # The session id surfaces MID-TURN through the session file so the
 # handshake is recorded inside the dispatcher's deadline (critique
 # F1); the client runs backgrounded under wait_for_cli's heartbeat

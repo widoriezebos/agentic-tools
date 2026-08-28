@@ -2,7 +2,7 @@
 
 The durable rules of the mission stop-loss fuse (C1..C3, its
 invariants, and its failure behavior), promoted from
-`plans/stop-loss-core.md` (which keeps intent, tests, and migration
+`records/stop-loss/stop-loss-core.md` (which keeps intent, tests, and migration
 history). `internal/mission`'s ledger and `internal/missionrunner`'s
 stop-loss step implement it. A change here is a contract change, not a
 cleanup.

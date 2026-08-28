@@ -77,6 +77,7 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		t.Fatalf("PAYLOAD allowlist drifted: got %q want %q", policy.PayloadRoots, want)
 	}
 	if want := []string{
+		"artifacts/**",
 		"benchmark/__pycache__/**", "benchmark/results/**",
 		"benchmark/specs/bm-1/grader/__pycache__/**",
 		"benchmark/specs/bm-2/grader/__pycache__/**",

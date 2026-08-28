@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shim (plans/kill-shell.md Phase A): the design-obligation gate's decisions
+# Shim (records/kill-shell/kill-shell.md Phase A): the design-obligation gate's decisions
 # live in the engine; this file relays the historical calling convention.
 # Pure-bash path resolution: no external command may appear here. --root
 # leads so a trailing caller flag missing its value keeps its own error.

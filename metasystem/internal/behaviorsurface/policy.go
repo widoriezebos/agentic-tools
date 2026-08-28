@@ -247,12 +247,19 @@ func (p Policy) Classify(name, prefix string) (Class, error) {
 	if err != nil || repositoryName == "" {
 		return Standard, err
 	}
-	if matchesAny(p.RepositoryOperationalDataPaths, repositoryName) {
-		return OperationalData, nil
-	}
 	normalized, err := NormalizePath(name, prefix)
-	if err != nil || normalized == "" {
+	if err != nil {
 		return Standard, err
+	}
+	// A name inside the vendored prefix belongs to prefix-space law
+	// first: the same shape (artifacts/**) is coordination state
+	// inside the installation and operational data at the repository
+	// root, and only the prefix says which one this path is.
+	if normalized == "" {
+		if matchesAny(p.RepositoryOperationalDataPaths, repositoryName) {
+			return OperationalData, nil
+		}
+		return Standard, nil
 	}
 	switch {
 	case p.tailored(normalized):
@@ -261,6 +268,8 @@ func (p Policy) Classify(name, prefix string) (Class, error) {
 		return Coordination, nil
 	case matchesAny(p.NonRepositoryPaths, normalized):
 		return NonRepository, nil
+	case matchesAny(p.RepositoryOperationalDataPaths, repositoryName):
+		return OperationalData, nil
 	default:
 		return Standard, nil
 	}

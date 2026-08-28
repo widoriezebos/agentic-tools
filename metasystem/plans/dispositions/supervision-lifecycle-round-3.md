@@ -2,11 +2,11 @@
 
 Round 3 (gpt-5.6-sol, 13 material, 8 critical) was adjudicated by the
 independent review of 2026-08-09 (Claude Fable,
-`plans/supervision-lifecycle-critique.md`), which re-verified every
+`records/supervision/supervision-lifecycle-critique.md`), which re-verified every
 claim against the working tree and added three findings of its own
 (SLC-F-001..003). All sixteen accepted; all folded into
-`plans/supervision-lifecycle.md` (revision of 2026-08-09) and
-`plans/supervision-registry.md`. The eight criticals reduce to five
+`records/supervision/supervision-lifecycle.md` (revision of 2026-08-09) and
+`records/supervision/supervision-registry.md`. The eight criticals reduce to five
 distinct defects: derived identity (R3-001/002), undefined breaker
 semantics (R3-004), untagged blast radius (R3-006), the unspecified
 registry (R3-008..010), and no machine-wide bound or durable teardown

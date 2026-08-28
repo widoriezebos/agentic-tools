@@ -6,7 +6,7 @@ import (
 	"regexp"
 )
 
-// Patience prompt projection (plans/patience-satellite-4.md): the next
+// Patience prompt projection (records/patience/patience-satellite-4.md): the next
 // turn's This Turn lines derive at assembly time from the FINAL cycle
 // block's Patience annotations — the durable bytes carry the chain kind, so
 // no second source can disagree with the booking-time classification.

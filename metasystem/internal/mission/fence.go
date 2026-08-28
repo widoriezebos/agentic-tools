@@ -583,7 +583,7 @@ func RefuseBudgetCap(repo, missionID, job string, capResolution map[string]any, 
 }
 
 // The provenance a terminal job's aggregate entry carries
-// (plans/patience-orphan-usage.md): the adapter reported the usage, the
+// (records/patience/patience-orphan-usage.md): the adapter reported the usage, the
 // aggregator derived it from a provably dead round's event stream, the group
 // is not yet provably dead, or the usage is unrecoverable by proof.
 const (

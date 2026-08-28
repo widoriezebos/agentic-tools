@@ -1,7 +1,7 @@
 # The supervision lifecycle: what owners, watchers, and reapers must do
 
 The durable rules (D-1..D-7) of the supervision lifecycle, promoted
-from `plans/supervision-lifecycle.md` (which keeps the incident
+from `records/supervision/supervision-lifecycle.md` (which keeps the incident
 measurement, proof obligations, implementation order, and the critique
 chain, CLOSED at its cap). `internal/supervise` implements them. A
 change to any D rule is a contract change, not a cleanup.

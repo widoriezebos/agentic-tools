@@ -412,7 +412,7 @@ wait_end_state() { # mission, expected status exit
 }
 
 make_end_state_contract gate-and-close close-stream
-# A landed return no host ever acted on (plans/patience-orphan-usage.md):
+# A landed return no host ever acted on (records/patience/patience-orphan-usage.md):
 # the chain is already runner-closed — closure never hides a landed round —
 # so the completed mission must list it in every turn prompt and deliver it
 # into the final ledger block as a Landed unconsumed annotation.
@@ -449,7 +449,7 @@ wait_end_state runner-closes-chain 10
 # TestInternalRunDispatchTerminalCycle and TestArmAndPreflightFullPass
 # (internal/missionrunner; script-fixtures-005/D40).
 
-# The host adapter is a witness, not a judge (plans/patience-turn-identity.md
+# The host adapter is a witness, not a judge (records/patience/patience-turn-identity.md
 # T3): a rotated session is reported in the result envelope with outcome
 # completed for the runner's adjudication; only a MISSING session keeps the
 # adapter's own exit-6 fault; and a start gate that never releases still

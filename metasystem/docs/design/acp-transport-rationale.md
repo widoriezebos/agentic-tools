@@ -4,7 +4,7 @@ Captured 2026-08-23 from the bm-2d rep-1 review with Wido, the first
 live run of a Devin-hosted mission under the wall. Companion doctrine:
 the native-versus-metasystem subagent boundary in
 `docs/orchestration.md`; the working design is
-`plans/acp-transport-design.md` while it ships.
+`records/acp/acp-transport-design.md` while it ships.
 
 ## Why the ACP shape
 

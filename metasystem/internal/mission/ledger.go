@@ -56,7 +56,7 @@ var (
 	// (docs/design/stop-loss-core.md): the only automatic stagnation reset besides a
 	// new best, and it always names the human-answered ask it echoes.
 	resetLineRe = regexp.MustCompile(`^Stop-loss reset: ask=([a-z0-9][a-z0-9-]*); reason=([^\n]*)$`)
-	// Annotation lines inside a cycle block (plans/patience-turn-identity.md):
+	// Annotation lines inside a cycle block (records/patience/patience-turn-identity.md):
 	// facts recorded beside — never inside — the classification line. They are
 	// audit trail: parsers tolerate and expose them, the prompt's ledger tail
 	// ignores them, and the stop-loss replay never reads them as fuse input.
@@ -65,7 +65,7 @@ var (
 	// runner writes: the fault that rejected a turn's return, a fired cap,
 	// the survivor count of a drain-stalled cycle healed on resume, and the
 	// landed-unconsumed rows a completed mission's terminal delivery appends
-	// (plans/patience-orphan-usage.md): chain root, round number or the
+	// (records/patience/patience-orphan-usage.md): chain root, round number or the
 	// invalid/unreadable marker (the overflow row carries the remaining
 	// count), and a whitespace-free return path or the literal none.
 	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped|Drain: stalled:(?:0|[1-9][0-9]*)` +
@@ -93,7 +93,7 @@ const resetReasonMaxLen = 500
 const CappedAnnotation = "Outcome: capped"
 
 // DrainStalledObserved is the observed token a healed drain-stalled cycle
-// carries (plans/patience-mission-reap-drain.md): distinguishable from every
+// carries (records/patience/patience-mission-reap-drain.md): distinguishable from every
 // other no-progress cause, so starvation is recorded exactly once and
 // unambiguously.
 const DrainStalledObserved = "unmeasurable:drain-stalled"
@@ -109,7 +109,7 @@ func DrainStalledAnnotation(survivors int) string {
 }
 
 // LandedUnconsumedAnnotation composes the terminal-delivery annotation for one
-// Landed Returns row (plans/patience-orphan-usage.md): the row's three fields
+// Landed Returns row (records/patience/patience-orphan-usage.md): the row's three fields
 // as chain/round/path tokens, one bounded ledger line per row. Audit trail
 // beside the final classification line, never a classification and never fuse
 // input.
@@ -118,7 +118,7 @@ func LandedUnconsumedAnnotation(chainRoot, round, path string) string {
 }
 
 // PatienceChainAnnotation composes the vocal floor-breach annotation for one
-// well-formed chain (plans/patience-satellite-4.md): audit trail beside the
+// well-formed chain (records/patience/patience-satellite-4.md): audit trail beside the
 // classification line, never fuse input.
 func PatienceChainAnnotation(root string, rounds, floor int) string {
 	return fmt.Sprintf("Patience: chain=%s rounds=%d floor=%d", root, rounds, floor)
@@ -321,7 +321,7 @@ func stampLedgerPending(file string, cycle int, content string) error {
 // AppendAnnotations appends annotation lines to an existing cycle's block —
 // the terminal delivery for facts that exist only after that cycle's own line
 // landed, such as the completion conclude's Landed Returns list
-// (plans/patience-orphan-usage.md). Only the FINAL cycle accepts the append:
+// (records/patience/patience-orphan-usage.md). Only the FINAL cycle accepts the append:
 // any earlier block is closed history, and history is never rewritten. The
 // annotations must match the strict write grammar, and the append is one
 // atomic write under the ledger lock. It returns the sha256 of the

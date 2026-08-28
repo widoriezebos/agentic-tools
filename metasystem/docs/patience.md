@@ -2,9 +2,9 @@
 
 Status: SHIPPED — the whole mechanism is implemented. The stop-loss
 core (`docs/design/stop-loss-core.md`, `internal/missionrunner/stoploss.go`)
-and all four satellites of `plans/stop-loss-satellites.md` are built
+and all four satellites of `records/stop-loss/stop-loss-satellites.md` are built
 and suite-verified; satellite 4 (patience floors,
-`plans/patience-satellite-4.md`, accepted after a 22-round critique
+`records/patience/patience-satellite-4.md`, accepted after a 22-round critique
 loop) landed 2026-08-12 in `internal/missionrunner/patience.go`. This
 document names the concepts and explains the whole mechanism.
 Ruled by the human, 2026-08-11. The three words below are the binding
@@ -20,7 +20,7 @@ observable after rejecting per-activity proxies with evidence: a chain
 round has produced value exactly when a concluded turn's durable log
 certifies its job with verdict accepted. Proxies — schema-valid
 returns, critique closures, verifier confirmations — are exactly the
-narrative a drought hides behind (plans/patience-satellite-4.md,
+narrative a drought hides behind (records/patience/patience-satellite-4.md,
 r1/P4-001 through r2/P4-024). Some activities need no progress
 definition at all: single-shot, or governed by an inner loop with its
 own stop criterion — bounded by construction.
@@ -68,7 +68,7 @@ progress with per-capability patience punishes only stall.
    (the orphan/usage satellite — which also completes the cost ledger,
    the denominator if patience is ever spend-denominated).
 2. **Observables.** ONE observable, settled by satellite 4's loop
-   (plans/patience-satellite-4.md): a chain round is WITNESSED
+   (records/patience/patience-satellite-4.md): a chain round is WITNESSED
    exactly when a concluded turn's durable log certifies its job with
    verdict accepted and non-empty evidence — witnessed consumption,
    the orchestrator's accountable decision to consume the round;
@@ -107,5 +107,5 @@ Patience is itself a fuse, so the last-defense ruling applies to it
 recursively: a floor calibrated as a pacing target rebuilds the original
 trap one level down, per model. When in doubt, a floor is too low, a
 window too long, and the human reset carries the rest. The reference
-failure and its analysis: `plans/stop-loss-last-defense.md` and the
+failure and its analysis: `records/stop-loss/stop-loss-last-defense.md` and the
 recorded precedent in `skills/design-critique/SKILL.md`.

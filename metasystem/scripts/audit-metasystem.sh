@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shim (plans/kill-shell.md Phase A): the audit's decisions live in the
+# Shim (records/kill-shell/kill-shell.md Phase A): the audit's decisions live in the
 # engine; this file relays the historical calling convention and env knobs.
 # Pure-bash path resolution: the suite proves this runs under a minimal
 # PATH, so no external command may appear here.

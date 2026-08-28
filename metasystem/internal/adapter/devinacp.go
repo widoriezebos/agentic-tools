@@ -2,7 +2,7 @@ package adapter
 
 // Devin's ACP dialect, registered per the seam pattern. Both
 // mappings are BEHAVIORAL EVIDENCE from the P1 wire probe
-// (plans/acp-wire-probe.md):
+// (records/acp/acp-wire-probe.md):
 //
 //   - tools=read-only → mode "ask": step C showed ask mode strips
 //     the toolset to read-only tools and the turn still ends

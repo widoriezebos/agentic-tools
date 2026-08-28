@@ -51,7 +51,7 @@ not paths.
   assertion. Mission level: the gate metric beating its best. Chain
   level: an accepted certification in the durable turn log — the one
   observable satellite 4 settled after rejecting per-activity proxies
-  (`docs/patience.md`, `plans/patience-satellite-4.md`).
+  (`docs/patience.md`, `records/patience/patience-satellite-4.md`).
 - **Patience** — how much observation without progress is tolerated
   before a verdict, set per role and (runtime, model) pair: slower
   progress is still progress. A last defense, never a pacing target
@@ -61,7 +61,7 @@ not paths.
   to blame. Mission level: the fuse parks vocally and a human resets
   via a ledger-recorded answer. Chain level: vocal only — annotation
   and prompt line, never a park (`docs/patience.md`,
-  `plans/patience-satellite-4.md`, `docs/design/stop-loss-core.md`).
+  `records/patience/patience-satellite-4.md`, `docs/design/stop-loss-core.md`).
 - **Sweep** — the takeover's cleanup: every non-terminal job stamped with
   an older epoch is failed with `stale-claim-epoch`, so an abandoned
   session's children cannot keep mutating a checkout that changed hands.

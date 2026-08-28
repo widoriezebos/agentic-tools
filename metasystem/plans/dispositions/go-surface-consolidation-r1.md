@@ -1,7 +1,7 @@
 # Go surface consolidation — round 1 dispositions
 
 Critic: design-critic-20260812t063648z-0c07 (codex, gpt-5.6-sol).
-7 findings, 7 material. All folded into plans/go-surface-consolidation.md.
+7 findings, 7 material. All folded into records/misc/go-surface-consolidation.md.
 
 | Finding | Disposition | Reasoning and evidence | Amendment |
 | --- | --- | --- | --- |

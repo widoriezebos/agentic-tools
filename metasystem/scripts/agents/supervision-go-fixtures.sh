@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owner-alone fixtures for the GO supervision engine (plans/go-migration.md,
+# Owner-alone fixtures for the GO supervision engine (records/misc/go-migration.md,
 # Phase 0 acceptance). These drive the RUNNING BINARY through the design's
 # owner-alone Proof rows in scratch checkouts — the acceptance that a unit
 # test against fakes cannot give, and that the overnight overclaim skipped.

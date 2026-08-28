@@ -4,8 +4,8 @@ Round 4 (gpt-5.6-sol, job supervision-lifecycle-r4, 14 material, 9
 critical, verdict NOT-CONVERGED) reviewed the 2026-08-09 rewrite and
 its new registry contract. All fourteen accepted; nine of them broke
 the registry/custody surface introduced by the rewrite itself. The
-folds land in `plans/supervision-lifecycle.md` (same-day revision) and
-`plans/supervision-registry.md`. The structural moves this round
+folds land in `records/supervision/supervision-lifecycle.md` (same-day revision) and
+`records/supervision/supervision-registry.md`. The structural moves this round
 forced: currency comes from the LOCK, not from state content; ONE lock
 covers every registry mutation including the arming gate's
 reduce-count-reserve; reduction is an explicit fold with absorbing

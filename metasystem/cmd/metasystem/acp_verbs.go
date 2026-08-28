@@ -16,7 +16,7 @@ import (
 
 // The acp family is the shell-callable surface of internal/acp:
 // the script owns launch, custody, and killing (the fifo topology
-// per plans/acp-transport-design.md); these verbs own only the
+// per records/acp/acp-transport-design.md); these verbs own only the
 // wire. `preflight` is the pre-launch envelope check so a refusal
 // happens before any process is spawned; `turn` drives one prompt
 // attempt over already-created pipe paths and emits the typed

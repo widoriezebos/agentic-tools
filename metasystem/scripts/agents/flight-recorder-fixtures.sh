@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The flight recorder is a WITNESS, never an authority (plans/flight-recorder.md
+# The flight recorder is a WITNESS, never an authority (records/misc/flight-recorder.md
 # D-5): these fixtures prove the properties that make that safe -- the emitter
 # can never hurt a caller, concurrent writers can never corrupt each other, and
 # the stream tells a story without ever deciding one.

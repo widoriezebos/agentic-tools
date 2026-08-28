@@ -586,7 +586,7 @@ set equality, not byte equality — byte-lossless is explicitly not
 claimed and LegacyNotes records the residue).
 
 This repository's changes ride `--manifest
-plans/goals-migration-manifest.md`, WHICH EXISTS and is reviewed with
+records/misc/goals-migration-manifest.md`, WHICH EXISTS and is reviewed with
 this design (R4-07). Its schema separates two operation kinds with a
 hard boundary: `add-goal` (a brand-new goal: id, intent, origin,
 next, blockedBy, arc, full text — synthesized OpenedAt per the
