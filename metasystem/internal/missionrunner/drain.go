@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -214,14 +216,19 @@ func (e *Engine) reapReservedRecords(now time.Time) error {
 // applyReapVerdict maps one candidate's proven facts to its terminal
 // verdict, the standing reaper's fixed mapping: a pending-setup husk past
 // the setup grace provably never launched (no process was ever recorded, so
-// its abandoned-setup fact suffices); a record with no recorded process is
-// never reapable (the process may exist unrecorded — no proof, no verdict);
+// its abandoned-setup fact suffices); a due fingerprinted reservation with no
+// recorded process reconciles by nonce, while a legacy identityless record
+// remains deferred because an unrecorded process may exist;
 // a custodian that is not provably dead reaps nothing (Unknown never acts);
 // a proven-dead custodian books budget expiry first (timeout/budget-cap on a
 // running record) and process loss otherwise.
 func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch.ReapFacts) error {
 	switch facts.Status {
 	case "pending-setup":
+		if facts.ReconciliationDue {
+			_, err := e.reconcileReservation(job)
+			return err
+		}
 		if facts.SetupAbandoned {
 			e.reapCAS(job, "pending-setup", "failed", map[string]any{
 				"error": "abandoned-setup", "phase": "claim-sweep",
@@ -237,21 +244,37 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 				e.reapCAS(job, facts.Status, "cancelled", map[string]any{
 					"error": nil, "phase": "supervision",
 				})
+				return nil
+			}
+			if facts.ReconciliationDue {
+				_, err := e.reconcileReservation(job)
+				return err
 			}
 			return nil
 		}
-		start, _ := jsonInt(doc["pidStartedAt"])
-		tag, _ := doc["instanceTag"].(string)
-		if e.custodian(pid, start, tag) != identity.Dead {
-			return nil
-		}
-		// A dead custodian is only HALF the proof groupDeathProvenAt
-		// claims: a tagged survivor means the group lives, and this
-		// kill-less reap must defer to the kill-capable dispatch path
-		// that can wind it down. Indeterminacy defers the same way.
-		recPgid, _ := jsonInt(doc["pgid"])
-		if alive, certain := e.taggedSurvivors(tag, pid, recPgid); !certain || alive {
-			return nil
+		if e.groupDeathFn != nil || (e.custodianFn == nil && e.survivorsFn == nil) {
+			death := e.custodyDeath(doc)
+			if death.Outcome != dispatch.CustodyDeathProven {
+				if death.Outcome == dispatch.CustodyDeathDeferred {
+					e.emit("reap-deferred", "REAP-DEFERRED: custody death is unproven", map[string]string{
+						"missionId": e.Mission, "jobId": job, "reason": death.Reason,
+					})
+				}
+				return nil
+			}
+		} else {
+			start, _ := jsonInt(doc["pidStartedAt"])
+			tag, _ := doc["instanceTag"].(string)
+			if e.custodian(pid, start, tag) != identity.Dead {
+				return nil
+			}
+			// A dead custodian is only HALF the proof groupDeathProvenAt
+			// claims: a tagged survivor means the group lives, and this
+			// kill-less reap must defer to the kill-capable dispatch path.
+			recPgid, _ := jsonInt(doc["pgid"])
+			if alive, certain := e.taggedSurvivors(tag, pid, recPgid); !certain || alive {
+				return nil
+			}
 		}
 		// A cancel marks the record before it kills: a dead marked
 		// group is that cancel's outcome here exactly as in the
@@ -288,6 +311,39 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 		})
 	}
 	return nil
+}
+
+func (e *Engine) custodyDeath(record map[string]any) dispatch.CustodyDeathResult {
+	if e.groupDeathFn != nil {
+		return e.groupDeathFn(record)
+	}
+	matcher := func(argv []string, tag string) bool {
+		_, ok := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
+		return ok
+	}
+	return dispatch.ProveCustodyDeath(e.Root, record, dispatch.CustodyDeathDependencies{
+		MatchesTag: matcher,
+		TaggedScan: func(tag string) census.TaggedProcessCensus {
+			return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{MatchesTag: matcher})
+		},
+	})
+}
+
+func (e *Engine) reconcileReservation(job string) (dispatch.ReconciliationResult, error) {
+	if e.reconcileFn != nil {
+		return e.reconcileFn(job)
+	}
+	matcher := func(argv []string, tag string) bool {
+		_, ok := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
+		return ok
+	}
+	return dispatch.ReconcileReservation(e.Root, job, dispatch.ReconciliationDependencies{
+		Scanner: census.KernelTaggedProcessScanner{MatchesTag: matcher},
+		Creator: identity.KernelProber{},
+		Emit: func(line string) {
+			e.emit("reap-deferred", line, map[string]string{"missionId": e.Mission, "jobId": job})
+		},
+	})
 }
 
 // reapCAS lands one reap verdict through the existing record CAS under the

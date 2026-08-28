@@ -94,6 +94,8 @@ func runAdapterCodexCommand(args []string) int {
 	sandbox := flags.String("sandbox", "", "sandbox mode (or derive via --record/--permissions)")
 	network := flags.String("network", "", "network access boolean (or derive via --record/--permissions)")
 	session := flags.String("session", "", "session to resume (follow-up)")
+	instanceTag := flags.String("instance-tag", "", "job instance tag placed in the delegate argv")
+	reasoningEffort := flags.String("reasoning-effort", "", "reasoning effort override (optional)")
 	record := flags.String("record", "", "job record: derive sandbox/network from its requested envelope")
 	permissions := flags.String("permissions", "", "permission envelope file: derive sandbox/network from it")
 	if flags.Parse(args) != nil {
@@ -116,11 +118,11 @@ func runAdapterCodexCommand(args []string) int {
 		}
 		extraDirs = roots
 	}
-	if *verb == "" || *model == "" || *schema == "" || *output == "" || *sandbox == "" || *network == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-command --verb V --model M --schema F --output F (--record F | --permissions F | --sandbox M --network B) [--workspace DIR] [--session SID]")
+	if *verb == "" || *model == "" || *schema == "" || *output == "" || *sandbox == "" || *network == "" || *instanceTag == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-command --verb V --model M --schema F --output F --instance-tag TAG (--record F | --permissions F | --sandbox M --network B) [--workspace DIR] [--session SID]")
 		return 2
 	}
-	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session, extraDirs)
+	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session, *instanceTag, *reasoningEffort, extraDirs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

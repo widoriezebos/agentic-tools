@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -240,8 +241,22 @@ func setupReaper(repo string) func() {
 		JobsDir:   supervise.JobsDir(repo),
 		Now:       func() time.Time { return time.Now().UTC() },
 		Custodian: kernelCustodian(repo),
-		Apply:     recordCASApplier(repo),
-		Emit:      func(line string) { fmt.Fprintln(os.Stderr, line) },
+		Death: func(record map[string]any) dispatchpkg.CustodyDeathResult {
+			return dispatchpkg.ProveCustodyDeath(repo, record, dispatchpkg.CustodyDeathDependencies{
+				MatchesTag: positionedJobTag,
+				TaggedScan: func(tag string) census.TaggedProcessCensus {
+					return commandTaggedProcessScanner{}.ScanTag(tag, time.Time{})
+				},
+			})
+		},
+		Reconcile: func(job string) (dispatchpkg.ReconciliationResult, error) {
+			return dispatchpkg.ReconcileReservation(repo, job, dispatchpkg.ReconciliationDependencies{
+				Scanner: commandTaggedProcessScanner{}, Creator: identity.KernelProber{},
+				Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
+			})
+		},
+		Apply: recordCASApplier(repo),
+		Emit:  func(line string) { fmt.Fprintln(os.Stderr, line) },
 	}
 	return func() {
 		if err := cfg.ReaperPass(); err != nil {

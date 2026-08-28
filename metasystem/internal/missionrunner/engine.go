@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -87,6 +88,11 @@ type Engine struct {
 	// Production binds identity.TaggedSurvivors — the group-death half
 	// of the kill-less reap proof, shared with the standing reaper.
 	survivorsFn func(tag string, exclude, pgid int64) (alive bool, certain bool)
+	// groupDeathFn replaces the two legacy process probes with the complete
+	// custody-domain predicate. Production binds the dispatch owner; tests may
+	// still bind the older probes while their tables are migrated.
+	groupDeathFn func(record map[string]any) dispatch.CustodyDeathResult
+	reconcileFn  func(job string) (dispatch.ReconciliationResult, error)
 }
 
 // fixtures is the engine's root-checked fixture authority, constructed on

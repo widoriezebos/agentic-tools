@@ -10,6 +10,7 @@ Usage:
   scripts/agents/adapters/devin.sh enforcement-map
   scripts/agents/adapters/devin.sh contract
   scripts/agents/adapters/devin.sh probe
+  scripts/agents/adapters/devin.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/devin.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
   scripts/agents/adapters/devin.sh follow-up --job <job-id> --start-gate <file>
@@ -333,6 +334,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   # argv0 devin-delegate-acp: the census signature distinguishes THIS
   # delegate-side server from the host CLI's internal raw `devin acp`
   # helper (issue #12) — the binary ignores argv0, the classifier reads it.
+  mark_cli_prefork || { acp_fifo_cleanup; fail_pending prefork_marker handshake; return 1; }
   ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec -a devin-delegate-acp "$(command -v devin)" acp >"$server_out" <"$server_in" 2>>"$log" ) &
   server_pid=$!
   register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; acp_fifo_cleanup; fail_pending custody_registration handshake; return 1; }
@@ -348,6 +350,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   # Follow-up rides session/load (ACP-to-ACP proven by the wire
   # probe, step B); the transport never switches mid-chain.
   [[ "$verb" != follow-up ]] || turn_args+=(--load-session "$requested_session")
+  mark_cli_prefork || { terminate_cli_child "$server_pid"; acp_fifo_cleanup; fail_pending prefork_marker handshake; return 1; }
   "$ms" "${turn_args[@]}" >"$outcome_file" 2>>"$log" &
   client_pid=$!
   register_cli_custody "$client_pid" || { terminate_cli_child "$client_pid"; terminate_cli_child "$server_pid"; acp_fifo_cleanup; fail_pending custody_registration handshake; return 1; }
@@ -488,7 +491,10 @@ supervise() { # dispatch|follow-up and supervisor args
     fail_pending transport_switch_refused setup
     return 1
   fi
-  config_file="$round_dir/devin-config.json"
+  # The CLI has no free-form metadata flag. Its per-turn config path is already
+  # an argv field and is private to this round, so naming that file with the
+  # instance tag gives ownership checks the same exact positional proof.
+  config_file="$round_dir/$instance_tag"
   local transcript="$round_dir/transcript.atif.json"
   local before_sessions="$round_dir/devin-sessions-before.json"
   local current_sessions="$round_dir/devin-sessions-current.json"
@@ -561,6 +567,7 @@ supervise() { # dispatch|follow-up and supervisor args
     command+=(-r "$requested_session")
   fi
 
+  mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   (
     cd "$workspace"
     # Existing Devin hooks can backfill this file from their stable session_id
@@ -761,6 +768,15 @@ shift
 adapter_enforcement_map='{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}'
 
 case "$command_name" in
+  output-stream)
+    [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
+    transport=$(devin_transport) || { echo "devin transport refused: $transport" >&2; exit 1; }
+    if [[ "$transport" == acp ]]; then
+      printf '%s/acp-outcome.json\n' "${2%/}"
+    else
+      printf '%s/raw.out\n' "${2%/}"
+    fi
+    ;;
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' .devin/config.json .devin/config.local.json .devin/hooks.v1.json

@@ -36,6 +36,10 @@ command -v python3 >/dev/null 2>&1 \
 
 # The engine does the structural JSON work below; functions use the
 # absolute path because agent-driver functions run from varying cwds.
+# Rebuild before copying the engine into fixture repositories. The shell and
+# binary must expose the same command set or a missing verb looks like a process
+# identity timeout instead of a stale test artifact.
+bash scripts/agents/go-build.sh >/dev/null
 engine="$root/bin/metasystem"
 
 # Atomically replace one top-level field of a JSON object file, leaving
@@ -154,9 +158,10 @@ cleanup() {
     keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-dispatch-$$"
     mkdir -p "$(dirname "$keep")"
     mv "$tmp" "$keep" 2>/dev/null && echo "dispatch fixture evidence preserved: $keep" >&2
-    return 0
+    return "$status"
   fi
   rm -rf "$tmp" 2>/dev/null || { sleep 1; rm -rf "$tmp" 2>/dev/null || true; }
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -196,6 +201,14 @@ fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
 agent_config="$agent_repo/scripts/metasystem-config.sh"
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
+
+# Capability snapshots belong to the fixture run that consumes them. Mint the
+# fake snapshots before cloning the other fixture repositories so none of the
+# beds inherits a dated snapshot from an earlier run.
+first_snapshot=$($fake_adapter probe)
+second_snapshot=$($fake_adapter probe)
+[[ "$first_snapshot" == *-001.json && "$second_snapshot" == *-002.json && "$first_snapshot" != "$second_snapshot" ]] \
+  || { echo "fake probe did not create immutable sequence-suffixed snapshots" >&2; exit 1; }
 
 # The mission runner and compound adapter selftest each get a pristine
 # repository and supervisor. They run only after the main dispatch fixture
@@ -347,6 +360,34 @@ wait_for_agent_child_stopped() { # stopped-file path, failure message
   done
 }
 
+cap_lock_fixture_acquire() { # fixture name
+  local name=$1 directory="$agent_repo/artifacts/agents/supervision/cap-authority.lock.d"
+  cap_lock_fixture_tag="metasystem-cap-lock-$name-$$-$RANDOM"
+  "$engine" util hold --tag "$cap_lock_fixture_tag" &
+  cap_lock_fixture_pid=$!
+  "$engine" job owner-lock --command claim --dir "$directory" \
+    --pid "$cap_lock_fixture_pid" --tag "$cap_lock_fixture_tag"
+}
+
+cap_lock_fixture_release() {
+  local directory="$agent_repo/artifacts/agents/supervision/cap-authority.lock.d"
+  "$engine" job owner-lock --command release --dir "$directory" \
+    --pid "$cap_lock_fixture_pid" --tag "$cap_lock_fixture_tag"
+  kill -TERM "$cap_lock_fixture_pid" 2>/dev/null || true
+  wait "$cap_lock_fixture_pid" 2>/dev/null || true
+  cap_lock_fixture_pid=
+  cap_lock_fixture_tag=
+}
+
+wait_for_chain_lock() { # chain id, fixture name
+  local chain=$1 name=$2 deadline=$(( SECONDS + agent_fixture_cap_sec ))
+  while [[ ! -f "$agent_repo/artifacts/agents/locks/$chain.d/owner.json" ]]; do
+    (( SECONDS < deadline )) \
+      || { echo "$name did not acquire its chain lock" >&2; return 1; }
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+
 wait_for_agent_fixture_process() { # fixture name, job id or -, exact child pid
   local name=$1 job=$2 child_pid=$3 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec )) result
   while kill -0 "$child_pid" 2>/dev/null; do
@@ -358,12 +399,26 @@ wait_for_agent_fixture_process() { # fixture name, job id or -, exact child pid
 }
 
 run_agent_fixture() { # fixture name, job id or -, command...
-  local name=$1 job=$2 child_pid
+  local name=$1 job=$2 child_pid result
   shift 2
-  case ${2:-} in dispatch|follow-up) wait_for_agent_census_fresh "$name" ;; esac
+  case ${2:-} in
+    dispatch|follow-up)
+      if wait_for_agent_census_fresh "$name"; then
+        :
+      else
+        result=$?
+        return "$result"
+      fi
+      ;;
+  esac
   "$@" &
   child_pid=$!
-  wait_for_agent_fixture_process "$name" "$job" "$child_pid"
+  if wait_for_agent_fixture_process "$name" "$job" "$child_pid"; then
+    return 0
+  else
+    result=$?
+  fi
+  return "$result"
 }
 
 run_agent_fixture_captured() { # fixture name, job id or -, output file, command...
@@ -698,16 +753,90 @@ METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
   --start-time "$agent_main_start" --tag metasystem-main-fake-validator \
   >"$agent_fixture/arming.out"
 
-first_snapshot=$($fake_adapter probe)
-second_snapshot=$($fake_adapter probe)
-[[ "$first_snapshot" == *-001.json && "$second_snapshot" == *-002.json && "$first_snapshot" != "$second_snapshot" ]] \
-  || { echo "fake probe did not create immutable sequence-suffixed snapshots" >&2; exit 1; }
-
 happy_brief="$agent_fixture/happy.md"
 make_agent_brief "$happy_brief" design
-run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait
+if run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait; then
+  :
+else
+  happy_dispatch_rc=$?
+  echo "valid fake dispatch failed: happy (exit: $happy_dispatch_rc)" >&2
+  exit "$happy_dispatch_rc"
+fi
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job happy)" == completed ]] \
   || { echo "valid fake dispatch did not complete" >&2; exit 1; }
+
+# Two wrappers for the same fresh operation queue at the short chain section.
+# The second wrapper must reach claim-launch and report the first wrapper's
+# reservation instead of failing at the shell lock or the standing job record.
+repeat_fresh_release="$agent_fixture/repeat-fresh-release"
+repeat_fresh_brief="$agent_fixture/repeat-fresh.md"
+make_agent_brief "$repeat_fresh_brief" design "FAKE:custodial-critique=$repeat_fresh_release"
+cap_lock_fixture_acquire repeat-fresh
+wait_for_agent_census_fresh repeat-fresh-first
+(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic \
+  --brief "$repeat_fresh_brief" --job-id repeat-fresh) \
+  >"$agent_fixture/repeat-fresh-first.out" 2>&1 &
+repeat_fresh_first_pid=$!
+wait_for_chain_lock repeat-fresh repeat-fresh-first
+(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic \
+  --brief "$repeat_fresh_brief" --job-id repeat-fresh) \
+  >"$agent_fixture/repeat-fresh-second.out" 2>&1 &
+repeat_fresh_second_pid=$!
+sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+cap_lock_fixture_release
+repeat_fresh_first_rc=0
+repeat_fresh_second_rc=0
+wait_for_agent_fixture_process repeat-fresh-first repeat-fresh "$repeat_fresh_first_pid" \
+  || repeat_fresh_first_rc=$?
+wait_for_agent_fixture_process repeat-fresh-second repeat-fresh "$repeat_fresh_second_pid" \
+  || repeat_fresh_second_rc=$?
+(( repeat_fresh_first_rc == 0 )) \
+  || { echo "the winning repeated fresh wrapper failed with $repeat_fresh_first_rc" >&2; cat "$agent_fixture/repeat-fresh-first.out" >&2; exit 1; }
+(( repeat_fresh_second_rc == 0 || repeat_fresh_second_rc == 3 )) \
+  || { echo "the losing repeated fresh wrapper failed before claim-launch with $repeat_fresh_second_rc" >&2; cat "$agent_fixture/repeat-fresh-second.out" >&2; exit 1; }
+grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/repeat-fresh-second.out" \
+  || { echo "the losing repeated fresh wrapper did not return a claim state" >&2; cat "$agent_fixture/repeat-fresh-second.out" >&2; exit 1; }
+[[ -f "$agent_repo/artifacts/agents/jobs/repeat-fresh.json" ]] \
+  || { echo "the repeated fresh operation created no job record" >&2; exit 1; }
+touch "$repeat_fresh_release"
+wait_for_agent_status repeat-fresh completed
+
+# A busy session refuses before reserving payload-retry. The refusal must not
+# leave its brief or round directory behind, because the same identifier is
+# valid as soon as the temporary occupant becomes terminal.
+payload_retry_digest=$("$engine" util sha256 --file "$happy_brief")
+payload_retry_preparation="$agent_fixture/payload-retry-occupancy.json"
+"$engine" job claim-occupancy-prepare --root "$agent_repo" \
+  --session fake:payload-retry --output "$payload_retry_preparation"
+"$engine" job claim-launch --root "$agent_repo" --opid payload-blocker \
+  --session fake:payload-retry --dispatch-mode fresh --resumed-session "" \
+  --runtime fake --model fake-model --role design-critic \
+  --launch-mode shared-checkout --permission-envelope-digest "$payload_retry_digest" \
+  --product-root "$agent_repo" --cap-min "$fixture_minimum_cap_min" \
+  --conf "$agent_repo/metasystem.conf" --input-hash "$payload_retry_digest" \
+  --creator-pid "$$" --occupancy-preparation "$payload_retry_preparation" >/dev/null
+if run_agent_fixture_captured payload-retry-refusal payload-retry \
+    "$agent_fixture/payload-retry-refusal.out" "$agent_dispatch" dispatch \
+    --role design-critic --brief "$happy_brief" --job-id payload-retry; then
+  echo "the occupied payload-retry session unexpectedly launched" >&2
+  exit 1
+else
+  payload_retry_refusal_rc=$?
+fi
+(( payload_retry_refusal_rc == 1 )) \
+  || { echo "the occupied payload-retry session returned $payload_retry_refusal_rc instead of 1" >&2; cat "$agent_fixture/payload-retry-refusal.out" >&2; exit 1; }
+grep -Fq 'REFUSED-SESSION-BUSY' "$agent_fixture/payload-retry-refusal.out" \
+  || { echo "payload-retry was not refused by claim-launch" >&2; cat "$agent_fixture/payload-retry-refusal.out" >&2; exit 1; }
+[[ ! -e "$agent_repo/artifacts/agents/payload-retry" ]] \
+  || { echo "a refused claim left payload-retry launch files behind" >&2; exit 1; }
+payload_blocker_patch="$agent_fixture/payload-blocker-failed.json"
+printf '{"error":"fixture-release"}\n' >"$payload_blocker_patch"
+"$engine" job record-cas --root "$agent_repo" --job payload-blocker \
+  --expect pending-setup --status failed --patch "$payload_blocker_patch" >/dev/null
+run_agent_fixture payload-retry payload-retry "$agent_dispatch" dispatch \
+  --role design-critic --brief "$happy_brief" --job-id payload-retry --wait
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/payload-retry.json" --field status)" == completed ]] \
+  || { echo "payload-retry did not launch after its temporary refusal cleared" >&2; exit 1; }
 
 # Exit honesty: a job that never existed answers FAST and speaks —
 # watch says vanished (5) with the reason on stderr instead of
@@ -736,6 +865,26 @@ for happy_key in jobId role mission runtime round parentJob status phase error \
 done
 [[ "$("$engine" json get --file "$happy_record" --field status)" == completed ]] \
   || { echo "happy record is not completed" >&2; exit 1; }
+happy_session_key=$("$engine" json get --file "$happy_record" --field sessionKey)
+[[ "$happy_session_key" == fake:happy ]] \
+  || { echo "fresh dispatch did not record its namespaced occupancy key" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field fingerprintVersion)" == 1 \
+   && -n "$("$engine" json get --file "$happy_record" --field fingerprint)" \
+   && "$("$engine" json get --file "$happy_record" --field dispatchMode)" == fresh \
+   && -n "$("$engine" json get --file "$happy_record" --field creatorLiveness.pid)" \
+   && -n "$("$engine" json get --file "$happy_record" --field reservationDeadline)" ]] \
+  || { echo "ordinary fresh dispatch did not complete a fingerprinted claim-launch reservation" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field launchMode)" == shared-checkout \
+   && "$("$engine" json get --file "$happy_record" --field productRoots)" == "[\"$agent_repo\"]" \
+   && "$("$engine" json get --file "$happy_record" --field productRootScopes)" \
+      == "[{\"path\":\"$agent_repo\",\"reason\":\"shared-checkout\",\"standing\":\"attribution-only\"}]" ]] \
+  || { echo "ordinary shared-checkout dispatch did not record its workspace attribution default" >&2; exit 1; }
+happy_session_digest=$(printf '%s' "$happy_session_key" | "$engine" util sha256)
+happy_session_index="$agent_repo/artifacts/agents/sessions/$happy_session_digest.json"
+[[ -f "$happy_session_index" \
+   && "$("$engine" json get --file "$happy_session_index" --field sessionKey)" == "$happy_session_key" \
+   && "$("$engine" json get --file "$happy_session_index" --field occupants)" == '[]' ]] \
+  || { echo "fresh dispatch did not maintain and release its session occupancy index" >&2; cat "$happy_session_index" >&2 2>/dev/null || true; exit 1; }
 happy_snapshot_rel=$("$engine" json get --file "$happy_record" --field capabilitySnapshot)
 [[ "$happy_snapshot_rel" == *-002.json ]] \
   || { echo "happy record does not carry the second sequence snapshot: $happy_snapshot_rel" >&2; exit 1; }
@@ -754,6 +903,220 @@ happy_enforcement_rel=$("$engine" json get --file "$happy_record" --field permis
   || { echo "happy snapshot envelope enforcement changed shape" >&2; exit 1; }
 [[ "$("$engine" json get --file "$happy_record" --field input.delivery)" == stdin ]] \
   || { echo "happy input was not delivered on stdin" >&2; exit 1; }
+
+# Every recorded custody group is attempted even when an earlier recycled
+# group is no longer owned. The aggregate still refuses a clean wind-down, and
+# the refusal remains visible, but the later owned group must receive TERM.
+wind_down_ms="$agent_fixture/wind-down-ms.sh"
+cat >"$wind_down_ms" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1 $2" == "job custody-groups" ]]; then
+  printf '310\n320\n'
+  exit 0
+fi
+if [[ "$1 $2" == "json get" ]]; then
+  printf '999999\n'
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$wind_down_ms"
+wind_down_signal="$agent_fixture/wind-down-signal"
+set +e
+(
+  source "$agent_dispatch"
+  ms="$wind_down_ms"
+  owned_group_alive=1
+  group_alive() {
+    [[ "$1" == 310 ]] && return 0
+    (( owned_group_alive ))
+  }
+  group_owned() { [[ "$2" == 320 ]]; }
+  kill() {
+    printf '%s\n' "$*" >>"$wind_down_signal"
+    owned_group_alive=0
+  }
+  wind_down_group "$agent_fixture/unused-record.json"
+) 2>"$agent_fixture/wind-down.err"
+wind_down_rc=$?
+set -e
+[[ $wind_down_rc -ne 0 ]] \
+  || { echo "cross-group wind-down hid the unowned group refusal" >&2; exit 1; }
+grep -Fq 'refusing to signal unowned process group 310' "$agent_fixture/wind-down.err" \
+  || { echo "cross-group wind-down did not record the recycled group refusal" >&2; exit 1; }
+grep -Fq -- '-TERM -- -320' "$wind_down_signal" \
+  || { echo "cross-group wind-down stopped before signalling the later owned group" >&2; exit 1; }
+
+# The standalone critique interface now enters through the proven launch
+# claim and the ordinary adapter supervisor. Hold its registered fake child
+# so the session gate and census can be observed before the wrapper stamps
+# the terminal compare-and-swap.
+critique_script="$agent_repo/scripts/agents/critique-round.sh"
+critique_chain=custodial-round
+critique_session="critique:$critique_chain"
+critique_release="$agent_fixture/critique-release"
+critique_input="$agent_fixture/critique-input.md"
+make_agent_brief "$critique_input" design "FAKE:custodial-critique=$critique_release"
+wait_for_agent_census_fresh custodial-critique
+METASYSTEM_CRITIQUE_FIXTURE_RUNTIME=fake \
+METASYSTEM_FAKE_CRITIQUE_HOLD_CAP_SEC="$agent_fixture_cap_sec" \
+  "$critique_script" "$critique_chain" 1 "$critique_input" \
+    --model fake-model --effort high >"$agent_fixture/critique-first.out" 2>&1 &
+critique_driver_pid=$!
+critique_job=
+critique_record=
+critique_deadline=$(( SECONDS + agent_fixture_cap_sec ))
+while (( SECONDS < critique_deadline )); do
+  for critique_candidate in "$agent_repo/artifacts/agents/jobs"/*.json; do
+    [[ -f "$critique_candidate" ]] || continue
+    [[ "$("$engine" json get --file "$critique_candidate" --field sessionKey 2>/dev/null || true)" == "$critique_session" ]] || continue
+    critique_record=$critique_candidate
+    critique_job=$(basename "${critique_candidate%.json}")
+    break
+  done
+  if [[ -n "$critique_record" \
+     && "$("$engine" json get --file "$critique_record" --field status 2>/dev/null || true)" == running \
+     && "$("$engine" json get --file "$critique_record" --field custodyProcesses 2>/dev/null || true)" != '[]' ]]; then
+    break
+  fi
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -n "$critique_job" \
+   && "$("$engine" json get --file "$critique_record" --field status 2>/dev/null || true)" == running ]] \
+  || { echo "custodial critique did not reach a running, custody-registered record" >&2; cat "$agent_fixture/critique-first.out" >&2; exit 1; }
+
+# The first launch has released its short chain lock by now. A second round
+# can therefore reach the session CAS and must be refused by that gate, not
+# by a shell lock or by a duplicate output path.
+set +e
+METASYSTEM_CRITIQUE_FIXTURE_RUNTIME=fake \
+  "$critique_script" "$critique_chain" 2 "$critique_input" \
+    --model fake-model --effort high >"$agent_fixture/critique-second.out" 2>&1 &
+critique_second_pid=$!
+wait_for_agent_fixture_process critique-session-busy - "$critique_second_pid"
+critique_second_rc=$?
+set -e
+(( critique_second_rc != 0 )) \
+  || { echo "a concurrent critique round entered an occupied chain session" >&2; exit 1; }
+grep -Fq 'REFUSED-SESSION-BUSY' \
+  "$agent_repo/artifacts/agents/critiques/$critique_chain/r2-stderr.log" \
+  || { echo "the concurrent critique refusal did not come from the session gate" >&2; cat "$agent_repo/artifacts/agents/critiques/$critique_chain/r2-stderr.log" >&2; exit 1; }
+critique_session_records=0
+for critique_candidate in "$agent_repo/artifacts/agents/jobs"/*.json; do
+  [[ -f "$critique_candidate" ]] || continue
+  if [[ "$("$engine" json get --file "$critique_candidate" --field sessionKey 2>/dev/null || true)" == "$critique_session" ]]; then
+    critique_session_records=$((critique_session_records + 1))
+  fi
+done
+(( critique_session_records == 1 )) \
+  || { echo "the refused concurrent critique minted a second session record" >&2; exit 1; }
+
+critique_custody=$((0))
+critique_custody_json=$("$engine" json get --file "$critique_record" --field custodyProcesses)
+critique_custody_item=$(json_elements "$critique_custody_json" | head -1)
+critique_child_pid=$("$engine" json get --value "$critique_custody_item" --field pid)
+critique_child_pgid=$("$engine" json get --value "$critique_custody_item" --field pgid)
+critique_child_started=$("$engine" json get --value "$critique_custody_item" --field pidStartedAt)
+critique_child_tag=$("$engine" json get --value "$critique_custody_item" --field instanceTag)
+critique_child_micro=$("$engine" json get --value "$critique_custody_item" --field pidStartedAtExactMicro 2>/dev/null || true)
+critique_child_ticks=$("$engine" json get --value "$critique_custody_item" --field pidStartTicks 2>/dev/null || true)
+critique_child_boot=$("$engine" json get --value "$critique_custody_item" --field bootId 2>/dev/null || true)
+critique_processes="$agent_fixture/critique-processes.json"
+critique_process_staged=$(mktemp "$agent_fixture/.critique-processes.XXXXXX")
+printf '[{"pid":%s,"ppid":1,"pgid":%s,"pidStartedAt":%s' \
+  "$critique_child_pid" "$critique_child_pgid" "$critique_child_started" >"$critique_process_staged"
+if [[ -n "$critique_child_micro" && "$critique_child_micro" != null ]]; then
+  printf ',"pidStartedAtExactMicro":%s' "$critique_child_micro" >>"$critique_process_staged"
+else
+  printf ',"pidStartTicks":%s,"bootId":"%s"' \
+    "$critique_child_ticks" "$critique_child_boot" >>"$critique_process_staged"
+fi
+printf ',"argv":"metasystem-fake-agent --workspace=%s %s","cwd":"%s","cwdError":false,"alive":true}]\n' \
+  "$agent_repo" "$critique_child_tag" "$agent_repo" >>"$critique_process_staged"
+mv "$critique_process_staged" "$critique_processes"
+critique_census="$agent_fixture/critique-census.json"
+METASYSTEM_CENSUS_PROCESS_FILE="$critique_processes" \
+  "$engine" proc census --root "$agent_repo" --repo "$agent_repo" \
+    --fingerprint critique-running --interval 5 --output "$critique_census" >/dev/null
+while IFS= read -r critique_inventory_item; do
+  [[ "$("$engine" json get --value "$critique_inventory_item" --field pid)" == "$critique_child_pid" ]] || continue
+  [[ "$("$engine" json get --value "$critique_inventory_item" --field class)" == CUSTODY ]] || continue
+  critique_custody=1
+done < <(json_elements "$("$engine" json get --file "$critique_census" --field inventory)")
+(( critique_custody == 1 )) \
+  || { echo "the running critique child was not classified CUSTODY" >&2; cat "$critique_census" >&2; exit 1; }
+
+touch "$critique_release"
+if wait_for_agent_fixture_process custodial-critique "$critique_job" "$critique_driver_pid"; then
+  :
+else
+  critique_first_rc=$?
+  echo "custodial critique failed after release (exit: $critique_first_rc)" >&2
+  cat "$agent_fixture/critique-first.out" >&2
+  exit "$critique_first_rc"
+fi
+[[ -f "$critique_record" \
+   && "$("$engine" json get --file "$critique_record" --field status)" == completed \
+   && "$("$engine" json get --file "$critique_record" --field proofLevel)" == proven \
+   && "$("$engine" json get --file "$critique_record" --field runtime)" == fake \
+   && "$("$engine" json get --file "$critique_record" --field role)" == design-critic \
+   && "$("$engine" json get --file "$critique_record" --field requestedModel)" == fake-model \
+   && "$("$engine" json get --file "$critique_record" --field reasoningEffort)" == high ]] \
+  || { echo "custodial critique record lost its proven launch identity" >&2; cat "$critique_record" >&2; exit 1; }
+critique_tag=$("$engine" json get --file "$critique_record" --field instanceTag)
+[[ "$("$engine" json get --file "$critique_record" --field pid)" == "$("$engine" json get --file "$critique_record" --field ownershipProof.pid)" \
+   && "$("$engine" json get --file "$critique_record" --field pgid)" == "$("$engine" json get --file "$critique_record" --field ownershipProof.pgid)" \
+   && "$("$engine" json get --file "$critique_record" --field ownershipProof.instanceTag)" == "$critique_tag" \
+   && "$("$engine" json get --file "$critique_record" --field ownershipProof.source)" == trusted-launcher \
+   && -n "$("$engine" json get --file "$critique_record" --field ownershipProof.provenAt)" ]] \
+  || { echo "custodial critique ownership proof is not exact" >&2; exit 1; }
+if critique_primary_micro=$("$engine" json get --file "$critique_record" --field pidStartedAtExactMicro 2>/dev/null); then
+  [[ "$critique_primary_micro" == "$("$engine" json get --file "$critique_record" --field ownershipProof.pidStartedAtExactMicro)" ]] \
+    || { echo "custodial critique Darwin identity differs from its proof" >&2; exit 1; }
+else
+  [[ "$("$engine" json get --file "$critique_record" --field pidStartTicks)" == "$("$engine" json get --file "$critique_record" --field ownershipProof.pidStartTicks)" \
+     && "$("$engine" json get --file "$critique_record" --field bootId)" == "$("$engine" json get --file "$critique_record" --field ownershipProof.bootId)" ]] \
+    || { echo "custodial critique Linux identity differs from its proof" >&2; exit 1; }
+fi
+critique_round_dir="$agent_repo/artifacts/agents/$critique_job/rounds/1"
+[[ "$("$engine" json get --file "$critique_record" --field outputStream)" == "$critique_round_dir/events.jsonl" \
+   && "$("$engine" json get --file "$critique_record" --field phase)" == completed \
+   && "$("$engine" json get --file "$critique_round_dir/terminal-patch.json" --field phase)" == completed \
+   && "$("$engine" json get --file "$critique_record" --field endedAt)" != null ]] \
+  || { echo "custodial critique did not finish through the adapter terminal writer" >&2; exit 1; }
+critique_archive="$agent_repo/artifacts/agents/critiques/$critique_chain"
+cmp -s "$critique_input" "$critique_archive/r1-input.md" \
+  && [[ -s "$critique_archive/r1-output.md" && -f "$critique_archive/r1-stderr.log" ]] \
+  || { echo "custodial critique changed the chain archive contract" >&2; exit 1; }
+
+# The flag changes only the recorded/prompt role; the default above remains
+# design-critic and this fast independent chain proves the override.
+critique_role_chain=custodial-code-role
+critique_role_session="critique:$critique_role_chain"
+critique_role_input="$agent_fixture/critique-role-input.md"
+make_agent_brief "$critique_role_input" review
+wait_for_agent_census_fresh custodial-code-role
+run_agent_fixture custodial-code-role - env METASYSTEM_CRITIQUE_FIXTURE_RUNTIME=fake \
+  "$critique_script" "$critique_role_chain" 1 "$critique_role_input" \
+    --model fake-model --effort high --role code-critic
+critique_role_record=
+for critique_candidate in "$agent_repo/artifacts/agents/jobs"/*.json; do
+  [[ -f "$critique_candidate" ]] || continue
+  [[ "$("$engine" json get --file "$critique_candidate" --field sessionKey 2>/dev/null || true)" == "$critique_role_session" ]] || continue
+  critique_role_record=$critique_candidate
+  break
+done
+[[ -f "$critique_role_record" \
+   && "$("$engine" json get --file "$critique_role_record" --field role)" == code-critic \
+   && "$("$engine" json get --file "$critique_role_record" --field status)" == completed ]] \
+  || { echo "critique --role code-critic did not reach the custodial record" >&2; exit 1; }
+if find "$agent_repo/artifacts/agents/record-locks" -maxdepth 1 -type f \
+    \( -name 'critique-permissions.*' -o -name 'critique-snapshot.*' \
+       -o -name 'critique-cap-resolution.*' -o -name 'critique-record.*' \) \
+    -print -quit | grep -q .; then
+  echo "custodial critique left setup temporaries in record-locks" >&2
+  exit 1
+fi
 
 # Review roles default to a zero-write envelope in the live checkout even
 # when repository configuration grants the same role writes for a quarantined
@@ -791,7 +1154,10 @@ review_live_record="$agent_repo/artifacts/agents/jobs/review-live-write.json"
    && ! -e "$agent_repo/artifacts/agents/jobs/review-live-write.log" \
    && ! -e "$agent_repo/artifacts/agents/hb/review-live-write" ]] \
   || { echo "the writable live-review refusal launched or prepared an adapter process" >&2; exit 1; }
-for process_field in pid pidStartedAt pgid instanceTag custodyProcesses; do
+# A refused reservation may keep instanceTag as its launch-generation identity.
+# It must not claim a launched process or custody: pid, pidStartedAt, pgid,
+# custodyProcesses, and ownershipProof must all remain absent.
+for process_field in pid pidStartedAt pgid custodyProcesses ownershipProof; do
   if "$engine" json get --file "$review_live_record" --field "$process_field" >/dev/null 2>&1; then
     echo "the writable live-review refusal recorded process or custody field: $process_field" >&2
     exit 1
@@ -876,7 +1242,12 @@ run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design
 generated=$(run_agent_fixture generated-dispatch - "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief")
 [[ "$generated" =~ ^design-critic-[0-9]{8}t[0-9]{6}z-[a-f0-9]{4}$ ]] \
   || { echo "generated job id does not match the lowercase grammar: $generated" >&2; exit 1; }
-agent_fails collision 'job id collision' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy
+jobid_reuse_brief="$agent_fixture/jobid-reuse.md"
+make_agent_brief "$jobid_reuse_brief" design 'This launch request is distinct from the happy request.'
+# A job id may be retried only for the same launch request. Different brief
+# bytes change the input fingerprint, so they cannot reuse the standing job.
+agent_fails jobid-reuse-fingerprint-mismatch 'REFUSED-OPID-MISMATCH' \
+  "$agent_dispatch" dispatch --role design-critic --brief "$jobid_reuse_brief" --job-id happy
 agent_fails malformed-job-id 'invalid job id' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id 'Bad_Id'
 agent_fails contradictory-mode "contradicts the brief's Working Mode" "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --mode verify
 agent_fails unregistered-override 'outside metasystem.runtimes' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime ghost
@@ -950,15 +1321,23 @@ agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$age
 wait_for_agent_fixture_process pending-chain-driver pending-chain "$pending_driver" || true
 
 # A just-created pending record with no launched supervisor is inside its
-# recorded handshake budget, so a sweep leaves it pending. Once the same
-# record is older than its budget, the existing process-loss classification
-# applies unchanged.
+# recorded handshake budget, so a sweep leaves it pending. Once that window
+# ends, the fingerprint and creator breadcrumb route the identityless
+# reservation through reconciliation. Complete nonce-census absence plus the
+# dead creator fails it as creator-abandoned; no process group existed, so the
+# record must never claim process loss or group death.
 launch_window_source="$agent_fixture/launch-window.json"
 launch_window_pending="$agent_fixture/launch-window-pending.json"
-# A record is created in pending-setup and only then completed into pending,
-# so the fixture takes both steps the dispatcher takes. Writing a pending
-# record straight into creation tested a transition the dispatcher no longer
-# performs.
+# The claim creates the real fingerprinted pending-setup reservation, including
+# its nonce tag and exact creator breadcrumb. Record setup then preserves those
+# fields while completing the same reservation into the launch-window shape.
+run_agent_fixture launch-window-claim launch-window "$engine" job claim-launch \
+  --root "$agent_repo" --opid launch-window --session fake:launch-window \
+  --dispatch-mode fresh --resumed-session '' --runtime fake --model fake-model \
+  --role design-critic --launch-mode shared-checkout \
+  --permission-envelope-digest 1111111111111111111111111111111111111111111111111111111111111111 \
+  --input-hash 2222222222222222222222222222222222222222222222222222222222222222 \
+  --cap-min 120 --conf "$agent_repo/metasystem.conf" >/dev/null
 # This record has not launched, so it carries no launch-time stamps: the
 # handshake deadline among them, which is stamped when a dispatcher starts
 # waiting on an adapter it just started.
@@ -967,17 +1346,16 @@ launch_window_pending="$agent_fixture/launch-window-pending.json"
 # custodyProcesses first: emptying it removes the nested pid/pidStartedAt
 # spellings, so the top-level nulling below cannot splice a lookalike.
 json_replace_field "$launch_window_source" custodyProcesses '[]'
-for launch_window_field in parentJob error pid pidStartedAt pgid sessionId endedAt usage mirror; do
+for launch_window_field in \
+  parentJob error pid pidStartedAt pidStartedAtExactMicro pidStartTicks bootId \
+  pgid sessionId endedAt usage mirror claimEpoch mainId goalId; do
   json_replace_field "$launch_window_source" "$launch_window_field" null
 done
 "$engine" json set --file "$launch_window_source" \
-  --field jobId=launch-window --field status=pending-setup --field phase=handshake \
-  --field instanceTag=metasystem-job-launch-window \
+  --field jobId=launch-window --field status=pending --field phase=handshake \
   --field "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --int round=1 --int sessionEstablishedTimeoutSec=60
 cp "$launch_window_source" "$launch_window_pending"
-"$engine" json set --file "$launch_window_pending" --field status=pending
-run_agent_fixture launch-window-create launch-window "$agent_dispatch" __record-create --job launch-window --source "$launch_window_source"
 run_agent_fixture launch-window-setup launch-window "$agent_dispatch" __record-setup --job launch-window --source "$launch_window_pending"
 run_agent_fixture launch-window-young-reap launch-window "$agent_dispatch" reap --job launch-window
 launch_window_record="$agent_repo/artifacts/agents/jobs/launch-window.json"
@@ -988,9 +1366,14 @@ launch_window_record="$agent_repo/artifacts/agents/jobs/launch-window.json"
 "$engine" json set --file "$launch_window_record" --field startedAt=2000-01-01T00:00:00Z
 run_agent_fixture launch-window-old-reap launch-window "$agent_dispatch" reap --job launch-window
 [[ "$("$engine" json get --file "$launch_window_record" --field status)" == failed \
-   && "$("$engine" json get --file "$launch_window_record" --field error)" == process-lost \
-   && "$("$engine" json get --file "$launch_window_record" --field phase)" == supervision ]] \
-  || { echo "an out-of-window pending record did not classify as process loss" >&2; cat "$launch_window_record" >&2; exit 1; }
+   && "$("$engine" json get --file "$launch_window_record" --field error)" == creator-abandoned \
+   && "$("$engine" json get --file "$launch_window_record" --field phase)" == reconciliation ]] \
+  || { echo "an out-of-window identityless reservation did not reconcile creator abandonment" >&2; cat "$launch_window_record" >&2; exit 1; }
+if "$engine" json get --file "$launch_window_record" --field groupDeathProvenAt >/dev/null 2>&1; then
+  echo "creator abandonment incorrectly claimed process-group death" >&2
+  cat "$launch_window_record" >&2
+  exit 1
+fi
 
 pending_loss_brief="$agent_fixture/pending-loss.md"
 make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
@@ -1224,6 +1607,48 @@ done < <(json_elements "$("$engine" json get --file "$mirror_home/manifest.json"
 # Follow-ups are child records under one serialized, explicitly closed chain.
 follow_message="$agent_fixture/follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
+
+# The same contention is exercised on a follow-up chain. Once the first
+# wrapper publishes round two, the second wrapper must claim that same round;
+# it must not turn a live round two into either a chain-lock refusal or round
+# three.
+repeat_follow_brief="$agent_fixture/repeat-follow-brief.md"
+make_agent_brief "$repeat_follow_brief" design
+run_agent_fixture repeat-follow-parent repeat-follow "$agent_dispatch" dispatch \
+  --role design-critic --brief "$repeat_follow_brief" --job-id repeat-follow --wait
+repeat_follow_release="$agent_fixture/repeat-follow-release"
+repeat_follow_message="$agent_fixture/repeat-follow-message.md"
+cp "$agent_repo/scripts/agents/templates/follow-up.md" "$repeat_follow_message"
+printf '\nFAKE:custodial-critique=%s\n' "$repeat_follow_release" >>"$repeat_follow_message"
+cap_lock_fixture_acquire repeat-follow
+wait_for_agent_census_fresh repeat-follow-first
+(cd "$agent_repo" && "$agent_dispatch" follow-up --job repeat-follow \
+  --message "$repeat_follow_message") >"$agent_fixture/repeat-follow-first.out" 2>&1 &
+repeat_follow_first_pid=$!
+wait_for_chain_lock repeat-follow repeat-follow-first
+(cd "$agent_repo" && "$agent_dispatch" follow-up --job repeat-follow \
+  --message "$repeat_follow_message") >"$agent_fixture/repeat-follow-second.out" 2>&1 &
+repeat_follow_second_pid=$!
+sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+cap_lock_fixture_release
+repeat_follow_first_rc=0
+repeat_follow_second_rc=0
+wait_for_agent_fixture_process repeat-follow-first repeat-follow-r2 "$repeat_follow_first_pid" \
+  || repeat_follow_first_rc=$?
+wait_for_agent_fixture_process repeat-follow-second repeat-follow-r2 "$repeat_follow_second_pid" \
+  || repeat_follow_second_rc=$?
+(( repeat_follow_first_rc == 0 )) \
+  || { echo "the winning repeated follow-up wrapper failed with $repeat_follow_first_rc" >&2; cat "$agent_fixture/repeat-follow-first.out" >&2; exit 1; }
+(( repeat_follow_second_rc == 0 || repeat_follow_second_rc == 3 )) \
+  || { echo "the losing repeated follow-up wrapper failed before claim-launch with $repeat_follow_second_rc" >&2; cat "$agent_fixture/repeat-follow-second.out" >&2; exit 1; }
+grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/repeat-follow-second.out" \
+  || { echo "the losing repeated follow-up wrapper did not return a claim state" >&2; cat "$agent_fixture/repeat-follow-second.out" >&2; exit 1; }
+[[ -f "$agent_repo/artifacts/agents/jobs/repeat-follow-r2.json" \
+   && ! -e "$agent_repo/artifacts/agents/jobs/repeat-follow-r3.json" ]] \
+  || { echo "the repeated follow-up did not stay on its claimed round" >&2; exit 1; }
+touch "$repeat_follow_release"
+wait_for_agent_status repeat-follow-r2 completed
+
 # A follow-up on a worktree chain whose trunk moved warns loudly: the
 # stale-worktree lesson was violated three times as prose before this line.
 stale_brief="$agent_fixture/stale-wt.md"
@@ -1250,6 +1675,24 @@ happy_child="$agent_repo/artifacts/agents/jobs/happy-r2.json"
    && "$("$engine" json get --file "$happy_child" --field sessionId)" \
       == "$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
   || { echo "follow-up child does not chain to happy round 1" >&2; exit 1; }
+happy_follow_session_key=$("$engine" json get --file "$happy_child" --field sessionKey)
+[[ "$happy_follow_session_key" == "fake:$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
+  || { echo "follow-up did not record the resumed session occupancy key" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_child" --field fingerprintVersion)" == 1 \
+   && -n "$("$engine" json get --file "$happy_child" --field fingerprint)" \
+   && "$("$engine" json get --file "$happy_child" --field dispatchMode)" == follow-up \
+   && "$("$engine" json get --file "$happy_child" --field resumedSessionId)" == "$("$engine" json get --file "$happy_record" --field sessionId)" \
+   && "$("$engine" json get --file "$happy_child" --field launchMode)" == shared-checkout \
+   && "$("$engine" json get --file "$happy_child" --field productRoots)" == "[\"$agent_repo\"]" \
+   && "$("$engine" json get --file "$happy_child" --field productRootScopes)" \
+      == "[{\"path\":\"$agent_repo\",\"reason\":\"shared-checkout\",\"standing\":\"attribution-only\"}]" ]] \
+  || { echo "ordinary follow-up did not complete its fingerprinted claim-launch reservation" >&2; exit 1; }
+happy_follow_session_digest=$(printf '%s' "$happy_follow_session_key" | "$engine" util sha256)
+happy_follow_session_index="$agent_repo/artifacts/agents/sessions/$happy_follow_session_digest.json"
+[[ -f "$happy_follow_session_index" \
+   && "$("$engine" json get --file "$happy_follow_session_index" --field sessionKey)" == "$happy_follow_session_key" \
+   && "$("$engine" json get --file "$happy_follow_session_index" --field occupants)" == '[]' ]] \
+  || { echo "follow-up did not maintain and release the resumed session occupancy index" >&2; cat "$happy_follow_session_index" >&2 2>/dev/null || true; exit 1; }
 happy_child_started=$("$engine" json get --file "$happy_child" --field startedAt)
 happy_parent_started=$("$engine" json get --file "$happy_record" --field startedAt)
 [[ ! "$happy_child_started" < "$happy_parent_started" ]] \
@@ -1327,6 +1770,11 @@ close_won=$(cat "$close_rc"); follow_won=$(cat "$follow_rc")
 implement_brief="$agent_fixture/implement.md"
 make_agent_brief "$implement_brief" implement
 run_agent_fixture conformance conformance "$agent_dispatch" dispatch --role implementer --brief "$implement_brief" --job-id conformance --worktree --wait
+conformance_record="$agent_repo/artifacts/agents/jobs/conformance.json"
+conformance_workspace=$("$engine" json get --file "$conformance_record" --field workspaceRoot)
+[[ "$("$engine" json get --file "$conformance_record" --field launchMode)" == worktree \
+   && "$("$engine" json get --file "$conformance_record" --field productRoots)" == "[\"$conformance_workspace\"]" ]] \
+  || { echo "ordinary worktree dispatch did not default its product root to workspaceRoot" >&2; exit 1; }
 # D8: an unreviewed completed implementer does NOT wedge the close — the
 # diff exists only once the host's conformance review runs, and the
 # workflow gap is the delegation floor's verdict, not the close's.

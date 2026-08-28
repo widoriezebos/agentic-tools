@@ -96,6 +96,9 @@ func TestCapabilityScoping(t *testing.T) {
 	if !ok || pgid != int64(selfPgid) || command != "runner --tag t" {
 		t.Fatalf("group grant: %d %q ok=%v", pgid, command, ok)
 	}
+	if !authorization.GroupOwnership().AllowsRecordedGroupProof() {
+		t.Fatal("authorized group grant refused a recorded proof")
+	}
 	if _, _, ok := authorization.GroupOwnership().FixtureGroup(7); ok {
 		t.Fatal("a pgid-less entry proved group ownership")
 	}
@@ -116,6 +119,9 @@ func TestCapabilityScoping(t *testing.T) {
 		t.Fatal("nil authorization served an entry")
 	}
 	var zeroGrant GroupOwnershipGrant
+	if zeroGrant.AllowsRecordedGroupProof() {
+		t.Fatal("zero grant authorized a recorded group proof")
+	}
 	if _, _, ok := zeroGrant.FixtureGroup(42); ok {
 		t.Fatal("zero grant proved ownership")
 	}

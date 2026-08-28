@@ -166,6 +166,63 @@ func TestRunnerReapRefusesRecordThatOutranTheCompare(t *testing.T) {
 func TestRunnerReapVerdicts(t *testing.T) {
 	now := time.Now()
 
+	t.Run("complete custody predicate defers a cross-group survivor", func(t *testing.T) {
+		engine := reapFixture(t, "job-a")
+		engine.groupDeathFn = func(map[string]any) dispatch.CustodyDeathResult {
+			return dispatch.CustodyDeathResult{Outcome: dispatch.CustodyDeathAlive, Reason: "custody-process-alive"}
+		}
+		path := writeJob(t, engine, "job-a", map[string]any{
+			"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
+		})
+		if err := engine.reapReservedRecords(now); err != nil {
+			t.Fatal(err)
+		}
+		if after := readTestDoc(t, path); after["status"] != "running" || after["groupDeathProvenAt"] != nil {
+			t.Fatalf("cross-group custody was terminal-stamped: %+v", after)
+		}
+	})
+
+	t.Run("fingerprinted setup routes through reconciliation", func(t *testing.T) {
+		engine := reapFixture(t, "job-husk")
+		called := 0
+		engine.reconcileFn = func(job string) (dispatch.ReconciliationResult, error) {
+			called++
+			return dispatch.ReconciliationResult{Outcome: dispatch.ReconciliationDeferred, Reason: "unknown-process-observations"}, nil
+		}
+		path := writeJob(t, engine, "job-husk", map[string]any{
+			"mission": "", "status": "pending-setup", "fingerprint": "digest", "pid": nil,
+			"instanceTag":                "metasystem-job-husk-nonce",
+			"reservationDeadline":        isoAt(now.Add(-time.Minute)),
+			"reservationDeadlinePurpose": "wake-only",
+		})
+		if err := engine.reapReservedRecords(now); err != nil {
+			t.Fatal(err)
+		}
+		if called != 1 || readTestDoc(t, path)["status"] != "pending-setup" {
+			t.Fatalf("fingerprinted reservation bypassed reconciliation: called=%d record=%+v", called, readTestDoc(t, path))
+		}
+	})
+
+	t.Run("fingerprinted pending launch routes through reconciliation", func(t *testing.T) {
+		engine := reapFixture(t, "job-window")
+		called := 0
+		engine.reconcileFn = func(job string) (dispatch.ReconciliationResult, error) {
+			called++
+			return dispatch.ReconciliationResult{Outcome: dispatch.ReconciliationDeferred}, nil
+		}
+		path := writeJob(t, engine, "job-window", map[string]any{
+			"status": "pending", "fingerprint": "digest", "pid": nil,
+			"instanceTag": "metasystem-job-window-nonce",
+			"startedAt":   isoAt(now.Add(-time.Hour)), "sessionEstablishedTimeoutSec": 60,
+		})
+		if err := engine.reapReservedRecords(now); err != nil {
+			t.Fatal(err)
+		}
+		if called != 1 || readTestDoc(t, path)["status"] != "pending" {
+			t.Fatalf("pending identityless reservation bypassed reconciliation: called=%d record=%+v", called, readTestDoc(t, path))
+		}
+	})
+
 	t.Run("a dead custodian past budget books timeout budget-cap", func(t *testing.T) {
 		engine := reapFixture(t, "job-a")
 		engine.custodianFn = fixedCustodian(identity.Dead)

@@ -10,6 +10,7 @@ Usage:
   scripts/agents/adapters/fake.sh contract
   scripts/agents/adapters/fake.sh probe [--profile current|old|unverified-network]
       [--age-days N]
+  scripts/agents/adapters/fake.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/fake.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
   scripts/agents/adapters/fake.sh follow-up --job <job-id> --start-gate <file>
@@ -24,7 +25,8 @@ resume-collision, concurrent-turn, cancel-race, process-loss, timeout,
 no-session-signal, handshake-failure, no-event-stream, hook-unavailable,
 interrupted-atomic-write, nested-agent-events, effective-wider,
 effective-narrower, and mirror-failure. A Fake-Argument: line is captured as
-data and never executed.
+data and never executed. custodial-critique=/absolute/release-file holds one
+registered child until the fixture releases the round.
 USAGE
 }
 
@@ -52,6 +54,10 @@ parse_supervisor_args() {
 }
 
 behavior_present() { grep -Fqi "FAKE:$1" "$prompt"; }
+
+behavior_value() { # behavior name
+  sed -n "s|^[[:space:]]*FAKE:$1=||p" "$prompt" | head -1
+}
 
 fake_guarded_write() { # permissions JSON, target path
   "$ms" adapter fake-guarded-write --permissions "$1" --target "$2"
@@ -190,6 +196,31 @@ supervise() { # verb and remaining args
     [[ "$session" == "$expected" ]] || { cas_terminal failed resume_collision resume; exit 1; }
   fi
   if behavior_present resume-collision; then cas_terminal failed resume_collision resume; exit 1; fi
+  critique_release=$(behavior_value custodial-critique)
+  if [[ -n "$critique_release" ]]; then
+    [[ "$critique_release" == /* ]] || { cas_terminal failed invalid_fixture_control execute; exit 1; }
+    critique_cap=${METASYSTEM_FAKE_CRITIQUE_HOLD_CAP_SEC:-30}
+    [[ "$critique_cap" =~ ^[1-9][0-9]*$ ]] \
+      || { cas_terminal failed invalid_fixture_control execute; exit 1; }
+    "$ms" util hold --tag "$instance_tag" &
+    critique_pid=$!
+    "$dispatch" __register-custody --job "$job" --pid "$critique_pid" \
+      || { kill -TERM "$critique_pid" 2>/dev/null || true; wait "$critique_pid" 2>/dev/null || true; cas_terminal failed custody_registration execute; exit 1; }
+    printf '%s\n' "$critique_pid" >"$round_dir/custody-child.pid"
+    critique_deadline=$(( $(date +%s) + critique_cap ))
+    while [[ ! -e "$critique_release" ]]; do
+      if (( $(date +%s) >= critique_deadline )); then
+        kill -TERM "$critique_pid" 2>/dev/null || true
+        wait "$critique_pid" 2>/dev/null || true
+        cas_terminal failed fixture_release_timeout execute
+        exit 1
+      fi
+      touch "$heartbeat"
+      sleep "$heartbeat_sleep"
+    done
+    kill -TERM "$critique_pid" 2>/dev/null || true
+    wait "$critique_pid" 2>/dev/null || true
+  fi
   if behavior_present process-loss; then
     "$ms" util hold --tag "$instance_tag" --stopped-file "$round_dir/child.stopped" &
     printf '%s\n' "$!" >"$round_dir/child.pid"
@@ -265,6 +296,10 @@ command=${1:-}
 [[ -n "$command" ]] || { usage; exit 2; }
 shift
 case "$command" in
+  output-stream)
+    [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
+    printf '%s/events.jsonl\n' "${2%/}"
+    ;;
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     ;;

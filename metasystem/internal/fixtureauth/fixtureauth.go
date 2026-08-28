@@ -74,11 +74,14 @@ func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 		return identity.FixtureEntry{}, false
 	}
 	var table map[string]struct {
-		PidStartedAt *int64  `json:"pidStartedAt"`
-		Started      *int64  `json:"started"`
-		Command      *string `json:"command"`
-		Pgid         *int64  `json:"pgid"`
-		Terminal     *bool   `json:"terminal"`
+		PidStartedAt           *int64  `json:"pidStartedAt"`
+		Started                *int64  `json:"started"`
+		PidStartedAtExactMicro *int64  `json:"pidStartedAtExactMicro"`
+		PidStartTicks          *int64  `json:"pidStartTicks"`
+		BootID                 *string `json:"bootId"`
+		Command                *string `json:"command"`
+		Pgid                   *int64  `json:"pgid"`
+		Terminal               *bool   `json:"terminal"`
 	}
 	if json.Unmarshal(data, &table) != nil {
 		return identity.FixtureEntry{}, false
@@ -92,6 +95,15 @@ func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 		entry.StartedAt, entry.HasStartedAt = *raw.PidStartedAt, true
 	} else if raw.Started != nil {
 		entry.StartedAt, entry.HasStartedAt = *raw.Started, true
+	}
+	if raw.PidStartedAtExactMicro != nil {
+		entry.StartedAtExactMicro, entry.HasStartedAtExactMicro = *raw.PidStartedAtExactMicro, true
+	}
+	if raw.PidStartTicks != nil {
+		entry.StartTicks, entry.HasStartTicks = *raw.PidStartTicks, true
+	}
+	if raw.BootID != nil {
+		entry.BootID, entry.HasBootID = *raw.BootID, true
 	}
 	if raw.Command != nil {
 		entry.Command, entry.HasCommand = *raw.Command, true
@@ -130,12 +142,17 @@ func (p CommandProbe) FixtureCommand(pid int64) (string, bool) {
 	return entry.Command, true
 }
 
-// GroupOwnershipGrant is the SIGNAL-authorizing authority (the
-// runner's group-ownership proof); granted only to the runner's
-// signal path and never bundled with command lookup.
+// GroupOwnershipGrant is the signal-authorizing fixture authority. It is
+// requested only at a signal path and is never bundled with command lookup.
 type GroupOwnershipGrant struct{ a *Authorization }
 
 func (a *Authorization) GroupOwnership() GroupOwnershipGrant { return GroupOwnershipGrant{a} }
+
+// AllowsRecordedGroupProof lets a fake checkout use the exact launch proof in
+// a job record when the kernel cannot enumerate the group's current argv.
+func (g GroupOwnershipGrant) AllowsRecordedGroupProof() bool {
+	return g.a != nil && g.a.fixtureMode
+}
 
 // FixtureGroup returns the fixture's recorded (pgid, command) for the
 // ownership proof — and only while the fixture leader is KERNEL-LIVE

@@ -895,11 +895,17 @@ mkdir -p "$repo/artifacts/agents/hb"
 owned_tag=metasystem-job-owned
 owned_cap=$(harness_fixture_semantic_cap dormant-job-minutes)
 owned_staged=$(mktemp "$repo/artifacts/agents/jobs/.owned.XXXXXX")
-printf '{"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":"%s","pid":%s,"pidStartedAt":%s,"pgid":%s,"instanceTag":"%s","ownershipProof":{"pid":%s,"pidStartedAt":%s,"pgid":%s,"instanceTag":"%s"},"startedAt":"2099-01-01T00:00:00Z","capMin":%s,"custodyProcesses":[{"pid":%s,"pidStartedAt":%s,"instanceTag":"%s"}]}\n' \
-  "$repo" "$$" "$supervisor_start" "$supervisor_pgid" "$owned_tag" \
-  "$$" "$supervisor_start" "$supervisor_pgid" "$owned_tag" \
+printf '{"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":"%s","pid":null,"pidStartedAt":null,"pgid":null,"instanceTag":"%s","startedAt":"2099-01-01T00:00:00Z","capMin":%s,"custodyProcesses":[{"pid":%s,"pidStartedAt":%s,"instanceTag":"%s"}]}\n' \
+  "$repo" "$owned_tag" \
   "$owned_cap" "$custody_pid" "$((custody_start - 1))" "$owned_tag" >"$owned_staged"
 mv "$owned_staged" "$repo/artifacts/agents/jobs/owned.json"
+owned_patch=$(mktemp "$repo/artifacts/agents/record-locks/owned-proof.XXXXXX")
+"$ms" job ownership-patch --root "$repo" --output "$owned_patch" \
+  --pid "$$" --pgid "$supervisor_pgid" --instance-tag "$owned_tag" \
+  --proven-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+"$ms" job record-cas --root "$repo" --job owned --expect running --status running \
+  --patch "$owned_patch"
+rm -f "$owned_patch"
 printf '{"pid":%s,"instanceTag":"%s"}\n' "$$" "$owned_tag" >"$repo/artifacts/agents/hb/owned"
 # The reaper proves the record's custodian (this shell) by pid+start+tag.
 # This shell's real command line does not carry the job tag, so the fixture

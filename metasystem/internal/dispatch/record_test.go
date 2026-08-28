@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // sandbox creates a checkout root and returns it. Records land under
@@ -126,6 +128,9 @@ func TestRecordSetupCompletesReservation(t *testing.T) {
 	if record["status"] != "pending" {
 		t.Fatalf("status = %v, want pending", record["status"])
 	}
+	if record["createdAt"] != "2026-08-10T00:00:00Z" {
+		t.Fatalf("setup replaced reservation createdAt: %v", record["createdAt"])
+	}
 }
 
 func TestRecordSetupRefusesEpochMismatch(t *testing.T) {
@@ -200,6 +205,18 @@ func TestRecordCASRefusesImmutableField(t *testing.T) {
 
 	patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{"capMin": 999})
 	_, err := RecordCAS(root, "job-a", "pending", "running", patch)
+	wantCode(t, err, 1)
+}
+
+func TestRecordCASRefusesReservationCreatedAtChange(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+
+	patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{
+		"createdAt": "2000-01-01T00:00:00Z",
+	})
+	_, err := RecordCAS(root, "job-a", "pending", "pending", patch)
 	wantCode(t, err, 1)
 }
 
@@ -671,7 +688,7 @@ func TestCustodyAddDefersDuringCancellation(t *testing.T) {
 	if _, err := RecordCAS(root, "job-a", "pending", "pending", mark); err != nil {
 		t.Fatalf("marker: %v", err)
 	}
-	if err := CustodyAdd(root, "job-a", 4242, 99); err == nil {
+	if err := CustodyAdd(root, "job-a", 4242, fixedStartReader{exact: nativeTestExact(4242, 1), state: identity.Alive}); err == nil {
 		t.Fatal("custody registration must defer on a marked record")
 	}
 	record := readRecord(t, root, "job-a")
