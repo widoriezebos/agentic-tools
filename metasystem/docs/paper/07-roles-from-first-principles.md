@@ -1,5 +1,7 @@
 # 7. Roles from First Principles
 
+**Roles come from hazards, not from the organization chart.**
+
 Chapter 1's day records the ruling, construction, independent challenge, refusal, release and account. Here we turn them into a distribution of power. Giving all of those functions to one capable actor would let the same actor form a theory, defend it, approve it and describe its success.
 
 Copying a familiar software department into machinery is not the answer. A role in this system is a temporary combination of two things: the actor's relation to the work (constructing it, challenging it, preserving its history or explaining it) and its permissions (what it may read, change, accept, stop or release). The combination exists because a particular hazard requires it, and it lasts only as long as that hazard does. A hazard here is a specific way the work can go wrong: a builder judging its own claim, a worker stopping in silence, a convincing account steering a decision. Risk, as Chapters 6 and 11 use it, sets verification depth and spending through four questions: severity, novelty, exposure and accumulated change. Hazards decide which roles must exist and stay separate.

@@ -1,5 +1,7 @@
 # 11. The Economy of Machine Engineering
 
+**The expensive part of cheap construction is deciding.**
+
 Chapter 1's session change is cheap to construct and expensive to decide. Production, comparison, independent examination, human judgment, gradual release, observation and recovery all consume finite resources. Cheap construction does not make dependable delivery free.
 
 Machine engineering has an economy. More attempts can improve a result or multiply the alternatives to compare. More machinery can prevent harm or cost more than the work it protects. The governing rule is proportionality: spend where expected value and risk justify the spend and stop where they do not.

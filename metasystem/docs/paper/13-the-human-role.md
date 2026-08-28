@@ -1,5 +1,7 @@
 # 13. The Human Role
 
+**Machinery can prepare every decision and answer for none of them.**
+
 Chapter 1 already records the single 9:12 interruption and the three-part ruling; Chapter 6 establishes why evidence cannot make that value choice. Here the unresolved question becomes a governance problem: who may bind the decision, under what delegation, with what accountability and through which route of appeal.
 
 The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.

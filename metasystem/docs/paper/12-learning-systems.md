@@ -1,5 +1,7 @@
 # 12. A System That Learns
 
+**Recovering is not learning; a system has learned only when next time goes differently.**
+
 In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches a small share of live traffic on the weekend when clocks move forward. Most sessions behave as expected. A few expire at the wrong moment because one comparison uses local clock time while the rest use a continuous measure of elapsed time. Authorized release stops the expansion and restores the previous behavior. The immediate danger passes, but the delivery system has not yet learned anything. It has only recovered.
 
 Learning begins when experience changes what happens next time. That change needs discipline. A hurried ban on every use of local time may stop the known failure and also prevent legitimate work such as displaying an appointment in the user's time zone. A note in an incident report may avoid that damage and still be forgotten by the next builder. The useful lesson is a governed change to future behavior, supported by evidence and open to challenge.

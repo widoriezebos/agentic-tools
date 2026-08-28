@@ -1,5 +1,7 @@
 # 4. The Mimicry Trap
 
+**A ceremony can be performed perfectly while nothing it protected is happening.**
+
 Imagine that at nine each morning, six machine workers receive a prompt called "standup". Each produces three tidy sentences about yesterday, today and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach, and none has challenged the assumption that a background refresh proves a user is active. The ceremony is present, but the protection is not.
 
 This is the mimicry trap. A familiar process is copied onto a workforce with different limits, so the result looks controlled while the need that once justified the process goes unexamined. Avoiding the trap does not require rejecting history. It requires reading each inherited practice as evidence about the problem it was built to solve.

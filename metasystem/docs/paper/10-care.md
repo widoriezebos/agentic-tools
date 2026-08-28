@@ -1,5 +1,7 @@
 # 10. Care
 
+**Only production can show what the tests could not imagine.**
+
 The session-expiry change passes every required examination and reaches a small part of live traffic. The application remains available. Error rates stay low. Yet several people sign in again and do not return to the page where they were working. One loses text entered into a form. Another completes the sign-in step but is immediately sent out again. None of these experiences appeared in any check the candidate passed.
 
 Release does not end delivery. Construction can create controlled evidence about a proposed behavior, but only production can show how that behavior meets real devices, real data, changing conditions and people pursuing work the tests did not imagine. Care is the continuing work of observing those outcomes, containing harm, repairing failure and revising the system when live evidence disproves an earlier claim. It is distributed: authorized release observes, contains or restores within its bounds; the builder repairs; and the responsible authority revises intent or governing rules.

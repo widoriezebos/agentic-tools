@@ -1,5 +1,7 @@
 # 6. Proof over Trust
 
+**A test that passes on the broken version proves only that it agrees with everything.**
+
 In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
 
 That difference between explanation and observation is the organizing principle: convincing claims can guide inquiry, but bounded proof and well-grounded evidence authorize consequential action. The aim is an accurate account of what one exact result has and has not demonstrated.

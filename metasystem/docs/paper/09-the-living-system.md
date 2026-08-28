@@ -1,5 +1,7 @@
 # 9. The Living System
 
+**A stopped worker looks exactly like a patient one until something outside it checks.**
+
 The session-expiry change is under way when the migration worker goes quiet. It has not reported failure; its last message sounds plausible, and the work it promised should take only a few minutes. At the same time, another worker prepares to replace session data, while a third examines code assembled from sources outside the system. Treating all three as reliable because they began with good instructions would make silence, confusion and hostile material look like ordinary work.
 
 A delivery system is living in a limited but important sense. Its workers start, act, wait, stop and are replaced while the application and its surroundings continue to change. Workers can disappear at any moment, and the world in which they act is not automatically friendly. Such a system needs to know whether work is alive, who is acting, where effects can spread and what authority exists at the instant of action. These protections belong to the environment around the workers, because a failed or compromised worker cannot be trusted to provide them for itself.

@@ -1,5 +1,7 @@
 # 16. What Engineering Becomes
 
+**Every metasystem is specific to the application it builds; the generic half is the easy part.**
+
 At the end of the hypothetical session-expiry change, the application contains a new behavior. The more durable result lies around it. Three disputed interpretations are recorded intent. Named checks distinguish an unresponsive reader, a background refresh and an authorized upload. A failed candidate remains visible. Release and reversal have named authority. The clock incident produces a tested enforced rule, while repeated sign-ins remain a human concern open to appeal.
 
 The next session change begins from that capability, leaving the blank ticket and private recollection behind. If similar work recurs and the consequences are large enough, the means of producing and caring for the software becomes an asset in its own right. Engineering attention can then move toward the intent, rules, evidence, authority and learning that shape many application changes.
