@@ -38,7 +38,7 @@ These prohibitions do not reproduce job boundaries. They preserve the conditions
 
 ## Why the custodian may accept a change
 
-At the end of examination, the session record names an exact candidate. It also contains the human ruling on passive reading, the failure of the first attempt, the checks on refresh and upload behavior and the proof that reversal remains possible. Someone must perform the small but consequential act that moves this candidate from proposed to accepted. Leaving that act unowned would break the chain at its final link.
+At the end of examination, the session record names an exact candidate. It also contains the human ruling on passive reading, the failure of the first attempt, the checks on refresh and upload behavior and the proof that rollback remains possible. Someone must perform the small but consequential act that moves this candidate from proposed to accepted. Leaving that act unowned would break the chain at its final link.
 
 The custodian holds that link. It verifies that the candidate presented for acceptance is the one the independent examiner challenged, that every required result belongs to that candidate and that every enforced rule has passed. It then performs only the authorized acceptance action. It cannot waive a refusal, reinterpret a human ruling, repair a test or substitute a later version. If any required fact is missing, it leaves the candidate unaccepted.
 

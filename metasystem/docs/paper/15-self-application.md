@@ -2,7 +2,7 @@
 
 **A rule change must never be its own judge.**
 
-A builder proposes a faster release rule. The current enforced rule requires an independent examination, a tested reversal and evidence bound to the exact candidate. The proposed rule removes one check that its builder calls redundant. If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
+A builder proposes a faster release rule. The current enforced rule requires an independent examination, a tested rollback and evidence bound to the exact candidate. The proposed rule removes one check that its builder calls redundant. If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by machinery outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
