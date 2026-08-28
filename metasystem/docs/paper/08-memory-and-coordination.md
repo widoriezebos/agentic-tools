@@ -20,7 +20,7 @@ When Chapter 6 requires independent examination free from the builder's path, th
 
 ## What each role may read
 
-A builder begins with the authorized session outcome, its constraints, the human ruling on passive reading, refresh and uploads, and the parts of the application needed to make the change. It can read earlier rulings that bear on the task and the evidence needed to check its own work. Its sequence of attempts, discoveries and unresolved questions is recorded so that another builder can recover if it stops. That path belongs to construction and later audit; it is not automatically part of examination.
+A builder begins with the authorized session outcome, its constraints, the human ruling on passive reading, refresh and uploads, and the parts of the application needed to make the change. It can read earlier rulings that apply to the task and the evidence needed to check its own work. Its sequence of attempts, discoveries and unresolved questions is recorded so that another builder can recover if it stops. That path belongs to construction and later audit; it is not automatically part of examination.
 
 An independent examiner receives the authorized outcome and the conditions the candidate must meet. It sees the relevant application behavior, the finished candidate and the results that the builder offers in support. It does not see the builder's private sequence of ideas, the arguments discarded along the way or the explanations used to defend the chosen design. Those omissions are intentional. The independent examiner needs enough context to find faults, but not a guided tour through the assumptions it is meant to challenge.
 

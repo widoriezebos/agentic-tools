@@ -34,7 +34,7 @@ Economic judgment joins technical judgment. A one-line authorization change can 
 
 Incidents create another skill: turning experience into a measured change in future behavior without making every surprise a permanent refusal. The work includes preserving uncertainty, testing a proposed enforced rule against cases it must block and permit, naming its owner, watching side effects and withdrawing it when the condition it protects changes. Learning becomes design work rather than a meeting held after damage.
 
-Plain explanation remains essential. A responsible authority deciding whether to shorten sessions needs a bounded question, credible alternatives and a traceable report of likely effects. Affected people challenging the decision need to understand what happened and where appeal goes. Producing more internal detail is not explanation. The skill is to connect each material claim to evidence in language the person bearing responsibility can use.
+Plain explanation remains essential. A responsible authority deciding whether to shorten sessions needs a bounded question, credible alternatives and a traceable report of likely effects. Affected people challenging the decision need to understand what happened and where appeal goes. Producing more internal detail is not explanation. The skill is to connect each material claim to evidence in language the person holding the responsibility can use.
 
 Human attention remains scarce throughout. The system should not spend it on routine approvals performed for show or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, severe possible harm, changes to governing rules, weak or correlated evidence and accountability. Deciding where human judgment is mandatory (and designing reliable machinery for the rest) becomes a central engineering act.
 
@@ -44,7 +44,7 @@ A user is repeatedly signed out and cannot complete important work. The release 
 
 Four protections follow from that failure. Accountability ends with identifiable humans. Affected people have a route to challenge consequential decisions. Records make the decision, authority, evidence and reasons understandable. Reversibility exists wherever the world permits it, with compensating action and explicit human acceptance where it does not.
 
-These protections are conditions under which delegated action remains legitimate and correctable. A machine cannot bear blame, represent an affected community or decide that one person's security justifies another's burden. Anonymous group approval cannot supply accountability just because people participated. An unexplained record cannot support meaningful appeal.
+These protections are conditions under which delegated action remains legitimate and correctable. A machine cannot take the blame, represent an affected community or decide that one person's security justifies another's burden. Anonymous group approval cannot supply accountability just because people participated. An unexplained record cannot support meaningful appeal.
 
 Pressure will test these boundaries. A faster path may omit a reviewer. A cheaper record may discard dissent. A broad permission may simplify recovery. A persuasive recommendation may tempt an authority to approve without understanding. The governing design must make those choices visible and refuse them where a protection would be lost. Efficiency is evidence only when responsibility, challenge and harm remain in view.
 
@@ -58,7 +58,7 @@ Liability and audit are similarly unresolved. A complete record can show which b
 
 Runaway spend poses another problem. Enforced budgets can stop one task while many reasonable tasks consume too much together. Verification may expand until delay causes harm. Organizations need accountable allocation across domains and evidence that computation and judgment buy better outcomes.
 
-Representation remains harder than authorization. A product authority may hold valid internal permission and still fail to hear people who bear the consequences. Appeals help after a decision, but they do not ensure that affected groups shape intent before harm occurs. The means by which users, workers, communities and public interests enter private delivery governance cannot be derived from record structure alone.
+Representation remains harder than authorization. A product authority may hold valid internal permission and still fail to hear the people who live with the consequences. Appeals help after a decision, but they do not ensure that affected groups shape intent before harm occurs. The means by which users, workers, communities and public interests enter private delivery governance cannot be derived from record structure alone.
 
 Human lawmakers and regulators may use machinery to compare proposals, trace consequences, inspect records and find inconsistent enforcement. That assistance can improve the evidence available to public judgment. It must not let a model choose social values, conceal contested assumptions behind a score or displace the authority and accountability of the people empowered to make law. The same unconditional boundary applies at the larger scale.
 
