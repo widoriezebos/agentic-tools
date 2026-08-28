@@ -1,6 +1,6 @@
 # 6. Proof over Trust
 
-**A test that passes on the broken version proves only that it agrees with everything.**
+**A check that has never failed on a broken version has proved nothing yet.**
 
 In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
 

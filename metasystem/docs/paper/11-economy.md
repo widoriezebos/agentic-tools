@@ -1,6 +1,6 @@
 # 11. The Economy of Machine Engineering
 
-**The expensive part of cheap construction is deciding.**
+**Spend where expected value and risk justify it and stop where they do not.**
 
 Chapter 1's session change is cheap to construct and expensive to decide. Production, comparison, independent examination, human judgment, gradual release, observation and recovery all consume finite resources. Cheap construction does not make dependable delivery free.
 

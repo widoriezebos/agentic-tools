@@ -1,6 +1,6 @@
 # 2. Back to Intent
 
-**The cheaper construction gets, the more valuable it becomes to know exactly what you are asking for.**
+**The cheaper construction gets, the more valuable a clear, revisable statement of what you want becomes.**
 
 The request from Thursday morning says to change how long a user stays signed in. It does not say whether the change is complete when new behavior exists on a builder's machine, when a check passes, when every user receives it or when the service has lived with it without causing harm. Those moments are not the same, and treating them as one makes a short request look complete long before a dependable outcome exists.
 

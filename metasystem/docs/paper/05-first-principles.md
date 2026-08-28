@@ -1,6 +1,6 @@
 # 5. First Principles
 
-**A system acts from principles when it can refuse a confident claim and say exactly what evidence is missing.**
+**A condition that must hold cannot depend on every worker choosing to remember it.**
 
 A candidate reaches the release boundary with a persuasive explanation and a passing check. The explanation says the session change is safe. The builder's own check never tried a late background response, and the candidate can still revive an expired session. If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
 

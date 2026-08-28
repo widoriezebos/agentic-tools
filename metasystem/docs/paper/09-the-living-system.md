@@ -1,6 +1,6 @@
 # 9. The Living System
 
-**A stopped worker looks exactly like a patient one until something outside it checks.**
+**The protections around a worker cannot live inside it: a failed worker cannot report its own failure.**
 
 The session-expiry change is under way when the migration worker goes quiet. It has not reported failure; its last message sounds plausible, and the work it promised should take only a few minutes. At the same time, another worker prepares to replace session data, while a third examines code assembled from sources outside the system. Treating all three as reliable because they began with good instructions would make silence, confusion and hostile material look like ordinary work.
 

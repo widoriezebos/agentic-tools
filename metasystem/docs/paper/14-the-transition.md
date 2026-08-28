@@ -1,6 +1,6 @@
 # 14. The Transition
 
-**Authority transfers only as fast as evidence arrives, and never without a tested way back.**
+**Authority follows demonstrated protection, and every transferred responsibility keeps a tested way back.**
 
 Picture a kind of team I have seen many times: the session-expiry request arrives while releases still depend on a familiar chain of tickets, code review, manual checks and a person following a production runbook. The team cannot declare that chain obsolete and replace it on Friday. Some steps may be habit. Others may hide an unwritten warning about shared devices, an approval required by policy or the only reliable way to reverse a failed session migration.
 

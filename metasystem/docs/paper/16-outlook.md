@@ -1,6 +1,6 @@
 # 16. What Engineering Becomes
 
-**Every metasystem is specific to the application it builds; the generic half is the easy part.**
+**The generic machinery can be reused; much of a metasystem's value lives in the half that cannot be.**
 
 At the end of the hypothetical session-expiry change, the application contains a new behavior. The more durable result lies around it. Three disputed interpretations are recorded intent. Named checks distinguish an unresponsive reader, a background refresh and an authorized upload. A failed candidate remains visible. Release and reversal have named authority. The clock incident produces a tested enforced rule, while repeated sign-ins remain a human concern open to appeal.
 
