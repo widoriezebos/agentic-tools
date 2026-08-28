@@ -53,7 +53,7 @@ type Checkout interface {
 // Components launches and observes the supervised pair.
 type Components interface {
 	// Launch starts one component detached and returns its identity.
-	Launch(component Component, tag string) (identity.Ref, error)
+	Launch(component Component, tag string, generation int64) (identity.Ref, error)
 	// Observe reports one component's three-way health: identity
 	// alive + heartbeat fresh = Healthy.
 	Observe(held Held) Observation
@@ -64,6 +64,14 @@ type Components interface {
 	// the component stop ceiling and reports whether it is PROVEN
 	// gone (three-way: false only on definitive survival or unknown).
 	Stop(held Held) (proven bool)
+}
+
+// WatcherRepairRequests is the narrow channel from the steward to the owner.
+// The request must name the exact watcher generation and identity the owner
+// already holds; only the owner may replace that component.
+type WatcherRepairRequests interface {
+	WatcherRestartRequested(held Held) (bool, error)
+	CompleteWatcherRestart(previous, replacement Held) error
 }
 
 // Ledger is the owner's slice of the registry: the write-ahead
@@ -146,10 +154,11 @@ func observationName(observation Observation) string {
 
 // Owner runs the supervision lifecycle for one checkout.
 type Owner struct {
-	Checkout   Checkout
-	Components Components
-	Ledger     Ledger
-	Intents    Intents
+	Checkout       Checkout
+	Components     Components
+	Ledger         Ledger
+	Intents        Intents
+	WatcherRepairs WatcherRepairRequests
 
 	// Numbers are D-6's decisions.
 	BaseInterval  time.Duration
@@ -257,6 +266,13 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 		o.published = true
 		trace.Actions = append(trace.Actions, "published")
 		return nil
+	}
+
+	if repaired, err := o.repairRequestedWatcher(now); repaired {
+		trace.Actions = append(trace.Actions, "watcher-restarted")
+		return nil
+	} else if err != nil {
+		trace.Actions = append(trace.Actions, "watcher-restart-failed: "+err.Error())
 	}
 
 	// Owed launched appends retry every observation; persistent
@@ -391,7 +407,7 @@ func (o *Owner) relaunchSet() error {
 	o.generation = next
 	o.held = unproven
 	for component, tag := range map[Component]string{Watcher: watcherTag, Reaper: reaperTag} {
-		ref, err := o.Components.Launch(component, tag)
+		ref, err := o.Components.Launch(component, tag, next)
 		if err != nil {
 			continue // the breaker sees the missing component next cycle
 		}
@@ -402,6 +418,56 @@ func (o *Owner) relaunchSet() error {
 		}
 	}
 	return nil
+}
+
+func (o *Owner) repairRequestedWatcher(now time.Time) (bool, error) {
+	if o.WatcherRepairs == nil {
+		return false, nil
+	}
+	var previous Held
+	for _, held := range o.currentGenerationHeld() {
+		if held.Component == Watcher {
+			if previous.Identity.Pid != 0 {
+				return false, fmt.Errorf("current generation has more than one watcher")
+			}
+			previous = held
+		}
+	}
+	if previous.Identity.Pid == 0 {
+		return false, nil
+	}
+	requested, err := o.WatcherRepairs.WatcherRestartRequested(previous)
+	if err != nil || !requested {
+		return false, err
+	}
+	if !o.Components.Stop(previous) {
+		return false, fmt.Errorf("the requested watcher identity did not stop")
+	}
+	replacementTag := fmt.Sprintf("%s-repair-%d", previous.Tag, now.UnixNano())
+	ref, err := o.Components.Launch(Watcher, replacementTag, previous.Generation)
+	if err != nil {
+		return false, err
+	}
+	replacement := Held{Component: Watcher, Tag: replacementTag, Identity: ref, Generation: previous.Generation}
+	if err := o.Ledger.AppendLaunched(replacement); err != nil {
+		o.Components.Stop(replacement)
+		return false, fmt.Errorf("record watcher replacement: %w", err)
+	}
+	held := make([]Held, 0, len(o.held))
+	for _, candidate := range o.held {
+		if candidate.Component == Watcher && candidate.Generation == previous.Generation && candidate.Identity.Pid == previous.Identity.Pid {
+			continue
+		}
+		held = append(held, candidate)
+	}
+	o.held = append(held, replacement)
+	if err := o.Checkout.PublishState(o.held); err != nil {
+		return false, fmt.Errorf("publish watcher replacement: %w", err)
+	}
+	if err := o.WatcherRepairs.CompleteWatcherRestart(previous, replacement); err != nil {
+		return false, fmt.Errorf("complete watcher replacement request: %w", err)
+	}
+	return true, nil
 }
 
 func (o *Owner) retryOwedAppends() (persistentFailure bool) {

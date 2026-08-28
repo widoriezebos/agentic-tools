@@ -10,7 +10,9 @@ set -euo pipefail
 # registry MEMBERSHIP — an unknown runtime exits 2; (4) the runtime's
 # OPTIONAL session environment via the registry, expanded indirectly,
 # never eval; (5) cwd resolution: payload cwd, then the declared
-# variable's nonempty value, then PWD.
+# variable's nonempty value, then PWD. Ring 3 is intentionally absent here:
+# recovery-only up and the optional operator-owned scheduler contract land
+# together at L7.
 runtime=${1:-}
 event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
@@ -22,7 +24,15 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 arm=$script_dir/arm-supervision.sh
-[[ -x "$ms" && -x "$arm" ]] || exit 0
+if [[ ! -x "$ms" ]]; then
+  if [[ "$event" == stop ]]; then
+    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (metasystem engine missing; reinstall or rebuild bin/metasystem)"}'
+  fi
+  exit 0
+fi
+if [[ ! -x "$arm" && "$event" != stop ]]; then
+  exit 0
+fi
 registered_runtimes=$("$ms" runtime list) || {
   runtime_list_rc=$?
   echo "supervision hook refused: runtime registry query failed (exit $runtime_list_rc)" >&2
@@ -67,6 +77,37 @@ if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
   session=$(printf '%s' "$session" | "$ms" util sha256)
 fi
 
+hook_generation=
+hook_attempt_seq=
+health_line=
+if [[ "$event" == stop ]]; then
+  turn_key_rc=0
+  turn_key=$({ printf '%s\n' "$session"; command cat "$payload"; } | "$ms" util sha256) || turn_key_rc=$?
+  if (( turn_key_rc != 0 )) || [[ -z "$turn_key" ]]; then
+    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (turn evidence could not be prepared)"}'
+    exit 0
+  fi
+  hook_attempt_rc=0
+  hook_attempt=$(
+    "$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null
+  ) || hook_attempt_rc=$?
+  if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
+    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"}'
+    exit 0
+  fi
+  hook_generation=$("$ms" json get --value "$hook_attempt" --field generation 2>/dev/null || true)
+  hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq 2>/dev/null || true)
+  if ! [[ "$hook_generation" =~ ^[1-9][0-9]*$ && "$hook_attempt_seq" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (attempt evidence was unreadable)"}'
+    exit 0
+  fi
+  health_rc=0
+  health_line=$("$ms" health --hook-preview --repo "$repo" 2>/dev/null) || health_rc=$?
+  if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
+    health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
+  fi
+fi
+
 # Hook frameworks commonly insert `/bin/sh -c` between the agent and this
 # script. Start above that shell so the runtime name in the hook command itself
 # cannot become a false signature match.
@@ -91,6 +132,38 @@ surface_json() { # message
   "$ms" json object "systemMessage=$1"
 }
 
+emit_stop_payload() { # response
+  response=$1
+  response_file_rc=0
+  response_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-response.XXXXXX") || response_file_rc=$?
+  if (( response_file_rc != 0 )) || [[ -z "$response_file" ]]; then
+    command printf '%s\n' "$response" || true
+    "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
+      --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED >/dev/null 2>&1 || true
+    return 0
+  fi
+  if ! printf '%s\n' "$response" >"$response_file"; then
+    command printf '%s\n' "$response" || true
+    "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
+      --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED >/dev/null 2>&1 || true
+    rm -f "$response_file"
+    return 0
+  fi
+  if ! command printf '%s\n' "$response"; then
+    "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
+      --attempt "$hook_attempt_seq" --result ERROR --outcome EMISSION_FAILED \
+      --health-line "$health_line" --payload-file "$response_file" >/dev/null 2>&1 || true
+    rm -f "$response_file"
+    return 0
+  fi
+  if ! "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
+      --attempt "$hook_attempt_seq" --result OK --outcome EMITTED \
+      --health-line "$health_line" --payload-file "$response_file" >/dev/null 2>&1; then
+    echo "supervision hook: emitted the health line but could not record completion" >&2
+  fi
+  rm -f "$response_file"
+}
+
 if [[ "$event" == stop ]]; then
   protocol_message=
   protocol_counts='{}'
@@ -110,7 +183,9 @@ if [[ "$event" == stop ]]; then
     advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
     [[ -z "$protocol_message" ]] || advisor_message="$advisor_message
 $protocol_message"
-    surface_json "$advisor_message"
+    response=$(surface_json "$advisor_message
+$health_line")
+    emit_stop_payload "$response"
     [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
       "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \
         --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
@@ -161,12 +236,17 @@ $protocol_message"
       # The display is the block reason byte-verbatim; watchdog and
       # protocol text stay in the non-blocking channel and never enter
       # the reason.
-      "$ms" report stop-block "$display"
+      blocking_message=$health_line
+      [[ -z "$extras" ]] || blocking_message="$extras
+$blocking_message"
+      response=$("$ms" report stop-block --system-message "$blocking_message" "$display")
     elif [[ -n "$extras" ]]; then
-      surface_json "$display
-$extras"
+      response=$(surface_json "$display
+$extras
+$health_line")
     else
-      surface_json "$display"
+      response=$(surface_json "$display
+$health_line")
     fi
   else
     degraded_line=$(tail -1 "$verdict_stderr" 2>/dev/null || true)
@@ -176,8 +256,10 @@ $extras"
     degraded_message="turn-verdict unavailable: ${degraded_line:-no diagnostic}"
     [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
 $protocol_message"
-    surface_json "$degraded_message"
+    response=$(surface_json "$degraded_message
+$health_line")
   fi
+  emit_stop_payload "$response"
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
     "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \
       --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true

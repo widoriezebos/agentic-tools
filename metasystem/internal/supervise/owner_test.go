@@ -3,6 +3,7 @@ package supervise
 import (
 	"errors"
 	"fmt"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,20 +20,22 @@ type fakeWorld struct {
 	publishErr     error
 	published      int
 
-	launchErr      error
-	launched       []Held
-	observation    Observation
-	groupCount     int
-	groupCountErr  error
-	stopProven     bool
-	stopped        []Held
-	relaunchedErr  error
-	relaunched     []relaunchedRecord
-	launchedAppend map[string]error
-	appendedLaunch []Held
-	exited         []exitRecord
-	intentFresh    bool
-	nextPid        int64
+	launchErr       error
+	launched        []Held
+	observation     Observation
+	groupCount      int
+	groupCountErr   error
+	stopProven      bool
+	stopped         []Held
+	relaunchedErr   error
+	relaunched      []relaunchedRecord
+	launchedAppend  map[string]error
+	appendedLaunch  []Held
+	exited          []exitRecord
+	intentFresh     bool
+	watcherRestart  bool
+	watcherRepaired bool
+	nextPid         int64
 }
 
 type relaunchedRecord struct {
@@ -64,13 +67,13 @@ func (w *fakeWorld) PublishState(held []Held) error {
 	return nil
 }
 
-func (w *fakeWorld) Launch(component Component, tag string) (identity.Ref, error) {
+func (w *fakeWorld) Launch(component Component, tag string, generation int64) (identity.Ref, error) {
 	if w.launchErr != nil {
 		return identity.Ref{}, w.launchErr
 	}
 	w.nextPid++
 	ref := identity.Ref{Pid: w.nextPid, StartedAtSec: 1000}
-	w.launched = append(w.launched, Held{Component: component, Tag: tag, Identity: ref})
+	w.launched = append(w.launched, Held{Component: component, Tag: tag, Identity: ref, Generation: generation})
 	return ref, nil
 }
 func (w *fakeWorld) Observe(Held) Observation       { return w.observation }
@@ -98,15 +101,109 @@ func (w *fakeWorld) AppendExited(reason, diagnosis string, complete bool) {
 	w.exited = append(w.exited, exitRecord{reason, complete})
 }
 func (w *fakeWorld) LatchShutdown() bool { return w.intentFresh }
+func (w *fakeWorld) WatcherRestartRequested(held Held) (bool, error) {
+	return w.watcherRestart, nil
+}
+func (w *fakeWorld) CompleteWatcherRestart(previous, replacement Held) error {
+	w.watcherRestart = false
+	w.watcherRepaired = true
+	return nil
+}
 
 func newOwner(world *fakeWorld) *Owner {
 	return &Owner{
 		Checkout: world, Components: world, Ledger: world, Intents: world,
-		BaseInterval: time.Second, Ceiling: 12,
+		WatcherRepairs: world,
+		BaseInterval:   time.Second, Ceiling: 12,
 		Breaker:       Breaker{GiveUpAt: 5, BaseInterval: time.Second, BackoffCap: 10 * time.Minute},
 		Establishment: Establishment{Deadline: 5},
 		TagPrefix:     "test-owner",
 		Sleep:         func(time.Duration) {},
+	}
+}
+
+func TestWatcherRestartRequestReplacesOnlyTheEnrolledGenerationWithinOneCycle(t *testing.T) {
+	world := newWorld()
+	owner := newOwner(world)
+	establish(t, owner, world)
+	var before Held
+	for _, held := range owner.held {
+		if held.Component == Watcher && held.Generation == owner.generation {
+			before = held
+		}
+	}
+	if before.Identity.Pid == 0 {
+		t.Fatal("the established owner has no watcher")
+	}
+	launches := len(world.launched)
+	world.watcherRestart = true
+	if exit := owner.Cycle(time.Now()); exit != nil {
+		t.Fatalf("watcher repair exited the owner: %+v", exit)
+	}
+	if !world.watcherRepaired || len(world.launched) != launches+1 {
+		t.Fatalf("one owner pass must launch one replacement: %+v", world)
+	}
+	var after Held
+	for _, held := range owner.held {
+		if held.Component == Watcher && held.Generation == owner.generation {
+			after = held
+		}
+	}
+	if after.Generation != before.Generation || after.Identity.Pid == before.Identity.Pid {
+		t.Fatalf("the replacement must stay inside the enrolled generation: before=%+v after=%+v", before, after)
+	}
+	for _, stopped := range world.stopped {
+		if stopped.Component == Reaper && stopped.Generation == before.Generation {
+			t.Fatalf("the watcher request must not restart its peer: %+v", world.stopped)
+		}
+	}
+}
+
+func TestKilledWatcherIsRestoredWithinOneOwnerPass(t *testing.T) {
+	world := newWorld()
+	components := &ProcComponents{
+		SupervisionDir: t.TempDir(), Prober: identity.KernelProber{}, StopCeiling: time.Second,
+		Command: func(component Component, tag, heartbeatPath string, generation int64) []string {
+			return []string{"/bin/sleep", "30"}
+		},
+	}
+	watcher, err := components.Launch(Watcher, "watcher-7", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reaper, err := components.Launch(Reaper, "reaper-7", 7)
+	if err != nil {
+		components.Stop(Held{Component: Watcher, Tag: "watcher-7", Identity: watcher, Generation: 7})
+		t.Fatal(err)
+	}
+	owner := newOwner(world)
+	owner.Components = components
+	owner.published = true
+	owner.generation = 7
+	owner.held = []Held{
+		{Component: Watcher, Tag: "watcher-7", Identity: watcher, Generation: 7},
+		{Component: Reaper, Tag: "reaper-7", Identity: reaper, Generation: 7},
+	}
+	t.Cleanup(func() { owner.teardownHeld() })
+	if err := syscall.Kill(int(watcher.Pid), syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	world.watcherRestart = true
+	if exit := owner.Cycle(time.Now()); exit != nil {
+		t.Fatalf("watcher repair exited the owner: %+v", exit)
+	}
+	var replacement Held
+	for _, held := range owner.held {
+		if held.Component == Watcher {
+			replacement = held
+		}
+		if held.Component == Reaper && held.Identity.Pid != reaper.Pid {
+			t.Fatalf("watcher repair replaced the live reaper: before=%+v after=%+v", reaper, held)
+		}
+	}
+	if replacement.Generation != 7 || replacement.Identity.Pid == watcher.Pid ||
+		identity.AliveRef(identity.KernelProber{}, replacement.Identity) != identity.Alive {
+		t.Fatalf("one owner pass did not restore the killed watcher in generation 7: before=%+v after=%+v", watcher, replacement)
 	}
 }
 

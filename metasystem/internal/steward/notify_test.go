@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // notifyRepo is a git repository whose notify-command appends to a
@@ -78,54 +79,134 @@ func TestPendingQueueDrainsOnDeliveryAndHoldsOnFailure(t *testing.T) {
 	}
 }
 
-func TestHealthFindingsStayPendingByDistinctDigest(t *testing.T) {
+func TestPendingQueueRetiresAnObsoleteAlertBeforeRevival(t *testing.T) {
+	root, sink := notifyRepo(t, "")
+	nonce := "verdict-" + string(VerdictStalledDead)
+	if err := QueueNotification(root, PendingNotification{Nonce: nonce, Message: "steward: stalled-dead — reviving"}); err != nil {
+		t.Fatal(err)
+	}
+	delivered, err := DeliverPending(root)
+	if err != nil || delivered != 0 {
+		t.Fatalf("the old alert-before-heal intent must retire without delivery: %d %v", delivered, err)
+	}
+	if _, err := os.Stat(sink); !os.IsNotExist(err) {
+		t.Fatalf("the obsolete recovery alert reached the notifier: %v", err)
+	}
+	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
+		t.Fatalf("the obsolete recovery alert remained pending: %v %v", pending, err)
+	}
+}
+
+func TestHealthAlertEpisodeDeduplicatesSubmissionAndRecordsAcknowledgment(t *testing.T) {
 	root, sink := notifyRepo(t, "")
 	first := evidenceDigest("runner stale")
-	second := evidenceDigest("narrator stale")
-	if err := QueueHealthNotification(root, first, "HEALTH unhealthy — runner stale"); err != nil {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	unhealthy := HealthVerdict{Aggregate: "unhealthy", FindingDigest: first,
+		Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Reason: "runner stale"}}}
+	episode, err := UpdateAlertEpisodes(root, unhealthy, "HEALTH unhealthy — runner stale", now)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := QueueHealthNotification(root, first, "HEALTH unhealthy — runner stale"); err != nil {
+	if episode.TransportResult != TransportPending || len(episode.Attempts) != 0 {
+		t.Fatalf("the first failure must open silent history before escalation: %+v", episode)
+	}
+	if _, err := os.Stat(sink); !os.IsNotExist(err) {
+		t.Fatalf("a recoverable first failure must not notify the human: %v", err)
+	}
+	unhealthy.ShouldAlert = true
+	episode, err = UpdateAlertEpisodes(root, unhealthy, "HEALTH unhealthy — runner stale", now.Add(time.Minute))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := QueueHealthNotification(root, second, "HEALTH unhealthy — narrator stale"); err != nil {
+	if episode.TransportResult != TransportSubmitted || len(episode.Attempts) != 1 {
+		t.Fatalf("notifier zero records one transport submission: %+v", episode)
+	}
+	repeated, err := UpdateAlertEpisodes(root, unhealthy, "a later rendering", now.Add(2*time.Minute))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DeliverPending(root); err != nil {
+	if repeated.EpisodeID != episode.EpisodeID || len(repeated.Attempts) != 1 {
+		t.Fatalf("the same digest stays one episode and one notification: first=%+v repeated=%+v", episode, repeated)
+	}
+	data, err := os.ReadFile(sink)
+	if err != nil || strings.Count(strings.TrimSpace(string(data)), "\n") != 0 {
+		t.Fatalf("one episode submits exactly one desktop notification: %q %v", data, err)
+	}
+
+	invoker := AlertInvoker{Pid: 9001, PidStartedAt: 77, UID: 501, ArgvDigest: evidenceDigest("human shell")}
+	acknowledged, err := AcknowledgeAlert(root, episode.EpisodeID, invoker, now.Add(3*time.Minute))
+	if err != nil {
 		t.Fatal(err)
 	}
-	pending, err := PendingNotifications(root)
-	if err != nil || len(pending) != 2 {
-		t.Fatalf("one held notification per distinct finding must remain for L4: %v %v", pending, err)
+	if !acknowledged.Acknowledged || acknowledged.AcknowledgedBy == nil || acknowledged.AcknowledgedBy.Pid != invoker.Pid {
+		t.Fatalf("acknowledgment must retain the observed invoker identity: %+v", acknowledged)
 	}
-	for _, notification := range pending {
-		if notification.Nonce != first && notification.Nonce != second {
-			t.Fatalf("the finding digest is the notification nonce: %+v", notification)
-		}
-		if notification.DeliveryOwner != healthDeliveryOwner {
-			t.Fatalf("health delivery remains owned by L4: %+v", notification)
-		}
-	}
-	if data, err := os.ReadFile(sink); err == nil && len(data) > 0 {
-		t.Fatalf("L3 must not drain health notifications through the notifier: %q", data)
-	}
-	if err := QueueHealthNotification(root, first, "a later rendering of the same finding"); err != nil {
+
+	healthy := HealthVerdict{Aggregate: "healthy", FindingDigest: evidenceDigest(""), Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthAlive}}}
+	if _, err := UpdateAlertEpisodes(root, healthy, "HEALTH healthy", now.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	after, err := PendingNotifications(root)
-	if err != nil || len(after) != 2 {
-		t.Fatalf("a repeated finding must retain the existing pending record: %v %v", after, err)
+	episodes, err := AlertEpisodes(root)
+	if err != nil || len(episodes) != 1 || !episodes[0].Resolved || !episodes[0].Cleared || episodes[0].ClearedAt.IsZero() {
+		t.Fatalf("a healthy verdict resolves and clears without deleting the episode: %+v %v", episodes, err)
 	}
-	for _, notification := range after {
-		if notification.Nonce == first && notification.Message != "HEALTH unhealthy — runner stale" {
-			t.Fatalf("a repeated finding must not overwrite its pending notification: %+v", notification)
-		}
+}
+
+func TestPendingSubmissionJournalIsReusedAfterRecovery(t *testing.T) {
+	root, sink := notifyRepo(t, "")
+	now := time.Date(2026, 8, 28, 12, 30, 0, 0, time.UTC)
+	digest := evidenceDigest("hook has no lawful remedy")
+	episode := AlertEpisode{
+		Schema: 1, EpisodeID: "alert-" + digest[:16] + "-1", Digest: digest,
+		Message: "HEALTH unhealthy — hook failed", OpenedAt: now,
+		Attempts:        []AlertAttempt{{Sequence: 1, AttemptedAt: now, Result: TransportPending}},
+		TransportResult: TransportPending,
 	}
-	occupied := evidenceDigest("occupied nonce")
-	if err := QueueNotification(root, PendingNotification{Nonce: occupied, Message: "an unrelated pending message"}); err != nil {
+	if err := os.MkdirAll(alertDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := QueueHealthNotification(root, occupied, "HEALTH unhealthy — another finding"); err == nil {
-		t.Fatal("a health finding must not overwrite a different pending notification")
+	if err := saveAlertEpisode(root, episode); err != nil {
+		t.Fatal(err)
+	}
+	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest, ShouldAlert: true,
+		Roles: []RoleVerdict{{Role: RoleHookFreshness, Status: HealthDead, FailureEscalation: NoLawfulRemedy}}}
+	recovered, err := UpdateAlertEpisodes(root, health, episode.Message, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.TransportResult != TransportSubmitted || len(recovered.Attempts) != 1 || recovered.Attempts[0].Sequence != 1 {
+		t.Fatalf("recovery must finish the journaled submission instead of creating another: %+v", recovered)
+	}
+	if data, err := os.ReadFile(sink); err != nil || strings.Count(strings.TrimSpace(string(data)), "\n") != 0 {
+		t.Fatalf("the recovered attempt submits once in this non-crash execution: %q %v", data, err)
+	}
+}
+
+func TestFailedAlertSubmissionRetriesWithoutDeletingTheEpisode(t *testing.T) {
+	root, sink := notifyRepo(t, "exit 1")
+	now := time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC)
+	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("watcher dead"), ShouldAlert: true,
+		Roles: []RoleVerdict{{Role: RoleRepoWatcher, Status: HealthDead, Reason: "watcher dead"}}}
+	failed, err := UpdateAlertEpisodes(root, health, "HEALTH unhealthy — watcher dead", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.TransportResult != TransportFailed || len(failed.Attempts) != 1 || failed.Acknowledged {
+		t.Fatalf("a failed transport must leave its unacknowledged episode retryable: %+v", failed)
+	}
+	command := `printf '%s\n' "$STEWARD_MESSAGE" >> ` + sink
+	if out, err := exec.Command("git", "-C", root, "config", "metasystem.steward.notify-command", command).CombinedOutput(); err != nil {
+		t.Fatalf("reconfigure notifier: %v\n%s", err, out)
+	}
+	retried, err := UpdateAlertEpisodes(root, health, "HEALTH unhealthy — watcher dead", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.EpisodeID != failed.EpisodeID || retried.TransportResult != TransportSubmitted || len(retried.Attempts) != 2 {
+		t.Fatalf("retry must retain the episode and append its transport result: failed=%+v retried=%+v", failed, retried)
+	}
+	episodes, err := AlertEpisodes(root)
+	if err != nil || len(episodes) != 1 || episodes[0].Acknowledged {
+		t.Fatalf("retry must never delete or invent acknowledgment for the episode: %+v %v", episodes, err)
 	}
 }

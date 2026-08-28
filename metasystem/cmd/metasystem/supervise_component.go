@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -39,6 +41,7 @@ func runSuperviseComponent(args []string) int {
 	tag := flags.String("tag", "", "component instance tag")
 	heartbeat := flags.String("heartbeat", "", "heartbeat file path")
 	intervalSec := flags.Int("interval", 60, "heartbeat/work interval seconds")
+	generation := flags.Int("generation", 0, "supervision generation this component serves")
 	capMin := flags.Int("cap-min", 0, "loaded watcher cap ceiling for the heartbeat attestation (defaults to the interval when unset)")
 	// crashOnStart reproduces the pure crash-loop shape (D-2): a
 	// component that dies on startup WITHOUT ever beating, so it never
@@ -59,6 +62,10 @@ func runSuperviseComponent(args []string) int {
 			fmt.Fprintln(os.Stderr, "supervise component: --repo is required for the "+*component)
 			return 2
 		}
+		if *generation < 1 {
+			fmt.Fprintln(os.Stderr, "supervise component: --generation is required for the "+*component)
+			return 2
+		}
 	}
 	if *crashOnStart {
 		fmt.Fprintln(os.Stderr, "supervise component: crash-on-start (fixture)")
@@ -69,7 +76,7 @@ func runSuperviseComponent(args []string) int {
 	// lets a heartbeat name the exact process it beats for.
 	self := identity.Ref{Pid: int64(os.Getpid())}
 	if exact, state, err := (identity.KernelProber{}).Probe(self.Pid); err == nil && state == identity.Alive {
-		self.StartedAtSec = exact.StartedAt.Unix()
+		self = exact.Ref()
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -83,21 +90,25 @@ func runSuperviseComponent(args []string) int {
 	if *scope == "" {
 		*scope = *repo
 	}
-	var work func()
+	var work func() error
 	switch *component {
 	case "watcher":
-		release, pass, ok := setupWatcher(*repo, *scope, self, *tag, *intervalSec)
+		release, pass, ok := setupWatcher(*repo, *scope, self, *tag, *generation, *intervalSec)
 		if !ok {
 			return 1
 		}
 		defer release()
 		work = pass
 	case "reaper":
-		work = setupReaper(*repo)
+		reaperPass := setupReaper(*repo)
+		work = func() error {
+			reaperPass()
+			return nil
+		}
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
 		// observable rather than a silent no-op.
-		work = func() {}
+		work = func() error { return nil }
 	}
 
 	// A definitively absent checkout root means the supervised thing is gone:
@@ -118,7 +129,9 @@ func runSuperviseComponent(args []string) int {
 		return 0
 	}
 	beat() // beat once immediately so the owner sees liveness fast
-	work() // and produce a first verdict/sweep without waiting a full interval
+	if err := work(); err != nil {
+		fmt.Fprintln(os.Stderr, "supervise component:", err)
+	} // and produce a first verdict/sweep without waiting a full interval
 	ticker := time.NewTicker(time.Duration(*intervalSec) * time.Second)
 	defer ticker.Stop()
 	for {
@@ -131,7 +144,9 @@ func runSuperviseComponent(args []string) int {
 				return 0
 			}
 			beat()
-			work()
+			if err := work(); err != nil {
+				fmt.Fprintln(os.Stderr, "supervise component:", err)
+			}
 		}
 	}
 }
@@ -149,7 +164,7 @@ func heartbeatWriter(path, component string, self identity.Ref, tag string, inte
 // and the per-interval census pass. It returns ok=false (and logs) when a live
 // writer already owns the lock — the owner then sees this watcher fail and, once
 // the incumbent stops, relaunches one that can claim it.
-func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec int) (release func(), pass func(), ok bool) {
+func setupWatcher(repo, scope string, self identity.Ref, tag string, generation, intervalSec int) (release func(), pass func() error, ok bool) {
 	supervisionDir := supervise.SupervisionDir(repo)
 	lock := &supervise.CensusWriterLock{
 		Dir: supervisionDir, Self: self, Tag: tag, Prober: identity.KernelProber{},
@@ -160,9 +175,16 @@ func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec
 	}
 
 	cfg := watcherConfig(repo, scope, supervisionDir, intervalSec)
-	pass = func() {
+	pass = func() error {
+		attempt, err := steward.BeginComponentAttempt(repo, "repo-watcher", generation, self, time.Now())
+		if err != nil {
+			return fmt.Errorf("record watcher attempt: %w", err)
+		}
+		var passErrors []error
 		if err := cfg.WatcherPass(); err != nil {
-			fmt.Fprintln(os.Stderr, "supervise component watcher:", err)
+			passErrors = append(passErrors, err)
+		} else if err := requireSuccessfulWatcherCensus(supervisionDir, generation); err != nil {
+			passErrors = append(passErrors, err)
 		}
 		// The run pass (monitor facility, MON-06/07): assess every
 		// non-terminal run record, then attest the pass — the attestation
@@ -170,13 +192,52 @@ func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec
 		// this watcher's identity plus the full lifecycle triples it
 		// scanned, so a one-shot invocation can never impersonate the
 		// standing watcher and a reused id can never be blessed unseen.
-		runPass(repo, self)
+		if err := runPass(repo, self); err != nil {
+			passErrors = append(passErrors, err)
+		}
+		repair, err := steward.RepairEnrolledRunner(repo)
+		if err != nil {
+			passErrors = append(passErrors, fmt.Errorf("repair enrolled steward: %w", err))
+		}
+		if len(passErrors) > 0 {
+			joined := errors.Join(passErrors...)
+			_, _ = steward.CompleteComponentAttempt(repo, "repo-watcher", generation, attempt.AttemptSeq,
+				steward.ComponentError, "PASS_FAILED", joined.Error(), time.Now())
+			return joined
+		}
+		evidence := fmt.Sprintf("census, run assessment, and steward check completed (%s)", repair.Status)
+		if _, err := steward.CompleteComponentAttempt(repo, "repo-watcher", generation, attempt.AttemptSeq,
+			steward.ComponentOK, "PASS_COMPLETE", evidence, time.Now()); err != nil {
+			return fmt.Errorf("record watcher completion: %w", err)
+		}
+		return nil
 	}
 	return lock.Release, pass, true
 }
 
+func requireSuccessfulWatcherCensus(supervisionDir string, generation int) error {
+	data, err := os.ReadFile(filepath.Join(supervisionDir, "last-census.json"))
+	if err != nil {
+		return fmt.Errorf("read watcher census completion: %w", err)
+	}
+	var verdict struct {
+		Verdict    string `json:"verdict"`
+		Generation *int64 `json:"generation"`
+	}
+	if err := json.Unmarshal(data, &verdict); err != nil {
+		return fmt.Errorf("read watcher census completion: %w", err)
+	}
+	if verdict.Verdict != "SUCCESS" {
+		return fmt.Errorf("watcher census completed with verdict %s", verdict.Verdict)
+	}
+	if verdict.Generation == nil || *verdict.Generation != int64(generation) {
+		return fmt.Errorf("watcher census does not belong to supervision generation %d", generation)
+	}
+	return nil
+}
+
 // runPass assesses runs and writes the attestation on full success.
-func runPass(repo string, self identity.Ref) {
+func runPass(repo string, self identity.Ref) error {
 	store := &run.Store{Root: repo}
 	records, unreadable := store.List()
 	type scanned struct {
@@ -201,7 +262,7 @@ func runPass(repo string, self identity.Ref) {
 		fmt.Fprintln(os.Stderr, "supervise component watcher run pass:", line)
 	}
 	if !clean {
-		return
+		return fmt.Errorf("run assessment did not complete")
 	}
 	if scannedRuns == nil {
 		scannedRuns = []scanned{}
@@ -214,20 +275,17 @@ func runPass(repo string, self identity.Ref) {
 	}
 	data, err := json.MarshalIndent(attestation, "", " ")
 	if err != nil {
-		return
+		return err
 	}
 	path := filepath.Join(supervise.SupervisionDir(repo), "runs-pass.json")
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".runs-pass-*")
+	durable, err := atomicfile.WriteText(path, string(append(data, '\n')), repo)
 	if err != nil {
-		return
+		return err
 	}
-	name := tmp.Name()
-	if _, err := tmp.Write(append(data, '\n')); err == nil && tmp.Close() == nil {
-		_ = os.Rename(name, path)
-	} else {
-		tmp.Close()
-		os.Remove(name)
+	if !durable {
+		return fmt.Errorf("run assessment attestation was published with durability unknown")
 	}
+	return nil
 }
 
 // setupReaper returns the per-interval job sweep, proving custody liveness

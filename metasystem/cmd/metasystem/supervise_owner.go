@@ -116,12 +116,13 @@ func runSuperviseOwnerLoop(args []string) int {
 		Prober:         prober,
 		IntervalSec:    *intervalSec,
 		StopCeiling:    5 * time.Second,
-		Command: func(component supervise.Component, componentTag, heartbeatPath string) []string {
+		Command: func(component supervise.Component, componentTag, heartbeatPath string, generation int64) []string {
 			self, _ := os.Executable()
 			argv := []string{self, "supervise", "component",
 				"--component", string(component), "--tag", componentTag,
 				"--heartbeat", heartbeatPath, "--interval", fmt.Sprint(*intervalSec),
 				"--cap-min", fmt.Sprint(*watcherCap),
+				"--generation", fmt.Sprint(generation),
 				// The component operates on this checkout: the watcher censuses
 				// the scope and the reaper sweeps this checkout's job records.
 				"--repo", *repo, "--scope", *scope}
@@ -142,12 +143,13 @@ func runSuperviseOwnerLoop(args []string) int {
 	logPath := filepath.Join(supervisionDir, "owner.ndjson")
 	owner := &supervise.Owner{
 		Checkout: checkout, Components: components, Ledger: ledger, Intents: intents,
-		BaseInterval:  time.Duration(*intervalSec) * time.Second,
-		Ceiling:       12,
-		Breaker:       supervise.Breaker{GiveUpAt: 5, BaseInterval: time.Duration(*intervalSec) * time.Second, BackoffCap: 10 * time.Minute},
-		Establishment: supervise.Establishment{Deadline: 5},
-		TagPrefix:     ownerTag,
-		Narrate:       narrator(logPath),
+		WatcherRepairs: &supervise.DiskWatcherRepairs{Root: *repo},
+		BaseInterval:   time.Duration(*intervalSec) * time.Second,
+		Ceiling:        12,
+		Breaker:        supervise.Breaker{GiveUpAt: 5, BaseInterval: time.Duration(*intervalSec) * time.Second, BackoffCap: 10 * time.Minute},
+		Establishment:  supervise.Establishment{Deadline: 5},
+		TagPrefix:      ownerTag,
+		Narrate:        narrator(logPath),
 		// Generations stay monotone across owner restarts (the fingerprint
 		// harness's staleness discipline): continue from the last published
 		// state rather than restarting at one.

@@ -34,13 +34,13 @@ func TestIntentExistsBeforeAnythingElse(t *testing.T) {
 	}
 }
 
-func TestUndeliveredIntentCannotAuthorizeALaunch(t *testing.T) {
+func TestPreparedIntentAuthorizesHealingWithoutNotification(t *testing.T) {
 	root := t.TempDir()
 	if err := MintIntent(root, testIntent("n2")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ConsumeIntent(root, "n2"); err == nil || !strings.Contains(err.Error(), "not yet delivered") {
-		t.Fatalf("consumption before delivery must refuse by name: %v", err)
+	if _, err := ConsumeIntent(root, "n2"); err != nil {
+		t.Fatalf("notification cannot gate an automatic repair: %v", err)
 	}
 }
 

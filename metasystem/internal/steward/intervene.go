@@ -1,10 +1,9 @@
 package steward
 
-// The intervention record: minted before anything happens, notified
-// before anything launches, consumed exactly once at launch. The
-// record IS the one-shot authorization (its staged digests bind what
-// runs), and its lifecycle makes every intervention visible-before-
-// action and reconcilable after a crash.
+// The intervention record is minted before anything happens and consumed
+// exactly once at launch. The record is the one-shot authorization whose
+// staged digests bind what runs, making every repair reconcilable after a
+// crash without requiring an alert before action.
 
 import (
 	"encoding/json"
@@ -34,7 +33,7 @@ type Intent struct {
 	JobId         string `json:"jobId"`
 	MintedAtTick  int    `json:"mintedAtTick"`
 	FenceAtMint   int64  `json:"fenceAtMint"`
-	Notified      bool   `json:"notified"`      // delivery confirmed
+	Notified      bool   `json:"notified"`      // retained for pre-heal-first records; never gates launch
 	DispatchedAt  int    `json:"dispatchedAt"`  // tick; zero = never
 	LaunchStamped bool   `json:"launchStamped"` // dispatch returned
 	ReapedAt      string `json:"reapedAt,omitempty"`
@@ -131,9 +130,9 @@ func UpdateIntent(repoRoot string, it Intent) error {
 }
 
 // ConsumeIntent authorizes exactly one launch: the atomic move to
-// consumed/ succeeds once; a replay finds the record gone and
-// refuses. Consumption requires the prerequisites the design pins —
-// delivered notification first.
+// consumed/ succeeds once and a replay finds the record gone. Recovery is
+// deliberately not notification-gated; the operator is contacted only when
+// the machinery cannot complete the repair.
 func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
 	live := filepath.Join(intentsDir(repoRoot), nonce+".json")
 	data, err := os.ReadFile(live)
@@ -143,9 +142,6 @@ func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
 	var it Intent
 	if err := json.Unmarshal(data, &it); err != nil {
 		return Intent{}, fmt.Errorf("intent %s malformed: %w", nonce, err)
-	}
-	if !it.Notified {
-		return Intent{}, fmt.Errorf("intent %s is not yet delivered to the operator; launch refused", nonce)
 	}
 	if err := os.MkdirAll(consumedDir(repoRoot), 0o755); err != nil {
 		return Intent{}, err
@@ -182,7 +178,7 @@ func ConsumedIntent(repoRoot, nonce string) (Intent, error) {
 
 // StampLaunch marks a consumed intent's dispatch as returned — the
 // crash boundary the next tick reconciles against: consumed without
-// a stamp is a notified unknown outcome.
+// a stamp is an unknown launch outcome.
 func StampLaunch(repoRoot, nonce string) error {
 	path := filepath.Join(consumedDir(repoRoot), nonce+".json")
 	it, err := ConsumedIntent(repoRoot, nonce)
@@ -290,7 +286,9 @@ type PendingNotification struct {
 	DeliveryOwner string `json:"deliveryOwner,omitempty"`
 }
 
-const healthDeliveryOwner = "L4"
+// L3 used this literal to mark held health findings for L4. The episode
+// migration recognizes it only long enough to preserve and retire that shape.
+const legacyHealthDeliveryOwner = "L4"
 
 func pendingDir(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "pending")
@@ -313,32 +311,6 @@ func QueueNotification(repoRoot string, n PendingNotification) error {
 		return fmt.Errorf("pending notification %s was published with durability unknown", n.Nonce)
 	}
 	return nil
-}
-
-// QueueHealthNotification holds one notification for each distinct finding.
-// L4 replaces this holding seam with alert episodes, delivery attempts, and
-// human acknowledgments.
-func QueueHealthNotification(repoRoot, findingDigest, message string) error {
-	if !validEvidenceDigest(findingDigest) {
-		return fmt.Errorf("health finding digest is invalid")
-	}
-	wanted := PendingNotification{Nonce: findingDigest, Message: message, DeliveryOwner: healthDeliveryOwner}
-	path := filepath.Join(pendingDir(repoRoot), findingDigest+".json")
-	data, err := os.ReadFile(path)
-	if err == nil {
-		var existing PendingNotification
-		if unmarshalErr := json.Unmarshal(data, &existing); unmarshalErr != nil {
-			return fmt.Errorf("pending health notification %s is malformed: %w", findingDigest, unmarshalErr)
-		}
-		if existing.Nonce == findingDigest && existing.DeliveryOwner == healthDeliveryOwner {
-			return nil
-		}
-		return fmt.Errorf("health finding digest %s already names a different pending notification", findingDigest)
-	}
-	if !os.IsNotExist(err) {
-		return err
-	}
-	return QueueNotification(repoRoot, wanted)
 }
 
 // PendingNotifications lists what still awaits delivery.

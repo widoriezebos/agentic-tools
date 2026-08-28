@@ -13,11 +13,20 @@ import (
 // runReportStopBlock prints the stop-hook block decision, appending any caller
 // detail given as the sole positional argument.
 func runReportStopBlock(args []string) int {
-	detail := ""
-	if len(args) > 0 {
-		detail = args[0]
+	flags := flag.NewFlagSet("report stop-block", flag.ContinueOnError)
+	systemMessage := flags.String("system-message", "", "non-blocking display line carried beside the refusal")
+	if flags.Parse(args) != nil {
+		return 2
 	}
-	encoded, _ := json.Marshal(report.StopBlock(detail))
+	detail := ""
+	if flags.NArg() > 0 {
+		detail = flags.Arg(0)
+	}
+	block := report.StopBlock(detail)
+	if *systemMessage != "" {
+		block["systemMessage"] = *systemMessage
+	}
+	encoded, _ := json.Marshal(block)
 	fmt.Println(string(encoded))
 	return 0
 }

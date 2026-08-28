@@ -8,6 +8,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -34,6 +36,7 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 func runStewardHealth(args []string) int {
 	flags := flag.NewFlagSet("health", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
+	hookPreview := flags.Bool("hook-preview", false, "render current hook facts without advancing the tick-owned alert breaker (internal)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -41,13 +44,125 @@ func runStewardHealth(args []string) int {
 		fmt.Fprintln(os.Stderr, "health: --repo is required")
 		return 2
 	}
+	if *hookPreview {
+		verdict := steward.PreviewHealth(*repo, time.Now(), nil)
+		fmt.Println(verdict.Line())
+		return verdict.ExitCode()
+	}
 	verdict, err := steward.ObserveHealth(*repo, time.Now(), nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health: health evidence is unknown: %v\n", err)
 		return 2
 	}
+	alertView := verdict
+	alertView.ShouldAlert = false
+	if _, err := steward.UpdateAlertEpisodes(*repo, alertView, verdict.Line(), time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "health: alert episode state is unknown: %v\n", err)
+		return 2
+	}
 	fmt.Println(verdict.Line())
 	return verdict.ExitCode()
+}
+
+func runHealthAcknowledgeAlert(args []string) int {
+	flags := flag.NewFlagSet("health acknowledge-alert", flag.ContinueOnError)
+	episodeID := flags.String("episode", "", "alert episode id")
+	repo := flags.String("repo", ".", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *episodeID == "" {
+		fmt.Fprintln(os.Stderr, "health acknowledge-alert: --episode is required")
+		return 2
+	}
+	// L8 will replace this observed invoker record with enrolled-terminal
+	// ancestry enforcement. Until then this records the immediate caller
+	// exactly and makes no claim that it was an agent-free terminal.
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		fmt.Fprintln(os.Stderr, "health acknowledge-alert: the immediate caller identity is unavailable")
+		return 1
+	}
+	argvDigest := ""
+	if exact.ArgvKnown {
+		argv := sha256.Sum256([]byte(strings.Join(exact.Argv, "\x00")))
+		argvDigest = hex.EncodeToString(argv[:])
+	}
+	invoker := steward.AlertInvoker{
+		Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartTicks: exact.StartTicks,
+		BootID: exact.BootID, UID: os.Getuid(), ArgvDigest: argvDigest,
+	}
+	episode, err := steward.AcknowledgeAlert(*repo, *episodeID, invoker, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "health acknowledge-alert: %v\n", err)
+		return 1
+	}
+	fmt.Printf("acknowledged alert %s\n", episode.EpisodeID)
+	return 0
+}
+
+func runStewardHookAttempt(args []string) int {
+	flags := flag.NewFlagSet("steward hook-attempt", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	pid := flags.Int64("pid", 0, "hook process pid")
+	turnKey := flags.String("turn-key", "", "current turn key")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" || *pid < 1 || *turnKey == "" {
+		fmt.Fprintln(os.Stderr, "steward hook-attempt: --repo, --pid, and --turn-key are required")
+		return 2
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(*pid)
+	if err != nil || state != identity.Alive {
+		fmt.Fprintln(os.Stderr, "steward hook-attempt: the hook process identity is unavailable")
+		return 1
+	}
+	record, err := steward.BeginHookAttempt(*repo, exact.Ref(), *turnKey, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward hook-attempt: %v\n", err)
+		return 1
+	}
+	data, _ := json.Marshal(map[string]any{"generation": record.Generation, "attemptSeq": record.AttemptSeq})
+	fmt.Println(string(data))
+	return 0
+}
+
+func runStewardHookComplete(args []string) int {
+	flags := flag.NewFlagSet("steward hook-complete", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	generation := flags.Int("generation", 0, "hook turn generation")
+	attempt := flags.Int64("attempt", 0, "hook attempt sequence")
+	result := flags.String("result", "", "OK | ERROR | INDETERMINATE")
+	outcome := flags.String("outcome", "", "completion outcome")
+	healthLine := flags.String("health-line", "", "health verdict carried by the payload")
+	payloadFile := flags.String("payload-file", "", "file containing the emitted payload")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" || *generation < 1 || *attempt < 1 || *result == "" || *outcome == "" {
+		fmt.Fprintln(os.Stderr, "steward hook-complete: repo and exact completion flags are required")
+		return 2
+	}
+	payload := []byte{}
+	if *payloadFile != "" {
+		var err error
+		payload, err = os.ReadFile(*payloadFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
+			return 1
+		}
+	}
+	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "") {
+		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires --health-line and --payload-file")
+		return 2
+	}
+	if _, err := steward.CompleteHookAttempt(*repo, *generation, *attempt, steward.ComponentResult(*result),
+		*outcome, *healthLine, string(payload), time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // runStewardTick is one scheduled observation: decide, persist the
@@ -74,16 +189,15 @@ func runStewardTick(args []string) int {
 		}
 		return 1
 	}
-	// The tick is a FUNCTIONAL seam — an external ticker calling this
-	// verb gets the runner's whole pass, not a printout: pending
-	// notifications drain, and a revive verdict drives the revival.
-	delivered, deliverErr := steward.DeliverPending(*repo)
+	// The tick is a functional seam: an external ticker gets the runner's
+	// whole pass. Recovery precedes notification, so a condition the machinery
+	// heals never reaches the operator as an alert.
 	revived := false
 	resume := result.Decision.Action == steward.ActRevive
 	if !resume {
-		// A delivered intent that never launched resumes here too —
-		// the external-ticker seam must not strand what the resident
-		// runner would have completed.
+		// A prepared intent that never launched resumes here too; the
+		// external-ticker seam must not strand what the resident runner
+		// would have completed.
 		if _, ok, resumeErr := steward.ResumableIntent(*repo); resumeErr == nil && ok {
 			resume = true
 		}
@@ -101,9 +215,10 @@ func runStewardTick(args []string) int {
 				fmt.Fprintf(os.Stderr, "steward tick: revive-failure incident could not queue: %v\n", qErr)
 			}
 		} else {
-			revived = true
+			revived = strings.Contains(string(out), "launched=true")
 		}
 	}
+	delivered, deliverErr := steward.DeliverPending(*repo)
 	report := map[string]any{
 		"verdict":   result.Decision.Verdict,
 		"action":    result.Decision.Action,
@@ -269,7 +384,10 @@ func runStewardRevive(args []string) int {
 	}
 	fmt.Printf("launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
 	if !outcome.Launched {
-		return 3
+		if outcome.Escalate {
+			return 3
+		}
+		return 0
 	}
 	return 0
 }

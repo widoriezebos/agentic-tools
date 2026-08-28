@@ -127,8 +127,9 @@ owner_start=$("$ms" proc started-at --pid "$owner_pid") || fail "owner start ide
 watcher_start=$("$ms" proc started-at --pid "$watcher_pid") || fail "watcher start identity unreadable"
 main_start=$("$ms" proc started-at --pid "$main_pid") || fail "main start identity unreadable"
 now_epoch=$(date -u +%s)
+now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-printf '{"generation":1,"owner":{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-owner-%s"},"components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-watcher-%s"}}}\n' \
+printf '{"generation":1,"intervalSec":60,"owner":{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-owner-%s"},"components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-watcher-%s"}}}\n' \
   "$owner_pid" "$owner_start" "$$" "$watcher_pid" "$watcher_start" "$$" \
   >"$repo/artifacts/agents/supervision/state.json"
 printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-owner-%s"}\n' \
@@ -137,6 +138,19 @@ printf '{"schemaVersion":2,"writer":"watch-background-jobs.sh","verdict":"SUCCES
   "$now_epoch" >"$repo/artifacts/agents/supervision/last-census.json"
 printf '{"sessionId":"fixture","mainId":"main-fixture","pid":%s,"pidStartedAt":%s,"runtime":"fake","instanceTag":"health-main-%s"}\n' \
   "$main_pid" "$main_start" "$$" >"$repo/artifacts/agents/mains/fixture.json"
+mkdir -p "$repo/artifacts/agents/steward/components"
+watcher_digest=$(printf '%s' 'fixture watcher pass' | "$ms" util sha256)
+printf '{"component":"repo-watcher","generation":1,"pid":%s,"pidStartedAt":%s,"successPid":%s,"successPidStartedAt":%s,"successAttemptSeq":1,"attemptSeq":1,"lastAttempt":"%s","lastCompletion":"%s","lastSuccess":"%s","result":"OK","outcome":"PASS_COMPLETE","evidenceDigest":"%s"}\n' \
+  "$watcher_pid" "$watcher_start" "$watcher_pid" "$watcher_start" "$now_iso" "$now_iso" "$now_iso" "$watcher_digest" \
+  >"$repo/artifacts/agents/steward/components/repo-watcher.json"
+
+hook_attempt=$("$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key health-fixture) || fail "hook attempt could not be recorded"
+hook_generation=$("$ms" json get --value "$hook_attempt" --field generation) || fail "hook generation unreadable"
+hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq) || fail "hook attempt sequence unreadable"
+printf '%s\n' '{"systemMessage":"HEALTH fixture"}' >"$tmp/hook-response.json"
+"$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" --attempt "$hook_attempt_seq" \
+  --result OK --outcome EMITTED --health-line 'HEALTH fixture' --payload-file "$tmp/hook-response.json" \
+  || fail "hook completion could not be recorded"
 
 run_health() {
   local name=$1
@@ -188,7 +202,7 @@ wait_for_pid_exit() { # name, pid
 runner_pid=$(read_runner_pid)
 [[ -n "$runner_pid" ]] || fail "initial arm recorded no runner pid"
 wait_for_healthy healthy || fail "armed repository did not become healthy"
-for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main claimed-goal-appetite nonterminal-jobs capability-snapshots; do
+for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness claimed-goal-appetite nonterminal-jobs capability-snapshots; do
   grep -Fq "$role=alive" "$tmp/healthy.out" || fail "healthy line omitted $role"
 done
 
@@ -237,11 +251,25 @@ wait_for_healthy narrator-recovered || fail "the stale narrator's printed restar
 # five-observation breaker from a healthy reset.
 kill "$runner_pid"
 wait_for_pid_exit "killed runner exit" "$runner_pid" || fail "killed runner did not exit"
+# This bed isolates the consecutive-failure breaker from the earlier
+# stop-and-recover exercise, which deliberately contributes a flap episode.
+rm -f "$repo/artifacts/agents/steward/health.json" "$tmp/alerts.log"
 run_health runner-dead
 dead_rc=$health_rc
 [[ "$dead_rc" -eq 1 ]] || { cat "$tmp/runner-dead.err" >&2; fail "dead bed returned $dead_rc"; }
 grep -Fq 'steward-runner=dead' "$tmp/runner-dead.out" || fail "dead verdict did not name the killed runner"
 grep -Fq 'steward restart --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the restart remedy"
+if [[ -f "$tmp/alerts.log" ]] && grep -Fq 'HEALTH unhealthy' "$tmp/alerts.log"; then
+  fail "a recoverable first failure notified the human before escalation"
+fi
+silent_episode=
+for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
+  [[ -f "$candidate" ]] || continue
+  grep -Fq '"cleared": false' "$candidate" || continue
+  silent_episode=$candidate
+done
+[[ -n "$silent_episode" ]] || fail "the first failure opened no silent history episode"
+grep -Fq '"attempts": []' "$silent_episode" || fail "the silent history episode attempted notification before escalation"
 
 for observation in 2 3 4 5; do
   "$ms" steward tick --repo "$repo" >"$tmp/tick-$observation.out" 2>"$tmp/tick-$observation.err" || {
@@ -252,19 +280,38 @@ done
 grep -Fq '"consecutiveFailures": 5' "$tmp/tick-5.out" || fail "failure five was not projected"
 grep -Fq '"failureEscalation": "AUTO_HEAL_ENDED"' "$tmp/tick-5.out" || fail "failure five did not end auto-heal"
 
-health_pending=0
-for pending in "$repo/artifacts/agents/steward/pending"/*.json; do
-  [[ -f "$pending" ]] || continue
-  if grep -Fq '"deliveryOwner":"L4"' "$pending"; then
-    health_pending=$((health_pending + 1))
-    digest=$(basename "$pending" .json)
-    grep -Fq "\"nonce\":\"$digest\"" "$pending" || fail "health pending nonce is not its finding digest"
-  fi
+episode_count=0
+episode_file=
+for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
+  [[ -f "$candidate" ]] || continue
+  grep -Fq '"cleared": false' "$candidate" || continue
+  episode_count=$((episode_count + 1))
+  episode_file=$candidate
 done
-[[ "$health_pending" -eq 1 ]] || fail "failure five must hold one digest-keyed L4 notification, found $health_pending"
-if [[ -f "$tmp/alerts.log" ]] && grep -Fq 'HEALTH unhealthy' "$tmp/alerts.log"; then
-  fail "L3 immediately drained a health finding through the notifier"
-fi
+[[ "$episode_count" -eq 1 ]] || fail "failure five must open one digest-keyed episode, found $episode_count"
+grep -Fq '"transportResult": "TRANSPORT_SUBMITTED"' "$episode_file" || fail "notifier exit zero was not recorded as transport submitted"
+episode_id=$("$ms" json get --file "$episode_file" --field episodeId) || fail "episode id unreadable"
+[[ $(grep -c '^HEALTH unhealthy' "$tmp/alerts.log" 2>/dev/null || true) -eq 1 ]] || fail "one episode must submit one desktop notification"
+
+"$ms" steward tick --repo "$repo" >"$tmp/tick-dedup.out" 2>"$tmp/tick-dedup.err" || {
+  cat "$tmp/tick-dedup.err" >&2
+  fail "same-digest dedup tick failed"
+}
+[[ $(grep -c '^HEALTH unhealthy' "$tmp/alerts.log" 2>/dev/null || true) -eq 1 ]] || fail "same digest submitted a second desktop notification"
+active_episodes=0
+for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
+  [[ -f "$candidate" ]] || continue
+  grep -Fq '"cleared": false' "$candidate" || continue
+  active_episodes=$((active_episodes + 1))
+done
+[[ "$active_episodes" -eq 1 ]] || fail "same digest opened a second active episode"
+
+"$ms" health acknowledge-alert --repo "$repo" --episode "$episode_id" >"$tmp/ack.out" 2>"$tmp/ack.err" || {
+  cat "$tmp/ack.err" >&2
+  fail "episode acknowledgment failed"
+}
+grep -Fq '"acknowledged": true' "$episode_file" || fail "episode acknowledgment was not recorded"
+grep -Fq '"acknowledgedBy"' "$episode_file" || fail "episode acknowledgment omitted the observed invoker"
 
 "$ms" steward restart --repo "$repo" >"$tmp/runner-restart.out" 2>"$tmp/runner-restart.err" || {
   cat "$tmp/runner-restart.err" >&2
@@ -272,9 +319,11 @@ fi
 }
 runner_pid=$(read_runner_pid)
 wait_for_healthy runner-recovered || fail "the killed runner's printed restart remedy did not heal health"
+grep -Fq '"resolved": true' "$episode_file" || fail "healthy verdict did not resolve the alert episode"
+grep -Fq '"cleared": true' "$episode_file" || fail "healthy verdict did not clear the alert episode"
 
 "$ms" steward disarm --repo "$repo" >/dev/null 2>&1 || true
 wait_for_pid_exit "disarmed runner exit" "$runner_pid" || fail "disarmed runner did not exit"
 runner_pid=
 
-echo "health fixtures: top-level direct rc 0/1/2, stopped-narrator recovery, killed-runner recovery, failure-five breaker, and held digest alert PASSED"
+echo "health fixtures: direct rc 0/1/2, ten roles, silent first-failure history, escalated episode dedup, acknowledgment, and healthy clear PASSED"

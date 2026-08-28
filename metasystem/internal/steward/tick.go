@@ -9,13 +9,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 // One tick: read the world, fold the evidence, decide, and put
-// every notify verdict on the durable queue. The tick
-// itself performs no action — the verb that calls it notifies,
-// revives, or stays quiet per the decision, so every rule stays
-// testable without a scheduler or a dispatcher.
+// every notify-only verdict on the durable queue. Revive decisions remain
+// silent until the scheduler has tried the repair.
 
 // WorkerCensus answers the liveness question for this repository's
 // workers: enrolled sessions, their delegate jobs, live gates,
@@ -136,15 +135,11 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err != nil {
 		return TickResult{}, err
 	}
-	if d.Action == ActNotify || d.Action == ActRevive {
+	if d.Action == ActNotify {
 		// A notify verdict IS the visibility the invariant promises:
 		// it goes to the queue, keyed by its verdict so the standing
 		// condition holds one pending message (redelivered after each
-		// successful delivery, held durably through an outage). The
-		// revive verdict queues too — the invariant says DEAD is
-		// notified within one tick, and the revival's own gated
-		// message must not be the only channel: a revival that fails
-		// before minting would otherwise loop in silence forever.
+		// successful delivery, held durably through an outage).
 		if err := QueueNotification(repoRoot, PendingNotification{
 			Nonce:   "verdict-" + string(d.Verdict),
 			Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
@@ -205,6 +200,9 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 		return fmt.Errorf("compute health: %w", err)
 	}
 	result.Health = health
+	if err := requestWatcherRepair(repoRoot, health, time.Now()); err != nil {
+		return fmt.Errorf("request watcher repair: %w", err)
+	}
 	narratorAttempt, err := beginComponentAttempt(repoRoot, "narrator", generation, process, time.Now())
 	if err != nil {
 		return fmt.Errorf("record narrator attempt: %w", err)
@@ -219,10 +217,26 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 		ComponentOK, "EMITTED", line, time.Now()); err != nil {
 		return fmt.Errorf("record narrator completion: %w", err)
 	}
-	if health.ShouldAlert {
-		if err := QueueHealthNotification(repoRoot, health.FindingDigest, line); err != nil {
-			return fmt.Errorf("queue health alert: %w", err)
+	if _, err := UpdateAlertEpisodes(repoRoot, health, line, time.Now()); err != nil {
+		return fmt.Errorf("update health alert episodes: %w", err)
+	}
+	return nil
+}
+
+func requestWatcherRepair(repoRoot string, health HealthVerdict, now time.Time) error {
+	for _, role := range health.Roles {
+		if role.Role != RoleRepoWatcher || role.Status != HealthDead {
+			continue
 		}
+		if role.FailureEscalation == AutoHealEnded {
+			return supervise.EndWatcherRestart(repoRoot, "the health breaker ended automatic watcher repair", now)
+		}
+		if !strings.Contains(role.Reason, "recorded pid") &&
+			!strings.Contains(role.Reason, "lastSuccess is stale") &&
+			!strings.Contains(role.Reason, "latest attempt passed its deadline") {
+			return nil
+		}
+		return supervise.RequestWatcherRestart(repoRoot, role.Reason, now)
 	}
 	return nil
 }

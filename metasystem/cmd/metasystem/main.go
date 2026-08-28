@@ -377,6 +377,8 @@ func families() []family {
 				{"restart", "replace the runner and arm it again after a stalled pass", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
+				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
+				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
 			},
 		},
 		{
@@ -486,6 +488,9 @@ func dispatch(args []string) int {
 		return 2
 	}
 	if args[0] == "health" {
+		if len(args) > 1 && args[1] == "acknowledge-alert" {
+			return runHealthAcknowledgeAlert(args[2:])
+		}
 		return runStewardHealth(args[1:])
 	}
 	for _, fam := range families() {
@@ -513,6 +518,7 @@ func dispatch(args []string) int {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: metasystem <family> <verb> [flags]")
 	fmt.Fprintln(os.Stderr, "       metasystem health --repo <checkout>")
+	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
 	for _, fam := range families() {
 		fmt.Fprintf(os.Stderr, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {

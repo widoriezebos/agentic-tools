@@ -26,7 +26,7 @@ type Action string
 const (
 	ActNone   Action = "none"
 	ActNotify Action = "notify"
-	ActRevive Action = "revive" // always notification-gated downstream
+	ActRevive Action = "revive" // silent unless the downstream repair fails
 )
 
 // OpenWork is the ledger's answer, degraded-honest.
@@ -73,8 +73,8 @@ type Snapshot struct {
 	ActiveContinuation bool
 	// ProviderOutage is a standing model-provider outage mark: the
 	// provider's weather, nobody's failure. It holds revival — a
-	// continuation spawned into an outage burns a launch and a
-	// notification on a certain failure — without touching visibility.
+	// continuation spawned into an outage burns a launch on a certain
+	// failure — without touching visibility.
 	ProviderOutage bool
 }
 
@@ -129,5 +129,5 @@ func Decide(s Snapshot) Decision {
 			"worker provably dead, but the model provider is overloaded; holding revival until the provider recovers"}
 	}
 	return Decision{VerdictStalledDead, ActRevive,
-		"worker provably dead with open work; reviving after delivered notification"}
+		"worker provably dead with open work; attempting automatic revival"}
 }

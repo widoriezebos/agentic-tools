@@ -9,6 +9,7 @@ package steward
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,8 +60,8 @@ func TickSeconds(repoRoot string) int {
 
 // RunLoop is the runner's body: acquire the per-repository lock
 // (refusing beside a live runner), then tick until the stop file
-// appears. Each pass reaps, decides, retries pending notifications,
-// and — on a revive verdict — drives one revival through the given
+// appears. Each pass reaps, decides, drives any lawful revival, and then
+// retries pending notifications.
 // launcher. The loop never crashes out of a tick: a failed pass is
 // reported and the next tick tries again.
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration) error {
@@ -98,19 +99,12 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
-		// Pending incidents deliver on EVERY pass — a failed tick is
-		// exactly when the operator most needs what is queued.
-		if _, deliverErr := DeliverPending(repoRoot); deliverErr != nil {
-			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
-		}
 		resume := err == nil && result.Decision.Action == ActRevive
 		if !resume {
-			// A delivered intent whose launch never happened (a
-			// notifier outage that recovered, a crashed revive) holds
-			// the active-continuation guard and would otherwise never
-			// complete: the verdict stays notify-only forever. Resume
-			// it — CompleteRevival re-arbitrates and launches or
-			// cancels on the current world.
+			// A prepared intent whose launch never happened holds the
+			// active-continuation guard and would otherwise never complete.
+			// Resume it so CompleteRevival can re-arbitrate and either launch
+			// or cancel on the current world.
 			if _, ok, resumeErr := ResumableIntent(repoRoot); resumeErr == nil && ok {
 				resume = true
 			}
@@ -129,6 +123,12 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 					fmt.Fprintf(os.Stderr, "revive-failure incident could not queue: %v\n", qErr)
 				}
 			}
+		}
+		// Recovery runs before delivery. A failed recovery queues its incident
+		// above and can reach the operator in this same pass; a successful one
+		// leaves only silent history.
+		if _, deliverErr := DeliverPending(repoRoot); deliverErr != nil {
+			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
 		}
 		deadline := time.Now().Add(interval)
 		for time.Now().Before(deadline) {
@@ -152,6 +152,110 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 // ticks.
 func Restart(repoRoot, binaryPath string) (string, error) {
 	return arm(repoRoot, binaryPath, true)
+}
+
+// RunnerRepairOutcome says whether the watcher found the enrolled steward
+// current or restored that same installation generation.
+type RunnerRepairOutcome struct {
+	Status         string
+	Generation     int
+	PreviousPid    int64
+	ReplacementPid int64
+}
+
+// RepairEnrolledRunner is the watcher's narrow repair path. It never mints an
+// installation identity: it may launch only the binary and generation already
+// enrolled in this checkout.
+func RepairEnrolledRunner(repoRoot string) (RunnerRepairOutcome, error) {
+	return repairEnrolledRunner(repoRoot, nil)
+}
+
+func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutcome, error) {
+	top, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
+		top = resolved
+	}
+	installed, err := VerifyIdentity(RepoIdentityPath(top), top)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return RunnerRepairOutcome{Status: "NOT_ENROLLED"}, nil
+		}
+		return RunnerRepairOutcome{}, err
+	}
+	if installed.InstallPath == "" {
+		return RunnerRepairOutcome{}, fmt.Errorf("the enrolled steward has no installation path")
+	}
+	bin, err := filepath.Abs(installed.InstallPath)
+	if err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(bin); resolveErr == nil {
+		bin = resolved
+	}
+	if info, statErr := os.Stat(bin); statErr != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		return RunnerRepairOutcome{}, fmt.Errorf("the enrolled steward binary %q is not executable", bin)
+	}
+	if beforeLock != nil {
+		beforeLock()
+	}
+	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	defer armLock.Close()
+	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	lockedInstalled, err := VerifyIdentity(RepoIdentityPath(top), top)
+	if err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	if lockedInstalled.Generation != installed.Generation || lockedInstalled.InstallPath != installed.InstallPath {
+		return RunnerRepairOutcome{Status: "ENROLLMENT_CHANGED", Generation: installed.Generation}, nil
+	}
+	ended, err := AutoHealingEnded(top, RoleStewardRunner)
+	if err != nil {
+		return RunnerRepairOutcome{}, fmt.Errorf("read steward health breaker: %w", err)
+	}
+	if ended {
+		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
+	}
+
+	verdict := checkStewardRunner(top, time.Now(), identity.KernelProber{})
+	if verdict.Status == HealthAlive {
+		record, _ := liveRunner(top)
+		return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: record.Pid}, nil
+	}
+	if verdict.Status == HealthUnknown {
+		return RunnerRepairOutcome{}, fmt.Errorf("steward freshness is unknown: %s", verdict.Reason)
+	}
+	previous, alive := liveRunner(top)
+	if alive {
+		if err := stopRunnerForReplacement(top, previous); err != nil {
+			return RunnerRepairOutcome{}, err
+		}
+	}
+	replacement, err := launchRunner(top, bin)
+	if err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if current := checkStewardRunner(top, time.Now(), identity.KernelProber{}); current.Status == HealthAlive {
+			return RunnerRepairOutcome{
+				Status: "RESTORED", Generation: installed.Generation,
+				PreviousPid: previous.Pid, ReplacementPid: replacement.Pid,
+			}, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within ten seconds", replacement.Pid, installed.Generation)
 }
 
 func arm(repoRoot, binaryPath string, replace bool) (string, error) {
@@ -220,33 +324,38 @@ func arm(repoRoot, binaryPath string, replace bool) (string, error) {
 	}); err != nil {
 		return "", err
 	}
-	logFile, err := os.OpenFile(runnerLogPath(top), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	record, err := launchRunner(top, bin)
 	if err != nil {
 		return "", err
 	}
+	return fmt.Sprintf("armed (runner pid %d)", record.Pid), nil
+}
+
+func launchRunner(repoRoot, binaryPath string) (RunnerRecord, error) {
+	logFile, err := os.OpenFile(runnerLogPath(repoRoot), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return RunnerRecord{}, err
+	}
 	defer logFile.Close()
-	cmd := exec.Command(bin, "steward", "run", "--repo", top)
+	cmd := exec.Command(binaryPath, "steward", "run", "--repo", repoRoot)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return "", err
+		return RunnerRecord{}, err
 	}
-	// The runner is detached on purpose: it must outlive this arm.
+	// The runner is detached on purpose: it must outlive this launch.
 	go func() { _ = cmd.Wait() }()
-	// Arm's promise is a GUARDED repository, not a spawned child:
-	// return only once the runner holds the lock and its record —
-	// or say plainly that it died trying.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if rec, alive := liveRunner(top); alive {
-			return fmt.Sprintf("armed (runner pid %d)", rec.Pid), nil
+		if rec, alive := liveRunner(repoRoot); alive {
+			return rec, nil
 		}
 		if _, probeState, _ := (identity.KernelProber{}).Probe(int64(cmd.Process.Pid)); probeState == identity.Dead {
-			return "", fmt.Errorf("the runner died before guarding the repository; see %s", runnerLogPath(top))
+			return RunnerRecord{}, fmt.Errorf("the runner died before guarding the repository; see %s", runnerLogPath(repoRoot))
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return "", fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(top))
+	return RunnerRecord{}, fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(repoRoot))
 }
 
 func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {

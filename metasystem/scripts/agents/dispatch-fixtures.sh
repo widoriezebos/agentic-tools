@@ -2645,18 +2645,14 @@ if "$steward_repo/scripts/agents/dispatch.sh" --steward-intent "$steward_nonce" 
   echo "steward flags: --role beside --steward-intent must refuse" >&2; exit 1
 fi
 
-# Staged-bytes drift: gate an intent behind a dead notifier, drift the
-# role contract, restore the channel — the resumed revival must refuse
-# at the drift check, never launch.
+# A notifier outage cannot gate a lawful automatic repair. Staged-byte drift
+# remains covered at the staging owner's focused test; this end-to-end leg
+# proves the recovery order at the real dispatch boundary.
 git -C "$steward_repo" config metasystem.steward.notify-command "exit 1"
-if "$steward_repo/bin/metasystem" steward revive --repo "$steward_repo" >/dev/null 2>&1; then
-  echo "steward drift: a gated revival must not report a launch" >&2; exit 1
-fi
-printf '\n# drifted\n' >> "$steward_repo/scripts/agents/roles/steward-continuation.md"
-git -C "$steward_repo" config metasystem.steward.notify-command true
-steward_drift=$("$steward_repo/bin/metasystem" steward revive --repo "$steward_repo" 2>&1 || true)
-grep -q "launched=false" <<<"$steward_drift" \
-  || { echo "steward drift: drifted bytes must refuse the launch: $steward_drift" >&2; exit 1; }
+steward_outage=$("$steward_repo/bin/metasystem" steward revive --repo "$steward_repo" 2>&1) \
+  || { echo "steward heal-first: notifier outage blocked revival: $steward_outage" >&2; exit 1; }
+grep -q "launched=true" <<<"$steward_outage" \
+  || { echo "steward heal-first: notifier outage produced no launch: $steward_outage" >&2; exit 1; }
 
 echo "steward continuation fixtures passed"
 

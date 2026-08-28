@@ -1,12 +1,10 @@
 package steward
 
-// The revival, in the design's pinned order: mint the intent under
-// the arbitration lock (recording the enrollment fence), deliver the
-// operator notification — delivery gates everything after it — then
-// re-take the lock for one critical section: fence check, full
-// predicate re-run, intent consumption, launch, stamp. A crash
-// between launch and stamp reconciles next tick as a notified
-// unknown; a fence bump or a changed verdict cancels with the reason
+// The revival mints the intent under the arbitration lock, then heals before
+// any operator notification. It re-takes the lock for one critical section:
+// fence check, full predicate re-run, intent consumption, launch, stamp. A crash
+// between launch and stamp reconciles next tick as an unknown launch
+// outcome; a fence bump or a changed verdict cancels with the reason
 // on record.
 
 import (
@@ -25,12 +23,12 @@ type LaunchSeam func(Intent) error
 // ReviveOutcome says what happened, for the report and the receipt.
 type ReviveOutcome struct {
 	Launched bool
+	Escalate bool
 	Reason   string
 }
 
-// PrepareIntent mints the durable record under the lock, capturing
-// the enrollment fence, and queues the operator notification. It
-// performs no delivery and no launch.
+// PrepareIntent mints the durable record under the lock and captures the
+// enrollment fence. It performs no notification and no launch.
 func PrepareIntent(repoRoot string, it Intent) error {
 	arb, err := AcquireArbitration(repoRoot)
 	if err != nil {
@@ -62,21 +60,12 @@ func PrepareIntent(repoRoot string, it Intent) error {
 		}
 		return fmt.Errorf("the revival receipt did not write: %v", res.Err)
 	}
-	if err := QueueNotification(repoRoot, PendingNotification{
-		Nonce:   it.Nonce,
-		Message: fmt.Sprintf("steward: reviving %s (worker provably dead); job %s", it.Goal, it.JobId),
-	}); err != nil {
-		if cancelErr := CancelIntent(repoRoot, it.Nonce, "preparation failed at the notification queue"); cancelErr != nil {
-			return fmt.Errorf("the notification could not queue (%v) AND the intent could not cancel (%v): a live half-prepared authorization remains — operator attention needed", err, cancelErr)
-		}
-		return err
-	}
 	return nil
 }
 
-// CompleteRevival runs the delivery gate and the critical section
-// for a live intent. Safe to call again after a notifier outage —
-// the intent survives until it launches or cancels.
+// CompleteRevival runs the critical section for a live intent. The intent
+// survives a crash until it launches or cancels, without waking the operator
+// merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam) (ReviveOutcome, error) {
 	intents, err := LiveIntents(repoRoot)
 	if err != nil {
@@ -92,17 +81,10 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{Reason: "intent is not live (already consumed or cancelled)"}, nil
 	}
 
-	// The delivery gate: no launch before the operator heard.
-	if !it.Notified {
-		if err := Deliver(repoRoot, fmt.Sprintf("steward: reviving %s (worker provably dead); job %s", it.Goal, it.JobId)); err != nil {
-			return ReviveOutcome{Reason: "notification not delivered; launch stays gated: " + err.Error()}, nil
-		}
-		it.Notified = true
-		if err := UpdateIntent(repoRoot, *it); err != nil {
-			return ReviveOutcome{}, err
-		}
-		_ = MarkDelivered(repoRoot, it.Nonce)
-	}
+	// Retire notification intents written by older binaries before recovery.
+	// Their presence must not preserve an alert-before-heal path after upgrade.
+	_ = MarkDelivered(repoRoot, it.Nonce)
+	_ = MarkDelivered(repoRoot, "verdict-"+string(VerdictStalledDead))
 
 	// The critical section: fence, verdict, consume, launch, stamp.
 	arb, err := AcquireArbitration(repoRoot)
@@ -161,7 +143,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{}, err
 	}
 	if err := launch(consumed); err != nil {
-		return ReviveOutcome{Reason: "dispatch failed after consumption; next tick reconciles: " + err.Error()}, nil
+		return ReviveOutcome{Escalate: true, Reason: "dispatch failed after consumption; next tick reconciles: " + err.Error()}, nil
 	}
 	if err := StampLaunch(repoRoot, consumed.Nonce); err != nil {
 		return ReviveOutcome{}, err
@@ -212,21 +194,16 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 	}), workReason, nil
 }
 
-// ResumableIntent names a live intent whose notification already
-// delivered — a revival stopped between its gate and its critical
-// section (a notifier outage recovered, a crashed revive). Both
-// schedulers resume it; without this, a recovered outage would
-// strand the revival forever behind its own active-continuation
-// guard.
+// ResumableIntent names a live intent whose repair did not reach its critical
+// section. Both schedulers resume it so a crash after preparation cannot
+// strand healing behind the active-continuation guard.
 func ResumableIntent(repoRoot string) (string, bool, error) {
 	live, err := LiveIntents(repoRoot)
 	if err != nil {
 		return "", false, err
 	}
 	for _, it := range live {
-		if it.Notified {
-			return it.Nonce, true, nil
-		}
+		return it.Nonce, true, nil
 	}
 	return "", false, nil
 }

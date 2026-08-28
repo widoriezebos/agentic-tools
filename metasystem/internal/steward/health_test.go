@@ -120,6 +120,46 @@ func TestFailureBreakerProjectsEveryObservationAndResets(t *testing.T) {
 	}
 }
 
+func TestHealingFlapEscalatesAcrossAliveResets(t *testing.T) {
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	dead := []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Reason: "recorded runner pid 91 is dead", Remedy: "restart"}}
+	alive := []RoleVerdict{{Role: RoleStewardRunner, Status: HealthAlive, Reason: "fresh"}}
+	state := HealthObservationState{}
+	for episode := 1; episode <= healthFlapLimit; episode++ {
+		failed := applyHealthObservation("/repo", state, dead, now.Add(time.Duration(episode*2)*time.Minute))
+		if episode < healthFlapLimit && (failed.ShouldAlert || failed.Roles[0].FailureEscalation != AutoHealEligible) {
+			t.Fatalf("failure episode %d remains silent while healing is eligible: %+v", episode, failed)
+		}
+		if episode == healthFlapLimit && (!failed.ShouldAlert || failed.Roles[0].FailureEscalation != HealingFlapping || failed.Roles[0].ConsecutiveFailures != 1) {
+			t.Fatalf("the third heal-and-fail episode must escalate across healthy resets: %+v", failed)
+		}
+		state = failed.State
+		if episode < healthFlapLimit {
+			recovered := applyHealthObservation("/repo", state, alive, now.Add(time.Duration(episode*2+1)*time.Minute))
+			if recovered.State.FailureCounts[RoleStewardRunner] != 0 || len(recovered.State.FailureEpisodes[RoleStewardRunner]) != episode {
+				t.Fatalf("healthy resets the consecutive breaker but retains flap history: %+v", recovered.State)
+			}
+			state = recovered.State
+		}
+	}
+}
+
+func TestNoLawfulRemedyEscalatesOnFirstObservation(t *testing.T) {
+	dead := []RoleVerdict{{Role: RoleHookFreshness, Status: HealthDead, Reason: "the hook did not emit", Remedy: "inspect"}}
+	verdict := applyHealthObservation("/repo", HealthObservationState{}, dead, time.Now())
+	if !verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
+		t.Fatalf("a failure class without an automatic remedy must escalate immediately: %+v", verdict)
+	}
+}
+
+func TestFindingDigestUsesStableRoleIdentity(t *testing.T) {
+	first := healthFindingDigest([]RoleVerdict{{Role: RoleNarratorFreshness, Status: HealthDead, Reason: "lastSuccess is stale at 3m0s"}})
+	second := healthFindingDigest([]RoleVerdict{{Role: RoleNarratorFreshness, Status: HealthDead, Reason: "lastSuccess is stale at 4m0s"}})
+	if first != second {
+		t.Fatalf("time-varying reason text must not mint another finding identity: %s != %s", first, second)
+	}
+}
+
 func TestClaimedGoalWithBrokenProseAppetiteIsNamed(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"hungry-goal": {
@@ -224,6 +264,109 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 	}
 	if failed.LastCompletion.IsZero() || !failed.LastSuccess.IsZero() {
 		t.Fatalf("an ERROR completion advances only completion: %+v", failed)
+	}
+}
+
+func TestHookEmissionAdvancesOnlyTheExactTurnSuccess(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 45001, StartedAtSec: 100, StartTicks: 99, BootID: "boot-a"}
+
+	first, err := BeginHookAttempt(root, process, "turn-g", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role := checkHookFreshness(root, now.Add(time.Millisecond)); role.Status != HealthDead || !strings.Contains(role.Reason, "attempt") {
+		t.Fatalf("an attempt without completion is service-dead: %+v", role)
+	}
+	if role := checkHookFreshnessAt(root, now.Add(time.Millisecond), true); role.Status == HealthDead {
+		t.Fatalf("the current hook line must treat its own in-flight attempt as pending: %+v", role)
+	}
+	payload := `{"systemMessage":"HEALTH unknown — hook-freshness=unknown"}`
+	line := "HEALTH unknown — hook-freshness=unknown"
+	completed, err := CompleteHookAttempt(root, first.Generation, first.AttemptSeq,
+		ComponentOK, "EMITTED", line, payload, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.SuccessAttemptSeq != first.AttemptSeq || !completed.LastSuccess.Equal(now.Add(time.Second)) {
+		t.Fatalf("OK/EMITTED must advance this attempt's success: %+v", completed)
+	}
+	if role := checkHookFreshness(root, now.Add(2*time.Second)); role.Status != HealthAlive {
+		t.Fatalf("the completed turn must be healthy: %+v", role)
+	}
+
+	second, err := BeginHookAttempt(root, process, "turn-g-next", now.Add(3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role := checkHookFreshnessAt(root, now.Add(3500*time.Millisecond), true); role.Status != HealthAlive || !strings.Contains(role.Reason, "prior generation") {
+		t.Fatalf("the current line must judge the previous completed turn: %+v", role)
+	}
+	failed, err := CompleteHookAttempt(root, second.Generation, second.AttemptSeq,
+		ComponentError, "EMIT_FAILED", line, "write failed", now.Add(4*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.LastSuccess.Equal(failed.LastCompletion) || failed.SuccessAttemptSeq == failed.AttemptSeq {
+		t.Fatalf("an emission failure advances completion, not success: %+v", failed)
+	}
+	if role := checkHookFreshness(root, now.Add(5*time.Second)); role.Status != HealthDead {
+		t.Fatalf("the failed current turn cannot inherit prior success: %+v", role)
+	}
+	retry, err := BeginHookAttempt(root, process, "turn-g-next", now.Add(6*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.Generation != second.Generation || retry.AttemptSeq <= second.AttemptSeq {
+		t.Fatalf("a retry stays in the turn generation and advances its attempt: first=%+v retry=%+v", second, retry)
+	}
+	if _, err := CompleteHookAttempt(root, retry.Generation, retry.AttemptSeq,
+		ComponentOK, "DISPLAYED", line, payload, now.Add(7*time.Second)); err == nil {
+		t.Fatal("the hook must never claim client display")
+	}
+	if _, err := CompleteHookAttempt(root, retry.Generation, retry.AttemptSeq,
+		ComponentOK, "EMITTED", line, payload, now.Add(8*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if role := checkHookFreshness(root, now.Add(9*time.Second)); role.Status != HealthAlive {
+		t.Fatalf("a successful retry restores hook health: %+v", role)
+	}
+}
+
+func TestNextHookTurnRetainsInterruptedAttemptAsFailedHistory(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 11, 30, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 45002, StartedAtSec: 101}
+	interrupted, err := BeginHookAttempt(root, process, "turn-killed", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := BeginHookAttempt(root, process, "turn-after-kill", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Generation == interrupted.Generation || len(next.AttemptHistory) != 1 {
+		t.Fatalf("the successor must retain exactly one terminal fact for the interrupted turn: before=%+v after=%+v", interrupted, next)
+	}
+	failed := next.AttemptHistory[0]
+	if failed.Generation != interrupted.Generation || failed.AttemptSeq != interrupted.AttemptSeq || failed.Result != ComponentError || failed.Outcome != "INTERRUPTED_BY_NEXT_TURN" {
+		t.Fatalf("the killed attempt was not closed as failed history: %+v", failed)
+	}
+	loaded, err := loadComponentEvidence(ComponentEvidencePath(root, "supervision-hook"))
+	if err != nil || len(loaded.AttemptHistory) != 1 || loaded.AttemptHistory[0].Outcome != "INTERRUPTED_BY_NEXT_TURN" {
+		t.Fatalf("the interrupted turn is not durable beside its successor: %+v %v", loaded, err)
+	}
+}
+
+func TestHookPreviewDoesNotAdvanceTheTickOwnedObservation(t *testing.T) {
+	root := t.TempDir()
+	verdict := PreviewHealth(root, time.Now(), healthProbe{})
+	if len(verdict.Roles) != len(healthRoleOrder) {
+		t.Fatalf("hook preview omitted health roles: %+v", verdict.Roles)
+	}
+	if _, err := os.Stat(HealthRecordPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("hook preview must not advance the durable health breaker: %v", err)
 	}
 }
 

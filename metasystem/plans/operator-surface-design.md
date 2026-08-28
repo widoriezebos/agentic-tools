@@ -448,3 +448,39 @@ claim/occupancy; group custody + progress; call-site migration) ·
 L13 delegate verb · L14 watch · L15 land verb (phases + receipt)
 · L16 recovery documented + rehearsed · L17 old-path deletions
 after the soak week. Fast-test law binds every landing's gate.
+
+
+## RULING L — THE ESCALATION LAW (Wido, 2026-08-28 afternoon)
+
+"Escalate only to me if you cannot recover yourself. I don't want
+to be bothered by things the machinery should take care of in a
+safe and reliable way." Binding on every alert path: the machinery
+heals first — restarts, re-arms, retries within its lawful
+authority — and the human hears about it only in the heartbeat
+line's history, never as an alert. An alert reaches Wido's desk or
+phone ONLY when: auto-heal has failed (the five-observation
+breaker ends healing), the failure class has no lawful automatic
+remedy (a human-reserved judgment, an unrecoverable state, a
+safety-uncertain act), or the same role keeps cycling through
+heal-and-fail (flapping is a failure of healing, not a success).
+Everything the machinery handled shows up as history in the chat
+heartbeat and the records — visible when he looks, silent when he
+doesn't. L4's alert episodes implement this: an episode OPENS on
+first failure but NOTIFIES only at the escalation conditions
+above; healed episodes close as history.
+
+
+## RULING M — DELEGATED WORK IS WATCHED WORK (Wido, 2026-08-28)
+
+"This is not about codex being stuck. This is about the metasystem
+watching, judging we are still making progress and reporting with
+a heartbeat — and acting if we are not." Binding on L13 (delegate)
+and L14 (watch): every delegated job is a tracked job the steward
+judges by evidence — its work products advancing counts as
+progress, slower progress is still progress — and the judgment
+appears in the heartbeat line so nobody has to ask "still
+running?". When the judgment is stall, the machinery ACTS within
+its lawful authority (probe, restart, reassign, kill-and-relaunch)
+before anything reaches the human, per Ruling L. Hand-watching a
+delegated pass from the chat is the bootstrap exception and dies
+with L13's landing.

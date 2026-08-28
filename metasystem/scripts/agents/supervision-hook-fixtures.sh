@@ -42,4 +42,93 @@ if [[ $membership_rc != 0 ]]; then
   exit 1
 fi
 
-echo "supervision hook runtime-membership fixture passed"
+missing_started=$SECONDS
+missing_rc=0
+METASYSTEM_BIN="$tmp/missing-engine" bash "$hook" claude stop <"$tmp/payload.json" \
+  >"$tmp/missing.out" 2>"$tmp/missing.err" || missing_rc=$?
+missing_elapsed=$((SECONDS - missing_started))
+[[ "$missing_rc" -eq 0 ]] || { echo "supervision hook missing-engine fixture returned $missing_rc" >&2; exit 1; }
+grep -Fq 'HEALTH unknown' "$tmp/missing.out" \
+  || { echo "supervision hook missing-engine fixture was silent" >&2; exit 1; }
+grep -Fq 'engine missing' "$tmp/missing.out" \
+  || { echo "supervision hook missing-engine fixture omitted its remedy" >&2; exit 1; }
+(( missing_elapsed <= 1 )) \
+  || { echo "supervision hook missing-engine fixture exceeded one second" >&2; exit 1; }
+
+line_root=$tmp/line-root
+mkdir -p "$line_root/scripts/agents" "$line_root/bin" "$line_root/plans"
+cp "$hook" "$line_root/scripts/agents/supervision-hook.sh"
+cp "$ms" "$line_root/bin/metasystem"
+printf '%s\n' 'metasystem.runtimes=none' >"$line_root/metasystem.conf"
+printf '# Goals\n\n## Goal-free: declared 2026-08-28T00:00:00Z by human over fixture\n' >"$line_root/plans/goals.md"
+git -C "$line_root" init -q -b main
+git -C "$line_root" config user.name fixture
+git -C "$line_root" config user.email fixture@example.invalid
+git -C "$line_root" add metasystem.conf plans/goals.md
+git -C "$line_root" commit -qm fixture
+printf '{"session_id":"line-fixture","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload.json"
+line_started=$SECONDS
+line_rc=0
+bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
+  >"$tmp/line.out" 2>"$tmp/line.err" || line_rc=$?
+line_elapsed=$((SECONDS - line_started))
+[[ "$line_rc" -eq 0 ]] || { echo "supervision hook chat-line fixture returned $line_rc" >&2; exit 1; }
+grep -Fq 'HEALTH ' "$tmp/line.out" \
+  || { echo "supervision hook chat-line fixture emitted no health verdict" >&2; exit 1; }
+if grep -Fq 'hook-freshness=dead' "$tmp/line.out"; then
+  echo "supervision hook chat-line fixture judged its own current attempt dead" >&2
+  exit 1
+fi
+hook_evidence=$line_root/artifacts/agents/steward/components/supervision-hook.json
+grep -Fq '"result": "OK"' "$hook_evidence" \
+  || { echo "supervision hook chat-line fixture recorded no successful completion" >&2; exit 1; }
+grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
+  || { echo "supervision hook chat-line fixture did not record EMITTED" >&2; exit 1; }
+(( line_elapsed <= 1 )) \
+  || { echo "supervision hook chat-line fixture exceeded one second" >&2; exit 1; }
+
+kill_engine=$tmp/kill-engine
+cat >"$kill_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
+  hook_pid=
+  previous=
+  for argument in "$@"; do
+    if [[ $previous == --pid ]]; then
+      hook_pid=$argument
+      break
+    fi
+    previous=$argument
+  done
+  result=$("${METASYSTEM_KILL_REAL_ENGINE:?}" "$@") || exit $?
+  printf '%s\n' "$result"
+  kill -KILL "$hook_pid"
+  exit 137
+fi
+exec "${METASYSTEM_KILL_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$kill_engine"
+printf '{"session_id":"killed-fixture","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/killed-payload.json"
+set +e
+METASYSTEM_BIN="$kill_engine" METASYSTEM_KILL_REAL_ENGINE="$ms" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/killed-payload.json" \
+  >"$tmp/killed.out" 2>"$tmp/killed.err"
+killed_rc=$?
+set -e
+[[ "$killed_rc" -ne 0 ]] \
+  || { echo "supervision hook kill fixture did not stop between attempt and emission" >&2; exit 1; }
+grep -Fq '"outcome": "ATTEMPTING"' "$hook_evidence" \
+  || { echo "supervision hook kill fixture left no unresolved attempt" >&2; exit 1; }
+
+printf '{"session_id":"after-kill-fixture","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/after-kill-payload.json"
+bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/after-kill-payload.json" \
+  >"$tmp/after-kill.out" 2>"$tmp/after-kill.err" \
+  || { echo "supervision hook could not run after an interrupted attempt" >&2; exit 1; }
+grep -Fq 'INTERRUPTED_BY_NEXT_TURN' "$hook_evidence" \
+  || { echo "the next hook turn erased the killed attempt instead of retaining failed history" >&2; exit 1; }
+grep -Fq 'hook-freshness=dead' "$tmp/after-kill.out" \
+  || { echo "the next hook line did not judge the prior interrupted turn" >&2; exit 1; }
+grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
+  || { echo "the post-kill hook turn did not complete its own emission" >&2; exit 1; }
+
+echo "supervision hook runtime membership, current-turn freshness, killed-attempt history, emission evidence, and loud missing-engine fixtures passed"

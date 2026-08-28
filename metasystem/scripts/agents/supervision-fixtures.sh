@@ -1320,6 +1320,8 @@ stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "
 first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
 printf '%s' "$first" | grep -q '"decision":"block"' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
+printf '%s' "$first" | grep -Fq 'HEALTH ' \
+  || { echo "the stop hook emitted no one-line health verdict" >&2; echo "$first" >&2; exit 1; }
 second=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
 printf '%s' "$second" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }

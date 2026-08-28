@@ -3,7 +3,7 @@ package steward
 // The reaper: each tick closes what the last revival left open. A
 // stamped continuation whose job record ended is reaped with its
 // outcome; a consumed-but-unstamped intent is the crash boundary,
-// reconciled as a notified unknown; a stamped one whose job record
+// reconciled as an unknown launch outcome; a stamped one whose job record
 // never appeared is an incident, not a guess. Every close frees the
 // one-active-continuation guard and tells the operator.
 

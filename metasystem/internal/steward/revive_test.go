@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -15,11 +16,24 @@ func reviveRepo(t *testing.T) string {
 	return root
 }
 
+func TestFailedRevivalIsTheFirstPointThatEscalates(t *testing.T) {
+	root := reviveRepo(t)
+	if err := PrepareIntent(root, testIntent("rev-failed")); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), "rev-failed", func(Intent) error {
+		return errors.New("dispatcher unavailable")
+	})
+	if err != nil || outcome.Launched || !outcome.Escalate || !strings.Contains(outcome.Reason, "dispatch failed") {
+		t.Fatalf("only the ended recovery attempt should request escalation: %+v %v", outcome, err)
+	}
+}
+
 func deadCensus() WorkerCensus {
 	return fakeCensus{workers: Workers{CensusComplete: true}}
 }
 
-func TestRevivalLaunchesOnceThroughTheFullGate(t *testing.T) {
+func TestRevivalLaunchesOnceBeforeAnyNotification(t *testing.T) {
 	root := reviveRepo(t)
 	it := testIntent("rev-1")
 	if err := PrepareIntent(root, it); err != nil {
@@ -31,7 +45,7 @@ func TestRevivalLaunchesOnceThroughTheFullGate(t *testing.T) {
 		return nil
 	})
 	if err != nil || !out.Launched || launched != 1 {
-		t.Fatalf("a dead worker with a delivered notification launches once: %+v %v launched=%d", out, err, launched)
+		t.Fatalf("a dead worker must be healed once without a notification gate: %+v %v launched=%d", out, err, launched)
 	}
 	ev, _ := LoadEvidence(EvidencePath(root))
 	if ev.DryRevivals != 1 {
@@ -46,7 +60,7 @@ func TestRevivalLaunchesOnceThroughTheFullGate(t *testing.T) {
 	}
 }
 
-func TestNotifierOutageGatesTheLaunchUntilDeliverySucceeds(t *testing.T) {
+func TestNotifierOutageCannotBlockARevival(t *testing.T) {
 	root := reviveRepo(t)
 	if out, err := gitConfig(root, "metasystem.steward.notify-command", "exit 1"); err != nil {
 		t.Fatalf("config: %v\n%s", err, out)
@@ -59,10 +73,10 @@ func TestNotifierOutageGatesTheLaunchUntilDeliverySucceeds(t *testing.T) {
 		launched++
 		return nil
 	})
-	if err != nil || out.Launched || launched != 0 || !strings.Contains(out.Reason, "not delivered") {
-		t.Fatalf("no launch without delivery: %+v launched=%d", out, launched)
+	if err != nil || !out.Launched || launched != 1 {
+		t.Fatalf("healing must proceed while the notifier is unavailable: %+v launched=%d", out, launched)
 	}
-	// The channel comes back: the SAME intent completes, exactly once.
+	// The channel coming back cannot replay an already consumed repair.
 	if cfgOut, err := gitConfig(root, "metasystem.steward.notify-command", "true"); err != nil {
 		t.Fatalf("config: %v\n%s", err, cfgOut)
 	}
@@ -70,8 +84,8 @@ func TestNotifierOutageGatesTheLaunchUntilDeliverySucceeds(t *testing.T) {
 		launched++
 		return nil
 	})
-	if err != nil || !out.Launched || launched != 1 {
-		t.Fatalf("delayed delivery completes the one launch: %+v launched=%d", out, launched)
+	if err != nil || out.Launched || launched != 1 {
+		t.Fatalf("the completed repair must not replay when notification recovers: %+v launched=%d", out, launched)
 	}
 }
 
@@ -118,7 +132,7 @@ func TestAWorldThatTurnedLiveCancelsBeforeLaunch(t *testing.T) {
 	}
 }
 
-func TestResumableIntentNamesADeliveredUnlaunchedRevival(t *testing.T) {
+func TestResumableIntentNamesAPreparedUnlaunchedRevival(t *testing.T) {
 	root := t.TempDir()
 	if _, ok, err := ResumableIntent(root); err != nil || ok {
 		t.Fatalf("an empty store resumes nothing: %v %v", ok, err)
@@ -126,16 +140,8 @@ func TestResumableIntentNamesADeliveredUnlaunchedRevival(t *testing.T) {
 	if err := MintIntent(root, testIntent("rs-1")); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := ResumableIntent(root); ok {
-		t.Fatal("an undelivered intent must not resume — the delivery gate comes first")
-	}
-	delivered := testIntent("rs-2")
-	delivered.Notified = true
-	if err := MintIntent(root, delivered); err != nil {
-		t.Fatal(err)
-	}
 	nonce, ok, err := ResumableIntent(root)
-	if err != nil || !ok || nonce != "rs-2" {
-		t.Fatalf("the delivered-but-unlaunched intent is the one to resume: %q %v %v", nonce, ok, err)
+	if err != nil || !ok || nonce != "rs-1" {
+		t.Fatalf("the prepared-but-unlaunched intent is the one to resume: %q %v %v", nonce, ok, err)
 	}
 }

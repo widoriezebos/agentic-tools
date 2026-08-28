@@ -1,11 +1,13 @@
 package steward
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeCensus struct {
@@ -31,6 +33,7 @@ func gitRepoWithCurrentGoal(t *testing.T) string {
 		}
 	}
 	run("init", "-q")
+	run("config", "metasystem.steward.notify-command", "true")
 	if err := os.MkdirAll(filepath.Join(root, "plans"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +57,57 @@ func tickN(t *testing.T, root string, cfg TickConfig, census WorkerCensus, n int
 		last = r
 	}
 	return last
+}
+
+func TestKilledWatcherIsRoutedToItsOwnerWithinOneTick(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "artifacts", "agents", "supervision")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state := map[string]any{
+		"generation": 4,
+		"components": map[string]any{
+			"watcher": map[string]any{"pid": 44001, "pidStartedAt": 100, "instanceTag": "owner-watcher-4"},
+		},
+	}
+	data, _ := json.Marshal(state)
+	if err := os.WriteFile(filepath.Join(directory, "state.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	health := HealthVerdict{Roles: []RoleVerdict{{
+		Role: RoleRepoWatcher, Status: HealthDead, Reason: "recorded pid 44001 is dead",
+	}}}
+	requestedAt := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	ended := health
+	ended.Roles = append([]RoleVerdict(nil), health.Roles...)
+	ended.Roles[0].FailureEscalation = AutoHealEnded
+	if err := requestWatcherRepair(root, health, requestedAt); err != nil {
+		t.Fatal(err)
+	}
+	requestData, err := os.ReadFile(filepath.Join(directory, "watcher-restart-request.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		Generation  int64     `json:"generation"`
+		Pid         int64     `json:"pid"`
+		Completed   bool      `json:"completed"`
+		RequestedAt time.Time `json:"requestedAt"`
+	}
+	if err := json.Unmarshal(requestData, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Generation != 4 || request.Pid != 44001 || request.Completed || !request.RequestedAt.Equal(requestedAt) {
+		t.Fatalf("the tick must request only the exact enrolled watcher generation: %+v", request)
+	}
+	if err := requestWatcherRepair(root, ended, requestedAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	requestData, err = os.ReadFile(filepath.Join(directory, "watcher-restart-request.json"))
+	if err != nil || json.Unmarshal(requestData, &request) != nil || !request.Completed {
+		t.Fatalf("failure five must retire an earlier pending watcher repair: %+v %v", request, err)
+	}
 }
 
 func TestQuietTicksAgeIntoLiveIdleNotification(t *testing.T) {
@@ -156,7 +210,7 @@ func TestNotifyVerdictsReachTheQueue(t *testing.T) {
 	}
 }
 
-func TestDeliveredRevivalMessageCompletesTheGate(t *testing.T) {
+func TestRevivalPreparationStaysSilentAndLaunches(t *testing.T) {
 	root := reviveRepo(t)
 	if out, err := gitConfig(root, "metasystem.steward.notify-command", "exit 1"); err != nil {
 		t.Fatalf("config: %v\n%s", err, out)
@@ -164,18 +218,8 @@ func TestDeliveredRevivalMessageCompletesTheGate(t *testing.T) {
 	if err := PrepareIntent(root, testIntent("dg-1")); err != nil {
 		t.Fatal(err)
 	}
-	// The channel returns; the runner's ordinary drain delivers the
-	// queued revival message — the intent's gate must complete here,
-	// not strand behind its own successful delivery.
-	if out, err := gitConfig(root, "metasystem.steward.notify-command", "true"); err != nil {
-		t.Fatalf("config: %v\n%s", err, out)
-	}
-	if _, err := DeliverPending(root); err != nil {
-		t.Fatal(err)
-	}
-	live, _ := LiveIntents(root)
-	if len(live) != 1 || !live[0].Notified {
-		t.Fatalf("the drained delivery completes the intent's gate: %+v", live)
+	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
+		t.Fatalf("a prepared automatic repair must remain silent: %v %v", pending, err)
 	}
 	launched := 0
 	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), "dg-1", func(Intent) error { launched++; return nil })
@@ -184,27 +228,20 @@ func TestDeliveredRevivalMessageCompletesTheGate(t *testing.T) {
 	}
 }
 
-func TestReviveVerdictQueuesTheIncidentToo(t *testing.T) {
+func TestReviveVerdictStaysSilentBeforeHealing(t *testing.T) {
 	root := gitRepoWithCurrentGoal(t)
 	census := fakeCensus{workers: Workers{CensusComplete: true}}
 	r := tickN(t, root, TickConfig{}, census, 1)
 	if r.Decision.Action != ActRevive {
 		t.Fatalf("this world revives: %+v", r.Decision)
 	}
-	// The invariant says DEAD with open work is notified within one
-	// tick. The revival's own gated message must not be the only
-	// channel — a revival failing before its mint would loop silently.
 	pending, err := PendingNotifications(root)
-	if err != nil || len(pending) == 0 {
-		t.Fatalf("the revive verdict is an incident the operator hears about: %v %v", pending, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	found := false
 	for _, n := range pending {
 		if strings.Contains(n.Message, "stalled-dead") {
-			found = true
+			t.Fatalf("a recoverable revive verdict alerted before healing: %v", pending)
 		}
-	}
-	if !found {
-		t.Fatalf("the incident names its verdict: %v", pending)
 	}
 }

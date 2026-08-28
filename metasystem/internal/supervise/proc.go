@@ -26,7 +26,7 @@ type ProcComponents struct {
 	// Command builds the argv for one component; the binary supplies
 	// its own `metasystem supervise component ...` invocation, tests
 	// supply a heartbeat-writing stub.
-	Command func(component Component, tag, heartbeatPath string) []string
+	Command func(component Component, tag, heartbeatPath string, generation int64) []string
 	// Prober proves identities three-way; the kernel one in
 	// production, a fake in tests.
 	Prober identity.Prober
@@ -63,8 +63,8 @@ func (p *ProcComponents) heartbeatPath(component Component) string {
 // owner reaps it when it dies (ReapDead's Wait), so no zombie
 // lingers and Stop can prove it gone, and supervises it by identity
 // (pid + start time), never by the child handle alone.
-func (p *ProcComponents) Launch(component Component, tag string) (identity.Ref, error) {
-	argv := p.Command(component, tag, p.heartbeatPath(component))
+func (p *ProcComponents) Launch(component Component, tag string, generation int64) (identity.Ref, error) {
+	argv := p.Command(component, tag, p.heartbeatPath(component), generation)
 	if len(argv) == 0 {
 		return identity.Ref{}, fmt.Errorf("component command for %s is empty", component)
 	}

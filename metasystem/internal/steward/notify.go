@@ -68,7 +68,16 @@ func DeliverPending(repoRoot string) (int, error) {
 	}
 	delivered := 0
 	for _, n := range pending {
-		if n.DeliveryOwner == healthDeliveryOwner {
+		if n.DeliveryOwner == legacyHealthDeliveryOwner {
+			continue
+		}
+		if n.Nonce == "verdict-"+string(VerdictStalledDead) {
+			// Older runners queued proven-death alerts before attempting
+			// revival. Retire that obsolete intent instead of delivering it
+			// after an upgrade or after the condition has already healed.
+			if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
+				return delivered, err
+			}
 			continue
 		}
 		if err := Deliver(repoRoot, n.Message); err != nil {
