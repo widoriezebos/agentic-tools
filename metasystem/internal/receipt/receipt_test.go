@@ -23,7 +23,7 @@ func baseOptions(t *testing.T) Options {
 		t.Fatal(err)
 	}
 	return Options{
-		Root: root, File: filepath.Join(root, "plans", "receipts.log"),
+		Root: root, File: filepath.Join(root, "memory", "receipts.log"),
 		Skills: "none", Verify: "skipped", Corrections: "0", StopLoss: "no",
 		Now: fixedNow, LookupEnv: noEnv,
 	}

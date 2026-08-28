@@ -469,7 +469,7 @@ r1's laundering table, closed only by the unbuilt isolation tier.
   (a list of canonical repository-relative files). PROTECTED-PATH
   TABLE (denied always): `plans/mission-*.contract.md`,
   `plans/goals.md`, `plans/goals-accepted.json`,
-  `plans/instruction-ledger.md`, `plans/known-issues.md`.
+  `memory/instruction-ledger.md`, `memory/known-issues.md`.
 - FIELD SCHEMAS: the authorization record, acceptance-entry
   payload, openTurn, taint/resolution entries, and wall.json each
   get a JSON schema beside the code (internal/missionrunner and

@@ -14,7 +14,7 @@ commitment.
 
 ## Time-sensitive (decide first)
 
-D-1. llm-wiki-pattern decision — plans/llm-wiki-pattern.md:168
+D-1. llm-wiki-pattern decision — memory/llm-wiki-pattern.md:168
 carries a self-delete clause: the parked accept/implement/reject
 decision EXPIRES 2026-09-03 or at the next retro. Proposal: put it
 on a retro agenda before the clause fires, or let it lapse

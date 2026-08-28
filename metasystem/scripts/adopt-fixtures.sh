@@ -98,7 +98,7 @@ copy_tree_without_artifacts() { # source root, destination
 }
 
   copy_tree_without_artifacts "$root" "$adopted"
-  rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
+  rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/memory/receipts.log" "$adopted/.claude"
   # A real adopted installation sits inside the app's git repository; the
   # copy must too, or entrypoints that verify repo scope refuse to start.
   git -C "$adopted" init -q -b main
@@ -171,11 +171,43 @@ if true; then  # template-gated by the orchestrator
   # The payload ships FRESH ledgers, never this repository's. The real
   # instruction ledger reached a live benchmark run before this assertion
   # existed, handing the builders the developers' own lessons.
-  if grep -qE '^\| (IL|KI)-[0-9]' "$nested_tgt/plans/instruction-ledger.md" "$nested_tgt/plans/known-issues.md" 2>/dev/null; then
+  if grep -qE '^\| (IL|KI)-[0-9]' "$nested_tgt/memory/instruction-ledger.md" "$nested_tgt/memory/known-issues.md" 2>/dev/null; then
     echo "adoption shipped the template repository's own ledger rows" >&2; exit 1
   fi
-  [[ ! -e "$nested_tgt/plans/receipts.log" && ! -e "$nested_tgt/README.md" ]] \
+  [[ ! -e "$nested_tgt/memory/receipts.log" && ! -e "$nested_tgt/README.md" ]] \
     || { echo "adoption shipped template-repository state" >&2; exit 1; }
+
+  # Exercise the writers through an installation genuinely vendored beneath
+  # the application repository. The prefix intentionally contains only the
+  # entrypoints and installation configuration: application state must not be
+  # recreated beside them.
+  vendored_prefix="$nested_tgt/metasystem"
+  mkdir -p "$vendored_prefix/bin" "$vendored_prefix/scripts"
+  cp "$nested_tgt/bin/metasystem" "$vendored_prefix/bin/metasystem"
+  cp "$nested_tgt/scripts/receipt.sh" "$vendored_prefix/scripts/receipt.sh"
+  cp "$nested_tgt/metasystem.conf" "$vendored_prefix/metasystem.conf"
+  [[ ! -e "$vendored_prefix/memory" ]] \
+    || { echo "vendored fixture began with application memory" >&2; exit 1; }
+
+  # A commitless repository ticks DEGRADED by design and a degraded tick
+  # never persists evidence; real adopted repositories have commits, so
+  # the fixture gives its target one before asserting healthy-tick writes.
+  git -C "$nested_tgt" add -A
+  git -C "$nested_tgt" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm adopted-base
+  "$vendored_prefix/scripts/receipt.sh" add --type implement --outcome shipped \
+    --skills none --verify clean --corrections 0 --stop-loss no --note "adopted state-root fixture" >/dev/null
+  tick_out=$("$vendored_prefix/bin/metasystem" steward tick --repo "$nested_tgt") \
+    || { echo "adopted steward tick failed" >&2; exit 1; }
+  grep -vq '"verdict": "degraded"' <<<"$tick_out" \
+    || { echo "adopted steward tick unexpectedly degraded: $tick_out" >&2; exit 1; }
+  [[ -f "$nested_tgt/memory/receipts.log" && -f "$nested_tgt/artifacts/agents/steward/highwater.json" ]] \
+    || { echo "adopted writers did not use the application state trees" >&2; exit 1; }
+  [[ ! -e "$vendored_prefix/memory" ]] \
+    || { echo "adopted writers recreated metasystem/memory/" >&2; exit 1; }
+  for register in known-issues.md flake-registry.md rulings.md instruction-ledger.md receipts.log backlog-notes.md proposal-drafts.md llm-wiki-pattern.md; do
+    [[ ! -e "$vendored_prefix/$register" && ! -e "$vendored_prefix/plans/$register" && ! -e "$vendored_prefix/memory/$register" ]] \
+      || { echo "adopted writer placed $register under the vendored tree" >&2; exit 1; }
+  done
 
   # IL-14: a brand-new plan file in the staged set needs explicit
   # acknowledgment; modifying a tracked plan stays free. The prose form of this
@@ -347,8 +379,10 @@ PLAN
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
   [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
   [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
-  [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md goals-accepted.json goals.md instruction-ledger.md known-issues.md " ]] \
-    || { echo "adopt: plans/ payload must carry the standing ledgers INCLUDING the goal pair (goal-system GOAL-14)" >&2; exit 1; }
+  [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md goals-accepted.json goals.md " ]] \
+	|| { echo "adopt: plans/ payload must carry only live intent, including the goal pair" >&2; exit 1; }
+  [[ "$(ls "$tgt/memory" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md " ]] \
+	|| { echo "adopt: memory/ payload must carry only fresh living registers" >&2; exit 1; }
   grep -q '^## Goal-free: declared .* over ' "$tgt/plans/goals.md" \
     || { echo "adopt: the seeded goal ledger lacks its digest-pinned Goal-free declaration" >&2; exit 1; }
   # Read-only pair check via the ENGINE's own fact (goal list's

@@ -2,6 +2,7 @@ package steward
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,7 +19,7 @@ func reviveRepo(t *testing.T) string {
 
 func TestFailedRevivalIsTheFirstPointThatEscalates(t *testing.T) {
 	root := reviveRepo(t)
-	if err := PrepareIntent(root, testIntent("rev-failed")); err != nil {
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-failed")); err != nil {
 		t.Fatal(err)
 	}
 	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), "rev-failed", func(Intent) error {
@@ -36,7 +37,7 @@ func deadCensus() WorkerCensus {
 func TestRevivalLaunchesOnceBeforeAnyNotification(t *testing.T) {
 	root := reviveRepo(t)
 	it := testIntent("rev-1")
-	if err := PrepareIntent(root, it); err != nil {
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), it); err != nil {
 		t.Fatal(err)
 	}
 	launched := 0
@@ -65,7 +66,7 @@ func TestNotifierOutageCannotBlockARevival(t *testing.T) {
 	if out, err := gitConfig(root, "metasystem.steward.notify-command", "exit 1"); err != nil {
 		t.Fatalf("config: %v\n%s", err, out)
 	}
-	if err := PrepareIntent(root, testIntent("rev-2")); err != nil {
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-2")); err != nil {
 		t.Fatal(err)
 	}
 	launched := 0
@@ -91,7 +92,7 @@ func TestNotifierOutageCannotBlockARevival(t *testing.T) {
 
 func TestEnrollmentAfterReservationCancelsTheRevival(t *testing.T) {
 	root := reviveRepo(t)
-	if err := PrepareIntent(root, testIntent("rev-3")); err != nil {
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-3")); err != nil {
 		t.Fatal(err)
 	}
 	// A worker enrolls between reservation and launch: the fence bumps.
@@ -118,7 +119,7 @@ func TestEnrollmentAfterReservationCancelsTheRevival(t *testing.T) {
 
 func TestAWorldThatTurnedLiveCancelsBeforeLaunch(t *testing.T) {
 	root := reviveRepo(t)
-	if err := PrepareIntent(root, testIntent("rev-4")); err != nil {
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-4")); err != nil {
 		t.Fatal(err)
 	}
 	liveNow := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}

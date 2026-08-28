@@ -21,6 +21,7 @@ var auditRequiredFiles = []string{
 	"AGENTS.md", "wow.md", "metasystem.conf", "docs/project-rules.md",
 	"docs/orchestration.md", "docs/collaboration.md",
 	"docs/design/design-principles.md", "docs/design/design-obligation-gate.md",
+	"memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md",
 }
 
 // The outside-reference scan roots: explicit metasystem-owned files only.
@@ -37,7 +38,7 @@ func auditScanRoots() []string {
 		"scripts/validate-metasystem.sh", "scripts/validate-skill.sh",
 		"scripts/assert-design-obligation-gate.sh", "scripts/refactor-baseline.sh", "scripts/frontier.sh",
 		"scripts/receipt.sh", "scripts/assert-stop-loss.sh", "scripts/enforcement",
-		"plans/README.md", "plans/instruction-ledger.md", "plans/known-issues.md",
+		"plans/README.md", "memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md",
 	}...)
 }
 

@@ -82,7 +82,7 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `scripts/assert-design-obligation-gate.sh` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
-| Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | `scripts/watch-background-jobs.sh` reports terminal, stale, capped and vanished jobs from a runner's job directory; `scripts/validate-metasystem.sh` exercises all four; remaining incidents land in receipts and `plans/known-issues.md` |
+| Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | `scripts/watch-background-jobs.sh` reports terminal, stale, capped and vanished jobs from a runner's job directory; `scripts/validate-metasystem.sh` exercises all four; remaining incidents land in receipts and `memory/known-issues.md` |
 | Runaway spend | Budgets as project facts, spend measured from the provider's own records, and overage or a costlier resource tier as human-reserved decisions | No script can read an external invoice: the fence lives in `docs/project-rules.md`, overage requires an explicit ask, and the retro compares spend against receipts |
 | Prose mistaken for enforcement | Binary rules become scripts, and the enforcement ships ready to wire in: a CI workflow and Claude Code hooks under `scripts/enforcement/` | `scripts/validate-metasystem.sh` runs positive and negative fixtures for the gate scripts, in the template and in adopted repositories |
 
@@ -191,7 +191,8 @@ docs/
 skills/              triggered workflows: verify, design-critique, refactor, improve, retro, take-a-step-back
 optional-skills/     opt-in specialists (debug-java), enabled per project
 scripts/             deterministic checks and shipped enforcement configs
-plans/               task-local state, handoff notes, standing ledgers
+plans/               live intent: goals, goal drafts, designs, handoff notes
+memory/              living registers: rulings, issues, flakes, receipts, notes
 ```
 
 Template maintenance notes and rationale live one level above this

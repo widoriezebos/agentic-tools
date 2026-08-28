@@ -137,6 +137,7 @@ One line per package; the package doc is the full story.
 | `registry` | the machine-wide supervision registry contract |
 | `report` | turn-end report decisions plus the improvement-mode frontier ledger |
 | `returnschema` | versioned role-return schema materialization |
+| `stateroot` | mode-aware directories for application state, derived from the installed engine and repository |
 | `supervise` | the supervision owner lifecycle: watcher, reaper, breaker, wind-down |
 | `turn` | the vocabulary of a mission turn |
 | `usage` | typed usage extraction, the single owner |

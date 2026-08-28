@@ -123,14 +123,15 @@ func registryPointerDocs(t *testing.T, root string) {
 func TestAuditMetasystemRefusals(t *testing.T) {
 	build := func(t *testing.T) string {
 		root := t.TempDir()
-		for _, dir := range []string{"docs/design", "skills", "scripts/enforcement"} {
+		for _, dir := range []string{"docs/design", "memory", "skills", "scripts/enforcement"} {
 			if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
 		for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
 			"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
-			"docs/design/design-principles.md", "docs/design/design-obligation-gate.md"} {
+			"docs/design/design-principles.md", "docs/design/design-obligation-gate.md",
+			"memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md"} {
 			if err := os.WriteFile(filepath.Join(root, file), []byte("clean instruction text\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -161,6 +162,14 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 		result, _ := AuditMetasystem(root, AuditOptions{})
 		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "missing required file: wow.md") {
 			t.Fatalf("missing file not caught: %v", result.Violations)
+		}
+	})
+	t.Run("missing memory register", func(t *testing.T) {
+		root := build(t)
+		os.Remove(filepath.Join(root, "memory", "instruction-ledger.md"))
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "missing required file: memory/instruction-ledger.md") {
+			t.Fatalf("missing memory register not caught: %v", result.Violations)
 		}
 	})
 	t.Run("outside reference", func(t *testing.T) {
@@ -205,7 +214,7 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 func TestAuditMetasystemReport(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "metasystem")
-	for _, dir := range []string{"docs/design", "skills/demo", "optional-skills/x", "meta", "artifacts/agents"} {
+	for _, dir := range []string{"docs/design", "memory", "skills/demo", "optional-skills/x", "meta", "artifacts/agents"} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -217,7 +226,8 @@ func TestAuditMetasystemReport(t *testing.T) {
 	os.WriteFile(filepath.Join(parent, "development", "metasystem-design.md"), []byte("design\n"), 0o644)
 	for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
 		"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
-		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md"} {
+		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md",
+		"memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md"} {
 		os.WriteFile(filepath.Join(root, file), []byte("two words\n"), 0o644)
 	}
 	// Template placeholders in project-rules: tolerated because the marker
@@ -317,12 +327,13 @@ func TestAuditEdgeBranches(t *testing.T) {
 // the required check and the count.
 func TestAuditMetasystemErrorPropagation(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"docs/design", "skills"} {
+	for _, dir := range []string{"docs/design", "memory", "skills"} {
 		os.MkdirAll(filepath.Join(root, dir), 0o755)
 	}
 	for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
 		"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
-		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md"} {
+		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md",
+		"memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md"} {
 		os.WriteFile(filepath.Join(root, file), []byte("clean text\n"), 0o644)
 	}
 	sealed := filepath.Join(root, "AGENTS.md")

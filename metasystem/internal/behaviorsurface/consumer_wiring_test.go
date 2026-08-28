@@ -76,7 +76,7 @@ set -euo pipefail
 case "$1 $2" in
   "behavior-surface select")
     while IFS= read -r -d '' path; do
-      case "$path" in artifacts/*|bin/*|plans/goals.md|plans/receipts.log) ;;
+      case "$path" in artifacts/*|bin/*|plans/goals.md|memory/receipts.log) ;;
         *) printf '%s\0' "$path" ;;
       esac
     done ;;

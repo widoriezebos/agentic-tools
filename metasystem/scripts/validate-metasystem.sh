@@ -599,7 +599,7 @@ for link in \
   docs/examples/design-obligation-matrix.md \
   docs/examples/step-back-ledger.md \
   .gitattributes \
-  plans/instruction-ledger.md \
+  memory/instruction-ledger.md \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
@@ -2039,16 +2039,18 @@ hook_cmd=$("$engine" json get --value "$first_stop_hook" --field command)
 [[ -n "$hook_cmd" ]] || { echo "the shipped Stop hook has no command" >&2; exit 1; }
 hookrepo="$tmp/hookrepo"
 mkdir -p "$hookrepo/scripts" "$hookrepo/plans" "$hookrepo/bin"
+git -C "$hookrepo" init -q -b main
 cp scripts/receipt.sh scripts/metasystem-config.sh "$hookrepo/scripts/"
 cp bin/metasystem "$hookrepo/bin/metasystem"
 cp metasystem.conf "$hookrepo/"
-printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/plans/receipts.log"
+mkdir -p "$hookrepo/memory"
+printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/memory/receipts.log"
 out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
 grep -q systemMessage <<<"$out" || { echo "stop hook stayed silent on a due retro" >&2; exit 1; }
-printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/plans/receipts.log"
+printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/memory/receipts.log"
 out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
 [[ -z "$out" ]] || { echo "stop hook emitted output when no retro is due" >&2; exit 1; }
-printf 'garbage\n' >"$hookrepo/plans/receipts.log"
+printf 'garbage\n' >"$hookrepo/memory/receipts.log"
 out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
 grep -q "errored" <<<"$out" || { echo "stop hook hid a failing receipt check" >&2; exit 1; }
 if grep -q "retro due" <<<"$out"; then

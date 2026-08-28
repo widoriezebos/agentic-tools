@@ -241,7 +241,7 @@ func TestHostArtifactDeclarationGrammar(t *testing.T) {
 		{"plans/goals.md", "protected path"},
 		{"plans/goals/some-goal.md", "protected path"},
 		{"plans/goals/done/old-goal.md", "protected path"},
-		{"plans/known-issues.md", "protected path"},
+		{"memory/known-issues.md", "protected path"},
 		{"plans/mission-alpha.contract.md", "protected path"},
 		{"docs/a.md,,docs/b.md", "empty path"},
 	}

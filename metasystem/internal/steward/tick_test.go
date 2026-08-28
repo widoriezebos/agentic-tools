@@ -215,7 +215,7 @@ func TestRevivalPreparationStaysSilentAndLaunches(t *testing.T) {
 	if out, err := gitConfig(root, "metasystem.steward.notify-command", "exit 1"); err != nil {
 		t.Fatalf("config: %v\n%s", err, out)
 	}
-	if err := PrepareIntent(root, testIntent("dg-1")); err != nil {
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("dg-1")); err != nil {
 		t.Fatal(err)
 	}
 	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {

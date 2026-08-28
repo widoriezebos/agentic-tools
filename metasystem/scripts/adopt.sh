@@ -241,14 +241,21 @@ for entry in "$stage"/* "$stage"/.[!.]*; do
   done
   (( keep )) || rm -rf "$entry"
 done
-# plans/ ships its README and FRESH ledgers, never this repository's. Shipping
+# plans/ ships its README and fresh goal ledgers, while memory/ is rebuilt with
+# fresh living registers rather than this repository's accumulated state. Shipping
 # the real instruction ledger and known-issues register was an early deliberate
 # choice ("standing ledgers") and it was wrong: an adopted project starts with
 # its own history, and a benchmark run must not read its builders our lessons.
 for p in "$stage"/plans/*; do
   case "$(basename "$p")" in README.md) ;; *) rm -rf "$p" ;; esac
 done
-cat >"$stage/plans/instruction-ledger.md" <<'SKELETON'
+mkdir -p "$stage/memory"
+cat >"$stage/memory/README.md" <<'SKELETON'
+# Memory
+
+This tree holds the living registers — records that accrete and are never finished (rulings, known issues, flakes, receipts, notes); static explanation belongs in docs/ and concluded history belongs in records/.
+SKELETON
+cat >"$stage/memory/instruction-ledger.md" <<'SKELETON'
 # Instruction Ledger
 
 Standing ledger of instruction changes adopted by retros (`skills/retro/SKILL.md`). Rows enter as `ADOPTED` with `Review by` naming the next retro; that retro replaces the status with a verdict: `KEPT`, `KEPT-UNPROVEN`, `AMENDED`, or `REVERTED`. Two consecutive `KEPT-UNPROVEN` verdicts revert by default.
@@ -256,7 +263,7 @@ Standing ledger of instruction changes adopted by retros (`skills/retro/SKILL.md
 | Id | Retro | Change | Owner doc | Evidence pattern | Expected effect | Review by | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 SKELETON
-cat >"$stage/plans/known-issues.md" <<'SKELETON'
+cat >"$stage/memory/known-issues.md" <<'SKELETON'
 # Known Issues
 
 Accepted defects and risks, each with its consequence and the condition that reopens it. A row here is a decision, not a backlog item: it says this project knows and accepts the issue until the stated condition changes.
@@ -271,9 +278,7 @@ SKELETON
 # exact rule — sorted plans/*.md basenames minus goals.md, newline-joined,
 # no trailing newline — over the seeded set. A live example goal would
 # parse as real work, so the skeleton declares goal-free instead.
-goal_scan_digest=$(printf '%s' "README.md
-instruction-ledger.md
-known-issues.md" | shasum -a 256 | cut -d' ' -f1)
+goal_scan_digest=$(printf '%s' "README.md" | shasum -a 256 | cut -d' ' -f1)
 cat >"$stage/plans/goals.md" <<GOALSKELETON
 # Goals
 

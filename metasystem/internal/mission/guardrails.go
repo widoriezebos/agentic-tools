@@ -45,10 +45,10 @@ func (g *GuardrailClass) Empty() bool {
 var protectedArtifactPrefixes = []string{"scripts/agents/", "plans/goals/"}
 
 var protectedArtifactFiles = map[string]bool{
-	"plans/goals.md":              true,
-	"plans/goals-accepted.json":   true,
-	"plans/instruction-ledger.md": true,
-	"plans/known-issues.md":       true,
+	"plans/goals.md":               true,
+	"plans/goals-accepted.json":    true,
+	"memory/instruction-ledger.md": true,
+	"memory/known-issues.md":       true,
 }
 
 // ProtectedArtifactPath reports whether the wall's protected-path

@@ -241,7 +241,7 @@ if [[ "${BATTERY_VALIDATOR_DELAY_READY:-0}" == 1 ]]; then
 fi
 [[ ! -e "$checkout/uncommitted.txt" && ! -e "$checkout/ignored.secret" ]]
 [[ "$(cat "$metasystem/plans/goals.md")" == 'subject ledger' ]]
-[[ "$(cat "$metasystem/plans/receipts.log")" == 'subject receipts' ]]
+[[ "$(cat "$metasystem/memory/receipts.log")" == 'subject receipts' ]]
 [[ ! -e "$metasystem/artifacts/agents/live-only" ]]
 ! grep -q 'LIVE-SECRET' "$metasystem/metasystem.conf.local"
 grep -q '^evidence.root=.*/isolated-evidence$' "$metasystem/metasystem.conf.local"
@@ -346,7 +346,8 @@ chmod +x "$repo/metasystem/scripts/agents/arm-supervision.sh"
 
 printf 'evidence.root=<placeholder>\nmetasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' >"$repo/metasystem/metasystem.conf"
 printf 'subject ledger\n' >"$repo/metasystem/plans/goals.md"
-printf 'subject receipts\n' >"$repo/metasystem/plans/receipts.log"
+mkdir -p "$repo/metasystem/memory"
+printf 'subject receipts\n' >"$repo/metasystem/memory/receipts.log"
 printf 'metasystem.conf.local\nbin/\nartifacts/\n*.secret\n' >"$repo/metasystem/.gitignore"
 printf 'sentinel-live-binary\n' >"$repo/metasystem/bin/metasystem"
 chmod +x "$repo/metasystem/bin/metasystem"
@@ -1184,7 +1185,7 @@ printf 'never copied\n' >"$repo/uncommitted.txt"
 printf 'never copied\n' >"$repo/ignored.secret"
 printf 'LIVE-SECRET\n' >"$repo/metasystem/metasystem.conf.local"
 printf 'live ledger mutation\n' >>"$repo/metasystem/plans/goals.md"
-printf 'live receipt mutation\n' >>"$repo/metasystem/plans/receipts.log"
+printf 'live receipt mutation\n' >>"$repo/metasystem/memory/receipts.log"
 mkdir -p "$repo/metasystem/artifacts/agents/live-only"
 printf 'live artifact\n' >"$repo/metasystem/artifacts/agents/live-only/state"
 live_binary_before=$(shasum -a 256 "$repo/metasystem/bin/metasystem" | awk '{print $1}')
@@ -1239,7 +1240,7 @@ isolated_clone=$(cat "$clone_path")
 
 # Every named live operation remains executable while validation is paused.
 printf 'live commit\n' >"$repo/live-commit.txt"
-git -C "$repo" add live-commit.txt metasystem/plans/goals.md metasystem/plans/receipts.log
+git -C "$repo" add live-commit.txt metasystem/plans/goals.md metasystem/memory/receipts.log
 git -C "$repo" commit -qm live-commit
 git -C "$repo" checkout -qb interference
 printf 'checkout and rebase\n' >"$repo/interference.txt"

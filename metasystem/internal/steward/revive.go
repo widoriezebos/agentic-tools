@@ -9,7 +9,6 @@ package steward
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
@@ -29,7 +28,7 @@ type ReviveOutcome struct {
 
 // PrepareIntent mints the durable record under the lock and captures the
 // enrollment fence. It performs no notification and no launch.
-func PrepareIntent(repoRoot string, it Intent) error {
+func PrepareIntent(repoRoot, receiptFile string, it Intent) error {
 	arb, err := AcquireArbitration(repoRoot)
 	if err != nil {
 		return err
@@ -47,7 +46,7 @@ func PrepareIntent(repoRoot string, it Intent) error {
 	// from the intent: the repository's ordinary evidence stream
 	// carries every intervention the steward ever attempts.
 	if res := receipt.Add(receipt.Options{
-		Root: repoRoot, File: filepath.Join(repoRoot, "plans", "receipts.log"),
+		Root: repoRoot, File: receiptFile,
 		Type: "other", Outcome: "shipped",
 		Skills: "steward", Verify: "skipped", Corrections: "0", StopLoss: "no",
 		Note: fmt.Sprintf("steward revival: intent %s revives %s via job %s", it.Nonce, it.Goal, it.JobId),

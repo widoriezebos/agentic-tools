@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // runReceipt relays scripts/receipt.sh's calling convention: the action
@@ -28,7 +30,7 @@ func runReceipt(args []string) int {
 	action := args[0]
 	args = args[1:]
 	opts := receipt.Options{
-		Root: ".", File: "plans/receipts.log",
+		Root:   ".",
 		Skills: "none", Verify: "skipped", Corrections: "0", StopLoss: "no",
 	}
 	if action == "retro" && len(args) > 0 && !strings.HasPrefix(args[0], "--") {
@@ -81,6 +83,14 @@ func runReceipt(args []string) int {
 			opts.MaxReceiptsSet = true
 		}
 	})
+	if opts.File == "" {
+		root, err := stateroot.StateRoot(stateroot.Receipts)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "receipt:", err)
+			return 1
+		}
+		opts.File = filepath.Join(root, "receipts.log")
+	}
 	var result receipt.Result
 	switch action {
 	case "add":

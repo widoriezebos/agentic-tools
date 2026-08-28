@@ -11,7 +11,7 @@ The metasystem improves itself the same way improve mode improves code: changes 
 
 - Receipts since the last retro: `scripts/receipt.sh stats` for the period numbers, including the critique-waiver count, and the raw `critique_waived` plus `waiver_stream` fields for per-stream waiver patterns.
 - Git history for the same period, cross-checked against receipts. A "shipped" receipt followed by fix commits is hidden rework, and it counts as rework.
-- The instruction ledger at `plans/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.
+- The instruction ledger at `memory/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.
 
 ## Step 1: Review the Previous Changes First
 

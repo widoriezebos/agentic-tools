@@ -2,7 +2,7 @@
 
 When a fixture leg fails:
 
-1. **Check the registry** (plans/flake-registry.md). A listed leg
+1. **Check the registry** (memory/flake-registry.md). A listed leg
    earns exactly ONE solo rerun of its suite. Green rerun → record
    the sighting (count and date) and continue; the failure gates
    nothing further. Red rerun → it is real: stop and fix.

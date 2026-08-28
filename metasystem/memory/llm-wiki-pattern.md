@@ -113,8 +113,8 @@ These sources are recent preprints and project reports, not settled evidence. Th
 | Always-loaded instructions and routing | `AGENTS.md:3`; `wow.md:3-29` | Already solved. A wiki must never become another instruction source or common-path context bundle. |
 | Project facts and policy | `docs/project-rules.md`; canonical guidance in `docs/` | Already solved. Wiki content is derived evidence and has no normative authority. |
 | Active task continuity | `plans/README.md:3,13-33` | Already solved. Handoff notes carry in-flight decisions and die when the stream ships. A wiki must not replace or auto-ingest them. |
-| Durable instruction learning | `docs/project-adaptation.md:26-47`; `skills/retro/SKILL.md:10-52`; `plans/instruction-ledger.md` | Already solved. Receipts and retros measure repeated failures and human-gate instruction changes. A wiki must not bypass the change gate. |
-| Durable dead ends | `plans/known-issues.md` | Already solved. A wiki can link to a known issue but cannot become a competing issue register. |
+| Durable instruction learning | `docs/project-adaptation.md:26-47`; `skills/retro/SKILL.md:10-52`; `memory/instruction-ledger.md` | Already solved. Receipts and retros measure repeated failures and human-gate instruction changes. A wiki must not bypass the change gate. |
+| Durable dead ends | `memory/known-issues.md` | Already solved. A wiki can link to a known issue but cannot become a competing issue register. |
 | Generated runtime evidence | `plans/README.md:3-9`; `artifacts/` and the durable evidence root | Already solved. Runtime artifacts remain evidence in their existing lifecycle. They are not bulk-ingested by default. |
 | Template-maintenance research synthesis | Maintenance sessions that update `development/source-analysis.md:1-95`, especially its evidence list and keep/remove/defer decisions | Candidate consumer only. The output lacks claim-level provenance, but no receipt or observed failure shows that maintainers repeatedly query a stable corpus or that this gap caused rework. The artifact itself is not a consumer. |
 
@@ -195,7 +195,7 @@ The design intentionally adopts Karpathy's immutable-source, compiled-wiki, inge
 | Derived synthesis | `<research.root>/wiki/*.md` |
 | Deterministic navigation | Generated `<research.root>/index.md`, owned by `skills/research-wiki/scripts/research-wiki.py` after enablement |
 | Policy and project facts | Existing canonical owners routed by `wow.md`; never the wiki |
-| Chronology and task audit | Git history and `plans/receipts.log`; no new operation log |
+| Chronology and task audit | Git history and `memory/receipts.log`; no new operation log |
 | Semantic review candidates | `artifacts/research-wiki/lint/`; never an automatic wiki mutation |
 
 ### On-disk contract

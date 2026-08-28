@@ -172,7 +172,7 @@ as-of reads, not invariants (R1-17).
   (internal/receipt/receipt.go:272-346) emits `key=value` rows;
   `receipt check` (:351) is due-detection; frontier writes
   atomically via tmp+rename (internal/report/frontier.go:251).
-- F11 Receipts: `plans/receipts.log` (TRACKED). RECEIPT rows carry
+- F11 Receipts: `memory/receipts.log` (TRACKED). RECEIPT rows carry
   `type=`, `outcome=`, `corrections=`, `delegate=` (a comma list
   `runtime:model:<free-form label>` naming EVERY delegate involved,
   critics included — receipt.go:158; labels are not role-typed),

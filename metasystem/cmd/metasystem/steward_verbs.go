@@ -23,6 +23,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -357,7 +358,12 @@ func runStewardRevive(args []string) int {
 			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
 			return 1
 		}
-		if err := steward.PrepareIntent(*repo, it); err != nil {
+		receiptRoot, rootErr := stateroot.StateRoot(stateroot.Receipts)
+		if rootErr != nil {
+			fmt.Fprintf(os.Stderr, "steward revive: %v\n", rootErr)
+			return 1
+		}
+		if err := steward.PrepareIntent(*repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
 			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
 			return 1
 		}

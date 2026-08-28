@@ -71,7 +71,7 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 	}
 	if want := []string{
 		".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "cmd/**", "docs/**",
-		"go.mod", "go.sum", "internal/**", "metasystem.conf", "optional-skills/**",
+		"go.mod", "go.sum", "internal/**", "metasystem.conf", "memory/README.md", "optional-skills/**",
 		"plans/README.md", "scripts/**", "skills/**", "wow.md",
 	}; !reflect.DeepEqual(policy.PayloadRoots, want) {
 		t.Fatalf("PAYLOAD allowlist drifted: got %q want %q", policy.PayloadRoots, want)
@@ -103,11 +103,12 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		{"README.md", Standard, false, true, false},
 		{"artifacts/agents/job.json", Coordination, false, false, false},
 		{"plans/goals.md", Tailored, false, false, false},
-		{"plans/receipts.log", Tailored, false, false, false},
+		{"memory/receipts.log", Tailored, false, false, false},
 		{"metasystem.conf", Tailored, false, true, false},
 		{".agents/skills/verify/SKILL.md", Tailored, false, true, false},
 		{".gitignore", Tailored, false, true, false},
-		{"plans/instruction-ledger.md", Tailored, false, true, false},
+		{"memory/instruction-ledger.md", Tailored, false, true, false},
+		{"memory/README.md", Standard, false, true, true},
 		{"bin/metasystem", NonRepository, false, false, false},
 		{".git/index", NonRepository, false, false, false},
 		{"metasystem.conf.local", Tailored, false, false, false},

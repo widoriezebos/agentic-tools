@@ -18,6 +18,7 @@
     "go.sum",
     "internal/**",
     "metasystem.conf",
+    "memory/README.md",
     "optional-skills/**",
     "plans/README.md",
     "scripts/**",
@@ -29,7 +30,7 @@
     "plans/goals/**",
     "plans/goals.md",
     "plans/goals-accepted.json",
-    "plans/receipts.log"
+    "memory/receipts.log"
   ],
   "repositoryOperationalDataPaths": [
     "benchmark/__pycache__/**",
@@ -62,9 +63,9 @@
       "plans/goals/**",
       "plans/goals.md",
       "plans/goals-accepted.json",
-      "plans/instruction-ledger.md",
-      "plans/known-issues.md",
-      "plans/receipts.log"
+      "memory/instruction-ledger.md",
+      "memory/known-issues.md",
+      "memory/receipts.log"
     ]
   },
   "nonRepositoryPaths": [

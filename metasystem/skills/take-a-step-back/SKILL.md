@@ -59,7 +59,7 @@ Immediately classify the result:
 
 Only `contract-improved` and `falsified-continue` authorize another cycle without user direction. An `unresolved` result authorizes one only while a declared `- No-gain budget: N` ledger line is unexhausted: `scripts/assert-stop-loss.sh` blocks once N trailing cycles pass without a `contract-improved`.
 
-One dead end deserves its own name: a capability ceiling, where the model, tool, or dependency cannot do what the mechanism requires. Prompt and parameter variations cannot cross it; stop iterating the moment evidence isolates one. Record it in `plans/known-issues.md` with the evidence, the realistic cost when it bites, and the named escalation lever (a stronger resource tier, an upstream fix, a design change); the lever is usually a reserved decision in `docs/project-rules.md`. Do not retry without new evidence. When the same issue bites again, append the occurrence to its entry and raise its priority instead of reopening the investigation.
+One dead end deserves its own name: a capability ceiling, where the model, tool, or dependency cannot do what the mechanism requires. Prompt and parameter variations cannot cross it; stop iterating the moment evidence isolates one. Record it in `memory/known-issues.md` with the evidence, the realistic cost when it bites, and the named escalation lever (a stronger resource tier, an upstream fix, a design change); the lever is usually a reserved decision in `docs/project-rules.md`. Do not retry without new evidence. When the same issue bites again, append the occurrence to its entry and raise its priority instead of reopening the investigation.
 
 ## Stop-Loss
 
