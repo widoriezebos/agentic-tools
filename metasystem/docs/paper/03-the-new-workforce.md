@@ -6,7 +6,7 @@ Agentic labor is not ordinary labor made faster. It is a different kind of workf
 
 ## What falls or changes shape
 
-When a new person joins a difficult change, someone spends hours explaining history, pointing to the relevant parts of the application and answering follow-up questions; I have been on both sides of that. A machine worker can receive a copied record in seconds. The cost of moving recorded context falls sharply. The cost of choosing the right context does not. A complete archive may bury the current constraint, while a narrow extract may omit the decision that explains it. Cheap copying is not the same as free knowledge.
+When a new person joins a difficult change, someone spends hours explaining history, pointing to the relevant parts of the application and answering follow-up questions. A machine worker can receive a copied record in seconds. The cost of moving recorded context falls sharply. The cost of choosing the right context does not. A complete archive may bury the current constraint, while a narrow extract may omit the decision that explains it. Cheap copying is not the same as free knowledge.
 
 A second attempt also becomes easier to start. There is no need to wait for the first builder to finish or to recruit another person with an open schedule. Several candidates can be constructed at once. But each attempt consumes computation, may compete for tools or environments and produces another result an independent examiner must compare. Parallel construction lowers elapsed time only when coordination and judgment do not grow faster than the value of the alternatives.
 
