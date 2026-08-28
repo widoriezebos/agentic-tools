@@ -62,7 +62,7 @@ The custodian holds that link. It verifies that the candidate presented for acce
 
 That authority involves no creative judgment. The custodian makes no product judgment and no claim about the design beyond what the required record establishes. Its narrow acceptance power completes the chain of custody without allowing the custodian to construct or review the candidate.
 
-Acceptance also ends the candidate's life as a proposal. What the custodian hands on is an accepted candidate; what runs after the releaser exposes it is a released version.
+What the custodian hands on is an accepted candidate; what runs after the releaser exposes it is a released version.
 
 ## Why the narrator has no power
 
