@@ -148,7 +148,7 @@ func claimReconcileLock(repoRoot, owner string) (func(), error) {
 // removal outside the root — and it must refuse BEFORE capture, not
 // only before refresh, or the outside bytes get published first.
 func ensureRealGoalDirs(repoRoot string) error {
-	for _, rel := range []string{"plans", "plans/goals", "plans/goals/done"} {
+	for _, rel := range protectedGoalDirectories() {
 		dirAbs := filepath.Join(repoRoot, filepath.FromSlash(rel))
 		lst, lstErr := os.Lstat(dirAbs)
 		if lstErr != nil {
@@ -171,11 +171,10 @@ type Snapshot struct {
 	Files map[string][]byte // repo-relative path -> bytes at capture
 }
 
-// CaptureSnapshot reads the working tree's plans/goals/ surface —
-// live, done/, and backlog.md — into one in-memory snapshot.
+// CaptureSnapshot reads the working tree's live ledger and both concluded-goal
+// locations into one in-memory snapshot.
 func CaptureSnapshot(repoRoot string) (*Snapshot, error) {
 	snap := &Snapshot{Files: map[string][]byte{}}
-	base := filepath.Join(repoRoot, "plans", "goals")
 	walk := func(dir, prefix string) error {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -196,10 +195,14 @@ func CaptureSnapshot(repoRoot string) (*Snapshot, error) {
 		}
 		return nil
 	}
+	base := filepath.Join(repoRoot, filepath.FromSlash(goalsRoot))
 	if err := walk(base, goalsPrefix); err != nil {
 		return nil, err
 	}
-	if err := walk(filepath.Join(base, "done"), goalsPrefix+"done/"); err != nil {
+	if err := walk(filepath.Join(repoRoot, filepath.FromSlash(strings.TrimSuffix(legacyDonePrefix, "/"))), legacyDonePrefix); err != nil {
+		return nil, err
+	}
+	if err := walk(filepath.Join(repoRoot, filepath.FromSlash(recordsGoalsRoot)), recordsGoalsPrefix); err != nil {
 		return nil, err
 	}
 	return snap, nil

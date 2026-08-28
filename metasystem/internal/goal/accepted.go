@@ -50,6 +50,9 @@ func RepairAcceptRemote(e Endpoint, by string) (AdvanceResult, error) {
 		if fetchedIdentity != acceptedIdentity {
 			return AdvanceResult{}, fmt.Errorf("repair refused: the remote tip is a foreign ledger (%s, not %s)", fetchedIdentity, acceptedIdentity)
 		}
+		if err := validateLegacyArchiveReadOnly(e.Root, accepted, fetched); err != nil {
+			return AdvanceResult{}, err
+		}
 	}
 	if err := ValidateCommit(e.Root, fetched); err != nil {
 		return AdvanceResult{}, err
@@ -77,6 +80,34 @@ func RepairAcceptRemote(e Endpoint, by string) (AdvanceResult, error) {
 	}
 	return AdvanceResult{Tip: fetched, Advanced: true,
 		Detail: fmt.Sprintf("repair by %s accepted %s (was %s)", by, short(fetched), short(accepted))}, nil
+}
+
+// validateLegacyArchiveReadOnly permits removals from the soak location but
+// refuses additions and rewrites. Reopen and prune can therefore retire old
+// entries as ledger events while no publisher can create a new legacy record.
+func validateLegacyArchiveReadOnly(root, before, after string) error {
+	out, err := gitIn(root, "diff", "--name-status", "--no-renames", before, after, "--", legacyDonePrefix)
+	if err != nil {
+		return fmt.Errorf("cannot compare the legacy concluded-goal location: %w", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		status, p, found := strings.Cut(line, "\t")
+		if !found {
+			return fmt.Errorf("cannot classify legacy concluded-goal change %q", line)
+		}
+		switch status {
+		case "D":
+			continue
+		case "A":
+			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; new conclusions belong under %s", p, recordsGoalsRoot)
+		default:
+			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; reopen or prune the standing record through its verb", p)
+		}
+	}
+	return nil
 }
 
 // setAcceptedTo moves the accepted ref with the old-value assertion

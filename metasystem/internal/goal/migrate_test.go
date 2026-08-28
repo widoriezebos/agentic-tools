@@ -99,6 +99,9 @@ func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
 	if done == nil || done.Conclude != "Landed and gated on both hosts." {
 		t.Fatalf("the archive keeps the conclusion: %+v", done)
 	}
+	if tree.DonePaths["port-engine"] != recordsGoalsPrefix+"port-engine.md" {
+		t.Fatalf("migration writes conclusions only to the records-owned archive: %s", tree.DonePaths["port-engine"])
+	}
 	added := tree.Live["new-work"]
 	if added == nil || added.State != StateQueued || len(added.Blocked) != 1 || added.Blocked[0] != "fix-docs" {
 		t.Fatalf("the manifest's add is queued behind its blocker: %+v", added)

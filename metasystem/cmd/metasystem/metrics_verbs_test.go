@@ -97,7 +97,7 @@ func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
 		if calls["synced-goal"] != 1 {
 			t.Fatalf("synced done requested %d reports, want 1", calls["synced-goal"])
 		}
-		metricsVerbGit(t, root, "cat-file", "-e", goal.AcceptedRef+":plans/goals/done/synced-goal.md")
+		metricsVerbGit(t, root, "cat-file", "-e", goal.AcceptedRef+":records/goals/synced-goal.md")
 	})
 }
 

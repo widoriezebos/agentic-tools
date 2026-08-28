@@ -72,7 +72,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 
 	for _, d := range deltas {
 		id := strings.TrimSuffix(path.Base(d.Path), ".md")
-		isArchive := strings.HasPrefix(d.Path, goalsPrefix+"done/")
+		isArchive := strings.HasPrefix(d.Path, legacyDonePrefix) || strings.HasPrefix(d.Path, recordsGoalsPrefix)
 		if d.Path == goalsPrefix+"backlog.md" {
 			return nil, fmt.Errorf("%s: the root record has no hand-edit grammar; declare-free and prune are verbs", d.Path)
 		}

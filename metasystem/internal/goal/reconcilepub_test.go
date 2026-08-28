@@ -193,7 +193,7 @@ func TestReconcileAppliesEveryRowKind(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(a, "plans", "goals", "editable.md")); err == nil {
 		t.Fatal("the concluded live file leaves the checkout on refresh")
 	}
-	if _, err := os.Stat(filepath.Join(a, "plans", "goals", "done", "editable.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(a, filepath.FromSlash(recordsGoalsRoot), "editable.md")); err != nil {
 		t.Fatal("the archive file materialized")
 	}
 }

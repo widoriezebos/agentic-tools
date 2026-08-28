@@ -610,6 +610,11 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		if err := RecordSteps(e.Root, req.Opid, "", commit); err != nil {
 			return PublishResult{}, err
 		}
+		if err := validateLegacyArchiveReadOnly(e.Root, tip, commit); err != nil {
+			_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, "legacy archive write refused: "+err.Error())
+			CleanupRefs(e, req.Opid)
+			return PublishResult{Outcome: OutcomeRejected, Tip: tip, Commit: commit, Detail: err.Error()}, nil
+		}
 		if req.Validate != nil {
 			if err := req.Validate(commit); err != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, "validation refused: "+err.Error())

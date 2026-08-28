@@ -52,7 +52,7 @@ func vTree(root *RootRecord, live []*GoalFile, done []*GoalFile) map[string][]by
 		files[goalsPrefix+f.Id+".md"] = RenderFile(f)
 	}
 	for _, f := range done {
-		files[goalsPrefix+"done/"+f.Id+".md"] = RenderFile(f)
+		files[recordsGoalsPrefix+f.Id+".md"] = RenderFile(f)
 	}
 	return files
 }

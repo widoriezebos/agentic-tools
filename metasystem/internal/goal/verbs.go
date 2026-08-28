@@ -274,9 +274,14 @@ func opidLanded(f *GoalFile, r VerbRequest) bool {
 	return false
 }
 
-// livePath and donePath name a goal's two possible homes.
+// livePath and donePath name the engine's two write locations. ArchivedPath
+// preserves the source location for moves and deletions during the dual-read
+// soak.
 func livePath(id string) string { return goalsPrefix + id + ".md" }
-func donePath(id string) string { return goalsPrefix + "done/" + id + ".md" }
+func donePath(id string) string { return recordsGoalsPrefix + id + ".md" }
+func archivedPath(t *TreeGoals, id string) string {
+	return doneLocation(t, id)
+}
 
 // Open adds a queued goal. Goal-free clears in the same commit when
 // it was declared.
@@ -809,7 +814,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 			}
 			touch(f, r, "reopen", []string{id})
 			changes := []Change{
-				{Path: donePath(id), Delete: true},
+				{Path: archivedPath(t, id), Delete: true},
 				{Path: livePath(id), Content: RenderFile(f)},
 			}
 			if t.Root != nil && t.Root.Free != nil {
@@ -1173,15 +1178,17 @@ func pruneRequest(r VerbRequest, keep int) PublishRequest {
 				walk(byAge[i])
 			}
 			var changes []Change
+			var dropped []string
 			for _, id := range ids {
 				if !keepSet[id] {
-					changes = append(changes, Change{Path: donePath(id), Delete: true})
+					changes = append(changes, Change{Path: archivedPath(t, id), Delete: true})
+					dropped = append(dropped, id)
 				}
 			}
 			t.Root.Revision++
 			t.Root.History = append(t.Root.History, HistoryLine{
 				At: r.stamp(), Opid: r.opid(), Verb: "prune",
-				Actor: r.Actor.historyActor(), Keep: keep,
+				Actor: r.Actor.historyActor(), Targets: dropped, Keep: keep,
 			})
 			changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			return ackDisplacements(t, r, changes), nil

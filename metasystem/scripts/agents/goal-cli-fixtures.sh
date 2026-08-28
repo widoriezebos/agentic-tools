@@ -310,4 +310,95 @@ grep -q '"outcome":"confirmed"' <<<"$other_claim" \
   || { echo "a complete-tuple claim did not confirm: $other_claim" >&2; exit 1; }
 unset METASYSTEM_GOAL_NOW
 
+# 13. Concluding writes the records-owned archive, reopening records a
+# ledger move back to the live set, and concluding again preserves the
+# canonical record bytes including its Integrity line.
+"$ms" goal open --root "$clone" --id archive-roundtrip \
+  --intent "Exercise concluded-goal archival." --next "Conclude it." >/dev/null
+"$ms" goal done --root "$clone" --id archive-roundtrip \
+  --conclude "Archived in the records-owned location." >/dev/null
+archive_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$archive_tip:records/goals/archive-roundtrip.md" >"$tmp/archive-roundtrip.md"
+grep -q '^Integrity: sha256=' "$tmp/archive-roundtrip.md" \
+  || { echo "the records-owned conclusion lost its Integrity line" >&2; exit 1; }
+if git -C "$clone" cat-file -e "$archive_tip:plans/goals/done/archive-roundtrip.md" 2>/dev/null; then
+  echo "goal done wrote the legacy archive" >&2; exit 1
+fi
+"$ms" goal reopen --root "$clone" --id archive-roundtrip >/dev/null
+reopen_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$reopen_tip:plans/goals/archive-roundtrip.md" >"$tmp/archive-reopened.md"
+grep -q ' reopen actor=' "$tmp/archive-reopened.md" \
+  || { echo "goal reopen did not record its History event" >&2; exit 1; }
+if git -C "$clone" cat-file -e "$reopen_tip:records/goals/archive-roundtrip.md" 2>/dev/null; then
+  echo "goal reopen left the concluded record behind" >&2; exit 1
+fi
+"$ms" goal done --root "$clone" --id archive-roundtrip \
+  --conclude "Archived again after the recorded reopen." >/dev/null
+
+# Admission must stop charging a concluded goal even when its only conclusion
+# is in records/goals. Prove the causal change by exhausting a claimed goal,
+# observing refusal, concluding it, and observing acceptance at the same clock.
+"$ms" goal release --root "$clone" --id budget-check >/dev/null
+METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z \
+  "$ms" goal open --root "$clone" --claim --id admission-concluded \
+    --intent "Prove admission consumes records-owned conclusions." \
+    --next "Conclude after its budget is exhausted." \
+    --elapsed-limit 4h --attempt-limit 1 \
+    --reserved-job-minutes-limit 30 --active-job-limit 1 >/dev/null
+set +e
+admission_before=$(METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
+  "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
+admission_before_rc=$?
+set -e
+[[ "$admission_before_rc" -eq 9 ]] \
+  || { echo "the exhausted live goal was not refused before conclusion (rc=$admission_before_rc): $admission_before" >&2; exit 1; }
+grep -q 'BUDGET_REFUSED: goal admission-concluded revision=1 admission closed: elapsedLimit' <<<"$admission_before" \
+  || { echo "the pre-conclusion refusal did not charge the exhausted goal: $admission_before" >&2; exit 1; }
+METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
+  "$ms" goal done --root "$clone" --id admission-concluded \
+    --conclude "The records-owned conclusion must leave the admission budget." >/dev/null
+admission_record_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -e "$admission_record_tip:records/goals/admission-concluded.md"
+set +e
+admission_after=$(METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
+  "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
+admission_after_rc=$?
+set -e
+[[ "$admission_after_rc" -eq 0 ]] \
+  || { echo "the records-located conclusion still consumed admission budget (rc=$admission_after_rc): $admission_after" >&2; exit 1; }
+if grep -q 'BUDGET_' <<<"$admission_after"; then
+  echo "admission emitted a budget verdict after consuming the records-located conclusion: $admission_after" >&2; exit 1
+fi
+
+# 14. The soak reader accepts a legacy conclusion alongside records-owned
+# conclusions. The fixture installs the already-accepted legacy shape with Git
+# plumbing because production admission correctly refuses new legacy writes.
+git -C "$clone" fetch -q origin
+git -C "$clone" reset -q --hard origin/main
+mkdir -p "$clone/plans/goals/done"
+mv "$clone/records/goals/archive-roundtrip.md" "$clone/plans/goals/done/archive-roundtrip.md"
+git -C "$clone" add plans/goals/done/archive-roundtrip.md records/goals/archive-roundtrip.md
+git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid \
+  commit -q --no-verify -m "fixture accepted legacy archive"
+git -C "$clone" push -q origin HEAD:main
+legacy_tip=$(git -C "$clone" rev-parse HEAD)
+git -C "$clone" update-ref refs/metasystem/goals/accepted "$legacy_tip"
+dual_list=$("$ms" goal list --root "$clone" --pretty)
+grep -q '^done: 3 archived$' <<<"$dual_list" \
+  || { echo "the dual-location soak reader did not count both conclusions: $dual_list" >&2; exit 1; }
+dual_show=$("$ms" goal show --root "$clone" --id archive-roundtrip)
+grep -q '"where":"archived"' <<<"$dual_show" \
+  || { echo "goal show did not read the legacy conclusion during the soak: $dual_show" >&2; exit 1; }
+
+# 15. Prune removes concluded files from both locations but leaves the
+# tombstone History event in the root ledger record.
+"$ms" goal prune --root "$clone" --keep 0 >/dev/null
+prune_tip=$(git -C "$origin" rev-parse main)
+if git -C "$clone" ls-tree -r --name-only "$prune_tip" -- records/goals plans/goals/done | grep -q '\.md$'; then
+  echo "goal prune left a concluded record outside its retention closure" >&2; exit 1
+fi
+git -C "$clone" cat-file -p "$prune_tip:plans/goals/backlog.md" >"$tmp/backlog-after-prune.md"
+grep -q ' prune actor=' "$tmp/backlog-after-prune.md" \
+  || { echo "goal prune removed files without its root History tombstone" >&2; exit 1; }
+
 echo "goal CLI fixtures: PASSED"

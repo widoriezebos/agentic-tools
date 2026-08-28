@@ -117,7 +117,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 				if c.Delete {
 					continue
 				}
-				id := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(c.Path, goalsPrefix+"done/"), goalsPrefix), ".md")
+				id := goalIDFromPath(c.Path)
 				if f, live := t.Live[id]; live {
 					changes[i].Content = RenderFile(f)
 				} else if f, done := t.Done[id]; done {
@@ -174,6 +174,15 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		return ReconcileResult{Publish: res, Rows: rows}, fmt.Errorf("published, but the refresh died; goal reconcile --refresh-only completes it: %w", err)
 	}
 	return ReconcileResult{Publish: res, Rows: rows, Skipped: skipped}, nil
+}
+
+func goalIDFromPath(p string) string {
+	for _, prefix := range []string{recordsGoalsPrefix, legacyDonePrefix, goalsPrefix} {
+		if strings.HasPrefix(p, prefix) {
+			return strings.TrimSuffix(strings.TrimPrefix(p, prefix), ".md")
+		}
+	}
+	return ""
 }
 
 // replaySession remembers what THIS reconcile's earlier rows already

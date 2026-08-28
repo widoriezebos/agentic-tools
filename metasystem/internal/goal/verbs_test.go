@@ -67,6 +67,19 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	if !ok {
 		t.Fatal("done lands in the archive")
 	}
+	if t2.DonePaths["build-it"] != recordsGoalsPrefix+"build-it.md" {
+		t.Fatalf("done writes only the records-owned archive: %s", t2.DonePaths["build-it"])
+	}
+	committed, err := ReadCommitGoals(a, res.Commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := committed[recordsGoalsPrefix+"build-it.md"], RenderFile(archived); string(got) != string(want) {
+		t.Fatal("the records-owned file must carry the canonical bytes and their unchanged Integrity line")
+	}
+	if _, legacyWrite := committed[legacyDonePrefix+"build-it.md"]; legacyWrite {
+		t.Fatal("done must not write the legacy archive")
+	}
 	if archived.Conclude != "Built and verified." || archived.Revision != 3 || len(archived.History) != 3 {
 		t.Fatalf("the archived record carries the whole lawful history: rev=%d hist=%d conclude=%q",
 			archived.Revision, len(archived.History), archived.Conclude)
@@ -451,6 +464,11 @@ func TestReopenGuardsClaimedDependents(t *testing.T) {
 	if _, archived := t2.Done["base"]; archived {
 		t.Fatal("reopen removes the archive entry")
 	}
+	if files, readErr := ReadCommitGoals(a, res.Commit); readErr != nil {
+		t.Fatal(readErr)
+	} else if _, remains := files[recordsGoalsPrefix+"base.md"]; remains {
+		t.Fatal("reopen's ledger commit must remove the concluded record")
+	}
 	back := t2.Live["base"]
 	if back == nil || back.State != StateQueued || back.Conclude != "" {
 		t.Fatalf("the reopened goal is queued without its old conclusion: %+v", back)
@@ -590,9 +608,14 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 	if _, gone := t2.Done["fresh"]; gone {
 		t.Fatal("outside the closure with keep=0, fresh dies")
 	}
+	if files, readErr := ReadCommitGoals(a, res.Commit); readErr != nil {
+		t.Fatal(readErr)
+	} else if _, remains := files[recordsGoalsPrefix+"fresh.md"]; remains {
+		t.Fatal("prune's ledger commit must remove the pruned concluded file")
+	}
 	// The root record carries the opid line with the literal keep.
 	last := t2.Root.History[len(t2.Root.History)-1]
-	if last.Verb != "prune" || last.Keep != 0 {
+	if last.Verb != "prune" || last.Keep != 0 || strings.Join(last.Targets, ",") != "fresh" {
 		t.Fatalf("the root history carries prune keep=0: %+v", last)
 	}
 	// A prune replay is idempotent on the rebuilt tip.

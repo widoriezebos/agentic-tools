@@ -13,33 +13,66 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// TreeGoals is one tree's parsed plans/goals/ subtree.
+// TreeGoals is one tree's parsed live ledger and concluded-goal records.
 type TreeGoals struct {
 	Root *RootRecord
 	// Live and Done are keyed by goal id; placement is recorded at
 	// parse so the placement/State agreement rule can name both.
-	Live map[string]*GoalFile
-	Done map[string]*GoalFile
+	Live      map[string]*GoalFile
+	Done      map[string]*GoalFile
+	DonePaths map[string]string
 }
 
-// goalsPrefix is the ledger's one directory.
-const goalsPrefix = "plans/goals/"
+var (
+	goalsRoot          = relativeStateRoot(stateroot.Goals)
+	recordsRoot        = relativeStateRoot(stateroot.Records)
+	goalsPrefix        = goalsRoot + "/"
+	recordsGoalsRoot   = path.Join(recordsRoot, "goals")
+	recordsGoalsPrefix = recordsGoalsRoot + "/"
+	legacyDonePrefix   = goalsPrefix + "done/"
+)
+
+func protectedGoalDirectories() []string {
+	return []string{
+		path.Dir(goalsRoot), goalsRoot, strings.TrimSuffix(legacyDonePrefix, "/"),
+		recordsRoot, recordsGoalsRoot,
+	}
+}
+
+func relativeStateRoot(kind stateroot.Kind) string {
+	root, err := stateroot.RelativeRoot(kind)
+	if err != nil {
+		panic(fmt.Sprintf("goal: resolve %s state root: %v", kind, err))
+	}
+	return root
+}
 
 // ParseTreeFiles builds the parsed subtree from raw bytes keyed by
 // repository-relative path. Every problem names its file; a tree
 // with problems is refused whole.
 func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
-	t := &TreeGoals{Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{}}
+	t := &TreeGoals{Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{}, DonePaths: map[string]string{}}
 	var problems []Problem
 	addf := func(format string, args ...any) {
 		problems = append(problems, Problem(fmt.Sprintf(format, args...)))
 	}
 	for _, p := range sortedKeys(files) {
 		data := files[p]
+		if strings.HasPrefix(p, recordsGoalsPrefix) {
+			rel := strings.TrimPrefix(p, recordsGoalsPrefix)
+			if strings.HasSuffix(rel, ".md") && !strings.Contains(rel, "/") {
+				parseDoneAt(t, p, data, addf)
+			} else {
+				addf("%s: not a concluded goal record", p)
+			}
+			continue
+		}
 		if !strings.HasPrefix(p, goalsPrefix) {
-			addf("%s: outside the ledger directory", p)
+			addf("%s: outside the goal ledger", p)
 			continue
 		}
 		rel := strings.TrimPrefix(p, goalsPrefix)
@@ -51,10 +84,9 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 			}
 			t.Root = root
 		case strings.HasPrefix(rel, "done/") && strings.HasSuffix(rel, ".md") && !strings.Contains(strings.TrimPrefix(rel, "done/"), "/"):
-			f, ok := parseGoalAt(p, data, addf)
-			if ok {
-				t.Done[f.Id] = f
-			}
+			// This legacy READ path is retained for the named reason
+			// "observed soak until m2 slice-5 landing deletes it".
+			parseDoneAt(t, p, data, addf)
 		case strings.HasSuffix(rel, ".md") && !strings.Contains(rel, "/"):
 			f, ok := parseGoalAt(p, data, addf)
 			if ok {
@@ -68,6 +100,19 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 		addf("%sbacklog.md: the root record is missing", goalsPrefix)
 	}
 	return t, problems
+}
+
+func parseDoneAt(t *TreeGoals, p string, data []byte, addf func(string, ...any)) {
+	f, ok := parseGoalAt(p, data, addf)
+	if !ok {
+		return
+	}
+	if prior, exists := t.DonePaths[f.Id]; exists {
+		addf("%s: goal %s is also present at %s", p, f.Id, prior)
+		return
+	}
+	t.Done[f.Id] = f
+	t.DonePaths[f.Id] = p
 }
 
 func parseGoalAt(p string, data []byte, addf func(string, ...any)) (*GoalFile, bool) {
@@ -106,10 +151,10 @@ func ValidateTree(t *TreeGoals) []Problem {
 	for _, id := range sortedGoalIds(t.Done) {
 		f := t.Done[id]
 		if f.State != StateDone {
-			addf("%sdone/%s.md: State %s inside the archive", goalsPrefix, id, f.State)
+			addf("%s: State %s inside the archive", doneLocation(t, id), f.State)
 		}
 		if f.Conclude == "" {
-			addf("%sdone/%s.md: done without a conclusion", goalsPrefix, id)
+			addf("%s: done without a conclusion", doneLocation(t, id))
 		}
 	}
 
@@ -184,7 +229,7 @@ func ValidateTree(t *TreeGoals) []Problem {
 		f := t.Done[id]
 		for _, dep := range f.Blocked {
 			if stateOf(dep) != StateDone {
-				addf("%sdone/%s.md: done while blocker %s is not done", goalsPrefix, id, dep)
+				addf("%s: done while blocker %s is not done", doneLocation(t, id), dep)
 			}
 		}
 	}
@@ -290,8 +335,15 @@ func forAll(t *TreeGoals, visit func(where string, f *GoalFile)) {
 		visit(goalsPrefix+id+".md", t.Live[id])
 	}
 	for _, id := range sortedGoalIds(t.Done) {
-		visit(goalsPrefix+"done/"+id+".md", t.Done[id])
+		visit(doneLocation(t, id), t.Done[id])
 	}
+}
+
+func doneLocation(t *TreeGoals, id string) string {
+	if t.DonePaths != nil && t.DonePaths[id] != "" {
+		return t.DonePaths[id]
+	}
+	return recordsGoalsPrefix + id + ".md"
 }
 
 // findCycle walks the composed blocked graph and names the first
@@ -357,10 +409,11 @@ func findCycle(t *TreeGoals) string {
 	return ""
 }
 
-// ReadCommitGoals lists and reads the whole plans/goals/ subtree of
-// one commit — the validator's and the projection's shared reader.
+// ReadCommitGoals lists and reads the live ledger plus both concluded-goal
+// locations of one commit — the validator's and the projection's shared
+// reader.
 func ReadCommitGoals(root, commit string) (map[string][]byte, error) {
-	out, err := gitIn(root, "ls-tree", "-r", "--name-only", commit, "--", goalsPrefix)
+	out, err := gitIn(root, "ls-tree", "-r", "--name-only", commit, "--", goalsPrefix, recordsGoalsPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list the ledger tree of %s: %w", commit, err)
 	}

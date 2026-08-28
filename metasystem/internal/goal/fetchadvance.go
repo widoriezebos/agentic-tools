@@ -100,6 +100,9 @@ func AcceptanceGates(root, accepted, fetched string) error {
 	if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", accepted, fetched); ancErr != nil {
 		return fmt.Errorf("rewound canonical branch refused: %s does not descend from the accepted tip %s; the projection stays pinned — repair --accept-remote is the deliberate path", short(fetched), short(accepted))
 	}
+	if err := validateLegacyArchiveReadOnly(root, accepted, fetched); err != nil {
+		return err
+	}
 	return nil
 }
 
