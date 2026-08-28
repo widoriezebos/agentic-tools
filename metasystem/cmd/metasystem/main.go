@@ -201,6 +201,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "path",
+			summary: "ownership oracle: which law owns a repository path",
+			verbs: []verb{
+				{"owner", "print <ownership> <mode>: metasystem-generic, app-owned, runtime, or outside", runPathOwner},
+			},
+		},
+		{
 			name:    "gate",
 			summary: "gate-run markers: know when a gate is in flight",
 			verbs: []verb{

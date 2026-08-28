@@ -786,4 +786,59 @@ for f in covenant.json docs/app-doctrine.md docs/covenant-evidence.md gate.sh; d
   }
 done
 
+
+# The declared-touch-list tracer (memory-architecture slice 3, R-10's
+# provable half): adoption's writes are exactly the expectation
+# computed from the SOURCE tree plus the enumerated seeds — one
+# inventory, no wildcards [MAC-S3-003]; pre-existing app bytes are
+# digest-compared so modification and deletion are caught, not just
+# creation [MAC-S3-002]; two runtimes exercise the branchy writers
+# [MAC-S3-005].
+if true; then  # template-gated by the orchestrator
+  for tracer_runtime in claude codex; do
+  tracer_tgt="$tmp/tracer-target-$tracer_runtime"
+  mkdir -p "$tracer_tgt/docs" "$tracer_tgt/src"
+  git -C "$tracer_tgt" init -q -b main
+  git -C "$tracer_tgt" config metasystem.goal.machine fixture-machine
+  printf 'app content\n' >"$tracer_tgt/src/app.txt"
+  printf 'app doc\n' >"$tracer_tgt/docs/app.md"
+  (cd "$tracer_tgt" && find . -type f -not -path './.git/*' -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256) >"$tmp/tracer-before-digest"
+  "$nested_src/vendored/scripts/adopt.sh" "$tracer_tgt" --runtimes "$tracer_runtime" >"$tmp/adopt-tracer.out" 2>&1 \
+    || { echo "tracer adoption failed ($tracer_runtime)" >&2; cat "$tmp/adopt-tracer.out" >&2; exit 1; }
+  # Pre-existing app bytes: digest-identical after adoption, except the
+  # enumerated append-seeds.
+  while IFS= read -r line; do
+    digest=${line%% *}; f=${line#*  }
+    case "${f#./}" in
+      .gitignore|.gitattributes) continue ;;
+    esac
+    [[ "$(shasum -a 256 "$tracer_tgt/${f#./}" 2>/dev/null | cut -d' ' -f1)" == "$digest" ]] \
+      || { echo "adoption altered or deleted app-owned bytes ($tracer_runtime): $f" >&2; exit 1; }
+  done <"$tmp/tracer-before-digest"
+  # New writes: exactly the source's shippable inventory + enumerated seeds.
+  (cd "$nested_src/vendored" && find . -type f \
+      -not -path './.git/*' -not -path './artifacts/*' -not -path './bin/*' \
+      -not -path './development/*' -not -path './memory/*' \
+      -not -path './plans/*' -not -path './records/*' \
+      | sed 's|^\./||' | LC_ALL=C sort) >"$tmp/tracer-expected-src"
+  (cd "$tracer_tgt" && find . -type f -not -path './.git/*' -not -path './artifacts/*' | sed 's|^\./||' | LC_ALL=C sort) >"$tmp/tracer-after"
+  (cd "$tracer_tgt" && find .git/hooks -type f 2>/dev/null | LC_ALL=C sort) >"$tmp/tracer-hooks"
+  while IFS= read -r written; do
+    grep -qxF "$written" "$tmp/tracer-expected-src" && continue
+    case "$written" in
+      src/app.txt|docs/app.md|.gitignore|.gitattributes) continue ;;
+      metasystem.conf|plans/goals-accepted.json|bin/metasystem) continue ;;
+      .github/workflows/metasystem.yml) continue ;;
+      memory/known-issues.md|memory/instruction-ledger.md) continue ;;
+      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md) continue ;;
+      .claude/*|.agents/*|.devin/*) continue ;;
+      *) echo "adoption wrote outside the computed inventory ($tracer_runtime): $written" >&2; exit 1 ;;
+    esac
+  done <"$tmp/tracer-after"
+  [[ -s "$tmp/tracer-hooks" ]] || { echo "adoption installed no hook ($tracer_runtime)" >&2; exit 1; }
+  [[ ! -e "$tracer_tgt/metasystem/memory" && ! -e "$tracer_tgt/memory/rulings.md" ]] \
+    || { echo "adoption shipped template registers ($tracer_runtime)" >&2; exit 1; }
+  done
+fi
+
 echo "adopt fixtures passed"
