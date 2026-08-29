@@ -141,6 +141,12 @@ func runConfigValidate(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	proofRunProblems, err := proofRunConfigProblems(*conf)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	problems = append(problems, proofRunProblems...)
 	for _, problem := range problems {
 		fmt.Fprintf(os.Stderr, "invalid metasystem configuration: %s\n", problem)
 	}

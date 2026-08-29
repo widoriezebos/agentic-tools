@@ -26,6 +26,7 @@ delegate_scope=0
 delivery_contract=0
 delivery_reuse=0
 enumeration_section=
+enumerate_mode=0
 case ${1:-} in
   '') ;;
   --delegate-scope) [[ $# -eq 1 ]] || { usage; exit 2; }; delegate_scope=1 ;;
@@ -43,9 +44,7 @@ case ${1:-} in
     # the gate can see it arrived under the contract.
     export METASYSTEM_DELIVERY_CONTRACT=1
     ;;
-  --enumerate)
-    exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agents/enumerate-suite.sh" "${@:2}"
-    ;;
+  --enumerate) enumerate_mode=1 ;;
   --enumeration-section)
     [[ "${METASYSTEM_ENUMERATION_DRIVER:-0}" == 1 && $# -eq 2 ]] \
       || { usage; exit 2; }
@@ -56,7 +55,11 @@ case ${1:-} in
 esac
 
 section_selected() { # stable section identifier
-  [[ -z "$enumeration_section" || "$enumeration_section" == "$1" ]]
+  if [[ -z "$enumeration_section" || "$enumeration_section" == "$1" ]]; then
+    suite_progress_enter_section "$1"
+    return 0
+  fi
+  return 1
 }
 
 delegate_owed_sections=(
@@ -83,9 +86,75 @@ delegate_process_section() { # human-readable section name
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
+
+# The entry process launches the suite into a separate process group beside
+# its watchdog. A stopped suite therefore cannot stop its own custodian.
+suite_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
+suite_progress_worker=0
+if [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
+  && "${METASYSTEM_SUITE_PROGRESS_ROOT:-}" == "$root" ]]; then
+  suite_progress_worker=1
+fi
+if (( ! suite_progress_worker )); then
+  suite_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  suite_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-validate.XXXXXX")
+  suite_progress_log="$root/artifacts/agents/supervision/suite-logs/validate-$suite_progress_run.log"
+  suite_banner=$(go run ./cmd/metasystem proof-run banner \
+    --suite validate-metasystem --root "$root" \
+    --progress "$suite_progress_path" --log "$suite_progress_log")
+  suite_depth=$(( ${METASYSTEM_SUITE_PROGRESS_DEPTH:--1} + 1 ))
+  selector_args=(--selector "$root/scripts/agents/validate-section-selector.sh")
+  if [[ -z "$enumeration_section" || "$enumeration_section" == engine-delivery-contract ]]; then
+    selector_args+=(--twice engine-delivery-contract)
+  fi
+  if [[ -z "$enumeration_section" || "$enumeration_section" == runtime-contract-audits ]]; then
+    selector_args+=(--twice runtime-contract-audits)
+  fi
+  [[ -z "$enumeration_section" ]] || selector_args+=(--selected "$enumeration_section")
+  exec go run ./cmd/metasystem proof-run launch \
+    --suite validate-metasystem --root "$root" --conf "$root/metasystem.conf" \
+    --progress "$suite_progress_path" --log "$suite_progress_log" \
+    --tmp "$suite_progress_tmp" --banner "$suite_banner" \
+    "${selector_args[@]}" -- \
+    env METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
+      METASYSTEM_SUITE_PROGRESS_ROOT="$root" \
+      METASYSTEM_SUITE_PROGRESS_DEPTH="$suite_depth" \
+      METASYSTEM_SUITE_PROGRESS_TMP="$suite_progress_tmp" \
+      METASYSTEM_SUITE_PROGRESS_LOG="$suite_progress_log" \
+      bash "$root/scripts/validate-metasystem.sh" "$@"
+fi
+
+suite_progress_current=
+suite_progress_append() { # section, start|end
+  local section=$1 event=$2 at
+  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '{"suite":"validate-metasystem","section":"%s","event":"%s","at":"%s","depth":%d}\n' \
+    "$section" "$event" "$at" "${METASYSTEM_SUITE_PROGRESS_DEPTH:-0}" \
+    >>"$suite_progress_path" \
+    || { echo "suite progress: cannot append $event for section $section" >&2; exit 1; }
+}
+suite_progress_enter_section() { # selector section
+  local section=$1
+  if [[ -n "$suite_progress_current" ]]; then
+    suite_progress_append "$suite_progress_current" end
+  fi
+  suite_progress_current=$section
+  suite_progress_append "$suite_progress_current" start
+}
+suite_progress_finish() {
+  if [[ -n "$suite_progress_current" ]]; then
+    suite_progress_append "$suite_progress_current" end
+    suite_progress_current=
+  fi
+}
+
+if (( enumerate_mode )); then
+  exec bash "$root/scripts/agents/enumerate-suite.sh" "${@:2}"
+fi
+
 source scripts/agents/checkout-execution-guard.sh
 checkout_execution_guard_acquire "validate-metasystem.sh"
-trap 'checkout_execution_guard_release || true' EXIT
+trap 'suite_progress_finish; checkout_execution_guard_release || true; if [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then rm -rf -- "$METASYSTEM_SUITE_PROGRESS_TMP" 2>/dev/null || true; fi' EXIT
 if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
   checkout_execution_guard_fixture_wait
   checkout_execution_guard_release
@@ -657,6 +726,7 @@ for link in \
   scripts/agents/battery.conf.local.template \
   scripts/agents/gate-run-freeze-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
+  scripts/agents/suite-progress-fixtures.sh \
   scripts/agents/land-fixtures.sh \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
@@ -747,6 +817,7 @@ bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/milestone-battery.sh
 bash -n scripts/agents/gate-run-freeze-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
+bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/land.sh
 bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
@@ -1060,7 +1131,12 @@ if (( ! template_mode )); then
 fi
 fi
 
-tmp=$(mktemp -d)
+tmp=${METASYSTEM_SUITE_PROGRESS_TMP:-}
+if [[ -z "$tmp" ]]; then
+  tmp=$(mktemp -d)
+else
+  mkdir -p "$tmp"
+fi
 agent_supervision_repo=
 
 if section_selected runtime-contract-audits; then
@@ -1148,11 +1224,12 @@ on_signal() {
   local signal=$1
   (( validation_cleanup_started )) && return 0
   validation_exit_status=$((128 + signal))
+  suite_progress_finish
   validation_cleanup
   trap - EXIT
   exit "$validation_exit_status"
 }
-trap 'validation_exit_status=$?; validation_cleanup' EXIT
+trap 'validation_exit_status=$?; suite_progress_finish; validation_cleanup' EXIT
 trap 'on_signal 2' INT
 trap 'on_signal 15' TERM
 
@@ -2512,6 +2589,9 @@ if section_selected gate-run-freeze-fixtures && (( template_mode )); then
 fi
 if section_selected witness-gate-fixtures && (( template_mode )); then
   bash scripts/agents/witness-gate-fixtures.sh
+fi
+if section_selected suite-progress-fixtures && (( template_mode )); then
+  bash scripts/agents/suite-progress-fixtures.sh
 fi
 if section_selected land-fixtures && (( template_mode )); then
   bash scripts/agents/land-fixtures.sh

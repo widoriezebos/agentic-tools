@@ -124,6 +124,8 @@ harness_fixture_base_cap() { # named harness cap
     health-state) base=3 ;;
     health-process-wait) base=2 ;;
     checkout-execution-guard) base=10 ;;
+    suite-watchdog-wait) base=8 ;;
+    suite-watchdog-reap) base=5 ;;
     *) echo "unknown fixture cap: $name" >&2; return 1 ;;
   esac
   printf '%s\n' "$base"

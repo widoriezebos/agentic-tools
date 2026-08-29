@@ -11,13 +11,51 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"
 source scripts/agents/fixture-budget.sh
+
+adopt_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
+adopt_progress_parent=0
+if [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
+  && "${METASYSTEM_SUITE_PROGRESS_ROOT:-}" == "$root" ]]; then
+  adopt_progress_parent=1
+fi
+if (( ! adopt_progress_parent )); then
+  adopt_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  adopt_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-adopt.XXXXXX")
+  adopt_progress_log="$root/artifacts/agents/supervision/suite-logs/adopt-$adopt_progress_run.log"
+  adopt_banner=$(go run ./cmd/metasystem proof-run banner \
+    --suite adopt-fixtures --root "$root" \
+    --progress "$adopt_progress_path" --log "$adopt_progress_log")
+  adopt_depth=$(( ${METASYSTEM_SUITE_PROGRESS_DEPTH:--1} + 1 ))
+  exec go run ./cmd/metasystem proof-run launch \
+    --suite adopt-fixtures --root "$root" --conf "$root/metasystem.conf" \
+    --progress "$adopt_progress_path" --log "$adopt_progress_log" \
+    --tmp "$adopt_progress_tmp" --banner "$adopt_banner" -- \
+    env METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
+      METASYSTEM_SUITE_PROGRESS_SUITE=adopt-fixtures \
+      METASYSTEM_SUITE_PROGRESS_ROOT="$root" \
+      METASYSTEM_SUITE_PROGRESS_DEPTH="$adopt_depth" \
+      METASYSTEM_SUITE_PROGRESS_TMP="$adopt_progress_tmp" \
+      METASYSTEM_SUITE_PROGRESS_LOG="$adopt_progress_log" \
+      bash "$root/scripts/adopt-fixtures.sh"
+elif [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" != adopt-fixtures ]]; then
+  "$root/bin/metasystem" proof-run banner --suite adopt-fixtures --root "$root" \
+    --progress "$adopt_progress_path" --log "$METASYSTEM_SUITE_PROGRESS_LOG"
+fi
 # Every adoption in this harness runs from a STERILE SNAPSHOT source
 # under whatever ancestry invoked the suite — agent or terminal. Genesis
 # no longer cares which: a non-holder is admitted for exactly the
 # adoption shape (a goal-free ledger on a checkout whose history carries
 # none), judged against the target itself, so these fixtures carry no
 # invocation-shape dependence and no authority-root env hook.
-tmp=$(mktemp -d)
+if [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" == adopt-fixtures \
+  && -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
+  tmp=$METASYSTEM_SUITE_PROGRESS_TMP
+elif [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
+  mkdir -p "$METASYSTEM_SUITE_PROGRESS_TMP"
+  tmp=$(mktemp -d "$METASYSTEM_SUITE_PROGRESS_TMP/adopt.XXXXXX")
+else
+  tmp=$(mktemp -d)
+fi
 witness_state=
 cleanup() {
   status=$?
@@ -366,6 +404,14 @@ PLAN
     || { echo "adopt: default runtime selection was not recorded" >&2; exit 1; }
   grep -qxF 'role.default.runtime=claude' "$tgt/metasystem.conf" \
     || { echo "adopt: selected claude was not made the roster default" >&2; exit 1; }
+  for suite_setting in \
+      'suite.progress-silence-min=30' \
+      'suite.section-cap-min=45' \
+      'suite.evidence-copy-timeout-sec=60' \
+      'suite.evidence-copy-max-mb=512'; do
+    grep -qxF "$suite_setting" "$tgt/metasystem.conf" \
+      || { echo "adopt: tailored configuration dropped suite progress setting $suite_setting" >&2; exit 1; }
+  done
   # Active keys only: F-4 demoted optional families to commented examples,
   # and a comment is documentation, not a roster entry.
   if grep -Ev '^[[:space:]]*#' "$tgt/metasystem.conf" | grep -Eq '(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$'; then

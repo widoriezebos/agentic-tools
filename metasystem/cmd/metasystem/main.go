@@ -29,6 +29,17 @@ type family struct {
 func families() []family {
 	return []family{
 		{
+			name:    "proof-run",
+			summary: "priced validation runs with structural progress and a sibling watchdog",
+			verbs: []verb{
+				{"banner", "print the suite witness state, duration class, heartbeat, and log paths", runProofRunBanner},
+				{"launch", "launch a suite in its own process group with a sibling watchdog", runProofRunLaunch},
+				{"watchdog", "watch suite output growth and enforce the section ceiling (internal)", runProofRunWatchdog},
+				{"preserve", "copy bounded watchdog evidence (internal)", runProofRunPreserve},
+				{"assert", "assert selector sections produced well-formed start and end events", runProofRunAssert},
+			},
+		},
+		{
 			name:    "proc",
 			summary: "process identity and census: who is running, provably",
 			verbs: []verb{

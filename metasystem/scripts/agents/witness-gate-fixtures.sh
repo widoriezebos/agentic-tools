@@ -441,6 +441,22 @@ copy_frozen_consumer() { # name, frozen tree
 
 run_check_only_acceptance() { # tree, fixture bin, witness, state root, run id
   local tree=$1 fixture_bin=$2 witness=$3 state_root=$4 run=$5
+  local banner
+  banner=$(cd "$tree" && env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    METASYSTEM_ALLOW_CONCURRENT_GATE=1 METASYSTEM_GATE_WITNESS="$witness" \
+    METASYSTEM_GATE_WITNESS_ROOT="$state_root" METASYSTEM_GATE_WITNESS_RUN="$run" \
+    "$source_engine" proof-run banner --suite fixture --root "$tree" \
+      --progress "$tree/progress.jsonl" --log "$tree/suite.log")
+  [[ "$banner" == *'witness=armed duration=minutes'* ]] \
+    || { echo "witness-gate fixture: usable witness banner was not armed" >&2; exit 1; }
+  banner=$(cd "$tree" && env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    METASYSTEM_ALLOW_CONCURRENT_GATE=1 METASYSTEM_GATE_WITNESS="$witness" \
+    METASYSTEM_GATE_WITNESS_ROOT="$state_root" METASYSTEM_GATE_WITNESS_RUN="$run" \
+    METASYSTEM_GATE_WITNESS_EXPORT="$tree" \
+    "$source_engine" proof-run banner --suite fixture --root "$tree" \
+      --progress "$tree/progress.jsonl" --log "$tree/suite.log")
+  [[ "$banner" == *'witness=frozen duration=minutes'* ]] \
+    || { echo "witness-gate fixture: usable exported witness banner was not frozen" >&2; exit 1; }
   (
     cd "$tree"
     env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
@@ -576,4 +592,33 @@ mid_freeze_pid=
 grep -Fq 'frozen export voided because the source changed while it was copied' "$tmp/mid-freeze/err" \
   || { echo "witness-gate fixture mid-freeze: mutation refusal was not loud" >&2; cat "$tmp/mid-freeze/err" >&2; exit 1; }
 
-echo "witness-gate fixtures passed (20 isolated legs)"
+# 21. The one-line cost banner classifies clean, dirty-frozen, inherited, and
+# inherited-frozen witness states before the suite begins doing work.
+banner_root=$tmp/banner-states
+mkdir -p "$banner_root/artifacts/agents/supervision/suite-logs" "$banner_root/internal"
+git -C "$banner_root" init -q -b main
+printf 'tracked\n' >"$banner_root/internal/tracked"
+git -C "$banner_root" add internal/tracked
+git -C "$banner_root" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm initial
+banner_args=(proof-run banner --suite fixture --root "$banner_root" \
+  --progress "$banner_root/artifacts/agents/supervision/suite-progress.jsonl" \
+  --log "$banner_root/artifacts/agents/supervision/suite-logs/run.log")
+"$source_engine" "${banner_args[@]}" >"$tmp/banner-unarmed"
+grep -qxF 'suite-cost suite=fixture witness=unarmed duration=full-gate heartbeat=artifacts/agents/supervision/suite-progress.jsonl logs=artifacts/agents/supervision/suite-logs/run.log' "$tmp/banner-unarmed" \
+  || { echo "witness-gate fixture banner: clean unarmed state was misclassified" >&2; exit 1; }
+printf 'dirty\n' >>"$banner_root/internal/tracked"
+"$source_engine" "${banner_args[@]}" >"$tmp/banner-frozen"
+grep -q 'witness=frozen duration=minutes' "$tmp/banner-frozen" \
+  || { echo "witness-gate fixture banner: dirty frozen state was misclassified" >&2; exit 1; }
+METASYSTEM_GATE_FORCE=1 "$source_engine" "${banner_args[@]}" >"$tmp/banner-forced"
+grep -q 'witness=unarmed duration=full-gate' "$tmp/banner-forced" \
+  || { echo "witness-gate fixture banner: forced full gate was misclassified" >&2; exit 1; }
+METASYSTEM_GATE_WITNESS=dummy "$source_engine" "${banner_args[@]}" >"$tmp/banner-armed"
+grep -q 'witness=unarmed duration=full-gate' "$tmp/banner-armed" \
+  || { echo "witness-gate fixture banner: unusable inherited witness was misclassified" >&2; exit 1; }
+METASYSTEM_GATE_WITNESS=dummy METASYSTEM_GATE_WITNESS_EXPORT=/private/frozen \
+  "$source_engine" "${banner_args[@]}" >"$tmp/banner-inherited-frozen"
+grep -q 'witness=unarmed duration=full-gate' "$tmp/banner-inherited-frozen" \
+  || { echo "witness-gate fixture banner: unusable exported witness was misclassified" >&2; exit 1; }
+
+echo "witness-gate fixtures passed (21 isolated legs)"
