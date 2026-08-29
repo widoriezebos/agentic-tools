@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -67,6 +68,18 @@ func TestEvidenceTimeoutLeavesLoudPartialNoteBeforeRefusingKill(t *testing.T) {
 }
 
 func TestDoneFileWinsBeforeAndDuringEvidencePreservation(t *testing.T) {
+	evidenceTimeout := time.Second
+	if raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
+		scaleMilli, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || scaleMilli < 1 {
+			t.Fatalf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer: %q", raw)
+		}
+		scaledSeconds := scaleMilli / 1000
+		if scaleMilli%1000 != 0 {
+			scaledSeconds++
+		}
+		evidenceTimeout = time.Duration(scaledSeconds) * time.Second
+	}
 	for _, test := range []struct {
 		name       string
 		doneBefore bool
@@ -89,10 +102,14 @@ func TestDoneFileWinsBeforeAndDuringEvidencePreservation(t *testing.T) {
 			actions := 0
 			err := stopStalledSuite(WatchdogOptions{
 				Suite: "fixture", Root: root, DonePath: done, LogPaths: []string{"log"},
-				SuiteIdentity: identity.Ref{Pid: 7, StartedAtSec: 8}, EvidenceTimeout: time.Second, EvidenceMax: 1,
+				SuiteIdentity: identity.Ref{Pid: 7, StartedAtSec: 8}, EvidenceTimeout: evidenceTimeout, EvidenceMax: 1,
 				Executable: preserve, ErrorOutput: os.Stderr,
 				Shutdown: func() error { actions++; return nil },
 				Signal:   func(int, syscall.Signal) error { actions++; return nil },
+				Prober: fixedProbe{
+					exact: identity.Exact{Pid: 7, StartedAt: time.Unix(8, 0)},
+					state: identity.Alive,
+				},
 			}, "finished", "stale observation", ProgressRun{})
 			if err != nil || actions != 0 {
 				t.Fatalf("error = %v, kill-capable actions = %d", err, actions)
