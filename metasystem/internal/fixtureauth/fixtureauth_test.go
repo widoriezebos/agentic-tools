@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -136,5 +138,43 @@ func TestFixtureModeRoot(t *testing.T) {
 	}
 	if FixtureModeRoot(fakeCheckout(t, "claude")) || FixtureModeRoot(t.TempDir()) {
 		t.Fatal("non-fake or conf-less checkout recognized as fixture mode")
+	}
+}
+
+func TestGoalClockRequiresFixtureModeAndValidTime(t *testing.T) {
+	t.Setenv(fixtureEnv, "")
+	t.Setenv(goalNowEnv, "not-a-time")
+	production, err := New(fakeCheckout(t, "claude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok, err := production.Clock().GoalNow(); err != nil || ok || !got.IsZero() {
+		t.Fatalf("production clock honored fixture input: time=%v ok=%v err=%v", got, ok, err)
+	}
+
+	fixture, err := New(fakeCheckout(t, "fake"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(goalNowEnv, "")
+	if got, ok, err := fixture.Clock().GoalNow(); err != nil || ok || !got.IsZero() {
+		t.Fatalf("empty fixture time replaced the wall clock: time=%v ok=%v err=%v", got, ok, err)
+	}
+
+	t.Setenv(goalNowEnv, "2026-08-29T14:30:00+02:00")
+	got, ok, err := fixture.Clock().GoalNow()
+	want := time.Date(2026, 8, 29, 12, 30, 0, 0, time.UTC)
+	if err != nil || !ok || !got.Equal(want) || got.Location() != time.UTC {
+		t.Fatalf("fixture time = %v ok=%v err=%v, want %v in UTC", got, ok, err, want)
+	}
+
+	t.Setenv(goalNowEnv, "not-a-time")
+	if _, ok, err := fixture.Clock().GoalNow(); err == nil || ok || !strings.Contains(err.Error(), goalNowEnv) {
+		t.Fatalf("malformed fixture time was not refused by name: ok=%v err=%v", ok, err)
+	}
+
+	var zero ClockProbe
+	if got, ok, err := zero.GoalNow(); err != nil || ok || !got.IsZero() {
+		t.Fatalf("zero clock probe served fixture time: time=%v ok=%v err=%v", got, ok, err)
 	}
 }

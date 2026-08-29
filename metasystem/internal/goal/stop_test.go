@@ -186,3 +186,76 @@ func TestResumeRequiresHumanAuthority(t *testing.T) {
 		t.Fatal("a human-shaped string passed without an ancestry proof")
 	}
 }
+
+func TestResumeRefusesInvalidFreshBudgetWithHumanAuthority(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	_, err := Resume(ResumeRequest{
+		VerbRequest: VerbRequest{
+			Endpoint: Endpoint{Root: root},
+			Actor:    Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
+			Now:      now,
+		},
+		Budget:    Budget{AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1},
+		Authority: testHumanAuthority(t, root, now),
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid fresh budget") || !strings.Contains(err.Error(), "elapsedLimit") {
+		t.Fatalf("resume did not refuse the invalid fresh budget by field name: %v", err)
+	}
+}
+
+func TestStopBatchRefusesContradictionsAndCompleteIsAbsorbing(t *testing.T) {
+	stamp := "2026-08-29T12:00:00Z"
+	complete := StopBatch{
+		StopID: "stop-bounded-r2-f1", GoalID: "bounded", GoalRevision: 2,
+		FenceEpoch: 1, CapabilityGeneration: 3, Machine: "mac-a", ClaimEpoch: 4,
+		Reason: StopReasonElapsedLimit, State: StopBatchComplete,
+		OpenedAt: stamp, UpdatedAt: stamp, CompletedAt: stamp, Pass: 1,
+	}
+	root := t.TempDir()
+	if err := WriteStopBatch(root, complete); err != nil {
+		t.Fatalf("write complete batch: %v", err)
+	}
+	settled, err := ReadStopBatch(root, complete.StopID)
+	if err != nil || settled.State != StopBatchComplete {
+		t.Fatalf("read complete batch: %+v %v", settled, err)
+	}
+	if err := WriteStopBatch(root, settled); err != nil {
+		t.Fatalf("identical complete batch must be idempotent: %v", err)
+	}
+	changed := settled
+	changed.Pass++
+	if err := WriteStopBatch(root, changed); err == nil || !strings.Contains(err.Error(), "COMPLETE and immutable") {
+		t.Fatalf("complete batch accepted changed evidence: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		change func(*StopBatch)
+	}{
+		{name: "authority", change: func(batch *StopBatch) { batch.CapabilityGeneration = 0 }},
+		{name: "reason", change: func(batch *StopBatch) { batch.Reason = "manual" }},
+		{name: "state", change: func(batch *StopBatch) { batch.State = "FINISHED" }},
+		{name: "timestamps", change: func(batch *StopBatch) { batch.UpdatedAt = "not-a-time" }},
+		{name: "pending completion", change: func(batch *StopBatch) { batch.Pending = []string{"job-1"} }},
+		{name: "non-complete completion time", change: func(batch *StopBatch) {
+			batch.State = StopBatchOpen
+		}},
+		{name: "observed generation", change: func(batch *StopBatch) {
+			batch.Observed = []StopJob{{JobID: "job-1"}}
+		}},
+		{name: "cancellation outcome", change: func(batch *StopBatch) {
+			batch.CancelOutcomes = []StopOutcome{{JobID: "job-1"}}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			batch := complete
+			test.change(&batch)
+			batch.StopID += "-" + strings.ReplaceAll(test.name, " ", "-")
+			if err := WriteStopBatch(t.TempDir(), batch); err == nil {
+				t.Fatal("contradictory stop batch was accepted")
+			}
+		})
+	}
+}

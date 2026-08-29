@@ -258,11 +258,36 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	writeFile(t, recordPath, `{"jobId":"spent","operationId":"spent","goalId":"bounded","goalRevision":2,"capMin":30,"status":"completed"}`)
 	writeFile(t, filepath.Join(evidenceRoot, "agents", "spent", "manifest.json"),
 		fmt.Sprintf(`{"updatedAt":"2026-08-10T08:00:00Z","files":{"jobs/spent.json":%s}}`, recordEntry(t, jobs, "spent.json")))
+	writeMirroredRecord := func(name, body string) {
+		t.Helper()
+		fileName := name + ".json"
+		writeFile(t, filepath.Join(jobs, fileName), body)
+		writeFile(t, filepath.Join(evidenceRoot, "agents", name, "manifest.json"),
+			fmt.Sprintf(`{"updatedAt":"2026-08-10T08:00:00Z","files":{"jobs/%s":%s}}`,
+				fileName, recordEntry(t, jobs, fileName)))
+	}
+	writeMirroredRecord("superseded", `{"jobId":"superseded","goalId":"bounded","goalRevision":1,"status":"completed"}`)
+	writeMirroredRecord("unknown-revision", `{"jobId":"unknown-revision","goalId":"bounded","status":"completed"}`)
+	writeMirroredRecord("unknown-goal", `{"jobId":"unknown-goal","goalId":"missing","goalRevision":1,"status":"completed"}`)
+	writeMirroredRecord("empty-goal", `{"jobId":"empty-goal","goalId":"","goalRevision":1,"status":"completed"}`)
+	writeMirroredRecord("malformed-goal", `{"jobId":"malformed-goal","goalId":42,"goalRevision":1,"status":"completed"}`)
+	writeMirroredRecord("unbound", `{"jobId":"unbound","goalId":null,"status":"completed"}`)
 
 	before := dispatch.ProjectBudget(root, file, testNow)
 	runGC(t, root, evidenceRoot)
-	if _, err := os.Stat(recordPath); err != nil {
-		t.Fatalf("GC deleted a current-revision spending fact: %v", err)
+	for name, wantGone := range map[string]bool{
+		"spent.json":            false,
+		"superseded.json":       true,
+		"unknown-revision.json": false,
+		"unknown-goal.json":     false,
+		"empty-goal.json":       false,
+		"malformed-goal.json":   false,
+		"unbound.json":          true,
+	} {
+		_, err := os.Stat(filepath.Join(jobs, name))
+		if gone := os.IsNotExist(err); gone != wantGone {
+			t.Fatalf("%s: gone=%v, want %v", name, gone, wantGone)
+		}
 	}
 	after := dispatch.ProjectBudget(root, file, testNow)
 	if !reflect.DeepEqual(before, after) {
