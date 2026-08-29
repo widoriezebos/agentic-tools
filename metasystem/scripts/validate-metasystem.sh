@@ -123,6 +123,7 @@ if (( ! suite_progress_worker )); then
       METASYSTEM_SUITE_PROGRESS_ROOT="$root" \
       METASYSTEM_SUITE_PROGRESS_DEPTH="$suite_depth" \
       METASYSTEM_SUITE_PROGRESS_TMP="$suite_progress_tmp" \
+      METASYSTEM_SUITE_PROGRESS_TMP_OWNER=validate-metasystem \
       METASYSTEM_SUITE_PROGRESS_LOG="$suite_progress_log" \
       METASYSTEM_BATTERY_RUN_CLASS_OUT="$battery_run_class_out" \
       METASYSTEM_BATTERY_ROOT_CLASS_WRITER="$battery_run_class_writer" \
@@ -181,12 +182,19 @@ umask 077
 printf 'format\tmetasystem-validation-stage-results-v1\n' >"$stage_results_file"
 printf 'columns\tkind\tid\tstatus\texit_code\tfailure_tail\n' >>"$stage_results_file"
 
-if [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
+if [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" \
+  && "${METASYSTEM_SUITE_PROGRESS_TMP_OWNER:-}" == validate-metasystem ]]; then
   stage_work=$METASYSTEM_SUITE_PROGRESS_TMP
   mkdir -p "$stage_work"
+elif [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
+  # A nested validator borrows the progress workspace and owns only its child.
+  mkdir -p "$METASYSTEM_SUITE_PROGRESS_TMP"
+  stage_work=$(mktemp -d "$METASYSTEM_SUITE_PROGRESS_TMP/validate.XXXXXX")
 else
   stage_work=$(mktemp -d "${TMPDIR:-/tmp}/validate-metasystem-stages.XXXXXX")
 fi
+# The ownership handoff applies only to this worker. Child processes must not inherit it.
+unset METASYSTEM_SUITE_PROGRESS_TMP_OWNER
 validation_red_sections=()
 validation_red_rcs=()
 if [[ -n "$enumeration_section" ]]; then

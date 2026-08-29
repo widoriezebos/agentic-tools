@@ -110,6 +110,13 @@ grep -Fq 'existing engine does not know gate guard-acquire; proceeding until thi
 # targets (the hook installs when git init happens), and no dispatch can run
 # there — so there is no suite-vs-dispatch contention to certify. Skip those
 # legs loudly; the holder races and token refusals still run everywhere.
+borrowed_validation_progress_env=(
+  env
+  METASYSTEM_SUITE_PROGRESS_ACTIVE=1
+  METASYSTEM_SUITE_PROGRESS_ROOT="$root"
+  METASYSTEM_SUITE_PROGRESS_TMP="$tmp"
+  METASYSTEM_SUITE_PROGRESS_TMP_OWNER=
+)
 if git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1; then
 # Suite first: launch the actual validation entrypoint, then the actual
 # dispatch verb. Dispatch must stay queued until validation releases; both
@@ -119,7 +126,8 @@ suite_control="$tmp/suite-first-suite.json"
 dispatch_control="$tmp/suite-first-dispatch.json"
 write_control "$suite_control" "$tmp/suite-first-suite.ready" "$tmp/suite-first-suite.release"
 write_control "$dispatch_control" "$tmp/suite-first-dispatch.ready" "$tmp/suite-first-dispatch.release"
-METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
+"${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
+  METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$suite_control" \
   "$root/scripts/validate-metasystem.sh" >"$tmp/suite-first-suite.out" 2>"$tmp/suite-first-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
@@ -151,7 +159,8 @@ METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_fir
   >"$tmp/dispatch-first-dispatch.out" 2>"$tmp/dispatch-first-dispatch.err" &
 dispatch_pid=$!; owned_pids+=("$dispatch_pid")
 wait_for_file "$tmp/dispatch-first-dispatch.ready" "dispatch-first dispatch"
-METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
+"${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
+  METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$suite_control" \
   "$root/scripts/validate-metasystem.sh" >"$tmp/dispatch-first-suite.out" 2>"$tmp/dispatch-first-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
@@ -176,7 +185,8 @@ printf '{"attempted":"%s","ready":"%s","release":"%s","capSec":%s,"detachReady":
   "$tmp/nested-detached.ready" "$tmp/nested-detached.release" >"$nested_dispatch_control"
 write_control "$nested_suite_control" "$tmp/nested-suite.ready" "$tmp/nested-suite.release" \
   "$nested_dispatch_control" "$brief"
-METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$nested_guard_root" \
+"${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
+  METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$nested_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$nested_suite_control" \
   "$root/scripts/validate-metasystem.sh" >"$tmp/nested-suite.out" 2>"$tmp/nested-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
