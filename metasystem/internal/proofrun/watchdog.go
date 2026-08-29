@@ -16,25 +16,26 @@ import (
 )
 
 type WatchdogOptions struct {
-	Suite           string
-	Root            string
-	ProgressPath    string
-	DonePath        string
-	LogPaths        []string
-	SuiteIdentity   identity.Ref
-	Silence         time.Duration
-	SectionCap      time.Duration
-	EvidenceTimeout time.Duration
-	EvidenceMax     int64
-	Poll            time.Duration
-	TermGrace       time.Duration
-	KillGrace       time.Duration
-	Executable      string
-	Output          *os.File
-	ErrorOutput     *os.File
-	Prober          identity.Prober
-	Signal          func(int, syscall.Signal) error
-	Shutdown        func() error
+	Suite            string
+	Root             string
+	ProgressPath     string
+	DonePath         string
+	LogPaths         []string
+	SuiteIdentity    identity.Ref
+	Silence          time.Duration
+	SectionCap       time.Duration
+	EvidenceTimeout  time.Duration
+	EvidenceMax      int64
+	Poll             time.Duration
+	TermGrace        time.Duration
+	KillGrace        time.Duration
+	Executable       string
+	Output           *os.File
+	ErrorOutput      *os.File
+	PreserveEvidence func(string, []string) string
+	Prober           identity.Prober
+	Signal           func(int, syscall.Signal) error
+	Shutdown         func() error
 }
 
 func RunWatchdog(options WatchdogOptions) error {
@@ -113,7 +114,13 @@ func stopStalledSuite(options WatchdogOptions, section, reason string, run Progr
 	if len(sources) == 0 {
 		sources = append(sources, options.LogPaths...)
 	}
-	evidenceNote := preserveWithBound(options, evidenceDir, sources)
+	preserve := options.PreserveEvidence
+	if preserve == nil {
+		preserve = func(destination string, sources []string) string {
+			return preserveWithBound(options, destination, sources)
+		}
+	}
+	evidenceNote := preserve(evidenceDir, sources)
 	if suiteDone(options.DonePath) {
 		return nil
 	}

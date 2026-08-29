@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -68,18 +67,6 @@ func TestEvidenceTimeoutLeavesLoudPartialNoteBeforeRefusingKill(t *testing.T) {
 }
 
 func TestDoneFileWinsBeforeAndDuringEvidencePreservation(t *testing.T) {
-	evidenceTimeout := time.Second
-	if raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
-		scaleMilli, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || scaleMilli < 1 {
-			t.Fatalf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer: %q", raw)
-		}
-		scaledSeconds := scaleMilli / 1000
-		if scaleMilli%1000 != 0 {
-			scaledSeconds++
-		}
-		evidenceTimeout = time.Duration(scaledSeconds) * time.Second
-	}
 	for _, test := range []struct {
 		name       string
 		doneBefore bool
@@ -90,20 +77,23 @@ func TestDoneFileWinsBeforeAndDuringEvidencePreservation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			done := filepath.Join(root, "done")
-			preserve := filepath.Join(root, "preserve.sh")
 			if test.doneBefore {
 				if err := os.WriteFile(done, nil, 0o600); err != nil {
 					t.Fatal(err)
 				}
-				writeExecutable(t, preserve, "#!/usr/bin/env bash\nexit 99\n")
-			} else {
-				writeExecutable(t, preserve, fmt.Sprintf("#!/usr/bin/env bash\ntouch %q\n", done))
 			}
 			actions := 0
+			preservations := 0
 			err := stopStalledSuite(WatchdogOptions{
 				Suite: "fixture", Root: root, DonePath: done, LogPaths: []string{"log"},
-				SuiteIdentity: identity.Ref{Pid: 7, StartedAtSec: 8}, EvidenceTimeout: evidenceTimeout, EvidenceMax: 1,
-				Executable: preserve, ErrorOutput: os.Stderr,
+				SuiteIdentity: identity.Ref{Pid: 7, StartedAtSec: 8}, ErrorOutput: os.Stderr,
+				PreserveEvidence: func(string, []string) string {
+					preservations++
+					if err := os.WriteFile(done, nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+					return "bounded copy completed"
+				},
 				Shutdown: func() error { actions++; return nil },
 				Signal:   func(int, syscall.Signal) error { actions++; return nil },
 				Prober: fixedProbe{
@@ -115,9 +105,14 @@ func TestDoneFileWinsBeforeAndDuringEvidencePreservation(t *testing.T) {
 				t.Fatalf("error = %v, kill-capable actions = %d", err, actions)
 			}
 			if test.doneBefore {
+				if preservations != 0 {
+					t.Fatalf("evidence preservations after done = %d", preservations)
+				}
 				if _, err := os.Stat(filepath.Join(root, "artifacts")); !os.IsNotExist(err) {
 					t.Fatalf("evidence preservation ran after done: %v", err)
 				}
+			} else if preservations != 1 {
+				t.Fatalf("evidence preservations before done = %d", preservations)
 			}
 		})
 	}
