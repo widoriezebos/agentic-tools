@@ -16,13 +16,15 @@ The candidate may take one of two forms. Where a reliable check can distinguish 
 
 ## Govern each enforced rule
 
+Every incident tempts the team to leave a rule behind, and every enforced rule is power: it stops future work without asking anyone. One rule after a real failure is protection. Hundreds of unowned rules are the ceremonies of Chapter 4 come back as machinery: refusals that outlive their need, applied every time, with nobody left who can say why. So a rule is governed as the grant of power it is, from the day it is proposed.
+
 Suppose the proposed clock rule refuses any session-limit calculation that reads local wall time. Before it receives that power, its sponsor, the builder proposing it, must show more than the original failure. An intentionally broken candidate using local time should fail the check. Correct candidates using an elapsed-time source should pass. Code that only formats a local time for display should also pass. These cases establish both sides of the boundary: what must be stopped and what must remain possible. This is Chapter 6's discriminating test, pointed at the rule itself.
 
 The enforced rule's record names how much evidence is required before adoption and why that amount fits the possible harm. It defines the parts of the system it may judge, the condition it may refuse and the evidence it must attach to a refusal. It names an accountable owner, the legislator of Chapter 5, with authority to maintain or withdraw it. It also names the signals that would reveal side effects, the date or event that forces review, and the appeal route of Chapter 5, by which a builder or affected person can challenge a refusal.
 
-These details follow from the power being granted. Because an enforced rule can stop future work, its scope cannot be left implicit. Because the world and the software will change, its owner and review point cannot be omitted. Because its test may be wrong, a refusal must stay open to appeal. Without those limits, one incident could block future work forever, through a check nobody re-examines.
+These details follow from the power being granted. Because an enforced rule can stop future work, its scope cannot be left implicit. Because the world and the software will change, its owner and review point cannot be omitted. Because its test may be wrong, a refusal must stay open to appeal.
 
-Adoption can still be proportionate. A narrowly understood recurrence with severe consequences may justify a firm rule after strong reproduction and independent examination. A weak association may justify observation only. The evidence threshold is part of the decision; there is no universal number. The responsible authority decides what uncertainty is acceptable for the consequence at hand and records that reason.
+Adoption can still be proportionate. A narrowly understood recurrence with severe consequences may justify a firm rule after strong reproduction and independent examination. A weak association may justify observation only. The evidence threshold is part of the decision; there is no universal number. The responsible authority decides what uncertainty is acceptable for the consequence at hand and records that reason. And like the ceremonies of Chapter 4, a rule stays only while the need it serves does; the review date and the appeal route are how it leaves.
 
 ## Test the enforced rule itself
 
