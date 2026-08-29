@@ -3,6 +3,7 @@ package run
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -211,10 +212,26 @@ func LiveWaiter(root string, prober identity.Prober, kind, id, mainId string, ta
 // exit code. It registers its waiter record on entry and removes it on
 // every exit path. Watch is OPEN — it polls the record; conclusions
 // belong to the watcher and the record-writer path.
-func (s *Store) Watch(id string, owner Caller, poll time.Duration) int {
+// Watch blocks until the run concludes and PRINTS a typed line for
+// every exit including success — a watcher that ends in silence is
+// indistinguishable from one that died, and the silent-conclusion
+// defect class exists because this function once returned codes
+// without a word (run-watch-silent-conclusion).
+func (s *Store) Watch(id string, owner Caller, poll time.Duration, out io.Writer) int {
+	if out == nil {
+		out = io.Discard
+	}
+	line := func(outcome string, rc int, record *Record) int {
+		log := ""
+		if record != nil {
+			log = record.Log
+		}
+		fmt.Fprintf(out, "run %s %s rc=%d log=%s\n", id, outcome, rc, log)
+		return rc
+	}
 	record, err := s.Read(id)
 	if err != nil || record == nil {
-		return ExitNoRecord
+		return line("no-record", ExitNoRecord, nil)
 	}
 	target := WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}
 	if err := s.RegisterWaiter("run", id, owner, target); err != nil {
@@ -227,22 +244,22 @@ func (s *Store) Watch(id string, owner Caller, poll time.Duration) int {
 	for {
 		record, err := s.Read(id)
 		if err != nil || record == nil {
-			return ExitNoRecord
+			return line("record-vanished", ExitNoRecord, nil)
 		}
 		if record.Generation != target.Generation || record.LaunchNonce != target.LaunchNonce {
 			// The public id now names a DIFFERENT lifecycle (reuse or
 			// adoption): this waiter's target is gone.
-			return ExitNoRecord
+			return line("target-replaced", ExitNoRecord, record)
 		}
 		switch record.Status {
 		case StatusGreen:
-			return ExitGreen
+			return line("green", ExitGreen, record)
 		case StatusRed:
-			return ExitRed
+			return line("red", ExitRed, record)
 		case StatusEndedUnknown:
-			return ExitEndedUnknown
+			return line("ended-unknown", ExitEndedUnknown, record)
 		case StatusLaunchFailed:
-			return ExitLaunchFailed
+			return line("launch-failed", ExitLaunchFailed, record)
 		}
 		time.Sleep(poll)
 	}

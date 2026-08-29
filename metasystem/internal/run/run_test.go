@@ -589,7 +589,7 @@ func TestWaiterContract(t *testing.T) {
 	s.WriteSidecar("watch-run", record.Generation, record.LaunchNonce, 0)
 	prober.verdicts[501] = identity.Dead
 	done := make(chan int, 1)
-	go func() { done <- s.Watch("watch-run", mainCaller, 30*time.Millisecond) }()
+	go func() { done <- s.Watch("watch-run", mainCaller, 30*time.Millisecond, nil) }()
 	waiterTarget := WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}
 	deadline := time.Now().Add(5 * time.Second)
 	for !LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
@@ -613,7 +613,7 @@ func TestWaiterContract(t *testing.T) {
 		t.Fatal("the waiter record survived the watch exit")
 	}
 	// Watch on a missing record: 4.
-	if code := s.Watch("ghost-run", mainCaller, time.Millisecond); code != ExitNoRecord {
+	if code := s.Watch("ghost-run", mainCaller, time.Millisecond, nil); code != ExitNoRecord {
 		t.Fatalf("missing record watch exit %d, want 4", code)
 	}
 }

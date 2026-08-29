@@ -198,7 +198,7 @@ func runRunWatch(args []string) int {
 		return run.ExitWaiterUnknown
 	}
 	store := runStore(*root)
-	return store.Watch(*id, caller, time.Duration(*pollMs)*time.Millisecond)
+	return store.Watch(*id, caller, time.Duration(*pollMs)*time.Millisecond, os.Stdout)
 }
 
 func runRunRegister(args []string) int {
