@@ -2,7 +2,7 @@
 
 **Recovering is not learning; a system has learned only when next time goes differently.**
 
-A later bounded release of the repaired session change reaches live traffic on the weekend when clocks move forward. A few sessions expire at the wrong moment: one comparison uses local clock time instead of elapsed time. The releaser stops the expansion and restores the previous behavior. That is recovery, and by itself it changes nothing; the same mistake can ship again next month. This chapter solves one problem: how one failure becomes changed future behavior, without piling up rules nobody owns or notes nobody reads.
+In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches live traffic on the weekend when clocks move forward. A few sessions expire at the wrong moment: one comparison uses local clock time instead of elapsed time. The releaser stops the expansion and restores the previous behavior. That is recovery, and by itself it changes nothing; the same mistake can ship again next month. This chapter solves one problem: how one failure becomes changed future behavior, without piling up rules nobody owns or notes nobody reads. What follows is design, told through the example, not a description of an existing system.
 
 ## From failure to lesson
 
