@@ -4,16 +4,26 @@ set -euo pipefail
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$source_root/scripts/agents/fixture-budget.sh"
 tmp=$(mktemp -d)
+tmp=$(cd "$tmp" && pwd -P)
 armed_repo=
 passed=()
 identity_updater=
 rearm_race_pid=
+export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/registry-home"
+mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 cleanup() {
+  local cleanup_engine
   [[ -z "$rearm_race_pid" ]] || { kill "$rearm_race_pid" 2>/dev/null || true; wait "$rearm_race_pid" 2>/dev/null || true; }
   [[ -z "$identity_updater" ]] || { kill "$identity_updater" 2>/dev/null || true; wait "$identity_updater" 2>/dev/null || true; }
   if [[ -n "$armed_repo" && -x "$armed_repo/scripts/agents/arm-supervision.sh" ]]; then
-    "$armed_repo/scripts/agents/arm-supervision.sh" --repo "$armed_repo" --shutdown >/dev/null 2>&1 || true
+    cleanup_engine=${enrolled_engine:-$ms}
+    # The config-refusal leg broadens the runtime list, where fake process
+    # tables are no longer authorized. Cleanup uses the real process table.
+    METASYSTEM_CENSUS_PROCESS_FILE= METASYSTEM_FAKE_PROCESS_IDENTITY_FILE= \
+      METASYSTEM_BIN="$cleanup_engine" \
+      "$armed_repo/scripts/agents/arm-supervision.sh" --repo "$armed_repo" --shutdown >&2 \
+      || echo "delegate caps fixture cleanup shutdown failed" >&2
   fi
   # Backstop: kill any process still rooted under this run's unique temp
   # dir so a failed assertion cannot leak a child that flakes later runs.
@@ -108,6 +118,22 @@ git -C "$harness" add .
 git -C "$harness" -c user.name=fixture -c user.email=fixture.invalid commit -qm fixture
 armed_repo=$harness
 
+# Fake-runtime fixtures authorize their disposable enrollment by staging the
+# accepted engine identity directly. Keep that engine under the scratch root
+# so neither the source checkout nor a person's installation is enrolled.
+fixture_install=$tmp/fixture-install
+mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
+printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
+cp "$ms" "$fixture_install/bin/metasystem"
+cp -R "$source_root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
+enrolled_engine=$fixture_install/bin/metasystem
+enrollment_digest=$("$enrolled_engine" util sha256 --file "$enrolled_engine")
+mkdir -p "$harness/artifacts/agents/steward"
+printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+  "$harness" "$enrolled_engine" "$enrollment_digest" \
+  >"$harness/artifacts/agents/steward/identity.json"
+chmod 0600 "$harness/artifacts/agents/steward/identity.json"
+
 process_fixture=$harness/process-fixture.json
 identity_fixture=$harness/process-identities.json
 printf '[]\n' >"$process_fixture"
@@ -162,7 +188,28 @@ register_supervision_identities() {
   --session caps-fixture --pid $$ --start "$process_start" --tag caps-fixture --runtime fake >/dev/null
 
 arm=$harness/scripts/agents/arm-supervision.sh
-$arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" --tag caps-fixture >/dev/null
+run_arm() { # description, arm arguments...
+  local description=$1 arm_rc
+  shift
+  set +e
+  METASYSTEM_BIN="$enrolled_engine" "$arm" "$@" >&2
+  arm_rc=$?
+  set -e
+  if (( arm_rc != 0 )); then
+    echo "delegate caps fixture $description failed (exit status $arm_rc)" >&2
+    return "$arm_rc"
+  fi
+}
+
+report_captured_arm() { # description, output file, status file
+  local description=$1 output_file=$2 status_file=$3 arm_status=missing
+  [[ ! -f "$status_file" ]] || arm_status=$(cat "$status_file")
+  echo "delegate caps fixture $description result (exit status $arm_status)" >&2
+  [[ ! -f "$output_file" ]] || cat "$output_file" >&2
+}
+
+run_arm "initial arm" --repo "$harness" --session caps-fixture --pid $$ \
+  --start-time "$process_start" --tag caps-fixture
 register_supervision_identities
 
 state=$harness/artifacts/agents/supervision/state.json
@@ -175,8 +222,8 @@ assert_loaded_cap() { # expected minutes
 }
 assert_loaded_cap 230
 
-$arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
-  --tag caps-fixture --rearm --max-cap 300 >/dev/null
+run_arm "raised-cap re-arm" --repo "$harness" --session caps-fixture --pid $$ \
+  --start-time "$process_start" --tag caps-fixture --rearm --max-cap 300
 assert_loaded_cap 330
 pass_fixture AUTH-R2-007
 
@@ -190,14 +237,14 @@ mkdir -p "$harness/artifacts/agents/jobs" "$harness/artifacts/agents/supervision
   --pid $$ --tag delegate-caps-fixtures.sh
 (
   set +e
-  $arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
+  METASYSTEM_BIN="$enrolled_engine" "$arm" --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
     --tag caps-fixture --rearm >"$tmp/downward-rearm.out" 2>&1
   printf '%s\n' "$?" >"$tmp/downward-rearm.status"
 ) &
 rearm_race_pid=$!
 sleep 0.2
 kill -0 "$rearm_race_pid" 2>/dev/null \
-  || { echo "AUTH-R2-006: re-arm did not serialize behind the cap-authority transaction" >&2; exit 1; }
+  || { report_captured_arm "downward re-arm" "$tmp/downward-rearm.out" "$tmp/downward-rearm.status"; echo "AUTH-R2-006: re-arm did not serialize behind the cap-authority transaction" >&2; exit 1; }
 cat >"$harness/artifacts/agents/jobs/blocking-job.json" <<'EOF'
 {"jobId":"blocking-job","status":"running","capMin":400}
 EOF
@@ -205,11 +252,12 @@ EOF
   --pid $$ --tag delegate-caps-fixtures.sh
 deadline=$((SECONDS + 10))
 while kill -0 "$rearm_race_pid" 2>/dev/null; do
-  (( SECONDS < deadline )) || { echo "AUTH-R2-006: serialized re-arm did not finish" >&2; exit 1; }
+  (( SECONDS < deadline )) || { report_captured_arm "downward re-arm" "$tmp/downward-rearm.out" "$tmp/downward-rearm.status"; echo "AUTH-R2-006: serialized re-arm did not finish" >&2; exit 1; }
   sleep 0.05
 done
 wait "$rearm_race_pid" || true
 rearm_race_pid=
+report_captured_arm "downward re-arm" "$tmp/downward-rearm.out" "$tmp/downward-rearm.status"
 if [[ $(cat "$tmp/downward-rearm.status") -eq 0 ]]; then
   echo "AUTH-R2-006: downward re-arm bypass was accepted" >&2
   exit 1
@@ -278,21 +326,21 @@ pass_fixture AUTH-R2-005
 # An ordinary establishing arm is also a replacement authority. Race a new
 # reservation into its lock wait after the prior watcher is stopped; it must
 # refuse the lower config-derived ceiling instead of silently taking over.
-$arm --repo "$harness" --shutdown >/dev/null
+run_arm "shutdown before ordinary establishment" --repo "$harness" --shutdown
 register_supervision_identities
 # Same live-identity hold as the re-arm leg above (D18).
 "$ms" job owner-lock --command claim --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
   --pid $$ --tag delegate-caps-fixtures.sh
 (
   set +e
-  $arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
+  METASYSTEM_BIN="$enrolled_engine" "$arm" --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
     --tag caps-fixture >"$tmp/ordinary-establish.out" 2>&1
   printf '%s\n' "$?" >"$tmp/ordinary-establish.status"
 ) &
 rearm_race_pid=$!
 sleep 0.2
 kill -0 "$rearm_race_pid" 2>/dev/null \
-  || { echo "AUTH-R2-006: ordinary establishment did not serialize behind the cap-authority transaction" >&2; exit 1; }
+  || { report_captured_arm "ordinary establishment" "$tmp/ordinary-establish.out" "$tmp/ordinary-establish.status"; echo "AUTH-R2-006: ordinary establishment did not serialize behind the cap-authority transaction" >&2; exit 1; }
 cat >"$harness/artifacts/agents/jobs/ordinary-blocking-job.json" <<'EOF'
 {"jobId":"ordinary-blocking-job","status":"running","capMin":400}
 EOF
@@ -300,11 +348,12 @@ EOF
   --pid $$ --tag delegate-caps-fixtures.sh
 deadline=$((SECONDS + 10))
 while kill -0 "$rearm_race_pid" 2>/dev/null; do
-  (( SECONDS < deadline )) || { echo "AUTH-R2-006: serialized ordinary establishment did not finish" >&2; exit 1; }
+  (( SECONDS < deadline )) || { report_captured_arm "ordinary establishment" "$tmp/ordinary-establish.out" "$tmp/ordinary-establish.status"; echo "AUTH-R2-006: serialized ordinary establishment did not finish" >&2; exit 1; }
   sleep 0.05
 done
 wait "$rearm_race_pid" || true
 rearm_race_pid=
+report_captured_arm "ordinary establishment" "$tmp/ordinary-establish.out" "$tmp/ordinary-establish.status"
 if [[ $(cat "$tmp/ordinary-establish.status") -eq 0 ]]; then
   echo "AUTH-R2-006: ordinary downward establishment bypass was accepted" >&2
   exit 1
