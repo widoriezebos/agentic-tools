@@ -107,6 +107,35 @@ func TestCritiqueRegisterAdvanceIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCritiqueRegisterFoldsEveryFailedCriticAttempt(t *testing.T) {
+	for _, failure := range []string{"empty_reply", "runtime_error"} {
+		t.Run(failure, func(t *testing.T) {
+			repo := t.TempDir()
+			writeCriticRound(t, repo, "critic", "critic", 1, nil, nil)
+			path := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+			record := readJSONFile(t, path)
+			record["status"] = "failed"
+			record["error"] = failure
+			record["phase"] = "delivery"
+			if err := writeRecord(path, record); err != nil {
+				t.Fatal(err)
+			}
+			outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic")
+			if err != nil || outcome != "advanced" {
+				t.Fatalf("failed critic fold = %q, %v", outcome, err)
+			}
+			items := readRegister(t, repo, "critic")
+			if len(items) != 1 {
+				t.Fatalf("failed attempt did not create one synthetic finding: %v", items)
+			}
+			entry := items[0].(map[string]any)
+			if entry["rigorClass"] != "unproven" || !strings.HasPrefix(entry["findingId"].(string), "synthetic-") {
+				t.Fatalf("failed attempt did not become synthetic unproven evidence: %v", entry)
+			}
+		})
+	}
+}
+
 func TestCritiqueRegisterConcurrentRetryHasOneWinner(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1,
@@ -283,10 +312,13 @@ func TestCritiqueRegisterSyntheticIDsAreStableAndEnumerated(t *testing.T) {
 	if len(reordered) != 2 || !multiplicityOK || duplicateMultiplicity != 2 {
 		t.Fatalf("reordered later round changed synthetic identity: %v", reordered)
 	}
-	state := loadCritiqueState(repo)
-	ids, _, err := state.openMaterialIDs(state.records["critic-r2"], "critic")
-	if err != nil || len(ids) != 2 || ids[0] == "" || ids[0] == ids[1] {
-		t.Fatalf("open material identifiers = %v, %v", ids, err)
+	register, err := decodeFindingRegister(readRegister(t, repo, "critic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := openRegisterFindingIDs(register)
+	if len(ids) != 2 || ids[0] == "" || ids[0] == ids[1] {
+		t.Fatalf("open material identifiers = %v", ids)
 	}
 }
 

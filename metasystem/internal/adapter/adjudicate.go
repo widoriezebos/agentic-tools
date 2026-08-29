@@ -116,6 +116,9 @@ func writeDeliveryRepairPrompt(path, namedRepairPath string, schema []byte) erro
 // ways, never part of the verdict.
 func AdjudicateTurn(p AdjudicateParams) (string, error) {
 	verdict, err := adjudicateTurnStage(p)
+	if err == nil {
+		verdict = criticFailureFold(p.RecordPath, verdict)
+	}
 	if err != nil || p.Root == "" {
 		return verdict, err
 	}
@@ -147,6 +150,33 @@ func AdjudicateTurn(p AdjudicateParams) (string, error) {
 		_ = outage.Clear(p.Root)
 	}
 	return verdict, nil
+}
+
+// criticFailureFold gives every paid critic attempt a register-consumable
+// terminal class. Runtime crashes and empty delivery are transport shapes,
+// not permission to skip a critique round; the dispatch register folds both
+// as synthetic unproven evidence.
+func criticFailureFold(recordPath, verdict string) string {
+	record, err := readObject(recordPath)
+	if err != nil {
+		return verdict
+	}
+	role, _ := record["role"].(string)
+	if role != "design-critic" && role != "code-critic" && role != "warden" {
+		return verdict
+	}
+	switch verdict {
+	case "finish failed runtime_error runtime":
+		return "finish failed protocol_error runtime"
+	case "fail-pending runtime_error handshake":
+		return "fail-pending protocol_error handshake"
+	case "finish failed empty_reply delivery":
+		return "finish failed protocol_error delivery"
+	case "fail-pending empty_reply delivery":
+		return "fail-pending protocol_error delivery"
+	default:
+		return verdict
+	}
 }
 
 // recordIfOverloaded feeds the outage mark when the failed call's

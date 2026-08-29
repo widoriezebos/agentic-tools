@@ -72,16 +72,14 @@ var immutableFields = map[string]bool{
 var dedicatedMetadataFields = map[string]bool{
 	"findingRegister":      true,
 	"findingRegisterRound": true,
-	"boundedCritiqueStart": true,
-	"critiqueExhaustions":  true,
 }
 
 // The only fields a terminal record still accepts: its evidence mirror, the
-// chain-closure flags, and the aggregated chain usage. Everything else about
-// a finished job is final. Critique exhaustions have their own locked owner.
+// chain-closure flags, the aggregated chain usage, and recorded critique
+// exhaustions. Everything else about a finished job is final.
 var terminalMetadataFields = map[string]bool{
 	"mirror": true, "chainClosed": true, "chainUsage": true,
-	"runnerClosed": true,
+	"runnerClosed": true, "critiqueExhaustions": true,
 }
 
 // OpError carries the process exit code a lifecycle refusal must surface. An
@@ -89,17 +87,10 @@ var terminalMetadataFields = map[string]bool{
 // exit code alone); a non-empty Message is printed to stderr.
 type OpError struct {
 	Code    int
-	Reason  string
 	Message string
 }
 
 func (e *OpError) Error() string {
-	if e.Reason != "" && e.Message != "" {
-		return fmt.Sprintf("reason=%s %s", e.Reason, e.Message)
-	}
-	if e.Reason != "" {
-		return "reason=" + e.Reason
-	}
 	if e.Message != "" {
 		return e.Message
 	}
@@ -360,7 +351,7 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if terminalStatuses[current] && metadataUpdate {
 			for field := range patch {
 				if !terminalMetadataFields[field] {
-					return refuse(1, "terminal record metadata is final except mirror, closure, and aggregate usage")
+					return refuse(1, "terminal record metadata is final except mirror, closure, aggregate usage, and critique exhaustion")
 				}
 			}
 		}

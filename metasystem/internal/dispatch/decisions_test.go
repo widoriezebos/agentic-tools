@@ -699,57 +699,40 @@ func TestMirrorRefusesEvidenceInsideRepository(t *testing.T) {
 	}
 }
 
-// critiqueFixture lays out a design-critic chain at round 3 with one open
-// material finding.
+// critiqueFixture lays out a register-backed design-critic chain at round
+// three with one open severe finding.
 func critiqueFixture(t *testing.T) (repo string) {
 	t.Helper()
 	repo = t.TempDir()
-	agents := filepath.Join(repo, "artifacts", "agents")
-	writeJSONFile(t, filepath.Join(agents, "jobs"), "crit.json", map[string]any{
-		"jobId": "crit", "role": "design-critic", "round": 1, "parentJob": nil,
-		"status": "completed", "critiqueExhaustions": []any{},
-	})
-	writeJSONFile(t, filepath.Join(agents, "jobs"), "crit-r3.json", map[string]any{
-		"jobId": "crit-r3", "role": "design-critic", "round": 3, "parentJob": "crit",
-		"status": "completed",
-	})
-	writeJSONFile(t, filepath.Join(agents, "crit", "rounds", "3"), "return.json", map[string]any{
-		"findings": []any{
-			map[string]any{"id": "F-1", "material": true},
-			map[string]any{"id": "F-2", "material": false},
-		},
-	})
+	writeCapRound(t, repo, "crit", "design-critic", 1, false,
+		[]any{registerFindingValue("F-1", true, "direct evidence")}, []any{registerRigor("F-1", "severe")})
+	writeCapRound(t, repo, "crit", "design-critic", 2, false, []any{}, []any{})
+	writeCapRound(t, repo, "crit", "design-critic", 3, false, []any{}, []any{})
 	return repo
 }
 
 func TestCritiqueExhaustionDesignCritic(t *testing.T) {
 	repo := critiqueFixture(t)
 	dir := t.TempDir()
-	latest := filepath.Join(repo, "artifacts", "agents", "jobs", "crit-r3.json")
-	output := filepath.Join(dir, "manifest.json")
 
 	vague := filepath.Join(dir, "vague.md")
 	os.WriteFile(vague, []byte("please continue\n"), 0o644)
-	_, err := CritiqueExhaustionAction(repo, "crit", "design-critic", latest, vague, "crit-r4", output)
+	_, err := CritiqueExhaustionAdvance(repo, "crit", "design-critic", vague, "crit-r4")
 	if err == nil || !strings.Contains(err.Error(), "F-1") {
 		t.Fatalf("unenumerated successor = %v", err)
 	}
 
 	named := filepath.Join(dir, "named.md")
 	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
-	action, err := CritiqueExhaustionAction(repo, "crit", "design-critic", latest, named, "crit-r4", output)
-	if err != nil || action != "record" {
+	action, err := CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
+	if err != nil || action != "recorded" {
 		t.Fatalf("enumerated successor = %q, %v", action, err)
 	}
-	lines, err := ExhaustionPatches(output, dir)
-	if err != nil || len(lines) != 1 || !strings.HasPrefix(lines[0], "crit\t") {
-		t.Fatalf("ExhaustionPatches = %v, %v", lines, err)
-	}
-	patch := readJSONFile(t, strings.SplitN(lines[0], "\t", 2)[1])
-	entries := patch["critiqueExhaustions"].([]any)
+	root := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", "crit.json"))
+	entries := root["critiqueExhaustions"].([]any)
 	entry := entries[0].(map[string]any)
 	if entry["successorJobId"] != "crit-r4" {
-		t.Fatalf("patch entry = %v", entry)
+		t.Fatalf("owned root entry = %v", entry)
 	}
 
 	// A recorded second exhaustion at a different round refuses outright.
@@ -757,26 +740,20 @@ func TestCritiqueExhaustionDesignCritic(t *testing.T) {
 	rootRecord := readJSONFile(t, filepath.Join(jobs, "crit.json"))
 	rootRecord["critiqueExhaustions"] = []any{map[string]any{"round": 6, "successorJobId": "other"}}
 	writeRecord(filepath.Join(jobs, "crit.json"), rootRecord)
-	_, err = CritiqueExhaustionAction(repo, "crit", "design-critic", latest, named, "crit-r4", output)
+	_, err = CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
 	if err == nil || !strings.Contains(err.Error(), "second critique exhaustion") {
 		t.Fatalf("second exhaustion = %v", err)
 	}
 }
 
 func TestCritiqueExhaustionRoundOffBudget(t *testing.T) {
-	repo := critiqueFixture(t)
-	agents := filepath.Join(repo, "artifacts", "agents")
-	writeJSONFile(t, filepath.Join(agents, "jobs"), "crit-r2.json", map[string]any{
-		"jobId": "crit-r2", "role": "design-critic", "round": 2, "parentJob": "crit",
-		"status": "completed",
-	})
-	writeJSONFile(t, filepath.Join(agents, "crit", "rounds", "2"), "return.json", map[string]any{
-		"findings": []any{map[string]any{"id": "F-9", "material": true}},
-	})
+	repo := t.TempDir()
+	writeCapRound(t, repo, "crit", "design-critic", 1, false,
+		[]any{registerFindingValue("F-9", true, "direct evidence")}, []any{registerRigor("F-9", "severe")})
+	writeCapRound(t, repo, "crit", "design-critic", 2, false, []any{}, []any{})
 	message := filepath.Join(t.TempDir(), "m.md")
 	os.WriteFile(message, []byte("x\n"), 0o644)
-	action, err := CritiqueExhaustionAction(repo, "crit", "design-critic",
-		filepath.Join(agents, "jobs", "crit-r2.json"), message, "next", filepath.Join(t.TempDir(), "out.json"))
+	action, err := CritiqueExhaustionAdvance(repo, "crit", "design-critic", message, "next")
 	if err != nil || action != "none" {
 		t.Fatalf("off-budget round = %q, %v", action, err)
 	}
@@ -897,44 +874,35 @@ func TestLineageRootOneVerdict(t *testing.T) {
 	}
 }
 
-// Code-critic chain exhaustion: a critic may never own the
-// successor; a RECORDED implementer successor reopens the budget to none;
-// and the RECORD's round beats a return that lies about its own round.
+// Code-critic chain exhaustion: a critic may never own the successor, while a
+// recorded implementer successor reopens the budget.
 func TestCritiqueExhaustionCodeCriticChain(t *testing.T) {
 	repo := t.TempDir()
 	agents := filepath.Join(repo, "artifacts", "agents")
-	writeJSONFile(t, filepath.Join(agents, "jobs"), "critic.json", map[string]any{
-		"jobId": "critic", "role": "code-critic", "round": 1, "parentJob": nil,
-		"reviews": "impl", "status": "completed", "critiqueExhaustions": []any{},
-	})
-	writeJSONFile(t, filepath.Join(agents, "jobs"), "critic-r3.json", map[string]any{
-		"jobId": "critic-r3", "role": "code-critic", "round": 3, "parentJob": "critic-r2",
-		"reviews": "impl", "status": "completed",
-	})
-	// The return deliberately lies that it is round two; the record's round
-	// three must still trigger the budget.
-	writeJSONFile(t, filepath.Join(agents, "critic", "rounds", "3"), "return.json", map[string]any{
-		"round": 2, "findings": []any{map[string]any{"id": "F-10", "material": true}},
-	})
+	writeCapRound(t, repo, "critic", "code-critic", 1, false,
+		[]any{registerFindingValue("F-10", true, "direct evidence")}, []any{registerRigor("F-10", "severe")})
+	rootPath := filepath.Join(agents, "jobs", "critic.json")
+	rootRecord := readJSONFile(t, rootPath)
+	rootRecord["reviews"] = "impl"
+	writeRecord(rootPath, rootRecord)
+	writeCapRound(t, repo, "critic", "code-critic", 2, false, []any{}, []any{})
+	writeCapRound(t, repo, "critic", "code-critic", 3, false, []any{}, []any{})
 	message := filepath.Join(t.TempDir(), "m.md")
 	os.WriteFile(message, []byte("Fix F-10 in the implementation follow-up.\n"), 0o644)
-	output := filepath.Join(t.TempDir(), "manifest.json")
 
 	// A critic-owned successor is refused toward the implementer follow-up.
-	_, err := CritiqueExhaustionAction(repo, "critic", "code-critic",
-		filepath.Join(agents, "jobs", "critic-r3.json"), message, "critic-r4", output)
+	_, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
 	if err == nil || !strings.Contains(err.Error(), "implementer follow-up") {
 		t.Fatalf("critic-owned successor = %v", err)
 	}
 
 	// A recorded implementer successor reopens the critic budget: none.
-	rootRecord := readJSONFile(t, filepath.Join(agents, "jobs", "critic.json"))
+	rootRecord = readJSONFile(t, filepath.Join(agents, "jobs", "critic.json"))
 	rootRecord["critiqueExhaustions"] = []any{map[string]any{
 		"round": 3, "openFindingIds": []any{"F-10"}, "successorJobId": "impl-r2",
 	}}
 	writeRecord(filepath.Join(agents, "jobs", "critic.json"), rootRecord)
-	action, err := CritiqueExhaustionAction(repo, "critic", "code-critic",
-		filepath.Join(agents, "jobs", "critic-r3.json"), message, "critic-r4", output)
+	action, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
 	if err != nil || action != "none" {
 		t.Fatalf("recorded implementer successor should reopen: action=%q err=%v", action, err)
 	}

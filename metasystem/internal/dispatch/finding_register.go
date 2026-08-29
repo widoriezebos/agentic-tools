@@ -17,6 +17,7 @@ import (
 
 const findingRegisterField = "findingRegister"
 const findingRegisterRoundField = "findingRegisterRound"
+const boundedCritiqueStartField = "boundedCritiqueStart"
 
 type registerFinding struct {
 	FindingID      string
@@ -28,8 +29,9 @@ type registerFinding struct {
 	Multiplicity   int64
 }
 
-// CritiqueRegisterAdvance folds one completed critic round into the
-// canonical register on its chain root. The operation serializes the
+// CritiqueRegisterAdvance folds one terminal critic attempt into the canonical
+// register on its chain root. Completed attempts consume their return;
+// failures consume a synthetic unproven finding. The operation serializes the
 // cross-root conflict check and the root-record write. A retry for an already
 // folded round returns unchanged without reading or publishing its return.
 func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string, err error) {
@@ -46,8 +48,10 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 		if role != "design-critic" && role != "code-critic" && role != "warden" {
 			return "", fmt.Errorf("job %s is not a critic round", roundJob)
 		}
-		if asString(roundRecord["status"]) != "completed" {
-			return "", fmt.Errorf("critic round %s is not completed", roundJob)
+		status := asString(roundRecord["status"])
+		failedAttempt := status == "failed"
+		if status != "completed" && !failedAttempt {
+			return "", fmt.Errorf("critic round %s is neither completed nor a failed critic attempt", roundJob)
 		}
 		round, ok := numInt(roundRecord["round"])
 		if !ok || round < 1 {
@@ -78,28 +82,36 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1)
 			}
 
-			resultPath := filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "return.json")
-			result, readErr := readObject(resultPath)
-			if readErr != nil {
-				return fmt.Errorf("critique return for job %s is unreadable: %v", roundJob, readErr)
-			}
-			if asString(result["jobId"]) != roundJob {
-				return fmt.Errorf("critique return for job %s carries a different job identifier", roundJob)
-			}
-			returnedRound, roundOK := numInt(result["round"])
-			if !roundOK || returnedRound != round {
-				return fmt.Errorf("critique return for job %s carries a different round number", roundJob)
-			}
-			findings, findingsOK := result["findings"].([]any)
-			if !findingsOK {
-				return fmt.Errorf("critique return for job %s has no findings array", roundJob)
-			}
-			advanced, foldErr := foldCritiqueFindings(register, role, roundJob, findings, result["rigor"])
-			if foldErr != nil {
-				return foldErr
+			advanced := register
+			if failedAttempt {
+				advanced = foldProtocolError(register, role, roundJob, roundRecord)
+			} else {
+				resultPath := filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "return.json")
+				result, readErr := readObject(resultPath)
+				if readErr != nil {
+					return fmt.Errorf("critique return for job %s is unreadable: %v", roundJob, readErr)
+				}
+				if asString(result["jobId"]) != roundJob {
+					return fmt.Errorf("critique return for job %s carries a different job identifier", roundJob)
+				}
+				returnedRound, roundOK := numInt(result["round"])
+				if !roundOK || returnedRound != round {
+					return fmt.Errorf("critique return for job %s carries a different round number", roundJob)
+				}
+				findings, findingsOK := result["findings"].([]any)
+				if !findingsOK {
+					return fmt.Errorf("critique return for job %s has no findings array", roundJob)
+				}
+				advanced, registerErr = foldCritiqueFindings(register, role, roundJob, findings, result["rigor"])
+				if registerErr != nil {
+					return registerErr
+				}
 			}
 			if conflictErr := refuseCrossRootClassConflict(state, rootJob, advanced); conflictErr != nil {
 				return conflictErr
+			}
+			if startErr := recordFirstAllBoundedRound(root, advanced, round); startErr != nil {
+				return fmt.Errorf("critique root record %s has malformed bounded-cap state: %v", rootJob, startErr)
 			}
 			after := encodeFindingRegister(advanced)
 			root[findingRegisterField] = after
@@ -112,6 +124,93 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 		})
 		return outcome, lockErr
 	})
+}
+
+func foldProtocolError(register []registerFinding, role, roundJob string, roundRecord map[string]any) []registerFinding {
+	advanced := append([]registerFinding(nil), register...)
+	id := syntheticProtocolFindingID(role, roundJob)
+	for _, finding := range advanced {
+		if finding.FindingID == id {
+			return advanced
+		}
+	}
+	advanced = append(advanced, registerFinding{
+		FindingID: id, Critic: roundJob, RigorClass: critiqueModel.Unproven,
+		FactsDigest: digestJSON(nil), Status: "open",
+		EvidenceDigest: digestJSON(map[string]any{
+			"error": roundRecord["error"], "phase": roundRecord["phase"], "protocolError": roundRecord["protocolError"],
+		}), Multiplicity: 1,
+	})
+	return advanced
+}
+
+func syntheticProtocolFindingID(role, roundJob string) string {
+	sum := sha256.Sum256(canonicalJSON([]any{"protocol_error", role, roundJob}))
+	return "synthetic-" + hex.EncodeToString(sum[:])
+}
+
+func recordFirstAllBoundedRound(root map[string]any, register []registerFinding, round int64) error {
+	if value, present := root[boundedCritiqueStartField]; present && value != nil {
+		_, _, err := boundedCritiqueStart(root)
+		return err
+	}
+	openIDs := openRegisterFindingIDs(register)
+	if len(openIDs) == 0 {
+		return nil
+	}
+	for _, finding := range register {
+		if finding.RigorClass != critiqueModel.Bounded {
+			return nil
+		}
+	}
+	ids := make([]any, len(openIDs))
+	for index, id := range openIDs {
+		ids[index] = id
+	}
+	root[boundedCritiqueStartField] = map[string]any{
+		"round": round, "openFindingIds": ids,
+	}
+	return nil
+}
+
+func boundedCritiqueStart(root map[string]any) (round int64, ids []string, err error) {
+	value, present := root[boundedCritiqueStartField]
+	if !present || value == nil {
+		return 0, nil, nil
+	}
+	entry, ok := value.(map[string]any)
+	if !ok || len(entry) != 2 {
+		return 0, nil, fmt.Errorf("the bounded critique start is not an object with round and openFindingIds")
+	}
+	round, ok = numInt(entry["round"])
+	if !ok || round < 1 {
+		return 0, nil, fmt.Errorf("the bounded critique start round is not a positive integer")
+	}
+	rawIDs, ok := entry["openFindingIds"].([]any)
+	if !ok || len(rawIDs) == 0 {
+		return 0, nil, fmt.Errorf("the bounded critique start has no finding identifiers")
+	}
+	seen := map[string]bool{}
+	for _, raw := range rawIDs {
+		id := asString(raw)
+		if id == "" || seen[id] {
+			return 0, nil, fmt.Errorf("the bounded critique start has an empty or duplicate finding identifier")
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return round, ids, nil
+}
+
+func openRegisterFindingIDs(register []registerFinding) []string {
+	var ids []string
+	for _, finding := range register {
+		if finding.Status == "open" || finding.Status == "disputed" {
+			ids = append(ids, finding.FindingID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func findingRegisterRound(root map[string]any, registerSize int) (int64, error) {

@@ -8,34 +8,23 @@ import (
 	"testing"
 )
 
-// CritiqueExhaustionAction's guard paths and the small value helpers.
+// CritiqueExhaustionAdvance's guard paths and the small value helpers.
 
 func TestCritiqueExhaustionGuards(t *testing.T) {
 	root := t.TempDir()
-	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
-	os.MkdirAll(jobs, 0o755)
-	latest := filepath.Join(jobs, "chain-f2.json")
 	message := filepath.Join(root, "message.md")
 
 	// An unreadable successor message refuses by name.
-	if _, err := CritiqueExhaustionAction(root, "chain", "design-critic", latest, message, "chain-f3", filepath.Join(root, "out.json")); err == nil ||
+	if _, err := CritiqueExhaustionAdvance(root, "chain", "design-critic", message, "chain-f3"); err == nil ||
 		!strings.Contains(err.Error(), "successor message is unreadable") {
 		t.Fatalf("missing message not refused: %v", err)
 	}
 	os.WriteFile(message, []byte("continue\n"), 0o644)
 
-	// An unreadable latest record refuses by name.
-	if _, err := CritiqueExhaustionAction(root, "chain", "design-critic", latest, message, "chain-f3", filepath.Join(root, "out.json")); err == nil ||
-		!strings.Contains(err.Error(), "follow-up job record is unreadable") {
-		t.Fatalf("missing latest not refused: %v", err)
-	}
-
-	// A protocol-error latest deliberately reads nothing further: verdict
-	// none, no error.
-	os.WriteFile(latest, []byte(`{"jobId":"chain-f2","status":"failed","error":"protocol_error"}`), 0o644)
-	action, err := CritiqueExhaustionAction(root, "chain", "design-critic", latest, message, "chain-f3", filepath.Join(root, "out.json"))
-	if err != nil || action != "none" {
-		t.Fatalf("protocol recovery: action=%q err=%v", action, err)
+	// An unreadable root record refuses by name.
+	if _, err := CritiqueExhaustionAdvance(root, "chain", "design-critic", message, "chain-f3"); err == nil ||
+		!strings.Contains(err.Error(), "root record chain is unreadable") {
+		t.Fatalf("missing root not refused: %v", err)
 	}
 }
 
@@ -47,6 +36,10 @@ func TestOpErrorRenderings(t *testing.T) {
 	bare := &OpError{Code: 7}
 	if !strings.Contains(bare.Error(), "code 7") {
 		t.Fatalf("bare code not rendered: %q", bare.Error())
+	}
+	typed := &OpError{Code: CritiqueCapExhaustedExitCode, Reason: CritiqueCapExhaustedReason, Message: "terminal"}
+	if got := typed.Error(); got != "reason=cap-exhausted-human-raise terminal" {
+		t.Fatalf("machine-readable reason lost: %q", got)
 	}
 }
 

@@ -43,6 +43,30 @@ func TestAdjudicateTurnPureVerdicts(t *testing.T) {
 	}
 }
 
+func TestAdjudicateCriticCrashAndEmptyReplyFoldToProtocolError(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "critic.json")
+	if err := os.WriteFile(record, []byte(`{"role":"code-critic"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name   string
+		params AdjudicateParams
+		want   string
+	}{
+		{"adapter crash", AdjudicateParams{Stage: "initial", CLIStatus: 7, HandshakeDone: true, RecordPath: record}, "finish failed protocol_error runtime"},
+		{"empty return", AdjudicateParams{Stage: "empty-reply", HandshakeDone: true, RecordPath: record}, "finish failed protocol_error delivery"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := AdjudicateTurn(c.params)
+			if err != nil || got != c.want {
+				t.Fatalf("verdict = %q err=%v, want %q", got, err, c.want)
+			}
+		})
+	}
+}
+
 // adjudicateFixture wires an unparseable candidate so validation fails at
 // normalization — the repair-decision branches run without a full
 // return-complete fixture (the adapter suite fixtures cover the valid path

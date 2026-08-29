@@ -1,0 +1,27 @@
+@@ -1364,25 +1365,10 @@
+     --progress-root "$watched_root"
+ }
+ 
+-critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest
+-  "$ms" job critique-exhaustion --repo "$root" --root-job "$1" --role "$2" \
+-    --latest "$3" --message "$4" --successor "$5" --output "$6"
+-}
+-
+-record_critique_exhaustions() { # manifest
+-  local manifest=$1 target patch target_status
+-  while IFS=$'\t' read -r target patch; do
+-    target_status=$(json_field "$jobs/$target.json" status)
+-    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$target" \
+-      --expect "$target_status" --status "$target_status" --patch "$patch" \
+-      || die 1 "could not record the critique exhaustion successor on code-critic chain $target"
+-    rm -f "$patch"
+-  done < <("$ms" job exhaustion-patches --manifest "$manifest" --dir "$record_locks")
+-}
+-
+ follow_up() {
+   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
+   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
++  local register_outcome exhaustion_outcome exhaustion_rc=0
+   while (($#)); do
+     case "$1" in
+       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;

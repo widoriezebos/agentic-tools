@@ -22,8 +22,7 @@ Usage:
   scripts/agents/dispatch.sh reap [--job <job-id>]
 
 Exit codes: 0 success/completed; 2 usage; 3 failed; 4 timeout;
-5 vanished; 6 unknown status job; 7 malformed status record; 8 cancelled;
-10 critique cap exhausted and waiting on a human raise.
+5 vanished; 6 unknown status job; 7 malformed status record; 8 cancelled.
 USAGE
 }
 
@@ -1479,22 +1478,6 @@ follow_up() {
       || die 1 "${incarnation_verdict:-mission chain incarnation check failed}"
     [[ -n "$mission_turn" ]] || die 2 "mission follow-up requires a runner turn (METASYSTEM_MISSION_TURN is not set); follow up from inside the mission host turn"
   fi
-  # The completed critic attempt is folded and the cap is checked while no
-  # successor record exists. A terminal human raise therefore cannot strand a
-  # pending-setup husk, and retrying the same round id remains possible.
-  if [[ "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
-    register_outcome=$("$ms" job critique-register-advance --repo "$root" \
-      --root-job "$root_id" --round-job "$(basename "${latest%.json}")") \
-      || die 1 "could not fold the latest critic attempt into its canonical register"
-  fi
-  if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
-    set +e
-    exhaustion_outcome=$("$ms" job critique-exhaustion-advance --repo "$root" \
-      --root-job "$root_id" --role "$role" --message "$message" --successor "$child" 2>&1)
-    exhaustion_rc=$?
-    set -e
-    (( exhaustion_rc == 0 )) || die "$exhaustion_rc" "$exhaustion_outcome"
-  fi
   mkdir -p "$record_locks"
   acquire_cap_authority_lock
   exit_cleanup_job=
@@ -1544,6 +1527,16 @@ follow_up() {
       # into it: this dispatcher does not own its history.
       reviewed_commit=$(git -C "$workspace" rev-parse HEAD) \
         || die 1 "design-critic follow-up cannot resolve the workspace commit"
+    fi
+  fi
+  if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]]; then
+    exhaustion_patch=$(mktemp "$record_locks/exhaustion.XXXXXX")
+    if ! exhaustion_action=$(critique_exhaustion_action \
+      "$root_id" "$role" "$latest" "$message" "$child" "$exhaustion_patch" 2>&1); then
+      die 1 "$exhaustion_action"
+    fi
+    if [[ "$exhaustion_action" == record ]]; then
+      record_critique_exhaustions "$exhaustion_patch"
     fi
   fi
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
@@ -1832,6 +1825,25 @@ internal_breach_stop_goal() {
   printf 'stop=%s state=COMPLETE\n' "$stop_id"
 }
 
+internal_critique_exhaustion() {
+  local root_job= role= latest= message= successor= output=
+  while (($#)); do
+    case "$1" in
+      --root-job) root_job=$2; shift 2 ;;
+      --role) role=$2; shift 2 ;;
+      --latest) latest=$2; shift 2 ;;
+      --message) message=$2; shift 2 ;;
+      --successor) successor=$2; shift 2 ;;
+      --output) output=$2; shift 2 ;;
+      *) exit 2 ;;
+    esac
+  done
+  valid_id "$root_job" && valid_id "$successor" \
+    && [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]] \
+    && [[ -f "$latest" && -f "$message" && -n "$output" ]] || exit 2
+  critique_exhaustion_action "$root_job" "$role" "$latest" "$message" "$successor" "$output"
+}
+
 internal_reap_held() {
   internal_authority holder-only
   lease_reentry=1
@@ -2000,6 +2012,7 @@ case "$command" in
     internal_authority adapter-writer "$2"
     internal_register_custody "$@"
     ;;
+  __critique-exhaustion) internal_critique_exhaustion "$@" ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;
 esac

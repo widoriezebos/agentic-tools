@@ -28,8 +28,8 @@ func recordExit(err error) int {
 	}
 	var op *dispatchcore.OpError
 	if errors.As(err, &op) {
-		if op.Message != "" || op.Reason != "" {
-			fmt.Fprintln(os.Stderr, op.Error())
+		if op.Message != "" {
+			fmt.Fprintln(os.Stderr, op.Message)
 		}
 		return op.Code
 	}
@@ -788,45 +788,48 @@ func runDispatchCloseCheck(args []string) int {
 	return recordExit(dispatchcore.CloseCheck(*repo, *root))
 }
 
-func runDispatchCritiqueRegisterAdvance(args []string) int {
-	flags := flag.NewFlagSet("job critique-register-advance", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
-	rootJob := flags.String("root-job", "", "critic chain root job id")
-	roundJob := flags.String("round-job", "", "critic round job id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" || *rootJob == "" || *roundJob == "" {
-		fmt.Fprintln(os.Stderr, "job critique-register-advance: --repo, --root-job, and --round-job are required")
-		return 2
-	}
-	outcome, err := dispatchcore.CritiqueRegisterAdvance(*repo, *rootJob, *roundJob)
-	if err != nil {
-		return recordExit(err)
-	}
-	fmt.Println(outcome)
-	return 0
-}
-
-func runDispatchCritiqueExhaustionAdvance(args []string) int {
-	flags := flag.NewFlagSet("job critique-exhaustion-advance", flag.ContinueOnError)
+func runDispatchCritiqueExhaustion(args []string) int {
+	flags := flag.NewFlagSet("job critique-exhaustion", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "chain root job id")
 	role := flags.String("role", "", "follow-up role")
+	latest := flags.String("latest", "", "latest chain record file")
 	message := flags.String("message", "", "successor message file")
 	successor := flags.String("successor", "", "successor job id")
+	output := flags.String("output", "", "exhaustion manifest output file")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *repo == "" || *rootJob == "" || *role == "" || *message == "" || *successor == "" {
-		fmt.Fprintln(os.Stderr, "job critique-exhaustion-advance: --repo, --root-job, --role, --message, and --successor are required")
+	if *repo == "" || *rootJob == "" || *role == "" || *latest == "" || *message == "" || *successor == "" || *output == "" {
+		fmt.Fprintln(os.Stderr, "job critique-exhaustion: --repo, --root-job, --role, --latest, --message, --successor, and --output are required")
 		return 2
 	}
-	action, err := dispatchcore.CritiqueExhaustionAdvance(*repo, *rootJob, *role, *message, *successor)
+	action, err := dispatchcore.CritiqueExhaustionAction(*repo, *rootJob, *role, *latest, *message, *successor, *output)
 	if err != nil {
 		return recordExit(err)
 	}
 	fmt.Println(action)
+	return 0
+}
+
+func runDispatchExhaustionPatches(args []string) int {
+	flags := flag.NewFlagSet("job exhaustion-patches", flag.ContinueOnError)
+	manifest := flags.String("manifest", "", "exhaustion manifest file")
+	dir := flags.String("dir", "", "directory for the patch files")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *manifest == "" || *dir == "" {
+		fmt.Fprintln(os.Stderr, "job exhaustion-patches: --manifest and --dir are required")
+		return 2
+	}
+	lines, err := dispatchcore.ExhaustionPatches(*manifest, *dir)
+	if err != nil {
+		return recordExit(err)
+	}
+	for _, line := range lines {
+		fmt.Println(line)
+	}
 	return 0
 }
 

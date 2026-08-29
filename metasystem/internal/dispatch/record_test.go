@@ -203,7 +203,7 @@ func TestRecordCASRefusesImmutableField(t *testing.T) {
 	wantCode(t, err, 1)
 }
 
-func TestRecordCASRefusesFindingRegisterWrite(t *testing.T) {
+func TestRecordCASRefusesCritiqueOwnerWrite(t *testing.T) {
 	root := sandbox(t)
 	createPending(t, root, "job-a")
 	setupPending(t, root, "job-a")
@@ -211,6 +211,8 @@ func TestRecordCASRefusesFindingRegisterWrite(t *testing.T) {
 	for field, value := range map[string]any{
 		"findingRegister":      []any{},
 		"findingRegisterRound": 1,
+		"boundedCritiqueStart": map[string]any{"round": 1, "openFindingIds": []any{"F-1"}},
+		"critiqueExhaustions":  []any{map[string]any{"round": 3}},
 	} {
 		t.Run(field, func(t *testing.T) {
 			patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{field: value})
