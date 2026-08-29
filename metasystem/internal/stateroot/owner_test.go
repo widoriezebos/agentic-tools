@@ -94,3 +94,35 @@ func TestOwnerSymlinkJudgedByEntryPath(t *testing.T) {
 		t.Fatalf("symlink entry ownership: %v %v", got, err)
 	}
 }
+
+func TestOwnerUsesShippedInventoryInUnvendoredAdoptedShape(t *testing.T) {
+	repo := t.TempDir()
+	for _, directory := range []string{"bin", "scripts/agents"} {
+		if err := os.MkdirAll(filepath.Join(repo, directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	priorExecutable := executablePath
+	priorTop := repositoryTop
+	executablePath = func() (string, error) { return filepath.Join(repo, "bin", "metasystem"), nil }
+	repositoryTop = func(string) (string, error) { return repo, nil }
+	t.Cleanup(func() { executablePath = priorExecutable; repositoryTop = priorTop })
+
+	for _, test := range []struct {
+		path string
+		want Ownership
+	}{
+		{path: "internal/stateroot/stateroot.go", want: OwnerMetasystem},
+		{path: "go.mod", want: OwnerMetasystem},
+		{path: "docs/application.md", want: OwnerApp},
+		{path: "artifacts/agents/state.json", want: OwnerRuntime},
+	} {
+		got, mode, err := Owner(test.path)
+		if err != nil || got != test.want || mode != "adopted" {
+			t.Errorf("Owner(%q) = %v, %q, %v; want %v, adopted", test.path, got, mode, err, test.want)
+		}
+	}
+}

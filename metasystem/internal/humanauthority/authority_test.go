@@ -14,6 +14,7 @@ import (
 type treeReader struct {
 	snapshots map[int64][]Snapshot
 	reads     map[int64]int
+	failAt    map[int64]map[int]error
 	session   int64
 }
 
@@ -23,6 +24,12 @@ func (reader *treeReader) Read(pid int64) (Snapshot, error) {
 		return Snapshot{}, os.ErrNotExist
 	}
 	index := reader.reads[pid]
+	if failures := reader.failAt[pid]; failures != nil {
+		if err := failures[index]; err != nil {
+			reader.reads[pid]++
+			return Snapshot{}, err
+		}
+	}
 	if index >= len(values) {
 		index = len(values) - 1
 	}
@@ -126,6 +133,20 @@ func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 		want    string
 	}{
 		{
+			name: "first process read fails",
+			prepare: func(reader *treeReader) {
+				delete(reader.snapshots, 30)
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "second process read fails",
+			prepare: func(reader *treeReader) {
+				reader.failAt = map[int64]map[int]error{30: {1: os.ErrNotExist}}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
 			name: "agent-created terminal",
 			prepare: func(reader *treeReader) {
 				reader.snapshots[30] = []Snapshot{authoritySnapshot(30, 20, []string{"wrapper"}, "tty-agent")}
@@ -140,6 +161,54 @@ func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 				reader.snapshots[30] = []Snapshot{value}
 			},
 			want: OutcomeArgvUnreadable,
+		},
+		{
+			name: "first executable unreadable",
+			prepare: func(reader *treeReader) {
+				value := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				value.ExecutableKnown = false
+				reader.snapshots[30] = []Snapshot{value}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "second argv unreadable",
+			prepare: func(reader *treeReader) {
+				first := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				second := first
+				second.Exact.ArgvKnown = false
+				reader.snapshots[30] = []Snapshot{first, second}
+			},
+			want: OutcomeArgvUnreadable,
+		},
+		{
+			name: "second executable unreadable",
+			prepare: func(reader *treeReader) {
+				first := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				second := first
+				second.ExecutableKnown = false
+				reader.snapshots[30] = []Snapshot{first, second}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "first parent unreadable",
+			prepare: func(reader *treeReader) {
+				value := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				value.ParentKnown = false
+				reader.snapshots[30] = []Snapshot{value}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "second parent unreadable",
+			prepare: func(reader *treeReader) {
+				first := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				second := first
+				second.ParentKnown = false
+				reader.snapshots[30] = []Snapshot{first, second}
+			},
+			want: OutcomeUnreadable,
 		},
 		{
 			name: "parent changed",
@@ -157,6 +226,16 @@ func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 				reader.snapshots[30] = []Snapshot{
 					authoritySnapshot(30, 20, []string{"wrapper", "first"}, "tty-1"),
 					authoritySnapshot(30, 20, []string{"wrapper", "second"}, "tty-1"),
+				}
+			},
+			want: OutcomeChanged,
+		},
+		{
+			name: "argument count changed",
+			prepare: func(reader *treeReader) {
+				reader.snapshots[30] = []Snapshot{
+					authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1"),
+					authoritySnapshot(30, 20, []string{"wrapper", "added"}, "tty-1"),
 				}
 			},
 			want: OutcomeChanged,
@@ -192,6 +271,30 @@ func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 			want: OutcomeReused,
 		},
 		{
+			name: "terminal observation changed",
+			prepare: func(reader *treeReader) {
+				reader.snapshots[30] = []Snapshot{
+					authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1"),
+					authoritySnapshot(30, 20, []string{"wrapper"}, "tty-replaced"),
+				}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "parent snapshot unreadable",
+			prepare: func(reader *treeReader) {
+				reader.failAt = map[int64]map[int]error{20: {0: os.ErrNotExist}}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "session leader changed",
+			prepare: func(reader *treeReader) {
+				reader.session = 11
+			},
+			want: OutcomeTerminalMissing,
+		},
+		{
 			name: "ancestry cycle",
 			prepare: func(reader *treeReader) {
 				reader.snapshots[30] = []Snapshot{authoritySnapshot(30, 31, []string{"wrapper"}, "tty-1")}
@@ -211,5 +314,15 @@ func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 				t.Fatalf("uncertain ancestry did not fail closed: proof=%+v err=%v want=%s", proof, err, test.want)
 			}
 		})
+	}
+}
+
+func TestProofRefusesAnEmptyInvokerPID(t *testing.T) {
+	root := authorityRoot(t)
+	reader := enrolledReader()
+	enrollTestTerminal(t, root, reader)
+	proof, err := Prove(root, 0, reader, time.Unix(1400, 0))
+	if err == nil || proof.Outcome != OutcomeTerminalMissing || proof.Valid() {
+		t.Fatalf("empty invoker PID did not fail closed: proof=%+v err=%v", proof, err)
 	}
 }

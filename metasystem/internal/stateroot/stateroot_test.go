@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,6 +93,61 @@ func TestStateRootRefusesUnknownKindsAndInvalidInstallationFacts(t *testing.T) {
 	t.Cleanup(func() { executablePath = prior })
 	if _, err := StateRoot(Registers); err == nil {
 		t.Fatal("an unavailable executable path must refuse")
+	}
+}
+
+func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
+	root := t.TempDir()
+	design := filepath.Join(root, "development", "metasystem-design.md")
+	if err := os.MkdirAll(filepath.Dir(design), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(design, []byte("design\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	template := filepath.Join(root, "metasystem")
+	if err := os.MkdirAll(template, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	priorTop := repositoryTop
+	repositoryTop = func(string) (string, error) {
+		return "", errors.New("template must not consult Git")
+	}
+	got, err := RootForInstallation(template)
+	repositoryTop = priorTop
+	if err != nil || got != template {
+		t.Fatalf("exact template marker resolved to %q, %v; want %q", got, err, template)
+	}
+
+	adopted := filepath.Join(root, "metasystem-copy")
+	if err := os.MkdirAll(adopted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "application")
+	repositoryTop = func(seen string) (string, error) {
+		if seen != adopted {
+			t.Fatalf("repository lookup received %q; want %q", seen, adopted)
+		}
+		return want, nil
+	}
+	t.Cleanup(func() { repositoryTop = priorTop })
+	got, err = RootForInstallation(adopted)
+	if err != nil || got != want {
+		t.Fatalf("adopted installation resolved to %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestRootForInstallationPropagatesAdoptedRepositoryFailure(t *testing.T) {
+	installation := filepath.Join(t.TempDir(), "metasystem")
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	priorTop := repositoryTop
+	repositoryTop = func(string) (string, error) { return "", errors.New("not in a repository") }
+	t.Cleanup(func() { repositoryTop = priorTop })
+	if _, err := RootForInstallation(installation); err == nil || !strings.Contains(err.Error(), "not in a repository") {
+		t.Fatalf("adopted repository failure was hidden: %v", err)
 	}
 }
 

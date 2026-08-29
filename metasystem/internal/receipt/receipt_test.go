@@ -91,6 +91,29 @@ func TestReceiptMetricsReportTypeAndBuilderValidation(t *testing.T) {
 	}
 }
 
+func TestReceiptProvenanceValidationFailsClosed(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "implement", "shipped"
+	opts.Goal = "Not-A-Goal"
+	if result := Add(opts); result.Code != 2 || result.Err[0] != "invalid --goal: Not-A-Goal" {
+		t.Fatalf("invalid goal accepted by add: %+v", result)
+	}
+
+	opts.RefEpoch = "1000"
+	opts.RefSHA1 = strings.Repeat("0", 40)
+	opts.Reason = "repair provenance"
+	opts.Field = "goal"
+	opts.NowValue = "Not-A-Goal"
+	if result := Correct(opts); result.Code != 2 || result.Err[0] != "invalid corrected goal value: Not-A-Goal" {
+		t.Fatalf("invalid corrected goal accepted: %+v", result)
+	}
+	opts.Field = "built_by"
+	opts.NowValue = "critic"
+	if result := Correct(opts); result.Code != 2 || result.Err[0] != "invalid corrected built_by value: critic" {
+		t.Fatalf("invalid corrected builder accepted: %+v", result)
+	}
+}
+
 func TestAddValidation(t *testing.T) {
 	cases := []struct {
 		mutate func(*Options)
