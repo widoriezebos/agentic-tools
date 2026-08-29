@@ -16,7 +16,7 @@ The candidate may take one of two forms. Where a reliable check can distinguish 
 
 ## Govern each enforced rule
 
-Every incident tempts the team to leave a rule behind, and every enforced rule is power: it stops future work without asking anyone. One rule after a real failure is protection. Hundreds of unowned rules are the ceremonies of Chapter 4 come back as machinery: refusals that outlive their need, applied every time, with nobody left who can say why. So a rule is governed as the grant of power it is, from the day it is proposed.
+Every incident tempts the team to leave a rule behind, and every enforced rule is power: it stops future work without asking anyone. One governed rule after a real failure is protection. Hundreds of unowned rules are the ceremonies of Chapter 4 come back as machinery: refusals that outlive their need, applied every time, with nobody left who can say why. So a rule is governed as the grant of power it is, from the day it is proposed.
 
 Suppose the proposed clock rule refuses any session-limit calculation that reads local wall time. Before it receives that power, its sponsor, the builder proposing it, must show more than the original failure. An intentionally broken candidate using local time should fail the check. Correct candidates using an elapsed-time source should pass. Code that only formats a local time for display should also pass. These cases establish both sides of the boundary: what must be stopped and what must remain possible. This is Chapter 6's discriminating test, pointed at the rule itself.
 
