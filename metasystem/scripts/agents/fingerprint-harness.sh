@@ -42,13 +42,20 @@ harness_fixture_budget_init "$source_root"
 fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fingerprint-harness.XXXXXX")
+tmp=$(cd "$tmp" && pwd -P)
 repo=$tmp/repo
 paused_pid=
+export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/registry-home"
+mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 cleanup() {
+  local cleanup_engine
   if [[ -n "$paused_pid" ]]; then kill -CONT "$paused_pid" 2>/dev/null || true; fi
   if [[ -x "$repo/scripts/agents/arm-supervision.sh" ]]; then
-    "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
+    cleanup_engine=${enrolled_engine:-$ms}
+    METASYSTEM_BIN="$cleanup_engine" \
+      "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >&2 \
+      || echo "fingerprint harness cleanup shutdown failed" >&2
   fi
   if [[ -n "${METASYSTEM_KEEP_FINGERPRINT_FIXTURE:-}" ]]; then
     echo "kept fingerprint harness fixture: $tmp" >&2
@@ -101,10 +108,19 @@ watcher_pass_complete() { # heartbeat, census
 }
 
 prove_process_ownership() { # pid, start, tag
-  local pid=$1 start=$2 tag=$3 command
-  "$ms" proc alive --pid "$pid" --start-time "$start" --root "$repo" >/dev/null || return 1
-  command=$(ps -p "$pid" -o command= 2>/dev/null || true)
-  [[ "$command" == *"$tag"* || "$command" == *"$repo"* ]]
+  local pid=$1 start=$2 tag=$3 heartbeat heartbeat_pid heartbeat_start heartbeat_tag
+  "$ms" proc alive --pid "$pid" --start-time "$start" --root "$repo" || {
+    echo "fingerprint harness process liveness proof failed: pid=$pid start=$start tag=$tag" >&2
+    return 1
+  }
+  heartbeat=$repo/artifacts/agents/supervision/watcher.heartbeat.json
+  heartbeat_pid=$(json_field "$heartbeat" pid) || return 1
+  heartbeat_start=$(json_field "$heartbeat" pidStartedAt) || return 1
+  heartbeat_tag=$(json_field "$heartbeat" instanceTag) || return 1
+  [[ "$heartbeat_pid" == "$pid" && "$heartbeat_start" == "$start" && "$heartbeat_tag" == "$tag" ]] || {
+    echo "fingerprint harness watcher heartbeat did not prove ownership: expected=$pid/$start/$tag actual=$heartbeat_pid/$heartbeat_start/$heartbeat_tag" >&2
+    return 1
+  }
 }
 
 backdate_census_generation() { # census, generation
@@ -138,6 +154,22 @@ git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -
 mkdir -p "$repo/bin"
 cp "$ms" "$repo/bin/metasystem"
 
+# Fake-runtime fixtures authorize their disposable enrollment by staging the
+# accepted engine identity directly. Keep that engine under the scratch root
+# so neither the source checkout nor a person's installation is enrolled.
+fixture_install=$tmp/fixture-install
+mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
+printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
+cp "$ms" "$fixture_install/bin/metasystem"
+cp -R "$source_root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
+enrolled_engine=$fixture_install/bin/metasystem
+enrollment_digest=$("$enrolled_engine" util sha256 --file "$enrolled_engine")
+mkdir -p "$repo/artifacts/agents/steward"
+printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+  "$repo" "$enrolled_engine" "$enrollment_digest" \
+  >"$repo/artifacts/agents/steward/identity.json"
+chmod 0600 "$repo/artifacts/agents/steward/identity.json"
+
 process_fixture=$tmp/processes.json
 identity_fixture=$tmp/process-identities.json
 printf '[]\n' >"$process_fixture"
@@ -151,15 +183,34 @@ state=$repo/artifacts/agents/supervision/state.json
 last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$repo/scripts/agents/templates/brief.md" >"$brief"
-"$repo/scripts/agents/adapters/fake.sh" probe >/dev/null
+probe_output=$tmp/fake-probe.out
+"$repo/scripts/agents/adapters/fake.sh" probe >"$probe_output" 2>&1 || {
+  cat "$probe_output" >&2
+  echo "fingerprint harness fake adapter probe failed" >&2
+  exit 1
+}
 main_start=$("$ms" proc started-at --pid "$$")
+
+run_arm() { # description, arm arguments...
+  local description=$1 arm_rc
+  shift
+  set +e
+  METASYSTEM_BIN="$enrolled_engine" "$arm" "$@" >&2
+  arm_rc=$?
+  set -e
+  if (( arm_rc != 0 )); then
+    echo "fingerprint harness $description failed (exit status $arm_rc)" >&2
+    return "$arm_rc"
+  fi
+}
 
 refusals=0
 last_published_generation=0
 for ((iteration = 1; iteration <= iterations; iteration++)); do
-  METASYSTEM_AGENT_RUNTIME=fake "$arm" --repo "$repo" \
+  printf 'fingerprint harness iteration %s/%s\n' "$iteration" "$iterations"
+  METASYSTEM_AGENT_RUNTIME=fake run_arm "iteration $iteration initial arm" --repo "$repo" \
     --session "fingerprint-$iteration" --pid "$$" --start-time "$main_start" \
-    --tag "metasystem-main-fake-fingerprint-$iteration" >/dev/null
+    --tag "metasystem-main-fake-fingerprint-$iteration"
 
   armed_generation=$(json_field "$state" generation)
   if (( last_published_generation > 0 && armed_generation <= last_published_generation )); then
@@ -193,8 +244,12 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
   set -e
   if grep -Fq 'dispatch refused: census fingerprint does not match' "$output"; then
     refusals=$((refusals + 1))
+    echo "fingerprint harness iteration $iteration dispatch was refused" >&2
+    cat "$output" >&2
   elif grep -Fq 'dispatch refused: census verdict is stale' "$output"; then
     refusals=$((refusals + 1))
+    echo "fingerprint harness iteration $iteration dispatch was refused" >&2
+    cat "$output" >&2
   elif (( status != 0 )); then
     echo "fingerprint harness dispatch failed outside the fingerprint gate" >&2
     # A refusal names itself; anything else has to be shown, or this failure is
@@ -223,23 +278,23 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
   # files; see the note at the bottom of this file for how it is proven and
   # what remains owed.
 
-  "$arm" --repo "$repo" --shutdown >/dev/null
-  METASYSTEM_AGENT_RUNTIME=fake "$arm" --repo "$repo" \
+  run_arm "iteration $iteration shutdown before restart" --repo "$repo" --shutdown
+  METASYSTEM_AGENT_RUNTIME=fake run_arm "iteration $iteration restart arm" --repo "$repo" \
     --session "fingerprint-restart-$iteration" --pid "$$" --start-time "$main_start" \
-    --tag "metasystem-main-fake-fingerprint-restart-$iteration" >/dev/null
+    --tag "metasystem-main-fake-fingerprint-restart-$iteration"
   restarted_generation=$(json_field "$state" generation)
   (( restarted_generation > healed_generation )) \
     || { echo "fingerprint harness generation repeated after owner restart: previous=$healed_generation current=$restarted_generation" >&2; exit 1; }
   state_digest_before_join=$(shasum -a 256 "$state" | awk '{print $1}')
-  METASYSTEM_AGENT_RUNTIME=fake "$arm" --repo "$repo" \
+  METASYSTEM_AGENT_RUNTIME=fake run_arm "iteration $iteration live-owner join" --repo "$repo" \
     --session "fingerprint-join-$iteration" --pid "$$" --start-time "$main_start" \
-    --tag "metasystem-main-fake-fingerprint-join-$iteration" >/dev/null
+    --tag "metasystem-main-fake-fingerprint-join-$iteration"
   joined_generation=$(json_field "$state" generation)
   state_digest_after_join=$(shasum -a 256 "$state" | awk '{print $1}')
   [[ "$joined_generation" == "$restarted_generation" && "$state_digest_after_join" == "$state_digest_before_join" ]] \
     || { echo "fingerprint harness live-owner join republished supervision state" >&2; exit 1; }
   last_published_generation=$restarted_generation
-  "$arm" --repo "$repo" --shutdown >/dev/null
+  run_arm "iteration $iteration final shutdown" --repo "$repo" --shutdown
 done
 
 (( refusals == 0 )) \
