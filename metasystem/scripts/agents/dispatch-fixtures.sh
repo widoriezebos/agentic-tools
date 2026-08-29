@@ -801,6 +801,10 @@ wait_for_agent_chain_unlock() { # root job
 }
 
 if [[ "$fixture_scenario" == dispatch ]]; then
+# Critique rounds have one documented driver: dispatch plus follow-up. The
+# standalone raw-runtime driver is retired and must not reappear.
+[[ ! -e "$root/scripts/agents/critique-round.sh" ]] \
+  || { echo "the retired standalone critique driver is still installed" >&2; exit 1; }
 # Configuration resolution is flag, environment, mode, plain, default.
 config_order="$agent_fixture/config-order"
 mkdir -p "$config_order/scripts" "$config_order/bin"
@@ -1655,14 +1659,66 @@ grep -Fq 'implementer follow-up' "$agent_fixture/cap-driver-refusal.out" \
   || { echo "the round-three refusal did not route through the implementation successor" >&2; exit 1; }
 [[ ! -e "$agent_repo/artifacts/agents/jobs/flag-runtime-r4.json" ]] \
   || { echo "the pre-reservation cap refusal stranded a round-four record" >&2; exit 1; }
+[[ ! -e "$agent_repo/artifacts/agents/flag-runtime/rounds/4" ]] \
+  || { echo "the pre-reservation cap refusal stranded a round-four payload" >&2; exit 1; }
 cap_driver_message="$agent_fixture/cap-driver-implementation.md"
 printf 'Address every open finding, including CAP-DRIVER-1.\n' >"$cap_driver_message"
+# This authorized internal mutation leaves the exact state a dispatcher crash
+# would leave after the atomic advance and before reservation. The ordinary
+# follow-up below retries the same successor and must build it once.
+run_agent_fixture cap-driver-advance-before-crash - "$agent_dispatch" \
+  __critique-exhaustion-advance --root-job review-target --role implementer \
+  --message "$cap_driver_message" --successor review-target-r2
+[[ ! -e "$agent_repo/artifacts/agents/jobs/review-target-r2.json" \
+   && ! -e "$agent_repo/artifacts/agents/review-target/rounds/2" ]] \
+  || { echo "the atomic critique advance created successor reservation or payload state" >&2; exit 1; }
 run_agent_fixture cap-driver-implementation review-target-r2 "$agent_dispatch" follow-up \
   --job review-target --message "$cap_driver_message" --wait
 run_agent_fixture cap-driver-retry flag-runtime-r4 "$agent_dispatch" follow-up \
   --job flag-runtime-r3 --message "$follow_message" --wait
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/flag-runtime-r4.json" --field status)" == completed ]] \
   || { echo "retrying the refused round-four id did not succeed" >&2; exit 1; }
+
+# A delegate-shaped process cannot invoke either internal critique mutation.
+# If authority were absent this already-folded retry would return unchanged.
+set +e
+(
+  exec -a codex bash -c '"$1" __critique-register-advance --root-job flag-runtime --round-job flag-runtime-r3; code=$?; exit "$code"' \
+    _ "$agent_dispatch"
+) >"$agent_fixture/unauthorized-critique-mutation.out" 2>&1
+unauthorized_critique_rc=$?
+set -e
+[[ "$unauthorized_critique_rc" -ne 0 ]] \
+  && grep -Fq 'control-plane write requires the authenticated lease holder' \
+    "$agent_fixture/unauthorized-critique-mutation.out" \
+  || { echo "a delegate-shaped caller reached the internal critique mutation" >&2; cat "$agent_fixture/unauthorized-critique-mutation.out" >&2; exit 1; }
+
+# Wardens consume the same severe finding cap as code critics: round three
+# refuses a critic-owned fourth round before creating its record or payload.
+warden_brief="$agent_fixture/cap-warden.md"
+make_agent_brief "$warden_brief" implement
+run_agent_fixture cap-warden cap-warden "$agent_dispatch" dispatch \
+  --role warden --brief "$warden_brief" --reviews review-target --job-id cap-warden --wait
+warden_return="$agent_repo/artifacts/agents/cap-warden/rounds/1/return.json"
+json_replace_field "$warden_return" findings \
+  '[{"id":"WARDEN-CAP-1","severity":"high","material":true,"claim":"warden cap finding","evidence":"direct fixture evidence"}]'
+json_replace_field "$warden_return" rigor \
+  '[{"findingId":"WARDEN-CAP-1","rigorClass":"severe","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"reopeningTrigger":"reopen if it recurs"}]'
+run_agent_fixture cap-warden-round2 cap-warden-r2 "$agent_dispatch" follow-up \
+  --job cap-warden --message "$follow_message" --wait
+run_agent_fixture cap-warden-round3 cap-warden-r3 "$agent_dispatch" follow-up \
+  --job cap-warden-r2 --message "$follow_message" --wait
+set +e
+run_agent_fixture_captured cap-warden-refusal cap-warden-r4 "$agent_fixture/cap-warden-refusal.out" \
+  "$agent_dispatch" follow-up --job cap-warden-r3 --message "$follow_message" --wait
+cap_warden_refusal_rc=$?
+set -e
+[[ "$cap_warden_refusal_rc" -ne 0 ]] \
+  && grep -Fq 'warden critique budget exhausted' "$agent_fixture/cap-warden-refusal.out" \
+  || { echo "the warden did not follow the code critic cap regime" >&2; cat "$agent_fixture/cap-warden-refusal.out" >&2; exit 1; }
+[[ ! -e "$agent_repo/artifacts/agents/jobs/cap-warden-r4.json" \
+   && ! -e "$agent_repo/artifacts/agents/cap-warden/rounds/4" ]] \
+  || { echo "the warden cap refusal created a child record or payload" >&2; exit 1; }
 
 # A follow-up on a worktree chain whose trunk moved warns loudly: the
 # stale-worktree lesson was violated three times as prose before this line.
@@ -1718,6 +1774,10 @@ happy_manifest_files=$("$engine" json get --file "$happy_mirror_home/manifest.js
 run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
   || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }
+malformed_follow_prompt="$agent_repo/artifacts/agents/malformed-return/rounds/2/prompt.md"
+grep -Fq '# Canonical critique register carry' "$malformed_follow_prompt" \
+  && grep -Fq -- '- synthetic-' "$malformed_follow_prompt" \
+  || { echo "the corrected protocol-return follow-up did not carry its synthetic finding identifier" >&2; cat "$malformed_follow_prompt" >&2; exit 1; }
 agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
 agent_fails timeout-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job timed --message "$follow_message"
 agent_fails process-loss-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"

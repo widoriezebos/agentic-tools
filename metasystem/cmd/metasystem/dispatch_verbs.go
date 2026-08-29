@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
@@ -803,7 +804,37 @@ func runDispatchCloseCheck(args []string) int {
 	return recordExit(dispatchcore.CloseCheck(*repo, *root))
 }
 
+// refuseRepeatedFlags is the strict-parse gate for authority-bearing
+// verbs: a repeated flag would let a caller redirect the endpoint AFTER
+// its wrapper's authority check authorized the first occurrence
+// (certified finding DCD-AUTH-001), so any repetition refuses before
+// parsing.
+func refuseRepeatedFlags(name string, args []string) bool {
+	seen := map[string]bool{}
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		flagName := strings.TrimLeft(arg, "-")
+		if i := strings.IndexByte(flagName, '='); i >= 0 {
+			flagName = flagName[:i]
+		}
+		if flagName == "" {
+			continue
+		}
+		if seen[flagName] {
+			fmt.Fprintf(os.Stderr, "%s: flag --%s repeated; authority-bearing flags parse strictly\n", name, flagName)
+			return true
+		}
+		seen[flagName] = true
+	}
+	return false
+}
+
 func runDispatchCritiqueRegisterAdvance(args []string) int {
+	if refuseRepeatedFlags("job critique-register-advance", args) {
+		return 2
+	}
 	flags := flag.NewFlagSet("job critique-register-advance", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "critic chain root job id")
@@ -823,7 +854,31 @@ func runDispatchCritiqueRegisterAdvance(args []string) int {
 	return 0
 }
 
+func runDispatchCritiqueOpenFindingIDs(args []string) int {
+	flags := flag.NewFlagSet("job critique-open-finding-ids", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	rootJob := flags.String("root-job", "", "critic chain root job id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" || *rootJob == "" {
+		fmt.Fprintln(os.Stderr, "job critique-open-finding-ids: --repo and --root-job are required")
+		return 2
+	}
+	ids, err := dispatchcore.CritiqueOpenFindingIDs(*repo, *rootJob)
+	if err != nil {
+		return recordExit(err)
+	}
+	for _, id := range ids {
+		fmt.Println(id)
+	}
+	return 0
+}
+
 func runDispatchCritiqueExhaustionAdvance(args []string) int {
+	if refuseRepeatedFlags("job critique-exhaustion-advance", args) {
+		return 2
+	}
 	flags := flag.NewFlagSet("job critique-exhaustion-advance", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "chain root job id")

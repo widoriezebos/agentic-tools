@@ -152,11 +152,17 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 			t.Fatalf("register round %d: exit=%d out=%q", round, code, out)
 		}
 	}
+	out, code := captureStdout(t, func() int {
+		return runDispatchCritiqueOpenFindingIDs([]string{"--repo", repo, "--root-job", "critic"})
+	})
+	if code != 0 || strings.TrimSpace(out) != "S-1" {
+		t.Fatalf("open finding identifiers: exit=%d out=%q", code, out)
+	}
 	message := filepath.Join(t.TempDir(), "message.md")
 	if err := os.WriteFile(message, []byte("Address S-1.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, code := captureStdout(t, func() int {
+	out, code = captureStdout(t, func() int {
 		return runDispatchCritiqueExhaustionAdvance([]string{
 			"--repo", repo, "--root-job", "critic", "--role", "design-critic",
 			"--message", message, "--successor", "critic-r4",
@@ -171,5 +177,8 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 	}
 	if code := runDispatchCritiqueRegisterAdvance([]string{"--repo", repo}); code != 2 {
 		t.Fatalf("register usage error exit=%d, want 2", code)
+	}
+	if code := runDispatchCritiqueOpenFindingIDs([]string{"--repo", repo}); code != 2 {
+		t.Fatalf("open finding identifiers usage error exit=%d, want 2", code)
 	}
 }

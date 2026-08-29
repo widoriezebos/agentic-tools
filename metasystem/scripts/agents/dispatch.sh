@@ -53,6 +53,7 @@ stop_cancel_authorized=
 exit_cleanup_job=
 exit_cleanup_chain=
 exit_cleanup_authorization=
+exit_cleanup_message=
 # Flight-recorder witness (docs/design/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
@@ -1384,20 +1385,24 @@ watch_job() { # --job <id>
     --progress-root "$watched_root"
 }
 
-critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest
-  "$ms" job critique-exhaustion --repo "$root" --root-job "$1" --role "$2" \
-    --latest "$3" --message "$4" --successor "$5" --output "$6"
+cleanup_follow_up_message() {
+  [[ -z "$exit_cleanup_message" ]] || rm -f -- "$exit_cleanup_message"
+  exit_cleanup_message=
 }
 
-record_critique_exhaustions() { # manifest
-  local manifest=$1 target patch target_status
-  while IFS=$'\t' read -r target patch; do
-    target_status=$(json_field "$jobs/$target.json" status)
-    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$target" \
-      --expect "$target_status" --status "$target_status" --patch "$patch" \
-      || die 1 "could not record the critique exhaustion successor on code-critic chain $target"
-    rm -f "$patch"
-  done < <("$ms" job exhaustion-patches --manifest "$manifest" --dir "$record_locks")
+append_critique_open_ids() { # source message, output message, critic root
+  local source=$1 output=$2 critic_root=$3 open_ids
+  open_ids=$("$ms" job critique-open-finding-ids --repo "$root" --root-job "$critic_root") \
+    || die 1 "could not read the critic chain's canonical open finding identifiers"
+  cat "$source" >"$output"
+  printf '\n\n# Canonical critique register carry\n\nOpen finding identifiers:\n' >>"$output"
+  if [[ -z "$open_ids" ]]; then
+    printf '%s\n' '- none' >>"$output"
+  else
+    while IFS= read -r finding_id; do
+      [[ -z "$finding_id" ]] || printf -- '- %s\n' "$finding_id"
+    done <<<"$open_ids" >>"$output"
+  fi
 }
 
 follow_up() {
@@ -1424,7 +1429,7 @@ follow_up() {
   # runs, and under set -u the trap dies on the expansion before releasing
   # anything (the Linux cap-authority leak, go-production-grade Phase 1).
   exit_cleanup_chain=$root_id
-  trap 'release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'cleanup_follow_up_message; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   # A worktree chain reads its own branch, not main: a follow-up citing files
   # amended on main after the branch point describes files the delegate does
   # not have. This lesson (KI-9's complement) was violated three times as
@@ -1479,43 +1484,6 @@ follow_up() {
       || die 1 "${incarnation_verdict:-mission chain incarnation check failed}"
     [[ -n "$mission_turn" ]] || die 2 "mission follow-up requires a runner turn (METASYSTEM_MISSION_TURN is not set); follow up from inside the mission host turn"
   fi
-  # The completed critic attempt is folded and the cap is checked while no
-  # successor record exists. A terminal human raise therefore cannot strand a
-  # pending-setup husk, and retrying the same round id remains possible.
-  if [[ "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
-    register_outcome=$("$ms" job critique-register-advance --repo "$root" \
-      --root-job "$root_id" --round-job "$(basename "${latest%.json}")") \
-      || die 1 "could not fold the latest critic attempt into its canonical register"
-  fi
-  if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
-    set +e
-    exhaustion_outcome=$("$ms" job critique-exhaustion-advance --repo "$root" \
-      --root-job "$root_id" --role "$role" --message "$message" --successor "$child" 2>&1)
-    exhaustion_rc=$?
-    set -e
-    (( exhaustion_rc == 0 )) || die "$exhaustion_rc" "$exhaustion_outcome"
-  fi
-  mkdir -p "$record_locks"
-  acquire_cap_authority_lock
-  exit_cleanup_job=
-  exit_cleanup_authorization=$child
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
-  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
-  model_key=$(canonical_model "$model")
-  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
-  proposed_cap=$(json_field "$cap_resolution" capMin)
-  require_goal_revision_admission "$proposed_cap"
-  require_slice_admission "$proposed_cap" "$approved_ref"
-  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
-  "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
-    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
-    --goal "$goal" --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution" \
-    --approved-ref "$approved_ref"
-  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
-  exit_cleanup_job=$child
-  exit_cleanup_authorization=
-  rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then
     # A critic's workspace is one of two different things, and treating them
     # alike broke the second. A WORKTREE of this repository is synchronised to
@@ -1546,6 +1514,46 @@ follow_up() {
         || die 1 "design-critic follow-up cannot resolve the workspace commit"
     fi
   fi
+  # The completed critic attempt is folded and the cap is checked while no
+  # successor record exists. A terminal human raise therefore cannot strand a
+  # pending-setup husk, and retrying the same round id remains possible.
+  if [[ "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
+    register_outcome=$(lease_run_held "$current_claim_epoch" "$0" __critique-register-advance \
+      --root-job "$root_id" --round-job "$(basename "${latest%.json}")") \
+      || die 1 "could not fold the latest critic attempt into its canonical register"
+    exit_cleanup_message=$(mktemp "${TMPDIR:-/tmp}/metasystem-critique-follow.XXXXXX")
+    append_critique_open_ids "$message" "$exit_cleanup_message" "$root_id"
+    message=$exit_cleanup_message
+  fi
+  if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
+    set +e
+    exhaustion_outcome=$(lease_run_held "$current_claim_epoch" "$0" __critique-exhaustion-advance \
+      --root-job "$root_id" --role "$role" --message "$message" --successor "$child" 2>&1)
+    exhaustion_rc=$?
+    set -e
+    (( exhaustion_rc == 0 )) || die "$exhaustion_rc" "$exhaustion_outcome"
+  fi
+  mkdir -p "$record_locks"
+  acquire_cap_authority_lock
+  exit_cleanup_job=
+  exit_cleanup_authorization=$child
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_follow_up_message; release_cap_authority_lock; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
+  proposed_cap=$(json_field "$cap_resolution" capMin)
+  require_goal_revision_admission "$proposed_cap"
+  require_slice_admission "$proposed_cap" "$approved_ref"
+  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
+  "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
+    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
+    --goal "$goal" --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution" \
+    --approved-ref "$approved_ref"
+  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
+  exit_cleanup_job=$child
+  exit_cleanup_authorization=
+  rm -f "$setup_json"
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
@@ -1577,6 +1585,7 @@ follow_up() {
     --claim-epoch "$reservation_claim_epoch" --cap-resolution "$cap_resolution" \
     --root "$root" --goal-revision "$goal_revision" --approved-ref "$approved_ref"
   rm -f "$cap_resolution"
+  cleanup_follow_up_message
   finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
 }
 
@@ -1860,6 +1869,21 @@ internal_launch() {
   launch_adapter "$runtime" "$verb" "$job" "$tag"
 }
 
+internal_critique_mutation() { # job verb, mutation flags
+  local verb=$1 previous= argument root_job=
+  shift
+  for argument in "$@"; do
+    if [[ "$previous" == --root-job ]]; then
+      root_job=$argument
+      break
+    fi
+    previous=$argument
+  done
+  valid_id "$root_job" || exit 2
+  internal_authority holder-only "$root_job"
+  "$ms" job "$verb" --repo "$root" "$@"
+}
+
 internal_handshake_timeout() {
   local job=
   [[ ${1:-} == --job && $# -eq 2 ]] || exit 2
@@ -1981,6 +2005,8 @@ case "$command" in
     internal_authority record-writer "$2"
     "$ms" job repair-claim --root "$root" "$@"
     ;;
+  __critique-register-advance) internal_critique_mutation critique-register-advance "$@" ;;
+  __critique-exhaustion-advance) internal_critique_mutation critique-exhaustion-advance "$@" ;;
   __launch) internal_launch "$@" ;;
   __handshake-timeout) internal_handshake_timeout "$@" ;;
   __reap-held) internal_reap_held "$@" ;;

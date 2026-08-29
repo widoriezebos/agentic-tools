@@ -207,3 +207,21 @@ func TestReturnCompleteRoleVersionThreeRefusesMalformedFacts(t *testing.T) {
 		t.Fatalf("malformed facts were not refused: %s", violations)
 	}
 }
+
+func TestFindingIDRefusesInteriorControlCharacters(t *testing.T) {
+	root := returnRoot(t)
+	path := filepath.Join(root, "return.json")
+	findings := `[{"id":"F-1\nF-2","severity":"high","material":true,"claim":"x","evidence":"read"}]`
+	rigor := `[{"findingId":"F-1\nF-2","rigorClass":"severe","facts":` + v3Facts() + `,"reopeningTrigger":"reopen"}]`
+	os.WriteFile(path, []byte(v3CriticReturn(findings, rigor, 1)), 0o644)
+	violations := ReturnCompleteRole(root, "design-critic", path)
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v, "control characters") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("an interior line feed survived id validation: %v", violations)
+	}
+}

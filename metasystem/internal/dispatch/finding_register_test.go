@@ -341,3 +341,24 @@ func TestCritiqueRegisterCrossRootClassConflictBlocks(t *testing.T) {
 		t.Fatalf("blocked root was mutated: %v", items)
 	}
 }
+
+func TestCancelledRoundFoldsNeutrally(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1, nil, nil)
+	path := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	record := readJSONFile(t, path)
+	record["status"] = "cancelled"
+	if err := writeRecord(path, record); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic")
+	if err != nil || outcome != "advanced" {
+		t.Fatalf("cancelled round must fold and unwedge: %q, %v", outcome, err)
+	}
+	if items := readRegister(t, repo, "critic"); len(items) != 0 {
+		t.Fatalf("a cancelled round is nobody's critique yet contributed findings: %v", items)
+	}
+	if got := readRegisterRound(t, repo, "critic"); got != 1 {
+		t.Fatalf("the folded round did not advance: %d", got)
+	}
+}

@@ -262,6 +262,14 @@ func (c *returnChecker) checkRigorRows(result map[string]any) {
 			c.violation("$.rigor[%d].findingId must be a non-empty string without surrounding whitespace", index)
 			continue
 		}
+		// Interior control characters (a line feed above all) would break
+		// the register's verbatim open-ID carry into follow-up prompts
+		// (certified finding DCD-CARRY-001): the id grammar admits only
+		// printable non-control bytes.
+		if strings.ContainsFunc(id, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			c.violation("$.rigor[%d].findingId contains control characters; ids are printable bytes only", index)
+			continue
+		}
 		if rigorSeen[id] {
 			c.violation("$.rigor[%d].findingId duplicates rigor row for finding %q", index, id)
 			continue

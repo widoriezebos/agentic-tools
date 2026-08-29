@@ -126,6 +126,7 @@ func families() []family {
 				{"mirror", "mirror a job's evidence with a manifest", runDispatchMirror},
 				{"close-check", "validate a chain is closable", runDispatchCloseCheck},
 				{"critique-register-advance", "fold one critic round into its canonical register", runDispatchCritiqueRegisterAdvance},
+				{"critique-open-finding-ids", "print a critic register's open finding identifiers", runDispatchCritiqueOpenFindingIDs},
 				{"critique-exhaustion-advance", "atomically advance register-backed critique exhaustion", runDispatchCritiqueExhaustionAdvance},
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
 				{"resolve-cap", "resolve the non-mission cap chain or refuse an unsigned mission cap", runDispatchResolveCap},

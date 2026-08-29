@@ -11,7 +11,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-bash -n "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/critique-round.sh" "$0"
+bash -n "$root/scripts/agents/dispatch.sh" "$0"
 
 packet="$tmp/packet.md"
 printf 'review this\n' >"$packet"

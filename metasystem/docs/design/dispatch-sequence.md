@@ -295,10 +295,12 @@ fresh dispatch (d.sh:1055-1058) — and must carry a session id; the
 child id is `<root>-r<round>`; a design-critic's workspace is
 synchronized only when it shares history with this repository
 (fast-forward to HEAD), while an independent repository reviews its
-own head and nothing is merged into it (d.sh:1070-1099); the
-critique-exhaustion policy (`job critique-exhaustion`, critique.go)
-may record successor patches across the chain before the new round
-launches (d.sh:1100-1109); the cap is re-authorized for the child; the
+own head and nothing is merged into it; the completed critic attempt is
+folded through the holder-only `__critique-register-advance` entry before
+any child reservation, every critic prompt receives the canonical register's
+open finding identifiers, and the holder-only
+`__critique-exhaustion-advance` entry atomically records an eligible successor
+before the new round is reserved; the cap is re-authorized for the child; the
 parent's REQUESTED permissions are reused verbatim while the snapshot
 is re-selected fresh (d.sh:1124-1128); and a runtime whose snapshot
 says it cannot resume gets the fresh-context fallback — prior brief,

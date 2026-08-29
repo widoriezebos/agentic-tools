@@ -223,34 +223,6 @@ func openRegisterFindingIDs(register []registerFinding) []string {
 	return ids
 }
 
-// CritiqueOpenFindingIDs returns the sorted open and disputed finding
-// identifiers carried by a critic chain's canonical register. The record lock
-// joins this read to register advances, so prompt assembly never observes a
-// partially published register.
-func CritiqueOpenFindingIDs(repoRoot, rootJob string) (ids []string, err error) {
-	err = withRecordLock(repoRoot, rootJob, func(recordPath string) error {
-		root, readErr := readObject(recordPath)
-		if readErr != nil {
-			return fmt.Errorf("critique root record %s is unreadable: %v", rootJob, readErr)
-		}
-		role := asString(root["role"])
-		if role != "design-critic" && role != "code-critic" && role != "warden" {
-			return fmt.Errorf("job %s is not a critic chain root", rootJob)
-		}
-		registerValue, present := root[findingRegisterField]
-		if !present {
-			return fmt.Errorf("critic chain %s has no canonical finding register", rootJob)
-		}
-		register, decodeErr := decodeFindingRegister(registerValue)
-		if decodeErr != nil {
-			return fmt.Errorf("critic chain %s has a malformed finding register: %v", rootJob, decodeErr)
-		}
-		ids = openRegisterFindingIDs(register)
-		return nil
-	})
-	return ids, err
-}
-
 func findingRegisterRound(root map[string]any, registerSize int) (int64, error) {
 	value, present := root[findingRegisterRoundField]
 	if !present {
