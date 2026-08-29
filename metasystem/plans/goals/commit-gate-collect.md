@@ -5,8 +5,10 @@
 - Origin: human
 - Next step: Appetite: 1h — run all four tools, report every red in one block, exit nonzero on any; no check weakens
 - OpenedAt: 2026-08-29T05:45:15Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=2h attemptLimit=4 reservedJobMinutesLimit=30 activeJobLimit=1
 
 History:
 - 2026-08-29T05:45:15Z QR17F3WE5QS18YEV49FP3N07SE-m1-bf243850 open actor=human:wido targets=commit-gate-collect
-Integrity: sha256=1c154f080b50f4f4e2b5212f9c7f0917ed22a269ea0292e591943611f9891eaf
+- 2026-08-29T19:33:11Z GNN4XWVSH8SYMNWHE83QKH08XK-m2-bc1be9cb set-budget actor=human:wido targets=commit-gate-collect
+Integrity: sha256=8a02f16ffaedef5748c88d945f47879e19577e6148e32a49970f5837bebc22a7
