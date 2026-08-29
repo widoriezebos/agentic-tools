@@ -453,3 +453,24 @@ func TestADanglingAcceptedRefSymlinkRefusesMutations(t *testing.T) {
 		t.Fatalf("a dangling ref symlink refuses at the gate: %v (has=%v)", gateErr, has)
 	}
 }
+
+func TestGoalGitParsesStdoutCleanOfStderrWarnings(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "clean")
+	mustGit(t, t.TempDir(), "init", "-q", "-b", "main", repo)
+	mustGit(t, repo, "commit", "-q", "--allow-empty", "-m", "seed")
+	// A wrapper that always warns on stderr stands in for the real
+	// polluters (advice hints, safe.directory notices).
+	wrapper := filepath.Join(t.TempDir(), "git")
+	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\necho 'warning: stderr noise' >&2\nexec /usr/bin/git \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Dir(wrapper)+":"+os.Getenv("PATH"))
+	out, err := goalGit(repo, nil, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tip := strings.TrimSpace(out)
+	if len(tip) != 40 || strings.Contains(out, "warning") {
+		t.Fatalf("parsed tip polluted by stderr: %q", out)
+	}
+}

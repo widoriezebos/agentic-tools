@@ -12,6 +12,7 @@ package goal
 // participate and never move.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -78,11 +79,21 @@ func goalGit(root string, extraEnv []string, args ...string) (string, error) {
 	// URL — the transaction must be steerable by NOTHING but its
 	// arguments.
 	cmd.Env = append(environWithoutGitSteering(), extraEnv...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("git %s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	// stdout is the PARSED channel and stderr the diagnostic one: a git
+	// wrapper printing a warning must never pollute a tip a caller
+	// parses (goal-git-stderr-pollution).
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// The ERROR path returns both channels: push-rejection
+		// classification (stale lease vs fatal) reads git's stderr
+		// voice, and losing it turned every CAS race into "transport
+		// unknown". Only the SUCCESS return is the parsed channel.
+		combined := stdout.String() + stderr.String()
+		return combined, fmt.Errorf("git %s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
-	return string(out), nil
+	return stdout.String(), nil
 }
 
 // CaptureTip fetches the canonical branch into the per-operation
@@ -285,11 +296,13 @@ func hashObject(root string, content []byte) (string, error) {
 	cmd := exec.Command("git", "-C", root, "hash-object", "-w", "--stdin")
 	cmd.Env = environWithoutGitSteering()
 	cmd.Stdin = strings.NewReader(string(content))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("hash-object: %v (%s)", err, strings.TrimSpace(string(out)))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("hash-object: %v (%s)", err, strings.TrimSpace(stderr.String()))
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // CASOutcome is one push attempt's classification.
