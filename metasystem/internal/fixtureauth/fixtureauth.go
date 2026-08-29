@@ -140,6 +140,12 @@ type GroupOwnershipGrant struct{ a *Authorization }
 
 func (a *Authorization) GroupOwnership() GroupOwnershipGrant { return GroupOwnershipGrant{a} }
 
+// AllowsRecordedGroupProof lets a fake checkout use the exact launch proof in
+// a job record when the kernel cannot enumerate the group's current argv.
+func (g GroupOwnershipGrant) AllowsRecordedGroupProof() bool {
+	return g.a != nil && g.a.fixtureMode
+}
+
 // FixtureGroup returns the fixture's recorded (pgid, command) for the
 // ownership proof — and only while the fixture leader is KERNEL-LIVE
 // at its recorded start and still in that group (a stale row must

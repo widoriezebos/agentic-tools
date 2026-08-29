@@ -392,6 +392,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		Snapshot: "artifacts/agents/capabilities/x.json", InputBytes: 12, InputHash: "h",
 		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
 		MainID: "main-1", ClaimEpoch: "7",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	})
 	if err != nil {
 		t.Fatalf("BuildRecord: %v", err)
@@ -417,6 +418,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		Fallbacks: "[]", Signal: true, HandshakeBudget: 20, ResumeMode: "resumed",
 		InputBytes: 3, InputHash: "h2", MainID: "main-1", ClaimEpoch: "7",
 		CapResolution: capResolution,
+		LaunchMode:    LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	})
 	if err != nil {
 		t.Fatalf("BuildFollowRecord: %v", err)
@@ -469,6 +471,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 		Output: filepath.Join(tmp, "r.json"), Job: "j1", Role: "implementer",
 		Runtime: "fake", Workspace: workspace, CapResolution: capResolution,
 		Permissions: permissions, Fallbacks: "[]", Root: root,
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	}
 
 	partial := base
@@ -506,6 +509,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 		Output: filepath.Join(tmp, "f.json"), Parent: parentPath, Job: "j1-r2",
 		Round: 2, ParentJob: "j1", Fallbacks: "[]", ResumeMode: "fresh-context",
 		CapResolution: capResolution, Root: root, MissionTurn: "m-one-t2",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	}
 	if err := BuildFollowRecord(follow); err != nil {
 		t.Fatalf("same-incarnation follow-up refused: %v", err)

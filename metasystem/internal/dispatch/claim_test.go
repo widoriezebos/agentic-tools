@@ -60,6 +60,8 @@ func claimParamsForTest(root, opid string) ClaimLaunchParams {
 		MainID:            "main-1",
 		ClaimEpoch:        "5",
 		GoalID:            "goal-a",
+		GoalRevision:      3,
+		MachineID:         "m-test",
 		DefaultCapMinutes: 120,
 	}
 }

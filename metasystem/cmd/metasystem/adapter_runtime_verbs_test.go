@@ -43,6 +43,7 @@ func TestRunAdapterCodexCommandNULDelimited(t *testing.T) {
 			"--verb", "dispatch", "--model", "gpt-5-sol", "--workspace", dir,
 			"--schema", "/s.json", "--output", "/o.json",
 			"--sandbox", "workspace-write", "--network", "true",
+			"--instance-tag", "metasystem-job-t-abc",
 		})
 	})
 	if code != 0 {

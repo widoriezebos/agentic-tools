@@ -61,6 +61,15 @@ func missionIncarnation(root, mission string) (string, error) {
 // records that RecordSetup swaps in. Keeping the shapes here means the same
 // package owns what a record looks like and how it is written.
 
+// stringValues widens a string slice for the JSON record shape.
+func stringValues(values []string) []any {
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	return out
+}
+
 // nullableString maps "" to JSON null, matching the record convention that an
 // absent optional field is stored as null rather than empty.
 func nullableString(value string) any {
@@ -212,6 +221,10 @@ type BuildRecordParams struct {
 	MachineID       string
 	MainID          string
 	ClaimEpoch      string
+	ReasoningEffort string
+	LaunchMode      LaunchMode
+	ProductRoots    []string
+	OutputStream    string
 	ApprovedRef     string
 }
 
@@ -219,6 +232,16 @@ type BuildRecordParams struct {
 // identity, workspace pin (base SHA and branch read from the workspace),
 // permissions, cap authority, capability snapshot, and input digest.
 func BuildRecord(p BuildRecordParams) error {
+	if p.OutputStream == "" || !filepath.IsAbs(p.OutputStream) {
+		return fmt.Errorf("fresh dispatch requires an absolute child output stream")
+	}
+	if p.LaunchMode != LaunchModeWorktree && p.LaunchMode != LaunchModeSharedCheckout {
+		return fmt.Errorf("fresh dispatch launch mode must be worktree or shared-checkout")
+	}
+	productRoots := append([]string(nil), p.ProductRoots...)
+	if len(productRoots) == 0 {
+		productRoots = []string{resolvePath(p.Workspace)}
+	}
 	base, err := gitOutput(p.Workspace, "rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("workspace is not a git worktree")
@@ -325,8 +348,10 @@ func BuildRecord(p BuildRecordParams) error {
 		"pid":                          nil,
 		"pidStartedAt":                 nil,
 		"pgid":                         nil,
-		"instanceTag":                  "metasystem-job-" + p.Job,
 		"custodyProcesses":             []any{},
+		"launchMode":                   p.LaunchMode,
+		"productRoots":                 stringValues(productRoots),
+		"outputStream":                 resolvePath(p.OutputStream),
 		"sessionId":                    nil,
 		"turnId":                       nullableString(p.MissionTurn),
 		"requestedModel":               p.Model,
@@ -349,6 +374,9 @@ func BuildRecord(p BuildRecordParams) error {
 		"chainClosed":         false,
 		"runnerClosed":        false,
 		"critiqueExhaustions": []any{},
+	}
+	if p.ReasoningEffort != "" {
+		record["reasoningEffort"] = p.ReasoningEffort
 	}
 	if p.Role == "design-critic" || p.Role == "code-critic" || p.Role == "warden" {
 		record["findingRegister"] = []any{}
@@ -379,6 +407,8 @@ type BuildFollowRecordParams struct {
 	Root            string // dispatching checkout root, for mission provenance
 	GoalRevision    uint64
 	ApprovedRef     string
+	LaunchMode      LaunchMode
+	OutputStream    string
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -386,6 +416,12 @@ type BuildFollowRecordParams struct {
 // resume mode the launch will use. Only a resumed round carries the parent's
 // session id forward — a fresh-context round starts a new session.
 func BuildFollowRecord(p BuildFollowRecordParams) error {
+	if p.OutputStream == "" || !filepath.IsAbs(p.OutputStream) {
+		return fmt.Errorf("follow-up dispatch requires an absolute child output stream")
+	}
+	if p.LaunchMode != LaunchModeWorktree && p.LaunchMode != LaunchModeSharedCheckout {
+		return fmt.Errorf("follow-up dispatch launch mode must be worktree or shared-checkout")
+	}
 	parent, err := readObject(p.Parent)
 	if err != nil {
 		return fmt.Errorf("cannot read the parent record: %v", err)
@@ -481,7 +517,8 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"pidStartedAt":                 nil,
 		"pgid":                         nil,
 		"custodyProcesses":             []any{},
-		"instanceTag":                  "metasystem-job-" + p.Job,
+		"launchMode":                   p.LaunchMode,
+		"outputStream":                 resolvePath(p.OutputStream),
 		"sessionId":                    session,
 		"turnId":                       nullableString(p.MissionTurn),
 		"capMin":                       authority.capMin,
@@ -504,5 +541,24 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"usage":     nil,
 		"mirror":    nil,
 	}
+	// A follow-up serves the same product as its chain: the parent's declared
+	// roots carry, and an empty declaration falls back to the workspace.
+	if value, present := parent["productRoots"]; present {
+		record["productRoots"] = value
+	}
+	if productRootsEmpty(record["productRoots"]) {
+		record["productRoots"] = []any{resolvePath(asString(parent["workspaceRoot"]))}
+	}
 	return writeRecord(p.Output, record)
+}
+
+func productRootsEmpty(value any) bool {
+	switch roots := value.(type) {
+	case []any:
+		return len(roots) == 0
+	case []string:
+		return len(roots) == 0
+	default:
+		return value == nil
+	}
 }

@@ -46,6 +46,10 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   shift
   parse_supervisor_args "$@" || return 2
   record="$jobs/$job.json"
+  [[ "$(field "$record" instanceTag)" == "$instance_tag" ]] || {
+    echo "$runtime adapter instance tag does not match job $job" >&2
+    return 1
+  }
   gate_poll=$(adapter_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}") || return 2
   # Capped like every host's wait (script-adapters-11): a dispatcher that
   # dies before opening the gate must not leave an immortal supervisor
@@ -81,6 +85,14 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   printf '%s adapter supervisor started value=%s\n' "$runtime" "$instance_tag" >"$log"
   printf '{"pid":%s,"pgid":%s,"instanceTag":"%s"}\n' "$$" "$$" "$instance_tag" >"$heartbeat"
   "$ms" adapter effective-init --record "$record" --output "$effective"
+}
+
+mark_cli_prefork() {
+  # The marker is advance evidence for the interval before the child's exact
+  # identity reaches custody. Its writer is this supervisor, and the child
+  # inherits this supervisor's process group.
+  "$ms" job prefork-mark --root "$root" --job "$job" --tag "$instance_tag" \
+    --supervisor-pid "$$" --intended-pgid "$$"
 }
 
 register_cli_custody() { # child pid
@@ -280,13 +292,11 @@ check_record_deadlines() { # cli child pid; one tick's verdicts; may not return
 }
 
 wait_for_cli() { # child pid; sets cli_status and keeps liveness sidecars fresh
-  local child=$1 tick=0 heartbeat_sleep
+  local child=$1 heartbeat_sleep
   heartbeat_sleep=$(adapter_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-100}") || return 2
   while kill -0 "$child" 2>/dev/null; do
     touch "$heartbeat"
     check_record_deadlines "$child"
-    tick=$((tick + 1))
-    (( tick % 10 != 0 )) || touch "$log"
     sleep "$heartbeat_sleep"
   done
   set +e

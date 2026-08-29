@@ -3063,6 +3063,19 @@ if [[ -n "$enumeration_section" ]]; then
     printf '================================================\n' >&2
     exit 2
   fi
+  # A gated or skipped selected section did not run; only a genuine pass
+  # may speak as one (a fail flows to the RED block below). Found live: a
+  # needs-engine bed under an unproven enumeration reported "passed".
+  selected_verdict=$(awk -F '\t' -v selected="$enumeration_section" \
+    '$1 == "section" && $2 == selected { print $3 }' "$stage_results_file")
+  if [[ "$selected_verdict" != pass && "$selected_verdict" != fail ]]; then
+    printf '\n========== VALIDATION SECTION INVALID ==========\n' >&2
+    printf 'selected section %s recorded verdict %s; it never ran\n' \
+      "$enumeration_section" "${selected_verdict:-none}" >&2
+    printf 'stage results: %s\n' "$stage_results_file" >&2
+    printf '================================================\n' >&2
+    exit 2
+  fi
 fi
 
 if (( ${#validation_red_sections[@]} > 0 )); then

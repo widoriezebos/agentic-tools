@@ -42,15 +42,21 @@ type ClaimLaunchParams struct {
 	MainID               string
 	ClaimEpoch           string
 	GoalID               string
+	GoalRevision         uint64
+	MachineID            string
+	ApprovedRef          string
 	DefaultCapMinutes    int64
 	Wait                 bool
 	OccupancyPreparation *SessionOccupancyPreparation
 }
 
 type claimReservationProvenance struct {
-	mainID     any
-	claimEpoch any
-	goalID     any
+	mainID       any
+	claimEpoch   any
+	goalID       any
+	goalRevision any
+	machineID    any
+	approvedRef  any
 }
 
 type ClaimProcessVerifier interface {
@@ -93,8 +99,13 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
+	goalRevision, err := nullableGoalRevision(params.GoalID, params.GoalRevision)
+	if err != nil {
+		return ClaimResult{}, err
+	}
 	provenance := claimReservationProvenance{
 		mainID: nullableString(params.MainID), claimEpoch: claimEpoch, goalID: nullableString(params.GoalID),
+		goalRevision: goalRevision, machineID: nullableString(params.MachineID), approvedRef: nullableString(params.ApprovedRef),
 	}
 	dependencies = claimDependenciesWithDefaults(dependencies)
 	if !params.Wait {
@@ -404,9 +415,13 @@ func claimReservationRecord(opid string, fingerprint LaunchFingerprint, provenan
 	}
 	return map[string]any{
 		"jobId":                      opid,
+		"operationId":                opid,
 		"mainId":                     provenance.mainID,
 		"claimEpoch":                 provenance.claimEpoch,
 		"goalId":                     provenance.goalID,
+		"goalRevision":               provenance.goalRevision,
+		"machineId":                  provenance.machineID,
+		"approvedRef":                provenance.approvedRef,
 		"proofLevel":                 "proven",
 		"status":                     "pending-setup",
 		"phase":                      "reservation",

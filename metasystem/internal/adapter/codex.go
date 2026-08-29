@@ -51,7 +51,11 @@ func CodexUsage(eventsPath, outputPath string) error {
 // the thread inherits its cwd and config and carries the supported per-turn
 // overrides through -c settings instead. network is the bare TOML boolean the
 // sandbox honors.
-func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network, session string, extraDirs []string) ([]string, error) {
+func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network, session, instanceTag, reasoningEffort string, extraDirs []string) ([]string, error) {
+	if instanceTag == "" {
+		return nil, fmt.Errorf("a codex delegate command requires an instance tag")
+	}
+	tagSetting := "metasystem_instance_tag=" + quoteTOML(instanceTag)
 	// Write roots OUTSIDE the workspace — the worktree's git metadata a
 	// commit needs (issue #5) — ride --add-dir on dispatch and the
 	// equivalent writable-roots override on resume (which has no
@@ -67,6 +71,10 @@ func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network,
 			"-C", workspace,
 			"-c", `approval_policy="never"`,
 			"-c", "sandbox_workspace_write.network_access=" + network,
+			"-c", tagSetting,
+		}
+		if reasoningEffort != "" {
+			command = append(command, "-c", "model_reasoning_effort="+quoteTOML(reasoningEffort))
 		}
 		for _, dir := range extraDirs {
 			command = append(command, "--add-dir", dir)
@@ -86,6 +94,10 @@ func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network,
 			"-c", "sandbox_mode=" + quoteTOML(sandbox),
 			"-c", `approval_policy="never"`,
 			"-c", "sandbox_workspace_write.network_access=" + network,
+			"-c", tagSetting,
+		}
+		if reasoningEffort != "" {
+			command = append(command, "-c", "model_reasoning_effort="+quoteTOML(reasoningEffort))
 		}
 		if len(extraDirs) > 0 {
 			command = append(command, "-c", "sandbox_workspace_write.writable_roots="+tomlStringArray(extraDirs))

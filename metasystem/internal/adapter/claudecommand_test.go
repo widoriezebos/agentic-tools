@@ -45,8 +45,9 @@ func writeClaudeRecord(t *testing.T, body string) string {
 func TestBuildClaudeCommandArgv(t *testing.T) {
 	t.Run("read-only envelope narrows and adds read roots", func(t *testing.T) {
 		record := writeClaudeRecord(t, `{
-			"workspaceRoot": "/ws",
-			"permissions": {"requested": {"writeRoots": [], "readRoots": ["/ws", "/extra/docs"]}}
+				"workspaceRoot": "/ws",
+				"instanceTag": "job-tag",
+				"permissions": {"requested": {"writeRoots": [], "readRoots": ["/ws", "/extra/docs"]}}
 		}`)
 		command, err := BuildClaudeCommand(record, "sonnet", `{"s":1}`, "/tmp/settings.json", "", "5.00", "50", "json")
 		if err != nil {
@@ -59,6 +60,7 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 			"--tools", "Read,Glob,Grep",
 			"--allowedTools", "Read,Glob,Grep",
 			"--settings", "/tmp/settings.json",
+			"--name", "job-tag",
 			"--max-budget-usd", "5.00", "--max-turns", "50",
 			"--add-dir", "/extra/docs",
 		}
@@ -68,7 +70,8 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 	})
 	t.Run("write envelope keeps full tools and resumes", func(t *testing.T) {
 		record := writeClaudeRecord(t, `{
-			"workspaceRoot": "/ws",
+				"workspaceRoot": "/ws",
+				"instanceTag": "job-tag",
 			"permissions": {"requested": {"writeRoots": ["/ws"]}}
 		}`)
 		command, err := BuildClaudeCommand(record, "sonnet", "{}", "/tmp/settings.json", "sess-9", "5.00", "50", "stream-json")
@@ -81,6 +84,7 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 			"--tools Bash,Edit,Write,Read,Glob,Grep,NotebookEdit",
 			"--resume sess-9",
 			"--output-format stream-json",
+			"--name job-tag",
 			"--verbose",
 		} {
 			if !strings.Contains(joined, fragment) {
@@ -101,4 +105,14 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 			t.Fatalf("host argv = %s", joined)
 		}
 	})
+}
+
+func TestBuildClaudeCommandRequiresADelegateInstanceTag(t *testing.T) {
+	record := writeClaudeRecord(t, `{
+		"workspaceRoot": "/ws",
+		"permissions": {"requested": {"writeRoots": ["/ws"]}}
+	}`)
+	if _, err := BuildClaudeCommand(record, "sonnet", "{}", "/tmp/settings.json", "", "5.00", "50", "json"); err == nil {
+		t.Fatal("a Claude delegate command without its custody tag was accepted")
+	}
 }

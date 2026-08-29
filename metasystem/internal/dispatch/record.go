@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"golang.org/x/sys/unix"
 )
@@ -63,7 +64,12 @@ var immutableFields = map[string]bool{
 	"capMin": true, "capDeadline": true, "capResolution": true,
 	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
 	"operationId": true, "goalId": true, "goalRevision": true, "machineId": true,
-	"approvedRef": true,
+	"approvedRef": true, "sessionKey": true, "proofLevel": true,
+	"fingerprintVersion": true, "fingerprint": true, "dispatchMode": true,
+	"resumedSessionId": true, "canonicalModelKey": true, "launchMode": true,
+	"permissionEnvelopeDigest": true, "productRoots": true, "capRequest": true,
+	"inputHash": true, "sessionOccupancyClaimGeneration": true,
+	"instanceTag": true, "outputStream": true, "reasoningEffort": true,
 }
 
 // Owned metadata has a dedicated read-decide-write operation whose lock
@@ -308,19 +314,69 @@ func RecordSetup(root, job, sourcePath string) error {
 			"sessionOccupancyHealing", "sessionOccupancyClaimGeneration",
 			"fingerprintVersion", "fingerprint", "creatorLiveness",
 			"reservationDeadline", "reservationDeadlinePurpose", "createdAt",
-			"instanceTag",
+			"instanceTag", "dispatchMode", "resumedSessionId", "canonicalModelKey",
+			"permissionEnvelopeDigest", "capRequest", "inputHash",
 		} {
+			// The reservation's truth wins unconditionally: a setup source
+			// carrying a lookalike spelling (a copied record, a stale
+			// husk) must not override what the claim proved — the session
+			// occupancy index is keyed by the reservation's own fields.
 			if value, present := current[field]; present {
-				if _, overridden := record[field]; !overridden {
-					record[field] = value
-				}
+				record[field] = value
 			}
+		}
+		if err := captureProgressLaunch(record); err != nil {
+			return refuse(1, "cannot complete progress setup for %s: %v", job, err)
 		}
 		if err := writeRecord(recordPath, record); err != nil {
 			return err
 		}
 		return transaction.syncRecord(job, record)
 	})
+}
+
+func captureProgressLaunch(record map[string]any) error {
+	launchMode := asString(record["launchMode"])
+	if launchMode == "" {
+		return nil
+	}
+	workspace := asString(record["workspaceRoot"])
+	outputStream := asString(record["outputStream"])
+	if outputStream == "" || !filepath.IsAbs(outputStream) {
+		return fmt.Errorf("outputStream must be an absolute child-output path")
+	}
+	roots, err := recordProductRoots(record["productRoots"])
+	if err != nil {
+		return err
+	}
+	scopes, err := progress.CaptureProductRootScopes(launchMode, workspace, roots)
+	if err != nil {
+		return err
+	}
+	record["productRootScopes"] = scopes
+	return nil
+}
+
+func recordProductRoots(value any) ([]string, error) {
+	if value == nil {
+		return nil, fmt.Errorf("productRoots must be an array, including when empty")
+	}
+	if roots, ok := value.([]string); ok {
+		return append([]string(nil), roots...), nil
+	}
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("productRoots must be an array")
+	}
+	roots := make([]string, 0, len(raw))
+	for index, item := range raw {
+		root, ok := item.(string)
+		if !ok || root == "" {
+			return nil, fmt.Errorf("productRoots[%d] must be a non-empty path", index)
+		}
+		roots = append(roots, root)
+	}
+	return roots, nil
 }
 
 // RecordProtocolError stamps a job failed with a protocol violation. It is

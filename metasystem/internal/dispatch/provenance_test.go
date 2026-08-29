@@ -50,6 +50,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		Job: "root-job-r2", Round: 2, ParentJob: "root-job", Fallbacks: "[]",
 		ResumeMode: "fresh-context", CapResolution: capFile, Root: root,
 		MainID: "main-1", ClaimEpoch: "5", GoalRevision: 2,
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	}); err != nil {
 		t.Fatal(err)
 	}

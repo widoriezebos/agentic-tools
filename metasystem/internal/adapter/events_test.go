@@ -278,4 +278,7 @@ func TestDevinArgvCarriesNoStreamMode(t *testing.T) {
 	if !strings.Contains(content, `"nativeEvents": false`) {
 		t.Fatal("devin.sh no longer declares nativeEvents false; revisit the implication pin")
 	}
+	if !strings.Contains(content, `config_file="$round_dir/$instance_tag"`) {
+		t.Fatal("Devin's CLI config argument does not carry the reservation instance tag")
+	}
 }
