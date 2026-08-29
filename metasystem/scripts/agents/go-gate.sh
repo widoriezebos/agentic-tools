@@ -412,26 +412,41 @@ fi
 # (go-production-grade B8).
 gofmt_rc=0
 unformatted=$(gofmt -l internal cmd 2>&1) || gofmt_rc=$?
+# Every static tool runs regardless of earlier reds and the verdicts land
+# as ONE block (Ruling P / commit-gate-collect): a red gofmt no longer
+# hides what vet and staticcheck would have said, so one gate run teaches
+# everything it can. Exit stays nonzero on any red; no check weakens.
+gate_static_reds=()
 if [[ "$gofmt_rc" != 0 ]]; then
-  echo "go gate: gofmt itself failed (status $gofmt_rc):" >&2
-  printf '%s\n' "$unformatted" >&2
-  exit 1
+  gate_static_reds+=("gofmt itself failed (status $gofmt_rc): $unformatted")
+elif [[ -n "$unformatted" ]]; then
+  gate_static_reds+=("gofmt would change: $(printf '%s ' $unformatted)")
 fi
-if [[ -n "$unformatted" ]]; then
-  echo "go gate: gofmt would change these files:" >&2
-  printf '  %s\n' $unformatted >&2
-  exit 1
-fi
-
-go vet ./... || { echo "go gate: go vet failed" >&2; exit 1; }
+gate_vet_out=$(go vet ./... 2>&1) || gate_static_reds+=("go vet failed:
+$gate_vet_out")
 
 # staticcheck, pinned (go-production-grade Phase 0d): the frozen version
 # keeps every checkout judging by the same rules, and a tool run that
 # cannot start fails the gate loudly rather than skipping silently. It
 # rides the compile cache vet just filled, so its verdict lands seconds
 # after vet's.
-go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... \
-  || { echo "go gate: staticcheck 2025.1 refused (or could not run)" >&2; exit 1; }
+gate_sc_out=$(go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... 2>&1) \
+  || gate_static_reds+=("staticcheck 2025.1 refused (or could not run):
+$gate_sc_out")
+
+gate_build_scratch=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-collect.XXXXXX")
+if ! bash scripts/agents/go-build.sh --out "$gate_build_scratch" >/dev/null 2>&1; then
+  gate_static_reds+=("build failed (go-build.sh)")
+fi
+rm -f "$gate_build_scratch"
+
+if (( ${#gate_static_reds[@]} )); then
+  echo "go gate: ${#gate_static_reds[@]} static check(s) red — the complete block:" >&2
+  for red in "${gate_static_reds[@]}"; do
+    printf -- '--- %s\n' "$red" >&2
+  done
+  exit 1
+fi
 
 # Fast mode stops here: the static verdicts are in, and the build proves
 # the engine still compiles while handing the edit loop a fresh binary.
