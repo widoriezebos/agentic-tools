@@ -63,6 +63,12 @@ func Classify(checkoutRoot FileState, currency CurrencyState, state FileState) V
 	if checkoutRoot == Indeterminate {
 		return Blind
 	}
+	// A component finishing an in-flight write can recreate an empty
+	// checkout directory after the real checkout has vanished. With no
+	// lock and no state token, that shell has no supervision purpose.
+	if currency == NoLock && state == Absent {
+		return PurposeGone
+	}
 	switch currency {
 	case NamesSelf:
 		if state == Absent {

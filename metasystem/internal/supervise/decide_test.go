@@ -21,6 +21,9 @@ func TestClassify(t *testing.T) {
 		// lock vanished with it.
 		{"deleted checkout", Absent, NoLock, Absent, PurposeGone},
 		{"deleted checkout, lock cached as other", Absent, NamesOther, Absent, PurposeGone},
+		// An in-flight component write may recreate empty parent directories
+		// after deletion. No lock and no state token still means purpose gone.
+		{"deleted checkout shell recreated", Present, NoLock, Absent, PurposeGone},
 		// Revocation: our lock, state token deliberately removed.
 		{"state revoked under own lock", Present, NamesSelf, Absent, PurposeGone},
 		// Healthy current owner.
