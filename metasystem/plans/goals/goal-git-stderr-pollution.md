@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 1h. Split stdout from stderr in goalGit (and audit sibling git captures in internal/goal for the same CombinedOutput shape): parse stdout only, surface stderr in the error path; fixture proves a git wrapper that prints a warning on stderr leaves the parsed tip clean.
 - OpenedAt: 2026-08-27T09:50:59Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=2h attemptLimit=4 reservedJobMinutesLimit=30 activeJobLimit=1
 
 History:
 - 2026-08-27T09:50:59Z CA965F8RXHCRNDKBSAFEXV4KFA-m1-bf243850 open actor=m1+coordinator targets=goal-git-stderr-pollution
-Integrity: sha256=25402381299347240def72dd0406fece4d9979a49c4483acc4fd000abc6069de
+- 2026-08-29T18:50:57Z 0YB11KKBBWKWB5ZSFN6E9BZPT0-m2-bc1be9cb set-budget actor=human:wido targets=goal-git-stderr-pollution
+Integrity: sha256=7637c5049590cfc7d15ddde65c8e67cc32cd303dac3b61a7760f3d4c1c37f07f
