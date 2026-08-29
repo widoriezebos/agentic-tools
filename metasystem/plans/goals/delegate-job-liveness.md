@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The live delegation lane comes back under metasystem custody, and delegated worker status must not lie. Evidence through 2026-08-27: at least six zombie/launch failures in two days — status fields raced or lied in four sightings 2026-08-26/27, then the correction pass for actionable-metrics double-fired at launch (a >10min first call retried, minting a duplicate resume whose id was handed back while the real task ran under another) and later zombied (status running 15+min after log, work products, and process were all dead; caught only by a coordinator's hand-rolled monitor applying the work-product-mtime + process-probe + timed-verdict triad). Root cause: the fleet's real lane (codex companion, raw codex exec) runs outside the job-record machinery entirely — no job record since 2026-08-12, no process identity, no idempotent launch, no cap, no reaper. Every protection exists in the metasystem dispatch lane and none of it applies to the lane in daily use (Wido approved this arc re-scope 2026-08-27)
 - Origin: human
-- Next step: L11 LANDED 981e674 (m2, 2026-08-29 late evening, per Wido's parallel order via m1): the custody applications from wip/custody-launch-machine applied per the triage keep-list — custody_death/adoption/prefork, claim+fingerprint+occupancy — semantically resolved against moved main (identity port to Prober/seconds documented at every divergence; occupancy transactions woven into RecordCreate/RecordSetup/RecordCAS beside the untouched register fences; the wip's certified tests ported with the same semantics). Gate: full dispatch bed green, package sweeps zero-fail, coverage deltas passed, land.sh custody. m1 SEQUENCES L13 ON TOP OF THIS HASH. Remaining goal substance (the delegate verb itself) is m1's L13 per the ADAPT verdicts.
+- Next step: L12 per R-20b overnight arrangement (m2 lean slice, ledger-coordinated): claim-launch CLI surface + dispatch.sh call-site wiring adapted toward delegate internals per records/misc/custody-wip-triage.md ADAPT - typed enum JSON out, headline grouping, four-field budget tuple in admission per Ruling H, v4 lock order. EXCLUDES the delegate verb itself (m1's L13). Source: cherry-pick from wip/custody-launch-machine@7fcd73e per the application discipline.
 - OpenedAt: 2026-08-27T06:12:18Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=60 activeJobLimit=1
 - Claimed: machine=m2 lineage=mac-coordinator at=2026-08-29T21:10:34Z revision=22
 - StopCapability: generation=22 revision=22 machine=m2 claimEpoch=1 fenceEpoch=0
@@ -33,4 +33,5 @@ History:
 - 2026-08-29T18:26:56Z P81715TMG5XTCTZFPSNHDV10P0-m2-bc1be9cb release actor=m2+mac-coordinator targets=delegate-job-liveness
 - 2026-08-29T21:10:20Z P4H9XS9BM60HWGJPB7KM0W2JYD-m2-bc1be9cb claim actor=m2+mac-coordinator targets=delegate-job-liveness
 - 2026-08-29T21:10:34Z SC4QVPD8H67QK4CH1Q4DJZNNP6-m2-bc1be9cb set-budget actor=human:wido targets=delegate-job-liveness
-Integrity: sha256=8e0574b6801c2d3e3a8cd46175be2a98d0c789fb5560d92d988ff4d3b6c549d3
+- 2026-08-29T21:10:59Z 1HYX3GPTPXNZFSW6MYAZ39280E-m2-bc1be9cb edit actor=m2+mac-coordinator targets=delegate-job-liveness
+Integrity: sha256=9bea2a284cedecfaa654f786372d2e98631354351c0a05979d3ccc0f99e31270
