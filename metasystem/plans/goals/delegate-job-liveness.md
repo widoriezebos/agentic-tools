@@ -5,10 +5,10 @@
 - Origin: human
 - Next step: L11 LANDED 981e674 (m2, 2026-08-29 late evening, per Wido's parallel order via m1): the custody applications from wip/custody-launch-machine applied per the triage keep-list — custody_death/adoption/prefork, claim+fingerprint+occupancy — semantically resolved against moved main (identity port to Prober/seconds documented at every divergence; occupancy transactions woven into RecordCreate/RecordSetup/RecordCAS beside the untouched register fences; the wip's certified tests ported with the same semantics). Gate: full dispatch bed green, package sweeps zero-fail, coverage deltas passed, land.sh custody. m1 SEQUENCES L13 ON TOP OF THIS HASH. Remaining goal substance (the delegate verb itself) is m1's L13 per the ADAPT verdicts.
 - OpenedAt: 2026-08-27T06:12:18Z
-- Revision: 21
-- Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=400 activeJobLimit=2
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-29T21:10:20Z revision=21
-- StopCapability: generation=21 revision=21 machine=m2 claimEpoch=1 fenceEpoch=0
+- Revision: 22
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=60 activeJobLimit=1
+- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-29T21:10:34Z revision=22
+- StopCapability: generation=22 revision=22 machine=m2 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-27T06:12:18Z E8F1PERWGM23AZ2B7JPCWP1BS6-m1-bf243850 open actor=human:wido targets=delegate-job-liveness
@@ -32,4 +32,5 @@ History:
 - 2026-08-29T18:26:42Z PG0C4Q1WH5VTNXKWKR2KNCWKWX-m2-bc1be9cb edit actor=m2+mac-coordinator targets=delegate-job-liveness
 - 2026-08-29T18:26:56Z P81715TMG5XTCTZFPSNHDV10P0-m2-bc1be9cb release actor=m2+mac-coordinator targets=delegate-job-liveness
 - 2026-08-29T21:10:20Z P4H9XS9BM60HWGJPB7KM0W2JYD-m2-bc1be9cb claim actor=m2+mac-coordinator targets=delegate-job-liveness
-Integrity: sha256=4de8bacf0d23bd82f26b2fff0fd7145edb23217cc51b58e1c955b73c6a92b879
+- 2026-08-29T21:10:34Z SC4QVPD8H67QK4CH1Q4DJZNNP6-m2-bc1be9cb set-budget actor=human:wido targets=delegate-job-liveness
+Integrity: sha256=8e0574b6801c2d3e3a8cd46175be2a98d0c789fb5560d92d988ff4d3b6c549d3
