@@ -14,7 +14,7 @@ The action it controls is a boundary: a moment where work changes state. A candi
 
 Chapter 1 called such an enforced rule a law. The term names authority; it adds no ceremony. A legislator is the person or group authorized to change the rule. A judge is a person authorized to decide a named exception. A precedent is a recorded ruling that later cases may use, and an appeal is a named route for asking another authorized person or group to reconsider a decision. These terms describe permissions and continuity; they do not prescribe job titles. One person may hold several permissions, and a group may hold one permission together.
 
-The metaphor stops at that boundary. Software has no moral agency, cannot accept accountability and cannot make a political disagreement disappear by enforcing one side. A law can refuse an unauthorized action. It cannot decide whether a rule is just. A recorded precedent can make a ruling visible. It cannot make the ruling wise. Value and political disagreement remain with people who have the authority and responsibility to decide them.
+The metaphor stops there. Software has no moral agency, cannot accept accountability and cannot make a political disagreement disappear by enforcing one side. A law can refuse an unauthorized action. It cannot decide whether a rule is just. A recorded precedent can make a ruling visible. It cannot make the ruling wise. Value and political disagreement remain with people who have the authority and responsibility to decide them.
 
 ## Intent is controlling and revisable
 
@@ -54,7 +54,7 @@ Five parallel builders can explore the session change quickly. They also create 
 
 Construction and verification receive explicit budgets proportional to risk. A budget is enforced: when it is exhausted, machinery stops, records what it learned and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure and accumulated change rather than to line count or confidence.
 
-Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always end with responsible authorities. This boundary is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
+Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always end with responsible authorities. That is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
 
 ## Failure leaves a record
 
