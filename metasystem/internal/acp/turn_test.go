@@ -36,6 +36,7 @@ type stubStep struct {
 	request       string // raw params: a server->client request sent before responding
 	dropAfter     bool   // close the pipe instead of responding
 	silent        bool   // never respond (blocked-read fixture)
+	seen          chan<- struct{}
 }
 
 func newStubTurn(t *testing.T, steps []stubStep) (*Conn, *stubServer, func()) {
@@ -72,6 +73,9 @@ func (s *stubServer) run(steps []stubStep) {
 			}
 		}
 		count++
+		if step.seen != nil {
+			step.seen <- struct{}{}
+		}
 		for _, raw := range step.rawFrames {
 			s.writer.w.Write([]byte(raw + "\n"))
 		}
@@ -341,17 +345,22 @@ func TestTurnParentCancellation(t *testing.T) {
 	writer := NewWriter(serverWrites, nil)
 	reader := NewReader(serverReads, nil)
 	sawCancel := make(chan bool, 1)
+	promptSeen := make(chan struct{})
 	go func() {
 		msg, _ := reader.Next()
 		writer.Send(&Message{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage(`{"protocolVersion":1,"authMethods":[]}`)})
 		msg, _ = reader.Next()
 		writer.Send(&Message{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage(`{"sessionId":"s-1"}`)})
 		reader.Next() // the prompt; never answered
+		close(promptSeen)
 		msg, err := reader.Next()
 		sawCancel <- err == nil && msg.Method == "session/cancel" && msg.ID == nil
 	}()
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { time.Sleep(150 * time.Millisecond); cancel() }()
+	go func() {
+		<-promptSeen
+		cancel()
+	}()
 	cfg := baseConfig()
 	cfg.CancelGrace = 300 * time.Millisecond
 	outcome := RunTurn(ctx, conn, cfg)

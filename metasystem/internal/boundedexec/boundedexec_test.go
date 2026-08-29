@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -70,22 +71,52 @@ func TestRunKillsAHangingCommand(t *testing.T) {
 	}
 }
 
-// A script's CHILDREN must die with it: the group is signalled, not just the
-// direct child. The grandchild writes to a file after a delay; if the group
-// kill worked, that file never appears.
+// A script's children must die with it: the group is signalled, not just the
+// direct child.
 func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 	dir := t.TempDir()
-	marker := filepath.Join(dir, "grandchild-survived")
+	ready := filepath.Join(dir, "grandchild-ready")
 	script := filepath.Join(dir, "spawn.sh")
 	os.WriteFile(script, []byte(
-		"#!/bin/sh\n( sleep 3; echo alive > "+marker+" ) &\nsleep 60\n"), 0o755)
-	err := Run(exec.Command("/bin/sh", script), FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script")
+		"#!/bin/sh\nsleep 60 &\necho ready > "+ready+"\nwait\n"), 0o755)
+	deadline := make(chan time.Time)
+	command := exec.Command("/bin/sh", script)
+	done := make(chan error, 1)
+	go func() {
+		done <- runWithDeadline(command, FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(duration time.Duration) <-chan time.Time {
+			if duration == 300*time.Millisecond {
+				return deadline
+			}
+			return time.After(duration)
+		})
+	}()
+	readyBy := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(readyBy) {
+			deadline <- time.Time{}
+			<-done
+			t.Fatal("the spawning script did not start its child")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	deadline <- time.Time{}
+	err := <-done
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("the spawning script was not bounded: %v", err)
 	}
-	time.Sleep(4 * time.Second)
-	if _, statErr := os.Stat(marker); statErr == nil {
-		t.Fatal("a grandchild outlived the bound: the group was not killed")
+	groupGoneBy := time.Now().Add(5 * time.Second)
+	for {
+		probeErr := syscall.Kill(-command.Process.Pid, 0)
+		if errors.Is(probeErr, syscall.ESRCH) {
+			break
+		}
+		if time.Now().After(groupGoneBy) {
+			t.Fatalf("a grandchild outlived the bound: group probe: %v", probeErr)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

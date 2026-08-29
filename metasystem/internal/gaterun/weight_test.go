@@ -120,6 +120,13 @@ func TestWeightLockHelperProcess(t *testing.T) {
 	if root == "" || commit == "" {
 		t.Fatal("weight lock helper environment is incomplete")
 	}
+	if attempt := os.Getenv("METASYSTEM_WEIGHT_LOCK_ATTEMPT"); attempt != "" {
+		beforeWeightLockWait = func() {
+			if err := os.WriteFile(attempt, []byte("waiting\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if signal := os.Getenv("METASYSTEM_WEIGHT_LOCK_SIGNAL"); signal != "" {
 		release := os.Getenv("METASYSTEM_WEIGHT_LOCK_RELEASE")
 		priorWriter := writeWeightState
@@ -149,7 +156,8 @@ func TestStableSiblingLockSerializesSeparateProcesses(t *testing.T) {
 	root := t.TempDir()
 	signal := filepath.Join(root, "holder-locked")
 	release := filepath.Join(root, "release-holder")
-	startHelper := func(commit string, hold bool, output *strings.Builder) *exec.Cmd {
+	attempt := filepath.Join(root, "follower-at-lock")
+	startHelper := func(commit string, hold bool, attemptPath string, output *strings.Builder) *exec.Cmd {
 		command := exec.Command(os.Args[0], "-test.run=^TestWeightLockHelperProcess$")
 		command.Env = append(os.Environ(),
 			"METASYSTEM_WEIGHT_LOCK_HELPER=1",
@@ -162,6 +170,9 @@ func TestStableSiblingLockSerializesSeparateProcesses(t *testing.T) {
 				"METASYSTEM_WEIGHT_LOCK_RELEASE="+release,
 			)
 		}
+		if attemptPath != "" {
+			command.Env = append(command.Env, "METASYSTEM_WEIGHT_LOCK_ATTEMPT="+attemptPath)
+		}
 		command.Stdout, command.Stderr = output, output
 		if err := command.Start(); err != nil {
 			t.Fatal(err)
@@ -169,7 +180,7 @@ func TestStableSiblingLockSerializesSeparateProcesses(t *testing.T) {
 		return command
 	}
 	var holderOutput, followerOutput strings.Builder
-	holder := startHelper("holder", true, &holderOutput)
+	holder := startHelper("holder", true, "", &holderOutput)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(signal); err == nil {
@@ -181,15 +192,27 @@ func TestStableSiblingLockSerializesSeparateProcesses(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	follower := startHelper("follower", false, &followerOutput)
+	follower := startHelper("follower", false, attempt, &followerOutput)
 	followerDone := make(chan error, 1)
 	go func() { followerDone <- follower.Wait() }()
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(attempt); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = holder.Process.Kill()
+			_ = follower.Process.Kill()
+			t.Fatalf("follower never reached the held lock:\n%s", followerOutput.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	select {
 	case err := <-followerDone:
 		_ = os.WriteFile(release, []byte("release\n"), 0o600)
 		_ = holder.Wait()
 		t.Fatalf("second process crossed a held flock: %v\n%s", err, followerOutput.String())
-	case <-time.After(150 * time.Millisecond):
+	default:
 	}
 	if err := os.WriteFile(release, []byte("release\n"), 0o600); err != nil {
 		t.Fatal(err)

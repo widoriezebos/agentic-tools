@@ -630,12 +630,13 @@ func TestDriverSynchronization(t *testing.T) {
 // the pump's verbatim row plus the cancel-requested prefix — no row
 // rewriting.
 func TestDriverCancelDuringSetup(t *testing.T) {
-	steps := []stubStep{{expectMethod: "initialize", silent: true}}
+	initializeSeen := make(chan struct{})
+	steps := []stubStep{{expectMethod: "initialize", silent: true, seen: initializeSeen}}
 	req := promptRequest()
 	req.Mode = "ask"
 	turn, _, _, cleanup := driverTurn(t, steps, req)
 	defer cleanup()
-	time.Sleep(50 * time.Millisecond)
+	<-initializeSeen
 	if err := turn.Cancel(context.Background()); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}

@@ -11,6 +11,10 @@ func TestArbitrationAdmitsOneContenderAtATime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	secondAtLock := make(chan struct{})
+	priorBeforeWait := beforeArbitrationWait
+	beforeArbitrationWait = func() { secondAtLock <- struct{}{} }
+	t.Cleanup(func() { beforeArbitrationWait = priorBeforeWait })
 	entered := make(chan struct{})
 	go func() {
 		second, err := AcquireArbitration(root)
@@ -19,10 +23,11 @@ func TestArbitrationAdmitsOneContenderAtATime(t *testing.T) {
 			second.Release()
 		}
 	}()
+	<-secondAtLock
 	select {
 	case <-entered:
 		t.Fatal("the second contender must block while the first holds")
-	case <-time.After(150 * time.Millisecond):
+	default:
 	}
 	first.Release()
 	select {

@@ -82,6 +82,10 @@ func Timeout(confPath string, kind Kind) Bound {
 // The returned error on expiry is a dependency failure: the metasystem
 // could not finish because something it depends on did not answer.
 func Run(cmd *exec.Cmd, bound Bound, what string) error {
+	return runWithDeadline(cmd, bound, what, time.After)
+}
+
+func runWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
@@ -94,7 +98,7 @@ func Run(cmd *exec.Cmd, bound Bound, what string) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(bound.Limit):
+	case <-deadline(bound.Limit):
 	}
 	// The bound expired: signal the GROUP so the command's children die with
 	// it rather than outliving the bound holding pipes open. A negative pid
@@ -106,7 +110,7 @@ func Run(cmd *exec.Cmd, bound Bound, what string) error {
 	// cannot hang the caller either.
 	select {
 	case <-done:
-	case <-time.After(killGraceWindow):
+	case <-deadline(killGraceWindow):
 	}
 	if bound.Key == "" {
 		return fmt.Errorf("%s %w after %s", what, ErrTimedOut, bound.Limit)

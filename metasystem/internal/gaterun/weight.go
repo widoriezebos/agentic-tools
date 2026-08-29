@@ -173,6 +173,8 @@ func WeightLockPath(root string) string {
 
 type weightLock struct{ file *os.File }
 
+var beforeWeightLockWait = func() {}
+
 func acquireWeightLock(root string) (*weightLock, error) {
 	path := WeightLockPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -182,6 +184,7 @@ func acquireWeightLock(root string) (*weightLock, error) {
 	if err != nil {
 		return nil, err
 	}
+	beforeWeightLockWait()
 	for {
 		err = unix.Flock(int(file.Fd()), unix.LOCK_EX)
 		if err != unix.EINTR {

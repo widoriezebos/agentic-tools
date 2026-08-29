@@ -590,7 +590,14 @@ func TestWaiterContract(t *testing.T) {
 	prober.verdicts[501] = identity.Dead
 	done := make(chan int, 1)
 	go func() { done <- s.Watch("watch-run", mainCaller, 30*time.Millisecond) }()
-	time.Sleep(60 * time.Millisecond)
+	waiterTarget := WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}
+	deadline := time.Now().Add(5 * time.Second)
+	for !LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
+		if time.Now().After(deadline) {
+			t.Fatal("watch did not publish its waiter record")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if _, err := s.Assess("watch-run"); err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +609,7 @@ func TestWaiterContract(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("watch did not return after conclusion")
 	}
-	if LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}) {
+	if LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
 		t.Fatal("the waiter record survived the watch exit")
 	}
 	// Watch on a missing record: 4.

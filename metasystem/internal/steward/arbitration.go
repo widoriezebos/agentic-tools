@@ -22,6 +22,8 @@ func ArbitrationLockPath(repoRoot string) string {
 // ArbitrationLock is a held exclusive lock.
 type ArbitrationLock struct{ f *os.File }
 
+var beforeArbitrationWait = func() {}
+
 // AcquireArbitration blocks until the critical section is ours.
 func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	path := ArbitrationLockPath(repoRoot)
@@ -32,6 +34,7 @@ func AcquireArbitration(repoRoot string) (*ArbitrationLock, error) {
 	if err != nil {
 		return nil, err
 	}
+	beforeArbitrationWait()
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
 		f.Close()
 		return nil, err

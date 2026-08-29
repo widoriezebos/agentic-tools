@@ -150,6 +150,10 @@ type turnDriver struct {
 // replay before it and stragglers after it are journaled evidence
 // that arithmetic, not timing, keeps out of the candidate.
 func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
+	return runTurn(ctx, conn, cfg, time.After)
+}
+
+func runTurn(ctx context.Context, conn *Conn, cfg TurnConfig, lateDeadline func(time.Duration) <-chan time.Time) Outcome {
 	driver := &turnDriver{conn: conn, tap: cfg.OnEvent}
 	handshake, cancelHandshake := context.WithTimeout(ctx, cfg.HandshakeTimeout)
 	defer cancelHandshake()
@@ -254,7 +258,7 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 		}
 		return driver.fail("prompt", err)
 	}
-	return driver.settle(respFrame, cfg.LateFrameWindow)
+	return driver.settle(respFrame, cfg.LateFrameWindow, lateDeadline)
 }
 
 // sessionEstablishedParams builds the pinned beat encoding with real
@@ -410,7 +414,7 @@ func classifySetup(frame Frame, violations int, phase string) (*Outcome, string)
 // first — the sequence fence, not drain timing, decides window
 // membership — and the bounded late window drains as journaled
 // evidence with post-window requests answered as violations.
-func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration) Outcome {
+func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration, lateDeadline func(time.Duration) <-chan time.Time) Outcome {
 	d.inWindow = false
 	d.emit(TapEvent{WireSeq: respFrame.Seq, Synthetic: true, Kind: TapSettlementStarted})
 	settleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -463,7 +467,7 @@ drained:
 	if err := json.Unmarshal(resp.Result, &body); err != nil {
 		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: "prompt result unreadable"}
 	}
-	d.drainLate(lateWindow, respFrame.Seq)
+	d.drainLate(lateWindow, respFrame.Seq, lateDeadline)
 	if d.failure != nil {
 		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("mandatory answer never reached the wire: %v", d.failure)}
 	}
@@ -499,13 +503,13 @@ drained:
 // They are journaled evidence; the fence arithmetic keeps them out
 // of the candidate, and post-window requests are violations
 // answered cancelled.
-func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64) {
+func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64, lateDeadline func(time.Duration) <-chan time.Time) {
 	if window <= 0 {
 		return
 	}
 	lateCtx, cancel := context.WithTimeout(context.Background(), window+5*time.Second)
 	defer cancel()
-	deadline := time.After(window)
+	deadline := lateDeadline(window)
 	for {
 		select {
 		case <-deadline:

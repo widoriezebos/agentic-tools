@@ -30,11 +30,16 @@ func TestConnCallCancelAndClose(t *testing.T) {
 	serverReads, clientWrites := io.Pipe()
 	conn := NewConn(clientReads, clientWrites, nil)
 	defer func() { clientWrites.Close(); serverWrites.Close() }()
+	secondCallSeen := make(chan struct{})
 	go func() {
 		reader := NewReader(serverReads, nil)
 		for {
-			if _, err := reader.Next(); err != nil {
+			msg, err := reader.Next()
+			if err != nil {
 				return
+			}
+			if msg.Method == "also/never" {
+				close(secondCallSeen)
 			}
 		}
 	}()
@@ -50,7 +55,7 @@ func TestConnCallCancelAndClose(t *testing.T) {
 		_, err := conn.Call(context.Background(), "also/never", nil)
 		callErr <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
+	<-secondCallSeen
 	serverWrites.Close()
 	if err := <-callErr; err != io.EOF {
 		t.Fatalf("peer close must fail pending calls with EOF: %v", err)
@@ -171,6 +176,7 @@ func TestTurnLateWindowTraffic(t *testing.T) {
 	writer := NewWriter(serverWrites, nil)
 	reader := NewReader(serverReads, nil)
 	lateAnswer := make(chan string, 1)
+	lateDeadline := make(chan time.Time)
 	go func() {
 		msg, _ := reader.Next()
 		writer.Send(&Message{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage(`{"protocolVersion":1,"authMethods":[]}`)})
@@ -182,10 +188,13 @@ func TestTurnLateWindowTraffic(t *testing.T) {
 		writer.Send(&Message{JSONRPC: "2.0", ID: NewRequestID(5), Method: "session/request_permission", Params: json.RawMessage(`{"sessionId":"s-1","options":[{"optionId":"r1","kind":"reject_once","name":"Reject"}]}`)})
 		reply, _ := reader.Next()
 		lateAnswer <- string(reply.Result)
+		lateDeadline <- time.Time{}
 	}()
 	cfg := baseConfig()
 	cfg.LateFrameWindow = 500 * time.Millisecond
-	outcome := RunTurn(context.Background(), conn, cfg)
+	outcome := runTurn(context.Background(), conn, cfg, func(time.Duration) <-chan time.Time {
+		return lateDeadline
+	})
 	if outcome.Row != RowDelivered || outcome.Candidate != nil {
 		t.Fatalf("late chunk must not become a candidate: %+v %q", outcome, outcome.Candidate)
 	}
@@ -205,6 +214,7 @@ func TestCancelWithDeadWriteSide(t *testing.T) {
 	conn := NewConn(clientReads, clientWrites, &bytes.Buffer{})
 	reader := NewReader(serverReads, nil)
 	writer := NewWriter(serverWrites, nil)
+	writeSideDead := make(chan struct{})
 	go func() {
 		msg, _ := reader.Next()
 		writer.Send(&Message{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage(`{"protocolVersion":1,"authMethods":[]}`)})
@@ -213,9 +223,13 @@ func TestCancelWithDeadWriteSide(t *testing.T) {
 		reader.Next()        // the prompt
 		clientWrites.Close() // kill the client's read side mid-prompt: writes now fail
 		serverWrites.Close()
+		close(writeSideDead)
 	}()
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { time.Sleep(200 * time.Millisecond); cancel() }()
+	go func() {
+		<-writeSideDead
+		cancel()
+	}()
 	cfg := baseConfig()
 	cfg.CancelGrace = 200 * time.Millisecond
 	outcome := RunTurn(ctx, conn, cfg)
