@@ -533,3 +533,110 @@ Over-configuration is refused the same as under-configuration:
 both fail the anti-mimicry test. The class table is data, revised
 by ruling; the economist backlog item builds the role that senses
 misclassification and acts.
+
+
+## RULING P — AN EXPENSIVE RUN TEACHES EVERYTHING IT CAN (Wido, 2026-08-29 morning)
+
+"We need to continue tests/suites/batteries even when we find
+something. Never halt, because an expensive run can teach us more
+than one thing." Binding on every costly verification surface: a
+red stage is RECORDED and the run CONTINUES to its end; the
+verdict lists every red at once; exit is nonzero if any stage
+failed. Halting early is lawful only when a failure makes later
+stages meaningless or unsafe (a broken engine build, a poisoned
+environment) — and that dependency must be declared, not assumed.
+The coverage ratchet already embodies this law; the validator's
+stage sequencer and the fixture beds' first-leg deaths do not, and
+the nine-single-lesson battery runs of 2026-08-29 are the recorded
+cost. The same law governs coordinator conduct: when one failure
+names a CLASS, the whole class surface is swept immediately, and
+fixes for independent findings are dispatched as one batch.
+
+
+## RULING Q — THE BUDGET IS AN ESTIMATE; THE GRACE BAND IS LAW (Wido, 2026-08-29)
+
+"The budget is always an estimate and 50% is rather ok given we
+never should have slices beyond 4 hours anyways." Two thresholds
+replace the equality-stop that rode in with the structured law:
+at elapsedLimit, ADMISSION CLOSES — no new reservation against
+the claim; at elapsedLimit plus the grace band, BREACH-STOP fires
+and live jobs wind down. The band is configuration at the repo
+root (metasystem.budget.elapsed-grace-percent), DEFAULT 50, read
+by the Go law — never a prompt, never prose. Attempt, reserved-
+minute, and active-job semantics are unchanged (exhaustion closes
+admission; authorized jobs reach their caps). Enforcement owners:
+dispatch admission in Go at every launch; the steward tick's stop
+custodian for wind-down; escalation only per Ruling L. The
+4-hour slice bound interacts with claim-time elapsed limits and
+awaits Wido's word (hard refusal vs warning vs slice-only rule).
+
+RULING Q ADDENDUM — THE 4-HOUR RULE RESOLVED (Wido, 2026-08-29,
+clarified same day: "this is about slice sizes, not about a batch
+of slices"): carving slices at ~4 hours is the NORM, not law, and
+it binds the SLICE — the individual unit of work, mechanically
+the per-job runtime cap (capMin) at reservation — never the
+claim's elapsed limit, which lawfully covers a batch of slices.
+A reservation whose runtime cap exceeds the norm (config
+metasystem.budget.slice-norm-hours, default 4) is REFUSED unless
+it references a recorded human approval — the R-14 envelope
+pattern; post-L8, the enrolled-terminal act. Approved size is
+lawful size. The machinery (reservation admission in Go)
+enforces; the coordinator's standing duty is carving toward the
+norm and bringing oversized slices to Wido (the R-2 shape).
+
+
+## RULING R — A CHANGED CONTRACT RUNS ITS CALLERS (2026-08-29, from the eleven-battery retro)
+
+When a landing changes a contract that other code calls — a law,
+a verb's semantics, a schema, an identity requirement — the
+landing's gate runs the CALLERS of that contract, enumerated
+mechanically (the callers of arm-supervision were one rg away all
+night). Area-green is not contract-green: L7's enrollment law
+landed with its own area passing while six calling harnesses
+broke lawfully and silently, costing six battery runs of serial
+discovery. Companion conduct rules from the same retro: the
+battery runs when its weight mechanism speaks, at the next
+landing gap, never deferred across multiple landings; and the
+landing gate checks coverage for the packages the landing touched
+(the ratchet's full sweep stays with the battery, but the delta
+is seconds and keeps debt visible at the landing that creates it).
+
+RULING R ADDENDUM (same day): RESIDENT PROCESSES are callers too.
+A landing that changes a record grammar or evidence schema has,
+among its callers, every resident process still running the prior
+generation — the narrator spent the night unable to read the very
+records the landings produced. The caller sweep names them, and
+the landing report states which resident roles go stale until the
+next lawful generation change.
+
+
+## RULING S — THE BATCH IS BUDGETED ON BOTH SIDES (Wido, 2026-08-29, from paper ch.11 and ch.7)
+
+Batching is not the mistake; batching without the economy is.
+Binding on every fan-out:
+- THE DECISION COMES BEFORE GENERATION (ch.11): before parallel
+  passes launch, the judging and landing capacity for their
+  outputs is budgeted alongside their production. Producing what
+  cannot be judged and landed is unfinished work, not abundance.
+- EACH CONCERN IS A FULL CONFIGURATION (ch.7): builder, examiner
+  sized by the four risk questions, AND its own custody-to-landing
+  path (its own worktree, its own landing) — never N builders
+  sharing one entangled tree and one landing channel.
+- MARGINAL SPEND GOES WHERE VALUE IS (ch.11): when green work
+  waits unlanded, the next unit of effort lands it before any new
+  generation starts. Landed intent is the outcome measure;
+  pass-counts and activity are cost, never progress.
+- A LANDING-LATENCY STOP RULE: work that is gate-green but
+  unlanded beyond a bounded delay stops all new generation until
+  it lands. The economist senses violations when it exists; the
+  coordinator holds the rule by recorded delegation until then.
+
+RULING S REFINEMENT (Wido, same day): "batching small and simple
+changes should be just fine, big and complex probably never." The
+batch admission test is the ch.11 risk profile, not batch size:
+small, simple, low-consequence changes MAY share one batch and
+one landing — the ceremony amortizes and the judging stays cheap.
+Big or complex concerns — design-bearing, destructive-reach, or
+anything whose judging needs its own critique — NEVER share a
+batch: each gets its own configuration and lands alone. The
+mega-batch failed because it mixed both kinds.

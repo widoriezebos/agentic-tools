@@ -72,7 +72,7 @@ func runBreachStopCustodian(repoRoot string, now time.Time) []BreachStopReport {
 	reports := make([]BreachStopReport, 0, len(routes))
 	for _, route := range routes {
 		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, StopID: route.StopID}
-		if route.Failure != "" {
+		if route.Condition == dispatch.StopRouteIndeterminate {
 			report.State, report.Detail = "INDETERMINATE", route.Failure
 			reports = append(reports, report)
 			continue
@@ -196,11 +196,14 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			return TickResult{}, err
 		}
 	}
-	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
-		return TickResult{}, err
-	}
 	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
 		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops}
+	if err := NarrateDigest(repoRoot, prev, result, time.Now()); err != nil {
+		return result, fmt.Errorf("write narrator digest: %w", err)
+	}
+	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
+		return result, err
+	}
 	// The running plain-English account rides every tick, strictly
 	// best-effort: the storyteller never fails the shift. What the
 	// narration notices also reaches the operator, one gated message

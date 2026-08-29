@@ -46,7 +46,12 @@ func TestLandingConsumerUsesProspectivePolicyForStaleBinaryAndRename(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	coverageDeltaBody, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "coverage-delta.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "commit.sh"), string(commitBody), true)
+	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "coverage-delta.sh"), string(coverageDeltaBody), true)
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "audit-metasystem.sh"), "#!/usr/bin/env bash\nexit 0\n", true)
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "go-gate.sh"), `#!/usr/bin/env bash
 set -euo pipefail
@@ -122,6 +127,9 @@ esac
 	output, err = runConsumerWrapper(root, marker, "-q", "-m", "prospective policy wins")
 	if err != nil {
 		t.Fatalf("stale live binary blocked prospective policy: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "coverage delta: no ratchet registry at this root; skipped") {
+		t.Fatalf("registry-free root did not state the coverage skip:\n%s", output)
 	}
 
 	// Intent-to-add makes both sides of this unstaged cross-class rename

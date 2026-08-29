@@ -210,6 +210,11 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
 		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
 		{"share over 100", "census.max-interval-share-percent=150\n", "census.max-interval-share-percent must be an integer between 1 and 100"},
+		{"negative elapsed grace", "metasystem.budget.elapsed-grace-percent=-1\n", "metasystem.budget.elapsed-grace-percent must be an integer between 0 and 200"},
+		{"nonnumeric elapsed grace", "metasystem.budget.elapsed-grace-percent=half\n", "metasystem.budget.elapsed-grace-percent must be an integer between 0 and 200"},
+		{"elapsed grace over 200", "metasystem.budget.elapsed-grace-percent=201\n", "metasystem.budget.elapsed-grace-percent must be an integer between 0 and 200"},
+		{"zero slice norm", "metasystem.budget.slice-norm-hours=0\n", "metasystem.budget.slice-norm-hours must be a positive integer"},
+		{"nonnumeric slice norm", "metasystem.budget.slice-norm-hours=four\n", "metasystem.budget.slice-norm-hours must be a positive integer"},
 	} {
 		problems := validateRepo(t, validConf+tc.line)
 		if !hasProblem(problems, tc.expect) {
@@ -217,8 +222,102 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\n"
+	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
+	}
+}
+
+func TestValidateBudgetLawOverrideSources(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	fixtureConf := strings.Replace(validConf, "metasystem.runtimes=claude,codex,fake", "metasystem.runtimes=fake", 1)
+	tests := []struct {
+		name        string
+		conf        string
+		local       string
+		environment map[string]string
+		expect      []string
+	}{
+		{
+			name:  "production local overrides",
+			conf:  validConf,
+			local: ElapsedGracePercentKey + "=75\n" + SliceNormHoursKey + "=6\n",
+			expect: []string{
+				ElapsedGracePercentKey + " accepts only committed root configuration",
+				SliceNormHoursKey + " accepts only committed root configuration",
+			},
+		},
+		{
+			name: "production environment overrides",
+			conf: validConf,
+			environment: map[string]string{
+				ElapsedGracePercentKey: "75",
+				SliceNormHoursKey:      "6",
+			},
+			expect: []string{
+				"environment source " + EnvName(ElapsedGracePercentKey) + " is refused",
+				"environment source " + EnvName(SliceNormHoursKey) + " is refused",
+			},
+		},
+		{
+			name:  "malformed fixture local overrides",
+			conf:  fixtureConf,
+			local: ElapsedGracePercentKey + "=201\n" + SliceNormHoursKey + "=0\n",
+			expect: []string{
+				ElapsedGracePercentKey + " must be an integer between 0 and 200",
+				SliceNormHoursKey + " must be a positive integer",
+			},
+		},
+		{
+			name: "malformed fixture environment overrides",
+			conf: fixtureConf,
+			environment: map[string]string{
+				ElapsedGracePercentKey: "many",
+				SliceNormHoursKey:      "none",
+			},
+			expect: []string{
+				"environment source " + EnvName(ElapsedGracePercentKey),
+				"environment source " + EnvName(SliceNormHoursKey),
+			},
+		},
+		{
+			name: "ambiguous fixture local overrides",
+			conf: fixtureConf,
+			local: ElapsedGracePercentKey + "=25\n" + ElapsedGracePercentKey + "=50\n" +
+				SliceNormHoursKey + "=4\n" + SliceNormHoursKey + "=6\n",
+			expect: []string{
+				"duplicate metasystem configuration key: " + ElapsedGracePercentKey,
+				"duplicate metasystem configuration key: " + SliceNormHoursKey,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(repo, "development"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
+			conf := filepath.Join(repo, "metasystem.conf")
+			body := strings.ReplaceAll(test.conf, "@EVIDENCE@", t.TempDir())
+			putFile(t, conf, body)
+			if test.local != "" {
+				putFile(t, conf+".local", test.local)
+			}
+			for key, value := range test.environment {
+				t.Setenv(EnvName(key), value)
+			}
+
+			_, problems, err := Validate(conf, repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, expected := range test.expect {
+				if !hasProblem(problems, expected) {
+					t.Fatalf("expected %q in %v", expected, problems)
+				}
+			}
+		})
 	}
 }

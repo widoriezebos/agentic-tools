@@ -51,6 +51,9 @@ func (r JobRecord) GoalID() string { return r.text("goalId") }
 // MachineID is the claim machine copied into a goal-bound reservation.
 func (r JobRecord) MachineID() string { return r.text("machineId") }
 
+// ApprovedRef is the immutable human word authorizing an oversized slice.
+func (r JobRecord) ApprovedRef() string { return r.text("approvedRef") }
+
 func (r JobRecord) uint64Field(key string) (uint64, bool) {
 	value, present := r.doc.Get(key)
 	if !present {

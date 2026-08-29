@@ -73,4 +73,81 @@ ENUMERATION_FIXTURE_BED=clean \
 grep -Fq '3 sections run / 0 failed; failed sections: none' "$clean_out" \
   || { echo "enumeration fixture: clean summary was not green" >&2; exit 1; }
 
+# A selected section that records no row is invalid, even when every body the
+# validator did run was green or lawfully gated.
+empty_selector="$tmp/empty-selector.sh"
+cat >"$empty_selector" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case ${1:-} in
+  list) printf 'selected-empty-section\tselected empty section\n' ;;
+  run)
+    [[ ${2:-} == selected-empty-section ]] || exit 2
+    METASYSTEM_VALIDATION_STAGE_RESULTS_OUT=${METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT:?} \
+    METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER=1 \
+    METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-unproven} \
+    METASYSTEM_ENUMERATION_DRIVER=1 \
+      bash "$ENUMERATION_FIXTURE_ROOT/scripts/validate-metasystem.sh" \
+        --enumeration-section selected-empty-section
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+empty_report="$tmp/empty.tsv"
+empty_out="$tmp/empty.out"
+empty_rc=0
+ENUMERATION_FIXTURE_ROOT="$root" \
+  bash "$root/scripts/validate-metasystem.sh" --enumerate \
+    --report "$empty_report" --selector "$empty_selector" >"$empty_out" 2>&1 \
+  || empty_rc=$?
+[[ $empty_rc -eq 2 ]] \
+  || { echo "enumeration fixture: selected empty section exited $empty_rc instead of INVALID rc 2" >&2; exit 1; }
+grep -Fq $'section\tselected-empty-section\tselected empty section\tinvalid\t2\t' "$empty_report" \
+  || { echo "enumeration fixture: selected empty section was not recorded invalid" >&2; exit 1; }
+grep -Fq 'selected section selected-empty-section recorded 0 results; exactly one is required' "$empty_report" \
+  || { echo "enumeration fixture: invalid result did not name the missing selected row" >&2; exit 1; }
+
+# Dependency state comes only from the Go gate's recorded row. A failed gate
+# must make the later engine consumer gated, never passed by process default.
+dependency_selector="$tmp/dependency-selector.sh"
+cat >"$dependency_selector" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case ${1:-} in
+  list)
+    printf 'go-engine-gate\tGo engine gate\n'
+    printf 'engine-consumer\tengine consumer\n'
+    ;;
+  run)
+    result=${METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT:?}
+    printf 'format\tmetasystem-validation-stage-results-v1\n' >"$result"
+    printf 'columns\tkind\tid\tstatus\texit_code\tfailure_tail\n' >>"$result"
+    case ${2:-} in
+      go-engine-gate)
+        printf 'section\tgo-engine-gate\tfail\t7\trecorded gate failure\n' >>"$result"
+        exit 1
+        ;;
+      engine-consumer)
+        [[ ${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-} == failed ]] \
+          || { echo "engine consumer did not inherit the recorded failed gate" >&2; exit 2; }
+        printf 'section\tengine-consumer\tgated\t0\tneeds engine: recorded gate failed\n' >>"$result"
+        ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+dependency_report="$tmp/dependency.tsv"
+dependency_rc=0
+bash "$root/scripts/validate-metasystem.sh" --enumerate \
+  --report "$dependency_report" --selector "$dependency_selector" >/dev/null 2>&1 \
+  || dependency_rc=$?
+[[ $dependency_rc -eq 1 ]] \
+  || { echo "enumeration fixture: recorded gate failure exited $dependency_rc instead of 1" >&2; exit 1; }
+grep -Fq $'section\tgo-engine-gate\tGo engine gate\tfail\t7\trecorded gate failure' "$dependency_report" \
+  || { echo "enumeration fixture: recorded Go gate failure was lost" >&2; exit 1; }
+grep -Fq $'section\tengine-consumer\tengine consumer\tgated\t0\tneeds engine: recorded gate failed' "$dependency_report" \
+  || { echo "enumeration fixture: engine consumer did not remain gated" >&2; exit 1; }
+
 echo "enumeration mode fixtures passed"

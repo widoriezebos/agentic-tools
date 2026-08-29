@@ -2,13 +2,14 @@ package config
 
 import (
 	"fmt"
-	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // Validation of the whole metasystem.conf domain: the runtime roster, capability
@@ -61,8 +62,9 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		}
 	})
 
-	// The .local override contributes only capability floors to validation; its
-	// other keys are the developer's own and not template invariants.
+	// The .local override contributes capability floors here. Budget settings
+	// are checked with the other numeric knobs below; other keys are the
+	// developer's own and not template invariants.
 	localPath := confPath + ".local"
 	if isFile(localPath) {
 		localContent, localErr := os.ReadFile(localPath)
@@ -319,6 +321,53 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	if raw, present := values["census.max-interval-share-percent"]; present {
 		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 || parsed > 100 {
 			add("census.max-interval-share-percent must be an integer between 1 and 100, got %s", pyRepr(raw))
+		}
+	}
+	if raw, present := values[ElapsedGracePercentKey]; present {
+		if _, parseErr := parseElapsedGracePercent(raw); parseErr != nil {
+			add("%v", parseErr)
+		}
+	}
+	fixtureBudgetOverrides := fixtureBudgetLawRoot(confPath)
+	if isFile(localPath) {
+		if raw, present, lookupErr := ConfLookup(localPath, ElapsedGracePercentKey); lookupErr != nil {
+			add("%v", lookupErr)
+		} else if present {
+			if !fixtureBudgetOverrides {
+				add("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", ElapsedGracePercentKey, localPath)
+			} else if _, parseErr := parseElapsedGracePercent(raw); parseErr != nil {
+				add("%s: %v", localPath, parseErr)
+			}
+		}
+	}
+	if raw, present := os.LookupEnv(EnvName(ElapsedGracePercentKey)); present {
+		if !fixtureBudgetOverrides {
+			add("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", ElapsedGracePercentKey, EnvName(ElapsedGracePercentKey))
+		} else if _, parseErr := parseElapsedGracePercent(raw); parseErr != nil {
+			add("environment source %s: %v", EnvName(ElapsedGracePercentKey), parseErr)
+		}
+	}
+	if raw, present := values[SliceNormHoursKey]; present {
+		if _, parseErr := parseSliceNormHours(raw); parseErr != nil {
+			add("%v", parseErr)
+		}
+	}
+	if isFile(localPath) {
+		if raw, present, lookupErr := ConfLookup(localPath, SliceNormHoursKey); lookupErr != nil {
+			add("%v", lookupErr)
+		} else if present {
+			if !fixtureBudgetOverrides {
+				add("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", SliceNormHoursKey, localPath)
+			} else if _, parseErr := parseSliceNormHours(raw); parseErr != nil {
+				add("%s: %v", localPath, parseErr)
+			}
+		}
+	}
+	if raw, present := os.LookupEnv(EnvName(SliceNormHoursKey)); present {
+		if !fixtureBudgetOverrides {
+			add("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", SliceNormHoursKey, EnvName(SliceNormHoursKey))
+		} else if _, parseErr := parseSliceNormHours(raw); parseErr != nil {
+			add("environment source %s: %v", EnvName(SliceNormHoursKey), parseErr)
 		}
 	}
 	// The evidence root is required, must be absolute, and must live outside the

@@ -50,6 +50,9 @@ func TestServingGoalResolvesAndRefuses(t *testing.T) {
 func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 	t.Helper()
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run := func(args ...string) {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-C", root}, args...)...)
@@ -133,7 +136,8 @@ func TestGoalAdmissionUsesOnlyTheStructuredLaw(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !atLimit.Refused() || len(atLimit.Refusals) != 1 || len(atLimit.Refusals[0].Breaches) != 1 ||
-		atLimit.Refusals[0].Breaches[0].Field != "elapsedLimit" {
+		atLimit.Refusals[0].Breaches[0].Field != "elapsedLimit" ||
+		atLimit.Refusals[0].Breaches[0].State != AdmissionClosedElapsed || atLimit.Refusals[0].LiveStopReason != "" {
 		t.Fatalf("elapsed equality did not close structured admission: %+v", atLimit)
 	}
 
@@ -145,5 +149,23 @@ func TestGoalAdmissionUsesOnlyTheStructuredLaw(t *testing.T) {
 	if !missing.Refused() || len(missing.Refusals) != 1 || missing.Refusals[0].Unknown == nil ||
 		missing.Refusals[0].Unknown.Record != "plans/goals/bounded.md" {
 		t.Fatalf("the budgetless claim did not refuse with its exact goal record: %+v", missing)
+	}
+}
+
+func TestGoalAdmissionRefusesMalformedElapsedGraceConfiguration(t *testing.T) {
+	root := revisionBindingBed(t, 2)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.budget.elapsed-grace-percent=201\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5,
+		time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC))
+	if err != nil || !verdict.Refused() || verdict.Refusal == nil || verdict.Refusal.Unknown == nil ||
+		verdict.Refusal.Unknown.Record != "metasystem.conf" ||
+		!strings.Contains(verdict.Refusal.Unknown.Reason, "integer between 0 and 200") {
+		t.Fatalf("malformed grace configuration did not close admission loudly: %+v %v", verdict, err)
+	}
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "BUDGET_UNKNOWN") {
+		t.Fatalf("malformed grace refusal lost its typed evidence: %v", lines)
 	}
 }

@@ -39,6 +39,7 @@ trap 'rm -rf "$tmp"' EXIT
 fixture_root="$tmp/metasystem"
 mkdir -p "$fixture_root/scripts/agents" "$fixture_root/bin" "$fixture_root/artifacts/agents/mains"
 cp "$wrapper" "$fixture_root/scripts/agents/commit.sh"
+cp "$root/scripts/agents/coverage-delta.sh" "$fixture_root/scripts/agents/coverage-delta.sh"
 # The push leg mirrors transport through the sync script, so the bed
 # carries it — a wrapper dependency absent from the bed reads as a
 # wrapper defect and turns this fixture red for the wrong reason.

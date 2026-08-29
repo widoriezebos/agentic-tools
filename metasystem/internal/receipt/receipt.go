@@ -148,7 +148,7 @@ func ValidBuiltByValue(value string) bool {
 // Add implements `receipt add`.
 func Add(opts Options) Result {
 	switch opts.Type {
-	case "implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "other":
+	case "implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "retro", "other":
 	default:
 		return fail(2, "invalid --type: %s", opts.Type)
 	}
@@ -370,7 +370,7 @@ func Stats(opts Options) Result {
 			out = append(out, fmt.Sprintf("outcome_%s=%d", outcome, count))
 		}
 	}
-	for _, kind := range []string{"implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "other"} {
+	for _, kind := range []string{"implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "retro", "other"} {
 		if count, present := types[kind]; present {
 			out = append(out, fmt.Sprintf("type_%s=%d", kind, count))
 		}

@@ -6,6 +6,72 @@
 # - this file is the only owner of harness cap values; and
 # - load scaling is extra headroom, never the reason an idle run passes.
 
+harness_fixture_warn_if_engine_stale() { # metasystem root
+  local harness_root=$1 engine newest
+  engine=${METASYSTEM_BIN:-$harness_root/bin/metasystem}
+  [[ "${harness_fixture_stale_engine_checked:-}" != "$harness_root:$engine" ]] || return 0
+  harness_fixture_stale_engine_checked=$harness_root:$engine
+  [[ -f "$engine" ]] || return 0
+  newest=$(find "$harness_root" \
+    \( -path "$harness_root/.git" -o -path "$harness_root/artifacts" \) -prune -o \
+    -type f -name '*.go' -newer "$engine" -print -quit 2>/dev/null)
+  [[ -z "$newest" ]] || {
+    printf '\n!!!!!!!!!!!!!!!! STALE FIXTURE ENGINE WARNING !!!!!!!!!!!!!!!!\n' >&2
+    printf 'bin/metasystem is older than Go source: %s\n' "$newest" >&2
+    printf 'fixture results may describe the old engine; continuing because pinned fixture engines are allowed\n' >&2
+    printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n' >&2
+  }
+}
+
+harness_fixture_bed_child_scenario() { # bed name, optional private child arguments
+  local bed=$1 capability expected extra fixture_capability_scenario
+  shift
+  if [[ -n "${METASYSTEM_FIXTURE_SCENARIO:-}" ]]; then
+    printf '%s fixtures: ignoring untrusted ambient METASYSTEM_FIXTURE_SCENARIO=%s\n' \
+      "$bed" "$METASYSTEM_FIXTURE_SCENARIO" >&2
+  fi
+  (( $# > 0 )) || return 1
+  if [[ $# -ne 3 || "$1" != --fixture-bed-child ]]; then
+    printf '%s fixtures: invalid private child invocation\n' "$bed" >&2
+    return 64
+  fi
+  expected=$2
+  capability=$3
+  [[ -f "$capability" && ! -L "$capability" ]] || {
+    printf '%s fixtures: private child capability is absent or unsafe\n' "$bed" >&2
+    return 64
+  }
+  exec 3<"$capability" || {
+    printf '%s fixtures: private child capability is unreadable\n' "$bed" >&2
+    return 64
+  }
+  IFS= read -r fixture_capability_scenario <&3 || {
+    exec 3<&-
+    printf '%s fixtures: private child capability is unreadable\n' "$bed" >&2
+    return 64
+  }
+  if IFS= read -r extra <&3; then
+    exec 3<&-
+    printf '%s fixtures: private child capability has extra data\n' "$bed" >&2
+    return 64
+  fi
+  exec 3<&-
+  [[ "$fixture_capability_scenario" == "$expected" ]] || {
+    printf '%s fixtures: private child capability does not authorize scenario %s\n' \
+      "$bed" "$expected" >&2
+    return 64
+  }
+  printf '%s\n' "$expected"
+}
+
+harness_fixture_bed_mint_capability() { # private directory, index, scenario
+  local directory=$1 index=$2 scenario=$3 capability
+  capability=$(mktemp "$directory/$index.capability.XXXXXX") || return 1
+  chmod 600 "$capability" || return 1
+  printf '%s\n' "$scenario" >"$capability" || return 1
+  printf '%s\n' "$capability"
+}
+
 # Fixture configuration edits use one Bash 3.2-compatible AWK path. The
 # adjacent temporary file keeps a failed edit away from the source, and the
 # original mode is restored before the completed file is renamed into place.
@@ -158,6 +224,7 @@ harness_fixture_milliseconds_to_seconds() { # positive integer milliseconds
 
 harness_fixture_budget_init() { # metasystem root
   local harness_root=$1 resolved calibration_cap interval_name interval_value
+  harness_fixture_warn_if_engine_stale "$harness_root"
   calibration_cap=$(harness_fixture_base_cap calibration-census) || return 1
   if [[ -n "${METASYSTEM_FIXTURE_CAP_SCALE:-}" ]]; then
     # The scale must be a plain decimal from 1 through 48 — the same

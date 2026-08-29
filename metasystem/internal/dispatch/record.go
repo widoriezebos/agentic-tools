@@ -63,6 +63,7 @@ var immutableFields = map[string]bool{
 	"capMin": true, "capDeadline": true, "capResolution": true,
 	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
 	"operationId": true, "goalId": true, "goalRevision": true, "machineId": true,
+	"approvedRef": true,
 }
 
 // Owned metadata has a dedicated read-decide-write operation whose lock
@@ -229,6 +230,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["goalId"], current["goalId"]) ||
 			!sameValue(record["goalRevision"], current["goalRevision"]) ||
 			!sameValue(record["machineId"], current["machineId"]) ||
+			!sameValue(record["approvedRef"], current["approvedRef"]) ||
 			!sameValue(record["capMin"], current["capMin"]) {
 			return refuse(1, "invalid setup transition for %s", job)
 		}

@@ -103,7 +103,7 @@ func nullableGoalRevision(goalID string, revision uint64) (any, error) {
 // id before the full record is assembled. Cap authority is already final when
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
-func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution string, machineIDs ...string) error {
+func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution, machineID, approvedRef string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
@@ -115,13 +115,6 @@ func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, go
 	authority, err := readCapAuthority(capResolution)
 	if err != nil {
 		return err
-	}
-	machineID := ""
-	if len(machineIDs) > 1 {
-		return fmt.Errorf("build setup accepts at most one goal machine")
-	}
-	if len(machineIDs) == 1 {
-		machineID = machineIDs[0]
 	}
 	if goalID == "" && machineID != "" {
 		return fmt.Errorf("machineId requires a goalId")
@@ -138,6 +131,7 @@ func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, go
 		"goalId":       nullableString(goalID),
 		"goalRevision": revision,
 		"machineId":    nullableString(machineID),
+		"approvedRef":  nullableString(approvedRef),
 		"capMin":       authority.capMin,
 		"createdAt":    nowISO(),
 	}
@@ -218,6 +212,7 @@ type BuildRecordParams struct {
 	MachineID       string
 	MainID          string
 	ClaimEpoch      string
+	ApprovedRef     string
 }
 
 // BuildRecord assembles the full pending record for a fresh dispatch: chain
@@ -310,6 +305,7 @@ func BuildRecord(p BuildRecordParams) error {
 		"goalId":             nullableString(p.GoalID),
 		"goalRevision":       revision,
 		"machineId":          nullableString(p.MachineID),
+		"approvedRef":        nullableString(p.ApprovedRef),
 		"status":             "pending",
 		"phase":              "handshake",
 		"error":              nil,
@@ -381,6 +377,7 @@ type BuildFollowRecordParams struct {
 	CapResolution   string
 	Root            string // dispatching checkout root, for mission provenance
 	GoalRevision    uint64
+	ApprovedRef     string
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -460,6 +457,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"goalId":             parent["goalId"],
 		"goalRevision":       revision,
 		"machineId":          parent["machineId"],
+		"approvedRef":        nullableString(p.ApprovedRef),
 		"workspaceRoot":      parent["workspaceRoot"],
 		"baseSha":            parent["baseSha"],
 		"branch":             parent["branch"],

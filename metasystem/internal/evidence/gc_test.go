@@ -232,6 +232,7 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	runGit("config", "user.name", "fixture")
 	runGit("config", "user.email", "fixture@example.invalid")
 	runGit("config", "goal.sync-remote", "local")
+	writeFile(t, filepath.Join(root, "metasystem.conf"), "")
 	writeFile(t, filepath.Join(root, "plans", "goals", "backlog.md"), string(goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 	})))

@@ -161,6 +161,35 @@ func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *test
 	}
 }
 
+func TestCorruptGraceTickEscalatesWithoutCancellingLawfulWork(t *testing.T) {
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
+		[]byte("metasystem.budget.elapsed-grace-percent=broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reports := runBreachStopCustodian(root, now)
+	if len(reports) != 1 || reports[0].State != "INDETERMINATE" ||
+		!strings.Contains(reports[0].Detail, "BUDGET_UNKNOWN") {
+		t.Fatalf("the next stop scan did not surface corrupt grace: %+v", reports)
+	}
+	role := checkClaimedGoalBudgets(root, now)
+	verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
+	if role.Status != HealthDead || !role.NoAutomaticRemedy || !verdict.ShouldAlert ||
+		verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
+		t.Fatalf("corrupt grace did not escalate immediately under Ruling L: role=%+v verdict=%+v", role, verdict)
+	}
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil || projection.Tree.Live["bounded-goal"].StopFence != nil {
+		t.Fatalf("indeterminate grace fenced or cancelled lawful work: %+v %v", projection.Tree.Live["bounded-goal"], err)
+	}
+}
+
 func TestDegradedTickQueuesTheIncidentOrSurfacesQueueFailure(t *testing.T) {
 	root := t.TempDir()
 	result, err := degradedTick(root, "evidence store is torn")

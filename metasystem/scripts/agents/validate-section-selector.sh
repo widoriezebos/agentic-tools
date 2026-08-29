@@ -81,8 +81,20 @@ case ${1:-} in
     (( section_known )) \
       || { echo "unknown validation section: $section_id" >&2; exit 2; }
     root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-    METASYSTEM_ENUMERATION_DRIVER=1 \
-      bash "$root/scripts/validate-metasystem.sh" --enumeration-section "$section_id"
+    stage_results_out=${METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT:-}
+    if [[ -n "$stage_results_out" ]]; then
+      [[ "$stage_results_out" == /* ]] \
+        || { echo "enumeration stage-results path must be absolute" >&2; exit 2; }
+      METASYSTEM_VALIDATION_STAGE_RESULTS_OUT=$stage_results_out \
+      METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER=1 \
+      METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-unproven} \
+      METASYSTEM_ENUMERATION_DRIVER=1 \
+        bash "$root/scripts/validate-metasystem.sh" --enumeration-section "$section_id"
+    else
+      METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-unproven} \
+      METASYSTEM_ENUMERATION_DRIVER=1 \
+        bash "$root/scripts/validate-metasystem.sh" --enumeration-section "$section_id"
+    fi
     ;;
   -h|--help)
     usage

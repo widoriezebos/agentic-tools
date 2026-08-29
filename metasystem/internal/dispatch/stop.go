@@ -77,10 +77,8 @@ func GoalLockBusyError(directory, key string) error {
 }
 
 func liveStopReason(projection BudgetProjection) string {
-	for _, breach := range projection.Breaches {
-		if breach.Field == "elapsedLimit" {
-			return goal.StopReasonElapsedLimit
-		}
+	if projection.ElapsedState == ElapsedBreach {
+		return goal.StopReasonElapsedLimit
 	}
 	if len(projection.Breaches) > 0 {
 		return goal.StopReasonCorruptOverLimit
@@ -123,6 +121,7 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 	if binding.Revision != revision && revision != 0 {
 		return goal.StopBatch{}, fmt.Errorf("goal %s moved from revision %d to %d while stop waited", id, revision, binding.Revision)
 	}
+	var firingEvidence *goal.StopFiringEvidence
 	if binding.Fence == nil {
 		budget := ProjectBudget(root, binding.File, now)
 		if budget.Status != BudgetKnown {
@@ -131,6 +130,12 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 		reason := liveStopReason(budget)
 		if reason == "" {
 			return goal.StopBatch{}, fmt.Errorf("goal %s revision %d has no live-stop breach", id, binding.Revision)
+		}
+		if reason == goal.StopReasonElapsedLimit {
+			firingEvidence = &goal.StopFiringEvidence{
+				ElapsedUsed: budget.Elapsed.String(), AdmissionLimit: budget.Limits.ElapsedLimit,
+				BreachBoundary: budget.ElapsedBreachLimit.String(), GracePercent: budget.ElapsedGracePercent,
+			}
 		}
 		stopID, ulid := stopIdentity(id, binding.Revision, binding.Capability.FenceEpoch+1)
 		endpoint, endpointErr := goal.ResolveEndpoint(root)
@@ -178,6 +183,7 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 		FenceEpoch: fence.Epoch, CapabilityGeneration: binding.Capability.Generation,
 		Machine: binding.Machine, ClaimEpoch: binding.Capability.ClaimEpoch,
 		Reason: fence.Reason, State: goal.StopBatchOpen, OpenedAt: stamp, UpdatedAt: stamp,
+		FiringEvidence: firingEvidence,
 	}
 	if err := goal.WriteStopBatch(root, batch); err != nil {
 		return goal.StopBatch{}, err
@@ -244,12 +250,20 @@ func (policy GoalRecoveryPolicy) BreachStop(endpoint goal.Endpoint, entry goal.E
 	return goal.CloseStopPublishRequest(request), release, nil
 }
 
+type StopRouteCondition string
+
+const (
+	StopRouteBreach        StopRouteCondition = "BREACH"
+	StopRouteIndeterminate StopRouteCondition = "INDETERMINATE"
+)
+
 type StopRoute struct {
-	GoalID   string
-	Revision uint64
-	StopID   string
-	Reason   string
-	Failure  string
+	GoalID    string
+	Revision  uint64
+	StopID    string
+	Reason    string
+	Condition StopRouteCondition
+	Failure   string
 }
 
 // FindBreachStops supplies the steward's heal-before-notify routes.
@@ -281,10 +295,15 @@ func FindBreachStops(root string, now time.Time) ([]StopRoute, error) {
 			if readErr == nil && batch.State == goal.StopBatchComplete {
 				continue
 			}
-			route := StopRoute{GoalID: id, Revision: file.Claimed.Revision, StopID: file.StopFence.StopID, Reason: file.StopFence.Reason}
+			route := StopRoute{
+				GoalID: id, Revision: file.Claimed.Revision, StopID: file.StopFence.StopID,
+				Reason: file.StopFence.Reason, Condition: StopRouteBreach,
+			}
 			if readErr != nil && !os.IsNotExist(readErr) {
+				route.Condition = StopRouteIndeterminate
 				route.Failure = readErr.Error()
 			} else if readErr == nil && batch.State == goal.StopBatchIndeterminate {
+				route.Condition = StopRouteIndeterminate
 				route.Failure = batch.Failure
 				if route.Failure == "" {
 					route.Failure = "the stop batch is INDETERMINATE"
@@ -294,11 +313,21 @@ func FindBreachStops(root string, now time.Time) ([]StopRoute, error) {
 			continue
 		}
 		budget := ProjectBudget(root, file, now)
-		if budget.Status != BudgetKnown || liveStopReason(budget) == "" {
+		if budget.Status != BudgetKnown {
+			routes = append(routes, StopRoute{
+				GoalID: id, Revision: file.Claimed.Revision, Condition: StopRouteIndeterminate,
+				Failure: fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", budget.Unknown.Record, budget.Unknown.Reason),
+			})
 			continue
 		}
-		route := StopRoute{GoalID: id, Revision: file.Claimed.Revision, Reason: liveStopReason(budget)}
+		if liveStopReason(budget) == "" {
+			continue
+		}
+		route := StopRoute{
+			GoalID: id, Revision: file.Claimed.Revision, Reason: liveStopReason(budget), Condition: StopRouteBreach,
+		}
 		if file.StopCapability == nil {
+			route.Condition = StopRouteIndeterminate
 			route.Failure = "the claimed revision has no stop capability"
 		}
 		routes = append(routes, route)

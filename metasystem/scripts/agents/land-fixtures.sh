@@ -22,6 +22,7 @@ make_leg() { # name
   leg_peer=$leg_root/peer
   mkdir -p "$leg_seed/scripts/agents" "$leg_seed/plans" "$leg_seed/bin"
   cp "$root/scripts/agents/land.sh" "$leg_seed/scripts/agents/land.sh"
+  cp "$root/scripts/agents/coverage-delta.sh" "$leg_seed/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/pre-commit-guard.sh" "$leg_seed/scripts/agents/pre-commit-guard.sh"
   cp "$root/scripts/agents/sync-transport.sh" "$leg_seed/scripts/agents/sync-transport.sh"
   cp "$source_engine" "$leg_seed/bin/metasystem"
@@ -39,6 +40,7 @@ trap 'rm -f -- "$token"' EXIT
 git commit "$@"
 SH
   chmod +x "$leg_seed/scripts/agents/land.sh" \
+    "$leg_seed/scripts/agents/coverage-delta.sh" \
     "$leg_seed/scripts/agents/pre-commit-guard.sh" \
     "$leg_seed/scripts/agents/commit.sh" \
     "$leg_seed/scripts/agents/sync-transport.sh" \

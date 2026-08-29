@@ -762,3 +762,25 @@ flake detector the battery never was — thirteen live-proof
 attempts harvested a hex-lottery assertion, seven rotted coverage
 floors, a records regression, and three load-races now counting
 toward their protocol promotions in the other machine's queue.
+
+## The night the machinery earned its verbs back (2026-08-28/29, m1)
+
+Seven landings in one continuous run: the budget became law with a
+grace band coming behind it, the breach-stop cancelled a real job
+in proven silence, and one idempotent `up` learned to arm the
+whole stack — then refused its own coordinator's engine, which was
+the protection working, not failing. The milestone battery ran
+eleven times to discharge one obligation, and that number became
+the night's deepest lesson: every run was right, the orchestration
+around it was wasteful — verification halted at its first lesson,
+laws landed without sweeping their callers, coverage debt hid
+between batteries. Rulings P through R turned each waste into
+machinery: continue-and-collect, caller sweeps, coverage deltas at
+the landing gate. The register grew five rulings in a day, every
+one traceable to a named failure. m2 completed the four trees in
+parallel and claimed its next arc. What remains is the custody
+applications, the delegate and watch verbs that retire the
+coordinator's hands, and one forty-five-minute human session that
+turns the resident generation — steward, watcher, and a narrator
+currently reading new records with old eyes — onto the engines
+this night built.

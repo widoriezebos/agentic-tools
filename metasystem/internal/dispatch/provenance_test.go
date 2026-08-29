@@ -14,7 +14,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "root-setup.json")
-	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1"); err != nil {
+	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job", setup); err != nil {
@@ -54,7 +54,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	childSetup := filepath.Join(stage, "child-setup.json")
-	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile, "bed-m1"); err != nil {
+	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job-r2", childSetup); err != nil {
@@ -87,7 +87,7 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1"); err != nil {
+	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "goal-bound", setup); err != nil {

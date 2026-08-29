@@ -23,6 +23,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
 var (
@@ -517,6 +519,19 @@ func repairResetAppendixLocked(root string, state *WeightState) error {
 	} else if err := publishWeightAppendix(path, pending.Result); err != nil {
 		return err
 	}
+	resetAt, err := time.Parse(time.RFC3339, pending.Result.ResetAtUTC)
+	if err != nil {
+		return err
+	}
+	if _, err := retrodebt.Raise(root, retrodebt.KindBattery, pending.Result.RunID, resetAt); err != nil {
+		return fmt.Errorf("raise battery retro debt: %w", err)
+	}
+	if err := narratordigest.Append(root, []narratordigest.Entry{{
+		Kind: "highlight", Text: "The milestone battery discharged green.",
+		SourceType: "episode", SourceID: pending.Result.RunID,
+	}}, resetAt); err != nil {
+		return fmt.Errorf("record green battery digest: %w", err)
+	}
 	next := *state
 	next.PendingReset = nil
 	next.Generation++
@@ -531,6 +546,16 @@ func repairAbandonAppendixLocked(root string, state *WeightState) error {
 	pending := state.PendingAbandon
 	if pending == nil {
 		return nil
+	}
+	abandonedAt, err := time.Parse(time.RFC3339, pending.Result.AbandonedAtUTC)
+	if err != nil {
+		return err
+	}
+	if err := narratordigest.Append(root, []narratordigest.Entry{{
+		Kind: "lowlight", Text: "The milestone battery ended red: " + pending.Result.Reason + ".",
+		SourceType: "episode", SourceID: pending.Result.RunID,
+	}}, abandonedAt); err != nil {
+		return fmt.Errorf("record red battery digest: %w", err)
 	}
 	path := filepath.Join(pending.Destination, "abandoned.json")
 	want, err := json.MarshalIndent(pending.Result, "", "  ")
@@ -723,6 +748,12 @@ func WeightAbandon(root, runID, reason string, bestEffortAppendix bool) (Abandon
 	if err := writeWeightState(root, next); err != nil {
 		return result, err
 	}
+	if err := narratordigest.Append(root, []narratordigest.Entry{{
+		Kind: "lowlight", Text: "The milestone battery ended red: " + reason + ".",
+		SourceType: "episode", SourceID: runID,
+	}}, now); err != nil {
+		return result, fmt.Errorf("battery abandonment landed but its narrator digest did not: %w", err)
+	}
 	appendixPath := filepath.Join(state.Checkpoint.RepairDestination, "abandoned.json")
 	if err := publishWeightAppendix(appendixPath, result); err != nil {
 		failed := result
@@ -805,11 +836,8 @@ func WeightReset(root, runID string, runClass RunClass) (WeightState, ResetResul
 	if err := publishWeightAppendix(appendixPath, result); err != nil {
 		return next, result, &ResetAppendixPendingError{Cause: err}
 	}
-	cleared := next
-	cleared.PendingReset = nil
-	cleared.Generation++
-	if err := writeWeightState(root, cleared); err != nil {
+	if err := repairResetAppendixLocked(root, &next); err != nil {
 		return next, result, &ResetAppendixPendingError{Cause: err}
 	}
-	return cleared, result, nil
+	return next, result, nil
 }

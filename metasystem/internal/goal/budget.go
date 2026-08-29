@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -127,6 +128,32 @@ func (b Budget) Validate() error {
 func (b Budget) ElapsedDuration() time.Duration {
 	duration, _ := ParseWorkingDuration(b.ElapsedLimit)
 	return duration
+}
+
+// ElapsedBreachDuration returns the stop boundary after applying the configured
+// grace percentage. Admission still closes at ElapsedDuration; this later
+// boundary is only for breach-stop.
+func (b Budget) ElapsedBreachDuration(gracePercent uint64) (time.Duration, error) {
+	limit := b.ElapsedDuration()
+	if limit <= 0 {
+		return 0, fmt.Errorf("elapsedLimit %q is not a positive duration", b.ElapsedLimit)
+	}
+	limitNanos := uint64(limit)
+	remaining := uint64(math.MaxInt64) - limitNanos
+	wholeHundreds := limitNanos / 100
+	if gracePercent > 0 && wholeHundreds > remaining/gracePercent {
+		return 0, fmt.Errorf("elapsedLimit %q with grace percent %d exceeds the duration range", b.ElapsedLimit, gracePercent)
+	}
+	extra := wholeHundreds * gracePercent
+	remainder := limitNanos % 100
+	if gracePercent > 0 && remainder > math.MaxUint64/gracePercent {
+		return 0, fmt.Errorf("elapsedLimit %q with grace percent %d exceeds the duration range", b.ElapsedLimit, gracePercent)
+	}
+	fraction := remainder * gracePercent / 100
+	if fraction > remaining-extra {
+		return 0, fmt.Errorf("elapsedLimit %q with grace percent %d exceeds the duration range", b.ElapsedLimit, gracePercent)
+	}
+	return time.Duration(limitNanos + extra + fraction), nil
 }
 
 func parseBudgetRecord(value string) (Budget, error) {

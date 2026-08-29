@@ -64,7 +64,12 @@ printf 'columns\tkind\tid\tname\tstatus\texit_code\tfailure_tail\n' >>"$report_t
 
 sections_run=0
 sections_failed=0
+sections_gated=0
+sections_invalid=0
 failed_names=()
+gated_names=()
+invalid_names=()
+engine_dependency=unproven
 while IFS=$'\t' read -r section_id section_name extra; do
   if [[ -z "$section_id" || -z "$section_name" || -n "${extra:-}" \
     || ! "$section_id" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
@@ -72,19 +77,73 @@ while IFS=$'\t' read -r section_id section_name extra; do
     exit 2
   fi
   section_log="$work/$section_id.log"
+  section_stage_results="$work/$section_id.stage-results.tsv"
   section_rc=0
-  if bash "$selector" run "$section_id" >"$section_log" 2>&1; then
+  recorded_tail=
+  selector_rc=0
+  METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=$engine_dependency \
+    METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT=$section_stage_results \
+    bash "$selector" run "$section_id" >"$section_log" 2>&1 || selector_rc=$?
+
+  section_status=
+  recorded_count=0
+  if [[ -f "$section_stage_results" ]]; then
+    recorded_count=$(awk -F '\t' -v selected="$section_id" \
+      '$1 == "section" && $2 == selected { count++ } END { print count + 0 }' \
+      "$section_stage_results")
+    if [[ "$recorded_count" == 1 ]]; then
+      section_status=$(awk -F '\t' -v selected="$section_id" \
+        '$1 == "section" && $2 == selected { print $3 }' "$section_stage_results")
+      section_rc=$(awk -F '\t' -v selected="$section_id" \
+        '$1 == "section" && $2 == selected { print $4 }' "$section_stage_results")
+      recorded_tail=$(awk -F '\t' -v selected="$section_id" \
+        '$1 == "section" && $2 == selected { print $5 }' "$section_stage_results")
+      case "$section_status:$selector_rc" in
+        pass:0 | gated:0 | fail:1) ;;
+        *) section_status=invalid; section_rc=$selector_rc ;;
+      esac
+    else
+      section_status=invalid
+      section_rc=$selector_rc
+    fi
+  elif [[ $selector_rc -eq 0 ]]; then
     section_status=pass
+  elif [[ $selector_rc -eq 2 ]]; then
+    section_status=invalid
+    section_rc=$selector_rc
   else
-    section_rc=$?
     section_status=fail
-    sections_failed=$((sections_failed + 1))
-    failed_names+=("$section_name")
+    section_rc=$selector_rc
+  fi
+
+  case "$section_status" in
+    fail)
+      sections_failed=$((sections_failed + 1))
+      failed_names+=("$section_name")
+      ;;
+    gated)
+      sections_gated=$((sections_gated + 1))
+      gated_names+=("$section_name")
+      ;;
+    invalid)
+      sections_invalid=$((sections_invalid + 1))
+      invalid_names+=("$section_name")
+      ;;
+  esac
+  if [[ "$section_id" == go-engine-gate ]]; then
+    if [[ "$section_status" == pass ]]; then
+      engine_dependency=ready
+    else
+      engine_dependency=failed
+    fi
   fi
   sections_run=$((sections_run + 1))
 
   failure_tail=
-  if [[ "$section_status" == fail ]]; then
+  if [[ ( "$section_status" == gated || "$section_status" == fail ) \
+    && -n "${recorded_tail:-}" ]]; then
+    failure_tail=$recorded_tail
+  elif [[ "$section_status" == fail || "$section_status" == invalid ]]; then
     failure_tail=$(tail -n 20 "$section_log" | awk '
       BEGIN { first = 1 }
       {
@@ -119,4 +178,7 @@ if (( sections_failed > 0 )); then
 fi
 printf 'Enumeration complete: %d sections run / %d failed; failed sections: %s\n' \
   "$sections_run" "$sections_failed" "$failed_list"
+printf 'Enumeration dependency outcomes: %d gated; invalid sections: %d\n' \
+  "$sections_gated" "$sections_invalid"
+(( sections_invalid == 0 )) || exit 2
 (( sections_failed == 0 )) || exit 1

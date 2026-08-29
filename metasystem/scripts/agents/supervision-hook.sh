@@ -76,6 +76,10 @@ fi
 hook_generation=
 hook_attempt_seq=
 health_line=
+checkin_tail=
+digest_message=
+digest_cursor=
+digest_prefix=
 hook_evidence_failure=
 if [[ "$event" == stop ]]; then
   turn_key_rc=0
@@ -158,6 +162,18 @@ if [[ "$event" == stop ]]; then
   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
   fi
+  digest_rc=0
+  digest_json=$("$ms" steward digest-pending --repo "$repo" 2>&1) || digest_rc=$?
+  if (( digest_rc == 0 )); then
+    digest_message=$("$ms" json get --value "$digest_json" --field message 2>/dev/null || true)
+    digest_cursor=$("$ms" json get --value "$digest_json" --field cursor 2>/dev/null || true)
+    digest_prefix=$("$ms" json get --value "$digest_json" --field prefixSha256 2>/dev/null || true)
+  else
+    digest_message="NARRATOR DIGEST unavailable: ${digest_json//$'\n'/ }"
+  fi
+  checkin_tail=$health_line
+  [[ -z "$digest_message" ]] || checkin_tail="$checkin_tail
+$digest_message"
 fi
 
 emit_stop_payload() { # response
@@ -183,6 +199,12 @@ emit_stop_payload() { # response
       --health-line "$health_line" --payload-file "$response_file" >/dev/null 2>&1 || true
     rm -f "$response_file"
     return 0
+  fi
+  if [[ -n "$digest_message" && "$digest_cursor" =~ ^[0-9]+$ && "$digest_prefix" =~ ^[0-9a-f]{64}$ ]]; then
+    if ! "$ms" steward digest-advance --repo "$repo" --cursor "$digest_cursor" \
+      --prefix-sha256 "$digest_prefix" >/dev/null 2>&1; then
+      echo "supervision hook: emitted the narrator digest but could not advance its check-in cursor" >&2
+    fi
   fi
   if ! "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result OK --outcome EMITTED \
@@ -216,7 +238,7 @@ $hook_evidence_failure"
     [[ -z "$protocol_message" ]] || advisor_message="$advisor_message
 $protocol_message"
     response=$(surface_json "$advisor_message
-$health_line")
+$checkin_tail")
     emit_stop_payload "$response"
     [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
       "$ms" lease protocol-advance --root "$repo" --main-id "$main_id" \
@@ -269,17 +291,17 @@ $health_line")
       # The display is the block reason byte-verbatim; watchdog and
       # protocol text stay in the non-blocking channel and never enter
       # the reason.
-      blocking_message=$health_line
+      blocking_message=$checkin_tail
       [[ -z "$extras" ]] || blocking_message="$extras
 $blocking_message"
       response=$("$ms" report stop-block --system-message "$blocking_message" "$display")
     elif [[ -n "$extras" ]]; then
       response=$(surface_json "$display
 $extras
-$health_line")
+$checkin_tail")
     else
       response=$(surface_json "$display
-$health_line")
+$checkin_tail")
     fi
   else
     degraded_line=$(tail -1 "$verdict_stderr" 2>/dev/null || true)
@@ -294,7 +316,7 @@ $hook_evidence_failure"
     [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
 $protocol_message"
     response=$(surface_json "$degraded_message
-$health_line")
+$checkin_tail")
   fi
   emit_stop_payload "$response"
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \

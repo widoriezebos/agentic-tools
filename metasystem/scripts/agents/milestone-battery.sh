@@ -23,7 +23,8 @@ unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
   METASYSTEM_GATE_WITNESS_WRITE METASYSTEM_GATE_WITNESS_CONTROLLER_PID \
   METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS \
   METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID \
-  METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER
+  METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER \
+  METASYSTEM_VALIDATION_STAGE_RESULTS_OUT METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER
 
 usage() {
   cat <<'USAGE' >&2
@@ -287,6 +288,7 @@ checkpoint_json=$run_dir/checkpoint.json
 surface_json=$run_dir/surface.json
 toolchain_file=$run_dir/toolchain.txt
 run_class_file=$run_dir/run-class.txt
+stage_results_file=$run_dir/stage-results.tsv
 controller_engine=$run_dir/metasystem
 enrolled_engine=$controller_engine
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -315,10 +317,14 @@ validator_identity_pid=
 validator_identity_started_at=
 validator_identity_start_ticks=
 validator_identity_boot_id=
+validator_quiesced=1
 validator_pgid_file=${BATTERY_VALIDATOR_PGID_FILE:-$run_dir/validator-identity/validator.pgid}
 validator_pgid_stage=${BATTERY_VALIDATOR_PGID_STAGE:-$run_dir/validator-identity/.validator-pgid.$$.stage}
 validator_publication_dir=${validator_pgid_file%/*}
 teardown_note=not-attempted
+copy_failures=0
+copy_failure_manifest=$run_dir/.copy-failures.$$.tsv
+copy_command_log=$run_dir/.copy-errors.$$.log
 
 json_escape() { # value
   local value=$1
@@ -369,8 +375,103 @@ read_run_class() {
   case "$run_class:$class_bytes" in FULL:5|WITNESS-ASSISTED:17) return 0 ;; *) return 1 ;; esac
 }
 
+record_evidence_copy_failure() { # reason, envelope-relative path
+  local reason=$1 relative=$2 quoted
+  printf -v quoted '%q' "$relative"
+  printf '%s\t%s\n' "$reason" "$quoted" >>"$copy_failure_manifest" || return 1
+  copy_failures=$((copy_failures + 1))
+}
+
+copy_regular_evidence_file() { # source, destination, envelope-relative path
+  local source=$1 destination=$2 relative=$3
+  if [[ -L "$source" ]]; then
+    printf 'milestone battery evidence copy refused symlink: %s\n' "$relative" >&2
+    record_evidence_copy_failure symlink-refused "$relative"
+    return 0
+  fi
+  if [[ ! -f "$source" ]]; then
+    record_evidence_copy_failure source-not-regular "$relative"
+    return 0
+  fi
+  mkdir -p "${destination%/*}" 2>>"$copy_command_log" \
+    || { record_evidence_copy_failure destination-directory-failed "$relative"; return 0; }
+  if ! cp "$source" "$destination" 2>>"$copy_command_log"; then
+    rm -f -- "$destination" 2>/dev/null || true
+    record_evidence_copy_failure copy-failed "$relative"
+  fi
+}
+
+copy_evidence_tree() { # source directory, destination directory, envelope-relative prefix
+  local source=$1 destination=$2 prefix=$3 entry relative copied copy_rc=0 failures_after_links
+  mkdir -p "$destination" 2>>"$copy_command_log" \
+    || { record_evidence_copy_failure destination-directory-failed "$prefix"; return 0; }
+  cp -R "$source/." "$destination/" 2>>"$copy_command_log" || copy_rc=$?
+
+  # Links are diagnostics, not trusted evidence bytes. Name every skipped link
+  # and keep collecting the regular files around it.
+  while IFS= read -r -d '' entry; do
+    relative=${entry#"$source"/}
+    printf 'milestone battery evidence copy refused symlink: %s/%s\n' "$prefix" "$relative" >&2
+    record_evidence_copy_failure symlink-refused "$prefix/$relative" || return 1
+    copied=$destination/$relative
+    [[ ! -L "$copied" ]] || rm -f -- "$copied" 2>>"$copy_command_log" \
+      || record_evidence_copy_failure rejected-link-removal-failed "$prefix/$relative" \
+      || return 1
+  done < <(find "$source" -type l -print0)
+  failures_after_links=$copy_failures
+
+  # A recursive copy normally continues after one bad file. If it reports a
+  # failure, retry every missing or different regular file on its own so one
+  # unreadable or vanished path cannot discard its neighbors.
+  if (( copy_rc != 0 )); then
+    while IFS= read -r -d '' entry; do
+      relative=${entry#"$source"/}
+      copied=$destination/$relative
+      if [[ -f "$copied" && ! -L "$copied" ]] && cmp -s "$entry" "$copied"; then
+        continue
+      fi
+      mkdir -p "${copied%/*}" 2>>"$copy_command_log" || true
+      if cp "$entry" "$copied" 2>>"$copy_command_log" && cmp -s "$entry" "$copied"; then
+        continue
+      fi
+      rm -f -- "$copied" 2>/dev/null || true
+      record_evidence_copy_failure copy-failed "$prefix/$relative" || return 1
+    done < <(find "$source" -type f -print0)
+    if (( copy_failures == failures_after_links )); then
+      record_evidence_copy_failure recursive-copy-failed "$prefix" || return 1
+    fi
+  fi
+}
+
+wait_for_validator_quiescence() { # optional maximum polls; zero waits until operator cancellation
+  local maximum_polls=${1:-0} members announced=0 polls=0
+  [[ "$validator_pgid" =~ ^[1-9][0-9]*$ && "$validator_pgid" == "$validator_pid" ]] \
+    || return 1
+  while :; do
+    members=$("$controller_engine" proc group-members --pgid "$validator_pgid" 2>>"$setup_log") \
+      || return 1
+    if [[ -z "$members" ]]; then
+      validator_quiesced=1
+      return 0
+    fi
+    polls=$((polls + 1))
+    (( maximum_polls == 0 || polls < maximum_polls )) || return 1
+    if (( ! announced )); then
+      printf 'validator leader exited; waiting for its remaining process-group members before evidence copy\n' \
+        >>"$setup_log"
+      announced=1
+    fi
+    sleep 0.05
+  done
+}
+
 publish_stage_one() { # setup exit, validation exit, verdict
-  local stage_setup=$1 stage_validation=$2 initial_verdict=$3 relative digest actual expected rejected_link
+  local stage_setup=$1 stage_validation=$2 initial_verdict=$3 relative digest actual expected
+  local copy_result=verified copy_failure_name=
+  (( validator_quiesced )) || {
+    printf 'milestone battery evidence copy refused: validator process group is not quiescent\n' >&2
+    return 1
+  }
   if [[ ! -e "$run_class_file" ]]; then
     write_default_run_class || return 1
   fi
@@ -379,50 +480,80 @@ publish_stage_one() { # setup exit, validation exit, verdict
   [[ ! -e "$envelope" ]] || { stage_published=1; return 0; }
   rm -rf -- "$stage" 2>/dev/null || true
   mkdir "$stage" || return 1
-  cp "$setup_log" "$validation_log" "$checkpoint_json" "$surface_json" "$toolchain_file" "$run_class_file" "$stage/" \
-    || return 1
+  printf 'reason\tpath_shell_quoted\n' >"$copy_failure_manifest" || return 1
+  : >"$copy_command_log" || return 1
+  copy_regular_evidence_file "$setup_log" "$stage/setup.log" setup.log || return 1
+  copy_regular_evidence_file "$validation_log" "$stage/validation.log" validation.log || return 1
+  copy_regular_evidence_file "$checkpoint_json" "$stage/checkpoint.json" checkpoint.json || return 1
+  copy_regular_evidence_file "$surface_json" "$stage/surface.json" surface.json || return 1
+  copy_regular_evidence_file "$toolchain_file" "$stage/toolchain.txt" toolchain.txt || return 1
+  copy_regular_evidence_file "$run_class_file" "$stage/run-class.txt" run-class.txt || return 1
+  copy_regular_evidence_file "$stage_results_file" "$stage/stage-results.tsv" stage-results.tsv || return 1
   printf '%s\n' "$subject" >"$stage/subject.sha" || return 1
   printf '{"setup":%d,"validation":%d}\n' "$stage_setup" "$stage_validation" >"$stage/exit-codes.json" || return 1
   printf '{"startedAt":"%s","endedAt":"%s"}\n' "$started_at" "$ended_at" >"$stage/timings.json" || return 1
   if [[ -f "$registry_home/.metasystem/armed-checkouts.jsonl" ]]; then
-    cp "$registry_home/.metasystem/armed-checkouts.jsonl" "$stage/supervision-registry.jsonl" || return 1
+    copy_regular_evidence_file "$registry_home/.metasystem/armed-checkouts.jsonl" \
+      "$stage/supervision-registry.jsonl" supervision-registry.jsonl || return 1
   fi
   if [[ -f "$clone_metasystem/artifacts/agents/supervision/last-census.json" ]]; then
-    cp "$clone_metasystem/artifacts/agents/supervision/last-census.json" "$stage/last-census.json" || return 1
+    copy_regular_evidence_file "$clone_metasystem/artifacts/agents/supervision/last-census.json" \
+      "$stage/last-census.json" last-census.json || return 1
   fi
   if [[ -d "$clone_metasystem/artifacts/agents/suite-failures" ]]; then
-    mkdir -p "$stage/failure-artifacts/suite-failures"
-    cp -R "$clone_metasystem/artifacts/agents/suite-failures/." "$stage/failure-artifacts/suite-failures/" || return 1
+    copy_evidence_tree "$clone_metasystem/artifacts/agents/suite-failures" \
+      "$stage/failure-artifacts/suite-failures" failure-artifacts/suite-failures || return 1
   fi
   if [[ -d "$clone_metasystem/artifacts/agents/gate-failures" ]]; then
-    mkdir -p "$stage/failure-artifacts/gate-failures"
-    cp -R "$clone_metasystem/artifacts/agents/gate-failures/." "$stage/failure-artifacts/gate-failures/" || return 1
+    copy_evidence_tree "$clone_metasystem/artifacts/agents/gate-failures" \
+      "$stage/failure-artifacts/gate-failures" failure-artifacts/gate-failures || return 1
   fi
-  rejected_link=$(find "$stage" -type l -print -quit) || return 1
-  if [[ -n "$rejected_link" ]]; then
-    printf 'milestone battery evidence copy refused symlink: %s\n' "$rejected_link" >&2
-    return 1
+  if (( copy_failures )); then
+    copy_result=partial
+    copy_failure_name=copy-failures.tsv
+    cp "$copy_failure_manifest" "$stage/copy-failures.tsv" || return 1
+    if [[ -s "$copy_command_log" ]]; then
+      cp "$copy_command_log" "$stage/copy-command-errors.log" || return 1
+    fi
   fi
   : >"$stage/copy-digests.nul"
   while IFS= read -r -d '' relative; do
     relative=${relative#./}
-    [[ "$relative" == copy-digests.nul || "$relative" == report.json ]] && continue
-    digest=$(sha256_file "$stage/$relative") || return 1
+    case "$relative" in
+      copy-digests.nul|copy-failures.tsv|copy-command-errors.log|report.json) continue ;;
+    esac
+    if ! digest=$(sha256_file "$stage/$relative"); then
+      record_evidence_copy_failure digest-read-failed "$relative" || return 1
+      copy_result=partial
+      copy_failure_name=copy-failures.tsv
+      continue
+    fi
     printf '%s\0%s\0' "$digest" "$relative" >>"$stage/copy-digests.nul"
   done < <(cd "$stage" && find . -type f -print0)
   exec 7<"$stage/copy-digests.nul"
   while IFS= read -r -d '' expected <&7 && IFS= read -r -d '' relative <&7; do
-    actual=$(sha256_file "$stage/$relative") || { exec 7<&-; return 1; }
-    [[ "$actual" == "$expected" ]] || { exec 7<&-; return 1; }
+    if ! actual=$(sha256_file "$stage/$relative"); then
+      record_evidence_copy_failure digest-verification-read-failed "$relative" || { exec 7<&-; return 1; }
+      copy_result=partial
+      copy_failure_name=copy-failures.tsv
+    elif [[ "$actual" != "$expected" ]]; then
+      record_evidence_copy_failure digest-mismatch "$relative" || { exec 7<&-; return 1; }
+      copy_result=partial
+      copy_failure_name=copy-failures.tsv
+    fi
   done
   exec 7<&-
-  printf '{"runId":"%s","subjectSHA":"%s","runClass":"%s","surfaceProjection":"LANDING","surfacePolicyVersion":%d,"surfaceDigest":"%s","toolchainIdentity":"%s","startedAt":"%s","endedAt":"%s","setupExit":%d,"validationExit":%d,"copyResult":"verified","copyDigestManifest":"copy-digests.nul","verdict":"%s","validationLog":"validation.log","failureArtifacts":"failure-artifacts"}\n' \
+  if (( copy_failures )); then
+    cp "$copy_failure_manifest" "$stage/copy-failures.tsv" || return 1
+  fi
+  printf '{"runId":"%s","subjectSHA":"%s","runClass":"%s","surfaceProjection":"LANDING","surfacePolicyVersion":%d,"surfaceDigest":"%s","toolchainIdentity":"%s","startedAt":"%s","endedAt":"%s","setupExit":%d,"validationExit":%d,"copyResult":"%s","copyDigestManifest":"copy-digests.nul","copyFailureManifest":"%s","verdict":"%s","validationLog":"validation.log","failureArtifacts":"failure-artifacts"}\n' \
     "$run_id" "$subject" "$run_class" "$surface_policy_version" "$surface_digest" "$toolchain_identity" \
-    "$started_at" "$ended_at" "$stage_setup" "$stage_validation" "$initial_verdict" >"$stage/report.json" \
+    "$started_at" "$ended_at" "$stage_setup" "$stage_validation" "$copy_result" \
+    "$copy_failure_name" "$initial_verdict" >"$stage/report.json" \
     || return 1
   mv "$stage" "$envelope" || return 1
   stage_published=1
-  return 0
+  (( copy_failures == 0 ))
 }
 
 launch_job_is_owned() { # pid
@@ -603,6 +734,7 @@ stop_validator() {
             : >"$BATTERY_VALIDATOR_PUBLICATION_STALL_DIR/exit-observed" || return 1
           fi
           validator_launching=0
+          validator_quiesced=1
           return 0
         fi
         sleep 0.05
@@ -645,6 +777,7 @@ stop_validator() {
     kill -KILL "$validator_pid" 2>/dev/null || true
   fi
   wait "$validator_pid" 2>/dev/null || true
+  wait_for_validator_quiescence 100 || return 1
   validator_active=0
   validator_launching=0
 }
@@ -727,7 +860,6 @@ controller_finalize() { # incoming status
   fi
   ended_at=${ended_at:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
   if ! publish_stage_one "$setup_exit" "$validation_exit" "$final_verdict"; then
-    stage_published=0
     retain_clone=1
     should_abandon=1
     abandon_best_effort=1
@@ -998,6 +1130,7 @@ else
   validator_identity_started_at=
   validator_identity_start_ticks=
   validator_identity_boot_id=
+  validator_quiesced=0
   recorded_probe_ok=0
   recorded_publication_ok=0
   validator_launching=1
@@ -1016,10 +1149,14 @@ else
     mv "$1" "$2" || exit
     cd "$4" || exit
     exec env METASYSTEM_BATTERY_RUN_CLASS_OUT="$6" \
-      METASYSTEM_BATTERY_ROOT_CLASS_WRITER=1 bash scripts/validate-metasystem.sh
+      METASYSTEM_BATTERY_ROOT_CLASS_WRITER=1 \
+      METASYSTEM_VALIDATION_STAGE_RESULTS_OUT="$7" \
+      METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER=1 \
+      bash scripts/validate-metasystem.sh
   ' validator-launch "$validator_pgid_stage" "$validator_pgid_file" \
     "$controller_engine" "$clone_metasystem" \
     "${BATTERY_VALIDATOR_PUBLICATION_STALL_DIR:-}" "$run_class_file" \
+    "$stage_results_file" \
     >"$validation_log" 2>&1 &
   # Trap delivery between the asynchronous command and the PID assignments is
   # a distinct ownership state. A configured hold file keeps that window open
@@ -1056,6 +1193,15 @@ else
   wait "$validator_pid"
   validation_exit=$?
   set -e
+  if ! wait_for_validator_quiescence; then
+    printf 'validator process-group quiescence could not be proved; evidence copy was not attempted\n' \
+      >>"$validation_log"
+    retain_clone=1
+    should_abandon=1
+    abandon_best_effort=1
+    final_verdict=evidence-incomplete
+    exit 1
+  fi
   validator_active=0
 fi
 ended_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)

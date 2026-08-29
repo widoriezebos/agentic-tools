@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
 
 // One tick, one sentence a person can read without the repository.
@@ -16,6 +18,31 @@ func TestNarrationLineSpeaksPlainly(t *testing.T) {
 	}, TickConfig{}, time.Date(2026, 8, 23, 21, 0, 0, 0, time.UTC))
 	if !strings.Contains(line, "working on narrator") || strings.Contains(line, "claimed goal:") {
 		t.Fatalf("the sentence must translate the record, not quote it: %q", line)
+	}
+}
+
+func TestNarratedLandingWritesDurableDigestEntry(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
+	result := TickResult{Evidence: Evidence{Marks: Marks{HeadOid: "abcdef1234567890"}}}
+	if err := NarrateDigest(root, Evidence{}, result, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := NarrateDigest(root, Evidence{}, result, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(narratordigest.Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 || !strings.Contains(lines[0], "HIGHLIGHT") ||
+		!strings.Contains(lines[0], "source: commit abcdef1234567890") {
+		t.Fatalf("landing digest was not one source-linked plain-English line: %q", data)
+	}
+	pending, err := narratordigest.Pending(root)
+	if err != nil || !strings.Contains(pending.Message, "A landing moved the repository storyline") {
+		t.Fatalf("new digest did not remain pending for delivery: %+v %v", pending, err)
 	}
 }
 

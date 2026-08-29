@@ -9,12 +9,21 @@ witness_present_at_validation_entry=0
 witness_engine_reused=0
 battery_run_class_out=${METASYSTEM_BATTERY_RUN_CLASS_OUT:-}
 battery_run_class_writer=${METASYSTEM_BATTERY_ROOT_CLASS_WRITER:-0}
+stage_results_requested=${METASYSTEM_VALIDATION_STAGE_RESULTS_OUT:-}
+stage_results_writer=${METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER:-0}
+enumeration_engine_dependency=${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-}
 unset METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER \
+  METASYSTEM_VALIDATION_STAGE_RESULTS_OUT METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER \
+  METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY \
   METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE METASYSTEM_GATE_WITNESS_WRITE \
   METASYSTEM_GATE_WITNESS_CONTROLLER_PID METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT \
   METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID
 if [[ -n "$battery_run_class_out" && "$battery_run_class_writer" != 1 ]]; then
   echo "battery run-class output is reserved for the isolated validation root" >&2
+  exit 1
+fi
+if [[ -n "$stage_results_requested" && "$stage_results_writer" != 1 ]]; then
+  echo "validation stage-results output is reserved for the isolated validation root" >&2
   exit 1
 fi
 
@@ -115,6 +124,11 @@ if (( ! suite_progress_worker )); then
       METASYSTEM_SUITE_PROGRESS_DEPTH="$suite_depth" \
       METASYSTEM_SUITE_PROGRESS_TMP="$suite_progress_tmp" \
       METASYSTEM_SUITE_PROGRESS_LOG="$suite_progress_log" \
+      METASYSTEM_BATTERY_RUN_CLASS_OUT="$battery_run_class_out" \
+      METASYSTEM_BATTERY_ROOT_CLASS_WRITER="$battery_run_class_writer" \
+      METASYSTEM_VALIDATION_STAGE_RESULTS_OUT="$stage_results_requested" \
+      METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER="$stage_results_writer" \
+      METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY="$enumeration_engine_dependency" \
       bash "$root/scripts/validate-metasystem.sh" "$@"
 fi
 
@@ -146,12 +160,150 @@ if (( enumerate_mode )); then
   exec bash "$root/scripts/agents/enumerate-suite.sh" "${@:2}"
 fi
 
+# The progress worker supplies the workspace while the sequencer records every section outcome.
+# Every section writes one result row. The milestone battery supplies an
+# output path inside its run directory; direct runs get a unique durable path
+# under artifacts so a later evidence collector can copy the same format.
+if [[ -n "$stage_results_requested" ]]; then
+  stage_results_file=$stage_results_requested
+  [[ "$stage_results_file" == /* && ! -e "$stage_results_file" \
+    && ! -L "$stage_results_file" ]] \
+    || { echo "validation stage-results output must be a new absolute path" >&2; exit 1; }
+  stage_results_parent=${stage_results_file%/*}
+  [[ -d "$stage_results_parent" && ! -L "$stage_results_parent" ]] \
+    || { echo "validation stage-results parent must be an existing real directory" >&2; exit 1; }
+else
+  stage_results_parent=$root/artifacts/agents/validation-stage-results
+  mkdir -p "$stage_results_parent"
+  stage_results_file=$stage_results_parent/$(date -u +%Y%m%dT%H%M%SZ)-$$.tsv
+fi
+umask 077
+printf 'format\tmetasystem-validation-stage-results-v1\n' >"$stage_results_file"
+printf 'columns\tkind\tid\tstatus\texit_code\tfailure_tail\n' >>"$stage_results_file"
+
+if [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
+  stage_work=$METASYSTEM_SUITE_PROGRESS_TMP
+  mkdir -p "$stage_work"
+else
+  stage_work=$(mktemp -d "${TMPDIR:-/tmp}/validate-metasystem-stages.XXXXXX")
+fi
+validation_red_sections=()
+validation_red_rcs=()
+if [[ -n "$enumeration_section" ]]; then
+  case "$enumeration_engine_dependency" in
+    ready | failed | unproven) engine_dependency=$enumeration_engine_dependency ;;
+    '') engine_dependency=unproven ;;
+    *)
+      echo "enumeration supplied an invalid engine dependency state: $enumeration_engine_dependency" >&2
+      exit 2
+      ;;
+  esac
+else
+  engine_dependency=ready
+fi
+fixture_budget_dependency=uninitialized
+last_section_status=not-run
+last_section_rc=0
+
+stage_tail_for_record() { # section log
+  tail -n 20 "$1" | awk '
+    BEGIN { first = 1 }
+    {
+      gsub(/\\/, "\\\\")
+      gsub(/\t/, "\\t")
+      gsub(/\r/, "\\r")
+      if (!first) printf "\\n"
+      printf "%s", $0
+      first = 0
+    }
+    END { if (!first) printf "\\n" }
+  '
+}
+
+record_stage_result() { # section id, status, exit code, escaped tail or reason
+  printf 'section\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >>"$stage_results_file"
+}
+
+section_dependency_ready() { # named need
+  case "$1" in
+    needs-nothing) return 0 ;;
+    needs-engine) [[ "$engine_dependency" == ready ]] ;;
+    needs-fixture-budget)
+      [[ "$engine_dependency" == ready && "$fixture_budget_dependency" == ready ]]
+      ;;
+    *) echo "unknown validation section dependency: $1" >&2; return 2 ;;
+  esac
+}
+
+section_dependency_reason() { # named need
+  case "$1" in
+    needs-engine) printf 'needs engine: the Go engine gate did not complete successfully' ;;
+    needs-fixture-budget)
+      if [[ "$engine_dependency" != ready ]]; then
+        printf 'needs engine: the Go engine gate did not complete successfully'
+      else
+        printf 'needs fixture budget: fixture-budget-initialization did not complete successfully'
+      fi
+      ;;
+    *) printf 'unknown dependency: %s' "$1" ;;
+  esac
+}
+
+run_section() { # section id, named need, command and arguments
+  local section_id=$1 section_need=$2 section_log body_rc tee_rc section_rc failure_tail reason
+  local pipeline_status
+  shift 2
+  last_section_status=not-run
+  last_section_rc=0
+  if ! section_dependency_ready "$section_need"; then
+    reason=$(section_dependency_reason "$section_need")
+    record_stage_result "$section_id" gated 0 "$reason"
+    printf '\n========== SECTION GATED: %s ==========' "$section_id" >&2
+    printf '\n%s\n' "$reason" >&2
+    printf '========================================\n\n' >&2
+    last_section_status=gated
+    return 0
+  fi
+
+  section_log=$stage_work/$section_id.log
+  printf '\n========== SECTION START: %s ==========\n' "$section_id"
+  set +e
+  ( set -e; "$@" ) 2>&1 | tee "$section_log"
+  pipeline_status=("${PIPESTATUS[@]}")
+  body_rc=${pipeline_status[0]}
+  tee_rc=${pipeline_status[1]}
+  set -e
+  section_rc=$body_rc
+  if (( section_rc == 0 && tee_rc != 0 )); then
+    section_rc=$tee_rc
+    printf 'section output recorder failed with exit %d\n' "$tee_rc" >>"$section_log"
+  fi
+  if (( section_rc == 0 )); then
+    record_stage_result "$section_id" pass 0 ""
+    printf '========== SECTION GREEN: %s ==========\n\n' "$section_id"
+    last_section_status=pass
+    return 0
+  fi
+
+  failure_tail=$(stage_tail_for_record "$section_log")
+  record_stage_result "$section_id" fail "$section_rc" "$failure_tail"
+  validation_red_sections+=("$section_id")
+  validation_red_rcs+=("$section_rc")
+  printf '\n!!!!!!!!!! SECTION RED: %s (exit %d) !!!!!!!!!!\n' "$section_id" "$section_rc" >&2
+  tail -n 20 "$section_log" >&2
+  printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n' >&2
+  last_section_status=fail
+  last_section_rc=$section_rc
+  return 0
+}
+
 source scripts/agents/checkout-execution-guard.sh
 checkout_execution_guard_acquire "validate-metasystem.sh"
-trap 'suite_progress_finish; checkout_execution_guard_release || true; if [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then rm -rf -- "$METASYSTEM_SUITE_PROGRESS_TMP" 2>/dev/null || true; fi' EXIT
+trap 'suite_progress_finish; [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"; rm -rf "$stage_work"; checkout_execution_guard_release || true' EXIT
 if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
   checkout_execution_guard_fixture_wait
   checkout_execution_guard_release
+  rm -rf "$stage_work"
   trap - EXIT
   exit 0
 fi
@@ -167,17 +319,24 @@ metasystem_here=$(pwd -P)
 # validation belong to the prospective engine.
 template_mode=0
 [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
-if section_selected static-placeholder-scan && (( ! template_mode )) \
-  && [[ -z "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]]; then
+static_placeholder_scan_section() {
+  local placeholder_pattern
+  local placeholder_files=()
+  (( template_mode )) && return 0
+  [[ -z "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]] || return 0
   placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
-  placeholder_files=()
   [[ -f docs/project-rules.md ]] && placeholder_files+=(docs/project-rules.md)
   [[ -f metasystem.conf ]] && placeholder_files+=(metasystem.conf)
   if (( ${#placeholder_files[@]} > 0 )) \
     && grep -En -- "$placeholder_pattern" "${placeholder_files[@]}"; then
     echo "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf" >&2
-    exit 1
+    return 1
   fi
+}
+if section_selected static-placeholder-scan; then
+  run_section static-placeholder-scan needs-nothing static_placeholder_scan_section
+  # A recorded cheap refusal ends the run before any engine rebuild can start.
+  [[ "$last_section_status" != fail ]] || exit "$last_section_rc"
 fi
 
 publish_battery_run_class() { # FULL|WITNESS-ASSISTED
@@ -312,7 +471,8 @@ fi
 # fail-open): wherever a metasystem.conf exists the key must too, and
 # source delivery without the module is a damaged payload — a deleted
 # go.mod must not read as "no engine expected".
-if section_selected engine-delivery-contract && [[ -f metasystem.conf ]]; then
+engine_delivery_contract_section() {
+if [[ -f metasystem.conf ]]; then
   engine_delivery=$(sed -n 's/^metasystem\.engine-delivery=//p' metasystem.conf | head -1)
   [[ -n "$engine_delivery" ]] \
     || { echo "metasystem.engine-delivery is required in metasystem.conf; a missing key reads as damage, not as a mode" >&2; exit 1; }
@@ -321,14 +481,26 @@ if section_selected engine-delivery-contract && [[ -f metasystem.conf ]]; then
     exit 1
   fi
 fi
-
-metasystem_go_source=0
-grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
-if section_selected engine-delivery-contract && (( ! metasystem_go_source )) \
+section_metasystem_go_source=0
+grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod \
+  && section_metasystem_go_source=1
+if (( ! section_metasystem_go_source )) \
   && [[ -f internal/missionrunner/stoploss.go || -f internal/mission/ledger.go ]]; then
   echo "metasystem Go source present but go.mod does not declare the metasystem module — damaged template" >&2
   exit 1
 fi
+}
+if section_selected engine-delivery-contract; then
+  run_section engine-delivery-contract needs-nothing engine_delivery_contract_section
+  if [[ "$last_section_status" == fail ]]; then
+    # A successful source build below can restore engine readiness. Without
+    # that proof, later engine consumers must not trust an old binary.
+    engine_dependency=failed
+  fi
+fi
+
+metasystem_go_source=0
+grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
 
 # The covenant evidence gate, EARLY (battery-wall-clock lever 3): the
 # gate is a pure function of files and costs milliseconds, so a broken
@@ -337,8 +509,8 @@ fi
 # means the present binary predates the verb — deferred, because the
 # LATE gate after the rebuild still enforces on the proven engine, and
 # that late run remains the guarantee this early run only accelerates.
-if section_selected covenant-evidence-pre-rebuild \
-  && [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
+covenant_evidence_pre_rebuild_section() {
+if [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
   early_evidence_rc=0
   bin/metasystem covenant evidence --root "$root" || early_evidence_rc=$?
   case "$early_evidence_rc" in
@@ -350,7 +522,14 @@ if section_selected covenant-evidence-pre-rebuild \
       ;;
   esac
 fi
-if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go_source )); then
+}
+if section_selected covenant-evidence-pre-rebuild; then
+  run_section covenant-evidence-pre-rebuild needs-nothing covenant_evidence_pre_rebuild_section
+fi
+
+go_engine_gate_section() {
+  local engine_state_succeeded=0
+  trap 'section_status=$?; if (( section_status != 0 && ! engine_state_succeeded )); then [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"; fi' EXIT
   # The witness-producing gate (D33): when the gate-input roots are clean
   # against HEAD, the full gate runs inside an extracted HEAD snapshot —
   # the exact bytes adoption stages — and its witness is handed to the
@@ -365,7 +544,6 @@ if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go
   # trap far below — any early exit still takes the witness with it
   # (the later validation_cleanup trap replaces this one and repeats
   # the removal).
-  trap '[[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"; checkout_execution_guard_release || true' EXIT
   WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
@@ -386,14 +564,34 @@ if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go
       echo "delivery contract: payload or toolchain equality was not proven; every validation family will run" >&2
     fi
   fi
+  {
+    declare -p witness_state witness_engine_reused delivery_reuse
+    declare -p METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
+      METASYSTEM_GATE_WITNESS_RUN 2>/dev/null || true
+  } >"$go_engine_state_file"
+  engine_state_succeeded=1
+  trap - EXIT
+}
+go_engine_state_file=$stage_work/go-engine-state.sh
+if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go_source )); then
+  run_section go-engine-gate needs-nothing go_engine_gate_section
+  if [[ "$last_section_status" == pass ]]; then
+    source "$go_engine_state_file"
+    engine_dependency=ready
+  elif [[ "$last_section_status" == fail ]]; then
+    engine_dependency=failed
+  fi
 fi
 
 validation_run_class=FULL
 if (( witness_present_at_validation_entry && witness_engine_reused )); then
   validation_run_class=WITNESS-ASSISTED
 fi
-publish_battery_run_class "$validation_run_class" \
-  || { echo "validation root could not publish its run class" >&2; exit 1; }
+publish_battery_run_class_section() {
+  publish_battery_run_class "$validation_run_class" \
+    || { echo "validation root could not publish its run class" >&2; exit 1; }
+}
+run_section battery-run-class-publication needs-engine publish_battery_run_class_section
 
 # The engine-seam tripwire and the Go-vs-python census conformance
 # harnesses (signature, fingerprint, run) retired with the migration:
@@ -401,17 +599,18 @@ publish_battery_run_class "$validation_run_class" \
 # packages carry their own unit coverage under the go gate above.
 # Owner-alone Go supervision fixtures drive the running binary.
 if section_selected supervision-go-fixtures && (( ! delegate_scope )) \
-  && (( metasystem_go_source )); then
-  delivery_contract_skip supervision-go-fixtures \
-    || bash scripts/agents/supervision-go-fixtures.sh
+  && (( metasystem_go_source )) && ! delivery_contract_skip supervision-go-fixtures; then
+  run_section supervision-go-fixtures needs-engine \
+    bash scripts/agents/supervision-go-fixtures.sh
 fi
 
 # The gate fence, live: this suite's own marker never blocks (this shell
 # is the registered run's chain), a foreign live run blocks both the
 # fence and a standalone go-gate rebuild, and a dead run stops blocking.
-if section_selected gate-fence-fixtures && (( ! delegate_scope )) \
-  && (( metasystem_go_source )); then
-  if ! delivery_contract_skip gate-fence-fixtures; then
+gate_fence_fixtures_section() {
+if (( run_gate_fence_fixture )); then
+  gate_fence_foreign=
+  trap '[[ -z "$gate_fence_foreign" ]] || { kill "$gate_fence_foreign" 2>/dev/null || true; wait "$gate_fence_foreign" 2>/dev/null || true; }' EXIT
   bin/metasystem gate fence --root "$root" --self-pid $$ \
     || { echo "the suite's own gate marker blocked its fence" >&2; exit 1; }
   sleep 60 & gate_fence_foreign=$!
@@ -427,12 +626,25 @@ if section_selected gate-fence-fixtures && (( ! delegate_scope )) \
     || { echo "go-gate refusal did not come from the rebuild fence" >&2; exit 1; }
   rm -f "$gate_fence_err"
   kill "$gate_fence_foreign" 2>/dev/null || true; wait "$gate_fence_foreign" 2>/dev/null || true
+  gate_fence_foreign=
   bin/metasystem gate fence --root "$root" --self-pid $$ \
     || { echo "a dead foreign gate run kept blocking the fence" >&2; exit 1; }
   echo "gate fence fixtures passed"
+  trap - EXIT
+fi
+if (( run_checkout_guard_fixture )); then
+  bash scripts/agents/checkout-execution-guard-fixtures.sh
+fi
+}
+if section_selected gate-fence-fixtures && (( ! delegate_scope )) \
+  && (( metasystem_go_source )); then
+  run_gate_fence_fixture=1
+  run_checkout_guard_fixture=1
+  delivery_contract_skip gate-fence-fixtures && run_gate_fence_fixture=0
+  delivery_contract_skip checkout-execution-guard-fixtures && run_checkout_guard_fixture=0
+  if (( run_gate_fence_fixture || run_checkout_guard_fixture )); then
+    run_section gate-fence-fixtures needs-engine gate_fence_fixtures_section
   fi
-  delivery_contract_skip checkout-execution-guard-fixtures \
-    || bash scripts/agents/checkout-execution-guard-fixtures.sh
 fi
 
 # The covenant evidence gate (counselor slice one): where an app has
@@ -446,8 +658,8 @@ fi
 # (-e follows symlinks and calls a dangling one absent): a directory,
 # FIFO, or symlink at the covenant's home is the engine's to refuse by
 # name, never validation's to skip silently.
-if section_selected covenant-evidence-post-rebuild \
-  && [[ -e covenant.json || -L covenant.json ]]; then
+covenant_evidence_post_rebuild_section() {
+if [[ -e covenant.json || -L covenant.json ]]; then
   if [[ -x bin/metasystem ]]; then
     bin/metasystem covenant evidence --root "$root" \
       || { echo "the covenant evidence gate refused; the table and the covenant disagree" >&2; exit 1; }
@@ -457,17 +669,23 @@ if section_selected covenant-evidence-post-rebuild \
     exit 1
   fi
 fi
+}
+if section_selected covenant-evidence-post-rebuild; then
+  run_section covenant-evidence-post-rebuild needs-engine covenant_evidence_post_rebuild_section
+fi
 
 
 # python3 remains a suite-host dependency for exactly one fixture: the
 # dispatch fixtures' TTY escalation driver needs a real pty, which shell
 # cannot open. Say so up front, loudly, instead of dying mid-suite with a
 # cryptic 127. The PRODUCT does not need python at all.
-if section_selected suite-host-prerequisites; then
+suite_host_prerequisites_section() {
   command -v python3 >/dev/null 2>&1 \
     || { echo "validate-metasystem: python3 is required by the TTY escalation fixture (the metasystem itself does not need it)" >&2; exit 1; }
+}
+if section_selected suite-host-prerequisites; then
+  run_section suite-host-prerequisites needs-nothing suite_host_prerequisites_section
 fi
-source scripts/agents/fixture-budget.sh
 
 # The engine does the structural JSON work below; helpers use the absolute
 # path so they survive the fixture subshells that change directories.
@@ -589,6 +807,8 @@ json_remove_field() { # file, top-level field the file must have
     || { rm -f "$staged"; return 1; }
   mv "$staged" "$file"
 }
+fixture_budget_initialization_section() {
+source scripts/agents/fixture-budget.sh
 if (( delegate_scope )); then
   # Load calibration is itself a real census. Delegate validation uses the
   # policy's minimum scale so no process enumeration occurs before the
@@ -604,11 +824,24 @@ fixture_dispatch_over_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-o
 fixture_watcher_config_cap_min=$(harness_fixture_semantic_cap watcher-config-minutes)
 fixture_watcher_nonfiring_cap_min=$(harness_fixture_semantic_cap watcher-nonfiring-minutes)
 fixture_watcher_firing_cap_min=$(harness_fixture_semantic_cap watcher-firing-minutes)
+declare -p fixture_minimum_cap_min fixture_mission_job_cap_min \
+  fixture_dispatch_envelope_cap_min fixture_dispatch_over_envelope_cap_min \
+  fixture_watcher_config_cap_min fixture_watcher_nonfiring_cap_min \
+  fixture_watcher_firing_cap_min >"$fixture_budget_state_file"
+}
+fixture_budget_state_file=$stage_work/fixture-budget-state.sh
+run_section fixture-budget-initialization needs-engine fixture_budget_initialization_section
+if [[ "$last_section_status" == pass ]]; then
+  source "$fixture_budget_state_file"
+  fixture_budget_dependency=ready
+elif [[ "$last_section_status" == fail || "$last_section_status" == gated ]]; then
+  fixture_budget_dependency=failed
+fi
 
 if section_selected metasystem-audit; then
-  # The literal adopted-repository placeholders were already judged by the
-  # pre-gate scan. The engine still owns every other audit rule here.
-  METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 scripts/audit-metasystem.sh .
+  # The recorded engine audit owns every rule except literals already judged by the cheap scan.
+  run_section metasystem-audit needs-engine env METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 \
+    scripts/audit-metasystem.sh .
 fi
 
 # The gate's own integrity (go-production-grade B8): a gofmt that cannot run
@@ -618,9 +851,7 @@ fi
 # Under the delivery contract the gate is a digest check plus rebuild —
 # it never runs gofmt, so this tripwire's subject does not exist there;
 # the outer run's full gate keeps it (D33).
-if section_selected gate-fail-open-tripwire \
-  && [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
-  && ! delivery_contract_skip gate-fail-open-tripwire; then
+gate_fail_open_tripwire_section() {
   gofmt_shim_dir=$(mktemp -d)
   printf '#!/usr/bin/env bash\necho "shim: gofmt is broken" >&2\nexit 7\n' >"$gofmt_shim_dir/gofmt"
   chmod +x "$gofmt_shim_dir/gofmt"
@@ -632,6 +863,11 @@ if section_selected gate-fail-open-tripwire \
   grep -q "gofmt itself failed" "$gofmt_shim_dir/out" \
     || { echo "go gate refused a broken gofmt without naming it" >&2; cat "$gofmt_shim_dir/out" >&2; exit 1; }
   rm -rf "$gofmt_shim_dir"
+}
+if section_selected gate-fail-open-tripwire \
+  && [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
+  && ! delivery_contract_skip gate-fail-open-tripwire; then
+  run_section gate-fail-open-tripwire needs-engine gate_fail_open_tripwire_section
 fi
 
 if (( delivery_contract )); then
@@ -642,21 +878,10 @@ if (( delivery_contract )); then
   template_mode=0
 fi
 
-if section_selected static-contract-audits; then
+static_contract_audits_section() {
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
-# A skill directory without a SKILL.md is invisible to the find, so check for
-# hollow directories explicitly first.
-for dir in skills optional-skills; do
-  [[ -d "$dir" ]] || continue
-  for d in "$dir"/*/; do
-    [[ -d "$d" ]] || continue
-    [[ -f "${d}SKILL.md" ]] || { echo "skill directory without SKILL.md: ${d%/}" >&2; exit 1; }
-  done
-  while IFS= read -r skill_md; do
-    scripts/validate-skill.sh "$(dirname "$skill_md")"
-  done < <(find "$dir" -name SKILL.md | sort)
-done
+scripts/agents/validate-skill-inventory.sh "$root"
 
 # Core assets are required everywhere. The full seven-skill set with every
 # per-runtime profile is required only in the template repository, detected by
@@ -718,9 +943,11 @@ for link in \
   scripts/agents/checkout-execution-guard.sh \
   scripts/agents/commit.sh \
   scripts/agents/land.sh \
+  scripts/agents/coverage-delta.sh \
   scripts/agents/second-session.sh \
   scripts/agents/arm-supervision.sh \
   scripts/agents/fixture-budget.sh \
+  scripts/agents/validate-skill-inventory.sh \
   scripts/agents/enumerate-suite.sh \
   scripts/agents/validate-section-selector.sh \
   scripts/agents/enumerate-suite-fixtures.sh \
@@ -774,6 +1001,9 @@ for link in \
   scripts/agents/check-preamble-quotes.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
+}
+if section_selected static-contract-audits; then
+  run_section static-contract-audits needs-engine static_contract_audits_section
 fi
 
 # Section 3.11 and retained watch-list round S4 have one bounded fixture suite.
@@ -781,31 +1011,39 @@ fi
 # so their supervisors and dispatch jobs cannot share lifecycle state. They
 # name S4-1 through S4-10 at their owning checks and contain no uncapped
 # process wait (IL-1).
+# Each process fixture section owns the supervision it arms and shuts down.
+# No later section consumes that armed state, so an arming failure is recorded
+# as the owning section's red and does not gate an unrelated section.
+supervision_and_census_section() {
+  scripts/agents/supervision-hook-fixtures.sh
+  scripts/agents/supervision-fixtures.sh
+}
 if section_selected supervision-and-census-fixtures \
   && delegate_process_section "supervision and census fixtures" \
   && ! delivery_contract_skip "supervision and census fixtures"; then
-  scripts/agents/supervision-hook-fixtures.sh
-  scripts/agents/supervision-fixtures.sh
+  run_section supervision-and-census-fixtures needs-engine supervision_and_census_section
 fi
 if section_selected supervisor-fingerprint-heal-harness \
   && delegate_process_section "supervisor fingerprint heal harness" \
   && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
-  scripts/agents/fingerprint-harness.sh --iterations 2
+  run_section supervisor-fingerprint-heal-harness needs-engine \
+    scripts/agents/fingerprint-harness.sh --iterations 2
 fi
 if section_selected mission-fixtures && ! delivery_contract_skip mission-fixtures; then
-  scripts/agents/mission-fixtures.sh
+  run_section mission-fixtures needs-engine scripts/agents/mission-fixtures.sh
 fi
 
 # Real runtime selftests spend model calls and remain manual acceptance steps.
 # Validation covers only their static adapter contract.
 # The external-dependency ratchet (os-dependency-reduction): an
 # undeclared interpreter in metasystem scripts refuses here.
-if section_selected shell-and-dependency-audits; then
+shell_and_dependency_audits_section() {
 bash scripts/agents/dependency-ratchet.sh --self-test >/dev/null
 bash scripts/agents/dependency-ratchet.sh >/dev/null
 bash -n scripts/agents/dependency-ratchet.sh
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
+bash -n scripts/agents/validate-skill-inventory.sh
 bash -n scripts/agents/enumerate-suite.sh
 bash -n scripts/agents/validate-section-selector.sh
 bash -n scripts/agents/enumerate-suite-fixtures.sh
@@ -831,6 +1069,7 @@ bash -n scripts/agents/gate-run-freeze-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/land.sh
+bash -n scripts/agents/coverage-delta.sh
 bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
@@ -852,21 +1091,28 @@ bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
+}
+if section_selected shell-and-dependency-audits; then
+  run_section shell-and-dependency-audits needs-nothing shell_and_dependency_audits_section
 fi
 if section_selected conformance-fixtures; then
-  delivery_contract_skip conformance-fixtures || bash scripts/agents/conformance-fixtures.sh
+  delivery_contract_skip conformance-fixtures \
+    || run_section conformance-fixtures needs-engine bash scripts/agents/conformance-fixtures.sh
 fi
 if section_selected goal-cli-fixtures; then
-  delivery_contract_skip goal-cli-fixtures || bash scripts/agents/goal-cli-fixtures.sh
+  delivery_contract_skip goal-cli-fixtures \
+    || run_section goal-cli-fixtures needs-engine bash scripts/agents/goal-cli-fixtures.sh
 fi
 if section_selected telemetry-census-fixtures; then
-  delivery_contract_skip telemetry-census-fixtures || bash scripts/agents/telemetry-census-fixtures.sh
+  delivery_contract_skip telemetry-census-fixtures \
+    || run_section telemetry-census-fixtures needs-engine bash scripts/agents/telemetry-census-fixtures.sh
 fi
 if section_selected return-schema-fixtures; then
-  delivery_contract_skip return-schema-fixtures || bash scripts/agents/return-schema-fixtures.sh
+  delivery_contract_skip return-schema-fixtures \
+    || run_section return-schema-fixtures needs-engine bash scripts/agents/return-schema-fixtures.sh
 fi
 if section_selected config-identity-fixtures; then
-  bash scripts/agents/config-identity-fixtures.sh
+  run_section config-identity-fixtures needs-engine bash scripts/agents/config-identity-fixtures.sh
 fi
 # worktree-lease-fixtures.py retired with the python lease helper: it
 # monkeypatched that module's internals (started_at, live, classify, ...),
@@ -875,13 +1121,16 @@ fi
 # behavioral coverage it also carried (succession, lock contention)
 # lives in scripts/agents/lease-succession-fixtures.sh below.
 if section_selected authority-regression-fixtures; then
-  delivery_contract_skip authority-regression-fixtures || bash scripts/agents/authority-regression-fixtures.sh
+  delivery_contract_skip authority-regression-fixtures \
+    || run_section authority-regression-fixtures needs-engine bash scripts/agents/authority-regression-fixtures.sh
 fi
 if section_selected pre-commit-guard-fixtures; then
-  delivery_contract_skip pre-commit-guard-fixtures || bash scripts/agents/pre-commit-guard-fixtures.sh
+  delivery_contract_skip pre-commit-guard-fixtures \
+    || run_section pre-commit-guard-fixtures needs-engine bash scripts/agents/pre-commit-guard-fixtures.sh
 fi
 if section_selected static-reproof-fixtures; then
-  delivery_contract_skip static-reproof-fixtures || bash scripts/agents/static-reproof-fixtures.sh
+  delivery_contract_skip static-reproof-fixtures \
+    || run_section static-reproof-fixtures needs-engine bash scripts/agents/static-reproof-fixtures.sh
 fi
 # PROJECT-DECLARED extra suites (born from the bm-2d rep-1 lesson: a
 # sibling artifact's checks lived in no battery, and engine drift landed
@@ -890,44 +1139,58 @@ fi
 # DECLARE companion suites in its own configuration, and a declaration is
 # a promise: a declared suite that is missing or red refuses the run.
 extra_suites=$(scripts/metasystem-config.sh get --key validate.extra-suites --default "" 2>/dev/null || true)
-if section_selected project-extra-suites && [[ -n "$extra_suites" ]]; then
+project_extra_suites_section() {
   for extra in $extra_suites; do
     if [[ ! -x "$extra" ]]; then
       echo "declared extra suite is missing or not executable: $extra (validate.extra-suites is a promise; clean the key or restore the suite)" >&2
       exit 1
     fi
-    delivery_contract_skip project-extra-suites || bash "$extra"       || { echo "declared extra suite failed: $extra" >&2; exit 1; }
+    bash "$extra" || { echo "declared extra suite failed: $extra" >&2; exit 1; }
   done
+}
+if section_selected project-extra-suites; then
+  delivery_contract_skip project-extra-suites \
+    || run_section project-extra-suites needs-engine project_extra_suites_section
 fi
 if section_selected record-protocol-fixtures; then
-  delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
+  delivery_contract_skip record-protocol-fixtures \
+    || run_section record-protocol-fixtures needs-engine bash scripts/agents/record-protocol-fixtures.sh
 fi
 if section_selected evidence-segment-fixtures; then
-  delivery_contract_skip evidence-segment-fixtures || bash scripts/agents/evidence-segment-fixtures.sh
+  delivery_contract_skip evidence-segment-fixtures \
+    || run_section evidence-segment-fixtures needs-engine bash scripts/agents/evidence-segment-fixtures.sh
 fi
 if section_selected second-session-fixtures; then
-  bash scripts/agents/second-session-fixtures.sh
+  run_section second-session-fixtures needs-engine bash scripts/agents/second-session-fixtures.sh
 fi
 if section_selected lease-succession-fixtures; then
-  delivery_contract_skip lease-succession-fixtures || bash scripts/agents/lease-succession-fixtures.sh
+  delivery_contract_skip lease-succession-fixtures \
+    || run_section lease-succession-fixtures needs-engine bash scripts/agents/lease-succession-fixtures.sh
 fi
 if section_selected flight-recorder-fixtures; then
-  delivery_contract_skip flight-recorder-fixtures || bash scripts/agents/flight-recorder-fixtures.sh
+  delivery_contract_skip flight-recorder-fixtures \
+    || run_section flight-recorder-fixtures needs-engine bash scripts/agents/flight-recorder-fixtures.sh
 fi
 if section_selected acp-fixtures; then
-  delivery_contract_skip acp-fixtures || bash scripts/agents/acp-fixtures.sh
+  delivery_contract_skip acp-fixtures \
+    || run_section acp-fixtures needs-engine bash scripts/agents/acp-fixtures.sh
 fi
 if section_selected delegate-caps-fixtures; then
-  delivery_contract_skip delegate-caps-fixtures || bash scripts/agents/delegate-caps-fixtures.sh
+  delivery_contract_skip delegate-caps-fixtures \
+    || run_section delegate-caps-fixtures needs-engine bash scripts/agents/delegate-caps-fixtures.sh
 fi
 if section_selected adapter-deadline-fixtures; then
-  delivery_contract_skip adapter-deadline-fixtures || bash scripts/agents/adapter-deadline-fixtures.sh
+  delivery_contract_skip adapter-deadline-fixtures \
+    || run_section adapter-deadline-fixtures needs-engine bash scripts/agents/adapter-deadline-fixtures.sh
 fi
-if section_selected enumeration-mode-fixtures; then
+enumeration_mode_fixtures_section() {
   enumeration_fixture_output=$(bash scripts/agents/enumerate-suite-fixtures.sh 2>&1) \
     || { printf '%s\n' "$enumeration_fixture_output" >&2; exit 1; }
+}
+if section_selected enumeration-mode-fixtures; then
+  run_section enumeration-mode-fixtures needs-engine enumeration_mode_fixtures_section
 fi
-if section_selected runtime-contract-audits; then
+runtime_contract_audits_static_section() {
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
@@ -1141,17 +1404,13 @@ if (( ! template_mode )); then
     fi
   done
 fi
-fi
+}
 
-tmp=${METASYSTEM_SUITE_PROGRESS_TMP:-}
-if [[ -z "$tmp" ]]; then
-  tmp=$(mktemp -d)
-else
-  mkdir -p "$tmp"
-fi
+# The heartbeat workspace and section recorder share one lifecycle and one preserved failure tree.
+tmp=$stage_work
 agent_supervision_repo=
 
-if section_selected runtime-contract-audits; then
+runtime_contract_audits_probe_section() {
 # The fake runtime is the only sandbox this suite owns. Its probe drives the
 # denied write and network-call paths and reports the observed nonzero status;
 # real adapters are inspected only for their declarations above.
@@ -1170,6 +1429,13 @@ fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
 [[ "$(canonical_json "$(cat "$fake_probe_result")")" == \
    "$(canonical_json '{"writeRoots": {"observed": "denied", "exitStatus": 77}, "network": {"observed": "denied", "exitStatus": 77}}')" ]] \
   || { echo "fake envelope probe did not observe both denials with status 77" >&2; cat "$fake_probe_result" >&2; exit 1; }
+}
+runtime_contract_audits_section() {
+  runtime_contract_audits_static_section
+  runtime_contract_audits_probe_section
+}
+if section_selected runtime-contract-audits; then
+  run_section runtime-contract-audits needs-engine runtime_contract_audits_section
 fi
 
 # Every fixture repository this suite arms, so cleanup can stop all of them.
@@ -1245,7 +1511,7 @@ trap 'validation_exit_status=$?; suite_progress_finish; validation_cleanup' EXIT
 trap 'on_signal 2' INT
 trap 'on_signal 15' TERM
 
-if section_selected agent-protocol-fixtures; then
+agent_protocol_fixtures_section() {
 # IL-3: prove the audit's fallback with a PATH that contains its ordinary POSIX
 # tools but deliberately contains no rg binary.
 no_rg_bin="$tmp/no-rg-bin"
@@ -2089,6 +2355,9 @@ for field in jobId round runtime sessionId; do
   grep -Fq "$.${field} identity mismatch" "$tmp/identity-$field.out" \
     || { echo "job-aware return checker did not name the $field mismatch" >&2; exit 1; }
 done
+}
+if section_selected agent-protocol-fixtures; then
+  run_section agent-protocol-fixtures needs-engine agent_protocol_fixtures_section
 fi
 
 # Dispatcher and fake-adapter fixtures run in a minimal adopted-mode Git
@@ -2101,10 +2370,11 @@ if section_selected dispatcher-adapter-and-mission-runner-fixtures \
   && delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
   && ! delivery_contract_skip "dispatcher, adapter selftest, and mission-runner process fixtures"; then
   # Extracted to the sub-suite shape (script-validate-4/D35).
-  bash scripts/agents/dispatch-fixtures.sh
+  run_section dispatcher-adapter-and-mission-runner-fixtures needs-engine \
+    bash scripts/agents/dispatch-fixtures.sh
 fi
 
-if section_selected workflow-tooling-fixtures; then
+workflow_tooling_fixtures_section() {
 # The shipped Stop hook must stay rooted and surface via JSON output: hooks
 # run in the session's cwd, receipt.sh resolves its ledger from there, and a
 # non-blocking exit code shows only a first-line hook-error notice.
@@ -2590,26 +2860,30 @@ if LC_ALL=C grep -q $'\r' "$rfile_crlf"; then
   echo "receipt sanitizer left a carriage return in the log" >&2
   exit 1
 fi
+}
+if section_selected workflow-tooling-fixtures; then
+  run_section workflow-tooling-fixtures needs-fixture-budget workflow_tooling_fixtures_section
 fi
 
 # adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
 if section_selected adoption-fixtures && (( template_mode )); then
-  bash scripts/adopt-fixtures.sh
+  run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
 fi
 if section_selected gate-run-freeze-fixtures && (( template_mode )); then
-  bash scripts/agents/gate-run-freeze-fixtures.sh
+  run_section gate-run-freeze-fixtures needs-engine bash scripts/agents/gate-run-freeze-fixtures.sh
 fi
 if section_selected witness-gate-fixtures && (( template_mode )); then
-  bash scripts/agents/witness-gate-fixtures.sh
+  run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
 fi
 if section_selected suite-progress-fixtures && (( template_mode )); then
-  bash scripts/agents/suite-progress-fixtures.sh
+  # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.
+  run_section suite-progress-fixtures needs-engine bash scripts/agents/suite-progress-fixtures.sh
 fi
 if section_selected land-fixtures && (( template_mode )); then
-  bash scripts/agents/land-fixtures.sh
+  run_section land-fixtures needs-engine bash scripts/agents/land-fixtures.sh
 fi
 
-if section_selected watch-background-jobs-fixtures; then
+watch_background_jobs_fixtures_section() {
 # watch-background-jobs: all four reportable states plus baseline suppression.
 # The state file is pre-created because a MISSING state file auto-baselines on
 # first run (the 2026-08-03 hardening); an existing empty state means armed.
@@ -2723,10 +2997,50 @@ scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/de
   echo "watch-background-jobs: post-arming job not reported under its scope's default state" >&2; exit 1; }
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
+}
+if section_selected watch-background-jobs-fixtures; then
+  run_section watch-background-jobs-fixtures needs-fixture-budget watch_background_jobs_fixtures_section
+fi
+
+validation_mode_accounting_section() {
+if (( delegate_scope )); then
+  [[ ${#delegate_skipped_sections[@]} -eq ${#delegate_owed_sections[@]} ]] \
+    || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
+  for index in "${!delegate_owed_sections[@]}"; do
+    [[ "${delegate_skipped_sections[$index]}" == "${delegate_owed_sections[$index]}" ]] \
+      || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
+  done
+fi
+}
+run_section validation-mode-accounting needs-nothing validation_mode_accounting_section
+
+if [[ -n "$enumeration_section" ]]; then
+  selected_result_count=$(awk -F '\t' -v selected="$enumeration_section" \
+    '$1 == "section" && $2 == selected { count++ } END { print count + 0 }' \
+    "$stage_results_file")
+  if [[ "$selected_result_count" != 1 ]]; then
+    printf '\n========== VALIDATION SECTION INVALID ==========\n' >&2
+    printf 'selected section %s recorded %s results; exactly one is required\n' \
+      "$enumeration_section" "$selected_result_count" >&2
+    printf 'stage results: %s\n' "$stage_results_file" >&2
+    printf '================================================\n' >&2
+    exit 2
+  fi
+fi
+
+if (( ${#validation_red_sections[@]} > 0 )); then
+  printf '\n========== METASYSTEM VALIDATION RED ==========\n' >&2
+  for index in "${!validation_red_sections[@]}"; do
+    printf -- '- %s (exit %s)\n' \
+      "${validation_red_sections[$index]}" "${validation_red_rcs[$index]}" >&2
+  done
+  printf 'stage results: %s\n' "$stage_results_file" >&2
+  printf '===============================================\n' >&2
+  exit 1
 fi
 
 if [[ -n "$enumeration_section" ]]; then
-  :
+  echo "validation section passed: $enumeration_section"
 elif (( delivery_contract )); then
   echo "metasystem delivery contract validated"
   if (( delivery_reuse )); then
@@ -2736,12 +3050,6 @@ elif (( delivery_contract )); then
     echo "no validation family was skipped because PAYLOAD and toolchain equality was not proven"
   fi
 elif (( delegate_scope )); then
-  [[ ${#delegate_skipped_sections[@]} -eq ${#delegate_owed_sections[@]} ]] \
-    || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
-  for index in "${!delegate_owed_sections[@]}"; do
-    [[ "${delegate_skipped_sections[$index]}" == "${delegate_owed_sections[$index]}" ]] \
-      || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
-  done
   echo "delegate-scope validation passed"
   echo "orchestrator still owes these process-visibility sections:"
   printf -- '- %s\n' "${delegate_skipped_sections[@]}"
@@ -2751,3 +3059,4 @@ else
   # identity and therefore resets nothing.
   echo "metasystem validation passed"
 fi
+echo "stage results: $stage_results_file"

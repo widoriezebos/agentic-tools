@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -21,6 +22,15 @@ type BudgetProjectionStatus string
 const (
 	BudgetKnown   BudgetProjectionStatus = "KNOWN"
 	BudgetUnknown BudgetProjectionStatus = "BUDGET_UNKNOWN"
+)
+
+// ElapsedBudgetState names which elapsed threshold the projection has crossed.
+// An empty state means elapsed time is still below the admission limit.
+type ElapsedBudgetState string
+
+const (
+	AdmissionClosedElapsed ElapsedBudgetState = "ADMISSION_CLOSED_ELAPSED"
+	ElapsedBreach          ElapsedBudgetState = "ELAPSED_BREACH"
 )
 
 // BudgetUnknownEvidence names the exact authoritative record that prevents a
@@ -37,22 +47,26 @@ type BudgetBreach struct {
 	Field string
 	Used  string
 	Limit string
+	State ElapsedBudgetState
 }
 
 // BudgetProjection is the complete four-dimensional view for one claimed
 // goal revision. Limits come from the goal; all spending comes from job
 // records, except elapsed time which comes from the revision's claim row.
 type BudgetProjection struct {
-	Status             BudgetProjectionStatus
-	GoalID             string
-	GoalRevision       uint64
-	Limits             goal.Budget
-	Attempts           uint64
-	ReservedJobMinutes uint64
-	ActiveJobs         uint64
-	Elapsed            time.Duration
-	Breaches           []BudgetBreach
-	Unknown            *BudgetUnknownEvidence
+	Status              BudgetProjectionStatus
+	GoalID              string
+	GoalRevision        uint64
+	Limits              goal.Budget
+	Attempts            uint64
+	ReservedJobMinutes  uint64
+	ActiveJobs          uint64
+	Elapsed             time.Duration
+	ElapsedGracePercent uint64
+	ElapsedBreachLimit  time.Duration
+	ElapsedState        ElapsedBudgetState
+	Breaches            []BudgetBreach
+	Unknown             *BudgetUnknownEvidence
 }
 
 func unknownBudget(id string, revision uint64, record, reason string) BudgetProjection {
@@ -125,10 +139,19 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 	if now.Before(claimedAt) {
 		return unknownBudget(file.Id, revision, recordPath, "CLOCK_REGRESSED: the revision claim is later than the observation")
 	}
+	gracePercent, err := config.ElapsedGracePercent(filepath.Join(repoRoot, "metasystem.conf"))
+	if err != nil {
+		return unknownBudget(file.Id, revision, "metasystem.conf", err.Error())
+	}
+	breachLimit, err := file.Budget.ElapsedBreachDuration(gracePercent)
+	if err != nil {
+		return unknownBudget(file.Id, revision, recordPath, err.Error())
+	}
 
 	projection := BudgetProjection{
 		Status: BudgetKnown, GoalID: file.Id, GoalRevision: revision,
 		Limits: *file.Budget, Elapsed: now.Sub(claimedAt),
+		ElapsedGracePercent: gracePercent, ElapsedBreachLimit: breachLimit,
 	}
 	jobsDir := filepath.Join(repoRoot, "artifacts", "agents", "jobs")
 	entries, err := os.ReadDir(jobsDir)
@@ -219,10 +242,15 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 
 func finishBudgetProjection(projection BudgetProjection) BudgetProjection {
 	elapsedLimit := projection.Limits.ElapsedDuration()
-	if projection.Elapsed >= elapsedLimit {
+	switch {
+	case projection.Elapsed >= projection.ElapsedBreachLimit:
+		projection.ElapsedState = ElapsedBreach
 		projection.Breaches = append(projection.Breaches, BudgetBreach{
-			Field: "elapsedLimit", Used: projection.Elapsed.Round(time.Second).String(), Limit: projection.Limits.ElapsedLimit,
+			Field: "elapsedLimit", Used: projection.Elapsed.Round(time.Second).String(),
+			Limit: projection.ElapsedBreachLimit.String(), State: ElapsedBreach,
 		})
+	case projection.Elapsed >= elapsedLimit:
+		projection.ElapsedState = AdmissionClosedElapsed
 	}
 	if projection.Attempts > projection.Limits.AttemptLimit {
 		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("attemptLimit", projection.Attempts, projection.Limits.AttemptLimit))

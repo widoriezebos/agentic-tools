@@ -3,6 +3,7 @@ package goal
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBudgetTupleIsCompletePositiveAndCanonical(t *testing.T) {
@@ -22,6 +23,29 @@ func TestBudgetTupleIsCompletePositiveAndCanonical(t *testing.T) {
 		if _, err := parseBudgetRecord(record); err == nil {
 			t.Fatalf("incomplete, extra, or non-positive tuple parsed: %q", record)
 		}
+	}
+}
+
+func TestElapsedBreachDurationAppliesGraceAtTheStopBoundary(t *testing.T) {
+	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1}
+	for _, test := range []struct {
+		percent uint64
+		want    time.Duration
+	}{
+		{percent: 0, want: time.Minute},
+		{percent: 50, want: 90 * time.Second},
+		{percent: 200, want: 3 * time.Minute},
+	} {
+		got, err := budget.ElapsedBreachDuration(test.percent)
+		if err != nil || got != test.want {
+			t.Fatalf("grace %d: duration=%s want=%s err=%v", test.percent, got, test.want, err)
+		}
+	}
+
+	overflow := budget
+	overflow.ElapsedLimit = "153722867m"
+	if _, err := overflow.ElapsedBreachDuration(200); err == nil || !strings.Contains(err.Error(), "duration range") {
+		t.Fatalf("an unrepresentable stop boundary was accepted: %v", err)
 	}
 }
 

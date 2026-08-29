@@ -29,6 +29,15 @@ func budgetGoal() *goal.GoalFile {
 	}
 }
 
+func budgetProjectionRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func writeBudgetJob(t *testing.T, root, name, operation string, revision, cap uint64, status string) {
 	t.Helper()
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", name+".json"), map[string]any{
@@ -38,7 +47,7 @@ func writeBudgetJob(t *testing.T, root, name, operation string, revision, cap ui
 }
 
 func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
-	root := t.TempDir()
+	root := budgetProjectionRoot(t)
 	writeBudgetJob(t, root, "done", "reserve-a", 3, 30, "completed")
 	writeBudgetJob(t, root, "live", "reserve-b", 3, 45, "running")
 	writeBudgetJob(t, root, "old-revision", "reserve-old", 2, 60, "completed")
@@ -49,20 +58,21 @@ func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
 	projection := ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
 	if projection.Status != BudgetKnown || projection.GoalRevision != 3 || projection.Attempts != 2 ||
 		projection.ReservedJobMinutes != 75 || projection.ActiveJobs != 1 || projection.Elapsed != 2*time.Hour ||
-		len(projection.Breaches) != 0 {
+		projection.ElapsedGracePercent != 50 || projection.ElapsedBreachLimit != 6*time.Hour ||
+		projection.ElapsedState != "" || len(projection.Breaches) != 0 {
 		t.Fatalf("projection did not use the sole reservation facts: %+v", projection)
 	}
 }
 
 func TestPublishedSetupRetainsAttemptAndReservedMinutes(t *testing.T) {
-	root := sandbox(t)
+	root := budgetProjectionRoot(t)
 	stage := t.TempDir()
 	capFile := writeJSON(t, filepath.Join(stage, "cap.json"), map[string]any{
 		"capMin": 30, "capDeadline": "2026-08-28T10:00:00Z",
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, capFile); err != nil {
+	if err := BuildSetup(setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, capFile, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "reserved", setup); err != nil {
@@ -125,7 +135,7 @@ func TestBudgetProjectionReportsExactUnknownRecord(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := budgetProjectionRoot(t)
 			test.mutate(root)
 			projection := ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
 			if projection.Status != BudgetUnknown || projection.Unknown == nil || projection.Unknown.Code != BudgetUnknown ||
@@ -137,13 +147,13 @@ func TestBudgetProjectionReportsExactUnknownRecord(t *testing.T) {
 }
 
 func TestBudgetProjectionSurfacesBreachesWithoutEnforcement(t *testing.T) {
-	root := t.TempDir()
+	root := budgetProjectionRoot(t)
 	writeBudgetJob(t, root, "one", "reserve-one", 3, 50, "running")
 	writeBudgetJob(t, root, "two", "reserve-two", 3, 50, "pending")
 	writeBudgetJob(t, root, "three", "reserve-three", 3, 10, "completed")
 
-	projection := ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC))
-	if projection.Status != BudgetKnown || len(projection.Breaches) != 4 {
+	projection := ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.ElapsedState != ElapsedBreach || len(projection.Breaches) != 4 {
 		t.Fatalf("all four breaches are health evidence, not a projection refusal: %+v", projection)
 	}
 	var fields []string

@@ -13,6 +13,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
 type probeAnswer struct {
@@ -250,6 +252,56 @@ func TestCheckpointResetPreservesConcurrentAddsAndProvenance(t *testing.T) {
 	}
 	if staleState.Generation != state.Generation || staleState.Accumulated != state.Accumulated {
 		t.Fatalf("stale reset mutated state: before=%+v after=%+v", state, staleState)
+	}
+}
+
+func TestGreenBatteryRaisesDebtClearedOnlyByRetroReceipt(t *testing.T) {
+	root, envelope := t.TempDir(), t.TempDir()
+	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
+	fixedClock(t, &now)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	add(t, root, "battery-subject", "2\t0\tinternal/a.go\x00")
+	openCheckpoint(t, root, "green-run", "battery-subject", envelope, 100,
+		weightProber{100: alive(100, 1000, 55, "boot-a")})
+	if _, _, err := WeightReset(root, "green-run", FullRun); err != nil {
+		t.Fatal(err)
+	}
+	open, err := retrodebt.Open(root)
+	if err != nil || len(open) != 1 || open[0].Kind != retrodebt.KindBattery || open[0].Source != "green-run" {
+		t.Fatalf("green discharge did not raise its retro debt: %+v %v", open, err)
+	}
+	legacyMarker := receipt.Retro(receipt.Options{
+		Root: root, File: filepath.Join(root, "memory", "receipts.log"), Summary: "cadence marker only",
+		Now: func() time.Time { return now },
+	})
+	if legacyMarker.Code != 0 {
+		t.Fatalf("legacy retro marker failed: %+v", legacyMarker)
+	}
+	if open, err = retrodebt.Open(root); err != nil || len(open) != 1 {
+		t.Fatalf("a RETRO cadence marker discharged receipt-gated debt: %+v %v", open, err)
+	}
+	ordinary := receipt.Add(receipt.Options{
+		Root: root, File: filepath.Join(root, "memory", "receipts.log"), Type: "review", Outcome: "shipped",
+		Skills: "none", Verify: "clean", Corrections: "0", StopLoss: "no", Now: func() time.Time { return now },
+	})
+	if ordinary.Code != 0 {
+		t.Fatalf("ordinary receipt failed: %+v", ordinary)
+	}
+	if open, err = retrodebt.Open(root); err != nil || len(open) != 1 {
+		t.Fatalf("a non-retro receipt discharged the debt: %+v %v", open, err)
+	}
+	retro := receipt.Add(receipt.Options{
+		Root: root, File: filepath.Join(root, "memory", "receipts.log"), Type: "retro", Outcome: "shipped",
+		Skills: "none", Verify: "clean", Corrections: "0", StopLoss: "no", Note: "lessons landed",
+		Now: func() time.Time { return now.Add(time.Minute) },
+	})
+	if retro.Code != 0 {
+		t.Fatalf("retro receipt was refused: %+v", retro)
+	}
+	if open, err = retrodebt.Open(root); err != nil || len(open) != 0 {
+		t.Fatalf("retro receipt did not discharge the debt: %+v %v", open, err)
 	}
 }
 

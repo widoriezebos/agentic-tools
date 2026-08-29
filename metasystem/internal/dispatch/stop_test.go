@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,8 +12,52 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 )
 
-func TestElapsedBoundaryClosesFenceAndBatchResumesToFixedPoint(t *testing.T) {
+func TestElapsedBudgetThreeBandsAndBreachStopFixedPoint(t *testing.T) {
 	root := revisionBindingBed(t, 2)
+	underLimit := time.Date(2026, 8, 28, 16, 59, 59, 0, time.UTC)
+	admission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, underLimit)
+	if err != nil || admission.Refused() || admission.LiveStopReason != "" {
+		t.Fatalf("elapsed below the limit was not admitted: %+v %v", admission, err)
+	}
+
+	betweenThresholds := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
+	admission, err = EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, betweenThresholds)
+	if err != nil || !admission.Refused() || admission.LiveStopReason != "" || admission.Refusal == nil ||
+		len(admission.Refusal.Breaches) != 1 || admission.Refusal.Breaches[0].State != AdmissionClosedElapsed {
+		t.Fatalf("elapsed equality must close admission without stopping: %+v %v", admission, err)
+	}
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*admission.Refusal}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "state=ADMISSION_CLOSED_ELAPSED") {
+		t.Fatalf("the admission refusal lost its typed elapsed evidence: %v", lines)
+	}
+	routes, err := FindBreachStops(root, betweenThresholds)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("the grace band produced a stop route: %+v %v", routes, err)
+	}
+	if _, err := EnsureBreachStop(root, "bounded", 2, betweenThresholds); err == nil || !strings.Contains(err.Error(), "no live-stop breach") {
+		t.Fatalf("the grace band allowed direct stop custody: %v", err)
+	}
+	binding, err := ResolveGoalBinding(root, "bounded", betweenThresholds)
+	if err != nil || binding.Fence != nil {
+		t.Fatalf("the refused grace-band stop changed the launch fence: %+v %v", binding, err)
+	}
+
+	atGraceBoundary := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
+	admission, err = EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, atGraceBoundary)
+	if err != nil || !admission.Refused() || admission.LiveStopReason != goal.StopReasonElapsedLimit || admission.Refusal == nil ||
+		len(admission.Refusal.Breaches) != 1 || admission.Refusal.Breaches[0].State != ElapsedBreach {
+		t.Fatalf("the grace boundary did not become a live stop: %+v %v", admission, err)
+	}
+	lines = FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*admission.Refusal}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "state=ELAPSED_BREACH") {
+		t.Fatalf("the breach refusal lost its typed elapsed evidence: %v", lines)
+	}
+	pastGraceBoundary := atGraceBoundary.Add(time.Second)
+	admission, err = EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, pastGraceBoundary)
+	if err != nil || !admission.Refused() || admission.LiveStopReason != goal.StopReasonElapsedLimit {
+		t.Fatalf("elapsed past the grace boundary did not keep the live stop armed: %+v %v", admission, err)
+	}
+
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "local-live.json"), map[string]any{
 		"jobId": "local-live", "operationId": "local-live", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "claimEpoch": 7, "capMin": 10, "status": "running",
@@ -21,27 +66,31 @@ func TestElapsedBoundaryClosesFenceAndBatchResumesToFixedPoint(t *testing.T) {
 		"jobId": "foreign-live", "operationId": "foreign-live", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "other", "claimEpoch": 7, "capMin": 10, "status": "running",
 	})
-	now := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
-	admission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now)
-	if err != nil || !admission.Refused() || admission.LiveStopReason != goal.StopReasonElapsedLimit {
-		t.Fatalf("elapsed equality did not become a live stop: %+v %v", admission, err)
-	}
-	batch, err := EnsureBreachStop(root, "bounded", 2, now)
+	batch, err := EnsureBreachStop(root, "bounded", 2, pastGraceBoundary)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if batch.State != goal.StopBatchOpen {
+	if batch.State != goal.StopBatchOpen || batch.FiringEvidence == nil ||
+		batch.FiringEvidence.ElapsedUsed != "12h0m1s" || batch.FiringEvidence.AdmissionLimit != "1d" ||
+		batch.FiringEvidence.BreachBoundary != "12h0m0s" || batch.FiringEvidence.GracePercent != 50 {
 		t.Fatalf("initial batch = %+v", batch)
 	}
-	binding, err := ResolveGoalBinding(root, "bounded", now)
+	changedEvidence := batch
+	copyEvidence := *batch.FiringEvidence
+	changedEvidence.FiringEvidence = &copyEvidence
+	changedEvidence.FiringEvidence.ElapsedUsed = "12h0m2s"
+	if err := goal.WriteStopBatch(root, changedEvidence); err == nil || !strings.Contains(err.Error(), "firing evidence is immutable") {
+		t.Fatalf("open batch accepted changed firing evidence: %v", err)
+	}
+	binding, err = ResolveGoalBinding(root, "bounded", pastGraceBoundary)
 	if err != nil || binding.Fence == nil || binding.Fence.StopID != batch.StopID {
 		t.Fatalf("fence was not closed before scan: %+v %v", binding, err)
 	}
-	fencedAdmission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now)
+	fencedAdmission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, pastGraceBoundary)
 	if err != nil || !fencedAdmission.Refused() || fencedAdmission.LiveStopReason != goal.StopReasonElapsedLimit {
 		t.Fatalf("a closed live-stop fence did not route the retry back through the custodian: %+v %v", fencedAdmission, err)
 	}
-	batch, err = ReconcileStopBatch(root, batch.StopID, now)
+	batch, err = ReconcileStopBatch(root, batch.StopID, pastGraceBoundary)
 	if err != nil || batch.State != goal.StopBatchOpen || strings.Join(batch.Pending, ",") != "local-live" ||
 		strings.Join(batch.Foreign, ",") != "foreign-live" || len(batch.Observed) != 2 ||
 		len(batch.CancelOutcomes) != 1 || batch.CancelOutcomes[0].Outcome != stopForeignReportOnly {
@@ -54,12 +103,12 @@ func TestElapsedBoundaryClosesFenceAndBatchResumesToFixedPoint(t *testing.T) {
 		"jobId": "local-live", "operationId": "local-live", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "claimEpoch": 7, "capMin": 10, "status": "cancelled",
 	})
-	batch, err = ReconcileStopBatch(root, batch.StopID, now.Add(time.Second))
+	batch, err = ReconcileStopBatch(root, batch.StopID, pastGraceBoundary.Add(time.Second))
 	if err != nil || batch.State != goal.StopBatchComplete || len(batch.Pending) != 0 ||
 		len(batch.CancelOutcomes) != 2 || batch.CancelOutcomes[1].Outcome != stopCancelled {
 		t.Fatalf("batch did not reach fixed point: %+v %v", batch, err)
 	}
-	retry, err := EnsureBreachStop(root, "bounded", 2, now.Add(2*time.Second))
+	retry, err := EnsureBreachStop(root, "bounded", 2, pastGraceBoundary.Add(2*time.Second))
 	if err != nil || retry.State != goal.StopBatchComplete || retry.StopID != batch.StopID {
 		t.Fatalf("completed retry was not idempotent: %+v %v", retry, err)
 	}
@@ -71,7 +120,7 @@ func TestIndeterminateCustodyIsTerminalForMachineryAndRoutesToEscalation(t *test
 		"jobId": "unknown", "operationId": "unknown", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "capMin": 10, "status": "running",
 	})
-	now := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
 	batch, err := EnsureBreachStop(root, "bounded", 2, now)
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +138,69 @@ func TestIndeterminateCustodyIsTerminalForMachineryAndRoutesToEscalation(t *test
 		t.Fatalf("machinery retried terminal indeterminate custody: %+v %v", retry, err)
 	}
 	routes, err := FindBreachStops(root, now.Add(time.Second))
-	if err != nil || len(routes) != 1 || routes[0].Failure == "" {
+	if err != nil || len(routes) != 1 || routes[0].Condition != StopRouteIndeterminate || routes[0].Failure == "" {
 		t.Fatalf("indeterminate batch was not routed to escalation: %+v %v", routes, err)
+	}
+}
+
+func TestCorruptGraceAfterLaunchRefusesAdmissionAndRoutesIndeterminateStop(t *testing.T) {
+	root := revisionBindingBed(t, 2)
+	before := time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC)
+	admission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, before)
+	if err != nil || admission.Refused() {
+		t.Fatalf("valid launch admission: %+v %v", admission, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
+		[]byte("metasystem.budget.elapsed-grace-percent=broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	routes, err := FindBreachStops(root, before.Add(time.Minute))
+	if err != nil || len(routes) != 1 || routes[0].Condition != StopRouteIndeterminate ||
+		!strings.Contains(routes[0].Failure, "BUDGET_UNKNOWN") || routes[0].StopID != "" {
+		t.Fatalf("corrupt post-launch grace did not produce one typed indeterminate route: %+v %v", routes, err)
+	}
+	refused, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, before.Add(time.Minute))
+	if err != nil || !refused.Refused() || refused.Refusal == nil || refused.Refusal.Unknown == nil {
+		t.Fatalf("corrupt post-launch grace admitted new work: %+v %v", refused, err)
+	}
+	binding, err := ResolveGoalBinding(root, "bounded", before.Add(time.Minute))
+	if err != nil || binding.Fence != nil {
+		t.Fatalf("indeterminate budget cancelled or fenced lawful work: %+v %v", binding, err)
+	}
+}
+
+func TestUnrepresentableGraceBoundaryRoutesIndeterminateStop(t *testing.T) {
+	root := revisionBindingBed(t, 2)
+	path := filepath.Join(root, "plans", "goals", "bounded.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(content)
+	if len(problems) != 0 {
+		t.Fatalf("parse accepted goal: %v", problems)
+	}
+	file.Budget.ElapsedLimit = "2562047h"
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "overflow bed"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if output, runErr := command.CombinedOutput(); runErr != nil {
+			t.Fatalf("git %v: %v: %s", args, runErr, output)
+		}
+	}
+
+	now := time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC)
+	routes, err := FindBreachStops(root, now)
+	if err != nil || len(routes) != 1 || routes[0].Condition != StopRouteIndeterminate ||
+		!strings.Contains(routes[0].Failure, "duration range") {
+		t.Fatalf("unrepresentable grace did not produce a typed indeterminate route: %+v %v", routes, err)
+	}
+	admission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now)
+	if err != nil || !admission.Refused() || admission.Refusal == nil || admission.Refusal.Unknown == nil {
+		t.Fatalf("unrepresentable grace admitted new work: %+v %v", admission, err)
 	}
 }
 
@@ -120,7 +230,7 @@ func TestBreachStopCannotForgeAReadableGoalLockOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = OwnerLockRelease(directory, int64(os.Getpid()), tag) })
-	now := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
 	if _, err := EnsureBreachStop(root, "bounded", 2, now); err == nil || !strings.Contains(err.Error(), "LOCK_BUSY") {
 		t.Fatalf("readable owner coordinates bypassed acquisition: %v", err)
 	}

@@ -28,6 +28,9 @@ func bedHistory(id, verb string) []goal.HistoryLine {
 func convertedBed(t *testing.T, machine string, files map[string]*goal.GoalFile) string {
 	t.Helper()
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)

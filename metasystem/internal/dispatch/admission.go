@@ -107,9 +107,9 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 }
 
 // GoalRevisionAdmission is the final decision made while the chain and
-// goal-revision locks are held. LiveStopReason is non-empty only for elapsed
-// equality or corrupt over-limit state; ordinary exhaustion closes admission
-// without cancelling already-authorized jobs.
+// goal-revision locks are held. LiveStopReason is non-empty only at the
+// elapsed breach boundary or for corrupt over-limit state; ordinary exhaustion
+// closes admission without cancelling already-authorized jobs.
 type GoalRevisionAdmission struct {
 	GoalID         string
 	GoalRevision   uint64
@@ -174,8 +174,16 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 func budgetAdmissionBreaches(projection BudgetProjection) []BudgetBreach {
 	var breaches []BudgetBreach
 	if projection.Elapsed >= projection.Limits.ElapsedDuration() {
+		state := projection.ElapsedState
+		if state == "" {
+			state = AdmissionClosedElapsed
+		}
+		limit := projection.Limits.ElapsedLimit
+		if state == ElapsedBreach && projection.ElapsedBreachLimit > 0 {
+			limit = projection.ElapsedBreachLimit.String()
+		}
 		breaches = append(breaches, BudgetBreach{
-			Field: "elapsedLimit", Used: projection.Elapsed.Round(time.Second).String(), Limit: projection.Limits.ElapsedLimit,
+			Field: "elapsedLimit", Used: projection.Elapsed.Round(time.Second).String(), Limit: limit, State: state,
 		})
 	}
 	if projection.Attempts >= projection.Limits.AttemptLimit {
@@ -202,7 +210,11 @@ func FormatGoalAdmission(verdict GoalAdmissionVerdict) []string {
 		}
 		fields := make([]string, 0, len(refusal.Breaches))
 		for _, breach := range refusal.Breaches {
-			fields = append(fields, fmt.Sprintf("%s used=%s limit=%s", breach.Field, breach.Used, breach.Limit))
+			state := ""
+			if breach.State != "" {
+				state = " state=" + string(breach.State)
+			}
+			fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", breach.Field, state, breach.Used, breach.Limit))
 		}
 		lines = append(lines, fmt.Sprintf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
 			refusal.GoalID, refusal.GoalRevision, strings.Join(fields, ", ")))

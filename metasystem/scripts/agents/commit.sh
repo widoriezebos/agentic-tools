@@ -52,6 +52,14 @@ for arg in "$@"; do
     exit 2
   fi
 done
+
+# Direct commits receive the same staged-package coverage boundary as landings.
+# The delta checker owns package discovery and reports every package below its
+# floor before it refuses.
+bash "$root/scripts/agents/coverage-delta.sh" --staged || {
+  echo "agent commit refused: staged Go package coverage check failed" >&2
+  exit 1
+}
 # IL-28 static re-proof: no landing goes red on a static check. The
 # boundary re-proves gofmt, vet, staticcheck, and the engine build via
 # the fast gate — plus the always-loaded word audit — before any commit

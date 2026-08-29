@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
 func testBudget() Budget {
@@ -122,6 +124,34 @@ func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
 		if _, err := gitIn(origin, "cat-file", "-e", publishedTip+":"+absent); err == nil {
 			t.Fatalf("the published done transaction must remove %s", absent)
 		}
+	}
+}
+
+func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	for index, id := range []string{"retro-one", "retro-two"} {
+		openID := fmt.Sprintf("01J5X00000000000000000RT%d0", index)
+		arcID := fmt.Sprintf("01J5X00000000000000000RT%d1", index)
+		if res, err := Open(verbReq(root, openID, "mac-a"), id, "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		if res, err := SetArc(verbReq(root, arcID, "mac-a"), id, "retro-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("set arc %s: %+v %v", id, res, err)
+		}
+	}
+	if res, err := Done(verbReq(root, "01J5X00000000000000000RT20", "mac-a"), "retro-one", "First member done."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("first done: %+v %v", res, err)
+	}
+	if open, err := retrodebt.Open(root); err != nil || len(open) != 0 {
+		t.Fatalf("an open arc raised debt too early: %+v %v", open, err)
+	}
+	if res, err := Done(verbReq(root, "01J5X00000000000000000RT30", "mac-a"), "retro-two", "Arc done."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("last done: %+v %v", res, err)
+	}
+	open, err := retrodebt.Open(root)
+	if err != nil || len(open) != 1 || open[0].Kind != retrodebt.KindArc || !strings.HasPrefix(open[0].Source, "retro-arc:") {
+		t.Fatalf("concluded arc did not raise its retro debt: %+v %v", open, err)
 	}
 }
 

@@ -1,6 +1,92 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario dispatch "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+
+fixture_bed_parent_log_root=
+fixture_bed_parent_child_pid=
+fixture_bed_parent_cleanup() {
+  local status=$?
+  trap - EXIT HUP INT QUIT TERM
+  if [[ -n "$fixture_bed_parent_child_pid" ]]; then
+    kill -TERM "$fixture_bed_parent_child_pid" 2>/dev/null || true
+    wait "$fixture_bed_parent_child_pid" 2>/dev/null || true
+  fi
+  [[ -z "$fixture_bed_parent_log_root" ]] \
+    || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
+  return "$status"
+}
+
+run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
+  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
+  local failed_names=() failed_rcs=() failed_logs=()
+  shift 3
+  log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
+  fixture_bed_parent_log_root=$log_root
+  trap fixture_bed_parent_cleanup EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 131' QUIT
+  trap 'exit 143' TERM
+  for scenario in "$@"; do
+    log=$log_root/$index.log
+    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
+    echo "$bed fixture scenario started: $scenario" >&2
+    "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
+    fixture_bed_parent_child_pid=$!
+    set +e
+    wait "$fixture_bed_parent_child_pid"
+    rc=$?
+    set -e
+    fixture_bed_parent_child_pid=
+    cat "$log"
+    if [[ $rc -eq 0 ]]; then
+      echo "$bed fixture scenario passed: $scenario" >&2
+    else
+      failed_names+=("$scenario")
+      failed_rcs+=("$rc")
+      failed_logs+=("$log")
+      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+    fi
+    index=$((index + 1))
+  done
+  if (( ${#failed_names[@]} )); then
+    echo "=== $bed failed scenarios ===" >&2
+    for ((index = 0; index < ${#failed_names[@]}; index++)); do
+      echo "- ${failed_names[$index]} (rc=${failed_rcs[$index]})" >&2
+      echo "  output tail:" >&2
+      tail -n 40 "${failed_logs[$index]}" | sed 's/^/    /' >&2
+    done
+    echo "=== end $bed failed scenarios ===" >&2
+    rm -rf "$log_root"
+    exit 1
+  fi
+  rm -rf "$log_root"
+  echo "$success_line"
+  exit 0
+}
+
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios dispatch \
+    "dispatch, adapter selftest, and mission-runner fixtures passed" \
+    "$fixture_bed_script" dispatch mission-runner adapter-selftest steward-continuation
+fi
+case "$fixture_scenario" in
+  dispatch | mission-runner | adapter-selftest | steward-continuation) ;;
+  *) echo "dispatch fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
+esac
+
 # The wall preflight demands a CLEAN initial baseline at start:
 # close everything the bed laid down in tracked space, exactly as a real
 # mission repository begins.
@@ -22,6 +108,7 @@ close_bed_baseline() { # repo
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"
 source scripts/agents/fixture-budget.sh
+harness_fixture_warn_if_engine_stale "$root"
 # Standalone runs resolve their own cap scale exactly as the sibling
 # suites do; under the battery the resolved env is inherited and the
 # init is a no-op re-resolution.
@@ -595,6 +682,7 @@ wait_for_agent_chain_unlock() { # root job
   done
 }
 
+if [[ "$fixture_scenario" == dispatch ]]; then
 # Configuration resolution is flag, environment, mode, plain, default.
 config_order="$agent_fixture/config-order"
 mkdir -p "$config_order/scripts" "$config_order/bin"
@@ -2051,7 +2139,9 @@ run_fixture_arm "dispatcher final shutdown" - \
   "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown \
   || { echo "dispatcher fixture shutdown failed" >&2; exit 1; }
 agent_supervision_repo=
+fi
 
+if [[ "$fixture_scenario" == mission-runner ]]; then
 # The minimal mission runner is exercised only through its fake host. The
 # repository, origin, supervision set, signed contracts, frozen gate, turn
 # records, state, and ledger are all real; only the model call is simulated.
@@ -2744,6 +2834,9 @@ run_fixture_arm "mission runner final shutdown" - \
   "${runner_process_env[@]}" "$runner_repo/scripts/agents/arm-supervision.sh" \
     --repo "$runner_repo" --shutdown
 agent_supervision_repo=
+fi
+
+if [[ "$fixture_scenario" == adapter-selftest ]]; then
 agent_selftest_process_fixture="$agent_fixture/selftest-processes.json"
 agent_selftest_identity_fixture="$agent_fixture/selftest-process-identities.json"
 printf '[]\n' >"$agent_selftest_process_fixture"
@@ -2777,7 +2870,9 @@ run_fixture_arm "adapter selftest final shutdown" - \
 agent_supervision_repo=
 unset METASYSTEM_CENSUS_PROCESS_FILE METASYSTEM_FAKE_PROCESS_IDENTITY_FILE \
   METASYSTEM_MISSION_PROCESS_IDENTITY_FILE
+fi
 
+if [[ "$fixture_scenario" == steward-continuation ]]; then
 # ---------------------------------------------------------------------------
 # The steward's continuation path, end to end: a provably dead worker's
 # revival flows through the real dispatcher into the fake adapter, returns
@@ -2902,5 +2997,4 @@ grep -q "launched=true" <<<"$steward_outage" \
   || { echo "steward heal-first: notifier outage produced no launch: $steward_outage" >&2; exit 1; }
 
 echo "steward continuation fixtures passed"
-
-echo "dispatch, adapter selftest, and mission-runner fixtures passed"
+fi

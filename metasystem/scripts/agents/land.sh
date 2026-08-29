@@ -6,7 +6,7 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--staged-only | <pathspec>...] [--allow-new-plan] [--skip-transport]" >&2
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
@@ -16,6 +16,7 @@ message_source=
 staged_only=0
 allow_new_plan=0
 skip_transport=0
+ratchet=
 pathspecs=()
 
 while (( $# )); do
@@ -36,6 +37,11 @@ while (( $# )); do
     --skip-transport)
       skip_transport=1
       shift
+      ;;
+    --ratchet)
+      [[ $# -ge 2 && -z "$ratchet" ]] || { usage; exit 2; }
+      ratchet=$2
+      shift 2
       ;;
     --)
       shift
@@ -106,7 +112,12 @@ run_step() { # name, command...
 fail_step() { # exit code
   local rc=$1
   printf '!! STEP FAILED: %s (exit %s)\n' "$step_name" "$rc" >&2
-  tail -n 40 "$step_output" >&2
+  if [[ "$step_name" == "coverage delta for staged Go packages" ]]; then
+    # Every failing package must reach the caller in one refusal.
+    cat "$step_output" >&2
+  else
+    tail -n 40 "$step_output" >&2
+  fi
   exit "$rc"
 }
 
@@ -158,6 +169,14 @@ commit_changes() {
   bash "$root/scripts/agents/commit.sh" -F "$message_file"
 }
 
+check_staged_coverage() {
+  local arguments=(--staged)
+  if [[ -n "$ratchet" ]]; then
+    arguments+=(--ratchet "$ratchet")
+  fi
+  bash "$root/scripts/agents/coverage-delta.sh" "${arguments[@]}"
+}
+
 require_clean_after_commit() {
   local status
   status=$(git status --porcelain --untracked-files=normal) || return $?
@@ -193,6 +212,7 @@ fi
 
 run_required_step "verify checks" verify_checks
 run_required_step "stage caller paths" stage_changes
+run_required_step "coverage delta for staged Go packages" check_staged_coverage
 run_required_step "commit" commit_changes
 run_required_step "verify clean after commit" require_clean_after_commit
 run_required_step "fetch origin" fetch_origin

@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
 type healthProbe map[int64]struct {
@@ -44,6 +45,25 @@ func TestHealthExitCodeArms(t *testing.T) {
 				t.Fatalf("exit code = %d, want %d: %+v", got, test.want, verdict)
 			}
 		})
+	}
+}
+
+func TestRetroDebtIsDeadUntilRetroReceiptLands(t *testing.T) {
+	root := t.TempDir()
+	if _, err := retrodebt.Raise(root, retrodebt.KindBattery, "battery-42", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	dead := checkRetroDebt(root)
+	if dead.Status != HealthDead || !dead.NoAutomaticRemedy || !strings.Contains(dead.Reason, "RETRO DEBT") ||
+		!strings.Contains(dead.Remedy, "--type retro") {
+		t.Fatalf("open retro debt was not a dead receipt-gated condition: %+v", dead)
+	}
+	receipts := filepath.Join(root, "memory", "receipts.log")
+	if err := os.WriteFile(receipts, []byte("1|2026-08-29T10:00:00Z|RECEIPT|type=retro|outcome=shipped|note=landed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if alive := checkRetroDebt(root); alive.Status != HealthAlive {
+		t.Fatalf("retro receipt did not clear the health condition: %+v", alive)
 	}
 }
 
@@ -224,6 +244,24 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 		}
 	})
 
+	t.Run("elapsed admission closed", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		role := checkClaimedGoalBudgets(root, time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC))
+		if role.Status != HealthAlive || !strings.Contains(role.Reason, "ADMISSION_CLOSED_ELAPSED") ||
+			!strings.Contains(role.Reason, "breachLimit=6h0m0s") || strings.Contains(role.Remedy, "steward tick") {
+			t.Fatalf("the elapsed grace band was not healthy closed-admission evidence: %+v", role)
+		}
+	})
+
+	t.Run("elapsed breach", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		role := checkClaimedGoalBudgets(root, time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC))
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "ELAPSED_BREACH") ||
+			!strings.Contains(role.Remedy, "steward tick") {
+			t.Fatalf("the grace boundary was not typed breach-stop evidence: %+v", role)
+		}
+	})
+
 	t.Run("breach", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		writeHealthJob(t, root, "one", `{"jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
@@ -239,8 +277,11 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		writeHealthJob(t, root, "revisionless", `{"jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
 		role := checkClaimedGoalBudgets(root, now)
-		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "BUDGET_UNKNOWN") ||
-			!strings.Contains(role.Reason, "artifacts/agents/jobs/revisionless.json") {
+		verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
+		if role.Status != HealthDead || !role.NoAutomaticRemedy ||
+			!strings.Contains(role.Reason, "BUDGET_UNKNOWN") ||
+			!strings.Contains(role.Reason, "artifacts/agents/jobs/revisionless.json") ||
+			!verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
 			t.Fatalf("unknown spending did not name its exact record: %+v", role)
 		}
 	})
@@ -260,11 +301,20 @@ func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T
 		StopID: file.StopFence.StopID, GoalID: file.Id, GoalRevision: 2, FenceEpoch: 1,
 		CapabilityGeneration: 2, Machine: "bed-m1", ClaimEpoch: 7, Reason: goal.StopReasonElapsedLimit,
 		State: goal.StopBatchComplete, OpenedAt: stamp, UpdatedAt: stamp, CompletedAt: stamp, Pass: 1,
+		FiringEvidence: &goal.StopFiringEvidence{
+			ElapsedUsed: "6h0m1s", AdmissionLimit: "4h", BreachBoundary: "6h0m0s", GracePercent: 50,
+		},
 	}
 	if err := goal.WriteStopBatch(root, batch); err != nil {
 		t.Fatal(err)
 	}
-	if role := checkClaimedGoalBudgets(root, now); role.Status != HealthAlive || !strings.Contains(role.Reason, "BREACH_STOP_COMPLETE") {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
+		[]byte("metasystem.budget.elapsed-grace-percent=broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if role := checkClaimedGoalBudgets(root, now); role.Status != HealthAlive ||
+		!strings.Contains(role.Reason, "BREACH_STOP_COMPLETE") ||
+		!strings.Contains(role.Reason, "ELAPSED_BREACH used=6h0m1s limit=6h0m0s grace=50") {
 		t.Fatalf("complete machinery stop must be health-alive history: %+v", role)
 	}
 

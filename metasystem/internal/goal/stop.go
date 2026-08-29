@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -27,25 +28,35 @@ const (
 
 // StopBatch is the resumable local cancellation ledger for one closed fence.
 type StopBatch struct {
-	StopID               string         `json:"stopId"`
-	GoalID               string         `json:"goalId"`
-	GoalRevision         uint64         `json:"goalRevision"`
-	FenceEpoch           uint64         `json:"fenceEpoch"`
-	CapabilityGeneration uint64         `json:"capabilityGeneration"`
-	Machine              string         `json:"machineId"`
-	ClaimEpoch           int64          `json:"claimEpoch"`
-	Reason               string         `json:"reason"`
-	State                StopBatchState `json:"state"`
-	OpenedAt             string         `json:"openedAt"`
-	UpdatedAt            string         `json:"updatedAt"`
-	CompletedAt          string         `json:"completedAt,omitempty"`
-	Pass                 uint64         `json:"pass"`
-	Pending              []string       `json:"pendingJobs"`
-	Terminal             []string       `json:"terminalJobs"`
-	Foreign              []string       `json:"foreignJobs,omitempty"`
-	Observed             []StopJob      `json:"observedJobs"`
-	CancelOutcomes       []StopOutcome  `json:"cancelOutcomes"`
-	Failure              string         `json:"failure,omitempty"`
+	StopID               string              `json:"stopId"`
+	GoalID               string              `json:"goalId"`
+	GoalRevision         uint64              `json:"goalRevision"`
+	FenceEpoch           uint64              `json:"fenceEpoch"`
+	CapabilityGeneration uint64              `json:"capabilityGeneration"`
+	Machine              string              `json:"machineId"`
+	ClaimEpoch           int64               `json:"claimEpoch"`
+	Reason               string              `json:"reason"`
+	State                StopBatchState      `json:"state"`
+	OpenedAt             string              `json:"openedAt"`
+	UpdatedAt            string              `json:"updatedAt"`
+	CompletedAt          string              `json:"completedAt,omitempty"`
+	Pass                 uint64              `json:"pass"`
+	Pending              []string            `json:"pendingJobs"`
+	Terminal             []string            `json:"terminalJobs"`
+	Foreign              []string            `json:"foreignJobs,omitempty"`
+	Observed             []StopJob           `json:"observedJobs"`
+	CancelOutcomes       []StopOutcome       `json:"cancelOutcomes"`
+	FiringEvidence       *StopFiringEvidence `json:"firingEvidence,omitempty"`
+	Failure              string              `json:"failure,omitempty"`
+}
+
+// StopFiringEvidence preserves the elapsed decision that closed the fence.
+// A nil value identifies a batch written before firing evidence was recorded.
+type StopFiringEvidence struct {
+	ElapsedUsed    string `json:"elapsedUsed"`
+	AdmissionLimit string `json:"admissionLimit"`
+	BreachBoundary string `json:"breachBoundary"`
+	GracePercent   uint64 `json:"gracePercent"`
 }
 
 // StopJob is one exact job generation seen by the fixed-point scan.
@@ -109,6 +120,14 @@ func validateStopBatch(batch StopBatch) error {
 	} else if batch.CompletedAt != "" {
 		return fmt.Errorf("non-complete stop batch carries completedAt")
 	}
+	if batch.FiringEvidence != nil {
+		if batch.Reason != StopReasonElapsedLimit {
+			return fmt.Errorf("only an elapsed-limit stop may carry firing evidence")
+		}
+		if err := validateStopFiringEvidence(*batch.FiringEvidence); err != nil {
+			return err
+		}
+	}
 	for _, observed := range batch.Observed {
 		if !safeStopID(observed.JobID) || !safeStopID(observed.OperationID) || observed.Machine == "" ||
 			observed.ClaimEpoch < 1 || observed.Status == "" || observed.Disposition == "" || !validStamp(observed.LastObservedAt) {
@@ -121,6 +140,27 @@ func validateStopBatch(batch StopBatch) error {
 		}
 	}
 	return nil
+}
+
+func validateStopFiringEvidence(evidence StopFiringEvidence) error {
+	used, usedErr := time.ParseDuration(evidence.ElapsedUsed)
+	boundary, boundaryErr := time.ParseDuration(evidence.BreachBoundary)
+	admission, admissionOK := ParseWorkingDuration(evidence.AdmissionLimit)
+	if usedErr != nil || boundaryErr != nil || !admissionOK || admission <= 0 || boundary <= 0 {
+		return fmt.Errorf("stop batch has malformed elapsed firing evidence")
+	}
+	expected, err := (Budget{ElapsedLimit: evidence.AdmissionLimit}).ElapsedBreachDuration(evidence.GracePercent)
+	if err != nil || expected != boundary || used < boundary {
+		return fmt.Errorf("stop batch elapsed firing evidence contradicts its boundary")
+	}
+	return nil
+}
+
+func sameStopFiringEvidence(left, right *StopFiringEvidence) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func normalizeStopBatch(batch *StopBatch) {
@@ -176,14 +216,19 @@ func WriteStopBatch(root string, batch StopBatch) error {
 	if err != nil {
 		return err
 	}
-	if previous, readErr := ReadStopBatch(root, batch.StopID); readErr == nil && previous.State == StopBatchComplete {
-		oldBytes, _ := json.Marshal(previous)
-		newBytes, _ := json.Marshal(batch)
-		if !bytes.Equal(oldBytes, newBytes) {
-			return fmt.Errorf("stop batch %s is COMPLETE and immutable", batch.StopID)
+	if previous, readErr := ReadStopBatch(root, batch.StopID); readErr == nil {
+		if !sameStopFiringEvidence(previous.FiringEvidence, batch.FiringEvidence) {
+			return fmt.Errorf("stop batch %s firing evidence is immutable", batch.StopID)
 		}
-		return nil
-	} else if readErr != nil && !os.IsNotExist(readErr) {
+		if previous.State == StopBatchComplete {
+			oldBytes, _ := json.Marshal(previous)
+			newBytes, _ := json.Marshal(batch)
+			if !bytes.Equal(oldBytes, newBytes) {
+				return fmt.Errorf("stop batch %s is COMPLETE and immutable", batch.StopID)
+			}
+			return nil
+		}
+	} else if !os.IsNotExist(readErr) {
 		return readErr
 	}
 	encoded, err := json.MarshalIndent(batch, "", "  ")

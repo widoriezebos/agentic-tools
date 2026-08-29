@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
 // Actor is the executing identity: the machine+lineage pair always;
@@ -567,7 +569,27 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if strings.TrimSpace(conclusion) == "" {
 		return PublishResult{}, fmt.Errorf("done needs its conclusion — the archive is the record")
 	}
-	return Publish(r.Endpoint, doneRequest(r, id, conclusion))
+	result, err := Publish(r.Endpoint, doneRequest(r, id, conclusion))
+	if err != nil || (result.Outcome != OutcomeConfirmed && result.Outcome != OutcomeConfirmedLate) {
+		return result, err
+	}
+	tree, treeErr := loadTree(r.Endpoint.Root, result.Tip)
+	if treeErr != nil {
+		return result, fmt.Errorf("goal done confirmed but arc retro debt could not be classified: %w", treeErr)
+	}
+	archived := tree.Done[id]
+	if archived == nil || archived.Arc == "" {
+		return result, nil
+	}
+	for _, live := range tree.Live {
+		if live.Arc == archived.Arc {
+			return result, nil
+		}
+	}
+	if _, debtErr := retrodebt.Raise(r.Endpoint.Root, retrodebt.KindArc, archived.Arc+":"+r.opid(), r.Now); debtErr != nil {
+		return result, fmt.Errorf("goal done confirmed but its arc retro debt did not land: %w", debtErr)
+	}
+	return result, nil
 }
 
 // doneRequest builds the verb's complete transaction request — the

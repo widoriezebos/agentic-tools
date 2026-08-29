@@ -23,6 +23,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -168,6 +169,45 @@ func runStewardHookComplete(args []string) int {
 	if _, err := steward.CompleteHookAttempt(*repo, *generation, *attempt, steward.ComponentResult(*result),
 		*outcome, *healthLine, string(payload), time.Now()); err != nil {
 		fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runStewardDigestPending(args []string) int {
+	flags := flag.NewFlagSet("steward digest-pending", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward digest-pending: --repo is required")
+		return 2
+	}
+	pending, err := narratordigest.Pending(*repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward digest-pending: %v\n", err)
+		return 1
+	}
+	data, _ := json.Marshal(pending)
+	fmt.Println(string(data))
+	return 0
+}
+
+func runStewardDigestAdvance(args []string) int {
+	flags := flag.NewFlagSet("steward digest-advance", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	cursor := flags.Int64("cursor", -1, "emitted digest byte cursor")
+	prefix := flags.String("prefix-sha256", "", "emitted digest prefix digest")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" || *cursor < 0 || *prefix == "" {
+		fmt.Fprintln(os.Stderr, "steward digest-advance: --repo, --cursor, and --prefix-sha256 are required")
+		return 2
+	}
+	if err := narratordigest.Advance(*repo, *cursor, *prefix); err != nil {
+		fmt.Fprintf(os.Stderr, "steward digest-advance: %v\n", err)
 		return 1
 	}
 	return 0

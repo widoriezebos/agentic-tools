@@ -10,9 +10,11 @@ Usage:
       [--workspace <dir> | --worktree]
       [--permissions <preset|envelope-file>] [--mission <id>]
       [--stream <mission-stream-id>] [--goal <goal-id>]
-      [--approve-escalation] [--wait] [--cap-min N]
+      [--approve-escalation] [--approved-ref <ruling-id|goal-opid>]
+      [--wait] [--cap-min N]
   scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
-  scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
+  scripts/agents/dispatch.sh follow-up --job <job-id> --message <file>
+      [--approved-ref <ruling-id|goal-opid>] [--wait]
   scripts/agents/dispatch.sh status --job <job-id>
   scripts/agents/dispatch.sh watch --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
@@ -517,6 +519,22 @@ require_goal_revision_admission() { # proposed cap minutes
   esac
 }
 
+require_slice_admission() { # proposed cap minutes, recorded approval reference
+  local proposed=$1 approval=${2:-} output result=0
+  local -a args=(--root "$root" --cap-min "$proposed")
+  [[ -z "$approval" ]] || args+=(--approved-ref "$approval")
+  set +e
+  output=$("$ms" job slice-admission "${args[@]}" 2>&1)
+  result=$?
+  set -e
+  [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+  case "$result" in
+    0) return 0 ;;
+    9) die 1 "dispatch refused by the slice-cap admission verdict above" ;;
+    *) die 1 "dispatch refused because slice-cap admission could not be evaluated" ;;
+  esac
+}
+
 config_get() { "$config" get "$@"; }
 
 canonical_model() { "$ms" config canonical-model "$1"; }
@@ -980,7 +998,7 @@ dispatch_job() {
   local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= goal= steward_intent= steward_mode=0 steward_tuple=
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
-  local cost_direction= approval_name= approved_at= roster_json=
+  local cost_direction= approval_name= approved_at= approved_ref= roster_json=
   local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
   while (($#)); do
     case "$1" in
@@ -998,6 +1016,7 @@ dispatch_job() {
       --stream) [[ $# -ge 2 ]] || { usage; exit 2; }; stream=$2; shift 2 ;;
       --goal) [[ $# -ge 2 ]] || { usage; exit 2; }; goal=$2; shift 2 ;;
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
+      --approved-ref) [[ $# -ge 2 ]] || { usage; exit 2; }; approved_ref=$2; shift 2 ;;
       --approve-escalation) approve_escalation=1; shift ;;
       --serving-goal) serving_goal=1; shift ;;
       --steward-intent) [[ $# -ge 2 ]] || { usage; exit 2; }; steward_intent=$2; shift 2 ;;
@@ -1008,7 +1027,7 @@ dispatch_job() {
   if [[ -n "$steward_intent" ]]; then
     # The unattended continuation: every launch input comes from the
     # consumed authorization; nothing here is caller-selectable.
-    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews$mode_override$stream$goal$cap_override" && $use_worktree -eq 0 && $serving_goal -eq 0 && $wait -eq 0 && $approve_escalation -eq 0 ]] \
+    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews$mode_override$stream$goal$cap_override$approved_ref" && $use_worktree -eq 0 && $serving_goal -eq 0 && $wait -eq 0 && $approve_escalation -eq 0 ]] \
       || die 2 "--steward-intent admits no other selection flags; the authorization decides"
     # An inherited mission scope would refuse or rescope the detached
     # continuation; the authorization is the whole context.
@@ -1162,11 +1181,13 @@ dispatch_job() {
   authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
   proposed_cap=$(json_field "$cap_resolution" capMin)
   require_goal_revision_admission "$proposed_cap"
+  require_slice_admission "$proposed_cap" "$approved_ref"
 
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal" \
-    --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution"
+    --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution" \
+    --approved-ref "$approved_ref"
   # Reservation remains two-phase: the final cap is authorized first, then
   # record-create publishes the spending fact before workspace or adapter
   # setup. A second dispatcher cannot prepare the same job id, and a crash
@@ -1262,7 +1283,7 @@ dispatch_job() {
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
     --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" \
-    --machine-id "$goal_machine" \
+    --machine-id "$goal_machine" --approved-ref "$approved_ref" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch"
   rm -f "$cap_resolution"
   finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
@@ -1380,11 +1401,12 @@ record_critique_exhaustions() { # manifest
 
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref=
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --message) [[ $# -ge 2 ]] || { usage; exit 2; }; message=$2; shift 2 ;;
+      --approved-ref) [[ $# -ge 2 ]] || { usage; exit 2; }; approved_ref=$2; shift 2 ;;
       --wait) wait=1; shift ;;
       *) usage; exit 2 ;;
     esac
@@ -1424,6 +1446,9 @@ follow_up() {
   session=$(json_field "$latest" sessionId 2>/dev/null || true)
   [[ -n "$session" && "$session" != null ]] || die 1 "follow-up has no resumable session id; use the fresh-context embed fallback"
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
+  if [[ -z "$approved_ref" ]]; then
+    approved_ref=$(json_field "$latest" approvedRef 2>/dev/null || true); [[ "$approved_ref" == null ]] && approved_ref=
+  fi
   goal=$(json_field "$latest" goalId 2>/dev/null || true); [[ "$goal" == null ]] && goal=
   workspace=$(json_field "$latest" workspaceRoot)
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
@@ -1464,10 +1489,12 @@ follow_up() {
   authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
   proposed_cap=$(json_field "$cap_resolution" capMin)
   require_goal_revision_admission "$proposed_cap"
+  require_slice_admission "$proposed_cap" "$approved_ref"
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
     --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
-    --goal "$goal" --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution"
+    --goal "$goal" --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution" \
+    --approved-ref "$approved_ref"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
   exit_cleanup_job=$child
   exit_cleanup_authorization=
@@ -1541,7 +1568,7 @@ follow_up() {
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$reservation_claim_epoch" --cap-resolution "$cap_resolution" \
-    --root "$root" --goal-revision "$goal_revision"
+    --root "$root" --goal-revision "$goal_revision" --approved-ref "$approved_ref"
   rm -f "$cap_resolution"
   finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
 }

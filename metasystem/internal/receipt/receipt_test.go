@@ -49,6 +49,19 @@ func TestAddAppendsOneLine(t *testing.T) {
 	}
 }
 
+func TestAddAcceptsRetroReceiptType(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "retro", "shipped"
+	result := Add(opts)
+	if result.Code != 0 {
+		t.Fatalf("retro receipt type was refused: %+v", result)
+	}
+	data, err := os.ReadFile(opts.File)
+	if err != nil || !strings.Contains(string(data), "|RECEIPT|type=retro|") {
+		t.Fatalf("retro receipt row did not land: %q %v", data, err)
+	}
+}
+
 func TestO13ReceiptProvenanceParsesWithOldRows(t *testing.T) {
 	opts := baseOptions(t)
 	opts.Type, opts.Outcome = "implement", "shipped"

@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
@@ -45,6 +46,7 @@ const (
 	RoleRepoWatcher       HealthRole = "repo-watcher"
 	RoleCensusFreshness   HealthRole = "census-freshness"
 	RoleNarratorFreshness HealthRole = "narrator-freshness"
+	RoleRetroDebt         HealthRole = "retro-debt"
 	RoleSessionMain       HealthRole = "session-main"
 	RoleHookFreshness     HealthRole = "hook-freshness"
 	// Keep the published role name stable for existing health consumers.
@@ -59,6 +61,7 @@ var healthRoleOrder = []HealthRole{
 	RoleRepoWatcher,
 	RoleCensusFreshness,
 	RoleNarratorFreshness,
+	RoleRetroDebt,
 	RoleSessionMain,
 	RoleHookFreshness,
 	RoleClaimedGoalBudget,
@@ -239,12 +242,31 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		checkRepoWatcher(repoRoot, now, state, stateErr, prober),
 		checkCensusFreshness(repoRoot, now, state, stateErr),
 		checkNarratorFreshness(repoRoot, now),
+		checkRetroDebt(repoRoot),
 		checkSessionMain(repoRoot, prober),
 		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
 		checkClaimedGoalBudgets(repoRoot, now),
 		checkNonterminalJobs(repoRoot, prober),
 		checkCapabilitySnapshots(repoRoot, metasystemRoot, now),
 	}
+}
+
+func checkRetroDebt(repoRoot string) RoleVerdict {
+	open, err := retrodebt.Open(repoRoot)
+	remedy := "record the retro receipt with scripts/receipt.sh add --type retro --outcome shipped --verify clean --note \"<what changed>\""
+	if err != nil {
+		return roleUnknown(RoleRetroDebt, "the durable retro debt record is unreadable: "+err.Error(), remedy)
+	}
+	if len(open) == 0 {
+		return roleAlive(RoleRetroDebt, "no retro receipt is owed")
+	}
+	sources := make([]string, 0, len(open))
+	for _, entry := range open {
+		sources = append(sources, entry.Kind+":"+entry.Source)
+	}
+	role := roleDead(RoleRetroDebt, "RETRO DEBT awaits a receipt after "+strings.Join(sources, ", "), remedy)
+	role.NoAutomaticRemedy = true
+	return role
 }
 
 func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
@@ -645,9 +667,11 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
 		if unknown, ok := dispatch.GoalRecordBudgetUnknown(err); ok {
-			return roleUnknown(RoleClaimedGoalBudget,
+			role := roleDead(RoleClaimedGoalBudget,
 				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason),
 				"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
+			role.NoAutomaticRemedy = true
+			return role
 		}
 		if id, malformed := malformedBudgetGoal(err); malformed {
 			role := roleDead(RoleClaimedGoalBudget,
@@ -663,7 +687,6 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 		automatic bool
 	}
 	var dead []budgetFailure
-	var unknown []string
 	var known []string
 	ids := make([]string, 0, len(projection.Tree.Live))
 	for id := range projection.Tree.Live {
@@ -694,18 +717,18 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			}
 			switch batch.State {
 			case goal.StopBatchComplete:
-				known = append(known, fmt.Sprintf("%s revision=%d BREACH_STOP_COMPLETE stop=%s terminalJobs=%d foreignJobs=%d",
-					id, file.Claimed.Revision, batch.StopID, len(batch.Terminal), len(batch.Foreign)))
+				known = append(known, fmt.Sprintf("%s revision=%d BREACH_STOP_COMPLETE stop=%s terminalJobs=%d foreignJobs=%d%s",
+					id, file.Claimed.Revision, batch.StopID, len(batch.Terminal), len(batch.Foreign), stopFiringEvidenceSummary(batch)))
 			case goal.StopBatchIndeterminate:
 				dead = append(dead, budgetFailure{
-					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s",
-						id, file.Claimed.Revision, batch.StopID, batch.Failure),
+					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s%s",
+						id, file.Claimed.Revision, batch.StopID, batch.Failure, stopFiringEvidenceSummary(batch)),
 					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
 				})
 			default:
 				dead = append(dead, budgetFailure{
-					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d",
-						id, file.Claimed.Revision, batch.StopID, len(batch.Pending)),
+					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d%s",
+						id, file.Claimed.Revision, batch.StopID, len(batch.Pending), stopFiringEvidenceSummary(batch)),
 					remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
 				})
 			}
@@ -713,19 +736,35 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 		}
 		budget := dispatch.ProjectBudget(repoRoot, file, now)
 		if budget.Status == dispatch.BudgetUnknown {
-			unknown = append(unknown, fmt.Sprintf("%s BUDGET_UNKNOWN record=%s reason=%s",
-				id, budget.Unknown.Record, budget.Unknown.Reason))
+			dead = append(dead, budgetFailure{
+				reason: fmt.Sprintf("%s BUDGET_UNKNOWN record=%s reason=%s",
+					id, budget.Unknown.Record, budget.Unknown.Reason),
+				remedy: "repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo " + strconv.Quote(repoRoot),
+			})
 			continue
 		}
 		if len(budget.Breaches) > 0 {
 			var fields []string
 			for _, breach := range budget.Breaches {
-				fields = append(fields, fmt.Sprintf("%s used=%s limit=%s", breach.Field, breach.Used, breach.Limit))
+				state := ""
+				if breach.State != "" {
+					state = string(breach.State) + " "
+				}
+				fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", state, breach.Field, breach.Used, breach.Limit))
 			}
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s revision=%d BREACH %s", id, budget.GoalRevision, strings.Join(fields, ", ")),
 				remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
 			})
+			continue
+		}
+		if budget.ElapsedState == dispatch.AdmissionClosedElapsed {
+			known = append(known, fmt.Sprintf("%s revision=%d ADMISSION_CLOSED_ELAPSED elapsed=%s admissionLimit=%s breachLimit=%s gracePercent=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d",
+				id, budget.GoalRevision, budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit,
+				budget.ElapsedBreachLimit, budget.ElapsedGracePercent,
+				budget.Attempts, budget.Limits.AttemptLimit,
+				budget.ReservedJobMinutes, budget.Limits.ReservedJobMinutesLimit,
+				budget.ActiveJobs, budget.Limits.ActiveJobLimit))
 			continue
 		}
 		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d elapsed=%s/%s",
@@ -735,7 +774,7 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit))
 	}
 	if len(dead) > 0 {
-		reasons := make([]string, 0, len(dead)+len(unknown))
+		reasons := make([]string, 0, len(dead))
 		remedy := dead[0].remedy
 		noAutomaticRemedy := false
 		for _, failure := range dead {
@@ -745,23 +784,26 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 				noAutomaticRemedy = true
 			}
 		}
-		if len(unknown) > 0 {
-			reasons = append(reasons, unknown...)
-			remedy = "repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo " + strconv.Quote(repoRoot)
-			noAutomaticRemedy = true
-		}
 		role := roleDead(RoleClaimedGoalBudget, strings.Join(reasons, "; "), remedy)
 		role.NoAutomaticRemedy = noAutomaticRemedy
 		return role
-	}
-	if len(unknown) > 0 {
-		return roleUnknown(RoleClaimedGoalBudget, strings.Join(unknown, "; "),
-			"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
 	}
 	if len(known) == 0 {
 		return roleAlive(RoleClaimedGoalBudget, "there are no claimed goals")
 	}
 	return roleAlive(RoleClaimedGoalBudget, strings.Join(known, "; "))
+}
+
+func stopFiringEvidenceSummary(batch goal.StopBatch) string {
+	if batch.Reason != goal.StopReasonElapsedLimit {
+		return ""
+	}
+	if batch.FiringEvidence == nil {
+		return " firingEvidence=legacy-unavailable"
+	}
+	evidence := batch.FiringEvidence
+	return fmt.Sprintf(" ELAPSED_BREACH used=%s limit=%s grace=%d admissionLimit=%s",
+		evidence.ElapsedUsed, evidence.BreachBoundary, evidence.GracePercent, evidence.AdmissionLimit)
 }
 
 func malformedBudgetGoal(err error) (string, bool) {

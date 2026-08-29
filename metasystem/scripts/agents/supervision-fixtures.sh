@@ -1,11 +1,102 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario supervision "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+
+fixture_bed_parent_log_root=
+fixture_bed_parent_child_pid=
+fixture_bed_parent_cleanup() {
+  local status=$?
+  trap - EXIT HUP INT QUIT TERM
+  if [[ -n "$fixture_bed_parent_child_pid" ]]; then
+    kill -TERM "$fixture_bed_parent_child_pid" 2>/dev/null || true
+    wait "$fixture_bed_parent_child_pid" 2>/dev/null || true
+  fi
+  [[ -z "$fixture_bed_parent_log_root" ]] \
+    || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
+  return "$status"
+}
+
+run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
+  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
+  local failed_names=() failed_rcs=() failed_logs=()
+  shift 3
+  log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
+  fixture_bed_parent_log_root=$log_root
+  trap fixture_bed_parent_cleanup EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 131' QUIT
+  trap 'exit 143' TERM
+  for scenario in "$@"; do
+    log=$log_root/$index.log
+    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
+    echo "$bed fixture scenario started: $scenario" >&2
+    "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
+    fixture_bed_parent_child_pid=$!
+    set +e
+    wait "$fixture_bed_parent_child_pid"
+    rc=$?
+    set -e
+    fixture_bed_parent_child_pid=
+    cat "$log"
+    if [[ $rc -eq 0 ]]; then
+      echo "$bed fixture scenario passed: $scenario" >&2
+    else
+      failed_names+=("$scenario")
+      failed_rcs+=("$rc")
+      failed_logs+=("$log")
+      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+    fi
+    index=$((index + 1))
+  done
+  if (( ${#failed_names[@]} )); then
+    echo "=== $bed failed scenarios ===" >&2
+    for ((index = 0; index < ${#failed_names[@]}; index++)); do
+      echo "- ${failed_names[$index]} (rc=${failed_rcs[$index]})" >&2
+      echo "  output tail:" >&2
+      tail -n 40 "${failed_logs[$index]}" | sed 's/^/    /' >&2
+    done
+    echo "=== end $bed failed scenarios ===" >&2
+    rm -rf "$log_root"
+    exit 1
+  fi
+  rm -rf "$log_root"
+  echo "$success_line"
+  exit 0
+}
+
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
+    run_fixture_bed_scenarios supervision "supervision fixtures passed (operator empty-runtime source)" \
+      "$fixture_bed_script" operator-layout
+  else
+    run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16)" \
+      "$fixture_bed_script" operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor
+  fi
+fi
+case "$fixture_scenario" in
+  operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor) ;;
+  *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
+esac
+
 # Focused fixtures for section 3.11. Every wait in this file goes through a
 # named ceiling so a broken supervisor fails loudly instead of hanging (IL-1).
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$source_root/scripts/agents/fixture-budget.sh"
+harness_fixture_warn_if_engine_stale "$source_root"
 harness_fixture_budget_init "$source_root"
 fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 
@@ -266,6 +357,7 @@ wait_for_child_exit() { # name, child pid
 
 cleanup_started=0
 cleanup() {
+  local status=$? keep
   (( cleanup_started )) && return 0
   cleanup_started=1
   local harness_path tuple pid start
@@ -303,6 +395,11 @@ cleanup() {
   fi
   if [[ -n "${METASYSTEM_KEEP_SUPERVISION_FIXTURE:-}" ]]; then
     echo "kept supervision fixture: $tmp" >&2
+  elif [[ $status -ne 0 && -d "$tmp" ]]; then
+    keep="$source_root/artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-supervision-$$"
+    mkdir -p "$(dirname "$keep")"
+    mv "$tmp" "$keep" 2>/dev/null \
+      && echo "supervision fixture evidence preserved: $keep" >&2
   else
     rm -rf "$tmp"
   fi
@@ -484,6 +581,7 @@ write_process_fixture() { # output followed by pid|ppid|pgid|started|argv|cwd ro
   mv "$staged" "$output"
 }
 
+if [[ "$fixture_scenario" == operator-layout ]]; then
 # The ordinary operator layout keeps the vendored metasystem one directory below
 # the Git toplevel. Its primary branch uses the shipped configuration and real
 # process sources: no fake census table, fake identity table, or rewritten
@@ -633,7 +731,11 @@ fi
   || { echo "nested operator shutdown failed" >&2; cat "$tmp/operator-shutdown.out" >&2; exit 1; }
 
 echo "nested ordinary operator supervision fixture passed" >&2
+[[ ! -e "$operator_harness/artifacts/agents/supervision/lock.d/owner.json" ]] \
+  || { echo "operator sandbox carries the operator's supervision lock" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" != operator-layout ]]; then
 repo=$tmp/repo
 mkdir -p "$repo"
 make_repo "$repo"
@@ -666,7 +768,9 @@ process_fixture=$repo/process-fixture.json
 identity_fixture=$repo/process-identities.json
 printf '[]\n' >"$process_fixture"
 printf '{}\n' >"$identity_fixture"
+fi
 
+if [[ "$fixture_scenario" == census-lifecycle ]]; then
 # Census cost must be proportional to agent-shaped processes, not to the host
 # process count. The retired python leg counted the module's cwd-resolver
 # calls under a stubbed ps; the engine enforces the same rule structurally
@@ -836,13 +940,15 @@ if "$watcher" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
   echo "S4-5: a second live census writer was accepted" >&2
   exit 1
 fi
-grep -Fq 'live census writer already owns' "$tmp/second-writer.out" \
+  grep -Fq 'live census writer already owns' "$tmp/second-writer.out" \
   || { echo "S4-5: duplicate writer refusal did not name the live owner" >&2
        echo "--- second writer said:" >&2; cat "$tmp/second-writer.out" >&2
        echo "--- lock state:" >&2; ls -la "$repo/artifacts/agents/supervision/census-writer.d" >&2 2>/dev/null || true
        cat "$repo/artifacts/agents/supervision/census-writer.d/owner.json" >&2 2>/dev/null || echo "(no owner.json)" >&2
        exit 1; }
+fi
 
+if [[ "$fixture_scenario" == slow-census ]]; then
 # Duration is part of the authoritative artifact, and the watcher names an
 # over-interval scan as a supervision defect instead of silently looping it.
 warning_repo=$tmp/warning-repo
@@ -879,7 +985,9 @@ warning_interval=$(json_field "$warning_supervision/last-census.json" intervalSe
 (( warning_duration > warning_interval * 1000 )) \
   || { echo "slow census did not record an over-interval duration" >&2
        cat "$warning_supervision/last-census.json" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == census-lifecycle ]]; then
 grep -Fq 'pidStartedAt' "$repo/scripts/agents/dispatch.sh" \
   || { echo "S4-1: job record does not carry pidStartedAt" >&2; exit 1; }
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
@@ -1262,7 +1370,9 @@ printf '{"session_id":"surface","cwd":"%s","hook_event_name":"Stop"}\n' "$repo" 
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
     "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
 grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == idle-hook ]]; then
 # S4-15: a stop event inside a repository is NEVER silent. Silence reads
 # identically to "still running", to "finished", and to "the hook never
 # fired", which is the ambiguity this check exists to remove. Whatever the
@@ -1302,7 +1412,9 @@ grep -Fq 'NOTHING LEFT TO WORK ON' "$source_root/internal/goal/turnverdict.go" \
 # TestOpenWorkGateMarkerIntegration). The supervision-hook legs below
 # (S4-14, S4-15) keep exercising the shell hook itself, which has no
 # Go home.
+fi
 
+if [[ "$fixture_scenario" == rotation-log ]]; then
 # The armed engine watcher publishes verdicts, not a census.log; the
 # transcript log and its byte-capped rotation belong to the shell job
 # watcher's --census mode, so rotation is proven there, in its own sandbox
@@ -1330,7 +1442,9 @@ until [[ -f "$rotation_supervision/census.log.1" ]]; do
       --instance-tag rotation-fixture >/dev/null 2>&1 || true
   rotation_passes=$((rotation_passes + 1))
 done
+fi
 
+if [[ "$fixture_scenario" == census-lifecycle ]]; then
 # The arming event log proves write-announcement precedes the first census and
 # therefore never labels the arming session UNTRACKED.
 announce_line=$(grep -n -m1 -F 'announcement-written' "$repo/artifacts/agents/supervision/arming.log" | cut -d: -f1 || true)
@@ -1338,14 +1452,13 @@ census_line=$(grep -n -m1 -F 'first-census-complete' "$repo/artifacts/agents/sup
 [[ -n "$announce_line" && -n "$census_line" && "$announce_line" -lt "$census_line" ]] \
   || { echo "arming log does not prove the announcement preceded the first census" >&2
        cat "$repo/artifacts/agents/supervision/arming.log" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == foreign-owner ]]; then
 # S4-11: a sandbox must never stop a supervisor another checkout armed. The
 # operator sandbox above is built without artifacts/ for exactly this reason;
 # both halves are asserted, because either one alone leaves the suite able to
 # disarm the machine it runs on.
-[[ ! -e "$operator_harness/artifacts/agents/supervision/lock.d/owner.json" ]] \
-  || { echo "operator sandbox carries the operator's supervision lock" >&2; exit 1; }
-
 foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q -b main .)
@@ -1390,7 +1503,9 @@ grep -Fq 'another repository' "$tmp/foreign-shutdown.out" \
 kill -0 "$foreign_sleep_pid" 2>/dev/null \
   || { echo "shutdown stopped a process another checkout owned" >&2; exit 1; }
 stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 2>&1 || true
+fi
 
+if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
 # S4-14: the stop hook refuses a turn that ends with open work, once, and leaves
 # evidence that it ran. A report was ignorable and was ignored four times in one
 # session; an unbounded refusal is the loop the design forbids.
@@ -1535,5 +1650,7 @@ printf '%s' "$mon4" | grep -Fq 'finished green' \
 mon5=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
 printf '%s' "$mon5" | grep -Fq 'finished green' \
   && { echo "the green surfaced twice" >&2; exit 1; }
-
-echo "supervision fixtures passed (S4-1 through S4-16)"
+# The final probe succeeds by finding no duplicate, so end the scenario with
+# an explicit successful status rather than the probe's expected false result.
+:
+fi

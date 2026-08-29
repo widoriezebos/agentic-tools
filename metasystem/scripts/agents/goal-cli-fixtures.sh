@@ -1,6 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario goal-cli "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+
+fixture_bed_parent_log_root=
+fixture_bed_parent_child_pid=
+fixture_bed_parent_cleanup() {
+  local status=$?
+  trap - EXIT HUP INT QUIT TERM
+  if [[ -n "$fixture_bed_parent_child_pid" ]]; then
+    kill -TERM "$fixture_bed_parent_child_pid" 2>/dev/null || true
+    wait "$fixture_bed_parent_child_pid" 2>/dev/null || true
+  fi
+  [[ -z "$fixture_bed_parent_log_root" ]] \
+    || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
+  return "$status"
+}
+
+run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
+  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
+  local failed_names=() failed_rcs=() failed_logs=()
+  shift 3
+  log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
+  fixture_bed_parent_log_root=$log_root
+  trap fixture_bed_parent_cleanup EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 131' QUIT
+  trap 'exit 143' TERM
+  for scenario in "$@"; do
+    log=$log_root/$index.log
+    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
+    echo "$bed fixture scenario started: $scenario" >&2
+    "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
+    fixture_bed_parent_child_pid=$!
+    set +e
+    wait "$fixture_bed_parent_child_pid"
+    rc=$?
+    set -e
+    fixture_bed_parent_child_pid=
+    cat "$log"
+    if [[ $rc -eq 0 ]]; then
+      echo "$bed fixture scenario passed: $scenario" >&2
+    else
+      failed_names+=("$scenario")
+      failed_rcs+=("$rc")
+      failed_logs+=("$log")
+      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+    fi
+    index=$((index + 1))
+  done
+  if (( ${#failed_names[@]} )); then
+    echo "=== $bed failed scenarios ===" >&2
+    for ((index = 0; index < ${#failed_names[@]}; index++)); do
+      echo "- ${failed_names[$index]} (rc=${failed_rcs[$index]})" >&2
+      echo "  output tail:" >&2
+      tail -n 40 "${failed_logs[$index]}" | sed 's/^/    /' >&2
+    done
+    echo "=== end $bed failed scenarios ===" >&2
+    rm -rf "$log_root"
+    exit 1
+  fi
+  rm -rf "$log_root"
+  echo "$success_line"
+  exit 0
+}
+
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
+    "$fixture_bed_script" migration-recovery labels-and-filtering structured-budget archive-and-prune
+fi
+case "$fixture_scenario" in
+  migration-recovery | labels-and-filtering | structured-budget | archive-and-prune) ;;
+  *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
+esac
+
 # The F17 fold, shell half: the goal CLI verbs proven end to end
 # through the REAL binary in a two-repository sandbox — source
 # digest, migration, the read-side fetch, the identity-preserving
@@ -10,10 +95,22 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$root/scripts/agents/fixture-budget.sh"
+harness_fixture_warn_if_engine_stale "$root"
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "goal-cli fixtures: bin/metasystem is not built" >&2; exit 1; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-goal-cli.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT
+cleanup() {
+  local status=$? keep
+  if [[ $status -ne 0 && -d "$tmp" ]]; then
+    keep="$root/artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-goal-cli-$$"
+    mkdir -p "$(dirname "$keep")"
+    mv "$tmp" "$keep" 2>/dev/null \
+      && echo "goal CLI fixture evidence preserved: $keep" >&2
+    return 0
+  fi
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
 
 origin="$tmp/origin.git"
 clone="$tmp/clone"
@@ -94,6 +191,8 @@ MANIFEST
 # collapsed every session to the literal "session").
 migrate_out=$(cd "$clone" && METASYSTEM_OWNER_LINEAGE=fixture-lineage \
   "$ms" goal migrate --root "$clone" --source-digest "$digest" --manifest "$manifest" --by wido)
+
+if [[ "$fixture_scenario" == migration-recovery ]]; then
 grep -q '"outcome": "confirmed"' <<<"$migrate_out" \
   || { echo "goal migrate did not confirm: $migrate_out" >&2; exit 1; }
 identity=$(sed -n 's/.*"identity": "\([^"]*\)".*/\1/p' <<<"$migrate_out" | head -1)
@@ -140,7 +239,15 @@ grep -q "\"identity\": \"$identity\"" <<<"$rerun_out" \
 # 5. Recovery runs clean on a healthy journal.
 recover_out=$("$ms" goal recover --root "$clone")
 [[ $? -eq 0 ]] || { echo "goal recover refused a healthy journal: $recover_out" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" != migration-recovery ]]; then
+  git -C "$clone" fetch -q origin
+  git -C "$clone" reset -q --hard origin/main
+  export METASYSTEM_OWNER_LINEAGE=fixture-lineage
+fi
+
+if [[ "$fixture_scenario" == labels-and-filtering ]]; then
 # 6. Label writes are canonical whole fields. Open accepts repeated
 # labels, sorts and deduplicates them, while an unlabeled open keeps
 # the field absent.
@@ -249,7 +356,12 @@ grep -q '^continue your claimed goal: ship-widget$' <<<"$held_next" \
 empty_next=$("$ms" goal next --root "$clone" --label absent)
 [[ "$empty_next" == "no goal matches --label absent" ]] \
   || { echo "the empty filtered candidate message is not distinct: $empty_next" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == structured-budget ]]; then
+"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" goal open --root "$clone" --id plain-goal \
+  --intent "An unlabeled goal." --next "Continue." >/dev/null
 # 11. The atomic open-and-claim path carries labels after the quota is
 # free, completing the command-line carriage leg.
 open_claim=$("$ms" goal open --root "$clone" --id claimed-label \
@@ -287,13 +399,13 @@ admission_within_rc=$?
 set -e
 [[ "$admission_within_rc" -eq 0 ]] \
   || { echo "the structured claim was refused while within all four limits: $admission_within" >&2; exit 1; }
-export METASYSTEM_GOAL_NOW=2026-08-20T08:00:00Z
+export METASYSTEM_GOAL_NOW=2026-08-20T12:00:00Z
 set +e
 admission_spent=$("$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
 admission_spent_rc=$?
 set -e
 [[ "$admission_spent_rc" -eq 10 ]] \
-  || { echo "the claim at its structured elapsed limit did not request breach-stop (rc=$admission_spent_rc): $admission_spent" >&2; exit 1; }
+  || { echo "the claim at its structured breach boundary did not request breach-stop (rc=$admission_spent_rc): $admission_spent" >&2; exit 1; }
 grep -q 'BUDGET_REFUSED: goal budget-check revision=1 admission closed: elapsedLimit' <<<"$admission_spent" \
   || { echo "the structured refusal did not name its exact limit: $admission_spent" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
@@ -322,7 +434,15 @@ other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
 grep -q '"outcome":"confirmed"' <<<"$other_claim" \
   || { echo "a complete-tuple claim did not confirm: $other_claim" >&2; exit 1; }
 unset METASYSTEM_GOAL_NOW
+fi
 
+if [[ "$fixture_scenario" == archive-and-prune ]]; then
+"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z \
+  "$ms" goal open --root "$clone" --id budget-check \
+    --intent "Exercise structured budget admission." \
+    --next "Continue." --claim --elapsed-limit 8h --attempt-limit 2 \
+    --reserved-job-minutes-limit 120 --active-job-limit 1 >/dev/null
 # 13. Concluding writes the records-owned archive, reopening records a
 # ledger move back to the live set, and concluding again preserves the
 # canonical record bytes including its Integrity line.
@@ -359,7 +479,7 @@ METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z \
     --elapsed-limit 4h --attempt-limit 1 \
     --reserved-job-minutes-limit 30 --active-job-limit 1 >/dev/null
 set +e
-admission_before=$(METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
+admission_before=$(METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
   "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
 admission_before_rc=$?
 set -e
@@ -367,13 +487,13 @@ set -e
   || { echo "the exhausted live goal did not request breach-stop before conclusion (rc=$admission_before_rc): $admission_before" >&2; exit 1; }
 grep -q 'BUDGET_REFUSED: goal admission-concluded revision=1 admission closed: elapsedLimit' <<<"$admission_before" \
   || { echo "the pre-conclusion refusal did not charge the exhausted goal: $admission_before" >&2; exit 1; }
-METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
+METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
   "$ms" goal done --root "$clone" --id admission-concluded \
     --conclude "The records-owned conclusion must leave the admission budget." >/dev/null
 admission_record_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -e "$admission_record_tip:records/goals/admission-concluded.md"
 set +e
-admission_after=$(METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
+admission_after=$(METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
   "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
 admission_after_rc=$?
 set -e
@@ -413,5 +533,4 @@ fi
 git -C "$clone" cat-file -p "$prune_tip:plans/goals/backlog.md" >"$tmp/backlog-after-prune.md"
 grep -q ' prune actor=' "$tmp/backlog-after-prune.md" \
   || { echo "goal prune removed files without its root History tombstone" >&2; exit 1; }
-
-echo "goal CLI fixtures: PASSED"
+fi

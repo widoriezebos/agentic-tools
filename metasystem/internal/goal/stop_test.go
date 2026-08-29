@@ -67,7 +67,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	stop := CloseStopRequest{
 		VerbRequest: VerbRequest{
 			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
-			Ulid: "01J5X00000000000000000S020", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9,
+			Ulid: "01J5X00000000000000000S020", Now: claim.Now.Add(90 * time.Second), ClaimEpoch: 9,
 		},
 		GoalID: "stop-me", StopID: "stop-stop-me-r2-f1", Reason: StopReasonElapsedLimit,
 		Capability: *file.StopCapability,

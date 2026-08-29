@@ -66,6 +66,9 @@ git -C "$line_root" config user.name fixture
 git -C "$line_root" config user.email fixture@example.invalid
 git -C "$line_root" add metasystem.conf plans/goals.md
 git -C "$line_root" commit -qm fixture
+mkdir -p "$line_root/records"
+printf '%s\n' '2026-08-29T10:00:00Z HIGHLIGHT — A landing moved the repository storyline to commit abc123. (source: commit abc123)' \
+  >"$line_root/records/narrator-digest.log"
 printf '{"session_id":"line-fixture","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload.json"
 line_started=$SECONDS
 line_rc=0
@@ -75,6 +78,10 @@ line_elapsed=$((SECONDS - line_started))
 [[ "$line_rc" -eq 0 ]] || { echo "supervision hook chat-line fixture returned $line_rc" >&2; exit 1; }
 grep -Fq 'HEALTH ' "$tmp/line.out" \
   || { echo "supervision hook chat-line fixture emitted no health verdict" >&2; exit 1; }
+grep -Fq 'NARRATOR DIGEST since last check-in' "$tmp/line.out" \
+  || { echo "supervision hook chat-line fixture omitted the pending narrator digest" >&2; exit 1; }
+grep -Fq 'A landing moved the repository storyline to commit abc123' "$tmp/line.out" \
+  || { echo "supervision hook chat-line fixture omitted the digest event" >&2; exit 1; }
 if grep -Fq 'hook-freshness=dead' "$tmp/line.out"; then
   echo "supervision hook chat-line fixture judged its own current attempt dead" >&2
   exit 1
@@ -86,6 +93,15 @@ grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture did not record EMITTED" >&2; exit 1; }
 (( line_elapsed <= 1 )) \
   || { echo "supervision hook chat-line fixture exceeded one second" >&2; exit 1; }
+
+printf '{"session_id":"line-fixture-two","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload-two.json"
+bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload-two.json" \
+  >"$tmp/line-two.out" 2>"$tmp/line-two.err" \
+  || { echo "supervision hook second digest check-in failed" >&2; exit 1; }
+if grep -Fq 'A landing moved the repository storyline to commit abc123' "$tmp/line-two.out"; then
+  echo "supervision hook repeated a digest after its check-in cursor advanced" >&2
+  exit 1
+fi
 
 kill_engine=$tmp/kill-engine
 cat >"$kill_engine" <<'SH'
@@ -131,4 +147,4 @@ grep -Fq 'hook-freshness=dead' "$tmp/after-kill.out" \
 grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "the post-kill hook turn did not complete its own emission" >&2; exit 1; }
 
-echo "supervision hook runtime membership, current-turn freshness, killed-attempt history, emission evidence, and loud missing-engine fixtures passed"
+echo "supervision hook runtime membership, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, and loud missing-engine fixtures passed"

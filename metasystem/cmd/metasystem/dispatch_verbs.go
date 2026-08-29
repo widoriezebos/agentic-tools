@@ -140,6 +140,7 @@ func runDispatchBuildSetup(args []string) int {
 	goalID := flags.String("goal", "", "goal id this job serves")
 	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this reservation serves")
 	machineID := flags.String("machine-id", "", "claim machine for a goal-bound reservation")
+	approvedRef := flags.String("approved-ref", "", "recorded human approval for an oversized slice")
 	capResolution := flags.String("cap-resolution", "", "final cap-resolution file")
 	if flags.Parse(args) != nil {
 		return 2
@@ -148,7 +149,31 @@ func runDispatchBuildSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, --role, and --cap-resolution are required")
 		return 2
 	}
-	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution, *machineID))
+	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution, *machineID, *approvedRef))
+}
+
+func runDispatchSliceAdmission(args []string) int {
+	flags := flag.NewFlagSet("job slice-admission", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	capMinutes := flags.Uint64("cap-min", 0, "final reservation cap in minutes")
+	approvedRef := flags.String("approved-ref", "", "recorded human approval reference")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *capMinutes == 0 {
+		fmt.Fprintln(os.Stderr, "job slice-admission: --root and positive --cap-min are required")
+		return 2
+	}
+	verdict, err := dispatchcore.EvaluateSliceAdmission(*root, *capMinutes, *approvedRef)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if verdict.Refused() {
+		fmt.Fprintln(os.Stderr, verdict.Refusal)
+		return 9
+	}
+	return 0
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
@@ -211,6 +236,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	flags.StringVar(&p.MachineID, "machine-id", "", "claim machine for a goal-bound reservation")
+	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	if flags.Parse(args) != nil {
@@ -247,6 +273,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
+	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
 	if flags.Parse(args) != nil {
 		return 2
 	}

@@ -1,8 +1,95 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario health "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+
+fixture_bed_parent_log_root=
+fixture_bed_parent_child_pid=
+fixture_bed_parent_cleanup() {
+  local status=$?
+  trap - EXIT HUP INT QUIT TERM
+  if [[ -n "$fixture_bed_parent_child_pid" ]]; then
+    kill -TERM "$fixture_bed_parent_child_pid" 2>/dev/null || true
+    wait "$fixture_bed_parent_child_pid" 2>/dev/null || true
+  fi
+  [[ -z "$fixture_bed_parent_log_root" ]] \
+    || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
+  return "$status"
+}
+
+run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
+  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
+  local failed_names=() failed_rcs=() failed_logs=()
+  shift 3
+  log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
+  fixture_bed_parent_log_root=$log_root
+  trap fixture_bed_parent_cleanup EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 131' QUIT
+  trap 'exit 143' TERM
+  for scenario in "$@"; do
+    log=$log_root/$index.log
+    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
+    echo "$bed fixture scenario started: $scenario" >&2
+    "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
+    fixture_bed_parent_child_pid=$!
+    set +e
+    wait "$fixture_bed_parent_child_pid"
+    rc=$?
+    set -e
+    fixture_bed_parent_child_pid=
+    cat "$log"
+    if [[ $rc -eq 0 ]]; then
+      echo "$bed fixture scenario passed: $scenario" >&2
+    else
+      failed_names+=("$scenario")
+      failed_rcs+=("$rc")
+      failed_logs+=("$log")
+      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+    fi
+    index=$((index + 1))
+  done
+  if (( ${#failed_names[@]} )); then
+    echo "=== $bed failed scenarios ===" >&2
+    for ((index = 0; index < ${#failed_names[@]}; index++)); do
+      echo "- ${failed_names[$index]} (rc=${failed_rcs[$index]})" >&2
+      echo "  output tail:" >&2
+      tail -n 40 "${failed_logs[$index]}" | sed 's/^/    /' >&2
+    done
+    echo "=== end $bed failed scenarios ===" >&2
+    rm -rf "$log_root"
+    exit 1
+  fi
+  rm -rf "$log_root"
+  echo "$success_line"
+  exit 0
+}
+
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios health \
+    "health fixtures: direct rc 0/1/2, ten roles, silent first-failure history, escalated episode dedup, acknowledgment, and healthy clear PASSED" \
+    "$fixture_bed_script" direct-verdicts narrator-recovery alert-episode
+fi
+case "$fixture_scenario" in
+  direct-verdicts | narrator-recovery | alert-episode) ;;
+  *) echo "health fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
+esac
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$root/scripts/agents/fixture-budget.sh"
+harness_fixture_warn_if_engine_stale "$root"
 harness_fixture_budget_init "$root"
 health_state_cap_sec=$(harness_fixture_cap health-state)
 health_process_cap_sec=$(harness_fixture_cap health-process-wait)
@@ -55,6 +142,7 @@ wait_for_recorded_pids_to_exit() { # signal stage
 }
 
 cleanup() {
+  local status=$? keep
   (( cleanup_started )) && return 0
   cleanup_started=1
   local pid
@@ -77,6 +165,13 @@ cleanup() {
       kill -KILL "$pid" 2>/dev/null || true
     done
     wait_for_recorded_pids_to_exit KILL || true
+  fi
+  if [[ $status -ne 0 && -d "$tmp" ]]; then
+    keep="$root/artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-health-$$"
+    mkdir -p "$(dirname "$keep")"
+    mv "$tmp" "$keep" 2>/dev/null \
+      && echo "health fixture evidence preserved: $keep" >&2
+    return 0
   fi
   if ! rm -rf "$tmp"; then
     echo "health fixture cleanup could not remove $tmp" >&2
@@ -243,6 +338,7 @@ for role in steward-runner supervision-owner repo-watcher census-freshness narra
   grep -Fq "$role=alive" "$tmp/healthy.out" || fail "healthy line omitted $role"
 done
 
+if [[ "$fixture_scenario" == direct-verdicts ]]; then
 # Exit 2 uses a malformed job record; runner and narrator failures below use
 # their actual processes rather than edited completion evidence.
 printf '{"jobId":"unknown-job"}\n' >"$repo/artifacts/agents/jobs/unknown-job.json"
@@ -252,7 +348,9 @@ unknown_rc=$health_rc
 grep -Fq 'nonterminal-jobs=unknown' "$tmp/unknown.out" || fail "unknown verdict did not name the malformed job"
 rm "$repo/artifacts/agents/jobs/unknown-job.json"
 wait_for_healthy unknown-recovered || fail "unknown recovery did not become healthy"
+fi
 
+if [[ "$fixture_scenario" == narrator-recovery ]]; then
 # Stopping the resident loop stalls narrator production without altering its
 # evidence. Equality at two producer intervals must make it stale.
 kill -STOP "$runner_pid"
@@ -283,7 +381,9 @@ continue_recorded_pids
 }
 runner_pid=$(read_runner_pid)
 wait_for_healthy narrator-recovered || fail "the stale narrator's focused restart did not heal health"
+fi
 
+if [[ "$fixture_scenario" == alert-episode ]]; then
 # Killing the actual resident runner proves the acceptance path and starts the
 # five-observation breaker from a healthy reset.
 kill "$runner_pid"
@@ -358,9 +458,8 @@ runner_pid=$(read_runner_pid)
 wait_for_healthy runner-recovered || fail "the killed runner's focused restart did not heal health"
 grep -Fq '"resolved": true' "$episode_file" || fail "healthy verdict did not resolve the alert episode"
 grep -Fq '"cleared": true' "$episode_file" || fail "healthy verdict did not clear the alert episode"
+fi
 
 "$ms" steward disarm --repo "$repo" >/dev/null 2>&1 || true
 wait_for_pid_exit "disarmed runner exit" "$runner_pid" || fail "disarmed runner did not exit"
 runner_pid=
-
-echo "health fixtures: direct rc 0/1/2, ten roles, silent first-failure history, escalated episode dedup, acknowledgment, and healthy clear PASSED"

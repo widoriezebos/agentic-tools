@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
 
 // narrationCapLines bounds the file: old ticks scroll away, because a
@@ -38,6 +39,47 @@ func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
 		return
 	}
 	_ = appendNarrationLine(repoRoot, line)
+}
+
+// NarrateDigest records only the changes that matter on return. Unlike the
+// scrolling tick narration, this concluded-story register is durable and a
+// write failure fails the tick before its observation high-water advances.
+func NarrateDigest(repoRoot string, previous Evidence, result TickResult, now time.Time) error {
+	var entries []narratordigest.Entry
+	commit := result.Evidence.Marks.HeadOid
+	if commit != "" && commit != "no-head" && commit != previous.Marks.HeadOid {
+		shown := commit
+		if len(shown) > 12 {
+			shown = shown[:12]
+		}
+		entries = append(entries, narratordigest.Entry{
+			Kind: "highlight", Text: "A landing moved the repository storyline to commit " + shown + ".",
+			SourceType: "commit", SourceID: commit,
+		})
+	}
+	for _, stop := range result.GoalStops {
+		source := stop.StopID
+		if source == "" {
+			source = fmt.Sprintf("breach-%s-r%d-%s", stop.GoalID, stop.Revision, strings.ToLower(stop.State))
+		}
+		entries = append(entries, narratordigest.Entry{
+			Kind: "lowlight", Text: fmt.Sprintf("A budget breach-stop for goal %s revision %d reached %s.", stop.GoalID, stop.Revision, strings.ToLower(stop.State)),
+			SourceType: "episode", SourceID: source,
+		})
+	}
+	if result.Decision.Action == ActNotify {
+		entries = append(entries, narratordigest.Entry{
+			Kind: "lowlight", Text: "The steward escalated: " + result.Decision.Reason + ".",
+			SourceType: "episode", SourceID: "escalation-" + string(result.Decision.Verdict) + "-" + result.Evidence.Marks.HeadOid,
+		})
+	}
+	if result.Decision.Action == ActRevive {
+		entries = append(entries, narratordigest.Entry{
+			Kind: "highlight", Text: "The steward started a revival after proving the prior worker dead.",
+			SourceType: "episode", SourceID: fmt.Sprintf("revival-%s-%d", result.Evidence.Marks.HeadOid, result.Evidence.DryRevivals),
+		})
+	}
+	return narratordigest.Append(repoRoot, entries, now)
 }
 
 // NarrateHealthLine durably appends the typed one-line health verdict. Unlike

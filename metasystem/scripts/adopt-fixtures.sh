@@ -41,6 +41,8 @@ elif [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" != adopt-fixtures ]]; then
   "$root/bin/metasystem" proof-run banner --suite adopt-fixtures --root "$root" \
     --progress "$adopt_progress_path" --log "$METASYSTEM_SUITE_PROGRESS_LOG"
 fi
+# The progress worker still checks the fixture budget against the engine it will exercise.
+harness_fixture_warn_if_engine_stale "$root"
 # Every adoption in this harness runs from a STERILE SNAPSHOT source
 # under whatever ancestry invoked the suite — agent or terminal. Genesis
 # no longer cares which: a non-holder is admitted for exactly the
@@ -116,8 +118,9 @@ fill_harness_conf() { # config path, absolute evidence root
 }
 
 # Adopted-mode contract: a copy without the template marker validates with a
-# skill pruned, and a present-but-broken skill still fails. Template mode
-# only, so the nested run (which lacks development/) cannot recurse.
+# skill pruned, and a present-but-broken skill still fails. These legs call
+# the validator's skill-inventory owner directly so an unrelated engine or
+# process fixture cannot replace the result being asserted.
 if true; then  # template-gated by the orchestrator
   adopted="$tmp/adopted"
   mkdir -p "$adopted"
@@ -147,25 +150,44 @@ copy_tree_without_artifacts() { # source root, destination
   conf_edit "$adopted/metasystem.conf" delete-lines '^mode[.].*[.]role[.].*$'
   conf_edit "$adopted/metasystem.conf" delete-lines '^validate[.]extra-suites=.*$'
   fill_harness_conf "$adopted/metasystem.conf" "$tmp/adopted-evidence"
-  bash "$adopted/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-pruned.log" 2>&1 || {
-    echo "adopted-mode validation failed for a copy with one skill pruned" >&2
-    tail -20 "$tmp/nested-pruned.log" >&2
+  echo "adopt fixture leg started: a canonical skill pruned before runtime registration must validate" >&2
+  bash "$adopted/scripts/agents/validate-skill-inventory.sh" "$adopted" >"$tmp/nested-pruned.log" 2>&1 || {
+    nested_pruned_rc=$?
+    echo "adopt fixture leg failed: pruned canonical skill; expected adopted inventory validation rc=0, observed rc=$nested_pruned_rc" >&2
+    tail -80 "$tmp/nested-pruned.log" >&2
     exit 1
   }
-  grep -Fq 'metasystem delivery contract validated' "$tmp/nested-pruned.log" \
-    || { echo "nested-pruned run did not end on the contract verdict" >&2; exit 1; }
+  grep -Fq 'verify is valid' "$tmp/nested-pruned.log" \
+    || { echo "adopt fixture leg failed: pruned canonical skill passed without validating the remaining inventory" >&2; exit 1; }
+  echo "adopt fixture leg passed: pruned canonical skill remained valid" >&2
+
+  echo "adopt fixture leg started: an empty canonical skill directory must be rejected" >&2
   mkdir "$adopted/skills/hollow"
-  if bash "$adopted/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
-    echo "adopted-mode validation accepted a skill directory without SKILL.md" >&2
+  hollow_rc=0
+  bash "$adopted/scripts/agents/validate-skill-inventory.sh" "$adopted" >"$tmp/nested-hollow.log" 2>&1 \
+    || hollow_rc=$?
+  if [[ $hollow_rc -eq 0 ]]; then
+    echo "adopt fixture leg failed: empty canonical skill directory; expected rejection, observed rc=0" >&2
     exit 1
   fi
+  grep -Fq 'skill directory without SKILL.md: skills/hollow' "$tmp/nested-hollow.log" \
+    || { echo "adopt fixture leg failed: empty canonical skill directory was rejected for an unrelated reason" >&2; tail -80 "$tmp/nested-hollow.log" >&2; exit 1; }
+  echo "adopt fixture leg passed: empty canonical skill directory was rejected with its reason" >&2
   rmdir "$adopted/skills/hollow"
+
+  echo "adopt fixture leg started: broken canonical skill frontmatter must be rejected" >&2
   grep -v '^name:' "$adopted/skills/verify/SKILL.md" >"$adopted/skills/verify/SKILL.md.new"
   mv "$adopted/skills/verify/SKILL.md.new" "$adopted/skills/verify/SKILL.md"
-  if bash "$adopted/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
-    echo "adopted-mode validation accepted a present skill with broken frontmatter" >&2
+  broken_skill_rc=0
+  bash "$adopted/scripts/agents/validate-skill-inventory.sh" "$adopted" >"$tmp/nested-broken-skill.log" 2>&1 \
+    || broken_skill_rc=$?
+  if [[ $broken_skill_rc -eq 0 ]]; then
+    echo "adopt fixture leg failed: broken canonical skill frontmatter; expected rejection, observed rc=0" >&2
     exit 1
   fi
+  grep -Fq 'skills/verify/SKILL.md: missing name' "$tmp/nested-broken-skill.log" \
+    || { echo "adopt fixture leg failed: broken canonical skill frontmatter was rejected for an unrelated reason" >&2; tail -80 "$tmp/nested-broken-skill.log" >&2; exit 1; }
+  echo "adopt fixture leg passed: broken canonical skill frontmatter was rejected with its reason" >&2
 fi
 
 # adopt.sh self-test, template mode only. The source is a committed snapshot
@@ -495,9 +517,16 @@ PLAN
       cmp -s "$a" "$b" || { echo "adopt: second run changed $rel" >&2; exit 1; }
     fi
   done <"$tmp/adopt-idem-snap"
+  # The direct audit proves the rule itself; validation proves its cheap refusal precedes the engine gate.
+  if (cd "$tgt" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS= \
+      bash scripts/audit-metasystem.sh .) >"$tmp/project-rules-placeholder-audit.out" 2>&1; then
+    echo "adopt: direct audit accepted unreplaced project-rules placeholders" >&2
+    exit 1
+  fi
   placeholder_refusal_message='adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf'
   placeholder_refusal_started=$SECONDS
-  if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/project-rules-placeholder.out" 2>&1; then
+  if METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS= \
+      bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/project-rules-placeholder.out" 2>&1; then
     echo "adopt: target validated with unreplaced placeholders" >&2
     exit 1
   fi
@@ -508,8 +537,15 @@ PLAN
     || { echo "adopt: project-rules placeholder refusal took ${placeholder_refusal_elapsed}s; expected the pre-gate scan to fail within seconds" >&2; exit 1; }
   sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
   mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
+  # The configuration leg applies the same direct-rule and cheap-entrypoint proofs.
+  if (cd "$tgt" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS= \
+      bash scripts/audit-metasystem.sh .) >"$tmp/conf-placeholder-audit.out" 2>&1; then
+    echo "adopt: direct audit accepted unreplaced configuration placeholders" >&2
+    exit 1
+  fi
   placeholder_refusal_started=$SECONDS
-  if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/conf-placeholder.out" 2>&1; then
+  if METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS= \
+      bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/conf-placeholder.out" 2>&1; then
     echo "adopt: target validated while metasystem.conf placeholders remained" >&2
     exit 1
   fi
@@ -888,7 +924,7 @@ if true; then  # template-gated by the orchestrator
       .github/workflows/metasystem.yml) continue ;;
       memory/known-issues.md|memory/instruction-ledger.md) continue ;;
       plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep) continue ;;
-      .claude/*|.agents/*|.devin/*) continue ;;
+      .claude/*|.agents/*|.devin/*|.codex/hooks.json) continue ;;
       *) echo "adoption wrote outside the computed inventory ($tracer_runtime): $written" >&2; exit 1 ;;
     esac
   done <"$tmp/tracer-after"

@@ -107,8 +107,9 @@ metasystem/ tree (minus memory/, development/); hook enrollment;
 .gitignore enrolled lines; .gitattributes appended lines; tailored
 metasystem.conf; seeded plans/goals ledger files and the
 goals-accepted.json baseline; runtime registrations under .claude/
-.devin/.agents; bin/metasystem; docs/project-rules.md only-if-
-absent. Growing the list is a reviewed design change.
+.devin/.agents plus the sanctioned .codex/hooks.json destination;
+bin/metasystem; docs/project-rules.md only-if-absent. Growing the
+list is a reviewed design change.
 
 ## The goal engine slice, honestly scoped [MAC-R2-006]
 

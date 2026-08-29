@@ -104,6 +104,7 @@ func families() []family {
 				{"goal-lock-path", "print the ranked lock path for one goal revision", runDispatchGoalLockPath},
 				{"goal-admission", "judge the structured goal budget before reservation", runDispatchGoalAdmission},
 				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
+				{"slice-admission", "judge a reservation cap against the configured slice norm", runDispatchSliceAdmission},
 				{"breach-stop", "close a breached revision's fence and initialize its stop batch", runDispatchBreachStop},
 				{"breach-stop-routes", "list steward and dispatch breach-stop routes", runDispatchBreachStopRoutes},
 				{"stop-batch-reconcile", "advance one stop batch from authoritative job records", runDispatchStopBatchReconcile},
@@ -411,6 +412,8 @@ func families() []family {
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
 				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
+				{"digest-pending", "print narrator highlights and lowlights since the last check-in (internal)", runStewardDigestPending},
+				{"digest-advance", "advance the narrator digest after payload emission (internal)", runStewardDigestAdvance},
 			},
 		},
 		{
