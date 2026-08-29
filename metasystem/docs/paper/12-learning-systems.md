@@ -10,6 +10,8 @@ The builder investigating the failure assembles the containment actions and obse
 
 A lesson can become one of two things. If a reliable check can tell the danger from legitimate work, the responsible authority can adopt it as an enforced rule. If no check can, it becomes a question for human judgment. The incident is evidence for either and authorizes neither.
 
+Nobody has learning as a job of their own; each step already has an owner. The releaser records incidents and near-misses, a builder investigates and proposes, an examiner challenges, the responsible authority decides, and an adopted lesson enters the backlog as a feature like anything else. One thing must not be left to memory: that the loop starts at all. So an incident record carries a decide-by date, watched like a review date, and past it undecided the record is flagged to the responsible authority, who proposes work, assigns it or declines it with a recorded reason.
+
 ## A rule in the metasystem
 
 An enforced rule is a feature like any other: it enters the backlog, is built, examined and accepted. What lands is a handful of files in the application's rule set. The check is code. Any threshold it reads is data. A known-bad case must fail and known-good cases must pass. And a governance record names the owner, who may maintain or withdraw the rule, the review date and the appeal route. The check runs at the acceptance boundary against each submitted candidate: if session code reads local wall time, the submission is refused. A builder can run the same check while working; that run is advice.
