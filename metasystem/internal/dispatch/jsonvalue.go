@@ -44,6 +44,10 @@ func numInt(v any) (int64, bool) {
 		if typed == float64(int64(typed)) {
 			return int64(typed), true
 		}
+	case int64:
+		return typed, true
+	case int:
+		return int64(typed), true
 	}
 	return 0, false
 }

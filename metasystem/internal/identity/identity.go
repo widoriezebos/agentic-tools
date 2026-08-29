@@ -22,6 +22,7 @@
 package identity
 
 import (
+	"runtime"
 	"strings"
 	"time"
 )
@@ -40,6 +41,29 @@ type Ref struct {
 	StartedAtSec int64
 	StartTicks   int64
 	BootID       string
+}
+
+// ModeName names the strongest comparison shape a recorded identity
+// carries, for records and audit lines (ported surface: the wip's
+// typed Compare modes reduce to these two names on main's Ref).
+func (r Ref) ModeName() string {
+	if r.StartTicks > 0 && r.BootID != "" {
+		return "linux-ticks-bootid"
+	}
+	return "start-seconds"
+}
+
+// NativeExact reports whether this recorded identity carries the
+// strongest shape its platform can record. On linux that is the
+// clock-step-immune ticks+bootID pair; on darwin the fork-captured
+// start second is itself stable (the wip original compared microsecond
+// tokens, which main's records deliberately do not carry — the
+// custody law only needs "no weaker than the platform's best").
+func (r Ref) NativeExact() bool {
+	if r.StartTicks > 0 && r.BootID != "" {
+		return true
+	}
+	return runtime.GOOS == "darwin" && r.StartedAtSec > 0
 }
 
 // Exact is a live identity as the kernel reports it.
@@ -70,6 +94,11 @@ func (e Exact) Ref() Ref {
 // otherwise the legacy whole-second comparison stands (darwin's
 // fork-captured start time is stable, and legacy records have nothing
 // stronger to offer).
+// SameIdentity exposes the one equality rule for consumers that hold
+// both a live probe and a recorded identity (the custody census's
+// group-read confirmation is the first).
+func SameIdentity(exact Exact, ref Ref) bool { return sameIdentity(exact, ref) }
+
 func sameIdentity(exact Exact, ref Ref) bool {
 	if ref.StartTicks > 0 && ref.BootID != "" && exact.StartTicks > 0 && exact.BootID != "" {
 		return exact.StartTicks == ref.StartTicks && exact.BootID == ref.BootID

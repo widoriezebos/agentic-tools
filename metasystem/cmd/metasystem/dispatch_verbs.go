@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"time"
 
@@ -625,7 +626,21 @@ func runDispatchCustodyAdd(args []string) int {
 		fmt.Fprintln(os.Stderr, "job custody-add: --root, --job, --pid, and --pid-started are required")
 		return 2
 	}
-	return recordExit(dispatchcore.CustodyAdd(*root, *job, *pid, *pidStarted))
+	// The engine now reads the identity itself through the kernel
+	// prober; the caller's recorded start second remains a binding
+	// cross-check so a recycled pid cannot be registered with a stale
+	// claim (Ruling R: this verb's shell callers pass what they saw).
+	prober := identity.KernelProber{}
+	exact, state, probeErr := prober.Probe(*pid)
+	if probeErr != nil || state != identity.Alive {
+		fmt.Fprintf(os.Stderr, "job custody-add: pid %d identity unreadable or not alive\n", *pid)
+		return 1
+	}
+	if exact.StartedAt.Unix() != *pidStarted {
+		fmt.Fprintf(os.Stderr, "job custody-add: pid %d start %d does not match the recorded %d\n", *pid, exact.StartedAt.Unix(), *pidStarted)
+		return 1
+	}
+	return recordExit(dispatchcore.CustodyAdd(*root, *job, *pid, prober))
 }
 
 func runDispatchHandshakeEval(args []string) int {

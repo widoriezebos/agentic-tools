@@ -182,15 +182,33 @@ var freshRoundSuffixRe = regexp.MustCompile(`-r([0-9]+)$`)
 // cannot both win. The source must already carry the job's own id and the
 // pending-setup status.
 func RecordCreate(root, job, sourcePath string) error {
+	record, err := readObject(sourcePath)
+	if err != nil {
+		return refuse(1, "invalid initial record for %s: %v", job, err)
+	}
+	// An indexed reservation (a record born with a session key) takes
+	// the occupancy path: the session's one-publication order decides
+	// before the record lock, and the reservation labels its index
+	// evidence on the record. A key-free record keeps the legacy path
+	// byte-identical.
+	if sessionKey := asString(record["sessionKey"]); sessionKey != "" {
+		if asString(record["proofLevel"]) != "proven" {
+			return refuse(1, "indexed reservation %s must carry proven custody", job)
+		}
+		store := IndexedSessionOccupancyReader{}
+		prepared, prepErr := store.Prepare(root, sessionKey)
+		if prepErr != nil {
+			return prepErr
+		}
+		return store.Resolve(root, sessionKey, job, prepared, func(occupancy SessionOccupancy, transaction *SessionIndexTransaction) error {
+			return recordCreateLocked(root, job, record, occupancy, transaction)
+		})
+	}
 	return withRecordLock(root, job, func(recordPath string) error {
 		if _, err := os.Stat(recordPath); err == nil {
 			return refuse(1, "job id collision: %s", job)
 		} else if !os.IsNotExist(err) {
 			return refuse(1, "cannot reserve job record %s: %v", job, err)
-		}
-		record, err := readObject(sourcePath)
-		if err != nil {
-			return refuse(1, "invalid initial record for %s: %v", job, err)
 		}
 		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
 			return refuse(1, "invalid initial record identity or status for %s", job)
@@ -216,12 +234,51 @@ func RecordCreate(root, job, sourcePath string) error {
 	})
 }
 
+// recordCreateLocked is the indexed reservation's record-lock section:
+// main's fresh-round guard and identity checks apply unchanged, then
+// the occupancy verdict and the busy publication label the record.
+func recordCreateLocked(root, job string, record map[string]any, occupancy SessionOccupancy, transaction *SessionIndexTransaction) error {
+	return withRecordLock(root, job, func(recordPath string) error {
+		if _, statErr := os.Stat(recordPath); statErr == nil {
+			return refuse(1, "job id collision: %s", job)
+		} else if !os.IsNotExist(statErr) {
+			return refuse(1, "cannot reserve job record %s: %v", job, statErr)
+		}
+		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
+			return refuse(1, "invalid initial record identity or status for %s", job)
+		}
+		if record["parentJob"] == nil {
+			if m := freshRoundSuffixRe.FindStringSubmatch(job); m != nil {
+				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
+					return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", m[1], job)
+				}
+			}
+		}
+		if occupancy.Unprovable != nil {
+			return refuse(1, "session occupancy is unprovable: %s", occupancy.Unprovable.Reason)
+		}
+		if occupancy.Busy != nil {
+			return refuse(1, "session is busy with %s", occupancy.Busy.OpID)
+		}
+		record["sessionOccupancyEvidence"] = sessionOccupancyEvidenceObjects(occupancy.FreeEvidence)
+		record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
+		generation, publishErr := transaction.publishBusy(classifySessionRecord(job, record))
+		if publishErr != nil {
+			return publishErr
+		}
+		if generation > 0 {
+			record["sessionOccupancyClaimGeneration"] = generation
+		}
+		return writeRecord(recordPath, record)
+	})
+}
+
 // RecordSetup completes a reservation: it swaps the pending-setup husk for the
 // full pending record, refusing unless the current record is still
 // pending-setup and the new record keeps the same job id, claim epoch, and
 // main id. This is the create/setup handshake that makes reservation atomic.
 func RecordSetup(root, job, sourcePath string) error {
-	return withRecordLock(root, job, func(recordPath string) error {
+	return withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		current, err := readObject(recordPath)
 		if err != nil {
 			return refuse(1, "cannot complete setup for job record %s: %v", job, err)
@@ -243,7 +300,26 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["capMin"], current["capMin"]) {
 			return refuse(1, "invalid setup transition for %s", job)
 		}
-		return writeRecord(recordPath, record)
+		// The reservation's session and custody evidence survive the
+		// husk swap, and the occupancy index hears the status change
+		// in the same locked breath (ported: the wip's indexed setup).
+		for _, field := range []string{
+			"sessionKey", "sessionNonce", "proofLevel", "sessionOccupancyEvidence",
+			"sessionOccupancyHealing", "sessionOccupancyClaimGeneration",
+			"fingerprintVersion", "fingerprint", "creatorLiveness",
+			"reservationDeadline", "reservationDeadlinePurpose", "createdAt",
+			"instanceTag",
+		} {
+			if value, present := current[field]; present {
+				if _, overridden := record[field]; !overridden {
+					record[field] = value
+				}
+			}
+		}
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		return transaction.syncRecord(job, record)
 	})
 }
 
@@ -306,7 +382,7 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 //
 // The returned observed string is non-empty only on a lost compare.
 func RecordCAS(root, job, expect, target, patchPath string) (observed string, err error) {
-	err = withRecordLock(root, job, func(recordPath string) error {
+	err = withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
 			return refuse(1, "cannot update job record %s: %v", job, readErr)
@@ -349,6 +425,9 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if _, has := patch["status"]; has {
 			return refuse(1, "record patch must be an object and cannot contain status")
 		}
+		if validationErr := validateOwnershipPatch(record, patch); validationErr != nil {
+			return refuse(1, "%v", validationErr)
+		}
 		for field := range patch {
 			if immutableFields[field] {
 				return refuse(1, "record patch attempts to change immutable identity")
@@ -371,7 +450,13 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if terminalStatuses[target] && isFalsy(record["endedAt"]) {
 			record["endedAt"] = nowISO()
 		}
-		return writeRecord(recordPath, record)
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		// The occupancy index hears every status transition in the same
+		// locked breath; key-less records took the plain record lock and
+		// carry a disabled transaction (ported: the wip's indexed CAS).
+		return transaction.syncRecord(job, record)
 	})
 	return observed, err
 }
@@ -588,4 +673,47 @@ func isZeroNumber(value any) bool {
 		return typed == 0
 	}
 	return false
+}
+
+// withRecordSessionLock gives an indexed record the lock order shared by all
+// of its writers: the session lock first, then the record lock. Legacy records
+// have no session key and continue through the record lock alone.
+func withRecordSessionLock(root, job string, fn func(recordPath string, transaction *SessionIndexTransaction) error) error {
+	_, recordPath, _ := paths(root, job)
+	record, readErr := readObject(recordPath)
+	sessionKey := ""
+	if readErr == nil {
+		sessionKey = asString(record["sessionKey"])
+	}
+	if sessionKey == "" {
+		return withRecordLock(root, job, func(lockedPath string) error {
+			return fn(lockedPath, &SessionIndexTransaction{disabled: true})
+		})
+	}
+	return withSessionOccupancyLock(root, sessionKey, func(indexPath string) error {
+		transaction := sessionIndexTransactionAtPath(indexPath, sessionKey)
+		return withRecordLock(root, job, func(lockedPath string) error {
+			lockedRecord, err := readObject(lockedPath)
+			if err == nil && asString(lockedRecord["sessionKey"]) != sessionKey {
+				return fmt.Errorf("job record %s changed session identity while its lock was acquired", job)
+			}
+			return fn(lockedPath, transaction)
+		})
+	})
+}
+
+func sessionIndexTransactionAtPath(indexPath, sessionKey string) *SessionIndexTransaction {
+	index, _, err := readSessionOccupancyIndexPath(indexPath, sessionKey)
+	if err != nil {
+		return &SessionIndexTransaction{disabled: true}
+	}
+	return &SessionIndexTransaction{indexPath: indexPath, index: index}
+}
+
+func sessionOccupancyEvidenceObjects(evidence []SessionOccupant) []any {
+	items := make([]any, 0, len(evidence))
+	for _, occupant := range evidence {
+		items = append(items, sessionOccupantObject(occupant))
+	}
+	return items
 }

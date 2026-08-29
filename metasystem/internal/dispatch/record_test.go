@@ -690,7 +690,7 @@ func TestCustodyAddDefersDuringCancellation(t *testing.T) {
 	if _, err := RecordCAS(root, "job-a", "pending", "pending", mark); err != nil {
 		t.Fatalf("marker: %v", err)
 	}
-	if err := CustodyAdd(root, "job-a", 4242, 99); err == nil {
+	if err := custodyAddFixed(root, "job-a", 4242, 99); err == nil {
 		t.Fatal("custody registration must defer on a marked record")
 	}
 	record := readRecord(t, root, "job-a")

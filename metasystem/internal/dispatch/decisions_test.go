@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // writeJSONFile marshals a value into dir/name and returns the path.
@@ -124,14 +126,14 @@ func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
 	})
 	// The exact identity again collapses to one entry; a recycled pid with a
 	// different start time is a distinct process and keeps its own entry.
-	if err := CustodyAdd(root, "job-c", 41, 5); err != nil {
+	if err := custodyAddFixed(root, "job-c", 41, 5); err != nil {
 		t.Fatalf("CustodyAdd exact duplicate: %v", err)
 	}
 	record := readJSONFile(t, filepath.Join(jobs, "job-c.json"))
 	if items := record["custodyProcesses"].([]any); len(items) != 1 {
 		t.Fatalf("custody entries after duplicate = %d, want 1", len(items))
 	}
-	if err := CustodyAdd(root, "job-c", 41, 9); err != nil {
+	if err := custodyAddFixed(root, "job-c", 41, 9); err != nil {
 		t.Fatalf("CustodyAdd recycled pid: %v", err)
 	}
 	record = readJSONFile(t, filepath.Join(jobs, "job-c.json"))
@@ -142,11 +144,21 @@ func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
 	writeJSONFile(t, jobs, "job-done.json", map[string]any{
 		"jobId": "job-done", "status": "completed", "instanceTag": "t",
 	})
-	err := CustodyAdd(root, "job-done", 1, 1)
+	err := custodyAddFixed(root, "job-done", 1, 1)
 	var op *OpError
 	if err == nil || !asOpError(err, &op) || op.Code != 1 || op.Message != "" {
 		t.Fatalf("terminal custody add = %v, want silent exit 1", err)
 	}
+}
+
+// custodyAddFixed drives the new CustodyAdd contract for legacy call
+// sites: a fixed live identity at the given start second with a stable
+// process group.
+func custodyAddFixed(root, job string, pid, startedSec int64) error {
+	exact := identity.Exact{Pid: pid, StartedAt: time.Unix(startedSec, 0)}
+	return CustodyAdd(root, job, pid,
+		fixedStartReader{exact: exact, state: identity.Alive},
+		func(int64) (int64, error) { return 4000, nil })
 }
 
 func asOpError(err error, target **OpError) bool {
