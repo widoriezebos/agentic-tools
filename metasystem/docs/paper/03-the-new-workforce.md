@@ -22,7 +22,7 @@ Consider a fault found at the end of a human workday. The person who understands
 
 What goes away is limited. A service can still ration access to machinery. An organization can still have deadlines. The people responsible for consequences still have finite attention, and a poor record can still make a fresh attempt ignorant. Scarcity does not vanish. But several reasons for arranging human work no longer apply to the worker carrying a single task with stated limits on scope, time and spend. From now on we call such a task a 'bounded attempt'. Every candidate is the result of one bounded attempt.
 
-Later role design should rely only on constraints that are really gone. Two roles need not remain separate because one person could not fit both activities into a day. They may still need separation because a claim requires independent judgment, because only a responsible authority may make a value ruling or because the actor constructing a candidate must not authorize its release. Different causes produce different boundaries. Removing a scheduling limit does not remove an authority boundary.
+Later role design should rely only on constraints that are really gone. Two roles need not remain separate because one person could not fit both activities into a day. They may still need separation because a claim requires independent judgment, because only a responsible authority may make a value ruling or because the actor constructing a candidate must not authorize its release. Different causes produce different separations. Removing a scheduling limit does not remove an authority boundary.
 
 ## What appears
 

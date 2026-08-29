@@ -34,7 +34,7 @@ This inverts the estimate: instead of asking how long the work will take, a budg
 
 When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that. There is no economy role in any of this. The responsible authority decides worth, an enforced rule does the stopping, and a named judge decides exceptions. Chapter 7's test says why: when a rule and a record already control the hazard, no role is needed.
 
-This boundary also makes failure visible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent or cost model is wrong and needs examination of its own.
+This stop rule also makes failure visible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent or cost model is wrong and needs examination of its own.
 
 ## Parallel attempts include the cost of judging
 

@@ -18,7 +18,7 @@ An intent domain is a bounded area of purpose for which named people may decide 
 
 The shape is not universal. A small organization may combine compatible functions in a few people. A high-consequence domain may require distinct builders, independent examiners, responsible authorities and reviewers from outside the team. A temporary exploration may need little enduring machinery at all. Hazards and permissions determine the roles; no organization chart is prescribed.
 
-Careers change with the responsibility. An engineer may spend less time producing each edit and more time making intent checkable, catching plausible mistakes, limiting failed actions or improving recovery. Another may specialize in evidence custody and explanation without authority to alter it. Leadership moves toward assigning purpose, budgets, boundaries and accountability that survive individual decisions.
+Careers change with the responsibility. An engineer may spend less time producing each edit and more time making intent checkable, catching plausible mistakes, limiting failed actions or improving recovery. Another may specialize in evidence custody and explanation without authority to alter it. Leadership moves toward assigning purpose, budgets, limits and accountability that survive individual decisions.
 
 This shift does not remove construction knowledge. A person who governs a builder must understand what the machinery can change, how tests can mislead and where the application can harm people. The craft moves up a level only by retaining contact with the level below. A compiler engineer still needs to understand programs; an engineer of delivery systems still needs to understand software behavior.
 
@@ -46,7 +46,7 @@ Four protections follow from that failure. Accountability ends with identifiable
 
 These protections are conditions under which delegated action remains legitimate and correctable. A machine cannot take the blame, represent an affected community or decide that one person's security justifies another's burden. Anonymous group approval cannot supply accountability just because people participated. An unexplained record cannot support meaningful appeal.
 
-Pressure will test these boundaries. A faster path may omit a reviewer. A cheaper record may discard dissent. A broad permission may simplify recovery. A persuasive recommendation may tempt an authority to approve without understanding. The governing design must make those choices visible and refuse them where a protection would be lost. Efficiency is evidence only when responsibility, challenge and harm remain in view.
+Pressure will test these protections. A faster path may omit a reviewer. A cheaper record may discard dissent. A broad permission may simplify recovery. A persuasive recommendation may tempt an authority to approve without understanding. The governing design must make those choices visible and refuse them where a protection would be lost. Efficiency is evidence only when responsibility, challenge and harm remain in view.
 
 ## Open problems
 
@@ -62,7 +62,7 @@ Representation remains harder than authorization. A product authority may hold v
 
 Human lawmakers and regulators may use machinery to compare proposals, trace consequences, inspect records and find inconsistent enforcement. That assistance can improve the evidence available to public judgment. It must not let a model choose social values, conceal contested assumptions behind a score or displace the authority and accountability of the people empowered to make law. The same unconditional division applies at the larger scale.
 
-These are limits of the concept rather than promised features awaiting implementation. Evidence from real use may show that some require institutions outside the delivery system, that some proposed boundaries are impractical or that familiar human practices protect them better. The outlook remains credible only if such findings can narrow or overturn it.
+These are limits of the concept rather than promised features awaiting implementation. Evidence from real use may show that some require institutions outside the delivery system, that some proposed limits are impractical or that familiar human practices protect them better. The outlook remains credible only if such findings can narrow or overturn it.
 
 ## Closing
 

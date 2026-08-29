@@ -54,7 +54,7 @@ The disagreement is recorded before construction continues. The record names the
 
 The structure may use one responsible executive, a standing group or several authorities protecting different domains. The form can vary. The condition does not: conflicting intent is visible, binding power is explicit, accountability remains human, and challenge can reach a human authority outside the disputed decision.
 
-Delegation does not dissolve responsibility. The delegating authority answers for the boundary, and the delegate answers for decisions within it. If nobody can identify the human with the duty to decide, machinery must not infer authority from seniority, activity or access. It stops.
+Delegation does not dissolve responsibility. The delegating authority answers for the limits it set, and the delegate answers for decisions within them. If nobody can identify the human with the duty to decide, machinery must not infer authority from seniority, activity or access. It stops.
 
 ## Ordering records cannot settle values
 
