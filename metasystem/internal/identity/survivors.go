@@ -6,6 +6,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var survivorPids = AllPids
+
 // TaggedSurvivors reports whether any live process OTHER than the
 // recorded custodian still carries the instance tag in its argv.
 // This is the fact a kill-less reaper must hold before it may claim
@@ -28,7 +30,7 @@ func TaggedSurvivors(tag string, exclude, pgid int64) (alive bool, certain bool)
 		// no survivor claim to make either way.
 		return false, true
 	}
-	pids, err := AllPids()
+	pids, err := survivorPids()
 	if err != nil {
 		return false, false
 	}

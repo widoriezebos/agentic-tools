@@ -37,6 +37,14 @@ func TestFailedCensusIsAnIncompleteScan(t *testing.T) {
 	}
 }
 
+func TestRuntimeWorkerCensusTreatsFingerprintFailureAsUnprovable(t *testing.T) {
+	root := t.TempDir()
+	workers, err := (RuntimeWorkerCensus{MetasystemRoot: filepath.Join(root, "missing-installation")}).Workers(root)
+	if err != nil || workers.Unprovable != 1 || workers.Live != 0 {
+		t.Fatalf("fingerprint failure did not block the death proof: workers=%+v err=%v", workers, err)
+	}
+}
+
 func TestUnknownInventoryClassIsUnprovable(t *testing.T) {
 	v := census.Verdict{Verdict: "SUCCESS", Inventory: []census.InventoryItem{{Class: "SOMETHING-NEW"}}}
 	w := workersFromVerdict(v)

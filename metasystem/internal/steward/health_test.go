@@ -284,6 +284,36 @@ func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T
 	}
 }
 
+func TestHealthThresholdConfigurationUsesDefaultsAndRejectsInvalidBounds(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := nonnegativeConfig(root, "steward.test-threshold", 7)
+	if err != nil || value != 7 {
+		t.Fatalf("missing threshold did not use its default: value=%d err=%v", value, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("steward.test-threshold=-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nonnegativeConfig(root, "steward.test-threshold", 7); err == nil || !strings.Contains(err.Error(), "at least 0") {
+		t.Fatalf("negative threshold was accepted: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("steward.test-threshold=9\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err = boundedConfig(root, "steward.test-threshold", 7, 5)
+	if err != nil || value != 9 {
+		t.Fatalf("valid threshold was not read: value=%d err=%v", value, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("steward.test-threshold=not-a-number\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boundedConfig(root, "steward.test-threshold", 7, 5); err == nil {
+		t.Fatal("nonnumeric threshold was accepted")
+	}
+}
+
 func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	breach := structuredHealthGoal()

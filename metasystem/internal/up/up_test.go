@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -204,5 +205,171 @@ func TestRecoveryRefusesBeforeArmingWithoutAnEnrolledEngine(t *testing.T) {
 	}
 	if _, err := os.Stat(root + "/artifacts/agents/supervision"); !os.IsNotExist(err) {
 		t.Fatalf("recovery mutated supervision before enrollment proof: %v", err)
+	}
+}
+
+func TestSessionDefaultsAndRecordedProcessComparison(t *testing.T) {
+	t.Setenv("METASYSTEM_SESSION_ID", "session-from-environment")
+	t.Setenv("METASYSTEM_INSTANCE_TAG", "tag-from-environment")
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "lineage-from-environment")
+	if got := sessionValue("", 41); got != "session-from-environment" {
+		t.Fatalf("session environment was ignored: %q", got)
+	}
+	if got := sessionValue("explicit", 41); got != "explicit" {
+		t.Fatalf("explicit session was replaced: %q", got)
+	}
+	if got := sessionTag("", "codex", "session"); got != "tag-from-environment" {
+		t.Fatalf("instance tag environment was ignored: %q", got)
+	}
+	if got := ownerLineage(""); got != "lineage-from-environment" {
+		t.Fatalf("owner lineage environment was ignored: %q", got)
+	}
+	if got := runtimeValue(""); got != "unknown" {
+		t.Fatalf("empty runtime = %q, want unknown", got)
+	}
+	t.Setenv("METASYSTEM_SESSION_ID", "")
+	t.Setenv("METASYSTEM_INSTANCE_TAG", "")
+	if got := sessionValue("", 41); got != "session-41" {
+		t.Fatalf("pid fallback session = %q", got)
+	}
+	if got := sessionTag("", "codex", "session 41"); got != "metasystem-main-codex-session-41" {
+		t.Fatalf("default instance tag = %q", got)
+	}
+
+	legacy := census.ProcIdentity{Pid: 41, PidStartedAt: 100}
+	if !sameAuthenticatedProcess(legacy, legacy) {
+		t.Fatal("identical legacy process identities did not match")
+	}
+	otherPid := legacy
+	otherPid.Pid++
+	if sameAuthenticatedProcess(legacy, otherPid) {
+		t.Fatal("different pids matched")
+	}
+	paired := census.ProcIdentity{Pid: 41, PidStartedAt: 100, PidStartTicks: 900, BootID: "boot-a"}
+	if !sameAuthenticatedProcess(paired, paired) {
+		t.Fatal("identical paired process identities did not match")
+	}
+	rebooted := paired
+	rebooted.BootID = "boot-b"
+	if sameAuthenticatedProcess(paired, rebooted) {
+		t.Fatal("process identities from different boots matched")
+	}
+}
+
+func TestCallerAncestryProofWalksParentsAndStopsOnCycles(t *testing.T) {
+	prior := sessionParentPid
+	parents := map[int64]int64{30: 20, 20: 10, 10: 1, 40: 40}
+	sessionParentPid = func(pid int64) (int64, bool) {
+		parent, ok := parents[pid]
+		return parent, ok
+	}
+	t.Cleanup(func() { sessionParentPid = prior })
+	if err := proveCallerDescendsFromTarget(30, 10); err != nil {
+		t.Fatalf("ancestor was not proven: %v", err)
+	}
+	if err := proveCallerDescendsFromTarget(30, 99); err == nil {
+		t.Fatal("unrelated target was accepted as an ancestor")
+	}
+	if err := proveCallerDescendsFromTarget(40, 10); err == nil {
+		t.Fatal("a parent cycle granted ancestry")
+	}
+}
+
+func TestWatchIntervalDefaultsAndRejectsInvalidConfiguration(t *testing.T) {
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if interval, err := watchInterval(root); err != nil || interval != 60 {
+		t.Fatalf("default watch interval: interval=%d err=%v", interval, err)
+	}
+	for _, value := range []string{"0", "not-a-number"} {
+		if err := os.WriteFile(conf, []byte("watch.interval-sec="+value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := watchInterval(root); err == nil || !strings.Contains(err.Error(), "positive integer") {
+			t.Fatalf("invalid watch interval %q was accepted: %v", value, err)
+		}
+	}
+}
+
+func TestArmingLogAppendsAndIgnoresUnwritableLayout(t *testing.T) {
+	root := t.TempDir()
+	appendArmingLog(root, "first event")
+	appendArmingLog(root, "second event")
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "arming.log"))
+	if err != nil || !strings.Contains(string(data), "first event") || !strings.Contains(string(data), "second event") {
+		t.Fatalf("arming log did not append both events: %q err=%v", data, err)
+	}
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	appendArmingLog(blocked, "must not panic")
+}
+
+func TestPreflightNamesMissingProductionCommands(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	err := preflightCommands()
+	if err == nil || !strings.Contains(err.Error(), "required production commands are missing") || !strings.Contains(err.Error(), "git") {
+		t.Fatalf("missing command inventory was not named: %v", err)
+	}
+}
+
+func TestInvokingEnrollmentRefusesAnotherBinaryAtTheSameDigest(t *testing.T) {
+	root := t.TempDir()
+	accepted := filepath.Join(root, "accepted")
+	candidate := filepath.Join(root, "candidate")
+	for _, path := range []string{accepted, candidate} {
+		if err := os.WriteFile(path, []byte("same binary bytes\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stageEnrollment(t, root, accepted, 3)
+	enrolled, err := openInvokingEnrollment(Options{Root: root, Binary: candidate})
+	if enrolled != nil || err == nil || !strings.Contains(err.Error(), "invoking engine") {
+		t.Fatalf("another binary path used the enrollment: enrolled=%v err=%v", enrolled, err)
+	}
+}
+
+func TestAdministrativeOutcomesRefuseWithoutIdentityOrHolderAuthority(t *testing.T) {
+	retired := Retire(Options{Root: t.TempDir(), Pid: 41})
+	if retired.Outcome != "failed" || retired.Failed != "session-identity" {
+		t.Fatalf("retire accepted a partial identity: %+v", retired)
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	identityTable := filepath.Join(t.TempDir(), "identities.json")
+	identityBody := fmt.Sprintf(`{"%d":{"terminal":false}}`, os.Getppid())
+	if err := os.WriteFile(identityTable, []byte(identityBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", identityTable)
+	shutdown := Shutdown(Options{Root: root, MetasystemRoot: root, Scope: root})
+	if shutdown.Outcome != "failed" || shutdown.Failed != "checkout-lease" {
+		t.Fatalf("shutdown accepted a non-holder: %+v", shutdown)
+	}
+	for _, outcome := range []string{"failed", "recovery-partial", "ENROLLMENT_DRIFT"} {
+		if code := (Result{Outcome: outcome}).ExitCode(); code != 1 {
+			t.Fatalf("outcome %s exit code = %d, want 1", outcome, code)
+		}
+	}
+}
+
+func TestCanonicalRuntimePathResolvesSymlinkedBinary(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "engine")
+	link := filepath.Join(root, "engine-link")
+	if err := os.WriteFile(target, []byte("engine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := canonicalRuntimePath(link), canonicalRuntimePath(target); got != want {
+		t.Fatalf("canonical runtime path = %q, want %q", got, want)
 	}
 }

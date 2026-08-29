@@ -99,6 +99,95 @@ func TestDiskPublicationFence(t *testing.T) {
 	}
 }
 
+func TestDiskGenerationReadsFailClosedAndExcludeRetiredComponents(t *testing.T) {
+	checkout, root := diskCheckout(t)
+	fixed := time.Date(2026, 8, 29, 16, 0, 0, 0, time.UTC)
+	checkout.clock = func() time.Time { return fixed }
+	if generation := checkout.PriorGeneration(); generation != 0 {
+		t.Fatalf("a missing state seeded generation %d", generation)
+	}
+	if err := os.WriteFile(checkout.statePath(), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if generation := checkout.PriorGeneration(); generation != 0 {
+		t.Fatalf("a malformed state seeded generation %d", generation)
+	}
+	writeOwner(t, root, 41, "owner-tag")
+	held := []Held{
+		{Component: Watcher, Tag: "retired-watcher", Generation: 4, Identity: identity.Ref{Pid: 50, StartedAtSec: 200}},
+		{Component: Watcher, Tag: "current-watcher", Generation: 5, Identity: identity.Ref{Pid: 51, StartedAtSec: 201}},
+	}
+	if err := checkout.PublishState(held); err != nil {
+		t.Fatal(err)
+	}
+	if generation := checkout.PriorGeneration(); generation != 5 {
+		t.Fatalf("published generation = %d, want 5", generation)
+	}
+	data, err := os.ReadFile(checkout.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document stateDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if watcher := document.Components[string(Watcher)]; watcher.Pid != 51 || watcher.InstanceTag != "current-watcher" {
+		t.Fatalf("retired generation leaked into publication: %+v", watcher)
+	}
+	if document.StartedAt != fixed.Format(isoSecond) {
+		t.Fatalf("publication ignored its supplied clock: %q", document.StartedAt)
+	}
+}
+
+func TestDiskStateOwnershipReportsMissingMalformedAndForeignState(t *testing.T) {
+	checkout, _ := diskCheckout(t)
+	if _, err := checkout.StateNamesSelf(); err == nil {
+		t.Fatal("missing state was reported as owned")
+	}
+	if err := os.WriteFile(checkout.statePath(), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkout.StateNamesSelf(); err == nil {
+		t.Fatal("malformed state was reported as owned")
+	}
+	if err := os.WriteFile(checkout.statePath(), []byte(`{"owner":{"pid":99,"pidStartedAt":100,"instanceTag":"other"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	owned, err := checkout.StateNamesSelf()
+	if err != nil || owned {
+		t.Fatalf("foreign state was reported as owned: owned=%v err=%v", owned, err)
+	}
+}
+
+func TestDiskCurrencyTreatsUnreadableOwnerAsIndeterminate(t *testing.T) {
+	checkout, _ := diskCheckout(t)
+	if err := os.MkdirAll(checkout.ownerFile(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if checkout.Currency() != Unreadable {
+		t.Fatal("an unreadable owner was treated as absent or authoritative")
+	}
+}
+
+func TestDiskIntentUsesTheCurrentClockWhenNoTestClockIsSupplied(t *testing.T) {
+	root := t.TempDir()
+	lockDir := filepath.Join(root, "artifacts", "agents", "supervision", "lock.d")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := json.Marshal(intentRecord{
+		TargetPid: 41, TargetPidStartedAt: 100, TargetInstanceTag: "owner-tag",
+		Requester: "test", WrittenAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err := os.WriteFile(filepath.Join(lockDir, "shutdown-intent.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	intents := &DiskIntents{Root: root, Self: identity.Ref{Pid: 41, StartedAtSec: 100}, SelfTag: "owner-tag", LatchWindow: time.Minute}
+	if !intents.LatchShutdown() {
+		t.Fatal("a fresh intent was rejected when using the current clock")
+	}
+}
+
 func TestDiskIntentLatch(t *testing.T) {
 	root := t.TempDir()
 	lockDir := filepath.Join(root, "artifacts", "agents", "supervision", "lock.d")
@@ -139,6 +228,22 @@ func TestDiskIntentLatch(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(lockDir, "shutdown-intent.json")); !os.IsNotExist(err) {
 		t.Fatal("foreign intents are consumed too")
+	}
+	if err := os.WriteFile(filepath.Join(lockDir, "shutdown-intent.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if intents.LatchShutdown() {
+		t.Fatal("a malformed shutdown intent was honored")
+	}
+	record, _ := json.Marshal(intentRecord{
+		TargetPid: 41, TargetPidStartedAt: 100, TargetInstanceTag: "owner-tag",
+		Requester: "test", WrittenAt: "not-a-time",
+	})
+	if err := os.WriteFile(filepath.Join(lockDir, "shutdown-intent.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if intents.LatchShutdown() {
+		t.Fatal("a shutdown intent without a valid timestamp was honored")
 	}
 }
 

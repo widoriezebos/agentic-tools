@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 // reviveRepo: a real repository with an owned goal, a working notify
@@ -257,6 +258,40 @@ func TestAWorldThatTurnedLiveCancelsBeforeLaunch(t *testing.T) {
 	})
 	if err != nil || out.Launched || launched != 0 || !strings.Contains(out.Reason, "world changed") {
 		t.Fatalf("a live worker at re-arbitration must cancel: %+v launched=%d", out, launched)
+	}
+}
+
+func TestProviderOutageArrivingBeforeLaunchCancelsTheRevival(t *testing.T) {
+	root := reviveRepo(t)
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-outage")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	launched := 0
+	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), "rev-outage", func(Intent) error {
+		launched++
+		return nil
+	})
+	if err != nil || out.Launched || launched != 0 || !strings.Contains(out.Reason, "provider is overloaded") {
+		t.Fatalf("provider outage did not cancel before dispatch: outcome=%+v launched=%d err=%v", out, launched, err)
+	}
+	if live, err := LiveIntents(root); err != nil || len(live) != 0 {
+		t.Fatalf("outage-cancelled intent remained live: intents=%+v err=%v", live, err)
+	}
+}
+
+func TestResumableIntentReportsUnreadableStore(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(intentsDir(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(intentsDir(root), []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ResumableIntent(root); err == nil {
+		t.Fatal("an unreadable live-intent store looked empty")
 	}
 }
 

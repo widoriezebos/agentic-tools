@@ -124,6 +124,16 @@ func TestAliveTaggedRefBindsIdentityAndTagToOneProbe(t *testing.T) {
 	}
 }
 
+func TestAliveTaggedRefPreservesDefinitiveDeathAndProbeUncertainty(t *testing.T) {
+	ref := Ref{Pid: 41, StartedAtSec: 100}
+	if got := AliveTaggedRef(fakeProber{state: Dead}, ref, "component-tag"); got != Dead {
+		t.Fatalf("definitive kernel absence = %s, want dead", got)
+	}
+	if got := AliveTaggedRef(fakeProber{state: Unknown, err: os.ErrPermission}, ref, "component-tag"); got != Unknown {
+		t.Fatalf("unreadable process identity = %s, want unknown", got)
+	}
+}
+
 func TestLivenessStrings(t *testing.T) {
 	if Alive.String() != "alive" || Dead.String() != "dead" || Unknown.String() != "unknown" {
 		t.Fatal("liveness names drifted")

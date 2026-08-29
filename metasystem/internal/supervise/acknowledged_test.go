@@ -75,6 +75,7 @@ func TestLoadAcknowledgedStrictFields(t *testing.T) {
 		{"missing exact token", `[{"pid":7,"pidStartedAt":100,"reason":"r","acknowledgedAt":"2026-08-16T00:00:00Z"}]`},
 		{"missing reason", `[{"pid":7,"pidStartedAt":100,"pidStartedAtExactMicro":1,"acknowledgedAt":"2026-08-16T00:00:00Z"}]`},
 		{"missing acknowledgedAt", `[{"pid":7,"pidStartedAt":100,"pidStartedAtExactMicro":1,"reason":"r"}]`},
+		{"invalid acknowledgedAt", `[{"pid":7,"pidStartedAt":100,"pidStartedAtExactMicro":1,"reason":"r","acknowledgedAt":"yesterday"}]`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

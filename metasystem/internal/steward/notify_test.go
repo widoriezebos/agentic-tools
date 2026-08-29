@@ -210,3 +210,114 @@ func TestFailedAlertSubmissionRetriesWithoutDeletingTheEpisode(t *testing.T) {
 		t.Fatalf("retry must never delete or invent acknowledgment for the episode: %+v %v", episodes, err)
 	}
 }
+
+func TestLegacyHeldHealthNotificationMigratesIntoAnEpisode(t *testing.T) {
+	root, _ := notifyRepo(t, "true")
+	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
+	digest := evidenceDigest("legacy watcher finding")
+	if err := QueueNotification(root, PendingNotification{
+		Nonce: digest, Message: "HEALTH unhealthy — legacy watcher finding", DeliveryOwner: legacyHealthDeliveryOwner,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := QueueNotification(root, PendingNotification{
+		Nonce: "unrelated", Message: "ordinary notification", DeliveryOwner: "another-owner",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest}
+	episode, err := UpdateAlertEpisodes(root, health, "HEALTH unhealthy — legacy watcher finding", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if episode.Digest != digest || episode.Message != "HEALTH unhealthy — legacy watcher finding" || episode.TransportResult != TransportPending {
+		t.Fatalf("legacy notification did not become silent episode history: %+v", episode)
+	}
+	pending, err := PendingNotifications(root)
+	if err != nil || len(pending) != 1 || pending[0].Nonce != "unrelated" {
+		t.Fatalf("migration retired the wrong pending records: pending=%+v err=%v", pending, err)
+	}
+	second, err := UpdateAlertEpisodes(root, health, "later rendering", now.Add(time.Minute))
+	if err != nil || second.EpisodeID != episode.EpisodeID {
+		t.Fatalf("migration duplicated an open episode: first=%+v second=%+v err=%v", episode, second, err)
+	}
+}
+
+func TestClearedFindingRecurrenceOpensANewEpisode(t *testing.T) {
+	root, _ := notifyRepo(t, "true")
+	now := time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC)
+	digest := evidenceDigest("runner stale")
+	unhealthy := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest}
+	first, err := UpdateAlertEpisodes(root, unhealthy, "runner stale", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "healthy"}, "healthy", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	second, err := UpdateAlertEpisodes(root, unhealthy, "runner stale again", now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.EpisodeID == second.EpisodeID || !strings.HasSuffix(second.EpisodeID, "-2") {
+		t.Fatalf("recurrence reused cleared history: first=%+v second=%+v", first, second)
+	}
+	episodes, err := AlertEpisodes(root)
+	if err != nil || len(episodes) != 2 || !episodes[0].Cleared || episodes[1].Cleared {
+		t.Fatalf("recurrence history is incomplete: episodes=%+v err=%v", episodes, err)
+	}
+}
+
+func TestNewFindingResolvesEarlierOpenEpisodeWithoutClearingIt(t *testing.T) {
+	root, _ := notifyRepo(t, "true")
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	firstDigest := evidenceDigest("watcher stale")
+	secondDigest := evidenceDigest("runner stale")
+	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: firstDigest}, "watcher stale", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: secondDigest}, "runner stale", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	episodes, err := AlertEpisodes(root)
+	if err != nil || len(episodes) != 2 || !episodes[0].Resolved || episodes[0].Cleared || episodes[1].Resolved {
+		t.Fatalf("new finding did not resolve only its predecessor: episodes=%+v err=%v", episodes, err)
+	}
+}
+
+func TestAlertEpisodeBoundariesRejectInvalidEvidenceAndInvoker(t *testing.T) {
+	root, _ := notifyRepo(t, "true")
+	now := time.Now()
+	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: "not-a-digest"}, "message", now); err == nil {
+		t.Fatal("invalid finding digest opened an episode")
+	}
+	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("x")}, " ", now); err == nil {
+		t.Fatal("blank finding message opened an episode")
+	}
+	if _, err := AcknowledgeAlert(root, "../escape", AlertInvoker{Pid: 1, PidStartedAt: 1}, now); err == nil {
+		t.Fatal("invalid episode id was acknowledged")
+	}
+	if _, err := AcknowledgeAlert(root, "alert-valid-1", AlertInvoker{}, now); err == nil {
+		t.Fatal("acknowledgment without an observed invoker was accepted")
+	}
+}
+
+func TestAlertEpisodeLoaderRejectsMalformedAndIncompleteRecords(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(alertDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(alertDir(root), "alert-bad-1.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AlertEpisodes(root); err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("malformed episode was accepted: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"schema":1,"episodeId":"alert-bad-1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AlertEpisodes(root); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("incomplete episode was accepted: %v", err)
+	}
+}

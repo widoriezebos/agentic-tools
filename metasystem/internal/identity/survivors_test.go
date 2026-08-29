@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,11 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	childGroup := int64(child.Process.Pid)
+	if _, err := AllPids(); errors.Is(err, syscall.EPERM) {
+		prior := survivorPids
+		survivorPids = func() ([]int64, error) { return []int64{childGroup}, nil }
+		t.Cleanup(func() { survivorPids = prior })
+	}
 	defer func() {
 		_ = child.Process.Kill()
 		_, _ = child.Process.Wait()

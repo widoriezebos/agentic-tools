@@ -201,3 +201,44 @@ func TestCensusClaimRefusesUnknownOwner(t *testing.T) {
 		t.Fatalf("the refused takeover disturbed the lock: %v", err)
 	}
 }
+
+func TestCensusClaimNamesMalformedOwnerAndInvalidDirectory(t *testing.T) {
+	t.Run("malformed owner", func(t *testing.T) {
+		dir := t.TempDir()
+		lockDir := filepath.Join(dir, "census-writer.d")
+		if err := os.MkdirAll(lockDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(lockDir, "owner.json"), []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		claimant := &CensusWriterLock{
+			Dir: dir, Self: identity.Ref{Pid: 300, StartedAtSec: 8}, Tag: "watcher-contender",
+			Prober: livenessProber{alive: map[int64]int64{}},
+		}
+		if err := claimant.Claim(); err == nil || !strings.Contains(err.Error(), "malformed owner identity") {
+			t.Fatalf("malformed owner did not refuse the claim by name: %v", err)
+		}
+	})
+	t.Run("invalid directory", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, "not-a-directory")
+		if err := os.WriteFile(path, []byte("file"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		claimant := &CensusWriterLock{Dir: filepath.Join(path, "supervision")}
+		if err := claimant.Claim(); err == nil || !strings.Contains(err.Error(), "prepare supervision dir") {
+			t.Fatalf("invalid supervision directory was accepted: %v", err)
+		}
+	})
+}
+
+func TestCensusOwnerCodecRejectsMissingPidAndMalformedJSON(t *testing.T) {
+	codec := censusOwnerCodec{}
+	if _, err := codec.Decode([]byte("{")); err == nil {
+		t.Fatal("malformed census owner was decoded")
+	}
+	if _, err := codec.Decode([]byte(`{"pid":0}`)); err == nil || !strings.Contains(err.Error(), "no pid") {
+		t.Fatalf("pid-less census owner was decoded: %v", err)
+	}
+}

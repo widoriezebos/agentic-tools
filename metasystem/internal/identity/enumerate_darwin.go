@@ -25,6 +25,10 @@ func AllPids() ([]int64, error) {
 	if err != nil {
 		return nil, fmt.Errorf("identity: sysctl kern.proc.all: %w", err)
 	}
+	return decodeAllPids(raw)
+}
+
+func decodeAllPids(raw []byte) ([]int64, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}

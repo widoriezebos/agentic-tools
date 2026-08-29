@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 type fakeCensus struct {
@@ -107,6 +109,75 @@ func TestKilledWatcherIsRoutedToItsOwnerWithinOneTick(t *testing.T) {
 	requestData, err = os.ReadFile(filepath.Join(directory, "watcher-restart-request.json"))
 	if err != nil || json.Unmarshal(requestData, &request) != nil || !request.Completed {
 		t.Fatalf("failure five must retire an earlier pending watcher repair: %+v %v", request, err)
+	}
+}
+
+func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *testing.T) {
+	now := time.Date(2026, 8, 29, 13, 0, 0, 0, time.UTC)
+	file := structuredHealthGoal()
+	file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "bed-m1", ClaimEpoch: 7, FenceEpoch: 1}
+	file.StopFence = &goal.StopFence{
+		StopID: "stop-bounded-goal-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
+		ClosedAt: now.Add(-time.Minute).Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
+	}
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	stamp := now.Format(time.RFC3339)
+	batch := goal.StopBatch{
+		StopID: file.StopFence.StopID, GoalID: file.Id, GoalRevision: 2, FenceEpoch: 1,
+		CapabilityGeneration: 2, Machine: "bed-m1", ClaimEpoch: 7, Reason: goal.StopReasonElapsedLimit,
+		State: goal.StopBatchIndeterminate, Failure: "custody cannot be proven", OpenedAt: stamp, UpdatedAt: stamp, Pass: 1,
+	}
+	if err := goal.WriteStopBatch(root, batch); err != nil {
+		t.Fatal(err)
+	}
+	reports := runBreachStopCustodian(root, now)
+	if len(reports) != 1 || reports[0].State != "INDETERMINATE" || reports[0].Detail != batch.Failure {
+		t.Fatalf("indeterminate stop was not routed to escalation: %+v", reports)
+	}
+
+	commandRoot := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	batch.State = goal.StopBatchOpen
+	batch.Failure = ""
+	if err := goal.WriteStopBatch(commandRoot, batch); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(commandRoot, "scripts", "agents", "dispatch.sh")
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop failed\\n'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reports = runBreachStopCustodian(commandRoot, now)
+	if len(reports) != 1 || reports[0].State != "FAILED" || reports[0].Detail != "stop failed" {
+		t.Fatalf("failed stop command was not reported: %+v", reports)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop complete\\n'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reports = runBreachStopCustodian(commandRoot, now)
+	if len(reports) != 1 || reports[0].State != "COMPLETE" || reports[0].Detail != "stop complete" {
+		t.Fatalf("successful stop command was not reported: %+v", reports)
+	}
+}
+
+func TestDegradedTickQueuesTheIncidentOrSurfacesQueueFailure(t *testing.T) {
+	root := t.TempDir()
+	result, err := degradedTick(root, "evidence store is torn")
+	if err != nil || result.Decision.Verdict != VerdictDegraded || result.Decision.Action != ActNotify {
+		t.Fatalf("degraded tick did not return its notify verdict: result=%+v err=%v", result, err)
+	}
+	pending, err := PendingNotifications(root)
+	if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, "evidence store is torn") {
+		t.Fatalf("degraded incident was not queued: pending=%+v err=%v", pending, err)
+	}
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err = degradedTick(blocked, "repository is unreadable")
+	if err == nil || result.Decision.Verdict != VerdictDegraded || !strings.Contains(err.Error(), "could not queue") {
+		t.Fatalf("queue failure hid the degraded verdict: result=%+v err=%v", result, err)
 	}
 }
 

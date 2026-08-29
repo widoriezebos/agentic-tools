@@ -1,8 +1,10 @@
 package identity
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -13,6 +15,9 @@ import (
 func TestAllPidsContainsSelf(t *testing.T) {
 	pids, err := AllPids()
 	if err != nil {
+		if errors.Is(err, syscall.EPERM) {
+			t.Skipf("process enumeration is restricted: %v", err)
+		}
 		t.Fatal(err)
 	}
 	self := int64(os.Getpid())

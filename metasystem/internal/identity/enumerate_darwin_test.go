@@ -3,9 +3,12 @@
 package identity
 
 import (
+	"encoding/binary"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -14,6 +17,9 @@ import (
 func TestAllPidsFindsSelf(t *testing.T) {
 	pids, err := AllPids()
 	if err != nil {
+		if errors.Is(err, syscall.EPERM) {
+			t.Skipf("process enumeration is restricted: %v", err)
+		}
 		t.Fatal(err)
 	}
 	if len(pids) < 10 {
@@ -39,6 +45,22 @@ func TestAllPidsFindsSelf(t *testing.T) {
 	}
 	if live < len(pids)/2 {
 		t.Fatalf("only %d/%d pids are live — offset likely wrong", live, len(pids))
+	}
+}
+
+func TestDecodeAllPidsRejectsDriftAndFiltersNonProcesses(t *testing.T) {
+	if pids, err := decodeAllPids(nil); err != nil || pids != nil {
+		t.Fatalf("empty process table: pids=%v err=%v", pids, err)
+	}
+	if _, err := decodeAllPids([]byte{1}); err == nil {
+		t.Fatal("misaligned process table was accepted")
+	}
+	raw := make([]byte, 2*648)
+	binary.LittleEndian.PutUint32(raw[40:], uint32(41))
+	binary.LittleEndian.PutUint32(raw[648+40:], uint32(0))
+	pids, err := decodeAllPids(raw)
+	if err != nil || len(pids) != 1 || pids[0] != 41 {
+		t.Fatalf("decoded process table: pids=%v err=%v", pids, err)
 	}
 }
 

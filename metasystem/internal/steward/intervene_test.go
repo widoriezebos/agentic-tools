@@ -199,3 +199,65 @@ func TestConsumptionFailureLeavesTheIntentLive(t *testing.T) {
 		t.Fatalf("nothing may appear consumed after a refusal: %v", consumed)
 	}
 }
+
+func TestUpdateIntentRequiresALiveRecordAndPersistsMutableState(t *testing.T) {
+	root := t.TempDir()
+	it := testIntent("update-1")
+	if err := UpdateIntent(root, it); err == nil || !strings.Contains(err.Error(), "is not live") {
+		t.Fatalf("missing intent was updated: %v", err)
+	}
+	if err := MintIntent(root, it); err != nil {
+		t.Fatal(err)
+	}
+	it.Notified = true
+	it.DispatchedAt = 9
+	if err := UpdateIntent(root, it); err != nil {
+		t.Fatal(err)
+	}
+	live, err := LiveIntents(root)
+	if err != nil || len(live) != 1 || !live[0].Notified || live[0].DispatchedAt != 9 {
+		t.Fatalf("mutable intent state was not persisted: intents=%+v err=%v", live, err)
+	}
+}
+
+func TestConsumedActiveJobRefusesAmbiguityAndNamesOneJob(t *testing.T) {
+	root := t.TempDir()
+	if job, ok, err := ConsumedActiveJob(root); err != nil || ok || job != "" {
+		t.Fatalf("empty consumed store named a job: job=%q ok=%v err=%v", job, ok, err)
+	}
+	first := testIntent("active-1")
+	first.JobId = "job-one"
+	if err := MintIntent(root, first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConsumeIntent(root, first.Nonce); err != nil {
+		t.Fatal(err)
+	}
+	if job, ok, err := ConsumedActiveJob(root); err != nil || !ok || job != "job-one" {
+		t.Fatalf("one active continuation was not named: job=%q ok=%v err=%v", job, ok, err)
+	}
+	second := testIntent("active-2")
+	second.JobId = "job-two"
+	if err := MintIntent(root, second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConsumeIntent(root, second.Nonce); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ConsumedActiveJob(root); err == nil || !strings.Contains(err.Error(), "guard was bypassed") {
+		t.Fatalf("two active continuations were collapsed to one: %v", err)
+	}
+}
+
+func TestConsumedActiveJobPreservesUnreadableStoreFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(consumedDir(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(consumedDir(root), []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ConsumedActiveJob(root); err == nil {
+		t.Fatal("an unreadable consumed store looked empty")
+	}
+}

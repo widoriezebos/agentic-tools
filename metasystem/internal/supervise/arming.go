@@ -157,6 +157,8 @@ func ownerLiveness(owner ArmingOwner) identity.Liveness {
 	return identity.AliveTaggedRef(identity.KernelProber{}, ref, owner.InstanceTag)
 }
 
+var armingOwnerLiveness = ownerLiveness
+
 func scaledWait(baseSeconds int, scaleMilli int) time.Duration {
 	if scaleMilli < 1 {
 		scaleMilli = 1000
@@ -265,10 +267,10 @@ func signalGroup(pid int64, signal syscall.Signal) error {
 }
 
 func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string) error {
-	if ownerLiveness(owner) == identity.Dead {
+	if armingOwnerLiveness(owner) == identity.Dead {
 		return nil
 	}
-	if ownerLiveness(owner) == identity.Unknown {
+	if armingOwnerLiveness(owner) == identity.Unknown {
 		return fmt.Errorf("owner identity is uninspectable; replacement is not authorized")
 	}
 	if err := writeShutdownIntent(root, owner, requester); err != nil {
@@ -277,7 +279,7 @@ func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string)
 	// Re-authenticate immediately beside signalling: the replacement caller
 	// did not spawn this owner and the shutdown-intent write created a race
 	// window in which the recorded pid could have changed.
-	switch ownerLiveness(owner) {
+	switch armingOwnerLiveness(owner) {
 	case identity.Dead:
 		return nil
 	case identity.Unknown:
@@ -288,12 +290,12 @@ func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string)
 	}
 	deadline := time.Now().Add(scaledWait(5, scaleMilli))
 	for time.Now().Before(deadline) {
-		if ownerLiveness(owner) == identity.Dead {
+		if armingOwnerLiveness(owner) == identity.Dead {
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	switch ownerLiveness(owner) {
+	switch armingOwnerLiveness(owner) {
 	case identity.Dead:
 		return nil
 	case identity.Unknown:
@@ -304,7 +306,7 @@ func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string)
 	}
 	deadline = time.Now().Add(scaledWait(1, scaleMilli))
 	for time.Now().Before(deadline) {
-		if ownerLiveness(owner) == identity.Dead {
+		if armingOwnerLiveness(owner) == identity.Dead {
 			return nil
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -569,6 +571,10 @@ func withoutExecutionID(environment []string) []string {
 	return filtered
 }
 
+var releaseLaunchedOwner = func(command *exec.Cmd) error {
+	return command.Process.Release()
+}
+
 func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 	supervisionDir := SupervisionDir(options.Root)
 	logFile, err := os.OpenFile(filepath.Join(supervisionDir, "owner.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -637,7 +643,7 @@ func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 		_ = cmd.Process.Kill()
 		return ArmingOwner{}, err
 	}
-	_ = cmd.Process.Release()
+	_ = releaseLaunchedOwner(cmd)
 	return owner, nil
 }
 
@@ -703,7 +709,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		if err != nil {
 			return EnsureResult{}, fmt.Errorf("supervision lock has no provable owner: %w", err)
 		}
-		switch ownerLiveness(owner) {
+		switch armingOwnerLiveness(owner) {
 		case identity.Unknown:
 			return EnsureResult{}, fmt.Errorf("supervision owner pid %d is uninspectable; takeover is not authorized", owner.Pid)
 		case identity.Dead:
