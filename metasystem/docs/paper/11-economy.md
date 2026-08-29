@@ -50,9 +50,7 @@ The decision comes before broad generation. Estimate what another attempt could 
 
 The final repair to session expiry may change a single comparison: a response received after expiry no longer counts as activity. That line sits on an authorization boundary used by every signed-in account. Reversing the comparison can keep unattended sessions open or eject active users. Its small size says little about its economic importance.
 
-A correction to thousands of low-impact help pages can be much larger while remaining routine. Its effects are visible, reversible and separated from money, identity and essential work. Automatic checks may establish that links still resolve and protected text remains untouched at far lower cost than a person reading every changed line.
-
-Spending follows possible harm, unfamiliarity, reach and accumulated change rather than line count or elapsed construction time. Size can influence cost, but it is not a substitute for risk. Treating it as one would lavish attention on bulky harmless work while letting a compact authorization mistake pass cheaply.
+A correction to thousands of low-impact help pages can be much larger and remain routine: visible, reversible, separated from money, identity and essential work, and checkable by machinery at far lower cost than a person reading every changed line. Chapter 6 drew the evidence conclusion: line count says little about what a change deserves. The economic conclusion is the same: the four questions, possible harm, unfamiliarity, reach and accumulated change, set the budget, the examination depth and the starting release bounds. Treating size as risk would lavish attention on bulky harmless work while letting a compact authorization mistake pass cheaply.
 
 ## When the machinery is not worth its cost
 
