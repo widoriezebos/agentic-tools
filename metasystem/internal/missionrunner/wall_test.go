@@ -20,6 +20,23 @@ import (
 // one commit, artifacts/ ignored — the same projection the runner sees.
 func wallRepo(t *testing.T) string {
 	t.Helper()
+	missionBedTemplateMu.Lock()
+	template := wallRepoTemplate
+	missionBedTemplateMu.Unlock()
+	if template != nil {
+		return template.clone(t)
+	}
+
+	root := buildWallRepo(t)
+	template = captureMissionBedTemplate(t, root)
+	missionBedTemplateMu.Lock()
+	wallRepoTemplate = template
+	missionBedTemplateMu.Unlock()
+	return root
+}
+
+func buildWallRepo(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
@@ -349,7 +366,7 @@ func seedWallEvidence(t *testing.T, root, mission, turnID string) {
 // resume; a clean workspace closes the unaccepted turn's marker so a
 // fresh turn can open.
 func TestResumeInspectsOpenTurnFirst(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -380,7 +397,7 @@ func TestResumeInspectsOpenTurnFirst(t *testing.T) {
 }
 
 func TestResumeClosesCleanUnacceptedTurn(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -616,7 +633,7 @@ func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
 // turn's cycle is already booked, so the violation ramp must not append
 // it twice — the taint and park still land.
 func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -674,7 +691,7 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 // legitimate shape the guard tolerates at resume, and the filtered tree
 // identity never sees it.
 func TestResumeCleanLedgerAheadHeals(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -861,7 +878,7 @@ func resolvedFixtureState(pre, adopted string) map[string]any {
 // even one that commits its edit on the mission branch to become "the
 // last commit touching the path" — violates.
 func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -922,7 +939,7 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 // coincidental later refusal, so the bed is a real provisioned mission
 // and the stderr text is captured.
 func TestAnswerRefusesSupersededAsk(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	if _, err := seedCrashedMissionState(t, engine); err != nil {
 		t.Fatal(err)
 	}
@@ -1683,7 +1700,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 // The RESUME CLOSE-MARKER call site faces the same moved-bytes window
 // and must refuse rather than rebind.
 func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -1757,7 +1774,7 @@ func TestVerifiedLedgerPinIsTheAnchorTip(t *testing.T) {
 // and returns the parked bed with the booked taint id.
 func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string, string, int64) {
 	t.Helper()
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -1891,7 +1908,21 @@ func TestResolveTaintAdoptDisputedTree(t *testing.T) {
 // and returns the engine, ready for resolution.
 func parkedSoloBuildMission(t *testing.T) *Engine {
 	t.Helper()
-	engine := buildFullCycleRoot(t, "FAKEHOST:solo-build")
+	templateKey := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
+	missionBedTemplateMu.Lock()
+	template := parkedSoloTemplates[templateKey]
+	missionBedTemplateMu.Unlock()
+	if template != nil {
+		engine := &Engine{Root: template.clone(t), Mission: "alpha"}
+		writeFreshSupervision(t, engine)
+		engine.anchorFn = func(statePath, ledgerPath, identityName string) error {
+			return mission.Anchor(statePath, engine.Root, ledgerPath)
+		}
+		stageHumanShell(t)
+		return engine
+	}
+
+	engine := copyFullCycleRoot(t, "FAKEHOST:solo-build")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state := readTestDoc(t, filepath.Join(engine.missionDir(), "state.json"))
@@ -1909,6 +1940,11 @@ func parkedSoloBuildMission(t *testing.T) *Engine {
 			t.Fatal(err)
 		}
 	}
+	template = captureMissionBedTemplate(t, engine.Root)
+	missionBedTemplateMu.Lock()
+	parkedSoloTemplates[templateKey] = template
+	missionBedTemplateMu.Unlock()
+	resetMissionBedTransportState(t, engine.Root)
 	stageHumanShell(t)
 	return engine
 }

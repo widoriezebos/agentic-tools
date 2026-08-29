@@ -22,7 +22,7 @@ import (
 // ledger.
 func recoveryBed(t *testing.T) (*Engine, string, string, string) {
 	t.Helper()
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
 	// Real scale until the recovery windows are audited — tracked
 	// under timing-tests-synthetic-clock.
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)

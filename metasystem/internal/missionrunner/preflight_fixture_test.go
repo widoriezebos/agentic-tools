@@ -250,7 +250,16 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 	fixtureGit(t, root, "commit", "-qm", "sign mission contract")
 	fixtureGit(t, root, "push", "-q", "origin", "main")
 
-	// Supervision facts: live tagged holders behind honest state files.
+	writeFreshSupervision(t, engine)
+	return engine
+}
+
+// writeFreshSupervision gives each copied bed its own live process facts.
+// A copied checkout may reuse immutable Git objects, but process identity and
+// heartbeat paths belong to the test that owns the copy.
+func writeFreshSupervision(t *testing.T, engine *Engine) {
+	t.Helper()
+	root := engine.Root
 	watcherPid, watcherStart := spawnTaggedHold(t, "fixture-watcher-tag")
 	reaperPid, reaperStart := spawnTaggedHold(t, "fixture-reaper-tag")
 	supervision := filepath.Join(root, "artifacts", "agents", "supervision")
@@ -281,7 +290,6 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 	writeDoc(filepath.Join(supervision, "last-census.json"), map[string]any{
 		"completedAtEpoch": now, "verdict": "SUCCESS", "fingerprint": "fixture-fingerprint",
 	})
-	return engine
 }
 
 // The full launch gate passes in-process: arming, seal verification,

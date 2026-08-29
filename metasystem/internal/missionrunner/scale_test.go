@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"fmt"
 	"os"
 	"testing"
 )
@@ -20,5 +21,11 @@ func TestMain(m *testing.M) {
 	// conversion arc (timing-tests-synthetic-clock) owns making
 	// compression the default; until then export the scale explicitly
 	// to run the audit mode.
-	os.Exit(m.Run())
+	if err := prepareMissionBedTemplates(); err != nil {
+		fmt.Fprintf(os.Stderr, "prepare mission-bed templates: %v\n", err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	cleanMissionBedTemplates()
+	os.Exit(code)
 }

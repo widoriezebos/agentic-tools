@@ -20,7 +20,7 @@ import (
 // retrying instead of blaming the host.
 func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
-	engine := buildFullCycleRoot(t, "FAKEHOST:exit-overloaded")
+	engine := copyFullCycleRoot(t, "FAKEHOST:exit-overloaded")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -76,7 +76,7 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 // or the missed shape feeds the breaker the ruling exempted.
 func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
-	engine := buildFullCycleRoot(t, "FAKEHOST:overloaded-result")
+	engine := copyFullCycleRoot(t, "FAKEHOST:overloaded-result")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))

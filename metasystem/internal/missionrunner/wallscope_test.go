@@ -438,6 +438,23 @@ func TestScopeStagedAccounting(t *testing.T) {
 // level under the toplevel, a sibling beside it.
 func newNestedScopeBed(t *testing.T) *scopeBed {
 	t.Helper()
+	missionBedTemplateMu.Lock()
+	template := nestedScopeTemplate
+	missionBedTemplateMu.Unlock()
+	if template != nil {
+		return bindNestedScopeBed(t, template.clone(t))
+	}
+
+	bed := buildNestedScopeBed(t)
+	template = captureMissionBedTemplate(t, bed.engine.Root)
+	missionBedTemplateMu.Lock()
+	nestedScopeTemplate = template
+	missionBedTemplateMu.Unlock()
+	return bed
+}
+
+func buildNestedScopeBed(t *testing.T) *scopeBed {
+	t.Helper()
 	top := t.TempDir()
 	run := func(args ...string) string {
 		t.Helper()
@@ -458,7 +475,11 @@ func newNestedScopeBed(t *testing.T) *scopeBed {
 	writeText(t, filepath.Join(top, "sibling", "lib.go"), "package lib\n")
 	run("add", "-A")
 	run("commit", "-qm", "nested baseline")
-	root := filepath.Join(top, "ws")
+	return bindNestedScopeBed(t, filepath.Join(top, "ws"))
+}
+
+func bindNestedScopeBed(t *testing.T, root string) *scopeBed {
+	t.Helper()
 	engine := &Engine{Root: root, Mission: "demo"}
 	ws := gittree.Workspace{Dir: root}
 	pre, err := wallSnapshot(ws, "demo")
@@ -580,7 +601,7 @@ func TestScopeSeededCaptureFollowsExpected(t *testing.T) {
 // The post-publication verification concludes a clean turn and
 // parks over motion between the acceptance write and its verification.
 func TestScopeAcceptanceVerification(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -659,7 +680,7 @@ func TestScopeAcceptanceVerification(t *testing.T) {
 
 // Motion after the acceptance write parks over the acceptance.
 func TestScopeAcceptanceVerificationCatchesMotion(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
 		t.Fatal(err)
@@ -752,7 +773,7 @@ func TestScopeAcceptanceVerificationCatchesMotion(t *testing.T) {
 // Admission REFUSES a nonempty replacement namespace — the real
 // preflight path, not merely the ref's presence.
 func TestScopeAdmissionRefusesReplaceNamespace(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	base := gittree.Workspace{Dir: engine.Root}
 	head, _, err := base.HeadCommit()
 	if err != nil {
