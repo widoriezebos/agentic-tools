@@ -41,7 +41,7 @@ adapter_milliseconds_to_sleep() { # positive integer milliseconds
 }
 
 prepare_supervision() { # dispatch|follow-up and supervisor args
-  local gate_poll
+  local gate_poll role schema_version
   adapter_verb=$1
   shift
   parse_supervisor_args "$@" || return 2
@@ -64,9 +64,14 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   events="$round_dir/events.jsonl"
   heartbeat="$agents/hb/$job"
   effective="$round_dir/effective-permissions.json"
-  schema="$round_dir/return-schema.v2.json"
-  "$ms" schema materialize --root "$root" --role "$(field "$record" role)" \
-    --version 2 --output "$schema"
+  role=$(field "$record" role)
+  schema_version=2
+  case "$role" in
+    design-critic|code-critic|warden) schema_version=3 ;;
+  esac
+  schema="$round_dir/return-schema.v${schema_version}.json"
+  "$ms" schema materialize --root "$root" --role "$role" \
+    --version "$schema_version" --output "$schema"
   workspace=$(field "$record" workspaceRoot)
   requested_model=$(field "$record" requestedModel)
   requested_session=$(field "$record" sessionId 2>/dev/null || true)

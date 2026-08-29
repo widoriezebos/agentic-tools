@@ -185,9 +185,9 @@ func decodeLeadingJSON(text string) (any, bool) {
 // what the harness observed, preserving a differing claim in the claimed
 // object. Only the schema family whose model member is an object carries
 // reconcilable identity; older shapes pass through untouched. Under schema
-// version 2 the claimed object always carries both members: null is how this
-// family says "claimed nothing", and an absent object is rejected by the
-// provider that enforces the schema.
+// version 2 and version 3 the claimed object always carries both members: null
+// is how this family says "claimed nothing", and an absent object is rejected
+// by the provider that enforces the schema.
 func reconcileIdentity(result, record map[string]any, sessionID string) {
 	model, ok := result["model"].(map[string]any)
 	if !ok {
@@ -216,7 +216,7 @@ func reconcileIdentity(result, record map[string]any, sessionID string) {
 	result["sessionId"] = observedSession
 	model["effective"] = observedModel
 	result["model"] = model
-	if numberEquals(result["schemaVersion"], 2) {
+	if numberEquals(result["schemaVersion"], 2) || numberEquals(result["schemaVersion"], 3) {
 		result["claimed"] = map[string]any{
 			"sessionId": claimed["sessionId"],
 			"model":     claimed["model"],

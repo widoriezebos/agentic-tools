@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,21 @@ func returnRoot(t *testing.T) string {
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "design-critic.schema.json"), source, 0o644)
 	return root
+}
+
+func v3Facts() string {
+	return `{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false}`
+}
+
+func v3CriticReturn(findings, rigor string, count int) string {
+	return fmt.Sprintf(`{
+  "schemaVersion": 3,
+  "claimed": {"sessionId": null, "model": null},
+  "jobId": "rc-v3", "round": 1, "runtime": "fake", "sessionId": "fake-session",
+  "model": {"requested": "fixture-model", "effective": "fixture-model"},
+  "evidence": [], "gaps": [], "mode": "design", "reviewedCommit": "abc1234",
+  "findings": %s, "verdictMaterialCount": %d, "rigor": %s
+}`, findings, count, rigor)
 }
 
 func TestReturnCompleteRoleUnknownRole(t *testing.T) {
@@ -120,5 +136,74 @@ func TestReturnCompleteRoleLawfulReturn(t *testing.T) {
 	violations = ReturnCompleteRole(root, "design-critic", path)
 	if len(violations) == 0 {
 		t.Fatal("a wrong material count passed")
+	}
+}
+
+func TestReturnCompleteRoleVersionThreeRigorJoin(t *testing.T) {
+	root := returnRoot(t)
+	path := filepath.Join(root, "return.json")
+	findings := `[
+    {"id":"F1","severity":"high","material":true,"claim":"bounded","evidence":"read"},
+    {"id":"F2","severity":"high","material":true,"claim":"severe","evidence":"read"},
+    {"id":"F3","severity":"high","material":true,"claim":"unproven","evidence":"read"}
+  ]`
+	rigor := `[
+    {"findingId":"F1","rigorClass":"bounded","facts":` + v3Facts() + `,"reopeningTrigger":"reopen if the finding recurs"},
+    {"findingId":"F2","rigorClass":"severe","facts":` + v3Facts() + `,"reopeningTrigger":"reopen until the invariant is proved"},
+    {"findingId":"F3","rigorClass":"unproven","facts":` + v3Facts() + `,"reopeningTrigger":"reopen when classification evidence exists"}
+  ]`
+	os.WriteFile(path, []byte(v3CriticReturn(findings, rigor, 3)), 0o644)
+	if violations := ReturnCompleteRole(root, "design-critic", path); len(violations) != 0 {
+		t.Fatalf("lawful version-three return was refused: %v", violations)
+	}
+
+	os.WriteFile(path, []byte(v3CriticReturn(`[]`, `[]`, 0)), 0o644)
+	if violations := ReturnCompleteRole(root, "design-critic", path); len(violations) != 0 {
+		t.Fatalf("zero-material return with empty rigor was refused: %v", violations)
+	}
+}
+
+func TestReturnCompleteRoleVersionThreeRefusesUnjoinableRigor(t *testing.T) {
+	root := returnRoot(t)
+	path := filepath.Join(root, "return.json")
+	finding := `[{"id":"F1","severity":"high","material":true,"claim":"claim","evidence":"read"}]`
+	row := `{"findingId":"F1","rigorClass":"bounded","facts":` + v3Facts() + `,"reopeningTrigger":"reopen if it recurs"}`
+	tests := map[string]struct {
+		findings string
+		rigor    string
+		want     string
+	}{
+		"missing row":       {finding, `[]`, "missing a classification row"},
+		"extra row":         {`[]`, `[` + row + `]`, "not a material finding"},
+		"blank finding id":  {strings.Replace(finding, `"F1"`, `"  "`, 1), `[]`, "without surrounding whitespace"},
+		"duplicate finding": {`[` + strings.TrimPrefix(strings.TrimSuffix(finding, `]`), `[`) + `,{"id":"F1","severity":"low","material":false,"claim":"other","evidence":"read"}]`, `[` + row + `]`, "duplicates finding identifier"},
+		"duplicate row":     {finding, `[` + row + `,` + row + `]`, "duplicates rigor row"},
+		"blank trigger":     {finding, `[` + strings.Replace(row, `"reopen if it recurs"`, `"  "`, 1) + `]`, "must contain non-whitespace text"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			count := 1
+			if test.findings == `[]` {
+				count = 0
+			}
+			os.WriteFile(path, []byte(v3CriticReturn(test.findings, test.rigor, count)), 0o644)
+			violations := strings.Join(ReturnCompleteRole(root, "design-critic", path), "\n")
+			if !strings.Contains(violations, test.want) {
+				t.Fatalf("missing %q refusal:\n%s", test.want, violations)
+			}
+		})
+	}
+}
+
+func TestReturnCompleteRoleVersionThreeRefusesMalformedFacts(t *testing.T) {
+	root := returnRoot(t)
+	path := filepath.Join(root, "return.json")
+	finding := `[{"id":"F1","severity":"high","material":true,"claim":"claim","evidence":"read"}]`
+	facts := strings.Replace(v3Facts(), `,"externalSideEffectBoundaryCrossed":false`, "", 1)
+	rigor := `[{"findingId":"F1","rigorClass":"bounded","facts":` + facts + `,"reopeningTrigger":"reopen if it recurs"}]`
+	os.WriteFile(path, []byte(v3CriticReturn(finding, rigor, 1)), 0o644)
+	violations := strings.Join(ReturnCompleteRole(root, "design-critic", path), "\n")
+	if !strings.Contains(violations, "externalSideEffectBoundaryCrossed is required") {
+		t.Fatalf("malformed facts were not refused: %s", violations)
 	}
 }

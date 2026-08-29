@@ -56,7 +56,33 @@ func TestVersionTwoAddsEnvelope(t *testing.T) {
 	}
 }
 
-func TestMaterializeV1AndV2(t *testing.T) {
+func TestVersionThreeAddsCriticRigorRows(t *testing.T) {
+	out, err := VersionThree(v1Schema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["$comment"] != "metasystem.version=3" || out["title"] != "Impl return version 3" {
+		t.Fatalf("version-three identity is wrong: comment=%v title=%v", out["$comment"], out["title"])
+	}
+	props := out["properties"].(map[string]any)
+	version := props["schemaVersion"].(map[string]any)["enum"].([]any)
+	if len(version) != 1 || version[0] != 3 {
+		t.Fatalf("schemaVersion does not require 3: %v", version)
+	}
+	rigor := props["rigor"].(map[string]any)
+	row := rigor["items"].(map[string]any)
+	rowProps := row["properties"].(map[string]any)
+	class := rowProps["rigorClass"].(map[string]any)["enum"].([]any)
+	if fmt.Sprint(class) != "[severe bounded unproven]" {
+		t.Fatalf("rigor classes are wrong: %v", class)
+	}
+	facts := rowProps["facts"].(map[string]any)
+	if len(facts["required"].([]any)) != 7 || len(facts["properties"].(map[string]any)) != 7 {
+		t.Fatalf("the seven evidence facts are not all required: %v", facts)
+	}
+}
+
+func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	root := t.TempDir()
 	schemaDir := filepath.Join(root, "scripts/agents/schemas")
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
@@ -64,6 +90,9 @@ func TestMaterializeV1AndV2(t *testing.T) {
 	}
 	body, _ := json.Marshal(v1Schema())
 	if err := os.WriteFile(filepath.Join(schemaDir, "implementer.schema.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(schemaDir, "code-critic.schema.json"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,6 +119,20 @@ func TestMaterializeV1AndV2(t *testing.T) {
 	if v2["$comment"] != "metasystem.version=2" {
 		t.Fatalf("v2 output missing the marker: %v", v2["$comment"])
 	}
+
+	v3Out := filepath.Join(root, "v3.json")
+	if err := Materialize(root, "code-critic", 3, v3Out); err != nil {
+		t.Fatal(err)
+	}
+	var v3 map[string]any
+	data, _ = os.ReadFile(v3Out)
+	_ = json.Unmarshal(data, &v3)
+	if v3["$comment"] != "metasystem.version=3" {
+		t.Fatalf("v3 output missing the marker: %v", v3["$comment"])
+	}
+	if err := Materialize(root, "implementer", 3, filepath.Join(root, "forbidden.json")); err == nil {
+		t.Fatal("version 3 materialized for a non-critic role")
+	}
 }
 
 // The structured-output invariants, in the generator's own package:
@@ -105,7 +148,7 @@ func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	roles := []string{"behavior-judge", "code-critic", "design-critic", "implementer", "investigator", "verifier"}
+	roles := []string{"behavior-judge", "code-critic", "design-critic", "implementer", "investigator", "verifier", "warden"}
 	var problems []string
 	declaresAType := func(node map[string]any) bool {
 		for _, key := range []string{"type", "enum", "anyOf", "oneOf", "allOf", "$ref"} {
@@ -169,7 +212,11 @@ func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
 	}
 	for _, role := range roles {
 		output := filepath.Join(t.TempDir(), role+".json")
-		if err := Materialize(root, role, 2, output); err != nil {
+		version := 2
+		if VersionThreeRoles[role] {
+			version = 3
+		}
+		if err := Materialize(root, role, version, output); err != nil {
 			t.Fatalf("materialize %s: %v", role, err)
 		}
 		data, err := os.ReadFile(output)
@@ -183,6 +230,6 @@ func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
 		walk(schema, role)
 	}
 	if len(problems) > 0 {
-		t.Fatalf("version-2 schemas violate the structured-output rules:\n%s", strings.Join(problems, "\n"))
+		t.Fatalf("materialized schemas violate the structured-output rules:\n%s", strings.Join(problems, "\n"))
 	}
 }

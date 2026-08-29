@@ -1,7 +1,6 @@
 // Package returnschema materializes the versioned role-return schemas.
-// Version 1 is the frozen source on disk; version 2
-// adds the schemaVersion and claimed envelope a provider's structured output
-// enforces, without touching the v1 files.
+// Version 1 is the frozen source on disk. Later versions are generated without
+// changing those checked-in files.
 package returnschema
 
 import (
@@ -9,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Roles are the role schemas this materializer knows.
@@ -16,6 +16,12 @@ var Roles = map[string]bool{
 	"behavior-judge": true, "code-critic": true, "design-critic": true,
 	"implementer": true, "investigator": true, "steward-continuation": true,
 	"verifier": true, "warden": true,
+}
+
+// VersionThreeRoles are the critic roles whose return contract carries rigor
+// classifications.
+var VersionThreeRoles = map[string]bool{
+	"code-critic": true, "design-critic": true, "warden": true,
 }
 
 // VersionTwo returns the v2 form of a v1 schema: a version marker, the
@@ -66,6 +72,60 @@ func VersionTwo(schema map[string]any) (map[string]any, error) {
 	return value, nil
 }
 
+// VersionThree returns the critic-only v3 form. It retains the v2 identity
+// envelope and adds one rigor row for every material finding.
+func VersionThree(schema map[string]any) (map[string]any, error) {
+	value, err := VersionTwo(schema)
+	if err != nil {
+		return nil, err
+	}
+	value["$comment"] = "metasystem.version=3"
+	title, _ := value["title"].(string)
+	value["title"] = strings.TrimSuffix(title, " version 2") + " version 3"
+
+	required := value["required"].([]any)
+	value["required"] = append(required, "rigor")
+	properties := value["properties"].(map[string]any)
+	properties["schemaVersion"] = map[string]any{"type": "integer", "enum": []any{3}}
+	properties["rigor"] = rigorSchema()
+	return value, nil
+}
+
+func rigorSchema() map[string]any {
+	boolean := func() map[string]any { return map[string]any{"type": "boolean"} }
+	factProperties := map[string]any{
+		"local":                             boolean(),
+		"recoverable":                       boolean(),
+		"proofBoundaryCrossed":              boolean(),
+		"authorityBoundaryCrossed":          boolean(),
+		"secretsBoundaryCrossed":            boolean(),
+		"irreversibleDataBoundaryCrossed":   boolean(),
+		"externalSideEffectBoundaryCrossed": boolean(),
+	}
+	return map[string]any{
+		"type": "array",
+		"items": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []any{"findingId", "rigorClass", "facts", "reopeningTrigger"},
+			"properties": map[string]any{
+				"findingId":  map[string]any{"type": "string"},
+				"rigorClass": map[string]any{"type": "string", "enum": []any{"severe", "bounded", "unproven"}},
+				"facts": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required": []any{
+						"local", "recoverable", "proofBoundaryCrossed", "authorityBoundaryCrossed",
+						"secretsBoundaryCrossed", "irreversibleDataBoundaryCrossed", "externalSideEffectBoundaryCrossed",
+					},
+					"properties": factProperties,
+				},
+				"reopeningTrigger": map[string]any{"type": "string"},
+			},
+		},
+	}
+}
+
 // Materialize reads a role's v1 schema, applies the requested version, and
 // writes it (indented, key-sorted) to outputPath.
 func Materialize(root, role string, version int, outputPath string) error {
@@ -80,6 +140,13 @@ func Materialize(root, role string, version int, outputPath string) error {
 	}
 	if version == 2 {
 		if schema, err = VersionTwo(schema); err != nil {
+			return err
+		}
+	} else if version == 3 {
+		if !VersionThreeRoles[role] {
+			return fmt.Errorf("schema version 3 is only available for critic roles")
+		}
+		if schema, err = VersionThree(schema); err != nil {
 			return err
 		}
 	}

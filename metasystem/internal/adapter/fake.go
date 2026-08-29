@@ -75,8 +75,10 @@ func WriteFakeReturn(recordPath, promptPath, outputPath string) error {
 
 	role, _ := record["role"].(string)
 	switch role {
-	case "design-critic", "code-critic":
+	case "design-critic", "code-critic", "warden":
+		value["schemaVersion"] = 3
 		value["findings"] = []any{}
+		value["rigor"] = []any{}
 		value["verdictMaterialCount"] = 0
 		if role == "design-critic" {
 			workspace, _ := record["workspaceRoot"].(string)

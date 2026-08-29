@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
@@ -168,13 +169,22 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 		schema, _ = raw.(map[string]any)
 	}
 
+	resultVersion := int64(1)
 	if resultObj, isObj := result.(map[string]any); isObj {
 		if version, present := resultObj["schemaVersion"]; present {
 			v, vOK := jsonInteger(version)
-			if !returnVersionedRoles[role] || !vOK || v != 2 {
+			resultVersion = v
+			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3) || (v == 3 && !returnschema.VersionThreeRoles[role]) {
 				c.violation("unknown return schema version for role %q: %v", role, version)
-			} else if schema != nil {
+			} else if schema != nil && v == 2 {
 				upgraded, err := returnschema.VersionTwo(schema)
+				if err != nil {
+					c.violation("role schema cannot version: %v", err)
+				} else {
+					schema = upgraded
+				}
+			} else if schema != nil && v == 3 {
+				upgraded, err := returnschema.VersionThree(schema)
 				if err != nil {
 					c.violation("role schema cannot version: %v", err)
 				} else {
@@ -196,6 +206,9 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	resultObj, _ := result.(map[string]any)
 	if (role == "design-critic" || role == "code-critic" || role == "warden") && resultObj != nil {
 		c.checkMaterialCount(resultObj)
+		if resultVersion == 3 {
+			c.checkRigorRows(resultObj)
+		}
 	}
 	if role == "behavior-judge" && resultObj != nil {
 		c.checkJudgeAnchors(resultObj)
@@ -206,6 +219,65 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 				c.violation("$.%s identity mismatch: return has %s, job record has %s",
 					name, jsonRepr(resultObj[name]), jsonRepr(record[name]))
 			}
+		}
+	}
+}
+
+func (c *returnChecker) checkRigorRows(result map[string]any) {
+	findings, findingsOK := result["findings"].([]any)
+	rigor, rigorOK := result["rigor"].([]any)
+	if !findingsOK || !rigorOK {
+		return
+	}
+	material := map[string]bool{}
+	findingSeen := map[string]bool{}
+	for index, raw := range findings {
+		finding, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, idOK := finding["id"].(string)
+		if !idOK || strings.TrimSpace(id) == "" || id != strings.TrimSpace(id) {
+			c.violation("$.findings[%d].id must be a non-empty string without surrounding whitespace", index)
+			continue
+		}
+		if findingSeen[id] {
+			c.violation("$.findings[%d].id duplicates finding identifier %q", index, id)
+			continue
+		}
+		findingSeen[id] = true
+		if finding["material"] == true {
+			material[id] = true
+		}
+	}
+
+	rigorSeen := map[string]bool{}
+	for index, raw := range rigor {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, idOK := row["findingId"].(string)
+		if !idOK || strings.TrimSpace(id) == "" || id != strings.TrimSpace(id) {
+			c.violation("$.rigor[%d].findingId must be a non-empty string without surrounding whitespace", index)
+			continue
+		}
+		if rigorSeen[id] {
+			c.violation("$.rigor[%d].findingId duplicates rigor row for finding %q", index, id)
+			continue
+		}
+		rigorSeen[id] = true
+		if !material[id] {
+			c.violation("$.rigor[%d] classifies %q, which is not a material finding", index, id)
+		}
+		trigger, triggerOK := row["reopeningTrigger"].(string)
+		if !triggerOK || strings.TrimSpace(trigger) == "" {
+			c.violation("$.rigor[%d].reopeningTrigger must contain non-whitespace text", index)
+		}
+	}
+	for id := range material {
+		if !rigorSeen[id] {
+			c.violation("$.rigor is missing a classification row for material finding %q", id)
 		}
 	}
 }

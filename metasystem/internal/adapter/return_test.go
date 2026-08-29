@@ -92,6 +92,20 @@ func TestNormalizeReturnClaimsNothingWhenIdentityMatches(t *testing.T) {
 	}
 }
 
+func TestNormalizeVersionThreeReturnClaimsNothingWhenIdentityMatches(t *testing.T) {
+	reply := `{"schemaVersion": 3, "jobId": "j", "round": 1, "runtime": "codex",
+	  "sessionId": "s1", "model": {"effective": "m1"}, "evidence": [], "gaps": [],
+	  "mode": "design", "rigor": []}`
+	result, err := normalizeInto(t, t.TempDir(), reply, "", `{"effectiveModel": "m1"}`, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok := result["claimed"].(map[string]any)
+	if !ok || claimed["sessionId"] != nil || claimed["model"] != nil {
+		t.Fatalf("version-three claimed envelope is wrong: %v", result["claimed"])
+	}
+}
+
 func TestNormalizeReturnFindsReturnInsideWrapperResultString(t *testing.T) {
 	// The common wrapper shape: the reply is a JSON envelope whose result
 	// member is the return object serialized as a string.

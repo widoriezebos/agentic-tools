@@ -91,8 +91,15 @@ func TestWriteFakeReturnDefaultsModeWithoutHeader(t *testing.T) {
 
 func TestWriteFakeReturnPerRole(t *testing.T) {
 	code := fakeReturnFixture(t, "code-critic", "", "Working Mode: implement\n")
-	if code["reviewedTree"] != strings.Repeat("0", 40) || code["verdictMaterialCount"] != float64(0) {
+	if code["schemaVersion"] != float64(3) || code["reviewedTree"] != strings.Repeat("0", 40) || code["verdictMaterialCount"] != float64(0) {
 		t.Fatalf("code-critic fields wrong: %v", code)
+	}
+	if rigor, ok := code["rigor"].([]any); !ok || len(rigor) != 0 {
+		t.Fatalf("fake critic must return empty version-three rigor: %v", code["rigor"])
+	}
+	warden := fakeReturnFixture(t, "warden", "", "Working Mode: implement\n")
+	if warden["schemaVersion"] != float64(3) || warden["reviewedTree"] != strings.Repeat("0", 40) {
+		t.Fatalf("warden fields wrong: %v", warden)
 	}
 
 	investigator := fakeReturnFixture(t, "investigator", "", "Working Mode: investigate\n")
