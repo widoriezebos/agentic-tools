@@ -10,7 +10,7 @@ This is the proposed human role in governed delivery. Final human authority does
 
 ## Legislator: authority over enforceable rules
 
-A new check now proposes to refuse any security timeout that depends on a civil-clock jump. The check has passed its own tests, but passing tests does not grant it authority. Someone must decide that future builders may be stopped by it, define which work it governs and provide a route for changing or repealing it. The builder who wants the check is not entitled to grant that power just by adding it.
+A new check now proposes to refuse any security timeout measured in local clock time instead of elapsed time. The check has passed its own tests, but passing tests does not grant it authority. Someone must decide that future builders may be stopped by it, define which work it governs and provide a route for changing or repealing it. The builder who wants the check is not entitled to grant that power just by adding it.
 
 That power to create, change and repeal enforced rules is the legislator's. It includes defining who may exercise it, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A temporary incident body may receive power to tighten one release condition without receiving a permanent right to rewrite all delivery rules.
 
