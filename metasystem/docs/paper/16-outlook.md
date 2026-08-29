@@ -60,7 +60,7 @@ Runaway spend poses another problem. Enforced budgets can stop one task while ma
 
 Representation remains harder than authorization. A product authority may hold valid internal permission and still fail to hear the people who live with the consequences. Appeals help after a decision, but they do not ensure that affected groups shape intent before harm occurs. The means by which users, workers, communities and public interests enter private delivery governance cannot be derived from record structure alone.
 
-Human lawmakers and regulators may use machinery to compare proposals, trace consequences, inspect records and find inconsistent enforcement. That assistance can improve the evidence available to public judgment. It must not let a model choose social values, conceal contested assumptions behind a score or displace the authority and accountability of the people empowered to make law. The same unconditional boundary applies at the larger scale.
+Human lawmakers and regulators may use machinery to compare proposals, trace consequences, inspect records and find inconsistent enforcement. That assistance can improve the evidence available to public judgment. It must not let a model choose social values, conceal contested assumptions behind a score or displace the authority and accountability of the people empowered to make law. The same unconditional division applies at the larger scale.
 
 These are limits of the concept rather than promised features awaiting implementation. Evidence from real use may show that some require institutions outside the delivery system, that some proposed boundaries are impractical or that familiar human practices protect them better. The outlook remains credible only if such findings can narrow or overturn it.
 
