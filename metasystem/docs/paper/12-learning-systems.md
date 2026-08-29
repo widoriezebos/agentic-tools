@@ -28,6 +28,4 @@ A landed rule becomes a tested floor. Months later a faster session implementati
 
 Sometimes the release stops before any recorded user loses access. That is a near-miss: the releaser records it, keeps the uncertainty, and it enters the same path as an incident. A lesson too weak or rare for a reliable check stays in marking mode until repetition supplies the evidence. And some lessons no check can hold, such as how much extra signing in is acceptable in exchange for a shorter session. Those become rulings by the responsible authority, recorded with reasons, scope and a reconsideration date, and open to challenge by the people they affect.
 
-## Repair, learn and revisit
-
-Care comes first: containment never waits for the lesson. Production judges last. If the clock failure recurs, the rule has failed and loses its standing. If legitimate work gets blocked, the rule's scope is wrong. If the people affected overturn the sign-in balance, the ruling changes. A system has not learned because it gathered prohibitions. It has learned when recorded experience changes future behavior in a way that can itself be revised.
+None of these lessons is ever final. Production keeps judging them: if the clock failure recurs, the rule has failed and loses its standing; if legitimate work gets blocked, its scope is wrong; if the people affected overturn the sign-in balance, the ruling changes. Recorded experience changes future behavior, and the change itself stays open to revision.
