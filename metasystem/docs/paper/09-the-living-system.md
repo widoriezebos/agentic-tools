@@ -14,7 +14,7 @@ The system observes two things. It looks for recent work products that change th
 
 Every wait also has a deadline and an owner. The deadline says when uncertainty must stop being treated as normal delay. The owner is the actor authorized to decide what follows: retry, replacement, reversal or human escalation. "Wait until it finishes" is not an operating rule unless someone can say when the wait ends and who acts then.
 
-Timeout does not mean blind repetition. Before a task begins, the system records enough state to make a later attempt safe. The session migration identifies which version it is changing, what has already completed and which action remains. If the worker stops, the replacement can continue from the last complete state or reverse it. Silent death becomes a contained interruption rather than an ambiguous result.
+Timeout does not mean blind repetition. Before a task begins, the system records enough state to make a later attempt safe. The session migration identifies which version it is changing, what has already completed and which action remains. If the worker stops, the replacement reads that record and can continue from the last complete state or reverse what was already applied. Silent death becomes a contained interruption rather than an ambiguous result.
 
 ## Identity must be checked at use
 

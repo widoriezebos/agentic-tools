@@ -40,7 +40,7 @@ A releaser moves an accepted candidate into production and stands watch over it.
 
 A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
 
-A narrator turns the record into a report a person can act on: of everything the system writes, the one output made for people rather than machinery. It changes no state and makes no decision.
+A narrator turns the record into a report a person can act on. Of everything the system writes, that report is the one output made for people rather than machinery. It changes no state and makes no decision.
 
 Any of the six can be held by a person or by machinery; the configurations later in this chapter return to that choice. All six work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
@@ -58,7 +58,7 @@ These prohibitions do not reproduce job boundaries. They preserve the conditions
 
 At the end of examination, the session record names an exact candidate. It also contains the human ruling on passive reading, the failure of the first attempt, the checks on refresh and upload behavior and the proof that rollback remains possible. Someone must perform the small but consequential act that moves this candidate from proposed to accepted. Leaving that act unowned would break the chain at its final link.
 
-The custodian holds that link. It verifies that the candidate presented for acceptance is the one the independent examiner challenged, that every required result belongs to that candidate and that every enforced rule has passed. It then performs only the authorized acceptance action. It cannot waive a refusal, reinterpret a human ruling, repair a test or substitute a later version. If any required fact is missing, it leaves the candidate unaccepted.
+The custodian holds that link. It verifies that the candidate presented for acceptance is the one the independent examiner challenged, that every required result belongs to that candidate and that every enforced rule is satisfied. It then performs only the authorized acceptance action. It cannot waive a refusal, reinterpret a human ruling, repair a test or substitute a later version. If any required fact is missing, it leaves the candidate unaccepted.
 
 That authority involves no creative judgment. The custodian makes no product judgment and no claim about the design beyond what the required record establishes. Its narrow acceptance power completes the chain of custody without allowing the custodian to construct or review the candidate.
 

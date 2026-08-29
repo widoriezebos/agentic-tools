@@ -28,7 +28,7 @@ The principle says that machinery acts under the current authorized intent, whil
 
 After the builder revises the candidate, it reports that expiry is now final. An independent examination sends the late response again and observes that access remains closed. The observation supports the claim in a way the builder's assurance cannot, because it distinguishes the repaired behavior from the earlier failure.
 
-Completion claims must be tied to such observations. Evidence here means traceable results: test outcomes, independent findings, release observations and records of reversal. Proof is narrower: a conclusion demonstrated only within named boundaries and assumptions.
+Completion claims must be tied to such observations. Evidence here means traceable results: test outcomes, independent findings, release observations and records of reversal. Proof is narrower: a conclusion demonstrated only within named limits and assumptions.
 
 Trust in a capable builder can guide where to look. It cannot authorize a consequence. Chapter 6 develops the evidence required to separate a supported claim from a convincing one.
 
@@ -54,7 +54,7 @@ Five parallel builders can explore the session change quickly. They also create 
 
 Construction and verification receive explicit budgets proportional to risk. A budget is enforced: when it is exhausted, machinery stops, records what it learned and escalates or closes the attempt according to its authority. Later chapters tie that effort to consequence, novelty, exposure and accumulated change rather than to line count or confidence.
 
-Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules, and accountability always end with responsible authorities. That is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
+Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules and accountability always end with responsible authorities. That is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
 
 ## Failure leaves a record
 
