@@ -65,6 +65,14 @@ var immutableFields = map[string]bool{
 	"operationId": true, "goalId": true, "goalRevision": true, "machineId": true,
 }
 
+// Owned metadata has a dedicated read-decide-write operation whose lock
+// protects invariants that a status-only compare cannot express. Generic
+// record patches must not bypass that owner.
+var dedicatedMetadataFields = map[string]bool{
+	"findingRegister":      true,
+	"findingRegisterRound": true,
+}
+
 // The only fields a terminal record still accepts: its evidence mirror, the
 // chain-closure flags, the aggregated chain usage, and recorded critique
 // exhaustions. Everything else about a finished job is final.
@@ -333,6 +341,9 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		for field := range patch {
 			if immutableFields[field] {
 				return refuse(1, "record patch attempts to change immutable identity")
+			}
+			if dedicatedMetadataFields[field] {
+				return refuse(1, "record patch attempts to change metadata owned by a dedicated operation")
 			}
 		}
 		if terminalStatuses[current] && metadataUpdate {

@@ -1,0 +1,419 @@
+package dispatch
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
+	"golang.org/x/sys/unix"
+)
+
+const findingRegisterField = "findingRegister"
+const findingRegisterRoundField = "findingRegisterRound"
+
+type registerFinding struct {
+	FindingID      string
+	Critic         string
+	RigorClass     critiqueModel.RigorClass
+	FactsDigest    string
+	Status         string
+	EvidenceDigest string
+	Multiplicity   int64
+}
+
+// CritiqueRegisterAdvance folds one completed critic round into the
+// canonical register on its chain root. The operation serializes the
+// cross-root conflict check and the root-record write. A retry for an already
+// folded round returns unchanged without reading or publishing its return.
+func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string, err error) {
+	return withFindingRegisterLock(repoRoot, func() (string, error) {
+		state := loadCritiqueState(repoRoot)
+		roundRecord, present := state.records[roundJob]
+		if !present {
+			return "", fmt.Errorf("critic round job record %s is unreadable", roundJob)
+		}
+		if state.chainRoot(roundJob) != rootJob {
+			return "", fmt.Errorf("critic round %s does not belong to chain root %s", roundJob, rootJob)
+		}
+		role := asString(roundRecord["role"])
+		if role != "design-critic" && role != "code-critic" && role != "warden" {
+			return "", fmt.Errorf("job %s is not a critic round", roundJob)
+		}
+		if asString(roundRecord["status"]) != "completed" {
+			return "", fmt.Errorf("critic round %s is not completed", roundJob)
+		}
+		round, ok := numInt(roundRecord["round"])
+		if !ok || round < 1 {
+			return "", fmt.Errorf("critic round %s has an invalid round number", roundJob)
+		}
+		lockErr := withRecordLock(repoRoot, rootJob, func(recordPath string) error {
+			root, rootErr := readObject(recordPath)
+			if rootErr != nil {
+				return fmt.Errorf("critique root record %s is unreadable: %v", rootJob, rootErr)
+			}
+			registerValue, registerPresent := root[findingRegisterField]
+			if !registerPresent {
+				registerValue = []any{}
+			}
+			register, registerErr := decodeFindingRegister(registerValue)
+			if registerErr != nil {
+				return fmt.Errorf("critique root record %s has a malformed finding register: %v", rootJob, registerErr)
+			}
+			foldedRound, roundErr := findingRegisterRound(root, len(register))
+			if roundErr != nil {
+				return fmt.Errorf("critique root record %s has malformed register round state: %v", rootJob, roundErr)
+			}
+			if round <= foldedRound {
+				outcome = "unchanged"
+				return nil
+			}
+			if round != foldedRound+1 {
+				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1)
+			}
+
+			resultPath := filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "return.json")
+			result, readErr := readObject(resultPath)
+			if readErr != nil {
+				return fmt.Errorf("critique return for job %s is unreadable: %v", roundJob, readErr)
+			}
+			if asString(result["jobId"]) != roundJob {
+				return fmt.Errorf("critique return for job %s carries a different job identifier", roundJob)
+			}
+			returnedRound, roundOK := numInt(result["round"])
+			if !roundOK || returnedRound != round {
+				return fmt.Errorf("critique return for job %s carries a different round number", roundJob)
+			}
+			findings, findingsOK := result["findings"].([]any)
+			if !findingsOK {
+				return fmt.Errorf("critique return for job %s has no findings array", roundJob)
+			}
+			advanced, foldErr := foldCritiqueFindings(register, role, roundJob, findings, result["rigor"])
+			if foldErr != nil {
+				return foldErr
+			}
+			if conflictErr := refuseCrossRootClassConflict(state, rootJob, advanced); conflictErr != nil {
+				return conflictErr
+			}
+			after := encodeFindingRegister(advanced)
+			root[findingRegisterField] = after
+			root[findingRegisterRoundField] = round
+			if writeErr := writeRecord(recordPath, root); writeErr != nil {
+				return writeErr
+			}
+			outcome = "advanced"
+			return nil
+		})
+		return outcome, lockErr
+	})
+}
+
+func findingRegisterRound(root map[string]any, registerSize int) (int64, error) {
+	value, present := root[findingRegisterRoundField]
+	if !present {
+		if registerSize == 0 {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("the last folded round is absent from a non-empty register")
+	}
+	round, ok := numInt(value)
+	if !ok || round < 0 {
+		return 0, fmt.Errorf("the last folded round is not a non-negative integer")
+	}
+	return round, nil
+}
+
+func withFindingRegisterLock(root string, fn func() (string, error)) (string, error) {
+	lockPath := filepath.Join(root, "artifacts", "agents", "finding-register.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return "", err
+	}
+	handle, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return "", fmt.Errorf("cannot open finding-register lock: %w", err)
+	}
+	defer handle.Close()
+	deadline := time.Now().Add(recordLockWait())
+	for {
+		if err := unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("finding-register lock is busy after %s", recordLockWait())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
+	return fn()
+}
+
+func decodeFindingRegister(value any) ([]registerFinding, error) {
+	items, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("the register is not an array")
+	}
+	seen := map[string]bool{}
+	register := make([]registerFinding, 0, len(items))
+	for index, raw := range items {
+		entry, ok := raw.(map[string]any)
+		if !ok || len(entry) != 7 {
+			return nil, fmt.Errorf("entry %d is not an object with the seven canonical fields", index)
+		}
+		finding := registerFinding{
+			FindingID:      asString(entry["findingId"]),
+			Critic:         asString(entry["critic"]),
+			RigorClass:     critiqueModel.RigorClass(asString(entry["rigorClass"])),
+			FactsDigest:    asString(entry["factsDigest"]),
+			Status:         asString(entry["status"]),
+			EvidenceDigest: asString(entry["evidenceDigest"]),
+		}
+		finding.Multiplicity, ok = numInt(entry["multiplicity"])
+		if finding.FindingID == "" || finding.Critic == "" || !finding.RigorClass.Valid() ||
+			!hexDigest64.MatchString(finding.FactsDigest) || !hexDigest64.MatchString(finding.EvidenceDigest) ||
+			!ok || finding.Multiplicity < 1 ||
+			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed") {
+			return nil, fmt.Errorf("entry %d has invalid canonical values", index)
+		}
+		if seen[finding.FindingID] {
+			return nil, fmt.Errorf("finding identifier %s appears more than once", finding.FindingID)
+		}
+		seen[finding.FindingID] = true
+		register = append(register, finding)
+	}
+	return register, nil
+}
+
+func encodeFindingRegister(register []registerFinding) []any {
+	items := make([]any, len(register))
+	for index, finding := range register {
+		items[index] = map[string]any{
+			"findingId": finding.FindingID, "critic": finding.Critic,
+			"rigorClass": string(finding.RigorClass), "factsDigest": finding.FactsDigest,
+			"status": finding.Status, "evidenceDigest": finding.EvidenceDigest,
+			"multiplicity": finding.Multiplicity,
+		}
+	}
+	return items
+}
+
+func foldCritiqueFindings(register []registerFinding, role, roundJob string, findings []any, rigorValue any) ([]registerFinding, error) {
+	advanced := append([]registerFinding(nil), register...)
+	byID := map[string]int{}
+	for index, finding := range advanced {
+		byID[finding.FindingID] = index
+	}
+	rigorRows := rigorRowsByID(rigorValue)
+	identities := findingIdentities(role, findings)
+	processed := map[string]bool{}
+	for index, raw := range findings {
+		finding, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		identity := identities[index]
+		id := identity.FindingID
+		if processed[id] {
+			continue
+		}
+		processed[id] = true
+		material, materialOK := finding["material"].(bool)
+		if !materialOK {
+			continue
+		}
+		existingIndex, exists := byID[id]
+		if !material {
+			if exists {
+				advanced[existingIndex].Status = "resolved"
+			}
+			continue
+		}
+
+		row := takeRigorRow(rigorRows, asString(finding["id"]))
+		class := critiqueModel.NormalizeWire(row["rigorClass"], row["facts"], row["reopeningTrigger"], false)
+		candidate := registerFinding{
+			FindingID: id, Critic: roundJob, RigorClass: class,
+			FactsDigest: digestJSON(row["facts"]), Status: "open",
+			EvidenceDigest: digestJSON(finding["evidence"]), Multiplicity: identity.Multiplicity,
+		}
+		if !exists {
+			byID[id] = len(advanced)
+			advanced = append(advanced, candidate)
+			continue
+		}
+		current := advanced[existingIndex]
+		if candidate.Multiplicity > current.Multiplicity {
+			advanced[existingIndex].Multiplicity = candidate.Multiplicity
+			current.Multiplicity = candidate.Multiplicity
+		}
+		if current.Critic == roundJob && current.RigorClass == candidate.RigorClass &&
+			current.FactsDigest == candidate.FactsDigest && current.EvidenceDigest == candidate.EvidenceDigest {
+			continue
+		}
+		class = critiqueModel.NormalizeWire(row["rigorClass"], row["facts"], row["reopeningTrigger"], true)
+		candidate.RigorClass = class
+		if rigorRank(class) < rigorRank(current.RigorClass) {
+			advanced[existingIndex].Status = "disputed"
+			continue
+		}
+		if rigorRank(class) > rigorRank(current.RigorClass) {
+			candidate.Critic = current.Critic
+			candidate.Multiplicity = current.Multiplicity
+			advanced[existingIndex] = candidate
+		}
+	}
+	return advanced, nil
+}
+
+func rigorRowsByID(value any) map[string][]map[string]any {
+	rows := map[string][]map[string]any{}
+	items, _ := value.([]any)
+	for _, raw := range items {
+		if row, ok := raw.(map[string]any); ok {
+			id := asString(row["findingId"])
+			rows[id] = append(rows[id], row)
+		}
+	}
+	return rows
+}
+
+func takeRigorRow(rows map[string][]map[string]any, id string) map[string]any {
+	queue := rows[id]
+	if len(queue) == 0 {
+		return map[string]any{}
+	}
+	row := queue[0]
+	rows[id] = queue[1:]
+	return row
+}
+
+func rigorRank(class critiqueModel.RigorClass) int {
+	switch class {
+	case critiqueModel.Severe:
+		return 3
+	case critiqueModel.Unproven:
+		return 2
+	default:
+		return 1
+	}
+}
+
+type findingIdentity struct {
+	FindingID    string
+	Multiplicity int64
+}
+
+func findingIdentities(role string, findings []any) []findingIdentity {
+	rawCounts := map[string]int64{}
+	claimedIDs := map[string]bool{}
+	for _, raw := range findings {
+		finding, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := asString(finding["id"])
+		if id != "" && id == strings.TrimSpace(id) {
+			rawCounts[id]++
+			claimedIDs[id] = true
+		}
+	}
+	identities := make([]findingIdentity, len(findings))
+	counts := map[string]int64{}
+	for index, raw := range findings {
+		finding, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		rawID := asString(finding["id"])
+		id := rawID
+		if rawID == "" || rawID != strings.TrimSpace(rawID) || rawCounts[rawID] > 1 {
+			id = syntheticFindingID(role, finding, claimedIDs)
+		}
+		identities[index].FindingID = id
+		counts[id]++
+	}
+	for index := range identities {
+		if identities[index].FindingID != "" {
+			identities[index].Multiplicity = counts[identities[index].FindingID]
+		}
+	}
+	return identities
+}
+
+func syntheticFindingID(role string, finding map[string]any, claimedIDs map[string]bool) string {
+	tuple := []any{role, normalizedFindingText(finding["claim"]), normalizedFindingText(finding["evidence"])}
+	for salt := 0; ; salt++ {
+		value := tuple
+		if salt > 0 {
+			value = append(append([]any{}, tuple...), salt)
+		}
+		sum := sha256.Sum256(canonicalJSON(value))
+		id := "synthetic-" + hex.EncodeToString(sum[:])
+		if !claimedIDs[id] {
+			return id
+		}
+	}
+}
+
+func normalizedFindingText(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return string(canonicalJSON(value))
+	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return strings.TrimSpace(text)
+}
+
+func refuseCrossRootClassConflict(state critiqueState, currentRoot string, prospective []registerFinding) error {
+	otherClasses := map[string]map[critiqueModel.RigorClass]string{}
+	ids := make([]string, 0, len(state.records))
+	for id := range state.records {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		record := state.records[id]
+		if id == currentRoot || record["parentJob"] != nil {
+			continue
+		}
+		value, present := record[findingRegisterField]
+		if !present {
+			continue
+		}
+		register, err := decodeFindingRegister(value)
+		if err != nil {
+			return fmt.Errorf("finding register on chain root %s is malformed; waiting on the human is the only remedy: %v", id, err)
+		}
+		for _, finding := range register {
+			if otherClasses[finding.FindingID] == nil {
+				otherClasses[finding.FindingID] = map[critiqueModel.RigorClass]string{}
+			}
+			otherClasses[finding.FindingID][finding.RigorClass] = id
+		}
+	}
+	for _, finding := range prospective {
+		for class, root := range otherClasses[finding.FindingID] {
+			if class != finding.RigorClass {
+				return fmt.Errorf("finding %s has conflicting rigor classes %s and %s on chain roots %s and %s; waiting on the original critic or the human is the only remedy",
+					finding.FindingID, finding.RigorClass, class, currentRoot, root)
+			}
+		}
+	}
+	return nil
+}
+
+func digestJSON(value any) string {
+	sum := sha256.Sum256(canonicalJSON(value))
+	return hex.EncodeToString(sum[:])
+}
+
+func canonicalJSON(value any) []byte {
+	data, _ := json.Marshal(value)
+	return data
+}

@@ -354,6 +354,10 @@ func BuildRecord(p BuildRecordParams) error {
 		"runnerClosed":        false,
 		"critiqueExhaustions": []any{},
 	}
+	if p.Role == "design-critic" || p.Role == "code-critic" || p.Role == "warden" {
+		record["findingRegister"] = []any{}
+		record["findingRegisterRound"] = 0
+	}
 	return writeRecord(p.Output, record)
 }
 

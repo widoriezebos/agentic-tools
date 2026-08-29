@@ -100,20 +100,22 @@ func (s critiqueState) openMaterialIDs(record map[string]any, chain string) (ids
 	if !ok {
 		return nil, 0, fmt.Errorf("critique return for job '%v' has no findings array", record["jobId"])
 	}
+	identities := findingIdentities(asString(record["role"]), findings)
 	seen := map[string]bool{}
-	for _, item := range findings {
+	for index, item := range findings {
 		finding, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
+		id := identities[index].FindingID
 		if material, ok := finding["material"].(bool); !ok || !material {
 			continue
 		}
-		id := asString(finding["id"])
-		if id != "" && !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
+		if seen[id] {
+			continue
 		}
+		seen[id] = true
+		ids = append(ids, id)
 	}
 	return ids, round, nil
 }
