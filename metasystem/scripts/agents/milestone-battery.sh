@@ -288,6 +288,7 @@ surface_json=$run_dir/surface.json
 toolchain_file=$run_dir/toolchain.txt
 run_class_file=$run_dir/run-class.txt
 controller_engine=$run_dir/metasystem
+enrolled_engine=$controller_engine
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ended_at=
 setup_exit=1
@@ -650,14 +651,22 @@ stop_validator() {
 
 shutdown_supervision() {
   local owner_record=$clone_metasystem/artifacts/agents/supervision/lock.d/owner.json
-  (( supervision_armed )) || [[ -f "$owner_record" ]] || return 0
-  if METASYSTEM_BIN="$controller_engine" \
-      "$clone_metasystem/scripts/agents/arm-supervision.sh" --repo "$clone" --shutdown \
-      >>"$setup_log" 2>&1; then
-    supervision_armed=0
-    return 0
+  local steward_identity=$clone_metasystem/artifacts/agents/steward/identity.json
+  local shutdown_failed=0
+  if (( supervision_armed )) || [[ -f "$owner_record" ]]; then
+    if METASYSTEM_BIN="$enrolled_engine" \
+        "$clone_metasystem/scripts/agents/arm-supervision.sh" --repo "$clone" --shutdown \
+        >>"$setup_log" 2>&1; then
+      supervision_armed=0
+    else
+      shutdown_failed=1
+    fi
   fi
-  return 1
+  if [[ -f "$steward_identity" ]]; then
+    "$enrolled_engine" steward disarm --repo "$clone_metasystem" \
+      >>"$setup_log" 2>&1 || shutdown_failed=1
+  fi
+  (( shutdown_failed == 0 ))
 }
 
 abandon_checkpoint() { # reason
@@ -875,6 +884,74 @@ toolchain_identity=$(cd "$clone_metasystem" \
   | "$controller_engine" util sha256)
 printf '%s\n' "$toolchain_identity" >"$toolchain_file"
 
+# Steward enrollment is reserved for a person at a terminal. This disposable
+# clone supplies that fact through a fake-runtime installation root, so the
+# authority exists only while this fixture invokes the enrollment verb.
+fixture_install=$run_dir/fixture-install
+fixture_identity=$run_dir/fixture-enrollment-identities.json
+mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
+printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
+cp "$controller_engine" "$fixture_install/bin/metasystem"
+cp -R "$clone_metasystem/scripts/agents/adapters" "$fixture_install/scripts/agents/"
+enrolled_engine=$fixture_install/bin/metasystem
+shell_start=$("$enrolled_engine" proc started-at --pid $$) \
+  || { setup_exit=1; final_verdict=fixture-enrollment-failed; exit 1; }
+ambient_ancestor=$(
+  "$controller_engine" proc find-ancestor --repo "$clone_metasystem" --pid $$ 2>/dev/null || true
+)
+ambient_pid=
+ambient_start=
+if [[ -n "$ambient_ancestor" ]]; then
+  ambient_pid=$("$controller_engine" json get --value "$ambient_ancestor" --field pid 2>/dev/null || true)
+  ambient_start=$("$controller_engine" json get --value "$ambient_ancestor" --field pidStartedAt 2>/dev/null || true)
+fi
+if [[ "$ambient_pid" =~ ^[1-9][0-9]*$ && "$ambient_start" =~ ^[1-9][0-9]*$ \
+    && "$ambient_pid" != "$$" ]]; then
+  printf '{"%s":{"pidStartedAt":%s,"command":"milestone battery fixture shell","terminal":true},"%s":{"pidStartedAt":%s,"command":"milestone battery fixture runner"}}\n' \
+    "$$" "$shell_start" "$ambient_pid" "$ambient_start" >"$fixture_identity"
+else
+  printf '{"%s":{"pidStartedAt":%s,"command":"milestone battery fixture shell","terminal":true}}\n' \
+    "$$" "$shell_start" >"$fixture_identity"
+fi
+# The clone-local notifier makes enrollment portable to hosts without a
+# desktop notifier and cannot import an operator checkout's notification path.
+git -C "$clone" config metasystem.steward.notify-command true
+clone_runtimes=$(env -u METASYSTEM_METASYSTEM_RUNTIMES \
+  "$controller_engine" config get --conf "$clone_metasystem/metasystem.conf" \
+    --key metasystem.runtimes --default '')
+if [[ "$clone_runtimes" == fake ]]; then
+  # Fake-runtime subjects already authorize fixture enrollment. Their beds
+  # stage the identity directly because the operator arm verb excludes them.
+  enrollment_digest=$("$enrolled_engine" util sha256 --file "$enrolled_engine")
+  mkdir -p "$clone_metasystem/artifacts/agents/steward"
+  printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+    "$clone_metasystem" "$enrolled_engine" "$enrollment_digest" \
+    >"$clone_metasystem/artifacts/agents/steward/identity.json"
+  chmod 0600 "$clone_metasystem/artifacts/agents/steward/identity.json"
+else
+  set +e
+  METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$fixture_identity" \
+    "$enrolled_engine" steward arm --repo "$clone_metasystem" >>"$setup_log" 2>&1
+  enroll_rc=$?
+  set -e
+  if [[ $enroll_rc != 0 ]]; then
+    setup_exit=$enroll_rc
+    final_verdict=fixture-enrollment-failed
+    exit 1
+  fi
+  # Enrollment briefly starts the steward runner. Stop that fixture-authenticated
+  # process so ordinary up starts every standing process without fixture inputs.
+  set +e
+  "$enrolled_engine" steward disarm --repo "$clone_metasystem" >>"$setup_log" 2>&1
+  disarm_rc=$?
+  set -e
+  if [[ $disarm_rc != 0 ]]; then
+    setup_exit=$disarm_rc
+    final_verdict=fixture-enrollment-failed
+    exit 1
+  fi
+fi
+
 checkpoint_rc=0
 "$controller_engine" gate weight-checkpoint --root "$real_metasystem" \
   --run-id "$run_id" --subject "$subject" --runner-pid $$ --envelope "$envelope" \
@@ -890,9 +967,10 @@ fi
 checkpoint_open=1
 
 set +e
-METASYSTEM_BIN="$controller_engine" METASYSTEM_AGENT_RUNTIME="${METASYSTEM_AGENT_RUNTIME:-codex}" \
+METASYSTEM_BIN="$enrolled_engine" METASYSTEM_AGENT_RUNTIME="${METASYSTEM_AGENT_RUNTIME:-codex}" \
   "$clone_metasystem/scripts/agents/arm-supervision.sh" --repo "$clone" \
-    --pid $$ --session "battery-$run_id" --tag "metasystem-battery-$run_id" \
+    --pid $$ --start-time "$shell_start" \
+    --session "battery-$run_id" --tag "metasystem-battery-$run_id" \
     >>"$setup_log" 2>&1
 arm_rc=$?
 set -e
