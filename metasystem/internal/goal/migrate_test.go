@@ -219,7 +219,7 @@ func TestTheCheckedInManifestParses(t *testing.T) {
 	// migration manifest (the cutover artifact belongs to the
 	// template repo alone), so absence skips; any other read error
 	// still fails.
-	data, err := os.ReadFile(filepath.Join("..", "..", "plans", "goals-migration-manifest.md"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "records", "misc", "goals-migration-manifest.md"))
 	if os.IsNotExist(err) {
 		t.Skip("no checked-in migration manifest here; adopted repositories carry none")
 	}

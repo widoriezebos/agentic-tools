@@ -66,7 +66,7 @@ func TestPolicyVersionAndDeclaredSkipSet(t *testing.T) {
 
 func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 	policy := mustPolicy(t)
-	if want := []string{"cmd/**", "internal/**", "scripts/agents/**", "go.mod", "go.sum"}; !reflect.DeepEqual(policy.EnginePaths, want) {
+	if want := []string{"cmd/**", "internal/**", "scripts/agents/**", "go.mod", "go.sum", "records/misc/goals-migration-manifest.md"}; !reflect.DeepEqual(policy.EnginePaths, want) {
 		t.Fatalf("ENGINE closure drifted: got %q want %q", policy.EnginePaths, want)
 	}
 	if want := []string{

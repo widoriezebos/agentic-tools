@@ -296,9 +296,15 @@ func TestValidationRefusalIsRejectedByName(t *testing.T) {
 	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "State missing") {
 		t.Fatalf("the rejection is journaled by name: %+v", entry)
 	}
-	// Nothing left the clone.
-	if out := mustGit(t, a, "ls-remote", "origin", "refs/heads/main"); strings.Contains(out, "bad") {
-		t.Fatal("a rejected transaction publishes nothing")
+	// Nothing left the clone. Judge only the ref-name column: the SHA
+	// column is hex, and "bad" is valid hex — asserting on the whole
+	// line was a one-in-a-hundred lottery (first drawn 2026-08-29, in
+	// the frozen witness gate of all places).
+	for _, line := range strings.Split(mustGit(t, a, "ls-remote", "origin"), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.Contains(fields[1], "bad") {
+			t.Fatal("a rejected transaction publishes nothing")
+		}
 	}
 }
 

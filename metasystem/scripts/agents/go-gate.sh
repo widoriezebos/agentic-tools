@@ -43,6 +43,8 @@ if [[ -n "$gate_proof_out" && "$gate_fast" != 1 ]]; then
   echo "go gate: --proof-out is a fast-mode flag (the landing boundary's side-effect-free build proof)" >&2
   exit 2
 fi
+gate_witness_reuse_out=${METASYSTEM_GATE_WITNESS_REUSE_OUT:-}
+unset METASYSTEM_GATE_WITNESS_REUSE_OUT
 
 # Fast mode is an edit-loop tool, not a landing gate: it must neither
 # consume nor produce a witness, so a witness handoff arriving alongside it
@@ -91,6 +93,7 @@ fi
 # die with their process. Skipped only where no binary exists yet (the
 # bootstrap residual, bounded by this very gate's build step).
 go_gate_marker=
+consumer_export_parent=
 go_gate_name=go-gate.sh
 if [[ "$gate_fast" == 1 ]]; then
   go_gate_name="go-gate.sh --fast"
@@ -101,8 +104,8 @@ if [[ -x "$root/bin/metasystem" ]]; then
     echo "go gate: registration failed; refusing to run invisibly" >&2
     exit 1
   }
-  trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"' EXIT
 fi
+trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"; [[ -z "${consumer_export_parent:-}" ]] || rm -rf "$consumer_export_parent"' EXIT
 
 # ---- The boundary-scoped gate witness (D33) ----------------------------
 # One validation run, one gate: the outer suite runs this gate inside an
@@ -133,10 +136,28 @@ gate_surface_digest() { # compatibility for the build stamp path
 }
 
 gate_toolchain_identity() {
-  {
-    go version
-    go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
-  } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
+  if [[ "${METASYSTEM_GATE_FROZEN_TOOLCHAIN:-0}" == 1 ]]; then
+    # -mod=readonly is a fixed protocol guard, not a varying toolchain input.
+    # Clearing it only for the identity read keeps historical clean witnesses
+    # compatible when their ambient GOFLAGS was empty; the actual frozen build
+    # remains pinned below. A clean witness made under other flags mismatches
+    # and pays the full frozen gate.
+    {
+      GOFLAGS= go version
+      GOFLAGS= go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
+    } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
+  else
+    {
+      go version
+      go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
+    } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
+  fi
+}
+
+frozen_toolchain_refusal() {
+  [[ " ${GOFLAGS:-} " =~ [[:space:]]-(modfile|overlay)(=|[[:space:]]) ]] \
+    && { echo "GOFLAGS may not contain -modfile or -overlay"; return 0; }
+  return 1
 }
 
 # A tree where ./... could reach beyond the hashed closure refuses witness
@@ -180,14 +201,15 @@ witness_acceptable() {
   dir_mode=$(stat -c '%a' "$canonical_root" 2>/dev/null || stat -f '%Lp' "$canonical_root")
   file_mode=$(stat -c '%a' "$canonical_witness" 2>/dev/null || stat -f '%Lp' "$canonical_witness")
   [[ "$dir_mode" == 700 && "$file_mode" == 600 ]] || { echo "witness permissions are not 0700/0600" >&2; return 3; }
-  local recorded_run recorded_version recorded_digest recorded_payload recorded_toolchain recorded_manifest
+  local recorded_run recorded_version recorded_digest recorded_payload recorded_toolchain recorded_payload_manifest recorded_manifest_digest
   local controller_pid controller_started_at controller_start_ticks controller_boot_id
   recorded_run=$(sed -n 's/.*"runId":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_version=$(sed -n 's/.*"policyVersion":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
   recorded_digest=$(sed -n 's/.*"engineDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_payload=$(sed -n 's/.*"payloadDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
   recorded_toolchain=$(sed -n 's/.*"toolchainIdentity":"\([^"]*\)".*/\1/p' "$canonical_witness")
-  recorded_manifest=$(sed -n 's/.*"payloadManifest":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  recorded_payload_manifest=$(sed -n 's/.*"payloadManifest":"\([^"]*\)".*/\1/p' "$canonical_witness")
+  recorded_manifest_digest=$(sed -n 's/.*"manifestDigest":"\([^"]*\)".*/\1/p' "$canonical_witness")
   controller_pid=$(sed -n 's/.*"controller":{"pid":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
   controller_started_at=$(sed -n 's/.*"controller":{"pid":[0-9][0-9]*,"startedAtSec":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
   controller_start_ticks=$(sed -n 's/.*"controller":{"pid":[0-9][0-9]*,"startedAtSec":[0-9][0-9]*,"startTicks":\([0-9][0-9]*\).*/\1/p' "$canonical_witness")
@@ -202,6 +224,9 @@ witness_acceptable() {
   else
     [[ -z "$controller_boot_id" ]] || { echo "witness controller pair identity is malformed" >&2; return 3; }
   fi
+  # This is an outsider boundary, not a same-user privilege boundary. A
+  # same-user process can already replace the engine or this script; that
+  # accepted risk gains no authority from the witness protocol.
   go run ./cmd/metasystem gate controller-descendant --consumer-pid $$ \
     --controller-pid "$controller_pid" --controller-started-at "$controller_started_at" \
     --controller-start-ticks "$controller_start_ticks" --controller-boot-id "$controller_boot_id" \
@@ -210,7 +235,17 @@ witness_acceptable() {
   local refusal
   if refusal=$(witness_refusal); then echo "witness refused here: $refusal" >&2; return 3; fi
   local local_version local_digest local_payload_version local_payload local_toolchain payload_manifest
-  read -r local_version local_digest < <(gate_surface_identity ENGINE "witness consumer $root") || return 3
+  if [[ -n "$recorded_manifest_digest" ]]; then
+    [[ "$recorded_manifest_digest" =~ ^[a-f0-9]{64}$ ]] \
+      || { echo "witness manifest identity is malformed" >&2; return 3; }
+    go run ./cmd/metasystem gate witness-verify --root "$root" --witness "$canonical_witness" \
+      >/dev/null 2>&1 \
+      || { echo "full-tree manifest digest mismatch between witness and consumer" >&2; return 3; }
+    local_version=$recorded_version
+    local_digest=$recorded_digest
+  else
+    read -r local_version local_digest < <(gate_surface_identity ENGINE "witness consumer $root") || return 3
+  fi
   local_toolchain=$(gate_toolchain_identity) || return 3
   [[ "$local_version" == "$recorded_version" ]] \
     || { echo "behavior-surface policy version mismatch between witness and consumer (theirs $recorded_version, ours ENGINE=$local_version)" >&2; return 3; }
@@ -219,11 +254,11 @@ witness_acceptable() {
   [[ "$local_toolchain" == "$recorded_toolchain" ]] \
     || { echo "toolchain identity mismatch between witness and consumer (theirs ${recorded_toolchain:0:8}, ours ${local_toolchain:0:8})" >&2; return 3; }
   if [[ "$consumer_scope" == DELIVERY ]]; then
-    [[ "$recorded_payload" =~ ^[a-f0-9]{64}$ && -n "$recorded_manifest" ]] \
+    [[ "$recorded_payload" =~ ^[a-f0-9]{64}$ && -n "$recorded_payload_manifest" ]] \
       || { echo "witness PAYLOAD identity is incomplete" >&2; return 3; }
-    [[ "$recorded_manifest" != */* && "$recorded_manifest" != .* ]] \
+    [[ "$recorded_payload_manifest" != */* && "$recorded_payload_manifest" != .* ]] \
       || { echo "witness payload manifest name is unsafe" >&2; return 3; }
-    payload_manifest="$canonical_root/$recorded_manifest"
+    payload_manifest="$canonical_root/$recorded_payload_manifest"
     [[ ! -L "$payload_manifest" && -f "$payload_manifest" ]] \
       || { echo "witness payload manifest is not a plain regular file" >&2; return 3; }
     local manifest_mode
@@ -243,6 +278,78 @@ witness_engine_skip_authorized() {
   go run ./cmd/metasystem behavior-surface skip-allowed \
     --scope WITNESS --family witness-engine-gate >/dev/null 2>&1
 }
+
+# A witness consumer first freezes its own tree, then runs this same gate from
+# the export. Every acceptance read, skip-path build, post-build recheck, and
+# full fallback therefore sees frozen bytes. GOFLAGS is discarded and pinned
+# to read-only module selection; GOMODCACHE remains inherited and shared because
+# the frozen go.sum pins module content hashes while -mod=readonly forbids a
+# dependency-set rewrite. Modfile and overlay flags would replace frozen inputs
+# and are refused before the export is used.
+if [[ -n "${METASYSTEM_GATE_WITNESS:-}" \
+  && "${METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT:-}" != "$root" ]]; then
+  if frozen_refusal=$(frozen_toolchain_refusal); then
+    echo "go gate: frozen witness consumer refused: $frozen_refusal" >&2
+    exit 1
+  fi
+  # The consumer path ends by installing a fresh binary into the live
+  # tree — the same mid-run swap the rebuild fence exists to prevent, so
+  # the fence binds here exactly as it binds the plain rebuild.
+  if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem" ]]; then
+    consumer_fence_rc=0
+    "$root/bin/metasystem" gate fence --root "$root" --self-pid $$ || consumer_fence_rc=$?
+    if [[ "$consumer_fence_rc" == 1 ]]; then
+      echo "go gate: a live gate run owns this checkout; rebuilding now would swap its binary mid-run (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)" >&2
+      exit 1
+    fi
+  fi
+  consumer_freeze_output=
+  if ! consumer_freeze_output=$(go run ./cmd/metasystem gate witness-freeze --root "$root"); then
+    echo "go gate: witness consumer could not freeze its live tree; refusing to use it as a proof substrate" >&2
+    exit 1
+  fi
+  read -r consumer_manifest_digest consumer_export_root <<<"$consumer_freeze_output"
+  if [[ ! "$consumer_manifest_digest" =~ ^[a-f0-9]{64}$ || ! -d "$consumer_export_root" ]]; then
+    [[ -z "$consumer_export_root" ]] || rm -rf "$(dirname "$consumer_export_root")"
+    echo "go gate: witness consumer freeze returned an invalid digest or export path" >&2
+    exit 1
+  fi
+  consumer_export_root=$(cd "$consumer_export_root" && pwd -P)
+  consumer_export_parent=$(dirname "$consumer_export_root")
+  consumer_live_root=$root
+  consumer_rc=0
+  if [[ "$gate_witness_check_only" == 1 ]]; then
+    ( cd "$consumer_export_root" \
+        && GOFLAGS=-mod=readonly METASYSTEM_GATE_FROZEN_TOOLCHAIN=1 \
+           METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT="$consumer_export_root" \
+           bash scripts/agents/go-gate.sh --witness-check-only ) || consumer_rc=$?
+  else
+    ( cd "$consumer_export_root" \
+        && GOFLAGS=-mod=readonly METASYSTEM_GATE_FROZEN_TOOLCHAIN=1 \
+           METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT="$consumer_export_root" \
+           METASYSTEM_GATE_WITNESS_REUSE_OUT="$gate_witness_reuse_out" \
+           bash scripts/agents/go-gate.sh ) || consumer_rc=$?
+  fi
+  if [[ "$consumer_rc" == 0 && "$gate_witness_check_only" != 1 ]]; then
+    if [[ ! -x "$consumer_export_root/bin/metasystem" ]]; then
+      echo "go gate: frozen witness consumer passed without producing its engine binary" >&2
+      consumer_rc=1
+    else
+      mkdir -p "$consumer_live_root/bin" \
+        && cp "$consumer_export_root/bin/metasystem" "$consumer_live_root/bin/.metasystem.witness.$$" \
+        && mv -f "$consumer_live_root/bin/.metasystem.witness.$$" "$consumer_live_root/bin/metasystem" \
+        || consumer_rc=1
+    fi
+  fi
+  rm -rf "$consumer_export_parent"
+  consumer_export_parent=
+  exit "$consumer_rc"
+fi
+
+if [[ "${METASYSTEM_GATE_FROZEN_TOOLCHAIN:-0}" == 1 && "${GOFLAGS:-}" != -mod=readonly ]]; then
+  echo "go gate: frozen proof tree requires GOFLAGS=-mod=readonly" >&2
+  exit 1
+fi
 
 # The probe exit: parsed above with the other arguments — the strict
 # loop landed after this handler once shadowed it (2026-08-24 red:
@@ -267,10 +374,18 @@ if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
       # rebuilt from the accepted content and stamped with its digest.
       METASYSTEM_BUILD_STAMP="witness-${digest:0:12}" bash scripts/agents/go-build.sh \
         || { echo "go gate: build failed under an accepted witness" >&2; exit 1; }
-      echo "go gate: PASSED (outer witness ${digest:0:8}, this boundary)"
-      exit 0
+      post_digest=
+      if post_digest=$(witness_acceptable) && [[ "$post_digest" == "$digest" ]]; then
+        if [[ -n "$gate_witness_reuse_out" ]]; then
+          printf 'reused\n' >"$gate_witness_reuse_out"
+        fi
+        echo "go gate: PASSED (outer witness ${digest:0:8}, this boundary)"
+        exit 0
+      fi
+      echo "go gate: witness changed during the skip-path build; running the full gate" >&2
+    else
+      echo "go gate: witness acceptable, but the prospective behavior-surface policy does not authorize witness-engine-gate; running the full gate" >&2
     fi
-    echo "go gate: witness acceptable, but the prospective behavior-surface policy does not authorize witness-engine-gate; running the full gate" >&2
   else
     echo "go gate: witness not accepted; running the full gate" >&2
   fi
@@ -459,6 +574,14 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off; then
   if refusal=$(witness_refusal); then
     echo "go gate: witness not written ($refusal)" >&2
   else
+    witness_manifest_digest=${METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST:-}
+    if [[ -n "$witness_manifest_digest" ]]; then
+      [[ "$witness_manifest_digest" =~ ^[a-f0-9]{64}$ ]] \
+        || { echo "go gate: frozen-export manifest digest is malformed" >&2; exit 1; }
+      go run ./cmd/metasystem gate witness-verify --root "$root" \
+        --witness "$witness_manifest_digest" >/dev/null \
+        || { echo "go gate: frozen export changed during the full proof; witness voided" >&2; exit 1; }
+    fi
     if [[ -z "$witness_digest" ]]; then
       read -r witness_policy_version witness_digest < <(gate_surface_identity ENGINE "outer snapshot $root")
     fi
@@ -487,12 +610,21 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off; then
       [[ -z "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" ]] \
         || { echo "go gate: witness controller pair identity is malformed" >&2; exit 1; }
     fi
-    printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
-      "$witness_policy_version" "$witness_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
-      "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
-      "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
-      "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
+    if [[ -n "$witness_manifest_digest" ]]; then
+      printf '{"policyVersion":%s,"engineDigest":"%s","manifestDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in frozen proof tree"}\n' \
+        "$witness_policy_version" "$witness_digest" "$witness_manifest_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
+        "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
+        "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
+        "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
+    else
+      printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
+        "$witness_policy_version" "$witness_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
+        "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
+        "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
+        "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
+    fi
     chmod 600 "$METASYSTEM_GATE_WITNESS_WRITE"
     echo "go gate: witness written (${witness_digest:0:8})"
   fi

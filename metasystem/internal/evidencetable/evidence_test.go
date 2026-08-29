@@ -172,6 +172,11 @@ func TestWalkerRefusals(t *testing.T) {
 // format owners drift apart.
 func TestSkillExampleIsTheCanon(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "skills", "inception", "SKILL.md"))
+	if os.IsNotExist(err) {
+		// Frozen witness exports carry only the ENGINE closure; the
+		// canon audit runs where the skill content lives.
+		t.Skip("skill content absent here; frozen exports carry only the engine closure")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

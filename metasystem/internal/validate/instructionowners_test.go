@@ -23,6 +23,13 @@ func TestInstructionOwnersAreInstructionBearing(t *testing.T) {
 	}
 	read := func(rel string) string {
 		data, err := os.ReadFile(filepath.Join(root, rel))
+		if os.IsNotExist(err) {
+			// A frozen witness export carries only the ENGINE closure;
+			// a repository-content audit is meaningful only where the
+			// content lives (live trees and full copies), same skip
+			// idiom as the migration-manifest test.
+			t.Skipf("repository content absent here (%s); frozen exports carry only the engine closure", rel)
+		}
 		if err != nil {
 			t.Fatalf("read %s: %v", rel, err)
 		}

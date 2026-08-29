@@ -223,6 +223,8 @@ func families() []family {
 				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"controller-descendant", "exit 0 only when a consumer descends from one exact live controller identity", runGateControllerDescendant},
+				{"witness-freeze", "export a stable private tree and print its manifest digest and path", runGateWitnessFreeze},
+				{"witness-verify", "compare a tree's manifest digest with a witness", runGateWitnessVerify},
 				{"guard-acquire", "wait for exclusive checkout execution or join the caller's owning chain", runGateGuardAcquire},
 				{"guard-release", "release the invoking process's checkout execution membership", runGateGuardRelease},
 				{"weight-add", "fold a landing's measured weight into the battery accumulator (numstat on stdin)", runGateWeightAdd},

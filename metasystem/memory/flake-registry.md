@@ -34,3 +34,7 @@ Remove an entry when its leg is fixed or three quiet months pass.
 - Sightings: 1 (2026-08-26 12:22Z, nested go gate inside the adopt bed, package runtime 229s under three concurrent work lanes; evidence artifacts/agents/suite-failures/20260826T122246Z-adopt-28021).
 - Mechanism hypothesis: timing-sensitive transaction assertion under heavy load in adopted-mode nested gates; passes 3x in 1.4s on the same tree unloaded.
 - Owner: flake protocol — a FIX goal at three sightings inside thirty days.
+| goal/TestValidationRefusalIsRejectedByName | 2026-08-29 | 1 | substring "bad" asserted against full ls-remote output; SHA column is hex and contains "bad" ~1% of runs | FIXED 2026-08-29 same day: assertion judges the ref-name column only |
+| steward/TestRunLoopTicksUntilTheStopFile | 2026-08-29 | 2 | tick-count assertion + TempDir teardown race with the live tick goroutine; surfaces under full-parallel race-gate CPU load (~120%), passes on lightly loaded host | steward is m1's ground (L6/L7): needs a deterministic stop handshake before teardown |
+| adopt/go-supervision purpose-gone teardown | 2026-08-29 | 1 | purpose-gone terminal with complete teardown not observed under post-gate load inside the adopt suite | listed area (suite-flake-supervision-watch triage goal); solo rerun per protocol |
+| census enumerate-filter-resolve UNRESOLVED-CWD | 2026-08-29 | 2 | fake-agent cwd unresolvable under post-gate load (census-settle class); nested adopt validate red | second sighting same day; third promotes a fix goal per protocol |
