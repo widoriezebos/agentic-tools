@@ -1,14 +1,12 @@
 # severity-tiered-rigor
 
-- State: claimed
+- State: queued
 - Intent: Critique depth and fix-path choice track real value mechanically: every finding carries a critic-declared blast class grounded in checkable facts (path frequency, blast radius); bounded-class chains get a round budget the machinery enforces (then land-with-recorded-residual or raise); refusing gates with a declared cheap unblock default to cheap+auto-debt-goal for bounded blockers; misclassification is guarded by critic-owned classification, human escalation on dispute, and auto-promotion to severe when a residual recurs in the near-miss register. Wido 2026-08-26: implement as mechanism, not prose.
 - Origin: human
 - Next step: PARKED FOR L11 (Wido via m1, 2026-08-29 evening): the lean program's finish pulls to Sunday; this arc resumes after. STATE: Tasks 1a/1b/2a/2b LANDED (ebee506, bd36ee6, e3ab42a, 699cd90 — grammar, fixture legs, register, cap engine). Task 3 (cutover + driver death) BUILT and certified with TWO findings awaiting the fix round: DCD-AUTH-001 (repeated --root-job flags redirect the internal endpoints after the authority check — parse strictly, refuse duplicates) and DCD-CARRY-001 (interior line-feed in a finding id breaks verbatim carry — normalize or refuse at return validation). Job implementer-20260829t170900z-728b holds the cumulative diff; the cancelled-round neutral fold (uncommitted in the working tree at park time — LANDS WITH T3) unwedged the chain and is pinned by TestCancelledRoundFoldsNeutrally. Remaining after T3: Tasks 4 (closure semantics), 5a/5b (same-tree union + certificate), 6 (docs + integrated proof).
 - OpenedAt: 2026-08-26T10:47:00Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=240 activeJobLimit=1
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-29T14:41:35Z revision=8
-- StopCapability: generation=8 revision=8 machine=m2 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-26T10:47:00Z FPKYWPM5D8MG8H2883KFHKG1PG-m1-bf243850 open actor=human:wido targets=severity-tiered-rigor
@@ -20,4 +18,5 @@ History:
 - 2026-08-29T14:41:22Z 3W9FVYZZX03AXXVFMG2VP6K0WH-m2-bc1be9cb set-budget actor=human:wido targets=severity-tiered-rigor
 - 2026-08-29T14:41:35Z 2JSW0VXSX9KDBP0652VJMXND7V-m2-bc1be9cb claim actor=m2+mac-coordinator targets=severity-tiered-rigor
 - 2026-08-29T17:45:14Z PY0NJ6ECSVDB8F2WM2RGNYN43V-m2-bc1be9cb edit actor=m2+mac-coordinator targets=severity-tiered-rigor
-Integrity: sha256=5ac981577bbe42332964897b232092b16679c64fcba8c2f73fb06de806da0a98
+- 2026-08-29T17:45:28Z GRV4DVGM10K3VD2N8BG1YS6V13-m2-bc1be9cb release actor=m2+mac-coordinator targets=severity-tiered-rigor
+Integrity: sha256=3a627f91e073a98c772a905ebb28a94816fad43eea80660a5ce41a438230f1ed
