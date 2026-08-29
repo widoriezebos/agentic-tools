@@ -54,10 +54,10 @@ EOF
 }
 
 twice_consulted_sections() {
-  cat <<'EOF'
-engine-delivery-contract
-runtime-contract-audits
-EOF
+  # Empty since the continue-and-collect conversion unified the
+  # doubled call sites: every section runs exactly once. Add a
+  # section id per line here if a double consult ever returns.
+  :
 }
 
 case ${1:-} in

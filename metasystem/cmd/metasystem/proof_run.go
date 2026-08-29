@@ -194,11 +194,12 @@ func selectedSections(selector, selected string) ([]string, map[string]bool, err
 	if selected == "" {
 		return sections, declaredTwice, nil
 	}
-	repeated := map[string]bool{}
-	if declaredTwice[selected] {
-		repeated[selected] = true
-	}
-	return []string{selected}, repeated, nil
+	// An enumeration run drives ONE call site, so even a
+	// declared-twice section is consulted exactly once here — the
+	// double consult exists only across a full run's two sites
+	// (found live: 'expected 2 of each' broke every single-section
+	// run of engine-delivery-contract).
+	return []string{selected}, map[string]bool{}, nil
 }
 
 func runProofRunWatchdog(args []string) int {

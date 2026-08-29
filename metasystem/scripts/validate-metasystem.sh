@@ -68,6 +68,10 @@ section_selected() { # stable section identifier
     suite_progress_enter_section "$1"
     return 0
   fi
+  # An enumeration run owes rows only for its one section; the others
+  # record their exclusion so the completeness law can tell a lawful
+  # absence from a silent one.
+  record_stage_result "$1" excluded 0 "not the enumerated section"
   return 1
 }
 
@@ -83,11 +87,13 @@ delivery_contract_skip() { # family or section name; returns 0 = skip it
   local policy_engine=${engine:-$root/bin/metasystem}
   "$policy_engine" behavior-surface skip-allowed --scope DELIVERY --family "$1" >/dev/null 2>&1 || return 1
   delivery_skipped+=("$1")
+  record_stage_result "$1" skipped 0 "delivery reuse: family proof carried by the witness"
   return 0
 }
 delegate_process_section() { # human-readable section name
   if (( delegate_scope )); then
     delegate_skipped_sections+=("$1")
+    record_stage_result "$1" skipped 0 "delegate scope: process sections are the custodian's"
     return 1
   fi
   return 0
@@ -3021,6 +3027,29 @@ if (( delegate_scope )); then
 fi
 }
 run_section validation-mode-accounting needs-nothing validation_mode_accounting_section
+
+# THE COMPLETENESS LAW (continue-and-collect-validation): a full run
+# proves every selector-named section left a recorded row — pass, fail,
+# gated, or skipped — and a section that simply never spoke makes the
+# RUN INVALID rather than quietly green (a silent section is
+# indistinguishable from a section someone forgot to wire).
+if [[ -z "$enumeration_section" ]]; then
+  validation_silent_sections=()
+  while IFS=$'\t' read -r selector_id _; do
+    [[ -n "$selector_id" ]] || continue
+    if ! awk -F '\t' -v want="$selector_id" '$1 == "section" && $2 == want { found=1 } END { exit !found }' "$stage_results_file"; then
+      validation_silent_sections+=("$selector_id")
+    fi
+  done < <(scripts/agents/validate-section-selector.sh list)
+  if (( ${#validation_silent_sections[@]} > 0 )); then
+    printf '\n========== VALIDATION RUN INVALID ==========\n' >&2
+    printf 'selector sections with NO recorded result:\n' >&2
+    printf -- '- %s\n' "${validation_silent_sections[@]}" >&2
+    printf 'stage results: %s\n' "$stage_results_file" >&2
+    printf '============================================\n' >&2
+    exit 2
+  fi
+fi
 
 if [[ -n "$enumeration_section" ]]; then
   selected_result_count=$(awk -F '\t' -v selected="$enumeration_section" \

@@ -139,11 +139,13 @@ esac
 	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 1 || !repeated["repeat"] {
 		t.Fatalf("selector data = %v, %v", sections, repeated)
 	}
+	// An enumeration run drives one call site, so even a declared-twice
+	// section expects a single consult there.
 	sections, repeated, err = selectedSections(selector, "repeat")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 1 || sections[0] != "repeat" || len(repeated) != 1 || !repeated["repeat"] {
+	if len(sections) != 1 || sections[0] != "repeat" || len(repeated) != 0 {
 		t.Fatalf("selected selector data = %v, %v", sections, repeated)
 	}
 	sections, repeated, err = selectedSections(selector, "first")
