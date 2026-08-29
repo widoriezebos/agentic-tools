@@ -26,6 +26,8 @@ The enforced rule's record names how much evidence is required before adoption a
 
 These details follow from the power being granted. Because an enforced rule can stop future work, its scope cannot be left implicit. Because the world and the software will change, its owner and review point cannot be omitted. Because its test may be wrong, a refusal must stay open to appeal.
 
+The government itself is enforced, by this paper's own law: a written expectation is advice. So the record is not a document someone maintains; it is data read by a rule about rules, standing at the same acceptance boundary. A rule cannot be adopted while its record is incomplete: no named owner, no known-bad fixture, no review date, no adoption. And it cannot keep power in bad standing: when the review date passes without renewal, or the known-bad fixture stops failing, the rule drops by itself from refusing to marking, and its owner is told. Every refusal names its owner and the appeal route because the gate fills them in from the record. An unowned rule loses its teeth automatically, so the pile of unowned refusals cannot form.
+
 Adoption can still be proportionate. A narrowly understood recurrence with severe consequences may justify a firm rule after strong reproduction and independent examination. A weak association may justify observation only. The evidence threshold is part of the decision; there is no universal number. The responsible authority decides what uncertainty is acceptable for the consequence at hand and records that reason. And like the ceremonies of Chapter 4, a rule stays only while the need it serves does; the review date and the appeal route are how it leaves.
 
 ## Test the enforced rule itself
