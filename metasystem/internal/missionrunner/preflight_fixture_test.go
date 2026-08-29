@@ -968,6 +968,12 @@ func TestStillbornInitCleansItsArtifacts(t *testing.T) {
 // wrapper and the bed's own binary, whose self-located project root is
 // the nested bed, exactly as deployed.
 func TestNestedCheckoutMissionBirth(t *testing.T) {
+	// The nested double-spawn chains real engine starts whose inner
+	// windows compound; under the package'''s compressed scale the chain
+	// cannot finish inside its verify window. Real scale until the
+	// chain'''s windows are audited individually — tracked under
+	// timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 	engine := equipFullCycleBed(t, buildPreflightBed(t, "FAKEHOST:close-stream", true))
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	t.Cleanup(func() {

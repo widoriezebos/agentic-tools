@@ -241,8 +241,9 @@ func TestTerminateGroup(t *testing.T) {
 }
 
 func TestSmallPureHelpers(t *testing.T) {
-	if scaledDuration(3) != 3*time.Second {
-		t.Fatal("scaledDuration")
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+	if w, err := ScaledWait(3); err != nil || w != 3*time.Second {
+		t.Fatalf("ScaledWait at explicit default scale: %v %v", w, err)
 	}
 	env := gitAuthorEnvironment("mission-alpha")
 	joined := strings.Join(env, "\n")

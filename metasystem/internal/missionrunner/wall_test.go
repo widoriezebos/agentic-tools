@@ -954,6 +954,12 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 // bed classifies HUMAN (a test process has no recognized ancestry), which
 // is exactly the human-reserved gate's happy path.
 func TestResolveTaintRestore(t *testing.T) {
+	// Taint identity is second-granular (setAt/resolvedAt timestamps):
+	// under the package's compressed scale a re-offense lands inside the
+	// same second and collapses into the first taint. This scenario runs
+	// at real scale until taint identity carries sub-second precision —
+	// tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 	engine := parkedSoloBuildMission(t)
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	state := readTestDoc(t, statePath)

@@ -67,6 +67,42 @@ func ScaledSeconds(base int) (int, error) {
 	return seconds, nil
 }
 
+// ScaledWait scales a base duration in seconds by the same fixture cap
+// scale, WITHOUT the one-second floor: ceilings that merely bound a real
+// fact (grace windows, handshake and verify deadlines, retry backoff) may
+// compress to milliseconds under test scales — the fact still gates, only
+// the negative-path wait shrinks. Floor 10ms so a zero scale cannot spin.
+func ScaledWait(baseSeconds int) (time.Duration, error) {
+	raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
+	if raw == "" {
+		raw = "1000"
+	}
+	scale, err := strconv.Atoi(raw)
+	if err != nil || scale < 1 {
+		return 0, fmt.Errorf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+	}
+	d := time.Duration(baseSeconds) * time.Second * time.Duration(scale) / 1000
+	if d < 10*time.Millisecond {
+		d = 10 * time.Millisecond
+	}
+	return d, nil
+}
+
+// ScaledWaitAtLeast is ScaledWait with a real-fact floor: windows that
+// bound a genuinely heavyweight external event (a real engine start, a
+// real clone) compress with the scale but never below the floor the
+// event physically needs.
+func ScaledWaitAtLeast(baseSeconds int, floor time.Duration) (time.Duration, error) {
+	d, err := ScaledWait(baseSeconds)
+	if err != nil {
+		return 0, err
+	}
+	if d < floor {
+		d = floor
+	}
+	return d, nil
+}
+
 // Interval reads a poll interval from the named environment variable
 // (milliseconds, defaulting to defaultMS when unset) and returns it as a
 // duration. A non-positive or non-integer value is a configuration error.

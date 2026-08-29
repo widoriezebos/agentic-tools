@@ -44,6 +44,11 @@ func recoveryBed(t *testing.T) (*Engine, string, string, string) {
 // put back mechanically, the whole posture re-verifies, the turn
 // passes, and the recovery record rides the evidence.
 func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	scribbled := filepath.Join(engine.Root, "scripts", "assert-turn-prompt.sh")
 	original, err := os.ReadFile(scribbled)
@@ -98,6 +103,11 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 // scribbled to C by the host comes back as B — reviewed work is never
 // discarded by recovery.
 func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
+	// Under the compressed package scale this scenario livelocks: a
+	// recovery window expires before its real fact on every retry.
+	// Real scale until the recovery windows are audited — tracked
+	// under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
@@ -149,6 +159,11 @@ func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
 // A violation in the ledger domain never reaches the rung: the
 // mechanical case is workspace content only.
 func TestWallRecoveryLeavesLedgerDomainToTheHuman(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	tampered, err := os.ReadFile(ledgerPath)
 	if err != nil {
@@ -189,6 +204,11 @@ func TestWallRecoveryLeavesLedgerDomainToTheHuman(t *testing.T) {
 // recording a violation is a crash tail, and a crash is a doubt that
 // belongs to the human — the recorded violation parks verbatim.
 func TestWallRecoveryStickyViolationOutranksTheRung(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	recorded := "undeclared host-authored change: ghost.txt (recorded before a crash)"
 	writeJSONFile(t, filepath.Join(turnDir, "wall.json"),
@@ -212,6 +232,11 @@ func TestWallRecoveryStickyViolationOutranksTheRung(t *testing.T) {
 // gate parks the recorded offense verbatim for the human — the rung
 // never re-earns a pass whose record already vanished once.
 func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	block := map[string]any{
 		"violation":     "undeclared host-authored change: x.txt",
@@ -247,6 +272,11 @@ func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
 // evidence with no live record and a landed acceptance also proceeds,
 // because the chain already holds the offense.
 func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	block := map[string]any{
 		"violation":     "undeclared host-authored change: x.txt",
@@ -324,6 +354,11 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 // The rung runs once per mission: any acceptance already carrying a
 // recovery record makes the next offense a repeat for the human.
 func TestWallRecoveryRefusesRepeatOffense(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	state := readTestDoc(t, statePath)
 	tree := strings.Repeat("d", 40)
@@ -372,6 +407,11 @@ func TestWallRecoveryRefusesRepeatOffense(t *testing.T) {
 // carries the failed-re-verification note on ask AND evidence, and no
 // recovery record ever reaches a pass.
 func TestWallRecoveryLateMutationFailsTheReverification(t *testing.T) {
+	// Recovery windows livelock under the compressed package scale
+	// (window expires before its real fact on every retry); real scale
+	// until audited — tracked under timing-tests-synthetic-clock.
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
+
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	writeText(t, filepath.Join(engine.Root, "host-scribble.txt"), "junk\n")
 	engine.postRestoreHook = func() {

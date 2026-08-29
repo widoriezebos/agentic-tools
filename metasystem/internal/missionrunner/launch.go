@@ -646,11 +646,11 @@ func (e *Engine) launch(mode string, foreground bool) error {
 	if err != nil {
 		return err
 	}
-	verifySeconds, err := ScaledSeconds(15)
+	verifyWindow, err := ScaledWaitAtLeast(15, 5*time.Second)
 	if err != nil {
 		return err
 	}
-	graceSeconds, err := ScaledSeconds(5)
+	graceWindow, err := ScaledWait(5)
 	if err != nil {
 		return err
 	}
@@ -658,7 +658,7 @@ func (e *Engine) launch(mode string, foreground bool) error {
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(scaledDuration(verifySeconds))
+	deadline := time.Now().Add(verifyWindow)
 	for !time.Now().After(deadline) {
 		if pathExists(signalPath) {
 			signal, err := readDocLabeled(signalPath, "runner start signal", 3)
@@ -673,7 +673,7 @@ func (e *Engine) launch(mode string, foreground bool) error {
 				fmt.Printf("mission=%s started=yes turn=%s\n", e.Mission, valueString(signal["turnId"]))
 				return nil
 			}
-			process.waitFor(scaledDuration(graceSeconds))
+			process.waitFor(graceWindow)
 			return failf(3, "mission start refused: %s", valueString(signal["error"]))
 		}
 		if process.exited() {

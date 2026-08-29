@@ -2058,11 +2058,11 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 				if backoff > 120 {
 					backoff = 120
 				}
-				if seconds, serr := ScaledSeconds(backoff); serr == nil {
-					e.emit("provider-overloaded", fmt.Sprintf("%s; backing off %ds", overloadClass, seconds), map[string]string{
+				if wait, serr := ScaledWait(backoff); serr == nil {
+					e.emit("provider-overloaded", fmt.Sprintf("%s; backing off %s", overloadClass, wait.Round(time.Millisecond)), map[string]string{
 						"missionId": e.Mission, "turnId": c.turnID, "outcome": "provider-overloaded",
 					})
-					time.Sleep(time.Duration(seconds) * time.Second)
+					time.Sleep(wait)
 				}
 			}
 		}

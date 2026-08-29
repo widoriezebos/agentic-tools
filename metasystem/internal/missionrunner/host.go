@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,7 +117,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		"missionId": e.Mission, "action": "sigterm",
 	})
 	_ = unix.Kill(-pgid, syscall.SIGTERM)
-	grace, err := ScaledSeconds(5)
+	grace, err := ScaledWait(5)
 	if err != nil {
 		return err
 	}
@@ -124,7 +125,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(time.Duration(grace) * time.Second)
+	deadline := time.Now().Add(grace)
 	for groupAlive(pgid) && time.Now().Before(deadline) {
 		time.Sleep(pollInterval)
 	}
@@ -188,7 +189,7 @@ type hostLaunch struct {
 	resultPath, turnPath string
 	hostGate             string
 	fakeRuntime          bool
-	grace                int
+	grace                time.Duration
 	command              *exec.Cmd
 	process              *hostProcess
 	pid                  int
@@ -239,7 +240,7 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	if session, ok := l.turn["hostSession"].(string); ok {
 		args = append(args, "--resume-session", session)
 	}
-	gateTimeout, err := ScaledSeconds(10)
+	gateTimeout, err := ScaledWaitAtLeast(10, 3*time.Second)
 	if err != nil {
 		return err
 	}
@@ -258,7 +259,7 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 		"METASYSTEM_MISSION_LEASE="+l.leasePath,
 		"METASYSTEM_MISSION_TURN="+l.turnID,
 		"METASYSTEM_HOST_START_GATE="+l.hostGate,
-		"METASYSTEM_HOST_START_GATE_TIMEOUT_SEC="+strconv.Itoa(gateTimeout),
+		"METASYSTEM_HOST_START_GATE_TIMEOUT_SEC="+strconv.Itoa(int(math.Ceil(gateTimeout.Seconds()))),
 	)
 	// The SEALED host caps ride into the adapter when the contract
 	// declares them: without this, an unsealed adapter default silently
@@ -301,7 +302,7 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 			closer.Close()
 		}
 	}()
-	grace, err := ScaledSeconds(5)
+	grace, err := ScaledWait(5)
 	if err != nil {
 		return 0, "", false, err
 	}
@@ -317,7 +318,7 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 	l.process = process
 	l.pid = l.command.Process.Pid
 	forceUnverified := l.fakeRuntime && os.Getenv("METASYSTEM_FAKE_HOST_START_UNVERIFIED") == "1"
-	deadline := time.Now().Add(time.Duration(grace) * time.Second)
+	deadline := time.Now().Add(grace)
 	var started int64
 	haveStarted := false
 	verified := false
@@ -350,7 +351,7 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 				return 0, "", false, err
 			}
 		}
-		if !process.waitFor(scaledDuration(grace)) {
+		if !process.waitFor(grace) {
 			return 0, "", false, failf(3, "host process %d did not exit during start wind-down", l.pid)
 		}
 		if _, err := patchTurn(l.turnPath, map[string]any{
@@ -407,11 +408,11 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 		}
 		l.process.waitFor(heartbeatInterval)
 	}
-	if !l.process.waitFor(scaledDuration(l.grace)) {
+	if !l.process.waitFor(l.grace) {
 		if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 			return 0, nil, "", err
 		}
-		if !l.process.waitFor(scaledDuration(l.grace)) {
+		if !l.process.waitFor(l.grace) {
 			return 0, nil, "", failf(3, "host process %d did not exit during wind-down", l.pid)
 		}
 	}
@@ -444,11 +445,6 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 		detail = "host exited without a usable result"
 	}
 	return l.process.exitCode(), result, detail, nil
-}
-
-// scaledDuration renders a scaled-seconds allowance as a duration.
-func scaledDuration(seconds int) time.Duration {
-	return time.Duration(seconds) * time.Second
 }
 
 // gitAuthorEnvironment is the process environment with the git author pinned

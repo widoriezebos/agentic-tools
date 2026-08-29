@@ -23,6 +23,17 @@ func writeJSONFile(t *testing.T, path string, value any) {
 	}
 }
 
+func TestScaledWaitCompressesBelowOneSecond(t *testing.T) {
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "25")
+	if w, err := ScaledWait(5); err != nil || w != 125*time.Millisecond {
+		t.Fatalf("5s at scale 25 = %v %v; want 125ms", w, err)
+	}
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1")
+	if w, err := ScaledWait(5); err != nil || w != 10*time.Millisecond {
+		t.Fatalf("the 10ms floor holds: %v %v", w, err)
+	}
+}
+
 func TestScaledSeconds(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "")
 	if got, err := ScaledSeconds(5); err != nil || got != 5 {
