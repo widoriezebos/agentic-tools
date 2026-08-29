@@ -24,7 +24,7 @@ From here the path is the same for every rule. An independent examiner tests it 
 
 ## What lessons become
 
-A landed rule becomes a tested floor. Months later a faster session implementation arrives, the known-bad case shows it revives an expired session, and the check refuses it. Nobody had to remember the incident. A floor holds a minimum, not a direction, and can be repealed through its appeal route when the condition it protects no longer exists.
+A landed rule becomes a tested floor. Months later a faster session implementation arrives, and the clock rule catches it: the new code reads local wall time in its expiry comparison. The check refuses it, and nobody had to remember the incident. A floor holds a minimum, not a direction, and can be repealed through its appeal route when the condition it protects no longer exists.
 
 Sometimes the release stops before any recorded user loses access. That is a near-miss: the releaser records it, keeps the uncertainty, and it enters the same path as an incident. A lesson too weak or rare for a reliable check stays in marking mode until repetition supplies the evidence. And some lessons no check can hold, such as how much extra signing in is acceptable in exchange for a shorter session. Those become rulings by the responsible authority, recorded with reasons, scope and a reconsideration date, and open to challenge by the people they affect.
 
