@@ -1,12 +1,14 @@
 # delegate-job-liveness
 
-- State: queued
+- State: claimed
 - Intent: The live delegation lane comes back under metasystem custody, and delegated worker status must not lie. Evidence through 2026-08-27: at least six zombie/launch failures in two days — status fields raced or lied in four sightings 2026-08-26/27, then the correction pass for actionable-metrics double-fired at launch (a >10min first call retried, minting a duplicate resume whose id was handed back while the real task ran under another) and later zombied (status running 15+min after log, work products, and process were all dead; caught only by a coordinator's hand-rolled monitor applying the work-product-mtime + process-probe + timed-verdict triad). Root cause: the fleet's real lane (codex companion, raw codex exec) runs outside the job-record machinery entirely — no job record since 2026-08-12, no process identity, no idempotent launch, no cap, no reaper. Every protection exists in the metasystem dispatch lane and none of it applies to the lane in daily use (Wido approved this arc re-scope 2026-08-27)
 - Origin: human
 - Next step: Appetite: 4h — HARD SLICE CEILING PER WIDO 2026-08-28 (no slice ever exceeds 4h again); this appetite governs WHATEVER continues on this goal and its breach banner must stay armed (the previous NextStep edits destroyed the parseable prefix and silenced appetite protection for the whole overnight build — the coordinator's own defect). STATE: ALL WORK STOPPED under Wido's stop order. The overnight build (6 stages + ~10 correction passes, UNLANDED) is preserved untouched on branch wip/custody-launch-machine (3fec78a, pushed). Steward/narrator were dead since Aug 20/23 (runner pid 18121 dead; being re-armed). NOTHING RESUMES without Wido's explicit word.
 - OpenedAt: 2026-08-27T06:12:18Z
-- Revision: 17
+- Revision: 18
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=400 activeJobLimit=2
+- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-29T17:45:56Z revision=18
+- StopCapability: generation=18 revision=18 machine=m2 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-27T06:12:18Z E8F1PERWGM23AZ2B7JPCWP1BS6-m1-bf243850 open actor=human:wido targets=delegate-job-liveness
@@ -26,4 +28,5 @@ History:
 - 2026-08-28T05:41:55Z VVKVX853GSHBZW2YQF6RFR4ZJT-m1-bf243850 edit actor=m1+coordinator targets=delegate-job-liveness
 - 2026-08-28T05:47:56Z 3WRQ5RYNWS7Z3X7Z19DAA7C5ST-m1-bf243850 release actor=m1+coordinator targets=delegate-job-liveness
 - 2026-08-29T17:45:42Z DYXCFN281R1R86C32RWQ7JS2RH-m2-bc1be9cb set-budget actor=human:wido targets=delegate-job-liveness
-Integrity: sha256=4ae1a37d3349ad80f70c38dccc902b6ea36cf8ffae0d62e0ff6c9e6ad9dc3118
+- 2026-08-29T17:45:56Z TSVCYXQB4NWQDJYDT1PAEPERS0-m2-bc1be9cb claim actor=m2+mac-coordinator targets=delegate-job-liveness
+Integrity: sha256=9629c1f2717da675194a4d7ae56da063b0b0f597c341489e48e3f21011433a58
