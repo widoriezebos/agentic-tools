@@ -11,7 +11,7 @@ import "fmt"
 // closed and importers must not be able to mutate it.
 func ValidMode(name string) bool {
 	switch name {
-	case "holder-only", "record-writer", "adapter-writer", "supervision-only", "genesis":
+	case "holder-only", "record-writer", "adapter-writer", "supervision-only", "stop-custodian", "genesis":
 		return true
 	}
 	return false
@@ -24,6 +24,12 @@ func ValidMode(name string) bool {
 func Authorize(mode string, classification map[string]any, job string) error {
 	class, _ := classification["class"].(string)
 	holder, _ := classification["holder"].(bool)
+	if mode == "stop-custodian" {
+		if class == "STEWARD" || (class == "MAIN" && holder) {
+			return nil
+		}
+		return fmt.Errorf("breach-stop requires the authenticated lease holder or enrolled steward custodian")
+	}
 
 	switch {
 	case class == "HUMAN":

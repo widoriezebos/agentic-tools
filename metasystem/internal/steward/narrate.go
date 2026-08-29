@@ -105,6 +105,13 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 	if len(result.Reaped) > 0 {
 		notes = append(notes, fmt.Sprintf("closed %d finished helper run(s)", len(result.Reaped)))
 	}
+	for _, stop := range result.GoalStops {
+		if stop.State == "COMPLETE" {
+			notes = append(notes, fmt.Sprintf("breach-stop completed for %s revision %d", stop.GoalID, stop.Revision))
+		} else {
+			notes = append(notes, fmt.Sprintf("breach-stop for %s revision %d is %s", stop.GoalID, stop.Revision, strings.ToLower(stop.State)))
+		}
+	}
 	if result.Decision.Action == ActNotify {
 		notes = append(notes, "flagged something for the operator: "+result.Decision.Reason)
 	}

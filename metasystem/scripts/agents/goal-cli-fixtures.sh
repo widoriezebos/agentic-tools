@@ -59,9 +59,18 @@ ledger=$(cat "$clone/plans/goals.md" && printf x) && ledger=${ledger%x}
 # something to enroll — a fresh clone has no hooks at all.
 mkdir -p "$clone/scripts/agents"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$clone/scripts/agents/"
-git -C "$clone" add plans scripts
+cp -R "$root/scripts/agents/adapters" "$clone/scripts/agents/"
+printf '%s\n' 'metasystem.runtimes=fake' >"$clone/metasystem.conf"
+git -C "$clone" add plans scripts metasystem.conf
 git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm "legacy ledger"
 git -C "$clone" push -q origin main
+
+# This suite is intentionally headless. Enroll its shell as the exact fake
+# checkout holder so claim-bearing goal fixtures carry a real claim epoch.
+fixture_start=$("$ms" proc started-at --pid "$$")
+"$ms" lease announce --root "$clone" --session goal-cli-fixture \
+  --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
+  --runtime fake --owner-lineage fixture-lineage >/dev/null
 
 # 1. source-digest speaks the exact bytes.
 digest=$("$ms" goal source-digest --root "$clone")
@@ -283,8 +292,8 @@ set +e
 admission_spent=$("$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
 admission_spent_rc=$?
 set -e
-[[ "$admission_spent_rc" -eq 9 ]] \
-  || { echo "the claim at its structured elapsed limit was not refused (rc=$admission_spent_rc): $admission_spent" >&2; exit 1; }
+[[ "$admission_spent_rc" -eq 10 ]] \
+  || { echo "the claim at its structured elapsed limit did not request breach-stop (rc=$admission_spent_rc): $admission_spent" >&2; exit 1; }
 grep -q 'BUDGET_REFUSED: goal budget-check revision=1 admission closed: elapsedLimit' <<<"$admission_spent" \
   || { echo "the structured refusal did not name its exact limit: $admission_spent" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
@@ -303,6 +312,10 @@ env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git clone -q "$o
 git -C "$other" config metasystem.goal.machine fixture-other
 mkdir -p "$other/scripts/agents"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$other/scripts/agents/"
+cp -R "$root/scripts/agents/adapters" "$other/scripts/agents/"
+"$ms" lease announce --root "$other" --session goal-cli-other \
+  --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
+  --runtime fake --owner-lineage other-lineage >/dev/null
 other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
   "$ms" goal claim --root "$other" --id plain-goal \
     --elapsed-limit 2h --attempt-limit 1 --reserved-job-minutes-limit 30 --active-job-limit 1)
@@ -350,8 +363,8 @@ admission_before=$(METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \
   "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
 admission_before_rc=$?
 set -e
-[[ "$admission_before_rc" -eq 9 ]] \
-  || { echo "the exhausted live goal was not refused before conclusion (rc=$admission_before_rc): $admission_before" >&2; exit 1; }
+[[ "$admission_before_rc" -eq 10 ]] \
+  || { echo "the exhausted live goal did not request breach-stop before conclusion (rc=$admission_before_rc): $admission_before" >&2; exit 1; }
 grep -q 'BUDGET_REFUSED: goal admission-concluded revision=1 admission closed: elapsedLimit' <<<"$admission_before" \
   || { echo "the pre-conclusion refusal did not charge the exhausted goal: $admission_before" >&2; exit 1; }
 METASYSTEM_GOAL_NOW=2026-08-20T14:00:00Z \

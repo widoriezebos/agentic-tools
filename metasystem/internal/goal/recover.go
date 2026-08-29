@@ -11,6 +11,7 @@ package goal
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,11 +23,24 @@ type RecoveryReport struct {
 	Detail string
 }
 
+// SensitiveRecoveryPolicy re-establishes authority that cannot lawfully be
+// reconstructed from journal text. The returned release function owns any
+// ranked lock held across the recovered transaction.
+type SensitiveRecoveryPolicy interface {
+	BreachStop(Endpoint, Entry) (PublishRequest, func(), error)
+}
+
 // Recover runs the rule over the whole journal. Verbs whose stored
 // intent cannot be rebuilt generically (reconcile re-runs from the
 // checkout it captures; migrate re-runs from its reviewed inputs)
 // terminalize toward their own re-runnable entry points, named.
 func Recover(e Endpoint) ([]RecoveryReport, error) {
+	return RecoverWithPolicy(e, nil)
+}
+
+// RecoverWithPolicy applies live policy to authority-sensitive operations.
+// A journal remains evidence of intent, never an authority credential.
+func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryReport, error) {
 	entries, err := Entries(e.Root)
 	if err != nil {
 		return nil, err
@@ -79,7 +93,7 @@ func Recover(e Endpoint) ([]RecoveryReport, error) {
 			}
 			report.Detail = "belief corrected to confirmed-late"
 		case ActionComplete:
-			detail, err := completeFromIntent(e, entry)
+			detail, err := completeFromIntent(e, entry, policy)
 			if err != nil {
 				return reports, err
 			}
@@ -110,12 +124,34 @@ func Recover(e Endpoint) ([]RecoveryReport, error) {
 // the entry, rebuild the mutation from the stored intent, and run
 // the same transaction loop the living use. The rebuilt push
 // resolves identically to the delayed one — same opid, same intent.
-func completeFromIntent(e Endpoint, entry Entry) (string, error) {
+func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy) (string, error) {
 	taken, err := TakeOver(e.Root, entry.Opid)
 	if err != nil {
 		return "", err
 	}
-	req, rebuildErr := requestForEntry(e, taken)
+	if taken.Intent.Verb == "resume" {
+		detail := "human authority cannot be recovered from journal text; rerun goal resume from the enrolled terminal"
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
+			return "", err
+		}
+		CleanupRefs(e, entry.Opid)
+		return "escalation required: " + detail, nil
+	}
+	var release func()
+	var req PublishRequest
+	var rebuildErr error
+	if taken.Intent.Verb == "breach-stop" {
+		if policy == nil {
+			rebuildErr = fmt.Errorf("breach-stop recovery requires a live budget projection under the goal-revision lock")
+		} else {
+			req, release, rebuildErr = policy.BreachStop(e, taken)
+		}
+	} else {
+		req, rebuildErr = requestForEntry(e, taken)
+	}
+	if release != nil {
+		defer release()
+	}
 	if rebuildErr != nil {
 		// A verb recovery cannot rebuild generically terminalizes
 		// toward its own re-runnable entry point, named — never a
@@ -149,6 +185,13 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		Actor:    actorFromEntry(entry),
 		Ulid:     entry.Opid[:26],
 		Now:      timeNowUTC(),
+	}
+	if raw := entry.Intent.Args["claimEpoch"]; raw != "" {
+		epoch, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || epoch < 1 {
+			return PublishRequest{}, fmt.Errorf("the stored intent carries invalid claimEpoch %q; close it by hand", raw)
+		}
+		r.ClaimEpoch = epoch
 	}
 	if r.opid() != entry.Opid {
 		return PublishRequest{}, fmt.Errorf("the entry's opid %s does not derive from its recorded identity; close it by hand", entry.Opid)
@@ -259,8 +302,7 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 }
 
 func actorFromEntry(entry Entry) Actor {
-	by := entry.Intent.Args["by"]
-	return Actor{Machine: entry.Machine, Lineage: entry.Lineage, Human: by}
+	return Actor{Machine: entry.Machine, Lineage: entry.Lineage}
 }
 
 func commaValues(value string) []string {

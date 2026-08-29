@@ -42,6 +42,11 @@ capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
 cap_authority_lock_held=0
+goal_revision_lock_held=0
+goal_revision_lock_dir=
+goal_revision_lock_goal=
+goal_revision_lock_revision=0
+stop_cancel_authorized=
 exit_cleanup_job=
 exit_cleanup_chain=
 exit_cleanup_authorization=
@@ -124,7 +129,11 @@ json_value() { # json string, dotted field
 
 record_cas() { # job, expected status, target status, patch file
   local cas_rc=0
-  "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4" || cas_rc=$?
+  if [[ -n "$stop_cancel_authorized" ]]; then
+    "$ms" job record-cas --root "$root" --job "$1" --expect "$2" --status "$3" --patch "$4" || cas_rc=$?
+  else
+    "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4" || cas_rc=$?
+  fi
   # FRCC-010: witness the lifecycle transitions post-CAS. Only genuine
   # status changes emit; metadata updates (expect == target) stay silent.
   if [[ "$cas_rc" == 0 && "$2" != "$3" ]]; then
@@ -215,7 +224,7 @@ lease_run_held() { # expected epoch (empty for human), command...
   fi
 }
 
-internal_authority() { # holder-only|record-writer|adapter-writer|supervision-only, optional job id
+internal_authority() { # control-plane authority mode, optional job id
   local mode=$1 job=${2:-} result
   result=$("$ms" lease classify --root "$root" --caller-pid "$entry_caller_pid") \
     || die 1 "control-plane write refused: caller classification failed"
@@ -348,10 +357,45 @@ acquire_chain_lock() { # root id
 }
 
 release_chain_lock() { # root id
+  [[ -n "$1" ]] || return 0
   local status=0
   owner_lock release "$locks/$1.d" "$$" "$process_instance_tag" || status=$?
   (( status == 4 )) && die 1 "refusing to release another owner's chain lock"
   return 0
+}
+
+acquire_goal_revision_lock() { # goal id, revision
+  local goal_id=$1 revision=$2 maximum started deadline elapsed holder_pid holder_tag holder
+  goal_revision_lock_dir=$("$ms" job goal-lock-path --root "$root" --goal "$goal_id" --revision "$revision") \
+    || die 1 "cannot resolve goal-revision lock for $goal_id revision $revision"
+  maximum=$(dispatch_fixture_wait_cap 10)
+  started=$SECONDS
+  deadline=$(( SECONDS + maximum ))
+  while ! owner_lock claim "$goal_revision_lock_dir" "$$" "$process_instance_tag"; do
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      holder_pid=$(json_field "$goal_revision_lock_dir/owner.json" pid 2>/dev/null || true)
+      holder_tag=$(json_field "$goal_revision_lock_dir/owner.json" instanceTag 2>/dev/null || true)
+      holder=unreadable
+      [[ -z "$holder_pid$holder_tag" ]] || holder="pid=${holder_pid:-unknown},tag=${holder_tag:-unknown}"
+      die 1 "LOCK_BUSY rank=goal-revision key=$goal_id/r$revision holder=$holder retry=retry-after-the-named-holder-releases elapsed=${elapsed}s cap=${maximum}s"
+    fi
+    sleep 0.05
+  done
+  goal_revision_lock_held=1
+  goal_revision_lock_goal=$goal_id
+  goal_revision_lock_revision=$revision
+}
+
+release_goal_revision_lock() {
+  (( goal_revision_lock_held )) || return 0
+  local status=0
+  owner_lock release "$goal_revision_lock_dir" "$$" "$process_instance_tag" || status=$?
+  (( status == 4 )) && die 1 "refusing to release another owner's goal-revision lock"
+  goal_revision_lock_held=0
+  goal_revision_lock_dir=
+  goal_revision_lock_goal=
+  goal_revision_lock_revision=0
 }
 
 acquire_lifecycle_lock() { # job id; nonzero means a live owner has it
@@ -360,14 +404,19 @@ acquire_lifecycle_lock() { # job id; nonzero means a live owner has it
 }
 
 acquire_lifecycle_lock_until() { # job id, maximum wait seconds
-  local job=$1 base=$2 maximum started deadline elapsed
+  local job=$1 base=$2 maximum started deadline elapsed directory holder_pid holder_tag holder
+  directory="$record_locks/$job.lifecycle.d"
   maximum=$(dispatch_fixture_wait_cap "$base")
   started=$SECONDS
   deadline=$(( SECONDS + maximum ))
   while ! acquire_lifecycle_lock "$job"; do
     if (( SECONDS >= deadline )); then
       elapsed=$((SECONDS - started))
-      echo "timed out acquiring lifecycle lock for $job (elapsed: ${elapsed}s; scaled cap: ${maximum}s)" >&2
+      holder_pid=$(json_field "$directory/owner.json" pid 2>/dev/null || true)
+      holder_tag=$(json_field "$directory/owner.json" instanceTag 2>/dev/null || true)
+      holder=unreadable
+      [[ -z "$holder_pid$holder_tag" ]] || holder="pid=${holder_pid:-unknown},tag=${holder_tag:-unknown}"
+      echo "LOCK_BUSY rank=job-lifecycle key=$job holder=$holder retry=retry-after-the-named-holder-releases elapsed=${elapsed}s cap=${maximum}s" >&2
       return 1
     fi
     sleep 0.05
@@ -418,8 +467,53 @@ require_goal_admission() {
   [[ -z "$output" ]] || printf '%s\n' "$output" >&2
   case "$result" in
     0) return 0 ;;
+    10)
+      run_breach_stop_routes
+      die 1 "dispatch refused: breach-stop closed admission and wound down the breached revision" ;;
     9) die 1 "dispatch refused by the goal admission verdict above; supply or revise the governing structured budget before another round" ;;
     *) die 1 "dispatch refused because the governing goal admission could not be evaluated" ;;
+  esac
+}
+
+run_breach_stop_routes() {
+  local routes goal_id revision prior_stop failure batch stop_id
+  routes=$("$ms" job breach-stop-routes --root "$root") \
+    || die 1 "breach-stop routes could not be resolved"
+  [[ -n "$routes" ]] || die 1 "goal admission required breach-stop but supplied no stoppable route"
+  while IFS=$'\t' read -r goal_id revision prior_stop failure; do
+    [[ -n "$goal_id" ]] || continue
+    [[ -z "$failure" ]] || die 1 "breach-stop for $goal_id revision $revision is indeterminate: $failure"
+    batch=$("$ms" job breach-stop --root "$root" --goal "$goal_id" --revision "$revision") \
+      || die 1 "breach-stop could not close $goal_id revision $revision"
+    stop_id=$(json_value "$batch" stopId)
+    internal_breach_stop_run "$stop_id"
+  done <<<"$routes"
+}
+
+require_goal_revision_admission() { # proposed cap minutes
+  local proposed=$1 output result=0 batch stop_id
+  [[ -n "${goal:-}" ]] || return 0
+  set +e
+  output=$("$ms" job goal-revision-admission --root "$root" --goal "$goal" \
+    --revision "$goal_revision" --proposed-cap "$proposed" 2>&1)
+  result=$?
+  set -e
+  [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+  case "$result" in
+    0) return 0 ;;
+    10)
+      # Stop takes the goal lock without the lower-ranked cap lock.
+      release_cap_authority_lock
+      release_goal_revision_lock
+      batch=$("$ms" job breach-stop --root "$root" --goal "$goal" --revision "$goal_revision") \
+        || die 1 "breach-stop could not close $goal revision $goal_revision"
+      stop_id=$(json_value "$batch" stopId)
+      release_chain_lock "$exit_cleanup_chain"
+      exit_cleanup_chain=
+      internal_breach_stop_run "$stop_id"
+      die 1 "dispatch refused: breach-stop $stop_id closed the launch fence and completed its cancellation pass" ;;
+    9) die 1 "dispatch refused by the exact goal revision admission verdict above" ;;
+    *) die 1 "dispatch refused because exact goal revision admission could not be evaluated" ;;
   esac
 }
 
@@ -887,7 +981,7 @@ dispatch_job() {
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
-  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json goal_revision=0
+  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -1038,17 +1132,27 @@ dispatch_job() {
   require_fresh_census
   report_plan_drift
   if [[ -n "$goal" ]]; then
-    goal_revision=$("$ms" job goal-revision --root "$root" --goal "$goal") \
-      || die 1 "cannot bind job $job to accepted goal $goal revision"
+    goal_binding=$("$ms" job goal-binding --root "$root" --goal "$goal") \
+      || die 1 "cannot bind job $job to accepted goal $goal stop authority"
+    goal_revision=$(json_value "$goal_binding" goalRevision)
+    goal_machine=$(json_value "$goal_binding" machineId)
+    goal_claim_epoch=$(json_value "$goal_binding" claimEpoch)
+    [[ -z "$current_claim_epoch" || "$current_claim_epoch" == "$goal_claim_epoch" ]] \
+      || die 1 "goal $goal revision $goal_revision belongs to claim epoch $goal_claim_epoch, not current epoch $current_claim_epoch"
   fi
+  reservation_claim_epoch=${goal_claim_epoch:-$current_claim_epoch}
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
   exit_cleanup_chain=$job
   exit_cleanup_job=
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
   [[ ! -e "$jobs/$job.json" ]] || die 1 "job id collision: $job"
   [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
+  if [[ -n "$goal" ]]; then
+    acquire_goal_revision_lock "$goal" "$goal_revision"
+    require_goal_revision_admission 0
+  fi
 
   acquire_cap_authority_lock
   cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
@@ -1056,11 +1160,13 @@ dispatch_job() {
   [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
   exit_cleanup_authorization=$job
   authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
+  proposed_cap=$(json_field "$cap_resolution" capMin)
+  require_goal_revision_admission "$proposed_cap"
 
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
-    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" --goal "$goal" \
-    --goal-revision "$goal_revision" --cap-resolution "$cap_resolution"
+    --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal" \
+    --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution"
   # Reservation remains two-phase: the final cap is authorized first, then
   # record-create publishes the spending fact before workspace or adapter
   # setup. A second dispatcher cannot prepare the same job id, and a crash
@@ -1156,7 +1262,8 @@ dispatch_job() {
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
     --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" \
-    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+    --machine-id "$goal_machine" \
+    --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch"
   rm -f "$cap_resolution"
   finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
 }
@@ -1205,16 +1312,23 @@ read_snapshot_fields() { # snapshot json — sets snapshot_path, fallbacks, sign
 }
 
 finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag
-  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch
+  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch launch_rc=0
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
-  release_chain_lock "$chain"
-  trap 'checkout_execution_guard_release || true' EXIT
+  # Launch returns only after the adapter has published the exact process
+  # identity. The chain and goal locks therefore cover the final fence read,
+  # reservation, spawn, and identity publication as one ranked interval.
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
-    --job "$job" --tag "metasystem-job-$job" || {
+    --job "$job" --tag "metasystem-job-$job" || launch_rc=$?
+  release_goal_revision_lock
+  release_chain_lock "$chain"
+  exit_cleanup_chain=
+  trap 'checkout_execution_guard_release || true' EXIT
+  if (( launch_rc != 0 )); then
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
     lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
-    rm -f "$patch"; return 3; }
+    rm -f "$patch"; return 3
+  fi
   await_handshake "$job" "$budget" "$current_claim_epoch" || return 3
   if (( wait_flag )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
@@ -1262,7 +1376,7 @@ record_critique_exhaustions() { # manifest
 
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json goal_revision=0
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -1283,7 +1397,7 @@ follow_up() {
   # runs, and under set -u the trap dies on the expansion before releasing
   # anything (the Linux cap-authority leak, go-production-grade Phase 1).
   exit_cleanup_chain=$root_id
-  trap 'release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   # A worktree chain reads its own branch, not main: a follow-up citing files
   # amended on main after the branch point describes files the delegate does
   # not have. This lesson (KI-9's complement) was violated three times as
@@ -1310,9 +1424,17 @@ follow_up() {
   workspace=$(json_field "$latest" workspaceRoot)
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   if [[ -n "$goal" ]]; then
-    goal_revision=$("$ms" job goal-revision --root "$root" --goal "$goal") \
-      || die 1 "cannot bind follow-up $child to accepted goal $goal revision"
+    goal_binding=$("$ms" job goal-binding --root "$root" --goal "$goal") \
+      || die 1 "cannot bind follow-up $child to accepted goal $goal stop authority"
+    goal_revision=$(json_value "$goal_binding" goalRevision)
+    goal_machine=$(json_value "$goal_binding" machineId)
+    goal_claim_epoch=$(json_value "$goal_binding" claimEpoch)
+    [[ -z "$current_claim_epoch" || "$current_claim_epoch" == "$goal_claim_epoch" ]] \
+      || die 1 "goal $goal revision $goal_revision belongs to claim epoch $goal_claim_epoch, not current epoch $current_claim_epoch"
+    acquire_goal_revision_lock "$goal" "$goal_revision"
+    require_goal_revision_admission 0
   fi
+  reservation_claim_epoch=${goal_claim_epoch:-$current_claim_epoch}
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   # Mission provenance refuses BEFORE the child reservation exists (round-4
   # critique R4-F1: a refusal after record-create strands the -rN husk and a
@@ -1331,15 +1453,17 @@ follow_up() {
   acquire_cap_authority_lock
   exit_cleanup_job=
   exit_cleanup_authorization=$child
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
   [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
   authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
+  proposed_cap=$(json_field "$cap_resolution" capMin)
+  require_goal_revision_admission "$proposed_cap"
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
-    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch" \
-    --goal "$goal" --goal-revision "$goal_revision" --cap-resolution "$cap_resolution"
+    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
+    --goal "$goal" --goal-revision "$goal_revision" --machine-id "$goal_machine" --cap-resolution "$cap_resolution"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
   exit_cleanup_job=$child
   exit_cleanup_authorization=
@@ -1412,7 +1536,7 @@ follow_up() {
     --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
-    --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution" \
+    --claim-epoch "$reservation_claim_epoch" --cap-resolution "$cap_resolution" \
     --root "$root" --goal-revision "$goal_revision"
   rm -f "$cap_resolution"
   finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
@@ -1575,7 +1699,7 @@ internal_cancel() {
   process_instance_tag=${process_instance_tag:-$job}
   acquire_lifecycle_lock_until "$job" 5 || exit 1
   status=$(json_field "$record" status)
-  case "$status" in pending|running) ;; *) release_lifecycle_lock "$job"; exit 0 ;; esac
+  case "$status" in pending-setup|pending|running) ;; *) release_lifecycle_lock "$job"; return 0 ;; esac
   # The marker lands BEFORE the kill: a reaper pass that concludes the
   # dead group before our own swap below still reads the cancel and
   # concludes cancelled — the kill-before-mark window is closed. An
@@ -1586,7 +1710,7 @@ internal_cancel() {
   if ! record_cas "$job" "$status" "$status" "$patch"; then
     status=$(json_field "$record" status)
     case "$status" in
-      pending|running)
+      pending-setup|pending|running)
         # An already-marked record is a PRIOR cancel's footprint (a
         # crash between mark and conclude, or a concurrent retry):
         # the mark is in place, so this cancel proceeds to finish
@@ -1600,11 +1724,11 @@ internal_cancel() {
           # cancel already succeeded" from a genuine mark failure.
           status=$(json_field "$record" status)
           case "$status" in
-            pending|running) release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job" ;;
-            *) release_lifecycle_lock "$job"; exit 0 ;;
+            pending-setup|pending|running) release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job" ;;
+            *) release_lifecycle_lock "$job"; return 0 ;;
           esac
         fi ;;
-      *) release_lifecycle_lock "$job"; exit 0 ;;
+      *) release_lifecycle_lock "$job"; return 0 ;;
     esac
   fi
   wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }
@@ -1620,9 +1744,54 @@ internal_cancel() {
     # honest shape.
     printf '{"error":null,"phase":"cancelled"}\n' >"$patch"
   fi
-  record_cas "$job" "$status" cancelled "$patch" || true
-  mirror_record "$job" || true
+  if ! record_cas "$job" "$status" cancelled "$patch"; then
+    if [[ -n "$stop_cancel_authorized" ]]; then
+      release_lifecycle_lock "$job"
+      return 1
+    fi
+  fi
+  [[ -n "$stop_cancel_authorized" ]] || mirror_record "$job" || true
   release_lifecycle_lock "$job"
+}
+
+internal_breach_stop_run() { # stop id
+  local stop_id=$1 verdict state job reconcile_rc
+  while :; do
+    set +e
+    verdict=$("$ms" job stop-batch-reconcile --root "$root" --stop "$stop_id" 2>&1)
+    reconcile_rc=$?
+    set -e
+    [[ "$reconcile_rc" == 0 ]] \
+      || die 1 "breach-stop $stop_id is indeterminate: $verdict"
+    state=$(json_value "$verdict" state)
+    [[ "$state" != COMPLETE ]] || return 0
+    while IFS= read -r job; do
+      [[ -n "$job" ]] || continue
+      "$ms" job stop-cancel-authorize --root "$root" --stop "$stop_id" --job "$job" \
+        || die 1 "breach-stop $stop_id lost cancellation authority for $job"
+      stop_cancel_authorized=$stop_id
+      internal_cancel "$job"
+      stop_cancel_authorized=
+    done < <("$ms" job stop-batch-pending --root "$root" --stop "$stop_id")
+  done
+}
+
+internal_breach_stop_goal() {
+  local goal_id= revision= batch stop_id
+  while (($#)); do
+    case "$1" in
+      --goal) goal_id=$2; shift 2 ;;
+      --revision) revision=$2; shift 2 ;;
+      *) exit 2 ;;
+    esac
+  done
+  valid_id "$goal_id" && [[ "$revision" =~ ^[1-9][0-9]*$ ]] || exit 2
+  internal_authority stop-custodian
+  batch=$("$ms" job breach-stop --root "$root" --goal "$goal_id" --revision "$revision") \
+    || die 1 "breach-stop could not close $goal_id revision $revision"
+  stop_id=$(json_value "$batch" stopId)
+  internal_breach_stop_run "$stop_id"
+  printf 'stop=%s state=COMPLETE\n' "$stop_id"
 }
 
 internal_critique_exhaustion() {
@@ -1806,6 +1975,7 @@ case "$command" in
     internal_authority holder-only "$2"
     internal_cancel "$2"
     ;;
+  __breach-stop-goal) internal_breach_stop_goal "$@" ;;
   __register-custody)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority adapter-writer "$2"

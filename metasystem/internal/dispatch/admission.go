@@ -13,10 +13,11 @@ import (
 // the dispatch admission seam. Unknown evidence closes admission without
 // inventing counters; known evidence names every exhausted limit.
 type GoalAdmissionRefusal struct {
-	GoalID       string
-	GoalRevision uint64
-	Breaches     []BudgetBreach
-	Unknown      *BudgetUnknownEvidence
+	GoalID         string
+	GoalRevision   uint64
+	Breaches       []BudgetBreach
+	Unknown        *BudgetUnknownEvidence
+	LiveStopReason string
 }
 
 // GoalAdmissionVerdict contains every refusal owned by the dispatching
@@ -78,6 +79,15 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 			file.Claimed.Machine != machine || file.Claimed.Lineage != stopLineage {
 			continue
 		}
+		if file.StopFence != nil {
+			verdict.Refusals = append(verdict.Refusals, GoalAdmissionRefusal{
+				GoalID: id, GoalRevision: file.Claimed.Revision,
+				Unknown: &BudgetUnknownEvidence{Code: BudgetUnknown, Record: goalRecordPath(id),
+					Reason: fmt.Sprintf("launch fence closed by stop batch %s", file.StopFence.StopID)},
+				LiveStopReason: file.StopFence.Reason,
+			})
+			continue
+		}
 		budget := ProjectBudget(repoRoot, file, now)
 		if budget.Status == BudgetUnknown {
 			verdict.Refusals = append(verdict.Refusals, GoalAdmissionRefusal{
@@ -89,8 +99,70 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 		if len(breaches) > 0 {
 			verdict.Refusals = append(verdict.Refusals, GoalAdmissionRefusal{
 				GoalID: id, GoalRevision: budget.GoalRevision, Breaches: breaches,
+				LiveStopReason: liveStopReason(budget),
 			})
 		}
+	}
+	return verdict, nil
+}
+
+// GoalRevisionAdmission is the final decision made while the chain and
+// goal-revision locks are held. LiveStopReason is non-empty only for elapsed
+// equality or corrupt over-limit state; ordinary exhaustion closes admission
+// without cancelling already-authorized jobs.
+type GoalRevisionAdmission struct {
+	GoalID         string
+	GoalRevision   uint64
+	Refusal        *GoalAdmissionRefusal
+	LiveStopReason string
+}
+
+func (v GoalRevisionAdmission) Refused() bool { return v.Refusal != nil }
+
+// EvaluateGoalRevisionAdmission binds the final fence and projected cap
+// decision to the exact accepted revision about to publish a reservation.
+func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time) (GoalRevisionAdmission, error) {
+	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
+	binding, err := ResolveGoalBinding(repoRoot, id, now)
+	if err != nil {
+		return verdict, err
+	}
+	if binding.Revision != revision {
+		return verdict, fmt.Errorf("goal %s accepted revision moved from %d to %d", id, revision, binding.Revision)
+	}
+	if binding.Fence != nil {
+		verdict.LiveStopReason = binding.Fence.Reason
+		verdict.Refusal = &GoalAdmissionRefusal{
+			GoalID: id, GoalRevision: revision,
+			Unknown: &BudgetUnknownEvidence{Code: BudgetUnknown, Record: goalRecordPath(id),
+				Reason: fmt.Sprintf("launch fence closed by stop batch %s", binding.Fence.StopID)},
+			LiveStopReason: binding.Fence.Reason,
+		}
+		return verdict, nil
+	}
+	projection := ProjectBudget(repoRoot, binding.File, now)
+	if projection.Status != BudgetKnown {
+		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Unknown: projection.Unknown}
+		return verdict, nil
+	}
+	if reason := liveStopReason(projection); reason != "" {
+		verdict.LiveStopReason = reason
+		verdict.Refusal = &GoalAdmissionRefusal{
+			GoalID: id, GoalRevision: revision, Breaches: projection.Breaches, LiveStopReason: reason,
+		}
+		return verdict, nil
+	}
+	breaches := budgetAdmissionBreaches(projection)
+	if proposedCap > 0 && projection.ReservedJobMinutes < projection.Limits.ReservedJobMinutesLimit &&
+		proposedCap > projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes {
+		breaches = append(breaches, BudgetBreach{
+			Field: "reservedJobMinutesLimit",
+			Used:  fmt.Sprintf("%d+%d proposed", projection.ReservedJobMinutes, proposedCap),
+			Limit: fmt.Sprintf("%d", projection.Limits.ReservedJobMinutesLimit),
+		})
+	}
+	if len(breaches) > 0 {
+		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Breaches: breaches}
 	}
 	return verdict, nil
 }

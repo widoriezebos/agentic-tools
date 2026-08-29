@@ -12,7 +12,11 @@ import (
 	"os"
 	"time"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // syncReq assembles the one request every synced verb consumes. A
@@ -42,16 +46,28 @@ func syncReq(root, by, lineageFlag string) (goal.VerbRequest, error) {
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
-	now, err := goalCommandNow()
+	now, err := goalCommandNow(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
-	return goal.VerbRequest{
+	req := goal.VerbRequest{
 		Endpoint: e,
 		Actor:    goal.Actor{Machine: machine, Lineage: lineage, Human: by},
 		Ulid:     ulid,
 		Now:      now,
-	}, nil
+	}
+	identity, classifyErr := lease.ClassifyVerb(root, int64(os.Getppid()))
+	if classifyErr == nil {
+		if identity.ClaimEpoch != nil && (identity.Holder || by != "" || identity.Class == lease.ClassHuman) {
+			req.ClaimEpoch = *identity.ClaimEpoch
+		} else if identity.Class == lease.ClassHuman {
+			// A direct human may prepare the first claimed revision before a
+			// checkout lease exists. The first lease generation is one, so the
+			// claim and its future dispatch records still share one coordinate.
+			req.ClaimEpoch = 1
+		}
+	}
+	return req, nil
 }
 
 func printSyncResult(res goal.PublishResult, err error) int {
@@ -122,7 +138,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 			return nil, false
 		}
 	}
-	if name != "open" && name != "claim" && name != "set-budget" && f.hasAnyBudgetFlag() {
+	if name != "open" && name != "claim" && name != "set-budget" && name != "resume" && f.hasAnyBudgetFlag() {
 		fmt.Fprintf(os.Stderr, "goal %s does not take budget flags\n", name)
 		return nil, false
 	}
@@ -308,6 +324,72 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 		code := printSyncResult(res, runErr)
 		return code
 	}
+}
+
+func runGoalResume(args []string) int {
+	f, ok := parseSyncFlags("resume", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) {
+		fmt.Fprintln(os.Stderr, "goal resume works the synced backlog; this checkout still carries the legacy ledger")
+		return 1
+	}
+	if f.id == "" || f.by == "" {
+		fmt.Fprintln(os.Stderr, "goal resume needs --id and --by")
+		return 2
+	}
+	budget, err := f.budgetTuple(true)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	proof, err := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "goal resume could not prove enrolled human ancestry:", err)
+		return 1
+	}
+	req, err := syncReq(f.root, f.by, f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	binding, err := dispatchcore.ResolveGoalBinding(f.root, f.id, req.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if binding.Fence == nil {
+		fmt.Fprintf(os.Stderr, "goal %s revision %d is not breach-stopped\n", f.id, binding.Revision)
+		return 1
+	}
+	held, err := goalrevision.Acquire(f.root, f.id, binding.Revision, "goal-resume")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "goal resume could not acquire the goal-revision lock:", err)
+		return 1
+	}
+	defer held.Release()
+	if err := humanauthority.RecordProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal resume", proof); err != nil {
+		fmt.Fprintln(os.Stderr, "goal resume could not record its authority proof:", err)
+		return 1
+	}
+	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
+	return printSyncResult(res, err)
+}
+
+func runGoalEnrollTerminal(args []string) int {
+	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	enrollment, err := humanauthority.Enroll(*root, int64(os.Getppid()), nil, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printJSON(enrollment)
+	return 0
 }
 
 var (

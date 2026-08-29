@@ -87,6 +87,9 @@ func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 	}
 	if claimRevision > 0 {
 		file.Budget = &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1}
+		file.StopCapability = &goal.StopCapability{
+			Generation: claimRevision, Revision: claimRevision, Machine: "bed-m1", ClaimEpoch: 7,
+		}
 	}
 	write("plans/goals/bounded.md", goal.RenderFile(file))
 	run("add", "plans/goals")

@@ -35,7 +35,7 @@ var validJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // self-edge (target == current) is a metadata update that carries no
 // transition. Terminal states have no outgoing edges.
 var statusTransitions = map[string]map[string]bool{
-	"pending-setup": {"failed": true},
+	"pending-setup": {"failed": true, "cancelled": true},
 	"pending":       {"running": true, "failed": true, "cancelled": true},
 	"running":       {"completed": true, "failed": true, "cancelled": true, "timeout": true},
 }
@@ -62,7 +62,7 @@ var immutableFields = map[string]bool{
 	"branch": true, "startedAt": true, "claimEpoch": true, "mainId": true,
 	"capMin": true, "capDeadline": true, "capResolution": true,
 	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
-	"operationId": true, "goalId": true, "goalRevision": true,
+	"operationId": true, "goalId": true, "goalRevision": true, "machineId": true,
 }
 
 // The only fields a terminal record still accepts: its evidence mirror, the
@@ -220,6 +220,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["operationId"], current["operationId"]) ||
 			!sameValue(record["goalId"], current["goalId"]) ||
 			!sameValue(record["goalRevision"], current["goalRevision"]) ||
+			!sameValue(record["machineId"], current["machineId"]) ||
 			!sameValue(record["capMin"], current["capMin"]) {
 			return refuse(1, "invalid setup transition for %s", job)
 		}

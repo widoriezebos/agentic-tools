@@ -10,19 +10,27 @@ import (
 // zero means none. The comm field can contain spaces, so fields are
 // counted after its closing parenthesis.
 func kernelTerminal(pid int64) (bool, bool) {
+	terminal, ok := kernelTerminalIdentity(pid)
+	return terminal != "", ok
+}
+
+func kernelTerminalIdentity(pid int64) (string, bool) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
-		return false, false
+		return "", false
 	}
 	s := string(data)
 	close := strings.LastIndexByte(s, ')')
 	if close < 0 {
-		return false, false
+		return "", false
 	}
 	fields := strings.Fields(s[close+1:])
 	// After the comm field: state, ppid, pgrp, session, tty_nr, ...
 	if len(fields) < 5 {
-		return false, false
+		return "", false
 	}
-	return fields[4] != "0", true
+	if fields[4] == "0" {
+		return "", true
+	}
+	return "linux-tty:" + fields[4], true
 }

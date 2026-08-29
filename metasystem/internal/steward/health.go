@@ -76,6 +76,7 @@ type RoleVerdict struct {
 	ConsecutiveUnknown  int          `json:"consecutiveUnknown,omitempty"`
 	ConsecutiveFailures int          `json:"consecutiveFailures,omitempty"`
 	FailureEscalation   string       `json:"failureEscalation,omitempty"`
+	NoAutomaticRemedy   bool         `json:"noAutomaticRemedy,omitempty"`
 }
 
 const (
@@ -399,6 +400,8 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 		// The watcher repairs the steward process whose failed tick also stops
 		// narration. An isolated narrator failure has no separate automatic act.
 		return roleIsDead(RoleStewardRunner)
+	case RoleClaimedGoalBudget:
+		return !role.NoAutomaticRemedy
 	default:
 		return false
 	}
@@ -641,12 +644,19 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 				"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
 		}
 		if id, malformed := malformedBudgetGoal(err); malformed {
-			return roleDead(RoleClaimedGoalBudget,
+			role := roleDead(RoleClaimedGoalBudget,
 				fmt.Sprintf("claimed goal %s has a malformed structured budget tuple", id), goalBudgetRemedy(id))
+			role.NoAutomaticRemedy = true
+			return role
 		}
 		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
 	}
-	var dead []string
+	type budgetFailure struct {
+		reason    string
+		remedy    string
+		automatic bool
+	}
+	var dead []budgetFailure
 	var unknown []string
 	var known []string
 	ids := make([]string, 0, len(projection.Tree.Live))
@@ -660,7 +670,39 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			continue
 		}
 		if file.Budget == nil {
-			dead = append(dead, fmt.Sprintf("%s BUDGET_MISSING record=plans/goals/%s.md: claimed goal has no structured budget", id, id))
+			dead = append(dead, budgetFailure{
+				reason: fmt.Sprintf("%s BUDGET_MISSING record=plans/goals/%s.md: claimed goal has no structured budget", id, id),
+				remedy: goalBudgetRemedy(id),
+			})
+			continue
+		}
+		if file.StopFence != nil {
+			batch, batchErr := goal.ReadStopBatch(repoRoot, file.StopFence.StopID)
+			if batchErr != nil {
+				dead = append(dead, budgetFailure{
+					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s",
+						id, file.Claimed.Revision, file.StopFence.StopID, batchErr),
+					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
+				})
+				continue
+			}
+			switch batch.State {
+			case goal.StopBatchComplete:
+				known = append(known, fmt.Sprintf("%s revision=%d BREACH_STOP_COMPLETE stop=%s terminalJobs=%d foreignJobs=%d",
+					id, file.Claimed.Revision, batch.StopID, len(batch.Terminal), len(batch.Foreign)))
+			case goal.StopBatchIndeterminate:
+				dead = append(dead, budgetFailure{
+					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s",
+						id, file.Claimed.Revision, batch.StopID, batch.Failure),
+					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
+				})
+			default:
+				dead = append(dead, budgetFailure{
+					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d",
+						id, file.Claimed.Revision, batch.StopID, len(batch.Pending)),
+					remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+				})
+			}
 			continue
 		}
 		budget := dispatch.ProjectBudget(repoRoot, file, now)
@@ -674,7 +716,10 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			for _, breach := range budget.Breaches {
 				fields = append(fields, fmt.Sprintf("%s used=%s limit=%s", breach.Field, breach.Used, breach.Limit))
 			}
-			dead = append(dead, fmt.Sprintf("%s revision=%d BREACH %s", id, budget.GoalRevision, strings.Join(fields, ", ")))
+			dead = append(dead, budgetFailure{
+				reason: fmt.Sprintf("%s revision=%d BREACH %s", id, budget.GoalRevision, strings.Join(fields, ", ")),
+				remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+			})
 			continue
 		}
 		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d elapsed=%s/%s",
@@ -684,9 +729,24 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit))
 	}
 	if len(dead) > 0 {
-		id := strings.Fields(dead[0])[0]
-		reasons := append(dead, unknown...)
-		return roleDead(RoleClaimedGoalBudget, strings.Join(reasons, "; "), goalBudgetRemedy(id))
+		reasons := make([]string, 0, len(dead)+len(unknown))
+		remedy := dead[0].remedy
+		noAutomaticRemedy := false
+		for _, failure := range dead {
+			reasons = append(reasons, failure.reason)
+			if !failure.automatic && !noAutomaticRemedy {
+				remedy = failure.remedy
+				noAutomaticRemedy = true
+			}
+		}
+		if len(unknown) > 0 {
+			reasons = append(reasons, unknown...)
+			remedy = "repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo " + strconv.Quote(repoRoot)
+			noAutomaticRemedy = true
+		}
+		role := roleDead(RoleClaimedGoalBudget, strings.Join(reasons, "; "), remedy)
+		role.NoAutomaticRemedy = noAutomaticRemedy
+		return role
 	}
 	if len(unknown) > 0 {
 		return roleUnknown(RoleClaimedGoalBudget, strings.Join(unknown, "; "),

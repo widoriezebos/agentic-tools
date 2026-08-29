@@ -13,10 +13,11 @@ func testBudget() Budget {
 
 func verbReq(root, ulid, machine string) VerbRequest {
 	return VerbRequest{
-		Endpoint: endpointFor(root),
-		Actor:    Actor{Machine: machine, Lineage: "lin-1"},
-		Ulid:     ulid,
-		Now:      time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC),
+		Endpoint:   endpointFor(root),
+		Actor:      Actor{Machine: machine, Lineage: "lin-1"},
+		Ulid:       ulid,
+		Now:        time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC),
+		ClaimEpoch: 1,
 	}
 }
 
@@ -87,6 +88,40 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	verbs := []string{archived.History[0].Verb, archived.History[1].Verb, archived.History[2].Verb}
 	if strings.Join(verbs, ",") != "open,claim,done" {
 		t.Fatalf("history names the verbs in order: %v", verbs)
+	}
+}
+
+func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
+	origin, repo := oneClone(t)
+	seedLedger(t, repo)
+
+	req := verbReq(repo, "01J5X0000000000000000000DA", "mac-a")
+	if res, err := Open(req, "archive-it", "Archive the result.", "main", "Conclude it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	req.Ulid = "01J5X0000000000000000000DB"
+	res, err := Done(req, "archive-it", "Published to the records-owned archive.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("done: %+v %v", res, err)
+	}
+
+	publishedTip := mustGit(t, origin, "rev-parse", "refs/heads/main")
+	if publishedTip != res.Commit {
+		t.Fatalf("the remote tip must be the done transaction: tip=%s commit=%s", publishedTip, res.Commit)
+	}
+	recordPath := recordsGoalsPrefix + "archive-it.md"
+	record, err := gitIn(origin, "cat-file", "-p", publishedTip+":"+recordPath)
+	if err != nil {
+		t.Fatalf("the published tree must contain %s: %v", recordPath, err)
+	}
+	archived, problems := ParseFile([]byte(record))
+	if len(problems) != 0 || archived == nil || archived.Conclude != "Published to the records-owned archive." {
+		t.Fatalf("the published archive must retain its canonical conclusion and integrity: %+v %v", archived, problems)
+	}
+	for _, absent := range []string{livePath("archive-it"), legacyDonePrefix + "archive-it.md"} {
+		if _, err := gitIn(origin, "cat-file", "-e", publishedTip+":"+absent); err == nil {
+			t.Fatalf("the published done transaction must remove %s", absent)
+		}
 	}
 }
 

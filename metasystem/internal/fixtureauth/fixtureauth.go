@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -28,6 +29,8 @@ import (
 // fixtureEnv is the fixture table's environment variable — read ONLY
 // here.
 const fixtureEnv = "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"
+
+const goalNowEnv = "METASYSTEM_GOAL_NOW"
 
 // Authorization is the root-checked fixture authority. A nil
 // *Authorization is valid everywhere and refuses every fixture read —
@@ -202,6 +205,30 @@ type ProcessTableProbe struct{ a *Authorization }
 func (a *Authorization) ProcessTable() ProcessTableProbe { return ProcessTableProbe{a} }
 
 func (p ProcessTableProbe) Allows() bool { return p.a != nil && p.a.fixtureMode }
+
+// ClockProbe is the fixture-only goal clock authority. Production roots
+// ignore the environment variable completely, including malformed values.
+type ClockProbe struct{ a *Authorization }
+
+func (a *Authorization) Clock() ClockProbe { return ClockProbe{a} }
+
+// GoalNow returns the configured fixture instant when this root explicitly
+// runs the fake runtime. The boolean is false when the wall clock remains
+// authoritative.
+func (p ClockProbe) GoalNow() (time.Time, bool, error) {
+	if p.a == nil || !p.a.fixtureMode {
+		return time.Time{}, false, nil
+	}
+	raw := os.Getenv(goalNowEnv)
+	if raw == "" {
+		return time.Time{}, false, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("%s must be an RFC3339 timestamp: %v", goalNowEnv, err)
+	}
+	return parsed.UTC(), true, nil
+}
 
 // MissionHolderProbe serves dispatch.ValidateMission: command plus
 // process-group facts, the two authorities mission-join needs.

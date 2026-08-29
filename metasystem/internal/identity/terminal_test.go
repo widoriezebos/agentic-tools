@@ -32,6 +32,12 @@ func TestKernelAnswersForALiveProcess(t *testing.T) {
 	}
 }
 
+func TestKernelExecutablePathForSelf(t *testing.T) {
+	if executable, ok := ExecutablePath(int64(os.Getpid())); !ok || executable == "" {
+		t.Fatalf("the kernel did not return this process's executable: %q ok=%v", executable, ok)
+	}
+}
+
 func TestDeadPidHasNoAnswer(t *testing.T) {
 	if _, ok := ControllingTerminal(1<<30, nil); ok {
 		t.Fatal("a nonexistent pid answers nothing")

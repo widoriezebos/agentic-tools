@@ -135,6 +135,11 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 				if strings.Contains(string(problem), "pending-human") || strings.Contains(string(problem), "pending-stamp") {
 					continue
 				}
+				if baseFile.State == StateClaimed && edited.State == StateParked &&
+					(string(problem) == "stop authority on a parked goal" ||
+						string(problem) == "StopCapability contradicts the claim binding") {
+					continue
+				}
 				return nil, fmt.Errorf("%s: the hand edit carries a diagnostic the surface refuses: %s", d.Path, problem)
 			}
 			rows, err := mapOneChange(d.Path, baseFile, edited)
@@ -215,6 +220,17 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	if !claimClearedByPark && ((edited.Claimed == nil) != (base.Claimed == nil) ||
 		(edited.Claimed != nil && *edited.Claimed != *base.Claimed)) {
 		return nil, fmt.Errorf("%s: Claimed is a generated field; claim and release are verbs", p)
+	}
+	stopRetainedByPark := claimClearedByPark && edited.StopCapability != nil && base.StopCapability != nil &&
+		*edited.StopCapability == *base.StopCapability &&
+		((edited.StopFence == nil && base.StopFence == nil) ||
+			(edited.StopFence != nil && base.StopFence != nil && *edited.StopFence == *base.StopFence))
+	stopClearedByPark := claimClearedByPark && edited.StopCapability == nil && edited.StopFence == nil
+	if !stopRetainedByPark && !stopClearedByPark && ((edited.StopCapability == nil) != (base.StopCapability == nil) ||
+		(edited.StopCapability != nil && *edited.StopCapability != *base.StopCapability) ||
+		(edited.StopFence == nil) != (base.StopFence == nil) ||
+		(edited.StopFence != nil && *edited.StopFence != *base.StopFence)) {
+		return nil, fmt.Errorf("%s: stop authority is generated; breach-stop and resume are verbs", p)
 	}
 
 	var rows []MappedVerb

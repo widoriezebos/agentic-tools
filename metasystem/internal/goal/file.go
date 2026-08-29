@@ -36,9 +36,14 @@ type GoalFile struct {
 	Pinned  string
 	Budget  *Budget
 	Claimed *ClaimRecord
-	Parked  *ParkRecord
-	Legacy  []string // LegacyNotes: verbatim non-field prose from migration
-	History []HistoryLine
+	// StopCapability is the narrow authority minted with one claimed
+	// revision. StopFence is present only after that authority closed launch
+	// admission for the revision.
+	StopCapability *StopCapability
+	StopFence      *StopFence
+	Parked         *ParkRecord
+	Legacy         []string // LegacyNotes: verbatim non-field prose from migration
+	History        []HistoryLine
 }
 
 // ClaimRecord is the ownership record of a claimed goal.
@@ -51,6 +56,32 @@ type ClaimRecord struct {
 	// binding existed.
 	Revision uint64
 }
+
+// StopCapability binds breach-stop authority to one exact local claim. The
+// goal id is the containing record's id; every other coordinate is explicit.
+type StopCapability struct {
+	Generation uint64
+	Revision   uint64
+	Machine    string
+	ClaimEpoch int64
+	FenceEpoch uint64
+}
+
+// StopFence is the absorbing launch refusal for one stopped revision. A human
+// resume removes it only after the named batch is complete.
+type StopFence struct {
+	StopID               string
+	Revision             uint64
+	Epoch                uint64
+	CapabilityGeneration uint64
+	ClosedAt             string
+	Reason               string
+}
+
+const (
+	StopReasonElapsedLimit     = "ELAPSED_LIMIT"
+	StopReasonCorruptOverLimit = "CORRUPT_OVER_LIMIT"
+)
 
 // ParkRecord is the pause record of a parked goal.
 type ParkRecord struct {
@@ -179,6 +210,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.State != StateClaimed && f.Claimed != nil {
 		addProblem("Claimed record on a %s goal", f.State)
 	}
+	if f.State != StateClaimed && (f.StopCapability != nil || f.StopFence != nil) {
+		addProblem("stop authority on a %s goal", f.State)
+	}
 	if f.Pinned != "" && !validPinnedNickname(f.Pinned) {
 		addProblem("Pinned %q is not a machine nickname (one word, no whitespace of any kind)", f.Pinned)
 	}
@@ -200,6 +234,28 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	}
 	if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision == 0 && f.Budget != nil {
 		addProblem("Budget: a structured tuple requires a revision-bound claim record")
+	}
+	if f.StopCapability != nil {
+		capability := f.StopCapability
+		if capability.Generation == 0 || capability.Revision == 0 || capability.Machine == "" || capability.ClaimEpoch < 1 {
+			addProblem("StopCapability is incomplete")
+		} else if f.Claimed == nil || capability.Revision != f.Claimed.Revision || capability.Machine != f.Claimed.Machine {
+			addProblem("StopCapability contradicts the claim binding")
+		}
+	}
+	if f.StopFence != nil {
+		fence := f.StopFence
+		if f.StopCapability == nil {
+			addProblem("StopFence has no stop capability")
+		} else if !safeStopID(fence.StopID) || fence.Revision == 0 || fence.Epoch == 0 || fence.CapabilityGeneration == 0 || !validStamp(fence.ClosedAt) {
+			addProblem("StopFence is incomplete")
+		} else if fence.Revision != f.StopCapability.Revision || fence.Epoch != f.StopCapability.FenceEpoch ||
+			fence.CapabilityGeneration != f.StopCapability.Generation {
+			addProblem("StopFence contradicts the stop capability")
+		}
+		if fence.Reason != StopReasonElapsedLimit && fence.Reason != StopReasonCorruptOverLimit {
+			addProblem("StopFence reason %q is not a live-stop reason", fence.Reason)
+		}
 	}
 	if f.State == StateParked && f.Parked == nil {
 		addProblem("parked without a Parked record")
@@ -320,6 +376,43 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			}
 		}
 		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision}
+	case "StopCapability":
+		rec, err := parseKVRecord(value, []string{"generation", "revision", "machine", "claimEpoch", "fenceEpoch"}, nil, "")
+		if err != nil {
+			addProblem("StopCapability: %v", err)
+			return
+		}
+		generation, generationErr := strconv.ParseUint(rec["generation"], 10, 64)
+		revision, revisionErr := strconv.ParseUint(rec["revision"], 10, 64)
+		claimEpoch, claimEpochErr := strconv.ParseInt(rec["claimEpoch"], 10, 64)
+		fenceEpoch, fenceEpochErr := strconv.ParseUint(rec["fenceEpoch"], 10, 64)
+		if generationErr != nil || generation == 0 || revisionErr != nil || revision == 0 ||
+			claimEpochErr != nil || claimEpoch < 1 || fenceEpochErr != nil {
+			addProblem("StopCapability has invalid numeric coordinates")
+			return
+		}
+		f.StopCapability = &StopCapability{
+			Generation: generation, Revision: revision, Machine: rec["machine"],
+			ClaimEpoch: claimEpoch, FenceEpoch: fenceEpoch,
+		}
+	case "StopFence":
+		rec, err := parseKVRecord(value,
+			[]string{"stopId", "revision", "epoch", "capabilityGeneration", "closedAt", "reason"}, nil, "")
+		if err != nil {
+			addProblem("StopFence: %v", err)
+			return
+		}
+		revision, revisionErr := strconv.ParseUint(rec["revision"], 10, 64)
+		epoch, epochErr := strconv.ParseUint(rec["epoch"], 10, 64)
+		generation, generationErr := strconv.ParseUint(rec["capabilityGeneration"], 10, 64)
+		if revisionErr != nil || revision == 0 || epochErr != nil || epoch == 0 || generationErr != nil || generation == 0 {
+			addProblem("StopFence has invalid numeric coordinates")
+			return
+		}
+		f.StopFence = &StopFence{
+			StopID: rec["stopId"], Revision: revision, Epoch: epoch,
+			CapabilityGeneration: generation, ClosedAt: rec["closedAt"], Reason: rec["reason"],
+		}
 	case "Parked":
 		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"}, "because")
 		if err != nil {
@@ -440,6 +533,16 @@ func RenderFile(f *GoalFile) []byte {
 			fmt.Fprintf(&b, " revision=%d", f.Claimed.Revision)
 		}
 		b.WriteByte('\n')
+	}
+	if f.StopCapability != nil {
+		fmt.Fprintf(&b, "- StopCapability: generation=%d revision=%d machine=%s claimEpoch=%d fenceEpoch=%d\n",
+			f.StopCapability.Generation, f.StopCapability.Revision, f.StopCapability.Machine,
+			f.StopCapability.ClaimEpoch, f.StopCapability.FenceEpoch)
+	}
+	if f.StopFence != nil {
+		fmt.Fprintf(&b, "- StopFence: stopId=%s revision=%d epoch=%d capabilityGeneration=%d closedAt=%s reason=%s\n",
+			f.StopFence.StopID, f.StopFence.Revision, f.StopFence.Epoch,
+			f.StopFence.CapabilityGeneration, f.StopFence.ClosedAt, f.StopFence.Reason)
 	}
 	if f.Parked != nil {
 		line := fmt.Sprintf("- Parked: by=%s at=%s", f.Parked.By, f.Parked.At)

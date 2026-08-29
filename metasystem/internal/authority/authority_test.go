@@ -20,6 +20,10 @@ func TestAuthorize(t *testing.T) {
 	}{
 		{"human always", "holder-only", cls("HUMAN", false, ""), "", true},
 		{"holder writes", "holder-only", cls("MAIN", true, ""), "", true},
+		{"holder runs stop custodian", "stop-custodian", cls("MAIN", true, ""), "", true},
+		{"steward runs stop custodian", "stop-custodian", cls("STEWARD", false, ""), "", true},
+		{"human string cannot run stop custodian", "stop-custodian", cls("HUMAN", false, ""), "", false},
+		{"delegate cannot run stop custodian", "stop-custodian", cls("DELEGATE", false, ""), "", false},
 		{"holder cannot standing-reap", "supervision-only", cls("MAIN", true, ""), "", false},
 		{"non-holder main refused holder-only", "holder-only", cls("MAIN", false, ""), "", false},
 		{"supervision writes record", "record-writer", cls("SUPERVISION", false, ""), "", true},
@@ -39,7 +43,7 @@ func TestAuthorize(t *testing.T) {
 }
 
 func TestValidMode(t *testing.T) {
-	for _, mode := range []string{"holder-only", "record-writer", "adapter-writer", "supervision-only"} {
+	for _, mode := range []string{"holder-only", "record-writer", "adapter-writer", "supervision-only", "stop-custodian"} {
 		if !ValidMode(mode) {
 			t.Errorf("%s must be a valid control-plane mode", mode)
 		}
@@ -117,7 +121,7 @@ func TestStewardIsAdmittedToExactlyItsOwnContinuationJob(t *testing.T) {
 
 func TestUntrustedRefusesEveryMode(t *testing.T) {
 	caller := map[string]any{"class": "UNTRUSTED"}
-	for _, mode := range []string{"holder-only", "record-writer", "adapter-writer", "supervision-only", "genesis"} {
+	for _, mode := range []string{"holder-only", "record-writer", "adapter-writer", "supervision-only", "stop-custodian", "genesis"} {
 		if err := Authorize(mode, caller, ""); err == nil {
 			t.Fatalf("mode %s must refuse an untrusted caller", mode)
 		}

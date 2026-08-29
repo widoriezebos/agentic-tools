@@ -66,23 +66,28 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 // procArgs reads argv via KERN_PROCARGS2: the buffer holds argc, the
 // executable path, NUL padding, then the NUL-separated argv and env.
 func procArgs(pid int64) ([]string, error) {
+	argv, _, err := procArgsAndExecutable(pid)
+	return argv, err
+}
+
+func procArgsAndExecutable(pid int64) ([]string, string, error) {
 	raw, err := unix.SysctlRaw("kern.procargs2", int(pid))
 	if err != nil {
-		return nil, fmt.Errorf("identity: procargs2 %d: %w", pid, err)
+		return nil, "", fmt.Errorf("identity: procargs2 %d: %w", pid, err)
 	}
 	if len(raw) < 4 {
-		return nil, fmt.Errorf("identity: procargs2 %d: short read", pid)
+		return nil, "", fmt.Errorf("identity: procargs2 %d: short read", pid)
 	}
 	argc := int(*(*int32)(unsafe.Pointer(&raw[0])))
 	if argc < 1 || argc > 4096 {
-		return nil, fmt.Errorf("identity: procargs2 %d: implausible argc %d", pid, argc)
+		return nil, "", fmt.Errorf("identity: procargs2 %d: implausible argc %d", pid, argc)
 	}
 	rest := raw[4:]
-	// Skip the executable path and its NUL padding.
 	cut := bytes.IndexByte(rest, 0)
 	if cut < 0 {
-		return nil, fmt.Errorf("identity: procargs2 %d: unterminated exec path", pid)
+		return nil, "", fmt.Errorf("identity: procargs2 %d: unterminated exec path", pid)
 	}
+	executable := string(rest[:cut])
 	rest = rest[cut:]
 	for len(rest) > 0 && rest[0] == 0 {
 		rest = rest[1:]
@@ -97,7 +102,15 @@ func procArgs(pid int64) ([]string, error) {
 		rest = rest[cut+1:]
 	}
 	if len(argv) != argc {
-		return nil, fmt.Errorf("identity: procargs2 %d: read %d of %d argv words", pid, len(argv), argc)
+		return nil, "", fmt.Errorf("identity: procargs2 %d: read %d of %d argv words", pid, len(argv), argc)
 	}
-	return argv, nil
+	if executable == "" {
+		return nil, "", fmt.Errorf("identity: procargs2 %d: empty exec path", pid)
+	}
+	return argv, executable, nil
+}
+
+func kernelExecutablePath(pid int64) (string, bool) {
+	_, executable, err := procArgsAndExecutable(pid)
+	return executable, err == nil
 }

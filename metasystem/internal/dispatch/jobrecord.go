@@ -48,6 +48,9 @@ func (r JobRecord) ParentJob() string { return r.text("parentJob") }
 // GoalID is the optional goal this job was reserved for.
 func (r JobRecord) GoalID() string { return r.text("goalId") }
 
+// MachineID is the claim machine copied into a goal-bound reservation.
+func (r JobRecord) MachineID() string { return r.text("machineId") }
+
 func (r JobRecord) uint64Field(key string) (uint64, bool) {
 	value, present := r.doc.Get(key)
 	if !present {
@@ -75,6 +78,15 @@ func (r JobRecord) uint64Field(key string) (uint64, bool) {
 
 // GoalRevision is the exact claimed-goal revision this reservation spends.
 func (r JobRecord) GoalRevision() (uint64, bool) { return r.uint64Field("goalRevision") }
+
+// ClaimEpoch is the checkout generation that bound the reservation.
+func (r JobRecord) ClaimEpoch() (int64, bool) {
+	value, present := r.doc.Get("claimEpoch")
+	if !present {
+		return 0, false
+	}
+	return numInt(value)
+}
 
 // CapMinutes is the immutable reserved runtime cap.
 func (r JobRecord) CapMinutes() (uint64, bool) { return r.uint64Field("capMin") }

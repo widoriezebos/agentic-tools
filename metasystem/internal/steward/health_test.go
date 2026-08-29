@@ -230,8 +230,8 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 		writeHealthJob(t, root, "two", `{"jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
 		role := checkClaimedGoalBudgets(root, now)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "reservedJobMinutesLimit") ||
-			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "goal set-budget") {
-			t.Fatalf("structured breaches were not health-only evidence: %+v", role)
+			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "steward tick") {
+			t.Fatalf("structured breaches did not route to breach-stop healing: %+v", role)
 		}
 	})
 
@@ -244,6 +244,87 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 			t.Fatalf("unknown spending did not name its exact record: %+v", role)
 		}
 	})
+}
+
+func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	file := structuredHealthGoal()
+	file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "bed-m1", ClaimEpoch: 7, FenceEpoch: 1}
+	file.StopFence = &goal.StopFence{
+		StopID: "stop-bounded-goal-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
+		ClosedAt: now.Add(-time.Minute).Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
+	}
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	stamp := now.Format(time.RFC3339)
+	batch := goal.StopBatch{
+		StopID: file.StopFence.StopID, GoalID: file.Id, GoalRevision: 2, FenceEpoch: 1,
+		CapabilityGeneration: 2, Machine: "bed-m1", ClaimEpoch: 7, Reason: goal.StopReasonElapsedLimit,
+		State: goal.StopBatchComplete, OpenedAt: stamp, UpdatedAt: stamp, CompletedAt: stamp, Pass: 1,
+	}
+	if err := goal.WriteStopBatch(root, batch); err != nil {
+		t.Fatal(err)
+	}
+	if role := checkClaimedGoalBudgets(root, now); role.Status != HealthAlive || !strings.Contains(role.Reason, "BREACH_STOP_COMPLETE") {
+		t.Fatalf("complete machinery stop must be health-alive history: %+v", role)
+	}
+
+	batch.State = goal.StopBatchIndeterminate
+	batch.CompletedAt = ""
+	batch.Failure = "custody cannot be proven"
+	// COMPLETE is absorbing, so use a second root for the failure episode.
+	failureRoot := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	if err := goal.WriteStopBatch(failureRoot, batch); err != nil {
+		t.Fatal(err)
+	}
+	role := checkClaimedGoalBudgets(failureRoot, now)
+	verdict := applyHealthObservation(failureRoot, HealthObservationState{}, []RoleVerdict{role}, now)
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "INDETERMINATE") ||
+		!verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
+		t.Fatalf("indeterminate custody must keep the fence and alert as no-lawful-remedy: role=%+v verdict=%+v", role, verdict)
+	}
+}
+
+func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	breach := structuredHealthGoal()
+	breach.Id = "a-breach"
+	for index := range breach.History {
+		breach.History[index].Targets = []string{breach.Id}
+	}
+	indeterminate := structuredHealthGoal()
+	indeterminate.Id = "z-indeterminate"
+	for index := range indeterminate.History {
+		indeterminate.History[index].Targets = []string{indeterminate.Id}
+	}
+	indeterminate.StopCapability = &goal.StopCapability{
+		Generation: 2, Revision: 2, Machine: "bed-m1", ClaimEpoch: 7, FenceEpoch: 1,
+	}
+	indeterminate.StopFence = &goal.StopFence{
+		StopID: "stop-z-indeterminate-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
+		ClosedAt: now.Add(-time.Minute).Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
+	}
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+		breach.Id: breach, indeterminate.Id: indeterminate,
+	})
+	writeHealthJob(t, root, "over-limit", `{"jobId":"over-limit","operationId":"reserve-over-limit","goalId":"a-breach","goalRevision":2,"capMin":80,"status":"running"}`)
+	stamp := now.Format(time.RFC3339)
+	batch := goal.StopBatch{
+		StopID: indeterminate.StopFence.StopID, GoalID: indeterminate.Id, GoalRevision: 2,
+		FenceEpoch: 1, CapabilityGeneration: 2, Machine: "bed-m1", ClaimEpoch: 7,
+		Reason: goal.StopReasonElapsedLimit, State: goal.StopBatchIndeterminate,
+		OpenedAt: stamp, UpdatedAt: stamp, Failure: "custody cannot be proven",
+	}
+	if err := goal.WriteStopBatch(root, batch); err != nil {
+		t.Fatal(err)
+	}
+	role := checkClaimedGoalBudgets(root, now)
+	verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
+	if !strings.Contains(role.Reason, "a-breach revision=2 BREACH") ||
+		!strings.Contains(role.Reason, "z-indeterminate revision=2 BREACH_STOP_INDETERMINATE") ||
+		!role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "keep the launch fence closed") ||
+		!verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
+		t.Fatalf("one healable goal must not mask another goal's indeterminate custody: role=%+v verdict=%+v", role, verdict)
+	}
 }
 
 func TestClaimedGoalMissingOrMalformedBudgetNamesSetBudget(t *testing.T) {

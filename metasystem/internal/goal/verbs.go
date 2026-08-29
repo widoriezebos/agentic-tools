@@ -12,6 +12,7 @@ package goal
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -40,6 +41,9 @@ type VerbRequest struct {
 	Actor    Actor
 	Ulid     string // caller-minted; the opid derives from it
 	Now      time.Time
+	// ClaimEpoch is the authenticated checkout lease generation. Only
+	// transitions that create a claimed revision consume it.
+	ClaimEpoch int64
 }
 
 func (r VerbRequest) opid() string {
@@ -94,6 +98,38 @@ func touch(f *GoalFile, r VerbRequest, verb string, targets []string) {
 
 func newClaimRecord(machine, lineage, at string, revision uint64) *ClaimRecord {
 	return &ClaimRecord{Machine: machine, Lineage: lineage, At: at, Revision: revision}
+}
+
+func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimEpoch int64) error {
+	if claimEpoch < 1 {
+		return fmt.Errorf("claim requires the authenticated lease holder's positive claim epoch")
+	}
+	f.Claimed = newClaimRecord(machine, lineage, at, revision)
+	f.StopCapability = &StopCapability{
+		Generation: revision, Revision: revision, Machine: machine, ClaimEpoch: claimEpoch,
+	}
+	f.StopFence = nil
+	return nil
+}
+
+func clearClaimBinding(f *GoalFile) error {
+	if f.StopFence != nil {
+		return fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may clear its launch fence", f.Id, f.StopFence.StopID)
+	}
+	f.Claimed = nil
+	f.StopCapability = nil
+	f.StopFence = nil
+	return nil
+}
+
+func claimIntentArgs(r VerbRequest, args map[string]string) map[string]string {
+	if args == nil {
+		args = map[string]string{}
+	}
+	if r.ClaimEpoch > 0 {
+		args["claimEpoch"] = strconv.FormatInt(r.ClaimEpoch, 10)
+	}
+	return intentArgs(r, args)
 }
 
 func suppliedBudget(values []Budget) (*Budget, error) {
@@ -368,7 +404,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, args)},
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -409,7 +445,9 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			f.State = StateClaimed
 			f.Budget = &budget
 			touch(f, r, "claim", []string{id})
-			f.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision)
+			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
+				return nil, err
+			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
@@ -429,7 +467,7 @@ func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
 func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "set-budget", Targets: []string{id}, Args: intentArgs(r, budgetIntentArgs(budget))},
+		Intent:  Intent{Verb: "set-budget", Targets: []string{id}, Args: claimIntentArgs(r, budgetIntentArgs(budget))},
 		Message: "goal set-budget " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -446,6 +484,9 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is claimed by %s+%s; changing another's budget is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
 			}
+			if f.StopFence != nil {
+				return nil, fmt.Errorf("goal %s revision %d is breach-stopped by %s; only goal resume with a fresh complete budget may reopen admission", id, f.StopFence.Revision, f.StopFence.StopID)
+			}
 			if f.State == StateParked && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is parked; changing a parked goal's budget is a human act", id)
 			}
@@ -460,7 +501,13 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 			f.Budget = &budget
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
 			if f.State == StateClaimed && f.Claimed != nil {
-				f.Claimed = newClaimRecord(f.Claimed.Machine, f.Claimed.Lineage, r.stamp(), f.Revision)
+				claimEpoch := r.ClaimEpoch
+				if claimEpoch < 1 && r.Actor.Human != "" && f.StopCapability != nil {
+					claimEpoch = f.StopCapability.ClaimEpoch
+				}
+				if err := bindClaim(f, f.Claimed.Machine, f.Claimed.Lineage, r.stamp(), f.Revision, claimEpoch); err != nil {
+					return nil, err
+				}
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
@@ -504,7 +551,9 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 				displaced = pairMarker(f.Claimed)
 			}
 			f.State = StateQueued
-			f.Claimed = nil
+			if err := clearClaimBinding(f); err != nil {
+				return nil, err
+			}
 			touchDisplaced(f, r, "release", []string{id}, displaced)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
@@ -569,7 +618,9 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			}
 			f.State = StateDone
 			f.Conclude = conclusion
-			f.Claimed = nil
+			if err := clearClaimBinding(f); err != nil {
+				return nil, err
+			}
 			f.Parked = nil
 			touchDisplaced(f, r, "done", []string{id}, displaced)
 			t.Done[id] = f
@@ -659,7 +710,9 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				By: r.Actor.historyActor(), At: r.stamp(),
 				Because: because, Displaced: displaced,
 			}
-			f.Claimed = nil
+			if err := clearClaimBinding(f); err != nil {
+				return nil, err
+			}
 			f.Revision++
 			f.History = append(f.History, HistoryLine{
 				At: r.stamp(), Opid: r.opid(), Verb: "park",
@@ -803,7 +856,13 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 						return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it rejoins a claimed arc", f.Id)
 					}
 					f.State = StateClaimed
-					f.Claimed = newClaimRecord(standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1)
+					claimEpoch := r.ClaimEpoch
+					if claimEpoch < 1 && standing.StopCapability != nil {
+						claimEpoch = standing.StopCapability.ClaimEpoch
+					}
+					if err := bindClaim(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+						return nil, err
+					}
 				case standing.State == StateParked && standing.Parked != nil:
 					if r.Actor.Human == "" {
 						return nil, fmt.Errorf("goal %s rejoins arc %s, which is parked; reopening into a parked arc is a human act", id, f.Arc)
@@ -1018,6 +1077,9 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			oldPair := f.Claimed
 			members := arcMembers(t, id)
 			for _, member := range members {
+				if member.StopFence != nil {
+					return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may replace its claim authority", member.Id, member.StopFence.StopID)
+				}
 				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
 					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; even a steal honors the pin — clear the pin, steal, then re-pin", member.Id, member.Pinned, r.Actor.Machine)
 				}
@@ -1036,7 +1098,9 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 				}
 				displaced := pairMarker(m.Claimed)
 				touchDisplaced(m, r, "steal", targets, displaced)
-				m.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision)
+				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
+					return nil, err
+				}
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			return ackDisplacements(t, r, changes), nil
@@ -1071,7 +1135,7 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: intentArgs(r, mergeIntentArgs(
+		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: claimIntentArgs(r, mergeIntentArgs(
 			map[string]string{"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ",")},
 			budgetIntentArgs(budget)))},
 		Message: "goal open --claim " + id,
@@ -1095,7 +1159,9 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 				Labels: canonical, Budget: &budget,
 			}
 			touch(f, r, "open-claim", []string{id})
-			f.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision)
+			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
+				return nil, err
+			}
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
 			if t.Root != nil && t.Root.Free != nil {
 				t.Root.Free = nil
@@ -1267,7 +1333,7 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, args)},
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1314,7 +1380,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				m.State = StateClaimed
 				m.Budget = &budget
 				touch(m, r, "claim", targets)
-				m.Claimed = newClaimRecord(r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision)
+				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
+					return nil, err
+				}
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
@@ -1368,7 +1436,9 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 					displaced = pairMarker(m.Claimed)
 				}
 				m.State = StateQueued
-				m.Claimed = nil
+				if err := clearClaimBinding(m); err != nil {
+					return nil, err
+				}
 				touchDisplaced(m, r, "release", targets, displaced)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
@@ -1453,7 +1523,9 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 					By: r.Actor.historyActor(), At: r.stamp(),
 					Because: because, Displaced: memberDisplaced,
 				}
-				m.Claimed = nil
+				if err := clearClaimBinding(m); err != nil {
+					return nil, err
+				}
 				m.Revision++
 				m.History = append(m.History, HistoryLine{
 					At: r.stamp(), Opid: r.opid(), Verb: "park",
@@ -1574,7 +1646,9 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 				}
 				// The departing member releases: one claim, one arc.
 				f.State = StateQueued
-				f.Claimed = nil
+				if err := clearClaimBinding(f); err != nil {
+					return nil, err
+				}
 			}
 			f.Arc = ""
 			touchDisplaced(f, r, "detach", []string{id}, displaced)
@@ -1728,7 +1802,9 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 				}
 				// Released as it detaches — the claim never splits.
 				f.State = StateQueued
-				f.Claimed = nil
+				if err := clearClaimBinding(f); err != nil {
+					return nil, err
+				}
 			case StateParked:
 				if r.Actor.Human == "" {
 					return nil, fmt.Errorf("goal %s is parked; a parked member moves under a human", id)
@@ -1786,7 +1862,13 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it joins a claimed arc", f.Id)
 				}
 				f.State = StateClaimed
-				f.Claimed = newClaimRecord(standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1)
+				claimEpoch := r.ClaimEpoch
+				if claimEpoch < 1 && standing.StopCapability != nil {
+					claimEpoch = standing.StopCapability.ClaimEpoch
+				}
+				if err := bindClaim(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+					return nil, err
+				}
 			case standing.State == StateParked && standing.Parked != nil:
 				if r.Actor.Human == "" {
 					return nil, fmt.Errorf("arc %s is parked; a parked arc's membership edits are human acts", arc)

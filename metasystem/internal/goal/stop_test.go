@@ -1,0 +1,188 @@
+package goal
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+)
+
+type goalAuthorityReader struct{}
+
+func (goalAuthorityReader) Read(pid int64) (humanauthority.Snapshot, error) {
+	parent := int64(10)
+	if pid == 10 {
+		parent = 1
+	}
+	return humanauthority.Snapshot{
+		Exact:      identity.Exact{Pid: pid, StartedAt: time.Unix(pid*10, 0), Argv: []string{"human-shell"}, ArgvKnown: true},
+		Executable: "/fixture/human-shell", ExecutableKnown: true,
+		ParentPID: parent, ParentKnown: true, TerminalID: "tty-test", TerminalKnown: true,
+	}, nil
+}
+
+func (goalAuthorityReader) SessionLeader(int64) (int64, error) { return 10, nil }
+
+func testHumanAuthority(t *testing.T, root string, now time.Time) *humanauthority.Proof {
+	t.Helper()
+	directory := filepath.Join(root, "scripts", "agents", "adapters")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-a-human-shell'\n"
+	if err := os.WriteFile(filepath.Join(directory, "authority-test.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reader := goalAuthorityReader{}
+	if _, err := humanauthority.Enroll(root, 20, reader, now); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := humanauthority.Prove(root, 20, reader, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &proof
+}
+
+func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if res, err := Open(verbReq(root, "01J5X00000000000000000S000", "mac-a"), "stop-me", "Bound this work.", "main", "Run it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	claim := verbReq(root, "01J5X00000000000000000S010", "mac-a")
+	claim.ClaimEpoch = 9
+	if res, err := Claim(claim, "stop-me", Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	p, err := Project(endpointFor(root), true, claim.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := p.Tree.Live["stop-me"]
+	stop := CloseStopRequest{
+		VerbRequest: VerbRequest{
+			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+			Ulid: "01J5X00000000000000000S020", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9,
+		},
+		GoalID: "stop-me", StopID: "stop-stop-me-r2-f1", Reason: StopReasonElapsedLimit,
+		Capability: *file.StopCapability,
+	}
+	if res, err := CloseStop(stop); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("close stop: %+v %v", res, err)
+	}
+	// The same operation and a fresh custodian retry are both harmless.
+	if res, err := CloseStop(stop); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("same-op retry: %+v %v", res, err)
+	}
+	retry := stop
+	retry.Ulid = "01J5X00000000000000000S021"
+	if res, err := CloseStop(retry); err != nil || res.Outcome != OutcomeAbandoned {
+		t.Fatalf("fresh retry must rediscover the fence: %+v %v", res, err)
+	}
+	p, err = Project(endpointFor(root), true, stop.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := p.Tree.Live["stop-me"]
+	if stopped.StopFence == nil || stopped.StopFence.StopID != stop.StopID || stopped.StopCapability.FenceEpoch != 1 ||
+		stopped.History[len(stopped.History)-1].Verb != "breach-stop" {
+		t.Fatalf("accepted stop fence/history missing: %+v", stopped)
+	}
+	resumeJournalOpid := Opid("01J5X00000000000000000S023", "mac-a", "human-shell")
+	strandEntryAt(t, root, resumeJournalOpid, "mac-a", PhaseCreated, Intent{
+		Verb: "resume", Targets: []string{"stop-me"}, Args: mergeIntentArgs(
+			map[string]string{"by": "wido"},
+			budgetIntentArgs(Budget{ElapsedLimit: "2h", AttemptLimit: 4, ReservedJobMinutesLimit: 80, ActiveJobLimit: 2}),
+		),
+	})
+	reports, err := Recover(endpointFor(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = Project(endpointFor(root), true, stop.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journalResume := p.Tree.Live["stop-me"]
+	entry, err := ReadEntry(root, resumeJournalOpid)
+	if err != nil || entry.Outcome != OutcomeRejected || journalResume.StopFence == nil || len(reports) == 0 ||
+		!strings.Contains(reports[len(reports)-1].Detail, "enrolled terminal") {
+		t.Fatalf("dead-owner resume journal crossed the human boundary: goal=%+v entry=%+v reports=%+v err=%v", journalResume, entry, reports, err)
+	}
+	park := verbReq(root, "01J5X00000000000000000S025", "mac-a")
+	park.Actor.Human = "wido"
+	if res, err := Park(park, "stop-me", "do not orphan the stop batch"); err != nil || res.Outcome != OutcomeRejected {
+		t.Fatalf("ordinary park cleared a stopped claim: %+v %v", res, err)
+	}
+	done := verbReq(root, "01J5X00000000000000000S026", "mac-a")
+	if res, err := Done(done, "stop-me", "must not bypass the stop batch"); err != nil || res.Outcome != OutcomeRejected ||
+		!strings.Contains(res.Detail, "only goal resume may clear its launch fence") {
+		t.Fatalf("ordinary done cleared a stopped claim: %+v %v", res, err)
+	}
+	p, err = Project(endpointFor(root), true, done.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stillStopped := p.Tree.Live["stop-me"]
+	if stillStopped == nil || stillStopped.StopFence == nil || stillStopped.StopFence.StopID != stop.StopID {
+		t.Fatalf("the refused done must preserve the stopped authority: %+v", stillStopped)
+	}
+
+	resume := ResumeRequest{
+		VerbRequest: VerbRequest{
+			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
+			Ulid: "01J5X00000000000000000S030", Now: stop.Now.Add(time.Minute),
+		},
+		GoalID: "stop-me",
+		Budget: Budget{ElapsedLimit: "2h", AttemptLimit: 4, ReservedJobMinutesLimit: 80, ActiveJobLimit: 2},
+	}
+	resume.Authority = testHumanAuthority(t, root, resume.Now)
+	if res, err := Resume(resume); err != nil || res.Outcome != OutcomeRejected {
+		t.Fatalf("resume before COMPLETE must refuse: %+v %v", res, err)
+	}
+	stamp := resume.Now.UTC().Format(time.RFC3339)
+	batch := StopBatch{
+		StopID: stop.StopID, GoalID: "stop-me", GoalRevision: stopped.Claimed.Revision,
+		FenceEpoch: 1, CapabilityGeneration: stopped.StopCapability.Generation,
+		Machine: "mac-a", ClaimEpoch: 9, Reason: StopReasonElapsedLimit,
+		State: StopBatchComplete, OpenedAt: stop.Now.UTC().Format(time.RFC3339), UpdatedAt: stamp,
+		CompletedAt: stamp, Pass: 1,
+	}
+	if err := WriteStopBatch(root, batch); err != nil {
+		t.Fatal(err)
+	}
+	wrongCapability := *stopped.StopCapability
+	wrongCapability.ClaimEpoch++
+	if err := VerifyStopBatchComplete(root, "stop-me", wrongCapability, *stopped.StopFence); err == nil {
+		t.Fatal("resume verification accepted the wrong capability tuple")
+	}
+	resume.Ulid = "01J5X00000000000000000S031"
+	if res, err := Resume(resume); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("complete-batch resume: %+v %v", res, err)
+	}
+	p, err = Project(endpointFor(root), true, resume.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := p.Tree.Live["stop-me"]
+	if fresh.StopFence != nil || fresh.StopCapability == nil || fresh.StopCapability.FenceEpoch != 0 ||
+		fresh.StopCapability.Revision != fresh.Claimed.Revision || fresh.Budget.ElapsedLimit != "2h" ||
+		fresh.History[len(fresh.History)-1].Verb != "resume" {
+		t.Fatalf("resume did not create one fresh revision and tuple: %+v", fresh)
+	}
+}
+
+func TestResumeRequiresHumanAuthority(t *testing.T) {
+	_, err := Resume(ResumeRequest{
+		VerbRequest: VerbRequest{Actor: Actor{Human: "argv-is-not-authority"}},
+		Budget:      Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1},
+	})
+	if err == nil {
+		t.Fatal("a human-shaped string passed without an ancestry proof")
+	}
+}

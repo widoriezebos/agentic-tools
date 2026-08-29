@@ -267,7 +267,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				f.Parked = &ParkRecord{By: r.Actor.historyActor(), At: r.stamp(), Because: row.Because}
 			}
 			f.State = StateParked
-			f.Claimed = nil
+			if err := clearClaimBinding(f); err != nil {
+				return nil, err
+			}
 			session.moved[id] = true
 			f.Revision++
 			f.History = append(f.History, HistoryLine{
@@ -314,7 +316,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		}
 		f.State = StateDone
 		f.Conclude = row.Conclude
-		f.Claimed = nil
+		if err := clearClaimBinding(f); err != nil {
+			return nil, err
+		}
 		f.Parked = nil
 		touchDisplaced(f, r, "done", []string{row.Id}, displaced)
 		delete(t.Live, row.Id)
@@ -421,7 +425,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				detachDisplaced = pairMarker(f.Claimed)
 			}
 			f.State = StateQueued
-			f.Claimed = nil
+			if err := clearClaimBinding(f); err != nil {
+				return nil, err
+			}
 		}
 		f.Arc = ""
 		session.moved[row.Id] = true
@@ -459,7 +465,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			}
 			// Released as it detaches — the claim never splits.
 			f.State = StateQueued
-			f.Claimed = nil
+			if err := clearClaimBinding(f); err != nil {
+				return nil, err
+			}
 		case StateParked:
 			// A parked member moves under the human; the destination
 			// decides its landing below.
@@ -506,7 +514,13 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				return nil, conflict("budget", "goal %s has no structured budget; run goal set-budget before joining a claimed arc", f.Id)
 			}
 			f.State = StateClaimed
-			f.Claimed = newClaimRecord(standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1)
+			claimEpoch := r.ClaimEpoch
+			if claimEpoch < 1 && standing.StopCapability != nil {
+				claimEpoch = standing.StopCapability.ClaimEpoch
+			}
+			if err := bindClaim(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+				return nil, conflict("claim", "%v", err)
+			}
 		case standing.State == StateParked && standing.Parked != nil:
 			// A queued or parked incoming member parks with the arc's
 			// record — a human act, which a reconcile always is.

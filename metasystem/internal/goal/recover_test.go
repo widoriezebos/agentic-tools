@@ -18,6 +18,14 @@ func strandEntry(t *testing.T, root string, opid string, phase Phase, intent Int
 // OTHER clone's.
 func strandEntryAt(t *testing.T, root, opid, machine string, phase Phase, intent Intent) {
 	t.Helper()
+	if intent.Verb == "claim" || intent.Verb == "open-claim" || intent.Verb == "steal" {
+		if intent.Args == nil {
+			intent.Args = map[string]string{}
+		}
+		if intent.Args["claimEpoch"] == "" {
+			intent.Args["claimEpoch"] = "1"
+		}
+	}
 	if _, err := CreateEntry(root, opid, machine, "lin-1", intent); err != nil {
 		t.Fatal(err)
 	}
@@ -373,16 +381,15 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 		}
 	}
 
-	// A dead owner's STEAL from the other machine, human-directed:
-	// recovery replays the cascade reassignment WITH the displaced
-	// markers and the human authority — none of which the old
-	// hand-copies could express.
+	// A dead owner's STEAL from the other machine cannot replay. The
+	// journal's by string is intent evidence, not human authority.
 	stealOpid := Opid("01J5X00000000000000000Q170", "mac-b", "lin-1")
 	strandEntryAt(t, b, stealOpid, "mac-b", PhaseCreated, Intent{
 		Verb: "steal", Targets: []string{"rv-one"},
 		Args: map[string]string{"by": "wido"},
 	})
-	if _, err := Recover(endpointFor(b)); err != nil {
+	reports, err := Recover(endpointFor(b))
+	if err != nil {
 		t.Fatal(err)
 	}
 	p, err = Project(endpointFor(b), true, time.Now())
@@ -390,12 +397,12 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 		t.Fatal(err)
 	}
 	stolen := p.Tree.Live["rv-one"]
-	if stolen.Claimed == nil || stolen.Claimed.Machine != "mac-b" {
-		t.Fatalf("the recovered steal reassigns the claim: %+v", stolen.Claimed)
+	if stolen.Claimed == nil || stolen.Claimed.Machine != "mac-a" {
+		t.Fatalf("journal text reassigned a human-reserved claim: %+v", stolen.Claimed)
 	}
-	last := stolen.History[len(stolen.History)-1]
-	if last.Actor != "human:wido" || !strings.HasPrefix(last.Displaced, "mac-a+lin-1@") {
-		t.Fatalf("the recovered steal carries the human authority and the displaced pair: %+v", last)
+	entry, err := ReadEntry(b, stealOpid)
+	if err != nil || entry.Outcome != OutcomeRejected {
+		t.Fatalf("the unauthorized steal journal did not close rejected: entry=%+v err=%v reports=%+v", entry, err, reports)
 	}
 }
 
@@ -431,7 +438,7 @@ func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
 	}
 }
 
-func TestRecoveryReplaysALiveHumanEditsJournaledIntent(t *testing.T) {
+func TestRecoveryNeverPromotesAHumanStringFromJournaledIntent(t *testing.T) {
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q300", "mac-a"), "hand-held", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -442,11 +449,9 @@ func TestRecoveryReplaysALiveHumanEditsJournaledIntent(t *testing.T) {
 	if res, err := Park(parkReq, "hand-held", "waiting on review"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	// The stranded intent is EXACTLY what the live verb journals: the
-	// real constructor builds it, nothing is typed by hand. A parked
-	// goal admits only a human edit, so a replay that lost the human
-	// would refuse — the round trip proves attribution survives the
-	// journal.
+	// The stranded intent is exactly what the live verb journals. The
+	// by field is deliberately retained in it, but recovery must not
+	// convert that string into Actor.Human.
 	editReq := verbReq(a, "01J5X00000000000000000Q320", "mac-a")
 	editReq.Actor.Human = "wido"
 	next := "Recovered by the human's own hand."
@@ -464,11 +469,11 @@ func TestRecoveryReplaysALiveHumanEditsJournaledIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := p.Tree.Live["hand-held"]
-	if f == nil || f.NextStep != next || strings.Join(f.Labels, ",") != "custody,recovered" {
-		t.Fatalf("the recovered live edit landed its field: %+v", f)
+	if f == nil || f.NextStep == next || len(f.Labels) != 0 {
+		t.Fatalf("journal text authorized a human-only edit: %+v", f)
 	}
-	last := f.History[len(f.History)-1]
-	if last.Verb != "edit" || last.Actor != "human:wido" {
-		t.Fatalf("the recovered edit carries the directing human, not the machine: %+v", last)
+	entry, err := ReadEntry(a, liveReq.Opid)
+	if err != nil || entry.Outcome != OutcomeRejected {
+		t.Fatalf("the human-shaped journal did not close rejected: entry=%+v err=%v", entry, err)
 	}
 }

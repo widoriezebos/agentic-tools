@@ -14,7 +14,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "root-setup.json")
-	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile); err != nil {
+	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job", setup); err != nil {
@@ -23,7 +23,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 	full := writeJSON(t, filepath.Join(stage, "root-full.json"), map[string]any{
 		"jobId": "root-job", "operationId": "root-job", "role": "implementer", "runtime": "fake", "round": 1,
 		"mission": nil, "missionIncarnation": nil, "stream": nil, "reviews": nil,
-		"goalId": "goal-a", "goalRevision": 2, "parentJob": nil, "status": "pending", "phase": "handshake",
+		"goalId": "goal-a", "goalRevision": 2, "machineId": "bed-m1", "parentJob": nil, "status": "pending", "phase": "handshake",
 		"error": nil, "mainId": "main-1", "claimEpoch": 5, "capMin": 5,
 		"workspaceRoot": root, "baseSha": "base", "branch": "main",
 		"permissions":    map[string]any{"requested": map[string]any{}},
@@ -54,7 +54,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	childSetup := filepath.Join(stage, "child-setup.json")
-	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile); err != nil {
+	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile, "bed-m1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job-r2", childSetup); err != nil {
@@ -87,7 +87,7 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile); err != nil {
+	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "goal-bound", setup); err != nil {
@@ -95,12 +95,12 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 	}
 	replacement := writeJSON(t, filepath.Join(stage, "replacement.json"), map[string]any{
 		"jobId": "goal-bound", "operationId": "goal-bound", "status": "pending", "mainId": "main-1", "claimEpoch": 5,
-		"goalId": "goal-b", "goalRevision": 2, "capMin": 5, "startedAt": "2026-08-20T00:00:00Z",
+		"goalId": "goal-b", "goalRevision": 2, "machineId": "bed-m1", "capMin": 5, "startedAt": "2026-08-20T00:00:00Z",
 	})
 	wantCode(t, RecordSetup(root, "goal-bound", replacement), 1)
 	capReplacement := writeJSON(t, filepath.Join(stage, "cap-replacement.json"), map[string]any{
 		"jobId": "goal-bound", "operationId": "goal-bound", "status": "pending", "mainId": "main-1", "claimEpoch": 5,
-		"goalId": "goal-a", "goalRevision": 2, "capMin": 6, "startedAt": "2026-08-20T00:00:00Z",
+		"goalId": "goal-a", "goalRevision": 2, "machineId": "bed-m1", "capMin": 6, "startedAt": "2026-08-20T00:00:00Z",
 	})
 	wantCode(t, RecordSetup(root, "goal-bound", capReplacement), 1)
 }

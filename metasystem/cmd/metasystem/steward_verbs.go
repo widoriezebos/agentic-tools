@@ -231,6 +231,7 @@ func runStewardTick(args []string) int {
 		"evidence":  result.Evidence,
 		"health":    result.Health,
 		"reaped":    result.Reaped,
+		"goalStops": result.GoalStops,
 		"delivered": delivered,
 		"revived":   revived,
 	}

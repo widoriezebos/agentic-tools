@@ -7,26 +7,28 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
-	"time"
 )
 
-// METASYSTEM_GOAL_NOW is the deterministic clock seam used by the goal CLI
-// fixtures. Production callers leave it unset and receive the wall clock.
-func goalCommandNow() (time.Time, error) {
-	raw := os.Getenv("METASYSTEM_GOAL_NOW")
-	if raw == "" {
-		return time.Now().UTC(), nil
-	}
-	parsed, err := time.Parse(time.RFC3339, raw)
+// goalCommandNow keeps the wall clock authoritative unless the target root
+// explicitly authorizes fixture inputs through its fake-runtime config.
+func goalCommandNow(root string) (time.Time, error) {
+	authorization, err := fixtureauth.New(root)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("METASYSTEM_GOAL_NOW must be an RFC3339 timestamp: %v", err)
+		return time.Time{}, err
 	}
-	return parsed.UTC(), nil
+	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
+		return time.Time{}, err
+	} else if ok {
+		return fixtureNow, nil
+	}
+	return time.Now().UTC(), nil
 }
 
 // The goal family: the doctrine commands humans and agents type.
@@ -412,7 +414,7 @@ func runGoalShow(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	now, err := goalCommandNow()
+	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -449,7 +451,7 @@ func nextSynced(root string, requiredLabels ...string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	now, err := goalCommandNow()
+	now, err := goalCommandNow(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -539,7 +541,7 @@ func runReportTurnVerdict(args []string) int {
 		return 2
 	}
 	scan := report.Scan(*root)
-	now, err := goalCommandNow()
+	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

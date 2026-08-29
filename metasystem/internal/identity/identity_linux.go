@@ -75,6 +75,11 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 	return exact, Alive, nil
 }
 
+func kernelExecutablePath(pid int64) (string, bool) {
+	path, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	return path, err == nil && path != ""
+}
+
 // parseProcStat extracts fields 22 (starttime, clock ticks since boot) and
 // 4 (ppid) from /proc/<pid>/stat content. Field 2 is the executable name in
 // parentheses and MAY ITSELF CONTAIN SPACES AND CLOSING PARENTHESES, so the

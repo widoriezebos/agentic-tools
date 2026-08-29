@@ -531,6 +531,18 @@ wait_for_agent_status() { # job, expected
   return 1
 }
 
+wait_for_agent_chain_unlock() { # root job
+  local job=$1 directory="$agent_repo/artifacts/agents/locks/$1.d" started=$SECONDS deadline=$((SECONDS + agent_status_cap_sec)) elapsed
+  while [[ -e "$directory" ]]; do
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      echo "agent fixture chain unlock timed out: $job (elapsed: ${elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2
+      return 1
+    fi
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+
 # Configuration resolution is flag, environment, mode, plain, default.
 config_order="$agent_fixture/config-order"
 mkdir -p "$config_order/scripts" "$config_order/bin"
@@ -747,6 +759,12 @@ METASYSTEM_OWNER_LINEAGE=budget-fixture \
   "$budget_dispatch_repo/bin/metasystem" goal migrate --root "$budget_dispatch_repo" \
     --source-digest "$budget_source_digest" --sync-mode local --by wido >/dev/null
 git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+track_armed_supervision "$budget_dispatch_repo"
+budget_main_start=$("$budget_dispatch_repo/bin/metasystem" proc started-at --pid "$$")
+METASYSTEM_AGENT_RUNTIME=fake "$budget_dispatch_repo/scripts/agents/arm-supervision.sh" \
+  --repo "$budget_dispatch_repo" --session budget-validator --pid "$$" \
+  --start-time "$budget_main_start" --tag metasystem-main-fake-budget-validator \
+  >"$agent_fixture/budget-arming.out"
 budget_claim=$(METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:05:00Z \
   "$budget_dispatch_repo/bin/metasystem" goal claim --root "$budget_dispatch_repo" --id structured-budget \
@@ -758,12 +776,6 @@ budget_goal_revision=$("$budget_dispatch_repo/bin/metasystem" job goal-revision 
 budget_brief="$agent_fixture/structured-budget.md"
 sed 's/^Working Mode:.*/Working Mode: design/' \
   "$budget_dispatch_repo/scripts/agents/templates/brief.md" >"$budget_brief"
-track_armed_supervision "$budget_dispatch_repo"
-budget_main_start=$("$budget_dispatch_repo/bin/metasystem" proc started-at --pid "$$")
-METASYSTEM_AGENT_RUNTIME=fake "$budget_dispatch_repo/scripts/agents/arm-supervision.sh" \
-  --repo "$budget_dispatch_repo" --session budget-validator --pid "$$" \
-  --start-time "$budget_main_start" --tag metasystem-main-fake-budget-validator \
-  >"$agent_fixture/budget-arming.out"
 (
   agent_repo=$budget_dispatch_repo
   agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
@@ -1074,6 +1086,10 @@ make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
 wait_for_agent_census_fresh pending-chain
 (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_brief" --job-id pending-chain >/dev/null 2>&1) & pending_driver=$!
 wait_for_agent_status pending-chain pending
+# Pending is published before launch identity. The dispatcher keeps the chain
+# lock until that identity is durable, so wait for the full launch interval
+# before testing the later status refusal.
+wait_for_agent_chain_unlock pending-chain
 pending_message="$agent_fixture/pending-follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$pending_message"
 agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job pending-chain --message "$pending_message"

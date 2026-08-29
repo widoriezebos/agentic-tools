@@ -106,8 +106,9 @@ type Options struct {
 
 // Lock is a held lock. Release it exactly once.
 type Lock struct {
-	path string
-	self Identity
+	path  string
+	self  Identity
+	codec OwnerCodec
 }
 
 // HolderError reports the live (or unproven) holder that kept the lock.
@@ -157,7 +158,7 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 	var sawOwnerlessAt time.Time
 	for {
 		if err := os.Rename(private, path); err == nil {
-			return &Lock{path: path, self: self}, nil
+			return &Lock{path: path, self: self, codec: opts.Codec}, nil
 		} else if !isContention(err) {
 			return nil, fmt.Errorf("lock: rename acquisition: %w", err)
 		}
@@ -231,7 +232,7 @@ func Holder(path string) (Identity, error) { return readOwner(path) }
 // removing a successor's lock would be exactly the trap-kill shape
 // SLC-F-001 forbids.
 func (l *Lock) Release() error {
-	return ReleaseNamed(l.path, l.self, nil)
+	return ReleaseNamed(l.path, l.self, l.codec)
 }
 
 // ReleaseNamed frees the lock at path when its owner file still decodes

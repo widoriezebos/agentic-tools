@@ -103,7 +103,7 @@ func nullableGoalRevision(goalID string, revision uint64) (any, error) {
 // id before the full record is assembled. Cap authority is already final when
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
-func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution string) error {
+func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution string, machineIDs ...string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
@@ -116,6 +116,16 @@ func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, go
 	if err != nil {
 		return err
 	}
+	machineID := ""
+	if len(machineIDs) > 1 {
+		return fmt.Errorf("build setup accepts at most one goal machine")
+	}
+	if len(machineIDs) == 1 {
+		machineID = machineIDs[0]
+	}
+	if goalID == "" && machineID != "" {
+		return fmt.Errorf("machineId requires a goalId")
+	}
 	record := map[string]any{
 		"jobId":        job,
 		"operationId":  job,
@@ -127,6 +137,7 @@ func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, go
 		"claimEpoch":   epoch,
 		"goalId":       nullableString(goalID),
 		"goalRevision": revision,
+		"machineId":    nullableString(machineID),
 		"capMin":       authority.capMin,
 		"createdAt":    nowISO(),
 	}
@@ -204,6 +215,7 @@ type BuildRecordParams struct {
 	Reviews         string
 	GoalID          string
 	GoalRevision    uint64
+	MachineID       string
 	MainID          string
 	ClaimEpoch      string
 }
@@ -239,6 +251,12 @@ func BuildRecord(p BuildRecordParams) error {
 	revision, err := nullableGoalRevision(p.GoalID, p.GoalRevision)
 	if err != nil {
 		return err
+	}
+	if p.GoalID != "" && p.MachineID == "" {
+		return fmt.Errorf("goal-bound reservation requires a machineId")
+	}
+	if p.GoalID == "" && p.MachineID != "" {
+		return fmt.Errorf("machineId requires a goalId")
 	}
 	// Mission provenance is resolved here, not accepted from the caller,
 	// and it is COMPLETE or refused: a mission-scoped
@@ -291,6 +309,7 @@ func BuildRecord(p BuildRecordParams) error {
 		"reviews":            nullableString(p.Reviews),
 		"goalId":             nullableString(p.GoalID),
 		"goalRevision":       revision,
+		"machineId":          nullableString(p.MachineID),
 		"status":             "pending",
 		"phase":              "handshake",
 		"error":              nil,
@@ -369,7 +388,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return fmt.Errorf("cannot read the parent record: %v", err)
 	}
-	for _, key := range []string{"role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "requestedModel"} {
+	for _, key := range []string{"role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "requestedModel", "machineId"} {
 		if _, present := parent[key]; !present {
 			return fmt.Errorf("parent record is missing %s", key)
 		}
@@ -436,6 +455,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"reviews":            parent["reviews"],
 		"goalId":             parent["goalId"],
 		"goalRevision":       revision,
+		"machineId":          parent["machineId"],
 		"workspaceRoot":      parent["workspaceRoot"],
 		"baseSha":            parent["baseSha"],
 		"branch":             parent["branch"],

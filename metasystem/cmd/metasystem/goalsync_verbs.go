@@ -16,6 +16,7 @@ import (
 	"os"
 	"time"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 
 	"os/exec"
@@ -464,7 +465,12 @@ func runGoalRecover(args []string) int {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
 		return 1
 	}
-	reports, err := goal.Recover(endpoint)
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
+		return 1
+	}
+	reports, err := goal.RecoverWithPolicy(endpoint, dispatchcore.GoalRecoveryPolicy{Now: now})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
 		return 1

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
@@ -166,4 +167,32 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 			t.Fatalf("an initialized root must be holder-only even for reconcile: %v", err)
 		}
 	})
+}
+
+func TestGoalCommandClockOverrideIsFixtureOnly(t *testing.T) {
+	production := t.TempDir()
+	if err := os.WriteFile(filepath.Join(production, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "not-a-time")
+	before := time.Now().UTC()
+	observed, err := goalCommandNow(production)
+	after := time.Now().UTC()
+	if err != nil || observed.Before(before) || observed.After(after) {
+		t.Fatalf("a production root must ignore the fixture clock completely: observed=%s err=%v", observed, err)
+	}
+
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-28T09:45:00Z")
+	observed, err = goalCommandNow(fixture)
+	if err != nil || observed.Format(time.RFC3339) != "2026-08-28T09:45:00Z" {
+		t.Fatalf("a fake root must receive its explicit fixture instant: observed=%s err=%v", observed, err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "not-a-time")
+	if _, err := goalCommandNow(fixture); err == nil {
+		t.Fatal("a malformed clock fixture must fail loudly in a fake root")
+	}
 }

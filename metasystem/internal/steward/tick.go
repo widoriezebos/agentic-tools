@@ -3,9 +3,12 @@ package steward
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -49,6 +52,48 @@ type TickResult struct {
 	ProviderOutage bool
 	Outage         outage.Mark
 	Health         HealthVerdict
+	GoalStops      []BreachStopReport
+}
+
+// BreachStopReport is machinery history for one heal-before-notify stop pass.
+type BreachStopReport struct {
+	GoalID   string `json:"goalId"`
+	Revision uint64 `json:"revision"`
+	StopID   string `json:"stopId,omitempty"`
+	State    string `json:"state"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+func runBreachStopCustodian(repoRoot string, now time.Time) []BreachStopReport {
+	routes, err := dispatch.FindBreachStops(repoRoot, now)
+	if err != nil {
+		return []BreachStopReport{{State: "FAILED", Detail: err.Error()}}
+	}
+	reports := make([]BreachStopReport, 0, len(routes))
+	for _, route := range routes {
+		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, StopID: route.StopID}
+		if route.Failure != "" {
+			report.State, report.Detail = "INDETERMINATE", route.Failure
+			reports = append(reports, report)
+			continue
+		}
+		cmd := exec.Command(filepath.Join(repoRoot, "scripts", "agents", "dispatch.sh"),
+			"__breach-stop-goal", "--goal", route.GoalID, "--revision", fmt.Sprint(route.Revision))
+		cmd.Dir = repoRoot
+		out, runErr := cmd.CombinedOutput()
+		if runErr != nil {
+			report.State = "FAILED"
+			report.Detail = strings.TrimSpace(string(out))
+			if report.Detail == "" {
+				report.Detail = runErr.Error()
+			}
+		} else {
+			report.State = "COMPLETE"
+			report.Detail = strings.TrimSpace(string(out))
+		}
+		reports = append(reports, report)
+	}
+	return reports
 }
 
 // RunTick folds one observation into the persisted evidence and
@@ -100,6 +145,11 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		}
 	}()
 
+	// Budget healing runs before health and notification. A successful stop is
+	// machinery history only; a failure remains visible to the ordinary health
+	// breaker, which is the sole escalation owner.
+	goalStops := runBreachStopCustodian(repoRoot, time.Now())
+
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.
 	reaped, err := ReapContinuations(repoRoot)
@@ -150,7 +200,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		return TickResult{}, err
 	}
 	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
-		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark}
+		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops}
 	// The running plain-English account rides every tick, strictly
 	// best-effort: the storyteller never fails the shift. What the
 	// narration notices also reaches the operator, one gated message

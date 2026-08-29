@@ -8,8 +8,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // The dispatch family is the job-record lifecycle surface (internal/dispatch):
@@ -136,6 +139,7 @@ func runDispatchBuildSetup(args []string) int {
 	claimEpoch := flags.String("claim-epoch", "", "worktree-lease claim epoch")
 	goalID := flags.String("goal", "", "goal id this job serves")
 	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this reservation serves")
+	machineID := flags.String("machine-id", "", "claim machine for a goal-bound reservation")
 	capResolution := flags.String("cap-resolution", "", "final cap-resolution file")
 	if flags.Parse(args) != nil {
 		return 2
@@ -144,7 +148,7 @@ func runDispatchBuildSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, --role, and --cap-resolution are required")
 		return 2
 	}
-	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution))
+	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution, *machineID))
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
@@ -206,6 +210,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.Reviews, "reviews", "", "implementer job id under review (optional)")
 	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
+	flags.StringVar(&p.MachineID, "machine-id", "", "claim machine for a goal-bound reservation")
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	if flags.Parse(args) != nil {
@@ -274,6 +279,50 @@ func runDispatchGoalRevision(args []string) int {
 	return 0
 }
 
+func runDispatchGoalBinding(args []string) int {
+	flags := flag.NewFlagSet("job goal-binding", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	goalID := flags.String("goal", "", "goal id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *goalID == "" {
+		fmt.Fprintln(os.Stderr, "job goal-binding: --root and --goal are required")
+		return 2
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	binding, err := dispatchcore.ResolveGoalBinding(*root, *goalID, now)
+	if err != nil {
+		return recordExit(err)
+	}
+	printJSON(map[string]any{
+		"goalId": binding.GoalID, "goalRevision": binding.Revision,
+		"machineId": binding.Machine, "claimEpoch": binding.Capability.ClaimEpoch,
+		"capabilityGeneration": binding.Capability.Generation,
+		"fenceEpoch":           binding.Capability.FenceEpoch, "fenced": binding.Fence != nil,
+	})
+	return 0
+}
+
+func runDispatchGoalLockPath(args []string) int {
+	flags := flag.NewFlagSet("job goal-lock-path", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	goalID := flags.String("goal", "", "goal id")
+	revision := flags.Uint64("revision", 0, "goal revision")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	path, err := dispatchcore.GoalRevisionLockDir(*root, *goalID, *revision)
+	if err != nil {
+		return recordExit(err)
+	}
+	fmt.Println(path)
+	return 0
+}
+
 func runDispatchGoalAdmission(args []string) int {
 	flags := flag.NewFlagSet("job goal-admission", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
@@ -285,7 +334,7 @@ func runDispatchGoalAdmission(args []string) int {
 		fmt.Fprintln(os.Stderr, "job goal-admission: --root is required")
 		return 2
 	}
-	now, err := goalCommandNow()
+	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -299,9 +348,153 @@ func runDispatchGoalAdmission(args []string) int {
 		fmt.Println(line)
 	}
 	if verdict.Refused() {
+		for _, refusal := range verdict.Refusals {
+			if refusal.LiveStopReason != "" {
+				return 10
+			}
+		}
 		return 9
 	}
 	return 0
+}
+
+func runDispatchGoalRevisionAdmission(args []string) int {
+	flags := flag.NewFlagSet("job goal-revision-admission", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	goalID := flags.String("goal", "", "goal id")
+	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
+	proposedCap := flags.Uint64("proposed-cap", 0, "reserved minutes proposed by this dispatch")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *goalID == "" || *revision == 0 {
+		fmt.Fprintln(os.Stderr, "job goal-revision-admission: --root, --goal, and --revision are required")
+		return 2
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	verdict, err := dispatchcore.EvaluateGoalRevisionAdmission(*root, *goalID, *revision, *proposedCap, now)
+	if err != nil {
+		return recordExit(err)
+	}
+	if !verdict.Refused() {
+		return 0
+	}
+	for _, line := range dispatchcore.FormatGoalAdmission(dispatchcore.GoalAdmissionVerdict{Refusals: []dispatchcore.GoalAdmissionRefusal{*verdict.Refusal}}) {
+		fmt.Println(line)
+	}
+	if verdict.LiveStopReason != "" {
+		return 10
+	}
+	return 9
+}
+
+func runDispatchBreachStop(args []string) int {
+	flags := flag.NewFlagSet("job breach-stop", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	goalID := flags.String("goal", "", "goal id")
+	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *goalID == "" || *revision == 0 {
+		fmt.Fprintln(os.Stderr, "job breach-stop: --root, --goal, and --revision are required")
+		return 2
+	}
+	caller, err := lease.ClassifyVerb(*root, int64(os.Getppid()))
+	if err != nil {
+		return recordExit(fmt.Errorf("job breach-stop: caller authority is unreadable: %w", err))
+	}
+	if err := authority.Authorize("stop-custodian", map[string]any{
+		"class": caller.Class, "holder": caller.Holder,
+	}, ""); err != nil {
+		return recordExit(err)
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	batch, err := dispatchcore.EnsureBreachStop(*root, *goalID, *revision, now)
+	if err != nil {
+		return recordExit(err)
+	}
+	printJSON(batch)
+	return 0
+}
+
+func runDispatchBreachStopRoutes(args []string) int {
+	flags := flag.NewFlagSet("job breach-stop-routes", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	if flags.Parse(args) != nil || *root == "" {
+		return 2
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	routes, err := dispatchcore.FindBreachStops(*root, now)
+	if err != nil {
+		return recordExit(err)
+	}
+	for _, route := range routes {
+		fmt.Printf("%s\t%d\t%s\t%s\n", route.GoalID, route.Revision, route.StopID, route.Failure)
+	}
+	return 0
+}
+
+func runDispatchStopBatchReconcile(args []string) int {
+	flags := flag.NewFlagSet("job stop-batch-reconcile", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	stopID := flags.String("stop", "", "stop batch id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *stopID == "" {
+		return 2
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	batch, err := dispatchcore.ReconcileStopBatch(*root, *stopID, now)
+	if err != nil {
+		return recordExit(err)
+	}
+	printJSON(batch)
+	if batch.State == "INDETERMINATE" {
+		return 11
+	}
+	return 0
+}
+
+func runDispatchStopBatchPending(args []string) int {
+	flags := flag.NewFlagSet("job stop-batch-pending", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	stopID := flags.String("stop", "", "stop batch id")
+	if flags.Parse(args) != nil || *root == "" || *stopID == "" {
+		return 2
+	}
+	batch, err := goal.ReadStopBatch(*root, *stopID)
+	if err != nil {
+		return recordExit(err)
+	}
+	for _, job := range batch.Pending {
+		fmt.Println(job)
+	}
+	return 0
+}
+
+func runDispatchStopCancelAuthorize(args []string) int {
+	flags := flag.NewFlagSet("job stop-cancel-authorize", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	stopID := flags.String("stop", "", "stop batch id")
+	jobID := flags.String("job", "", "job id")
+	if flags.Parse(args) != nil || *root == "" || *stopID == "" || *jobID == "" {
+		return 2
+	}
+	return recordExit(dispatchcore.AuthorizeStopCancellation(*root, *stopID, *jobID))
 }
 
 // runDispatchVerifyChainIncarnation relays the pre-authorization incarnation
