@@ -36,13 +36,19 @@ func TestNormalizeFailsClosed(t *testing.T) {
 	if got := Normalize(RigorClass("invented"), lawfulFacts(), true, false); got != Unproven {
 		t.Fatalf("unknown class normalized to %q", got)
 	}
+}
+
+func TestNormalizeRecurrenceToUnproven(t *testing.T) {
+	if got := Normalize(Bounded, lawfulFacts(), true, true); got != Unproven {
+		t.Fatalf("recurrent bounded finding normalized to %q", got)
+	}
+}
+
+func TestNormalizeUnknownDangerousClassStaysUnproven(t *testing.T) {
 	dangerous := lawfulFacts()
 	dangerous.AuthorityBoundaryCrossed = true
 	if got := Normalize(RigorClass("invented"), dangerous, true, false); got != Unproven {
 		t.Fatalf("unknown class with dangerous facts normalized to %q", got)
-	}
-	if got := Normalize(Bounded, lawfulFacts(), true, true); got != Unproven {
-		t.Fatalf("recurrent bounded finding normalized to %q", got)
 	}
 }
 

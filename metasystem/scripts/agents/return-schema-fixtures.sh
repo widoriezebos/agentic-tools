@@ -155,4 +155,111 @@ if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture
   exit 1
 fi
 
-echo "return schema version 1 compatibility and version 2 normalization fixtures passed"
+# The v3 critic grammar is exercised through the same materializer and return
+# validator used by adapters and dispatch. JSON construction and inspection go
+# through the engine too, so these legs do not maintain a second parser.
+cat >"$fixture/critic-v3-base.json" <<'JSON'
+{"schemaVersion":3,"claimed":{"sessionId":null,"model":null},
+ "jobId":"fixture-critic","round":1,"runtime":"fake","sessionId":"fake-session",
+ "model":{"requested":"fixture-model","effective":"fixture-model"},
+ "evidence":[],"gaps":[],"mode":"critique","reviewedCommit":"abc1234",
+ "findings":[],"verdictMaterialCount":0,"rigor":[]}
+JSON
+
+safe_facts='{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false}'
+
+write_v3_return() { # output, findings JSON, material count, rigor JSON
+  local output=$1 findings=$2 count=$3 rigor=$4
+  cp "$fixture/critic-v3-base.json" "$output"
+  json_replace_field "$output" findings "$findings"
+  "$ms" json set --file "$output" --int verdictMaterialCount="$count"
+  json_replace_field "$output" rigor "$rigor"
+}
+
+expect_v3_pass() { # leg, findings JSON, material count, rigor JSON
+  local leg=$1 findings=$2 count=$3 rigor=$4 candidate
+  candidate="$fixture/$leg.json"
+  write_v3_return "$candidate" "$findings" "$count" "$rigor"
+  "$ms" validate return-complete --root "$root" --role design-critic --file "$candidate"
+}
+
+expect_v3_refusal() { # leg, findings JSON, material count, rigor JSON, diagnostic
+  local leg=$1 findings=$2 count=$3 rigor=$4 diagnostic=$5 candidate errors
+  candidate="$fixture/$leg.json"
+  errors="$fixture/$leg.err"
+  write_v3_return "$candidate" "$findings" "$count" "$rigor"
+  if "$ms" validate return-complete --root "$root" --role design-critic \
+      --file "$candidate" >"$fixture/$leg.out" 2>"$errors"; then
+    echo "$leg: invalid version-3 critic return passed" >&2
+    exit 1
+  fi
+  grep -Fq "$diagnostic" "$errors" \
+    || { echo "$leg: refusal did not name $diagnostic" >&2; cat "$errors" >&2; exit 1; }
+}
+
+finding_f1='[{"id":"F1","severity":"high","material":true,"claim":"fixture claim","evidence":"fixture evidence"}]'
+bounded_row='[{"findingId":"F1","rigorClass":"bounded","facts":'"$safe_facts"',"reopeningTrigger":"reopen if the finding recurs"}]'
+
+expect_v3_pass zero-material-empty-rigor '[]' 0 '[]'
+
+lawful_findings='[{"id":"F1","severity":"high","material":true,"claim":"bounded","evidence":"read"},{"id":"F2","severity":"critical","material":true,"claim":"severe","evidence":"read"},{"id":"F3","severity":"medium","material":true,"claim":"unproven","evidence":"read"}]'
+lawful_rigor='[{"findingId":"F1","rigorClass":"bounded","facts":'"$safe_facts"',"reopeningTrigger":"reopen if it recurs"},{"findingId":"F2","rigorClass":"severe","facts":'"$safe_facts"',"reopeningTrigger":"reopen until the invariant is proved"},{"findingId":"F3","rigorClass":"unproven","facts":'"$safe_facts"',"reopeningTrigger":"reopen when classification evidence exists"}]'
+expect_v3_pass lawful-bounded-severe-unproven "$lawful_findings" 3 "$lawful_rigor"
+
+expect_v3_refusal missing-rigor-row "$finding_f1" 1 '[]' \
+  'missing a classification row for material finding "F1"'
+expect_v3_refusal extra-rigor-row '[]' 0 "$bounded_row" \
+  'which is not a material finding'
+malformed_facts='{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false}'
+malformed_row='[{"findingId":"F1","rigorClass":"bounded","facts":'"$malformed_facts"',"reopeningTrigger":"reopen if it recurs"}]'
+expect_v3_refusal malformed-facts "$finding_f1" 1 "$malformed_row" \
+  '$.rigor[0].facts.externalSideEffectBoundaryCrossed is required'
+
+empty_id='[{"id":"","severity":"high","material":true,"claim":"empty id","evidence":"read"}]'
+expect_v3_refusal empty-finding-id "$empty_id" 1 '[]' \
+  '$.findings[0].id must be a non-empty string without surrounding whitespace'
+whitespace_id='[{"id":" F1 ","severity":"high","material":true,"claim":"spaced id","evidence":"read"}]'
+expect_v3_refusal whitespace-finding-id "$whitespace_id" 1 '[]' \
+  '$.findings[0].id must be a non-empty string without surrounding whitespace'
+duplicate_ids='[{"id":"F1","severity":"high","material":true,"claim":"first","evidence":"read"},{"id":"F1","severity":"low","material":true,"claim":"second","evidence":"read"}]'
+expect_v3_refusal duplicate-finding-id "$duplicate_ids" 2 "$bounded_row" \
+  'duplicates finding identifier "F1"'
+
+# The classifier has no standalone command surface. These focused package
+# invocations execute its production normalization owner and keep each
+# validation-order rule independently visible in this fixture suite.
+(
+  cd "$root"
+  go test ./internal/critique -run '^TestNormalizeRecurrenceToUnproven$' -count=1
+  go test ./internal/critique -run '^TestNormalizeDangerousFactsToSevere$' -count=1
+  go test ./internal/critique -run '^TestNormalizeUnknownDangerousClassStaysUnproven$' -count=1
+)
+
+# Version 1 and version 2 are frozen byte contracts, represented by their
+# engine-computed schema digests.
+"$ms" schema materialize --root "$root" --role code-critic --version 1 \
+  --output "$fixture/code-critic-v1.schema.json"
+"$ms" schema materialize --root "$root" --role code-critic --version 2 \
+  --output "$fixture/code-critic-v2.schema.json"
+[[ "$("$ms" util sha256 --file "$fixture/code-critic-v1.schema.json")" == \
+   fe4ec2d623507feed6a5dbbdf6e4040ced855348d111f79e43ced4129a96943c ]] \
+  || { echo "version-1 critic schema bytes changed" >&2; exit 1; }
+[[ "$("$ms" util sha256 --file "$fixture/code-critic-v2.schema.json")" == \
+   6161117b74d84c34941d0181030b99108869421b2044b8bf80b539ee26e33056 ]] \
+  || { echo "version-2 critic schema bytes changed" >&2; exit 1; }
+
+cat >"$fixture/fake-critic-record.json" <<'JSON'
+{"jobId":"fake-critic-v3","round":1,"role":"code-critic","sessionId":"fake-session",
+ "requestedModel":"fake-model","effectiveModel":"fake-model"}
+JSON
+printf 'Working Mode: critique\n' >"$fixture/fake-critic-prompt.md"
+"$ms" adapter fake-return --record "$fixture/fake-critic-record.json" \
+  --prompt "$fixture/fake-critic-prompt.md" --output "$fixture/fake-critic-return.json"
+"$ms" validate return-complete --root "$root" --role code-critic \
+  --file "$fixture/fake-critic-return.json"
+[[ "$("$ms" json get --file "$fixture/fake-critic-return.json" --field schemaVersion)" == 3 ]] \
+  || { echo "fake critic did not speak return schema version 3" >&2; exit 1; }
+[[ "$("$ms" json get --file "$fixture/fake-critic-return.json" --field rigor)" == '[]' ]] \
+  || { echo "zero-finding fake critic did not emit empty rigor" >&2; exit 1; }
+
+echo "return schema version 1, version 2, and critic version 3 fixtures passed"
