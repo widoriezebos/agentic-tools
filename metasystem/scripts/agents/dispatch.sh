@@ -1338,7 +1338,7 @@ finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, 
 }
 
 watch_job() { # --job <id>
-  local job=
+  local job= watched_root
   while (( $# )); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -1353,9 +1353,13 @@ watch_job() { # --job <id>
     echo "watch: no job record for $job — it never existed here or was reaped" >&2
     exit 5
   fi
+  watched_root=$(json_field "$jobs/$job.json" workspaceRoot 2>/dev/null || true)
+  [[ -n "$watched_root" && "$watched_root" != null ]] || watched_root=$root
   # The Go core blocks to terminal and holds the waiter record the turn
-  # verdict reads; exit codes ride through verbatim.
-  "$ms" job watch --root "$root" --job "$job" --caller-pid $$
+  # verdict reads; the printer only tails the watched workspace's suite
+  # journal, and exit codes ride through verbatim.
+  "$ms" job watch --root "$root" --job "$job" --caller-pid $$ \
+    --progress-root "$watched_root"
 }
 
 critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest

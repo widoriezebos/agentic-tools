@@ -2,12 +2,13 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/validate-section-selector.sh <list|run SECTION_ID>" >&2
+  echo "Usage: scripts/agents/validate-section-selector.sh <list|twice|run SECTION_ID>" >&2
 }
 
 sections() {
   cat <<'EOF'
 engine-delivery-contract	engine delivery contract
+static-placeholder-scan	static adopted-repository placeholder scan
 covenant-evidence-pre-rebuild	covenant evidence before rebuild
 go-engine-gate	Go engine gate
 supervision-go-fixtures	Go supervision fixtures
@@ -52,10 +53,21 @@ watch-background-jobs-fixtures	background-job watcher fixtures
 EOF
 }
 
+twice_consulted_sections() {
+  cat <<'EOF'
+engine-delivery-contract
+runtime-contract-audits
+EOF
+}
+
 case ${1:-} in
   list)
     [[ $# -eq 1 ]] || { usage; exit 2; }
     sections
+    ;;
+  twice)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    twice_consulted_sections
     ;;
   run)
     [[ $# -eq 2 ]] || { usage; exit 2; }

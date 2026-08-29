@@ -495,18 +495,29 @@ PLAN
       cmp -s "$a" "$b" || { echo "adopt: second run changed $rel" >&2; exit 1; }
     fi
   done <"$tmp/adopt-idem-snap"
-  if bash "$tgt/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
+  placeholder_refusal_message='adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf'
+  placeholder_refusal_started=$SECONDS
+  if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/project-rules-placeholder.out" 2>&1; then
     echo "adopt: target validated with unreplaced placeholders" >&2
     exit 1
   fi
+  grep -Fqx "$placeholder_refusal_message" "$tmp/project-rules-placeholder.out" \
+    || { echo "adopt: project-rules placeholder failed without the static placeholder-scan refusal" >&2; exit 1; }
+  placeholder_refusal_elapsed=$((SECONDS - placeholder_refusal_started))
+  (( placeholder_refusal_elapsed < 60 )) \
+    || { echo "adopt: project-rules placeholder refusal took ${placeholder_refusal_elapsed}s; expected the pre-gate scan to fail within seconds" >&2; exit 1; }
   sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
   mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
+  placeholder_refusal_started=$SECONDS
   if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/conf-placeholder.out" 2>&1; then
     echo "adopt: target validated while metasystem.conf placeholders remained" >&2
     exit 1
   fi
-  grep -q 'metasystem.conf' "$tmp/conf-placeholder.out" \
-    || { echo "adopt: placeholder failure did not name metasystem.conf" >&2; exit 1; }
+  grep -Fqx "$placeholder_refusal_message" "$tmp/conf-placeholder.out" \
+    || { echo "adopt: configuration placeholder failed without the static placeholder-scan refusal" >&2; exit 1; }
+  placeholder_refusal_elapsed=$((SECONDS - placeholder_refusal_started))
+  (( placeholder_refusal_elapsed < 60 )) \
+    || { echo "adopt: configuration placeholder refusal took ${placeholder_refusal_elapsed}s; expected the pre-gate scan to fail within seconds" >&2; exit 1; }
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
   # The covenant evidence gate rides the same green validate (counselor
   # slice one): a fully valid covenant + canonical table + present deps

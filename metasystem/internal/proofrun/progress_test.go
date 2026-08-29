@@ -78,3 +78,26 @@ func TestLatestProgressRunStartsAtLastHeader(t *testing.T) {
 		t.Fatalf("journal permissions = %v, %v", info.Mode().Perm(), err)
 	}
 }
+
+func TestDeepestLiveHeartbeatTracksNestedOpenSection(t *testing.T) {
+	now := time.Date(2026, 8, 29, 10, 5, 0, 0, time.UTC)
+	run := ProgressRun{Events: []SectionEvent{
+		{Suite: "validate", Section: "adoption", Event: "start", At: now.Add(-5 * time.Minute).Format(time.RFC3339Nano), Depth: 0},
+		{Suite: "adopt", Section: "nested", Event: "start", At: now.Add(-2 * time.Minute).Format(time.RFC3339Nano), Depth: 1},
+	}}
+	if got, ok := DeepestLiveHeartbeat(run, now); !ok || got != "adopt:nested since 2min" {
+		t.Fatalf("heartbeat = %q, %v", got, ok)
+	}
+
+	run.Events = append(run.Events,
+		SectionEvent{Suite: "adopt", Section: "nested", Event: "end", At: now.Format(time.RFC3339Nano), Depth: 1})
+	if got, ok := DeepestLiveHeartbeat(run, now); !ok || got != "validate:adoption since 5min" {
+		t.Fatalf("parent heartbeat = %q, %v", got, ok)
+	}
+
+	run.Events = append(run.Events,
+		SectionEvent{Suite: "validate", Section: "adoption", Event: "end", At: now.Format(time.RFC3339Nano), Depth: 0})
+	if got, ok := DeepestLiveHeartbeat(run, now); ok || got != "" {
+		t.Fatalf("closed heartbeat = %q, %v", got, ok)
+	}
+}

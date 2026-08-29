@@ -33,6 +33,7 @@ func families() []family {
 			summary: "priced validation runs with structural progress and a sibling watchdog",
 			verbs: []verb{
 				{"banner", "print the suite witness state, duration class, heartbeat, and log paths", runProofRunBanner},
+				{"heartbeat", "print the deepest live suite section under a root", runProofRunHeartbeat},
 				{"launch", "launch a suite in its own process group with a sibling watchdog", runProofRunLaunch},
 				{"watchdog", "watch suite output growth and enforce the section ceiling (internal)", runProofRunWatchdog},
 				{"preserve", "copy bounded watchdog evidence (internal)", runProofRunPreserve},

@@ -244,11 +244,26 @@ scan_once() {
   local scan_args=(--state "$state_file" --running "$running_file" \
     --scope-field "$scope_field" --stale-min "$stale_min" --cap-min "$cap_min" \
     --start-verify-min "$start_verify_min")
+  local report heartbeat= line
   [ -z "$scope" ] || scan_args+=(--scope "$scope")
   [ "$baseline" -eq 1 ] && scan_args+=(--baseline)
   local pattern
   for pattern in "${dirs[@]}"; do scan_args+=(--dir "$pattern"); done
-  "$ms" report scan-jobs "${scan_args[@]}"
+  report=$("$ms" report scan-jobs "${scan_args[@]}")
+  if [[ -n "$scope" ]]; then
+    heartbeat=$("$ms" proof-run heartbeat --root "$scope" 2>/dev/null || true)
+  fi
+  if [[ -n "$report" ]]; then
+    while IFS= read -r line; do
+      if [[ -n "$heartbeat" ]]; then
+        printf '%s %s\n' "$heartbeat" "$line"
+      else
+        printf '%s\n' "$line"
+      fi
+    done <<<"$report"
+  elif [[ -n "$heartbeat" ]]; then
+    printf '%s\n' "$heartbeat"
+  fi
 }
 
 

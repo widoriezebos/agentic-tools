@@ -56,12 +56,14 @@ reap_cap=$(harness_fixture_cap suite-watchdog-reap)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/suite-progress-fixtures.XXXXXX")
 tmp=$(cd "$tmp" && pwd -P)
 owned_pids=()
+watch_dispatch_record=
 cleanup() {
   local pid
   for pid in ${owned_pids[@]+"${owned_pids[@]}"}; do
     [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
     kill "$pid" 2>/dev/null || true
   done
+  [[ -z "$watch_dispatch_record" ]] || rm -f "$watch_dispatch_record"
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -114,6 +116,39 @@ if launch_fixture "$silent" silent missing-section \
 fi
 grep -Fq 'missing-section has 0 starts and 0 ends' "$silent_out" \
   || { echo "suite-progress fixture: structural red did not name the silent section" >&2; exit 1; }
+
+# Both runner-facing watchers relay the deepest open section from the same
+# read-only journal view. The background watcher prefixes a reportable job;
+# the command-level printer is covered at its Go-owned boundary.
+watch_root="$tmp/watch-root"
+watch_jobs="$tmp/watch-jobs"
+watch_state="$tmp/watch.state"
+watch_out="$tmp/watch.out"
+dispatch_watch_out="$tmp/dispatch-watch.out"
+mkdir -p "$watch_root/artifacts/agents/supervision" "$watch_jobs"
+watch_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '{"tmpPaths":[],"logPaths":["suite.log"]}\n' >"$watch_root/artifacts/agents/supervision/suite-progress.jsonl"
+printf '{"suite":"outer","section":"parent","event":"start","at":"%s","depth":0}\n' "$watch_now" \
+  >>"$watch_root/artifacts/agents/supervision/suite-progress.jsonl"
+printf '{"suite":"inner","section":"child","event":"start","at":"%s","depth":1}\n' "$watch_now" \
+  >>"$watch_root/artifacts/agents/supervision/suite-progress.jsonl"
+[[ "$("$bin" proof-run heartbeat --root "$watch_root")" == 'inner:child since 0min' ]] \
+  || { echo "suite-progress fixture: deepest live heartbeat was not selected" >&2; exit 1; }
+printf '{"status":"completed","workspaceRoot":"%s"}\n' "$watch_root" >"$watch_jobs/prefix-job.json"
+: >"$watch_state"
+METASYSTEM_BIN="$bin" "$root/scripts/watch-background-jobs.sh" \
+  --dir "$watch_jobs" --scope "$watch_root" --state "$watch_state" --once >"$watch_out" 2>&1
+grep -Fq 'inner:child since 0min DONE prefix-job status=completed' "$watch_out" \
+  || { echo "suite-progress fixture: background watcher did not prefix its job note with the deepest heartbeat" >&2; cat "$watch_out" >&2; exit 1; }
+dispatch_watch_job="suite-prefix-$$"
+watch_dispatch_record="$root/artifacts/agents/jobs/$dispatch_watch_job.json"
+mkdir -p "$(dirname "$watch_dispatch_record")"
+printf '{"jobId":"%s","status":"completed","startedAt":"%s","workspaceRoot":"%s"}\n' \
+  "$dispatch_watch_job" "$watch_now" "$watch_root" >"$watch_dispatch_record"
+METASYSTEM_BIN="$bin" "$root/scripts/agents/dispatch.sh" watch \
+  --job "$dispatch_watch_job" >"$dispatch_watch_out" 2>&1
+grep -Fq 'inner:child since 0min' "$dispatch_watch_out" \
+  || { echo "suite-progress fixture: dispatch watch did not print the deepest heartbeat" >&2; cat "$dispatch_watch_out" >&2; exit 1; }
 
 # The bounded copier reports the exact truncated source in its loud result,
 # while retaining the bytes that fit and its durable copy note.

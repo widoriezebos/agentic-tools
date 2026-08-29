@@ -743,3 +743,22 @@ A concluded goal now archives with its integrity line intact, and
 reopening one is a git rename the ledger narrates. The architecture
 Wido asked for — intuitive, separate, upgrade-safe — is the
 repository's shape now, not a design document's promise.
+
+## The proof learns its price and the run learns to speak
+
+Three slices closed the ruling the four-hour dark run earned. A
+dirty tree now freezes its declared bytes into a private export and
+proves THAT — once — while every nested boundary byte-checks and
+walks through in seconds; the adopt suite's structural bill fell
+from four and a half hours to half of one, measured. Every suite
+opens by naming its price honestly, heartbeats its sections into a
+ledger a watchdog actually reads, and a stall — even a printing
+one — dies inside its window with its evidence receipted and its
+section named. Cheap refusals moved ahead of the expensive gate,
+so proving a refusal costs seconds; and a suite that omits any of
+this is red by construction, which was the human's condition: not
+vigilance, construction. The frozen gate turned out to be the
+flake detector the battery never was — thirteen live-proof
+attempts harvested a hex-lottery assertion, seven rotted coverage
+floors, a records regression, and three load-races now counting
+toward their protocol promotions in the other machine's queue.

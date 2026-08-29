@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
@@ -91,6 +94,64 @@ func TestProofRunLimitsDefaultSilentlyWhenOperationalKnobsAreAbsent(t *testing.T
 	if limits.silence != 30*time.Minute || limits.sectionCap != 45*time.Minute ||
 		limits.evidenceTimeout != 60*time.Second || limits.evidenceMax != 512*1024*1024 {
 		t.Fatalf("default proof-run limits = %+v", limits)
+	}
+}
+
+func TestSuiteProgressPrinterSurfacesDeepestLiveSection(t *testing.T) {
+	root := t.TempDir()
+	progress := filepath.Join(root, "artifacts", "agents", "supervision", "suite-progress.jsonl")
+	if err := proofrun.AppendProgressHeader(progress, proofrun.ProgressHeader{LogPaths: []string{"suite.log"}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, event := range []proofrun.SectionEvent{
+		{Suite: "outer", Section: "parent", Event: "start", At: now, Depth: 0},
+		{Suite: "inner", Section: "child", Event: "start", At: now, Depth: 1},
+	} {
+		if err := proofrun.AppendSectionEvent(progress, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	stop := startSuiteProgressPrinter(root, time.Hour, &output)
+	stop()
+	if got := strings.TrimSpace(output.String()); got != "inner:child since 0min" {
+		t.Fatalf("progress note = %q", got)
+	}
+}
+
+func TestSelectedSectionsReadsTwiceConsultedDataFromSelector(t *testing.T) {
+	selector := filepath.Join(t.TempDir(), "selector.sh")
+	script := `#!/usr/bin/env bash
+case "$1" in
+  list) printf 'first\tfirst section\nrepeat\trepeated section\n' ;;
+  twice) printf 'repeat\n' ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(selector, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sections, repeated, err := selectedSections(selector, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 1 || !repeated["repeat"] {
+		t.Fatalf("selector data = %v, %v", sections, repeated)
+	}
+	sections, repeated, err = selectedSections(selector, "repeat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || sections[0] != "repeat" || len(repeated) != 1 || !repeated["repeat"] {
+		t.Fatalf("selected selector data = %v, %v", sections, repeated)
+	}
+	sections, repeated, err = selectedSections(selector, "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || sections[0] != "first" || len(repeated) != 0 {
+		t.Fatalf("non-repeated selected selector data = %v, %v", sections, repeated)
 	}
 }
 

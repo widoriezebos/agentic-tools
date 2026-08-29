@@ -215,3 +215,51 @@ func CurrentSection(run ProgressRun, suite string) (string, time.Time) {
 	}
 	return current, started
 }
+
+// DeepestLiveHeartbeat projects the most deeply nested section that has
+// started but not ended. Watchers use this read-only view; section structure
+// remains owned by AssertSectionProgress at suite completion.
+func DeepestLiveHeartbeat(run ProgressRun, now time.Time) (string, bool) {
+	type sectionKey struct {
+		suite   string
+		section string
+		depth   int
+	}
+	type liveSection struct {
+		key     sectionKey
+		started time.Time
+		order   int
+	}
+
+	live := make(map[sectionKey]liveSection)
+	for order, event := range run.Events {
+		started, err := time.Parse(time.RFC3339Nano, event.At)
+		if err != nil {
+			continue
+		}
+		key := sectionKey{suite: event.Suite, section: event.Section, depth: event.Depth}
+		if event.Event == "start" {
+			live[key] = liveSection{key: key, started: started, order: order}
+		} else {
+			delete(live, key)
+		}
+	}
+
+	var deepest liveSection
+	found := false
+	for _, section := range live {
+		if !found || section.key.depth > deepest.key.depth ||
+			(section.key.depth == deepest.key.depth && section.order > deepest.order) {
+			deepest = section
+			found = true
+		}
+	}
+	if !found {
+		return "", false
+	}
+	age := now.Sub(deepest.started)
+	if age < 0 {
+		age = 0
+	}
+	return fmt.Sprintf("%s:%s since %dmin", deepest.key.suite, deepest.key.section, int64(age/time.Minute)), true
+}

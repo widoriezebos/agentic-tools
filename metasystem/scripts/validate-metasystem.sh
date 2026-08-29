@@ -104,12 +104,6 @@ if (( ! suite_progress_worker )); then
     --progress "$suite_progress_path" --log "$suite_progress_log")
   suite_depth=$(( ${METASYSTEM_SUITE_PROGRESS_DEPTH:--1} + 1 ))
   selector_args=(--selector "$root/scripts/agents/validate-section-selector.sh")
-  if [[ -z "$enumeration_section" || "$enumeration_section" == engine-delivery-contract ]]; then
-    selector_args+=(--twice engine-delivery-contract)
-  fi
-  if [[ -z "$enumeration_section" || "$enumeration_section" == runtime-contract-audits ]]; then
-    selector_args+=(--twice runtime-contract-audits)
-  fi
   [[ -z "$enumeration_section" ]] || selector_args+=(--selected "$enumeration_section")
   exec go run ./cmd/metasystem proof-run launch \
     --suite validate-metasystem --root "$root" --conf "$root/metasystem.conf" \
@@ -165,6 +159,26 @@ fi
 # root, never the caller's working directory — a nested adopted-copy run
 # inherited the template's cwd and believed itself the template.
 metasystem_here=$(pwd -P)
+
+# Adopted repositories can refuse their literal template placeholders without
+# consulting the engine. Keep this scan ahead of the engine gate so a known
+# textual refusal does not pay for a rebuild. The full audit remains later:
+# required-file grammar, active-instruction placeholders, and configuration
+# validation belong to the prospective engine.
+template_mode=0
+[[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
+if section_selected static-placeholder-scan && (( ! template_mode )) \
+  && [[ -z "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]]; then
+  placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
+  placeholder_files=()
+  [[ -f docs/project-rules.md ]] && placeholder_files+=(docs/project-rules.md)
+  [[ -f metasystem.conf ]] && placeholder_files+=(metasystem.conf)
+  if (( ${#placeholder_files[@]} > 0 )) \
+    && grep -En -- "$placeholder_pattern" "${placeholder_files[@]}"; then
+    echo "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf" >&2
+    exit 1
+  fi
+fi
 
 publish_battery_run_class() { # FULL|WITNESS-ASSISTED
   [[ -n "$battery_run_class_out" ]] || return 0
@@ -592,7 +606,9 @@ fixture_watcher_nonfiring_cap_min=$(harness_fixture_semantic_cap watcher-nonfiri
 fixture_watcher_firing_cap_min=$(harness_fixture_semantic_cap watcher-firing-minutes)
 
 if section_selected metasystem-audit; then
-  scripts/audit-metasystem.sh .
+  # The literal adopted-repository placeholders were already judged by the
+  # pre-gate scan. The engine still owns every other audit rule here.
+  METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 scripts/audit-metasystem.sh .
 fi
 
 # The gate's own integrity (go-production-grade B8): a gofmt that cannot run
@@ -618,10 +634,6 @@ if section_selected gate-fail-open-tripwire \
   rm -rf "$gofmt_shim_dir"
 fi
 
-# The template distinction is shared by later fixture sections. Computing it
-# has no side effects; the checks that consume it remain separately enumerable.
-template_mode=0
-[[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
 if (( delivery_contract )); then
   # A delivery run is never the orchestrating template — wherever it
   # runs, adoption fixtures and the other template-only blocks belong to

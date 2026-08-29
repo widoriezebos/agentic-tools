@@ -29,9 +29,7 @@ func runProofRunLaunch(args []string) int {
 	selector := flags.String("selector", "", "validation section selector")
 	selected := flags.String("selected", "", "single selected section")
 	var tmpPaths repeatedFlag
-	var twice repeatedFlag
 	flags.Var(&tmpPaths, "tmp", "temporary evidence path (repeatable)")
-	flags.Var(&twice, "twice", "selector section consulted twice (repeatable)")
 	silenceMS := flags.Int64("silence-ms", 0, "fixture override for output-silence milliseconds")
 	sectionCapMS := flags.Int64("section-cap-ms", 0, "fixture override for section-cap milliseconds")
 	evidenceTimeoutMS := flags.Int64("evidence-timeout-ms", 0, "fixture override for evidence-copy milliseconds")
@@ -64,14 +62,10 @@ func runProofRunLaunch(args []string) int {
 	if *evidenceMaxBytes > 0 {
 		limits.evidenceMax = *evidenceMaxBytes
 	}
-	expected, err := selectedSections(*selector, *selected)
+	expected, repeated, err := selectedSections(*selector, *selected)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
 		return 1
-	}
-	repeated := make(map[string]bool, len(twice))
-	for _, section := range twice {
-		repeated[section] = true
 	}
 	return proofrun.LaunchSuite(proofrun.LaunchOptions{
 		Suite: *suite, Root: *root, ConfPath: *conf, ProgressPath: *progress, LogPath: *logPath,
@@ -157,27 +151,54 @@ func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	}, nil
 }
 
-func selectedSections(selector, selected string) ([]string, error) {
-	if selected != "" {
-		return []string{selected}, nil
-	}
+func selectedSections(selector, selected string) ([]string, map[string]bool, error) {
 	if selector == "" {
-		return nil, nil
+		if selected != "" {
+			return []string{selected}, map[string]bool{}, nil
+		}
+		return nil, map[string]bool{}, nil
 	}
 	command := exec.Command("bash", selector, "list")
 	output, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("list validation selector: %w", err)
+		return nil, nil, fmt.Errorf("list validation selector: %w", err)
 	}
 	var sections []string
+	known := map[string]bool{}
 	for _, line := range bytes.Split(bytes.TrimSpace(output), []byte{'\n'}) {
 		id, _, found := bytes.Cut(line, []byte{'\t'})
 		if !found || len(id) == 0 {
-			return nil, fmt.Errorf("selector emitted invalid row %q", line)
+			return nil, nil, fmt.Errorf("selector emitted invalid row %q", line)
 		}
-		sections = append(sections, string(id))
+		section := string(id)
+		sections = append(sections, section)
+		known[section] = true
 	}
-	return sections, nil
+
+	command = exec.Command("bash", selector, "twice")
+	output, err = command.Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("read twice-consulted validation sections: %w", err)
+	}
+	declaredTwice := map[string]bool{}
+	trimmed := bytes.TrimSpace(output)
+	if len(trimmed) > 0 {
+		for _, line := range bytes.Split(trimmed, []byte{'\n'}) {
+			section := string(line)
+			if !known[section] {
+				return nil, nil, fmt.Errorf("twice-consulted section %q is absent from the selector", section)
+			}
+			declaredTwice[section] = true
+		}
+	}
+	if selected == "" {
+		return sections, declaredTwice, nil
+	}
+	repeated := map[string]bool{}
+	if declaredTwice[selected] {
+		repeated[selected] = true
+	}
+	return []string{selected}, repeated, nil
 }
 
 func runProofRunWatchdog(args []string) int {
@@ -265,21 +286,15 @@ func runProofRunAssert(args []string) int {
 	suite := flags.String("suite", "", "suite name")
 	selector := flags.String("selector", "", "section selector")
 	selected := flags.String("selected", "", "single selected section")
-	var twice repeatedFlag
-	flags.Var(&twice, "twice", "twice-consulted section (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	expected, err := selectedSections(*selector, *selected)
+	expected, repeated, err := selectedSections(*selector, *selected)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
 		return 1
 	}
 	run, err := proofrun.ReadLatestProgressRun(*progress)
-	repeated := map[string]bool{}
-	for _, section := range twice {
-		repeated[section] = true
-	}
 	if err == nil {
 		err = proofrun.AssertSectionProgress(run, *suite, expected, repeated)
 	}
@@ -311,6 +326,67 @@ func runProofRunBanner(args []string) int {
 	fmt.Printf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s\n",
 		*suite, state, duration, proofRunDisplayPath(*root, *progress), proofRunDisplayPath(*root, *logPath))
 	return 0
+}
+
+func runProofRunHeartbeat(args []string) int {
+	flags := flag.NewFlagSet("proof-run heartbeat", flag.ContinueOnError)
+	root := flags.String("root", "", "watched root")
+	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run heartbeat --root R")
+		return 2
+	}
+	heartbeat, ok := deepestSuiteHeartbeat(*root, time.Now())
+	if !ok {
+		return 1
+	}
+	fmt.Println(heartbeat)
+	return 0
+}
+
+func deepestSuiteHeartbeat(root string, now time.Time) (string, bool) {
+	progress := filepath.Join(root, "artifacts", "agents", "supervision", "suite-progress.jsonl")
+	run, err := proofrun.ReadLatestProgressRun(progress)
+	if err != nil {
+		return "", false
+	}
+	return proofrun.DeepestLiveHeartbeat(run, now)
+}
+
+func startSuiteProgressPrinter(root string, interval time.Duration, output io.Writer) func() {
+	if root == "" || output == nil {
+		return func() {}
+	}
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	last := ""
+	printChanged := func() {
+		heartbeat, ok := deepestSuiteHeartbeat(root, time.Now())
+		if ok && heartbeat != last {
+			fmt.Fprintln(output, heartbeat)
+			last = heartbeat
+		}
+	}
+	printChanged()
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				printChanged()
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
 }
 
 func proofRunDisplayPath(root, path string) string {

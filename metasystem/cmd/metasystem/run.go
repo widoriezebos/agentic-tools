@@ -372,6 +372,7 @@ func runJobWatchVerb(args []string) int {
 	job := flags.String("job", "", "job id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
+	progressRoot := flags.String("progress-root", "", "root whose live suite heartbeat prefixes progress notes")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -380,7 +381,10 @@ func runJobWatchVerb(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return run.ExitWaiterUnknown
 	}
-	return dispatchcore.JobWatch(*root, *job, caller, time.Duration(*pollMs)*time.Millisecond)
+	poll := time.Duration(*pollMs) * time.Millisecond
+	stopProgress := startSuiteProgressPrinter(*progressRoot, poll, os.Stderr)
+	defer stopProgress()
+	return dispatchcore.JobWatch(*root, *job, caller, poll)
 }
 
 // The run package's flight-recorder wiring: component "run", this
