@@ -4,7 +4,7 @@
 
 In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches a small share of live traffic on the weekend when clocks move forward. Most sessions behave as expected. A few expire at the wrong moment because one comparison uses local clock time while the rest use a continuous measure of elapsed time. The releaser stops the expansion and restores the previous behavior. The immediate danger passes, but the delivery system has not yet learned anything. It has only recovered.
 
-Learning begins when experience changes what happens next time. That change needs discipline. A hurried ban on every use of local time may stop the known failure and also prevent legitimate work such as displaying an appointment in the user's time zone. A note in an incident report may avoid that damage and still be forgotten by the next builder. The useful lesson is a governed change to future behavior, supported by evidence and open to challenge.
+Learning begins when experience changes what happens next time. A hurried ban on every use of local time may stop the known failure and also prevent legitimate work such as displaying an appointment in the user's time zone. A note in an incident report may avoid that damage and still be forgotten by the next builder. The useful lesson is a governed change to future behavior, supported by evidence and open to challenge.
 
 ## Incidents produce candidate lessons
 
@@ -20,9 +20,9 @@ Suppose the proposed clock rule refuses any session-limit calculation that reads
 
 The enforced rule's record names how much evidence is required before adoption and why that amount fits the possible harm. It defines the parts of the system it may judge, the condition it may refuse and the evidence it must attach to a refusal. It names an accountable owner with authority to maintain or withdraw it. It also names the signals that would reveal side effects, the date or event that forces review, and the route by which a builder or affected person can appeal.
 
-These details follow from the power being granted. Because an enforced rule can stop future work, its scope cannot be left implicit. Because the world and the software will change, its owner and review point cannot be omitted. Because its test may be wrong, refusal cannot be the end of the conversation. Authority without those limits would turn one incident into an indefinite veto held by an unexamined mechanism.
+These details follow from the power being granted. Because an enforced rule can stop future work, its scope cannot be left implicit. Because the world and the software will change, its owner and review point cannot be omitted. Because its test may be wrong, a refusal must stay open to appeal. Without those limits, one incident could block future work forever, through a check nobody re-examines.
 
-Adoption can still be proportionate. A narrowly understood recurrence with severe consequences may justify a firm rule after strong reproduction and independent examination. A weak association may justify observation only. The evidence threshold is part of the decision; there is no universal number. The responsible authority decides what uncertainty is acceptable for the consequence at hand and leaves that reason in the record.
+Adoption can still be proportionate. A narrowly understood recurrence with severe consequences may justify a firm rule after strong reproduction and independent examination. A weak association may justify observation only. The evidence threshold is part of the decision; there is no universal number. The responsible authority decides what uncertainty is acceptable for the consequence at hand and records that reason.
 
 ## Test the enforced rule itself
 
@@ -38,7 +38,7 @@ Months later, a new session implementation arrives. It is faster and simpler, bu
 
 Such a floor preserves a minimum behavior; it does not set a permanent direction. A dependency may remain below a known vulnerable version. An expired session may remain unable to revive. A recovery path may remain demonstrable before release. These are conditions that later work must either satisfy or challenge through the named appeal route.
 
-The floor is not a ratchet under every measure. Shorter session lifetimes are not automatically safer when repeated sign-ins lock people out or destroy work. More tests are not automatically better when they repeat one assumption and consume attention needed elsewhere. Even a well-tested floor can be repealed when the condition it protects no longer exists or a better mechanism replaces it. The record makes such a change reviewable instead of impossible.
+A floor is not a ratchet that forces every measure one way. Shorter session lifetimes are not automatically safer when repeated sign-ins lock people out or destroy work. More tests are not automatically better when they repeat one assumption and consume attention needed elsewhere. Even a well-tested floor can be repealed when the condition it protects no longer exists or a better mechanism replaces it. The record makes such a change reviewable instead of impossible.
 
 ## Near-misses widen the evidence base
 
@@ -46,7 +46,7 @@ In another region, observation shows a cluster of sessions approaching the same 
 
 The record calls this a near-miss and preserves its uncertainty. It does not claim that nobody was harmed just because no report arrived, nor that harm certainly occurred because it was possible. It records the exposure, the intervention and the missing evidence. That wider base can strengthen the clock rule, expose a weak production signal or justify a narrower rollout next time.
 
-Near-misses enter the same governed path as incidents because absence of visible harm does not make their interpretation reliable. If every alarming trace created a new refusal, noisy systems would accumulate rules faster than they could examine them. If only proven damage counted, the system would discard warnings that arrived cheaply. Preserving the uncertainty allows later evidence to change the conclusion without rewriting history.
+Near-misses enter the same governed path as incidents because absence of visible harm does not make their interpretation reliable. If every alarming trace created a new refusal, a noisy system would gain rules faster than anyone could examine them. If only proven damage counted, the system would discard warnings it got without anyone being harmed. Preserving the uncertainty allows later evidence to change the conclusion without rewriting history.
 
 ## Some lessons cannot become automatic refusals
 
@@ -60,6 +60,6 @@ Other lessons may remain warnings because the event is rare, the signal is weak,
 
 When the clock failure appears, the first action is containment. The releaser narrows exposure or restores the previous safe version while the responsible authority receives a clear report of possible user harm. A complete lesson is not made a condition of recovery. Delaying repair until every cause is known would make learning compete with care.
 
-After containment, the builder corrects the elapsed-time comparison, an independent examiner reproduces the old failure and challenges the repair, and an enforced rule binds the passing evidence to the exact candidate. The candidate lesson then follows its own path through evidence, ownership, testing, limited activation and appeal. One result becomes the clock rule. The question of acceptable reauthentication burden remains a human ruling with an owner and review date.
+After containment, the builder corrects the elapsed-time comparison, an independent examiner reproduces the old failure and challenges the repair, and an enforced rule binds the passing evidence to the exact candidate. The candidate lesson then goes through the steps this chapter described: evidence, ownership, testing, limited activation and appeal. One lesson becomes the clock rule. The question of acceptable reauthentication burden remains a human ruling with an owner and review date.
 
-Learning is complete only when later production behavior tests both outcomes. If the clock failure recurs, the evidence no longer supports the enforced rule's authority. If legitimate work is blocked, its scope is wrong. If the reauthentication burden changes or affected people overturn the earlier balance, the ruling must change. A system learns not when it accumulates prohibitions, but when recorded experience changes future behavior in a way that can itself be revised.
+Learning is complete only when production later puts both to the test: the clock rule and the reauthentication ruling. If the clock failure recurs, the evidence no longer supports the enforced rule's authority. If legitimate work is blocked, its scope is wrong. If the reauthentication burden changes or affected people overturn the earlier balance, the ruling must change. A system has not learned because it gathered prohibitions. It has learned when recorded experience changes future behavior in a way that can itself be revised.
