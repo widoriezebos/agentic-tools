@@ -108,7 +108,13 @@ var sha256Re = CommandHashRe
 // The clock is injected so the verdict's timestamps are deterministic. The
 // fixture table already records each process's cwd, so no resolver runs.
 func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, interval int, now time.Time) (Verdict, error) {
-	return runCensus(metasystemRoot, repo, fingerprint, interval, now,
+	return RunFixtureCensusAt(metasystemRoot, metasystemRoot, repo, processFile, fingerprint, interval, now)
+}
+
+// RunFixtureCensusAt separates installed configuration from repository state
+// for a vendored metasystem layout.
+func RunFixtureCensusAt(metasystemRoot, stateRoot, repo, processFile, fingerprint string, interval int, now time.Time) (Verdict, error) {
+	return runCensus(metasystemRoot, stateRoot, repo, fingerprint, interval, now,
 		func(root string) ([]Process, error) { return enumerateFixture(root, processFile) }, nil)
 }
 
@@ -121,9 +127,10 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 // non-nil, patches the matched processes' cwds before classification — the
 // production path resolves cwds for matched pids only, the cost rule the
 // live process table is careful about.
-func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.Time,
+func runCensus(metasystemRoot, stateRoot, repo, fingerprint string, interval int, now time.Time,
 	enumerate func(root string) ([]Process, error), resolveCwds func([]int64) map[int64]cwdResult) (Verdict, error) {
 	metasystemRoot = realpath(metasystemRoot)
+	stateRoot = realpath(stateRoot)
 	repoReal := realpath(repo)
 	var errors, diagnostics []string
 	// The fixture authority for this walk: constructed
@@ -141,7 +148,7 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 	var generation *int64
 	var stateDigest *string
 
-	if ids, gen, digest, err := readSupervisionSnapshot(metasystemRoot); err != nil {
+	if ids, gen, digest, err := readSupervisionSnapshot(stateRoot); err != nil {
 		errors = append(errors, "supervision-state:"+err.Error())
 	} else {
 		generation, stateDigest = &gen, &digest
@@ -175,8 +182,8 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 		cwds = resolveCwds(matchedPids)
 	}
 
-	custody := liveCustody(metasystemRoot)
-	announced := announcementsList(metasystemRoot, processes, fixtureProbe, &errors)
+	custody := liveCustody(stateRoot)
+	announced := announcementsList(stateRoot, processes, fixtureProbe, &errors)
 	var inventory []InventoryItem
 	for _, assignment := range matched {
 		process := processes[assignment.Index]

@@ -51,14 +51,41 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 // stored elsewhere, e.g. the owner lock), while the recorded pair is the fresh
 // probe's — one process, one identity.
 func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID, tag, runtime, ownerLineage string) (string, error) {
-	root = resolveRoot(root)
+	return AnnounceWithProof(root, session, pid, start, startTicks, bootID, tag, runtime, ownerLineage, nil)
+}
+
+// AnnounceWithProof records the proof route used by a coordinating command.
+// Direct lease callers may omit it; ambient up always supplies it.
+func AnnounceWithProof(root, session string, pid, start, startTicks int64, bootID, tag, runtime, ownerLineage string, provenance *IdentityProvenance) (string, error) {
+	return AnnounceWithProofAt(root, root, session, pid, start, startTicks, bootID, tag, runtime, ownerLineage, provenance)
+}
+
+// AnnounceWithProofAt keeps mutable announcement state at stateRoot while it
+// loads runtime and fixture authority from the installed metasystem root.
+func AnnounceWithProofAt(stateRoot, metasystemRoot, session string, pid, start, startTicks int64, bootID, tag, runtime, ownerLineage string, provenance *IdentityProvenance) (string, error) {
+	root := resolveRoot(stateRoot)
+	metasystemRoot = resolveRoot(metasystemRoot)
 	if ownerLineage != "" && !validLineage(ownerLineage) {
 		return "", fmt.Errorf("owner lineage must match [A-Za-z0-9._-]{1,128}")
+	}
+	if provenance != nil {
+		switch provenance.Source {
+		case "runtime-signature-ancestry":
+			if provenance.CallerPid != 0 || provenance.CallerPidStartedAt != 0 {
+				return "", fmt.Errorf("runtime-signature provenance must not carry fallback caller fields")
+			}
+		case "explicit-ancestry-fallback":
+			if provenance.CallerPid < 1 || provenance.CallerPidStartedAt < 1 {
+				return "", fmt.Errorf("explicit fallback provenance requires the caller identity")
+			}
+		default:
+			return "", fmt.Errorf("announcement identity provenance source is invalid")
+		}
 	}
 	if (startTicks > 0) != (bootID != "") {
 		return "", fmt.Errorf("announcement identity pair is partial: startTicks and bootId are both-or-neither")
 	}
-	probe, probeErr := fixtureProbe(root)
+	probe, probeErr := fixtureProbe(metasystemRoot)
 	if probeErr != nil {
 		return "", probeErr
 	}
@@ -81,16 +108,13 @@ func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID
 		return "", err
 	}
 	defer arb.Release()
-	if err := steward.BumpEnrollmentFence(root); err != nil {
-		return "", err
-	}
 	lock, err := acquireBounded(registryLockPath(root), "lease")
 	if err != nil {
 		return "", err
 	}
 	defer lock.release()
 
-	claimer, err := newClaimer(root)
+	claimer, err := newClaimerAt(root, metasystemRoot)
 	if err != nil {
 		return "", err
 	}
@@ -119,10 +143,19 @@ func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID
 			// A process does not change its logical owner mid-life.
 			return "", fmt.Errorf("announcement already carries owner lineage %s; refusing to replace it with %s", stored, ownerLineage)
 		}
+		changed := false
 		if ownerLineage != "" && stored == "" {
 			// Absent-to-present fill. The lease is written first so no sibling
 			// of the same lineage is briefly judged foreign and sweeps.
 			existing.OwnerLineage = ownerLineage
+			changed = true
+		}
+		if provenance != nil && existing.IdentityProvenance == nil {
+			copy := *provenance
+			existing.IdentityProvenance = &copy
+			changed = true
+		}
+		if changed {
 			if err := claimer.claim(&existing); err != nil {
 				return "", err
 			}
@@ -148,20 +181,24 @@ func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID
 	}
 	mainID := fmt.Sprintf("main-%d-%d-%s", start, pid, suffix)
 	ann := Announcement{
-		SessionId:     session,
-		MainId:        mainID,
-		Pid:           pid,
-		PidStartedAt:  start,
-		PidStartTicks: liveID.StartTicks,
-		BootID:        liveID.BootID,
-		Pgid:          int64(pgid),
-		Runtime:       runtime,
-		InstanceTag:   tag,
-		CommandHash:   CommandHash(command),
-		AnnouncedAt:   nowStamp(),
-		OwnerLineage:  ownerLineage,
+		SessionId:          session,
+		MainId:             mainID,
+		Pid:                pid,
+		PidStartedAt:       start,
+		PidStartTicks:      liveID.StartTicks,
+		BootID:             liveID.BootID,
+		Pgid:               int64(pgid),
+		Runtime:            runtime,
+		InstanceTag:        tag,
+		CommandHash:        CommandHash(command),
+		AnnouncedAt:        nowStamp(),
+		OwnerLineage:       ownerLineage,
+		IdentityProvenance: provenance,
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%s-%d.json", safeSession(session), pid))
+	if err := steward.BumpEnrollmentFence(root); err != nil {
+		return "", err
+	}
 	if err := atomicJSON(path, &ann); err != nil {
 		return "", err
 	}
@@ -215,11 +252,48 @@ type ClassifyResult struct {
 	StewardJob   string        `json:"stewardJob,omitempty"`
 }
 
+// CurrentHolderView names the one session that currently has checkout write
+// authority. SessionId is empty only for a legacy lease whose announcement is
+// no longer present.
+type CurrentHolderView struct {
+	MainId    string
+	SessionId string
+	Pid       int64
+}
+
+// CurrentHolder returns the checkout's recorded holder without classifying a
+// caller. It is an internal diagnostic view used by advisor outcomes.
+func CurrentHolder(root string) (CurrentHolderView, error) {
+	root = resolveRoot(root)
+	current, err := loadLease(root, true)
+	if err != nil {
+		return CurrentHolderView{}, err
+	}
+	view := CurrentHolderView{MainId: current.HolderMainId, Pid: current.Pid}
+	records, err := readAnnouncements(root, false)
+	if err != nil {
+		return CurrentHolderView{}, err
+	}
+	for _, record := range records {
+		if record.Ann.MainId == current.HolderMainId {
+			view.SessionId = record.Ann.SessionId
+			break
+		}
+	}
+	return view, nil
+}
+
 // ClassifyVerb resolves and reports who a caller is, plus whether it holds
 // the checkout and the current epoch/revision.
 func ClassifyVerb(root string, callerPid int64) (ClassifyResult, error) {
+	return ClassifyVerbAt(root, root, callerPid)
+}
+
+// ClassifyVerbAt reads checkout authority from root and runtime identity
+// adapters from metasystemRoot.
+func ClassifyVerbAt(root, metasystemRoot string, callerPid int64) (ClassifyResult, error) {
 	root = resolveRoot(root)
-	identity, err := Classify(root, callerPid)
+	identity, err := ClassifyAt(root, metasystemRoot, callerPid)
 	if err != nil {
 		return ClassifyResult{}, err
 	}
@@ -277,8 +351,14 @@ type HolderView struct {
 // (claiming an unheld checkout for an authenticated main), and reports HUMAN
 // and internal-helper callers without re-gating them.
 func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (HolderView, error) {
+	return RequireHolderAt(root, root, callerPid, expectedEpoch)
+}
+
+// RequireHolderAt gates repository state while loading caller identity from
+// the installed metasystem adapters.
+func RequireHolderAt(root, metasystemRoot string, callerPid int64, expectedEpoch *int64) (HolderView, error) {
 	root = resolveRoot(root)
-	identity, err := Classify(root, callerPid)
+	identity, err := ClassifyAt(root, metasystemRoot, callerPid)
 	if err != nil {
 		return HolderView{}, err
 	}
@@ -296,7 +376,7 @@ func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (HolderVi
 		if identity.Class != ClassMain {
 			return HolderView{}, fmt.Errorf("checkout lease is absent and caller pid %d is %s, not an authenticated main", callerPid, identity.Class)
 		}
-		holderClaimer, claimerErr := newClaimer(root)
+		holderClaimer, claimerErr := newClaimerAt(root, metasystemRoot)
 		if claimerErr != nil {
 			return HolderView{}, claimerErr
 		}
@@ -310,7 +390,7 @@ func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (HolderVi
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
 		return HolderView{}, ownedElsewhere(lease, identity)
 	}
-	stampClaimer, stampErr := newClaimer(root)
+	stampClaimer, stampErr := newClaimerAt(root, metasystemRoot)
 	if stampErr != nil {
 		return HolderView{}, stampErr
 	}

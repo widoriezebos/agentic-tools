@@ -37,6 +37,7 @@ func runSuperviseComponent(args []string) int {
 	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
 	component := flags.String("component", "", "watcher | reaper")
 	repo := flags.String("repo", "", "checkout root the component operates on")
+	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "component instance tag")
 	heartbeat := flags.String("heartbeat", "", "heartbeat file path")
@@ -90,17 +91,20 @@ func runSuperviseComponent(args []string) int {
 	if *scope == "" {
 		*scope = *repo
 	}
+	if *metasystemRoot == "" {
+		*metasystemRoot = *repo
+	}
 	var work func() error
 	switch *component {
 	case "watcher":
-		release, pass, ok := setupWatcher(*repo, *scope, self, *tag, *generation, *intervalSec)
+		release, pass, ok := setupWatcher(*metasystemRoot, *repo, *scope, self, *tag, *generation, *intervalSec)
 		if !ok {
 			return 1
 		}
 		defer release()
 		work = pass
 	case "reaper":
-		reaperPass := setupReaper(*repo)
+		reaperPass := setupReaper(*repo, *metasystemRoot)
 		work = func() error {
 			reaperPass()
 			return nil
@@ -164,7 +168,7 @@ func heartbeatWriter(path, component string, self identity.Ref, tag string, inte
 // and the per-interval census pass. It returns ok=false (and logs) when a live
 // writer already owns the lock — the owner then sees this watcher fail and, once
 // the incumbent stops, relaunches one that can claim it.
-func setupWatcher(repo, scope string, self identity.Ref, tag string, generation, intervalSec int) (release func(), pass func() error, ok bool) {
+func setupWatcher(metasystemRoot, repo, scope string, self identity.Ref, tag string, generation, intervalSec int) (release func(), pass func() error, ok bool) {
 	supervisionDir := supervise.SupervisionDir(repo)
 	lock := &supervise.CensusWriterLock{
 		Dir: supervisionDir, Self: self, Tag: tag, Prober: identity.KernelProber{},
@@ -174,7 +178,7 @@ func setupWatcher(repo, scope string, self identity.Ref, tag string, generation,
 		return nil, nil, false
 	}
 
-	cfg := watcherConfig(repo, scope, supervisionDir, intervalSec)
+	cfg := watcherConfig(metasystemRoot, repo, scope, supervisionDir, intervalSec)
 	pass = func() error {
 		attempt, err := steward.BeginComponentAttempt(repo, "repo-watcher", generation, self, time.Now())
 		if err != nil {
@@ -292,12 +296,12 @@ func runPass(repo string, self identity.Ref) error {
 // against the live kernel. Verdicts land through the locked job-record
 // compare-and-swap owner: a completion that arrives after the sweep's read
 // wins, and the stale verdict is void.
-func setupReaper(repo string) func() {
+func setupReaper(repo, metasystemRoot string) func() {
 	cfg := supervise.ReaperConfig{
 		Repo:      repo,
 		JobsDir:   supervise.JobsDir(repo),
 		Now:       func() time.Time { return time.Now().UTC() },
-		Custodian: kernelCustodian(repo),
+		Custodian: kernelCustodian(metasystemRoot),
 		Apply:     recordCASApplier(repo),
 		Emit:      func(line string) { fmt.Fprintln(os.Stderr, line) },
 	}
@@ -313,8 +317,8 @@ func setupReaper(repo string) func() {
 // so the standing reaper and the mission runner's drain reap can never
 // disagree about one record's custodian. The fixture authority is
 // root-checked; a refused construction refuses fixtures.
-func kernelCustodian(repo string) func(pid, start int64, tag string) identity.Liveness {
-	authorization, err := fixtureauth.New(repo)
+func kernelCustodian(metasystemRoot string) func(pid, start int64, tag string) identity.Liveness {
+	authorization, err := fixtureauth.New(metasystemRoot)
 	if err != nil {
 		// A leaked fixture makes every custody verdict Unknown — which
 		// authorizes nothing.

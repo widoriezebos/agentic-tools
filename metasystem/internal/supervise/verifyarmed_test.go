@@ -88,16 +88,24 @@ func TestArmedNowVerdicts(t *testing.T) {
 	}
 	t.Run("dead owner refuses", func(t *testing.T) {
 		agents, _ := armedFixture(t, nil)
-		if ArmedNow(agents, 999999, 100, "", 60, now) {
+		inspection := InspectArmed(agents, 999999, 100, "", 60, now)
+		if inspection.Armed() {
 			t.Fatal("a dead owner must not verify")
+		}
+		if inspection.Component != "supervision-owner" {
+			t.Fatalf("dead owner failure was attributed to %q", inspection.Component)
 		}
 	})
 	t.Run("missing component entry refuses", func(t *testing.T) {
 		agents, self := armedFixture(t, func(state, _, _, _ map[string]any) {
 			delete(state["components"].(map[string]any), "reaper")
 		})
-		if ArmedNow(agents, self, 100, "", 60, now) {
+		inspection := InspectArmed(agents, self, 100, "", 60, now)
+		if inspection.Armed() {
 			t.Fatal("a fleet without a reaper must not verify")
+		}
+		if inspection.Component != "job-reaper" {
+			t.Fatalf("missing reaper failure was attributed to %q", inspection.Component)
 		}
 	})
 	t.Run("unreadable state refuses", func(t *testing.T) {

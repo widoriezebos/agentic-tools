@@ -32,7 +32,11 @@ type claimer struct {
 }
 
 func newClaimer(root string) (*claimer, error) {
-	probe, err := fixtureProbe(root)
+	return newClaimerAt(root, root)
+}
+
+func newClaimerAt(root, metasystemRoot string) (*claimer, error) {
+	probe, err := fixtureProbe(metasystemRoot)
 	if err != nil {
 		return nil, err
 	}

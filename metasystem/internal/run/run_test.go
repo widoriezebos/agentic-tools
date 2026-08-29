@@ -189,6 +189,7 @@ func TestAssessUsesSyntheticProcessTable(t *testing.T) {
 		t.Helper()
 		s := testStore(t)
 		s.AllPids = func() ([]int64, error) { return members, nil }
+		s.GroupPresent = func(int64) (bool, bool) { return false, false }
 		prober := fakeProber{
 			verdicts: map[int64]identity.Liveness{701: identity.Alive},
 			starts:   map[int64]int64{701: 5000},
@@ -498,6 +499,23 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 	}
 	if result.To != StatusEndedUnknown {
 		t.Fatalf("pattern no-match guessed: %+v", result)
+	}
+}
+
+func TestGroupEmptyAcceptsTheKernelsAbsentGroupProofBeforeEnumeration(t *testing.T) {
+	s := testStore(t)
+	s.GroupPresent = func(int64) (bool, bool) { return false, true }
+	s.AllPids = func() ([]int64, error) { return nil, errors.New("process table denied") }
+	if !s.groupEmpty(424242) {
+		t.Fatal("an absent process group still depended on full process enumeration")
+	}
+	s.GroupPresent = func(int64) (bool, bool) { return true, true }
+	if s.groupEmpty(424242) {
+		t.Fatal("a present group was called empty when membership was unreadable")
+	}
+	s.GroupPresent = func(int64) (bool, bool) { return false, false }
+	if s.groupEmpty(424242) {
+		t.Fatal("an unknown group was called empty when membership was unreadable")
 	}
 }
 

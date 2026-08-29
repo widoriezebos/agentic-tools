@@ -59,6 +59,10 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 			if template {
 				base = installation
 			}
+			gotBase, err := RootForInstallation(installation)
+			if err != nil || gotBase != base {
+				t.Fatalf("RootForInstallation() = %q, %v; want %q", gotBase, err, base)
+			}
 			for _, test := range tests {
 				got, err := StateRoot(test.kind)
 				if err != nil || got != filepath.Join(base, filepath.FromSlash(test.rel)) {

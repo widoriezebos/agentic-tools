@@ -419,7 +419,7 @@ func TestFixtureTerminalReadsFixtureOnly(t *testing.T) {
 }
 
 func TestNoStewardInstallationMeansNoStewardBinary(t *testing.T) {
-	if got := verifiedStewardBinary(t.TempDir()); got != "" {
+	if got := verifiedStewardBinaries(t.TempDir()); len(got) != 0 {
 		t.Fatalf("no identity record, no recognized binary: %q", got)
 	}
 }

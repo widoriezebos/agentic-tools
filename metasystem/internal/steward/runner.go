@@ -154,6 +154,95 @@ func Restart(repoRoot, binaryPath string) (string, error) {
 	return arm(repoRoot, binaryPath, true)
 }
 
+// EnsureRunnerResult reports how session-start arming treated the steward.
+// Excluded is reserved for fixture repositories and linked worktrees whose
+// standing policy deliberately assigns the runner to another checkout.
+type EnsureRunnerResult struct {
+	Action     string
+	Pid        int64
+	Generation int
+}
+
+func canonicalPath(path string) string {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
+		return resolved
+	}
+	return filepath.Clean(absolute)
+}
+
+func scaledRunnerWait(scaleMilli int) time.Duration {
+	if scaleMilli < 1 {
+		scaleMilli = 1000
+	}
+	seconds := (10*scaleMilli + 999) / 1000
+	if seconds < 1 {
+		seconds = 1
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func waitForRunnerSuccess(repoRoot string, wait time.Duration) RoleVerdict {
+	deadline := time.Now().Add(wait)
+	verdict := checkStewardRunner(repoRoot, time.Now(), identity.KernelProber{})
+	for verdict.Status != HealthAlive && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		verdict = checkStewardRunner(repoRoot, time.Now(), identity.KernelProber{})
+	}
+	return verdict
+}
+
+// EnsureRunner consults the standing enrolled engine, verifies a successful
+// generation-bound tick, and restores the runner without minting a generation.
+func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (EnsureRunnerResult, error) {
+	top := canonicalPath(repoRoot)
+	if _, excluded := runnerExclusion(top); excluded {
+		return EnsureRunnerResult{Action: "excluded"}, nil
+	}
+	if _, ok := NotifyCommand(top); !ok {
+		return EnsureRunnerResult{}, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
+	}
+	if enrolled == nil || enrolled.file == nil {
+		return EnsureRunnerResult{}, fmt.Errorf("the enrolled engine is not pinned")
+	}
+	wasAlive := false
+	if _, alive := liveRunner(top); alive {
+		wasAlive = true
+	}
+	if wasAlive {
+		verdict := waitForRunnerSuccess(top, scaledRunnerWait(scaleMilli))
+		if verdict.Status == HealthAlive {
+			record, _ := liveRunner(top)
+			return EnsureRunnerResult{Action: "verified", Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
+		}
+		if verdict.Status == HealthUnknown {
+			return EnsureRunnerResult{}, fmt.Errorf("steward runner cannot be verified: %s", verdict.Reason)
+		}
+	}
+	repair, err := repairPinnedRunner(top, enrolled, nil, scaledRunnerWait(scaleMilli))
+	if err != nil {
+		return EnsureRunnerResult{}, err
+	}
+	if repair.Status != "RESTORED" && repair.Status != "CURRENT" {
+		return EnsureRunnerResult{}, fmt.Errorf("steward runner repair stopped with %s", repair.Status)
+	}
+	action := "verified"
+	if repair.Status == "RESTORED" {
+		action = "started"
+		if wasAlive {
+			action = "replaced"
+		}
+	}
+	record, alive := liveRunner(top)
+	if !alive {
+		return EnsureRunnerResult{}, fmt.Errorf("steward runner completed a pass but its process identity is no longer live")
+	}
+	return EnsureRunnerResult{Action: action, Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
+}
+
 // RunnerRepairOutcome says whether the watcher found the enrolled steward
 // current or restored that same installation generation.
 type RunnerRepairOutcome struct {
@@ -178,26 +267,22 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
 		top = resolved
 	}
-	installed, err := VerifyIdentity(RepoIdentityPath(top), top)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return RunnerRepairOutcome{Status: "NOT_ENROLLED"}, nil
-		}
-		return RunnerRepairOutcome{}, err
+	if _, err := os.Stat(RepoIdentityPath(top)); errors.Is(err, os.ErrNotExist) {
+		return RunnerRepairOutcome{Status: "NOT_ENROLLED"}, nil
 	}
-	if installed.InstallPath == "" {
-		return RunnerRepairOutcome{}, fmt.Errorf("the enrolled steward has no installation path")
-	}
-	bin, err := filepath.Abs(installed.InstallPath)
+	pinned, err := OpenEnrolledBinary(top)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	if resolved, resolveErr := filepath.EvalSymlinks(bin); resolveErr == nil {
-		bin = resolved
+	defer pinned.Close()
+	if err := pinned.PrepareForExecution(); err != nil {
+		return RunnerRepairOutcome{}, err
 	}
-	if info, statErr := os.Stat(bin); statErr != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-		return RunnerRepairOutcome{}, fmt.Errorf("the enrolled steward binary %q is not executable", bin)
-	}
+	return repairPinnedRunner(top, pinned, beforeLock, 10*time.Second)
+}
+
+func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), wait time.Duration) (RunnerRepairOutcome, error) {
+	installed := pinned.Install
 	if beforeLock != nil {
 		beforeLock()
 	}
@@ -216,7 +301,8 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	if lockedInstalled.Generation != installed.Generation || lockedInstalled.InstallPath != installed.InstallPath {
+	if lockedInstalled.Generation != installed.Generation || lockedInstalled.InstallPath != installed.InstallPath ||
+		lockedInstalled.InstallDigest != installed.InstallDigest {
 		return RunnerRepairOutcome{Status: "ENROLLMENT_CHANGED", Generation: installed.Generation}, nil
 	}
 	ended, err := AutoHealingEnded(top, RoleStewardRunner)
@@ -241,11 +327,11 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 			return RunnerRepairOutcome{}, err
 		}
 	}
-	replacement, err := launchRunner(top, bin)
+	replacement, err := launchRunner(top, pinned)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		if current := checkStewardRunner(top, time.Now(), identity.KernelProber{}); current.Status == HealthAlive {
 			return RunnerRepairOutcome{
@@ -255,7 +341,20 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within ten seconds", replacement.Pid, installed.Generation)
+	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within %s", replacement.Pid, installed.Generation, wait)
+}
+
+func runnerExclusion(top string) (string, bool) {
+	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
+		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
+			canonicalGitPath(top, string(commonDir)) != canonicalGitPath(top, string(gitDir)) {
+			return "linked worktree (the primary checkout owns the watchdog)", true
+		}
+	}
+	if config.ConfValue(filepath.Join(top, "metasystem.conf"), "metasystem.runtimes", "") == "fake" {
+		return "fake-runtimes repository (fixtures arm deliberately)", true
+	}
+	return "", false
 }
 
 func arm(repoRoot, binaryPath string, replace bool) (string, error) {
@@ -266,27 +365,8 @@ func arm(repoRoot, binaryPath string, replace bool) (string, error) {
 	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
 		top = resolved
 	}
-	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
-		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
-			canonicalGitPath(top, string(commonDir)) != canonicalGitPath(top, string(gitDir)) {
-			// A linked worktree is a delegate's disposable copy: a
-			// watchdog armed there would outlive the job and guard a
-			// directory built to be deleted. The comparison is on
-			// CANONICAL paths: git answers relative from one flag and
-			// absolute from the other inside a subdirectory checkout,
-			// and a raw string mismatch would refuse every primary
-			// checkout that is not the repository root.
-			return "not armed: linked worktree (the primary checkout owns the watchdog)", nil
-		}
-	}
-	if config.ConfValue(filepath.Join(top, "metasystem.conf"), "metasystem.runtimes", "") == "fake" {
-		// A fake-runtimes repository is a fixture world: sessions come
-		// and go by the thousand and their repositories are deleted
-		// minutes later. A leaked runner ticking a dead directory is
-		// exactly the leak class the suite hygiene rules name, so the
-		// ambient arming path stays out; a fixture that wants a runner
-		// arms it deliberately.
-		return "not armed: fake-runtimes repository (fixtures arm deliberately)", nil
+	if reason, excluded := runnerExclusion(top); excluded {
+		return "not armed: " + reason, nil
 	}
 	if _, ok := NotifyCommand(top); !ok {
 		return "", fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
@@ -314,30 +394,42 @@ func arm(repoRoot, binaryPath string, replace bool) (string, error) {
 		}
 	}
 	prior, _ := VerifyIdentity(RepoIdentityPath(top), top)
-	bin, err := filepath.Abs(binaryPath)
+	bin := canonicalPath(binaryPath)
+	digest, err := installDigest(bin)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("digest enrolled metasystem engine: %w", err)
 	}
 	if err := MintIdentity(RepoIdentityPath(top), InstallIdentity{
 		RepoIdentity: top, Generation: prior.Generation + 1,
-		InstallPath: bin, MintedAt: time.Now().UTC().Format(time.RFC3339),
+		InstallPath: bin, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		return "", err
 	}
-	record, err := launchRunner(top, bin)
+	pinned, err := OpenEnrolledBinary(top)
+	if err != nil {
+		return "", err
+	}
+	defer pinned.Close()
+	if err := pinned.PrepareForExecution(); err != nil {
+		return "", err
+	}
+	record, err := launchRunner(top, pinned)
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("armed (runner pid %d)", record.Pid), nil
 }
 
-func launchRunner(repoRoot, binaryPath string) (RunnerRecord, error) {
+func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error) {
 	logFile, err := os.OpenFile(runnerLogPath(repoRoot), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return RunnerRecord{}, err
 	}
 	defer logFile.Close()
-	cmd := exec.Command(binaryPath, "steward", "run", "--repo", repoRoot)
+	cmd, err := binary.Command("steward", "run", "--repo", repoRoot)
+	if err != nil {
+		return RunnerRecord{}, err
+	}
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {

@@ -33,6 +33,19 @@ type Announcement struct {
 	CommandHash   string `json:"commandHash,omitempty"`
 	AnnouncedAt   string `json:"announcedAt"`
 	OwnerLineage  string `json:"ownerLineage,omitempty"`
+	// IdentityProvenance records how the announcing command proved its
+	// relationship to the process named above. The explicit fallback carries
+	// the caller identity whose ancestry contained that process.
+	IdentityProvenance *IdentityProvenance `json:"identityProvenance,omitempty"`
+}
+
+// IdentityProvenance is the announcement's proof route. Caller fields are
+// required for the explicit ancestry fallback and omitted for a runtime
+// signature proof.
+type IdentityProvenance struct {
+	Source             string `json:"source"`
+	CallerPid          int64  `json:"callerPid,omitempty"`
+	CallerPidStartedAt int64  `json:"callerPidStartedAt,omitempty"`
 }
 
 type announcementFile struct {
@@ -293,7 +306,14 @@ type supervisedProc struct {
 // unenrolled scheduler) are UNTRUSTED and refused by the authority
 // gates, closing the accidental-privilege fall-through.
 func Classify(root string, caller int64) (Classification, error) {
-	probe, err := fixtureProbe(root)
+	return ClassifyAt(root, root, caller)
+}
+
+// ClassifyAt separates repository state from the installed runtime adapters.
+// They are the same directory in a self-hosted checkout and distinct when the
+// metasystem is vendored beneath an application repository.
+func ClassifyAt(root, metasystemRoot string, caller int64) (Classification, error) {
+	probe, err := fixtureProbe(metasystemRoot)
 	if err != nil {
 		return Classification{}, err
 	}
@@ -304,7 +324,7 @@ func Classify(root string, caller int64) (Classification, error) {
 	if own := authenticatedAnnouncement(caller, records, probe); own != nil {
 		return Classification{Class: ClassMain, MainId: own.MainId, Announcement: own}, nil
 	}
-	signatures, err := allAdapterSignatures(root)
+	signatures, err := allAdapterSignatures(metasystemRoot)
 	if err != nil {
 		return Classification{}, err
 	}
@@ -312,7 +332,7 @@ func Classify(root string, caller int64) (Classification, error) {
 	if err != nil {
 		return Classification{}, err
 	}
-	stewardBinary := verifiedStewardBinary(root)
+	stewardBinaries := verifiedStewardBinaries(root)
 	seen := map[int64]bool{caller: true}
 	current, ok := ParentPid(caller)
 	for ok && !seen[current] {
@@ -324,7 +344,7 @@ func Classify(root string, caller int64) (Classification, error) {
 			if census.Runtime(command, signatures) != "" {
 				return Classification{Class: ClassDelegate, Pid: current}, nil
 			}
-			if stewardBinary != "" && stewardPlumbing(command, stewardBinary) {
+			if stewardPlumbing(command, stewardBinaries) {
 				// Only the steward FAMILY of the installed binary is
 				// the steward's own plumbing (steward run/tick/
 				// revive spawn the continuation chain). Any other
@@ -363,8 +383,8 @@ func Classify(root string, caller int64) (Classification, error) {
 	// the HUMAN checks on purpose: a person at a terminal stays a
 	// person whatever binary they typed; arming the watchdog must
 	// never reclassify them and disable the human-reserved verbs.
-	if stewardBinary != "" {
-		if command, cok := ProcessCommand(caller, probe); cok && stewardPlumbing(command, stewardBinary) {
+	if len(stewardBinaries) > 0 {
+		if command, cok := ProcessCommand(caller, probe); cok && stewardPlumbing(command, stewardBinaries) {
 			return Classification{Class: ClassSteward, Pid: caller}, nil
 		}
 	}
@@ -386,28 +406,35 @@ func probeFixtureTerminal(pid int64, probe identity.FixtureProbe) (bool, bool) {
 // stewardPlumbing reports whether a command line is the installed
 // binary invoking its steward family — the only invocations that
 // ARE the watchdog rather than plumbing some other actor ran.
-func stewardPlumbing(command, stewardBinary string) bool {
-	if !sameExecutable(commandExecutable(command), stewardBinary) {
+func stewardPlumbing(command string, stewardBinaries []string) bool {
+	matched := false
+	for _, binary := range stewardBinaries {
+		if sameExecutable(commandExecutable(command), binary) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		return false
 	}
 	fields := strings.Fields(command)
 	return len(fields) >= 2 && fields[1] == "steward"
 }
 
-// verifiedStewardBinary authenticates this repository's steward
-// installation and returns its binary path, or empty when no valid
+// verifiedStewardBinaries authenticates this repository's steward
+// installation and returns its enrolled and pinned paths, or none when no valid
 // installation exists. Verification failures mean "not the steward" —
 // the caller keeps walking toward its other classifications.
-func verifiedStewardBinary(root string) string {
+func verifiedStewardBinaries(root string) []string {
 	top, err := filepath.Abs(root)
 	if err != nil {
-		return ""
+		return nil
 	}
 	id, err := steward.VerifyIdentity(steward.RepoIdentityPath(top), top)
 	if err != nil {
-		return ""
+		return nil
 	}
-	return id.InstallPath
+	return []string{id.InstallPath, steward.EnrolledExecutionPath(top, id)}
 }
 
 // sameExecutable compares two executable paths with symlinks

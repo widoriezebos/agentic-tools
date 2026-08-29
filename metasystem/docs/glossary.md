@@ -71,10 +71,12 @@ not paths.
 
 ## Supervision: who watches the processes
 
-- **Arming** — starting supervision for a checkout
-  (`scripts/agents/arm-supervision.sh`): announce the session, claim or
-  join the lease, launch the watcher and reaper, and wait for a first
-  healthy census. "Armed" means the checkout is being watched.
+- **Arming** — starting the complete checkout control plane with
+  `metasystem up`: announce the session, classify the lease, establish or
+  verify the supervision owner, watcher, reaper, and steward runner, and wait
+  for their generation-bound success. "Armed" means the checkout is watched;
+  a second session is armed as a read-only `advisor` without displacing the
+  lease holder.
 - **Census** — the periodic scan (the engine's census, run by
   `scripts/watch-background-jobs.sh --census`; `internal/census`) that classifies every process
   touching the checkout: **ANNOUNCED** (a registered main), **CUSTODY**

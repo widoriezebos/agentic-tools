@@ -36,26 +36,6 @@ func writeIdentityJSON(path string, value any) error {
 	return writeErr
 }
 
-func readJSONObject(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	return doc, nil
-}
-
-func jsonIntField(v any) (int64, bool) {
-	f, ok := v.(float64)
-	if !ok || f != float64(int64(f)) {
-		return 0, false
-	}
-	return int64(f), true
-}
-
 // strictBool registers a string boolean flag that accepts exactly the two
 // spellings its shell callers already pass and refuses anything else: a
 // typo must be a usage error (exit 2), never a silent false — a

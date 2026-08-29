@@ -61,10 +61,10 @@ func TestArmAndPreflightRefusals(t *testing.T) {
 		t.Fatalf("failing armer: %v", err)
 	}
 
-	// An armer that reports ARMED hands off to contract preflight, which
+	// An armer that reports the typed armed outcome hands off to contract preflight, which
 	// refuses the absent contract by name.
 	armed := &Engine{Root: t.TempDir(), Mission: "mr-arm-c"}
-	stubArming(t, armed.Root, `echo ARMED`)
+	stubArming(t, armed.Root, `echo 'up outcome=armed authority=writer'`)
 	if err := armed.armAndPreflight("start"); err == nil ||
 		!strings.Contains(err.Error(), "refused by preflight") {
 		t.Fatalf("preflight handoff: %v", err)

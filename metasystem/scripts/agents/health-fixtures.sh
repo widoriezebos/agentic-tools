@@ -9,6 +9,7 @@ health_process_cap_sec=$(harness_fixture_cap health-process-wait)
 
 ms=${METASYSTEM_BIN:-$root/bin/metasystem}
 [[ -x "$ms" ]] || { echo "health fixtures: binary absent; build the engine first" >&2; exit 1; }
+source_ms=$ms
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-health.XXXXXX")
 runner_pid=
@@ -119,6 +120,28 @@ chmod +x "$tmp/notifier.sh"
 export HEALTH_FIXTURE_ALERTS=$tmp/alerts.log
 git -C "$repo" config metasystem.steward.notify-command "$tmp/notifier.sh"
 
+# Human-only steward enrollment must not inherit the agent classification of
+# whichever runner launched this bed. Install the fixture engine under the
+# scratch root and give it the same authorized identity sources used by the
+# restricted-CI supervision fixture.
+fixture_install=$tmp/fixture-install
+mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
+printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
+cp "$source_ms" "$fixture_install/bin/metasystem"
+cp -R "$root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
+ms=$fixture_install/bin/metasystem
+printf '[]\n' >"$tmp/processes.json"
+
+ambient_ancestor=$(
+  "$source_ms" proc find-ancestor --repo "$root" --pid "$$" 2>/dev/null || true
+)
+ambient_pid=
+ambient_start=
+if [[ -n "$ambient_ancestor" ]]; then
+  ambient_pid=$("$source_ms" json get --value "$ambient_ancestor" --field pid 2>/dev/null || true)
+  ambient_start=$("$source_ms" json get --value "$ambient_ancestor" --field pidStartedAt 2>/dev/null || true)
+fi
+
 "$ms" util hold --tag health-owner-$$ >/dev/null 2>&1 & owner_pid=$!
 "$ms" util hold --tag health-watcher-$$ >/dev/null 2>&1 & watcher_pid=$!
 "$ms" util hold --tag health-main-$$ >/dev/null 2>&1 & main_pid=$!
@@ -126,8 +149,20 @@ git -C "$repo" config metasystem.steward.notify-command "$tmp/notifier.sh"
 owner_start=$("$ms" proc started-at --pid "$owner_pid") || fail "owner start identity unreadable"
 watcher_start=$("$ms" proc started-at --pid "$watcher_pid") || fail "watcher start identity unreadable"
 main_start=$("$ms" proc started-at --pid "$main_pid") || fail "main start identity unreadable"
+shell_start=$("$ms" proc started-at --pid "$$") || fail "fixture shell identity unreadable"
 now_epoch=$(date -u +%s)
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+if [[ "$ambient_pid" =~ ^[1-9][0-9]*$ && "$ambient_start" =~ ^[1-9][0-9]*$ \
+    && "$ambient_pid" != "$$" ]]; then
+  printf '{"%s":{"pidStartedAt":%s,"command":"health fixture shell","terminal":true},"%s":{"pidStartedAt":%s,"command":"health fixture ambient runner"}}\n' \
+    "$$" "$shell_start" "$ambient_pid" "$ambient_start" >"$tmp/identities.json"
+else
+  printf '{"%s":{"pidStartedAt":%s,"command":"health fixture shell","terminal":true}}\n' \
+    "$$" "$shell_start" >"$tmp/identities.json"
+fi
+export METASYSTEM_CENSUS_PROCESS_FILE=$tmp/processes.json
+export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$tmp/identities.json
 
 printf '{"generation":1,"intervalSec":60,"owner":{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-owner-%s"},"components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-watcher-%s"}}}\n' \
   "$owner_pid" "$owner_start" "$$" "$watcher_pid" "$watcher_start" "$$" \
@@ -136,8 +171,10 @@ printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"health-owner-%s"}\n' \
   "$owner_pid" "$owner_start" "$$" >"$repo/artifacts/agents/supervision/lock.d/owner.json"
 printf '{"schemaVersion":2,"writer":"watch-background-jobs.sh","verdict":"SUCCESS","completedAtEpoch":%s,"intervalSec":60,"generation":1,"fingerprint":"fixture","counts":{},"inventory":[],"diagnostics":[],"errors":[]}\n' \
   "$now_epoch" >"$repo/artifacts/agents/supervision/last-census.json"
-printf '{"sessionId":"fixture","mainId":"main-fixture","pid":%s,"pidStartedAt":%s,"runtime":"fake","instanceTag":"health-main-%s"}\n' \
-  "$main_pid" "$main_start" "$$" >"$repo/artifacts/agents/mains/fixture.json"
+env -u METASYSTEM_CENSUS_PROCESS_FILE -u METASYSTEM_FAKE_PROCESS_IDENTITY_FILE \
+  "$ms" lease announce --root "$repo" --session fixture --pid "$main_pid" \
+  --start "$main_start" --runtime fake --tag "health-main-$$" >/dev/null \
+  || fail "session main announcement failed"
 mkdir -p "$repo/artifacts/agents/steward/components"
 watcher_digest=$(printf '%s' 'fixture watcher pass' | "$ms" util sha256)
 printf '{"component":"repo-watcher","generation":1,"pid":%s,"pidStartedAt":%s,"successPid":%s,"successPidStartedAt":%s,"successAttemptSeq":1,"attemptSeq":1,"lastAttempt":"%s","lastCompletion":"%s","lastSuccess":"%s","result":"OK","outcome":"PASS_COMPLETE","evidenceDigest":"%s"}\n' \
@@ -238,14 +275,14 @@ while :; do
   sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
 done
 [[ "$narrator_stalled" == yes ]] || fail "stopped ticks did not make narrator evidence stale"
-grep -Fq 'steward restart --repo' "$tmp/narrator-stalled.out" || fail "stale narrator omitted the restart remedy"
+grep -Fq 'metasystem up --repo' "$tmp/narrator-stalled.out" || fail "stale narrator omitted the up remedy"
 continue_recorded_pids
 "$ms" steward restart --repo "$repo" >"$tmp/narrator-restart.out" 2>"$tmp/narrator-restart.err" || {
   cat "$tmp/narrator-restart.err" >&2
-  fail "the stale narrator's printed restart remedy failed"
+  fail "the stale narrator's focused restart failed"
 }
 runner_pid=$(read_runner_pid)
-wait_for_healthy narrator-recovered || fail "the stale narrator's printed restart remedy did not heal health"
+wait_for_healthy narrator-recovered || fail "the stale narrator's focused restart did not heal health"
 
 # Killing the actual resident runner proves the acceptance path and starts the
 # five-observation breaker from a healthy reset.
@@ -258,7 +295,7 @@ run_health runner-dead
 dead_rc=$health_rc
 [[ "$dead_rc" -eq 1 ]] || { cat "$tmp/runner-dead.err" >&2; fail "dead bed returned $dead_rc"; }
 grep -Fq 'steward-runner=dead' "$tmp/runner-dead.out" || fail "dead verdict did not name the killed runner"
-grep -Fq 'steward restart --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the restart remedy"
+grep -Fq 'metasystem up --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the up remedy"
 if [[ -f "$tmp/alerts.log" ]] && grep -Fq 'HEALTH unhealthy' "$tmp/alerts.log"; then
   fail "a recoverable first failure notified the human before escalation"
 fi
@@ -315,10 +352,10 @@ grep -Fq '"acknowledgedBy"' "$episode_file" || fail "episode acknowledgment omit
 
 "$ms" steward restart --repo "$repo" >"$tmp/runner-restart.out" 2>"$tmp/runner-restart.err" || {
   cat "$tmp/runner-restart.err" >&2
-  fail "the killed runner's printed restart remedy failed"
+  fail "the killed runner's focused restart failed"
 }
 runner_pid=$(read_runner_pid)
-wait_for_healthy runner-recovered || fail "the killed runner's printed restart remedy did not heal health"
+wait_for_healthy runner-recovered || fail "the killed runner's focused restart did not heal health"
 grep -Fq '"resolved": true' "$episode_file" || fail "healthy verdict did not resolve the alert episode"
 grep -Fq '"cleared": true' "$episode_file" || fail "healthy verdict did not clear the alert episode"
 

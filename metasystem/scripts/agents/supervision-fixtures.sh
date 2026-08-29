@@ -12,6 +12,11 @@ fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 tmp=$(mktemp -d)
 owned_pids=()
 fixture_harness_roots=()
+# Every detached owner inherits this run-scoped registry home. A direct fixture
+# run must never need write access to, or append evidence into, the operator's
+# real home directory.
+export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/registry-home"
+mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
@@ -76,7 +81,7 @@ assert_scratch_scoped_announcement_calls() {
   expected=$(printf '%s\n' \
     'scripts/agents/supervision-fixtures.sh:call:announced' \
     'scripts/agents/supervision-fixtures.sh:call:"$repo"' \
-    'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo/metasystem"' \
+    'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo"' \
     'scripts/agents/supervision-fixtures.sh:direct:"$stop_root"' \
     'scripts/agents/supervision-fixtures.sh:direct:"$stop_root"' \
     'scripts/agents/supervision-fixtures.sh:call:' \
@@ -267,7 +272,7 @@ cleanup() {
   if [[ -n "${operator_harness:-}" && -x "$operator_harness/scripts/agents/arm-supervision.sh" ]]; then
     if declare -p operator_env >/dev/null 2>&1; then
       "${operator_env[@]}" "$operator_harness/scripts/agents/arm-supervision.sh" \
-        --repo "$operator_harness" --shutdown >/dev/null 2>&1 || true
+        --repo "${operator_scope:-$operator_harness}" --shutdown >/dev/null 2>&1 || true
     else
       "$operator_harness/scripts/agents/arm-supervision.sh" \
         --repo "$operator_harness" --shutdown >/dev/null 2>&1 || true
@@ -313,6 +318,36 @@ trap cleanup EXIT
 trap 'on_signal 2' INT
 trap 'on_signal 15' TERM
 
+enroll_fixture_engine() { # repository state root, engine path
+  local state_root=$1 engine=$2 digest identity_dir
+  state_root=$(cd "$state_root" && pwd -P)
+  engine=$(cd "$(dirname "$engine")" && pwd -P)/$(basename "$engine")
+  digest=$($engine util sha256 --file "$engine")
+  identity_dir=$state_root/artifacts/agents/steward
+  mkdir -p "$identity_dir"
+  printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+    "$state_root" "$engine" "$digest" >"$identity_dir/identity.json"
+  chmod 0600 "$identity_dir/identity.json"
+}
+
+# An explicit identity fixture must invoke up below the process it announces.
+# Keeping that process alive also gives later assertions a real live tuple.
+live_arm_driver=$tmp/live-arm-driver.sh
+cat >"$live_arm_driver" <<'SH'
+#!/usr/bin/env bash
+set -u
+engine=$1 arm=$2 repo=$3 session=$4 tag=$5 output=$6 status_file=$7 ready=$8 release=$9
+started=$("$engine" proc started-at --pid $$)
+"$arm" --repo "$repo" --session "$session" --pid $$ --start-time "$started" --tag "$tag" >"$output" 2>&1
+status=$?
+printf '%s\n' "$status" >"$status_file"
+touch "$ready"
+(( status == 0 )) || exit "$status"
+while [[ ! -e "$release" ]]; do
+  sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:-0.05}"
+done
+SH
+
 make_repo() { # destination
   local repo=$1 evidence=$tmp/evidence-$(basename "$repo")
   fixture_harness_roots+=("$repo")
@@ -339,6 +374,9 @@ make_repo() { # destination
   # at <repo>/bin/metasystem, added after the base commit.
   mkdir -p "$repo/bin"
   cp "$ms" "$repo/bin/metasystem"
+  # Fixture setup supplies the standing human enrollment. Product arming is
+  # then exercised only through its ambient, non-minting path.
+  enroll_fixture_engine "$repo" "$repo/bin/metasystem"
 }
 
 json_field() { # file, dotted field (script-fixtures-022: the engine verb)
@@ -472,6 +510,7 @@ git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invali
 fixture_harness_roots+=("$operator_harness")
 operator_arm=$operator_harness/scripts/agents/arm-supervision.sh
 operator_engine=$operator_harness/bin/metasystem
+enroll_fixture_engine "$operator_scope" "$operator_engine"
 
 # A plain shell with no matching ancestor must refuse, but the refusal tells an
 # operator both supported ways forward. Restricting discovery to the fake
@@ -487,8 +526,9 @@ operator_identity_rc=$?
 set -e
 [[ $operator_identity_rc -ne 0 ]] \
   || { echo "nested operator identity inference unexpectedly succeeded" >&2; exit 1; }
-grep -Fq 'Pass --pid <agent-pid> and --start-time <epoch-seconds>' "$tmp/operator-identity.out" \
-  && grep -Fq 'ancestor matches a configured runtime signature' "$tmp/operator-identity.out" \
+grep -Fq 'component=session-identity outcome=failed' "$tmp/operator-identity.out" \
+  && grep -Fq 'runtime-signature ancestry proof failed' "$tmp/operator-identity.out" \
+  && grep -Fq 'pass --pid <session-pid> and --start-time <epoch-seconds>' "$tmp/operator-identity.out" \
   || { echo "nested operator identity refusal is not actionable" >&2; cat "$tmp/operator-identity.out" >&2; exit 1; }
 
 operator_env=(env -u METASYSTEM_CENSUS_PROCESS_FILE -u METASYSTEM_FAKE_PROCESS_IDENTITY_FILE
@@ -566,12 +606,12 @@ if [[ "${METASYSTEM_SUITE_TEST_PAUSE_AT:-}" == post-owned-pids ]]; then
 fi
 wait_for_child_exit "nested ordinary operator arming" "$operator_driver" \
   || { operator_driver_rc=$?; cat "$tmp/operator-arm.out" >&2; exit "$operator_driver_rc"; }
-grep -Eq "(^|[[:space:]])ARMED repo=$operator_scope([[:space:]]|$)" "$tmp/operator-arm.out" \
+grep -Fq 'up outcome=armed authority=writer' "$tmp/operator-arm.out" \
   || { cat "$tmp/operator-arm.out" >&2; exit 1; }
-[[ -s "$operator_harness/artifacts/agents/supervision/last-census.json" ]] \
-  || { echo "nested operator path did not write the metasystem registry" >&2; exit 1; }
-[[ ! -e "$operator_scope/artifacts" ]] \
-  || { echo "nested operator path wrote registries at the Git toplevel" >&2; exit 1; }
+[[ -s "$operator_scope/artifacts/agents/supervision/last-census.json" ]] \
+  || { echo "nested operator path did not write state at the Git repository scope" >&2; exit 1; }
+[[ ! -e "$operator_harness/artifacts" ]] \
+  || { echo "nested operator path split state beneath the vendored installation" >&2; exit 1; }
 if grep -Eq 'metasystem\.runtimes has no signature adapters|No such file or directory' "$tmp/operator-arm.out"; then
   cat "$tmp/operator-arm.out" >&2
   exit 1
@@ -588,7 +628,9 @@ if grep -Fq '$(git rev-parse --show-toplevel)/scripts/agents/supervision-hook.sh
   echo "nested operator hook configuration still resolves metasystem scripts from the Git toplevel" >&2
   exit 1
 fi
-"${operator_env[@]}" "$operator_arm" --repo "$operator_harness" --shutdown >/dev/null 2>&1
+"${operator_env[@]}" "$operator_arm" --repo "$operator_scope" --shutdown \
+  >"$tmp/operator-shutdown.out" 2>&1 \
+  || { echo "nested operator shutdown failed" >&2; cat "$tmp/operator-shutdown.out" >&2; exit 1; }
 
 echo "nested ordinary operator supervision fixture passed" >&2
 
@@ -612,9 +654,9 @@ release_checkout() { # repo
 # suite, and as DELEGATE again whenever a census fixture puts a simulated agent
 # command on a real ancestor's process identifier. Announcing this shell claims
 # the checkout as a side effect, which is what a starting main does.
-become_main() { # repo, session
-  local repo=$1 session=$2
-  "$repo/bin/metasystem" lease announce --root "$repo" \
+become_main() { # repository state root, session, optional engine
+  local repo=$1 session=$2 engine=${3:-$1/bin/metasystem}
+  "$engine" lease announce --root "$repo" \
     --session "$session" --pid $$ --start "$(process_started_at $$)" \
     --tag "fixture-$session" --runtime fake >/dev/null
 }
@@ -731,7 +773,7 @@ owned_pids+=("$infer_driver:$infer_driver_start")
 wait_until "S4-8 inferred announcement" bash -c 'compgen -G "$1/artifacts/agents/mains/inferred-session-*.json" >/dev/null' _ "$repo"
 touch "$infer_release"
 wait_for_child_exit "S4-8 inferred arming" "$infer_driver"
-grep -Eq '(^|[[:space:]])ARMED repo=' "$tmp/inferred-arm.out" \
+grep -Fq 'up outcome=armed authority=writer' "$tmp/inferred-arm.out" \
   || { cat "$tmp/inferred-arm.out" >&2; exit 1; }
 
 last="$repo/artifacts/agents/supervision/last-census.json"
@@ -864,6 +906,33 @@ owner_after=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" 
 [[ $(find "$repo/artifacts/agents/mains" -name 'duplicate-*.json' | wc -l | tr -d ' ') -eq 1 ]] \
   || { echo "duplicate session starts did not collapse" >&2; exit 1; }
 
+# A second live session announces and verifies the shared rings but never
+# displaces the checkout holder. Its typed advisor outcome names both the
+# holder and the isolated-worktree remedy.
+advisor_output_file=$tmp/advisor-arm.out
+advisor_status_file=$tmp/advisor-arm.status
+advisor_ready=$tmp/advisor-arm.ready
+advisor_release=$tmp/advisor-arm.release
+bash "$live_arm_driver" "$repo/bin/metasystem" "$arm" "$repo" advisor-session advisor-session \
+  "$advisor_output_file" "$advisor_status_file" "$advisor_ready" "$advisor_release" &
+advisor_pid=$!
+advisor_start=$(process_started_at "$advisor_pid")
+owned_pids+=("$advisor_pid:$advisor_start")
+wait_until "advisor descendant arming" test -e "$advisor_ready"
+[[ $(cat "$advisor_status_file") == 0 ]] \
+  || { echo "advisor descendant failed to arm" >&2; cat "$advisor_output_file" >&2; exit 1; }
+holder_before=$(json_field "$repo/artifacts/agents/mains/worktree-lease.json" holderMainId)
+advisor_output=$(cat "$advisor_output_file")
+holder_after=$(json_field "$repo/artifacts/agents/mains/worktree-lease.json" holderMainId)
+[[ "$holder_before" == "$holder_after" ]] \
+  || { echo "advisor up displaced the live checkout holder" >&2; exit 1; }
+grep -Fq 'component=checkout-lease outcome=advisor' <<<"$advisor_output" \
+  && grep -Fq 'up outcome=advisor authority=read-only' <<<"$advisor_output" \
+  && grep -Fq 'scripts/agents/second-session.sh' <<<"$advisor_output" \
+  || { echo "second-session up did not return the typed advisor outcome" >&2; echo "$advisor_output" >&2; exit 1; }
+touch "$advisor_release"
+wait_for_child_exit "advisor descendant release" "$advisor_pid"
+
 # Complete three-class inventory, self-announcement before first census, stale
 # custody rejection (S4-2), worktree scope inclusion, peer exclusion, embedded
 # and not-yet-created argv paths (S4-9), and per-process unresolved cwd (S4-6).
@@ -888,9 +957,10 @@ printf '{"sessionId":"announced","pid":%s,"pidStartedAt":%s,"pgid":%s,"runtime":
   "$announced_pid" "$announced_start" "$announced_pid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$announced_staged"
 mv "$announced_staged" "$repo/artifacts/agents/mains/announced-$announced_pid.json"
 supervisor_start=$(process_started_at "$$")
-supervisor_pgid=$(ps -o pgid= -p "$$" | tr -d '[:space:]')
+supervisor_announcement="$repo/artifacts/agents/mains/duplicate-$$.json"
+supervisor_pgid=$(json_field "$supervisor_announcement" pgid)
 [[ "$supervisor_pgid" =~ ^[0-9]+$ ]] \
-  || { echo "cannot read this shell's process group" >&2; exit 1; }
+  || { echo "cannot read this shell's announced process group" >&2; exit 1; }
 mkdir -p "$repo/artifacts/agents/hb"
 owned_tag=metasystem-job-owned
 owned_cap=$(harness_fixture_semantic_cap dormant-job-minutes)
@@ -978,9 +1048,22 @@ printf '\n# signature fingerprint fixture\n' >>"$repo/scripts/agents/adapters/fa
 fingerprint_after=$($arm fingerprint --repo "$repo")
 [[ "$fingerprint_before" != "$fingerprint_after" ]] \
   || { echo "S4-3: adapter change did not alter expected fingerprint" >&2; exit 1; }
+old_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
+replacement_output=$("$arm" --repo "$repo" --session generation-replacement --pid "$$" \
+  --start-time "$(process_started_at "$$")" --tag fixture-main)
+new_generation_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
+[[ "$new_generation_owner" != "$old_generation_owner" ]] \
+  && grep -Fq 'component=supervision-owner outcome=replaced' <<<"$replacement_output" \
+  || { echo "ordinary up did not replace the live older engine generation" >&2; echo "$replacement_output" >&2; exit 1; }
 git -C "$repo" show HEAD:scripts/agents/adapters/fake.sh >"$repo/scripts/agents/adapters/fake.sh.restored"
 mv "$repo/scripts/agents/adapters/fake.sh.restored" "$repo/scripts/agents/adapters/fake.sh"
 chmod +x "$repo/scripts/agents/adapters/fake.sh"
+# Restoring the accepted bytes is another generation change; ordinary up
+# absorbs that replacement too, leaving later fixture legs on current code.
+"$arm" --repo "$repo" --session generation-restored --pid "$$" \
+  --start-time "$(process_started_at "$$")" --tag fixture-main >/dev/null
+owner_before=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
+owner_start=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pidStartedAt)
 
 # Dispatch refuses absent, stale, failed, and fingerprint-mismatched verdicts.
 gate_repo=$tmp/gate-repo
@@ -1091,10 +1174,18 @@ edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
 printf '{"session_id":"stale-surface","cwd":"%s","hook_event_name":"Stop"}\n' "$gate_repo" \
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
     "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
-grep -Fq 'code changed since arming' "$tmp/stale-surface.out" \
-  || { echo "S4-3/S4-4: end-turn hook hid fingerprint drift" >&2; exit 1; }
-grep -Fq 'owner' "$tmp/stale-surface.out" && grep -Fq 'not running' "$tmp/stale-surface.out" \
-  || { echo "S4-4: end-turn hook hid a dead supervision owner" >&2; exit 1; }
+if grep -Fq 'code changed since arming' "$tmp/stale-surface.out"; then
+  grep -Fq 'owner' "$tmp/stale-surface.out" && grep -Fq 'not running' "$tmp/stale-surface.out" \
+    || { echo "S4-4: end-turn hook hid a dead supervision owner" >&2; exit 1; }
+else
+  # Stop now runs up before rendering. A live owner may repair the deliberately
+  # stale publication during that transaction; prove reconciliation instead of
+  # requiring the obsolete pre-repair warning.
+  [[ "$(json_field "$gate_repo/artifacts/agents/supervision/state.json" fingerprint)" \
+      == "$(json_field "$gate_repo/artifacts/agents/supervision/last-census.json" fingerprint)" ]] \
+    && [[ "$(json_field "$gate_repo/artifacts/agents/supervision/state.json" owner.pid)" != 999999 ]] \
+    || { echo "S4-3/S4-4: end-turn hook neither surfaced nor repaired fingerprint drift" >&2; cat "$tmp/stale-surface.out" >&2; exit 1; }
+fi
 
 # Continuous supervision has one owner and one cadence. Killing either
 # component is detected and the whole instance-fingerprinted set is replaced
@@ -1134,19 +1225,30 @@ if [[ -n "${METASYSTEM_SUITE_DEBUG_TAKEOVER_CLASS:-}" ]]; then
   [[ "$("$ms" json get --value "$takeover_class" --field class)" == MAIN ]] \
     || { echo "takeover-point caller is not class MAIN" >&2; exit 1; }
 fi
-"$arm" --repo "$repo" --session takeover --pid "$$" --start-time "$(process_started_at "$$")" --tag takeover-main >/dev/null
+takeover_output=$("$arm" --repo "$repo" --session takeover --pid "$$" \
+  --start-time "$(process_started_at "$$")" --tag takeover-main)
 new_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 [[ "$new_owner" != "$owner_before" ]] || { echo "stale supervision lock was not taken over" >&2; exit 1; }
+grep -Fq 'component=supervision-owner outcome=taken-over' <<<"$takeover_output" \
+  || { echo "dead-owner takeover was not surfaced as a typed component outcome" >&2; echo "$takeover_output" >&2; exit 1; }
 
 # Dead announcements are pruned; SessionEnd retires its own; log rotation and
 # end-of-turn UNTRACKED/stale-supervisor surfacing remain visible.
 # A real process in its own session that stays alive until stop_owned_pid
 # terminates it below; its tag matches no runtime signature.
-dead_pid=$("$ms" supervise launch-detached -- "$ms" util hold --tag metasystem-dead-main-fixture)
+dead_output_file=$tmp/dead-main-arm.out
+dead_status_file=$tmp/dead-main-arm.status
+dead_ready=$tmp/dead-main-arm.ready
+dead_release=$tmp/dead-main-arm.release
+release_checkout "$repo"
+bash "$live_arm_driver" "$repo/bin/metasystem" "$arm" "$repo" dead-main dead-main \
+  "$dead_output_file" "$dead_status_file" "$dead_ready" "$dead_release" &
+dead_pid=$!
 dead_start=$(process_started_at "$dead_pid")
 owned_pids+=("$dead_pid:$dead_start")
-release_checkout "$repo"
-"$arm" --repo "$repo" --session dead-main --pid "$dead_pid" --start-time "$dead_start" --tag dead-main >/dev/null
+wait_until "dead-main descendant arming" test -e "$dead_ready"
+[[ $(cat "$dead_status_file") == 0 ]] \
+  || { echo "dead-main descendant failed to arm" >&2; cat "$dead_output_file" >&2; exit 1; }
 stop_owned_pid "dead announcement" "$dead_pid" "$dead_start"
 wait_for_census "dead announcement pruning" pred_path_absent "$repo/artifacts/agents/mains/dead-main-$dead_pid.json"
 
@@ -1247,7 +1349,7 @@ census_line=$(grep -n -m1 -F 'first-census-complete' "$repo/artifacts/agents/sup
 foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q -b main .)
-mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
+mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/artifacts/agents/supervision/lock.d"
 cp "$source_root/scripts/agents/arm-supervision.sh" \
   "$source_root/scripts/agents/preflight-commands.sh" \
   "$foreign/repo/metasystem/scripts/agents/"
@@ -1266,7 +1368,8 @@ printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$fore
 # caller must BE this sandbox's announced main. Ambient ancestry
 # answers agent under an agent-run suite, and require-holder then
 # refuses UNTRUSTED before the foreign-owner rule is ever reached.
-become_main "$foreign/repo/metasystem" foreign-owner-shutdown
+METASYSTEM_CENSUS_PROCESS_FILE= METASYSTEM_FAKE_PROCESS_IDENTITY_FILE= \
+  become_main "$foreign/repo" foreign-owner-shutdown "$foreign/repo/metasystem/bin/metasystem"
 foreign_sleep_pid=$(
   bash -c '"$1" util hold --tag metasystem-foreign-owner >/dev/null 2>&1 & echo $!' _ "$ms"
 )
@@ -1274,7 +1377,7 @@ foreign_start=$(process_started_at "$foreign_sleep_pid")
 owned_pids+=("$foreign_sleep_pid:$foreign_start")
 printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"metasystem-supervision-owner-some-other-checkout-1-2","acquiredAt":"1970-01-01T00:00:00Z"}\n' \
   "$foreign_sleep_pid" "$foreign_start" \
-  >"$foreign/repo/metasystem/artifacts/agents/supervision/lock.d/owner.json"
+  >"$foreign/repo/artifacts/agents/supervision/lock.d/owner.json"
 set +e
 "$foreign/repo/metasystem/scripts/agents/arm-supervision.sh" --repo "$foreign/repo" --shutdown \
   >"$tmp/foreign-shutdown.out" 2>&1
@@ -1318,6 +1421,9 @@ FIXTURE
 git -C "$stop_root" init -q -b main
 stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
 first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$first" | grep -Fq 'Metasystem supervision arming failed:' \
+  && printf '%s' "$first" | grep -Fq 'ENROLLMENT_DRIFT' \
+  || { echo "the Stop payload did not carry the up failure" >&2; echo "$first" >&2; exit 1; }
 printf '%s' "$first" | grep -q '"decision":"block"' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
 printf '%s' "$first" | grep -Fq 'HEALTH ' \

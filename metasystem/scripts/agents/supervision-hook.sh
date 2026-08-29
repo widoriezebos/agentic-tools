@@ -10,9 +10,9 @@ set -euo pipefail
 # registry MEMBERSHIP — an unknown runtime exits 2; (4) the runtime's
 # OPTIONAL session environment via the registry, expanded indirectly,
 # never eval; (5) cwd resolution: payload cwd, then the declared
-# variable's nonempty value, then PWD. Ring 3 is intentionally absent here:
-# recovery-only up and the optional operator-owned scheduler contract land
-# together at L7.
+# variable's nonempty value, then PWD. The optional recovery-only scheduler
+# entry is operator-owned and can be printed with `metasystem up
+# --print-scheduler-entry`; this hook never installs host state.
 runtime=${1:-}
 event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
@@ -23,14 +23,10 @@ case "$event" in start|stop|end) ;; *) exit 2 ;; esac
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
-arm=$script_dir/arm-supervision.sh
 if [[ ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
     printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (metasystem engine missing; reinstall or rebuild bin/metasystem)"}'
   fi
-  exit 0
-fi
-if [[ ! -x "$arm" && "$event" != stop ]]; then
   exit 0
 fi
 registered_runtimes=$("$ms" runtime list) || {
@@ -80,47 +76,55 @@ fi
 hook_generation=
 hook_attempt_seq=
 health_line=
+hook_evidence_failure=
 if [[ "$event" == stop ]]; then
   turn_key_rc=0
   turn_key=$({ printf '%s\n' "$session"; command cat "$payload"; } | "$ms" util sha256) || turn_key_rc=$?
   if (( turn_key_rc != 0 )) || [[ -z "$turn_key" ]]; then
-    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (turn evidence could not be prepared)"}'
-    exit 0
-  fi
-  hook_attempt_rc=0
-  hook_attempt=$(
-    "$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null
-  ) || hook_attempt_rc=$?
-  if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
-    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"}'
-    exit 0
-  fi
-  hook_generation=$("$ms" json get --value "$hook_attempt" --field generation 2>/dev/null || true)
-  hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq 2>/dev/null || true)
-  if ! [[ "$hook_generation" =~ ^[1-9][0-9]*$ && "$hook_attempt_seq" =~ ^[1-9][0-9]*$ ]]; then
-    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (attempt evidence was unreadable)"}'
-    exit 0
-  fi
-  health_rc=0
-  health_line=$("$ms" health --hook-preview --repo "$repo" 2>/dev/null) || health_rc=$?
-  if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
-    health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
+	hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (turn evidence could not be prepared)"
+  else
+	hook_attempt_rc=0
+	hook_attempt=$(
+	  "$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null
+	) || hook_attempt_rc=$?
+	if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
+	  hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
+	else
+	  hook_generation=$("$ms" json get --value "$hook_attempt" --field generation 2>/dev/null || true)
+	  hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq 2>/dev/null || true)
+	  if ! [[ "$hook_generation" =~ ^[1-9][0-9]*$ && "$hook_attempt_seq" =~ ^[1-9][0-9]*$ ]]; then
+		hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence was unreadable)"
+	  fi
+	fi
   fi
 fi
 
-# Hook frameworks commonly insert `/bin/sh -c` between the agent and this
-# script. Start above that shell so the runtime name in the hook command itself
-# cannot become a false signature match.
-search_pid=$(ps -p "$PPID" -o ppid= 2>/dev/null | tr -d ' ' || true)
-[[ "$search_pid" =~ ^[1-9][0-9]*$ ]] || search_pid=$PPID
-identity=$("$ms" proc find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
+# Runtime signatures are anchored on the executable, so an intermediate
+# `/bin/sh -c` does not impersonate the runtime merely because its arguments
+# name this hook. Start at the immediate parent and let the process owner walk.
+identity=$("$ms" proc find-ancestor --repo "$repo" --pid "$PPID" --runtime "$runtime" 2>/dev/null || true)
 main_id=
 main_class=
 main_holder=false
 identity_pid=
+identity_started=
 if [[ -n "$identity" ]]; then
   identity_pid=$("$ms" json get --value "$identity" --field pid)
-  lease_view=$("$ms" lease classify --root "$harness_root" --caller-pid "$identity_pid" 2>/dev/null || true)
+  identity_started=$("$ms" json get --value "$identity" --field pidStartedAt)
+else
+  # Recorded fallback: a hook may run in a test harness or runtime wrapper
+  # whose authenticated main was announced explicitly. Classification returns
+  # that exact announcement; an unannounced process gains nothing here.
+  parent_view=$("$ms" lease classify --root "$repo" --metasystem-root "$harness_root" --caller-pid "$PPID" 2>/dev/null || true)
+  if [[ "$("$ms" json get --value "$parent_view" --field class 2>/dev/null || true)" == MAIN ]]; then
+    identity_pid=$("$ms" json get --value "$parent_view" --field announcement.pid 2>/dev/null || true)
+    identity_started=$("$ms" json get --value "$parent_view" --field announcement.pidStartedAt 2>/dev/null || true)
+    [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]] \
+      && identity=recorded-main
+  fi
+fi
+if [[ -n "$identity_pid" ]]; then
+  lease_view=$("$ms" lease classify --root "$repo" --metasystem-root "$harness_root" --caller-pid "$identity_pid" 2>/dev/null || true)
   if [[ -n "$lease_view" ]]; then
     main_id=$("$ms" json get --value "$lease_view" --field mainId 2>/dev/null || true)
     main_class=$("$ms" json get --value "$lease_view" --field class 2>/dev/null || true)
@@ -131,6 +135,30 @@ fi
 surface_json() { # message
   "$ms" json object "systemMessage=$1"
 }
+
+tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
+up_failure=
+if [[ "$event" == stop ]]; then
+  up_rc=0
+  if [[ -n "$identity_pid" ]]; then
+    up_output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
+      --repo "$repo" --session "$session" --pid "$identity_pid" --start-time "$identity_started" \
+      --tag "$tag" 2>&1) || up_rc=$?
+  else
+    # A Stop call with no session identity still drives the restricted verify
+    # and recovery path. It gains no announcement or checkout lease authority.
+    up_output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
+      --repo "$repo" --recover-only --if-down 2>&1) || up_rc=$?
+  fi
+  if (( up_rc != 0 )); then
+    up_failure="Metasystem supervision arming failed: $(printf '%s' "$up_output" | tail -1)"
+  fi
+  health_rc=0
+  health_line=$("$ms" health --hook-preview --repo "$repo" --metasystem-root "$harness_root" 2>/dev/null) || health_rc=$?
+  if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
+    health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
+  fi
+fi
 
 emit_stop_payload() { # response
   response=$1
@@ -168,7 +196,7 @@ if [[ "$event" == stop ]]; then
   protocol_message=
   protocol_counts='{}'
   if [[ -n "$main_id" ]]; then
-    protocol_growth=$("$ms" lease protocol-growth --root "$harness_root" --main-id "$main_id" 2>/dev/null || true)
+    protocol_growth=$("$ms" lease protocol-growth --root "$repo" --main-id "$main_id" 2>/dev/null || true)
     if [[ -n "$protocol_growth" ]]; then
       protocol_message=$("$ms" json get --value "$protocol_growth" --field message)
       protocol_counts=$("$ms" json get --value "$protocol_growth" --field counts)
@@ -181,32 +209,36 @@ if [[ "$event" == stop ]]; then
   # refusal to walk away from open work, with a sentence about ownership.
   if [[ "$main_class" == MAIN && "$main_holder" != true ]]; then
     advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
+	[[ -z "$up_failure" ]] || advisor_message="$advisor_message
+$up_failure"
+	[[ -z "$hook_evidence_failure" ]] || advisor_message="$advisor_message
+$hook_evidence_failure"
     [[ -z "$protocol_message" ]] || advisor_message="$advisor_message
 $protocol_message"
     response=$(surface_json "$advisor_message
 $health_line")
     emit_stop_payload "$response"
     [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
-      "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \
+      "$ms" lease protocol-advance --root "$repo" --main-id "$main_id" \
         --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
     exit 0
   fi
   [[ -z "$identity_pid" ]] || \
-    "$ms" lease renew --root "$harness_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
+    "$ms" lease renew --root "$repo" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
 
   # The WATCHDOG path calls the verdict like every other path (only the
   # advisor early-exit above bypasses it): the report's text stays
   # hook-side, its DIGEST rides to the verb, and the verb's surfaceWatchdog
   # answer decides exactly-once surfacing across concurrent Stop calls
   # (goal-system GOAL-04; the loose per-session state files are retired).
-  watchdog_text=$("$ms" supervise watchdog-report --repo "$harness_root" 2>/dev/null || true)
+  watchdog_text=$("$ms" supervise watchdog-report --repo "$repo" 2>/dev/null || true)
   watchdog_digest=
   [[ -z "$watchdog_text" ]] || watchdog_digest=$(printf '%s' "$watchdog_text" | "$ms" util sha256)
 
   # Leave evidence that this ran. Without it there is no telling a hook that
   # fired and found nothing from one that never fired, which is the confusion
   # that let this repository run for days with its hooks uninstalled.
-  supervision_dir="$harness_root/artifacts/agents/supervision"
+  supervision_dir="$repo/artifacts/agents/supervision"
   mkdir -p "$supervision_dir"
   "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || true
 
@@ -217,7 +249,7 @@ $health_line")
   # over — never silence, and never an all-clear it cannot vouch for. The
   # old 2>/dev/null||true suppression was the named defect this removes.
   verdict_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-verdict-err.XXXXXX")
-  if verdict=$("$ms" report turn-verdict --root "$harness_root" \
+  if verdict=$("$ms" report turn-verdict --root "$repo" \
       --session "$session" --watchdog-surfaced "$watchdog_digest" \
       --main-id "$main_id" 2>"$verdict_stderr"); then
     rm -f "$verdict_stderr"
@@ -228,8 +260,9 @@ $health_line")
     printf '%s stop verdict block=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$should_block" >>"$supervision_dir/hooks.log" 2>/dev/null || true
 
-    extras=
-    [[ "$surface_watchdog" == true && -n "$watchdog_text" ]] && extras=$watchdog_text
+	extras=$up_failure
+	[[ -z "$hook_evidence_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$hook_evidence_failure")
+	[[ "$surface_watchdog" != true || -z "$watchdog_text" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$watchdog_text")
     [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
 
     if [[ "$should_block" == true ]]; then
@@ -254,6 +287,10 @@ $health_line")
     printf '%s stop verdict unavailable\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       >>"$supervision_dir/hooks.log" 2>/dev/null || true
     degraded_message="turn-verdict unavailable: ${degraded_line:-no diagnostic}"
+	[[ -z "$up_failure" ]] || degraded_message="$degraded_message
+$up_failure"
+	[[ -z "$hook_evidence_failure" ]] || degraded_message="$degraded_message
+$hook_evidence_failure"
     [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
 $protocol_message"
     response=$(surface_json "$degraded_message
@@ -261,7 +298,7 @@ $health_line")
   fi
   emit_stop_payload "$response"
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
-    "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \
+    "$ms" lease protocol-advance --root "$repo" --main-id "$main_id" \
       --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
   exit 0
 fi
@@ -277,22 +314,21 @@ if [[ -z "$identity" ]]; then
   surface_json "Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
   exit 0
 fi
-pid=$("$ms" json get --value "$identity" --field pid)
-started=$("$ms" json get --value "$identity" --field pidStartedAt)
-# The tag suffix is slugged the same way as arm-supervision.sh, so the arming
-# and hook paths derive the identical instance tag.
-tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
-
+pid=$identity_pid
+started=$identity_started
 if [[ "$event" == end ]]; then
-  METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" --tag "$tag" --retire >/dev/null 2>&1 || true
+  METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
+    --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \
+    --tag "$tag" --retire >/dev/null 2>&1 || true
   exit 0
 fi
 
-if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" --tag "$tag" 2>&1); then
+if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
+    --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \
+    --tag "$tag" 2>&1); then
   # The watchdog revives with the first metasystem activity on this
-  # machine: arming is idempotent and best-effort — a session must
-  # never fail because the steward could not start.
-  { "$ms" steward arm --repo "$repo" >/dev/null 2>&1 || true; } 2>/dev/null
+  # machine: `up` verifies the owner, watcher, steward, announcement, and
+  # lease as one idempotent transaction.
   exit 0
 fi
 surface_json "Metasystem supervision arming failed: $(printf '%s' "$output" | tail -1)"

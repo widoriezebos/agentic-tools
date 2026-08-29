@@ -126,10 +126,20 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	if _, alive := liveRunner(root); !alive {
 		t.Fatal("the confirmed runner is provably live")
 	}
-	// Idempotency: a second arm finds the guard, never a duplicate.
-	again, err := Arm(root, bin)
-	if err != nil || !strings.Contains(again, "already armed") {
-		t.Fatalf("a second arm collapses onto the live runner: %q %v", again, err)
+	// Idempotency: session-start ensure waits for a generation-bound pass and
+	// verifies the same runner without spawning a duplicate.
+	beforeEnsure, _ := liveRunner(root)
+	pinned, err := OpenEnrolledBinary(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	if err := pinned.PrepareForExecution(); err != nil {
+		t.Fatal(err)
+	}
+	ensured, err := EnsureRunner(root, pinned, 1000)
+	if err != nil || ensured.Action != "verified" || ensured.Pid != beforeEnsure.Pid {
+		t.Fatalf("a second ensure must verify the live runner: %+v %v", ensured, err)
 	}
 	before, _ := liveRunner(root)
 	restarted, err := Restart(root, bin)
@@ -212,8 +222,12 @@ func TestWatcherRepairStopsWhenTheStewardBreakerEndsHealing(t *testing.T) {
 	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	trueDigest, err := installDigest(trueBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-		RepoIdentity: top, Generation: 3, InstallPath: trueBinary, MintedAt: time.Now().UTC().Format(time.RFC3339),
+		RepoIdentity: top, Generation: 3, InstallPath: trueBinary, InstallDigest: trueDigest, MintedAt: time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -251,8 +265,12 @@ func TestWatcherRepairAbortsWhenEnrollmentChangesBeforeItsLock(t *testing.T) {
 	}
 	writeIdentity := func(generation int, binary string) {
 		t.Helper()
+		digest, err := installDigest(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-			RepoIdentity: top, Generation: generation, InstallPath: binary, MintedAt: time.Now().UTC().Format(time.RFC3339),
+			RepoIdentity: top, Generation: generation, InstallPath: binary, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
 		}); err != nil {
 			t.Fatal(err)
 		}

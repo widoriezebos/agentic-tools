@@ -68,11 +68,15 @@ func runLeaseRetire(args []string) int {
 func runLeaseClassify(args []string) int {
 	flags := flag.NewFlagSet("lease classify", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
+	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
 	caller := flags.Int64("caller-pid", 0, "caller pid")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	out, err := lease.ClassifyVerb(*root, *caller)
+	if *metasystemRoot == "" {
+		*metasystemRoot = *root
+	}
+	out, err := lease.ClassifyVerbAt(*root, *metasystemRoot, *caller)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

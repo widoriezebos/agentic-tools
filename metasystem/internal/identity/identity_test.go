@@ -100,6 +100,30 @@ func TestAliveRefThreeWay(t *testing.T) {
 	}
 }
 
+func TestAliveTaggedRefBindsIdentityAndTagToOneProbe(t *testing.T) {
+	ref := Ref{Pid: 41, StartedAtSec: 100, StartTicks: 700, BootID: "boot-a"}
+	live := fakeProber{exact: Exact{
+		Pid: 41, StartedAt: time.Unix(100, 0), StartTicks: 700, BootID: "boot-a",
+		Argv: []string{"component", "instance-tag"}, ArgvKnown: true,
+	}, state: Alive}
+	if got := AliveTaggedRef(live, ref, "instance-tag"); got != Alive {
+		t.Fatalf("matching tagged identity = %s, want alive", got)
+	}
+	if got := AliveTaggedRef(live, ref, "another-tag"); got != Dead {
+		t.Fatalf("missing tag = %s, want dead", got)
+	}
+	reused := live
+	reused.exact.StartTicks++
+	if got := AliveTaggedRef(reused, ref, "instance-tag"); got != Dead {
+		t.Fatalf("reused pid with copied tag = %s, want dead", got)
+	}
+	unreadable := live
+	unreadable.exact.ArgvKnown = false
+	if got := AliveTaggedRef(unreadable, ref, "instance-tag"); got != Unknown {
+		t.Fatalf("unreadable argv = %s, want unknown", got)
+	}
+}
+
 func TestLivenessStrings(t *testing.T) {
 	if Alive.String() != "alive" || Dead.String() != "dead" || Unknown.String() != "unknown" {
 		t.Fatal("liveness names drifted")

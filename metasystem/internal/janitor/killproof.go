@@ -12,9 +12,8 @@ import (
 )
 
 // Shape is one known invocation form (REG-6): a command whose argv
-// carries the claim's tag in a defined position. The shapes cover
-// both the shipped shell components and the Go binary's verbs, so a
-// janitor can prove ownership across the migration.
+// carries the claim's tag in a defined position. The shapes cover the
+// shipped shell components and the Go owner's verb.
 type Shape struct {
 	// Name labels the shape in reports.
 	Name string
@@ -28,11 +27,9 @@ type Shape struct {
 	TagFlag string
 }
 
-// DefaultShapes covers the committed shell supervision and the Go
-// binary's owner verb.
+// DefaultShapes covers the committed supervision processes.
 func DefaultShapes() []Shape {
 	return []Shape{
-		{Name: "shell-owner", Includes: []string{"arm-supervision.sh", "__owner"}, TagFlag: "--tag"},
 		{Name: "shell-watcher", Includes: []string{"watch-background-jobs.sh"}, TagFlag: "--instance-tag"},
 		{Name: "shell-reaper", Includes: []string{"dispatch.sh", "reap"}, TagFlag: "--instance-tag"},
 		{Name: "go-owner", Includes: []string{"metasystem", "supervise"}, TagFlag: "--tag"},

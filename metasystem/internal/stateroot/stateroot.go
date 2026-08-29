@@ -75,12 +75,9 @@ func StateRoot(kind Kind) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	appRoot := installationRoot
-	if !templateMode(installationRoot) {
-		appRoot, err = repositoryTop(installationRoot)
-		if err != nil {
-			return "", err
-		}
+	appRoot, err := RootForInstallation(installationRoot)
+	if err != nil {
+		return "", err
 	}
 	if kind == Evidence {
 		value, _, err := config.Get(config.GetParams{
@@ -95,6 +92,20 @@ func StateRoot(kind Kind) (string, error) {
 		return filepath.Clean(value), nil
 	}
 	return filepath.Join(appRoot, filepath.FromSlash(relative)), nil
+}
+
+// RootForInstallation returns the directory beneath which repository-local
+// state lives. Template checkouts keep it in the metasystem installation;
+// adopted installations use the containing application repository.
+func RootForInstallation(installationRoot string) (string, error) {
+	root, err := filepath.Abs(installationRoot)
+	if err != nil {
+		return "", fmt.Errorf("state root: locate installation: %w", err)
+	}
+	if templateMode(root) {
+		return root, nil
+	}
+	return repositoryTop(root)
 }
 
 // RelativeRoot returns the repository-relative directory owned by kind.

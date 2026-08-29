@@ -140,6 +140,7 @@ One line per package; the package doc is the full story.
 | `stateroot` | mode-aware directories for application state, derived from the installed engine and repository |
 | `supervise` | the supervision owner lifecycle: watcher, reaper, breaker, wind-down |
 | `turn` | the vocabulary of a mission turn |
+| `up` | the session-start arming transaction and its typed aggregate outcome |
 | `usage` | typed usage extraction, the single owner |
 | `validate` | whole-artifact validators and rewrites (incl. conf tailoring) |
 | `wiredoc` | the mechanism of typed on-disk documents |
@@ -151,6 +152,7 @@ it does; this table adds where the decisions live.
 
 | Family | Backing packages |
 | --- | --- |
+| `up` | `up`, coordinating `lease`, `supervise`, and `steward` |
 | `proc` | `identity`, `census` |
 | `config` | `config`, `validate` (tailor) |
 | `validate` | `validate` |

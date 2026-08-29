@@ -60,11 +60,11 @@ func TestKillable(t *testing.T) {
 			want:     false,
 		},
 		{
-			// SLC-R6-004: an establishment orphan has no recorded
-			// identity; the owner SHAPE with the claim's tag is proof.
+			// An establishment orphan has no recorded identity; the Go owner
+			// shape with the claim's tag is proof.
 			name: "signature-only owner proof",
 			observed: observed(77, 999,
-				"bash", "/repo/scripts/agents/arm-supervision.sh", "__owner", "--repo", "/repo", "--tag", tag),
+				"/repo/bin/metasystem", "supervise", "owner", "--repo", "/repo", "--tag", tag),
 			recorded: nil,
 			want:     true,
 		},

@@ -152,6 +152,9 @@ type Store struct {
 	// recorded pids are synthetic; production leaves it nil. The table and
 	// group reader describe one world, so tests override both or neither.
 	AllPids func() ([]int64, error)
+	// GroupPresent is the kernel's direct process-group existence proof.
+	// Production leaves it nil; tests can pin absent, present, or unknown.
+	GroupPresent func(pgid int64) (present, certain bool)
 }
 
 func (s *Store) getpgid(pid int64) (int64, error) {
@@ -167,6 +170,20 @@ func (s *Store) allPids() ([]int64, error) {
 		return s.AllPids()
 	}
 	return identity.AllPids()
+}
+
+func (s *Store) groupPresent(pgid int64) (present, certain bool) {
+	if s.GroupPresent != nil {
+		return s.GroupPresent(pgid)
+	}
+	switch err := unix.Kill(int(-pgid), 0); err {
+	case nil, unix.EPERM:
+		return true, true
+	case unix.ESRCH:
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // checkEpoch refuses a stale-epoch mutation; callers hold the runs lock.

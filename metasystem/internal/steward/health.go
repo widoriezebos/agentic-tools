@@ -185,7 +185,7 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 	if stateUnreadable {
 		previous = healthRecord{}
 	}
-	roles := evaluateHealthRoles(repoRoot, now.UTC(), prober, false)
+	roles := evaluateHealthRoles(repoRoot, repoRoot, now.UTC(), prober, false)
 	if stateUnreadable {
 		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
 		for index := range roles {
@@ -205,10 +205,16 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 // periodic observation breaker. The hook records its own attempt and
 // completion; only the steward tick owns durable alert escalation.
 func PreviewHealth(repoRoot string, now time.Time, prober identity.Prober) HealthVerdict {
+	return PreviewHealthAt(repoRoot, repoRoot, now, prober)
+}
+
+// PreviewHealthAt reads durable health state from repoRoot and installed
+// configuration and adapters from metasystemRoot.
+func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober) HealthVerdict {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	roles := evaluateHealthRoles(repoRoot, now.UTC(), prober, true)
+	roles := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, true)
 	aggregate := "healthy"
 	for _, role := range roles {
 		if role.Status == HealthDead {
@@ -225,7 +231,7 @@ func PreviewHealth(repoRoot string, now time.Time, prober identity.Prober) Healt
 	}
 }
 
-func evaluateHealthRoles(repoRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) []RoleVerdict {
+func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) []RoleVerdict {
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
 	return []RoleVerdict{
 		checkStewardRunner(repoRoot, now, prober),
@@ -237,7 +243,7 @@ func evaluateHealthRoles(repoRoot string, now time.Time, prober identity.Prober,
 		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
 		checkClaimedGoalBudgets(repoRoot, now),
 		checkNonterminalJobs(repoRoot, prober),
-		checkCapabilitySnapshots(repoRoot, now),
+		checkCapabilitySnapshots(repoRoot, metasystemRoot, now),
 	}
 }
 
@@ -408,7 +414,7 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 }
 
 func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem steward restart --repo %q", repoRoot)
+	remedy := fmt.Sprintf("metasystem up --repo %q", repoRoot)
 	path := runnerRecordPath(repoRoot)
 	var runner RunnerRecord
 	if err := readJSON(path, &runner); err != nil {
@@ -532,7 +538,7 @@ func checkCensusFreshness(repoRoot string, now time.Time, state map[string]any, 
 }
 
 func checkNarratorFreshness(repoRoot string, now time.Time) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem steward restart --repo %q", repoRoot)
+	remedy := fmt.Sprintf("metasystem up --repo %q", repoRoot)
 	generation, err := installedGeneration(repoRoot)
 	if err != nil {
 		return roleUnknown(RoleNarratorFreshness, "the steward installation generation is unreadable", remedy)
@@ -839,19 +845,19 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 	return roleAlive(RoleNonterminalJobs, "no non-terminal job has a provably dead recorded process")
 }
 
-func checkCapabilitySnapshots(repoRoot string, now time.Time) RoleVerdict {
+func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) RoleVerdict {
 	runtimeValue, _, err := config.Get(config.GetParams{
-		Key: "metasystem.runtimes", ConfPath: filepath.Join(repoRoot, "metasystem.conf"),
+		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem config validate --conf "+strconv.Quote(filepath.Join(repoRoot, "metasystem.conf")))
+		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 	}
 	if runtimeValue == "none" {
 		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured")
 	}
-	maxAgeDays, err := nonnegativeConfig(repoRoot, "capability.snapshot-max-age-days", 30)
+	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", 30)
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem config validate --conf "+strconv.Quote(filepath.Join(repoRoot, "metasystem.conf")))
+		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 	}
 	runtimes := strings.Split(runtimeValue, ",")
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "capabilities", "*.json"))
@@ -915,10 +921,10 @@ func checkCapabilitySnapshots(repoRoot string, now time.Time) RoleVerdict {
 		for _, name := range names {
 			name = strings.TrimSuffix(name, ":CLOCK_REGRESSED")
 			if name == "empty-runtime" || strings.HasSuffix(name, ":NO_ADAPTER") {
-				commands = append(commands, "metasystem config validate --conf "+strconv.Quote(filepath.Join(repoRoot, "metasystem.conf")))
+				commands = append(commands, "metasystem config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 				continue
 			}
-			commands = append(commands, fmt.Sprintf("%q probe", filepath.Join(repoRoot, "scripts", "agents", "adapters", name+".sh")))
+			commands = append(commands, fmt.Sprintf("%q probe", filepath.Join(metasystemRoot, "scripts", "agents", "adapters", name+".sh")))
 		}
 		return strings.Join(commands, " && ")
 	}
@@ -1011,7 +1017,7 @@ func boundedConfig(repoRoot, key string, fallback, minimum int) (int, error) {
 }
 
 func supervisionRemedy(repoRoot string) string {
-	return fmt.Sprintf("%q --repo %q", filepath.Join(repoRoot, "scripts", "agents", "arm-supervision.sh"), repoRoot)
+	return fmt.Sprintf("metasystem up --repo %q", repoRoot)
 }
 
 func readHealthObject(path string) (map[string]any, error) {

@@ -307,7 +307,7 @@ set -euo pipefail
 if [[ ${1:-} == fingerprint && ${2:-} == --repo && $# -eq 3 ]]; then
   printf 'fixture-fingerprint\n'
 else
-  printf 'ARMED fixture-supervision\n'
+  printf 'up outcome=armed authority=writer\n'
 fi
 ARM
 chmod +x "$repo/scripts/agents/arm-supervision.sh"

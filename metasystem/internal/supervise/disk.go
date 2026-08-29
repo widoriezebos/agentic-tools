@@ -75,9 +75,11 @@ func (c *DiskCheckout) StateFileState() FileState { return threeWayStat(c.stateP
 // ownerRecord is the checkout lock's owner file schema — the same
 // bytes the shell system writes and reads today.
 type ownerRecord struct {
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
-	InstanceTag  string `json:"instanceTag"`
+	Pid           int64  `json:"pid"`
+	PidStartedAt  int64  `json:"pidStartedAt"`
+	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
+	BootID        string `json:"bootId,omitempty"`
+	InstanceTag   string `json:"instanceTag"`
 }
 
 func (c *DiskCheckout) Currency() CurrencyState {
@@ -114,16 +116,20 @@ type stateDocument struct {
 }
 
 type stateIdentity struct {
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
-	InstanceTag  string `json:"instanceTag"`
+	Pid           int64  `json:"pid"`
+	PidStartedAt  int64  `json:"pidStartedAt"`
+	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
+	BootID        string `json:"bootId,omitempty"`
+	InstanceTag   string `json:"instanceTag"`
 }
 
 type stateComponent struct {
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
-	InstanceTag  string `json:"instanceTag"`
-	Heartbeat    string `json:"heartbeat"`
+	Pid           int64  `json:"pid"`
+	PidStartedAt  int64  `json:"pidStartedAt"`
+	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
+	BootID        string `json:"bootId,omitempty"`
+	InstanceTag   string `json:"instanceTag"`
+	Heartbeat     string `json:"heartbeat"`
 }
 
 // BuildStamp is set by the linker at build time and stamped into
@@ -183,15 +189,20 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 			continue
 		}
 		components[string(member.Component)] = stateComponent{
-			Pid:          member.Identity.Pid,
-			PidStartedAt: member.Identity.StartedAtSec,
-			InstanceTag:  member.Tag,
-			Heartbeat:    filepath.Join(c.supervisionDir(), string(member.Component)+".heartbeat.json"),
+			Pid:           member.Identity.Pid,
+			PidStartedAt:  member.Identity.StartedAtSec,
+			PidStartTicks: member.Identity.StartTicks,
+			BootID:        member.Identity.BootID,
+			InstanceTag:   member.Tag,
+			Heartbeat:     filepath.Join(c.supervisionDir(), string(member.Component)+".heartbeat.json"),
 		}
 	}
 	document := stateDocument{
-		SchemaVersion:        1,
-		Owner:                stateIdentity{Pid: c.Self.Pid, PidStartedAt: c.Self.StartedAtSec, InstanceTag: c.SelfTag},
+		SchemaVersion: 1,
+		Owner: stateIdentity{
+			Pid: c.Self.Pid, PidStartedAt: c.Self.StartedAtSec,
+			PidStartTicks: c.Self.StartTicks, BootID: c.Self.BootID, InstanceTag: c.SelfTag,
+		},
 		Components:           components,
 		IntervalSec:          c.IntervalSec,
 		Generation:           current,

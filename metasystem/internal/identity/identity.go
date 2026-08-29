@@ -22,6 +22,7 @@
 package identity
 
 import (
+	"strings"
 	"time"
 )
 
@@ -123,6 +124,30 @@ func AliveRef(prober Prober, ref Ref) Liveness {
 		// The pid was reused by a different process: definitively gone.
 		// (With the pair recorded this cannot fire from a clock step;
 		// legacy seconds-only records keep the old semantics.)
+		return Dead
+	}
+	return Alive
+}
+
+// AliveTaggedRef authenticates a recorded process and its instance tag from
+// one kernel observation. It is the signal-side proof used when a caller did
+// not spawn the process itself: a reused pid, an unreadable argv, or a missing
+// tag never authorizes a signal.
+func AliveTaggedRef(prober Prober, ref Ref, tag string) Liveness {
+	exact, state, _ := prober.Probe(ref.Pid)
+	switch state {
+	case Dead:
+		return Dead
+	case Unknown:
+		return Unknown
+	}
+	if !sameIdentity(exact, ref) {
+		return Dead
+	}
+	if !exact.ArgvKnown {
+		return Unknown
+	}
+	if tag == "" || !strings.Contains(strings.Join(exact.Argv, " "), tag) {
 		return Dead
 	}
 	return Alive

@@ -477,7 +477,7 @@ func (e *Engine) armAndPreflight(mode string) error {
 	}
 	stdout, stderr, code := runCaptured(e.Root, nil,
 		filepath.Join(e.Root, "scripts", "agents", "arm-supervision.sh"), args...)
-	if code != 0 || !strings.Contains(stdout, "ARMED") {
+	if code != 0 || !strings.Contains(stdout, "up outcome=armed") {
 		return failf(3, "mission start refused: supervision did not arm: %s", firstDetail(stderr, stdout))
 	}
 	verified, err := os.CreateTemp("", "mission-"+e.Mission+"-verified.*.contract.md")

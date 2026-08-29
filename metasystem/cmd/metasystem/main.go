@@ -1,9 +1,9 @@
-// Command metasystem is the metasystem's one binary: each family
-// groups the decisions the shell wrappers invoke, exposed as git-style
-// verbs. Wrappers keep their historical names and exec into these
-// verbs. File naming: one file per verb family (a verb lives in the file
-// of the family it REGISTERS under); cross-family helpers live in
-// helpers.go and nowhere else.
+// Command metasystem is the metasystem's one binary. Operator verbs such as
+// up and health route directly; internal families group the narrower
+// decisions that plumbing invokes. Compatibility wrappers keep historical
+// names only long enough to exec into these verbs. File naming is one file
+// per routed surface; cross-family helpers live in helpers.go and nowhere
+// else.
 package main
 
 import (
@@ -391,7 +391,7 @@ func families() []family {
 				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
 				{"revive", "one revival end to end: stage, mint, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
-				{"arm", "guard this repository: mint the identity, verify the notifier, spawn the detached runner", runStewardArm},
+				{"arm", "explicit human enrollment: pin this engine generation and spawn the detached runner", runStewardArm},
 				{"restart", "replace the runner and arm it again after a stalled pass", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
@@ -481,12 +481,10 @@ func families() []family {
 				{"fingerprint", "print a checkout's supervision fingerprint (code, signatures, configuration)", runCensusFingerprint},
 				{"derive-ceiling", "derive the watcher cap ceiling from config, environment, and the declared maximum", runSuperviseDeriveCeiling},
 				{"verify-armed", "exit 0 when supervision is verifiably armed at this instant", runSuperviseVerifyArmed},
-				{"owner", "run the owner loop for a checkout (internal; launched by arm)", runSuperviseOwnerLoop},
+				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},
 				{"blocking-reserved-cap", "print the highest live reservation at or above a ceiling", runSuperviseBlockingReservedCap},
-				{"write-owner-identity", "atomically write the owner-identity record", runSuperviseWriteOwnerIdentity},
-				{"component-identity", "print a recorded component's pid, start, and tag", runSuperviseComponentIdentity},
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
 				{"heartbeat", "atomically write a component heartbeat with its kernel identity", runSuperviseHeartbeat},
@@ -504,6 +502,9 @@ func dispatch(args []string) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		usage()
 		return 2
+	}
+	if args[0] == "up" {
+		return runUp(args[1:])
 	}
 	if args[0] == "health" {
 		if len(args) > 1 && args[1] == "acknowledge-alert" {
@@ -535,6 +536,8 @@ func dispatch(args []string) int {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: metasystem <family> <verb> [flags]")
+	fmt.Fprintln(os.Stderr, "       metasystem up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
+	fmt.Fprintln(os.Stderr, "       metasystem up --print-scheduler-entry [--repo <checkout>]")
 	fmt.Fprintln(os.Stderr, "       metasystem health --repo <checkout>")
 	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
 	for _, fam := range families() {

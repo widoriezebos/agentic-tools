@@ -51,7 +51,7 @@ func runSuperviseWatcherPass(args []string) int {
 
 	_ = supervise.WriteHeartbeat(*heartbeat, "watcher", self, *tag, *interval, *capMin)
 
-	cfg := watcherConfig(*root, censusScope, *supervisionDir, *interval)
+	cfg := watcherConfig(*root, *root, censusScope, *supervisionDir, *interval)
 	if err := cfg.WatcherPass(); err != nil {
 		fmt.Fprintln(os.Stderr, "supervise watcher-pass:", err)
 		return 1

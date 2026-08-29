@@ -2,12 +2,23 @@ package census
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
 )
+
+// EnumerateConfiguredProcesses uses the same authorized process source as a
+// census pass: the explicit fixture table when configured, otherwise the live
+// kernel table.
+func EnumerateConfiguredProcesses(metasystemRoot string) ([]Process, error) {
+	if processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"); processFile != "" {
+		return enumerateFixture(metasystemRoot, processFile)
+	}
+	return EnumerateProcesses()
+}
 
 // The PRODUCTION enumeration path: the real process table, and cwd resolution
 // per matched process. It feeds the SAME classification core the fixture path
@@ -81,6 +92,12 @@ type cwdResult struct {
 // fixture), resolving cwds only for the signature-matched processes — the
 // production counterpart of RunFixtureCensus over the same runCensus core.
 func RunProductionCensus(metasystemRoot, repo, fingerprint string, interval int, now time.Time) (Verdict, error) {
-	return runCensus(metasystemRoot, repo, fingerprint, interval, now,
+	return RunProductionCensusAt(metasystemRoot, metasystemRoot, repo, fingerprint, interval, now)
+}
+
+// RunProductionCensusAt separates installed configuration from repository
+// state while keeping one census scope.
+func RunProductionCensusAt(metasystemRoot, stateRoot, repo, fingerprint string, interval int, now time.Time) (Verdict, error) {
+	return runCensus(metasystemRoot, stateRoot, repo, fingerprint, interval, now,
 		func(string) ([]Process, error) { return EnumerateProcesses() }, ResolveCwds)
 }

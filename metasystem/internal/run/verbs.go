@@ -423,6 +423,9 @@ func parentOf(pid int64) (int64, error) {
 // groupEmpty reports whether no live process remains in the group. A
 // group whose membership cannot be read is NOT provably empty.
 func (s *Store) groupEmpty(pgid int64) bool {
+	if present, certain := s.groupPresent(pgid); certain && !present {
+		return true
+	}
 	pids, err := s.allPids()
 	if err != nil {
 		return false

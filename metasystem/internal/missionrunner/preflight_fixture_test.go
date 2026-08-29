@@ -177,12 +177,12 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 	}
 	os.WriteFile(filepath.Join(root, "metasystem.conf"),
 		[]byte("metasystem.runtimes=fake\nrole.default.runtime=fake\n"), 0o644)
-	// The stub armer: ARMED for arming, a fixed fingerprint for both seal
+	// The stub armer: typed armed outcome for arming, a fixed fingerprint for both seal
 	// and preflight — agreement by construction.
 	os.WriteFile(filepath.Join(root, "scripts", "agents", "arm-supervision.sh"), []byte(
 		"#!/usr/bin/env bash\nset -euo pipefail\n"+
 			"if [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\n"+
-			"printf 'ARMED\\n'\n"), 0o755)
+			"printf 'up outcome=armed authority=writer\\n'\n"), 0o755)
 
 	fixtureGit(t, gitInitDir, "init", "-q", "-b", "main")
 	fixtureGit(t, root, "config", "user.name", "fixture")

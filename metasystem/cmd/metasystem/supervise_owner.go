@@ -22,8 +22,8 @@ var procfsMounts = "/proc/self/mounts"
 
 // runSuperviseOwner runs the Go owner loop for one checkout: it
 // assembles the disk, process, ledger, and intent adapters behind the
-// tested owner and drives it. Launched by arm-supervision.sh under the
-// engine switch; it supervises until an exit condition (D-1) fires,
+// tested owner and drives it. Launched by `metasystem up`; it supervises
+// until an exit condition (D-1) fires,
 // tears down by held identity, and records its terminal.
 //
 // Observability: every cycle narrates one JSON line to the owner log
@@ -33,6 +33,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	flags := flag.NewFlagSet("supervise owner", flag.ContinueOnError)
 	registryDefault, registryDefaultErr := defaultRegistryPath()
 	repo := flags.String("repo", "", "checkout root")
+	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "owner instance tag")
 	intervalSec := flags.Int("interval", 60, "base observation interval seconds")
@@ -62,6 +63,10 @@ func runSuperviseOwnerLoop(args []string) int {
 	if *scope == "" {
 		*scope = *repo
 	}
+	if *metasystemRoot == "" {
+		*metasystemRoot = *repo
+	}
+	componentBinary, _ := os.Executable()
 
 	// Wait for the armer's start gate: it captures our pid, publishes
 	// owner.json naming us, then touches the gate. Until then our lock
@@ -81,13 +86,12 @@ func runSuperviseOwnerLoop(args []string) int {
 		}
 	}
 
-	self := identity.Ref{Pid: int64(os.Getpid())}
-	exact, state, err := identity.KernelProber{}.Probe(self.Pid)
+	exact, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		fmt.Fprintln(os.Stderr, "supervise owner: cannot read own identity")
 		return 1
 	}
-	self.StartedAtSec = exact.StartedAt.Unix()
+	self := exact.Ref()
 
 	supervisionDir := filepath.Join(*repo, "artifacts", "agents", "supervision")
 	ownerTag := *tag
@@ -117,15 +121,14 @@ func runSuperviseOwnerLoop(args []string) int {
 		IntervalSec:    *intervalSec,
 		StopCeiling:    5 * time.Second,
 		Command: func(component supervise.Component, componentTag, heartbeatPath string, generation int64) []string {
-			self, _ := os.Executable()
-			argv := []string{self, "supervise", "component",
+			argv := []string{componentBinary, "supervise", "component",
 				"--component", string(component), "--tag", componentTag,
 				"--heartbeat", heartbeatPath, "--interval", fmt.Sprint(*intervalSec),
 				"--cap-min", fmt.Sprint(*watcherCap),
 				"--generation", fmt.Sprint(generation),
 				// The component operates on this checkout: the watcher censuses
 				// the scope and the reaper sweeps this checkout's job records.
-				"--repo", *repo, "--scope", *scope}
+				"--repo", *repo, "--metasystem-root", *metasystemRoot, "--scope", *scope}
 			// Fixture-only crash-loop injection (D-2 breaker proof): the
 			// component crashes on start and never beats, so the owner
 			// sees Failing every observation.

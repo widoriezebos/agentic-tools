@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // announceSelf announces this test process as a main and returns its mainId.
@@ -75,7 +77,7 @@ func TestVerbResultWireShapes(t *testing.T) {
 
 func TestAnnounceMakesUsMainAndHolder(t *testing.T) {
 	root := t.TempDir()
-	announceSelf(t, root)
+	mainID := announceSelf(t, root)
 	self := int64(os.Getpid())
 
 	got, err := ClassifyVerb(root, self)
@@ -95,6 +97,113 @@ func TestAnnounceMakesUsMainAndHolder(t *testing.T) {
 	}
 	if held.Class != "HOLDER" || !held.Holder {
 		t.Fatalf("require-holder should confirm HOLDER: %+v", held)
+	}
+	current, err := CurrentHolder(root)
+	if err != nil {
+		t.Fatalf("current holder: %v", err)
+	}
+	if current.MainId != mainID || current.SessionId != "my sess" || current.Pid != self {
+		t.Fatalf("current holder did not name the holder session: %+v", current)
+	}
+}
+
+func TestDuplicateAnnouncementDoesNotBumpTheWorkerEnrollmentFence(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	started := selfStart(t)
+	if _, err := Announce(root, "same-session", self, started, "tag", "fake", ""); err != nil {
+		t.Fatal(err)
+	}
+	before, err := steward.ReadEnrollmentFence(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Announce(root, "same-session", self, started, "tag", "fake", ""); err != nil {
+		t.Fatal(err)
+	}
+	after, err := steward.ReadEnrollmentFence(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("verifying the same announcement advanced the worker enrollment fence: %d -> %d", before, after)
+	}
+	if _, err := AnnounceWithProof(root, "same-session", self, started, 0, "", "tag", "fake", "", &IdentityProvenance{
+		Source: "explicit-ancestry-fallback", CallerPid: self, CallerPidStartedAt: started,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	afterEnrichment, err := steward.ReadEnrollmentFence(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterEnrichment != before {
+		t.Fatalf("enriching the same announcement advanced the worker enrollment fence: %d -> %d", before, afterEnrichment)
+	}
+}
+
+func TestAnnouncementRecordsExplicitFallbackProvenance(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	started := selfStart(t)
+	path, err := AnnounceWithProof(root, "fallback", self, started, 0, "", "tag", "fake", "", &IdentityProvenance{
+		Source: "explicit-ancestry-fallback", CallerPid: self, CallerPidStartedAt: started,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var announcement Announcement
+	if err := json.Unmarshal(data, &announcement); err != nil {
+		t.Fatal(err)
+	}
+	if announcement.IdentityProvenance == nil ||
+		announcement.IdentityProvenance.Source != "explicit-ancestry-fallback" ||
+		announcement.IdentityProvenance.CallerPid != self ||
+		announcement.IdentityProvenance.CallerPidStartedAt != started {
+		t.Fatalf("fallback provenance was not recorded: %+v", announcement.IdentityProvenance)
+	}
+}
+
+func TestAnnouncementSeparatesVendoredInstallFromStateRoot(t *testing.T) {
+	stateRoot := t.TempDir()
+	metasystemRoot := filepath.Join(stateRoot, "metasystem")
+	if err := os.MkdirAll(metasystemRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(metasystemRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	identityTable := filepath.Join(t.TempDir(), "identities.json")
+	if err := os.WriteFile(identityTable, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", identityTable)
+	self := int64(os.Getpid())
+	started := selfStart(t)
+	path, err := AnnounceWithProofAt(stateRoot, metasystemRoot, "vendored", self, started, 0, "", "tag", "fake", "", &IdentityProvenance{
+		Source: "explicit-ancestry-fallback", CallerPid: self, CallerPidStartedAt: started,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalStateRoot, err := filepath.EvalSymlinks(stateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDirectory := filepath.Join(canonicalStateRoot, "artifacts", "agents", "mains")
+	if filepath.Dir(path) != wantDirectory {
+		t.Fatalf("announcement escaped the repository state root: %s", path)
+	}
+	if _, err := os.Stat(filepath.Join(metasystemRoot, "artifacts")); !os.IsNotExist(err) {
+		t.Fatalf("announcement split state under the vendored install: %v", err)
+	}
+	holder, err := RequireHolderAt(stateRoot, metasystemRoot, self, nil)
+	if err != nil || holder.Class != "HOLDER" {
+		t.Fatalf("vendored holder classification did not use the installation root: %+v %v", holder, err)
 	}
 }
 

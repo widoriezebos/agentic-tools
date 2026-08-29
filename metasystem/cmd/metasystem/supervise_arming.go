@@ -14,8 +14,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
-// The arming-side supervision verbs: the reserved-cap ceiling check, the
-// owner-identity publication, component-identity reads, and detached launch.
+// The arming-side supervision verbs that remain shared outside `up`: the
+// reserved-cap ceiling check and generic detached launch.
 
 // runSuperviseBlockingReservedCap relays `supervise blocking-reserved-cap`:
 // the scan/rank decision lives in supervise.BlockingReservedCap, and
@@ -40,69 +40,6 @@ func runSuperviseBlockingReservedCap(args []string) int {
 	if blocked {
 		fmt.Printf("%s|%d\n", blocker.Job, blocker.Cap)
 	}
-	return 0
-}
-
-// runSuperviseWriteOwnerIdentity atomically writes the owner-identity record
-// {pid, pidStartedAt, instanceTag, acquiredAt}.
-func runSuperviseWriteOwnerIdentity(args []string) int {
-	flags := flag.NewFlagSet("supervise write-owner-identity", flag.ContinueOnError)
-	path := flags.String("path", "", "identity file path")
-	pid := flags.Int64("pid", 0, "owner pid")
-	start := flags.Int64("start", 0, "owner start epoch seconds")
-	tag := flags.String("tag", "", "owner instance tag")
-	acquiredAt := flags.String("acquired-at", "", "acquisition timestamp")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *path == "" || *pid == 0 || *tag == "" {
-		fmt.Fprintln(os.Stderr, "supervise write-owner-identity: --path, --pid, and --tag are required")
-		return 2
-	}
-	value := map[string]any{
-		"pid": *pid, "pidStartedAt": *start, "instanceTag": *tag, "acquiredAt": *acquiredAt,
-	}
-	if err := writeIdentityJSON(*path, value); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-// runSuperviseComponentIdentity prints "pid start tag" for one recorded
-// component, failing as a unit when the component or any field is absent.
-func runSuperviseComponentIdentity(args []string) int {
-	flags := flag.NewFlagSet("supervise component-identity", flag.ContinueOnError)
-	state := flags.String("state", "", "supervision state path")
-	component := flags.String("component", "", "component name")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *state == "" || *component == "" {
-		fmt.Fprintln(os.Stderr, "supervise component-identity: --state and --component are required")
-		return 2
-	}
-	doc, err := readJSONObject(*state)
-	if err != nil {
-		// Named on stderr: this runs in detached supervision where
-		// stderr is the only diagnostic channel. An absent component or
-		// field below stays silent by design — the callers probe with
-		// || true and an absent entry is an ordinary outcome, not a fault.
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	components, _ := doc["components"].(map[string]any)
-	entry, _ := components[*component].(map[string]any)
-	if entry == nil {
-		return 1
-	}
-	pid, pidOK := jsonIntField(entry["pid"])
-	start, startOK := jsonIntField(entry["pidStartedAt"])
-	tag, tagOK := entry["instanceTag"].(string)
-	if !pidOK || !startOK || !tagOK {
-		return 1
-	}
-	fmt.Printf("%d %d %s\n", pid, start, tag)
 	return 0
 }
 

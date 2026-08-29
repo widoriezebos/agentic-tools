@@ -36,9 +36,15 @@ type ReservedCapBlocker struct {
 // fixture entry would keep a dead custodian reading Alive with no refusal
 // anywhere.
 func BlockingReservedCap(agentsDir string, ceiling int64) (ReservedCapBlocker, bool, error) {
+	root := filepath.Dir(filepath.Dir(agentsDir))
+	return BlockingReservedCapAt(agentsDir, root, ceiling)
+}
+
+// BlockingReservedCapAt scans repository state at agentsDir and checks fixture
+// authority against the installed metasystem configuration.
+func BlockingReservedCapAt(agentsDir, metasystemRoot string, ceiling int64) (ReservedCapBlocker, bool, error) {
 	if os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE") != "" {
-		root := filepath.Dir(filepath.Dir(agentsDir))
-		if config.ConfValue(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
+		if config.ConfValue(filepath.Join(metasystemRoot, "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
 			return ReservedCapBlocker{}, false, fmt.Errorf("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE is set but metasystem.runtimes is not fake")
 		}
 	}

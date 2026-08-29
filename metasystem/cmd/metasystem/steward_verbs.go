@@ -40,6 +40,7 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 func runStewardHealth(args []string) int {
 	flags := flag.NewFlagSet("health", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
+	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
 	hookPreview := flags.Bool("hook-preview", false, "render current hook facts without advancing the tick-owned alert breaker (internal)")
 	if flags.Parse(args) != nil {
 		return 2
@@ -48,8 +49,11 @@ func runStewardHealth(args []string) int {
 		fmt.Fprintln(os.Stderr, "health: --repo is required")
 		return 2
 	}
+	if *metasystemRoot == "" {
+		*metasystemRoot = *repo
+	}
 	if *hookPreview {
-		verdict := steward.PreviewHealth(*repo, time.Now(), nil)
+		verdict := steward.PreviewHealthAt(*repo, *metasystemRoot, time.Now(), nil)
 		fmt.Println(verdict.Line())
 		return verdict.ExitCode()
 	}
@@ -445,6 +449,9 @@ func runStewardArm(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
 		return 2
 	}
+	if !requireHumanStewardEnrollment(*repo, "steward arm") {
+		return 1
+	}
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
@@ -469,6 +476,9 @@ func runStewardRestart(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward restart: --repo is required")
 		return 2
 	}
+	if !requireHumanStewardEnrollment(*repo, "steward restart") {
+		return 1
+	}
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
@@ -481,6 +491,24 @@ func runStewardRestart(args []string) int {
 	}
 	fmt.Println(msg)
 	return 0
+}
+
+func requireHumanStewardEnrollment(repo, verb string) bool {
+	metasystemRoot, err := upMetasystemRoot("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: cannot resolve the installed engine: %v\n", verb, err)
+		return false
+	}
+	classification, err := lease.ClassifyAt(repo, metasystemRoot, int64(os.Getppid()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: human ancestry proof failed: %v\n", verb, err)
+		return false
+	}
+	if classification.Class != lease.ClassHuman {
+		fmt.Fprintf(os.Stderr, "%s: explicit engine enrollment requires an agent-free terminal; caller classified %s\n", verb, classification.Class)
+		return false
+	}
+	return true
 }
 
 func runStewardDisarm(args []string) int {
