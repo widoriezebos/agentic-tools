@@ -4,6 +4,8 @@
 
 > *A builder proposes a faster release rule. The current enforced rule requires an independent examination, a tested rollback and evidence bound to the exact candidate. The proposed rule removes one check that its builder calls redundant.*
 
+The idea for such a change usually arrives from the system's own records: an incident, a review, a report showing a rule's cost. Whoever turns the idea into a concrete proposal acts as its builder from that moment, and everything below applies to them.
+
 If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
