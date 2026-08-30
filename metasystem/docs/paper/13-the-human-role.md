@@ -6,7 +6,15 @@ Chapter 1 already records the single 9:12 interruption and the three-part ruling
 
 The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.
 
-This is the proposed human role in governed delivery. Final human authority does not require continuous presence. It means that identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one. The umbrella term for these people is the responsible authority; this chapter takes each capacity in turn.
+The human role in this design has two halves, and this chapter takes them in turn. The first half is work: people still engineer. The second half is authority: identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Final human authority does not require continuous presence. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one. The umbrella term for the people who hold the last word is the responsible authority.
+
+## The work that stays human
+
+Nothing in this design retires the human engineer. Before any record exists, someone must want something: decide that a product should exist, imagine its shape, choose the first architecture worth trying. Machinery can explore alternatives and expose contradictions; it cannot want. That beginning is design work, and it is human.
+
+Stating intent is design work too: choosing outcomes, constraints and what remains free to choose shapes the product, and Chapter 2 describes how to do it well. Any working role from Chapter 7 can also be held by a person. A person can build a candidate, examine another's work or hold custody, and through Chapter 14's transition people hold most of these roles most of the time. Review in particular is not sign-off. The reviewer later in this chapter reads the design, notices that the tests share a time source with the implementation and knows which case would expose the flaw. That is engineering, done in the examiner's seat.
+
+The delivery system itself is also engineered by people: its rules, budgets, roles and records are design decisions humans own and revise. What changes in this proposal is only the default for ordinary construction, and it changes for Chapter 11's economic reasons, not by prohibition. Where machinery with checks builds dependably at lower cost, human attention buys more elsewhere. Where it does not, the person builds. The rest of this chapter is about the second half: the decisions that stay with people even when every role is held by machinery.
 
 ## Legislator: authority over enforceable rules
 
