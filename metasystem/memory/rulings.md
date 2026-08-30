@@ -5,7 +5,18 @@ the durable home; this file lives in plans/ under its interim law —
 beside known-issues and the flake registry, never docs/). One entry
 per human ruling: id, date, the ruling as close to verbatim as the
 session record allows, context, and supersessions. Append-only;
-corrections append a superseding entry, never rewrite one. Every
+corrections append a superseding entry, never rewrite one.
+
+ID MINTING (register-id-minting, 2026-08-30): two machines minted
+R-15 in the same hour, and R-20 collided the same way (R-20b is the
+workaround's scar). New ids are machine-suffixed by construction:
+R-<n>-<machine> (R-21-m2, R-22-m1), where <n> continues from the
+highest number visible to the appending machine and <machine> is its
+ledger machine id. Two machines may both mint R-21-*; the register is
+ordered by file position, not by id arithmetic, so that is a feature,
+not a collision. Existing ids stay as minted - nothing migrates
+retroactively. The landing driver refuses a NEW bare R-<n> id so the
+law is mechanical, not habitual. Every
 coordinator seat on every machine applies these; owning docs may
 REFERENCE ids but never host the only copy.
 

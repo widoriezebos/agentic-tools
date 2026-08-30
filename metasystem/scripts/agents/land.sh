@@ -133,6 +133,16 @@ verify_checks() {
     echo "land refused: HEAD is not on a branch" >&2
     return 2
   }
+  # Register-id minting law (register-id-minting): a NEW rulings entry
+  # must carry a machine-suffixed id (R-<n>-<machine>). Two machines
+  # minting the bare same number in one hour is how R-15 and R-20
+  # collided; the suffix makes collision impossible by construction.
+  if git diff --cached --name-only -- | grep -qx 'metasystem/memory/rulings.md\|memory/rulings.md'; then
+    if git diff --cached -- '*memory/rulings.md' | grep -E '^\+\| R-[0-9]+[a-z]? \|' >&2; then
+      echo "land refused: new rulings ids must be machine-suffixed (R-<n>-<machine>); see the register header" >&2
+      return 2
+    fi
+  fi
   if (( staged_only )); then
     git diff --cached --check --
     return $?
