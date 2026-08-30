@@ -288,6 +288,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "counselor",
+			summary: "read-only drift counsel from durable records",
+			verbs: []verb{
+				{"brief", "print the current narrative drift brief in dry-run mode", runCounselorBrief},
+			},
+		},
+		{
 			name:    "schema",
 			summary: "role-return schema materialization",
 			verbs: []verb{
