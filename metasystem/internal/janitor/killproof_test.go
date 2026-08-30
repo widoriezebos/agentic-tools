@@ -270,11 +270,11 @@ func TestGroupOwnershipVerificationFold(t *testing.T) {
 		uncertain bool
 		want      GroupOwnershipOutcome
 	}{
-		{"empty scan", nil, false, GroupNotOwned},
+		{"empty scan proves nothing", nil, false, GroupIndeterminate},
 		{"verified wins immediately", []identity.VerificationOutcome{identity.VerificationNotOurs, identity.VerificationVerified}, false, GroupOwned},
 		{"indeterminate member defers", []identity.VerificationOutcome{identity.VerificationIndeterminate}, false, GroupIndeterminate},
 		{"uncertain membership defers", []identity.VerificationOutcome{identity.VerificationNotOurs}, true, GroupIndeterminate},
-		{"dead members prove nothing", []identity.VerificationOutcome{identity.VerificationDead}, false, GroupNotOwned},
+		{"dead members prove nothing", []identity.VerificationOutcome{identity.VerificationDead}, false, GroupIndeterminate},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

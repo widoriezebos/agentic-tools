@@ -190,7 +190,13 @@ func groupOwnershipFromVerifications(verifications []identity.Verification, unce
 	if knownNonMatch {
 		return GroupNotOwned
 	}
-	return GroupNotOwned
+	// An EMPTY scan proves nothing: a group mid-reap (members leaving
+	// between the group probe and the member walk, zombies with no argv)
+	// must never read as PROVABLY foreign — that false proof made the
+	// wind-down abandon its own dying groups on Linux (the VM sweep's
+	// winddown-zombie-ownership-linux finding). NOT-OWNED requires at
+	// least one positive not-ours observation.
+	return GroupIndeterminate
 }
 
 // Killable applies the three-part signal proof to one live observation: pid,

@@ -158,6 +158,15 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 			time.Sleep(pollInterval)
 		}
 		if groupAlive(pgid) {
+			if !groupHasSubstantiveMember(pgid) {
+				// Zombies keep a pgid signalable on Linux until the
+				// parent reaps; the work is dead and the kill did its
+				// job — the reaping debt is the parent's, not a leak.
+				e.emit("wind-down", fmt.Sprintf("group %d down to zombies pending reap", pgid), map[string]string{
+					"missionId": e.Mission, "action": "zombie-pending-reap",
+				})
+				return nil
+			}
 			// Loud, typed evidence — an abandoned group is the leak the
 			// compressed suite bleeds from; it must never exit silently.
 			e.emit("wind-down", fmt.Sprintf("group %d survived SIGKILL", pgid), map[string]string{

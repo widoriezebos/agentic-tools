@@ -76,6 +76,30 @@ func groupAlive(pgid int) bool {
 	}
 }
 
+// groupHasSubstantiveMember reports whether any member of the group is a
+// live process with readable argv — the difference between running work
+// and a zombie shell awaiting its parent's reap. A zombie-only group is
+// finished work: SIGKILL can do no more to it, and holding the wind-down
+// open for the parent's reaping debt reads as a leak that is not one
+// (the VM sweep's Linux finding: zombies keep the pgid signalable).
+func groupHasSubstantiveMember(pgid int) bool {
+	pids, err := identity.AllPids()
+	if err != nil {
+		return true // unknown: stay conservative, keep waiting
+	}
+	for _, pid := range pids {
+		memberGroup, err := unix.Getpgid(int(pid))
+		if err != nil || memberGroup != pgid {
+			continue
+		}
+		exact, state, err := identity.KernelProber{}.Probe(pid)
+		if err == nil && state == identity.Alive && exact.ArgvKnown {
+			return true
+		}
+	}
+	return false
+}
+
 // groupOwnership is the runner's tri-state signal predicate, riding the
 // janitor's positional shapes: a process that merely MENTIONS the tag
 // anywhere in argv never proves ownership (the substring-kill hazard the
