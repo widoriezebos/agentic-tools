@@ -46,9 +46,7 @@ After several low-risk changes, the new checks reproduce known failures, permit 
 
 That separation is intentional. Machinery may receive permission to propose a change before it receives permission to test against sensitive data. It may receive permission to test before it may accept the result. It may accept a low-risk candidate before it may expose users, and it may release to a small group before it may expand further. Each permission is transferred only after evidence shows that the machinery can perform the action and contain its consequences.
 
-> *The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary and includes behavior not previously tested.*
-
-During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. The releaser first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
+The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary and includes behavior not previously tested. During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. The releaser first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
 
 Scope widens from reversible, familiar, limited work because failures are cheaper to study and contain. That evidence does not authorize an irreversible migration or policy waiver. Authority follows demonstrated protection across the relevant risk range.
 
@@ -64,7 +62,7 @@ Replacement evidence is required only when the need remains. In that case, the o
 
 ## Make rollback part of adoption
 
-During a limited release, the new path reports healthy sign-in rates while support receives credible reports of lost work. The measures disagree, and the new appeal path has not yet routed those reports to the release authority. The system narrows its own permission, restores the previous release procedure and session behavior and preserves both sets of evidence.
+> *During a limited release, the new path reports healthy sign-in rates while support receives credible reports of lost work. The measures disagree, and the new appeal path has not yet routed those reports to the release authority. The system narrows its own permission, restores the previous release procedure and session behavior and preserves both sets of evidence.*
 
 That response was designed before authority moved. Every transferred responsibility has a tested route back to the last safe process, data state and authority boundary. Reversing the application alone is insufficient if sessions have been irreversibly rewritten. Restoring the old runbook is insufficient if the people named in it no longer hold authority. A rollback identifies what can be restored automatically, what requires compensating action and which responsible authority may order it.
 

@@ -2,7 +2,9 @@
 
 **The generic machinery can be reused; much of a metasystem's value lives in the half that cannot be.**
 
-> *At the end of the hypothetical session-expiry change, the application contains a new behavior. The more durable result lies around it. Three disputed interpretations are recorded intent. Named checks distinguish an unresponsive reader, a background refresh and an authorized upload. A failed candidate remains visible. Release and reversal have named authority. The clock incident produces a tested enforced rule, while repeated sign-ins remain a human concern open to appeal.*
+> *At the end of the hypothetical session-expiry change, the application contains a new behavior. Three disputed interpretations are recorded intent. Named checks distinguish an unresponsive reader, a background refresh and an authorized upload. A failed candidate remains visible. Release and reversal have named authority. The clock incident produces a tested enforced rule, while repeated sign-ins remain a human concern open to appeal.*
+
+The more durable result lies around the new behavior.
 
 The next session change begins from that capability, leaving the blank ticket and private recollection behind. If similar work recurs and the consequences are large enough, the means of producing and caring for the software becomes an asset in its own right. Engineering attention can then move toward the intent, rules, evidence, authority and learning that shape many application changes.
 
@@ -40,7 +42,9 @@ Human attention remains scarce throughout. The system should not spend it on rou
 
 ## What must not be lost
 
-A user is repeatedly signed out and cannot complete important work. The release measures call the change healthy because errors remain low and most users sign in again. If the user cannot reach a person who may reconsider the policy, the pursuit of efficiency has removed a material part of governance. The system has optimized the behavior it measures while leaving the affected person outside the decision.
+> *A user is repeatedly signed out and cannot complete important work. The release measures call the change healthy because errors remain low and most users sign in again.*
+
+If the user cannot reach a person who may reconsider the policy, the pursuit of efficiency has removed a material part of governance. The system has optimized the behavior it measures while leaving the affected person outside the decision.
 
 Four protections follow from that failure. Accountability ends with identifiable humans. Affected people have a route to challenge consequential decisions. Records make the decision, authority, evidence and reasons understandable. Reversibility exists wherever the world permits it, with compensating action and explicit human acceptance where it does not.
 

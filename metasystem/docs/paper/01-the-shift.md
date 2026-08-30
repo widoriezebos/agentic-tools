@@ -46,7 +46,11 @@ The following day describes a possible end state that is not yet common practice
 
 > *The responsible authority returns to other work. The builder proposes a design and constructs a 'candidate': a version of the change that still has to be judged. An independent examination challenges the candidate (the design and code) rather than inheriting its claims. The candidate is tested using a controlled clock: one second before expiry, the exact boundary and one second after. The examination tries two devices, a sleeping laptop, an upload that crosses expiry, a stale page and a delayed response. The first candidate fails because a late background response can revive an expired session.*
 
-> *An enforced rule refuses that candidate. No person is asked to inspect a convincing explanation or notice the failure of the tests in some stream of output. The builder revises the design so that expiry is final and the upload has only its narrow permission. The examination repeats the new checks, runs the existing sign-in and account-recovery checks and verifies rollback. Results bind to the exact candidate; earlier evidence cannot authorize a later one. Another enforced rule refuses release unless live observation can distinguish an expected rise in sign-ins from a broken loop that ejects responsive users.*
+> *An enforced rule refuses that candidate. No person is asked to inspect a convincing explanation or notice the failure of the tests in some stream of output. The builder revises the design so that expiry is final and the upload has only its narrow permission. The examination repeats the new checks, runs the existing sign-in and account-recovery checks and verifies rollback.*
+
+Results bind to the exact candidate; earlier evidence cannot authorize a later one.
+
+> *Another enforced rule refuses release unless live observation can distinguish an expected rise in sign-ins from a broken loop that ejects responsive users.*
 
 Both push the same number up: an expiry change adds sign-ins by design, because ended sessions bring people back. In the loop, one person is wrongly judged idle, signed out mid-work and thrown out again minutes after signing back in. The total looks healthy either way; the pattern per account tells them apart.
 

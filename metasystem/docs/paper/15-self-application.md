@@ -44,7 +44,7 @@ The same discipline governs emergency maintenance. A failed delivery service may
 
 ## What self-application can reveal
 
-The proposed clock rule is tested first against the retained broken cases. It refuses the local-time comparison, permits display formatting and detects the newly introduced interface. The current release rule verifies those results before the authority it names grants the proposed rule its power. A separate independent examiner then changes the proposed rule in a way expected to fail and confirms that the surrounding examination catches the regression. Finally, a rehearsal restores the prior rule set and authority record.
+> *The proposed clock rule is tested first against the retained broken cases. It refuses the local-time comparison, permits display formatting and detects the newly introduced interface. The current release rule verifies those results before the authority it names grants the proposed rule its power. A separate independent examiner then changes the proposed rule in a way expected to fail and confirms that the surrounding examination catches the regression. Finally, a rehearsal restores the prior rule set and authority record.*
 
 This sequence can expose several structural defects: an enforced rule that can judge its replacement only by relying on that replacement, evidence that disappears when its producer stops, a builder able to weaken the independent examination or alter a retained failure case, and a recovery path that restores code but not authority. These failures are the point of the exercise: they test the delivery system under the unusual pressure of being both means and object of change.
 
