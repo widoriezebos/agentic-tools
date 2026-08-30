@@ -37,6 +37,14 @@ type InstallIdentity struct {
 	// ordinary up. The steward and supervision owner use the same binary.
 	InstallDigest string `json:"installDigest,omitempty"`
 	MintedAt      string `json:"mintedAt"`
+	// TemporaryHumanWord records a remote human authorization for an
+	// enrollment performed without an agent-free terminal (the human was
+	// away from the machine and spoke through an agent session). It is
+	// durable provenance, not a weaker enrollment: health and every
+	// reader see the temporary state until a terminal re-arm replaces
+	// this generation. ReviewBy is the human's own re-approval date.
+	TemporaryHumanWord string `json:"temporaryHumanWord,omitempty"`
+	ReviewBy           string `json:"reviewBy,omitempty"`
 }
 
 // MintIdentity writes the record with owner-only permissions,

@@ -486,6 +486,8 @@ func runStewardRun(args []string) int {
 func runStewardArm(args []string) int {
 	flags := flag.NewFlagSet("steward arm", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
+	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
+	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -493,15 +495,33 @@ func runStewardArm(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
 		return 2
 	}
-	if !requireHumanStewardEnrollment(*repo, "steward arm") {
-		return 1
+	if (*temporaryWord == "") != (*reviewBy == "") {
+		fmt.Fprintln(os.Stderr, "steward arm: --temporary-human-word and --review-by travel together")
+		return 2
+	}
+	if *temporaryWord == "" {
+		if !requireHumanStewardEnrollment(*repo, "steward arm") {
+			return 1
+		}
+	} else {
+		// The agent-free-terminal law stands; this is its one recorded
+		// exception: the human is away from the machine and authorized a
+		// temporary enrollment in their own words, which ride the
+		// identity record until they re-arm at a terminal. Loud by
+		// construction — the word and the review date are durable.
+		fmt.Fprintf(os.Stderr, "steward arm: TEMPORARY enrollment under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
 	}
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
 		return 1
 	}
-	msg, err := steward.Arm(*repo, bin)
+	var msg string
+	if *temporaryWord != "" {
+		msg, err = steward.ArmTemporary(*repo, bin, *temporaryWord, *reviewBy)
+	} else {
+		msg, err = steward.Arm(*repo, bin)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
 		return 1

@@ -144,14 +144,22 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 // repo's own binary, verify the operator is reachable, and spawn the
 // detached runner unless one already lives. Idempotent.
 func Arm(repoRoot, binaryPath string) (string, error) {
-	return arm(repoRoot, binaryPath, false)
+	return arm(repoRoot, binaryPath, false, "", "")
+}
+
+// ArmTemporary is Arm under a recorded remote human authorization: the
+// human's verbatim word and their re-approval date ride the enrollment
+// record itself, so the temporary state is visible to every reader until
+// a terminal re-arm mints the next generation without them.
+func ArmTemporary(repoRoot, binaryPath, humanWord, reviewBy string) (string, error) {
+	return arm(repoRoot, binaryPath, true, humanWord, reviewBy)
 }
 
 // Restart replaces a live runner before arming the repository again. It is
 // the repair path for a process that remains alive but no longer completes
 // ticks.
 func Restart(repoRoot, binaryPath string) (string, error) {
-	return arm(repoRoot, binaryPath, true)
+	return arm(repoRoot, binaryPath, true, "", "")
 }
 
 // EnsureRunnerResult reports how session-start arming treated the steward.
@@ -357,7 +365,7 @@ func runnerExclusion(top string) (string, bool) {
 	return "", false
 }
 
-func arm(repoRoot, binaryPath string, replace bool) (string, error) {
+func arm(repoRoot, binaryPath string, replace bool, temporaryWord, reviewBy string) (string, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return "", err
@@ -402,6 +410,7 @@ func arm(repoRoot, binaryPath string, replace bool) (string, error) {
 	if err := MintIdentity(RepoIdentityPath(top), InstallIdentity{
 		RepoIdentity: top, Generation: prior.Generation + 1,
 		InstallPath: bin, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
+		TemporaryHumanWord: temporaryWord, ReviewBy: reviewBy,
 	}); err != nil {
 		return "", err
 	}
@@ -416,6 +425,9 @@ func arm(repoRoot, binaryPath string, replace bool) (string, error) {
 	record, err := launchRunner(top, pinned)
 	if err != nil {
 		return "", err
+	}
+	if temporaryWord != "" {
+		return fmt.Sprintf("armed TEMPORARILY under a recorded remote human word, review by %s (runner pid %d)", reviewBy, record.Pid), nil
 	}
 	return fmt.Sprintf("armed (runner pid %d)", record.Pid), nil
 }
