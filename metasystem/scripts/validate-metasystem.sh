@@ -321,18 +321,17 @@ if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
   trap - EXIT
   exit 0
 fi
-# Captured AFTER the cd above: the sentinel must describe the suite's own
-# root, never the caller's working directory — a nested adopted-copy run
-# inherited the template's cwd and believed itself the template.
-metasystem_here=$(pwd -P)
-
 # Adopted repositories can refuse their literal template placeholders without
 # consulting the engine. Keep this scan ahead of the engine gate so a known
 # textual refusal does not pay for a rebuild. The full audit remains later:
 # required-file grammar, active-instruction placeholders, and configuration
 # validation belong to the prospective engine.
-template_mode=0
-[[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
+validation_context=$(scripts/agents/validate-section-selector.sh context)
+case "$validation_context" in
+  template) template_mode=1 ;;
+  adopted) template_mode=0 ;;
+  *) echo "validation selector returned an invalid run context: $validation_context" >&2; exit 1 ;;
+esac
 static_placeholder_scan_section() {
   local placeholder_pattern
   local placeholder_files=()
@@ -882,14 +881,6 @@ if section_selected gate-fail-open-tripwire \
   && [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
   && ! delivery_contract_skip gate-fail-open-tripwire; then
   run_section gate-fail-open-tripwire needs-engine gate_fail_open_tripwire_section
-fi
-
-if (( delivery_contract )); then
-  # A delivery run is never the orchestrating template — wherever it
-  # runs, adoption fixtures and the other template-only blocks belong to
-  # the FULL suite that spawned it. (The contract env exports happen at
-  # flag parse, ahead of the gate hook.)
-  template_mode=0
 fi
 
 static_contract_audits_section() {
@@ -2206,7 +2197,7 @@ scripts/assert-critique-closed.sh \
 # Template repository only. An adopted copy gets its hooks from adopt.sh at its
 # own root, with a different layout; this is about the repository that builds the
 # metasystem running under it.
-# One derivation of template_mode (script-validate-12/D36): line ~272 owns it.
+# The selector owns the run context used by this guard and the progress checker.
 if (( template_mode )); then
   harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
   [[ -f "$harness_own_settings" ]] \

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/validate-section-selector.sh <catalog|list|twice|run SECTION_ID>" >&2
+  echo "Usage: scripts/agents/validate-section-selector.sh <catalog|context|list|twice|run SECTION_ID>" >&2
 }
 
 sections() {
@@ -53,13 +53,23 @@ watch-background-jobs-fixtures	background-job watcher fixtures
 EOF
 }
 
-selected_sections() {
-  local root template_mode=0 section_id section_name
+run_context() {
+  local root
   root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-  [[ "${root##*/}" == metasystem && -f "${root%/*}/development/metasystem-design.md" ]] \
-    && template_mode=1
+  if [[ "${METASYSTEM_DELIVERY_CONTRACT:-0}" != 1 \
+    && "${root##*/}" == metasystem \
+    && -f "${root%/*}/development/metasystem-design.md" ]]; then
+    printf 'template\n'
+  else
+    printf 'adopted\n'
+  fi
+}
+
+selected_sections() {
+  local context section_id section_name
+  context=$(run_context)
   while IFS=$'\t' read -r section_id section_name; do
-    if (( ! template_mode )); then
+    if [[ "$context" == adopted ]]; then
       case "$section_id" in
         witness-gate-fixtures | suite-progress-fixtures | land-fixtures | adoption-fixtures | gate-run-freeze-fixtures)
           continue
@@ -81,6 +91,10 @@ case ${1:-} in
   catalog)
     [[ $# -eq 1 ]] || { usage; exit 2; }
     sections
+    ;;
+  context)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    run_context
     ;;
   list)
     [[ $# -eq 1 ]] || { usage; exit 2; }

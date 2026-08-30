@@ -117,6 +117,51 @@ fi
 grep -Fq 'missing-section has 0 starts and 0 ends' "$silent_out" \
   || { echo "suite-progress fixture: structural red did not name the silent section" >&2; exit 1; }
 
+# Delivery validation uses the adopted section set even when its files live in
+# the template checkout. The same selector view drives the completion check:
+# absent inactive sections are valid, while every active section remains owed.
+context_selector="$root/scripts/agents/validate-section-selector.sh"
+context_bed="$tmp/context-active"
+context_progress="$context_bed/progress.jsonl"
+context_missing_progress="$context_bed/missing-progress.jsonl"
+context_sections="$context_bed/sections"
+mkdir -p "$context_bed"
+METASYSTEM_DELIVERY_CONTRACT=1 bash "$context_selector" list \
+  | cut -f1 >"$context_sections"
+for inactive_section in adoption-fixtures gate-run-freeze-fixtures \
+    witness-gate-fixtures suite-progress-fixtures land-fixtures; do
+  grep -qxF "$inactive_section" "$context_sections" && {
+    echo "suite-progress fixture: delivery context retained inactive section $inactive_section" >&2
+    exit 1
+  }
+done
+printf '{"tmpPaths":[],"logPaths":["suite.log"]}\n' >"$context_progress"
+printf '{"tmpPaths":[],"logPaths":["suite.log"]}\n' >"$context_missing_progress"
+context_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+while IFS= read -r active_section; do
+  printf '{"suite":"context-active","section":"%s","event":"start","at":"%s","depth":0}\n' \
+    "$active_section" "$context_now" >>"$context_progress"
+  printf '{"suite":"context-active","section":"%s","event":"end","at":"%s","depth":0}\n' \
+    "$active_section" "$context_now" >>"$context_progress"
+  if [[ "$active_section" != engine-delivery-contract ]]; then
+    printf '{"suite":"context-active","section":"%s","event":"start","at":"%s","depth":0}\n' \
+      "$active_section" "$context_now" >>"$context_missing_progress"
+    printf '{"suite":"context-active","section":"%s","event":"end","at":"%s","depth":0}\n' \
+      "$active_section" "$context_now" >>"$context_missing_progress"
+  fi
+done <"$context_sections"
+METASYSTEM_DELIVERY_CONTRACT=1 "$bin" proof-run assert \
+  --progress "$context_progress" --suite context-active --selector "$context_selector"
+context_missing_out="$context_bed/missing.out"
+if METASYSTEM_DELIVERY_CONTRACT=1 "$bin" proof-run assert \
+    --progress "$context_missing_progress" --suite context-active --selector "$context_selector" \
+    >"$context_missing_out" 2>&1; then
+  echo "suite-progress fixture: an active delivery section was not required" >&2
+  exit 1
+fi
+grep -Fq 'engine-delivery-contract has 0 starts and 0 ends' "$context_missing_out" \
+  || { echo "suite-progress fixture: missing active section was not named" >&2; cat "$context_missing_out" >&2; exit 1; }
+
 # Both runner-facing watchers relay the deepest open section from the same
 # read-only journal view. The background watcher prefixes a reportable job;
 # the command-level printer is covered at its Go-owned boundary.
