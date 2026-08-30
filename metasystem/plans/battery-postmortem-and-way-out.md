@@ -430,3 +430,46 @@ proof therefore ends in a request, not a declaration: authorize the
 three laws, and the machinery makes this class of failure
 impossible; every day before that word, the only safeguard is the
 one that already failed.
+
+## The paper and the design, reconciled (m1, on Wido's order)
+
+IN LINE: Law 1 applies ch.5/ch.11 budgets-that-stop; Law 2 applies
+ch.13 legislator authority and ch.15 no-self-witnessing; Law 3 and
+the retirement apply ch.4 archaeology and ch.14 duplication removal;
+the whole disaster was pre-catalogued in ch.3's failure table.
+
+FOUND BUT NOT IN THE PAPER (candidate paper additions, each needing
+Wido's word and the paper's own gate):
+1. The honest verifier that fails itself: an artificial verification
+   context manufacturing false reds until the system services its
+   verifier instead of its product; detection signal = the ratio of
+   verifier-self-defects to product findings. Thirteen of
+   twenty-four envelopes. Belongs beside ch.3's failure modes or
+   ch.9's hostile world, which covers only DISHONEST tools.
+2. Optimism under authority (prediction laundering): operator
+   forecasts functioning as human permission across cycles; the
+   binding rule - forecasts never authorize, only recorded budgets
+   authorize. Belongs in ch.3 or ch.13.
+3. The recurring obligation as a budget-bearing unit with a
+   cause-blind counter - offered as evidence-from-use against
+   ch.16's open runaway-spend problem.
+4. Concurrent lawful record-writers (id minting, union registers,
+   sibling-fix checks) - a ch.8 gap, possibly implementation-level;
+   offer and let the gate decide.
+
+IN THE PAPER BUT MISSING FROM THE DESIGN (design additions):
+1. MODEL-CORRELATED JUDGMENT (ch.6): every builder and critic here
+   is one model; fresh-mind gives context-independence, not
+   model-independence. Required: the limitation recorded as
+   standing, plus a Wido-ruled policy for when a second model or
+   human review is mandatory. THE LARGEST UNCOVERED HAZARD.
+2. Replacement evidence window (ch.14): the battery retirement
+   carries a declared observation window; a missed class within it
+   reopens the decision.
+3. Ruling ownership and review (ch.13): every register ruling gains
+   an owner and review condition; ownerless rules are reviewed or
+   withdrawn, never governed by inertia as R-3 did.
+4. Recorded assumptions on mechanisms (ch.10): what makes a
+   mechanism's evidence meaningful is recorded so drift is
+   detectable - the battery's 600-second assumption was never a
+   record, so its drift was invisible.
