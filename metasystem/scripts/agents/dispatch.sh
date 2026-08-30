@@ -1827,10 +1827,22 @@ surface_census_verdict() {
 }
 
 cancel_job() {
-  local job=
+  local job= cancel_status cancel_pid
   [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }; job=$2
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
   lease_entry_check
+  # A reservation husk (and any record that never published a process) has
+  # no adapter supervisor to negotiate with: routing it through the
+  # runtime's cancel died resolving machinery that does not exist, and the
+  # human's stop silently lost to a later setup (cancellation delta review
+  # round 6). The internal gate owns that shape end to end — it marks,
+  # concludes, and its cancelled status makes RecordSetup refuse forever.
+  cancel_status=$(json_field "$jobs/$job.json" status 2>/dev/null || true)
+  cancel_pid=$(json_field "$jobs/$job.json" pid 2>/dev/null || true)
+  if [[ "$cancel_status" == pending-setup || -z "$cancel_pid" || "$cancel_pid" == null ]]; then
+    lease_run_held "$current_claim_epoch" "$0" __cancel-owned --job "$job"
+    return
+  fi
   lease_run_held "$current_claim_epoch" \
     "$root/scripts/agents/adapters/$(json_field "$jobs/$job.json" runtime).sh" cancel --job "$job"
 }
@@ -1955,7 +1967,7 @@ internal_handshake() {
 }
 
 internal_cancel() {
-  local job=$1 record="$jobs/$1.json" status patch cancel_pid cancel_pgid
+  local job=$1 record="$jobs/$1.json" status patch cancel_pid cancel_pgid cancel_mission
   [[ -f "$record" ]] || exit 1
   process_instance_tag=${process_instance_tag:-$job}
   acquire_lifecycle_lock_until "$job" 5 || exit 1
@@ -2016,6 +2028,12 @@ internal_cancel() {
       release_lifecycle_lock "$job"
       return 1
     fi
+  fi
+  # The cancelled reservation's fence slot is not abandoned debt: a
+  # mission-bound job released here exactly as a failed setup husk is.
+  cancel_mission=$(json_field "$record" mission 2>/dev/null || true)
+  if [[ -n "$cancel_mission" && "$cancel_mission" != null ]]; then
+    mission_fence release-job --repo "$root" --mission "$cancel_mission" --job "$job" >/dev/null 2>&1 || true
   fi
   [[ -n "$stop_cancel_authorized" ]] || mirror_record "$job" || true
   release_lifecycle_lock "$job"

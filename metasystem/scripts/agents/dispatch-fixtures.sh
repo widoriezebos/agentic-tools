@@ -1634,6 +1634,39 @@ if "$engine" json get --file "$launch_window_record" --field groupDeathProvenAt 
   exit 1
 fi
 
+# The cancel-pending-setup-husk ordering law: create, cancel, then setup
+# and launch must both refuse — a marked husk can never outrun the
+# human's stop (codex contract ruling, cancellation delta round 6).
+run_agent_fixture cancel-husk-claim cancel-husk "$engine" job claim-launch \
+  --root "$agent_repo" --opid cancel-husk --session fake:cancel-husk \
+  --dispatch-mode fresh --resumed-session '' --runtime fake --model fake-model \
+  --role design-critic --launch-mode shared-checkout \
+  --permission-envelope-digest 3333333333333333333333333333333333333333333333333333333333333333 \
+  --input-hash 4444444444444444444444444444444444444444444444444444444444444444 \
+  --cap-min 120 --conf "$agent_repo/metasystem.conf" >/dev/null
+cancel_husk_record="$agent_repo/artifacts/agents/jobs/cancel-husk.json"
+[[ "$("$engine" json get --file "$cancel_husk_record" --field status)" == pending-setup ]] \
+  || { echo "cancel-husk reservation did not park at pending-setup" >&2; exit 1; }
+run_agent_fixture cancel-husk-cancel - "$agent_dispatch" cancel --job cancel-husk
+[[ "$("$engine" json get --file "$cancel_husk_record" --field status)" == cancelled \
+   && "$("$engine" json get --file "$cancel_husk_record" --field phase)" == cancelled ]] \
+  || { echo "the public cancel did not stick on the pending-setup husk" >&2; cat "$cancel_husk_record" >&2; exit 1; }
+# The would-be setup: the same source shape the launch path would publish.
+cancel_husk_setup="$agent_fixture/cancel-husk-setup.json"
+cp "$cancel_husk_record" "$cancel_husk_setup"
+json_replace_field "$cancel_husk_setup" status '"pending"'
+set +e
+(cd "$agent_repo" && scripts/agents/dispatch.sh __record-setup --job cancel-husk --source "$cancel_husk_setup") \
+  >"$agent_fixture/cancel-husk-setup.out" 2>&1
+cancel_husk_setup_rc=$?
+set -e
+[[ $cancel_husk_setup_rc -ne 0 ]] \
+  || { echo "a cancelled husk completed setup - the stop was outrun" >&2; exit 1; }
+[[ "$("$engine" json get --file "$cancel_husk_record" --field status)" == cancelled ]] \
+  || { echo "the refused setup still moved the cancelled husk" >&2; exit 1; }
+[[ ! -e "$agent_repo/artifacts/agents/hb/cancel-husk" && ! -e "$agent_repo/artifacts/agents/jobs/cancel-husk.log" ]] \
+  || { echo "the cancelled husk shows launch traces" >&2; exit 1; }
+
 pending_loss_brief="$agent_fixture/pending-loss.md"
 make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
 wait_for_agent_census_fresh pending-loss
