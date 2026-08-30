@@ -10,6 +10,13 @@ import (
 // returnPath. An unreadable usage file records usage as unavailable rather than
 // failing the turn, and an empty session or return path is recorded as null.
 func ResultWrite(resultPath, session, outcome, usagePath, rawPath, returnPath string) error {
+	return resultWriteTransport(resultPath, session, outcome, usagePath, rawPath, returnPath, "")
+}
+
+// resultWriteTransport is ResultWrite with the turn's transport pin. An
+// empty transport keeps the pre-pin envelope byte shape — absent means
+// the legacy path, exactly as an absent configuration key does.
+func resultWriteTransport(resultPath, session, outcome, usagePath, rawPath, returnPath, transport string) error {
 	usage, ok := loadValue(usagePath)
 	if !ok {
 		usage = map[string]any{"availability": "unavailable"}
@@ -20,6 +27,9 @@ func ResultWrite(resultPath, session, outcome, usagePath, rawPath, returnPath st
 		"usage":      usage,
 		"rawPath":    rawPath,
 		"returnPath": nullIfEmpty(returnPath),
+	}
+	if transport != "" {
+		envelope["transport"] = transport
 	}
 	if err := atomicWriteJSON(resultPath, envelope); err != nil {
 		return fmt.Errorf("write result envelope: %w", err)
@@ -80,8 +90,15 @@ func fakeUsage(input, cached, output int) map[string]any {
 // instead of raw stdout, so a file-delivered host result is a reply.
 // The raw path stays in the envelope as evidence either way.
 func FinishTurn(resultPath, session, usagePath, rawPath, returnPath, acceptedPath string, cliStatus int64, requireReply bool) (int, error) {
+	return FinishTurnTransport(resultPath, session, usagePath, rawPath, returnPath, acceptedPath, cliStatus, requireReply, "")
+}
+
+// FinishTurnTransport is FinishTurn carrying the turn's transport pin into
+// every envelope it writes, including the failed ones — a refused or failed
+// ACP turn is still evidence of WHICH path ran.
+func FinishTurnTransport(resultPath, session, usagePath, rawPath, returnPath, acceptedPath string, cliStatus int64, requireReply bool, transport string) (int, error) {
 	if cliStatus != 0 {
-		if err := ResultWrite(resultPath, session, "failed", usagePath, rawPath, ""); err != nil {
+		if err := resultWriteTransport(resultPath, session, "failed", usagePath, rawPath, "", transport); err != nil {
 			return 1, err
 		}
 		return 3, nil
@@ -92,19 +109,19 @@ func FinishTurn(resultPath, session, usagePath, rawPath, returnPath, acceptedPat
 	}
 	if requireReply {
 		if info, err := os.Stat(replyEvidence); err != nil || info.Size() == 0 {
-			if err := ResultWrite(resultPath, session, "failed", usagePath, rawPath, ""); err != nil {
+			if err := resultWriteTransport(resultPath, session, "failed", usagePath, rawPath, "", transport); err != nil {
 				return 1, err
 			}
 			return 3, nil
 		}
 	}
 	if session == "" {
-		if err := ResultWrite(resultPath, session, "unresumable", usagePath, rawPath, returnPath); err != nil {
+		if err := resultWriteTransport(resultPath, session, "unresumable", usagePath, rawPath, returnPath, transport); err != nil {
 			return 1, err
 		}
 		return 6, nil
 	}
-	if err := ResultWrite(resultPath, session, "completed", usagePath, rawPath, returnPath); err != nil {
+	if err := resultWriteTransport(resultPath, session, "completed", usagePath, rawPath, returnPath, transport); err != nil {
 		return 1, err
 	}
 	return 0, nil

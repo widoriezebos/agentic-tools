@@ -17,6 +17,24 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/host-common.sh"
 host_parse_start_turn "$@"
 host_require_cli devin
 
+# The transport selector mirrors the delegate adapter's devin_transport()
+# (D81/D82) on the SAME configuration key: the dispatch flip extends to
+# host turns. An ABSENT key still resolves legacy (pre-flip
+# configurations keep their meaning, D61's waiver stands there); an
+# unreadable configuration or an unrecognized value REFUSES — a broken
+# config must never fail open into the dangerous path.
+host_transport=
+host_transport_value=$(
+  "$root/scripts/metasystem-config.sh" get --key dispatch.transport.devin --default legacy 2>/dev/null
+) || {
+  echo "devin host: transport configuration unreadable" >&2
+  exit 3
+}
+case "$host_transport_value" in
+  legacy|acp) host_transport=$host_transport_value ;;
+  *) echo "devin host: transport configuration invalid: $host_transport_value" >&2; exit 3 ;;
+esac
+
 turn_dir=$(cd "$(dirname "$prompt")" && pwd -P)
 turn_record="$turn_dir/turn.json"
 raw="$turn_dir/raw.out"
@@ -62,6 +80,78 @@ if [[ -e "$host_return_file" ]]; then
 fi
 "$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" --output "$devin_prompt" \
   --return-file "$host_return_file"
+
+if [[ "$host_transport" == acp ]]; then
+  # The ACP host turn: the same wire the delegate rides (the script owns
+  # fifos and the server child; `acp turn` owns the wire), without the
+  # dispatch record machinery a delegate carries — the host's evidence is
+  # its turn directory and the result envelope's transport pin. The
+  # session mode comes from the host permission envelope's tools grade,
+  # so the session carries the v1 grades rather than the dangerous mode.
+  outcome_file="$turn_dir/acp-outcome.json"
+  journal_file="$turn_dir/acp-journal.log"
+  session_file="$turn_dir/acp-session-id"
+  "$ms" acp preflight --envelope-file "$permissions" >>"$log" 2>&1 \
+    || { echo "devin host: ACP preflight refused the permission envelope" >&2; exit 3; }
+  acp_grade=$("$ms" json get --file "$permissions" --field tools --default "")
+  acp_mode=$("$ms" acp mode --runtime devin --tools "$acp_grade" 2>>"$log") \
+    || { echo "devin host: no ACP session mode maps to tools grade '$acp_grade'" >&2; exit 3; }
+  expected_protocol=$("$ms" json get \
+    --value "$("$ms" runtime acp-expectation devin)" \
+    --field expectedProtocolVersion --default "") || expected_protocol=
+  [[ -n "$expected_protocol" ]] \
+    || { echo "devin host: the runtime registry declares no ACP protocol expectation" >&2; exit 3; }
+  acp_nonce=$("$ms" util token-hex --bytes 6)
+  server_out="$turn_dir/acp-$acp_nonce-out"
+  server_in="$turn_dir/acp-$acp_nonce-in"
+  mkfifo "$server_out" "$server_in" \
+    || { echo "devin host: cannot create the ACP fifo pair" >&2; exit 3; }
+  # Wire plumbing is not evidence: the pair is removed on every exit so a
+  # later evidence-tree copy never meets a named pipe (KI-42).
+  acp_fifo_cleanup() { rm -f -- "$server_out" "$server_in"; }
+  trap acp_fifo_cleanup EXIT
+  # argv0 devin-host-acp: the census signature distinguishes the HOST's
+  # server child from both the raw CLI helper and the delegate-side server.
+  ( cd "$root" && exec -a devin-host-acp "$(command -v devin)" acp >"$server_out" <"$server_in" 2>>"$log" ) &
+  acp_server_pid=$!
+  acp_turn_args=(
+    acp turn --server-out "$server_out" --server-in "$server_in"
+    --journal "$journal_file" --workspace "$root"
+    --envelope-file "$permissions" --prompt-file "$devin_prompt"
+    --mode "$acp_mode" --expected-protocol "$expected_protocol"
+    --session-file "$session_file"
+  )
+  [[ -z "$resume_session" ]] || acp_turn_args+=(--load-session "$resume_session")
+  set +e
+  "$ms" "${acp_turn_args[@]}" >"$outcome_file" 2>>"$log"
+  cli_status=$?
+  set -e
+  kill -TERM "$acp_server_pid" 2>/dev/null || true
+  wait "$acp_server_pid" 2>/dev/null || true
+  acp_fifo_cleanup
+  trap - EXIT
+  [[ -f "$raw" ]] || : >"$raw"
+
+  accepted_reply=""
+  if (( cli_status == 0 )) && [[ -s "$outcome_file" ]]; then
+    acp_row=$("$ms" json get --file "$outcome_file" --field row --default "")
+    if [[ "$acp_row" == delivered ]]; then
+      # The wire candidate is the reply; the raw capture doubles as the
+      # accepted snapshot path finish and the extractor read.
+      "$ms" json get --file "$outcome_file" --field candidate --default "" >"$raw"
+      accepted_reply="$raw"
+      "$ms" host devin-return --raw "$raw" --output "$return_path"
+    fi
+  fi
+  "$ms" adapter acp-usage --usage "$usage_path" --outcome "$outcome_file" >>"$log" 2>&1 || true
+  session=""
+  [[ ! -s "$session_file" ]] || session=$(head -1 "$session_file")
+  finish_rc=0
+  "$ms" host finish --result "$result" --session "$session" --usage-file "$usage_path" \
+    --raw "$raw" --return-path "$return_path" --accepted-reply "$accepted_reply" \
+    --cli-status "$cli_status" --require-reply --transport acp || finish_rc=$?
+  exit "$finish_rc"
+fi
 
 devin_command=(
   devin -p

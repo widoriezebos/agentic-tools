@@ -56,6 +56,7 @@ func runHostFinish(args []string) int {
 	cliStatus := flags.Int64("cli-status", 0, "host CLI exit status")
 	acceptedReply := flags.String("accepted-reply", "", "the delivery walk's accepted snapshot (judges require-reply instead of raw)")
 	requireReply := flags.Bool("require-reply", false, "exit 0 with an empty reply is a failure (Devin's shape)")
+	transport := flags.String("transport", "", "transport pin recorded in the envelope (legacy paths omit it)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -63,7 +64,11 @@ func runHostFinish(args []string) int {
 		fmt.Fprintln(os.Stderr, "host finish: --result and --raw are required")
 		return 2
 	}
-	code, err := host.FinishTurn(*result, *session, *usageFile, *raw, *returnPath, *acceptedReply, *cliStatus, *requireReply)
+	if *transport != "" && *transport != "acp" && *transport != "legacy" {
+		fmt.Fprintln(os.Stderr, "host finish: --transport must be acp or legacy when given")
+		return 2
+	}
+	code, err := host.FinishTurnTransport(*result, *session, *usageFile, *raw, *returnPath, *acceptedReply, *cliStatus, *requireReply, *transport)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}

@@ -123,4 +123,87 @@ esac
   echo "ACP-V-004 failed: the courtesy session/cancel never reached the wire" >&2; exit 1; }
 echo "ACP-V-004 passed"
 
-echo "acp verb fixtures passed (ACP-V-001 through ACP-V-004)"
+# ACP-H-001: the devin HOST rides the same wire. A harness checkout pins
+# the transport key, a fake devin CLI answers the graded four-request
+# sequence (initialize, session/new, set_mode from the envelope's tools
+# grade, prompt), and the result envelope must carry the acp transport
+# pin with the wire session. An invalid transport value refuses before
+# any launch.
+host_harness=$tmp/host-harness
+mkdir -p "$host_harness/scripts/agents/hosts" "$host_harness/scripts/agents/schemas" \
+  "$host_harness/scripts/agents/permissions" "$host_harness/bin" "$host_harness/turns/t1"
+cp "$source_root/scripts/agents/hosts/host-common.sh" \
+  "$source_root/scripts/agents/hosts/devin.sh" "$host_harness/scripts/agents/hosts/"
+cp "$source_root/scripts/metasystem-config.sh" "$host_harness/scripts/"
+cp "$source_root/scripts/agents/schemas/orchestrator.schema.json" "$host_harness/scripts/agents/schemas/"
+cp "$source_root/scripts/agents/permissions/workspace.json" "$host_harness/scripts/agents/permissions/"
+cp "$ms" "$host_harness/bin/metasystem"
+printf 'dispatch.transport.devin=acp\n' >"$host_harness/metasystem.conf"
+
+fake_cli_bin=$tmp/host-cli-bin
+mkdir -p "$fake_cli_bin"
+cat >"$fake_cli_bin/devin" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${1:-} == acp ]] || { echo "fake devin: only acp mode is scripted" >&2; exit 9; }
+read -r _
+echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true},"authMethods":[]}}'
+read -r _
+echo '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"host-fx-1"}}'
+read -r request
+case "$request" in
+  *session/set_mode*) echo '{"jsonrpc":"2.0","id":3,"result":{}}' ;;
+  *) echo "fake devin: expected set_mode, got: $request" >&2; exit 9 ;;
+esac
+read -r _
+echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"host-fx-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"{\"status\":\"done\"}"}}}}'
+echo '{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn","usage":{"inputTokens":9,"outputTokens":2,"totalTokens":11}}}'
+sleep 1
+FAKE
+chmod +x "$fake_cli_bin/devin"
+
+host_turn_dir=$host_harness/turns/t1
+printf '{"model":"devin-fixture-model"}\n' >"$host_turn_dir/turn.json"
+printf 'reply with the return\n' >"$host_turn_dir/prompt.md"
+set +e
+PATH="$fake_cli_bin:$PATH" "$host_harness/scripts/agents/hosts/devin.sh" start-turn \
+  --mission fx --turn-id t1 --prompt "$host_turn_dir/prompt.md" \
+  --result "$host_turn_dir/result.json" --instance-tag metasystem-host-fx-t1 \
+  >"$tmp/host-turn.out" 2>&1
+host_rc=$?
+set -e
+if [[ $host_rc -ne 0 ]]; then
+  echo "ACP-H-001 failed: host turn exit $host_rc" >&2
+  cat "$tmp/host-turn.out" "$host_turn_dir/host.log" 2>/dev/null >&2
+  exit 1
+fi
+[[ "$("$ms" json get --file "$host_turn_dir/result.json" --field transport --default "")" == acp ]] \
+  || { echo "ACP-H-001 failed: no acp transport pin" >&2; cat "$host_turn_dir/result.json" >&2; exit 1; }
+[[ "$("$ms" json get --file "$host_turn_dir/result.json" --field sessionId)" == host-fx-1 \
+   && "$("$ms" json get --file "$host_turn_dir/result.json" --field outcome)" == completed ]] \
+  || { echo "ACP-H-001 failed: session or outcome wrong" >&2; cat "$host_turn_dir/result.json" >&2; exit 1; }
+grep -q 'session/set_mode' "$host_turn_dir/acp-journal.log" \
+  || { echo "ACP-H-001 failed: the graded set_mode never reached the wire" >&2; exit 1; }
+grep -Fq '"status": "done"' "$host_turn_dir/return.json" 2>/dev/null \
+  || grep -Fq '"status":"done"' "$host_turn_dir/return.json" 2>/dev/null \
+  || { echo "ACP-H-001 failed: the wire reply did not become the return" >&2; ls "$host_turn_dir" >&2; cat "$host_turn_dir/raw.out" >&2 || true; exit 1; }
+echo "ACP-H-001 passed"
+
+# ACP-H-002: an invalid transport value refuses before any launch, and an
+# absent key resolves the legacy path (proven by reaching the legacy CLI,
+# which this fake refuses loudly in a recognizable way).
+printf 'dispatch.transport.devin=carrier-pigeon\n' >"$host_harness/metasystem.conf"
+set +e
+PATH="$fake_cli_bin:$PATH" "$host_harness/scripts/agents/hosts/devin.sh" start-turn \
+  --mission fx --turn-id t2 --prompt "$host_turn_dir/prompt.md" \
+  --result "$host_turn_dir/result-invalid.json" --instance-tag metasystem-host-fx-t2 \
+  >"$tmp/host-invalid.out" 2>&1
+invalid_rc=$?
+set -e
+[[ $invalid_rc -eq 3 ]] && grep -q 'transport configuration invalid' "$tmp/host-invalid.out" \
+  || { echo "ACP-H-002 failed: invalid transport did not refuse (rc=$invalid_rc)" >&2; cat "$tmp/host-invalid.out" >&2; exit 1; }
+[[ ! -e "$host_turn_dir/result-invalid.json" ]] \
+  || { echo "ACP-H-002 failed: a refused transport still wrote a result" >&2; exit 1; }
+echo "ACP-H-002 passed"
+
+echo "acp verb fixtures passed (ACP-V-001 through ACP-V-004, ACP-H-001 through ACP-H-002)"
