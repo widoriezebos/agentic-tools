@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 1h. Enumerate every caller consuming janitor fold/kill-guard exit codes on m1 surfaces (steward sweeps, cancel paths, cleanup scripts), verify each handles exit 3 as fail-closed correctly, fix any that treated 1 as the only refusal; prove with the affected fixtures
 - OpenedAt: 2026-08-30T14:57:35Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=3d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-30T14:57:35Z BHNDDTA3DWP99EGG7G2BB41N5H-m1-bf243850 open actor=m1+coordinator targets=kill-guard-fold-consumers
-Integrity: sha256=0def167fa648e8c967481589c5d335110b1a23d6e961ef2026fdf717956ae23d
+- 2026-08-30T15:17:24Z 91F0NGJS9FB66ZBNY0JE2DAADH-m1-bf243850 set-budget actor=m1+coordinator targets=kill-guard-fold-consumers
+Integrity: sha256=025288a22813b28804e739700f22b4383f27eb17a3dd3ebac4beecabfb51c3ec
