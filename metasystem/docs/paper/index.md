@@ -2,8 +2,8 @@
 
 **Engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering: moving human attention from building the application to building the system that builds the application (and about refusing to carry human ceremony into a workforce that does not need it).
 
-## The origin of this paper
-This paper is not the result of me having some brain wave and then writing that down with the subsequent goal of turning it into software at some point. It is actually the reverse of that: I started with little software and then discovered what to build by building it. After having reached the point where the system became capable enough to write itself under my guidance, I turned that journey into a narrative: this paper. So, even though this story disguises itself as a narrative, it is probably closer to rationale and design decisions that lead to the software: the metasystem. 
+## The origin of this paper, and where it will go next
+This paper is not the result of me having some brain wave and then writing that down with the subsequent goal of turning it into software at some point. It is actually the reverse of that: I started with little software and then discovered what to build by building it. After having reached the point where the system became capable enough to write itself under my guidance, I turned that journey into a narrative: this paper. So, even though this story disguises itself as a thought exercise, it is probably closer to rationale and design decisions that lead to the software: the metasystem. In some cases this paper however went beyond what the software currently does, so there this paper shows the direction to take the software next. With then the software potentially causing discoveries that lead to revisions or even new chapters to this paper. Neither the software nor this paper I consider 'finished' for that reason.
 
 ## The paper in five parts
 
