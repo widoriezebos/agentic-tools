@@ -426,7 +426,7 @@ git -C "$repo" remote add origin "$remote"
 
 run_nested_failure_copy_fixture() {
   local nested_failure_tree nested_no_rg_bin command_name red_subject red_envelope copied_command
-  local rejected_link symlink_subject symlink_runs symlink_rc symlink_retained
+  local rejected_link symlink_subject symlink_runs symlink_rc symlink_envelope
   nested_failure_tree=$repo/metasystem/artifacts/agents/suite-failures/nested-validation-failure
   nested_no_rg_bin=$nested_failure_tree/no-rg-bin
   mkdir -p "$nested_no_rg_bin"
@@ -459,8 +459,8 @@ run_nested_failure_copy_fixture() {
   [[ "$("$real_engine" json get --file "$red_envelope/report.json" --field copyDigestManifest)" == copy-digests.nul ]]
   [[ ! -e "$red_envelope/reset.json" ]]
 
-  # Symlink evidence remains terminal and names the rejected entry so an
-  # operator can locate the artifact that prevented verified publication.
+  # Symlink evidence is named partial evidence. The envelope remains useful,
+  # while the link itself never becomes trusted evidence bytes.
   rejected_link=$nested_failure_tree/no-rg-bin/rg
   ln -s grep "$rejected_link"
   git -C "$repo" add -f -- metasystem/artifacts/agents/suite-failures/nested-validation-failure
@@ -479,9 +479,19 @@ run_nested_failure_copy_fixture() {
   grep -Fq 'milestone battery evidence copy refused symlink:' "$tmp/symlink.err"
   grep -Fq 'failure-artifacts/suite-failures/nested-validation-failure/no-rg-bin/rg' \
     "$tmp/symlink.err"
-  symlink_retained=$(sed -n 's/.* path=\([^ ]*\) envelope=.*/\1/p' "$tmp/symlink.err" | tail -1)
-  [[ "$symlink_retained" == "$symlink_runs"/*/subject && -d "$symlink_retained" ]]
-  rm -rf -- "${symlink_retained%/subject}"
+  symlink_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/symlink.out" "$tmp/symlink.err" | tail -1)
+  [[ -n "$symlink_envelope" && -f "$symlink_envelope/report.json" \
+    && -f "$symlink_envelope/copy-failures.tsv" \
+    && -f "$symlink_envelope/teardown.json" ]]
+  [[ "$("$real_engine" json get --file "$symlink_envelope/report.json" --field copyResult)" == partial ]]
+  [[ "$("$real_engine" json get --file "$symlink_envelope/report.json" --field verdict)" == red ]]
+  grep -Fq $'symlink-refused\tfailure-artifacts/suite-failures/nested-validation-failure/no-rg-bin/rg' \
+    "$symlink_envelope/copy-failures.tsv"
+  [[ "$("$real_engine" json get --file "$symlink_envelope/teardown.json" --field result)" == removed ]]
+  [[ -z "$("$real_engine" json get --file "$symlink_envelope/teardown.json" --field retainedPath)" ]]
+  grep -Fq 'clone=removed' "$tmp/symlink.err"
+  ! grep -Fq 'retained clone' "$tmp/symlink.err"
+  [[ -z "$(find "$symlink_runs" -mindepth 1 -maxdepth 1 -type d -print -quit)" ]]
 }
 
 if [[ "${BATTERY_NESTED_FAILURE_COPY_FIXTURE_ONLY:-0}" == 1 ]]; then

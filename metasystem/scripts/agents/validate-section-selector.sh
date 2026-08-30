@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/validate-section-selector.sh <list|twice|run SECTION_ID>" >&2
+  echo "Usage: scripts/agents/validate-section-selector.sh <catalog|list|twice|run SECTION_ID>" >&2
 }
 
 sections() {
@@ -53,6 +53,23 @@ watch-background-jobs-fixtures	background-job watcher fixtures
 EOF
 }
 
+selected_sections() {
+  local root template_mode=0 section_id section_name
+  root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+  [[ "${root##*/}" == metasystem && -f "${root%/*}/development/metasystem-design.md" ]] \
+    && template_mode=1
+  while IFS=$'\t' read -r section_id section_name; do
+    if (( ! template_mode )); then
+      case "$section_id" in
+        witness-gate-fixtures | suite-progress-fixtures | land-fixtures | adoption-fixtures | gate-run-freeze-fixtures)
+          continue
+          ;;
+      esac
+    fi
+    printf '%s\t%s\n' "$section_id" "$section_name"
+  done < <(sections)
+}
+
 twice_consulted_sections() {
   # Empty since the continue-and-collect conversion unified the
   # doubled call sites: every section runs exactly once. Add a
@@ -61,9 +78,13 @@ twice_consulted_sections() {
 }
 
 case ${1:-} in
-  list)
+  catalog)
     [[ $# -eq 1 ]] || { usage; exit 2; }
     sections
+    ;;
+  list)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    selected_sections
     ;;
   twice)
     [[ $# -eq 1 ]] || { usage; exit 2; }

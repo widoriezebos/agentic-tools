@@ -304,7 +304,7 @@ while true; do
     sleep 0.05
   done
 
-  if "$harness/scripts/agents/dispatch.sh" dispatch --role implementer --brief "$brief" \
+  if "$harness/scripts/agents/dispatch.sh" dispatch --role implementer --brief "$brief" --worktree \
       --job-id attested-ceiling --cap-min 500 >"$tmp/attested.out" 2>&1; then
     echo "AUTH-R2-005: dispatch trusted raised supervision state over watcher attestation" >&2
     exit 1

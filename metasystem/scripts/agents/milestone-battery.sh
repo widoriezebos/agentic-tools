@@ -325,6 +325,7 @@ validator_pgid_stage=${BATTERY_VALIDATOR_PGID_STAGE:-$run_dir/validator-identity
 validator_publication_dir=${validator_pgid_file%/*}
 teardown_note=not-attempted
 copy_failures=0
+blocking_copy_failures=0
 copy_failure_manifest=$run_dir/.copy-failures.$$.tsv
 copy_command_log=$run_dir/.copy-errors.$$.log
 
@@ -377,11 +378,13 @@ read_run_class() {
   case "$run_class:$class_bytes" in FULL:5|WITNESS-ASSISTED:17) return 0 ;; *) return 1 ;; esac
 }
 
-record_evidence_copy_failure() { # reason, envelope-relative path
-  local reason=$1 relative=$2 quoted
+record_evidence_copy_failure() { # reason, envelope-relative path, optional named-partial
+  local reason=$1 relative=$2 publication_class=${3:-blocking} quoted
   printf -v quoted '%q' "$relative"
   printf '%s\t%s\n' "$reason" "$quoted" >>"$copy_failure_manifest" || return 1
   copy_failures=$((copy_failures + 1))
+  [[ "$publication_class" == named-partial ]] \
+    || blocking_copy_failures=$((blocking_copy_failures + 1))
 }
 
 copy_regular_evidence_file() { # source, destination, envelope-relative path
@@ -414,7 +417,7 @@ copy_evidence_tree() { # source directory, destination directory, envelope-relat
   while IFS= read -r -d '' entry; do
     relative=${entry#"$source"/}
     printf 'milestone battery evidence copy refused symlink: %s/%s\n' "$prefix" "$relative" >&2
-    record_evidence_copy_failure symlink-refused "$prefix/$relative" || return 1
+    record_evidence_copy_failure symlink-refused "$prefix/$relative" named-partial || return 1
     copied=$destination/$relative
     [[ ! -L "$copied" ]] || rm -f -- "$copied" 2>>"$copy_command_log" \
       || record_evidence_copy_failure rejected-link-removal-failed "$prefix/$relative" \
@@ -562,7 +565,7 @@ publish_stage_one() { # setup exit, validation exit, verdict
     || return 1
   mv "$stage" "$envelope" || return 1
   stage_published=1
-  (( copy_failures == 0 ))
+  (( blocking_copy_failures == 0 ))
 }
 
 launch_job_is_owned() { # pid

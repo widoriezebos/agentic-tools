@@ -988,7 +988,7 @@ warning_interval=$(json_field "$warning_supervision/last-census.json" intervalSe
 fi
 
 if [[ "$fixture_scenario" == census-lifecycle ]]; then
-grep -Fq 'pidStartedAt' "$repo/scripts/agents/dispatch.sh" \
+grep -Fq '"pidStartedAt"' "$source_root/internal/dispatch/ownership.go" \
   || { echo "S4-1: job record does not carry pidStartedAt" >&2; exit 1; }
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }

@@ -10,7 +10,7 @@ trap 'rm -rf "$tmp"' EXIT
 # without running any section body.
 sed -n 's/.*section_selected \([a-z0-9-]*\).*/\1/p' \
   "$root/scripts/validate-metasystem.sh" | sort -u >"$tmp/guarded-sections"
-bash "$root/scripts/agents/validate-section-selector.sh" list \
+bash "$root/scripts/agents/validate-section-selector.sh" catalog \
   | cut -f1 | sort -u >"$tmp/selected-sections"
 diff -u "$tmp/guarded-sections" "$tmp/selected-sections" \
   || { echo "enumeration fixture: validator guards and selector rows disagree" >&2; exit 1; }

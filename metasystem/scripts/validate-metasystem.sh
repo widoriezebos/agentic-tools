@@ -82,12 +82,12 @@ delegate_owed_sections=(
 )
 delegate_skipped_sections=()
 delivery_skipped=()
-delivery_contract_skip() { # family or section name; returns 0 = skip it
+delivery_contract_skip() { # section id, optional behavior family; returns 0 = skip it
   (( delivery_contract && delivery_reuse )) || return 1
-  local policy_engine=${engine:-$root/bin/metasystem}
-  "$policy_engine" behavior-surface skip-allowed --scope DELIVERY --family "$1" >/dev/null 2>&1 || return 1
-  delivery_skipped+=("$1")
-  record_stage_result "$1" skipped 0 "delivery reuse: family proof carried by the witness"
+  local section_id=$1 family=${2:-$1} policy_engine=${engine:-$root/bin/metasystem}
+  "$policy_engine" behavior-surface skip-allowed --scope DELIVERY --family "$family" >/dev/null 2>&1 || return 1
+  delivery_skipped+=("$family")
+  record_stage_result "$section_id" skipped 0 "delivery reuse: family proof carried by the witness"
   return 0
 }
 delegate_process_section() { # human-readable section name
@@ -1034,12 +1034,12 @@ supervision_and_census_section() {
 }
 if section_selected supervision-and-census-fixtures \
   && delegate_process_section "supervision and census fixtures" \
-  && ! delivery_contract_skip "supervision and census fixtures"; then
+  && ! delivery_contract_skip supervision-and-census-fixtures "supervision and census fixtures"; then
   run_section supervision-and-census-fixtures needs-engine supervision_and_census_section
 fi
 if section_selected supervisor-fingerprint-heal-harness \
   && delegate_process_section "supervisor fingerprint heal harness" \
-  && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
+  && ! delivery_contract_skip supervisor-fingerprint-heal-harness "supervisor fingerprint heal harness"; then
   run_section supervisor-fingerprint-heal-harness needs-engine \
     scripts/agents/fingerprint-harness.sh --iterations 2
 fi
@@ -2382,7 +2382,8 @@ fi
 # exercises the full contract.
 if section_selected dispatcher-adapter-and-mission-runner-fixtures \
   && delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
-  && ! delivery_contract_skip "dispatcher, adapter selftest, and mission-runner process fixtures"; then
+  && ! delivery_contract_skip dispatcher-adapter-and-mission-runner-fixtures \
+    "dispatcher, adapter selftest, and mission-runner process fixtures"; then
   # Extracted to the sub-suite shape (script-validate-4/D35).
   run_section dispatcher-adapter-and-mission-runner-fixtures needs-engine \
     bash scripts/agents/dispatch-fixtures.sh
@@ -2880,20 +2881,20 @@ if section_selected workflow-tooling-fixtures; then
 fi
 
 # adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
-if section_selected adoption-fixtures && (( template_mode )); then
+if (( template_mode )) && section_selected adoption-fixtures; then
   run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
 fi
-if section_selected gate-run-freeze-fixtures && (( template_mode )); then
+if (( template_mode )) && section_selected gate-run-freeze-fixtures; then
   run_section gate-run-freeze-fixtures needs-engine bash scripts/agents/gate-run-freeze-fixtures.sh
 fi
-if section_selected witness-gate-fixtures && (( template_mode )); then
+if (( template_mode )) && section_selected witness-gate-fixtures; then
   run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
 fi
-if section_selected suite-progress-fixtures && (( template_mode )); then
+if (( template_mode )) && section_selected suite-progress-fixtures; then
   # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.
   run_section suite-progress-fixtures needs-engine bash scripts/agents/suite-progress-fixtures.sh
 fi
-if section_selected land-fixtures && (( template_mode )); then
+if (( template_mode )) && section_selected land-fixtures; then
   run_section land-fixtures needs-engine bash scripts/agents/land-fixtures.sh
 fi
 
