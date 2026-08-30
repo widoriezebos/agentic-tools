@@ -14,8 +14,6 @@ A new check now proposes to refuse any security timeout measured in local clock 
 
 That power to create, change and repeal enforced rules is the legislator's. It includes defining who may exercise it, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A group formed for one incident may receive temporary power to tighten one release condition, without gaining a permanent right to rewrite all delivery rules.
 
-The word gives software governance none of the legitimacy, institutions or reach of public law. Calling a permission a law does not make it one, and the organization remains answerable to real law outside the delivery system.
-
 Because enforced rules can stop action, their authorship and limits stay visible. A refusal identifies the rule, its authority, its supporting evidence and the available challenge. An ownerless rule is reviewed or withdrawn rather than allowed to govern by inertia.
 
 ## Judge: authority over named exceptions
