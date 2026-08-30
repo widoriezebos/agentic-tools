@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 )
 
 // Process identity for the runner's liveness and ownership decisions. All
@@ -75,29 +76,27 @@ func groupAlive(pgid int) bool {
 	}
 }
 
-// groupOwned reports whether a process group is provably ours: some live
-// member's command line carries the instance tag this runner minted. Without
-// that proof the group must never be signaled.
-func groupOwned(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) bool {
-	if pids, err := identity.AllPids(); err == nil {
-		for _, pid := range pids {
-			memberGroup, err := unix.Getpgid(int(pid))
-			if err != nil || memberGroup != pgid {
-				continue
-			}
-			exact, state, err := identity.KernelProber{}.Probe(pid)
-			if err != nil || state != identity.Alive {
-				continue
-			}
-			if strings.Contains(strings.Join(exact.Argv, " "), tag) {
-				return true
-			}
+// groupOwnership is the runner's tri-state signal predicate, riding the
+// janitor's positional shapes: a process that merely MENTIONS the tag
+// anywhere in argv never proves ownership (the substring-kill hazard the
+// shapes exist to close — this replaced a strings.Contains over the
+// joined argv). INDETERMINATE stays distinguishable from NOT-OWNED so a
+// wind-down that already holds proof can kill through a mid-death group
+// whose argv went unreadable, while a provably foreign group is never
+// signaled.
+func groupOwnership(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome {
+	outcome := janitor.GroupOwnership(int64(pgid), tag)
+	if outcome == janitor.GroupOwned {
+		return outcome
+	}
+	// The fake runtime's launcher records identities in the fixture
+	// table; the grant is the root-checked authority for reading it.
+	if fixturePgid, command, ok := grant.FixtureGroup(int64(pgid)); ok {
+		if fixturePgid == int64(pgid) && strings.Contains(command, "fixture "+tag) {
+			return janitor.GroupOwned
 		}
 	}
-	if fixturePgid, command, ok := grant.FixtureGroup(int64(pgid)); ok {
-		return fixturePgid == int64(pgid) && strings.Contains(command, tag)
-	}
-	return false
+	return outcome
 }
 
 // publishFakeIdentity records a launched fake host's identity in the fixture

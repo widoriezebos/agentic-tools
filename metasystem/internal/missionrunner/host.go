@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"math"
 	"os"
 	"os/exec"
@@ -105,8 +106,8 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		}
 		grant = authorization.GroupOwnership()
 	}
-	if !groupOwned(pgid, tag, grant) {
-		fmt.Fprintf(os.Stderr, "host process group %d is no longer provably ours; "+
+	if groupOwnership(pgid, tag, grant) != janitor.GroupOwned {
+		fmt.Fprintf(os.Stderr, "host process group %d is not provably ours; "+
 			"leaving it to the census rather than signaling an unowned group\n", pgid)
 		e.emit("wind-down", fmt.Sprintf("group %d unowned; skipped", pgid), map[string]string{
 			"missionId": e.Mission, "action": "skipped-unowned", "reason": "ownership-proof-absent",
@@ -117,7 +118,11 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		"missionId": e.Mission, "action": "sigterm",
 	})
 	_ = unix.Kill(-pgid, syscall.SIGTERM)
-	grace, err := ScaledWait(5)
+	// Process death is a REAL fact: a compressed test scale must not
+	// shrink the TERM grace below the time a live group actually needs
+	// to exit, or every compressed run abandons half-dead groups into
+	// the next test (timing-tests slice 2's measured wedge).
+	grace, err := ScaledWaitAtLeast(5, 2*time.Second)
 	if err != nil {
 		return err
 	}
@@ -130,13 +135,40 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		time.Sleep(pollInterval)
 	}
 	if groupAlive(pgid) {
-		if !groupOwned(pgid, tag, grant) {
-			fmt.Fprintf(os.Stderr, "ownership proof for host process group %d disappeared "+
-				"during wind-down; skipping the kill of an unowned group\n", pgid)
+		// The kill-through rule: this wind-down proved ownership before
+		// its own TERM, and a group mid-death often has unreadable argv —
+		// INDETERMINATE within this bounded window is still ours to
+		// finish. Only a PROVABLY foreign group (a recycled pgid whose
+		// members positively carry someone else's argv) stops the kill.
+		if groupOwnership(pgid, tag, grant) == janitor.GroupNotOwned {
+			fmt.Fprintf(os.Stderr, "host process group %d is provably foreign after TERM; "+
+				"skipping the kill of a recycled group\n", pgid)
+			e.emit("wind-down", fmt.Sprintf("group %d recycled; kill skipped", pgid), map[string]string{
+				"missionId": e.Mission, "action": "skipped-recycled",
+			})
 			return nil
 		}
 		_ = unix.Kill(-pgid, syscall.SIGKILL)
+		killFloor, floorErr := ScaledWaitAtLeast(1, time.Second)
+		if floorErr != nil {
+			return floorErr
+		}
+		killDeadline := time.Now().Add(killFloor)
+		for groupAlive(pgid) && time.Now().Before(killDeadline) {
+			time.Sleep(pollInterval)
+		}
+		if groupAlive(pgid) {
+			// Loud, typed evidence — an abandoned group is the leak the
+			// compressed suite bleeds from; it must never exit silently.
+			e.emit("wind-down", fmt.Sprintf("group %d survived SIGKILL", pgid), map[string]string{
+				"missionId": e.Mission, "action": "leaked-group",
+			})
+			return fmt.Errorf("host process group %d survived the kill-through window", pgid)
+		}
 	}
+	e.emit("wind-down", fmt.Sprintf("group %d down", pgid), map[string]string{
+		"missionId": e.Mission, "action": "group-down",
+	})
 	return nil
 }
 

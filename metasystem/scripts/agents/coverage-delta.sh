@@ -194,7 +194,10 @@ for package in "${normalized[@]}"; do
   fi
   floor_display=$(awk -v floor="$floor" 'BEGIN { printf "%.1f", floor }')
 
-  test_output=$(go test -cover "$test_package" 2>&1)
+  # The same 30m ceiling the go gate carries: the missionrunner suite
+  # outgrew go test's default 10m, and a coverage probe that times out
+  # reads as a package failure with a phantom partial percentage.
+  test_output=$(go test -cover -timeout 30m "$test_package" 2>&1)
   test_rc=$?
   measured=$(printf '%s\n' "$test_output" \
     | sed -n 's/.*coverage: \([0-9][0-9.]*\)% of statements.*/\1/p' \

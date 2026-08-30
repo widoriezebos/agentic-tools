@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"golang.org/x/sys/unix"
 	"os"
 	"os/exec"
@@ -101,7 +102,7 @@ func TestGroupProbes(t *testing.T) {
 	if groupAlive(0) || groupAlive(-1) {
 		t.Fatal("a nonsense pgid read alive")
 	}
-	if groupOwned(self, "tag-that-cannot-appear-77aa", fixtureauth.GroupOwnershipGrant{}) {
+	if groupOwnership(self, "tag-that-cannot-appear-77aa", fixtureauth.GroupOwnershipGrant{}) == janitor.GroupOwned {
 		t.Fatal("ownership proven by a tag no member carries")
 	}
 }
@@ -183,54 +184,21 @@ func TestTerminateGroup(t *testing.T) {
 		t.Fatal("an unowned group was signaled")
 	}
 
-	// Owned: the tag is on the live member's command line, so the group is
-	// wound down within the grace window.
-	tag := "mr-owned-4c1d"
-	owned := exec.Command("bash", "-c", "exec -a sleep-"+tag+" sleep 30")
+	// Owned: the tag rides a SHIPPED positional shape (the tagged-hold
+	// form), because ownership is a positioned proof now — an argv that
+	// merely mentions or embeds the tag never authorizes a signal (the
+	// substring-kill hazard the janitor shapes closed).
+	tag := "metasystem-job-mr-owned-4c1d"
+	owned := exec.Command("bash", "-c", "sleep 30", "metasystem", "util", "hold", "--tag", tag)
 	owned.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := owned.Start(); err != nil {
 		t.Fatal(err)
 	}
 	// Reap concurrently: a deferred Wait would hold the child as a zombie,
 	// and a zombie keeps its group technically alive after the wind-down's
-	// SIGTERM — the group then reads alive with its ownership proof gone,
-	// which is the test harness's artifact, not the wind-down's failure.
+	// SIGTERM.
 	go owned.Wait()
 	ownedPgid, _ := syscall.Getpgid(owned.Process.Pid)
-	// The child execs twice (bash, then the tagged sleep). Ownership is
-	// briefly provable through bash's transitional argv — which still
-	// carries the tag — and terminateGroup's own re-check can then land in
-	// the inner execve window (the flake dossier's mechanism) and rightly
-	// skip the signal. Wait for the proof in its final, stable form: a
-	// member whose argv[0] IS the tagged name, after which no exec
-	// transition remains.
-	stablyOwned := func() bool {
-		pids, err := identity.AllPids()
-		if err != nil {
-			return false
-		}
-		for _, pid := range pids {
-			if memberGroup, err := syscall.Getpgid(int(pid)); err != nil || memberGroup != ownedPgid {
-				continue
-			}
-			exact, state, err := identity.KernelProber{}.Probe(pid)
-			if err != nil || state != identity.Alive || len(exact.Argv) == 0 {
-				continue
-			}
-			if filepath.Base(exact.Argv[0]) == "sleep-"+tag {
-				return true
-			}
-		}
-		return false
-	}
-	stableBy := time.Now().Add(2 * time.Second)
-	for !stablyOwned() {
-		if time.Now().After(stableBy) {
-			owned.Process.Kill()
-			t.Skip("argv tagging not visible on this host; the owned path needs it")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
 	if err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
 		t.Fatalf("terminating an owned group errored: %v", err)
 	}
@@ -279,7 +247,7 @@ func TestDeniedCapabilitiesActNowhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if groupOwned(self, "any-tag", fixtureauth.GroupOwnershipGrant{}) {
+	if groupOwnership(self, "any-tag", fixtureauth.GroupOwnershipGrant{}) == janitor.GroupOwned {
 		t.Fatal("a zero grant proved ownership of a live group")
 	}
 }
