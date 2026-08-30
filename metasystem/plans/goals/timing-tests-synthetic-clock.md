@@ -5,9 +5,9 @@
 - Origin: main
 - Next step: SLICE 1 ATTEMPTED (2026-08-29, within budget): the compressed-scale wedge is NOT a single leaker — bisection converged then falsified (the isolated pair passes; the 60-test window flakes even without the victim). Narrowed truth: cumulative cross-test flakiness under scale 50 (order- and load-dependent), consistent with compressed graces abandoning process groups. Compression stays OPT-IN (landed 9e1c291; suite green at default). REMAINING SLICES resized: (2) 3h instrument leaked-group accounting (count abandoned pgids per test under compression; fix winddown to kill-through with a real-fact floor instead of abandoning); (3) 3h sub-second taint identity + recovery windows; (4) 3h t.Parallel decoupling. Claim released for queue rotation per the keep-going order.
 - OpenedAt: 2026-08-27T17:12:26Z
-- Revision: 7
+- Revision: 8
 - Labels: shared
-- Budget: elapsedLimit=1d4h attemptLimit=16 reservedJobMinutesLimit=300 activeJobLimit=1
+- Budget: elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=45 activeJobLimit=1
 
 History:
 - 2026-08-27T17:12:26Z GRZ4RPVHPK0D6H2SKE8P1X46EV-m2-bc1be9cb open actor=human:wido targets=timing-tests-synthetic-clock
@@ -17,4 +17,5 @@ History:
 - 2026-08-29T14:12:41Z 6RDN6FT5A113SMWB9VKR2PGV20-m2-bc1be9cb claim actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
 - 2026-08-29T14:40:54Z 20RDB340JW8DFKARY5S1KD1BKA-m2-bc1be9cb edit actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
 - 2026-08-29T14:41:08Z 05QC5NP22JDT5PZFTQVNY4002B-m2-bc1be9cb release actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
-Integrity: sha256=67af13e527054500503f4164a5fb5c9a43337e5a6938f8eabc0d2f64ff4dda11
+- 2026-08-30T00:15:28Z FMMXTJ3Q89WPVBCN7PV9XZM4GK-m2-bc1be9cb set-budget actor=human:wido targets=timing-tests-synthetic-clock
+Integrity: sha256=c6f954d867ec06845525634b678446faa009cf4e8925fd2ec1702bc1d5d2de92
