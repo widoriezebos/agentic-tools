@@ -7,6 +7,8 @@ This paper is not the result of me having some brain wave and then writing that 
 
 ## The paper in five parts
 
+One ordinary change, how long a user stays signed in, runs as an example through every chapter. Passages that tell that story are set apart as slanted, indented blocks; everything else is the design.
+
 **Part I: The shift (chapters 1-2).** Engineering attention has moved up a level before: assembly to compilers, servers to infrastructure as code, manual testing to continuous integration. Agentic engineering extends that move to engineering itself, but it begins by separating what delivery requires (intent, construction, verification, care and learning) from the ceremonies humans invented around those needs. Intent becomes the durable interface, while its ambiguity, conflict and capacity to be wrong become design problems in their own right.
 
 **Part II: The workforce and the trap (chapters 3-4).** Agentic labor has different limits: some costs fall, others change shape, memory exists only in records, failure is silent by default, plausible work can be wrong, and trustworthy judgment remains scarce. Copying standups, sprints, reviews and estimates into this workforce preserves familiar forms instead of the needs they served. Chapter 4 asks, ceremony by ceremony, which practices to discard, which to replace with machinery, which to adapt and which to keep as explicitly human acts.

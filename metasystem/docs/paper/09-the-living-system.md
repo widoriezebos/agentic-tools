@@ -8,7 +8,9 @@ A delivery system is living in a limited but important sense. Its workers start,
 
 ## Silent death and deadlines
 
-At 10:03, the migration worker last records the set of existing sessions it intends to update. At 10:04, an independent signal confirms that the worker is still running. By 10:09, neither the intended update nor another signal appears. A status that still says "working" cannot distinguish slow progress from a stopped worker.
+> *At 10:03, the migration worker last records the set of existing sessions it intends to update. At 10:04, an independent signal confirms that the worker is still running. By 10:09, neither the intended update nor another signal appears.*
+
+A status that still says "working" cannot distinguish slow progress from a stopped worker.
 
 The system observes two things. It looks for recent work products that change the recorded state of the task, and it looks for a heartbeat, a small independently observed sign that the worker is still able to act. Neither is sufficient alone. A worker can remain alive while making no progress, and a finished work product can remain visible after its worker has died. Together they allow a liveness watcher to distinguish activity, waiting and silence more reliably.
 
@@ -18,7 +20,9 @@ Timeout does not mean blind repetition. Before a task begins, the system records
 
 ## Identity must be checked at use
 
-A liveness watcher decides to stop the silent worker. Between observation and action, that worker ends and its short numeric identifier is assigned to a new, unrelated task. If the watcher acts only on the remembered number, it stops the wrong work. The identifier was once accurate; it is not authority now.
+> *A liveness watcher decides to stop the silent worker. Between observation and action, that worker ends and its short numeric identifier is assigned to a new, unrelated task. If the watcher acts only on the remembered number, it stops the wrong work.*
+
+The identifier was once accurate; it is not authority now.
 
 Consequential actions check identity at the moment they occur. The system verifies both the actor or object being named and its current claim to the resource. Before stopping work, it confirms that the target is still the same worker and still belongs to the timed-out task. Before replacing session data, it confirms that the candidate is still authorized for that exact data. Before release, it confirms that the accepted change is still the change whose evidence passed.
 
@@ -36,7 +40,9 @@ This is least authority: each task receives only the information, resources and 
 
 ## Safe against itself
 
-A well-meaning worker encounters a failed expiry check and decides that the check is obsolete. It attempts to remove the refusal and continue. Another worker sees two similar session stores and prepares to replace the broader one. Neither action requires malice. Confidence, stale context or an overly broad instruction is enough.
+> *A well-meaning worker encounters a failed expiry check and decides that the check is obsolete. It attempts to remove the refusal and continue. Another worker sees two similar session stores and prepares to replace the broader one.*
+
+Neither action requires malice. Confidence, stale context or an overly broad instruction is enough.
 
 Protection is enforced where the action happens, not in the worker's judgment. The first worker cannot remove the refusal: changing an enforced rule requires the rule's authority, and a builder's confidence is not that authority. The second worker's replacement does not start on a loose description: it must name the exact store to be replaced, the authority that permits it and the limit of what it may touch. If the target is unknown, described too broadly or not owned by the task, the replacement is refused.
 
@@ -46,7 +52,7 @@ The surrounding controls also protect records from the workers they describe. A 
 
 ## The hostile world
 
-During construction, the builder reads a package that promises to simplify session handling. Its instructions urge any tool using it to reveal a secret before continuing. Another attacker swaps a dependency after its examination, so the copy that runs is not the copy that was examined. Elsewhere, generated code opens a path that accepts a forged session marker. A compromised checking tool reports success without running the boundary case. An attacker who can alter the record tries to make the refused candidate appear accepted.
+> *During construction, the builder reads a package that promises to simplify session handling. Its instructions urge any tool using it to reveal a secret before continuing. Another attacker swaps a dependency after its examination, so the copy that runs is not the copy that was examined. Elsewhere, generated code opens a path that accepts a forged session marker. A compromised checking tool reports success without running the boundary case. An attacker who can alter the record tries to make the refused candidate appear accepted.*
 
 These possibilities define the hostile world. Harm can enter through user input, generated code, tools, outside dependencies, stolen secrets or tampered evidence. Good intent inside the delivery system does not make those sources trustworthy. The design begins by asking where information or authority crosses between parts with different reasons to trust them.
 

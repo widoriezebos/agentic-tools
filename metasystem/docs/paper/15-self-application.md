@@ -2,7 +2,9 @@
 
 **A rule change must never be its own judge.**
 
-A builder proposes a faster release rule. The current enforced rule requires an independent examination, a tested rollback and evidence bound to the exact candidate. The proposed rule removes one check that its builder calls redundant. If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
+> *A builder proposes a faster release rule. The current enforced rule requires an independent examination, a tested rollback and evidence bound to the exact candidate. The proposed rule removes one check that its builder calls redundant.*
+
+If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
@@ -10,7 +12,7 @@ This stress test is necessary for the paper's proposal. A delivery system that c
 
 ## The distinctive self-change problem
 
-Suppose the session incident in Chapter 12 has produced an enforced rule against local-time comparisons in security limits. Months later, a builder changes that rule so that it recognizes a new time interface. The candidate includes both the revised rule and a revision to the cases used to test it. One of those revisions removes the broken case that crosses a daylight-saving boundary, and nothing calls attention to the removal.
+> *Suppose the session incident in Chapter 12 has produced an enforced rule against local-time comparisons in security limits. Months later, a builder changes that rule so that it recognizes a new time interface. The candidate includes both the revised rule and a revision to the cases used to test it. One of those revisions removes the broken case that crosses a daylight-saving boundary, and nothing calls attention to the removal.*
 
 If only the candidate check runs, it passes. The same change has weakened the independent examination and erased the evidence that would reveal the weakness. The failure is circular because the object under examination controls the means of examination. Separating authorship from review helps, but it does not solve the problem when both roles must use the compromised candidate to decide whether it is safe.
 
@@ -30,7 +32,9 @@ Recovery also needs to cover authority and data, not only program files. If a ca
 
 ## Rules bind their own maintenance
 
-The builder of the faster release rule argues that the ordinary review requirement should not apply because the work only changes delivery machinery. That argument reverses the risk. A defect in one application feature may affect one path; a defect in an enforced rule may admit many later defects. So the rule governing independent examination applies to its own replacement unless an authorized exception explicitly supplies an equal or stronger protection.
+> *The builder of the faster release rule argues that the ordinary review requirement should not apply because the work only changes delivery machinery.*
+
+That argument reverses the risk. A defect in one application feature may affect one path; a defect in an enforced rule may admit many later defects. So the rule governing independent examination applies to its own replacement unless an authorized exception explicitly supplies an equal or stronger protection.
 
 Workers changing the system receive only the permissions needed for that work. A builder may propose a new authority rule but may not enact it. An independent examiner may attack the proposal but may not repair it and accept the repair itself. An authorized custodian may bind the accepted candidate to its evidence but may not waive a failed check.
 

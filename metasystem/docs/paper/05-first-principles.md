@@ -2,7 +2,9 @@
 
 **A condition that must hold cannot depend on every worker choosing to remember it.**
 
-A candidate reaches release with a persuasive explanation and a passing check. The explanation says the session change is safe. The builder's own check never tried a late background response, and the candidate can still revive an expired session. If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
+> *A candidate reaches release with a persuasive explanation and a passing check. The explanation says the session change is safe. The builder's own check never tried a late background response, and the candidate can still revive an expired session.*
+
+If the system proceeds because the builder sounds confident, it has made trust the control. If it refuses because a required observation is missing, records the refusal and returns the candidate for repair, it has begun to act from principles.
 
 Later chapters develop these principles: their mechanisms, their limits, the arguments against them. Here we state them briefly, so the machinery can be judged against a small set of purposes rather than a collection of inherited steps.
 
@@ -18,7 +20,9 @@ The metaphor stops there. Software has no moral agency, cannot accept accountabi
 
 ## Intent is controlling and revisable
 
-A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work. The system exists to serve that human intent. Neither the builder's preferred design nor the chance to finish sooner outranks it.
+> *A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work.*
+
+The system exists to serve that human intent. Neither the builder's preferred design nor the chance to finish sooner outranks it.
 
 Intent controls construction, checks, release and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. Chapter 2 makes intent versioned, challengeable and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a binding decision.
 
@@ -26,7 +30,9 @@ The principle says that machinery acts under the current authorized intent, whil
 
 ## Evidence over trust
 
-After the builder revises the candidate, it reports that expiry is now final. An independent examination sends the late response again and observes that access remains closed. The observation supports the claim in a way the builder's assurance cannot, because it distinguishes the repaired behavior from the earlier failure.
+> *After the builder revises the candidate, it reports that expiry is now final. An independent examination sends the late response again and observes that access remains closed.*
+
+The observation supports the claim in a way the builder's assurance cannot, because it distinguishes the repaired behavior from the earlier failure.
 
 Completion claims must be tied to such observations. Evidence here means traceable results: test outcomes, independent findings, release observations and records of reversal. Proof is narrower: a conclusion demonstrated only within named limits and assumptions.
 
@@ -34,7 +40,9 @@ Trust in a capable builder can guide where to look. It cannot authorize a conseq
 
 ## Records are the only durable memory
 
-A builder learns that existing sessions need separate treatment to adopt the new limit, records nothing and disappears when its session ends. The next builder sees the request but not the discovery. The system has memory only in the conversational sense, which is no memory once that conversation is gone.
+> *A builder learns that existing sessions need separate treatment to adopt the new limit, records nothing and disappears when its session ends. The next builder sees the request but not the discovery.*
+
+The system has memory only in the conversational sense, which is no memory once that conversation is gone.
 
 Intent, current state, decisions, candidate identity, checks, refusals and observed results must live in durable records. Another authorized actor should be able to continue without guessing what the missing worker knew. The records also allow an independent examiner to receive the evidence it needs without receiving the builder's entire path of reasoning.
 
@@ -60,6 +68,8 @@ Some decisions cannot be bought with more computation. Machinery may gather info
 
 ## Failure leaves a record
 
-An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty. The examination did not finish, and a report that says it did would bury that finding. The right end state records the conflicting observations, the cases that were tried and the budget that ran out, so that whoever is authorized to decide the next step starts from what actually happened.
+> *An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty.*
+
+The examination did not finish, and a report that says it did would bury that finding. The right end state records the conflicting observations, the cases that were tried and the budget that ran out, so that whoever is authorized to decide the next step starts from what actually happened.
 
 The system should prefer a clear refusal supported by evidence to a success it cannot justify. Failure, near-miss (a dangerous path stopped before observed harm) and uncertainty are outcomes in their own right, and they are recorded as such. They remain connected to the intent and candidate so that care can repair immediate harm and learning can improve later work. A worker may disappear; the fact that it failed and what it learned must not disappear with it.

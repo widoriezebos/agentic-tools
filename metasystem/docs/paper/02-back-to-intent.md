@@ -34,7 +34,9 @@ As construction becomes easier to repeat, this interface becomes more important:
 
 ## Intent can be wrong
 
-A support team asks for a warning before sign-out because users report lost work. The security authority asks for no warning because any extension could keep an unattended account open. Both requests sound precise. Together they conflict unless the warning requires direct action and has a bounded duration. Construction cannot resolve this conflict. The defect is an unresolved relationship between two desired outcomes.
+> *A support team asks for a warning before sign-out because users report lost work. The security authority asks for no warning because any extension could keep an unattended account open.*
+
+Both requests sound precise. Together they conflict unless the warning requires direct action and has a bounded duration. Construction cannot resolve this conflict. The defect is an unresolved relationship between two desired outcomes.
 
 Other defects are quieter. "Active work" may include typing, silent reading, a background refresh or just keeping a page visible. "Existing sessions" may mean sessions created before release, sessions on every device or only sessions that contact the service again. "No disruption" may conceal an impossible promise. Asking for examples at the edge exposes these meanings: what happens to a reader who does nothing, a reader who responds, a sleeping laptop and an upload already in progress? Asking what observation would reveal failure exposes weak success language: fewer complaints may reflect fewer users rather than a safer session policy.
 

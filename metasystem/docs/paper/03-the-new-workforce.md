@@ -2,7 +2,7 @@
 
 **Candidates become plentiful; a well-supported decision about one exact candidate stays scarce.**
 
-A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.
+> *A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.*
 
 Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be built for what this workforce actually is, not for what people hope or fear it is.
 
@@ -26,15 +26,27 @@ Later role design should rely only on constraints that are really gone. Two role
 
 ## What appears
 
-A builder reaches a useful observation, then its session ends before the observation enters a durable record. The next builder begins with the original request and repeats the same search. Memory existed during the attempt but did not survive it. Machine workers are stateless: continuity depends on records outside the worker, because the worker will not remember tomorrow.
+> *A builder reaches a useful observation, then its session ends before the observation enters a durable record. The next builder begins with the original request and repeats the same search.*
 
-Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely. To an observer, all four look the same: a worker that needs more time. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
+Memory existed during the attempt but did not survive it. Machine workers are stateless: continuity depends on records outside the worker, because the worker will not remember tomorrow.
 
-A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session. Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
+> *Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely.*
 
-An independent examiner then receives the builder's conclusion and repeats it in gentler words. The independent examiner may be biased by the supplied framing or may favor a response that appears cooperative. The pattern is agreement-seeking. Asking for examination does not create independence if every independent examiner starts from the same reasoning or is rewarded only for producing a smooth consensus.
+To an observer, all four look the same: a worker that needs more time. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
-Long attempts introduce another failure. A builder begins with the authorized request, follows a nearby problem, improves that problem and returns with a result that no longer serves the original outcome. Nothing in the final work is obviously absurd; the attempt just changed direction. This paper calls that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
+> *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
+
+Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
+
+> *An independent examiner then receives the builder's conclusion and repeats it in gentler words.*
+
+The independent examiner may be biased by the supplied framing or may favor a response that appears cooperative. The pattern is agreement-seeking. Asking for examination does not create independence if every independent examiner starts from the same reasoning or is rewarded only for producing a smooth consensus.
+
+Long attempts introduce another failure.
+
+> *A builder begins with the authorized request, follows a nearby problem, improves that problem and returns with a result that no longer serves the original outcome.*
+
+Nothing in the final work is obviously absurd; the attempt just changed direction. This paper calls that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
 
 Even the identity of an active attempt can be unclear. A delayed message may come from the original worker, a retry or a replacement. Two apparent attempts may share the same hidden context. A resumed worker may look fresh while retaining the assumption an independent examiner was meant to challenge. Where independence or custody is at stake, the system needs evidence of which actor performed which action, what context it received and which exact candidate it judged.
 

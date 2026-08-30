@@ -2,7 +2,7 @@
 
 **Only production can show what the tests could not imagine.**
 
-The session-expiry change passes every required examination and reaches a small part of live traffic. The application remains available. Error rates stay low. Yet several people sign in again and do not return to the page where they were working. One loses text entered into a form. Another completes the sign-in step but is immediately sent out again. None of these experiences appeared in any check the candidate passed.
+> *The session-expiry change passes every required examination and reaches a small part of live traffic. The application remains available. Error rates stay low. Yet several people sign in again and do not return to the page where they were working. One loses text entered into a form. Another completes the sign-in step but is immediately sent out again. None of these experiences appeared in any check the candidate passed.*
 
 Release does not end delivery. Construction can create controlled evidence about a proposed behavior, but only production can show how that behavior meets real devices, real data, changing conditions and people pursuing work the tests did not imagine. Care is the continuing work of observing those outcomes, containing harm, repairing failure and revising the system when live evidence disproves an earlier claim. It is distributed: the releaser observes, contains or restores within its bounds; the builder repairs; and the responsible authority revises intent or governing rules.
 
@@ -20,7 +20,9 @@ A recorded observation leads to one of three things. If it stays inside the boun
 
 ## Detect drift
 
-Three months after release, a browser update changes how sleeping pages resume. No session code changes. A response that used to arrive before expiry now arrives after it, and the application treats it differently. The behavior that passed examination in August can become wrong in November without a new candidate passing through the delivery loop.
+> *Three months after release, a browser update changes how sleeping pages resume. No session code changes. A response that used to arrive before expiry now arrives after it, and the application treats it differently.*
+
+The behavior that passed examination in August can become wrong in November without a new candidate passing through the delivery loop.
 
 Software lives among changing dependencies, data, users, devices, traffic and rules. Expected variation occurs inside the range the evidence already supports: more sign-ins on a busy morning, for example, do not by themselves invalidate the design. Chapter 3 used drift for a builder moving off the authorized outcome; production has its own version: a changing condition breaks an assumption that made the earlier evidence meaningful. A new device pattern, a changed outside service, a different population or accumulating data can move the application outside the conditions that were examined.
 
@@ -30,7 +32,9 @@ Not every deviation justifies intervention. Ordinary variation remains within au
 
 ## Incidents begin with harm containment
 
-During expansion, support receives credible reports that people on a particular device lose unsaved work after the warning. The overall error rate remains normal, and the cause is not yet known. Waiting for a complete explanation of the cause would leave more people exposed.
+> *During expansion, support receives credible reports that people on a particular device lose unsaved work after the warning. The overall error rate remains normal, and the cause is not yet known.*
+
+Waiting for a complete explanation of the cause would leave more people exposed.
 
 This is an incident: an observed or credible threat to an outcome the system is responsible for protecting. The definition includes user harm that does not appear as a technical failure. A repeated sign-in loop is an incident even if every request returns a formally successful response. A session left open on a shared device is an incident even if no user reports it. Credible evidence of harm is enough to begin containment.
 
@@ -48,7 +52,9 @@ Repair is not one kind of work here, because the fault can sit in four different
 
 ## Live evidence revises intent
 
-After restoration, the investigation finds that the implementation followed the written rule. A shared device used in a clinic moves between people throughout the day. Restoring the last page after sign-in exposes the previous person's context to the next authorized user. The problem is not a broken implementation. One part of the stated outcome is harmful in a setting the original ruling did not consider.
+> *After restoration, the investigation finds that the implementation followed the written rule. A shared device used in a clinic moves between people throughout the day. Restoring the last page after sign-in exposes the previous person's context to the next authorized user.*
+
+The problem is not a broken implementation. One part of the stated outcome is harmful in a setting the original ruling did not consider.
 
 Production evidence can disprove claims at several levels. It may show that construction failed to implement the authorized behavior. It may show that a test passed without distinguishing a harmful case. It may show that the risk classification understated exposure. It may also show that the intent itself fails to serve the people it governs. Treating the original request as untouchable would preserve a clean chain from intent to behavior at the cost of preserving the wrong behavior.
 

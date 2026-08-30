@@ -18,7 +18,9 @@ Roles begin with the limits that survive. They are not permanent identities assi
 
 ## Hazards determine required separations
 
-The first session-expiry candidate treats a delayed background response as fresh activity. The builder can explain why the design looked reasonable: the application already uses recent requests as evidence that a session is alive. That explanation is useful, but it also reveals a commitment. The builder has selected a model of the problem and invested effort in making it work. Authorship does not make the builder dishonest. It makes acceptance from the same viewpoint weaker: the assumptions that most need challenging are the ones the builder now sees the result through. So building and accepting are kept separate, and acceptance needs an independent examiner.
+> *The first session-expiry candidate treats a delayed background response as fresh activity. The builder can explain why the design looked reasonable: the application already uses recent requests as evidence that a session is alive.*
+
+That explanation is useful, but it also reveals a commitment. The builder has selected a model of the problem and invested effort in making it work. Authorship does not make the builder dishonest. It makes acceptance from the same viewpoint weaker: the assumptions that most need challenging are the ones the builder now sees the result through. So building and accepting are kept separate, and acceptance needs an independent examiner.
 
 Now suppose the change must update existing sessions. Construction needs permission to prepare that update, but a mistake in applying it could sign out every user or damage stored state. The power to explore and construct is broad in what it may try and narrow in what it may touch, compared with the power to act on live data. Because of that destructive reach, permissions are also kept separate: permission to make a candidate does not imply permission to replace data, stop work or release the candidate. Authority narrows as an action becomes harder to reverse or affects more people.
 
@@ -50,7 +52,11 @@ Any of the seven can be held by a person or by machinery; the configurations lat
 
 Suppose the builder of the session change runs its own checks, declares them sufficient and accepts the candidate. The record may look complete, yet the original assumption about background refresh can pass from design into test without encountering another point of view. The builder may check its work, but it may not be the authority that accepts its own claim. The combination is prohibited because it puts building and accepting back in the same actor.
 
-The separation cuts the other way too. An independent examiner discovers that a late response revives an expired session. If it changes the candidate itself and then continues examining it, it becomes an unrecorded builder and begins judging its own repair. It may propose a correction or return a precise finding, but a builder must perform the change and a fresh independent examination must judge the new candidate.
+The separation cuts the other way too.
+
+> *An independent examiner discovers that a late response revives an expired session.*
+
+If it changes the candidate itself and then continues examining it, it becomes an unrecorded builder and begins judging its own repair. It may propose a correction or return a precise finding, but a builder must perform the change and a fresh independent examination must judge the new candidate.
 
 Custody and observation have similar limits. The actor that binds an exact candidate to its passed evidence may not also construct or examine that candidate. Otherwise the custodian could accept a candidate it constructed or rely on an examination it performed itself. A liveness watcher may stop or replace work only through narrow, checked authority, and it may not erase the records needed to determine why a worker stopped. A narrator may read enough to explain the outcome but may not alter state, accept work, authorize release or hide an action by performing it while describing it.
 
@@ -58,7 +64,9 @@ These prohibitions do not reproduce job boundaries. They preserve the conditions
 
 ## Why the custodian may accept a change
 
-At the end of examination, the session record names an exact candidate. It also contains the human ruling on passive reading, the failure of the first attempt, the checks on refresh and upload behavior and the proof that rollback remains possible. Someone must perform the small but consequential act that moves this candidate from proposed to accepted. Leaving that act unowned would break the chain at its final link.
+> *At the end of examination, the session record names an exact candidate. It also contains the human ruling on passive reading, the failure of the first attempt, the checks on refresh and upload behavior and the proof that rollback remains possible.*
+
+Someone must perform the small but consequential act that moves this candidate from proposed to accepted. Leaving that act unowned would break the chain at its final link.
 
 The custodian holds that link. It verifies that the candidate presented for acceptance is the one the independent examiner challenged, that every required result belongs to that candidate and that every enforced rule is satisfied. It then performs only the authorized acceptance action. It cannot waive a refusal, reinterpret a human ruling, repair a test or substitute a later version. If any required fact is missing, it leaves the candidate unaccepted.
 
@@ -68,7 +76,9 @@ What the custodian hands on is an accepted candidate; what runs after the releas
 
 ## Why the narrator has no power
 
-At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release. A narrator can turn the record into that report. The report has influence because it shapes what the responsible authority notices and may shape a later decision.
+> *At 4:30, the responsible authority does not need every event from the day. They need to know what changed, which ambiguity required their ruling, what failed, what passed, what was accepted and what happened after release.*
+
+A narrator can turn the record into that report. The report has influence because it shapes what the responsible authority notices and may shape a later decision.
 
 That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the report states a material result, the responsible authority can reach the exact observation supporting it. The report becomes inspectable, while authority remains with actors whose powers are named.
 

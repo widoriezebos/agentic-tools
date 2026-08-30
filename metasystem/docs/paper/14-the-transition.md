@@ -18,7 +18,9 @@ The team turns scattered evidence into revisable intent in a controlled way; it 
 
 ## Establish a measurable baseline
 
-The current team takes two days to prepare and release an ordinary authentication change. A reviewer spends several hours reconstructing which paths it touches. Manual checks find some regressions, while production incidents show that sleeping devices and delayed responses have escaped in the past. Recovery usually takes forty minutes after the release owner decides to reverse. These facts form a baseline only when their sources and uncertainty are recorded.
+> *The current team takes two days to prepare and release an ordinary authentication change. A reviewer spends several hours reconstructing which paths it touches. Manual checks find some regressions, while production incidents show that sleeping devices and delayed responses have escaped in the past. Recovery usually takes forty minutes after the release owner decides to reverse.*
+
+These facts form a baseline only when their sources and uncertainty are recorded.
 
 The baseline connects cost to protected outcomes. It measures elapsed delivery time and human attention, but also failures found before release, failures missed, the number of people exposed, time to containment, success of reversal, repeated sign-ins, lost work and unresolved support reports. Activity counts alone cannot show whether the old process is safe. A quick release that harms users is not an efficient reference point, and an expensive review that never catches a relevant fault may not be protection.
 
@@ -30,7 +32,9 @@ The baseline makes later claims testable. If the new path finds clock-boundary f
 
 For the first expiry candidate, the new builder traces behavior and raises the three interpretations for one ruling, but it does not bypass the current request and approval path. Its independent examination runs beside the existing manual checks. Its release plan is compared with the runbook. Each path records what it would accept, refuse or ask a responsible authority to decide.
 
-The paths agree that existing sessions need coverage and disagree about a late background response. The old checklist misses that case; the new examination catches it but overlooks an administrative exception known to the support team. Neither can replace the other yet. Together they expose missing intent and checks while the current authority boundary limits harm.
+> *The paths agree that existing sessions need coverage and disagree about a late background response. The old checklist misses that case; the new examination catches it but overlooks an administrative exception known to the support team.*
+
+Neither can replace the other yet. Together they expose missing intent and checks while the current authority boundary limits harm.
 
 This side-by-side operation is coexistence. It keeps separate records of agreement, disagreement, cost, delay and missed cases. Each path records its result before seeing the other's, so mutual influence cannot look like independent confirmation. Neither path receives credit for a failure revealed only by the other.
 
@@ -42,7 +46,9 @@ After several low-risk changes, the new checks reproduce known failures, permit 
 
 That separation is intentional. Machinery may receive permission to propose a change before it receives permission to test against sensitive data. It may receive permission to test before it may accept the result. It may accept a low-risk candidate before it may expose users, and it may release to a small group before it may expand further. Each permission is transferred only after evidence shows that the machinery can perform the action and contain its consequences.
 
-The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary and includes behavior not previously tested. During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. The releaser first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
+> *The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary and includes behavior not previously tested.*
+
+During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. The releaser first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
 
 Scope widens from reversible, familiar, limited work because failures are cheaper to study and contain. That evidence does not authorize an irreversible migration or policy waiver. Authority follows demonstrated protection across the relevant risk range.
 
@@ -66,7 +72,7 @@ Rollback contains harm and restores known protection while the team examines the
 
 ## Finish by removing proven duplication
 
-After a declared period, the new examination has caught every failure found by the old session checklist, found additional boundary failures, permitted legitimate administrative cases and supported faster recovery across the agreed risk range. The responsible authority explicitly retires that checklist. Its history and retirement reason remain available, but builders no longer perform it for reassurance.
+> *After a declared period, the new examination has caught every failure found by the old session checklist, found additional boundary failures, permitted legitimate administrative cases and supported faster recovery across the agreed risk range. The responsible authority explicitly retires that checklist. Its history and retirement reason remain available, but builders no longer perform it for reassurance.*
 
 Other practices end differently. The fixed batching ceremony is removed because Chapter 4's established deletion decision still holds. The cross-functional discussion remains because it continues to expose conflicting intent. Human release approval narrows to unfamiliar or high-consequence changes, while the releaser handles established low-risk cases within observed bounds. The transition completes one responsibility at a time; no single declaration makes the new system ready.
 

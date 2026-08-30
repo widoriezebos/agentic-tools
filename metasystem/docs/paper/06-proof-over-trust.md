@@ -2,19 +2,23 @@
 
 **A check that has never failed on a broken version has proved nothing yet.**
 
-In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.
+> *In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.*
 
 The gap between the explanation and the observation is the whole principle: a convincing claim can point you somewhere, but only well-grounded evidence and bounded proof can authorize an action with consequences. The aim is an accurate statement of what one exact result has and has not shown.
 
 ## Evidence, proof and the boundary between them
 
-A check sets a clock to one second after expiry, sends a request and observes rejection. That result is evidence for the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is evidence of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition and observable result.
+> *A check sets a clock to one second after expiry, sends a request and observes rejection.*
+
+That result is evidence for the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is evidence of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition and observable result.
 
 What this check can prove is narrower. Within its controlled clock, a specified session state, a stated definition of activity and the exact candidate examined, it demonstrates that rejection follows. The conclusion holds inside those boundaries and assumptions. It does not become a universal statement about every device, delay, future revision or user just because the check passed.
 
 ## Enforced rules instead of guidelines
 
-The first candidate reaches a release step with the late-response check failing. A guide beside the work says that all session checks should pass. The builder can still proceed if the guide has no power. When the same condition sits at the release action and refuses the candidate, the missing protection becomes effective rather than advisory.
+> *The first candidate reaches a release step with the late-response check failing. A guide beside the work says that all session checks should pass.*
+
+The builder can still proceed if the guide has no power. When the same condition sits at the release action and refuses the candidate, the missing protection becomes effective rather than advisory.
 
 This is an enforced rule. It controls a named action, judges the exact candidate presented for that action and explains a refusal in plain language. "Release refused: a response received after expiry restores access" is governable. "Policy failed" is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
 
@@ -22,7 +26,9 @@ Binding to the exact candidate is essential. Evidence from an earlier version ca
 
 ## Discriminating tests
 
-A test passes on the repaired candidate. The independent examiner then runs it against the earlier candidate that revives the expired session. If the test also passes there, it does not distinguish the claimed protection from its known failure. The passing result measures only the test's ability to agree with both versions.
+> *A test passes on the repaired candidate. The independent examiner then runs it against the earlier candidate that revives the expired session.*
+
+If the test also passes there, it does not distinguish the claimed protection from its known failure. The passing result measures only the test's ability to agree with both versions.
 
 A discriminating test must fail on a relevant broken version and pass on the supported one. A preserved known-bad candidate can provide that comparison. Where no natural example exists, the independent examiner can introduce a small fault, such as reversing the expiry comparison or allowing refresh to extend the session, and confirm that the test detects it. The fault does not show that every fault will be found; it shows that this test responds to the behavior it claims to protect.
 
@@ -48,7 +54,9 @@ Chapter 11 applies the same questions to production, comparison and the decision
 
 ## What proof cannot prove
 
-Every session check passes, but both the candidate and the checks define a visible page as proof of human activity. An unattended computer with the page open then stays signed in forever. The tests accurately demonstrate behavior under their rule. The rule is the mistake.
+> *Every session check passes, but both the candidate and the checks define a visible page as proof of human activity. An unattended computer with the page open then stays signed in forever.*
+
+The tests accurately demonstrate behavior under their rule. The rule is the mistake.
 
 No proof exceeds its boundary, source of expected results and assumptions. A test derived from the same mistaken interpretation as the candidate can make agreement look like correctness. Several independent examiners using the same model or data can repeat one blind spot. A fixed set of cases cannot cover every network delay, assistive technology, future browser or user behavior the service will meet.
 
@@ -66,7 +74,9 @@ Low risk does not mean no control. A path authorized by enforced rules still nee
 
 ## Repair a mistaken classification
 
-In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. The releaser contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it. Together those acts form care.
+> *In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. The releaser contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it.*
+
+Together those acts form care.
 
 The classification is a problem of its own. The rule failed to recognize that the activity signal involved a value choice and broad exposure. That missed trigger is treated as a defect rather than bad luck. Its record includes the evidence available before release, the evidence found afterward and the reason the earlier rule did not escalate.
 
@@ -76,6 +86,6 @@ Repair then tests a revised classification against this case and against cases t
 
 Chapter 1 already records the ruling, named checks, refused candidate and one human interruption. Here those facts set the task: find the observations that tell supported behavior apart from the known failure.
 
-The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison on purpose and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.
+> *The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison on purpose and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.*
 
 The four risk questions make the depth decision clear. Authentication failure can expose accounts or lock every signed-in user out; the consequence is severe. The boundary behavior is subtle enough to be unfamiliar in important cases. Every current session may be exposed. Related changes to warnings, uploads and restoration have accumulated around the expiry rule. Independent human review is triggered even if the final repair is a one-line comparison.

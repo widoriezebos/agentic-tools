@@ -38,7 +38,9 @@ This stop rule also makes failure visible. A stopped attempt is not disguised as
 
 ## Parallel attempts include the cost of judging
 
-Two builders propose different session designs. One records a fixed expiry time and grants uploads a narrow continuation. The other keeps a separate activity history and derives expiry when each request arrives. Producing both may be cheap. Deciding between them requires each to be understood, challenged, compared against the ruling and examined for reversal and live behavior.
+> *Two builders propose different session designs. One records a fixed expiry time and grants uploads a narrow continuation. The other keeps a separate activity history and derives expiry when each request arrives.*
+
+Producing both may be cheap. Deciding between them requires each to be understood, challenged, compared against the ruling and examined for reversal and live behavior.
 
 Chapter 3's production-versus-judging gap returns as a price: every additional attempt creates a judging obligation. Someone or something must identify the meaningful differences, test claims that are not shared, resolve conflicting evidence and explain why one result should displace another. If human judgment is required, attention may be the scarcest part of the exercise.
 
@@ -54,7 +56,9 @@ A correction to thousands of low-impact help pages can be much larger and remain
 
 ## When the machinery is not worth its cost
 
-A person writes a disposable program to compare two local data files once, examines the result and throws the program away. Building durable role separation, continuous observation, an acceptance custodian and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low, and any mistake is easy to notice and reverse.
+> *A person writes a disposable program to compare two local data files once, examines the result and throws the program away.*
+
+Building durable role separation, continuous observation, an acceptance custodian and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low, and any mistake is easy to notice and reverse.
 
 This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost. The possibility of automation alone does not justify it.
 

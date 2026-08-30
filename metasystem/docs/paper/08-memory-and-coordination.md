@@ -2,13 +2,17 @@
 
 **Work that lives only inside a worker loses its memory the moment the worker stops.**
 
-Halfway through preparing existing sessions for the new expiry rule, a builder stops. No colleague remembers the last command, because there is no colleague watching over its shoulder. The next builder must determine whether any session was changed, which candidate was in use, which decisions already bind the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
+> *Halfway through preparing existing sessions for the new expiry rule, a builder stops. No colleague remembers the last command, because there is no colleague watching over its shoulder.*
+
+The next builder must determine whether any session was changed, which candidate was in use, which decisions already bind the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
 
 The system keeps memory outside its workers, because any worker can disappear. Intent, decisions, claims, actions, results and current state become durable records as the work proceeds. That memory also coordinates workers that do not share a conversation or a working day. It can show where work is, who may act next and what evidence an action must preserve. It cannot decide which human value should prevail.
 
 ## One authoritative record, with access limited by role
 
-Consider the first session-expiry candidate. One report says it is ready. Another says a delayed background response revives an expired session. A third says the candidate was repaired, but the evidence belongs to the earlier version. If all three reports can determine the state of the work, "ready" has no stable meaning. Release can follow whichever story an actor happens to read.
+> *Consider the first session-expiry candidate. One report says it is ready. Another says a delayed background response revives an expired session. A third says the candidate was repaired, but the evidence belongs to the earlier version.*
+
+If all three reports can determine the state of the work, "ready" has no stable meaning. Release can follow whichever story an actor happens to read.
 
 The remedy is one authoritative record: a structured, history-preserving source that alone determines the current state. For the case established in Chapter 1, it binds every state transition to the actor, authority, exact candidate and evidence that support it. Earlier states remain visible to authorized readers rather than being rewritten to make the final path look clean. A private note can help a worker think, but it cannot make a candidate accepted or an enforced rule passed until the relevant fact enters the authoritative record.
 
@@ -46,12 +50,16 @@ Coordination orders actions and preserves their relationships. It can require th
 
 ## Two audiences, one source
 
-At 4:30, machinery needs to know the exact accepted candidate and whether every required check passed. The responsible authority needs a readable report of the ruling, refusal, accepted result and production bounds. Presenting the responsible authority with raw state changes would hide the decision in detail. Presenting machinery with a polished summary would hide the exact state in prose.
+> *At 4:30, machinery needs to know the exact accepted candidate and whether every required check passed. The responsible authority needs a readable report of the ruling, refusal, accepted result and production bounds.*
+
+Presenting the responsible authority with raw state changes would hide the decision in detail. Presenting machinery with a polished summary would hide the exact state in prose.
 
 The system produces two views from one source. Structured fields allow machinery to determine state and enforce permissions. A readable report lets a person understand the outcome, exceptions, failures and consequences. Every material sentence in that report remains linked to the record from which it was drawn. The human view may compress; it may not create a second truth.
 
 ## Decisions, precedents and institutional memory
 
-Months later, another change must decide whether a long-running export may continue after a session ends. The earlier upload ruling is relevant: a user-started operation received a separate, limited continuation without reviving the session. Retrieving that ruling can expose a useful distinction and prevent the new decision from beginning in ignorance.
+> *Months later, another change must decide whether a long-running export may continue after a session ends. The earlier upload ruling is relevant: a user-started operation received a separate, limited continuation without reviving the session.*
+
+Retrieving that ruling can expose a useful distinction and prevent the new decision from beginning in ignorance.
 
 The stored ruling is a precedent: it informs the later decision without binding it. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Kept rulings like these form institutional memory: what the organization has decided and why, preserved beyond the people and workers who decided it. That memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends there.

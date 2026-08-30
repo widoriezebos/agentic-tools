@@ -4,7 +4,7 @@
 
 Chapter 1 already records the single 9:12 interruption and the three-part ruling; Chapter 6 establishes why evidence cannot make that value choice. Here the unresolved question becomes a governance problem: who may make the binding decision, under what delegation, with what accountability and through which route of appeal.
 
-The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.
+> *The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.*
 
 The human role in this design has two halves, and this chapter takes them in turn. The first half is work: people still engineer. The second half is authority: identifiable people keep the last word at named boundaries where purpose, value, irreversible consequence, enforceable rules or accountability is at stake. Final human authority does not require continuous presence. Machinery may prepare and scrutinize a decision. It may not make a value ruling or inherit responsibility for one. The umbrella term for the people who hold the last word is the responsible authority.
 
@@ -32,7 +32,9 @@ Because enforced rules can stop action, their authorship and limits stay visible
 
 ## Judge: authority over named exceptions
 
-An upload has reached its final seconds when the ordinary session expires. The standing ruling permits a limited continuation, but an unusual recovery operation will take much longer and cannot be restarted without loss. The machinery can show the data at risk, the security exposure, the possible alternatives and whether reversal remains possible. It cannot decide that this case deserves an exception.
+> *An upload has reached its final seconds when the ordinary session expires. The standing ruling permits a limited continuation, but an unusual recovery operation will take much longer and cannot be restarted without loss. The machinery can show the data at risk, the security exposure, the possible alternatives and whether reversal remains possible.*
+
+It cannot decide that this case deserves an exception.
 
 Resolving that named case is the judge's work. The named cases can include a value conflict that machinery escalated, acceptance of a stated risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
 
@@ -52,7 +54,9 @@ Intent remains answerable to evidence. The authorized person can be wrong about 
 
 ## Reviewer: authority, accountability and appeal
 
-Before the expiry candidate reaches more users, an independent reviewer sees that one comparison touches every active account and that the tests share a time source with the implementation. The reviewer asks for a sleeping-device case run against a second, independent clock source, then holds expansion until the new evidence arrives. This is a decision within the reviewer's recorded permission, and the releaser may not ignore it.
+> *Before the expiry candidate reaches more users, an independent reviewer sees that one comparison touches every active account and that the tests share a time source with the implementation. The reviewer asks for a sleeping-device case run against a second, independent clock source, then holds expansion until the new evidence arrives.*
+
+This is a decision within the reviewer's recorded permission, and the releaser may not ignore it.
 
 Chapter 6 defines the evidentiary triggers that begin human review and treats a missed trigger as a defect; this chapter defines what the reviewer may do once review or appeal begins. An explicitly authorized reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance itself. The authorization states which consequences and actions the reviewer controls. It does not grant a general right to rewrite intent or enforced rules.
 
@@ -62,7 +66,9 @@ Appeal remains possible after release and after a routine classification. Suppos
 
 ## Multi-human governance
 
-Security representatives ask for a short lifetime. Support staff report that frequent sign-ins drive people away. Accessibility representatives show that the burden is not evenly distributed. Each claim may be sincere and supported, yet the intentions conflict. If construction proceeds by selecting whichever request arrived last, the system has hidden a value decision inside record handling.
+> *Security representatives ask for a short lifetime. Support staff report that frequent sign-ins drive people away. Accessibility representatives show that the burden is not evenly distributed.*
+
+Each claim may be sincere and supported, yet the intentions conflict. If construction proceeds by selecting whichever request arrived last, the system has hidden a value decision inside record handling.
 
 The disagreement is recorded before construction continues. The record names the affected domains, the people whose interests are represented, the points of agreement, the unresolved tradeoff and the evidence each claim uses. It then names who has binding authority for the decision, how that authority was delegated, its scope and expiry, and the route to another accountable human or body on appeal.
 
@@ -72,7 +78,9 @@ Delegation does not dissolve responsibility. The delegating authority answers fo
 
 ## Ordering records cannot settle values
 
-Two authorized proposals arrive seconds apart. One lowers the session limit; the other restores the longer limit to reduce lockouts. Machinery can preserve both, prevent them from overwriting each other and establish which proposal was recorded first. It cannot treat the later timestamp as a reason that privacy now outweighs accessibility.
+> *Two authorized proposals arrive seconds apart. One lowers the session limit; the other restores the longer limit to reduce lockouts.*
+
+Machinery can preserve both, prevent them from overwriting each other and establish which proposal was recorded first. It cannot treat the later timestamp as a reason that privacy now outweighs accessibility.
 
 Ordering controls coordination; it cannot make an outcome legitimate. Once the responsible authority or body rules, machinery can enforce that ruling consistently and reject an older conflicting instruction. Before the ruling, it can display the conflict and prevent accidental progress. The stop happens because people disagree about substance, so the disagreement goes to the authority that can settle it, instead of being treated as a race between two writes.
 
