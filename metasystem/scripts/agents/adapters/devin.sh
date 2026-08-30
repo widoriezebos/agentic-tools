@@ -12,9 +12,9 @@ Usage:
   scripts/agents/adapters/devin.sh probe
   scripts/agents/adapters/devin.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/devin.sh dispatch --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/devin.sh follow-up --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/devin.sh cancel --job <job-id>
   scripts/agents/adapters/devin.sh selftest
   scripts/agents/adapters/devin.sh local-config-paths

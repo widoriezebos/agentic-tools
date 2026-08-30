@@ -4,11 +4,86 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+func TestClaimLaunchSerializesOperationIdentityAcrossJobsAndChains(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
+	type observed struct {
+		result ClaimResult
+		err    error
+	}
+	results := make(chan observed, 2)
+	start := make(chan struct{})
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for index, job := range []string{"chain-a", "chain-b"} {
+		params := claimParamsForTest(root, job)
+		params.OperationID = "shared-operation"
+		params.GoalID, params.GoalRevision, params.MachineID = "", 0, ""
+		params.Request.SessionKey = fmt.Sprintf("fake:chain-%d", index)
+		go func(p ClaimLaunchParams) {
+			ready.Done()
+			<-start
+			result, err := ClaimLaunch(p, claimDependenciesForTest(&now, identity.Verification{}))
+			results <- observed{result: result, err: err}
+		}(params)
+	}
+	ready.Wait()
+	close(start)
+	counts := map[ClaimOutcome]int{}
+	for range 2 {
+		got := <-results
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		counts[got.result.Outcome]++
+	}
+	if counts[ClaimWON] != 1 || counts[ClaimRefusedOpIDMismatch] != 1 {
+		t.Fatalf("shared operation outcomes = %v, want one winner and one mismatch", counts)
+	}
+}
+
+func TestClaimLaunchRefusesOperationIdentityReuseByAncestor(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	writeJSONFile(t, jobs, "chain-parent.json", map[string]any{
+		"jobId": "chain-parent", "operationId": "shared-operation", "status": "completed",
+	})
+	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
+	child := claimParamsForTest(root, "chain-child")
+	child.OperationID = "shared-operation"
+	child.AdapterVerb = "follow-up"
+	child.Request.DispatchMode = DispatchModeFollowUp
+	child.Request.SessionKey = "codex:chain-child"
+	resumedChild := "session-chain-child"
+	child.Request.ResumedSessionID = &resumedChild
+	result, err := ClaimLaunch(child, claimDependenciesForTest(&now, identity.Verification{}))
+	if err != nil || result.Outcome != ClaimRefusedOpIDMismatch {
+		t.Fatalf("ancestor operation reuse = %s, %v; want REFUSED-OPID-MISMATCH", result.Outcome, err)
+	}
+}
+
+func TestClaimLaunchRefusesHazardWithoutExecutableRuntimeEffort(t *testing.T) {
+	root := t.TempDir()
+	params := claimParamsForTest(root, "claude-destructive")
+	params.Request.Runtime = "claude"
+	params.Request.DestructiveReach = HazardDestructiveReach
+	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
+	_, err := ClaimLaunch(params, claimDependenciesForTest(&now, identity.Verification{}))
+	if err == nil || !strings.Contains(err.Error(), "no executable maximal-effort mapping") {
+		t.Fatalf("unsupported runtime hazard admission = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "artifacts", "agents", "jobs", "claude-destructive.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("refused runtime hazard published a reservation: %v", statErr)
+	}
+}
 
 type fixedClaimVerifier struct {
 	verification identity.Verification
@@ -43,13 +118,14 @@ func (panicOccupancyReader) Resolve(string, string, string, SessionOccupancyPrep
 func claimDependenciesForTest(now *time.Time, process identity.Verification) ClaimLaunchDependencies {
 	creator := nativeTestExact(9001, 1)
 	return ClaimLaunchDependencies{
-		Now:             func() time.Time { return *now },
-		Sleep:           func(time.Duration) {},
-		CreatorPID:      creator.Pid,
-		IdentityReader:  fixedStartReader{exact: creator, state: identity.Alive},
-		ProcessVerifier: fixedClaimVerifier{verification: process},
-		Occupancy:       fixedOccupancyReader{},
-		Nonce:           func() (string, error) { return "0123456789abcdef", nil },
+		Now:              func() time.Time { return *now },
+		Sleep:            func(time.Duration) {},
+		CreatorPID:       creator.Pid,
+		IdentityReader:   fixedStartReader{exact: creator, state: identity.Alive},
+		ProcessVerifier:  fixedClaimVerifier{verification: process},
+		Occupancy:        fixedOccupancyReader{},
+		Nonce:            func() (string, error) { return "0123456789abcdef", nil },
+		LaunchCapability: func() (string, error) { return "launch-capability-for-test", nil },
 	}
 }
 
@@ -62,12 +138,15 @@ func claimParamsForTest(root, opid string) ClaimLaunchParams {
 		GoalID:            "goal-a",
 		GoalRevision:      3,
 		MachineID:         "m-test",
+		AdapterVerb:       "dispatch",
 		DefaultCapMinutes: 120,
 	}
 }
 
 func writeClaimRecord(t *testing.T, root, opid string, request LaunchFingerprintRequest, fields map[string]any) map[string]any {
 	t.Helper()
+	request.GoalID = "goal-a"
+	request.GoalRevision = 3
 	fingerprint, err := CanonicalizeLaunchFingerprint(root, request, 120)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +178,7 @@ func TestClaimLaunchOutcomeWONCreatesExactReservation(t *testing.T) {
 		t.Fatalf("outcome = %s evidence=%v", result.Outcome, result.Evidence)
 	}
 	record := readRecord(t, root, "job-won")
-	if !looseEqual(record["fingerprintVersion"], 1) || record["fingerprint"] == "" {
+	if !looseEqual(record["fingerprintVersion"], 2) || record["fingerprint"] == "" {
 		t.Fatalf("fingerprint fields = %+v", record)
 	}
 	if record["reservationDeadline"] != "2026-08-27T10:10:00Z" {
@@ -298,12 +377,12 @@ func TestClaimLaunchNeverComparesAcrossFingerprintVersions(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
 	params := claimParamsForTest(root, "job-version")
-	writeClaimRecord(t, root, params.OpID, params.Request, map[string]any{"fingerprintVersion": 2})
+	writeClaimRecord(t, root, params.OpID, params.Request, map[string]any{"fingerprintVersion": 1})
 	result, err := ClaimLaunch(params, claimDependenciesForTest(&now, identity.Verification{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != ClaimRefusedOpIDMismatch {
+	if result.Outcome != ClaimRefusedUnprovableLegacy {
 		t.Fatalf("version mismatch = %+v", result)
 	}
 }

@@ -72,7 +72,7 @@ expect_failure() { # name, expected text, command...
 }
 
 mkdir -p "$repo/scripts/agents" "$repo/scripts" "$repo/truth" "$repo/plans" "$repo/docs" "$repo/bin"
-# The copied assert scripts resolve their engine as <repo>/bin/metasystem.
+# The fixture repo receives the engine at <repo>/bin/metasystem.
 cp "$root/bin/metasystem" "$repo/bin/metasystem"
 git init -q -b main "$repo"
 git init -q -b main --bare "$remote"
@@ -216,8 +216,8 @@ conf_edit "$base" replace-literal FIXTURE_TURN_CAP_MIN "$mission_turn_cap_min"
 # rejection variants moved in-process: TestContractValidateRejects and
 # TestContractValidateRejectsPerKeyMatrix (internal/contract, under the
 # go gate) carry the exact missing/malformed table this loop drove
-# through assert-mission.sh (script-fixtures-003/D38). The seal-sign-
-# preflight smokes below stay: they prove the SCRIPT forwards.
+# through the contract validator (script-fixtures-003/D38). The seal-sign-
+# preflight smokes below stay: they prove the engine verbs.
 
 dispatch_allow=$repo/plans/mission-dispatch-allow.contract.md
 sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol/' "$base" >"$dispatch_allow"

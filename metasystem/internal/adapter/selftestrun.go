@@ -46,6 +46,7 @@ func (p SelftestParams) jobsDir() string   { return filepath.Join(p.agentsDir(),
 func (p SelftestParams) dispatch() string {
 	return filepath.Join(p.Root, "scripts", "agents", "dispatch.sh")
 }
+func (p SelftestParams) delegate() string { return filepath.Join(p.Root, "bin", "metasystem") }
 
 // ValidateSelftestModel refuses an absent or still-templated model value: a
 // placeholder like <model> dispatches nothing and the self-test must say so
@@ -200,9 +201,8 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"Read README.md, then return a valid empty-findings design critique proving the read in evidence."); err != nil {
 		return err
 	}
-	if err := runQuiet(p.dispatch(), "dispatch", "--role", "design-critic",
-		"--brief", filepath.Join(dir, "brief.md"), "--runtime", p.Runtime,
-		"--workspace", scratch, "--permissions", "none", "--job-id", mainJob); err != nil {
+	if err := runSelftestDelegateQuiet(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+		"--brief", filepath.Join(dir, "brief.md"), "--workspace", scratch, "--op", mainJob); err != nil {
 		return err
 	}
 	// Probe after the runtime has established its session, while the turn is
@@ -226,8 +226,8 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := os.WriteFile(filepath.Join(dir, "follow.md"), []byte(selftestFollowUp), 0o644); err != nil {
 		return err
 	}
-	if err := runQuiet(p.dispatch(), "follow-up", "--job", mainJob,
-		"--message", filepath.Join(dir, "follow.md")); err != nil {
+	if err := runQuiet(p.delegate(), "delegate", "--follow-up", mainJob,
+		"--brief", filepath.Join(dir, "follow.md")); err != nil {
 		return err
 	}
 	followJob := mainJob + "-r2"
@@ -247,12 +247,11 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"Inspect repository files one at a time and continue until the orchestrator cancels this scratch turn."); err != nil {
 		return err
 	}
-	if err := runQuiet(p.dispatch(), "dispatch", "--role", "design-critic",
-		"--brief", filepath.Join(dir, "cancel.md"), "--runtime", p.Runtime,
-		"--workspace", scratch, "--permissions", "none", "--job-id", cancelJob); err != nil {
+	if err := runSelftestDelegateQuiet(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+		"--brief", filepath.Join(dir, "cancel.md"), "--workspace", scratch, "--op", cancelJob); err != nil {
 		return err
 	}
-	if err := runLoud(p.dispatch(), "cancel", "--job", cancelJob); err != nil {
+	if err := runLoud(p.delegate(), "delegate", "--cancel", cancelJob); err != nil {
 		return err
 	}
 	if p.dispatchStatus(cancelJob) != "cancelled" {
@@ -290,9 +289,8 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 			if err := writeBrief(briefPath, attempt.goal); err != nil {
 				return err
 			}
-			_ = runSilent(p.dispatch(), "dispatch", "--role", "design-critic",
-				"--brief", briefPath, "--runtime", p.Runtime,
-				"--workspace", scratch, "--permissions", "none", "--job-id", attemptJob)
+			_ = runSelftestDelegateSilent(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+				"--brief", briefPath, "--workspace", scratch, "--op", attemptJob)
 			p.waitForJob(attemptJob)
 			outcome := AttemptOutcome{
 				Declared:        SelftestEnvelopeDeclaration(filepath.Join(p.agentsDir(), "capabilities"), p.Runtime, attempt.field),
@@ -314,9 +312,8 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := writeBrief(filepath.Join(dir, "permissions.md"), permittedGoal+skillInstruction); err != nil {
 		return err
 	}
-	if err := runQuiet(p.dispatch(), "dispatch", "--role", "design-critic",
-		"--brief", filepath.Join(dir, "permissions.md"), "--runtime", p.Runtime,
-		"--workspace", scratch, "--permissions", "none", "--job-id", permissionJob); err != nil {
+	if err := runSelftestDelegateQuiet(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+		"--brief", filepath.Join(dir, "permissions.md"), "--workspace", scratch, "--op", permissionJob); err != nil {
 		return err
 	}
 	if !p.waitForJob(permissionJob) {
@@ -516,10 +513,26 @@ func runQuiet(command string, args ...string) error {
 	return cmd.Run()
 }
 
+func runSelftestDelegateQuiet(command string, args ...string) error {
+	cmd := exec.Command(command, args...)
+	cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // runSilent discards both streams — the tolerated calls (reap between polls,
 // a denial-shaped dispatch) whose noise the shell suppressed entirely.
 func runSilent(command string, args ...string) error {
 	cmd := exec.Command(command, args...)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
+}
+
+func runSelftestDelegateSilent(command string, args ...string) error {
+	cmd := exec.Command(command, args...)
+	cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	return cmd.Run()

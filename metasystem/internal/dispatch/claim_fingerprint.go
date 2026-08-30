@@ -14,7 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-const LaunchFingerprintVersion = 1
+const LaunchFingerprintVersion = 2
 
 type DispatchMode string
 
@@ -45,9 +45,12 @@ type LaunchFingerprintRequest struct {
 	ProductRoots             []string
 	CapMinutes               int64
 	InputHash                string
+	GoalID                   string
+	GoalRevision             uint64
+	DestructiveReach         HazardClass
 }
 
-// CanonicalLaunchRequest is the v1 tuple after model, root, and cap
+// CanonicalLaunchRequest is the versioned tuple after model, root, and cap
 // normalization. Its JSON names are also the committed golden-vector shape.
 type CanonicalLaunchRequest struct {
 	SessionKey               string       `json:"sessionKey"`
@@ -61,6 +64,9 @@ type CanonicalLaunchRequest struct {
 	ProductRoots             []string     `json:"productRoots"`
 	CapMinutes               int64        `json:"capMinutes"`
 	InputHash                string       `json:"inputHash"`
+	GoalID                   string       `json:"goalId,omitempty"`
+	GoalRevision             uint64       `json:"goalRevision,omitempty"`
+	DestructiveReach         HazardClass  `json:"destructiveReach"`
 }
 
 type LaunchFingerprint struct {
@@ -75,6 +81,7 @@ type fingerprintWireField struct {
 }
 
 var launchFingerprintV1Preamble = []byte{'C', 'L', 'M', '-', 'F', 'P', 0, 1}
+var launchFingerprintV2Preamble = []byte{'C', 'L', 'M', '-', 'F', 'P', 0, 2}
 
 // CanonicalizeLaunchFingerprint resolves the whole request before hashing.
 // Relative roots are based at the Git root supplied by the caller. Roots are
@@ -110,6 +117,12 @@ func CanonicalizeLaunchFingerprint(gitRoot string, raw LaunchFingerprintRequest,
 	if !incarnationRe.MatchString(raw.InputHash) {
 		return LaunchFingerprint{}, fmt.Errorf("claim-launch input hash must be lowercase SHA-256")
 	}
+	if (raw.GoalID == "") != (raw.GoalRevision == 0) {
+		return LaunchFingerprint{}, fmt.Errorf("claim-launch goal id and positive revision must be present together")
+	}
+	if _, ok := requiredConfigurationByHazard[raw.DestructiveReach]; !ok {
+		return LaunchFingerprint{}, fmt.Errorf("claim-launch destructiveReach must be MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
+	}
 	capMinutes := raw.CapMinutes
 	if capMinutes == 0 {
 		capMinutes = defaultCapMinutes
@@ -133,8 +146,11 @@ func CanonicalizeLaunchFingerprint(gitRoot string, raw LaunchFingerprintRequest,
 		ProductRoots:             roots,
 		CapMinutes:               capMinutes,
 		InputHash:                raw.InputHash,
+		GoalID:                   raw.GoalID,
+		GoalRevision:             raw.GoalRevision,
+		DestructiveReach:         raw.DestructiveReach,
 	}
-	return LaunchFingerprintV1(request)
+	return LaunchFingerprintV2(request)
 }
 
 func canonicalProductRoots(gitRoot string, roots []string) ([]string, error) {
@@ -188,7 +204,7 @@ func excludedProductRoot(gitRoot, root string) bool {
 // bytes. The roots field is present and carries an unsigned 64-bit count,
 // followed by the same unsigned 64-bit length plus UTF-8 bytes for each root.
 func LaunchFingerprintV1(request CanonicalLaunchRequest) (LaunchFingerprint, error) {
-	if err := validateCanonicalLaunchRequest(request); err != nil {
+	if err := validateCanonicalLaunchRequest(request, 1); err != nil {
 		return LaunchFingerprint{}, err
 	}
 	capMinutes := strconv.FormatInt(request.CapMinutes, 10)
@@ -219,38 +235,83 @@ func LaunchFingerprintV1(request CanonicalLaunchRequest) (LaunchFingerprint, err
 	}
 	sum := sha256.Sum256(wire)
 	return LaunchFingerprint{
-		Version: LaunchFingerprintVersion,
+		Version: 1,
 		Digest:  hex.EncodeToString(sum[:]),
 		Request: request,
 	}, nil
 }
 
-func validateCanonicalLaunchRequest(request CanonicalLaunchRequest) error {
+// LaunchFingerprintV2 adds the exact goal revision to the v1 request and
+// uses a distinct preamble so a legacy digest can never compare equal.
+func LaunchFingerprintV2(request CanonicalLaunchRequest) (LaunchFingerprint, error) {
+	if err := validateCanonicalLaunchRequest(request, 2); err != nil {
+		return LaunchFingerprint{}, err
+	}
+	capMinutes := strconv.FormatInt(request.CapMinutes, 10)
+	roots, err := encodeFingerprintRoots(request.ProductRoots)
+	if err != nil {
+		return LaunchFingerprint{}, err
+	}
+	values := [][]byte{
+		[]byte(request.SessionKey), []byte(request.DispatchMode), []byte(request.ResumedSessionID),
+		[]byte(request.Runtime), []byte(request.CanonicalModelKey), []byte(request.Role),
+		[]byte(request.LaunchMode), []byte(request.PermissionEnvelopeDigest), roots,
+		[]byte(capMinutes), []byte(request.InputHash), []byte(request.GoalID),
+		[]byte(strconv.FormatUint(request.GoalRevision, 10)),
+		[]byte(request.DestructiveReach),
+	}
+	fields := make([]fingerprintWireField, 0, len(values))
+	for _, value := range values {
+		fields = append(fields, fingerprintWireField{Present: true, Value: value})
+	}
+	wire, err := encodeLaunchFingerprint(launchFingerprintV2Preamble, fields)
+	if err != nil {
+		return LaunchFingerprint{}, err
+	}
+	sum := sha256.Sum256(wire)
+	return LaunchFingerprint{Version: LaunchFingerprintVersion, Digest: hex.EncodeToString(sum[:]), Request: request}, nil
+}
+
+func validateCanonicalLaunchRequest(request CanonicalLaunchRequest, version int) error {
 	if request.DispatchMode != DispatchModeFresh && request.DispatchMode != DispatchModeFollowUp {
-		return fmt.Errorf("fingerprint v1 dispatch mode must be fresh or follow-up")
+		return fmt.Errorf("fingerprint v%d dispatch mode must be fresh or follow-up", version)
 	}
 	if request.DispatchMode == DispatchModeFresh && request.ResumedSessionID != "" {
-		return fmt.Errorf("fingerprint v1 fresh dispatch must carry an explicit empty resumed session")
+		return fmt.Errorf("fingerprint v%d fresh dispatch must carry an explicit empty resumed session", version)
 	}
 	if request.DispatchMode == DispatchModeFollowUp && request.ResumedSessionID == "" {
-		return fmt.Errorf("fingerprint v1 follow-up requires a resumed session")
+		return fmt.Errorf("fingerprint v%d follow-up requires a resumed session", version)
 	}
 	if request.LaunchMode != LaunchModeWorktree && request.LaunchMode != LaunchModeSharedCheckout {
-		return fmt.Errorf("fingerprint v1 launch mode is invalid")
+		return fmt.Errorf("fingerprint v%d launch mode is invalid", version)
 	}
 	if request.SessionKey == "" || request.Runtime == "" || request.CanonicalModelKey == "" || request.Role == "" || request.CapMinutes < 1 {
-		return fmt.Errorf("fingerprint v1 required field is empty")
+		return fmt.Errorf("fingerprint v%d required field is empty", version)
 	}
 	if config.CanonicalModel(request.CanonicalModelKey) != request.CanonicalModelKey {
-		return fmt.Errorf("fingerprint v1 model key is not canonical")
+		return fmt.Errorf("fingerprint v%d model key is not canonical", version)
 	}
 	if !incarnationRe.MatchString(request.PermissionEnvelopeDigest) || !incarnationRe.MatchString(request.InputHash) {
-		return fmt.Errorf("fingerprint v1 digests must be lowercase SHA-256")
+		return fmt.Errorf("fingerprint v%d digests must be lowercase SHA-256", version)
+	}
+	if version == 1 && (request.GoalID != "" || request.GoalRevision != 0) {
+		return fmt.Errorf("fingerprint v1 has no goal revision field")
+	}
+	if version == 2 && ((request.GoalID == "") != (request.GoalRevision == 0)) {
+		return fmt.Errorf("fingerprint v2 goal id and positive revision must be present together")
+	}
+	if version == 1 && request.DestructiveReach != "" {
+		return fmt.Errorf("fingerprint v1 has no destructiveReach field")
+	}
+	if version == 2 {
+		if _, ok := requiredConfigurationByHazard[request.DestructiveReach]; !ok {
+			return fmt.Errorf("fingerprint v2 destructiveReach is invalid")
+		}
 	}
 	stringsToCheck := []string{
 		request.SessionKey, string(request.DispatchMode), request.ResumedSessionID,
 		request.Runtime, request.CanonicalModelKey, request.Role, string(request.LaunchMode),
-		request.PermissionEnvelopeDigest, request.InputHash,
+		request.PermissionEnvelopeDigest, request.InputHash, request.GoalID, string(request.DestructiveReach),
 	}
 	for _, value := range stringsToCheck {
 		if !utf8.ValidString(value) {
@@ -286,8 +347,12 @@ func encodeFingerprintRoots(roots []string) ([]byte, error) {
 }
 
 func encodeLaunchFingerprintV1(fields []fingerprintWireField) ([]byte, error) {
+	return encodeLaunchFingerprint(launchFingerprintV1Preamble, fields)
+}
+
+func encodeLaunchFingerprint(preamble []byte, fields []fingerprintWireField) ([]byte, error) {
 	var buffer bytes.Buffer
-	buffer.Write(launchFingerprintV1Preamble)
+	buffer.Write(preamble)
 	for _, field := range fields {
 		if !field.Present {
 			buffer.WriteByte(0)

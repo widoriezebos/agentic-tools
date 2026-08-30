@@ -144,6 +144,7 @@ func stageSelftestFixture(t *testing.T, writeEnforcement, networkEnforcement str
 		filepath.Join(agents, "jobs"),
 		filepath.Join(agents, "capabilities"),
 		filepath.Join(root, "scripts", "agents"),
+		filepath.Join(root, "bin"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -208,7 +209,23 @@ case "$verb" in
 esac
 `
 	for path, content := range map[string]string{
-		filepath.Join(root, "scripts", "agents", "dispatch.sh"):     dispatch,
+		filepath.Join(root, "scripts", "agents", "dispatch.sh"): dispatch,
+		filepath.Join(root, "bin", "metasystem"): `#!/usr/bin/env bash
+set -euo pipefail
+dispatch=$(cd "$(dirname "$0")/../scripts/agents" && pwd -P)/dispatch.sh
+[[ $1 == delegate ]] || exit 2
+shift
+case "$1" in
+  --adapter-selftest)
+    runtime=$2; brief=$4; workspace=$6; job=$8
+    exec "$dispatch" dispatch --role design-critic --brief "$brief" --runtime "$runtime" --workspace "$workspace" --permissions none --job-id "$job" ;;
+  --follow-up)
+    exec "$dispatch" follow-up --job "$2" --message "$4" ;;
+  --cancel)
+    exec "$dispatch" cancel --job "$2" ;;
+  *) exit 2 ;;
+esac
+`,
 		filepath.Join(root, "scripts", "assert-return-complete.sh"): "#!/usr/bin/env bash\nexit 0\n",
 		filepath.Join(root, "adapter.sh"):                           "#!/usr/bin/env bash\nexit 0\n",
 	} {

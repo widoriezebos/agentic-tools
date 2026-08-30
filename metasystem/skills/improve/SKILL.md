@@ -15,7 +15,7 @@ Before the first run, write in the owning plan:
 - The baseline score, the noise floor (minimum meaningful delta), and the target or stop score.
 - Guard metrics that must not regress, with their floors.
 - The budget (runs, cost, wall-clock) and the non-goals.
-- The no-gain budget: write `- No-gain budget: 3` in the ledger so `scripts/assert-stop-loss.sh` mechanically enforces the three-consecutive stop condition below.
+- The no-gain budget: write `- No-gain budget: 3` in the ledger so `metasystem validate stop-loss` mechanically enforces the three-consecutive stop condition below.
 
 Track actual spend against the budget as runs complete, from the project's authoritative usage source (`docs/project-rules.md`) rather than estimates, and count failed and invalid runs; a run in a failure mode typically costs several times a healthy one. When the budget runs out with the goal unmet, stop and ask: one batched request stating spend so far, what it bought, and the remaining options. Never run past the fence silently; overage is a reserved decision.
 
@@ -25,9 +25,9 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 
 ## Frontier Ledger
 
-- The frontier is the best-known state: exact SHA, score, evaluation command, and run artifact. Manage it with `scripts/frontier.sh` (record, challenge, status).
-- Record the baseline frontier before the first experiment, declaring the metric's direction (`--direction min` for lower-is-better goals such as latency and cost; max is the default). The direction persists in the frontier file; changing it later is a re-baseline (`record --force`). Where the evaluation's output is machine-parseable, wrap it in a project script that runs the eval and calls `scripts/frontier.sh record` with the parsed score, so declaration is mechanical instead of remembered.
-- When a run beats the frontier (`scripts/frontier.sh challenge` passes: more than the noise floor above the recorded score), stop other work and preserve that exact state first. Commit, re-record the frontier, and follow the project's push and tag policy. Only then iterate further.
+- The frontier is the best-known state: exact SHA, score, evaluation command, and run artifact. Manage it with `metasystem report frontier` (record, challenge, status).
+- Record the baseline frontier before the first experiment, declaring the metric's direction (`--direction min` for lower-is-better goals such as latency and cost; max is the default). The direction persists in the frontier file; changing it later is a re-baseline (`record --force`). Where the evaluation's output is machine-parseable, wrap it in a project script that runs the eval and calls `metasystem report frontier record` with the parsed score, so declaration is mechanical instead of remembered.
+- When a run beats the frontier (`metasystem report frontier challenge` passes: more than the noise floor above the recorded score), stop other work and preserve that exact state first. Commit, re-record the frontier, and follow the project's push and tag policy. Only then iterate further.
 - A score without provenance (SHA, configuration, run artifact) is not a frontier. Never update the ledger from memory, a partial run, or a stale artifact.
 
 ## Experiment Cycles
@@ -35,9 +35,9 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 - One mechanism per experiment. Pre-register the hypothesis, the expected signal size relative to the noise floor, and the cheapest signal able to reject it. Use the cycle contract and result classifications from `skills/take-a-step-back/SKILL.md` verbatim.
 - Cheapest rejection first: run the canary or subset evaluation before the full suite whenever the project's evaluation supports it.
 - A delta within the noise floor is noise, in both directions. Do not count it as progress; repeat the run or increase the effect before believing it. Equally, a within-noise result refutes nothing; classify it `unresolved`, never falsified. A guard-metric regression is never averaged away by a primary-metric gain.
-- Classification tracks the primary metric and its guards: `contract-improved` is reserved for a run that passes `scripts/frontier.sh challenge` on the primary metric with every guard metric at or above its floor. Guard-only improvements, guard-regressing gains, and side effects classify by that primary-metric-and-guard outcome, so they never reset the no-gain count.
+- Classification tracks the primary metric and its guards: `contract-improved` is reserved for a run that passes `metasystem report frontier challenge` on the primary metric with every guard metric at or above its floor. Guard-only improvements, guard-regressing gains, and side effects classify by that primary-metric-and-guard outcome, so they never reset the no-gain count.
 - After a falsified experiment, revert the behavior and keep the learning in the plan. Never stack experiments on unreverted falsified changes.
-- Record each experiment as a ledger cycle with its classification line, and run `scripts/assert-stop-loss.sh --file <plan>` before contracting the next one. It blocks on a dead end, repeated no-progress, or an exhausted cycle budget.
+- Record each experiment as a ledger cycle with its classification line, and run `metasystem validate stop-loss --file <plan>` before contracting the next one. It blocks on a dead end, repeated no-progress, or an exhausted cycle budget.
 
 ## Evaluation Types
 
@@ -46,15 +46,15 @@ The loop in this skill is the same for every optimization problem. What changes 
 - **Deterministic search** (design choices, algorithms, architectures validated by tests and benchmarks). The evaluation is the test and benchmark suite, and the noise floor is small. Explore candidates as separate branches or worktrees, one design decision per experiment, and let frontier challenges prune the losers.
 - **Stochastic systems** (randomized load, chaos scenarios, sampled inputs). A single run proves nothing. The evaluation command must aggregate over enough seeded scenarios to produce a stable statistic. Measure the noise floor by re-running the unchanged baseline several times, and set guard metrics on the tail (worst case, high percentiles), never only on the average.
 - **Hidden information** (security, recommendations, anything where real feedback is partial). Build the on-demand evaluation as a simulator or a replay of recorded traces, and add a standing guard: reconcile simulator results against live outcomes on a declared cadence. When simulator and reality diverge, stop optimizing; the evaluation is broken, and fixing it re-baselines the frontier.
-- **Dynamic systems** (live traffic, changing conditions, evolving targets). Frontier scores expire when the environment shifts. Declare the measurement window when recording the baseline (`scripts/frontier.sh record --max-age-minutes M`); after that, `challenge` refuses to compare against an expired frontier, and continuing requires an explicit re-baseline (`record --force`) with the reason in the owning plan. Use offline or replay evaluation as the fast inner loop and live measurement as the slow outer confirmation. Anything that touches production runs under the reserved decisions in `docs/project-rules.md`, never as an unsupervised experiment loop.
+- **Dynamic systems** (live traffic, changing conditions, evolving targets). Frontier scores expire when the environment shifts. Declare the measurement window when recording the baseline (`metasystem report frontier record --max-age-minutes M`); after that, `challenge` refuses to compare against an expired frontier, and continuing requires an explicit re-baseline (`record --force`) with the reason in the owning plan. Use offline or replay evaluation as the fast inner loop and live measurement as the slow outer confirmation. Anything that touches production runs under the reserved decisions in `docs/project-rules.md`, never as an unsupervised experiment loop.
 
 ## Anti-Overfitting
 
 - The evaluation is a proxy; the contract is the user or production outcome. A gain needs a mechanism you can explain. An unexplainable gain is treated as noise or overfitting until independently reproduced.
 - A gain proven on one case set is not accepted as the production default until it replicates on an independent set (a second corpus, a holdout, the next rotation) per the project's evaluation policy. Single-set parity is what overfitting looks like from the inside; small curated case sets are exactly what a candidate can memorize.
 - Do not tune against the same fixed evaluation cases indefinitely; rotate, extend, or hold out cases per the project's evaluation policy in `docs/project-rules.md`.
-- Never modify the evaluation and the system under test in one change. An evaluation change re-baselines the frontier (`scripts/frontier.sh record --force`, with the reason recorded in the owning plan).
+- Never modify the evaluation and the system under test in one change. An evaluation change re-baselines the frontier (`metasystem report frontier record --force`, with the reason recorded in the owning plan).
 
 ## Stop Conditions
 
-Stop and report when any of these applies: the target is reached; the budget is exhausted; three consecutive experiments fail to beat the frontier beyond the noise floor (the ledger's no-gain budget, enforced by `scripts/assert-stop-loss.sh`); or guard metrics keep regressing. These conditions apply in addition to the take-a-step-back stop-loss. Whichever stops earlier wins, and a `falsified-continue` classification does not extend the three-experiment limit. Hand over the preserved frontier, the experiment ledger with classifications, the exhausted mechanisms, and the recommended next decision. Whatever the outcome, the best-known state must be exactly recoverable at the end.
+Stop and report when any of these applies: the target is reached; the budget is exhausted; three consecutive experiments fail to beat the frontier beyond the noise floor (the ledger's no-gain budget, enforced by `metasystem validate stop-loss`); or guard metrics keep regressing. These conditions apply in addition to the take-a-step-back stop-loss. Whichever stops earlier wins, and a `falsified-continue` classification does not extend the three-experiment limit. Hand over the preserved frontier, the experiment ledger with classifications, the exhausted mechanisms, and the recommended next decision. Whatever the outcome, the best-known state must be exactly recoverable at the end.

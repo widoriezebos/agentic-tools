@@ -414,16 +414,20 @@ func runStewardRevive(args []string) int {
 
 	outcome, err := steward.CompleteRevival(*repo, steward.TickConfig{}, stewardCensusFor(*repo), nonce,
 		func(it steward.Intent) error {
-			cmd := exec.Command(filepath.Join(*repo, "scripts", "agents", "dispatch.sh"),
-				"--steward-intent", it.Nonce)
+			binary, binaryErr := os.Executable()
+			if binaryErr != nil {
+				return binaryErr
+			}
+			cmd := exec.Command(binary, "delegate", "--revive", it.Nonce)
 			cmd.Dir = *repo
+			cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+*repo)
 			// Its own session, no controlling terminal: the chain
 			// classifies STEWARD identically whether the tick came
 			// from the runner, a cron, or an operator's shell.
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				return fmt.Errorf("dispatch: %v (%s)", err, strings.TrimSpace(string(out)))
+				return fmt.Errorf("delegate revival: %v (%s)", err, strings.TrimSpace(string(out)))
 			}
 			return nil
 		})

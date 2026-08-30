@@ -4,17 +4,6 @@ set -euo pipefail
 usage() {
   cat <<'USAGE' >&2
 Usage:
-  scripts/agents/dispatch.sh dispatch --role <role> --brief <file>
-      [--mode <working-mode>] [--runtime <name>; see: bin/metasystem runtime list]
-      [--model <model>] [--job-id <id>] [--reviews <implementer-job-id>]
-      [--workspace <dir> | --worktree]
-      [--permissions <preset|envelope-file>] [--mission <id>]
-      [--stream <mission-stream-id>] [--goal <goal-id>]
-      [--approve-escalation] [--approved-ref <ruling-id|goal-opid>]
-      [--wait] [--cap-min N]
-  scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
-  scripts/agents/dispatch.sh follow-up --job <job-id> --message <file>
-      [--approved-ref <ruling-id|goal-opid>] [--wait]
   scripts/agents/dispatch.sh status --job <job-id>
   scripts/agents/dispatch.sh watch --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
@@ -34,6 +23,15 @@ repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) \
   || die 1 "metasystem installation is not inside a git repository: $root"
 repo_scope=$(cd "$repo_scope" && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+# Operator launches have one public owner. This shell keeps custody callbacks
+# but refuses the retired authority-bearing grammar by naming its replacement.
+if [[ ${BASH_SOURCE[0]} == "$0" && -z "${METASYSTEM_DELEGATE_INTERNAL:-}" ]]; then
+  case "${1:-dispatch}" in
+    dispatch|follow-up|cancel|--*)
+      printf '%s\n' '{"outcome":"REFUSED-REQUEST","headline":"refused","detail":"the legacy dispatch authority grammar was removed; use metasystem delegate"}'
+      exit 2 ;;
+  esac
+fi
 config="$root/scripts/metasystem-config.sh"
 source "$root/scripts/agents/checkout-execution-guard.sh"
 agents="$root/artifacts/agents"
@@ -54,6 +52,7 @@ exit_cleanup_job=
 exit_cleanup_chain=
 exit_cleanup_authorization=
 exit_cleanup_message=
+exit_cleanup_lifecycle=
 # Flight-recorder witness (docs/design/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
@@ -83,6 +82,27 @@ current_claim_epoch=
 current_main_id=
 current_caller_class=
 lease_reentry=0
+
+record_delegate_outcome() { # outcome, headline, optional detail, optional job
+  local outcome=$1 headline=$2 detail=${3:-} outcome_job=${4:-}
+  [[ -n "${METASYSTEM_DELEGATE_OUTCOME_FILE:-}" ]] || return 0
+  "$ms" json object "outcome=$outcome" "headline=$headline" "detail=$detail" "jobId=$outcome_job" \
+    >"$METASYSTEM_DELEGATE_OUTCOME_FILE"
+}
+
+record_delegate_outcome_raw() { # already encoded JSON
+  [[ -n "${METASYSTEM_DELEGATE_OUTCOME_FILE:-}" ]] || return 0
+  printf '%s\n' "$1" >"$METASYSTEM_DELEGATE_OUTCOME_FILE"
+}
+
+die() {
+  last_die_message=$2
+  if [[ -n "${METASYSTEM_DELEGATE_OUTCOME_FILE:-}" && ! -s "$METASYSTEM_DELEGATE_OUTCOME_FILE" ]]; then
+    record_delegate_outcome ERROR refused "$2" "${job:-${child:-}}"
+  fi
+  echo "$2" >&2
+  exit "$1"
+}
 
 valid_id() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -380,14 +400,26 @@ acquire_chain_lock() { # root id
 # repeated operation can be resolved by its launch claim. Mechanical lock
 # failures still refuse immediately; only a standing owner is waited out.
 acquire_launch_chain_lock() { # root id
-  local chain=$1 dir="$locks/$1.d" status
+  local chain=$1 dir="$locks/$1.d" status maximum deadline holder_pid holder_tag holder
   mkdir -p "$locks"
+  maximum=$(dispatch_fixture_wait_cap 10)
+  deadline=$((SECONDS + maximum))
   while true; do
     status=0
     owner_lock claim "$dir" "$$" "$process_instance_tag" || status=$?
     case "$status" in
       0) return 0 ;;
-      3) sleep 0.05 ;;
+      3)
+        if (( SECONDS >= deadline )); then
+          holder_pid=$(json_field "$dir/owner.json" pid 2>/dev/null || true)
+          holder_tag=$(json_field "$dir/owner.json" instanceTag 2>/dev/null || true)
+          holder=unreadable
+          [[ -z "$holder_pid$holder_tag" ]] || holder="pid=${holder_pid:-unknown},tag=${holder_tag:-unknown}"
+          record_delegate_outcome LOCK_BUSY refused "rank=chain key=$chain holder=$holder retry=retry-after-the-named-holder-releases" "${job:-${child:-}}"
+          die 1 "LOCK_BUSY rank=chain key=$chain holder=$holder retry=retry-after-the-named-holder-releases"
+        fi
+        sleep 0.05
+        ;;
       *) die 1 "cannot acquire launch chain lock: $chain" ;;
     esac
   done
@@ -415,6 +447,7 @@ acquire_goal_revision_lock() { # goal id, revision
       holder_tag=$(json_field "$goal_revision_lock_dir/owner.json" instanceTag 2>/dev/null || true)
       holder=unreadable
       [[ -z "$holder_pid$holder_tag" ]] || holder="pid=${holder_pid:-unknown},tag=${holder_tag:-unknown}"
+      record_delegate_outcome LOCK_BUSY refused "rank=goal-revision key=$goal_id/r$revision holder=$holder retry=retry-after-the-named-holder-releases elapsed=${elapsed}s cap=${maximum}s" "${job:-${child:-}}"
       die 1 "LOCK_BUSY rank=goal-revision key=$goal_id/r$revision holder=$holder retry=retry-after-the-named-holder-releases elapsed=${elapsed}s cap=${maximum}s"
     fi
     sleep 0.05
@@ -464,13 +497,19 @@ release_lifecycle_lock() { # job id
   owner_lock release "$record_locks/$1.lifecycle.d" "$$" "$process_instance_tag" || true
 }
 
+release_exit_lifecycle() {
+  [[ -n "$exit_cleanup_lifecycle" ]] || return 0
+  release_lifecycle_lock "$exit_cleanup_lifecycle"
+  exit_cleanup_lifecycle=
+}
+
 acquire_cap_authority_lock() {
   # Identity-bearing owner lock (script-orchestration-01/D18): the old bare
   # mkdir spinlock had no owner and no healer, so a SIGKILLed holder bricked
   # every dispatch AND arming until a human ran rmdir. The owner-lock verb
   # heals a provably dead holder's husk and keeps an unprovable one (B1) —
   # the same protocol the lifecycle and chain locks above already use.
-  local directory="$agents/supervision/cap-authority.lock.d" maximum started deadline elapsed
+  local directory="$agents/supervision/cap-authority.lock.d" maximum started deadline elapsed holder_pid holder_tag holder
   mkdir -p "${directory%/*}"
   maximum=$(dispatch_fixture_wait_cap 10)
   started=$SECONDS
@@ -478,7 +517,12 @@ acquire_cap_authority_lock() {
   while ! owner_lock claim "$directory" "$$" "$process_instance_tag"; do
     if (( SECONDS >= deadline )); then
       elapsed=$((SECONDS - started))
-      die 1 "timed out acquiring repository cap-authority lock (elapsed: ${elapsed}s; scaled cap: ${maximum}s)"
+      holder_pid=$(json_field "$directory/owner.json" pid 2>/dev/null || true)
+      holder_tag=$(json_field "$directory/owner.json" instanceTag 2>/dev/null || true)
+      holder=unreadable
+      [[ -z "$holder_pid$holder_tag" ]] || holder="pid=${holder_pid:-unknown},tag=${holder_tag:-unknown}"
+      record_delegate_outcome LOCK_BUSY refused "rank=cap-authority key=repository holder=$holder retry=retry-after-the-named-holder-releases elapsed=${elapsed}s cap=${maximum}s" "${job:-${child:-}}"
+      die 1 "LOCK_BUSY rank=cap-authority key=repository holder=$holder retry=retry-after-the-named-holder-releases elapsed=${elapsed}s cap=${maximum}s"
     fi
     sleep 0.05
   done
@@ -505,10 +549,23 @@ require_goal_admission() {
   case "$result" in
     0) return 0 ;;
     10)
+      record_delegate_outcome REFUSED-BUDGET refused "$output" "${job:-${child:-}}"
+      # Breach-stop owns the next locks. Drop every admission lock before it
+      # enters cancellation so the stop path cannot wait on this dispatcher.
+      release_cap_authority_lock
+      release_goal_revision_lock
+      if [[ -n "$exit_cleanup_chain" ]]; then
+        release_chain_lock "$exit_cleanup_chain"
+        exit_cleanup_chain=
+      fi
       run_breach_stop_routes
       die 1 "dispatch refused: breach-stop closed admission and wound down the breached revision" ;;
-    9) die 1 "dispatch refused by the goal admission verdict above; supply or revise the governing structured budget before another round" ;;
-    *) die 1 "dispatch refused because the governing goal admission could not be evaluated" ;;
+    9)
+      record_delegate_outcome REFUSED-BUDGET refused "$output"
+      die 1 "dispatch refused by the goal admission verdict above; supply or revise the governing structured budget before another round" ;;
+    *)
+      record_delegate_outcome BUDGET_UNKNOWN refused "${output:-the governing goal admission could not be evaluated}" "${job:-${child:-}}"
+      die 1 "dispatch refused because the governing goal admission could not be evaluated" ;;
   esac
 }
 
@@ -539,6 +596,7 @@ require_goal_revision_admission() { # proposed cap minutes
   case "$result" in
     0) return 0 ;;
     10)
+      record_delegate_outcome REFUSED-BUDGET refused "$output" "${job:-${child:-}}"
       # Stop takes the goal lock without the lower-ranked cap lock.
       release_cap_authority_lock
       release_goal_revision_lock
@@ -549,15 +607,20 @@ require_goal_revision_admission() { # proposed cap minutes
       exit_cleanup_chain=
       internal_breach_stop_run "$stop_id"
       die 1 "dispatch refused: breach-stop $stop_id closed the launch fence and completed its cancellation pass" ;;
-    9) die 1 "dispatch refused by the exact goal revision admission verdict above" ;;
-    *) die 1 "dispatch refused because exact goal revision admission could not be evaluated" ;;
+    9)
+      record_delegate_outcome REFUSED-BUDGET refused "$output" "${job:-${child:-}}"
+      die 1 "dispatch refused by the exact goal revision admission verdict above" ;;
+    *)
+      record_delegate_outcome BUDGET_UNKNOWN refused "${output:-exact goal revision admission could not be evaluated}" "${job:-${child:-}}"
+      die 1 "dispatch refused because exact goal revision admission could not be evaluated" ;;
   esac
 }
 
-require_slice_admission() { # proposed cap minutes, recorded approval reference
-  local proposed=$1 approval=${2:-} output result=0
+require_slice_admission() { # proposed cap minutes, recorded approval reference, goal, revision
+  local proposed=$1 approval=${2:-} approval_goal=${3:-} approval_revision=${4:-0} output result=0
   local -a args=(--root "$root" --cap-min "$proposed")
   [[ -z "$approval" ]] || args+=(--approved-ref "$approval")
+  [[ -z "$approval_goal" ]] || args+=(--goal "$approval_goal" --goal-revision "$approval_revision")
   set +e
   output=$("$ms" job slice-admission "${args[@]}" 2>&1)
   result=$?
@@ -565,8 +628,12 @@ require_slice_admission() { # proposed cap minutes, recorded approval reference
   [[ -z "$output" ]] || printf '%s\n' "$output" >&2
   case "$result" in
     0) return 0 ;;
-    9) die 1 "dispatch refused by the slice-cap admission verdict above" ;;
-    *) die 1 "dispatch refused because slice-cap admission could not be evaluated" ;;
+    9)
+      record_delegate_outcome_raw "$output"
+      die 1 "dispatch refused by the slice-cap admission verdict above" ;;
+    *)
+      record_delegate_outcome SLICE_ADMISSION_UNKNOWN refused "${output:-slice-cap admission could not be evaluated}" "${job:-${child:-}}"
+      die 1 "dispatch refused because slice-cap admission could not be evaluated" ;;
   esac
 }
 
@@ -721,18 +788,8 @@ latest_chain_record() { # root job
   "$ms" job latest-chain-record --jobs "$jobs" --root "$1"
 }
 
-write_prompt() { # path job role runtime model round mission content
-  local path=$1 job=$2 role=$3 runtime=$4 model=$5 round=$6 mission=${7:-none} content=$8
-  {
-    printf 'Job-Id: %s\nRole: %s\nRuntime: %s\nModel: %s\nRound: %s\nMission: %s\n\n' "$job" "$role" "$runtime" "$model" "$round" "${mission:-none}"
-    cat "$root/scripts/agents/roles/$role.md"
-    printf '\n\n'
-    cat "$content"
-  } >"$path"
-}
-
-launch_adapter() { # runtime verb job tag
-  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
+launch_adapter() { # runtime verb job tag capability
+  local runtime=$1 verb=$2 job=$3 tag=$4 launch_capability=$5 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
   local adapter_command
   local -a ownership_args
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
@@ -742,7 +799,7 @@ launch_adapter() { # runtime verb job tag
   # ownership CAS below, but not starting at all is cheaper than
   # starting and killing.
   [[ "$(json_field "$jobs/$job.json" status)" == pending ]] || return 1
-  adapter_command=("$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag")
+  adapter_command=("$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag" --launch-capability "$launch_capability")
   if (( checkout_execution_guard_held )); then
     adapter_command=("$root/scripts/agents/checkout-execution-guard.sh" run-member \
       --root "$checkout_execution_guard_root" --engine "$checkout_execution_guard_engine" -- "${adapter_command[@]}")
@@ -1086,9 +1143,9 @@ dispatch_job() {
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
-  local permission_name permission_json permission_digest snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 cap
-  local -a product_root_args=()
+  local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort=
+  local -a product_root_args=() composition_source_args=()
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -1104,8 +1161,10 @@ dispatch_job() {
       --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission_override=$2; shift 2 ;;
       --stream) [[ $# -ge 2 ]] || { usage; exit 2; }; stream=$2; shift 2 ;;
       --goal) [[ $# -ge 2 ]] || { usage; exit 2; }; goal=$2; shift 2 ;;
+      --destructive-reach) [[ $# -ge 2 ]] || { usage; exit 2; }; destructive_reach=$2; shift 2 ;;
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
       --approved-ref) [[ $# -ge 2 ]] || { usage; exit 2; }; approved_ref=$2; shift 2 ;;
+      --source) [[ $# -ge 2 ]] || { usage; exit 2; }; composition_source_args+=(--source "$2"); shift 2 ;;
       --approve-escalation) approve_escalation=1; shift ;;
       --serving-goal) serving_goal=1; shift ;;
       --steward-intent) [[ $# -ge 2 ]] || { usage; exit 2; }; steward_intent=$2; shift 2 ;;
@@ -1132,13 +1191,25 @@ dispatch_job() {
     permissions_override=$(json_value "$steward_tuple" permissions)
     use_worktree=1
     steward_mode=1
+    destructive_reach=DESTRUCTIVE-REACH
   fi
-  [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
+  destructive_reach=${destructive_reach:-${METASYSTEM_DISPATCH_FIXTURE_HAZARD:-}}
+  [[ -n "$role" && -f "$brief" && ( "$destructive_reach" == MECHANICAL || "$destructive_reach" == DESIGN-BEARING || "$destructive_reach" == DESTRUCTIVE-REACH ) ]] || { usage; exit 2; }
   [[ -z "$goal" ]] || valid_id "$goal" || die 2 "invalid goal id: $goal"
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
-  # Goal admission applies the structured limits before reservation, so a
-  # refusal creates no job and never acts on jobs already admitted.
-  require_goal_admission
+  # Source admission is a pure preflight. A forbidden assertion refuses
+  # before a runtime probe, worktree, branch, quarantine, lock, or job exists.
+  if (( ${#composition_source_args[@]} )); then
+    set +e
+    composition_output=$("$ms" job compose-role-packet --validate-only --root "$root" --role "$role" \
+      "${composition_source_args[@]}")
+    composition_rc=$?
+    set -e
+    if (( composition_rc != 0 )); then
+      [[ -z "$composition_output" ]] || { record_delegate_outcome_raw "$composition_output"; printf '%s\n' "$composition_output"; }
+      return "$composition_rc"
+    fi
+  fi
   checkout_execution_guard_acquire "dispatch ${job:-$role}" \
     || die 1 "dispatch refused: checkout execution guard acquisition failed"
   trap 'checkout_execution_guard_release || true' EXIT
@@ -1229,37 +1300,45 @@ dispatch_job() {
     die 1 "--approve-escalation is unnecessary because the requested pair does not require escalation approval; remove the flag"
   fi
 
-  if [[ -z "$job" ]]; then
-    job="$role-$(date -u +%Y%m%dt%H%M%Sz)-$("$ms" util token-hex --bytes 2)"
-  fi
-  valid_id "$job" || die 2 "invalid job id: $job"
-  # Preconditions before the id is reserved keep a refused launch from leaving
-  # a pending-setup husk that consumes the caller's chosen name.
-  require_fresh_census
-  report_plan_drift
+  operation_brief_hash=$(sha256_file "$brief")
   if [[ -n "$goal" ]]; then
     goal_binding=$("$ms" job goal-binding --root "$root" --goal "$goal") \
-      || die 1 "cannot bind job $job to accepted goal $goal stop authority"
+      || die 1 "cannot bind delegate operation to accepted goal $goal stop authority"
     goal_revision=$(json_value "$goal_binding" goalRevision)
     goal_machine=$(json_value "$goal_binding" machineId)
     goal_claim_epoch=$(json_value "$goal_binding" claimEpoch)
     [[ -z "$current_claim_epoch" || "$current_claim_epoch" == "$goal_claim_epoch" ]] \
       || die 1 "goal $goal revision $goal_revision belongs to claim epoch $goal_claim_epoch, not current epoch $current_claim_epoch"
   fi
+  if [[ -z "$job" ]]; then
+    job=$("$ms" job operation-id --goal "$goal" --goal-revision "$goal_revision" \
+      --dispatch-mode fresh --role "$role" --brief-digest "$operation_brief_hash") \
+      || die 1 "could not derive the delegate operation identity"
+  fi
+  valid_id "$job" || die 2 "invalid job id: $job"
+  # A new operation has no retry fingerprint to compare. Run the global
+  # budget gate before process setup; standing operations defer it until the
+  # exact v2 preflight has established replay versus mismatch.
+  if [[ ! -e "$jobs/$job.json" ]]; then
+    require_goal_admission
+  fi
+  # Preconditions before the id is reserved keep a refused launch from leaving
+  # a pending-setup husk that consumes the caller's chosen name.
+  require_fresh_census
+  report_plan_drift
   reservation_claim_epoch=${goal_claim_epoch:-$current_claim_epoch}
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_launch_chain_lock "$job"
   exit_cleanup_job=$job
   exit_cleanup_chain=$job
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
   # A payload without a reservation belongs to another operation. A payload
   # beside a reservation is resolved by claim-launch as the same operation.
   [[ -e "$jobs/$job.json" || ! -e "$agents/$job" ]] \
     || die 1 "job payload collision: $job"
   if [[ -n "$goal" ]]; then
     acquire_goal_revision_lock "$goal" "$goal_revision"
-    require_goal_revision_admission 0
   fi
 
   if (( use_worktree )); then
@@ -1319,6 +1398,7 @@ dispatch_job() {
   permission_json=$(mktemp "$record_locks/permissions.XXXXXX")
   expand_permissions "$permission_name" "$workspace" "$use_worktree" "$permission_json"
   permission_digest=$(sha256_file "$permission_json")
+  tool_policy=$(json_field "$permission_json" tools)
   snapshot_json=$(mktemp "$record_locks/snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
   read_snapshot_fields "$snapshot_json"
@@ -1334,19 +1414,29 @@ dispatch_job() {
     brief=$brief_with_goal
   fi
 
-  input_bytes=$(enforce_inline_input_limit "$brief" brief)
-  input_hash=$(sha256_file "$brief")
   payload="$agents/$job"; round_dir="$payload/rounds/1"
+  prompt_temp=$(mktemp "$record_locks/composed-packet.XXXXXX")
+  composition_temp=$(mktemp "$record_locks/composition.XXXXXX")
+  set +e
+  composition_output=$("$ms" job compose-role-packet --root "$root" --role "$role" --brief "$brief" \
+    --job "$job" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round 1 --mission "$mission" \
+    --destructive-reach "$destructive_reach" \
+    --output "$prompt_temp" --composition "$composition_temp" \
+    "${composition_source_args[@]+"${composition_source_args[@]}"}")
+  composition_rc=$?
+  set -e
+  if (( composition_rc != 0 )); then
+    [[ -z "$composition_output" ]] || { record_delegate_outcome_raw "$composition_output"; printf '%s\n' "$composition_output"; }
+    return "$composition_rc"
+  fi
+  input_bytes=$(enforce_inline_input_limit "$prompt_temp" brief)
+  input_hash=$(sha256_file "$prompt_temp")
 
   local output_stream
   output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
     || die 1 "$runtime adapter could not resolve its child output stream"
 
   product_root_args=(--product-root "$workspace")
-  occupancy_preparation=$(mktemp "$record_locks/claim-occupancy.XXXXXX")
-  "$ms" job claim-occupancy-prepare --root "$root" --session "$runtime:$job" \
-    --output "$occupancy_preparation"
-
   acquire_cap_authority_lock
   cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
@@ -1360,9 +1450,39 @@ dispatch_job() {
     authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
   fi
   cap=$(json_field "$cap_resolution" capMin)
-  require_goal_revision_admission "$cap"
-  require_slice_admission "$cap" "$approved_ref"
+  set +e
+  preflight_output=$("$ms" job claim-launch --preflight --root "$root" --opid "$job" \
+    --operation-id "$job" \
+    --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
+    --runtime "$runtime" --model "$model" --role "$role" \
+    --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
+    "${product_root_args[@]+"${product_root_args[@]}"}" \
+    --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
+    --goal "$goal" --goal-revision "$goal_revision" \
+    --destructive-reach "$destructive_reach" --adapter-verb dispatch)
+  preflight_rc=$?
+  set -e
+  preflight_outcome=$(json_value "$preflight_output" outcome 2>/dev/null || true)
+  if (( preflight_rc != 0 )); then
+    [[ -z "$preflight_output" ]] || { record_delegate_outcome_raw "$preflight_output"; printf '%s\n' "$preflight_output"; }
+    return "$preflight_rc"
+  fi
+  [[ "$preflight_outcome" != PREFLIGHT-MATCHED ]] || replay_operation=1
+  if (( replay_operation == 0 )); then
+    require_goal_admission
+    require_goal_revision_admission "$cap"
+    require_slice_admission "$cap" "$approved_ref" "$goal" "$goal_revision"
+  fi
+  if ! acquire_lifecycle_lock_until "$job" 5; then
+    record_delegate_outcome LOCK_BUSY refused "rank=job-lifecycle key=$job retry=retry-after-the-named-holder-releases" "$job"
+    die 1 "LOCK_BUSY rank=job-lifecycle key=$job retry=retry-after-the-named-holder-releases"
+  fi
+  exit_cleanup_lifecycle=$job
+  occupancy_preparation=$(mktemp "$record_locks/claim-occupancy.XXXXXX")
+  "$ms" job claim-occupancy-prepare --root "$root" --session "$runtime:$job" \
+    --output "$occupancy_preparation"
   claim_output=$("$ms" job claim-launch --root "$root" --opid "$job" \
+    --operation-id "$job" \
     --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
     --runtime "$runtime" --model "$model" --role "$role" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
@@ -1370,25 +1490,31 @@ dispatch_job() {
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal" \
     --goal-revision "$goal_revision" --machine-id "$goal_machine" --approved-ref "$approved_ref" \
+    --destructive-reach "$destructive_reach" --adapter-verb dispatch \
     --creator-pid "$$" --occupancy-preparation "$occupancy_preparation") || claim_rc=$?
   rm -f "$occupancy_preparation"
   claim_outcome=$(json_value "$claim_output" outcome 2>/dev/null || true)
   [[ -n "$claim_outcome" ]] \
     || { printf '%s\n' "$claim_output" >&2; return 1; }
   if [[ "$claim_outcome" != WON ]]; then
+    record_delegate_outcome_raw "$claim_output"
     [[ ! -f "$jobs/$job.json" ]] || exit_cleanup_job=
     printf '%s\n' "$claim_output"
     return "$claim_rc"
   fi
   (( claim_rc == 0 )) || return "$claim_rc"
+  launch_capability=$(json_value "$claim_output" evidence.launchCapability)
+  [[ -n "$launch_capability" ]] || die 1 "claim-launch won without an adapter launch capability"
   exit_cleanup_authorization=
   release_cap_authority_lock
 
   mkdir -p "$round_dir"
   cp "$brief" "$payload/brief.md"
-  write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
+  mv "$prompt_temp" "$round_dir/prompt.md"
+  mv "$composition_temp" "$round_dir/composition.json"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
+  reasoning_effort=$(json_field "$round_dir/composition.json" configurationObligations.builderReasoningEffort)
   "$ms" job build-record --output "$record_json" --job "$job" --role "$role" \
     --mission "$mission" --mission-turn "$mission_turn" --stream "$stream" \
     --root "$root" --runtime "$runtime" \
@@ -1401,12 +1527,14 @@ dispatch_job() {
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
     --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" \
     --machine-id "$goal_machine" --approved-ref "$approved_ref" \
+    --destructive-reach "$destructive_reach" --reasoning-effort "$reasoning_effort" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
+    --composition "$round_dir/composition.json" \
     --launch-mode "$launch_mode" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --output-stream "$output_stream"
   rm -f "$cap_resolution"
-  finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
+  finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait" "$launch_capability"
 }
 
 # The authorize-and-launch tail, shared by dispatch_job and follow_up
@@ -1452,8 +1580,8 @@ read_snapshot_fields() { # snapshot json — sets snapshot_path, fallbacks, sign
   resume_cap=$(json_field "$1" resume 2>/dev/null || true)
 }
 
-finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag
-  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch launch_rc=0 tag
+finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag, capability
+  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 launch_capability=$8 patch launch_rc=0 tag
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
   # Launch returns only after the adapter has published the exact process
@@ -1462,17 +1590,22 @@ finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, 
   tag=$(json_field "$jobs/$job.json" instanceTag)
   [[ -n "$tag" && "$tag" != null ]] || die 1 "job $job record carries no reservation instance tag"
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
-    --job "$job" --tag "$tag" || launch_rc=$?
+    --job "$job" --tag "$tag" --launch-capability "$launch_capability" || launch_rc=$?
+  release_exit_lifecycle
   release_goal_revision_lock
   release_chain_lock "$chain"
   exit_cleanup_chain=
   trap 'checkout_execution_guard_release || true' EXIT
   if (( launch_rc != 0 )); then
+    record_delegate_outcome LAUNCH-FAILED refused "the adapter launch failed after reservation" "$job"
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
     lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
     rm -f "$patch"; return 3
   fi
-  await_handshake "$job" "$budget" "$current_claim_epoch" || return 3
+  if ! await_handshake "$job" "$budget" "$current_claim_epoch"; then
+    record_delegate_outcome HANDSHAKE-FAILED refused "the runtime did not establish its session within the recorded deadline" "$job"
+    return 3
+  fi
   if (( wait_flag )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
   # The exact waiter command (monitor facility, MON-04; backlog item 1
@@ -1530,25 +1663,26 @@ append_critique_open_ids() { # source message, output message, critic root
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 cap resumed_for_claim input_bytes input_hash
+  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp=
-  local -a product_root_args=()
+  local -a product_root_args=() continuation_args=()
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --message) [[ $# -ge 2 ]] || { usage; exit 2; }; message=$2; shift 2 ;;
+	  --operation-id) [[ $# -ge 2 ]] || { usage; exit 2; }; operation_override=$2; shift 2 ;;
       --approved-ref) [[ $# -ge 2 ]] || { usage; exit 2; }; approved_ref=$2; shift 2 ;;
       --wait) wait=1; shift ;;
       *) usage; exit 2 ;;
     esac
   done
   valid_id "$job" && [[ -f "$message" && -f "$jobs/$job.json" ]] || { usage; exit 2; }
+  operation_brief_hash=$(sha256_file "$message")
   lease_entry_check
   require_fresh_census
   report_plan_drift
-  require_goal_admission
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
   acquire_launch_chain_lock "$root_id"
   # The trap must reference a GLOBAL: when set -e unwinds the owning
@@ -1580,6 +1714,7 @@ follow_up() {
       && [[ "$(json_field "$latest" dispatchMode 2>/dev/null || true)" == follow-up ]]; then
     repeated_follow_up=1
     child=$(json_field "$latest" jobId)
+	standing_child_record="$jobs/$child.json"
     round=$(json_field "$latest" round 2>/dev/null || true)
     if [[ ! "$round" =~ ^([2-9]|[1-9][0-9]+)$ ]]; then
       round=${child#"$root_id-r"}
@@ -1600,6 +1735,7 @@ follow_up() {
   else
     die 1 "follow-up requires the newest record to be completed or failed with protocol_error; use a fresh dispatch after pending, running, timeout, or process-lost"
   fi
+  operation_parent=$(basename "${latest%.json}")
   session=$(json_field "$latest" sessionId 2>/dev/null || true)
   [[ -n "$session" && "$session" != null ]] || die 1 "follow-up has no resumable session id; use the fresh-context embed fallback"
   # The recorded parent session is part of every follow-up's identity. A
@@ -1607,6 +1743,9 @@ follow_up() {
   # session, even though the adapter opens a new session for the child.
   resumed_for_claim=$session
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
+  destructive_reach=$(json_field "$latest" destructiveReach 2>/dev/null || true)
+  [[ "$destructive_reach" == MECHANICAL || "$destructive_reach" == DESIGN-BEARING || "$destructive_reach" == DESTRUCTIVE-REACH ]] \
+    || die 1 "follow-up chain has no admitted destructiveReach class; start a fresh typed delegate chain"
   if [[ -z "$approved_ref" ]]; then
     approved_ref=$(json_field "$latest" approvedRef 2>/dev/null || true); [[ "$approved_ref" == null ]] && approved_ref=
   fi
@@ -1622,8 +1761,19 @@ follow_up() {
     [[ -z "$current_claim_epoch" || "$current_claim_epoch" == "$goal_claim_epoch" ]] \
       || die 1 "goal $goal revision $goal_revision belongs to claim epoch $goal_claim_epoch, not current epoch $current_claim_epoch"
     acquire_goal_revision_lock "$goal" "$goal_revision"
-    require_goal_revision_admission 0
   fi
+	if [[ -n "$operation_override" ]]; then
+	  operation_id=$operation_override
+	else
+	  operation_id=$("$ms" job operation-id --goal "$goal" --goal-revision "$goal_revision" \
+	    --dispatch-mode follow-up --role "$role" --brief-digest "$operation_brief_hash" --parent-job "$operation_parent") \
+	    || die 1 "could not derive the follow-up operation identity"
+	fi
+	valid_id "$operation_id" || die 2 "invalid follow-up operation id: $operation_id"
+	if (( repeated_follow_up )) && [[ "$(json_field "$standing_child_record" operationId 2>/dev/null || true)" != "$operation_id" ]]; then
+	  record_delegate_outcome REFUSED-OPID-MISMATCH refused "the active follow-up is bound to another v2 operation identity" "$child"
+	  return 1
+	fi
   reservation_claim_epoch=${goal_claim_epoch:-$current_claim_epoch}
   launch_mode=$(json_field "$latest" launchMode 2>/dev/null || true)
   if [[ "$launch_mode" != worktree && "$launch_mode" != shared-checkout ]]; then
@@ -1706,10 +1856,11 @@ follow_up() {
   exit_cleanup_job=$child
   exit_cleanup_chain=$root_id
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_follow_up_message; release_cap_authority_lock; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   permission_digest=$(sha256_file "$permission_json")
+  tool_policy=$(json_field "$permission_json" tools)
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
   read_snapshot_fields "$snapshot_json"
@@ -1719,25 +1870,32 @@ follow_up() {
     resume_mode=fresh-context
     adapter_verb=dispatch
     parent_round=$(json_field "$latest" round)
-    fresh_context_temp=$(mktemp "$record_locks/follow-context.XXXXXX")
-    delivery_content=$fresh_context_temp
-    {
-      printf '# Prior brief\n\n'; cat "$payload/brief.md"
-      printf '\n\n# Prior return\n\n'; cat "$payload/rounds/$parent_round/return.json"
-      printf '\n\n# Correction\n\n'; cat "$message"
-    } >"$delivery_content"
+    continuation_args=(
+      --continuation "prior-brief=$payload/brief.md"
+      --continuation "prior-return=$payload/rounds/$parent_round/return.json"
+    )
   fi
-  input_bytes=$(enforce_inline_input_limit "$delivery_content" message)
-  input_hash=$(sha256_file "$delivery_content")
+  prompt_temp=$(mktemp "$record_locks/follow-composed-packet.XXXXXX")
+  composition_temp=$(mktemp "$record_locks/follow-composition.XXXXXX")
+  set +e
+  composition_output=$("$ms" job compose-role-packet --root "$root" --role "$role" --brief "$delivery_content" \
+    --job "$child" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round "$round" --mission "$mission" \
+    --destructive-reach "$destructive_reach" \
+    --output "$prompt_temp" --composition "$composition_temp" \
+    "${continuation_args[@]+"${continuation_args[@]}"}")
+  composition_rc=$?
+  set -e
+  if (( composition_rc != 0 )); then
+    [[ -z "$composition_output" ]] || { record_delegate_outcome_raw "$composition_output"; printf '%s\n' "$composition_output"; }
+    return "$composition_rc"
+  fi
+  input_bytes=$(enforce_inline_input_limit "$prompt_temp" message)
+  input_hash=$(sha256_file "$prompt_temp")
   local output_stream
   output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
     || die 1 "$runtime adapter could not resolve its child output stream"
 
   product_root_args=(--product-root "$workspace")
-  occupancy_preparation=$(mktemp "$record_locks/follow-claim-occupancy.XXXXXX")
-  "$ms" job claim-occupancy-prepare --root "$root" --session "$runtime:$session" \
-    --output "$occupancy_preparation"
-
   acquire_cap_authority_lock
   cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
@@ -1751,9 +1909,39 @@ follow_up() {
     authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
   fi
   cap=$(json_field "$cap_resolution" capMin)
-  require_goal_revision_admission "$cap"
-  require_slice_admission "$cap" "$approved_ref"
+  set +e
+  preflight_output=$("$ms" job claim-launch --preflight --root "$root" --opid "$child" \
+	--operation-id "$operation_id" \
+    --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
+    --runtime "$runtime" --model "$model" --role "$role" \
+    --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
+    "${product_root_args[@]+"${product_root_args[@]}"}" \
+    --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
+    --goal "$goal" --goal-revision "$goal_revision" \
+    --destructive-reach "$destructive_reach" --adapter-verb "$adapter_verb")
+  preflight_rc=$?
+  set -e
+  preflight_outcome=$(json_value "$preflight_output" outcome 2>/dev/null || true)
+  if (( preflight_rc != 0 )); then
+    [[ -z "$preflight_output" ]] || { record_delegate_outcome_raw "$preflight_output"; printf '%s\n' "$preflight_output"; }
+    return "$preflight_rc"
+  fi
+  [[ "$preflight_outcome" != PREFLIGHT-MATCHED ]] || replay_operation=1
+  if (( replay_operation == 0 )); then
+    require_goal_admission
+    require_goal_revision_admission "$cap"
+    require_slice_admission "$cap" "$approved_ref" "$goal" "$goal_revision"
+  fi
+  if ! acquire_lifecycle_lock_until "$child" 5; then
+    record_delegate_outcome LOCK_BUSY refused "rank=job-lifecycle key=$child retry=retry-after-the-named-holder-releases" "$child"
+    die 1 "LOCK_BUSY rank=job-lifecycle key=$child retry=retry-after-the-named-holder-releases"
+  fi
+  exit_cleanup_lifecycle=$child
+  occupancy_preparation=$(mktemp "$record_locks/follow-claim-occupancy.XXXXXX")
+  "$ms" job claim-occupancy-prepare --root "$root" --session "$runtime:$session" \
+    --output "$occupancy_preparation"
   claim_output=$("$ms" job claim-launch --root "$root" --opid "$child" \
+	--operation-id "$operation_id" \
     --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
     --runtime "$runtime" --model "$model" --role "$role" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
@@ -1761,6 +1949,7 @@ follow_up() {
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal" \
     --goal-revision "$goal_revision" --machine-id "$goal_machine" --approved-ref "$approved_ref" \
+    --destructive-reach "$destructive_reach" --adapter-verb "$adapter_verb" \
     --creator-pid "$$" --occupancy-preparation "$occupancy_preparation") || claim_rc=$?
   rm -f "$occupancy_preparation"
   claim_outcome=$(json_value "$claim_output" outcome 2>/dev/null || true)
@@ -1770,12 +1959,15 @@ follow_up() {
     return 1
   fi
   if [[ "$claim_outcome" != WON ]]; then
+    record_delegate_outcome_raw "$claim_output"
     [[ -z "$fresh_context_temp" ]] || rm -f "$fresh_context_temp"
     [[ ! -f "$jobs/$child.json" ]] || exit_cleanup_job=
     printf '%s\n' "$claim_output"
     return "$claim_rc"
   fi
   (( claim_rc == 0 )) || return "$claim_rc"
+  launch_capability=$(json_value "$claim_output" evidence.launchCapability)
+  [[ -n "$launch_capability" ]] || die 1 "claim-launch won without an adapter launch capability"
   exit_cleanup_authorization=
   release_cap_authority_lock
 
@@ -1785,21 +1977,24 @@ follow_up() {
     mv "$fresh_context_temp" "$delivery_content"
     fresh_context_temp=
   fi
-  write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
+  mv "$prompt_temp" "$round_dir/prompt.md"
+  mv "$composition_temp" "$round_dir/composition.json"
 
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
   "$ms" job build-follow-record --output "$record_json" --parent "$latest" \
-    --job "$child" --round "$round" --parent-job "$(basename "${latest%.json}")" \
+    --job "$child" --operation-id "$operation_id" --round "$round" --parent-job "$(basename "${latest%.json}")" \
     --snapshot "$snapshot_path" --fallbacks "$fallbacks" --signal "$signal" \
     --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$reservation_claim_epoch" --cap-resolution "$cap_resolution" \
     --root "$root" --goal-revision "$goal_revision" --approved-ref "$approved_ref" \
+    --destructive-reach "$destructive_reach" \
+    --composition "$round_dir/composition.json" \
     --launch-mode "$launch_mode" --output-stream "$output_stream"
   rm -f "$cap_resolution"
   cleanup_follow_up_message
-  finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
+  finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait" "$launch_capability"
 }
 
 status_job() {
@@ -2091,20 +2286,21 @@ internal_reap_held() {
 }
 
 internal_launch() {
-  local runtime= verb= job= tag=
+  local runtime= verb= job= tag= launch_capability=
   while (($#)); do
     case "$1" in
       --runtime) runtime=$2; shift 2 ;;
       --verb) verb=$2; shift 2 ;;
       --job) job=$2; shift 2 ;;
       --tag) tag=$2; shift 2 ;;
+      --launch-capability) launch_capability=$2; shift 2 ;;
       *) exit 2 ;;
     esac
   done
   [[ -n "$runtime" && ( "$verb" == dispatch || "$verb" == follow-up ) \
-    && -n "$job" && -n "$tag" ]] || exit 2
+    && -n "$job" && -n "$tag" && -n "$launch_capability" ]] || exit 2
   internal_authority holder-only "$job"
-  launch_adapter "$runtime" "$verb" "$job" "$tag"
+  launch_adapter "$runtime" "$verb" "$job" "$tag" "$launch_capability"
 }
 
 internal_critique_mutation() { # job verb, mutation flags

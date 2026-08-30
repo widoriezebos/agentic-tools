@@ -70,6 +70,8 @@ var immutableFields = map[string]bool{
 	"permissionEnvelopeDigest": true, "productRoots": true, "capRequest": true,
 	"inputHash": true, "sessionOccupancyClaimGeneration": true,
 	"instanceTag": true, "outputStream": true, "reasoningEffort": true,
+	"composition": true, "sliceApprovalClaim": true, "destructiveReach": true,
+	"configurationObligations": true, "launchCapability": true,
 }
 
 // Owned metadata has a dedicated read-decide-write operation whose lock
@@ -87,7 +89,7 @@ var dedicatedMetadataFields = map[string]bool{
 // a finished job is final. Critique exhaustions have their own locked owner.
 var terminalMetadataFields = map[string]bool{
 	"mirror": true, "chainClosed": true, "chainUsage": true,
-	"runnerClosed": true,
+	"runnerClosed": true, "independentCritiqueJobRef": true, "liveProofEvidenceRef": true,
 }
 
 // OpError carries the process exit code a lifecycle refusal must surface. An
@@ -167,6 +169,34 @@ func withRecordLock(root, job string, fn func(recordPath string) error) error {
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn(recordPath)
+}
+
+// withOperationPublicationLock serializes the repository-wide scan and
+// publication of operation identities. Different chains therefore cannot
+// both observe one operation id as free and publish it under different jobs.
+func withOperationPublicationLock(root string, fn func() error) error {
+	lockPath := filepath.Join(root, "artifacts", "agents", "record-locks", "operation-id.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return err
+	}
+	handle, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("cannot open global operation lock: %w", err)
+	}
+	defer handle.Close()
+	deadline := time.Now().Add(recordLockWait())
+	for {
+		err = unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("global operation lock is busy after %s", recordLockWait())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
+	return fn()
 }
 
 // recordLockWait bounds record-lock acquisition, honoring the same env
@@ -303,6 +333,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["goalRevision"], current["goalRevision"]) ||
 			!sameValue(record["machineId"], current["machineId"]) ||
 			!sameValue(record["approvedRef"], current["approvedRef"]) ||
+			!sameValue(record["sliceApprovalClaim"], current["sliceApprovalClaim"]) ||
 			!sameValue(record["capMin"], current["capMin"]) {
 			return refuse(1, "invalid setup transition for %s", job)
 		}
@@ -316,6 +347,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			"reservationDeadline", "reservationDeadlinePurpose", "createdAt",
 			"instanceTag", "dispatchMode", "resumedSessionId", "canonicalModelKey",
 			"permissionEnvelopeDigest", "capRequest", "inputHash",
+			"launchCapability", "destructiveReach", "configurationObligations",
 		} {
 			// The reservation's truth wins unconditionally: a setup source
 			// carrying a lookalike spelling (a copied record, a stale

@@ -17,16 +17,17 @@ field() { # json file, dotted field
 }
 
 parse_supervisor_args() {
-  job= gate= instance_tag=
+  job= gate= instance_tag= launch_capability=
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || return 2; job=$2; shift 2 ;;
       --start-gate) [[ $# -ge 2 ]] || return 2; gate=$2; shift 2 ;;
       --instance-tag) [[ $# -ge 2 ]] || return 2; instance_tag=$2; shift 2 ;;
+      --launch-capability) [[ $# -ge 2 ]] || return 2; launch_capability=$2; shift 2 ;;
       *) return 2 ;;
     esac
   done
-  [[ -n "$job" && -n "$gate" && -n "$instance_tag" ]]
+  [[ -n "$job" && -n "$gate" && -n "$instance_tag" && -n "$launch_capability" ]]
 }
 
 root_job_id() { # job id
@@ -46,6 +47,9 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   shift
   parse_supervisor_args "$@" || return 2
   record="$jobs/$job.json"
+  "$ms" job launch-capability-consume --root "$root" --job "$job" \
+    --capability "$launch_capability" --adapter-verb "$adapter_verb" \
+    --instance-tag "$instance_tag" --supervisor-pid "$$" || return 1
   [[ "$(field "$record" instanceTag)" == "$instance_tag" ]] || {
     echo "$runtime adapter instance tag does not match job $job" >&2
     return 1

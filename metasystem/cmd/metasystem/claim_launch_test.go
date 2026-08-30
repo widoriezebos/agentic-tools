@@ -33,6 +33,8 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 		"--runtime", "codex",
 		"--model", "gpt-5.6-sol",
 		"--role", "implementer",
+		"--destructive-reach", "MECHANICAL",
+		"--adapter-verb", "dispatch",
 		"--launch-mode", "worktree",
 		"--permission-envelope-digest", digestA,
 		"--product-root", product,
@@ -57,7 +59,7 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("claim-launch output is not JSON: %q: %v", out, err)
 	}
-	if result.Outcome != "WON" || result.Evidence["fingerprint"] == "" {
+	if result.Outcome != "WON" || result.Evidence["fingerprint"] == "" || result.Evidence["launchCapability"] == "" {
 		t.Fatalf("claim-launch result = %+v", result)
 	}
 	created, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", "claim-cli.json"))

@@ -63,8 +63,8 @@ for retired in AUTH-R2-001 AUTH-R2-002 AUTH-R2-003; do
   echo "$retired retired: cap authority proven in internal/mission fence tests" >&2
 done
 
-# AUTH-R2-004 RETIRED with the python runner: it executed the python embedded
-# in mission-runner.sh and monkeypatched mission-contract.py's preflight to
+# AUTH-R2-004 RETIRED with the python runner: it executed embedded Python and
+# monkeypatched mission-contract.py's preflight to
 # prove the preflight-to-pin handoff (start pins, a generic preflight gains no
 # pin authority, resume re-pins a resealed amendment, an unsigned amendment is
 # refused). That embedded python no longer exists; the handoff lives in the
@@ -304,15 +304,25 @@ while true; do
     sleep 0.05
   done
 
-  if "$harness/scripts/agents/dispatch.sh" dispatch --role implementer --brief "$brief" --worktree \
-      --job-id attested-ceiling --cap-min 500 >"$tmp/attested.out" 2>&1; then
+  if {
+    mkdir -p "$harness/docs"
+    cp "$source_root/docs/orchestration.md" "$harness/docs/orchestration.md"
+    METASYSTEM_DELEGATE_ROOT="$harness" METASYSTEM_BIN="$enrolled_engine" \
+        METASYSTEM_CAP_MIN_IMPLEMENTER_FAKE_FAKE_MODEL=500 \
+        METASYSTEM_DISPATCH_PERMISSIONS_IMPLEMENTER=none \
+        "$enrolled_engine" delegate --role implementer --brief "$brief" \
+          --goal none-explicit --destructive-reach MECHANICAL --op attested-ceiling \
+          >"$tmp/attested.out" 2>&1
+  }; then
     echo "AUTH-R2-005: dispatch trusted raised supervision state over watcher attestation" >&2
     exit 1
   fi
-  if grep -Fq "live watcher's attested 330m ceiling" "$tmp/attested.out"; then
+  if grep -Fq '"outcome":"ERROR"' "$tmp/attested.out" \
+      && grep -Fq "\"detail\":\"dispatch cap 500m must stay below the live watcher's attested 330m ceiling" "$tmp/attested.out"; then
     break
   fi
-  if grep -Fq 'dispatch refused: last census verdict is CENSUS-FAILED' "$tmp/attested.out"; then
+  if grep -Fq 'dispatch refused: last census verdict is CENSUS-FAILED' "$tmp/attested.out" \
+      && grep -Fq '"outcome":"ERROR"' "$tmp/attested.out"; then
     (( SECONDS < deadline )) \
       || { echo "AUTH-R2-005: transient CENSUS-FAILED refusal did not recover before the deadline" >&2; cat "$tmp/attested.out" >&2; exit 1; }
     sleep 0.05

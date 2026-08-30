@@ -12,9 +12,9 @@ Usage:
       [--age-days N]
   scripts/agents/adapters/fake.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/fake.sh dispatch --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/fake.sh follow-up --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/fake.sh cancel --job <job-id>
   scripts/agents/adapters/fake.sh selftest
   scripts/agents/adapters/fake.sh local-config-paths
@@ -42,16 +42,17 @@ field() { # json file, dotted field
 }
 
 parse_supervisor_args() {
-  job= gate= instance_tag=
+  job= gate= instance_tag= launch_capability=
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --start-gate) [[ $# -ge 2 ]] || { usage; exit 2; }; gate=$2; shift 2 ;;
       --instance-tag) [[ $# -ge 2 ]] || { usage; exit 2; }; instance_tag=$2; shift 2 ;;
+      --launch-capability) [[ $# -ge 2 ]] || { usage; exit 2; }; launch_capability=$2; shift 2 ;;
       *) usage; exit 2 ;;
     esac
   done
-  [[ -n "$job" && -n "$gate" && -n "$instance_tag" ]] || { usage; exit 2; }
+  [[ -n "$job" && -n "$gate" && -n "$instance_tag" && -n "$launch_capability" ]] || { usage; exit 2; }
 }
 
 behavior_present() { grep -Fqi "FAKE:$1" "$prompt"; }
@@ -134,6 +135,9 @@ supervise() { # verb and remaining args
   local verb=$1 gate_poll heartbeat_sleep; shift
   parse_supervisor_args "$@"
   record="$jobs/$job.json"
+  "$ms" job launch-capability-consume --root "$root" --job "$job" \
+    --capability "$launch_capability" --adapter-verb "$verb" \
+    --instance-tag "$instance_tag" --supervisor-pid "$$" || exit 1
   gate_poll=$(fixture_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}")
   heartbeat_sleep=$(fixture_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-200}")
   gate_deadline=$(( $(date +%s) + ${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} ))
@@ -353,13 +357,13 @@ case "$command" in
     selftest_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fake-selftest.XXXXXX")
     selftest_id="fake-selftest-$(date -u +%Y%m%dt%H%M%Sz)-$$"
     sed 's/^Working Mode:.*/Working Mode: design/' "$root/scripts/agents/templates/brief.md" >"$selftest_dir/brief.md"
-    "$dispatch" dispatch --role design-critic --brief "$selftest_dir/brief.md" --runtime fake --permissions none --job-id "$selftest_id" --wait
+    env METASYSTEM_DELEGATE_ROOT="$root" METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1 "$ms" delegate --adapter-selftest fake --brief "$selftest_dir/brief.md" --workspace "$root" --op "$selftest_id" --wait
     cp "$root/scripts/agents/templates/follow-up.md" "$selftest_dir/follow.md"
-    "$dispatch" follow-up --job "$selftest_id" --message "$selftest_dir/follow.md" --wait
+    env METASYSTEM_DELEGATE_ROOT="$root" "$ms" delegate --follow-up "$selftest_id" --brief "$selftest_dir/follow.md" --wait
     sed 's/^Working Mode:.*/Working Mode: design/' "$root/scripts/agents/templates/brief.md" >"$selftest_dir/cancel.md"
     printf '\nFAKE:timeout\n' >>"$selftest_dir/cancel.md"
-    "$dispatch" dispatch --role design-critic --brief "$selftest_dir/cancel.md" --runtime fake --permissions none --job-id "$selftest_id-cancel" >/dev/null
-    "$dispatch" cancel --job "$selftest_id-cancel"
+    env METASYSTEM_DELEGATE_ROOT="$root" METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1 "$ms" delegate --adapter-selftest fake --brief "$selftest_dir/cancel.md" --workspace "$root" --op "$selftest_id-cancel" >/dev/null
+    env METASYSTEM_DELEGATE_ROOT="$root" "$ms" delegate --cancel "$selftest_id-cancel"
     mkdir -p "$agents/selftests"
     "$ms" adapter fake-selftest-record \
       --output "$agents/selftests/$selftest_id.json" --job "$selftest_id"

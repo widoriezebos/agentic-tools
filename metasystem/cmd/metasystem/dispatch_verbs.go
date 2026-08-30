@@ -44,6 +44,109 @@ func recordExit(err error) int {
 	return 1
 }
 
+type repeatedStringFlag []string
+
+type hazardClassFlag dispatchcore.HazardClass
+
+func (value *hazardClassFlag) String() string       { return string(*value) }
+func (value *hazardClassFlag) Set(raw string) error { *value = hazardClassFlag(raw); return nil }
+
+func (values *repeatedStringFlag) String() string { return strings.Join(*values, ",") }
+
+func (values *repeatedStringFlag) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+func runDispatchComposeRolePacket(args []string) int {
+	flags := flag.NewFlagSet("job compose-role-packet", flag.ContinueOnError)
+	root := flags.String("root", "", "metasystem checkout root")
+	role := flags.String("role", "", "role recipe")
+	brief := flags.String("brief", "", "task-direction file")
+	job := flags.String("job", "", "job id")
+	runtimeName := flags.String("runtime", "", "runtime name")
+	model := flags.String("model", "", "model name")
+	toolPolicy := flags.String("tool-policy", "", "resolved permission tool policy")
+	round := flags.Int64("round", 0, "job round")
+	mission := flags.String("mission", "", "mission id")
+	destructiveReach := flags.String("destructive-reach", "", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
+	output := flags.String("output", "", "assembled packet output")
+	composition := flags.String("composition", "", "composition record output")
+	validateOnly := flags.Bool("validate-only", false, "validate asserted sources without reading or writing a packet")
+	var sources repeatedStringFlag
+	var continuations repeatedStringFlag
+	flags.Var(&sources, "source", "asserted packet source (repeatable)")
+	flags.Var(&continuations, "continuation", "engine continuation slot=path (repeatable)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "job compose-role-packet: positional arguments are not accepted")
+		return 2
+	}
+	if *validateOnly {
+		if *root == "" || *role == "" {
+			fmt.Fprintln(os.Stderr, "job compose-role-packet --validate-only requires --root and --role")
+			return 2
+		}
+		_, _, err := dispatchcore.ValidateRolePacketSources(*root, *role, sources)
+		if err == nil {
+			return 0
+		}
+		var refusal *dispatchcore.CompositionRefusal
+		if errors.As(err, &refusal) {
+			printJSON(map[string]any{"outcome": refusal.Code, "headline": "refused", "source": refusal.Source, "detail": refusal.Detail})
+			return 9
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	continuationInputs := make([]dispatchcore.CompositionContinuation, 0, len(continuations))
+	for _, encoded := range continuations {
+		slot, path, found := strings.Cut(encoded, "=")
+		if !found || slot == "" || path == "" {
+			fmt.Fprintln(os.Stderr, "job compose-role-packet: --continuation must be slot=path")
+			return 2
+		}
+		continuationInputs = append(continuationInputs, dispatchcore.CompositionContinuation{Slot: slot, Path: path})
+	}
+	_, err := dispatchcore.ComposeRolePacket(dispatchcore.ComposeRolePacketParams{
+		Root: *root, Role: *role, Brief: *brief, JobID: *job, Runtime: *runtimeName,
+		Model: *model, ToolPolicy: *toolPolicy, Round: *round, Mission: *mission, DestructiveReach: dispatchcore.HazardClass(*destructiveReach), Output: *output,
+		CompositionOutput: *composition, ExtraSources: sources, Continuations: continuationInputs,
+	})
+	if err == nil {
+		return 0
+	}
+	var refusal *dispatchcore.CompositionRefusal
+	if errors.As(err, &refusal) {
+		printJSON(map[string]any{"outcome": refusal.Code, "headline": "refused", "source": refusal.Source, "detail": refusal.Detail})
+		return 9
+	}
+	fmt.Fprintln(os.Stderr, err)
+	return 1
+}
+
+func runDispatchOperationID(args []string) int {
+	flags := flag.NewFlagSet("job operation-id", flag.ContinueOnError)
+	goalID := flags.String("goal", "", "goal id")
+	revision := flags.Uint64("goal-revision", 0, "accepted goal revision")
+	mode := flags.String("dispatch-mode", "", "fresh or follow-up")
+	role := flags.String("role", "", "role")
+	briefDigest := flags.String("brief-digest", "", "task-direction SHA-256")
+	parentJob := flags.String("parent-job", "", "direct parent job for a follow-up")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	id, err := dispatchcore.DefaultOperationID(*goalID, *revision, dispatchcore.DispatchMode(*mode), *role, *briefDigest, *parentJob)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	fmt.Println(id)
+	return 0
+}
+
 func runDispatchRecordCreate(args []string) int {
 	flags := flag.NewFlagSet("job record-create", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
@@ -66,6 +169,7 @@ func runDispatchClaimLaunch(args []string) int {
 	flags := flag.NewFlagSet("job claim-launch", flag.ContinueOnError)
 	root := flags.String("root", "", "Git checkout root")
 	opid := flags.String("opid", "", "idempotent launch operation id")
+	operationID := flags.String("operation-id", "", "reservation operation identity; defaults to opid")
 	session := flags.String("session", "", "namespaced session key")
 	dispatchMode := flags.String("dispatch-mode", "", "fresh or follow-up")
 	resumedSession := flags.String("resumed-session", "", "runtime session id resumed by a follow-up")
@@ -83,7 +187,10 @@ func runDispatchClaimLaunch(args []string) int {
 	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this launch binds")
 	machineID := flags.String("machine-id", "", "claiming machine for the bound goal")
 	approvedRef := flags.String("approved-ref", "", "recorded approval reference")
+	destructiveReach := flags.String("destructive-reach", "", "admitted hazard class")
+	adapterVerb := flags.String("adapter-verb", "", "actual adapter launch verb")
 	wait := flags.Bool("wait", false, "wait through the bounded same-operation reservation loop")
+	preflight := flags.Bool("preflight", false, "compare retry identity without occupancy or reservation")
 	creatorPID := flags.Int64("creator-pid", 0, "long-lived launcher pid recorded for pending-setup liveness")
 	occupancyPreparationPath := flags.String("occupancy-preparation", "", "off-lock occupancy preparation hand-off")
 	var productRoots []string
@@ -100,6 +207,16 @@ func runDispatchClaimLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, "job claim-launch: --root, --opid, --session, --dispatch-mode, --runtime, --model, --role, --launch-mode, --permission-envelope-digest, and --input-hash are required")
 		return 2
 	}
+	if !claimLaunchInternalAuthorized(*root) {
+		printJSON(dispatchcore.ClaimResult{
+			Outcome: dispatchcore.ClaimRefusedInternalSurface,
+			Evidence: map[string]any{
+				"resolution": "delegate-verb-required",
+				"remedy":     "use metasystem delegate",
+			},
+		})
+		return 1
+	}
 	confPath := *conf
 	if confPath == "" {
 		confPath = filepath.Join(*root, "metasystem.conf")
@@ -111,6 +228,30 @@ func runDispatchClaimLaunch(args []string) int {
 		return 1
 	}
 	resumed := *resumedSession
+	claimParams := dispatchcore.ClaimLaunchParams{
+		Root: *root, OpID: *opid, OperationID: *operationID,
+		MainID: *mainID, ClaimEpoch: *claimEpoch, GoalID: *goalID,
+		GoalRevision: *goalRevision, MachineID: *machineID, ApprovedRef: *approvedRef, AdapterVerb: *adapterVerb,
+		Request: dispatchcore.LaunchFingerprintRequest{
+			SessionKey: *session, DispatchMode: dispatchcore.DispatchMode(*dispatchMode),
+			ResumedSessionID: &resumed, Runtime: *runtimeName, Model: *model, Role: *role,
+			LaunchMode: dispatchcore.LaunchMode(*launchMode), PermissionEnvelopeDigest: *permissionDigest,
+			ProductRoots: productRoots, CapMinutes: resolvedCap, InputHash: *inputHash,
+			GoalID: *goalID, GoalRevision: *goalRevision,
+			DestructiveReach: dispatchcore.HazardClass(*destructiveReach),
+		},
+		DefaultCapMinutes: resolvedCap,
+		Wait:              *wait,
+	}
+	if *preflight {
+		result, preflightErr := dispatchcore.ClaimLaunchPreflight(claimParams)
+		if preflightErr != nil {
+			fmt.Fprintln(os.Stderr, preflightErr)
+			return 1
+		}
+		printJSON(result)
+		return dispatchcore.ClaimOutcomeExitCode(result.Outcome)
+	}
 	var occupancyPreparation *dispatchcore.SessionOccupancyPreparation
 	if *occupancyPreparationPath != "" {
 		prepared, readErr := dispatchcore.ReadClaimOccupancyPreparation(*occupancyPreparationPath, *session)
@@ -125,20 +266,8 @@ func runDispatchClaimLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	result, err := dispatchcore.ClaimLaunch(dispatchcore.ClaimLaunchParams{
-		Root: *root, OpID: *opid,
-		MainID: *mainID, ClaimEpoch: *claimEpoch, GoalID: *goalID,
-		GoalRevision: *goalRevision, MachineID: *machineID, ApprovedRef: *approvedRef,
-		Request: dispatchcore.LaunchFingerprintRequest{
-			SessionKey: *session, DispatchMode: dispatchcore.DispatchMode(*dispatchMode),
-			ResumedSessionID: &resumed, Runtime: *runtimeName, Model: *model, Role: *role,
-			LaunchMode: dispatchcore.LaunchMode(*launchMode), PermissionEnvelopeDigest: *permissionDigest,
-			ProductRoots: productRoots, CapMinutes: resolvedCap, InputHash: *inputHash,
-		},
-		DefaultCapMinutes:    resolvedCap,
-		Wait:                 *wait,
-		OccupancyPreparation: occupancyPreparation,
-	}, dispatchcore.ClaimLaunchDependencies{
+	claimParams.OccupancyPreparation = occupancyPreparation
+	result, err := dispatchcore.ClaimLaunch(claimParams, dispatchcore.ClaimLaunchDependencies{
 		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{},
 		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
 			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
@@ -153,6 +282,69 @@ func runDispatchClaimLaunch(args []string) int {
 	}
 	printJSON(result)
 	return dispatchcore.ClaimOutcomeExitCode(result.Outcome)
+}
+
+// claimLaunchInternalAuthorized keeps reservation publication behind the
+// delegate verb. Production dispatch has a live `metasystem delegate`
+// ancestor; the complete process-table fixture is the one test seam that may
+// exercise the custody machine directly.
+func claimLaunchInternalAuthorized(root string) bool {
+	if strings.HasSuffix(os.Args[0], ".test") {
+		return true
+	}
+	if claimLaunchFakeFixtureAuthorized(root) {
+		return true
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(self); resolveErr == nil {
+		self = resolved
+	}
+	prober := identity.KernelProber{}
+	current := int64(os.Getppid())
+	seen := map[int64]bool{}
+	for depth := 0; depth < 12 && current > 1 && !seen[current]; depth++ {
+		seen[current] = true
+		exact, state, probeErr := prober.Probe(current)
+		if probeErr != nil || state != identity.Alive || !exact.ArgvKnown {
+			return false
+		}
+		if executable, ok := identity.ExecutablePath(current); ok {
+			if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
+				executable = resolved
+			}
+			if executable == self && len(exact.Argv) >= 2 && exact.Argv[1] == "delegate" {
+				return os.Getenv("METASYSTEM_DELEGATE_INTERNAL") == "1"
+			}
+		}
+		parent, ok := identity.ParentPid(current)
+		if !ok {
+			break
+		}
+		current = parent
+	}
+	return false
+}
+
+func claimLaunchFakeFixtureAuthorized(root string) bool {
+	processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE")
+	identityFile := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
+	for _, path := range []string{processFile, identityFile} {
+		if path == "" {
+			return false
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return false
+		}
+	}
+	configuration, err := os.ReadFile(filepath.Join(root, "metasystem.conf"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains("\n"+string(configuration), "\nmetasystem.runtimes=fake\n")
 }
 
 func runDispatchClaimOccupancyPrepare(args []string) int {
@@ -171,6 +363,28 @@ func runDispatchClaimOccupancyPrepare(args []string) int {
 		return 2
 	}
 	return recordExit(dispatchcore.WriteClaimOccupancyPreparation(*root, *session, *output))
+}
+
+func runDispatchLaunchCapabilityConsume(args []string) int {
+	flags := flag.NewFlagSet("job launch-capability-consume", flag.ContinueOnError)
+	root := flags.String("root", "", "Git checkout root")
+	job := flags.String("job", "", "admitted job id")
+	capability := flags.String("capability", "", "opaque one-shot launch capability")
+	adapterVerb := flags.String("adapter-verb", "", "dispatch or follow-up")
+	instanceTag := flags.String("instance-tag", "", "admitted instance tag")
+	supervisorPID := flags.Int64("supervisor-pid", 0, "adapter supervisor pid")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" || *job == "" || *capability == "" || *adapterVerb == "" || *instanceTag == "" || *supervisorPID < 1 {
+		fmt.Fprintln(os.Stderr, "job launch-capability-consume requires --root, --job, --capability, --adapter-verb, --instance-tag, and positive --supervisor-pid")
+		return 2
+	}
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	return recordExit(dispatchcore.ConsumeLaunchCapability(*root, *job, *capability, *adapterVerb, *instanceTag, *supervisorPID, reader))
 }
 
 type commandClaimProcessVerifier struct{}
@@ -455,6 +669,7 @@ func runDispatchRepairClaim(args []string) int {
 
 func runDispatchBuildSetup(args []string) int {
 	flags := flag.NewFlagSet("job build-setup", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root used to prove an approval")
 	output := flags.String("output", "", "pending-setup record output file")
 	job := flags.String("job", "", "job id")
 	role := flags.String("role", "", "job role")
@@ -473,7 +688,7 @@ func runDispatchBuildSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, --role, and --cap-resolution are required")
 		return 2
 	}
-	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution, *machineID, *approvedRef))
+	return recordExit(dispatchcore.BuildSetup(*root, *output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, *capResolution, *machineID, *approvedRef))
 }
 
 func runDispatchSliceAdmission(args []string) int {
@@ -481,6 +696,8 @@ func runDispatchSliceAdmission(args []string) int {
 	root := flags.String("root", "", "checkout root")
 	capMinutes := flags.Uint64("cap-min", 0, "final reservation cap in minutes")
 	approvedRef := flags.String("approved-ref", "", "recorded human approval reference")
+	goalID := flags.String("goal", "", "goal id this approval covers")
+	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this approval covers")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -488,13 +705,13 @@ func runDispatchSliceAdmission(args []string) int {
 		fmt.Fprintln(os.Stderr, "job slice-admission: --root and positive --cap-min are required")
 		return 2
 	}
-	verdict, err := dispatchcore.EvaluateSliceAdmission(*root, *capMinutes, *approvedRef)
+	verdict, err := dispatchcore.EvaluateSliceAdmission(*root, *capMinutes, *approvedRef, *goalID, *goalRevision)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	if verdict.Refused() {
-		fmt.Fprintln(os.Stderr, verdict.Refusal)
+		printJSON(map[string]any{"outcome": verdict.Reason, "headline": "refused", "detail": verdict.Refusal})
 		return 9
 	}
 	return 0
@@ -562,9 +779,11 @@ func runDispatchBuildRecord(args []string) int {
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	flags.StringVar(&p.MachineID, "machine-id", "", "claim machine for a goal-bound reservation")
 	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
+	flags.Var((*hazardClassFlag)(&p.DestructiveReach), "destructive-reach", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	flags.StringVar(&p.OutputStream, "output-stream", "", "child stdout event stream path")
+	flags.StringVar(&p.Composition, "composition", "", "closed-packet composition record")
 	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
 	flags.Func("product-root", "canonical declared product root (repeatable)", func(value string) error {
 		p.ProductRoots = append(p.ProductRoots, value)
@@ -574,8 +793,8 @@ func runDispatchBuildRecord(args []string) int {
 		return 2
 	}
 	if p.Output == "" || p.Job == "" || p.Role == "" || p.Runtime == "" || p.Workspace == "" ||
-		p.CapResolution == "" || p.Permissions == "" || p.Fallbacks == "" || p.OutputStream == "" || *launchMode == "" {
-		fmt.Fprintln(os.Stderr, "job build-record: --output, --job, --role, --runtime, --workspace, --cap-resolution, --permissions, --fallbacks, --launch-mode, and --output-stream are required")
+		p.CapResolution == "" || p.Permissions == "" || p.Fallbacks == "" || p.OutputStream == "" || p.Composition == "" || *launchMode == "" {
+		fmt.Fprintln(os.Stderr, "job build-record: --output, --job, --role, --runtime, --workspace, --cap-resolution, --permissions, --fallbacks, --composition, --launch-mode, and --output-stream are required")
 		return 2
 	}
 	p.Overridden = *overridden
@@ -590,6 +809,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.Output, "output", "", "pending record output file")
 	flags.StringVar(&p.Parent, "parent", "", "parent (latest) record file")
 	flags.StringVar(&p.Job, "job", "", "follow-up job id")
+	flags.StringVar(&p.OperationID, "operation-id", "", "v2 reservation operation identity")
 	flags.Int64Var(&p.Round, "round", 0, "follow-up round number")
 	flags.StringVar(&p.ParentJob, "parent-job", "", "parent job id")
 	flags.StringVar(&p.Snapshot, "snapshot", "", "capability snapshot path")
@@ -606,14 +826,16 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
+	flags.Var((*hazardClassFlag)(&p.DestructiveReach), "destructive-reach", "inherited hazard class")
 	flags.StringVar(&p.OutputStream, "output-stream", "", "child stdout event stream path")
+	flags.StringVar(&p.Composition, "composition", "", "closed-packet composition record")
 	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if p.Output == "" || p.Parent == "" || p.Job == "" || p.Round < 2 || p.ParentJob == "" ||
-		p.Fallbacks == "" || p.ResumeMode == "" || p.CapResolution == "" || p.OutputStream == "" || *launchMode == "" {
-		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --round (>=2), --parent-job, --fallbacks, --resume-mode, --cap-resolution, --launch-mode, and --output-stream are required")
+	if p.Output == "" || p.Parent == "" || p.Job == "" || p.OperationID == "" || p.Round < 2 || p.ParentJob == "" ||
+		p.Fallbacks == "" || p.ResumeMode == "" || p.CapResolution == "" || p.OutputStream == "" || p.Composition == "" || *launchMode == "" {
+		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --operation-id, --round (>=2), --parent-job, --fallbacks, --resume-mode, --cap-resolution, --composition, --launch-mode, and --output-stream are required")
 		return 2
 	}
 	p.Signal = *signal

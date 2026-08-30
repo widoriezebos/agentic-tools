@@ -385,7 +385,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	})
 
 	setup := filepath.Join(tmp, "setup.json")
-	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7", "", 0, capResolution, "", ""); err != nil {
+	if err := BuildSetup(root, setup, "job-b", "implementer", "", "main-1", "7", "", 0, capResolution, "", ""); err != nil {
 		t.Fatalf("BuildSetup: %v", err)
 	}
 	setupRecord := readJSONFile(t, setup)
@@ -403,7 +403,9 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		Snapshot: "artifacts/agents/capabilities/x.json", InputBytes: 12, InputHash: "h",
 		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
 		MainID: "main-1", ClaimEpoch: "7",
-		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
+		DestructiveReach: HazardMechanical,
+		ReasoningEffort:  "medium",
+		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	})
 	if err != nil {
 		t.Fatalf("BuildRecord: %v", err)
@@ -428,8 +430,9 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		ParentJob: "job-b", Snapshot: "artifacts/agents/capabilities/x.json",
 		Fallbacks: "[]", Signal: true, HandshakeBudget: 20, ResumeMode: "resumed",
 		InputBytes: 3, InputHash: "h2", MainID: "main-1", ClaimEpoch: "7",
-		CapResolution: capResolution,
-		LaunchMode:    LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
+		CapResolution:    capResolution,
+		DestructiveReach: HazardMechanical,
+		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	})
 	if err != nil {
 		t.Fatalf("BuildFollowRecord: %v", err)
@@ -483,6 +486,8 @@ func TestMissionProvenanceTuple(t *testing.T) {
 		Runtime: "fake", Workspace: workspace, CapResolution: capResolution,
 		Permissions: permissions, Fallbacks: "[]", Root: root,
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
+		DestructiveReach: HazardMechanical,
+		ReasoningEffort:  "medium",
 	}
 
 	partial := base
@@ -521,6 +526,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 		Round: 2, ParentJob: "j1", Fallbacks: "[]", ResumeMode: "fresh-context",
 		CapResolution: capResolution, Root: root, MissionTurn: "m-one-t2",
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
+		DestructiveReach: HazardMechanical,
 	}
 	if err := BuildFollowRecord(follow); err != nil {
 		t.Fatalf("same-incarnation follow-up refused: %v", err)

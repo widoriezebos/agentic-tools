@@ -14,7 +14,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "root-setup.json")
-	if err := BuildSetup(setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
+	if err := BuildSetup(root, setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job", setup); err != nil {
@@ -26,8 +26,11 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		"goalId": "goal-a", "goalRevision": 2, "machineId": "bed-m1", "parentJob": nil, "status": "pending", "phase": "handshake",
 		"error": nil, "mainId": "main-1", "claimEpoch": 5, "capMin": 5,
 		"workspaceRoot": root, "baseSha": "base", "branch": "main",
-		"permissions":    map[string]any{"requested": map[string]any{}},
-		"requestedModel": "fake-model", "startedAt": "2026-08-20T00:00:00Z", "endedAt": nil,
+		"permissions":              map[string]any{"requested": map[string]any{}},
+		"destructiveReach":         "MECHANICAL",
+		"configurationObligations": requiredConfigurationByHazard[HazardMechanical],
+		"reasoningEffort":          "medium",
+		"requestedModel":           "fake-model", "startedAt": "2026-08-20T00:00:00Z", "endedAt": nil,
 	})
 	if err := RecordSetup(root, "root-job", full); err != nil {
 		t.Fatal(err)
@@ -50,12 +53,13 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		Job: "root-job-r2", Round: 2, ParentJob: "root-job", Fallbacks: "[]",
 		ResumeMode: "fresh-context", CapResolution: capFile, Root: root,
 		MainID: "main-1", ClaimEpoch: "5", GoalRevision: 2,
-		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
+		DestructiveReach: HazardMechanical,
+		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	childSetup := filepath.Join(stage, "child-setup.json")
-	if err := BuildSetup(childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
+	if err := BuildSetup(root, childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job-r2", childSetup); err != nil {
@@ -88,7 +92,7 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
+	if err := BuildSetup(root, setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "goal-bound", setup); err != nil {

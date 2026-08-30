@@ -53,7 +53,7 @@ exhaustion stops with the work waiting on the human.
 
 ## Rostered Dispatch
 
-`metasystem.conf` owns the runtime and model roster. Dispatch a rostered role through `scripts/agents/dispatch.sh --role <role> --brief <file>` even when the selected runtime matches the main agent; `scripts/agents/dispatch.sh --help` owns the full command and lifecycle interface. `runtime=main` means the current session performs that role and is not dispatchable. Native subagents remain available for cheap, read-only exploration outside the roster.
+`metasystem.conf` owns the runtime and model roster. Dispatch a rostered role through `metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <MECHANICAL|DESIGN-BEARING|DESTRUCTIVE-REACH>` even when the selected runtime matches the main agent; `metasystem help` owns the full operator interface. `runtime=main` means the current session performs that role and is not dispatchable. Native subagents remain available for cheap, read-only exploration outside the roster.
 
 A brief asks the delegate only for verification it can actually perform. The validation suite is not one of those: its fixtures need real process visibility and every delegate sandbox denies it, so the orchestrator runs the suite outside the sandbox and the brief says so (KI-15). Demanding the impossible turns correct delegate behavior into a gap-stop.
 
@@ -61,7 +61,7 @@ A brief that cites authority — a manifest key, a document section, a decided c
 
 The dispatcher resolves the roster, writes the job record, assembles the runtime-neutral prompt, expands the permissions preset from `scripts/agents/permissions/`, and invokes `scripts/agents/adapters/<runtime>.sh`. The adapter's `--help` and `scripts/agents/adapters/runtime-common.sh` are the executable adapter contract; exact provider flags live only in the adapter. Role behavior and capability needs live in `scripts/agents/roles/<role>.md` and `<role>.requirements.json`.
 
-Corrections use `dispatch.sh follow-up` to resume the recorded session. When a runtime cannot resume that exact session, make a fresh dispatch whose brief embeds the prior brief, prior return, and focused correction; record the loss of context instead of silently pretending it resumed.
+Corrections use `metasystem delegate --follow-up <job> --brief <file>` to resume the recorded session. When a runtime cannot resume that exact session, the typed delegate path makes a fresh-context continuation whose packet embeds the prior brief, prior return, and focused correction; it records the loss of context instead of silently pretending it resumed.
 
 ## Artifact Protocol
 

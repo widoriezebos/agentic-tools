@@ -112,7 +112,7 @@ func nullableGoalRevision(goalID string, revision uint64) (any, error) {
 // id before the full record is assembled. Cap authority is already final when
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
-func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution, machineID, approvedRef string) error {
+func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution, machineID, approvedRef string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
@@ -128,21 +128,39 @@ func BuildSetup(output, job, role, parent, mainID, claimEpoch, goalID string, go
 	if goalID == "" && machineID != "" {
 		return fmt.Errorf("machineId requires a goalId")
 	}
+	capMinutes, ok := numInt(authority.capMin)
+	if !ok || capMinutes < 1 {
+		return fmt.Errorf("cap resolution has no positive capMin")
+	}
+	if approvedRef != "" && goalID == "" {
+		return fmt.Errorf("approvedRef requires a goalId and positive goalRevision")
+	}
+	var approvalClaim *SliceApprovalClaim
+	if approvedRef != "" {
+		if repoRoot == "" {
+			return fmt.Errorf("approvedRef requires the checkout root for approval proof")
+		}
+		approvalClaim, err = proveSliceApprovalClaim(repoRoot, uint64(capMinutes), approvedRef, goalID, goalRevision)
+		if err != nil {
+			return err
+		}
+	}
 	record := map[string]any{
-		"jobId":        job,
-		"operationId":  job,
-		"role":         role,
-		"status":       "pending-setup",
-		"phase":        "setup",
-		"error":        nil,
-		"mainId":       nullableString(mainID),
-		"claimEpoch":   epoch,
-		"goalId":       nullableString(goalID),
-		"goalRevision": revision,
-		"machineId":    nullableString(machineID),
-		"approvedRef":  nullableString(approvedRef),
-		"capMin":       authority.capMin,
-		"createdAt":    nowISO(),
+		"jobId":              job,
+		"operationId":        job,
+		"role":               role,
+		"status":             "pending-setup",
+		"phase":              "setup",
+		"error":              nil,
+		"mainId":             nullableString(mainID),
+		"claimEpoch":         epoch,
+		"goalId":             nullableString(goalID),
+		"goalRevision":       revision,
+		"machineId":          nullableString(machineID),
+		"approvedRef":        nullableString(approvedRef),
+		"sliceApprovalClaim": sliceApprovalClaim(approvalClaim),
+		"capMin":             authority.capMin,
+		"createdAt":          nowISO(),
 	}
 	if parent != "" {
 		record["parentJob"] = parent
@@ -191,41 +209,43 @@ func (a capAuthority) resolutionField() map[string]any {
 // from. File-valued fields are read here so the record shape and its inputs
 // stay in one place.
 type BuildRecordParams struct {
-	Output          string
-	Job             string
-	Role            string
-	Mission         string
-	MissionTurn     string
-	Stream          string
-	Root            string // dispatching checkout root, for mission provenance
-	Runtime         string
-	Workspace       string
-	CapResolution   string // cap-resolution file
-	Model           string
-	Overridden      bool
-	Snapshot        string
-	InputBytes      int64
-	InputHash       string
-	Permissions     string // requested-permissions envelope file
-	Fallbacks       string // JSON array of capability fallbacks
-	Signal          bool
-	HandshakeBudget int64
-	ApprovalName    string
-	ApprovedAt      string
-	RosterPair      string
-	RequestedPair   string
-	CostDirection   string
-	Reviews         string
-	GoalID          string
-	GoalRevision    uint64
-	MachineID       string
-	MainID          string
-	ClaimEpoch      string
-	ReasoningEffort string
-	LaunchMode      LaunchMode
-	ProductRoots    []string
-	OutputStream    string
-	ApprovedRef     string
+	Output           string
+	Job              string
+	Role             string
+	Mission          string
+	MissionTurn      string
+	Stream           string
+	Root             string // dispatching checkout root, for mission provenance
+	Runtime          string
+	Workspace        string
+	CapResolution    string // cap-resolution file
+	Model            string
+	Overridden       bool
+	Snapshot         string
+	InputBytes       int64
+	InputHash        string
+	Permissions      string // requested-permissions envelope file
+	Fallbacks        string // JSON array of capability fallbacks
+	Signal           bool
+	HandshakeBudget  int64
+	ApprovalName     string
+	ApprovedAt       string
+	RosterPair       string
+	RequestedPair    string
+	CostDirection    string
+	Reviews          string
+	GoalID           string
+	GoalRevision     uint64
+	MachineID        string
+	MainID           string
+	ClaimEpoch       string
+	ReasoningEffort  string
+	LaunchMode       LaunchMode
+	ProductRoots     []string
+	OutputStream     string
+	ApprovedRef      string
+	DestructiveReach HazardClass
+	Composition      string // closed-packet composition record
 }
 
 // BuildRecord assembles the full pending record for a fresh dispatch: chain
@@ -262,6 +282,13 @@ func BuildRecord(p BuildRecordParams) error {
 	if err != nil {
 		return fmt.Errorf("invalid capability fallbacks: %v", err)
 	}
+	var composition any
+	if p.Composition != "" {
+		composition, err = readCompositionForJob(p.Composition, p.Job, p.Role, p.Runtime, p.Model, p.Mission, p.DestructiveReach, 1, p.InputBytes, p.InputHash)
+		if err != nil {
+			return err
+		}
+	}
 	epoch, err := nullableEpoch(p.ClaimEpoch)
 	if err != nil {
 		return err
@@ -275,6 +302,27 @@ func BuildRecord(p BuildRecordParams) error {
 	}
 	if p.GoalID == "" && p.MachineID != "" {
 		return fmt.Errorf("machineId requires a goalId")
+	}
+	configuration, err := MinimumHazardConfiguration(p.DestructiveReach)
+	if err != nil {
+		return err
+	}
+	if err := ValidateRuntimeHazardConfiguration(p.Runtime, p.DestructiveReach); err != nil {
+		return err
+	}
+	if p.ReasoningEffort != configuration.BuilderReasoningEffort {
+		return fmt.Errorf("destructiveReach %s requires builder reasoning effort %s", p.DestructiveReach, configuration.BuilderReasoningEffort)
+	}
+	capMinutes, ok := numInt(authority.capMin)
+	if !ok || capMinutes < 1 {
+		return fmt.Errorf("cap resolution has no positive capMin")
+	}
+	var approvalClaim *SliceApprovalClaim
+	if p.ApprovedRef != "" {
+		approvalClaim, err = proveSliceApprovalClaim(p.Root, uint64(capMinutes), p.ApprovedRef, p.GoalID, p.GoalRevision)
+		if err != nil {
+			return err
+		}
 	}
 	// Mission provenance is resolved here, not accepted from the caller,
 	// and it is COMPLETE or refused: a mission-scoped
@@ -315,28 +363,32 @@ func BuildRecord(p BuildRecordParams) error {
 		}
 	}
 	record := map[string]any{
-		"jobId":              p.Job,
-		"operationId":        p.Job,
-		"role":               p.Role,
-		"mission":            nullableString(p.Mission),
-		"missionIncarnation": incarnation,
-		"stream":             nullableString(p.Stream),
-		"runtime":            p.Runtime,
-		"round":              1,
-		"parentJob":          nil,
-		"reviews":            nullableString(p.Reviews),
-		"goalId":             nullableString(p.GoalID),
-		"goalRevision":       revision,
-		"machineId":          nullableString(p.MachineID),
-		"approvedRef":        nullableString(p.ApprovedRef),
-		"status":             "pending",
-		"phase":              "handshake",
-		"error":              nil,
-		"mainId":             nullableString(p.MainID),
-		"claimEpoch":         epoch,
-		"workspaceRoot":      resolvePath(p.Workspace),
-		"baseSha":            base,
-		"branch":             branch,
+		"jobId":                    p.Job,
+		"operationId":              p.Job,
+		"role":                     p.Role,
+		"mission":                  nullableString(p.Mission),
+		"missionIncarnation":       incarnation,
+		"stream":                   nullableString(p.Stream),
+		"runtime":                  p.Runtime,
+		"round":                    1,
+		"parentJob":                nil,
+		"reviews":                  nullableString(p.Reviews),
+		"goalId":                   nullableString(p.GoalID),
+		"goalRevision":             revision,
+		"machineId":                nullableString(p.MachineID),
+		"approvedRef":              nullableString(p.ApprovedRef),
+		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),
+		"destructiveReach":         p.DestructiveReach,
+		"configurationObligations": configuration,
+		"reasoningEffort":          p.ReasoningEffort,
+		"status":                   "pending",
+		"phase":                    "handshake",
+		"error":                    nil,
+		"mainId":                   nullableString(p.MainID),
+		"claimEpoch":               epoch,
+		"workspaceRoot":            resolvePath(p.Workspace),
+		"baseSha":                  base,
+		"branch":                   branch,
 		"permissions": map[string]any{
 			"requested":           permissions,
 			"effective":           nil,
@@ -367,6 +419,7 @@ func BuildRecord(p BuildRecordParams) error {
 			"hash":     p.InputHash,
 			"delivery": "stdin",
 		},
+		"composition":         composition,
 		"startedAt":           nowISO(),
 		"endedAt":             nil,
 		"usage":               nil,
@@ -374,9 +427,6 @@ func BuildRecord(p BuildRecordParams) error {
 		"chainClosed":         false,
 		"runnerClosed":        false,
 		"critiqueExhaustions": []any{},
-	}
-	if p.ReasoningEffort != "" {
-		record["reasoningEffort"] = p.ReasoningEffort
 	}
 	if p.Role == "design-critic" || p.Role == "code-critic" || p.Role == "warden" {
 		record["findingRegister"] = []any{}
@@ -388,27 +438,30 @@ func BuildRecord(p BuildRecordParams) error {
 
 // BuildFollowRecordParams carries the inputs for a follow-up round record.
 type BuildFollowRecordParams struct {
-	Output          string
-	Parent          string // parent (latest) record file
-	Job             string
-	Round           int64
-	ParentJob       string
-	Snapshot        string
-	Fallbacks       string
-	Signal          bool
-	HandshakeBudget int64
-	ResumeMode      string
-	InputBytes      int64
-	InputHash       string
-	MissionTurn     string
-	MainID          string
-	ClaimEpoch      string
-	CapResolution   string
-	Root            string // dispatching checkout root, for mission provenance
-	GoalRevision    uint64
-	ApprovedRef     string
-	LaunchMode      LaunchMode
-	OutputStream    string
+	Output           string
+	Parent           string // parent (latest) record file
+	Job              string
+	OperationID      string
+	Round            int64
+	ParentJob        string
+	Snapshot         string
+	Fallbacks        string
+	Signal           bool
+	HandshakeBudget  int64
+	ResumeMode       string
+	InputBytes       int64
+	InputHash        string
+	MissionTurn      string
+	MainID           string
+	ClaimEpoch       string
+	CapResolution    string
+	Root             string // dispatching checkout root, for mission provenance
+	GoalRevision     uint64
+	ApprovedRef      string
+	DestructiveReach HazardClass
+	Composition      string // closed-packet composition record
+	LaunchMode       LaunchMode
+	OutputStream     string
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -421,6 +474,12 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	}
 	if p.LaunchMode != LaunchModeWorktree && p.LaunchMode != LaunchModeSharedCheckout {
 		return fmt.Errorf("follow-up dispatch launch mode must be worktree or shared-checkout")
+	}
+	if p.OperationID == "" {
+		p.OperationID = p.Job
+	}
+	if !validJobID.MatchString(p.OperationID) {
+		return fmt.Errorf("follow-up dispatch requires a valid reservation operation id")
 	}
 	parent, err := readObject(p.Parent)
 	if err != nil {
@@ -460,6 +519,20 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return fmt.Errorf("invalid capability fallbacks: %v", err)
 	}
+	role, _ := parent["role"].(string)
+	runtimeName, _ := parent["runtime"].(string)
+	model, _ := parent["requestedModel"].(string)
+	mission, _ := parent["mission"].(string)
+	if asString(parent["destructiveReach"]) != string(p.DestructiveReach) {
+		return fmt.Errorf("follow-up must inherit the parent destructiveReach class")
+	}
+	var composition any
+	if p.Composition != "" {
+		composition, err = readCompositionForJob(p.Composition, p.Job, role, runtimeName, model, mission, p.DestructiveReach, p.Round, p.InputBytes, p.InputHash)
+		if err != nil {
+			return err
+		}
+	}
 	epoch, err := nullableEpoch(p.ClaimEpoch)
 	if err != nil {
 		return err
@@ -477,6 +550,24 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return err
 	}
+	configuration, err := MinimumHazardConfiguration(p.DestructiveReach)
+	if err != nil {
+		return err
+	}
+	if err := ValidateRuntimeHazardConfiguration(runtimeName, p.DestructiveReach); err != nil {
+		return err
+	}
+	capMinutes, ok := numInt(authority.capMin)
+	if !ok || capMinutes < 1 {
+		return fmt.Errorf("cap resolution has no positive capMin")
+	}
+	var approvalClaim *SliceApprovalClaim
+	if p.ApprovedRef != "" {
+		approvalClaim, err = proveSliceApprovalClaim(p.Root, uint64(capMinutes), p.ApprovedRef, goalID, p.GoalRevision)
+		if err != nil {
+			return err
+		}
+	}
 	var session any
 	if p.ResumeMode == "resumed" {
 		var present bool
@@ -485,29 +576,33 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		}
 	}
 	record := map[string]any{
-		"role":               parent["role"],
-		"mission":            parent["mission"],
-		"missionIncarnation": parent["missionIncarnation"],
-		"stream":             parent["stream"],
-		"runtime":            parent["runtime"],
-		"reviews":            parent["reviews"],
-		"goalId":             parent["goalId"],
-		"goalRevision":       revision,
-		"machineId":          parent["machineId"],
-		"approvedRef":        nullableString(p.ApprovedRef),
-		"workspaceRoot":      parent["workspaceRoot"],
-		"baseSha":            parent["baseSha"],
-		"branch":             parent["branch"],
-		"requestedModel":     parent["requestedModel"],
-		"jobId":              p.Job,
-		"operationId":        p.Job,
-		"round":              p.Round,
-		"parentJob":          p.ParentJob,
-		"status":             "pending",
-		"phase":              "handshake",
-		"error":              nil,
-		"mainId":             nullableString(p.MainID),
-		"claimEpoch":         epoch,
+		"role":                     parent["role"],
+		"mission":                  parent["mission"],
+		"missionIncarnation":       parent["missionIncarnation"],
+		"stream":                   parent["stream"],
+		"runtime":                  parent["runtime"],
+		"reviews":                  parent["reviews"],
+		"goalId":                   parent["goalId"],
+		"goalRevision":             revision,
+		"machineId":                parent["machineId"],
+		"approvedRef":              nullableString(p.ApprovedRef),
+		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),
+		"destructiveReach":         p.DestructiveReach,
+		"configurationObligations": configuration,
+		"reasoningEffort":          configuration.BuilderReasoningEffort,
+		"workspaceRoot":            parent["workspaceRoot"],
+		"baseSha":                  parent["baseSha"],
+		"branch":                   parent["branch"],
+		"requestedModel":           parent["requestedModel"],
+		"jobId":                    p.Job,
+		"operationId":              p.OperationID,
+		"round":                    p.Round,
+		"parentJob":                p.ParentJob,
+		"status":                   "pending",
+		"phase":                    "handshake",
+		"error":                    nil,
+		"mainId":                   nullableString(p.MainID),
+		"claimEpoch":               epoch,
 		"permissions": map[string]any{
 			"requested":           requested,
 			"effective":           nil,
@@ -536,10 +631,11 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			"hash":     p.InputHash,
 			"delivery": "stdin",
 		},
-		"startedAt": nowISO(),
-		"endedAt":   nil,
-		"usage":     nil,
-		"mirror":    nil,
+		"composition": composition,
+		"startedAt":   nowISO(),
+		"endedAt":     nil,
+		"usage":       nil,
+		"mirror":      nil,
 	}
 	// A follow-up serves the same product as its chain: the parent's declared
 	// roots carry, and an empty declaration falls back to the workspace.
@@ -550,6 +646,120 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		record["productRoots"] = []any{resolvePath(asString(parent["workspaceRoot"]))}
 	}
 	return writeRecord(p.Output, record)
+}
+
+func readCompositionForJob(path, job, role, runtimeName, model, mission string, destructiveReach HazardClass, round, packetBytes int64, packetDigest string) (map[string]any, error) {
+	if path == "" {
+		return nil, fmt.Errorf("delegate job requires a composition record")
+	}
+	record, err := readObject(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read composition record: %v", err)
+	}
+	allowedRecordFields := map[string]bool{
+		"schemaVersion": true, "jobId": true, "role": true, "runtime": true,
+		"model": true, "round": true, "mission": true, "recipe": true,
+		"recipeDigest": true, "packetDigest": true, "contextProof": true,
+		"toolSurface": true, "machineSlotAdmission": true, "sources": true,
+		"destructiveReach": true, "configurationObligations": true,
+	}
+	if len(record) != len(allowedRecordFields) {
+		return nil, fmt.Errorf("composition record has an incomplete or expanded top-level shape")
+	}
+	for field := range record {
+		if !allowedRecordFields[field] {
+			return nil, fmt.Errorf("composition record contains undeclared field %q", field)
+		}
+	}
+	schemaVersion, schemaOK := numInt(record["schemaVersion"])
+	recordedRound, roundOK := numInt(record["round"])
+	if !schemaOK || schemaVersion != 1 {
+		return nil, fmt.Errorf("composition record must use schema version 1")
+	}
+	if asString(record["jobId"]) != job || asString(record["role"]) != role || asString(record["runtime"]) != runtimeName ||
+		asString(record["model"]) != model || asString(record["mission"]) != emptyAsNone(mission) || !roundOK || recordedRound != round ||
+		asString(record["packetDigest"]) != packetDigest || asString(record["destructiveReach"]) != string(destructiveReach) {
+		return nil, fmt.Errorf("composition record does not bind the job, role, runtime, model, mission, round, and delivered packet digest")
+	}
+	configuration, configurationOK := record["configurationObligations"].(map[string]any)
+	expectedConfiguration, expectedErr := MinimumHazardConfiguration(destructiveReach)
+	if expectedErr != nil || !configurationOK || !configurationObligationsMatchObject(expectedConfiguration, configuration) {
+		return nil, fmt.Errorf("composition record does not carry the hazard configuration obligations")
+	}
+	if asString(record["recipe"]) != rolePacketTablePath+"#"+role || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
+		!incarnationRe.MatchString(packetDigest) || packetBytes <= 0 {
+		return nil, fmt.Errorf("composition record has invalid recipe or packet provenance")
+	}
+	contextProof, ok := record["contextProof"].(map[string]any)
+	if !ok || len(contextProof) != 3 || asString(contextProof["classification"]) != "advisory" ||
+		asString(contextProof["proofState"]) != "no-leak-not-proven" || asString(contextProof["reasonCode"]) != "BROAD-READ-RUNTIME" {
+		return nil, fmt.Errorf("composition record does not carry the bootstrap-honest context classification")
+	}
+	toolSurface, ok := record["toolSurface"].(map[string]any)
+	if !ok || len(toolSurface) != 3 || asString(toolSurface["policy"]) == "" {
+		return nil, fmt.Errorf("composition record does not carry the resolved tool surface")
+	}
+	nameState := asString(toolSurface["nameState"])
+	names, namesOK := toolSurface["names"].([]any)
+	if !namesOK || (nameState != "exact" && nameState != "unobserved") || (nameState == "unobserved" && len(names) != 0) {
+		return nil, fmt.Errorf("composition record has invalid tool-name evidence")
+	}
+	machineSlot, ok := record["machineSlotAdmission"].(map[string]any)
+	if !ok || len(machineSlot) != 2 || asString(machineSlot["outcome"]) != "DEFERRED" ||
+		asString(machineSlot["ownerGoal"]) != "machine-concurrency-governor" {
+		return nil, fmt.Errorf("composition record does not preserve the machine-slot governor seam")
+	}
+	sources, ok := record["sources"].([]any)
+	if !ok || len(sources) < 3 {
+		return nil, fmt.Errorf("composition record has no source ranges")
+	}
+	previousEnd := int64(0)
+	for index, raw := range sources {
+		source, ok := raw.(map[string]any)
+		if !ok || len(source) != 7 {
+			return nil, fmt.Errorf("composition source %d has an invalid shape", index)
+		}
+		for _, field := range []string{"slot", "source", "sourceDigest", "deliveredDigest", "sourceBytes", "startByte", "endByte"} {
+			if _, present := source[field]; !present {
+				return nil, fmt.Errorf("composition source %d is missing %s", index, field)
+			}
+		}
+		start, startOK := numInt(source["startByte"])
+		end, endOK := numInt(source["endByte"])
+		sourceBytes, bytesOK := numInt(source["sourceBytes"])
+		if asString(source["slot"]) == "" || asString(source["source"]) == "" ||
+			!incarnationRe.MatchString(asString(source["sourceDigest"])) || !incarnationRe.MatchString(asString(source["deliveredDigest"])) ||
+			!startOK || !endOK || !bytesOK || start != previousEnd || end <= start || sourceBytes < 0 {
+			return nil, fmt.Errorf("composition source %d has invalid identity, digests, or byte range", index)
+		}
+		previousEnd = end
+	}
+	first, _ := sources[0].(map[string]any)
+	toolIndex := -1
+	for index, raw := range sources {
+		source, _ := raw.(map[string]any)
+		if asString(source["slot"]) == "tool-names" {
+			toolIndex = index
+		}
+	}
+	if toolIndex < 1 || toolIndex+1 >= len(sources) {
+		return nil, fmt.Errorf("composition source order or packet byte coverage is invalid")
+	}
+	toolNames, _ := sources[toolIndex].(map[string]any)
+	runtimeNotice, _ := sources[toolIndex+1].(map[string]any)
+	continuationsValid := true
+	for _, raw := range sources[toolIndex+2:] {
+		source, _ := raw.(map[string]any)
+		slot := asString(source["slot"])
+		continuationsValid = continuationsValid && (slot == "prior-brief" || slot == "prior-return" || slot == "critique-register") && asString(source["source"]) == "engine:"+slot
+	}
+	if asString(first["slot"]) != "task-direction" || asString(first["source"]) != "caller:brief" ||
+		asString(toolNames["source"]) != "generated:tool-names" ||
+		asString(runtimeNotice["slot"]) != "generated-runtime-notice" || asString(runtimeNotice["source"]) != "generated:runtime-notice" ||
+		!continuationsValid || previousEnd != packetBytes {
+		return nil, fmt.Errorf("composition source order or packet byte coverage is invalid")
+	}
+	return record, nil
 }
 
 func productRootsEmpty(value any) bool {

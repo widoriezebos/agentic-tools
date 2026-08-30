@@ -2,9 +2,11 @@ package dispatch
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,6 +24,9 @@ const (
 	ClaimRefusedUnprovableLegacy ClaimOutcome = "REFUSED-UNPROVABLE-LEGACY"
 	ClaimRefusedSessionBusy      ClaimOutcome = "REFUSED-SESSION-BUSY"
 	ClaimRefusedUnprovable       ClaimOutcome = "REFUSED-UNPROVABLE"
+	ClaimRefusedInternalSurface  ClaimOutcome = "REFUSED-INTERNAL-SURFACE"
+	ClaimPreflightAvailable      ClaimOutcome = "PREFLIGHT-AVAILABLE"
+	ClaimPreflightMatched        ClaimOutcome = "PREFLIGHT-MATCHED"
 )
 
 const (
@@ -38,6 +43,7 @@ type ClaimResult struct {
 type ClaimLaunchParams struct {
 	Root                 string
 	OpID                 string
+	OperationID          string
 	Request              LaunchFingerprintRequest
 	MainID               string
 	ClaimEpoch           string
@@ -45,18 +51,115 @@ type ClaimLaunchParams struct {
 	GoalRevision         uint64
 	MachineID            string
 	ApprovedRef          string
+	AdapterVerb          string
 	DefaultCapMinutes    int64
 	Wait                 bool
 	OccupancyPreparation *SessionOccupancyPreparation
 }
 
+// ClaimLaunchPreflight compares an existing operation with the complete v2
+// request before budget admission or session occupancy. This is advisory; the
+// authoritative claim repeats the global operation scan while holding the
+// operation publication lock.
+func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
+	if !validJobID.MatchString(params.OpID) {
+		return ClaimResult{}, fmt.Errorf("claim-launch opid must be a valid job id")
+	}
+	if params.OperationID == "" {
+		params.OperationID = params.OpID
+	}
+	if !validJobID.MatchString(params.OperationID) {
+		return ClaimResult{}, fmt.Errorf("claim-launch operation id must be a valid job id")
+	}
+	params.Request.GoalID = params.GoalID
+	params.Request.GoalRevision = params.GoalRevision
+	if err := ValidateRuntimeHazardConfiguration(params.Request.Runtime, params.Request.DestructiveReach); err != nil {
+		return ClaimResult{}, err
+	}
+	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
+	if err != nil {
+		return ClaimResult{}, err
+	}
+	_, recordPath, _ := paths(params.Root, params.OpID)
+	record, err := readObject(recordPath)
+	if os.IsNotExist(err) {
+		otherPath, other, findErr := findOperationRecord(params.Root, params.OperationID, params.OpID)
+		if findErr != nil {
+			return ClaimResult{}, findErr
+		}
+		if other != nil {
+			return claimResult(ClaimRefusedOpIDMismatch, fingerprint, map[string]any{
+				"resolution": "operation-id-bound-to-another-job", "recordPath": otherPath,
+				"recordedJobId": asString(other["jobId"]), "operationId": params.OperationID,
+			}), nil
+		}
+		return claimResult(ClaimPreflightAvailable, fingerprint, map[string]any{"resolution": "no-standing-opid", "operationId": params.OperationID}), nil
+	}
+	if err != nil {
+		return ClaimResult{}, fmt.Errorf("claim-launch cannot read standing opid %s: %w", params.OpID, err)
+	}
+	base := map[string]any{"resolution": "preflight-same-opid", "recordPath": recordPath}
+	if asString(record["jobId"]) != params.OpID || recordOperationID(record) != params.OperationID {
+		base["reason"] = "standing-record-job-id-does-not-match-opid"
+		return claimResult(ClaimRefusedUnprovable, fingerprint, base), nil
+	}
+	recordedDigest, hasDigest := record["fingerprint"].(string)
+	recordedVersion, hasVersion := numInt(record["fingerprintVersion"])
+	if !hasDigest || recordedDigest == "" || !hasVersion || recordedVersion != int64(fingerprint.Version) {
+		base["reason"] = "standing-record-uses-legacy-or-unknown-fingerprint-version"
+		return claimResult(ClaimRefusedUnprovableLegacy, fingerprint, base), nil
+	}
+	base["recordedFingerprint"] = recordedDigest
+	base["recordedFingerprintVersion"] = recordedVersion
+	if recordedDigest != fingerprint.Digest {
+		base["reason"] = "fingerprint-equality-gate-failed"
+		return claimResult(ClaimRefusedOpIDMismatch, fingerprint, base), nil
+	}
+	return claimResult(ClaimPreflightMatched, fingerprint, base), nil
+}
+
+func findOperationRecord(root, operationID, exceptJob string) (string, map[string]any, error) {
+	jobsDir, _, _ := paths(root, exceptJob)
+	entries, err := os.ReadDir(jobsDir)
+	if os.IsNotExist(err) {
+		return "", nil, nil
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("claim-launch cannot scan operation identities: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(jobsDir, entry.Name())
+		record, readErr := readObject(path)
+		if readErr != nil {
+			return "", nil, fmt.Errorf("claim-launch cannot read operation identity record %s: %w", path, readErr)
+		}
+		recordedJob := asString(record["jobId"])
+		if recordedJob != exceptJob && recordOperationID(record) == operationID {
+			return path, record, nil
+		}
+	}
+	return "", nil, nil
+}
+
+func recordOperationID(record map[string]any) string {
+	if operationID := asString(record["operationId"]); operationID != "" {
+		return operationID
+	}
+	return asString(record["jobId"])
+}
+
 type claimReservationProvenance struct {
-	mainID       any
-	claimEpoch   any
-	goalID       any
-	goalRevision any
-	machineID    any
-	approvedRef  any
+	mainID             any
+	claimEpoch         any
+	goalID             any
+	goalRevision       any
+	machineID          any
+	approvedRef        any
+	sliceApprovalClaim any
+	configuration      ConfigurationObligations
 }
 
 type ClaimProcessVerifier interface {
@@ -64,13 +167,14 @@ type ClaimProcessVerifier interface {
 }
 
 type ClaimLaunchDependencies struct {
-	Now             func() time.Time
-	Sleep           func(time.Duration)
-	CreatorPID      int64
-	IdentityReader  identity.StartReader
-	ProcessVerifier ClaimProcessVerifier
-	Occupancy       SessionOccupancyReader
-	Nonce           func() (string, error)
+	Now              func() time.Time
+	Sleep            func(time.Duration)
+	CreatorPID       int64
+	IdentityReader   identity.StartReader
+	ProcessVerifier  ClaimProcessVerifier
+	Occupancy        SessionOccupancyReader
+	Nonce            func() (string, error)
+	LaunchCapability func() (string, error)
 	// Reconcile runs the nonce-global adoption engine after a same-operation
 	// read reaches RECONCILING. The command boundary binds production census;
 	// tests bind a deterministic process table.
@@ -91,9 +195,40 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if !validJobID.MatchString(params.OpID) {
 		return ClaimResult{}, fmt.Errorf("claim-launch opid must be a valid job id")
 	}
+	if params.OperationID == "" {
+		params.OperationID = params.OpID
+	}
+	if !validJobID.MatchString(params.OperationID) {
+		return ClaimResult{}, fmt.Errorf("claim-launch operation id must be a valid job id")
+	}
+	// Provenance and retry identity name the same accepted goal revision. The
+	// claim boundary supplies these fields so an internal caller cannot omit
+	// them from the fingerprint while still recording them on the reservation.
+	params.Request.GoalID = params.GoalID
+	params.Request.GoalRevision = params.GoalRevision
+	if params.AdapterVerb != "dispatch" && params.AdapterVerb != "follow-up" {
+		return ClaimResult{}, fmt.Errorf("claim-launch adapter verb must be dispatch or follow-up")
+	}
+	configuration, err := MinimumHazardConfiguration(params.Request.DestructiveReach)
+	if err != nil {
+		return ClaimResult{}, err
+	}
+	if err := ValidateRuntimeHazardConfiguration(params.Request.Runtime, params.Request.DestructiveReach); err != nil {
+		return ClaimResult{}, err
+	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
 	if err != nil {
 		return ClaimResult{}, err
+	}
+	var approvalClaim *SliceApprovalClaim
+	if params.ApprovedRef != "" {
+		approvalClaim, err = proveSliceApprovalClaim(params.Root, uint64(fingerprint.Request.CapMinutes), params.ApprovedRef, params.GoalID, params.GoalRevision)
+		if err != nil {
+			if refusal, ok := err.(*OpError); ok {
+				return claimResult(ClaimOutcome(refusal.Reason), fingerprint, map[string]any{"resolution": "slice-approval-refused", "detail": refusal.Message}), nil
+			}
+			return ClaimResult{}, err
+		}
 	}
 	claimEpoch, err := nullableEpoch(params.ClaimEpoch)
 	if err != nil {
@@ -103,9 +238,14 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
+	if params.ApprovedRef != "" && params.GoalID == "" {
+		return ClaimResult{}, fmt.Errorf("claim-launch approvedRef requires a goal id and positive revision")
+	}
 	provenance := claimReservationProvenance{
 		mainID: nullableString(params.MainID), claimEpoch: claimEpoch, goalID: nullableString(params.GoalID),
 		goalRevision: goalRevision, machineID: nullableString(params.MachineID), approvedRef: nullableString(params.ApprovedRef),
+		sliceApprovalClaim: sliceApprovalClaim(approvalClaim),
+		configuration:      configuration,
 	}
 	dependencies = claimDependenciesWithDefaults(dependencies)
 	if !params.Wait {
@@ -178,6 +318,9 @@ func claimDependenciesWithDefaults(dependencies ClaimLaunchDependencies) ClaimLa
 	if dependencies.Nonce == nil {
 		dependencies.Nonce = claimNonce
 	}
+	if dependencies.LaunchCapability == nil {
+		dependencies.LaunchCapability = claimLaunchCapability
+	}
 	return dependencies
 }
 
@@ -189,13 +332,30 @@ func claimNonce() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
+func claimLaunchCapability() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("claim-launch cannot mint adapter launch capability: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}
+
 func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint, provenance claimReservationProvenance, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (result ClaimResult, err error) {
+	err = withOperationPublicationLock(params.Root, func() error {
+		var lockedErr error
+		result, lockedErr = claimLaunchAttemptLocked(params, fingerprint, provenance, dependencies, attempt, reconcileIdentityless)
+		return lockedErr
+	})
+	return result, err
+}
+
+func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFingerprint, provenance claimReservationProvenance, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (result ClaimResult, err error) {
 	found := false
 	err = withRecordSessionLock(params.Root, params.OpID, func(recordPath string, _ *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr == nil {
 			found = true
-			result, readErr = resolveSameOpID(params.OpID, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
+			result, readErr = resolveSameOpID(params.OpID, params.OperationID, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
 			return readErr
 		}
 		if !os.IsNotExist(readErr) {
@@ -205,6 +365,18 @@ func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint,
 	})
 	if err != nil || found {
 		return result, err
+	}
+	{
+		otherPath, other, scanErr := findOperationRecord(params.Root, params.OperationID, params.OpID)
+		if scanErr != nil {
+			return ClaimResult{}, scanErr
+		}
+		if other != nil {
+			return claimResult(ClaimRefusedOpIDMismatch, fingerprint, map[string]any{
+				"resolution": "operation-id-bound-to-another-job", "recordPath": otherPath,
+				"recordedJobId": asString(other["jobId"]), "operationId": params.OperationID,
+			}), nil
+		}
 	}
 
 	var prepared SessionOccupancyPreparation
@@ -220,7 +392,7 @@ func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint,
 		return withRecordLock(params.Root, params.OpID, func(recordPath string) error {
 			record, readErr := readObject(recordPath)
 			if readErr == nil {
-				result, readErr = resolveSameOpID(params.OpID, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
+				result, readErr = resolveSameOpID(params.OpID, params.OperationID, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
 				return readErr
 			}
 			if !os.IsNotExist(readErr) {
@@ -269,7 +441,15 @@ func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint,
 			}
 			creatorBreadcrumb := exactIdentityFields(creator.Ref())
 			creatorBreadcrumb["recordedAt"] = createdAt.Format(time.RFC3339)
-			record = claimReservationRecord(params.OpID, fingerprint, provenance, instanceTag, creatorBreadcrumb, occupancy.FreeEvidence, createdAt)
+			launchCapability, capabilityErr := dependencies.LaunchCapability()
+			if capabilityErr != nil {
+				return capabilityErr
+			}
+			if launchCapability == "" || strings.ContainsAny(launchCapability, " /\\\t\r\n") {
+				return fmt.Errorf("claim-launch capability source returned an invalid value")
+			}
+			capabilityDigest := sha256.Sum256([]byte(launchCapability))
+			record = claimReservationRecord(params.OpID, params.OperationID, fingerprint, provenance, instanceTag, params.AdapterVerb, hex.EncodeToString(capabilityDigest[:]), creatorBreadcrumb, occupancy.FreeEvidence, createdAt)
 			record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
 			generation, publishErr := transaction.publishBusy(classifySessionRecord(params.OpID, record))
 			if publishErr != nil {
@@ -290,6 +470,7 @@ func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint,
 				"deadlinePurpose":         "wake-only",
 				"freeSessionEvidence":     occupancy.FreeEvidence,
 				"sessionOccupancyHealing": healingObject(occupancy.Healing),
+				"launchCapability":        launchCapability,
 			})
 			return nil
 		})
@@ -297,12 +478,12 @@ func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint,
 	return result, err
 }
 
-func resolveSameOpID(opid, recordPath string, record map[string]any, fingerprint LaunchFingerprint, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (ClaimResult, error) {
+func resolveSameOpID(opid, operationID, recordPath string, record map[string]any, fingerprint LaunchFingerprint, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (ClaimResult, error) {
 	base := map[string]any{
 		"resolution": "same-opid",
 		"recordPath": recordPath,
 	}
-	if asString(record["jobId"]) != opid {
+	if asString(record["jobId"]) != opid || recordOperationID(record) != operationID {
 		base["reason"] = "standing-record-job-id-does-not-match-opid"
 		return claimResult(ClaimRefusedUnprovable, fingerprint, base), nil
 	}
@@ -314,7 +495,11 @@ func resolveSameOpID(opid, recordPath string, record map[string]any, fingerprint
 	}
 	base["recordedFingerprint"] = recordedDigest
 	base["recordedFingerprintVersion"] = recordedVersion
-	if recordedVersion != int64(fingerprint.Version) || recordedDigest != fingerprint.Digest {
+	if recordedVersion != int64(fingerprint.Version) {
+		base["reason"] = "standing-record-uses-legacy-or-unknown-fingerprint-version"
+		return claimResult(ClaimRefusedUnprovableLegacy, fingerprint, base), nil
+	}
+	if recordedDigest != fingerprint.Digest {
 		base["reason"] = "fingerprint-equality-gate-failed"
 		return claimResult(ClaimRefusedOpIDMismatch, fingerprint, base), nil
 	}
@@ -401,7 +586,7 @@ func resolveSameOpID(opid, recordPath string, record map[string]any, fingerprint
 	}
 }
 
-func claimReservationRecord(opid string, fingerprint LaunchFingerprint, provenance claimReservationProvenance, instanceTag string, creator map[string]any, freeEvidence []SessionOccupant, createdAt time.Time) map[string]any {
+func claimReservationRecord(opid, operationID string, fingerprint LaunchFingerprint, provenance claimReservationProvenance, instanceTag, adapterVerb, capabilityDigest string, creator map[string]any, freeEvidence []SessionOccupant, createdAt time.Time) map[string]any {
 	request := fingerprint.Request
 	roots := make([]any, 0, len(request.ProductRoots))
 	for _, root := range request.ProductRoots {
@@ -414,14 +599,22 @@ func claimReservationRecord(opid string, fingerprint LaunchFingerprint, provenan
 		})
 	}
 	return map[string]any{
-		"jobId":                      opid,
-		"operationId":                opid,
-		"mainId":                     provenance.mainID,
-		"claimEpoch":                 provenance.claimEpoch,
-		"goalId":                     provenance.goalID,
-		"goalRevision":               provenance.goalRevision,
-		"machineId":                  provenance.machineID,
-		"approvedRef":                provenance.approvedRef,
+		"jobId":                    opid,
+		"operationId":              operationID,
+		"mainId":                   provenance.mainID,
+		"claimEpoch":               provenance.claimEpoch,
+		"goalId":                   provenance.goalID,
+		"goalRevision":             provenance.goalRevision,
+		"machineId":                provenance.machineID,
+		"approvedRef":              provenance.approvedRef,
+		"sliceApprovalClaim":       provenance.sliceApprovalClaim,
+		"destructiveReach":         request.DestructiveReach,
+		"configurationObligations": provenance.configuration,
+		"launchCapability": map[string]any{
+			"digest": capabilityDigest, "jobId": opid, "operationId": operationID,
+			"instanceTag": instanceTag, "adapterVerb": adapterVerb, "status": "minted",
+			"mintedAt": createdAt.Format(time.RFC3339),
+		},
 		"proofLevel":                 "proven",
 		"status":                     "pending-setup",
 		"phase":                      "reservation",

@@ -12,9 +12,9 @@ Usage:
   scripts/agents/adapters/codex.sh probe
   scripts/agents/adapters/codex.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/codex.sh dispatch --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/codex.sh follow-up --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/codex.sh cancel --job <job-id>
   scripts/agents/adapters/codex.sh selftest
   scripts/agents/adapters/codex.sh local-config-paths

@@ -145,7 +145,7 @@ func TestSessionOccupancyRecordVerbsKeepOnePublicationOrder(t *testing.T) {
 	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
 		t.Fatal(err)
 	}
-	if err := BuildSetup(setup, "record-verbs", "implementer", "", "main-1", "5", "", 0, capResolution, "", ""); err != nil {
+	if err := BuildSetup(root, setup, "record-verbs", "implementer", "", "main-1", "5", "", 0, capResolution, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Main's BuildSetup predates session indexing; the reservation

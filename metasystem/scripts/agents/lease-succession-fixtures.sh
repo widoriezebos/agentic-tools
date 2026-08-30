@@ -34,7 +34,7 @@ git -C "$checkout" init -q -b main .
 start=$("$ms" proc started-at --pid $$)
 
 announce() { "$ms" lease announce --root "$checkout" --session mission-runner-bm-2 \
-  --pid $$ --start "$start" --tag mission-runner.sh --runtime fake "$@"; }
+  --pid $$ --start "$start" --tag metasystem-mission-runner --runtime fake "$@"; }
 
 announce >/dev/null
 announce --owner-lineage mission-deadbeef >/dev/null

@@ -11,6 +11,22 @@ import (
 	"time"
 )
 
+func TestCommandTaggedProcessScannerUsesAuthorizedCompleteFixtureTable(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	processes := filepath.Join(root, "processes.json")
+	if err := os.WriteFile(processes, []byte("[]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
+	result := (commandTaggedProcessScanner{root: root}).ScanTag("reservation-tag", time.Now())
+	if !result.Complete() || result.EnumerationError != "" || len(result.Tagged) != 0 {
+		t.Fatalf("complete empty fixture table = %+v", result)
+	}
+}
+
 // writeTemp writes a JSON file and returns its path.
 func writeTemp(t *testing.T, dir, name string, value any) string {
 	t.Helper()

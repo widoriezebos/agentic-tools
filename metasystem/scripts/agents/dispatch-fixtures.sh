@@ -12,6 +12,8 @@ else
   [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
 fi
 unset METASYSTEM_FIXTURE_SCENARIO
+export METASYSTEM_DELEGATE_INTERNAL=1
+export METASYSTEM_DISPATCH_FIXTURE_HAZARD=MECHANICAL
 
 fixture_bed_parent_log_root=
 fixture_bed_parent_child_pid=
@@ -425,13 +427,13 @@ grep -Fq 'reason=cap-exhausted-human-raise' "$cap_fixture/severe-round6.out" \
 agent_fixture="$tmp/agent-fixture"
 agent_repo="$agent_fixture/repo"
 agent_evidence="$agent_fixture/evidence"
-mkdir -p "$agent_repo/scripts" "$agent_repo/docs"
+mkdir -p "$agent_repo/scripts" "$agent_repo/docs" "$agent_repo/skills"
 agent_repo=$(cd "$agent_repo" && pwd -P)
 cp -R scripts/agents "$agent_repo/scripts/"
-cp scripts/metasystem-config.sh scripts/assert-mission.sh scripts/assert-stop-loss.sh \
-  scripts/assert-return-complete.sh scripts/assert-turn-prompt.sh \
+cp scripts/metasystem-config.sh scripts/assert-return-complete.sh \
   scripts/watch-background-jobs.sh "$agent_repo/scripts/"
-cp docs/project-rules.md "$agent_repo/docs/"
+cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
+cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"
 cp metasystem.conf "$agent_repo/"
 # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
 # only harness-specific overrides ride --set.
@@ -544,7 +546,7 @@ wait_for_agent_census_fresh() { # fixture name
 agent_fixture_job_from_args() {
   local previous= argument
   for argument in "$@"; do
-    if [[ "$previous" == --job || "$previous" == --job-id ]]; then
+    if [[ "$previous" == --job || "$previous" == --job-id || "$previous" == --op ]]; then
       printf '%s\n' "$argument"
       return
     fi
@@ -1101,16 +1103,34 @@ sed 's/^Working Mode:.*/Working Mode: design/' \
   agent_supervision_repo=$budget_dispatch_repo
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:06:00Z
-  run_agent_fixture structured-budget-within structured-budget-within \
-    "$agent_dispatch" dispatch --role design-critic --brief "$budget_brief" \
-      --job-id structured-budget-within --goal structured-budget --wait
+  wait_for_agent_census_fresh structured-budget-within
+  run_agent_fixture_captured structured-budget-within structured-budget-within \
+    "$agent_fixture/structured-budget-within.out" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --brief "$budget_brief" \
+      --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL --wait
 )
+grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-within.out" \
+  && grep -Fq '"headline":"started"' "$agent_fixture/structured-budget-within.out" \
+  || { echo "the delegate verb did not preserve the typed winning outcome" >&2; cat "$agent_fixture/structured-budget-within.out" >&2; exit 1; }
 budget_within_record="$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within.json"
 [[ "$("$engine" json get --file "$budget_within_record" --field status)" == completed ]] \
   || { echo "the within-limits structured dispatch did not complete" >&2; exit 1; }
 [[ "$("$engine" json get --file "$budget_within_record" --field goalId)" == structured-budget \
    && "$("$engine" json get --file "$budget_within_record" --field goalRevision)" == "$budget_goal_revision" ]] \
   || { echo "the within-limits dispatch did not bind the accepted structured goal revision" >&2; exit 1; }
+budget_mismatch_brief="$agent_fixture/structured-budget-mismatch.md"
+cp "$budget_brief" "$budget_mismatch_brief"
+printf '\nThis changes the retry fingerprint.\n' >>"$budget_mismatch_brief"
+(
+  agent_repo=$budget_dispatch_repo
+  agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
+  agent_supervision_repo=$budget_dispatch_repo
+  export METASYSTEM_OWNER_LINEAGE=budget-fixture
+  export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
+  agent_fails structured-budget-opid-mismatch '"outcome":"REFUSED-OPID-MISMATCH"' \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --brief "$budget_mismatch_brief" \
+      --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL
+)
 set +e
 budget_admission=$(METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z \
@@ -1129,9 +1149,9 @@ grep -Fq 'BUDGET_REFUSED: goal structured-budget' <<<"$budget_admission" \
   agent_supervision_repo=$budget_dispatch_repo
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
-  agent_fails structured-budget-refused 'attemptLimit used=1 limit=1' \
-    "$agent_dispatch" dispatch --role design-critic --brief "$budget_brief" \
-      --job-id structured-budget-refused --goal structured-budget
+  agent_fails structured-budget-refused '"outcome":"REFUSED-BUDGET"' \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --brief "$budget_brief" \
+      --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \
   || { echo "the structured admission refusal created a job record" >&2; exit 1; }
@@ -1143,8 +1163,8 @@ cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow
   agent_supervision_repo=$budget_dispatch_repo
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
-  agent_fails structured-budget-follow-up-refused 'attemptLimit used=1 limit=1' \
-    "$agent_dispatch" follow-up --job structured-budget-within --message "$budget_follow_message"
+  agent_fails structured-budget-follow-up-refused '"outcome":"REFUSED-BUDGET"' \
+    "$budget_dispatch_repo/bin/metasystem" delegate --follow-up structured-budget-within --brief "$budget_follow_message"
 )
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within-r2.json" ]] \
   || { echo "the structured follow-up refusal created a child reservation" >&2; exit 1; }
@@ -1215,6 +1235,7 @@ payload_retry_preparation="$agent_fixture/payload-retry-occupancy.json"
 "$engine" job claim-launch --root "$agent_repo" --opid payload-blocker \
   --session fake:payload-retry --dispatch-mode fresh --resumed-session "" \
   --runtime fake --model fake-model --role design-critic \
+  --destructive-reach MECHANICAL --adapter-verb dispatch \
   --launch-mode shared-checkout --permission-envelope-digest "$payload_retry_digest" \
   --product-root "$agent_repo" --cap-min "$fixture_minimum_cap_min" \
   --conf "$agent_repo/metasystem.conf" --input-hash "$payload_retry_digest" \
@@ -1263,16 +1284,22 @@ happy_record="$agent_repo/artifacts/agents/jobs/happy.json"
 for happy_key in jobId role mission runtime round parentJob status phase error \
   workspaceRoot baseSha branch permissions capMin pid pidStartedAt pgid instanceTag custodyProcesses \
   sessionId turnId requestedModel effectiveModel overridden capabilitySnapshot \
-  sessionEstablishedTimeoutSec input startedAt endedAt usage mirror; do
+  sessionEstablishedTimeoutSec input composition startedAt endedAt usage mirror; do
   "$engine" json get --file "$happy_record" --field "$happy_key" >/dev/null \
     || { echo "happy record lacks required field: $happy_key" >&2; exit 1; }
 done
 [[ "$("$engine" json get --file "$happy_record" --field status)" == completed ]] \
   || { echo "happy record is not completed" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field composition.contextProof.proofState)" == no-leak-not-proven \
+   && "$("$engine" json get --file "$happy_record" --field composition.machineSlotAdmission.ownerGoal)" == machine-concurrency-governor \
+   && "$("$engine" json get --file "$happy_record" --field composition.toolSurface.nameState)" == exact \
+   && "$("$engine" json get --file "$happy_record" --field composition.toolSurface.names)" == '[]' \
+   && -n "$("$engine" json get --file "$happy_record" --field composition.packetDigest)" ]] \
+  || { echo "happy job record lost its bootstrap-honest composition record" >&2; exit 1; }
 happy_session_key=$("$engine" json get --file "$happy_record" --field sessionKey)
 [[ "$happy_session_key" == fake:happy ]] \
   || { echo "fresh dispatch did not record its namespaced occupancy key" >&2; exit 1; }
-[[ "$("$engine" json get --file "$happy_record" --field fingerprintVersion)" == 1 \
+[[ "$("$engine" json get --file "$happy_record" --field fingerprintVersion)" == 2 \
    && -n "$("$engine" json get --file "$happy_record" --field fingerprint)" \
    && "$("$engine" json get --file "$happy_record" --field dispatchMode)" == fresh \
    && -n "$("$engine" json get --file "$happy_record" --field creatorLiveness.pid)" \
@@ -1418,9 +1445,11 @@ happy_input_bytes=$("$engine" json get --file "$happy_record" --field input.byte
 [[ "$happy_input_bytes" =~ ^[0-9]+$ ]] && (( happy_input_bytes > 0 )) \
   || { echo "happy input bytes are not positive: $happy_input_bytes" >&2; exit 1; }
 happy_prompt="$agent_repo/artifacts/agents/happy/rounds/1/prompt.md"
-happy_prompt_head=$'Job-Id: happy\nRole: design-critic\nRuntime: fake\nModel: fake-model\nRound: 1\n'
+happy_prompt_head=$'# Task Direction\n\n'
 head -c ${#happy_prompt_head} "$happy_prompt" | cmp -s - <(printf '%s' "$happy_prompt_head") \
-  || { echo "happy prompt does not open with its identity header" >&2; sed -n '1,6p' "$happy_prompt" >&2; exit 1; }
+  || { echo "happy prompt does not open with the task-direction slot" >&2; sed -n '1,6p' "$happy_prompt" >&2; exit 1; }
+grep -Fq 'Job-Id: happy' "$happy_prompt" \
+  || { echo "happy prompt lost its generated runtime identity notice" >&2; exit 1; }
 happy_prompt_text=$(cat "$happy_prompt")
 happy_preamble=$(cat "$agent_repo/scripts/agents/roles/design-critic.md")
 happy_payload_brief=$(cat "$agent_repo/artifacts/agents/happy/brief.md")
@@ -1430,8 +1459,8 @@ happy_preamble_prefix=${happy_prompt_text%%"$happy_preamble"*}
 happy_brief_prefix=${happy_prompt_text%%"$happy_payload_brief"*}
 [[ "$happy_brief_prefix" != "$happy_prompt_text" ]] \
   || { echo "happy prompt lost the brief" >&2; exit 1; }
-(( ${#happy_preamble_prefix} < ${#happy_brief_prefix} )) \
-  || { echo "happy prompt does not place the preamble before the brief" >&2; exit 1; }
+(( ${#happy_brief_prefix} < ${#happy_preamble_prefix} )) \
+  || { echo "happy prompt does not place the exact task direction before role instructions" >&2; exit 1; }
 # GOAL-08: --serving-goal joins the recorded brief bytes BEFORE the hash.
 # Refusal first: no usable Current goal in the fixture repo refuses exit 3
 # without creating a job. Then with a goal open, the payload brief carries
@@ -1453,13 +1482,14 @@ bin/metasystem goal open --root "$agent_repo" \
   --id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
 sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
+sg_prompt="$agent_repo/artifacts/agents/serving-goal/rounds/1/prompt.md"
 grep -Fq '# Serving goal (context, not instruction)' "$sg_brief" \
   && grep -Fq 'fixture-serving — Serve the fixture goal' "$sg_brief" \
   || { echo "the payload brief lacks the serving-goal section" >&2; exit 1; }
 sg_recorded=$(bin/metasystem json get --file "$agent_repo/artifacts/agents/jobs/serving-goal.json" --field input.hash)
-sg_actual=$(shasum -a 256 "$sg_brief" | cut -d' ' -f1)
+sg_actual=$(shasum -a 256 "$sg_prompt" | cut -d' ' -f1)
 [[ "$sg_recorded" == "$sg_actual" ]] \
-  || { echo "the projection is not inside the recorded input hash ($sg_recorded != $sg_actual)" >&2; exit 1; }
+  || { echo "the composed packet is not the recorded input hash ($sg_recorded != $sg_actual)" >&2; exit 1; }
 
 # MON-04 (the human's item-1 waiter contract): a non-waiting dispatch
 # prints the exact watch command, and the watch verb exits with the
@@ -1479,8 +1509,28 @@ printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:
 run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait
 
 generated=$(run_agent_fixture generated-dispatch - "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief")
-[[ "$generated" =~ ^design-critic-[0-9]{8}t[0-9]{6}z-[a-f0-9]{4}$ ]] \
+[[ "$generated" =~ ^design-critic-[a-f0-9]{24}$ ]] \
   || { echo "generated job id does not match the lowercase grammar: $generated" >&2; exit 1; }
+wait_for_agent_census_fresh delegate-forbidden-source
+agent_fails delegate-forbidden-source '"outcome":"REFUSED-CONTEXT-SOURCE"' \
+  "$agent_repo/bin/metasystem" delegate --role design-critic --brief "$happy_brief" \
+    --goal none-explicit --destructive-reach MECHANICAL --op delegate-forbidden-source --source docs/project-rules.md
+[[ ! -e "$agent_repo/artifacts/agents/jobs/delegate-forbidden-source.json" ]] \
+  || { echo "a forbidden packet source created a reservation" >&2; exit 1; }
+alternates_before=$(sed -n '1,$p' "$agent_repo/.git/objects/info/alternates" 2>/dev/null || true)
+agent_fails delegate-forbidden-worktree '"outcome":"REFUSED-CONTEXT-SOURCE"' \
+  "$agent_dispatch" dispatch --role implementer --brief "$happy_brief" \
+    --job-id delegate-forbidden-worktree --worktree --source docs/project-rules.md
+[[ ! -e "$agent_repo/artifacts/agents/jobs/delegate-forbidden-worktree.json" \
+   && ! -e "$agent_repo/artifacts/agents/worktrees/delegate-forbidden-worktree" ]] \
+  || { echo "a forbidden worktree source left reservation or workspace state" >&2; exit 1; }
+if git -C "$agent_repo" show-ref --verify --quiet refs/heads/agent/delegate-forbidden-worktree; then
+  echo "a forbidden worktree source left an agent branch" >&2
+  exit 1
+fi
+alternates_after=$(sed -n '1,$p' "$agent_repo/.git/objects/info/alternates" 2>/dev/null || true)
+[[ "$alternates_after" == "$alternates_before" ]] \
+  || { echo "a forbidden worktree source changed the shared alternates file" >&2; exit 1; }
 jobid_reuse_brief="$agent_fixture/jobid-reuse.md"
 make_agent_brief "$jobid_reuse_brief" design 'This launch request is distinct from the happy request.'
 # A job id may be retried only for the same launch request. Different brief
@@ -1577,7 +1627,7 @@ launch_window_pending="$agent_fixture/launch-window-pending.json"
 run_agent_fixture launch-window-claim launch-window "$engine" job claim-launch \
   --root "$agent_repo" --opid launch-window --session fake:launch-window \
   --dispatch-mode fresh --resumed-session '' --runtime fake --model fake-model \
-  --role design-critic --launch-mode shared-checkout \
+  --role design-critic --destructive-reach MECHANICAL --adapter-verb dispatch --launch-mode shared-checkout \
   --permission-envelope-digest 1111111111111111111111111111111111111111111111111111111111111111 \
   --input-hash 2222222222222222222222222222222222222222222222222222222222222222 \
   --cap-min 120 --conf "$agent_repo/metasystem.conf" >/dev/null
@@ -1586,9 +1636,12 @@ run_agent_fixture launch-window-claim launch-window "$engine" job claim-launch \
 # waiting on an adapter it just started.
 "$engine" json strip --file "$agent_repo/artifacts/agents/jobs/happy.json" \
   --key ownershipProof --key chainUsage --key handshakeDeadline >"$launch_window_source"
-# custodyProcesses first: emptying it removes the nested pid/pidStartedAt
-# spellings, so the top-level nulling below cannot splice a lookalike.
+# custodyProcesses and launchCapability first: emptying them removes the
+# nested pid and pidStartedAt spellings, so the top-level nulling below
+# cannot splice a lookalike. Record setup restores the capability minted by
+# the launch-window reservation.
 json_replace_field "$launch_window_source" custodyProcesses '[]'
+json_replace_field "$launch_window_source" launchCapability null
 # The exact-micro/ticks/bootId spellings ride only where the platform proves
 # them. Null them only when present so the scenario holds on both platforms.
 for launch_window_field in \
@@ -1639,7 +1692,7 @@ fi
 run_agent_fixture cancel-husk-claim cancel-husk "$engine" job claim-launch \
   --root "$agent_repo" --opid cancel-husk --session fake:cancel-husk \
   --dispatch-mode fresh --resumed-session '' --runtime fake --model fake-model \
-  --role design-critic --launch-mode shared-checkout \
+  --role design-critic --destructive-reach MECHANICAL --adapter-verb dispatch --launch-mode shared-checkout \
   --permission-envelope-digest 3333333333333333333333333333333333333333333333333333333333333333 \
   --input-hash 4444444444444444444444444444444444444444444444444444444444444444 \
   --cap-min 120 --conf "$agent_repo/metasystem.conf" >/dev/null
@@ -2083,7 +2136,7 @@ happy_child="$agent_repo/artifacts/agents/jobs/happy-r2.json"
 happy_follow_session_key=$("$engine" json get --file "$happy_child" --field sessionKey)
 [[ "$happy_follow_session_key" == "fake:$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
   || { echo "follow-up did not record the resumed session occupancy key" >&2; exit 1; }
-[[ "$("$engine" json get --file "$happy_child" --field fingerprintVersion)" == 1 \
+[[ "$("$engine" json get --file "$happy_child" --field fingerprintVersion)" == 2 \
    && -n "$("$engine" json get --file "$happy_child" --field fingerprint)" \
    && "$("$engine" json get --file "$happy_child" --field dispatchMode)" == follow-up \
    && "$("$engine" json get --file "$happy_child" --field resumedSessionId)" == "$("$engine" json get --file "$happy_record" --field sessionId)" \
@@ -2188,7 +2241,8 @@ conformance_workspace=$("$engine" json get --file "$conformance_record" --field 
 # diff exists only once the host's conformance review runs, and the
 # workflow gap is the delegation floor's verdict, not the close's.
 run_agent_fixture close-before-diff conformance "$agent_dispatch" close --job conformance
-(cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+  --stage review --job conformance
 [[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
   || { echo "conformance did not persist diff.patch" >&2; exit 1; }
 run_agent_fixture conformance-reap conformance "$agent_dispatch" reap --job conformance
@@ -2201,26 +2255,37 @@ mv "$agent_fixture/diff.patch.save" "$agent_repo/artifacts/agents/conformance/ro
 conformance_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/conformance.json" --field workspaceRoot)
 case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
 printf 'untracked change\n' >"$conformance_workspace/source.txt"
-agent_fails diff-boundary-mismatch 'changed paths fall outside the cumulative implementation boundary' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
+agent_fails diff-boundary-mismatch 'changed paths fall outside the cumulative implementation boundary' \
+  "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+    --stage review --job conformance
 json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
   diffBoundary '["source.txt"]'
-(cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+  --stage review --job conformance
 mkdir -p "$conformance_workspace/plans"
 printf 'delegate plan\n' >"$conformance_workspace/plans/delegate.md"
 json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
   diffBoundary '["source.txt","plans/delegate.md"]'
-agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
+agent_fails untracked-plan 'trusted plans/ state changed' \
+  "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+    --stage review --job conformance
 git -C "$conformance_workspace" add source.txt plans/delegate.md
 # The workspace is a WORKTREE of the enrolled repo (shared hooks);
 # this harness checkpoint bypasses them for the same stated reason
 # as trunk-advance.
 git -C "$conformance_workspace" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm delegate-checkpoint
-agent_fails committed-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
+agent_fails committed-plan 'trusted plans/ state changed' \
+  "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+    --stage review --job conformance
 printf 'uncommitted change\n' >>"$conformance_workspace/plans/delegate.md"
-agent_fails uncommitted-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
+agent_fails uncommitted-plan 'trusted plans/ state changed' \
+  "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+    --stage review --job conformance
 mkdir -p "$conformance_workspace/artifacts/agents"
 printf 'tamper\n' >"$conformance_workspace/artifacts/agents/tamper"
-agent_fails control-plane-change 'agent control plane contains delegate-created files' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
+agent_fails control-plane-change 'agent control plane contains delegate-created files' \
+  "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+    --stage review --job conformance
 
 # Snapshot self-heal, fallbacks, permission waivers, and raw/event
 # degradations. A snapshot miss costs ONE adapter probe, not a husked
@@ -2278,10 +2343,14 @@ old_caps_child="$agent_repo/artifacts/agents/jobs/old-capabilities-r2.json"
    != "$("$engine" json get --file "$old_caps_record" --field sessionId)" ]] \
   || { echo "fresh-context follow-up reused the parent session" >&2; exit 1; }
 old_caps_prompt="$agent_repo/artifacts/agents/old-capabilities/rounds/2/prompt.md"
-grep -Fq '# Prior brief' "$old_caps_prompt" \
-  && grep -Fq '# Prior return' "$old_caps_prompt" \
-  && grep -Fq '# Correction' "$old_caps_prompt" \
+grep -Fq '# Prior Brief' "$old_caps_prompt" \
+  && grep -Fq '# Prior Return' "$old_caps_prompt" \
+  && grep -Fq '# Task Direction' "$old_caps_prompt" \
   || { echo "fresh-context prompt lost an embed section" >&2; exit 1; }
+old_caps_sources=$("$engine" json get --file "$old_caps_child" --field composition.sources)
+[[ "$old_caps_sources" == *'"source":"engine:prior-brief"'* \
+   && "$old_caps_sources" == *'"source":"engine:prior-return"'* ]] \
+  || { echo "fresh-context composition collapsed its continuation provenance" >&2; exit 1; }
 mv "$snapshot_dir"/*.json "$agent_fixture/"
 mv "$old_save"/*.json "$snapshot_dir/"
 
@@ -2719,7 +2788,7 @@ if [[ "$fixture_scenario" == mission-runner ]]; then
 # authorized empty census table; runner identity remains covered separately by
 # the mission-process identity fixture below.
 runner_process_env=(env -u METASYSTEM_CENSUS_PROCESS_FILE -u METASYSTEM_FAKE_PROCESS_IDENTITY_FILE)
-runner="$runner_repo/scripts/agents/mission-runner.sh"
+runner_engine="$runner_repo/bin/metasystem"
 runner_origin="$agent_fixture/runner-origin.git"
 runner_mission_identity_fixture="$agent_fixture/runner-mission-process-identities.json"
 runner_real_census="$agent_fixture/runner-real-census.json"
@@ -2866,7 +2935,7 @@ exposure=EUR:1${extra_keys:+
 $extra_keys}
 \`\`\`
 EOF
-  contract_sha=$("$runner_repo/scripts/assert-mission.sh" --seal --file "$contract")
+  contract_sha=$("$runner_repo/bin/metasystem" mission contract-seal --file "$contract")
   printf '\nApproval: name=Fixture-Human; date=2026-08-04; contract-sha256=%s\n' "$contract_sha" >>"$contract"
   runner_git add "plans/mission-$mission.contract.md"
   runner_git commit -qm "sign mission $mission"
@@ -2903,7 +2972,8 @@ wait_runner_status() { # mission, expected exit
   local mission=$1 expected=$2 result=7 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec ))
   while (( SECONDS < deadline )); do
     set +e
-    "$runner" status --mission "$mission" >"$agent_fixture/status-$mission.out" 2>&1
+    "$runner_engine" mission status --root "$runner_repo" --mission "$mission" \
+      >"$agent_fixture/status-$mission.out" 2>&1
     result=$?
     set -e
     [[ $result -eq $expected ]] && return 0
@@ -2968,10 +3038,12 @@ runner_git add candidate-score.txt
 runner_git commit --allow-empty -qm 'improve mission runner candidate'
 runner_git push -qu origin "$runner_branch"
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
+run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+  "$runner_engine" mission start --root "$runner_repo" --mission runner-cycle
 wait_runner_status runner-cycle 10
 cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
-"$runner_repo/scripts/assert-turn-prompt.sh" --file "$cycle_turn/prompt.md" --turn "$cycle_turn"
+"$runner_repo/bin/metasystem" validate turn-prompt --root "$runner_repo" \
+  --file "$cycle_turn/prompt.md" --turn "$cycle_turn"
 cycle_prompt="$cycle_turn/prompt.md"
 [[ "$(sed -n '/^$/q;p' "$cycle_prompt" | sed 's/: .*//')" \
    == $'Mission-Id\nTurn-Id\nCycle\nHost-Session\nRuntime\nModel\nReconciliation' ]] \
@@ -3029,7 +3101,8 @@ cat >"$runner_repo/artifacts/agents/jobs/pat-lost.json" <<EOF
  "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "endedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 EOF
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-patience-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-patience
+run_runner_expect runner-patience-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+  "$runner_engine" mission start --root "$runner_repo" --mission runner-patience
 wait_runner_status runner-patience 11
 patience_ledger="$runner_repo/artifacts/agents/missions/runner-patience/ledger.md"
 grep -Fq -- '- Patience: orphan=pat-lost rounds=1' "$patience_ledger" \
@@ -3044,7 +3117,7 @@ if grep -q 'Patience' "$patience_turn_1/prompt.md"; then
 fi
 grep -Fq 'Patience: orphan job pat-lost has unwitnessed spend' "$patience_turn_2/prompt.md" \
   || { echo "the second prompt did not project the patience line" >&2; exit 1; }
-"$runner_repo/scripts/assert-turn-prompt.sh" \
+"$runner_repo/bin/metasystem" validate turn-prompt --root "$runner_repo" \
   --file "$patience_turn_2/prompt.md" --turn "$patience_turn_2"
 rm -f "$runner_repo/artifacts/agents/jobs/pat-lost.json"
 wait_lease_released runner-patience 'patience fixture exit'
@@ -3143,7 +3216,7 @@ run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
   PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_CODEX_FIXTURE_DIR="$codex_host_fixture" \
   METASYSTEM_CODEX_FIXTURE_TIMEOUT_SEC="$agent_fixture_cap_sec" \
-  "$runner" start --mission runner-codex
+  "$runner_engine" mission start --root "$runner_repo" --mission runner-codex
 wait_runner_file "$codex_host_fixture/ready-1" "codex host first turn"
 codex_turn_one=$(find "$runner_repo/artifacts/agents/missions/runner-codex/turns" \
   -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -3280,7 +3353,8 @@ grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
 
 make_runner_contract runner-bad-prompt return-ok 5 '## Streams'
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-bad-prompt-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-bad-prompt
+run_runner_expect runner-bad-prompt-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+  "$runner_engine" mission start --root "$runner_repo" --mission runner-bad-prompt
 wait_runner_status runner-bad-prompt 11
 bad_turn=$(find "$runner_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
 [[ ! -e "$bad_turn/raw.out" ]] || { echo "prompt-checker refusal launched the fake host" >&2; exit 1; }
@@ -3289,7 +3363,8 @@ grep -Fq 'prompt-refused' "$bad_turn/turn.json" \
 
 make_runner_contract runner-ghost dispatch-ghost 5
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-ghost-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-ghost
+run_runner_expect runner-ghost-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+  "$runner_engine" mission start --root "$runner_repo" --mission runner-ghost
 wait_runner_status runner-ghost 10
 ghost_mission="$runner_repo/artifacts/agents/missions/runner-ghost"
 # The newest HOST-TURN entry: post-verification entries conclude turns
@@ -3328,7 +3403,8 @@ printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >"$runner_repo/artifacts/agents/missions/runner-fence/fences.json"
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-fence-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-fence
+run_runner_expect runner-fence-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+  "$runner_engine" mission start --root "$runner_repo" --mission runner-fence
 wait_runner_status runner-fence 11
 fence_mission="$runner_repo/artifacts/agents/missions/runner-fence"
 [[ "$("$engine" json get --file "$fence_mission/state.json" --field status)" == parked \
@@ -3349,7 +3425,8 @@ done
 make_runner_contract runner-unverified return-ok 5
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-unverified-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  METASYSTEM_FAKE_HOST_START_UNVERIFIED=1 "$runner" start --mission runner-unverified
+  METASYSTEM_FAKE_HOST_START_UNVERIFIED=1 \
+    "$runner_engine" mission start --root "$runner_repo" --mission runner-unverified
 wait_runner_status runner-unverified 11
 unverified_mission="$runner_repo/artifacts/agents/missions/runner-unverified"
 [[ "$("$engine" json get --file "$unverified_mission/state.json" --field parkReason)" == host-failure ]] \
@@ -3376,7 +3453,8 @@ for unverified_ask_file in "$unverified_mission/asks"/*.json; do
 done
 [[ -n "$unverified_ask" ]] \
   || { echo "no unanswered host-failure ask for the unverified start" >&2; exit 1; }
-run_runner_expect runner-unverified-answer 0 "$runner" answer --mission runner-unverified \
+run_runner_expect runner-unverified-answer 0 \
+  "$runner_engine" mission answer --root "$runner_repo" --mission runner-unverified \
   --ask "$unverified_ask" --answer acknowledged
 wait_runner_status runner-unverified 0
 
@@ -3388,7 +3466,8 @@ agent_supervision_repo=
   || { echo "parked mission retained its runner lease" >&2; exit 1; }
 agent_supervision_repo=$runner_repo
 track_armed_supervision "$runner_repo"
-run_runner_expect runner-unverified-resume 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" resume --mission runner-unverified
+run_runner_expect runner-unverified-resume 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+  "$runner_engine" mission resume --root "$runner_repo" --mission runner-unverified
 wait_runner_status runner-unverified 10
 [[ -f "$runner_repo/artifacts/agents/supervision/state.json" ]] \
   || { echo "resume did not re-arm supervision" >&2; exit 1; }

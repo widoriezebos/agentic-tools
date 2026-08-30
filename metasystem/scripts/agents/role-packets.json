@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "destructiveReach": {
+    "MECHANICAL": {
+      "builderEffortTier": "ordinary",
+      "builderReasoningEffort": "medium",
+      "independentCritiqueRequired": false,
+      "independentCritiqueEffortTier": "none",
+      "independentCritiqueReasoningEffort": "none",
+      "liveProofRequired": false
+    },
+    "DESIGN-BEARING": {
+      "builderEffortTier": "maximal",
+      "builderReasoningEffort": "xhigh",
+      "independentCritiqueRequired": true,
+      "independentCritiqueEffortTier": "maximal",
+      "independentCritiqueReasoningEffort": "xhigh",
+      "liveProofRequired": false
+    },
+    "DESTRUCTIVE-REACH": {
+      "builderEffortTier": "maximal",
+      "builderReasoningEffort": "xhigh",
+      "independentCritiqueRequired": true,
+      "independentCritiqueEffortTier": "maximal",
+      "independentCritiqueReasoningEffort": "xhigh",
+      "liveProofRequired": true
+    }
+  },
+  "roles": {
+    "behavior-judge": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/behavior-judge.md"},
+        {"slot": "required-skill", "path": "docs/orchestration.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/behavior-judge.schema.json"}
+      ]
+    },
+    "code-critic": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/code-critic.md"},
+        {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/code-critic.schema.json"}
+      ]
+    },
+    "design-critic": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/design-critic.md"},
+        {"slot": "required-skill", "path": "skills/design-critique/SKILL.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/design-critic.schema.json"}
+      ]
+    },
+    "implementer": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/implementer.md"},
+        {"slot": "required-skill", "path": "docs/orchestration.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/implementer.schema.json"}
+      ]
+    },
+    "investigator": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/investigator.md"},
+        {"slot": "required-skill", "path": "skills/take-a-step-back/SKILL.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/investigator.schema.json"}
+      ]
+    },
+    "steward-continuation": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/steward-continuation.md"},
+        {"slot": "required-skill", "path": "docs/orchestration.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/steward-continuation.schema.json"}
+      ]
+    },
+    "verifier": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/verifier.md"},
+        {"slot": "required-skill", "path": "skills/verify/SKILL.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/verifier.schema.json"}
+      ]
+    },
+    "warden": {
+      "sources": [
+        {"slot": "role-instructions", "path": "scripts/agents/roles/warden.md"},
+        {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},
+        {"slot": "response-contract", "path": "scripts/agents/schemas/warden.schema.json"}
+      ]
+    }
+  }
+}

@@ -38,11 +38,19 @@ func assertShellOrder(t *testing.T, section string, tokens ...string) {
 
 func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing.T) {
 	fresh := dispatchShellSection(t, "dispatch_job() {", "\nauthorize_job_cap() {")
+	if strings.Contains(fresh, "goal_admission_checked") || strings.Count(fresh, "require_goal_admission") != 2 {
+		t.Fatal("fresh dispatch does not preserve an advisory read plus an unsuppressed cap-locked revalidation")
+	}
 	assertShellOrder(t, fresh,
 		`acquire_launch_chain_lock "$job"`,
-		"job claim-occupancy-prepare",
 		"acquire_cap_authority_lock",
-		"job claim-launch",
+		"job claim-launch --preflight",
+		"require_goal_admission",
+		"require_goal_revision_admission",
+		"require_slice_admission",
+		"acquire_lifecycle_lock_until",
+		"job claim-occupancy-prepare",
+		"claim_output=",
 		`--occupancy-preparation "$occupancy_preparation"`,
 		"release_cap_authority_lock",
 		"job build-record",
@@ -62,9 +70,14 @@ func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing
 	follow := dispatchShellSection(t, "follow_up() {", "\nstatus_job() {")
 	assertShellOrder(t, follow,
 		`acquire_launch_chain_lock "$root_id"`,
-		"job claim-occupancy-prepare",
 		"acquire_cap_authority_lock",
-		"job claim-launch",
+		"job claim-launch --preflight",
+		"require_goal_admission",
+		"require_goal_revision_admission",
+		"require_slice_admission",
+		"acquire_lifecycle_lock_until",
+		"job claim-occupancy-prepare",
+		"claim_output=",
 		`--occupancy-preparation "$occupancy_preparation"`,
 		"release_cap_authority_lock",
 		"job build-follow-record",
@@ -85,7 +98,60 @@ func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing
 	}
 }
 
-func TestEveryProductionClaimPreparesOccupancyBeforeTheCapLock(t *testing.T) {
+func TestGoalAdmissionDropsAuthorityLocksBeforeBreachStop(t *testing.T) {
+	section := dispatchShellSection(t, "require_goal_admission() {", "\nrun_breach_stop_routes() {")
+	assertShellOrder(t, section,
+		"10)",
+		"release_cap_authority_lock",
+		"release_goal_revision_lock",
+		`release_chain_lock "$exit_cleanup_chain"`,
+		"run_breach_stop_routes",
+	)
+}
+
+func TestClaimAuthorizationComparesTheExactExecutablePath(t *testing.T) {
+	data, err := os.ReadFile("dispatch_verbs.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Contains(text, "filepath.Base(executable) == filepath.Base(self)") || !strings.Contains(text, "executable == self") {
+		t.Fatal("internal claim authorization is not bound to the exact delegate executable")
+	}
+}
+
+func TestAllAdapterLaunchRoutesConsumeTheOneShotCapability(t *testing.T) {
+	common, err := os.ReadFile("../../scripts/agents/adapters/runtime-common.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"--launch-capability", "job launch-capability-consume", `--adapter-verb "$adapter_verb"`, `--supervisor-pid "$$"`} {
+		if !strings.Contains(string(common), token) {
+			t.Fatalf("real-adapter common path lacks %q", token)
+		}
+	}
+	for _, runtime := range []string{"codex", "claude", "devin"} {
+		data, readErr := os.ReadFile("../../scripts/agents/adapters/" + runtime + ".sh")
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		text := string(data)
+		if !strings.Contains(text, `runtime-common.sh"`) || !strings.Contains(text, `dispatch|follow-up) supervise "$command_name" "$@"`) {
+			t.Fatalf("%s does not route both launch verbs through common supervision", runtime)
+		}
+	}
+	fake, err := os.ReadFile("../../scripts/agents/adapters/fake.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"--launch-capability", "job launch-capability-consume", `dispatch|follow-up) supervise "$command" "$@"`} {
+		if !strings.Contains(string(fake), token) {
+			t.Fatalf("fake adapter path lacks %q", token)
+		}
+	}
+}
+
+func TestEveryProductionClaimTakesOccupancyAfterLifecycleAdmission(t *testing.T) {
 	sections := map[string]string{
 		"fresh":     dispatchShellSection(t, "dispatch_job() {", "\nauthorize_job_cap() {"),
 		"follow-up": dispatchShellSection(t, "follow_up() {", "\nstatus_job() {"),
@@ -93,9 +159,10 @@ func TestEveryProductionClaimPreparesOccupancyBeforeTheCapLock(t *testing.T) {
 	for name, section := range sections {
 		t.Run(name, func(t *testing.T) {
 			assertShellOrder(t, section,
-				"job claim-occupancy-prepare",
 				"acquire_cap_authority_lock",
-				"job claim-launch",
+				"acquire_lifecycle_lock_until",
+				"job claim-occupancy-prepare",
+				"claim_output=",
 			)
 		})
 	}
@@ -109,6 +176,6 @@ func TestFreshDispatchCreatesItsPayloadOnlyAfterWinningTheClaim(t *testing.T) {
 		`if [[ "$claim_outcome" != WON ]]`,
 		`mkdir -p "$round_dir"`,
 		`cp "$brief" "$payload/brief.md"`,
-		`write_prompt "$round_dir/prompt.md"`,
+		`mv "$prompt_temp" "$round_dir/prompt.md"`,
 	)
 }

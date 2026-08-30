@@ -57,13 +57,13 @@ Immediately classify the result:
 - `unresolved`: a valid measured result whose delta lies inside a declared noise floor; the run executed and produced an interpretable measurement that neither confirms nor refutes. Illegitimate without a declared noise floor; a run with no interpretable measurement is `no-progress`. Never counts toward the no-progress trigger.
 - `invalid-run`: parity/environment/timeout prevents interpretation; repair validity, not behavior.
 
-Only `contract-improved` and `falsified-continue` authorize another cycle without user direction. An `unresolved` result authorizes one only while a declared `- No-gain budget: N` ledger line is unexhausted: `scripts/assert-stop-loss.sh` blocks once N trailing cycles pass without a `contract-improved`.
+Only `contract-improved` and `falsified-continue` authorize another cycle without user direction. An `unresolved` result authorizes one only while a declared `- No-gain budget: N` ledger line is unexhausted: `metasystem validate stop-loss` blocks once N trailing cycles pass without a `contract-improved`.
 
 One dead end deserves its own name: a capability ceiling, where the model, tool, or dependency cannot do what the mechanism requires. Prompt and parameter variations cannot cross it; stop iterating the moment evidence isolates one. Record it in `memory/known-issues.md` with the evidence, the realistic cost when it bites, and the named escalation lever (a stronger resource tier, an upstream fix, a design change); the lever is usually a reserved decision in `docs/project-rules.md`. Do not retry without new evidence. When the same issue bites again, append the occurrence to its entry and raise its priority instead of reopening the investigation.
 
 ## Stop-Loss
 
-Record every cycle and its classification in the ledger, and run `scripts/assert-stop-loss.sh --file <ledger>` before contracting a new cycle. It blocks on the machine-checkable triggers below (a dead end, two no-progress cycles, the declared cycle budget); the remaining triggers stay your judgment. Do not argue with the check.
+Record every cycle and its classification in the ledger, and run `metasystem validate stop-loss --file <ledger>` before contracting a new cycle. It blocks on the machine-checkable triggers below (a dead end, two no-progress cycles, the declared cycle budget); the remaining triggers stay your judgment. Do not argue with the check.
 
 Stop when any applies:
 
@@ -78,7 +78,7 @@ State `STOP-LOSS TRIGGERED`, preserve learning, remove or stash failed behavior,
 
 ## Preserve Progress
 
-Before expensive proof, make the exact state recoverable. After contract improvement, checkpoint before more edits. After falsification, preserve useful learning separately from behavior that should be reverted. A materially best-known frontier must be preserved exactly before further change; the frontier ledger and its rules are owned by `skills/improve/SKILL.md` and `scripts/frontier.sh`.
+Before expensive proof, make the exact state recoverable. After contract improvement, checkpoint before more edits. After falsification, preserve useful learning separately from behavior that should be reverted. A materially best-known frontier must be preserved exactly before further change; the frontier ledger and its rules are owned by `skills/improve/SKILL.md` and `metasystem report frontier`.
 
 ## Design and Proof
 

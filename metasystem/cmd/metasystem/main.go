@@ -92,6 +92,8 @@ func families() []family {
 			name:    "job",
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
+				{"compose-role-packet", "assemble a role's closed packet and provenance record", runDispatchComposeRolePacket},
+				{"operation-id", "derive the v2 default delegate operation identity", runDispatchOperationID},
 				{"record-create", "reserve a job by writing its pending-setup record", runDispatchRecordCreate},
 				{"record-setup", "complete a reservation into the full pending record", runDispatchRecordSetup},
 				{"record-cas", "compare-and-swap a record's status and fields", runDispatchRecordCAS},
@@ -119,6 +121,7 @@ func families() []family {
 				{"chain-usage", "aggregate a chain's usage (exit 7 when unchanged)", runDispatchChainUsage},
 				{"custody-add", "append a custody process to a job record under its lock", runDispatchCustodyAdd},
 				{"claim-launch", "reserve a launch operation through the typed claim state machine", runDispatchClaimLaunch},
+				{"launch-capability-consume", "verify and spend one admitted adapter launch capability", runDispatchLaunchCapabilityConsume},
 				{"claim-occupancy-prepare", "prepare session-occupancy evidence off the record lock", runDispatchClaimOccupancyPrepare},
 				{"prefork-mark", "persist the pre-fork custody marker for an imminent launch", runDispatchPreforkMark},
 				{"custody-groups", "print a record's custody process-group kill targets", runDispatchCustodyGroups},
@@ -537,6 +540,9 @@ func dispatch(args []string) int {
 		}
 		return runStewardHealth(args[1:])
 	}
+	if args[0] == "delegate" {
+		return runDelegate(args[1:])
+	}
 	for _, fam := range families() {
 		if fam.name != args[0] {
 			continue
@@ -565,9 +571,15 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       metasystem up --print-scheduler-entry [--repo <checkout>]")
 	fmt.Fprintln(os.Stderr, "       metasystem health --repo <checkout>")
 	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
+	fmt.Fprintln(os.Stderr, "       metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
+	fmt.Fprintln(os.Stderr, "       metasystem delegate --follow-up <job> --brief <file>")
+	fmt.Fprintln(os.Stderr, "       metasystem delegate --cancel <job>")
 	for _, fam := range families() {
 		fmt.Fprintf(os.Stderr, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {
+			if fam.name == "job" && (v.name == "claim-launch" || v.name == "claim-occupancy-prepare" || v.name == "compose-role-packet" || v.name == "operation-id") {
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "    %-14s %s\n", v.name, v.summary)
 		}
 	}

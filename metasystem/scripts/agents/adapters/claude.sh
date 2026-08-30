@@ -12,9 +12,9 @@ Usage:
   scripts/agents/adapters/claude.sh probe
   scripts/agents/adapters/claude.sh output-stream --round-dir <absolute-path>
   scripts/agents/adapters/claude.sh dispatch --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/claude.sh follow-up --job <job-id> --start-gate <file>
-      --instance-tag <tag>
+      --instance-tag <tag> --launch-capability <opaque-capability>
   scripts/agents/adapters/claude.sh cancel --job <job-id>
   scripts/agents/adapters/claude.sh selftest
   scripts/agents/adapters/claude.sh local-config-paths

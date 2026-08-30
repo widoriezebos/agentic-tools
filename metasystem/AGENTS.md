@@ -22,7 +22,7 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - Give each important behavior one owner. Keep boundaries honest. Make state, failure, and observability explicit.
 - **Strictness guards invariants, never conveniences.** A check refuses loudly only to protect a named invariant whose violation is a real defect. A rule that breaks on benign variation — an arbitrary cap, a missing lawful path, a format nit — is the defect: handle the variation intuitively or do not encode the rule. No nameable invariant, no rule.
 - Use focused tests first. Use expensive, model-backed, debugger, or full-suite validation only when it answers a named question.
-- When the runtime provides subagents, delegate independent exploration and verifiable subtasks. Keep the main context for decisions. Dispatch rostered roles through `scripts/agents/dispatch.sh`; if exact-session resume is unavailable, use the documented fresh-dispatch embed fallback (`docs/orchestration.md`).
+- When the runtime provides subagents, delegate independent exploration and verifiable subtasks. Keep the main context for decisions. Dispatch rostered roles through `metasystem delegate`; if exact-session resume is unavailable, use the documented fresh-dispatch embed fallback (`docs/orchestration.md`).
 - Keep machine-verifiable requirements in schemas, tests, linters, permissions, or scripts, never in repeated prose.
 - Keep project-specific commands and policies in `docs/project-rules.md`.
 

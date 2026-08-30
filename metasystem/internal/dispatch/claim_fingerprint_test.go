@@ -31,7 +31,7 @@ func TestLaunchFingerprintV1GoldenVectors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Digest != vector.Expected || got.Version != LaunchFingerprintVersion {
+			if got.Digest != vector.Expected || got.Version != 1 {
 				t.Fatalf("fingerprint = version %d %s, want version 1 %s", got.Version, got.Digest, vector.Expected)
 			}
 		})
@@ -202,5 +202,6 @@ func launchFingerprintRequestForTest() LaunchFingerprintRequest {
 		ProductRoots:             nil,
 		CapMinutes:               120,
 		InputHash:                "2222222222222222222222222222222222222222222222222222222222222222",
+		DestructiveReach:         HazardMechanical,
 	}
 }

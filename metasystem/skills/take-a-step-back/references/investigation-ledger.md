@@ -8,8 +8,8 @@
 - Reproduction and exact state:
 - Success/non-goals:
 - Budget and stop conditions:
-- Cycle budget: <number, parsed by scripts/assert-stop-loss.sh>
-- No-gain budget: <optional; trailing cycles allowed without a contract-improved, parsed by scripts/assert-stop-loss.sh; improve mode sets 3>
+- Cycle budget: <number, parsed by metasystem validate stop-loss>
+- No-gain budget: <optional; trailing cycles allowed without a contract-improved, parsed by metasystem validate stop-loss; improve mode sets 3>
 
 ## Existing Evidence
 | Artifact | Fact established | Reliability/limits |

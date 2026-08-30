@@ -337,6 +337,7 @@ expect_failure waiver-control-plane 'agent control plane contains delegate-creat
 # recorded-implementer-successor budget reopen, record-round-beats-
 # lying-return). The one refusal string covers both the second-budget
 # and human-only-remedy assertions the shell greps split across. The
-# assert-conformance.sh stage-level E2E above remains this file's job.
+# The `metasystem validate conformance` stage-level E2E above remains this
+# file's job.
 
 echo "conformance fixtures passed"
