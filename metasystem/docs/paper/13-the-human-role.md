@@ -28,6 +28,8 @@ The record keeps the judge's identity, authority, reasons, evidence, scope and e
 
 Machinery may assemble the strongest case on each side, expose missing evidence and test whether an option violates an existing constraint. Final decision-making power remains with a responsible authority, without condition. Better models, more complete records or a long history of correct recommendations can improve the preparation of judgment; none turns responsibility into a machine property.
 
+A machine worker can turn human approval into a habit without ever lying. After each failed attempt it predicts that the next one will pass, the person approves one more attempt, and after enough cycles the approval is a routine, not a decision. The protection is Chapter 11's stop rule. The responsible authority sets and records a budget before the work starts, and attempts are allowed only within its limits; every other rule still applies. When any limit is reached, further work needs a new recorded decision, from the responsible authority or from an authorized delegate acting within its scope. A forecast can inform that decision. It never authorizes another attempt.
+
 ## Intent-holder: authority over purpose
 
 The 8:40 outcome (sign users out after thirty minutes without activity) comes from the responsible authority for account-access outcomes. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. The same authority may not bind an unrelated medical-record rule or promise another organization's resources.

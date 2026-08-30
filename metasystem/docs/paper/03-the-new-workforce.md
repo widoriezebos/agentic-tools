@@ -64,5 +64,6 @@ The table summarizes the design brief; it does not claim that one mechanism sett
 | Machine workers act through tools, quickly and often | Mistakes can repeat quickly and reach real systems | Narrow permissions and place enforced refusal at consequential actions |
 | Computation is metered | Cheap candidates can still create expensive verification | Set budgets from risk and stop or escalate when they are exhausted |
 | Machine judgment can share one blind spot | Several agreeing results can still be wrong | Use independent examination and reserve named questions for responsible authorities |
+| Checks are cheap to add | A check or its test setup can break and make a good candidate look faulty | Give each check an owner, the outcome it protects and a review date, and record failures of the check or its setup separately from failures of the candidate |
 
 The table does not describe a world without human limits or economic limits. It distinguishes which limits have moved and which new ones govern the work. That distinction is enough to expose the next trap: preserving a familiar process after the need that justified it has changed.
