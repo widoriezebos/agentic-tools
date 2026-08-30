@@ -52,7 +52,7 @@ Every session check passes, but both the candidate and the checks define a visib
 
 No proof exceeds its boundary, source of expected results and assumptions. A test derived from the same mistaken interpretation as the candidate can make agreement look like correctness. Several independent examiners using the same model or data can repeat one blind spot. A fixed set of cases cannot cover every network delay, assistive technology, future browser or user behavior the service will meet.
 
-Tests and live observation can challenge agreement among same-model examiners, but those sources are not independent by default. Expected results, injected faults, observed signals and their interpretation may carry the same mistaken assumption. Each source keeps its limits, and human review is still required when builders, examiners and test generators may agree for the same mistaken reason.
+Tests and live observation can challenge agreement among same-model examiners, but those sources are not independent by default. Expected results, injected faults, observed signals and their interpretation may carry the same mistaken assumption. Each source keeps its limits, and the human-review condition later in this chapter still applies.
 
 The answer to these limits is to claim only what was shown. The system records what was examined, which expected results came from authorized intent, which sources were independent and which assumptions remain. Live observation then tests the result against situations the controlled examination did not include. Evidence can challenge intent as well as construction. Whether a burden on affected people is acceptable remains a human judgment. A test can show what the burden is, not whether it is acceptable.
 
