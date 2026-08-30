@@ -37,6 +37,15 @@ json_elements() { # compact JSON array
     }'
 }
 
+revoked_directory() { # directory stem below the fixture temp root
+  local stem=$1 candidate
+  for candidate in "$tmp/$stem".revoked.*; do
+    [[ -d "$candidate" ]] || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+}
+
 tmp=$(mktemp -d)
 enumeration_pid=
 publication_failure_bystander=
@@ -76,6 +85,15 @@ cleanup() {
 	rm -rf -- "$tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
+fixture_failed() { # exit code, source line, failed command
+  local rc=$1 line=$2 command=$3
+  case $- in *e*) ;; *) return 0 ;; esac
+  trap - ERR
+  printf 'gate-run-freeze fixture failed at line %s (exit %s): %s\n' \
+    "$line" "$rc" "$command" >&2
+  exit "$rc"
+}
+trap 'fixture_failed "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 repo=$tmp/live
 evidence=$tmp/evidence
@@ -102,6 +120,33 @@ set -euo pipefail
 family=${1:-}; verb=${2:-}; shift 2 || true
 value() { local flag=$1; shift; while (($#)); do [[ "$1" == "$flag" ]] && { printf '%s' "$2"; return; }; shift; done; }
 case "$family/$verb" in
+  proc/group-members)
+    pgid=$(value --pgid "$@")
+    leader_path=${BATTERY_VALIDATOR_PID_PATH:-}
+    child_path=${BATTERY_VALIDATOR_CHILD_PID_PATH:-}
+    leader=
+    if [[ -n "$leader_path" && -f "$leader_path" ]]; then
+      leader=$(cat "$leader_path")
+    fi
+    [[ -z "$leader_path" || ! -e "$leader_path.quiesced" ]] || exit 0
+    if [[ -z "$leader_path" && "${BATTERY_FIXTURE_SEAMS:-0}" != 1 ]]; then
+      exec "$BATTERY_REAL_ENGINE" proc group-members "$@"
+    fi
+    if [[ -n "$leader" && "$leader" != "$pgid" && "${BATTERY_FIXTURE_SEAMS:-0}" != 1 ]]; then
+      exec "$BATTERY_REAL_ENGINE" proc group-members "$@"
+    fi
+    # Every member the fixture creates is published through these two files.
+    # Reading those known identities keeps this bed portable to hosts that
+    # deny process-table enumeration while production still uses the real census.
+    for pid_path in "$leader_path" "$child_path"; do
+      [[ -n "$pid_path" && -f "$pid_path" ]] || continue
+      pid=$(cat "$pid_path")
+      [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
+      identity=$("$BATTERY_REAL_ENGINE" proc probe --pid "$pid" 2>/dev/null) || continue
+      liveness=$("$BATTERY_REAL_ENGINE" json get --value "$identity" --field liveness 2>/dev/null) || continue
+      [[ "$liveness" == alive ]] && printf '%s\n' "$pid"
+    done
+    exit 0 ;;
   json/set)
     file=$(value --file "$@")
     if [[ "${BATTERY_FAKE_TEARDOWN_APPENDIX_FAIL:-0}" == 1 && "$file" == */.teardown.*.json ]]; then
@@ -148,7 +193,11 @@ cat >"$repo/metasystem/scripts/validate-metasystem.sh" <<'VALIDATE'
 set -euo pipefail
 class_out=${METASYSTEM_BATTERY_RUN_CLASS_OUT:-}
 class_writer=${METASYSTEM_BATTERY_ROOT_CLASS_WRITER:-0}
+stage_results_out=${METASYSTEM_VALIDATION_STAGE_RESULTS_OUT:-}
+stage_results_writer=${METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER:-0}
 [[ "$class_writer" == 1 && "$class_out" == /* ]]
+[[ "$stage_results_writer" == 1 && "$stage_results_out" == /* \
+  && ! -e "$stage_results_out" && ! -L "$stage_results_out" ]]
 for witness_var in METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
   METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE \
   METASYSTEM_GATE_WITNESS_WRITE METASYSTEM_GATE_WITNESS_CONTROLLER_PID \
@@ -156,13 +205,17 @@ for witness_var in METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
   METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID; do
   [[ -z "${!witness_var:-}" ]]
 done
-unset METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER
+unset METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER \
+  METASYSTEM_VALIDATION_STAGE_RESULTS_OUT METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER
 class_stage=${class_out}.stage.$$
 case "${BATTERY_FAKE_RUN_CLASS:-FULL}" in
   FULL|WITNESS-ASSISTED) fixture_run_class=${BATTERY_FAKE_RUN_CLASS:-FULL} ;;
   *) exit 2 ;;
 esac
 umask 077
+printf 'format\tmetasystem-validation-stage-results-v1\n' >"$stage_results_out"
+printf 'columns\tkind\tid\tstatus\texit_code\tfailure_tail\n' >>"$stage_results_out"
+chmod 600 "$stage_results_out"
 printf '%s\n' "$fixture_run_class" >"$class_stage"
 chmod 600 "$class_stage"
 mv "$class_stage" "$class_out"
@@ -213,6 +266,7 @@ census_has_validator() { # report, validator pid, checkout root, excluded live r
 cleanup_validator() {
   [[ -z "$validator_child" ]] || kill "$validator_child" 2>/dev/null || true
   [[ -z "$validator_child" ]] || wait "$validator_child" 2>/dev/null || true
+  [[ -z "${BATTERY_VALIDATOR_PID_PATH:-}" ]] || : >"$BATTERY_VALIDATOR_PID_PATH.quiesced"
 }
 if [[ "${BATTERY_VALIDATOR_CHILD_SURVIVES_TERM:-0}" == 1 ]]; then
   trap '' TERM
@@ -228,6 +282,7 @@ if [[ -n "${BATTERY_SEAM_OBSERVATION:-}" ]]; then
     "${BATTERY_VALIDATOR_PUBLICATION_STALL_DIR:-<unset>}" >"$BATTERY_SEAM_OBSERVATION"
   exit 73
 fi
+[[ -z "${BATTERY_VALIDATOR_PID_PATH:-}" ]] || rm -f -- "$BATTERY_VALIDATOR_PID_PATH.quiesced"
 if [[ "${BATTERY_VALIDATOR_DELAY_READY:-0}" == 1 ]]; then
   printf '%s\n' "$checkout" >"$BATTERY_CLONE_PATH"
   printf '%s\n' "$$" >"$BATTERY_VALIDATOR_PID_PATH"
@@ -267,6 +322,12 @@ else
 fi
 validator_child=$!
 [[ -z "${BATTERY_VALIDATOR_CHILD_PID_PATH:-}" ]] || printf '%s\n' "$validator_child" >"$BATTERY_VALIDATOR_CHILD_PID_PATH"
+validator_started=$("$BATTERY_REAL_ENGINE" proc started-at --pid "$validator_child")
+process_fixture=$metasystem/artifacts/agents/supervision/process-fixture.json
+process_fixture_stage=$(mktemp "$metasystem/artifacts/agents/supervision/.process-fixture.XXXXXX")
+printf '[{"pid":%s,"ppid":%s,"pgid":%s,"pidStartedAt":%s,"argv":"metasystem-fake-agent sleep 300","cwd":"%s","cwdError":false,"alive":true}]\n' \
+  "$validator_child" "$$" "$$" "$validator_started" "$metasystem" >"$process_fixture_stage"
+mv "$process_fixture_stage" "$process_fixture"
 for ((attempt=0; attempt<400; attempt++)); do
   if census_has_validator \
     "$metasystem/artifacts/agents/supervision/last-census.json" \
@@ -317,10 +378,13 @@ if [[ " $* " == *' --shutdown '* ]]; then
   rm -rf -- "${owner%/owner.json}"
 else
   mkdir -p "${owner%/owner.json}"
+  process_fixture=$harness/artifacts/agents/supervision/process-fixture.json
+  printf '[]\n' >"$process_fixture"
   gate=$harness/artifacts/agents/supervision/owner-gate.$$
   tag=fixture-battery-owner-$$
   fingerprint=$("$BATTERY_REAL_ENGINE" supervise fingerprint --root "$harness" --repo "$repo")
-  "$BATTERY_REAL_ENGINE" supervise owner --repo "$harness" --scope "$repo" \
+  METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture" \
+    "$BATTERY_REAL_ENGINE" supervise owner --repo "$harness" --scope "$repo" \
     --tag "$tag" --interval 1 --watcher-cap 1 --fingerprint "$fingerprint" --gate "$gate" \
     >"$harness/artifacts/agents/supervision/owner-fixture.log" 2>&1 &
   pid=$!
@@ -492,7 +556,24 @@ set +e
 wait "$launch_abort_pid"
 launch_abort_rc=$?
 set -e
-[[ $launch_abort_rc == 130 ]]
+[[ $launch_abort_rc == 130 ]] \
+  || {
+    echo "gate-run-freeze fixture: launch-time abort exited $launch_abort_rc instead of 130" >&2
+    cat "$tmp/launch-abort.err" >&2
+    launch_abort_failed_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' \
+      "$tmp/launch-abort.out" "$tmp/launch-abort.err" | tail -1)
+    launch_abort_failed_clone=$(sed -n 's/.* path=\([^ ]*\) envelope=.*/\1/p' \
+      "$tmp/launch-abort.out" "$tmp/launch-abort.err" | tail -1)
+    [[ ! -f "$launch_abort_failed_envelope/setup.log" ]] \
+      || tail -80 "$launch_abort_failed_envelope/setup.log" >&2
+    [[ ! -f "$launch_abort_failed_envelope/validation.log" ]] \
+      || tail -80 "$launch_abort_failed_envelope/validation.log" >&2
+    [[ ! -f "${launch_abort_failed_clone%/subject}/setup.log" ]] \
+      || tail -80 "${launch_abort_failed_clone%/subject}/setup.log" >&2
+    [[ ! -f "${launch_abort_failed_clone%/subject}/validation.log" ]] \
+      || tail -80 "${launch_abort_failed_clone%/subject}/validation.log" >&2
+    exit 1
+  }
 for _ in $(seq 1 400); do
   kill -0 -- "-$launch_abort_pgid" 2>/dev/null || break
   sleep 0.01
@@ -502,13 +583,19 @@ done
 ! kill -0 "$launch_abort_child" 2>/dev/null
 [[ ! -e "$launch_abort_ready" ]]
 launch_aborted_clone=$(cat "$launch_abort_clone_path")
-[[ ! -e "$launch_aborted_clone" ]]
+[[ ! -e "$launch_aborted_clone" ]] \
+  || { echo "gate-run-freeze fixture: launch-time abort retained clone $launch_aborted_clone" >&2; cat "$tmp/launch-abort.err" >&2; exit 1; }
 launch_abort_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/launch-abort.out" "$tmp/launch-abort.err" | tail -1)
 [[ -f "$launch_abort_envelope/report.json" && -f "$launch_abort_envelope/abandoned.json" \
    && -f "$launch_abort_envelope/outcome.json" && -f "$launch_abort_envelope/teardown.json" \
-   && ! -e "$launch_abort_envelope/reset.json" ]]
-! grep -q '^validatorPid=' "$launch_abort_envelope/setup.log"
-grep -Fq 'clone=removed' "$tmp/launch-abort.err"
+   && -f "$launch_abort_envelope/setup.log" \
+   && -f "$launch_abort_envelope/stage-results.tsv" \
+   && ! -e "$launch_abort_envelope/reset.json" ]] \
+  || { echo "gate-run-freeze fixture: launch-time abort evidence is incomplete (envelope=$launch_abort_envelope)" >&2; cat "$tmp/launch-abort.err" >&2; exit 1; }
+! grep -q '^validatorPid=' "$launch_abort_envelope/setup.log" \
+  || { echo "gate-run-freeze fixture: launch-time abort recorded the validator as active" >&2; exit 1; }
+grep -Fq 'clone=removed' "$tmp/launch-abort.err" \
+  || { echo "gate-run-freeze fixture: launch-time abort did not report clone removal" >&2; cat "$tmp/launch-abort.err" >&2; exit 1; }
 if [[ "${BATTERY_LAUNCH_ABORT_FIXTURE_ONLY:-0}" == 1 ]]; then
   echo "gate-run-freeze launch-abort fixture passed"
   exit 0
@@ -576,7 +663,24 @@ wait "$publication_failure_pid"
 publication_failure_rc=$?
 set -e
 publication_failure_ended=$(date +%s)
-[[ $publication_failure_rc == 130 ]]
+[[ $publication_failure_rc == 130 ]] \
+  || {
+    echo "gate-run-freeze fixture: publication-failure abort exited $publication_failure_rc instead of 130" >&2
+    cat "$tmp/publication-failure.err" >&2
+    publication_failure_failed_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' \
+      "$tmp/publication-failure.out" "$tmp/publication-failure.err" | tail -1)
+    publication_failure_failed_clone=$(sed -n 's/.* path=\([^ ]*\) envelope=.*/\1/p' \
+      "$tmp/publication-failure.out" "$tmp/publication-failure.err" | tail -1)
+    [[ ! -f "$publication_failure_failed_envelope/setup.log" ]] \
+      || tail -80 "$publication_failure_failed_envelope/setup.log" >&2
+    [[ ! -f "$publication_failure_failed_envelope/validation.log" ]] \
+      || tail -80 "$publication_failure_failed_envelope/validation.log" >&2
+    [[ ! -f "${publication_failure_failed_clone%/subject}/setup.log" ]] \
+      || tail -80 "${publication_failure_failed_clone%/subject}/setup.log" >&2
+    [[ ! -f "${publication_failure_failed_clone%/subject}/validation.log" ]] \
+      || tail -80 "${publication_failure_failed_clone%/subject}/validation.log" >&2
+    exit 1
+  }
 publication_failure_elapsed=$((publication_failure_ended - publication_failure_started))
 if (( publication_failure_elapsed >= 3 )); then
   echo "gate-run-freeze fixture: publication-failure finalizer took ${publication_failure_elapsed}s" >&2
@@ -591,11 +695,13 @@ publication_failure_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/publica
    && -f "$publication_failure_envelope/abandoned.json" \
    && -f "$publication_failure_envelope/outcome.json" \
    && -f "$publication_failure_envelope/teardown.json" \
-   && ! -e "$publication_failure_envelope/reset.json" ]]
-publication_failure_revoked=$(find "$tmp" -maxdepth 1 \
-  -name 'publication-failure-locked.revoked.*' -type d -print -quit)
-[[ ! -e "$publication_failure_locked" && -d "$publication_failure_revoked" ]]
-grep -Fq 'clone=removed' "$tmp/publication-failure.err"
+   && ! -e "$publication_failure_envelope/reset.json" ]] \
+  || { echo "gate-run-freeze fixture: publication-failure evidence is incomplete (envelope=$publication_failure_envelope)" >&2; cat "$tmp/publication-failure.err" >&2; exit 1; }
+publication_failure_revoked=$(revoked_directory publication-failure-locked)
+[[ ! -e "$publication_failure_locked" && -d "$publication_failure_revoked" ]] \
+  || { echo "gate-run-freeze fixture: failed publication directory was not revoked" >&2; cat "$tmp/publication-failure.err" >&2; exit 1; }
+grep -Fq 'clone=removed' "$tmp/publication-failure.err" \
+  || { echo "gate-run-freeze fixture: publication-failure abort did not report clone removal" >&2; cat "$tmp/publication-failure.err" >&2; exit 1; }
 kill -KILL "$publication_failure_bystander" 2>/dev/null || true
 wait "$publication_failure_bystander" 2>/dev/null || true
 publication_failure_bystander=
@@ -661,7 +767,7 @@ kill -0 "$revocation_race_launch_pid" 2>/dev/null
 kill -TERM "$revocation_race_controller"
 revocation_race_revoked=
 for _ in $(seq 1 1200); do
-  revocation_race_revoked=$(find "$tmp" -maxdepth 1 -name 'revocation-race-identity.revoked.*' -type d -print -quit)
+  revocation_race_revoked=$(revoked_directory revocation-race-identity)
   [[ ! -e "$revocation_race_identity" && -n "$revocation_race_revoked" ]] && break
   kill -0 "$revocation_race_controller" 2>/dev/null || break
   sleep 0.01
@@ -945,8 +1051,7 @@ recycled_pid_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' \
    && -f "$recycled_pid_envelope/outcome.json" \
    && -f "$recycled_pid_envelope/teardown.json" \
    && ! -e "$recycled_pid_envelope/reset.json" ]]
-recycled_pid_revoked=$(find "$tmp" -maxdepth 1 \
-  -name 'recycled-pid-identity.revoked.*' -type d -print -quit)
+recycled_pid_revoked=$(revoked_directory recycled-pid-identity)
 [[ ! -e "$recycled_pid_identity_dir" && -d "$recycled_pid_revoked" ]]
 grep -Fq 'clone=removed' "$tmp/recycled-pid.err"
 kill -KILL "$recycled_pid_sentinel" 2>/dev/null || true
@@ -1116,8 +1221,7 @@ kill -0 "$publication_retention_launch_pid" 2>/dev/null
 kill -TERM "$publication_retention_controller"
 publication_retention_revoked=
 for _ in $(seq 1 1200); do
-  publication_retention_revoked=$(find "$tmp" -maxdepth 1 \
-    -name 'publication-retention-identity.revoked.*' -type d -print -quit)
+  publication_retention_revoked=$(revoked_directory publication-retention-identity)
   [[ ! -e "$publication_retention_identity" \
     && -n "$publication_retention_revoked" ]] && break
   kill -0 "$publication_retention_controller" 2>/dev/null || break
@@ -1148,9 +1252,11 @@ publication_retention_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' \
    && -f "$publication_retention_envelope/teardown.json" \
    && ! -e "$publication_retention_envelope/reset.json" ]]
 publication_retention_result=$("$real_engine" json get \
-  --file "$publication_retention_envelope/teardown.json" --field result)
+  --file "$publication_retention_envelope/teardown.json" --field result) \
+  || { echo "gate-run-freeze fixture: publication-retention teardown omitted its result" >&2; cat "$publication_retention_envelope/teardown.json" >&2; cat "$tmp/publication-retention.err" >&2; exit 1; }
 publication_retention_retained=$("$real_engine" json get \
-  --file "$publication_retention_envelope/teardown.json" --field retainedPath)
+  --file "$publication_retention_envelope/teardown.json" --field retainedPath) \
+  || { echo "gate-run-freeze fixture: publication-retention teardown omitted its retained path" >&2; cat "$publication_retention_envelope/teardown.json" >&2; cat "$tmp/publication-retention.err" >&2; exit 1; }
 [[ "$publication_retention_result" == validator-publication-revocation-failed \
    && "$publication_retention_retained" == "$publication_retention_runs"/*/subject \
    && -d "$publication_retention_retained" ]]
@@ -1230,7 +1336,17 @@ METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS=1 METASYSTEM_GATE_WITNESS_CONTROL
     --evidence-root "$evidence" >"$tmp/first.out" 2>"$tmp/first.err" &
 first_pid=$!
 for _ in $(seq 1 2000); do [[ -e "$ready" ]] && break; kill -0 "$first_pid" 2>/dev/null || break; sleep 0.01; done
-[[ -e "$ready" ]] || { echo "gate-run-freeze fixture: isolated validator never started" >&2; cat "$tmp/first.err" >&2; exit 1; }
+[[ -e "$ready" ]] || {
+  echo "gate-run-freeze fixture: isolated validator never started" >&2
+  cat "$tmp/first.err" >&2
+  first_failed_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/first.out" "$tmp/first.err" | tail -1)
+  first_failed_clone=$(sed -n 's/.* path=\([^ ]*\) envelope=.*/\1/p' "$tmp/first.out" "$tmp/first.err" | tail -1)
+  [[ ! -f "$first_failed_envelope/setup.log" ]] || tail -100 "$first_failed_envelope/setup.log" >&2
+  [[ ! -f "$first_failed_envelope/validation.log" ]] || tail -100 "$first_failed_envelope/validation.log" >&2
+  [[ ! -f "${first_failed_clone%/subject}/setup.log" ]] || tail -100 "${first_failed_clone%/subject}/setup.log" >&2
+  [[ ! -f "${first_failed_clone%/subject}/validation.log" ]] || tail -100 "${first_failed_clone%/subject}/validation.log" >&2
+  exit 1
+}
 
 isolated_clone=$(cat "$clone_path")
 [[ "$(git -C "$isolated_clone" rev-parse HEAD)" == "$subject" ]]
@@ -1492,7 +1608,8 @@ env BATTERY_FAKE_TEARDOWN_APPENDIX_FAIL=1 \
 teardown_appendix_rc=$?
 set -e
 [[ $teardown_appendix_rc != 0 ]]
-grep -Fq 'teardown evidence incomplete; clone already removed' "$tmp/teardown-appendix.err"
+grep -Fq 'teardown evidence incomplete; clone already removed' "$tmp/teardown-appendix.err" \
+  || { echo "gate-run-freeze fixture: teardown-appendix failure did not report removed-clone state" >&2; cat "$tmp/teardown-appendix.err" >&2; exit 1; }
 ! grep -Fq 'retained clone' "$tmp/teardown-appendix.err"
 teardown_appendix_envelope=$(sed -n 's/.* envelope=\(.*\)$/\1/p' "$tmp/teardown-appendix.out" "$tmp/teardown-appendix.err" | tail -1)
 [[ -f "$teardown_appendix_envelope/report.json" && -f "$teardown_appendix_envelope/outcome.json" \

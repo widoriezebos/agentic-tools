@@ -232,7 +232,7 @@ rm -f "$stage/payload.tar"
 # ships source and CI rebuilds, so the pair of scripts and engine can prove
 # its coherence by building. The adoption-time binary copy into gitignored
 # bin/ remains a host convenience, never the delivery.
-payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal metasystem.conf optional-skills plans scripts skills wow.md"
+payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal metasystem.conf optional-skills plans records scripts skills wow.md"
 for entry in "$stage"/* "$stage"/.[!.]*; do
   [[ -e "$entry" || -L "$entry" ]] || continue
   keep=0
@@ -241,6 +241,13 @@ for entry in "$stage"/* "$stage"/.[!.]*; do
   done
   (( keep )) || rm -rf "$entry"
 done
+# One engine input lives under records/. Preserve that file without shipping
+# this template repository's accumulated history to a new project.
+goals_migration_manifest=$stage/records/misc/goals-migration-manifest.md
+[[ -f "$goals_migration_manifest" && ! -L "$goals_migration_manifest" ]] \
+  || die 1 "payload is missing the engine's goals migration manifest"
+mv "$goals_migration_manifest" "$stage/.goals-migration-manifest.md"
+rm -rf "$stage/records"
 # plans/ ships its README and fresh goal ledgers, while memory/ is rebuilt with
 # fresh living registers rather than this repository's accumulated state. Shipping
 # the real instruction ledger and known-issues register was an early deliberate
@@ -256,6 +263,8 @@ cat >"$stage/memory/README.md" <<'SKELETON'
 This tree holds the living registers — records that accrete and are never finished (rulings, known issues, flakes, receipts, notes); static explanation belongs in docs/ and concluded history belongs in records/.
 SKELETON
 mkdir -p "$stage/records/goals"
+mkdir -p "$stage/records/misc"
+mv "$stage/.goals-migration-manifest.md" "$stage/records/misc/goals-migration-manifest.md"
 cat >"$stage/records/README.md" <<'SKELETON'
 # Records
 

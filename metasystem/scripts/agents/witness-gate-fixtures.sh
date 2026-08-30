@@ -25,6 +25,15 @@ if (( ! fixture_bed_child )); then
   run_fixture_bed_scenarios witness-gate "witness-gate fixtures passed (21 isolated legs)" \
     "$fixture_bed_script" authority-and-scope equality-and-weights frozen-consumers cost-banner
 fi
+# This bed creates every witness it exercises. A parent validation's witness
+# describes another root and must not turn these producer legs into consumers.
+unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
+  METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_EXPORT \
+  METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE METASYSTEM_GATE_WITNESS_WRITE \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_PID METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT \
+  METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID \
+  METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT \
+  METASYSTEM_GATE_WITNESS_REUSE_OUT
 
 tmp=$(mktemp -d)
 foreign_controller=
@@ -438,6 +447,10 @@ set -e
   || { echo "witness-gate fixture dirty-tree-arms: dirty producer accepted a Go overlay" >&2; exit 1; }
 grep -Fq 'GOFLAGS may not contain -modfile or -overlay' "$tmp/dirty-tree-arms/overlay.out" \
   || { echo "witness-gate fixture dirty-tree-arms: overlay refusal was not explicit" >&2; exit 1; }
+if [[ "${WITNESS_DIRTY_TREE_ARMS_FIXTURE_ONLY:-0}" == 1 ]]; then
+  echo "witness-gate dirty-tree-arms fixture passed"
+  exit 0
+fi
 
 
 fi

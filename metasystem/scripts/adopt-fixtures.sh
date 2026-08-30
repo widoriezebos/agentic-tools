@@ -447,6 +447,9 @@ PLAN
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
   [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
   [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
+  cmp -s "$srcrepo/records/misc/goals-migration-manifest.md" \
+    "$tgt/records/misc/goals-migration-manifest.md" \
+    || { echo "adopt: the engine's goals migration manifest did not ship byte-for-byte" >&2; exit 1; }
   [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md goals-accepted.json goals.md " ]] \
 	|| { echo "adopt: plans/ payload must carry only live intent, including the goal pair" >&2; exit 1; }
   [[ "$(ls "$tgt/memory" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md " ]] \
@@ -651,7 +654,20 @@ EVIDENCE
   # The D17 fail-open, closed and asserted (D33): a source-delivery target
   # whose go.mod vanished must FAIL — never read as "no engine expected".
   mv "$tgt/go.mod" "$tgt/go.mod.hidden"
-  if bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/gomod-gone.out" 2>&1; then
+  mkdir -p "$tmp/gomod-gone-progress"
+  # Enter the validator body directly: its ordinary progress launcher is a
+  # Go program, and this leg deliberately removed the module needed to start it.
+  # Invoke it relatively so its root and the worker identity share the same
+  # logical spelling even when macOS exposes /var through /private/var.
+  if ( cd "$tgt" && \
+      METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
+        METASYSTEM_SUITE_PROGRESS_SUITE=validate-metasystem \
+        METASYSTEM_SUITE_PROGRESS_ROOT="$PWD" \
+        METASYSTEM_SUITE_PROGRESS_DEPTH=0 \
+        METASYSTEM_SUITE_PROGRESS_TMP="$tmp/gomod-gone-progress" \
+        METASYSTEM_SUITE_PROGRESS_LOG="$tmp/gomod-gone-progress.log" \
+        bash scripts/validate-metasystem.sh --delivery-contract ) \
+      >"$tmp/gomod-gone.out" 2>&1; then
     echo "adopt: a source-delivery target without go.mod validated green" >&2
     exit 1
   fi
@@ -923,7 +939,7 @@ if true; then  # template-gated by the orchestrator
       metasystem.conf|plans/goals-accepted.json|bin/metasystem) continue ;;
       .github/workflows/metasystem.yml) continue ;;
       memory/known-issues.md|memory/instruction-ledger.md) continue ;;
-      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep) continue ;;
+      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep|records/misc/goals-migration-manifest.md) continue ;;
       .claude/*|.agents/*|.devin/*|.codex/hooks.json) continue ;;
       *) echo "adoption wrote outside the computed inventory ($tracer_runtime): $written" >&2; exit 1 ;;
     esac

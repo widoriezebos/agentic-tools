@@ -318,6 +318,8 @@ validator_identity_started_at=
 validator_identity_start_ticks=
 validator_identity_boot_id=
 validator_quiesced=1
+validator_fenced_outside_clone=0
+recorded_publication_ok=0
 validator_pgid_file=${BATTERY_VALIDATOR_PGID_FILE:-$run_dir/validator-identity/validator.pgid}
 validator_pgid_stage=${BATTERY_VALIDATOR_PGID_STAGE:-$run_dir/validator-identity/.validator-pgid.$$.stage}
 validator_publication_dir=${validator_pgid_file%/*}
@@ -468,10 +470,17 @@ wait_for_validator_quiescence() { # optional maximum polls; zero waits until ope
 publish_stage_one() { # setup exit, validation exit, verdict
   local stage_setup=$1 stage_validation=$2 initial_verdict=$3 relative digest actual expected
   local copy_result=verified copy_failure_name=
-  (( validator_quiesced )) || {
-    printf 'milestone battery evidence copy refused: validator process group is not quiescent\n' >&2
+  (( validator_quiesced || validator_fenced_outside_clone )) || {
+    printf 'milestone battery evidence copy refused: validator is neither quiescent nor fenced outside the clone\n' >&2
     return 1
   }
+  if [[ ! -e "$stage_results_file" && $recorded_publication_ok == 0 ]]; then
+    # Publication failed before validation could receive its one-time output
+    # capability. Preserve an empty, valid ledger to state that no stage began.
+    umask 077
+    printf 'format\tmetasystem-validation-stage-results-v1\n' >"$stage_results_file" || return 1
+    printf 'columns\tkind\tid\tstatus\texit_code\tfailure_tail\n' >>"$stage_results_file" || return 1
+  fi
   if [[ ! -e "$run_class_file" ]]; then
     write_default_run_class || return 1
   fi
@@ -694,6 +703,10 @@ stop_validator() {
       # arrive. Renaming the channel closes the wrapper's absolute destination
       # while preserving any publication that won the rename race.
       revoke_validator_publication || return 1
+      # The wrapper cannot enter the clone without first publishing through
+      # the absolute path that was just revoked. It may remain live, but its
+      # future path is fenced away from the bytes copied as evidence.
+      validator_fenced_outside_clone=1
       # Revocation rejects every future path resolution, but a rename already
       # inside the kernel can still land in the moved directory. Wait until
       # that publication appears, the owned launch job dies, or the grace
@@ -706,6 +719,7 @@ stop_validator() {
         if read_published_validator_identity; then
           if (( launch_pid_valid )) \
             && adopt_validator_identity "$validator_publication" "$launch_pid"; then
+            validator_fenced_outside_clone=0
             validator_active=1
             break
           fi
@@ -725,6 +739,7 @@ stop_validator() {
           validator_publication=
           if read_published_validator_identity; then
             if adopt_validator_identity "$validator_publication" "$launch_pid"; then
+              validator_fenced_outside_clone=0
               validator_active=1
               break
             fi
@@ -1131,6 +1146,7 @@ else
   validator_identity_start_ticks=
   validator_identity_boot_id=
   validator_quiesced=0
+  validator_fenced_outside_clone=0
   recorded_probe_ok=0
   recorded_publication_ok=0
   validator_launching=1
