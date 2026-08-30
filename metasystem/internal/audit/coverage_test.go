@@ -172,6 +172,16 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 			t.Fatalf("missing memory register not caught: %v", result.Violations)
 		}
 	})
+	t.Run("unscheduled residue marker", func(t *testing.T) {
+		root := build(t)
+		os.MkdirAll(filepath.Join(root, "plans"), 0o755)
+		os.WriteFile(filepath.Join(root, "plans", "sample-design.md"),
+			[]byte("RESIDUE: an unscheduled debt"), 0o644)
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "RESIDUE") {
+			t.Fatalf("unscheduled residue marker not caught: %v", result.Violations)
+		}
+	})
 	t.Run("outside reference", func(t *testing.T) {
 		root := build(t)
 		os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("see /Users/someone/notes\n"), 0o644)

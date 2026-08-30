@@ -12,6 +12,9 @@ package goal
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -565,9 +568,28 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 
 // Done concludes one goal and moves it to the archive — the one
 // member only; sibling arc members stay untouched.
+// residueVocabRe recognizes the conclusion vocabulary that declares
+// residue; residueLinkRe is the token that schedules it. R-4: a recorded
+// residue is a scheduled debt — prose alone refuses.
+var (
+	residueVocabRe = regexp.MustCompile(`(?i)\bresidu`)
+	residueLinkRe  = regexp.MustCompile(`goal:([a-z0-9][a-z0-9-]*)`)
+)
+
 func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if strings.TrimSpace(conclusion) == "" {
 		return PublishResult{}, fmt.Errorf("done needs its conclusion — the archive is the record")
+	}
+	if residueVocabRe.MatchString(conclusion) {
+		links := residueLinkRe.FindAllStringSubmatch(conclusion, -1)
+		if len(links) == 0 {
+			return PublishResult{}, fmt.Errorf("the conclusion names residue without scheduling it: link each residue's open backlog item as goal:<id>, or open one first (R-4: residue is a scheduled debt, not a prose note)")
+		}
+		for _, link := range links {
+			if _, err := os.Stat(filepath.Join(r.Endpoint.Root, "plans", "goals", link[1]+".md")); err != nil {
+				return PublishResult{}, fmt.Errorf("the conclusion's residue link goal:%s does not resolve to an open backlog item", link[1])
+			}
+		}
 	}
 	result, err := Publish(r.Endpoint, doneRequest(r, id, conclusion))
 	if err != nil || (result.Outcome != OutcomeConfirmed && result.Outcome != OutcomeConfirmedLate) {

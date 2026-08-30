@@ -45,9 +45,13 @@ func auditScanRoots() []string {
 var (
 	// The path pattern anchors on a non-word, non-slash character before the
 	// leading slash so prose like "rule/home/owner" does not false-positive.
-	auditOutsideRe     = regexp.MustCompile(`(^|[^[:alnum:]/])/(Users|home|root|tmp|var|opt|etc|private|workspace)/|\.\./`)
-	auditActiveTODORe  = regexp.MustCompile(`TODO|TBD|<one paragraph>|<command>|<paths`)
-	auditPlaceholderRe = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
+	auditOutsideRe    = regexp.MustCompile(`(^|[^[:alnum:]/])/(Users|home|root|tmp|var|opt|etc|private|workspace)/|\.\./`)
+	auditActiveTODORe = regexp.MustCompile(`TODO|TBD|<one paragraph>|<command>|<paths`)
+	// The residue marker grammar (residue-demands-a-token, R-4): a line
+	// declaring residue must link the open backlog item that schedules it.
+	auditResidueMarkerRe = regexp.MustCompile(`(?m)^\s*RESIDUE:`)
+	auditResidueLinkRe   = regexp.MustCompile(`goal:([a-z0-9][a-z0-9-]*)`)
+	auditPlaceholderRe   = regexp.MustCompile(`<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>`)
 )
 
 // AuditResult carries the audit's verdict: refusals, and the informational
@@ -86,6 +90,17 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 		result.Report = append(result.Report, hits...)
 		result.Violations = append(result.Violations,
 			"references outside the metasystem are forbidden in metasystem-owned files")
+		return result, nil
+	}
+
+	residueHits, err := auditResidueMarkers(absRoot)
+	if err != nil {
+		return nil, err
+	}
+	if len(residueHits) > 0 {
+		result.Report = append(result.Report, residueHits...)
+		result.Violations = append(result.Violations,
+			"a RESIDUE: marker must link its open backlog item as goal:<id> (R-4: residue is a scheduled debt, not a prose note)")
 		return result, nil
 	}
 
@@ -250,6 +265,41 @@ func fileExists(path string) bool {
 // auditScanFiles greps the pattern across files and directory trees rooted at
 // the named paths, skipping .git and tolerating absent roots (the shim's
 // existence filter). Hits come back as file:line:text report lines.
+// auditResidueMarkers sweeps the design docs for RESIDUE: markers whose
+// line carries no goal:<id> link resolving to a live backlog item
+// (plans/goals/<id>.md). Free-prose residue words are not policed — the
+// MARKER is the law's grammar, applied forward, nothing migrated.
+func auditResidueMarkers(root string) ([]string, error) {
+	designs, err := filepath.Glob(filepath.Join(root, "plans", "*design*.md"))
+	if err != nil {
+		return nil, err
+	}
+	var hits []string
+	for _, path := range designs {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("audit cannot read design doc %s: %w", path, err)
+		}
+		rel, _ := filepath.Rel(root, path)
+		for number, line := range strings.Split(string(data), "\n") {
+			if !auditResidueMarkerRe.MatchString(line) {
+				continue
+			}
+			links := auditResidueLinkRe.FindAllStringSubmatch(line, -1)
+			if len(links) == 0 {
+				hits = append(hits, fmt.Sprintf("%s:%d: RESIDUE marker carries no goal:<id> link", rel, number+1))
+				continue
+			}
+			for _, link := range links {
+				if !fileExists(filepath.Join(root, "plans", "goals", link[1]+".md")) {
+					hits = append(hits, fmt.Sprintf("%s:%d: RESIDUE link goal:%s does not resolve to an open backlog item", rel, number+1, link[1]))
+				}
+			}
+		}
+	}
+	return hits, nil
+}
+
 func auditScanFiles(root string, paths []string, pattern *regexp.Regexp) ([]string, error) {
 	var hits []string
 	for _, rel := range paths {
