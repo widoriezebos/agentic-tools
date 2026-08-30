@@ -127,18 +127,34 @@ const (
 // the shipped positional shapes. A process that merely mentions the tag is a
 // known non-match, including when it is the group leader.
 func GroupOwnership(pgid int64, tag string) GroupOwnershipOutcome {
+	return groupOwnership(pgid, tag, groupOwnershipDependencies{
+		PIDs: identity.AllPids,
+		PGID: func(pid int64) (int64, error) {
+			group, err := unix.Getpgid(int(pid))
+			return int64(group), err
+		},
+		Reader: identity.KernelProber{},
+	})
+}
+
+type groupOwnershipDependencies struct {
+	PIDs   func() ([]int64, error)
+	PGID   func(pid int64) (int64, error)
+	Reader identity.VerificationReader
+}
+
+func groupOwnership(pgid int64, tag string, dependencies groupOwnershipDependencies) GroupOwnershipOutcome {
 	if pgid < 2 || tag == "" {
 		return GroupNotOwned
 	}
-	pids, err := identity.AllPids()
+	pids, err := dependencies.PIDs()
 	if err != nil {
 		return GroupIndeterminate
 	}
-	reader := identity.KernelProber{}
 	uncertainMembership := false
 	var verifications []identity.Verification
 	for _, pid := range pids {
-		group, err := unix.Getpgid(int(pid))
+		group, err := dependencies.PGID(pid)
 		if err != nil {
 			if !errors.Is(err, unix.ESRCH) {
 				uncertainMembership = true
@@ -148,7 +164,7 @@ func GroupOwnership(pgid int64, tag string) GroupOwnershipOutcome {
 		if int64(group) != pgid {
 			continue
 		}
-		verifications = append(verifications, identity.VerifyProcess(reader, pid, func(argv []string) bool {
+		verifications = append(verifications, identity.VerifyProcess(dependencies.Reader, pid, func(argv []string) bool {
 			_, ok := MatchShape(DefaultShapes(), argv, tag)
 			return ok
 		}))

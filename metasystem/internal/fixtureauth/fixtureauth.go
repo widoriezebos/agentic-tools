@@ -77,11 +77,14 @@ func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 		return identity.FixtureEntry{}, false
 	}
 	var table map[string]struct {
-		PidStartedAt *int64  `json:"pidStartedAt"`
-		Started      *int64  `json:"started"`
-		Command      *string `json:"command"`
-		Pgid         *int64  `json:"pgid"`
-		Terminal     *bool   `json:"terminal"`
+		PidStartedAt           *int64  `json:"pidStartedAt"`
+		Started                *int64  `json:"started"`
+		PidStartedAtExactMicro *int64  `json:"pidStartedAtExactMicro"`
+		PidStartTicks          *int64  `json:"pidStartTicks"`
+		BootID                 *string `json:"bootId"`
+		Command                *string `json:"command"`
+		Pgid                   *int64  `json:"pgid"`
+		Terminal               *bool   `json:"terminal"`
 	}
 	if json.Unmarshal(data, &table) != nil {
 		return identity.FixtureEntry{}, false
@@ -95,6 +98,15 @@ func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 		entry.StartedAt, entry.HasStartedAt = *raw.PidStartedAt, true
 	} else if raw.Started != nil {
 		entry.StartedAt, entry.HasStartedAt = *raw.Started, true
+	}
+	if raw.PidStartedAtExactMicro != nil {
+		entry.StartedAtExactMicro, entry.HasStartedAtExactMicro = *raw.PidStartedAtExactMicro, true
+	}
+	if raw.PidStartTicks != nil {
+		entry.StartTicks, entry.HasStartTicks = *raw.PidStartTicks, true
+	}
+	if raw.BootID != nil {
+		entry.BootID, entry.HasBootID = *raw.BootID, true
 	}
 	if raw.Command != nil {
 		entry.Command, entry.HasCommand = *raw.Command, true

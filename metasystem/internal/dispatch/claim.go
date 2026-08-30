@@ -67,7 +67,7 @@ type ClaimLaunchDependencies struct {
 	Now             func() time.Time
 	Sleep           func(time.Duration)
 	CreatorPID      int64
-	IdentityReader  identity.Prober
+	IdentityReader  identity.StartReader
 	ProcessVerifier ClaimProcessVerifier
 	Occupancy       SessionOccupancyReader
 	Nonce           func() (string, error)
@@ -247,7 +247,7 @@ func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint,
 				return nil
 			}
 
-			creator, state, creatorErr := dependencies.IdentityReader.Probe(dependencies.CreatorPID)
+			creator, state, creatorErr := dependencies.IdentityReader.ReadStart(dependencies.CreatorPID)
 			if creatorErr != nil || state != identity.Alive || creator.Pid != dependencies.CreatorPID || !creator.Ref().NativeExact() {
 				result = claimResult(ClaimRefusedUnprovable, fingerprint, map[string]any{
 					"resolution": "creator-liveness-unprovable",

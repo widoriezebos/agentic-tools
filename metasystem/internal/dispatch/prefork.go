@@ -28,11 +28,11 @@ func preforkMarkerPath(root, tag string) (string, error) {
 // WritePreforkMarker records the supervisor's exact identity before a child
 // can be forked. The custody count distinguishes sequential children of one
 // supervisor: a marker is satisfied only by a later custody append.
-func WritePreforkMarker(root, job, tag string, supervisorPID, intendedPGID int64, reader identity.Prober) error {
+func WritePreforkMarker(root, job, tag string, supervisorPID, intendedPGID int64, reader identity.StartReader) error {
 	if supervisorPID < 1 || intendedPGID < 2 || reader == nil {
 		return fmt.Errorf("dispatch: pre-fork marker requires a supervisor, intended group, and identity reader")
 	}
-	exact, state, err := reader.Probe(supervisorPID)
+	exact, state, err := reader.ReadStart(supervisorPID)
 	if err != nil || state != identity.Alive || exact.Pid != supervisorPID || !exact.Ref().NativeExact() {
 		return fmt.Errorf("dispatch: supervisor %d exact identity is unavailable", supervisorPID)
 	}

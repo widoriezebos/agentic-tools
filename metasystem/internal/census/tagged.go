@@ -134,7 +134,7 @@ type TaggedScanDependencies struct {
 	PIDs       func() ([]int64, error)
 	Signal     func(pid int64) error
 	PGID       func(pid int64) (int64, error)
-	Reader     identity.Prober
+	Reader     identity.VerificationReader
 	MatchesTag func(argv []string, tag string) bool
 	// A zero time preserves the fixture and non-adoption scanner behavior:
 	// without a reservation generation, age cannot narrow the universe.
@@ -195,7 +195,7 @@ func ScanTaggedProcesses(tag string, dependencies TaggedScanDependencies) Tagged
 				})
 				continue
 			}
-			confirmed, state, confirmErr := dependencies.Reader.Probe(pid)
+			confirmed, state, confirmErr := dependencies.Reader.ReadStart(pid)
 			if state == identity.Dead && confirmErr == nil {
 				continue
 			}

@@ -31,7 +31,7 @@ type ReconciliationResult struct {
 type ReconciliationDependencies struct {
 	Now     func() time.Time
 	Scanner census.TaggedProcessScanner
-	Creator identity.Prober
+	Creator identity.StartReader
 	Emit    func(string)
 }
 
@@ -163,7 +163,7 @@ func (unavailableTaggedProcessScanner) ScanTag(string, time.Time) census.TaggedP
 	return census.TaggedProcessCensus{EnumerationError: "tag-position scanner is unavailable"}
 }
 
-func chooseReconciliation(record map[string]any, observed census.TaggedProcessCensus, creator identity.Prober) ReconciliationResult {
+func chooseReconciliation(record map[string]any, observed census.TaggedProcessCensus, creator identity.StartReader) ReconciliationResult {
 	if !observed.Complete() {
 		reason := "unknown-process-observations"
 		if observed.EnumerationError != "" {

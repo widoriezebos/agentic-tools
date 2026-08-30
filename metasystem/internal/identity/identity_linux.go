@@ -14,11 +14,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// KernelProber reads process identity from Linux procfs: start time from
-// /proc/<pid>/stat field 22 anchored to /proc/stat's btime (10-millisecond
-// tick resolution — every decision path compares whole seconds, so the
-// coarser-than-darwin resolution is inert; see the package doc), and argv
-// from /proc/<pid>/cmdline.
+// KernelProber reads process identity from Linux procfs: start ticks from
+// /proc/<pid>/stat paired with the kernel boot ID, plus argv from cmdline.
 type KernelProber struct{}
 
 // userHZ is the userspace ABI clock-tick constant. It is 100 on all
@@ -27,7 +24,7 @@ type KernelProber struct{}
 // probed.
 const userHZ = 100
 
-func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
+func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if pid < 1 {
 		return Exact{}, Unknown, fmt.Errorf("identity: invalid pid %d", pid)
 	}
@@ -54,23 +51,35 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 	if boot <= 0 || startTicks < 0 {
 		return Exact{}, Unknown, fmt.Errorf("identity: pid %d start time is implausible (btime=%d ticks=%d)", pid, boot, startTicks)
 	}
+	bootIdentity, err := bootID()
+	if err != nil {
+		return Exact{}, Unknown, fmt.Errorf("identity: %w", err)
+	}
 	started := time.Unix(boot, 0).Add(time.Duration(startTicks) * (time.Second / userHZ))
-	exact := Exact{Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootID()}
-	// Argv is best-effort at probe time: a process we cannot read the argv
-	// of is still alive, and the KILL decision separately demands a
-	// readable, claim-consistent argv (REG-6). An empty cmdline (kernel
-	// threads, zombies) is an argv read failure, not a liveness failure —
-	// ArgvKnown stays false.
-	if cmdline, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); readErr == nil && len(cmdline) > 0 {
-		parts := bytes.Split(bytes.TrimRight(cmdline, "\x00"), []byte{0})
-		argv := make([]string, 0, len(parts))
-		for _, part := range parts {
-			argv = append(argv, string(part))
-		}
-		if len(argv) > 0 {
-			exact.Argv = argv
-			exact.ArgvKnown = true
-		}
+	return Exact{Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootIdentity}, Alive, nil
+}
+
+func (KernelProber) ReadArgv(pid int64) ([]string, bool) {
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil || len(cmdline) == 0 {
+		return nil, false
+	}
+	parts := bytes.Split(bytes.TrimRight(cmdline, "\x00"), []byte{0})
+	argv := make([]string, 0, len(parts))
+	for _, part := range parts {
+		argv = append(argv, string(part))
+	}
+	return argv, len(argv) > 0
+}
+
+func (p KernelProber) Probe(pid int64) (Exact, Liveness, error) {
+	exact, state, err := p.ReadStart(pid)
+	if err != nil || state != Alive {
+		return exact, state, err
+	}
+	if argv, known := p.ReadArgv(pid); known {
+		exact.Argv = argv
+		exact.ArgvKnown = true
 	}
 	return exact, Alive, nil
 }
@@ -124,13 +133,16 @@ func bootTimeEpoch() (int64, error) {
 	return 0, fmt.Errorf("/proc/stat has no btime line")
 }
 
-// bootID reads the kernel's per-boot identity token. Best-effort: an
-// unreadable boot id degrades comparisons to the legacy seconds rule
-// rather than failing the probe — absence weakens, never lies.
-func bootID() string {
+// bootID reads the kernel's per-boot identity token. Linux exact identity is
+// the pair, so an unreadable or empty token makes the observation Unknown.
+func bootID() (string, error) {
 	data, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("read boot id: %w", err)
 	}
-	return strings.TrimSpace(string(data))
+	value := strings.TrimSpace(string(data))
+	if value == "" {
+		return "", fmt.Errorf("boot id is empty")
+	}
+	return value, nil
 }

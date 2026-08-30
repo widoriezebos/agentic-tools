@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -112,6 +113,11 @@ func TestAliveTaggedRefBindsIdentityAndTagToOneProbe(t *testing.T) {
 	if got := AliveTaggedRef(live, ref, "another-tag"); got != Dead {
 		t.Fatalf("missing tag = %s, want dead", got)
 	}
+	prefixOnly := live
+	prefixOnly.exact.Argv = []string{"component", "instance-tag-suffix"}
+	if got := AliveTaggedRef(prefixOnly, ref, "instance-tag"); got != Dead {
+		t.Fatalf("substring-only tag = %s, want dead", got)
+	}
 	reused := live
 	reused.exact.StartTicks++
 	if got := AliveTaggedRef(reused, ref, "instance-tag"); got != Dead {
@@ -131,6 +137,38 @@ func TestAliveTaggedRefPreservesDefinitiveDeathAndProbeUncertainty(t *testing.T)
 	}
 	if got := AliveTaggedRef(fakeProber{state: Unknown, err: os.ErrPermission}, ref, "component-tag"); got != Unknown {
 		t.Fatalf("unreadable process identity = %s, want unknown", got)
+	}
+}
+
+func TestRefModeRejectsMixedAndPartialExactShapes(t *testing.T) {
+	rows := []struct {
+		name string
+		ref  Ref
+		want ComparisonMode
+	}{
+		{"empty", Ref{}, CompareInvalid},
+		{"partial linux ticks", Ref{Pid: 1, StartedAtSec: 2, StartTicks: 3}, CompareInvalid},
+		{"partial linux boot", Ref{Pid: 1, StartedAtSec: 2, BootID: "boot"}, CompareInvalid},
+		{"mixed platforms", Ref{Pid: 1, StartedAtSec: 2, StartedAtUnixMicro: 2_000_001, StartTicks: 3, BootID: "boot"}, CompareInvalid},
+		{"darwin exact", Ref{Pid: 1, StartedAtSec: 2, StartedAtUnixMicro: 2_000_001}, CompareDarwinMicroseconds},
+		{"linux exact", Ref{Pid: 1, StartedAtSec: 2, StartTicks: 3, BootID: "boot"}, CompareLinuxTicksBootID},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			if got := row.ref.Mode(); got != row.want || row.ref.ModeName() != string(row.want) {
+				t.Fatalf("mode=%s name=%q, want %s", got, row.ref.ModeName(), row.want)
+			}
+		})
+	}
+	exact := Exact{Pid: 1, StartedAt: time.UnixMicro(2_000_001)}
+	if !SameIdentity(exact, rows[4].ref) {
+		t.Fatal("SameIdentity rejected an equal exact identity")
+	}
+	if got := rows[4].ref.NativeExact(); got != (runtime.GOOS == "darwin") {
+		t.Fatalf("Darwin ref NativeExact=%v on %s", got, runtime.GOOS)
+	}
+	if got := rows[5].ref.NativeExact(); got != (runtime.GOOS == "linux") {
+		t.Fatalf("Linux ref NativeExact=%v on %s", got, runtime.GOOS)
 	}
 }
 

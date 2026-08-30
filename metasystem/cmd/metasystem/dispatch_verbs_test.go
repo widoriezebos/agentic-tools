@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeTemp writes a JSON file and returns its path.
@@ -38,6 +39,22 @@ func captureStdout(t *testing.T, fn func() int) (string, int) {
 	os.Stdout = original
 	out, _ := io.ReadAll(read)
 	return string(out), code
+}
+
+func TestCommandTaggedProcessScannerHonorsEmptyConfiguredUniverse(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	processes := writeTemp(t, t.TempDir(), "processes.json", []any{})
+	identities := writeTemp(t, t.TempDir(), "identities.json", map[string]any{})
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", identities)
+
+	result := (commandTaggedProcessScanner{root: root}).ScanTag("metasystem-job-empty-nonce", time.Time{})
+	if !result.Complete() || result.EnumerationError != "" || len(result.Tagged) != 0 {
+		t.Fatalf("empty configured process universe was not a complete absence proof: %+v", result)
+	}
 }
 
 // TestDispatchRecordVerbsPath drives the whole record lifecycle through the CLI

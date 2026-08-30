@@ -1589,9 +1589,8 @@ run_agent_fixture launch-window-claim launch-window "$engine" job claim-launch \
 # custodyProcesses first: emptying it removes the nested pid/pidStartedAt
 # spellings, so the top-level nulling below cannot splice a lookalike.
 json_replace_field "$launch_window_source" custodyProcesses '[]'
-# The exact-micro/ticks/bootId spellings ride only where the platform
-# proves them (L11: darwin native identity is whole seconds); null them
-# only when present so the scenario holds on both platforms.
+# The exact-micro/ticks/bootId spellings ride only where the platform proves
+# them. Null them only when present so the scenario holds on both platforms.
 for launch_window_field in \
   parentJob error pid pidStartedAt pgid sessionId endedAt usage mirror \
   claimEpoch mainId goalId; do

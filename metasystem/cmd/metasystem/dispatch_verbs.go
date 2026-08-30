@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"golang.org/x/sys/unix"
@@ -119,7 +120,11 @@ func runDispatchClaimLaunch(args []string) int {
 		}
 		occupancyPreparation = &prepared
 	}
-	prober := identity.KernelProber{}
+	startReader, err := dispatchStartReader(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	result, err := dispatchcore.ClaimLaunch(dispatchcore.ClaimLaunchParams{
 		Root: *root, OpID: *opid,
 		MainID: *mainID, ClaimEpoch: *claimEpoch, GoalID: *goalID,
@@ -134,10 +139,10 @@ func runDispatchClaimLaunch(args []string) int {
 		Wait:                 *wait,
 		OccupancyPreparation: occupancyPreparation,
 	}, dispatchcore.ClaimLaunchDependencies{
-		CreatorPID: *creatorPID, IdentityReader: prober, ProcessVerifier: commandClaimProcessVerifier{},
+		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{},
 		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
 			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
-				Scanner: commandTaggedProcessScanner{}, Creator: prober,
+				Scanner: commandTaggedProcessScanner{root: root}, Creator: startReader,
 				Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
 			})
 		},
@@ -177,12 +182,72 @@ func (commandClaimProcessVerifier) Verify(pid int64, instanceTag string) identit
 	})
 }
 
-type commandTaggedProcessScanner struct{}
+type commandTaggedProcessScanner struct {
+	root string
+}
 
-func (commandTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
-	return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{
+func (s commandTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
+	dependencies := census.TaggedScanDependencies{
 		MatchesTag: positionedJobTag, ReservationCreatedAt: reservationCreatedAt,
-	})
+	}
+	processes, configured, err := census.ConfiguredProcessFixture(s.root)
+	if err != nil {
+		return census.TaggedProcessCensus{EnumerationError: err.Error()}
+	}
+	if configured {
+		reader, readerErr := dispatchStartReader(s.root)
+		if readerErr != nil {
+			return census.TaggedProcessCensus{EnumerationError: readerErr.Error()}
+		}
+		pids := make([]int64, 0, len(processes))
+		byPID := make(map[int64]census.Process, len(processes))
+		argv := make(map[int64][]string, len(processes))
+		argvKnown := make(map[int64]bool, len(processes))
+		for _, process := range processes {
+			if !process.Alive {
+				continue
+			}
+			pids = append(pids, process.Pid)
+			byPID[process.Pid] = process
+			// Fixture process rows store a flat command string. Only simple
+			// whitespace-separated commands can recover exact token boundaries;
+			// quoted or escaped commands remain unreadable and cannot prove a tag.
+			if !strings.ContainsAny(process.Argv, "'\"\\") {
+				argv[process.Pid] = strings.Fields(process.Argv)
+				argvKnown[process.Pid] = true
+			}
+		}
+		dependencies.PIDs = func() ([]int64, error) { return pids, nil }
+		dependencies.Signal = func(pid int64) error {
+			if _, exists := byPID[pid]; !exists {
+				return unix.ESRCH
+			}
+			return nil
+		}
+		dependencies.PGID = func(pid int64) (int64, error) {
+			process, exists := byPID[pid]
+			if !exists {
+				return 0, unix.ESRCH
+			}
+			return process.PGID, nil
+		}
+		dependencies.Reader = commandConfiguredProcessReader{starts: reader, argv: argv, argvKnown: argvKnown}
+	}
+	return census.ScanTaggedProcesses(tag, dependencies)
+}
+
+type commandConfiguredProcessReader struct {
+	starts    identity.StartReader
+	argv      map[int64][]string
+	argvKnown map[int64]bool
+}
+
+func (r commandConfiguredProcessReader) ReadStart(pid int64) (identity.Exact, identity.Liveness, error) {
+	return r.starts.ReadStart(pid)
+}
+
+func (r commandConfiguredProcessReader) ReadArgv(pid int64) ([]string, bool) {
+	return r.argv[pid], r.argvKnown[pid]
 }
 
 func positionedJobTag(argv []string, tag string) bool {
@@ -207,7 +272,11 @@ func runDispatchPreforkMark(args []string) int {
 		fmt.Fprintln(os.Stderr, "job prefork-mark: --root, --job, --tag, --supervisor-pid, and --intended-pgid are required")
 		return 2
 	}
-	return recordExit(dispatchcore.WritePreforkMarker(*root, *job, *tag, *supervisor, *pgid, identity.KernelProber{}))
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	return recordExit(dispatchcore.WritePreforkMarker(*root, *job, *tag, *supervisor, *pgid, reader))
 }
 
 func runDispatchCustodyGroups(args []string) int {
@@ -254,8 +323,12 @@ func runDispatchReconcileReservation(args []string) int {
 		fmt.Fprintln(os.Stderr, "job reconcile-reservation: --root and --job are required")
 		return 2
 	}
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
 	result, err := dispatchcore.ReconcileReservation(*root, *job, dispatchcore.ReconciliationDependencies{
-		Scanner: commandTaggedProcessScanner{}, Creator: identity.KernelProber{},
+		Scanner: commandTaggedProcessScanner{root: *root}, Creator: reader,
 		Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
 	})
 	if err != nil {
@@ -284,9 +357,23 @@ func runDispatchOwnershipPatch(args []string) int {
 		fmt.Fprintln(os.Stderr, "job ownership-patch: --root, --output, --pid, --pgid, --instance-tag, and --proven-at are required")
 		return 2
 	}
+	reader, err := dispatchStartReader(*root)
+	if err != nil {
+		return recordExit(err)
+	}
 	return recordExit(dispatchcore.BuildOwnershipPatch(
-		*output, *pid, *pgid, *tag, *provenAt, *handshakeDeadline, identity.KernelProber{},
+		*output, *pid, *pgid, *tag, *provenAt, *handshakeDeadline, reader,
 	))
+}
+
+func dispatchStartReader(root string) (identity.StartReader, error) {
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return nil, err
+	}
+	return identity.FixtureStartReader{
+		Kernel: identity.KernelProber{}, Fixture: authorization.Identity(),
+	}, nil
 }
 
 func runDispatchRecordSetup(args []string) int {
@@ -873,12 +960,13 @@ func runDispatchCustodyAdd(args []string) int {
 		fmt.Fprintln(os.Stderr, "job custody-add: --root, --job, --pid, and --pid-started are required")
 		return 2
 	}
-	// The engine now reads the identity itself through the kernel
-	// prober; the caller's recorded start second remains a binding
-	// cross-check so a recycled pid cannot be registered with a stale
-	// claim (Ruling R: this verb's shell callers pass what they saw).
-	prober := identity.KernelProber{}
-	exact, state, probeErr := prober.Probe(*pid)
+	// The caller's recorded start second remains a binding cross-check so a
+	// recycled pid cannot be registered with a stale claim.
+	reader, readerErr := dispatchStartReader(*root)
+	if readerErr != nil {
+		return recordExit(readerErr)
+	}
+	exact, state, probeErr := reader.ReadStart(*pid)
 	if probeErr != nil || state != identity.Alive {
 		fmt.Fprintf(os.Stderr, "job custody-add: pid %d identity unreadable or not alive\n", *pid)
 		return 1
@@ -887,7 +975,7 @@ func runDispatchCustodyAdd(args []string) int {
 		fmt.Fprintf(os.Stderr, "job custody-add: pid %d start %d does not match the recorded %d\n", *pid, exact.StartedAt.Unix(), *pidStarted)
 		return 1
 	}
-	return recordExit(dispatchcore.CustodyAdd(*root, *job, *pid, prober))
+	return recordExit(dispatchcore.CustodyAdd(*root, *job, *pid, reader))
 }
 
 func runDispatchHandshakeEval(args []string) int {

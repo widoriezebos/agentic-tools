@@ -21,6 +21,16 @@ type stage4ProcessTable struct {
 }
 
 func (f *stage4ProcessTable) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	exact, state, err := f.ReadStart(pid)
+	if err != nil {
+		return exact, state, err
+	}
+	exact.Argv = f.argv[pid]
+	exact.ArgvKnown = f.argvKnown[pid]
+	return exact, state, nil
+}
+
+func (f *stage4ProcessTable) ReadStart(pid int64) (identity.Exact, identity.Liveness, error) {
 	state, present := f.startStates[pid]
 	if !present {
 		state = identity.Dead
@@ -28,12 +38,7 @@ func (f *stage4ProcessTable) Probe(pid int64) (identity.Exact, identity.Liveness
 	if state == identity.Unknown {
 		return identity.Exact{}, state, errors.New("identity unreadable")
 	}
-	exact := f.starts[pid]
-	// The ported VerifyProcess reads argv from the probe itself; the
-	// table's separate argv map rides along on every probe.
-	exact.Argv = f.argv[pid]
-	exact.ArgvKnown = f.argvKnown[pid]
-	return exact, state, nil
+	return f.starts[pid], state, nil
 }
 
 func (f *stage4ProcessTable) ReadArgv(pid int64) ([]string, bool) {

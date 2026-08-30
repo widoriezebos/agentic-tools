@@ -18,7 +18,7 @@ type recordedGroupProofGrant bool
 
 func (g recordedGroupProofGrant) AllowsRecordedGroupProof() bool { return bool(g) }
 
-func (r fixedStartReader) Probe(int64) (identity.Exact, identity.Liveness, error) {
+func (r fixedStartReader) ReadStart(int64) (identity.Exact, identity.Liveness, error) {
 	return r.exact, r.state, nil
 }
 
@@ -29,11 +29,7 @@ func nativeTestExact(pid, generation int64) identity.Exact {
 			StartTicks: 7000 + generation, BootID: "boot-a",
 		}
 	}
-	// Ported: distinct generations differ by whole SECONDS — main's
-	// darwin identity has second resolution, and a sub-second recycle
-	// is indistinguishable by design (the wip's microsecond token had
-	// no home to land in).
-	return identity.Exact{Pid: pid, StartedAt: time.Unix(100_000+generation, 0)}
+	return identity.Exact{Pid: pid, StartedAt: time.UnixMicro(100_000_000 + generation)}
 }
 
 func assertNativeIdentityFields(t *testing.T, value map[string]any, generation int64) {
@@ -47,14 +43,11 @@ func assertNativeIdentityFields(t *testing.T, value map[string]any, generation i
 		}
 		return
 	}
-	// Ported semantics: main's records carry no darwin microsecond
-	// token — the fork-captured start SECOND is darwin's native shape,
-	// so the assertion is exactly the absence of every exact extension.
-	if value["pidStartedAtExactMicro"] != nil || value["pidStartTicks"] != nil || value["bootId"] != nil {
-		t.Fatalf("darwin record carried an exact extension main does not define: %+v", value)
+	if !looseEqual(value["pidStartedAtExactMicro"], 100_000_000+generation) {
+		t.Fatalf("darwin identity field missing: %+v", value)
 	}
-	if !looseEqual(value["pidStartedAt"], 100_000+generation) {
-		t.Fatalf("darwin identity second missing: %+v", value)
+	if value["pidStartTicks"] != nil || value["bootId"] != nil {
+		t.Fatalf("darwin record carried the linux representation: %+v", value)
 	}
 }
 
@@ -109,20 +102,8 @@ func TestRecordCASRefusesNewSecondsOnlyOwnership(t *testing.T) {
 			"provenAt": "2026-08-27T10:00:00Z", "source": "trusted-launcher",
 		},
 	})
-	_, casErr := RecordCAS(root, "job-a", "pending", "pending", secondsOnly)
-	if runtime.GOOS == "linux" {
-		// On linux the ticks+bootID pair is the native shape; a
-		// seconds-only write is weaker than the platform's best and
-		// refuses.
-		if casErr == nil {
-			t.Fatal("a linux ownership write without the ticks+bootID pair must be refused")
-		}
-		return
-	}
-	// Ported semantics: darwin's native shape IS the start second, so
-	// the same write is the strongest darwin can record and stands.
-	if casErr != nil {
-		t.Fatalf("darwin seconds ownership is the native shape: %v", casErr)
+	if _, err := RecordCAS(root, "job-a", "pending", "pending", secondsOnly); err == nil {
+		t.Fatal("a new ownership write without the platform-exact identity must be refused")
 	}
 }
 

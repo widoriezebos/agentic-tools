@@ -14,24 +14,33 @@ import (
 // census pass: the explicit fixture table when configured, otherwise the live
 // kernel table.
 func EnumerateConfiguredProcesses(metasystemRoot string) ([]Process, error) {
-	if processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"); processFile != "" {
-		return enumerateFixture(metasystemRoot, processFile)
+	if processes, configured, err := ConfiguredProcessFixture(metasystemRoot); configured || err != nil {
+		return processes, err
 	}
 	return EnumerateProcesses()
 }
 
-// The PRODUCTION enumeration path: the real process table, and cwd resolution
-// per matched process. It feeds the SAME classification core the fixture path
-// exercises, so the verdict logic is shared; this file is the process-touching
-// binding. Start times are whole-second local epoch, NOT microsecond-exact,
-// because the rest of the system's (pid, started) join keys — announcements,
-// custody — are whole-second, and a microsecond-exact census would fail to
-// match them.
+// ConfiguredProcessFixture returns the authorized synthetic process universe
+// without falling through to the host process table when that universe is
+// empty. The boolean distinguishes an empty configured table from no table.
+func ConfiguredProcessFixture(metasystemRoot string) ([]Process, bool, error) {
+	processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE")
+	if processFile == "" {
+		return nil, false, nil
+	}
+	processes, err := enumerateFixture(metasystemRoot, processFile)
+	return processes, true, err
+}
+
+// The production enumeration path reads the real process table and resolves
+// working directories per matched process. It feeds the same classification
+// core as the fixture path while retaining both the whole-second join key and
+// the platform's exact process identity.
 
 // EnumerateProcesses returns the live process table NATIVELY: sysctl
 // kern.proc.all for the pid list, the kernel prober for each pid's start
-// time (whole seconds, join-key consistent) and argv, and getpgid for the
-// group. No `ps` subprocess. A pid that vanishes between enumeration and
+// time and argv, and getpgid for the group. No `ps` subprocess. A pid that
+// vanishes between enumeration and
 // probing is simply dropped (it was not live).
 func EnumerateProcesses() ([]Process, error) {
 	pids, err := identity.AllPids()

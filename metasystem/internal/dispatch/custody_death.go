@@ -28,7 +28,7 @@ type CustodyDeathResult struct {
 // proof. Reapers inject this decision as one predicate and retain no signal
 // authority.
 type CustodyDeathDependencies struct {
-	Reader     identity.Prober
+	Reader     identity.VerificationReader
 	PIDs       func() ([]int64, error)
 	PGID       func(pid int64) (int64, error)
 	TaggedScan func(tag string) census.TaggedProcessCensus
@@ -225,26 +225,24 @@ func preforkNamedGroupClear(marker *preforkMarker, tag string, dependencies Cust
 // readable but untagged process born later remains indistinguishable from the
 // child in the fork-to-registration window and keeps the marker standing.
 func processDefinitelyPredatesSupervisor(process identity.Exact, supervisor identity.Ref) bool {
-	// Ported onto main's Ref, which records seconds (darwin) or the
-	// ticks+bootID pair (linux) — the wip's microsecond token does not
-	// exist here, so darwin's precedence proof coarsens to strict
-	// whole-second ordering: only a strictly earlier SECOND proves
-	// pre-existence, which refuses more and never lies.
-	if supervisor.StartTicks > 0 && supervisor.BootID != "" {
+	switch supervisor.Mode() {
+	case identity.CompareLinuxTicksBootID:
 		if process.BootID != supervisor.BootID {
 			return process.BootID != ""
 		}
 		return process.StartTicks > 0 && process.StartTicks < supervisor.StartTicks
-	}
-	if supervisor.StartedAtSec > 0 {
+	case identity.CompareDarwinMicroseconds:
 		return process.StartTicks == 0 && process.BootID == "" &&
-			process.StartedAt.Unix() < supervisor.StartedAtSec
+			process.StartedAt.UnixMicro() < supervisor.StartedAtUnixMicro
+	case identity.CompareLegacySeconds:
+		return process.StartedAt.Unix() < supervisor.StartedAtSec
+	default:
+		return false
 	}
-	return false
 }
 
-func recordedRefLiveness(reader identity.Prober, ref identity.Ref) identity.Liveness {
-	exact, state, err := reader.Probe(ref.Pid)
+func recordedRefLiveness(reader identity.StartReader, ref identity.Ref) identity.Liveness {
+	exact, state, err := reader.ReadStart(ref.Pid)
 	if err != nil || state == identity.Unknown {
 		return identity.Unknown
 	}

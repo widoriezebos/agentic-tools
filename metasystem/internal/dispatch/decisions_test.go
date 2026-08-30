@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -120,9 +121,11 @@ func TestChainUsageAggregatesAndDetectsUnchanged(t *testing.T) {
 func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
 	root := t.TempDir()
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	existing := exactIdentityFields(fixedCustodyExact(41, 5).Ref())
+	existing["instanceTag"] = "metasystem-job-job-c"
 	writeJSONFile(t, jobs, "job-c.json", map[string]any{
 		"jobId": "job-c", "status": "running", "instanceTag": "metasystem-job-job-c",
-		"custodyProcesses": []any{map[string]any{"pid": 41, "pidStartedAt": 5, "instanceTag": "metasystem-job-job-c"}},
+		"custodyProcesses": []any{existing},
 	})
 	// The exact identity again collapses to one entry; a recycled pid with a
 	// different start time is a distinct process and keeps its own entry.
@@ -151,14 +154,22 @@ func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
 	}
 }
 
-// custodyAddFixed drives the new CustodyAdd contract for legacy call
-// sites: a fixed live identity at the given start second with a stable
-// process group.
+// custodyAddFixed drives CustodyAdd with a fixed platform-exact identity and
+// a stable process group.
 func custodyAddFixed(root, job string, pid, startedSec int64) error {
-	exact := identity.Exact{Pid: pid, StartedAt: time.Unix(startedSec, 0)}
+	exact := fixedCustodyExact(pid, startedSec)
 	return CustodyAdd(root, job, pid,
 		fixedStartReader{exact: exact, state: identity.Alive},
 		func(int64) (int64, error) { return 4000, nil })
+}
+
+func fixedCustodyExact(pid, startedSec int64) identity.Exact {
+	exact := identity.Exact{Pid: pid, StartedAt: time.Unix(startedSec, 0)}
+	if runtime.GOOS == "linux" {
+		exact.StartTicks = startedSec * 100
+		exact.BootID = "boot-test"
+	}
+	return exact
 }
 
 func asOpError(err error, target **OpError) bool {

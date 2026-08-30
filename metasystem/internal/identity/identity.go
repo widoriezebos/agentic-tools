@@ -1,17 +1,9 @@
 // Package identity answers the one question every supervision decision
 // hangs on: is the process I recorded still the process at that pid?
-// Identity is kernel facts — pid plus start time — never claims, and
-// liveness answers are THREE-WAY (D-2, SLC-R11-002): only a successful
-// read proving absence is DEAD; a failed read is UNKNOWN, and UNKNOWN
-// never authorizes anything.
-//
-// The committed shell helpers read start times to whole seconds, which
-// is why REG-6's kill proof needs argv as a third factor. This package
-// reads exact kernel start times — microseconds on darwin, 10ms
-// clock-tick resolution on linux, both far finer than the whole-second
-// resolution every decision actually compares at — while still speaking
-// seconds to records for compatibility with every artifact the system
-// already has.
+// Identity is kernel facts — pid plus its platform-native start identity —
+// never claims. Liveness answers are three-way: only a successful read
+// proving absence is Dead; a failed read is Unknown, and Unknown never
+// authorizes anything.
 //
 // SAME-USER SCOPE INVARIANT: every consumer that acts on Dead —
 // the reapers, lock takeover, the lease sweep — judges processes this
@@ -23,47 +15,19 @@ package identity
 
 import (
 	"runtime"
-	"strings"
 	"time"
 )
 
-// Ref is a recorded process identity: the pid and the second its
-// process started, the resolution every existing record carries.
-// StartTicks and BootID are the clock-step-immune pair: on
-// Linux the btime-anchored epoch second MOVES when the realtime clock
-// steps (time-synced guests step every ~30s), so equality on seconds
-// reads live processes as Dead. Ticks are boot-relative and constant
-// for the process's life; the boot id changes only across reboots —
-// the one case where ticks could be ambiguous. Records that predate
-// the pair carry zero values and fall back to the seconds comparison.
+// Ref is a recorded process identity. New Darwin records carry the kernel's
+// microsecond start token; new Linux records carry start ticks plus boot ID.
+// StartedAtSec remains alongside either exact shape for older readers. A ref
+// with neither exact shape is a legacy record and compares by whole seconds.
 type Ref struct {
-	Pid          int64
-	StartedAtSec int64
-	StartTicks   int64
-	BootID       string
-}
-
-// ModeName names the strongest comparison shape a recorded identity
-// carries, for records and audit lines (ported surface: the wip's
-// typed Compare modes reduce to these two names on main's Ref).
-func (r Ref) ModeName() string {
-	if r.StartTicks > 0 && r.BootID != "" {
-		return "linux-ticks-bootid"
-	}
-	return "start-seconds"
-}
-
-// NativeExact reports whether this recorded identity carries the
-// strongest shape its platform can record. On linux that is the
-// clock-step-immune ticks+bootID pair; on darwin the fork-captured
-// start second is itself stable (the wip original compared microsecond
-// tokens, which main's records deliberately do not carry — the
-// custody law only needs "no weaker than the platform's best").
-func (r Ref) NativeExact() bool {
-	if r.StartTicks > 0 && r.BootID != "" {
-		return true
-	}
-	return runtime.GOOS == "darwin" && r.StartedAtSec > 0
+	Pid                int64
+	StartedAtSec       int64
+	StartedAtUnixMicro int64
+	StartTicks         int64
+	BootID             string
 }
 
 // Exact is a live identity as the kernel reports it.
@@ -82,28 +46,103 @@ type Exact struct {
 	ArgvKnown bool
 }
 
-// Ref converts an exact identity to record resolution, carrying the
-// clock-step-immune pair when the platform supplies one.
+// Ref converts a live identity to exactly one native record shape.
 func (e Exact) Ref() Ref {
-	return Ref{Pid: e.Pid, StartedAtSec: e.StartedAt.Unix(), StartTicks: e.StartTicks, BootID: e.BootID}
+	ref := Ref{Pid: e.Pid, StartedAtSec: e.StartedAt.Unix()}
+	if e.StartTicks != 0 || e.BootID != "" {
+		ref.StartTicks = e.StartTicks
+		ref.BootID = e.BootID
+		return ref
+	}
+	ref.StartedAtUnixMicro = e.StartedAt.UnixMicro()
+	return ref
 }
 
-// sameIdentity is the ONE equality rule between a live probe and a
-// recorded identity: when both sides carry the clock-step-immune pair,
-// the pair decides — the btime-derived second is not consulted at all;
-// otherwise the legacy whole-second comparison stands (darwin's
-// fork-captured start time is stable, and legacy records have nothing
-// stronger to offer).
-// SameIdentity exposes the one equality rule for consumers that hold
-// both a live probe and a recorded identity (the custody census's
-// group-read confirmation is the first).
+// ComparisonMode labels the representation that decided an identity join.
+// The label makes the weaker legacy fallback visible to callers.
+type ComparisonMode string
+
+const (
+	CompareInvalid            ComparisonMode = "invalid"
+	CompareDarwinMicroseconds ComparisonMode = "darwin-microseconds"
+	CompareLinuxTicksBootID   ComparisonMode = "linux-ticks-boot-id"
+	CompareLegacySeconds      ComparisonMode = "legacy-seconds"
+)
+
+// Mode reports the one representation carried by the ref. A mixed or partial
+// exact shape is invalid and never falls back to seconds.
+func (r Ref) Mode() ComparisonMode {
+	hasMicro := r.StartedAtUnixMicro > 0
+	hasTicks := r.StartTicks > 0
+	hasBoot := r.BootID != ""
+	if hasMicro && (hasTicks || hasBoot) {
+		return CompareInvalid
+	}
+	if hasTicks != hasBoot {
+		return CompareInvalid
+	}
+	if hasMicro {
+		return CompareDarwinMicroseconds
+	}
+	if hasTicks {
+		return CompareLinuxTicksBootID
+	}
+	if r.StartedAtSec > 0 {
+		return CompareLegacySeconds
+	}
+	return CompareInvalid
+}
+
+// ModeName names the representation carried in records and audit output.
+func (r Ref) ModeName() string { return string(r.Mode()) }
+
+// NativeExact reports whether the ref carries this host platform's required
+// exact representation.
+func (r Ref) NativeExact() bool {
+	switch runtime.GOOS {
+	case "darwin":
+		return r.Mode() == CompareDarwinMicroseconds
+	case "linux":
+		return r.Mode() == CompareLinuxTicksBootID
+	default:
+		return false
+	}
+}
+
+// Comparison is the result of joining one live kernel observation to one
+// durable ref.
+type Comparison struct {
+	Matches bool
+	Mode    ComparisonMode
+}
+
+// Compare is the one equality rule between a live probe and a recorded
+// identity. Exact fields are exclusive: a malformed or unavailable exact
+// representation never weakens itself to the legacy seconds rule.
+func Compare(exact Exact, ref Ref) Comparison {
+	mode := ref.Mode()
+	comparison := Comparison{Mode: mode}
+	if exact.Pid != ref.Pid || mode == CompareInvalid {
+		return comparison
+	}
+	switch mode {
+	case CompareDarwinMicroseconds:
+		comparison.Matches = exact.StartTicks == 0 && exact.BootID == "" &&
+			exact.StartedAt.UnixMicro() == ref.StartedAtUnixMicro
+	case CompareLinuxTicksBootID:
+		comparison.Matches = exact.StartTicks == ref.StartTicks && exact.BootID == ref.BootID
+	case CompareLegacySeconds:
+		comparison.Matches = exact.StartedAt.Unix() == ref.StartedAtSec
+	}
+	return comparison
+}
+
+// SameIdentity exposes the one equality rule for consumers that hold both a
+// live probe and a recorded identity.
 func SameIdentity(exact Exact, ref Ref) bool { return sameIdentity(exact, ref) }
 
 func sameIdentity(exact Exact, ref Ref) bool {
-	if ref.StartTicks > 0 && ref.BootID != "" && exact.StartTicks > 0 && exact.BootID != "" {
-		return exact.StartTicks == ref.StartTicks && exact.BootID == ref.BootID
-	}
-	return exact.StartedAt.Unix() == ref.StartedAtSec
+	return Compare(exact, ref).Matches
 }
 
 // Liveness is the three-way verdict.
@@ -137,25 +176,44 @@ type Prober interface {
 	Probe(pid int64) (Exact, Liveness, error)
 }
 
-// AliveRef reports whether a recorded identity is the process still at
-// its pid, three-way. The seconds comparison is intentional: records
-// carry seconds, and a mismatch at that resolution is a DIFFERENT
-// process, definitively.
+// StartReader reads only the identity token. It is used when argv is either
+// unnecessary or must be read between two independent start observations.
+type StartReader interface {
+	ReadStart(pid int64) (Exact, Liveness, error)
+}
+
+// AliveRef reports whether a recorded identity is the process still at its
+// pid, three-way.
 func AliveRef(prober Prober, ref Ref) Liveness {
-	exact, state, _ := prober.Probe(ref.Pid)
+	state, _ := AliveRefComparison(prober, ref)
+	return state
+}
+
+// AliveRefComparison also reports which recorded representation decided the
+// join, including the labeled legacy fallback.
+func AliveRefComparison(prober Prober, ref Ref) (Liveness, ComparisonMode) {
+	var exact Exact
+	var state Liveness
+	if reader, ok := prober.(StartReader); ok {
+		exact, state, _ = reader.ReadStart(ref.Pid)
+	} else {
+		exact, state, _ = prober.Probe(ref.Pid)
+	}
 	switch state {
 	case Dead:
-		return Dead
+		return Dead, ref.Mode()
 	case Unknown:
-		return Unknown
+		return Unknown, ref.Mode()
 	}
-	if !sameIdentity(exact, ref) {
+	comparison := Compare(exact, ref)
+	if comparison.Mode == CompareInvalid {
+		return Unknown, comparison.Mode
+	}
+	if !comparison.Matches {
 		// The pid was reused by a different process: definitively gone.
-		// (With the pair recorded this cannot fire from a clock step;
-		// legacy seconds-only records keep the old semantics.)
-		return Dead
+		return Dead, comparison.Mode
 	}
-	return Alive
+	return Alive, comparison.Mode
 }
 
 // AliveTaggedRef authenticates a recorded process and its instance tag from
@@ -176,8 +234,21 @@ func AliveTaggedRef(prober Prober, ref Ref, tag string) Liveness {
 	if !exact.ArgvKnown {
 		return Unknown
 	}
-	if tag == "" || !strings.Contains(strings.Join(exact.Argv, " "), tag) {
+	if !HasExactToken(exact.Argv, tag) {
 		return Dead
 	}
 	return Alive
+}
+
+// HasExactToken reports whether argv contains tag as one complete argument.
+func HasExactToken(argv []string, tag string) bool {
+	if tag == "" {
+		return false
+	}
+	for _, argument := range argv {
+		if argument == tag {
+			return true
+		}
+	}
+	return false
 }

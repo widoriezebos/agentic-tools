@@ -2,6 +2,8 @@ package census
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,7 +19,7 @@ type taggedTestReader struct {
 
 type unreadableTaggedTestReader struct{}
 
-func (unreadableTaggedTestReader) Probe(int64) (identity.Exact, identity.Liveness, error) {
+func (unreadableTaggedTestReader) ReadStart(int64) (identity.Exact, identity.Liveness, error) {
 	return identity.Exact{}, identity.Unknown, errors.New("identity unreadable")
 }
 
@@ -25,7 +27,7 @@ func (unreadableTaggedTestReader) ReadArgv(int64) ([]string, bool) {
 	return nil, false
 }
 
-func (r taggedTestReader) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+func (r taggedTestReader) ReadStart(pid int64) (identity.Exact, identity.Liveness, error) {
 	exact, ok := r.starts[pid]
 	if !ok {
 		return identity.Exact{}, identity.Dead, nil
@@ -154,6 +156,68 @@ func TestTaggedProcessCensusPreservesEnumerationFailure(t *testing.T) {
 	})
 	if result.Complete() || result.EnumerationError == "" {
 		t.Fatalf("enumeration failure was normalized to absence: %+v", result)
+	}
+}
+
+func TestTaggedProcessCensusReturnsVerifiedProcess(t *testing.T) {
+	stable := identity.Exact{Pid: 41, StartedAt: time.UnixMicro(100_000_001)}
+	reader := taggedTestReader{
+		starts: map[int64]identity.Exact{41: stable},
+		argv:   map[int64][]string{41: {"adapter", "--instance-tag", "job-tag"}},
+		known:  map[int64]bool{41: true},
+	}
+	result := ScanTaggedProcesses("job-tag", TaggedScanDependencies{
+		PIDs:   func() ([]int64, error) { return []int64{41}, nil },
+		Signal: func(int64) error { return nil },
+		PGID:   func(int64) (int64, error) { return 700, nil },
+		Reader: reader,
+		MatchesTag: func(argv []string, wanted string) bool {
+			return len(argv) == 3 && argv[2] == wanted
+		},
+	})
+	if !result.Complete() || len(result.Tagged) != 1 || result.Tagged[0].PGID != 700 {
+		t.Fatalf("verified tagged process was not returned: %+v", result)
+	}
+
+	result = ScanTaggedProcesses("job-tag", TaggedScanDependencies{
+		PIDs:   func() ([]int64, error) { return []int64{41}, nil },
+		Signal: func(int64) error { return nil },
+		PGID:   func(int64) (int64, error) { return 0, os.ErrPermission },
+		Reader: reader,
+		MatchesTag: func(argv []string, wanted string) bool {
+			return len(argv) == 3 && argv[2] == wanted
+		},
+	})
+	if result.Complete() || len(result.Indeterminate) != 1 || result.Indeterminate[0].Reason == "" {
+		t.Fatalf("unreadable process group was not preserved: %+v", result)
+	}
+}
+
+func TestConfiguredProcessFixtureDistinguishesEmptyFromAbsent(t *testing.T) {
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", "")
+	if rows, configured, err := ConfiguredProcessFixture(t.TempDir()); err != nil || configured || rows != nil {
+		t.Fatalf("unset fixture = rows:%v configured:%v err:%v", rows, configured, err)
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	table := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(table, []byte("[]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", table)
+	rows, configured, err := ConfiguredProcessFixture(root)
+	if err != nil || !configured || len(rows) != 0 {
+		t.Fatalf("empty fixture = rows:%v configured:%v err:%v", rows, configured, err)
+	}
+	rows, err = EnumerateConfiguredProcesses(root)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("configured enumeration = rows:%v err:%v", rows, err)
+	}
+	if _, _, err := ConfiguredProcessFixture(t.TempDir()); err == nil {
+		t.Fatal("a non-fake root accepted the configured process table")
 	}
 }
 

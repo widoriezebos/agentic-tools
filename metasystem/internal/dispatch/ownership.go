@@ -55,11 +55,11 @@ func RecordedGroupProofMatches(path string, pgid int64, tag string, grant Record
 // BuildOwnershipPatch records one live supervisor using this platform's exact
 // identity shape. The compatibility second is carried alongside it but never
 // decides a new-record comparison.
-func BuildOwnershipPatch(output string, pid, pgid int64, tag, provenAt string, handshakeDeadline int64, reader identity.Prober) error {
+func BuildOwnershipPatch(output string, pid, pgid int64, tag, provenAt string, handshakeDeadline int64, reader identity.StartReader) error {
 	if output == "" || pid < 1 || pgid < 2 || tag == "" || provenAt == "" || reader == nil {
 		return fmt.Errorf("dispatch: ownership patch requires output, pid, pgid, tag, proven time, and identity reader")
 	}
-	exact, state, err := reader.Probe(pid)
+	exact, state, err := reader.ReadStart(pid)
 	if err != nil || state != identity.Alive || exact.Pid != pid {
 		return fmt.Errorf("dispatch: pid %d exact start identity is unavailable", pid)
 	}
@@ -86,9 +86,10 @@ func exactIdentityFields(ref identity.Ref) map[string]any {
 		"pid":          ref.Pid,
 		"pidStartedAt": ref.StartedAtSec,
 	}
-	// Main's Ref carries no microsecond token; the linux pair is the
-	// only exact extension recorded.
-	if ref.StartTicks > 0 && ref.BootID != "" {
+	switch ref.Mode() {
+	case identity.CompareDarwinMicroseconds:
+		fields["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
+	case identity.CompareLinuxTicksBootID:
 		fields["pidStartTicks"] = ref.StartTicks
 		fields["bootId"] = ref.BootID
 	}
@@ -102,31 +103,34 @@ func identityRefFromObject(value map[string]any) (identity.Ref, bool) {
 		return identity.Ref{}, false
 	}
 	ref := identity.Ref{Pid: pid, StartedAtSec: started}
+	if micro, ok := numInt(value["pidStartedAtExactMicro"]); ok {
+		ref.StartedAtUnixMicro = micro
+	}
 	if ticks, ok := numInt(value["pidStartTicks"]); ok {
 		ref.StartTicks = ticks
 	}
 	if bootID, ok := value["bootId"].(string); ok {
 		ref.BootID = bootID
 	}
-	return ref, true
+	return ref, ref.Mode() != identity.CompareInvalid
 }
 
-// sameRecordedIdentity compares two RECORDED identities: the strongest
-// shape both sides carry decides (main's Ref records seconds plus the
-// optional linux pair; the wip's microsecond mode has no home here).
+// sameRecordedIdentity compares two recorded identities using the exact shape
+// both records carry.
 func sameRecordedIdentity(a, b identity.Ref) bool {
-	if a.Pid != b.Pid {
+	if a.Pid != b.Pid || a.Mode() != b.Mode() {
 		return false
 	}
-	aPair := a.StartTicks > 0 && a.BootID != ""
-	bPair := b.StartTicks > 0 && b.BootID != ""
-	if aPair != bPair {
-		return false
-	}
-	if aPair {
+	switch a.Mode() {
+	case identity.CompareDarwinMicroseconds:
+		return a.StartedAtUnixMicro == b.StartedAtUnixMicro
+	case identity.CompareLinuxTicksBootID:
 		return a.StartTicks == b.StartTicks && a.BootID == b.BootID
+	case identity.CompareLegacySeconds:
+		return a.StartedAtSec == b.StartedAtSec
+	default:
+		return false
 	}
-	return a.StartedAtSec == b.StartedAtSec
 }
 
 // validateOwnershipPatch accepts the one atomic initial ownership write and

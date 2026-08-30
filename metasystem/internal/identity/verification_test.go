@@ -20,27 +20,24 @@ type scriptedVerificationReader struct {
 	argvRead  int
 }
 
-func (r *scriptedVerificationReader) Probe(int64) (Exact, Liveness, error) {
+func (r *scriptedVerificationReader) ReadStart(int64) (Exact, Liveness, error) {
 	if r.startRead >= len(r.starts) {
 		return Exact{}, Unknown, errors.New("unexpected start read")
 	}
 	read := r.starts[r.startRead]
 	r.startRead++
-	// Ported: argv rides the probe itself; the second read carries the
-	// scripted argv exactly as the kernel prober attaches it.
-	exact := read.exact
-	exact.Argv = r.argv
-	exact.ArgvKnown = r.argvKnown
+	return read.exact, read.state, read.err
+}
+
+func (r *scriptedVerificationReader) ReadArgv(int64) ([]string, bool) {
 	r.argvRead++
-	return exact, read.state, read.err
+	return r.argv, r.argvKnown
 }
 
 func verificationShape(name string, token int64) Exact {
 	switch name {
 	case "darwin-microseconds":
-		// Ported: main records darwin seconds; distinct tokens differ
-		// by whole seconds.
-		return Exact{Pid: 41, StartedAt: time.Unix(100_000+token, 0)}
+		return Exact{Pid: 41, StartedAt: time.UnixMicro(100_000_000 + token)}
 	case "linux-ticks-boot-id":
 		return Exact{Pid: 41, StartedAt: time.Unix(100, 0), StartTicks: 7000 + token, BootID: "boot-a"}
 	default:
@@ -75,41 +72,41 @@ func TestOrderedVerificationTable(t *testing.T) {
 			}{
 				{
 					name: "first read gone stops the sandwich", starts: []verificationStartRead{{state: Dead}},
-					want: VerificationDead, wantPresence: Dead, wantStartRead: 1, wantArgvRead: 1,
+					want: VerificationDead, wantPresence: Dead, wantStartRead: 1,
 				},
 				{
 					name: "first read unknown", starts: []verificationStartRead{{state: Unknown, err: errors.New("permission denied")}},
-					want: VerificationIndeterminate, wantPresence: Unknown, wantStartRead: 1, wantArgvRead: 1,
+					want: VerificationIndeterminate, wantPresence: Unknown, wantStartRead: 1,
 				},
 				{
 					name: "second read unknown", starts: []verificationStartRead{{exact: stable, state: Alive}, {state: Unknown, err: errors.New("permission denied")}},
 					argv: []string{"adapter", "--instance-tag", "job-tag"}, argvKnown: true,
-					want: VerificationIndeterminate, wantPresence: Unknown, wantStartRead: 2, wantArgvRead: 2,
+					want: VerificationIndeterminate, wantPresence: Unknown, wantStartRead: 2, wantArgvRead: 1,
 				},
 				{
 					name: "second read gone", starts: []verificationStartRead{{exact: stable, state: Alive}, {state: Dead}},
 					argv: []string{"adapter", "--instance-tag", "job-tag"}, argvKnown: true,
-					want: VerificationDead, wantPresence: Dead, wantStartRead: 2, wantArgvRead: 2,
+					want: VerificationDead, wantPresence: Dead, wantStartRead: 2, wantArgvRead: 1,
 				},
 				{
 					name: "start changed during argv read", starts: []verificationStartRead{{exact: stable, state: Alive}, {exact: changed, state: Alive}},
 					argv: []string{"adapter", "--instance-tag", "job-tag"}, argvKnown: true,
-					want: VerificationIndeterminate, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 2,
+					want: VerificationIndeterminate, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 1,
 				},
 				{
 					name: "argv unreadable with stable live identity", starts: []verificationStartRead{{exact: stable, state: Alive}, {exact: stable, state: Alive}},
 					argvKnown: false,
-					want:      VerificationIndeterminate, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 2,
+					want:      VerificationIndeterminate, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 1,
 				},
 				{
 					name: "tag absent from its position", starts: []verificationStartRead{{exact: stable, state: Alive}, {exact: stable, state: Alive}},
 					argv: []string{"rg", "job-tag"}, argvKnown: true,
-					want: VerificationNotOurs, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 2,
+					want: VerificationNotOurs, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 1,
 				},
 				{
 					name: "stable identity and positioned tag", starts: []verificationStartRead{{exact: stable, state: Alive}, {exact: stable, state: Alive}},
 					argv: []string{"adapter", "--instance-tag", "job-tag"}, argvKnown: true,
-					want: VerificationVerified, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 2,
+					want: VerificationVerified, wantPresence: Alive, wantStartRead: 2, wantArgvRead: 1,
 				},
 			}
 			for _, row := range rows {
@@ -131,18 +128,24 @@ func TestOrderedVerificationTable(t *testing.T) {
 	}
 }
 
-func TestExactIdentityComparisonPortedShapes(t *testing.T) {
-	// Ported: main has no microsecond mode — a darwin same-second pid
-	// reuse is indistinguishable BY DESIGN (SameIdentity matches), and
-	// the sub-second rejection the wip proved has no shape to prove
-	// here. The linux pair still rejects exactly.
+func TestExactIdentityRejectsSameSecondPidReuse(t *testing.T) {
+	darwinLive := Exact{Pid: 41, StartedAt: time.UnixMicro(100_000_002)}
+	darwinRecorded := Ref{Pid: 41, StartedAtSec: 100, StartedAtUnixMicro: 100_000_001}
+	if comparison := Compare(darwinLive, darwinRecorded); comparison.Matches || comparison.Mode != CompareDarwinMicroseconds {
+		t.Fatalf("darwin comparison = %+v, want a microsecond-exact rejection", comparison)
+	}
+
 	linuxLive := Exact{Pid: 41, StartedAt: time.Unix(100, 0), StartTicks: 7002, BootID: "boot-a"}
 	linuxRecorded := Ref{Pid: 41, StartedAtSec: 100, StartTicks: 7001, BootID: "boot-a"}
-	if SameIdentity(linuxLive, linuxRecorded) {
-		t.Fatal("a linux ticks mismatch must reject")
+	if comparison := Compare(linuxLive, linuxRecorded); comparison.Matches || comparison.Mode != CompareLinuxTicksBootID {
+		t.Fatalf("linux comparison = %+v, want a ticks-and-boot-id rejection", comparison)
 	}
-	darwinLive := Exact{Pid: 41, StartedAt: time.Unix(100, 900_000_000)}
-	if !SameIdentity(darwinLive, Ref{Pid: 41, StartedAtSec: 100}) {
-		t.Fatal("the whole-second comparison is darwin's identity rule")
+}
+
+func TestLegacySecondsComparisonIsLabeled(t *testing.T) {
+	live := Exact{Pid: 41, StartedAt: time.UnixMicro(100_900_000)}
+	comparison := Compare(live, Ref{Pid: 41, StartedAtSec: 100})
+	if !comparison.Matches || comparison.Mode != CompareLegacySeconds {
+		t.Fatalf("legacy comparison = %+v", comparison)
 	}
 }

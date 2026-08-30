@@ -13,11 +13,11 @@ import (
 // so custody registration cannot race a status transition or its index write.
 // Only a live job (pending or running) accepts custody; anything else is a
 // silent refusal.
-func CustodyAdd(root, job string, pid int64, reader identity.Prober, groupReaders ...func(int64) (int64, error)) error {
+func CustodyAdd(root, job string, pid int64, reader identity.StartReader, groupReaders ...func(int64) (int64, error)) error {
 	if pid < 1 || reader == nil {
 		return fmt.Errorf("dispatch: custody registration requires a pid and identity reader")
 	}
-	exact, state, err := reader.Probe(pid)
+	exact, state, err := reader.ReadStart(pid)
 	if err != nil || state != identity.Alive || exact.Pid != pid {
 		return fmt.Errorf("dispatch: custody pid %d exact start identity is unavailable", pid)
 	}
@@ -56,7 +56,7 @@ func CustodyAdd(root, job string, pid int64, reader identity.Prober, groupReader
 		if groupErr != nil || pgid < 2 {
 			return fmt.Errorf("dispatch: custody pid %d process group is unavailable", pid)
 		}
-		confirmed, confirmedState, confirmedErr := reader.Probe(pid)
+		confirmed, confirmedState, confirmedErr := reader.ReadStart(pid)
 		if confirmedErr != nil || confirmedState != identity.Alive {
 			return fmt.Errorf("dispatch: custody pid %d changed while its group was read", pid)
 		}

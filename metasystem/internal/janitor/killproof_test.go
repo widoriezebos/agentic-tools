@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -207,12 +208,14 @@ type tagVerificationReader struct {
 	read   int
 }
 
-func (r *tagVerificationReader) Probe(int64) (identity.Exact, identity.Liveness, error) {
+func (r *tagVerificationReader) ReadStart(int64) (identity.Exact, identity.Liveness, error) {
 	exact := r.starts[r.read]
 	r.read++
-	exact.Argv = append([]string(nil), r.argv...)
-	exact.ArgvKnown = true
 	return exact, identity.Alive, nil
+}
+
+func (r *tagVerificationReader) ReadArgv(int64) ([]string, bool) {
+	return append([]string(nil), r.argv...), true
 }
 
 func TestGroupOwnershipGuardsRefuseWithoutScanning(t *testing.T) {
@@ -225,15 +228,26 @@ func TestGroupOwnershipGuardsRefuseWithoutScanning(t *testing.T) {
 }
 
 func TestGroupOwnershipOnLiveGroups(t *testing.T) {
+	if _, err := identity.AllPids(); err != nil {
+		t.Skipf("process enumeration is unavailable: %v", err)
+	}
 	tag := fmt.Sprintf("metasystem-job-live-%d", os.Getpid())
-	// The trailing words ride bash's positional slots: real kernel argv
-	// carrying the tagged-hold shape tokens and the tag as --tag's value.
-	owned := exec.Command("bash", "-c", "sleep 30", "metasystem", "util", "hold", "--tag", tag)
+	// The trailing words ride Bash's positional slots. Waiting on a child keeps
+	// Bash from replacing itself with sleep, so the observed argv stays stable
+	// across the start/argv/start verification.
+	owned := exec.Command("bash", "-c", "printf x; sleep 30 & wait", "metasystem", "util", "hold", "--tag", tag)
 	owned.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	ready, err := owned.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := owned.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = owned.Process.Kill(); _, _ = owned.Process.Wait() }()
+	if _, err := io.ReadFull(ready, make([]byte, 1)); err != nil {
+		t.Fatalf("wait for stable Bash argv: %v", err)
+	}
 	if got := GroupOwnership(int64(owned.Process.Pid), tag); got != GroupOwned {
 		t.Fatalf("shaped live group ownership = %s, want OWNED", got)
 	}
@@ -272,5 +286,64 @@ func TestGroupOwnershipVerificationFold(t *testing.T) {
 				t.Fatalf("fold = %s, want %s", got, row.want)
 			}
 		})
+	}
+}
+
+type groupTestReader struct {
+	starts map[int64]identity.Exact
+	argv   map[int64][]string
+}
+
+func (r groupTestReader) ReadStart(pid int64) (identity.Exact, identity.Liveness, error) {
+	exact, ok := r.starts[pid]
+	if !ok {
+		return identity.Exact{}, identity.Dead, nil
+	}
+	return exact, identity.Alive, nil
+}
+
+func (r groupTestReader) ReadArgv(pid int64) ([]string, bool) {
+	argv, ok := r.argv[pid]
+	return argv, ok
+}
+
+func TestGroupOwnershipDependencyTable(t *testing.T) {
+	stable := identity.Exact{Pid: 41, StartedAt: time.UnixMicro(100_000_001)}
+	reader := groupTestReader{
+		starts: map[int64]identity.Exact{41: stable, 42: {Pid: 42, StartedAt: stable.StartedAt}},
+		argv: map[int64][]string{
+			41: {"metasystem", "util", "hold", "--tag", tag},
+			42: {"rg", tag},
+		},
+	}
+	base := groupOwnershipDependencies{
+		PIDs: func() ([]int64, error) { return []int64{41, 42, 43, 44}, nil },
+		PGID: func(pid int64) (int64, error) {
+			switch pid {
+			case 41, 42:
+				return 700, nil
+			case 43:
+				return 0, syscall.ESRCH
+			default:
+				return 701, nil
+			}
+		},
+		Reader: reader,
+	}
+	if got := groupOwnership(700, tag, base); got != GroupOwned {
+		t.Fatalf("verified member ownership = %s, want OWNED", got)
+	}
+	base.PGID = func(pid int64) (int64, error) {
+		if pid == 43 {
+			return 0, syscall.EPERM
+		}
+		return 701, nil
+	}
+	if got := groupOwnership(700, tag, base); got != GroupIndeterminate {
+		t.Fatalf("unreadable group membership = %s, want INDETERMINATE", got)
+	}
+	base.PIDs = func() ([]int64, error) { return nil, syscall.EPERM }
+	if got := groupOwnership(700, tag, base); got != GroupIndeterminate {
+		t.Fatalf("unreadable process table = %s, want INDETERMINATE", got)
 	}
 }
