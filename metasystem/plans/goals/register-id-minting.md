@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 1h — pick the mechanism (a goal-verb-style opid suffix, per-machine ranges, or a mint verb reading the register under the goal lock), migrate nothing retroactively, document in the register header
 - OpenedAt: 2026-08-29T15:50:10Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=15 activeJobLimit=1
 
 History:
 - 2026-08-29T15:50:10Z 9CC40599A8D6G7E4X86KBF80Y7-m1-bf243850 open actor=m1+coordinator targets=register-id-minting
-Integrity: sha256=0a3c7f541ef8fe85f4bfc59654afa2c7f54b8fef8d9a06a3c957c38a2ff98472
+- 2026-08-30T00:12:00Z XFMJTV0EKK9JVQ6XB1QQ4TQPCZ-m2-bc1be9cb set-budget actor=human:wido targets=register-id-minting
+Integrity: sha256=afa0e9ff7af1f52707bbf1194d8d93acdfef3ab9da9cf8a3d84de289b4ddba8e
