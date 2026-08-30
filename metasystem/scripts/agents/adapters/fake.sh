@@ -21,7 +21,8 @@ Usage:
 
 The simulator reads FAKE:<behavior> markers from the assembled prompt.
 Supported behaviors include malformed-return, missing-session-id,
-resume-collision, concurrent-turn, cancel-race, process-loss, timeout,
+resume-collision, concurrent-turn, cancel-race, process-loss,
+return-then-process-loss, timeout,
 no-session-signal, handshake-failure, no-event-stream, hook-unavailable,
 interrupted-atomic-write, nested-agent-events, effective-wider,
 effective-narrower, and mirror-failure. A Fake-Argument: line is captured as
@@ -224,6 +225,13 @@ supervise() { # verb and remaining args
   if behavior_present process-loss; then
     "$ms" util hold --tag "$instance_tag" --stopped-file "$round_dir/child.stopped" &
     printf '%s\n' "$!" >"$round_dir/child.pid"
+    printf '{"lost":true}\n' >"$heartbeat"
+    kill -KILL "$$"
+  fi
+  if behavior_present return-then-process-loss; then
+    # The recollection scenario: the delivered return lands on disk, then
+    # the supervisor dies before its terminal compare-and-swap.
+    write_valid_return
     printf '{"lost":true}\n' >"$heartbeat"
     kill -KILL "$$"
   fi

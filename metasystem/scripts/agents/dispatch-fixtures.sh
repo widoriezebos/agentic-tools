@@ -1655,6 +1655,36 @@ until grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/pending-loss.js
 done
 wait_for_agent_fixture_process pending-loss-driver pending-loss "$pending_loss_driver" || true
 
+# Recollection (return-recollection-on-process-lost): a critic whose
+# supervisor dies AFTER the valid return lands is not failed work — the
+# reap's recollection walk adjudicates the on-disk return and concludes
+# the job completed with recollection provenance.
+recollect_brief="$agent_fixture/recollect.md"
+make_agent_brief "$recollect_brief" design 'FAKE:return-then-process-loss'
+wait_for_agent_census_fresh recollect-loss
+(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$recollect_brief" --job-id recollect-loss >/dev/null 2>&1) & recollect_driver=$!
+wait_for_agent_status recollect-loss running
+recollect_record="$agent_repo/artifacts/agents/jobs/recollect-loss.json"
+recollect_started=$SECONDS
+recollect_deadline=$((SECONDS + agent_status_cap_sec))
+until [[ "$("$engine" json get --file "$recollect_record" --field status 2>/dev/null)" == completed ]]; do
+  if (( SECONDS >= recollect_deadline )); then
+    echo "recollection did not conclude the delivered-then-lost critic (elapsed: $((SECONDS - recollect_started))s; scaled cap: ${agent_status_cap_sec}s)" >&2
+    cat "$recollect_record" >&2
+    exit 1
+  fi
+  run_agent_fixture recollect-reap recollect-loss "$agent_dispatch" reap --job recollect-loss
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -n "$("$engine" json get --file "$recollect_record" --field recollectedAt 2>/dev/null)" \
+   && "$("$engine" json get --file "$recollect_record" --field recollectedFrom)" == process-lost \
+   && "$("$engine" json get --file "$recollect_record" --field error)" == null ]] \
+  || { echo "the recollected record does not carry its provenance" >&2; cat "$recollect_record" >&2; exit 1; }
+"$engine" validate return-complete --root "$agent_repo" --role design-critic \
+  --file "$agent_repo/artifacts/agents/recollect-loss/rounds/1/return.json" \
+  || { echo "the recollected return does not adjudicate" >&2; exit 1; }
+wait_for_agent_fixture_process recollect-driver recollect-loss "$recollect_driver" || true
+
 malformed_brief="$agent_fixture/malformed-return.md"
 make_agent_brief "$malformed_brief" design 'FAKE:malformed-return'
 set +e

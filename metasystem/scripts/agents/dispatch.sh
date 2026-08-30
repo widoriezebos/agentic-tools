@@ -1003,6 +1003,7 @@ reap_one_locked() { # job
   if [[ "$status" != running || "$budget_expired" != 1 ]]; then
     if ! job_supervisor_matches "$record"; then
       wind_down_group "$record" || return 1
+      if recollect_lost_return "$job" "$record" "$status"; then return; fi
       patch=$(mktemp "$record_locks/lost.XXXXXX")
       printf '{"error":"process-lost","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
       cas_out=$(record_cas "$job" "$status" failed "$patch" 2>/dev/null) && cas_rc=0 || cas_rc=$?
@@ -1030,6 +1031,40 @@ reap_one_locked() { # job
     fi
     mirror_record "$job" || true
   fi
+}
+
+# recollect_lost_return (return-recollection-on-process-lost, D64 at the
+# job level): a job dying process-lost with a complete, schema-valid
+# return.json in its newest round delivered its work — the return is
+# adjudicated and the job concludes completed with recollection
+# provenance. Only a truly absent or invalid return stays failed. A raw
+# candidate that never reached normalization cannot validate post-mortem
+# (the schema demands the session observation), so it lawfully stays lost.
+recollect_lost_return() { # job id, record path, current status
+  local job=$1 record=$2 status=$3 role round_dir round_base best=0 return_file patch usage_arg cas_out cas_rc
+  [[ "$status" == running ]] || return 1
+  role=$(json_field "$record" role 2>/dev/null || true)
+  round_dir=""
+  local candidate_dir
+  for candidate_dir in "$agents/$job/rounds"/*/; do
+    [[ -d "$candidate_dir" ]] || continue
+    round_base=$(basename "$candidate_dir")
+    [[ "$round_base" =~ ^[0-9]+$ ]] || continue
+    if (( round_base > best )); then best=$round_base; round_dir=${candidate_dir%/}; fi
+  done
+  [[ -n "$round_dir" && -s "$round_dir/return.json" ]] || return 1
+  "$ms" validate return-complete --root "$root" --role "$role" --file "$round_dir/return.json"     >/dev/null 2>&1 || return 1
+  usage_arg=""
+  [[ ! -s "$round_dir/usage.json" ]] || usage_arg="$round_dir/usage.json"
+  patch=$(mktemp "$record_locks/recollect.XXXXXX")
+  "$ms" adapter result-patch --output "$patch" --error null --phase supervision --usage "$usage_arg"
+  "$ms" json set --file "$patch" --field "recollectedAt=$(now_iso)"     --field recollectedFrom=process-lost
+  cas_out=$(record_cas "$job" "$status" completed "$patch" 2>/dev/null) && cas_rc=0 || cas_rc=$?
+  rm -f "$patch"
+  (( cas_rc == 0 )) || return 1
+  reap_verdict_events "$job" completed recollected 0 "$cas_out"
+  mirror_record "$job" || true
+  return 0
 }
 
 reap_one() { # job
