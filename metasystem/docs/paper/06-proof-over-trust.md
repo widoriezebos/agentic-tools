@@ -34,6 +34,8 @@ An independent examiner asked "does this solution look correct?" after reading t
 
 Each new independent examiner receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That withholding protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a newly started machine worker that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority (no more access than the task needs), but it cannot manufacture independence after the fact. Chapter 8 develops how one durable record can support both continuity and appropriately limited access.
 
+Fresh context removes one source of shared error: the builder's path. A newly started examiner using the same model can still find faults that a review performed inside the builder's context missed. The two workers still share the model and its data, so their agreement cannot by itself rule out a shared mistake.
+
 The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision rather than the moment the process stops producing output.
 
 ## Four questions set verification depth
@@ -49,6 +51,8 @@ Chapter 11 applies the same questions to production, comparison and the decision
 Every session check passes, but both the candidate and the checks define a visible page as proof of human activity. An unattended computer with the page open then stays signed in forever. The tests accurately demonstrate behavior under their rule. The rule is the mistake.
 
 No proof exceeds its boundary, source of expected results and assumptions. A test derived from the same mistaken interpretation as the candidate can make agreement look like correctness. Several independent examiners using the same model or data can repeat one blind spot. A fixed set of cases cannot cover every network delay, assistive technology, future browser or user behavior the service will meet.
+
+Tests and live observation can challenge agreement among same-model examiners, but those sources are not independent by default. Expected results, injected faults, observed signals and their interpretation may carry the same mistaken assumption. Each source keeps its limits, and human review is still required when builders, examiners and test generators may agree for the same mistaken reason.
 
 The answer to these limits is to claim only what was shown. The system records what was examined, which expected results came from authorized intent, which sources were independent and which assumptions remain. Live observation then tests the result against situations the controlled examination did not include. Evidence can challenge intent as well as construction. Whether a burden on affected people is acceptable remains a human judgment. A test can show what the burden is, not whether it is acceptable.
 
