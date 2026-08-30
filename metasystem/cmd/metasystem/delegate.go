@@ -219,7 +219,7 @@ func commandExitCode(err error) int {
 
 func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if len(args) == 0 {
-		return nil, "", fmt.Errorf("usage: metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>]")
+		return nil, "", fmt.Errorf("usage: metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>]")
 	}
 	if args[0] == "--cancel" {
 		if len(args) != 2 {
@@ -286,8 +286,10 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 
 	goalSeen := false
 	roleSeen := false
+	role := ""
 	briefSeen := false
 	opSeen := false
+	reviewsSeen := false
 	destructiveReachSeen := false
 	out := []string{"dispatch"}
 	for index := 0; index < len(args); index++ {
@@ -310,6 +312,7 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 					return nil, "", fmt.Errorf("delegate requires exactly one --role")
 				}
 				roleSeen = true
+				role = args[index+1]
 			} else {
 				if briefSeen {
 					return nil, "", fmt.Errorf("delegate requires exactly one --brief")
@@ -324,6 +327,13 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 			}
 			opSeen = true
 			out = append(out, "--job-id", args[index+1])
+			index++
+		case "--reviews":
+			if index+1 >= len(args) || reviewsSeen {
+				return nil, "", fmt.Errorf("delegate accepts at most one --reviews value")
+			}
+			reviewsSeen = true
+			out = append(out, "--reviews", args[index+1])
 			index++
 		case "--destructive-reach":
 			if index+1 >= len(args) || destructiveReachSeen {
@@ -350,6 +360,9 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	}
 	if !goalSeen || !roleSeen || !briefSeen || !destructiveReachSeen {
 		return nil, "", fmt.Errorf("delegate requires --role, --brief, --goal <id|none-explicit>, and --destructive-reach <class>")
+	}
+	if reviewsSeen && role != "code-critic" && role != "warden" {
+		return nil, "", fmt.Errorf("--reviews is only valid for the code-critic and warden roles")
 	}
 	return out, "dispatch", nil
 }

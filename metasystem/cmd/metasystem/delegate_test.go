@@ -21,6 +21,32 @@ func TestNormalizeDelegateFreshRequiresExplicitGoalAndMapsOperation(t *testing.T
 	}
 }
 
+func TestNormalizeDelegateFreshForwardsReviewsForCriticRoles(t *testing.T) {
+	got, mode, err := normalizeDelegateArgs([]string{
+		"--reviews", "implementer-a", "--role", "code-critic", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL",
+	})
+	want := []string{"dispatch", "--reviews", "implementer-a", "--role", "code-critic", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL"}
+	if err != nil || mode != "dispatch" || !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalize = %v %s %v, want %v dispatch", got, mode, err, want)
+	}
+}
+
+func TestDelegateReviewsRefusesNonCriticRole(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_DELEGATE_ROOT", root)
+	out, code := captureStdout(t, func() int {
+		return runDelegate([]string{
+			"--role", "implementer", "--reviews", "implementer-a", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL",
+		})
+	})
+	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "--reviews is only valid for the code-critic and warden roles") {
+		t.Fatalf("non-critic reviews exit=%d output=%q", code, out)
+	}
+}
+
 func TestDelegateAdapterSelftestRefusesADirectInvocation(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
