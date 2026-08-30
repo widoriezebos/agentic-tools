@@ -28,6 +28,7 @@ func runProofRunLaunch(args []string) int {
 	banner := flags.String("banner", "", "one-line cost banner")
 	selector := flags.String("selector", "", "validation section selector")
 	selected := flags.String("selected", "", "single selected section")
+	enumerated := flags.Bool("enumerated", false, "expect every section listed for this enumeration run")
 	var tmpPaths repeatedFlag
 	flags.Var(&tmpPaths, "tmp", "temporary evidence path (repeatable)")
 	silenceMS := flags.Int64("silence-ms", 0, "fixture override for output-silence milliseconds")
@@ -62,7 +63,7 @@ func runProofRunLaunch(args []string) int {
 	if *evidenceMaxBytes > 0 {
 		limits.evidenceMax = *evidenceMaxBytes
 	}
-	expected, repeated, err := selectedSections(*selector, *selected)
+	expected, repeated, err := selectedSections(*selector, *selected, *enumerated)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
 		return 1
@@ -151,7 +152,7 @@ func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	}, nil
 }
 
-func selectedSections(selector, selected string) ([]string, map[string]bool, error) {
+func selectedSections(selector, selected string, enumerated bool) ([]string, map[string]bool, error) {
 	if selector == "" {
 		if selected != "" {
 			return []string{selected}, map[string]bool{}, nil
@@ -174,6 +175,12 @@ func selectedSections(selector, selected string) ([]string, map[string]bool, err
 		sections = append(sections, section)
 		known[section] = true
 	}
+	// Enumeration owns one progress interval for every row returned by this
+	// invocation of the selector. Twice-consulted declarations apply only to
+	// a full validation run, where separate call sites may revisit a section.
+	if enumerated {
+		return sections, map[string]bool{}, nil
+	}
 
 	command = exec.Command("bash", selector, "twice")
 	output, err = command.Output()
@@ -194,11 +201,8 @@ func selectedSections(selector, selected string) ([]string, map[string]bool, err
 	if selected == "" {
 		return sections, declaredTwice, nil
 	}
-	// An enumeration run drives ONE call site, so even a
-	// declared-twice section is consulted exactly once here — the
-	// double consult exists only across a full run's two sites
-	// (found live: 'expected 2 of each' broke every single-section
-	// run of engine-delivery-contract).
+	// A selected run drives one call site, so it expects one interval even
+	// when the full validation run consults that section more than once.
 	return []string{selected}, map[string]bool{}, nil
 }
 
@@ -290,7 +294,7 @@ func runProofRunAssert(args []string) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	expected, repeated, err := selectedSections(*selector, *selected)
+	expected, repeated, err := selectedSections(*selector, *selected, false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run assert:", err)
 		return 1

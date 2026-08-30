@@ -70,6 +70,27 @@ failed_names=()
 gated_names=()
 invalid_names=()
 engine_dependency=unproven
+enumeration_progress_path=${METASYSTEM_ENUMERATION_PROGRESS_PATH:-}
+enumeration_progress_suite=${METASYSTEM_ENUMERATION_PROGRESS_SUITE:-}
+enumeration_progress_depth=${METASYSTEM_ENUMERATION_PROGRESS_DEPTH:-0}
+enumeration_progress_coordinated=${METASYSTEM_ENUMERATION_PROGRESS_COORDINATED:-0}
+if [[ "$enumeration_progress_coordinated" != 1 ]]; then
+  enumeration_progress_path=
+fi
+if [[ -n "$enumeration_progress_path" ]]; then
+  [[ "$enumeration_progress_path" == /* \
+    && -n "$enumeration_progress_suite" \
+    && "$enumeration_progress_depth" =~ ^[0-9]+$ ]] \
+    || { echo "enumeration progress coordinates are invalid" >&2; exit 2; }
+fi
+append_enumeration_progress() { # section, start|end
+  local section=$1 event=$2 at
+  [[ -n "$enumeration_progress_path" ]] || return 0
+  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '{"suite":"%s","section":"%s","event":"%s","at":"%s","depth":%d}\n' \
+    "$enumeration_progress_suite" "$section" "$event" "$at" \
+    "$enumeration_progress_depth" >>"$enumeration_progress_path"
+}
 while IFS=$'\t' read -r section_id section_name extra; do
   if [[ -z "$section_id" || -z "$section_name" || -n "${extra:-}" \
     || ! "$section_id" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
@@ -81,9 +102,12 @@ while IFS=$'\t' read -r section_id section_name extra; do
   section_rc=0
   recorded_tail=
   selector_rc=0
+  append_enumeration_progress "$section_id" start
   METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=$engine_dependency \
     METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT=$section_stage_results \
+    METASYSTEM_ENUMERATION_PROGRESS_DRIVER=$enumeration_progress_coordinated \
     bash "$selector" run "$section_id" >"$section_log" 2>&1 || selector_rc=$?
+  append_enumeration_progress "$section_id" end
 
   section_status=
   recorded_count=0

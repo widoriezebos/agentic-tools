@@ -63,9 +63,19 @@ case ${1:-} in
   *) usage; exit 2 ;;
 esac
 
+enumeration_progress_driver=0
+if [[ -n "$enumeration_section" \
+  && "${METASYSTEM_ENUMERATION_DRIVER:-0}" == 1 \
+  && "${METASYSTEM_ENUMERATION_PROGRESS_DRIVER:-0}" == 1 ]]; then
+  enumeration_progress_driver=1
+fi
+unset METASYSTEM_ENUMERATION_PROGRESS_DRIVER
+
 section_selected() { # stable section identifier
   if [[ -z "$enumeration_section" || "$enumeration_section" == "$1" ]]; then
-    suite_progress_enter_section "$1"
+    if (( ! enumeration_progress_driver )); then
+      suite_progress_enter_section "$1"
+    fi
     return 0
   fi
   # An enumeration run owes rows only for its one section; the others
@@ -117,10 +127,34 @@ if (( ! suite_progress_worker )); then
   suite_banner=$(go run ./cmd/metasystem proof-run banner \
     --suite validate-metasystem --root "$root" \
     --progress "$suite_progress_path" --log "$suite_progress_log")
+  suite_launcher_command=(go run ./cmd/metasystem)
+  if (( enumerate_mode )) || [[ -n "$enumeration_section" ]]; then
+    suite_progress_engine="$suite_progress_tmp/metasystem"
+    go build -o "$suite_progress_engine" ./cmd/metasystem
+    # Enumeration exposes pass, fail, and invalid as separate outcomes. The
+    # Go tool would translate both nonzero outcomes to its own exit code 1.
+    suite_launcher_command=("$suite_progress_engine")
+  fi
   suite_depth=$(( ${METASYSTEM_SUITE_PROGRESS_DEPTH:--1} + 1 ))
-  selector_args=(--selector "$root/scripts/agents/validate-section-selector.sh")
-  [[ -z "$enumeration_section" ]] || selector_args+=(--selected "$enumeration_section")
-  exec go run ./cmd/metasystem proof-run launch \
+  suite_selector="$root/scripts/agents/validate-section-selector.sh"
+  selector_args=()
+  if (( enumerate_mode )); then
+    enumeration_args=("${@:2}")
+    enumeration_arg_index=0
+    while (( enumeration_arg_index < ${#enumeration_args[@]} )); do
+      if [[ "${enumeration_args[$enumeration_arg_index]}" == --selector ]]; then
+        enumeration_arg_index=$((enumeration_arg_index + 1))
+        (( enumeration_arg_index < ${#enumeration_args[@]} )) || { usage; exit 2; }
+        suite_selector=${enumeration_args[$enumeration_arg_index]}
+      fi
+      enumeration_arg_index=$((enumeration_arg_index + 1))
+    done
+    selector_args=(--selector "$suite_selector" --enumerated)
+  else
+    selector_args=(--selector "$suite_selector")
+    [[ -z "$enumeration_section" ]] || selector_args+=(--selected "$enumeration_section")
+  fi
+  exec "${suite_launcher_command[@]}" proof-run launch \
     --suite validate-metasystem --root "$root" --conf "$root/metasystem.conf" \
     --progress "$suite_progress_path" --log "$suite_progress_log" \
     --tmp "$suite_progress_tmp" --banner "$suite_banner" \
@@ -164,7 +198,25 @@ suite_progress_finish() {
 }
 
 if (( enumerate_mode )); then
-  exec bash "$root/scripts/agents/enumerate-suite.sh" "${@:2}"
+  enumeration_progress_path=
+  enumeration_owns_tmp=0
+  if [[ "${METASYSTEM_SUITE_PROGRESS_TMP_OWNER:-}" == validate-metasystem ]]; then
+    enumeration_progress_path=$suite_progress_path
+    enumeration_owns_tmp=1
+  fi
+  # The enumeration driver retains the shared workspace. Each selected
+  # validator borrows it and removes only the child directory it creates.
+  unset METASYSTEM_SUITE_PROGRESS_TMP_OWNER
+  enumeration_rc=0
+  METASYSTEM_ENUMERATION_PROGRESS_COORDINATED=1 \
+  METASYSTEM_ENUMERATION_PROGRESS_PATH="$enumeration_progress_path" \
+  METASYSTEM_ENUMERATION_PROGRESS_SUITE=validate-metasystem \
+  METASYSTEM_ENUMERATION_PROGRESS_DEPTH="${METASYSTEM_SUITE_PROGRESS_DEPTH:-0}" \
+    bash "$root/scripts/agents/enumerate-suite.sh" "${@:2}" || enumeration_rc=$?
+  if (( enumeration_owns_tmp )) && [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
+    rm -rf -- "$METASYSTEM_SUITE_PROGRESS_TMP"
+  fi
+  exit "$enumeration_rc"
 fi
 
 # The progress worker supplies the workspace while the sequencer records every section outcome.

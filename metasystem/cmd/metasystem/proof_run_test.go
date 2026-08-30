@@ -132,28 +132,35 @@ esac
 	if err := os.WriteFile(selector, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	sections, repeated, err := selectedSections(selector, "")
+	sections, repeated, err := selectedSections(selector, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 1 || !repeated["repeat"] {
 		t.Fatalf("selector data = %v, %v", sections, repeated)
 	}
-	// An enumeration run drives one call site, so even a declared-twice
-	// section expects a single consult there.
-	sections, repeated, err = selectedSections(selector, "repeat")
+	// A selected run drives one call site, so even a declared-twice section
+	// expects a single interval there.
+	sections, repeated, err = selectedSections(selector, "repeat", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sections) != 1 || sections[0] != "repeat" || len(repeated) != 0 {
 		t.Fatalf("selected selector data = %v, %v", sections, repeated)
 	}
-	sections, repeated, err = selectedSections(selector, "first")
+	sections, repeated, err = selectedSections(selector, "first", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sections) != 1 || sections[0] != "first" || len(repeated) != 0 {
 		t.Fatalf("non-repeated selected selector data = %v, %v", sections, repeated)
+	}
+	sections, repeated, err = selectedSections(selector, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 0 {
+		t.Fatalf("enumerated selector data = %v, %v", sections, repeated)
 	}
 }
 
