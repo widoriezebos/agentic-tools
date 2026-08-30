@@ -41,7 +41,8 @@ type GetParams struct {
 
 // Get resolves one key and returns the value with the process exit code the
 // caller should use. The precedence, highest first: an explicit flag, the
-// mechanically derived environment variable, the .local override, the
+// mechanically derived environment variable, the .local override (its
+// mode-scoped role keys first, then its base keys), the
 // mode-scoped key (for role runtime/model keys), the committed key, then the
 // explicit default. Exit code 0 carries the value; 2 marks an invalid key or
 // mode; 1 marks a missing value or a malformed source (duplicate key,
@@ -68,6 +69,21 @@ func Get(p GetParams) (value string, code int, err error) {
 	}
 
 	localPath := p.ConfPath + ".local"
+	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
+		// The local overlay outranks the committed file for MODE-scoped
+		// role keys exactly as it does for base keys: a machine carrying
+		// its model lanes by hand (R-25) writes mode.<m>.role.<r>.* into
+		// .local, and skipping the overlay here silently dispatched the
+		// wrong lane (found live: a design brief launched on the
+		// implementation lane's runtime).
+		v, found, err := ConfLookup(localPath, "mode."+p.Mode+"."+p.Key)
+		if err != nil {
+			return "", 1, err
+		}
+		if found {
+			return v, 0, nil
+		}
+	}
 	if isFile(localPath) {
 		v, found, err := ConfLookup(localPath, p.Key)
 		if err != nil {

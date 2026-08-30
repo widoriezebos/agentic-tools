@@ -242,3 +242,38 @@ func TestKeyOrigin(t *testing.T) {
 		t.Fatal("a duplicate key must refuse, not pick a winner")
 	}
 }
+
+// The local overlay carries mode-scoped role keys too (R-25 lanes by
+// hand): a mode key in .local outranks everything below the environment,
+// and a .local base key still outranks the committed mode key. Found
+// live: a design brief dispatched on the implementation lane because the
+// overlay's mode keys were skipped.
+func TestGetLocalOverlayModeScopedKeys(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "metasystem.conf")
+	putFile(t, conf, "role.implementer.runtime=base-runtime\n"+
+		"mode.design.role.implementer.runtime=committed-mode-runtime\n")
+	putFile(t, conf+".local", "mode.design.role.implementer.runtime=local-mode-runtime\n")
+
+	value, code, err := Get(GetParams{Key: "role.implementer.runtime", Mode: "design", ConfPath: conf, LookupEnv: noEnv})
+	if err != nil || code != 0 || value != "local-mode-runtime" {
+		t.Fatalf("local mode key must win: %q %d %v", value, code, err)
+	}
+
+	// A .local base key outranks the committed mode key (locality outranks
+	// specificity across files; specificity wins within a file).
+	putFile(t, conf+".local", "role.implementer.runtime=local-base-runtime\n")
+	value, code, err = Get(GetParams{Key: "role.implementer.runtime", Mode: "design", ConfPath: conf, LookupEnv: noEnv})
+	if err != nil || code != 0 || value != "local-base-runtime" {
+		t.Fatalf("local base key must outrank the committed mode key: %q %d %v", value, code, err)
+	}
+
+	// Without any .local, the committed mode key still beats the base.
+	if err := os.Remove(conf + ".local"); err != nil {
+		t.Fatal(err)
+	}
+	value, code, err = Get(GetParams{Key: "role.implementer.runtime", Mode: "design", ConfPath: conf, LookupEnv: noEnv})
+	if err != nil || code != 0 || value != "committed-mode-runtime" {
+		t.Fatalf("committed mode key must still beat base: %q %d %v", value, code, err)
+	}
+}
