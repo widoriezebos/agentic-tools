@@ -28,7 +28,7 @@ Two further hazards arise around the work rather than inside the candidate. A st
 
 ## The roles
 
-Those hazards give the delivery system six working roles. Here is what each may do and may not do; the rest of the paper relies on these names.
+The hazards above, together with the configuration-and-dispatch hazard derived by the anti-mimicry test below, give the delivery system seven working roles. Here is what each may do and may not do; the rest of the paper relies on these names.
 
 A builder constructs a candidate against the recorded intent. It explores the application, chooses a design and changes only what its task permits it to change. It does not judge its own claim, accept its own work or authorize release.
 
@@ -42,7 +42,9 @@ A liveness watcher observes whether active workers are alive and making progress
 
 A narrator turns the record into a report a person can act on. Of everything the system writes, that report is the one output made for people rather than machinery. It changes no state and makes no decision.
 
-Any of the six can be held by a person or by machinery; the configurations later in this chapter return to that choice. All six work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
+A dispatch delegate holds temporary permission to choose a change's configuration within the recorded budget and risk bounds, assemble its context and sequence work within the recorded priorities. It may neither examine nor accept the work it starts.
+
+Any of the seven can be held by a person or by machinery; the configurations later in this chapter return to that choice. All seven work under the responsible authority from Chapter 1: a named person who rules on values and exceptions and answers for the consequences.
 
 ## Prohibited combinations
 
@@ -78,13 +80,13 @@ A low-risk wording correction may need one builder, an automatic examination and
 
 These are configurations; none of them is a job title. A human can serve as the independent examiner when consequence, shared machine assumptions or accountability requires human judgment. Several independent people or machines can examine the same candidate when the possible harm justifies the cost. On smaller work, compatible functions can be combined. The configuration changes with the hazards; the protections do not change just to keep every role occupied.
 
-The configuration is also where cost meets risk. Every role staffed for a change costs computation and judging; every role left out either has its hazard controlled another way (a rule, a record or a narrower permission) or its risk accepted for that change. Choosing the configuration is a spending decision, priced by the same four questions that set verification depth, and it is remade when risk shifts rather than inherited from the last change. Chapter 11 develops the economics: the right configuration is the smallest one that protects the outcome at stake.
+The configuration is also where cost meets risk. Every role staffed for a change costs computation and judging; every role left out either has its hazard controlled another way (a rule, a record or a narrower permission) or its risk accepted for that change. Choosing the configuration is a spending decision, priced by the same four questions that set verification depth, and it is remade when risk shifts rather than inherited from the last change. The choice belongs to the responsible authority or a delegate authorized for it. Chapter 11 develops the economics: the right configuration is the smallest one that protects the outcome at stake.
 
 A role also does not have to be a program that runs all the time. The liveness watcher is one: silence can begin at any moment while workers act, so something must always be watching. The custodian is not: the records and the rules that guard acceptance hold at all times, but the custodian itself acts only at the moment of acceptance, when one actor briefly holds the narrow permission to accept. Both are real roles with real separations, whether their machinery runs all day or only for a moment.
 
 ## The anti-mimicry test
 
-Suppose someone proposes a coordinator because every engineering team has one. The proposal is incomplete. It must name the hazard the coordinator controls, the permission needed to control it and the permissions that would compromise that protection. Perhaps the real hazard is two builders overwriting the same candidate. A rule that records state changes before replacement may control it without a coordinator. Perhaps the hazard is a value conflict between security and convenience. No scheduling role can resolve it; a responsible authority's ruling is required.
+Suppose someone proposes a coordinator because every engineering team has one. The proposal is incomplete. It must name the hazard the coordinator controls, the permission needed to control it and the permissions that would compromise that protection. Perhaps the real hazard is two builders overwriting the same candidate. A rule that records state changes before replacement may control it without a coordinator. Perhaps the hazard is a value conflict between security and convenience. No scheduling role can resolve it; a responsible authority's ruling is required. What can survive the test is narrower than the proposal. A wrong configuration, missing context or sequence outside the recorded priorities can consume a change's budget before independent examination exposes the mistake. Controlling that hazard requires permission to choose the configuration within the recorded budget and risk bounds, assemble the context and sequence the work. A dispatch delegate may hold those permissions from the responsible authority, but may neither examine nor accept the work it starts; either combination would let it judge its own dispatch. That bounded role passes the test; the coordinator justified by familiarity does not.
 
 This is the anti-mimicry test. Every role must trace back through permission and separation to a real hazard. A liveness watcher survives the test because silent stopping is observable, because the watcher needs permission to detect and sometimes replace stopped work and because it must not erase the evidence of failure. A narrator survives because human decisions need readable reports, because it needs read access to source records and because changing state would let it conceal the very actions it explains.
 
