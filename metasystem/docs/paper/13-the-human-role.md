@@ -2,7 +2,7 @@
 
 **Machinery can prepare a decision and scrutinize it; answering for it stays human.**
 
-Chapter 1 already records the single 9:12 interruption and the three-part ruling; Chapter 6 establishes why evidence cannot make that value choice. Here the unresolved question becomes a governance problem: who may bind the decision, under what delegation, with what accountability and through which route of appeal.
+Chapter 1 already records the single 9:12 interruption and the three-part ruling; Chapter 6 establishes why evidence cannot make that value choice. Here the unresolved question becomes a governance problem: who may make the binding decision, under what delegation, with what accountability and through which route of appeal.
 
 The request reaches the responsible authority for account-access policy. The resulting record names the source and scope of that authority, any delegation, the evidence and reasons considered, accountability and the route to another responsible authority on appeal. Construction resumes without continuous human supervision of each test or implementation step.
 
@@ -14,7 +14,7 @@ A new check now proposes to refuse any security timeout measured in local clock 
 
 That power to create, change and repeal enforced rules is the legislator's. It includes defining who may exercise it, for which domain and for how long. A security authority may govern session handling without gaining control over billing policy. A group formed for one incident may receive temporary power to tighten one release condition, without gaining a permanent right to rewrite all delivery rules.
 
-The word gives software governance none of the legitimacy, institutions or reach of public law. A private permission cannot borrow moral authority from its name, and the organization remains answerable to law outside the delivery system.
+The word gives software governance none of the legitimacy, institutions or reach of public law. Calling a permission a law does not make it one, and the organization remains answerable to real law outside the delivery system.
 
 Because enforced rules can stop action, their authorship and limits stay visible. A refusal identifies the rule, its authority, its supporting evidence and the available challenge. An ownerless rule is reviewed or withdrawn rather than allowed to govern by inertia.
 
@@ -22,7 +22,7 @@ Because enforced rules can stop action, their authorship and limits stay visible
 
 An upload has reached its final seconds when the ordinary session expires. The standing ruling permits a limited continuation, but an unusual recovery operation will take much longer and cannot be restarted without loss. The machinery can show the data at risk, the security exposure, the possible alternatives and whether reversal remains possible. It cannot decide that this case deserves an exception.
 
-Resolving that named case is the judge's work. The permission may cover an escalated value conflict, acceptance of specified risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
+Resolving that named case is the judge's work. The named cases can include a value conflict that machinery escalated, acceptance of a stated risk, approval of an irreversible act or an exception that no enforced rule may grant automatically. The ruling binds only the stated case or class of cases. It does not become a hidden power to waive unrelated failures.
 
 The record keeps the judge's identity, authority, reasons, evidence, scope and expiry attached to the decision. That attachment is not ceremonial. If the exception causes harm, the organization must be able to determine who had the duty to decide, what that person knew and whether the decision exceeded its authority. If later evidence changes the balance, another responsible authority must be able to reconsider it.
 
@@ -34,7 +34,7 @@ A machine worker can turn human approval into a habit without ever lying. After 
 
 The 8:40 outcome (sign users out after thirty minutes without activity) comes from the responsible authority for account-access outcomes. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. The same authority may not bind an unrelated medical-record rule or promise another organization's resources.
 
-An intent-holder is the person or authorized group allowed to bind purpose and priorities within a stated domain. The role supplies outcomes, constraints and real freedoms rather than hiding a task list inside a desired result. Its authority can be delegated: an account-security lead may decide timeout risk while an accessibility body decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
+An intent-holder is the person or authorized group allowed to bind purpose and priorities within a stated domain. The role states outcomes, constraints and what remains free to choose. It does not write a task list and call it an outcome. Its authority can be delegated: an account-security lead may decide how much timeout risk is acceptable while an accessibility group decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
 
 Intent remains answerable to evidence. The authorized person can be wrong about user behavior, omit an affected group or state two conditions that cannot both be met. A builder that discovers such a conflict does not choose the more convenient interpretation. It records the conflict and returns a clear question to the relevant authority. Binding intent means having the permission to settle what the purpose is; it does not make the purpose infallible.
 
@@ -54,7 +54,7 @@ Security representatives ask for a short lifetime. Support staff report that fre
 
 The disagreement is recorded before construction continues. The record names the affected domains, the people whose interests are represented, the points of agreement, the unresolved tradeoff and the evidence each claim uses. It then names who has binding authority for the decision, how that authority was delegated, its scope and expiry, and the route to another accountable human or body on appeal.
 
-The structure may use one responsible executive, a standing group or several authorities protecting different domains. The form can vary. The condition does not: conflicting intent is visible, binding power is explicit, accountability remains human, and challenge can reach a human authority outside the disputed decision.
+The structure may use one responsible executive, a standing group or several authorities protecting different domains. The form can vary. The condition does not: conflicting intent is visible, binding power is explicit, accountability remains human, and a challenge can reach a person who did not make the disputed decision.
 
 Delegation does not dissolve responsibility. The delegating authority answers for the limits it set, and the delegate answers for decisions within them. If nobody can identify the human with the duty to decide, machinery must not infer authority from seniority, activity or access. It stops.
 
@@ -62,16 +62,16 @@ Delegation does not dissolve responsibility. The delegating authority answers fo
 
 Two authorized proposals arrive seconds apart. One lowers the session limit; the other restores the longer limit to reduce lockouts. Machinery can preserve both, prevent them from overwriting each other and establish which proposal was recorded first. It cannot treat the later timestamp as a reason that privacy now outweighs accessibility.
 
-Ordering controls coordination; it cannot make an outcome legitimate. Once the responsible authority or body rules, machinery can enforce that ruling consistently and reject an older conflicting instruction. Before the ruling, it can display the conflict and prevent accidental progress. The cause of the stop is substantive disagreement, so the rule sends it to substantive authority rather than disguising it as a race between writes.
+Ordering controls coordination; it cannot make an outcome legitimate. Once the responsible authority or body rules, machinery can enforce that ruling consistently and reject an older conflicting instruction. Before the ruling, it can display the conflict and prevent accidental progress. The stop happens because people disagree about substance, so the disagreement goes to the authority that can settle it, instead of being treated as a race between two writes.
 
 ## What humans should not do
 
-If a reviewer inspects every low-risk formatting change, consequential decisions wait behind work that strong automatic checks can settle. If a manager rescues a stopped builder without recording it, the record says the work is still active while continuity depends on hidden attention. If an authority grants unexplained exceptions whenever a deadline approaches, enforced rules become optional in practice.
+If a reviewer inspects every low-risk formatting change, consequential decisions wait behind work that strong automatic checks can settle. If a manager restarts a stopped builder without recording it, the record still says the work is active, and the work now depends on help nobody can see. If an authority grants unexplained exceptions whenever a deadline approaches, enforced rules become optional in practice.
 
-These failures lead to narrower duties. Humans should not review every machine action, translate routine state by hand or serve as an unrecorded recovery mechanism. Their attention belongs on accountable judgment and examination where correlated blind spots or possible harm require human independence. The system presents a bounded question, relevant evidence, options and the consequence of delay.
+These failures lead to narrower duties. Humans should not review every machine action, translate routine state by hand or serve as an unrecorded recovery mechanism. Their attention belongs on the decisions a person must answer for, and on examination where shared machine blind spots or possible harm require an independent human view. The system presents a bounded question, relevant evidence, options and the consequence of delay.
 
-Protecting attention makes human authority usable. Machinery remains bounded by evidence, enforced rules and appeal; a human delegate remains bounded by recorded scope and accountability. When those bounds fail, the failed classification, authority path or enforced rule is repaired.
+Protecting attention makes human authority usable. Machinery remains bounded by evidence, enforced rules and appeal; a human delegate remains bounded by recorded scope and accountability. When a limit fails, the failing piece is repaired: the classification, the delegation or the enforced rule.
 
 ## The change, continued
 
-The human review that this change's risk triggers is the reviewer's own recorded work; during Thursday's construction and release, the responsible authority is interrupted only once, at 9:12. The rulings that production evidence later forces (the shared-device restoration and the reauthentication burden) arrive through care and learning, not as interruptions of that day.
+The human review that this change's risk triggers is the reviewer's own recorded work; during Thursday's construction and release, the responsible authority is interrupted only once, at 9:12. The rulings that come later from production evidence (the shared-device restoration and the reauthentication burden) arrive through care and learning, not as interruptions of that day.
