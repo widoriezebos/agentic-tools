@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Timing-logic tests run on an injected synthetic clock and finish in microseconds; only legs that spawn real processes keep the real clock — the race gate's 25min is mostly wall-clock waits on arithmetic (Wido 2026-08-27 evening: why does timing-sensitive testing take so long, should we use a synthetic clock)
 - Origin: main
-- Next step: SLICE 2 LANDED 845f76b (m2, 2026-08-30): the wind-down abandonment wedge is closed - terminateGroup rides the janitor tri-state ownership (the runner's strings.Contains substring proof retired; positional shapes only), kills through INDETERMINATE mid-death re-checks inside the bounded window, refuses only provably-recycled groups, and floors the TERM grace at 2 real seconds + a floored SIGKILL death-wait regardless of compression scale; a group surviving kill-through is loud typed evidence (leaked-group), never silent. Accounting proven on real groups incl. 4 cycles at scale 50 with zero abandoned; full missionrunner race suite green. Rider: coverage-delta's probe gained the go gate's 30m ceiling (its bare 10m default was timing out on this package and reading as failure). REMAINING SLICES: (3) 3h sub-second taint identity + recovery windows; (4) 3h t.Parallel decoupling; after those, revisit the four scale-1000 pinned families - slice 2's fix may lift some pins. Released for rotation.
+- Next step: SLICE 3 LANDED d033841 (m2, 2026-08-30): resolved by measurement - with slice 2's kill-through in, NINE of the ten compression pins no longer reproduce and are gone for good (8 wallrecovery + the same-second taint pin; sub-second taint identity proved unnecessary - the collapse was the leaked-group wedge in a timestamp costume). Full package green at scale 50 pin-free and at default. Janitor gains mission-run-loop + four host start-turn shapes so runner/host groups prove ownership by their own argv at wind-down. ONE wedge remains, pinned with a sharp reason: TestNestedCheckoutMissionBirth at scale 50 - the nested child runner never writes its verification signal inside the floored window; the compounding is in the child's own start path. REMAINING: (4a) diagnose+fix the nested-start compounding (~2h); (4b) t.Parallel decoupling if still wanted after 4a; then the arc's endgame - compression by default - is one decision away. Released for rotation.
 - OpenedAt: 2026-08-27T17:12:26Z
-- Revision: 12
+- Revision: 13
 - Labels: shared
 - Budget: elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=45 activeJobLimit=1
 - Claimed: machine=m2 lineage=mac-coordinator at=2026-08-30T01:58:44Z revision=12
@@ -24,4 +24,5 @@ History:
 - 2026-08-30T01:57:52Z W2V6VQY8950XBRK5JYQYTANRCY-m2-bc1be9cb edit actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
 - 2026-08-30T01:58:07Z J8AD9QKW9SAT01A4FEMFVYMD8Q-m2-bc1be9cb release actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
 - 2026-08-30T01:58:44Z GHMBHXQPE965BG5Q19WS6Q4ATC-m2-bc1be9cb claim actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
-Integrity: sha256=41fec64dfdb83a1eb996ac47be962668e29e370dbfded5a345065761044ebfe9
+- 2026-08-30T02:50:22Z YNDFSAMRND1655V4197VRGV08C-m2-bc1be9cb edit actor=m2+mac-coordinator targets=timing-tests-synthetic-clock
+Integrity: sha256=744e3f314202af3c4aad65cc99e019a56a7d5802c07223d6b9044a9b03744036
