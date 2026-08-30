@@ -86,3 +86,25 @@ func TestDelegateInternalRefusalDetailPreservesInternalFailure(t *testing.T) {
 		t.Fatalf("detail = %q, want bounded fallback", got)
 	}
 }
+
+func TestDelegateCommandEnvironmentReplacesInheritedInternalAuthority(t *testing.T) {
+	environment := delegateCommandEnvironment([]string{
+		"KEEP=value",
+		"METASYSTEM_DELEGATE_INTERNAL=stale",
+		"METASYSTEM_DELEGATE_OUTCOME_FILE=stale",
+		delegateClaimCapabilityEnv + "=stale",
+	}, "/tmp/outcome", "fresh-capability")
+	want := map[string]int{
+		"KEEP=value":                                     1,
+		"METASYSTEM_DELEGATE_INTERNAL=1":                 1,
+		"METASYSTEM_DELEGATE_OUTCOME_FILE=/tmp/outcome":  1,
+		delegateClaimCapabilityEnv + "=fresh-capability": 1,
+	}
+	got := make(map[string]int)
+	for _, entry := range environment {
+		got[entry]++
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("delegate environment = %#v, want %#v", got, want)
+	}
+}

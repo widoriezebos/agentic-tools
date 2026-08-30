@@ -207,7 +207,15 @@ func runDispatchClaimLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, "job claim-launch: --root, --opid, --session, --dispatch-mode, --runtime, --model, --role, --launch-mode, --permission-envelope-digest, and --input-hash are required")
 		return 2
 	}
-	if !claimLaunchInternalAuthorized(*root) {
+	claimOperationID := *operationID
+	if claimOperationID == "" {
+		claimOperationID = *opid
+	}
+	claimBinding := dispatchcore.DelegateClaimCapabilityBinding{
+		JobID: *opid, OperationID: claimOperationID,
+		DispatchMode: dispatchcore.DispatchMode(*dispatchMode), AdapterVerb: *adapterVerb,
+	}
+	if !claimLaunchInternalAuthorized(*root, claimBinding, *preflight) {
 		printJSON(dispatchcore.ClaimResult{
 			Outcome: dispatchcore.ClaimRefusedInternalSurface,
 			Evidence: map[string]any{
@@ -285,47 +293,29 @@ func runDispatchClaimLaunch(args []string) int {
 }
 
 // claimLaunchInternalAuthorized keeps reservation publication behind the
-// delegate verb. Production dispatch has a live `metasystem delegate`
-// ancestor; the complete process-table fixture is the one test seam that may
-// exercise the custody machine directly.
-func claimLaunchInternalAuthorized(root string) bool {
-	if strings.HasSuffix(os.Args[0], ".test") {
-		return true
+// delegate verb. The environment marker identifies the internal route but
+// carries no authority by itself: a real delegate must also present the
+// short-lived bearer word it minted, and the authoritative claim spends that
+// word under the job record lock. The complete process-table fixture remains
+// the one test seam that may exercise the custody machine directly.
+func claimLaunchInternalAuthorized(root string, binding dispatchcore.DelegateClaimCapabilityBinding, preflight bool) bool {
+	if os.Getenv("METASYSTEM_DELEGATE_INTERNAL") != "1" {
+		return false
 	}
 	if claimLaunchFakeFixtureAuthorized(root) {
 		return true
 	}
-	self, err := os.Executable()
-	if err != nil {
+	raw := os.Getenv(delegateClaimCapabilityEnv)
+	if raw == "" {
 		return false
 	}
-	if resolved, resolveErr := filepath.EvalSymlinks(self); resolveErr == nil {
-		self = resolved
+	var err error
+	if preflight {
+		err = dispatchcore.ValidateDelegateClaimCapability(root, raw, binding)
+	} else {
+		err = dispatchcore.ConsumeDelegateClaimCapability(root, raw, binding)
 	}
-	prober := identity.KernelProber{}
-	current := int64(os.Getppid())
-	seen := map[int64]bool{}
-	for depth := 0; depth < 12 && current > 1 && !seen[current]; depth++ {
-		seen[current] = true
-		exact, state, probeErr := prober.Probe(current)
-		if probeErr != nil || state != identity.Alive || !exact.ArgvKnown {
-			return false
-		}
-		if executable, ok := identity.ExecutablePath(current); ok {
-			if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
-				executable = resolved
-			}
-			if executable == self && len(exact.Argv) >= 2 && exact.Argv[1] == "delegate" {
-				return os.Getenv("METASYSTEM_DELEGATE_INTERNAL") == "1"
-			}
-		}
-		parent, ok := identity.ParentPid(current)
-		if !ok {
-			break
-		}
-		current = parent
-	}
-	return false
+	return err == nil
 }
 
 func claimLaunchFakeFixtureAuthorized(root string) bool {

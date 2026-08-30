@@ -10,8 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+const delegateClaimCapabilityEnv = "METASYSTEM_DELEGATE_CLAIM_CAPABILITY"
 
 type delegateOutcome struct {
 	Outcome  string `json:"outcome"`
@@ -49,9 +52,22 @@ func runDelegate(args []string) int {
 	outcomePath := outcomeFile.Name()
 	_ = outcomeFile.Close()
 	defer os.Remove(outcomePath)
+	claimCapability := ""
+	if mode == "dispatch" || mode == "follow-up" {
+		dispatchMode := dispatchcore.DispatchModeFresh
+		if mode == "follow-up" {
+			dispatchMode = dispatchcore.DispatchModeFollowUp
+		}
+		claimCapability, err = dispatchcore.MintDelegateClaimCapability(root, dispatchMode)
+		if err != nil {
+			printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
+			return 1
+		}
+		defer dispatchcore.RemoveDelegateClaimCapability(root, claimCapability)
+	}
 
 	command := exec.Command(filepath.Join(root, "scripts", "agents", "dispatch.sh"), internalArgs...)
-	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_INTERNAL=1", "METASYSTEM_DELEGATE_OUTCOME_FILE="+outcomePath)
+	command.Env = delegateCommandEnvironment(os.Environ(), outcomePath, claimCapability)
 	command.Stdin = os.Stdin
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -84,6 +100,29 @@ func runDelegate(args []string) int {
 	detail := delegateInternalRefusalDetail(stderr.String(), runErr, exitCode)
 	printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: detail})
 	return exitCode
+}
+
+func delegateCommandEnvironment(base []string, outcomePath, claimCapability string) []string {
+	blocked := map[string]bool{
+		"METASYSTEM_DELEGATE_INTERNAL":     true,
+		"METASYSTEM_DELEGATE_OUTCOME_FILE": true,
+		delegateClaimCapabilityEnv:         true,
+	}
+	environment := make([]string, 0, len(base)+3)
+	for _, entry := range base {
+		key, _, _ := strings.Cut(entry, "=")
+		if !blocked[key] {
+			environment = append(environment, entry)
+		}
+	}
+	environment = append(environment,
+		"METASYSTEM_DELEGATE_INTERNAL=1",
+		"METASYSTEM_DELEGATE_OUTCOME_FILE="+outcomePath,
+	)
+	if claimCapability != "" {
+		environment = append(environment, delegateClaimCapabilityEnv+"="+claimCapability)
+	}
+	return environment
 }
 
 func delegateInternalRefusalDetail(stderr string, runErr error, exitCode int) string {

@@ -7,7 +7,20 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
+
+func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.DispatchMode) {
+	t.Helper()
+	raw, err := dispatchcore.MintDelegateClaimCapability(root, mode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dispatchcore.RemoveDelegateClaimCapability(root, raw) })
+	t.Setenv("METASYSTEM_DELEGATE_INTERNAL", "1")
+	t.Setenv(delegateClaimCapabilityEnv, raw)
+}
 
 func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	root := t.TempDir()
@@ -48,6 +61,7 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 		"--creator-pid", strconv.Itoa(os.Getpid()),
 		"--occupancy-preparation", preparation,
 	}
+	setClaimLaunchCapability(t, root, dispatchcore.DispatchModeFresh)
 	out, code := captureStdout(t, func() int { return runDispatchClaimLaunch(args) })
 	if code != 0 {
 		t.Fatalf("claim-launch exit=%d output=%q", code, out)
@@ -96,12 +110,45 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 			break
 		}
 	}
+	setClaimLaunchCapability(t, root, dispatchcore.DispatchModeFresh)
 	out, code = captureStdout(t, func() int { return runDispatchClaimLaunch(mismatch) })
 	if code != 1 {
 		t.Fatalf("mismatch exit=%d output=%q", code, out)
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil || result.Outcome != "REFUSED-OPID-MISMATCH" {
 		t.Fatalf("mismatch output=%q result=%+v err=%v", out, result, err)
+	}
+}
+
+func TestClaimLaunchInternalSurfaceRequiresMarkerAndBearerCapability(t *testing.T) {
+	root := t.TempDir()
+	binding := dispatchcore.DelegateClaimCapabilityBinding{
+		JobID: "claim-auth", OperationID: "claim-auth", DispatchMode: dispatchcore.DispatchModeFresh, AdapterVerb: "dispatch",
+	}
+	raw, err := dispatchcore.MintDelegateClaimCapability(root, dispatchcore.DispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dispatchcore.RemoveDelegateClaimCapability(root, raw) })
+	t.Setenv(delegateClaimCapabilityEnv, raw)
+	t.Setenv("METASYSTEM_DELEGATE_INTERNAL", "")
+	if claimLaunchInternalAuthorized(root, binding, true) {
+		t.Fatal("bearer capability without the internal route marker was authorized")
+	}
+	t.Setenv("METASYSTEM_DELEGATE_INTERNAL", "1")
+	t.Setenv(delegateClaimCapabilityEnv, "")
+	if claimLaunchInternalAuthorized(root, binding, true) {
+		t.Fatal("internal route marker without a bearer capability was authorized")
+	}
+	t.Setenv(delegateClaimCapabilityEnv, raw)
+	if !claimLaunchInternalAuthorized(root, binding, true) {
+		t.Fatal("delegate capability did not authorize claim preflight")
+	}
+	if !claimLaunchInternalAuthorized(root, binding, false) {
+		t.Fatal("delegate capability did not authorize its bound claim")
+	}
+	if claimLaunchInternalAuthorized(root, binding, false) {
+		t.Fatal("spent delegate capability authorized a replay")
 	}
 }
 

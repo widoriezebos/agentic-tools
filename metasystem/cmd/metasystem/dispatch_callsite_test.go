@@ -109,14 +109,30 @@ func TestGoalAdmissionDropsAuthorityLocksBeforeBreachStop(t *testing.T) {
 	)
 }
 
-func TestClaimAuthorizationComparesTheExactExecutablePath(t *testing.T) {
+func TestClaimAuthorizationUsesTheDelegateCapabilityInsteadOfProcessAncestry(t *testing.T) {
 	data, err := os.ReadFile("dispatch_verbs.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(data)
-	if strings.Contains(text, "filepath.Base(executable) == filepath.Base(self)") || !strings.Contains(text, "executable == self") {
-		t.Fatal("internal claim authorization is not bound to the exact delegate executable")
+	section := string(data)
+	start := strings.Index(section, "func claimLaunchInternalAuthorized")
+	if start < 0 {
+		t.Fatal("claim-launch authorization section is absent")
+	}
+	end := strings.Index(section[start:], "func claimLaunchFakeFixtureAuthorized")
+	if end < 0 {
+		t.Fatal("claim-launch authorization section has no fixture boundary")
+	}
+	section = section[start : start+end]
+	for _, required := range []string{"METASYSTEM_DELEGATE_INTERNAL", "ValidateDelegateClaimCapability", "ConsumeDelegateClaimCapability"} {
+		if !strings.Contains(section, required) {
+			t.Fatalf("internal claim authorization lacks %q", required)
+		}
+	}
+	for _, forbidden := range []string{"ParentPid", "ExecutablePath", "os.Args[0]"} {
+		if strings.Contains(section, forbidden) {
+			t.Fatalf("internal claim authorization still depends on %q", forbidden)
+		}
 	}
 }
 
