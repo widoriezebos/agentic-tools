@@ -2,6 +2,9 @@
 
 **Engineering after the shift from building software to governing its production**. A paper about the next shift in software engineering: moving human attention from building the application to building the system that builds the application (and about refusing to carry human ceremony into a workforce that does not need it).
 
+## Warning for the reader: you
+This paper is not the result of me having some brain wave and then writing that down with the goal of turning that into software at some point. It is actually the reverse of that: I started with little software and then discovered what to build by building it. After having reached the point where the system became capable enough to write itself under my guidance, I turned that journey into a narrative: this paper. So, even though this story disguises itself as a narrative in the form of a paper, this will not be an easy read. If you manage to read through all of this paper and look back, you will probably realise that you have been reading a functional design of an engineering organisation in the form of (mostly) software. 
+
 ## The paper in five parts
 
 **Part I: The shift (chapters 1-2).** Engineering attention has moved up a level before: assembly to compilers, servers to infrastructure as code, manual testing to continuous integration. Agentic engineering extends that move to engineering itself, but it begins by separating what delivery requires (intent, construction, verification, care and learning) from the ceremonies humans invented around those needs. Intent becomes the durable interface, while its ambiguity, conflict and capacity to be wrong become design problems in their own right.
