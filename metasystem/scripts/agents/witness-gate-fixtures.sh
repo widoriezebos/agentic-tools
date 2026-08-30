@@ -9,6 +9,23 @@ source_engine=$root/bin/metasystem
 [[ -x "$source_engine" ]] \
   || { echo "witness-gate fixture: current source engine is absent; run the Go gate first" >&2; exit 1; }
 
+source "$root/scripts/agents/fixture-budget.sh"
+source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario witness-gate "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios witness-gate "witness-gate fixtures passed (21 isolated legs)" \
+    "$fixture_bed_script" authority-and-scope equality-and-weights frozen-consumers cost-banner
+fi
+
 tmp=$(mktemp -d)
 foreign_controller=
 mid_freeze_pid=
@@ -198,6 +215,7 @@ run_recheck_refusal() { # name, tree, fixture bin, witness, state root, run id, 
     || { echo "witness-gate fixture $name: post-build mismatch did not reach the full gate" >&2; sed -n '1,100p' "$output" >&2; exit 1; }
 }
 
+if [[ "$fixture_scenario" == authority-and-scope ]]; then
 # 1. A live PID carrying a different start identity has no ancestry authority.
 make_leg wrong-start-identity
 write_witness wrong-start-identity "$leg_tree" "$leg_bin" $$
@@ -282,6 +300,9 @@ make_leg prospective-policy
 write_witness prospective-policy "$leg_tree" "$leg_bin" $$
 run_engine_acceptance prospective-policy "$leg_tree" "$leg_bin" "$witness_path" "$witness_root" "$witness_run"
 
+fi
+
+if [[ "$fixture_scenario" == equality-and-weights ]]; then
 # 8. Toolchain identity is independent of byte equality.
 make_leg toolchain-mismatch
 write_witness toolchain-mismatch "$leg_tree" "$leg_bin" $$
@@ -418,6 +439,8 @@ set -e
 grep -Fq 'GOFLAGS may not contain -modfile or -overlay' "$tmp/dirty-tree-arms/overlay.out" \
   || { echo "witness-gate fixture dirty-tree-arms: overlay refusal was not explicit" >&2; exit 1; }
 
+
+fi
 freeze_fixture_tree() { # name
   local name=$1 freeze_output
   make_leg "$name"
@@ -486,6 +509,8 @@ run_frozen_flag_refusal() { # tree, fixture bin, witness, state root, run id
     || { echo "witness-gate fixture: alternate modfile refusal was not explicit" >&2; exit 1; }
 }
 
+
+if [[ "$fixture_scenario" == frozen-consumers ]]; then
 # 15. A byte-identical copy accepts the full-tree witness.
 freeze_fixture_tree frozen-identical
 copy_frozen_consumer frozen-identical "$frozen_tree"
@@ -592,6 +617,9 @@ mid_freeze_pid=
 grep -Fq 'frozen export voided because the source changed while it was copied' "$tmp/mid-freeze/err" \
   || { echo "witness-gate fixture mid-freeze: mutation refusal was not loud" >&2; cat "$tmp/mid-freeze/err" >&2; exit 1; }
 
+fi
+
+if [[ "$fixture_scenario" == cost-banner ]]; then
 # 21. The one-line cost banner classifies clean, dirty-frozen, inherited, and
 # inherited-frozen witness states before the suite begins doing work.
 banner_root=$tmp/banner-states
@@ -620,5 +648,4 @@ METASYSTEM_GATE_WITNESS=dummy METASYSTEM_GATE_WITNESS_EXPORT=/private/frozen \
   "$source_engine" "${banner_args[@]}" >"$tmp/banner-inherited-frozen"
 grep -q 'witness=unarmed duration=full-gate' "$tmp/banner-inherited-frozen" \
   || { echo "witness-gate fixture banner: unusable exported witness was misclassified" >&2; exit 1; }
-
-echo "witness-gate fixtures passed (21 isolated legs)"
+fi

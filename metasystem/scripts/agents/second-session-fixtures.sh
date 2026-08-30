@@ -4,8 +4,26 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "second-session fixtures: binary absent; run the go gate first" >&2; exit 1; }
+source "$root/scripts/agents/fixture-budget.sh"
+source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario second-session "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios second-session "second-session fixtures passed" \
+    "$fixture_bed_script" config-manifest human-shell-bootstrap
+fi
+
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-second-session.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
+if [[ "$fixture_scenario" == config-manifest ]]; then
 manifest="$tmp/paths"
 for adapter in "$root"/scripts/agents/adapters/*.sh; do
   [[ ${adapter##*/} != runtime-common.sh ]] || continue
@@ -27,6 +45,9 @@ diff -u "$tmp/expected-paths" "$manifest" >&2 \
 # TestSessionIsolationRejectsSymlinkIntoPrimary prove the same
 # properties. What stays here is what shell owns: the adapters'
 # local-config-paths manifest above, and WC-8's human-shell bootstrap.
+
+exit 0
+fi
 
 # WC-8: the paved command must work from a human shell, whose ancestry has no
 # runtime signature. Build the smallest committed source checkout and replace

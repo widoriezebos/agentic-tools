@@ -10,6 +10,23 @@ source_engine=$root/bin/metasystem
 [[ -x "$source_engine" ]] \
   || { echo "land fixture: current source engine is absent; run the Go gate first" >&2; exit 1; }
 
+source "$root/scripts/agents/fixture-budget.sh"
+source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario land "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios land "land fixtures passed (3 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan
+fi
+
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 real_git=$(command -v git)
@@ -68,6 +85,7 @@ SH
 # 1. Origin advances immediately before the first real push reads the remote.
 # That push sees the diverged branch and is rejected; the driver fetches,
 # rebases, and its second real push lands both commits.
+if [[ "$fixture_scenario" == push-retry ]]; then
 make_leg push-retry
 retry_output=$leg_root/land.out
 retry_attempts=$leg_root/push-attempts
@@ -131,10 +149,12 @@ git -C "$leg_local" merge-base --is-ancestor "$retry_peer_head" "$retry_local_he
 [[ $(git --git-dir="$leg_remote" show main:payload.txt) == 'local landing' ]]
 [[ $(git --git-dir="$leg_remote" show main:peer.txt) == 'peer advance' ]]
 echo "land push-retry fixture passed"
+fi
 
 # 2. A Git wrapper fails the fetch step with a distinctive exit code while
 # every other command still reaches real Git. The driver must surface that
 # exact code and never invoke rebase or push.
+if [[ "$fixture_scenario" == step-failure ]]; then
 make_leg step-failure
 failure_bin=$leg_root/failure-bin
 failure_log=$leg_root/git.log
@@ -174,10 +194,12 @@ if grep -Fq '== STEP: rebase onto origin/main' "$failure_output" \
 fi
 [[ $(git -C "$leg_local" rev-parse HEAD) != $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
 echo "land step-failure fixture passed"
+fi
 
 # 3. An inherited acknowledgment is deliberately ignored. The guard's exact
 # refusal reaches the caller without the flag, then the same staged addition
 # lands when --allow-new-plan supplies the acknowledgment for that invocation.
+if [[ "$fixture_scenario" == new-plan ]]; then
 make_leg new-plan
 new_plan_output=$leg_root/refused.out
 allowed_output=$leg_root/allowed.out
@@ -231,5 +253,4 @@ new_plan_remote_head=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
 [[ "$new_plan_local_head" == "$new_plan_remote_head" ]]
 [[ $(git --git-dir="$leg_remote" show main:plans/new.md) == 'deliberate new plan' ]]
 echo "land new-plan fixture passed"
-
-echo "land fixtures passed (3 isolated legs)"
+fi

@@ -107,6 +107,58 @@ git -C "$repo" push -qu origin main
 git -C "$remote" symbolic-ref HEAD refs/heads/main
 git -C "$repo" remote set-head origin -a >/dev/null
 
+source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario mission "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios mission \
+    "mission contract, state, and runner end-state fixtures passed" \
+    "$fixture_bed_script" contract-and-state runner-end-state
+fi
+
+# Fabricate only the supervisor facts preflight reads; both scenarios
+# need their own live holders and facts, so this is a function.
+fabricate_supervisor_facts() {
+  # Fabricate only the supervisor facts preflight reads. Each process is a real
+  # live process whose argv carries the recorded tag; cleanup waits are named
+  # and ceiling-bounded above.
+  "$root/bin/metasystem" util hold --tag mission-watcher-tag & watcher_pid=$!
+  "$root/bin/metasystem" util hold --tag mission-reaper-tag & reaper_pid=$!
+  # The engine ships in this fixture repo, so preflight demands EXACT-START
+  # liveness: record the holders' real start times, not synthetic ones.
+  watcher_start=$("$root/bin/metasystem" proc started-at --pid "$watcher_pid")
+  reaper_start=$("$root/bin/metasystem" proc started-at --pid "$reaper_pid")
+  identity_file=$fixture_root/mission-process-identities.json
+  printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"}}\n' \
+    "$watcher_pid" "$watcher_start" "$reaper_pid" "$reaper_start" >"$identity_file"
+  export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE=$identity_file
+  supervision=$repo/artifacts/agents/supervision
+  mkdir -p "$supervision"
+  supervision_now=$(date +%s)
+  watcher_hb=$supervision/watcher.heartbeat.json
+  reaper_hb=$supervision/reaper.heartbeat.json
+  printf '{"function":"watcher","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
+    "$watcher_pid" "$watcher_start" "$supervision_now" >"$watcher_hb"
+  printf '{"function":"reaper","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
+    "$reaper_pid" "$reaper_start" "$supervision_now" >"$reaper_hb"
+  printf '{"intervalSec":60,"fingerprint":"fixture-fingerprint","components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-watcher-tag","heartbeat":"%s"},"reaper":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-reaper-tag","heartbeat":"%s"}}}\n' \
+    "$watcher_pid" "$watcher_start" "$watcher_hb" \
+    "$reaper_pid" "$reaper_start" "$reaper_hb" >"$supervision/state.json"
+  printf '{"verdict":"SUCCESS","completedAtEpoch":%s,"fingerprint":"fixture-fingerprint"}\n' \
+    "$supervision_now" >"$supervision/last-census.json"
+}
+
+
+if [[ "$fixture_scenario" == contract-and-state ]]; then
+
 base=$repo/base.contract.md
 cases=$repo/cases
 mkdir -p "$cases"
@@ -193,33 +245,7 @@ git -C "$repo" add plans/mission-alpha.contract.md
 git -C "$repo" commit -qm 'sign mission contract'
 git -C "$repo" push -qu origin main
 
-# Fabricate only the supervisor facts preflight reads. Each process is a real
-# live process whose argv carries the recorded tag; cleanup waits are named
-# and ceiling-bounded above.
-"$root/bin/metasystem" util hold --tag mission-watcher-tag & watcher_pid=$!
-"$root/bin/metasystem" util hold --tag mission-reaper-tag & reaper_pid=$!
-# The engine ships in this fixture repo, so preflight demands EXACT-START
-# liveness: record the holders' real start times, not synthetic ones.
-watcher_start=$("$root/bin/metasystem" proc started-at --pid "$watcher_pid")
-reaper_start=$("$root/bin/metasystem" proc started-at --pid "$reaper_pid")
-identity_file=$fixture_root/mission-process-identities.json
-printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"}}\n' \
-  "$watcher_pid" "$watcher_start" "$reaper_pid" "$reaper_start" >"$identity_file"
-export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE=$identity_file
-supervision=$repo/artifacts/agents/supervision
-mkdir -p "$supervision"
-supervision_now=$(date +%s)
-watcher_hb=$supervision/watcher.heartbeat.json
-reaper_hb=$supervision/reaper.heartbeat.json
-printf '{"function":"watcher","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
-  "$watcher_pid" "$watcher_start" "$supervision_now" >"$watcher_hb"
-printf '{"function":"reaper","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
-  "$reaper_pid" "$reaper_start" "$supervision_now" >"$reaper_hb"
-printf '{"intervalSec":60,"fingerprint":"fixture-fingerprint","components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-watcher-tag","heartbeat":"%s"},"reaper":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-reaper-tag","heartbeat":"%s"}}}\n' \
-  "$watcher_pid" "$watcher_start" "$watcher_hb" \
-  "$reaper_pid" "$reaper_start" "$reaper_hb" >"$supervision/state.json"
-printf '{"verdict":"SUCCESS","completedAtEpoch":%s,"fingerprint":"fixture-fingerprint"}\n' \
-  "$supervision_now" >"$supervision/last-census.json"
+fabricate_supervisor_facts
 
 "$root/scripts/assert-mission.sh" --preflight --file "$contract" >/dev/null
 mv "$supervision/state.json" "$supervision/state.unarmed"
@@ -288,6 +314,10 @@ race_ask=$repo/artifacts/agents/missions/race/asks/fence-bound.json
 [[ -f "$race_ask" ]] && grep -Fq '`concurrency`' "$race_ask" \
   || { echo "concurrent mission refusal did not write its batched ask" >&2; exit 1; }
 
+fi
+
+if [[ "$fixture_scenario" != runner-end-state ]]; then exit 0; fi
+
 # The end-state fixtures run the real runner with the fake host and synthetic
 # process identities. They stay independent of the process-owning validator
 # fixtures so restricted worktrees can exercise these two terminal outcomes.
@@ -311,13 +341,16 @@ else
 fi
 ARM
 chmod +x "$repo/scripts/agents/arm-supervision.sh"
-git -C "$repo" rm -q candidate-bad
+# candidate-bad is the contract scenario's leftover; under scenario
+# isolation this child may never have created it.
+git -C "$repo" rm -q --ignore-unmatch candidate-bad
 # -f: the fixture historically tracks its conf for origin durability; the
 # projection boundary above ignores it exactly as production does.
 git -C "$repo" add -f scripts metasystem.conf
 git -C "$repo" commit -qm 'install mission runner fixtures'
 git -C "$repo" push -qu origin main
 
+fabricate_supervisor_facts
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
 # Refresh the supervision facts to now; json set stages beside each file
 # and renames, so no reader can observe a torn record.
@@ -515,5 +548,3 @@ grep -Fq 'start gate was not released' "$fixture_root/host-gate-timeout.out" \
   || { echo "start-gate timeout did not name its refusal" >&2; exit 1; }
 [[ ! -e "$host_turn/result-gate.json" ]] \
   || { echo "a launch that never passed the gate must not write a result envelope" >&2; exit 1; }
-
-echo "mission contract, state, and runner end-state fixtures passed"

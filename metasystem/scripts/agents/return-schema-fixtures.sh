@@ -4,6 +4,24 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "return schema fixtures: binary absent; run the go gate first" >&2; exit 1; }
+source "$root/scripts/agents/fixture-budget.sh"
+source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario return-schema "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios return-schema \
+    "return schema version 1, version 2, and critic version 3 fixtures passed" \
+    "$fixture_bed_script" implementer-v1-v2 critic-v3
+fi
+
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-return-schema.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT
 
@@ -111,6 +129,8 @@ cp "$fixture/candidate.json" "$fixture/extra.json"
 # Go-owned code belong where they survive fixture retirement. This file
 # keeps its thin normalize_return and assert-return-complete legs.
 
+if [[ "$fixture_scenario" == implementer-v1-v2 ]]; then
+
 "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/v1.json"
 
 # Exercise the adapter's real normalization owner, not a fixture reimplementation.
@@ -154,6 +174,10 @@ if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture
   echo "version-2 return with an undeclared property passed" >&2
   exit 1
 fi
+
+fi
+
+if [[ "$fixture_scenario" != critic-v3 ]]; then exit 0; fi
 
 # The v3 critic grammar is exercised through the same materializer and return
 # validator used by adapters and dispatch. JSON construction and inspection go
@@ -261,5 +285,3 @@ printf 'Working Mode: critique\n' >"$fixture/fake-critic-prompt.md"
   || { echo "fake critic did not speak return schema version 3" >&2; exit 1; }
 [[ "$("$ms" json get --file "$fixture/fake-critic-return.json" --field rigor)" == '[]' ]] \
   || { echo "zero-finding fake critic did not emit empty rigor" >&2; exit 1; }
-
-echo "return schema version 1, version 2, and critic version 3 fixtures passed"
