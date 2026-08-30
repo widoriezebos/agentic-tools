@@ -54,11 +54,16 @@ EOF
 }
 
 run_context() {
-  local root
+  local root prefix marker_type
   root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+  prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null || true)
+  marker_type=$(git -C "$root" cat-file -t HEAD:development/metasystem-design.md 2>/dev/null || true)
+  # The template identity comes from the committed repository layout. A
+  # checkout clone retains both facts, while an untracked lookalike marker in
+  # an adopted repository cannot promote that installation to template mode.
   if [[ "${METASYSTEM_DELIVERY_CONTRACT:-0}" != 1 \
-    && "${root##*/}" == metasystem \
-    && -f "${root%/*}/development/metasystem-design.md" ]]; then
+    && "$prefix" == metasystem/ \
+    && "$marker_type" == blob ]]; then
     printf 'template\n'
   else
     printf 'adopted\n'

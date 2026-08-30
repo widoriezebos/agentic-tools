@@ -15,6 +15,43 @@ bash "$root/scripts/agents/validate-section-selector.sh" catalog \
 diff -u "$tmp/guarded-sections" "$tmp/selected-sections" \
   || { echo "enumeration fixture: validator guards and selector rows disagree" >&2; exit 1; }
 
+# Context is repository identity, not a nearby filesystem coincidence. Copy
+# the implementation under test over a fresh clone because the working change
+# is not committed during local validation; the identity facts still come
+# only from the clone's committed tree.
+checkout=$(git -C "$root" rev-parse --show-toplevel)
+prefix=$(git -C "$root" rev-parse --show-prefix)
+template_clone="$tmp/template-clone"
+git clone -q --no-local "$checkout" "$template_clone"
+template_root=$template_clone/${prefix%/}
+cp "$root/scripts/agents/validate-section-selector.sh" \
+  "$template_root/scripts/agents/validate-section-selector.sh"
+# The checkout file is not the identity proof; the blob in HEAD is. Leaving
+# it absent here makes the fixture fail if classification regresses to an
+# untracked or worktree-only marker.
+rm "$template_clone/development/metasystem-design.md"
+[[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" context) == template ]] \
+  || { echo "enumeration fixture: an independent template clone classified as adopted" >&2; exit 1; }
+[[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 43 ]] \
+  || { echo "enumeration fixture: an independent template clone did not select 43 sections" >&2; exit 1; }
+
+adopted_repo="$tmp/adopted-repo"
+adopted_root="$adopted_repo/metasystem"
+mkdir -p "$adopted_root/scripts/agents" "$adopted_repo/development"
+cp "$root/scripts/agents/validate-section-selector.sh" \
+  "$adopted_root/scripts/agents/validate-section-selector.sh"
+cp "$root/go.mod" "$adopted_root/go.mod"
+git -C "$adopted_repo" init -q -b main
+git -C "$adopted_repo" add metasystem
+git -C "$adopted_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm adopted
+# This is the old marker shape, deliberately left untracked.
+printf 'not repository identity\n' >"$adopted_repo/development/metasystem-design.md"
+[[ $(bash "$adopted_root/scripts/agents/validate-section-selector.sh" context) == adopted ]] \
+  || { echo "enumeration fixture: an untracked marker promoted an adopted installation" >&2; exit 1; }
+[[ $(bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 38 ]] \
+  || { echo "enumeration fixture: an adopted installation did not select 38 sections" >&2; exit 1; }
+
 selector="$tmp/selector.sh"
 cat >"$selector" <<'EOF'
 #!/usr/bin/env bash
