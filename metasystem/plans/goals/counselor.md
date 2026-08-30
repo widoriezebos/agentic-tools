@@ -1,13 +1,15 @@
 # counselor
 
-- State: queued
+- State: claimed
 - Intent: The counselor — the third seat: advisory and ambient, about content; it holds the standing model of the gap between what the app is becoming and what the net actually bounds, and speaks to the human in briefs and sittings, never refusals; no pen — proposals flow through the warden lane and the human tier (name and shape ratified by Wido, 2026-08-24)
 - Origin: human
 - Next step: QUEUE POSITION (Wido ratified 2026-08-30, 'Make it so'): FRONT of the queue, launching the moment pm-implementation lands - shared steward seam forbids running them concurrently; the earlier 'after the study-area goals' ordering is superseded. SCOPE per the folded post-mortem design (BPM-08, plans/battery-postmortem-and-way-out.md): the counselor is the judging mind for the value question - it reads the spend-versus-evidence ledger the Go laws keep and asks, with no stake in the answer, whether a mechanism's cost is buying evidence that changes decisions, including the redundancy realization (something new built while a similar protection already exists, the battery's exact disease); the steward is independent carriage so the warning reaches Wido without passing through the coordinator; warnings are narrative briefs and cost lines, never refusals and never a second approval. TEETH (Wido 2026-08-30: not optional guidance): the counselor never refuses - the refusing is Go's. Three bindings make its word consequential: (1) delivery is steward-carried and fail-closed - the coordinator cannot suppress or soften a warning on its way to the digest; (2) a standing warning is JOINED at the consequence boundary - a budget-extension or promotion decision for a mechanism the counselor has flagged refuses to render without that warning attached, so the decision cannot be taken around it (this matches the design's review-event column: budget extension IS the counselor's enforcement point); (3) the joined-attachment effect is itself governed - it earns ENFORCED through the DRAFT-OBSERVE-LIMITED-ENFORCED lifecycle like every governing mechanism, per Law 2. The economist-role goal closes as a duplicate into this one - its charter rides here: payback-law noticing (counselor primary, coordinator demotes to fail-stop backstop with every backstop catch logged as a finding against the counselor mechanism), expensive runs that taught one lesson, serial fixes where a batch was possible, misclassified Ruling O configurations, every mechanism names the live requirement that dies without it. REMAINING SLICES (unchanged content, two Wido study-area additions and the case-study-day coverage mapping): slice 2 (drift brief, 1d) with the PROOF-COST-VS-CHANGE-RISK trend and the PROCESS-VS-PRODUCT ratio from durable records; slice 3 (sitting + accepted-risk register, 6h) with the FIVE-WHYS pass, PATTERN-APPLICABILITY pass, SELF-APPLICATION review, and NEAR-MISS AGGREGATION BY CLASS; slice 4 (ambient noticings, 4h) - the process-vs-product inversion signal fires ambiently during a stretch, not at the sitting. Slice 1 landed 1cdb948.
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 12
+- Revision: 13
 - Arc: app-guardrail-program
 - Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2
+- Claimed: machine=m1 lineage=coordinator at=2026-08-30T14:53:12Z revision=13
+- StopCapability: generation=13 revision=13 machine=m1 claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-08-24T13:49:17Z 6GX63SFRD9E7S38SSPDM4AB1VS-m1-bf243850 open actor=human:wido targets=counselor
@@ -22,4 +24,5 @@ History:
 - 2026-08-30T09:56:28Z N692F0ZKYVD8PMZVF80K3PNW3V-m1-bf243850 edit actor=m1+coordinator targets=counselor
 - 2026-08-30T09:57:36Z M21WHBG9XYC78R5QK11T8PRC22-m1-bf243850 edit actor=m1+coordinator targets=counselor
 - 2026-08-30T14:52:42Z EJAVC3G2M9191QYDFFTKCWQSXT-m1-bf243850 set-budget actor=m1+coordinator targets=counselor
-Integrity: sha256=69157739fbdcdc461c6fdb6e490e66de40d371235191b0288f5cda53b04a134d
+- 2026-08-30T14:53:12Z 5E2JH3XFVCPFS7VV0JFHCJ839Z-m1-bf243850 claim actor=m1+coordinator targets=counselor
+Integrity: sha256=63fd2452259ccfe750f73c3ce78ee6e060e67dbd1c406248db39d62e8465f6d0
