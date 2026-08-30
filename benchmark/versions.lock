@@ -7,6 +7,7 @@
     "configuration:cheap@1": "3b526d1cffb6b6331e108cf0778de9200334cded",
     "configuration:devin-delegate@1": "8a13bae2deb80147c04db71ae89c5a7d53ce0834",
     "configuration:devin-host-claude-delegate@1": "6ad8613645e33d402e6fc2c00595d9e1162c0c81",
+    "configuration:devin-host-claude-delegate@2": "b0cee2e1e121fee72b8cf12d036ae9ce4ddb7599",
     "configuration:devin-host@1": "940a468de49ccd5aa5dd55be04dd189792e0d56a",
     "configuration:devin-opus-gpt55@1": "314aec29028ece084954458066cf90067afc0759",
     "configuration:sol@1": "a7c4807574e3df8f0036a8042823a9c0e7906c48"
