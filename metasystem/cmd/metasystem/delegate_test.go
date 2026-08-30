@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -71,5 +72,17 @@ func TestNormalizeDelegateAdapterSelftestIsFixedConfiguration(t *testing.T) {
 	want := []string{"dispatch", "--role", "design-critic", "--brief", "brief.md", "--runtime", "fake", "--workspace", "/tmp/scratch", "--permissions", "none", "--job-id", "test-job", "--destructive-reach", "MECHANICAL"}
 	if err != nil || mode != "dispatch" || !reflect.DeepEqual(got, want) {
 		t.Fatalf("selftest normalize = %v %s %v", got, mode, err)
+	}
+}
+
+func TestDelegateInternalRefusalDetailPreservesInternalFailure(t *testing.T) {
+	if got := delegateInternalRefusalDetail("\n writable permissions require --worktree \n", errors.New("exit status 1"), 1); got != "writable permissions require --worktree" {
+		t.Fatalf("detail = %q, want internal stderr", got)
+	}
+	if got := delegateInternalRefusalDetail("", errors.New("fork failed"), 1); got != "fork failed" {
+		t.Fatalf("detail = %q, want command error", got)
+	}
+	if got := delegateInternalRefusalDetail("", nil, 3); got != "delegate internal exited with status 3 without detail" {
+		t.Fatalf("detail = %q, want bounded fallback", got)
 	}
 }

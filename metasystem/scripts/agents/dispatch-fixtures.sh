@@ -1115,6 +1115,8 @@ grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-within.out" \
 budget_within_record="$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within.json"
 [[ "$("$engine" json get --file "$budget_within_record" --field status)" == completed ]] \
   || { echo "the within-limits structured dispatch did not complete" >&2; exit 1; }
+[[ "$("$engine" json get --file "$budget_within_record" --field launchMode)" == shared-checkout ]] \
+  || { echo "the public read-only critic did not use shared-checkout custody" >&2; cat "$budget_within_record" >&2; exit 1; }
 [[ "$("$engine" json get --file "$budget_within_record" --field goalId)" == structured-budget \
    && "$("$engine" json get --file "$budget_within_record" --field goalRevision)" == "$budget_goal_revision" ]] \
   || { echo "the within-limits dispatch did not bind the accepted structured goal revision" >&2; exit 1; }
@@ -1382,10 +1384,8 @@ grep -Fq -- '-TERM -- -320' "$wind_down_signal" \
 # (operator-surface L13); until that verb lands there is no custodial entry
 # to exercise here.
 
-# Review roles default to a zero-write envelope in the live checkout even
-# when repository configuration grants the same role writes for a quarantined
-# worktree. An explicit live-checkout selection gets a custody-specific
-# refusal, while --worktree keeps the configured write grant.
+# A writable role preset derives quarantined custody even for a review role.
+# An explicit live-checkout selection still gets a custody-specific refusal.
 conf_edit "$agent_repo/metasystem.conf" replace-line-first \
   '^dispatch[.]permissions[.]design-critic=.*$' \
   'dispatch.permissions.design-critic=workspace'
@@ -1393,19 +1393,22 @@ review_default_brief="$agent_fixture/review-default.md"
 make_agent_brief "$review_default_brief" design
 run_agent_fixture review-default review-default "$agent_dispatch" dispatch \
   --role design-critic --brief "$review_default_brief" --job-id review-default --wait
+review_default_record="$agent_repo/artifacts/agents/jobs/review-default.json"
+review_default_root=$("$engine" json get --file "$review_default_record" --field workspaceRoot)
 review_default_effective="$agent_repo/artifacts/agents/review-default/rounds/1/effective-permissions.json"
-[[ "$("$engine" json get --file "$review_default_effective" --field writeRoots)" == '[]' \
-   && "$("$engine" json get --file "$review_default_effective" --field tools)" == read-only ]] \
-  || { echo "a live-checkout review did not receive the zero-write effective envelope" >&2; cat "$review_default_effective" >&2; exit 1; }
+[[ "$("$engine" json get --file "$review_default_record" --field launchMode)" == worktree \
+   && "$("$engine" json get --file "$review_default_effective" --field writeRoots)" == *"$review_default_root"* \
+   && "$("$engine" json get --file "$review_default_effective" --field tools)" == runtime-default ]] \
+  || { echo "a writable review preset did not derive quarantined worktree custody" >&2; cat "$review_default_record" "$review_default_effective" >&2; exit 1; }
 
 review_follow_message="$agent_fixture/review-follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$review_follow_message"
 run_agent_fixture review-default-follow-up review-default-r2 "$agent_dispatch" follow-up \
   --job review-default --message "$review_follow_message" --wait
 review_follow_effective="$agent_repo/artifacts/agents/review-default/rounds/2/effective-permissions.json"
-[[ "$("$engine" json get --file "$review_follow_effective" --field writeRoots)" == '[]' \
-   && "$("$engine" json get --file "$review_follow_effective" --field tools)" == read-only ]] \
-  || { echo "a live-checkout review follow-up did not inherit the zero-write effective envelope" >&2; cat "$review_follow_effective" >&2; exit 1; }
+[[ "$("$engine" json get --file "$review_follow_effective" --field writeRoots)" == *"$review_default_root"* \
+   && "$("$engine" json get --file "$review_follow_effective" --field tools)" == runtime-default ]] \
+  || { echo "a worktree review follow-up did not inherit the writable envelope" >&2; cat "$review_follow_effective" >&2; exit 1; }
 
 agent_fails review-live-write 'design-critic live-checkout write refusal' \
   "$agent_dispatch" dispatch --role design-critic --brief "$review_default_brief" \
@@ -1557,6 +1560,17 @@ agent_fails no-role-default 'neither a runtime entry nor role.default.runtime' "
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 code_brief="$agent_fixture/code.md"
 make_agent_brief "$code_brief" implement
+wait_for_agent_census_fresh delegate-derived-worktree
+run_agent_fixture_captured delegate-derived-worktree delegate-derived-worktree \
+  "$agent_fixture/delegate-derived-worktree.out" \
+  "$agent_repo/bin/metasystem" delegate --role implementer --brief "$code_brief" \
+    --goal none-explicit --destructive-reach DESIGN-BEARING --op delegate-derived-worktree --wait
+delegate_implementer_record="$agent_repo/artifacts/agents/jobs/delegate-derived-worktree.json"
+grep -Fq '"outcome":"WON"' "$agent_fixture/delegate-derived-worktree.out" \
+  && [[ "$("$engine" json get --file "$delegate_implementer_record" --field launchMode)" == worktree ]] \
+  || { echo "the public writable delegate did not return a typed launch on derived worktree custody" >&2; cat "$agent_fixture/delegate-derived-worktree.out" "$delegate_implementer_record" >&2; exit 1; }
+echo "live delegate isolation probe passed"
+
 review_target_brief="$agent_fixture/review-target.md"
 make_agent_brief "$review_target_brief" implement
 run_agent_fixture review-target review-target "$agent_dispatch" dispatch --role implementer --brief "$review_target_brief" --job-id review-target --worktree --wait
@@ -1836,8 +1850,19 @@ conf_edit "$agent_repo/metasystem.conf" delete-line-first '^dispatch[.]permissio
 agent_fails invalid-network-floor 'must be deny or allow' \
   env METASYSTEM_DISPATCH_PERMISSIONS_NETWORK=sometimes "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id bad-floor
 
-agent_fails writable-without-worktree 'writable permissions require --worktree' \
-  "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id no-worktree
+invalid_permissions="$agent_fixture/invalid-permissions.json"
+printf '{"readRoots":["."],"writeRoots":"<worktree>","network":"allow","approvals":"deny","tools":"runtime-default"}\n' >"$invalid_permissions"
+conf_edit "$agent_repo/metasystem.conf" replace-line-first \
+  '^dispatch[.]permissions[.]implementer=.*$' \
+  "dispatch.permissions.implementer=$invalid_permissions"
+agent_fails delegate-internal-refusal '"outcome":"REFUSED-INTERNAL"' \
+  "$agent_repo/bin/metasystem" delegate --role implementer --brief "$code_brief" \
+    --goal none-explicit --destructive-reach DESIGN-BEARING --op delegate-internal-refusal
+grep -Fq '"detail":"permission roots must be arrays"' "$agent_fixture/delegate-internal-refusal.out" \
+  || { echo "the public delegate refusal did not carry the internal permission detail" >&2; cat "$agent_fixture/delegate-internal-refusal.out" >&2; exit 1; }
+conf_edit "$agent_repo/metasystem.conf" replace-line-first \
+  '^dispatch[.]permissions[.]implementer=.*$' \
+  'dispatch.permissions.implementer=workspace'
 custom_permissions="$agent_fixture/custom-permissions.json"
 cat >"$custom_permissions" <<EOF
 {"readRoots":["."],"writeRoots":["$agent_fixture/outside"],"network":"deny","approvals":"deny","tools":"runtime-default"}

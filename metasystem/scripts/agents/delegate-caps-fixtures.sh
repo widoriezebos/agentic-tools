@@ -317,12 +317,12 @@ while true; do
     echo "AUTH-R2-005: dispatch trusted raised supervision state over watcher attestation" >&2
     exit 1
   fi
-  if grep -Fq '"outcome":"ERROR"' "$tmp/attested.out" \
+  if grep -Fq '"outcome":"REFUSED-INTERNAL"' "$tmp/attested.out" \
       && grep -Fq "\"detail\":\"dispatch cap 500m must stay below the live watcher's attested 330m ceiling" "$tmp/attested.out"; then
     break
   fi
   if grep -Fq 'dispatch refused: last census verdict is CENSUS-FAILED' "$tmp/attested.out" \
-      && grep -Fq '"outcome":"ERROR"' "$tmp/attested.out"; then
+      && grep -Fq '"outcome":"REFUSED-INTERNAL"' "$tmp/attested.out"; then
     (( SECONDS < deadline )) \
       || { echo "AUTH-R2-005: transient CENSUS-FAILED refusal did not recover before the deadline" >&2; cat "$tmp/attested.out" >&2; exit 1; }
     sleep 0.05

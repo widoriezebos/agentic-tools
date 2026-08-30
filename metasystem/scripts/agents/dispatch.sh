@@ -98,7 +98,7 @@ record_delegate_outcome_raw() { # already encoded JSON
 die() {
   last_die_message=$2
   if [[ -n "${METASYSTEM_DELEGATE_OUTCOME_FILE:-}" && ! -s "$METASYSTEM_DELEGATE_OUTCOME_FILE" ]]; then
-    record_delegate_outcome ERROR refused "$2" "${job:-${child:-}}"
+    record_delegate_outcome REFUSED-INTERNAL refused "$2" "${job:-${child:-}}"
   fi
   echo "$2" >&2
   exit "$1"
@@ -1300,6 +1300,20 @@ dispatch_job() {
     die 1 "--approve-escalation is unnecessary because the requested pair does not require escalation approval; remove the flag"
   fi
 
+  permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default none)}
+  if [[ "$role" == warden ]]; then
+    # The warden holds the no-pen seat: its write authority is bound by
+    # the role, never by a caller flag, a config key, or a file that
+    # shadows a preset name — the shipped zero-write preset is forced
+    # by its absolute repository path.
+    [[ -z "$permissions_override" ]] || die 2 "the warden role dispatches with the zero-write preset; --permissions cannot change it"
+    permission_name="$root/scripts/agents/permissions/none.json"
+  fi
+  if (( use_worktree == 0 && workspace_selected == 0 )) \
+      && permission_envelope_requests_writes "$permission_name"; then
+    use_worktree=1
+  fi
+
   operation_brief_hash=$(sha256_file "$brief")
   if [[ -n "$goal" ]]; then
     goal_binding=$("$ms" job goal-binding --root "$root" --goal "$goal") \
@@ -1375,21 +1389,6 @@ dispatch_job() {
     launch_mode=shared-checkout
     workspace=${workspace:-$repo_scope}
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
-  fi
-  permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default none)}
-  if is_review_role "$role" && (( use_worktree == 0 && workspace_selected == 0 )) && [[ -z "$permissions_override" ]]; then
-    # A review launched in the coordinator's checkout gets no pen by
-    # default, even when repository configuration grants that role a
-    # writable envelope for quarantined worktree dispatches.
-    permission_name="$root/scripts/agents/permissions/none.json"
-  fi
-  if [[ "$role" == warden ]]; then
-    # The warden holds the no-pen seat: its write authority is bound by
-    # the role, never by a caller flag, a config key, or a file that
-    # shadows a preset name — the shipped zero-write preset is forced
-    # by its absolute repository path.
-    [[ -z "$permissions_override" ]] || die 2 "the warden role dispatches with the zero-write preset; --permissions cannot change it"
-    permission_name="$root/scripts/agents/permissions/none.json"
   fi
   if is_review_role "$role" && (( use_worktree == 0 )) && [[ "$workspace" == "$repo_scope" ]] \
       && permission_envelope_requests_writes "$permission_name"; then

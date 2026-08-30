@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,7 @@ type delegateOutcome struct {
 func runDelegate(args []string) int {
 	root, err := upMetasystemRoot(os.Getenv("METASYSTEM_DELEGATE_ROOT"))
 	if err != nil {
-		printJSON(delegateOutcome{Outcome: "ERROR", Headline: "refused", Detail: err.Error()})
+		printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
 	if len(args) > 0 && args[0] == "--adapter-selftest" && !delegateSelftestInternalAuthorized(root) {
@@ -42,7 +43,7 @@ func runDelegate(args []string) int {
 	}
 	outcomeFile, err := os.CreateTemp("", "metasystem-delegate-outcome.*")
 	if err != nil {
-		printJSON(delegateOutcome{Outcome: "ERROR", Headline: "refused", Detail: err.Error()})
+		printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
 	outcomePath := outcomeFile.Name()
@@ -53,8 +54,9 @@ func runDelegate(args []string) int {
 	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_INTERNAL=1", "METASYSTEM_DELEGATE_OUTCOME_FILE="+outcomePath)
 	command.Stdin = os.Stdin
 	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 	command.Stdout = &stdout
-	command.Stderr = os.Stderr
+	command.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	runErr := command.Run()
 	exitCode := commandExitCode(runErr)
 
@@ -79,9 +81,19 @@ func runDelegate(args []string) int {
 		printJSON(delegateOutcome{Outcome: outcome, Headline: headline, JobID: job})
 		return 0
 	}
-	detail := "delegate internal failed without a typed outcome; see stderr"
-	printJSON(delegateOutcome{Outcome: "ERROR", Headline: "refused", Detail: detail})
+	detail := delegateInternalRefusalDetail(stderr.String(), runErr, exitCode)
+	printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: detail})
 	return exitCode
+}
+
+func delegateInternalRefusalDetail(stderr string, runErr error, exitCode int) string {
+	if detail := strings.TrimSpace(stderr); detail != "" {
+		return detail
+	}
+	if runErr != nil {
+		return runErr.Error()
+	}
+	return fmt.Sprintf("delegate internal exited with status %d without detail", exitCode)
 }
 
 // delegateSelftestInternalAuthorized keeps the fixed self-test grammar behind
