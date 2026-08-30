@@ -248,3 +248,26 @@ func TestTerminalStateRoundTripRetainsFieldsAndPruneMarker(t *testing.T) {
 		t.Fatalf("pruned run evidence did not retain durable spend: %+v", projection)
 	}
 }
+
+func TestRetroDebtMarkerRoundTripsAndIsIdempotent(t *testing.T) {
+	root := budgetRoot(t)
+	attempt := terminalAttempt("retro-round-trip")
+	if err := obligationstate.RecordTerminal(root, goalID, goalRevision, obligationRevision, attempt); err != nil {
+		t.Fatal(err)
+	}
+	if err := obligationstate.MarkRetroDebt(root, goalID, goalRevision, obligationRevision, attempt.RunID); err != nil {
+		t.Fatal(err)
+	}
+	state, found, err := obligationstate.Load(root, goalID, goalRevision, obligationRevision)
+	if err != nil || !found || state.Generation != 2 || len(state.Attempts) != 1 || !state.Attempts[0].RetroDebtRaised {
+		t.Fatalf("retro debt marker did not round-trip: %+v found=%t err=%v", state, found, err)
+	}
+
+	if err := obligationstate.MarkRetroDebt(root, goalID, goalRevision, obligationRevision, attempt.RunID); err != nil {
+		t.Fatal(err)
+	}
+	state, found, err = obligationstate.Load(root, goalID, goalRevision, obligationRevision)
+	if err != nil || !found || state.Generation != 2 || !state.Attempts[0].RetroDebtRaised {
+		t.Fatalf("repeating the retro debt marker was not idempotent: %+v found=%t err=%v", state, found, err)
+	}
+}

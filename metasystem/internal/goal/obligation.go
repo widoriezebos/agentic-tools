@@ -125,10 +125,10 @@ func validateGovernedObligation(o *GovernedObligation, fileRevision uint64, clai
 		}
 		authorized[effect] = true
 	}
-	if (o.State == ObligationLimited || o.State == ObligationEnforced) &&
-		(o.AuthorizedBy == "" || !validStamp(o.AuthorizedAt) || o.AuthorityOperation == "" || len(o.AuthorizedEffects) == 0 ||
-			!oneOf(o.ReviewPolicy, "A", "B", "C") || o.ReviewOutcome != "human-approved") {
-		return fmt.Errorf("obligation %s requires a complete human authorization", o.State)
+	if o.State == ObligationLimited || o.State == ObligationEnforced {
+		if err := o.ValidateAuthorizationCompleteness(); err != nil {
+			return fmt.Errorf("obligation %s requires a complete human authorization: %w", o.State, err)
+		}
 	}
 	if (o.State == ObligationDraft || o.State == ObligationObserve) &&
 		(o.AuthorizedBy != "" || o.AuthorizedAt != "" || o.AuthorityOperation != "" || len(o.AuthorizedEffects) != 0 ||

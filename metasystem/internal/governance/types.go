@@ -2,7 +2,10 @@
 // vocabulary shared by goal and run records. It owns no policy engine.
 package governance
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type ObligationState string
 
@@ -87,6 +90,33 @@ type ConsequenceDecision struct {
 	Reason      string
 }
 
+// ValidateAuthorizationCompleteness protects the authorization tuple required
+// before an active obligation can apply a governing effect.
+func (o *GovernedObligation) ValidateAuthorizationCompleteness() error {
+	if o == nil {
+		return fmt.Errorf("authorization record is missing")
+	}
+	if o.AuthorizedBy == "" {
+		return fmt.Errorf("AuthorizedBy is missing")
+	}
+	if _, err := time.Parse(time.RFC3339, o.AuthorizedAt); err != nil {
+		return fmt.Errorf("AuthorizedAt is missing or invalid")
+	}
+	if o.AuthorityOperation == "" {
+		return fmt.Errorf("AuthorityOperation is missing")
+	}
+	if len(o.AuthorizedEffects) == 0 {
+		return fmt.Errorf("AuthorizedEffects are missing")
+	}
+	if o.ReviewPolicy != "A" && o.ReviewPolicy != "B" && o.ReviewPolicy != "C" {
+		return fmt.Errorf("ReviewPolicy is missing or invalid")
+	}
+	if o.ReviewOutcome != "human-approved" {
+		return fmt.Errorf("ReviewOutcome is missing or not human-approved")
+	}
+	return nil
+}
+
 func (o *GovernedObligation) Decide(effect GoverningEffect) ConsequenceDecision {
 	if o == nil {
 		return ConsequenceDecision{Reason: "no governed obligation is recorded"}
@@ -99,8 +129,11 @@ func (o *GovernedObligation) Decide(effect GoverningEffect) ConsequenceDecision 
 		}
 		return ConsequenceDecision{Reason: "the obligation does not govern " + string(effect)}
 	}
-	if o.AuthorizedBy == "" || o.AuthorizedAt == "" || o.AuthorityOperation == "" {
-		return ConsequenceDecision{Reason: "the human authorization record is incomplete"}
+	if o.State != ObligationLimited && o.State != ObligationEnforced {
+		return ConsequenceDecision{Reason: "obligation state " + string(o.State) + " has no consequence authority"}
+	}
+	if err := o.ValidateAuthorizationCompleteness(); err != nil {
+		return ConsequenceDecision{Reason: "human authorization is incomplete: " + err.Error()}
 	}
 	for _, allowed := range o.AuthorizedEffects {
 		if allowed == effect {
