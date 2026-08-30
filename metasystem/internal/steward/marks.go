@@ -33,12 +33,21 @@ func CurrentMarks(repoRoot string) (Marks, error) {
 		// strength of a read failure. Refuse instead.
 		return Marks{}, fmt.Errorf("HEAD unreadable in an existing repository: %v", headErr)
 	}
+	// The cutover landed: the goal ledger's content identity is the
+	// accepted goals ref's tip (refs/metasystem/goals/accepted, advanced
+	// by every ledger CAS). The retired plans/goals.md hash sat here for
+	// three days after the cutover, pinning OpidDigest to the no-ledger
+	// sentinel and making every goal movement invisible to stall
+	// detection (steward-marks-retired-ledger). An absent ref keeps the
+	// sentinel so pre-cutover checkouts still compare totally.
 	ledger := "no-ledger"
-	if data, err := os.ReadFile(filepath.Join(repoRoot, "plans", "goals.md")); err == nil {
-		sum := sha256.Sum256(data)
-		ledger = hex.EncodeToString(sum[:])
-	} else if !os.IsNotExist(err) {
-		return Marks{}, fmt.Errorf("goal ledger unreadable: %v", err)
+	refCmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted")
+	if refOut, refErr := refCmd.Output(); refErr == nil {
+		tip := strings.TrimSpace(string(refOut))
+		if tip != "" {
+			sum := sha256.Sum256([]byte(tip))
+			ledger = hex.EncodeToString(sum[:])
+		}
 	}
 	return Marks{HeadOid: head, OpidDigest: ledger}, nil
 }
