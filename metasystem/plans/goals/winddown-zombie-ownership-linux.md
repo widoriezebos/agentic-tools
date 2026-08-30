@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 2h. In the identity prober or the ownership fold: a readable-but-EMPTY argv must not produce NOT-OURS - a zombie is Dead-or-indeterminate for ownership purposes; align groupAlive's zombie semantics across platforms or make the wind-down treat zombie-only groups as down. Verify on the Debian guest (the sweep's lima VM, transport remote in place) before concluding - darwin green is not the proof.
 - OpenedAt: 2026-08-30T09:55:06Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=2h attemptLimit=4 reservedJobMinutesLimit=30 activeJobLimit=1
 
 History:
 - 2026-08-30T09:55:06Z DKZTPG05478QCWG2FKCCM5QH48-m2-bc1be9cb open actor=m2+mac-coordinator targets=winddown-zombie-ownership-linux
-Integrity: sha256=8495e616889d9f10f1fe164da20efabb3cfdf9ea71661021ad7d0404c6c2699a
+- 2026-08-30T10:59:18Z WAQ0N9M1P1QH8DE63MDQ45DVSK-m2-bc1be9cb set-budget actor=human:wido targets=winddown-zombie-ownership-linux
+Integrity: sha256=da235179319365002a1a48fbfa377cdea4dbaa6d03f251800189670124ae0074
