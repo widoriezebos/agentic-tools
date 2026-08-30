@@ -1026,3 +1026,349 @@ Evidence: The skip-nonmovable contract is at metasystem/plans/goal-scope-bounds-
 Splitting a parent that is already the final live member of an older arc bypasses the older arc's retroactive-debt transition. The design says removing that parent from its old arc behaves like a normal conclusion, but Split archives the parent directly and specifies no equivalent of Done's last-live-member debt raise. The old arc can therefore finish through Split without recording the debt that the implemented normal-conclusion path records.
 
 Evidence: The claimed equivalence to normal conclusion and the direct parent archival are at metasystem/plans/goal-scope-bounds-design.md:442-473. The implemented Done verb checks whether the archived goal was the final live arc member and raises retroactive debt at metasystem/internal/goal/verbs.go:634-679. The proposed Split mutation contains no corresponding old-arc debt operation in metasystem/plans/goal-scope-bounds-design.md:418-482.
+
+## 11. Addendum - mechanisms for the slice-2 gaps (gsb-design-r3)
+
+The Sol-lane slice-2 implementer gap-stopped on four points the design
+left to judgment. This section closes each with one chosen mechanism,
+buildable without further decisions. It is append-only: where it
+extends an earlier section it says so; the SS10 finding-over-text
+precedence stands, and nothing here weakens a refusal path — every
+mechanism only adds refusals or makes an existing one durable. Every
+symbol and line cited below was re-read in the current tree during
+this addendum.
+
+### 11.1 Gap 1 (GSB-R1-001) — coordinator ratification is a holder-classified, draft-digest-bound token
+
+The chosen mechanism is the ClaimEpoch pattern, extended with a draft
+digest: the command layer mints a ratification token only under an
+authenticated MAIN-holder (or human) lease classification, the engine
+requires the token and independently re-verifies the digest against
+the member definitions it is about to publish, and the accepted
+commit records the whole triple. One-sentence reason for the choice:
+the coordinator's ratification act IS invoking split over the draft
+it just read, so an out-of-band ratification reference would add a
+second durable channel that bottoms out in the same lease
+authentication — the digest, not a reference, is what binds the act
+to THESE member definitions.
+
+- **Record shape.** New struct in `internal/goal/split.go`:
+  `SplitRatification{Tier string, MainID string, ClaimEpoch int64,
+  DraftSHA256 string}`. `Tier` is closed: `"human"` or `"main"`.
+  `DraftSHA256` is the lowercase sha256 hex of the canonical draft
+  serialization already defined in 3.6 (the re-rendered parsed
+  structs — the same bytes the journal carries).
+- **Command-layer minting (the who).** `runGoalSplit` classifies its
+  caller with `lease.ClassifyVerb(root, ppid)` — the exact call
+  `syncReq` already makes (`cmd/metasystem/goalsync_mutations.go:59`).
+  For a MAIN-ORIGIN parent it refuses unless the classification is
+  `Class == lease.ClassMain && Holder == true` (the checkout-lease
+  holder: `Holder` is true only when the caller's `MainId` equals the
+  lease's `HolderMainId`, `internal/lease/verbs.go:305` — the
+  coordinator session by construction) or `Class == lease.ClassHuman`
+  (a human may always run it, matching 3.3). Every other class —
+  `DELEGATE`, `SUPERVISION`, `UNTRUSTED`, the full set at
+  `internal/lease/classify.go:63-73` — refuses. Refusal wording:
+  `SPLIT_RATIFY_REFUSED: goal <id> is main-origin; its split draft is
+  ratified by the coordinator — re-run goal split from the MAIN
+  checkout-lease holder session (a human may also run it with --by)`.
+  On success the CLI fills the token: `Tier: "main"`, `MainID` and
+  `ClaimEpoch` from the classification, `DraftSHA256` computed over
+  the canonical serialization of the draft it parsed. For a
+  HUMAN-ORIGIN parent the 3.3 `humanauthority.Prove`/`RecordProof`
+  sequence is unchanged and the CLI fills `Tier: "human"` plus the
+  same `DraftSHA256`.
+- **Engine requirement (the what).** The signature becomes
+  `Split(r, parentID, members, ratification SplitRatification, proof
+  *humanauthority.Proof)`. Inside `Mutate`, re-run on every rebuilt
+  tip: a main-origin parent requires `Tier == "main"`, nonempty
+  `MainID`, and `ClaimEpoch >= 1`, exactly the bar `bindClaim` sets
+  for the epoch it cannot itself authenticate
+  (`internal/goal/verbs.go:110-113` — the engine requires the token;
+  only the holder-classified command path mints it,
+  `goalsync_mutations.go:59-69`). A human-origin parent requires
+  `Tier == "human"`, non-nil proof, and nonempty `r.Actor.Human`
+  (3.3 unchanged). BOTH tiers require the digest re-verification:
+  the engine re-serializes the `members` it is about to publish and
+  refuses on mismatch — `SPLIT_RATIFY_REFUSED: the ratified draft
+  digest <first-8-hex> does not match the member definitions being
+  published (<first-8-hex>); re-run goal split with the ratified
+  draft`. This is what makes the ratification draft-specific rather
+  than command-specific: no code path can publish member definitions
+  other than the ones the ratifier's invocation hashed.
+- **Published proof record.** The archived parent gains one record
+  line, rendered/parsed with the `parseKVRecord` conventions of
+  `internal/goal/file.go`:
+  `Ratified: tier=<human|main> by=<name> mainId=<id> claimEpoch=<e> draftSha256=<64-hex>`
+  — `by` present exactly when tier=human; `mainId` and `claimEpoch`
+  present exactly when tier=main; `draftSha256` always. Grammar-level
+  validation enforces that presence rule and the 64-hex shape. The
+  line lands in the same accepted commit as the members, so every
+  machine that pulls sees who ratified which exact draft bytes next
+  to the decomposed-with-pointer conclusion.
+- **Journal and recovery.** Intent args gain `ratifierTier`,
+  `ratifierMainId`, `ratifierClaimEpoch`, and `draftSha256` beside
+  the existing `by` and `members`. Recovery of a main-origin split
+  replays them on the claimEpoch precedent — stored intent already
+  lawfully carries the epoch back into the engine
+  (`internal/goal/recover.go:189-195`) — and the rebuilt `Mutate`
+  re-runs the digest check over the re-parsed `Args["members"]`, so
+  a journal entry whose stored members were doctored after the
+  ratifying invocation closes rejected instead of completing. The
+  3.6 rule for by-carrying (human-ratified) entries is unchanged.
+- **Fixture.** A main-origin split invoked under a non-holder
+  classification refuses with `SPLIT_RATIFY_REFUSED` (fixture-side
+  classification injection per the existing lease fixtures); under a
+  holder classification it lands and the archived parent's
+  `Ratified:` line carries tier=main and a digest equal to sha256 of
+  the canonical draft; a recovery fixture with mismatching stored
+  members and `draftSha256` terminalizes `OutcomeRejected` naming
+  the digest.
+
+### 11.2 Gap 2 (GSB-R1-002) — the ever-sliced fact is a `Sliced:` record on the goal file, written by dispatch before the first reservation exists
+
+The chosen mechanism is a first-write-wins record published INTO the
+shared goal ledger at first job-reservation admission, so split's own
+`Mutate` — not a checkout-local lock — enforces the hard rule.
+One-sentence reason: the fact must be visible to split's transaction
+on every rebuilt tip, survive revision changes, machines, and
+garbage collection, and the goal file is the only store already
+inside the CAS transaction domain with all three properties (job
+records are clone-local and reaped; `ProjectBudget` scans only the
+current claimed revision, `internal/dispatch/budget.go:234-376`).
+
+- **Record shape.** `GoalFile` (`internal/goal/file.go:21`) gains
+  `Sliced *SlicedRecord{Machine string, Lineage string, Revision
+  uint64, At string}`, rendered
+  `Sliced: machine=<m> lineage=<l> revision=<r> at=<iso8601>` — the
+  coordinates of the goal's FIRST admitted job reservation, ever.
+  Written once; NO verb clears or rewrites it: release, set-budget,
+  park, reopen, steal, and edit all carry it verbatim (edit's closed
+  field set already refuses unknown deltas), and reconcile maps any
+  hand edit of the line to a conflict — the unrepresentable-change
+  posture. Grammar validation: positive `Revision`, RFC3339 `At`.
+  Deliberately NO at-rest rule ties `Sliced` to state — a released
+  or re-queued goal lawfully carries it; that is the point.
+- **Writer and check point.** A new internal engine verb
+  `MarkSliced(r VerbRequest, id string)` /
+  `sliceStartRequest(r, id)` (History verb `slice-start`), with no
+  CLI mount. Its `Mutate`: the goal must be live and claimed by
+  `r.Actor`'s pair; `Sliced != nil` classifies `NothingToDo`
+  (idempotent); otherwise it writes
+  `{r.Actor.Machine, r.Actor.Lineage, f.Claimed.Revision, r.stamp()}`
+  plus `touch`. The ONE caller is `dispatch.ClaimLaunch`
+  (`internal/dispatch/claim.go:202`), the reservation-creating verb
+  both dispatch legs funnel through
+  (`scripts/agents/dispatch.sh:1477-1479` fresh, `:1939-1941`
+  follow-up, invoking claim-launch at `:1489-1501`): when the launch
+  carries a goal binding, after the admission verdicts pass and
+  BEFORE the reservation record is written, it reads the accepted
+  tree and, if `Sliced` is absent, publishes slice-start
+  (`internal/dispatch` already imports `internal/goal` —
+  `internal/dispatch/admission.go:9` — so no cycle). Fail closed: a
+  slice-start that does not confirm (or classify `NothingToDo`)
+  refuses the launch — `SLICE_START_UNRECORDED: goal <id>'s
+  first-slicing fact could not land on the shared ledger; the
+  reservation is refused` — no fact, no reservation, no job. Cost,
+  stated: the first dispatch against each goal performs one ledger
+  publish, and dispatching the first slice while the ledger remote
+  is unreachable refuses like any other ledger mutation.
+- **Split enforcement, engine-side.** Split's `Mutate` gains, ahead
+  of the 3.3 precondition table and re-run on every rebuild:
+  `Sliced != nil` refuses in EVERY parent state, parked included
+  (the SS10 no-parked-parent-bypass requirement):
+  `GOAL_SPLIT_REFUSED: goal <id> recorded its first slice
+  (machine <m>, revision <r>, <at>); split is a before-slicing act
+  and slicing has begun — conclude the goal (schedule residue per
+  R-4) and open successor goals instead`. The finding's races close
+  structurally: split and slice-start are CAS transactions on the
+  same accepted branch, so exactly one of {split, first reservation}
+  wins any interleaving — a split landing first archives the parent
+  and slice-start's rebuilt `Mutate` refuses (so ClaimLaunch refuses
+  the reservation); a slice-start landing first is seen by split's
+  rebuilt `Mutate` (`internal/goal/txn.go:613`, mutate-per-capture)
+  and refuses the split. SetBudget's revision re-bind and recovery's
+  replay change nothing: the check reads the tree, not a lock, and
+  recovery runs the same `Mutate`.
+- **Reach of the rule, stated.** The refusal keys on `Sliced` ONLY.
+  A goal that was claimed — even claimed, worked zero jobs, and
+  released — still splits; a goal with `Sliced` never splits again,
+  in any state, forever. The 3.3 zero-spend `ProjectBudget`
+  preflight is RETAINED unchanged as a command-side defense for
+  exactly one residual: goals whose slicing predates this record's
+  existence (no backfill is possible or attempted). The `Sliced`
+  check is the enforcement of record; 3.3's preflight is legacy
+  defense, and 5.1's recovery-window residual paragraph is
+  superseded for the sliced case — recovery re-runs the check.
+- **Recovery.** `case "slice-start":` joins the verb switch
+  (`internal/goal/recover.go:205`) rebuilding `sliceStartRequest`; a
+  created-phase entry that dies abandons harmlessly because the
+  fail-closed ordering means its reservation never launched.
+- **Fixture.** First goal-bound ClaimLaunch publishes the record;
+  a second launch publishes nothing (tree unchanged, `NothingToDo`);
+  split of the sliced goal refuses naming machine, revision, and
+  timestamp — also when the goal is parked or was released; split of
+  a claimed-never-sliced goal still passes 3.3's preflight; a raced
+  split/slice-start pair (the `BeforePush` fixture seam,
+  `internal/goal/txn.go:484-487`) confirms exactly one winner with
+  the loser classified by name.
+
+### 11.3 Gap 3 (GSB-R2-001) — permanence is a root-record decomposition registry
+
+Of the three named options, the chosen mechanism is the ROOT
+DECOMPOSITION REGISTRY. One-sentence reason: the root record
+(`plans/goals/backlog.md`) is the one ledger file no prune deletes
+and it is already parsed into every `Mutate` and into `ValidateTree`
+(`TreeGoals.Root`, `internal/goal/validate.go:21-28`), so one
+appendix there guards reopen, open, open-claim, and the at-rest
+tree without changing prune's retention contract (tombstone
+retention couples permanence to `keep`-count semantics, and
+GSB-R1-013 already proved that guard shape insufficient;
+coordinated prune/open guards leave the fact spread across verb
+behavior with no at-rest witness).
+
+- **Record shape.** `RootRecord` (`internal/goal/root.go:17`) gains
+  `Decomposed []DecomposedEntry{Id, Opid, At string}`, rendered as a
+  new section parallel to `LegacyNotes:` (parse loop
+  `root.go:62-88`, render `root.go:196-229`):
+
+  ```
+  Decomposed:
+  - <parent-id> opid=<opid> at=<iso8601>
+  ```
+
+  Parse strictness: kebab `validId`, opid shape, RFC3339 stamp, and
+  a duplicate parent id refuses the tree by name. Entries are
+  append-only and render sorted by `At` then id. Growth is one line
+  per split forever — accepted and stated.
+- **The one writer.** Split's `Mutate` appends the entry
+  `{parentID, r.opid(), r.stamp()}` and bumps `Root.Revision` with a
+  root History line in the SAME `[]Change` set as the members and
+  the archived parent — the exact root-write shape the Goal-free
+  clear already uses (`internal/goal/verbs.go:378-386`). No verb
+  removes an entry. Prune's mutation, which already rewrites the
+  root for its own History line (`verbs.go:1363-1368`), carries the
+  section through untouched.
+- **The guards.** All inside `Mutate`, re-run per rebuild, via one
+  helper `rootDecomposed(t.Root, id) bool`:
+  - `reopenRequest`, after the archive lookup (`verbs.go:915-918`):
+    a registered id refuses — `goal <id> was decomposed into arc
+    <id>; a decomposed parent never returns — reopen or claim its
+    member goals, or open a NEW goal under a new id`. This also
+    closes the pre-prune window the finding proved
+    (`verbs.go:890-999` has no split guard today).
+  - `openRequest` (`verbs.go:362-370`) and `openClaimRequest`: a
+    registered id refuses — `goal id <id> is retired: it names a
+    decomposed parent (split opid <opid>); pick a different id`.
+    This closes the prune-then-recreate hole: the identifier stays
+    retired after `Prune` (`verbs.go:1290-1373`) deletes the
+    archived parent, because the registry never prunes.
+  - Split's own draft validation (3.2) additionally refuses member
+    ids present in the registry.
+- **At-rest rule** (config-free, joins `ValidateTree`): no LIVE
+  goal's id may appear in `Root.Decomposed` — a violating tree is
+  defective by name ("decomposed parent <id> is live again"). The
+  archived parent itself remaining in `Done` is legal until pruned.
+  Reconcile maps hand edits that add or remove registry entries, or
+  that resurrect a registered id as a live file, to conflicts.
+- **Amendment to 8.1(b), honest per GSB-R1-013.** If Wido selects
+  the split-scoped repeal, its discriminator becomes membership in
+  `Root.Decomposed` rather than presence of the archived parent —
+  the registry is exactly the durable structural fact whose absence
+  made option (b)'s prune guard insufficient. Option (b) no longer
+  needs any prune guard; its remaining cost is only the two-behavior
+  arc concept.
+- **Fixture.** Split, then `prune --keep 0` (members hold no
+  blocker edge to the parent, so the archived parent dies): `goal
+  open --id <parent>` refuses naming the registry and the split
+  opid; `goal reopen --id <parent>` before the prune refuses naming
+  decomposition; a hand-built tree with a live goal named in
+  `Decomposed:` fails `ValidateCommit`.
+
+### 11.4 Gap 4 (GSB-R2-003) — the old-arc debt raises before the split's journal entry may terminalize confirmed
+
+The chosen mechanism mirrors Done's last-live-member classification
+but moves the raise INSIDE the confirmation ordering, so a
+terminal-confirmed split entry PROVES the debt landed.
+One-sentence reason: recovery can only hang an effect on a
+non-terminal journal entry, so any raise that happens after
+`MarkTerminal(OutcomeConfirmed)` (as Done's does today,
+`internal/goal/verbs.go:659-679` running after
+`internal/goal/txn.go:672`) is unrecoverable by construction — the
+ordering, not the mirroring, is what the finding demands.
+
+- **What raises.** The archived parent retains its `Arc` field
+  verbatim (11.4 makes 3.5.4 explicit on this: only `Blocked`,
+  `Parked`, and the claim binding clear — matching Done's archive
+  shape). The debt condition and coordinates are Done's exactly
+  (`verbs.go:667-676`): on the confirmed tip, if the archived
+  parent's old `Arc` is nonempty and NO live goal carries it,
+  `retrodebt.Raise(root, retrodebt.KindArc, archived.Arc+":"+opid,
+  now)`. Split members carry `Arc == parentID`, not the old arc, so
+  they never mask the check; a parent whose old arc still has live
+  siblings raises nothing; a parent with `Arc == ""` raises nothing.
+  `Raise` is idempotent by `kind:source`
+  (`internal/retrodebt/debt.go:168-173`), so re-running the
+  classification at every observation point below is free.
+- **The transaction hook.** `PublishRequest`
+  (`internal/goal/txn.go:467`) gains
+  `AfterConfirmed func(tip string) error`, nil for every existing
+  verb. In the CAS-landed leg it runs after the postcondition
+  verifies and BEFORE `MarkTerminal(OutcomeConfirmed)`
+  (`txn.go:666-672`); on error the entry STAYS pushed and the verb
+  returns the error — precisely the existing stays-pushed posture of
+  a failed confirming refetch (`txn.go:661-671`). The
+  `AlreadyApplied` replay leg (`txn.go:722`) runs the hook before
+  its confirm-mark under the same rule. `splitRequest` sets the hook
+  to the classification above; `Split`'s wrapper needs no post-
+  publish debt step at all.
+- **Atomicity answer, stated.** Tree atomicity is untouched — the
+  split commit stands whole on the accepted branch. A debt failure
+  or a crash in the window leaves the journal entry PUSHED, which
+  blocks this clone's further ledger mutations until classified
+  (`txn.go:507-510`) — a disclosed, resumable stop, never a torn
+  split and never a silently forgotten debt.
+- **Recovery completes the effect.** For an entry whose
+  `Intent.Verb == "split"`, a shared helper
+  `raiseSplitOldArcDebt(e, tip, entry)` (parent =
+  `entry.Intent.Targets[0]`; load the tip; run the classification)
+  runs before the terminal mark at each recovery confirmation
+  point: `ActionConfirm` and `ActionConfirmLate`
+  (`internal/goal/recover.go:75-94`), and `completeFromIntent`'s
+  path inherits the hook through the rebuilt `splitRequest`. The
+  world may have moved by recovery time; the rule is honest about
+  it: the classification runs against the tip the opid was found
+  on, and if a goal has meanwhile rejoined the old arc, the arc is
+  live again and its debt lawfully raises when ITS last member
+  concludes — deferring to the arc's true conclusion is Done's own
+  semantics, not a loss. The debt register is per-checkout state
+  under `memory/` (`internal/retrodebt/debt.go:55-57`;
+  `stateroot.Registers` resolves to `memory`), the same locality
+  Done's raise already has.
+- **Done itself is deliberately unchanged in slice 2.** Migrating
+  Done onto the hook would strictly narrow the identical
+  pre-existing crash window and is recorded as a follow-up backlog
+  candidate, not smuggled into a split slice; this addendum may not
+  widen slice 2's boundary beyond its gaps.
+- **Fixture.** Splitting the final live member of arc `alpha`
+  raises `arc-goal:alpha:<opid>` (mirroring the Done coverage at
+  `internal/goal/verbs_test.go:146-153`); an injected one-shot
+  `AfterConfirmed` failure leaves the entry pushed, and a
+  subsequent `Recover` classifies it, raises the debt, then
+  terminalizes — with exactly one debt entry existing afterwards
+  (idempotence); a split whose parent has a live old-arc sibling
+  raises nothing.
+
+### Slice-2 build-order deltas
+
+Section 6's slice-2 list is amended, not rewritten: item 3 adds the
+`Sliced:` and `Ratified:` record grammar and the root `Decomposed:`
+section with its at-rest rule; item 4 adds `MarkSliced` and the
+open/reopen/open-claim registry guards; item 5 adds
+`SplitRatification`, the digest check, the split-side `Sliced` and
+registry refusals, the root-registry append, and the
+`AfterConfirmed` hook with its `raiseSplitOldArcDebt` helper (plus
+the `PublishRequest` field and its two txn call sites and two
+recovery call sites); item 6 adds the holder classification gate in
+`runGoalSplit` and the `internal/dispatch/claim.go` slice-start call.
+The fixtures named per mechanism above join the slice-2 proof list.
