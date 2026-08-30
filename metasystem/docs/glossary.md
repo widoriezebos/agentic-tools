@@ -140,7 +140,7 @@ not paths.
   human-signed `mission-*.contract.md`, executed as a series of **turns**
   by a **host** (the orchestrating agent session), which dispatches
   **delegates** for the actual work. Run by
-  `scripts/agents/mission-runner.sh`.
+  `metasystem mission <verb>`.
 - **Cycle** — one plan-act-measure iteration of a mission: the host takes
   a turn, the runner measures the gate, the ledger gains a line. Bounded
   by the cycle fence and the no-gain budget (consecutive cycles without

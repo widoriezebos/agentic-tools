@@ -1954,7 +1954,8 @@ func (e *Engine) cycleGatePrompt(c *cycleContext) (map[string]any, bool, error) 
 		return final, true, ferr
 	}
 	stdout, stderr, code := runCaptured(e.Root, nil,
-		filepath.Join(e.Root, "scripts", "assert-turn-prompt.sh"),
+		filepath.Join(e.Root, "bin", "metasystem"),
+		"validate", "turn-prompt", "--root", e.Root,
 		"--file", filepath.Join(c.turnDir, "prompt.md"), "--turn", c.turnDir)
 	if code != 0 {
 		detail := firstDetail(stderr, stdout)

@@ -26,7 +26,7 @@ Severity and materiality are separate. Require the verdict count to include only
 
 Review the accepted brief and the computed base-to-working-tree diff before reasoning about code quality.
 
-For a dispatched implementation, run `scripts/agents/assert-conformance.sh --stage review --job <job-id>`. It computes the diff from the implementer branch's merge-base with the invoking target checkout, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and checks only that every changed path appears in the union of every round's immutable `diffBoundary` declarations: a declared-but-unchanged path passes, while a changed-but-undeclared path refuses. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
+For a dispatched implementation, run `metasystem validate conformance --stage review --job <job-id>`. It computes the diff from the implementer branch's merge-base with the invoking target checkout, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and checks only that every changed path appears in the union of every round's immutable `diffBoundary` declarations: a declared-but-unchanged path passes, while a changed-but-undeclared path refuses. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
 
 Check that the diff implements every acceptance criterion, stays within the declared workspace and non-goals, preserves tests and certification assets unless the brief explicitly changes them, and contains no unrelated work. Treat every mismatch as a conformance finding before proceeding.
 
@@ -55,7 +55,7 @@ The orchestrator answers every finding with the shared dispositions table:
 | F-2 | refuted | <the exact check and observed result> | none |
 ```
 
-Use `accepted` or `refuted` for material findings; a TRUE finding outside the brief's declared threat model closes as `out-of-scope`, citing that scope in its evidence cell — accepted as fact, rejected as work. Use `noted` only for non-material findings. A chain closes on ZERO unrefuted material findings, and a refutation carries the exact check and its observed result — an evidence-free refutation is refused by the closure check itself. Close the round by running `scripts/assert-critique-closed.sh --findings <return.json> --dispositions <file>`; a count or prose claim is not closure.
+Use `accepted` or `refuted` for material findings; a TRUE finding outside the brief's declared threat model closes as `out-of-scope`, citing that scope in its evidence cell — accepted as fact, rejected as work. Use `noted` only for non-material findings. A chain closes on ZERO unrefuted material findings, and a refutation carries the exact check and its observed result — an evidence-free refutation is refused by the closure check itself. Close the round by running `bin/metasystem validate critique-closed --findings <return.json> --dispositions <file>`; a count or prose claim is not closure.
 
 ## Round Budget and Exit
 

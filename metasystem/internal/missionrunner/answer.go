@@ -56,7 +56,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		return 3
 	}
 	if reason == "wall-violation" {
-		fmt.Fprintln(os.Stderr, "answer refused: a generic answer never clears taint; use mission-runner.sh resolve-taint (restore or adopt-disputed-tree)")
+		fmt.Fprintln(os.Stderr, "answer refused: a generic answer never clears taint; use metasystem mission resolve-taint (restore or adopt-disputed-tree)")
 		return 3
 	}
 	if !turnvocab.OrchestratorMayRaise(reason) && reason != "fence" {
@@ -94,8 +94,8 @@ func (e *Engine) Answer(askID, answer string) int {
 		unpark()
 	case reason == "fence":
 		stdout, stderr, code := runCaptured(e.Root, nil,
-			filepath.Join(e.Root, "scripts", "assert-mission.sh"),
-			"--preflight", "--file", e.contractPath())
+			filepath.Join(e.Root, "bin", "metasystem"),
+			"mission", "contract-preflight", "--file", e.contractPath())
 		if code != 0 {
 			fmt.Fprintf(os.Stderr, "answer refused: fence contract amendment is not preflight-ready: %s\n", firstDetail(stderr, stdout))
 			return 3

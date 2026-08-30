@@ -1459,7 +1459,8 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	}
 	runWrapper := func(bed *Engine, args ...string) (string, error) {
 		t.Helper()
-		cmd := exec.Command(filepath.Join(bed.Root, "scripts", "agents", "mission-runner.sh"), args...)
+		full := append([]string{"mission", args[0], "--root", bed.Root}, args[1:]...)
+		cmd := exec.Command(filepath.Join(bed.Root, "bin", "metasystem"), full...)
 		cmd.Dir = bed.Root
 		out, err := cmd.CombinedOutput()
 		return string(out), err

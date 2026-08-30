@@ -131,10 +131,7 @@ backdate_census_generation() { # census, generation
 mkdir -p "$repo/scripts" "$repo/docs"
 cp -R "$source_root/scripts/agents" "$repo/scripts/"
 cp "$source_root/scripts/metasystem-config.sh" \
-  "$source_root/scripts/assert-mission.sh" \
-  "$source_root/scripts/assert-stop-loss.sh" \
   "$source_root/scripts/assert-return-complete.sh" \
-  "$source_root/scripts/assert-turn-prompt.sh" \
   "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
 cp "$source_root/docs/project-rules.md" "$repo/docs/"
 cp "$source_root/metasystem.conf" "$repo/"

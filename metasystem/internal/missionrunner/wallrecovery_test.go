@@ -49,7 +49,7 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 	// until audited — tracked under timing-tests-synthetic-clock.
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
-	scribbled := filepath.Join(engine.Root, "scripts", "assert-turn-prompt.sh")
+	scribbled := filepath.Join(engine.Root, "scripts", "assert-return-complete.sh")
 	original, err := os.ReadFile(scribbled)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 		path, _ := p.(string)
 		joined += path + "\n"
 	}
-	if !strings.Contains(joined, "scripts/assert-turn-prompt.sh") || !strings.Contains(joined, "host-scribble.txt") {
+	if !strings.Contains(joined, "scripts/assert-return-complete.sh") || !strings.Contains(joined, "host-scribble.txt") {
 		t.Fatalf("both scribbles must be in the restore set: %q", joined)
 	}
 	after, err := os.ReadFile(scribbled)

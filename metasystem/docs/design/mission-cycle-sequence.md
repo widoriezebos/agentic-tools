@@ -216,7 +216,7 @@ refusal naming the widest block, prompt.go:522-533). Assembly failure →
 `failed/prompt-refused`, then `recordFailedTurn` with `consecutiveFailures=2`
 — an **immediate host-failure park** that still burns a ledger cycle (§6(h)).
 
-**S8. Validate the prompt.** `scripts/assert-turn-prompt.sh` →
+**S8. Validate the prompt.** `metasystem validate turn-prompt` →
 `validate turn-prompt` (loop.go:728-737, validate/turnprompt.go): framing,
 header order, byte-exact preamble, section fencing, row grammar, and the
 ask reason-class whitelist `PromptAskReasons` (orchestrator-raisable classes
@@ -503,7 +503,7 @@ this mission+turn stamp.
 
 **What the runner cannot know today**: whether a critique round *closed*.
 Closure — every material finding dispositioned
-(`scripts/assert-critique-closed.sh` joining a round return's findings
+(`metasystem validate critique-closed` joining a round return's findings
 against a Markdown dispositions table) — is a skill-level check over
 artifacts the runner never reads (round `return.json` files and dispositions
 documents in `plans/`). No job-record field records closure; the runner sees

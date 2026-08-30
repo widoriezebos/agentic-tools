@@ -197,15 +197,15 @@ func runValidateReturnComplete(args []string) int {
 }
 
 // runValidateDesignObligations checks design-obligation matrices with the
-// calling convention of scripts/assert-design-obligation-gate.sh: repeated
+// calling convention of metasystem validate design-obligations: repeated
 // --file arguments, an optional --runtime-required, and --root for
 // resolving a relative path unreadable from the working directory. Exit 0
 // passed; 1 failed; 2 usage.
 func runValidateDesignObligations(args []string) int {
 	usage := func() {
 		fmt.Fprint(os.Stderr, `Usage:
-  scripts/assert-design-obligation-gate.sh --file <plan.md> [--file <plan.md>...]
-  scripts/assert-design-obligation-gate.sh --runtime-required --file <plan.md>...
+  metasystem validate design-obligations --file <plan.md> [--file <plan.md>...]
+  metasystem validate design-obligations --runtime-required --file <plan.md>...
 
 Checks the structure and declared state of design-obligation matrices.
 
@@ -262,13 +262,13 @@ pipe characters; the column parser cannot see an escaped pipe as content.
 	return code
 }
 
-// runValidateConformance relays scripts/agents/assert-conformance.sh's
+// runValidateConformance relays the retired conformance wrapper's
 // calling convention: --stage review|merge and --job, with --root naming
 // the merge-target checkout. Exit 0 conforming; 1 conformance failure; 2
 // usage.
 func runValidateConformance(args []string) int {
 	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage: scripts/agents/assert-conformance.sh --stage review|merge --job <job-id>
+		fmt.Fprint(os.Stderr, `Usage: metasystem validate conformance --stage review|merge --job <job-id>
 
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
@@ -327,13 +327,13 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 	return code
 }
 
-// runValidateStopLoss relays scripts/assert-stop-loss.sh's calling
+// runValidateStopLoss owns the stop-loss check's calling
 // convention: --file names the investigation ledger. Exit 0 more cycles
 // allowed; 1 stop-loss triggered; 2 usage error.
 func runValidateStopLoss(args []string) int {
 	usage := func() {
 		fmt.Fprint(os.Stderr, `Usage:
-  scripts/assert-stop-loss.sh --file <investigation-ledger.md>
+  metasystem validate stop-loss --file <investigation-ledger.md>
 
 Reads the cycle classifications from an investigation ledger and blocks
 further cycles when a machine-checkable stop-loss trigger has fired:

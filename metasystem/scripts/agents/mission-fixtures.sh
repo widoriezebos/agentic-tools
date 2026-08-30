@@ -207,7 +207,7 @@ CONTRACT
 conf_edit "$base" replace-literal FIXTURE_JOB_CAP_MIN "$mission_job_cap_min"
 conf_edit "$base" replace-literal FIXTURE_TURN_CAP_MIN "$mission_turn_cap_min"
 
-"$root/scripts/assert-mission.sh" --file "$base" >/dev/null
+"$root/bin/metasystem" mission contract-validate --file "$base" >/dev/null
 
 # Every concrete key in the authored grammar is independently required and
 # independently type-checked. These fixture commands are synchronous; the
@@ -221,7 +221,7 @@ conf_edit "$base" replace-literal FIXTURE_TURN_CAP_MIN "$mission_turn_cap_min"
 
 dispatch_allow=$repo/plans/mission-dispatch-allow.contract.md
 sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol/' "$base" >"$dispatch_allow"
-"$root/scripts/assert-mission.sh" --seal --file "$dispatch_allow" >/dev/null
+"$root/bin/metasystem" mission contract-seal --file "$dispatch_allow" >/dev/null
 # The dispatch-allow value survives sealing byte-exactly and the sealed
 # contract still validates. (The parser-internal assertions the python
 # module leg made — the values map and pair splitting — are owned by
@@ -239,7 +239,7 @@ contract=$repo/plans/mission-alpha.contract.md
 cp "$base" "$contract"
 conf_edit "$contract" insert-after '^stream[.]primary=' \
   'stream.secondary=Preserve the evidence contract.'
-contract_sha=$("$root/scripts/assert-mission.sh" --seal --file "$contract")
+contract_sha=$("$root/bin/metasystem" mission contract-seal --file "$contract")
 printf '\nApproval: name=Human; date=2026-08-04; contract-sha256=%s\n' "$contract_sha" >>"$contract"
 git -C "$repo" add plans/mission-alpha.contract.md
 git -C "$repo" commit -qm 'sign mission contract'
@@ -247,19 +247,19 @@ git -C "$repo" push -qu origin main
 
 fabricate_supervisor_facts
 
-"$root/scripts/assert-mission.sh" --preflight --file "$contract" >/dev/null
+"$root/bin/metasystem" mission contract-preflight --file "$contract" >/dev/null
 mv "$supervision/state.json" "$supervision/state.unarmed"
-expect_failure unarmed-preflight "supervisor set is unarmed" "$root/scripts/assert-mission.sh" --preflight --file "$contract"
+expect_failure unarmed-preflight "supervisor set is unarmed" "$root/bin/metasystem" mission contract-preflight --file "$contract"
 mv "$supervision/state.unarmed" "$supervision/state.json"
 mkdir -p "$repo/artifacts/agents/missions/alpha/lease.d"
-expect_failure lease-preflight "lease is not acquirable" "$root/scripts/assert-mission.sh" --preflight --file "$contract"
+expect_failure lease-preflight "lease is not acquirable" "$root/bin/metasystem" mission contract-preflight --file "$contract"
 rmdir "$repo/artifacts/agents/missions/alpha/lease.d"
 
 printf 'bad candidate\n' >"$repo/candidate-bad"
 git -C "$repo" add candidate-bad
 git -C "$repo" commit -qm 'make candidate unmeasurable'
 git -C "$repo" push -qu origin main
-expect_failure unrunnable-gate "gate measurement failed" "$root/scripts/assert-mission.sh" --preflight --file "$contract"
+expect_failure unrunnable-gate "gate measurement failed" "$root/bin/metasystem" mission contract-preflight --file "$contract"
 
 # The ledger grammar, state chain, fork detection, reconcile parks, and
 # anchor round-trips are internal/mission's unit tests under the go gate
@@ -322,9 +322,8 @@ if [[ "$fixture_scenario" != runner-end-state ]]; then exit 0; fi
 # process identities. They stay independent of the process-owning validator
 # fixtures so restricted worktrees can exercise these two terminal outcomes.
 cp -R "$root/scripts/agents/." "$repo/scripts/agents/"
-cp "$root/scripts/metasystem-config.sh" "$root/scripts/assert-mission.sh" \
-  "$root/scripts/assert-return-complete.sh" "$root/scripts/assert-stop-loss.sh" \
-  "$root/scripts/assert-turn-prompt.sh" "$repo/scripts/"
+cp "$root/scripts/metasystem-config.sh" \
+  "$root/scripts/assert-return-complete.sh" "$repo/scripts/"
 cp "$root/metasystem.conf" "$repo/metasystem.conf"
 conf_edit "$repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$fixture_root/runner-evidence"
@@ -413,7 +412,7 @@ envelope.dependencies=jq
 exposure=EUR:1
 \`\`\`
 EOF
-  contract_sha=$("$repo/scripts/assert-mission.sh" --seal --file "$path")
+  contract_sha=$("$repo/bin/metasystem" mission contract-seal --file "$path")
   printf '\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256=%s\n' "$contract_sha" >>"$path"
   git -C "$repo" add "plans/mission-$mission.contract.md"
   git -C "$repo" commit -qm "sign mission $mission"
@@ -426,7 +425,7 @@ wait_end_state() { # mission, expected status exit
   deadline=$((SECONDS + maximum))
   while (( SECONDS < deadline )); do
     set +e
-    "$repo/scripts/agents/mission-runner.sh" status --mission "$mission" >/dev/null 2>&1
+    "$repo/bin/metasystem" mission status --root "$repo" --mission "$mission" >/dev/null 2>&1
     result=$?
     set -e
     [[ $result -eq $expected ]] && return 0
@@ -463,7 +462,7 @@ cat >"$repo/artifacts/agents/jobs/landed-orphan.json" <<'EOF'
 EOF
 printf '{"jobId":"landed-orphan"}\n' >"$repo/artifacts/agents/landed-orphan/rounds/1/return.json"
 close_bed_baseline "$repo"
-METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
+METASYSTEM_AGENT_RUNTIME=fake "$repo/bin/metasystem" mission start --root "$repo" \
   --mission gate-and-close --foreground >/dev/null
 wait_end_state gate-and-close 10
 # The end-state details this leg used to re-assert — completed state,
@@ -475,7 +474,7 @@ wait_end_state gate-and-close 10
 
 make_end_state_contract runner-closes-chain dispatch-terminal
 close_bed_baseline "$repo"
-METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
+METASYSTEM_AGENT_RUNTIME=fake "$repo/bin/metasystem" mission start --root "$repo" \
   --mission runner-closes-chain --foreground >/dev/null
 wait_end_state runner-closes-chain 10
 # The runner-closed chain, mirror manifest, and turn-log acceptance are

@@ -61,7 +61,7 @@ coherent and no crash window between "recorded" and "counted".
 
 - The mission stop-loss decision moves INTO the runner as a pure
   replay over (sealed contract, ledger) — nothing lives in mission state.
-- `assert-stop-loss.sh` is NOT modified. The runner simply stops
+- the stop-loss validator is NOT modified. The runner simply stops
   delegating the mission decision to it; non-mission callers keep the
   script, its lifetime rule, and its fixtures unchanged. No scope switch,
   no shared-script hazard — the round-2/3 carriage problem dissolves by

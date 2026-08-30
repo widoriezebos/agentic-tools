@@ -208,11 +208,11 @@ func runMissionTurnPark(args []string) int {
 func missionRunnerUsage() {
 	fmt.Fprint(os.Stderr,
 		"Usage:\n"+
-			"  scripts/agents/mission-runner.sh start --mission <id> [--foreground]\n"+
-			"  scripts/agents/mission-runner.sh resume --mission <id> [--foreground]\n"+
-			"  scripts/agents/mission-runner.sh status --mission <id>\n"+
-			"  scripts/agents/mission-runner.sh answer --mission <id> --ask <ask-id> --answer <text>\n"+
-			"  scripts/agents/mission-runner.sh resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
+			"  metasystem mission start --mission <id> [--foreground]\n"+
+			"  metasystem mission resume --mission <id> [--foreground]\n"+
+			"  metasystem mission status --mission <id>\n"+
+			"  metasystem mission answer --mission <id> --ask <ask-id> --answer <text>\n"+
+			"  metasystem mission resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
 			"      (--restore <treeId> | --adopt --waives <claim> [--waives <claim> ...])\n")
 }
 

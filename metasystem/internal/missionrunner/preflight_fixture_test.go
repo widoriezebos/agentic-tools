@@ -1106,8 +1106,8 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 		}
 	})
-	cmd := exec.Command(filepath.Join(engine.Root, "scripts", "agents", "mission-runner.sh"),
-		"start", "--mission", engine.Mission)
+	cmd := exec.Command(filepath.Join(engine.Root, "bin", "metasystem"),
+		"mission", "start", "--root", engine.Root, "--mission", engine.Mission)
 	cmd.Dir = engine.Root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1266,16 +1266,10 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		}
 		os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
 	}
-	// The human entrypoint travels
-	// too: the resolution fixtures must drive the REAL wrapper,
-	// not only the in-process engine.
-	wrapper, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "mission-runner.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(root, "scripts", "agents", "mission-runner.sh"), wrapper, 0o755)
-	os.WriteFile(filepath.Join(root, "scripts", "assert-turn-prompt.sh"),
-		[]byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	// The human entrypoint IS the engine verb now (the wrapper died in
+	// the L15 delete tranche); the resolution fixtures drive the same
+	// binary a human types. The prompt checker runs for real too — the
+	// authority artifacts below make its pass honest instead of stubbed.
 	// The prompt authority artifacts, verbatim from the repository: without
 	// them AssemblePrompt refuses and the cycle parks before any host runs.
 	// The return checker and its role schema travel the same way:

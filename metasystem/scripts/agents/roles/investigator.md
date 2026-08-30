@@ -14,7 +14,7 @@ Immediately classify the result:
 - `unresolved`: a valid measured result whose delta lies inside a declared noise floor; the run executed and produced an interpretable measurement that neither confirms nor refutes. Illegitimate without a declared noise floor; a run with no interpretable measurement is `no-progress`. Never counts toward the no-progress trigger.
 - `invalid-run`: parity/environment/timeout prevents interpretation; repair validity, not behavior.
 
-Only `contract-improved` and `falsified-continue` authorize another cycle without user direction. An `unresolved` result authorizes one only while a declared `- No-gain budget: N` ledger line is unexhausted: `scripts/assert-stop-loss.sh` blocks once N trailing cycles pass without a `contract-improved`.
+Only `contract-improved` and `falsified-continue` authorize another cycle without user direction. An `unresolved` result authorizes one only while a declared `- No-gain budget: N` ledger line is unexhausted: `metasystem validate stop-loss` blocks once N trailing cycles pass without a `contract-improved`.
 <!-- /quote -->
 
 Apply this stop-loss discipline exactly:

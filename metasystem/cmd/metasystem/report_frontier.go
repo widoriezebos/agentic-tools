@@ -8,7 +8,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
-// runReportFrontier relays scripts/frontier.sh's calling convention:
+// runReportFrontier is the frontier report's one calling convention:
 // the action word, then the flag set the shell always accepted.
 func runReportFrontier(args []string) int {
 	if len(args) == 0 {

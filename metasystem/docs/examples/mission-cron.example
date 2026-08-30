@@ -4,4 +4,4 @@
 # after proving the old runner and any orphaned host process are dead.
 #
 # Replace both paths and the mission id. Keep the log outside the repository.
-* * * * * cd /absolute/path/to/repository && /absolute/path/to/repository/scripts/agents/mission-runner.sh resume --mission example-mission >>/absolute/path/to/mission-runner.log 2>&1
+* * * * * cd /absolute/path/to/repository && /absolute/path/to/repository/bin/metasystem mission resume --root /absolute/path/to/repository/metasystem --mission example-mission >>/absolute/path/to/mission-runner.log 2>&1

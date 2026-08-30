@@ -364,6 +364,8 @@ func (e *Engine) resolveArmingIdentity() (armingIdentity, error) {
 		session: fmt.Sprintf("mission-runner-%s-%d", e.Mission, pid),
 		pid:     pid,
 		started: started,
+		// The announcement token predates the wrapper's deletion; it is
+		// protocol vocabulary lease succession matches on, not a path.
 		tag:     "mission-runner.sh",
 		lineage: MissionLineage(e.Mission),
 	}, nil

@@ -1,6 +1,6 @@
 # Mission Contract Example
 
-This is a draft contract shape, not signed authority. Replace the repository facts, run `scripts/assert-mission.sh --file <path>`, price the exposure, run `--seal`, commit the signed bytes to the shared default branch, arm supervision, and then run `--preflight`.
+This is a draft contract shape, not signed authority. Replace the repository facts, run `metasystem mission contract-validate --file <path>`, price the exposure, run `contract-seal`, commit the signed bytes to the shared default branch, arm supervision, and then run `--preflight`.
 
 # Intent
 

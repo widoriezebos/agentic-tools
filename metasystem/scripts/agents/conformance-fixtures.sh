@@ -31,7 +31,6 @@ new_case() { # name
   controller="$case_root/controller"
   worktree="$case_root/worktree"
   mkdir -p "$controller/scripts/agents" "$controller/docs"
-  cp "$source_root/scripts/agents/assert-conformance.sh" "$controller/scripts/agents/"
   cp "$source_root/scripts/agents/instruction-bearing-paths.txt" "$controller/scripts/agents/"
   cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
   # The copied config reader resolves its engine as <controller>/bin/metasystem.
@@ -167,7 +166,7 @@ expect_failure() { # name, expected text, command...
 new_case core
 printf 'changed\n' >>"$worktree/source.txt"
 write_implementer '' source.txt
-"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl \
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl \
   >"$fixture_root/review-stage.out"
 grep -Fq 'reviewedTree=' "$fixture_root/review-stage.out" \
   || { echo "review stage did not emit the reviewed tree" >&2; exit 1; }
@@ -178,7 +177,7 @@ reviewed_tree=$("$source_root/bin/metasystem" json get \
   --file "$controller/artifacts/agents/impl/rounds/1/review.json" --field reviewedTree)
 
 expect_failure missing-chain 'reviews field names implementer job' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 grep -Fq 'role.code-critic.runtime' "$fixture_root/missing-chain.out" \
   || { echo "missing-chain refusal did not name the exact configuration key" >&2; exit 1; }
 
@@ -186,7 +185,7 @@ configure_critic
 commit_worktree
 write_critic "0000000000000000000000000000000000000000" '' none critic-model
 expect_failure stale-tree 'is stale' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 write_critic "$reviewed_tree" F-7 none critic-model
 cat >"$controller/artifacts/agents/critic/rounds/1/dispositions.md" <<'DISPOSITIONS'
@@ -195,26 +194,26 @@ cat >"$controller/artifacts/agents/critic/rounds/1/dispositions.md" <<'DISPOSITI
 | F-7 | accepted | fixture disposition | fixture amendment |
 DISPOSITIONS
 expect_failure dispositioned-material 'still has material findings despite any dispositions: F-7' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 write_critic "$reviewed_tree" F-9 one critic-model
 expect_failure exhausted-open 'open material findings: F-9' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 write_critic "$reviewed_tree" F-10 missing-successor-finding critic-model
 expect_failure exhausted-successor 'prompt does not enumerate open findings: F-10' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 write_critic "$reviewed_tree" F-9 critic-successor critic-model
 expect_failure exhausted-wrong-party 'is not an implementer follow-up in the reviewed implementation chain' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 write_critic "$reviewed_tree" F-9 two critic-model
 expect_failure second-exhaustion 'waiting on the human is the only remedy' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 write_critic "$reviewed_tree" '' none critic-model
-"$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl >/dev/null
 write_critic "$reviewed_tree" '' none shared-model
 expect_failure same-model 'implementer job '\''impl'\'' uses effective model '\''shared-model'\''' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 grep -Fq 'code-critic chain '\''critic'\'' uses effective model '\''shared-model'\''' "$fixture_root/same-model.out" \
   || { echo "same-model refusal did not name both jobs and models" >&2; exit 1; }
 grep -Fq 'dispatch a critic on a different model' "$fixture_root/same-model.out" \
@@ -222,7 +221,7 @@ grep -Fq 'dispatch a critic on a different model' "$fixture_root/same-model.out"
 grep -Fq 'declare independence=session-only' "$fixture_root/same-model.out" \
   || { echo "same-model refusal omitted the session-only remedy" >&2; exit 1; }
 printf 'independence=session-only\n' >>"$controller/metasystem.conf"
-"$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl \
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl \
   >"$fixture_root/session-only.out"
 grep -Fq 'independence=session-only recorded in gate evidence' "$fixture_root/session-only.out" \
   || { echo "session-only independence was accepted without an honest evidence record" >&2; exit 1; }
@@ -233,7 +232,7 @@ new_case ignored-local
 printf 'changed\n' >>"$worktree/source.txt"
 printf 'role.code-critic.runtime=fake\n' >"$worktree/local.conf"
 write_implementer '' source.txt
-"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl >/dev/null
 grep -Fq 'local.conf' "$controller/artifacts/agents/impl/rounds/1/diff.patch" && {
   echo "review artifact included an ignored local configuration file" >&2
   exit 1
@@ -245,14 +244,14 @@ grep -Fq 'local.conf' "$controller/artifacts/agents/impl/rounds/1/diff.patch" &&
 new_case multi-round
 printf 'round one\n' >>"$worktree/source.txt"
 write_implementer '' source.txt
-"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl >/dev/null
 commit_worktree
 printf 'round two\n' >>"$worktree/docs/note.md"
 write_followup_return 2 docs/note.md
-"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl-r2 >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl-r2 >/dev/null
 printf 'undeclared\n' >"$worktree/extra.txt"
 expect_failure cumulative-boundary-outside 'some implementation round must declare every changed path' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage review --job impl-r2
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl-r2
 grep -Fq 'extra.txt' "$fixture_root/cumulative-boundary-outside.out" \
   || { echo "cumulative boundary refusal did not name the undeclared path" >&2; exit 1; }
 
@@ -262,7 +261,7 @@ grep -Fq 'extra.txt' "$fixture_root/cumulative-boundary-outside.out" \
 new_case recovery
 printf 'changed\n' >>"$worktree/source.txt"
 write_implementer '' source.txt
-"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl >/dev/null
 first_tree=$("$source_root/bin/metasystem" json get \
   --file "$controller/artifacts/agents/impl/rounds/1/review.json" --field reviewedTree)
 commit_worktree
@@ -271,17 +270,17 @@ git -C "$controller" add upstream.txt
 git -C "$controller" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm upstream
 controller_branch=$(git -C "$controller" branch --show-current)
 git -C "$worktree" -c user.name=metasystem -c user.email=metasystem@example.invalid rebase -q "$controller_branch"
-"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl >/dev/null
 final_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}')
 artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
 configure_critic
 write_critic "$first_tree" '' none critic-model
 expect_failure recovery-stale 'is stale' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 [[ "$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')" == "$artifact_sha" ]] \
   || { echo "a refused merge rewrote the stored review artifact" >&2; exit 1; }
 write_critic "$final_tree" '' none critic-model
-"$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl >/dev/null
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl >/dev/null
 [[ "$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')" == "$artifact_sha" ]] \
   || { echo "a successful merge rewrote the stored review artifact" >&2; exit 1; }
 
@@ -293,13 +292,13 @@ printf 'printf "changed\\n"\n' >>"$worktree/scripts/tool.sh"
 write_implementer prose-under-30 scripts/tool.sh
 commit_worktree
 expect_failure waiver-script 'instruction-bearing paths that are never waivable' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 new_case waiver-small
 for number in 1 2 3 4 5 6 7 8 9 10; do printf 'line %s\n' "$number" >>"$worktree/docs/note.md"; done
 write_implementer prose-under-30 docs/note.md
 commit_worktree
-"$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl \
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl \
   >"$fixture_root/waiver-small.out"
 grep -Fq 'count=1' "$fixture_root/waiver-small.out" \
   || { echo "genuine prose waiver was not counted" >&2; exit 1; }
@@ -309,7 +308,7 @@ for number in $(seq 1 40); do printf 'line %s\n' "$number" >>"$worktree/docs/not
 write_implementer prose-under-30 docs/note.md
 commit_worktree
 expect_failure waiver-large 'the maximum is 30 additions plus deletions' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 # CC-2-2: waivers never bypass trusted plans/ or the normally ignored agent
 # control plane, even when every committed path otherwise qualifies as prose.
@@ -319,7 +318,7 @@ printf 'delegate plan\n' >"$worktree/plans/note.md"
 write_implementer prose-under-30 plans/note.md
 commit_worktree
 expect_failure waiver-plan 'trusted plans/ state changed: plans/note.md' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 new_case waiver-control-plane
 printf 'small prose change\n' >>"$worktree/docs/note.md"
@@ -328,7 +327,7 @@ printf 'tamper\n' >"$worktree/artifacts/agents/tamper"
 write_implementer prose-under-30 docs/note.md
 commit_worktree
 expect_failure waiver-control-plane 'agent control plane contains delegate-created files' \
-  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 # The critique-exhaustion owner is proven in-process under the go gate
 # (script-fixtures-021/D44): TestCritiqueExhaustionDesignCritic,

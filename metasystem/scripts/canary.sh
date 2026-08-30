@@ -69,8 +69,8 @@ for class in "$@"; do
         bash -n "$script" || { echo "CANARY RED at shell-syntax: $script" >&2; exit 1; }
       done < <(git ls-files 'scripts/*.sh' 'scripts/**/*.sh')
       echo "canary[shell]: syntax sweep clean"
-      run audit bash scripts/audit-metasystem.sh . ;;
-    docs) run audit bash scripts/audit-metasystem.sh . ;;
+      run audit ./bin/metasystem audit metasystem --root . ;;
+    docs) run audit ./bin/metasystem audit metasystem --root . ;;
     *) echo "canary: unknown change class '$class' — refusing rather than passing vacuously" >&2; exit 2 ;;
   esac
 done

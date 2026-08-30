@@ -905,8 +905,8 @@ fi
 
 if section_selected metasystem-audit; then
   # The recorded engine audit owns every rule except literals already judged by the cheap scan.
-  run_section metasystem-audit needs-engine env METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 \
-    scripts/audit-metasystem.sh .
+  run_section metasystem-audit needs-engine \
+    "$root/bin/metasystem" audit metasystem --root . --allow-placeholders
 fi
 
 # The gate's own integrity (go-production-grade B8): a gofmt that cannot run
@@ -964,15 +964,12 @@ for link in \
   .gitattributes \
   memory/instruction-ledger.md \
   scripts/refactor-baseline.sh \
-  scripts/frontier.sh \
   scripts/receipt.sh \
   scripts/adopt.sh \
   scripts/enforcement/github-actions-metasystem.yml \
   scripts/enforcement/claude-code-hooks.json \
   scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json \
-  scripts/assert-stop-loss.sh \
-  scripts/assert-mission.sh \
   docs/examples/mission-contract.md \
   docs/examples/mission-cron.example \
   docs/project-adaptation.md \
@@ -1036,7 +1033,6 @@ for link in \
   scripts/agents/adapter-deadline-fixtures.sh \
   scripts/adopt-fixtures.sh \
   scripts/agents/dispatch-fixtures.sh \
-  scripts/agents/mission-runner.sh \
   scripts/agents/hosts/host-common.sh \
   scripts/agents/hosts/claude.sh \
   scripts/agents/hosts/codex.sh \
@@ -1049,13 +1045,9 @@ for link in \
   scripts/agents/adapters/codex-config-filter.v1.json \
   scripts/agents/adapters/claude-config-filter.v1.json \
   scripts/agents/adapters/devin-config-filter.v1.json \
-  scripts/agents/assert-conformance.sh \
   scripts/agents/conformance-fixtures.sh \
   scripts/agents/instruction-bearing-paths.txt \
-  scripts/assert-critique-closed.sh \
-  scripts/assert-return-complete.sh \
-  scripts/assert-turn-prompt.sh \
-  scripts/agents/check-preamble-quotes.sh; do
+  scripts/assert-return-complete.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
 }
@@ -1135,16 +1127,13 @@ bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
 bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
-bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
 bash -n scripts/agents/hosts/fake.sh
-bash -n scripts/assert-mission.sh
 bash -n scripts/assert-return-complete.sh
-bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
@@ -1577,7 +1566,10 @@ for command_name in cat find grep sort tr wc; do
   cp "$(command -v "$command_name")" "$no_rg_bin/$command_name"
   chmod +x "$no_rg_bin/$command_name"
 done
-env PATH="$no_rg_bin" /bin/bash scripts/audit-metasystem.sh . >"$tmp/audit-no-rg.out"
+# The rg-fallback premise died with the shell wrapper; the leg now proves
+# the ENGINE audit runs under the same minimal PATH — no hidden external
+# command dependency replaced the old one.
+env PATH="$no_rg_bin" "$engine" audit metasystem --root . >"$tmp/audit-no-rg.out"
 
 
 # The brief contains only orchestrator-authored header fields. Dispatch owns
@@ -1786,7 +1778,7 @@ done
 
 # Quote markers name their canonical source. The checker compares the content
 # bytes rather than trusting a second prose copy of the binding criterion.
-scripts/agents/check-preamble-quotes.sh
+"$engine" validate preamble-quotes
 # Count the quote blocks from one source whose body carries one marker. A
 # block runs from a `<!-- quote source="..." -->` line to the first
 # `<!-- /quote -->` line; block bodies are whole lines, so a marker that
@@ -1839,7 +1831,7 @@ sed 's/build something DIFFERENT/build the same thing/' \
   "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
 mv "$tmp/drifted-roles/design-critic.md.new" "$tmp/drifted-roles/design-critic.md"
 set +e
-scripts/agents/check-preamble-quotes.sh --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
+"$engine" validate preamble-quotes --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
 quote_status=$?
 set -e
 if [[ $quote_status -eq 0 ]]; then
@@ -1855,7 +1847,7 @@ sed 's/ship a defect/ship no defect/' \
   "$tmp/drifted-code-roles/code-critic.md" >"$tmp/drifted-code-roles/code-critic.md.new"
 mv "$tmp/drifted-code-roles/code-critic.md.new" "$tmp/drifted-code-roles/code-critic.md"
 set +e
-scripts/agents/check-preamble-quotes.sh --roles-dir "$tmp/drifted-code-roles" >"$tmp/code-quote-drift.out" 2>&1
+"$engine" validate preamble-quotes --roles-dir "$tmp/drifted-code-roles" >"$tmp/code-quote-drift.out" 2>&1
 code_quote_status=$?
 set -e
 [[ $code_quote_status -eq 1 ]] \
@@ -1868,7 +1860,7 @@ sed "s/The human's absence narrows/The human's presence narrows/" \
 mv "$tmp/drifted-orchestrator-roles/orchestrator.md.new" \
   "$tmp/drifted-orchestrator-roles/orchestrator.md"
 set +e
-scripts/agents/check-preamble-quotes.sh \
+"$engine" validate preamble-quotes \
   --roles-dir "$tmp/drifted-orchestrator-roles" >"$tmp/orchestrator-quote-drift.out" 2>&1
 orchestrator_quote_status=$?
 set -e
@@ -2090,7 +2082,7 @@ Advance active streams by designing, dispatching, reviewing, and certifying. Whe
 EOF
 } >"$good_turn_prompt"
 
-scripts/assert-turn-prompt.sh --file "$good_turn_prompt" --turn "$turn_dir"
+"$engine" validate turn-prompt --file "$good_turn_prompt" --turn "$turn_dir"
 
 # Each mutation replaces the first occurrence of its needle; a mutation
 # that changes nothing means the fixture and the needle drifted apart, so
@@ -2128,7 +2120,7 @@ check_bad_turn_prompt() { # fixture name, failing check
   local name=$1 expected=$2 output status
   output="$turn_fixture/$name.out"
   set +e
-  scripts/assert-turn-prompt.sh \
+  "$engine" validate turn-prompt \
     --file "$turn_fixture/$name.md" --turn "$turn_dir" >"$output" 2>&1
   status=$?
   set -e
@@ -2151,7 +2143,7 @@ check_bad_turn_prompt unfenced-data fencing
 check_bad_turn_prompt malformed-record records
 
 set +e
-scripts/assert-turn-prompt.sh >"$turn_fixture/usage.out" 2>&1
+"$engine" validate turn-prompt >"$turn_fixture/usage.out" 2>&1
 turn_prompt_usage_status=$?
 set -e
 [[ $turn_prompt_usage_status -eq 2 ]] \
@@ -2233,7 +2225,7 @@ cp "$return_fixtures/design-critic-positive.json" "$critique_fixtures/unjoinable
 json_remove_field "$critique_fixtures/unjoinable-missing-findings.json" findings
 write_critique_table unjoinable-malformed-table '| --- | --- | --- |'
 
-scripts/assert-critique-closed.sh \
+"$engine" validate critique-closed \
   --findings "$critique_fixtures/joinable.json" \
   --dispositions "$critique_fixtures/all-disposed.md"
 
@@ -2259,7 +2251,7 @@ if (( template_mode )); then
   echo "metasystem runs under its own hooks"
 fi
 
-scripts/assert-plan-consistency.sh >"$tmp/plan-consistency.out"
+"$engine" validate plan-consistency >"$tmp/plan-consistency.out"
 grep -q 'retired term' "$tmp/plan-consistency.out" \
   || { echo "plan consistency check did not report its retired terms" >&2; exit 1; }
 
@@ -2271,13 +2263,13 @@ FIXTURE
 cat >"$plan_fixture/clean.md" <<'FIXTURE'
 The widget check was replaced by the gadget check.
 FIXTURE
-scripts/assert-plan-consistency.sh --plans-dir "$plan_fixture" >/dev/null \
+"$engine" validate plan-consistency --plans-dir "$plan_fixture" >/dev/null \
   || { echo "plan consistency rejected a line that explains the change" >&2; exit 1; }
 cat >"$plan_fixture/stale.md" <<'FIXTURE'
 Test quality is measured by the widget check.
 FIXTURE
 set +e
-scripts/assert-plan-consistency.sh --plans-dir "$plan_fixture" >"$tmp/plan-stale.out" 2>&1
+"$engine" validate plan-consistency --plans-dir "$plan_fixture" >"$tmp/plan-stale.out" 2>&1
 plan_status=$?
 set -e
 (( plan_status == 1 )) \
@@ -2290,7 +2282,7 @@ check_open_critique() { # fixture name, findings file, dispositions file, diagno
   shift 3
   output="$tmp/critique-$name.out"
   set +e
-  scripts/assert-critique-closed.sh \
+  "$engine" validate critique-closed \
     --findings "$findings_file" \
     --dispositions "$dispositions_file" >"$output" 2>&1
   status=$?
@@ -2336,7 +2328,7 @@ check_open_critique unjoinable-format-malformed-table \
   "malformed dispositions table: invalid separator row"
 
 set +e
-scripts/assert-critique-closed.sh >"$tmp/critique-usage.out" 2>&1
+"$engine" validate critique-closed >"$tmp/critique-usage.out" 2>&1
 critique_usage_status=$?
 set -e
 [[ $critique_usage_status -eq 2 ]] \
@@ -2497,12 +2489,12 @@ cat >"$tmp/good.md" <<'EOF'
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | OBL-1 | HIGH | Requirement | Behavior | `owner.py` | `owner.py` | `test_owner.py` | Not applicable: pure derivation | DONE | None |
 EOF
-scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/good.md" >/dev/null
+"$engine" validate design-obligations --runtime-required --file "$tmp/good.md" >/dev/null
 
 # Proof cells on critical/high rows must be concrete: a DONE row whose proof
 # is vague prose must fail, or a declared status can outrun its evidence.
 sed 's/| `test_owner.py` |/| covered somewhere |/' "$tmp/good.md" >"$tmp/vague.md"
-if scripts/assert-design-obligation-gate.sh --file "$tmp/vague.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --file "$tmp/vague.md" >/dev/null 2>&1; then
   echo "obligation gate accepted a DONE row with a vague proof cell" >&2
   exit 1
 fi
@@ -2513,59 +2505,59 @@ cat >"$tmp/keyword.md" <<'EOF'
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | OBL-1 | CRITICAL | Requirement | Behavior | someone will own this | we should test this later | needs testing | manual test pending | DONE | None |
 EOF
-if scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/keyword.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --runtime-required --file "$tmp/keyword.md" >/dev/null 2>&1; then
   echo "obligation gate accepted keyword prose as proof and a prose owner" >&2
   exit 1
 fi
 sed 's/| Not applicable: pure derivation |/| Not applicable |/' "$tmp/good.md" >"$tmp/bare-na.md"
-if scripts/assert-design-obligation-gate.sh --file "$tmp/bare-na.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --file "$tmp/bare-na.md" >/dev/null 2>&1; then
   echo "obligation gate accepted a bare Not applicable without a reason" >&2
   exit 1
 fi
 sed 's/| Not applicable: pure derivation |/| Not applicable: |/' "$tmp/good.md" >"$tmp/empty-na.md"
-if scripts/assert-design-obligation-gate.sh --file "$tmp/empty-na.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --file "$tmp/empty-na.md" >/dev/null 2>&1; then
   echo "obligation gate accepted an empty-delimiter Not applicable" >&2
   exit 1
 fi
 sed 's/| `owner.py` | `owner.py` |/| `owner.py` | pyproject.toml |/' "$tmp/good.md" >"$tmp/toml.md"
-scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/toml.md" >/dev/null || {
+"$engine" validate design-obligations --runtime-required --file "$tmp/toml.md" >/dev/null || {
   echo "obligation gate rejected an unbackticked config-file proof path" >&2
   exit 1
 }
 sed 's/| `owner.py` | `owner.py` |/| `owner.py` | module.mjs |/' "$tmp/good.md" >"$tmp/mjs.md"
-scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/mjs.md" >/dev/null || {
+"$engine" validate design-obligations --runtime-required --file "$tmp/mjs.md" >/dev/null || {
   echo "obligation gate rejected an unbackticked filename outside the old whitelist" >&2
   exit 1
 }
 sed 's/| `owner.py` | `owner.py` |/| `owner.py` | compare e.g. the results |/' "$tmp/good.md" >"$tmp/eg.md"
-if scripts/assert-design-obligation-gate.sh --file "$tmp/eg.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --file "$tmp/eg.md" >/dev/null 2>&1; then
   echo "obligation gate mistook abbreviation prose for a filename" >&2
   exit 1
 fi
 # Matrices shown inside fenced code blocks are documentation, not declarations.
 { printf '```markdown\n'; cat "$tmp/good.md"; printf '```\n'; } >"$tmp/fenced.md"
-if scripts/assert-design-obligation-gate.sh --file "$tmp/fenced.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --file "$tmp/fenced.md" >/dev/null 2>&1; then
   echo "obligation gate read a matrix out of a fenced code block" >&2
   exit 1
 fi
 
 sed 's/| DONE |/| MISSING |/' "$tmp/good.md" >"$tmp/bad.md"
-if scripts/assert-design-obligation-gate.sh --file "$tmp/bad.md" >/dev/null 2>&1; then
+if "$engine" validate design-obligations --file "$tmp/bad.md" >/dev/null 2>&1; then
   echo "obligation gate accepted a missing high obligation" >&2
   exit 1
 fi
 
 sed 's/| HIGH |/| MEDIUM |/; s/| DONE |/| PARTIAL |/' "$tmp/good.md" >"$tmp/medium.md"
-scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/medium.md" >/dev/null || {
+"$engine" validate design-obligations --runtime-required --file "$tmp/medium.md" >/dev/null || {
   echo "obligation gate rejected a valid medium-only matrix" >&2
   exit 1
 }
 
-scripts/assert-design-obligation-gate.sh --runtime-required --file docs/examples/design-obligation-matrix.md >/dev/null 2>&1 && {
+"$engine" validate design-obligations --runtime-required --file docs/examples/design-obligation-matrix.md >/dev/null 2>&1 && {
   echo "example matrix with READY_FOR_RUNTIME passed --runtime-required; negative fixture broken" >&2
   exit 1
 }
-scripts/assert-design-obligation-gate.sh --file docs/examples/design-obligation-matrix.md >/dev/null
+"$engine" validate design-obligations --file docs/examples/design-obligation-matrix.md >/dev/null
 
 repo="$tmp/baseline-repo"
 git init -q -b main "$repo"
@@ -2623,110 +2615,110 @@ if (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared a
   exit 1
 fi
 
-(cd "$repo" && "$root/scripts/frontier.sh" record --score 80 --min-delta 1 --eval "declared eval" >/dev/null)
-if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 79 >/dev/null 2>&1); then
+(cd "$repo" && "$root/bin/metasystem" report frontier record --score 80 --min-delta 1 --eval "declared eval" >/dev/null)
+if (cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 79 >/dev/null 2>&1); then
   echo "frontier challenge accepted a score below the frontier" >&2
   exit 1
 fi
-if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 80.5 >/dev/null 2>&1); then
+if (cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 80.5 >/dev/null 2>&1); then
   echo "frontier challenge forgot the stored noise floor" >&2
   exit 1
 fi
-(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 80.5 --min-delta 0 >/dev/null)
-(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 82 >/dev/null)
+(cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 80.5 --min-delta 0 >/dev/null)
+(cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 82 >/dev/null)
 git -C "$repo" add plans/frontier
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm frontier
-if (cd "$repo" && "$root/scripts/frontier.sh" record --score 75 --eval "declared eval" >/dev/null 2>&1); then
+if (cd "$repo" && "$root/bin/metasystem" report frontier record --score 75 --eval "declared eval" >/dev/null 2>&1); then
   echo "frontier record accepted a regression without --force" >&2
   exit 1
 fi
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=60\neval=declared\nartifact=\n' >"$tmp/frontier-old"
-if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-old" >/dev/null 2>&1; then
+if "$engine" report frontier challenge --score 99 --file "$tmp/frontier-old" >/dev/null 2>&1; then
   echo "frontier challenge compared against an expired frontier" >&2
   exit 1
 fi
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-nowindow"
-scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-nowindow" >/dev/null
-scripts/frontier.sh status --file "$tmp/frontier-nowindow" | grep -qx 'direction=max' || {
+"$engine" report frontier challenge --score 99 --file "$tmp/frontier-nowindow" >/dev/null
+"$engine" report frontier status --file "$tmp/frontier-nowindow" | grep -qx 'direction=max' || {
   echo "frontier status hid the effective direction of a legacy file" >&2
   exit 1
 }
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\ndirection=sideways\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-malformed"
-if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-malformed" >/dev/null 2>&1; then
+if "$engine" report frontier challenge --score 99 --file "$tmp/frontier-malformed" >/dev/null 2>&1; then
   echo "frontier challenge accepted a malformed persisted direction" >&2
   exit 1
 fi
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\ndirection=\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-emptydir"
-if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-emptydir" >/dev/null 2>&1; then
+if "$engine" report frontier challenge --score 99 --file "$tmp/frontier-emptydir" >/dev/null 2>&1; then
   echo "frontier challenge accepted an empty persisted direction" >&2
   exit 1
 fi
 
 # Lower-is-better frontiers: persisted direction, force-gated changes, and a
 # challenge that only ever uses the stored direction.
-(cd "$repo" && "$root/scripts/frontier.sh" record --score 80 --min-delta 1 --direction min --eval "declared eval" --file plans/frontier-min >/dev/null)
+(cd "$repo" && "$root/bin/metasystem" report frontier record --score 80 --min-delta 1 --direction min --eval "declared eval" --file plans/frontier-min >/dev/null)
 git -C "$repo" add plans/frontier-min
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm frontier-min
-if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 79.5 --file plans/frontier-min >/dev/null 2>&1); then
+if (cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 79.5 --file plans/frontier-min >/dev/null 2>&1); then
   echo "min-direction challenge accepted a within-noise improvement" >&2
   exit 1
 fi
-(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 78 --file plans/frontier-min >/dev/null)
-(cd "$repo" && METASYSTEM_FRONTIER_DIRECTION=max "$root/scripts/frontier.sh" challenge --score 78 --file plans/frontier-min >/dev/null) || {
+(cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 78 --file plans/frontier-min >/dev/null)
+(cd "$repo" && METASYSTEM_FRONTIER_DIRECTION=max "$root/bin/metasystem" report frontier challenge --score 78 --file plans/frontier-min >/dev/null) || {
   echo "challenge honored an environment direction instead of the persisted one" >&2
   exit 1
 }
-if (cd "$repo" && "$root/scripts/frontier.sh" record --score 85 --eval "declared eval" --file plans/frontier-min >/dev/null 2>&1); then
+if (cd "$repo" && "$root/bin/metasystem" report frontier record --score 85 --eval "declared eval" --file plans/frontier-min >/dev/null 2>&1); then
   echo "min-direction record accepted a regression without --force" >&2
   exit 1
 fi
-if (cd "$repo" && "$root/scripts/frontier.sh" record --score 99 --direction max --eval "declared eval" --file plans/frontier-min >/dev/null 2>&1); then
+if (cd "$repo" && "$root/bin/metasystem" report frontier record --score 99 --direction max --eval "declared eval" --file plans/frontier-min >/dev/null 2>&1); then
   echo "frontier record accepted a direction change without --force" >&2
   exit 1
 fi
-if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 1 --direction min --file plans/frontier-min >/dev/null 2>&1); then
+if (cd "$repo" && "$root/bin/metasystem" report frontier challenge --score 1 --direction min --file plans/frontier-min >/dev/null 2>&1); then
   echo "frontier challenge accepted a direction flag" >&2
   exit 1
 fi
 
-scripts/assert-stop-loss.sh --file docs/examples/step-back-ledger.md >/dev/null
+"$engine" validate stop-loss --file docs/examples/step-back-ledger.md >/dev/null
 printf '### Cycle C1\n- Classification: no-progress\n### Cycle C2\n- Classification: no-progress\n' >"$tmp/stuck.md"
-if scripts/assert-stop-loss.sh --file "$tmp/stuck.md" >/dev/null 2>&1; then
+if "$engine" validate stop-loss --file "$tmp/stuck.md" >/dev/null 2>&1; then
   echo "stop-loss check allowed a third cycle after two no-progress results" >&2
   exit 1
 fi
 printf -- '- Cycle budget: 2\n### Cycle C1\n- Classification: contract-improved\n### Cycle C2\n- Classification: falsified-continue\n' >"$tmp/spent.md"
-if scripts/assert-stop-loss.sh --file "$tmp/spent.md" >/dev/null 2>&1; then
+if "$engine" validate stop-loss --file "$tmp/spent.md" >/dev/null 2>&1; then
   echo "stop-loss check ignored an exhausted cycle budget" >&2
   exit 1
 fi
 printf '### Cycle C1\n- Classification: falsified-dead-end\n' >"$tmp/deadend.md"
-if scripts/assert-stop-loss.sh --file "$tmp/deadend.md" >/dev/null 2>&1; then
+if "$engine" validate stop-loss --file "$tmp/deadend.md" >/dev/null 2>&1; then
   echo "stop-loss check allowed cycles after a dead end" >&2
   exit 1
 fi
 printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: falsified-continue\n### Cycle E3\n- Classification: unresolved\n' >"$tmp/nogain.md"
-if scripts/assert-stop-loss.sh --file "$tmp/nogain.md" >/dev/null 2>&1; then
+if "$engine" validate stop-loss --file "$tmp/nogain.md" >/dev/null 2>&1; then
   echo "stop-loss check ignored an exhausted no-gain budget over a mixed trailing sequence" >&2
   exit 1
 fi
 printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: contract-improved\n### Cycle E3\n- Classification: unresolved\n### Cycle E4\n- Classification: falsified-continue\n' >"$tmp/nogain-reset.md"
-scripts/assert-stop-loss.sh --file "$tmp/nogain-reset.md" >/dev/null || {
+"$engine" validate stop-loss --file "$tmp/nogain-reset.md" >/dev/null || {
   echo "stop-loss check failed to reset the no-gain count on a contract-improved cycle" >&2
   exit 1
 }
 printf '### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: unresolved\n### Cycle E3\n- Classification: unresolved\n' >"$tmp/nogain-optout.md"
-scripts/assert-stop-loss.sh --file "$tmp/nogain-optout.md" >/dev/null || {
+"$engine" validate stop-loss --file "$tmp/nogain-optout.md" >/dev/null || {
   echo "stop-loss check blocked unresolved cycles without a declared no-gain budget" >&2
   exit 1
 }
 printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n### Cycle E3\n- Classification: falsified-continue\n' >"$tmp/nogain-unclassified.md"
-if scripts/assert-stop-loss.sh --file "$tmp/nogain-unclassified.md" >/dev/null 2>&1; then
+if "$engine" validate stop-loss --file "$tmp/nogain-unclassified.md" >/dev/null 2>&1; then
   echo "stop-loss no-gain count let an unclassified cycle vanish from the tail" >&2
   exit 1
 fi
 printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: not-contract-improved\n### Cycle E3\n- Classification: falsified-continue\n' >"$tmp/nogain-fakegain.md"
-if scripts/assert-stop-loss.sh --file "$tmp/nogain-fakegain.md" >/dev/null 2>&1; then
+if "$engine" validate stop-loss --file "$tmp/nogain-fakegain.md" >/dev/null 2>&1; then
   echo "stop-loss no-gain count reset on a classification merely containing contract-improved" >&2
   exit 1
 fi

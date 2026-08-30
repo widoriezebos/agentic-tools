@@ -12,7 +12,7 @@ import (
 )
 
 // The metasystem audit, the decision engine behind the
-// scripts/audit-metasystem.sh shim: required instruction files, the
+// `metasystem audit metasystem` verb: required instruction files, the
 // outside-reference scan over the explicit metasystem-owned list, the
 // instruction inventories, placeholder checks, the always-loaded word budget,
 // and the report-only common-path bundle.
@@ -36,8 +36,8 @@ func auditScanRoots() []string {
 		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
 		"skills", "optional-skills", "meta",
 		"scripts/validate-metasystem.sh", "scripts/validate-skill.sh",
-		"scripts/assert-design-obligation-gate.sh", "scripts/refactor-baseline.sh", "scripts/frontier.sh",
-		"scripts/receipt.sh", "scripts/assert-stop-loss.sh", "scripts/enforcement",
+		"scripts/refactor-baseline.sh",
+		"scripts/receipt.sh", "scripts/enforcement",
 		"plans/README.md", "memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md",
 	}...)
 }

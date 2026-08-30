@@ -440,7 +440,7 @@ Improvement contract:
 - No-gain budget: 3
 - Non-goals: optimizing model choice, adding retrieval infrastructure, or tuning against holdout questions.
 
-The human-run response bundle records raw answers, selected source ids, cited anchors, provider usage, human scores, effective model/configuration, corpus hash, packet hash, session id, condition, and run id. `score` validates those joins, computes the metrics, and calls `scripts/frontier.sh` for the primary metric. A development gain is not accepted until the holdout replicates it with all guards passing. If the human-run protocol or scoring command cannot be made reproducible within its approved setup budget, or if the candidate misses the target or a guard after the no-gain budget, leave the skill unimplemented or remove the prototype.
+The human-run response bundle records raw answers, selected source ids, cited anchors, provider usage, human scores, effective model/configuration, corpus hash, packet hash, session id, condition, and run id. `score` validates those joins, computes the metrics, and calls `metasystem report frontier` for the primary metric. A development gain is not accepted until the holdout replicates it with all guards passing. If the human-run protocol or scoring command cannot be made reproducible within its approved setup budget, or if the candidate misses the target or a guard after the no-gain budget, leave the skill unimplemented or remove the prototype.
 
 ## Implementation Sequence After Design Approval
 
@@ -448,7 +448,7 @@ The human-run response bundle records raw answers, selected source ids, cited an
 | --- | --- | --- |
 | 1 | After an activation trigger, name the four evaluation roles, freeze the development evaluation, and have the independent custodian seal holdout materials outside builder access | Evaluation self-tests; human-verified source anchors; custody manifest; no wiki exists yet |
 | 2 | Fill the existing project evaluation, accounting, and budget facts | `docs/project-rules.md` has no relevant placeholder; accounting preflight passes |
-| 3 | Run and record every preregistered development direct-source repetition; the custodian separately seals every declared holdout repetition | `scripts/frontier.sh`; exact count of at least three valid repetitions per baseline; custody hashes |
+| 3 | Run and record every preregistered development direct-source repetition; the custodian separately seals every declared holdout repetition | `metasystem report frontier`; exact count of at least three valid repetitions per baseline; custody hashes |
 | 4 | Add `optional-skills/research-wiki/` and runtime metadata | `validate-skill.sh`; metadata fixtures |
 | 5 | Add `optional-skills/research-wiki/scripts/research-wiki.py` with init, capture, select, rebuild-index, and check | Focused positive and negative fixtures |
 | 6 | Content-hash each development candidate version, then independently rebuild the corpus in every preregistered repetition under improve mode | Exact declared count of fresh compilations per version; no result reuse across versions; accepted candidate mean meets the exact target and every aggregate/run guard passes |

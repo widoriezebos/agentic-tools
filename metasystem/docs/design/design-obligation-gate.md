@@ -46,8 +46,8 @@ Allowed status:
 Run:
 
 ```bash
-scripts/assert-design-obligation-gate.sh --file plans/<plan>.md
-scripts/assert-design-obligation-gate.sh --runtime-required --file plans/<plan>.md
+bin/metasystem validate design-obligations --file plans/<plan>.md
+bin/metasystem validate design-obligations --runtime-required --file plans/<plan>.md
 ```
 
 The matrix is semantic work; the script checks structure and declared state. A passing script does not prove that a named owner or test is truthful.
