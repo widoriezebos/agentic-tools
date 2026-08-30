@@ -122,9 +122,14 @@ The whole-paper reread supports that narrower conclusion:
   a hopeful annotation.
 - Chapter 6 requires explicit stopping logic for designed repeated
   proof rounds. It does not require a stop-reason recital on every
-  ordinary fix.
+  ordinary fix. It also warns that fresh instances of one model can
+  share a blind spot and names the evidence conditions that require
+  another source of judgment.
 - Chapter 7 forbids self-acceptance. It does not forbid every
   author/operator overlap.
+- Chapter 10 requires the assumptions that make evidence meaningful
+  to remain visible so drift can reopen a claim instead of appearing
+  as an unexplained failure.
 - Chapter 11 requires proportionality and the smallest sufficient
   machinery. It indicts the unbounded orchestration cost without
   erasing protection that proved useful.
@@ -133,11 +138,13 @@ The whole-paper reread supports that narrower conclusion:
   operator-surface design, not from Chapter 12 itself.
 - Chapter 13 assigns promotion authority here to Wido as legislator;
   the coordinator may propose evidence but may not promote its own
-  mechanism.
+  mechanism. It also requires ownerless rules to be reviewed or
+  withdrawn rather than allowed to govern by inertia.
 - Chapter 14 requires a declared purpose and end condition for
-  coexistence and clean removal on replacement. The landing gates do
-  not automatically replace the full validator because the ledger
-  shows unique full-sweep catches.
+  coexistence, replacement evidence across a declared period, and
+  clean removal on replacement. The landing gates do not
+  automatically replace the full validator because the ledger shows
+  unique full-sweep catches.
 - Chapter 15 requires the current/base authority to judge a proposed
   enforcement change. The new candidate cannot be its own witness;
   promotion needs old-basis evidence.
@@ -162,16 +169,60 @@ recorded review decision.
 
 The status is: retirement ruled; deletion pending.
 
-The retirement is one clean-cut landing:
+The retirement is one clean-cut landing with a preserved rollback
+artifact, not an irreversible deletion:
 
-- Delete `milestone-battery.sh` and `battery.sh`.
-- Remove their validator enrolment and obsolete fixtures.
-- Replace collaboration instructions with the one retained
-  direct-validator command.
-- Require a clean committed subject and record its `HEAD`.
-- Remove clone/controller/checkpoint terminology.
-- Verify that no canonical documentation or runnable path still names
+- Before deletion, tag the last commit containing the wrappers as
+  `battery-orchestration-pre-retirement-20260830`. The tag is the
+  archive owner for `scripts/agents/milestone-battery.sh`,
+  `scripts/agents/battery.sh`,
+  `scripts/agents/battery.conf.local.template`, and
+  `scripts/agents/gate-run-freeze-fixtures.sh`.
+- Prove the restoration route before deletion by materializing those
+  four paths from the tag into a temporary checkout, checking their
+  recorded modes and hashes, and running the archived shell syntax and
+  wrapper fixture entrypoints there. The acceptance test is
+  `TestBatteryRestorationTagMaterializesArchivedWrappers`.
+- Delete `milestone-battery.sh` and `battery.sh`, their private config
+  template, and the wrapper-only `gate-run-freeze-fixtures.sh` bed.
+  Remove the corresponding selector, static-inventory, syntax, and
+  validator-section entries. The direct-owner witness, stage-results,
+  adoption, weight, supervision, and VM tests remain.
+- Replace collaboration instructions with this retained validator
+  command, verbatim:
+
+  ```sh
+  scripts/validate-metasystem.sh
+  ```
+
+- Require a clean committed subject and record its `HEAD` beside the
+  direct run record. Remove clone/controller/checkpoint terminology and
+  verify that no canonical documentation or runnable path still names
   either retired entrypoint.
+
+That landing opens an actively observed replacement-evidence window.
+The condition-class representation is the `id` column in the retained
+`metasystem-validation-stage-results-v1` stage-results file. At the
+archive tag, the m1 coordinator, as named retirement-window custodian,
+freezes the set of section IDs that correspond to real validator
+catch-classes in the twenty-four-row ledger; wrapper setup, copy,
+checkpoint, selector, and controller classes are excluded. On
+terminalization of each of the next two weight-triggered direct
+validations, the steward schedules a diff between that run's complete
+stage-results ledger and the frozen set. A missing section ID, a
+selected section without a classifiable result, or a real condition
+reported outside its owning section is a qualifying miss and reopens
+the retirement immediately. An aborted, invalid, or unclassifiable
+attempt consumes its obligation budget but does not advance the
+two-result window. The custodian brings each diff, not merely the two
+final verdicts, to Wido, the ruling owner.
+
+Reopening does not silently restore either defective wrapper. It
+returns the missing protection and the retirement decision to Wido for
+repair, replacement, or an explicitly authorized restoration from
+`battery-orchestration-pre-retirement-20260830`. The route remains
+tested while the window is open; if the tag or restoration test becomes
+unavailable, the retirement is fail-closed and the window cannot close.
 
 Until every item lands together and the final reference check is
 green, the orchestration is not reported deleted. The parked
@@ -180,21 +231,33 @@ must resolve it.
 
 ## The way out: three laws
 
-1. BUDGET BEFORE GOVERNED EXECUTION. No recurring governed run
-   launches without a human-authorized obligation revision and
-   complete budget. Every attempt and cost is recorded from the same
-   facts; limit exhaustion refuses the next launch and raises the
-   retro.
+1. BUDGET AND ASSUMPTIONS BEFORE GOVERNED EXECUTION. No recurring
+   governed run launches without a human-authorized obligation
+   revision, a complete budget, and the recorded environment, timing,
+   and context assumptions that make its evidence meaningful. Every
+   attempt and cost is recorded from the same facts. Assumption drift
+   reopens the obligation. Terminalization of attempt N owns the
+   exhaustion transition: if N ends non-green at any limit, that red
+   terminal itself raises retro debt and closes admission. A request
+   for N+1 merely observes the already-closed boundary. Forecasts
+   never authorize either action.
 
 2. AUTHORITY ONLY AT THE CONSEQUENCE BOUNDARY. Experiments may exist
    and run, but cannot refuse, discharge, promote themselves, or
    authorize more spend. Human authorization plus old-basis evidence
-   grants bounded authority.
+   grants bounded authority. The authorization also records the
+   Chapter 6 review triggers and satisfies Wido's selected
+   second-model-or-human review policy before the consequence occurs.
 
-3. ONE PRIMARY OWNER PER PROTECTED CONDITION. A new protection names
-   the existing protection, its unique marginal purpose, and its
-   review or replacement condition. A replacement landing deletes
-   the replaced path.
+3. ONE PRIMARY OWNER; REVIEW WHERE TEMPORARY. A new protection names
+   the existing protection, its unique marginal purpose, owner, and
+   review or replacement condition. Every register ruling names its
+   accountable owner when minted. A scheduled review condition is
+   required only when the ruling is temporary, experimental, grants
+   delegated authority, or depends on a named assumption. Stable
+   standing rulings do not acquire recurring review theater. A
+   replacement landing deletes the replaced path; due items are
+   batched under the bounded review sweep below.
 
 Cost lines are a view of the attempt record. Failure retro is the
 terminal output of an exhausted budget. Counselor observation uses
@@ -203,8 +266,14 @@ per-round stop-reason machinery is justified.
 
 ### Consequence-boundary implementation
 
-The first implementation applies only to recurring executions that
-can stop work, retry automatically, or discharge an obligation.
+The first implementation applies only to an execution that is a
+standing shared process or whose output can cause a recognized
+consequence: stop or accept other work, discharge or reset an
+obligation, promote authority, or authorize another governed launch or
+spend. Repetition and automatic retry are not independent governance
+triggers. A self-contained, user-invoked diagnostic remains a free
+experiment even if it loops; it enters Law 1 only when it becomes a
+standing shared process or crosses a recognized consequence boundary.
 
 - Each governed obligation has an immutable revision and a
   human-authorized budget tuple.
@@ -219,6 +288,10 @@ can stop work, retry automatically, or discharge an obligation.
   cannot refuse.
 - Wido authorizes `LIMITED` or `ENFORCED`. The coordinator cannot
   promote, rebudget, or accept its own authority mechanism.
+- The authorization record carries the closed Chapter 6 trigger record
+  and the review outcome required by Wido's selected policy. A missing
+  trigger classification or required review refuses consequence, not
+  construction.
 - The base engine/action boundary, not candidate code, checks the
   authorization.
 
@@ -226,15 +299,170 @@ This governs effect at the consequence boundary. It does not make
 the existence of experiments or commands conditional on a universal
 mechanism lifecycle.
 
-### Cause-blind obligation budget
+#### Model-correlated judgment at that boundary
+
+The activation ruling appends this standing limitation to the rulings
+register verbatim. Its identifier is minted under the existing
+machine-suffixed register-id law:
+
+> MODEL-CORRELATED JUDGMENT — STANDING LIMITATION. Builders, critics,
+> test generators, and proof authors may be instances of the same
+> model family. Fresh context provides context-independence, not
+> model-independence. Agreement among those instances can repeat a
+> shared model, training-data, tool, or assumption blind spot and does
+> not by itself authorize a consequential action. Owner: Wido as
+> legislator. Review class: assumption-dependent. Review condition: the
+> model or human review roster changes, evidence reveals a correlated
+> miss, or the mandatory-review policy is reconsidered.
+
+Each consequence authorization records an executable trigger record,
+not a critic's unstructured conclusion. The closed fields and values
+are:
+
+- `consequenceKind`:
+  `refuse-work|accept-work|discharge-obligation|reset-obligation|reset-weight|promote-authority|authorize-governed-launch|authorize-spend`.
+  This is the complete base action-boundary inventory for the first
+  implementation; adding another governing effect requires adding an
+  enum value, mapper decision, and boundary-inventory test in the same
+  change.
+- `valueJudgment`: `yes|no|unknown`, plus the affected value and people
+  or interests.
+- `irreversibility`:
+  `reversible|compensable|irreversible|unknown`, plus the recovery
+  path.
+- `severeHarm`: `yes|no|unknown`, plus the possible harm, reach, and
+  affected people or systems. This is the structured representation of
+  Chapter 6's separate "possible harm is severe" trigger; it is not
+  inferred from `irreversibility`.
+- `unfamiliarApproach`: `yes|no|unknown`, plus the relevant prior
+  evidence.
+- `testDiscrimination`: `strong|weak|unknown`, plus the checks claimed
+  to distinguish the candidate from its known failure.
+- `correlatedAssumptionRisk`: `yes|no|unknown`, plus the builder,
+  critic, test source, model family, data source, and shared
+  assumptions as far as they are known.
+- `authorityScopeChange`: `yes|no|unknown`, and `destructiveReach`:
+  `none|reversible-local|destructive|unknown`. These two consequence
+  fields make the narrower departure options executable; they are not
+  substituted for Chapter 6's triggers.
+
+Unknown remains unknown; it is never silently stored as no. Any
+participant may raise a trigger. Because the authorization history is
+append-only, a later writer cannot erase it; only the reviewer required
+by the selected policy can append its disposition. A second-model
+review means a different recorded model family, not another fresh
+instance of the same model. It remains evidence rather than proof of
+independence. A human reviewer is an accountable reviewer authorized
+under Chapter 13 and independent of construction. Either review binds
+its result to the exact obligation revision, candidate, environment,
+and proposed consequence. The base action boundary refuses a
+consequence when the selected policy requires such a result and none is
+present.
+
+The mapping from trigger data to mandatory review, and acceptance of
+the resulting model spend and human-attention cost, is HIS ruling:
+
+| Wido's policy option | Executable mapper over the recorded fields | Compliance, cost, and residual risk |
+|---|---|---|
+| A — Chapter 6 implementation | Require authorized human review when `valueJudgment=yes|unknown`; `irreversibility=irreversible|unknown`; `severeHarm=yes|unknown`; `unfamiliarApproach=yes|unknown` together with `testDiscrimination=weak|unknown`; or `correlatedAssumptionRisk=yes|unknown`. A second-model critique may support but cannot replace the human. | This is the Chapter 6-compliant option. It has the highest human load and delay and the least exposure to model-correlated agreement. |
+| B — Tiered, recorded departure | Apply A's human path to value, irreversibility, and severe harm. For unfamiliar/weakly discriminating work or correlated-assumption risk, require a recorded different-model critique; escalate a material finding, unknown, or inability to prove a different model family to a human. | This is a departure from Chapter 6 because a model result replaces mandatory human review for two trigger classes. Wido must accept that departure in the activation ruling. It buys lower human load at the cost of residual cross-model correlation and classification dependence. |
+| C — Narrow, recorded departure and daily-use-safe start | Require human review for `authorityScopeChange=yes|unknown`; require a different-model critique for `destructiveReach=destructive|unknown`; require no additional reviewer below those thresholds. All recognized consequences still need traceable intent, exact-candidate evidence, and base-boundary authorization. | This is a deliberate departure from Chapter 6 for every lower trigger class. It is the only currently described daily-use-safe start because it adds the least routine review ceremony; Wido must explicitly accept the omitted Chapter 6 protection and its residual risk. |
+
+No option is selected by this design. Wido must select or replace one
+in the activation ruling; Law 2 cannot enter `LIMITED` or `ENFORCED`
+without that choice.
+
+### One activation package
+
+Activation is one bounded check-in, not a series of interruptions. It
+contains: authorization of the three laws; Wido's selected Law 2
+policy and any accepted Chapter 6 departure; the first complete budget
+for the retained milestone-validator obligation; the model-correlated
+standing limitation; the one class-level legacy adoption ruling
+specified below; and a superseding correction to R-21-m1.
+
+The R-21-m1 correction is append-only. Activation appends a newly
+minted machine-suffixed row; it does not rewrite the August 30 row. Its
+ruling text is:
+
+> SUPERSEDES R-21-m1 FOR COUNT AND BREAKER SEMANTICS. The incident had
+> twenty-four launches, not twenty-three. Every terminal attempt is
+> cause-blind budget use, including setup failure, refusal, abort,
+> invalid result, and a changed red; "N consecutive reds" is withdrawn.
+> Terminalization of non-green attempt N raises retro debt and closes
+> admission when any human-set limit is reached. A request for N+1 only
+> observes that existing fence. Owner: Wido as legislator. Review class:
+> assumption-dependent until the first live exhaustion test passes;
+> review event: that test or evidence that a terminal class escaped
+> accounting.
+
+R-21-m1 remains readable history and is marked superseded by the new
+row's context. The three laws do not activate unless this correction is
+in the same accepted package.
+
+### Governed obligation record and cause-blind budget
+
+The recurring obligation is the existing claimed goal revision; no new
+obligation registry or predicate language is created. This is an
+evidence-from-use candidate addition to Chapter 16, not a claim that
+the paper's open portfolio-allocation problem is solved. The existing
+goal record is extended with one typed `EvidenceAssumptions` value for
+the facts the engine can already observe:
+
+- `platform`: the supported operating-system/architecture token;
+- `toolchainIdentity`: the recorded toolchain identity;
+- `surfaceDigest`: the exact behavior-surface digest;
+- `maxActiveJobs`: the greatest permitted observed active-job count
+  for the evidence; and
+- `timingEnvelopeSeconds`: the maximum terminal run duration for which
+  the evidence claim is valid.
+
+The run record carries the matching typed observation:
+`observedAt`, `platform`, `toolchainIdentity`, `surfaceDigest`,
+`activeJobs`, `durationSeconds`, and
+`assumptionState=match|drift|unavailable`, plus a closed list of the
+fields that drifted. Equality owns the first three comparisons;
+`activeJobs <= maxActiveJobs` and
+`durationSeconds <= timingEnvelopeSeconds` own the other two. There is
+no string expression, generic predicate, or evaluator plug-in. An
+assumption that cannot be expressed with these current observations
+cannot authorize governed evidence until a separately justified typed
+field is added.
+
+The steward tick is the evaluator. It records the admission observation
+before launch, re-evaluates current platform, toolchain, surface, and
+active-job facts on every tick while the run is live, and evaluates
+duration at terminalization. An unavailable observation is
+`assumptionState=unavailable` and fails closed exactly like drift:
+admission refuses before launch, or the terminal attempt counts but
+cannot discharge the obligation and reopens it with
+`ASSUMPTION_DRIFT`. Drift never resets the cause-blind counter. The
+former unstated 600-second expectation is represented directly as
+`timingEnvelopeSeconds=600` together with its actual platform,
+toolchain, surface digest, and active-job ceiling.
 
 Every recurring governed obligation carries a human-set attempt,
-elapsed-time, and execution-cost budget. Every admitted launch
-counts, regardless of failure cause. A different red does not reset
-the counter. Successful discharge or a human-authorized obligation
-revision may reset it. At any limit, admission refuses the next
-launch, preserves all evidence, raises retro debt, and requires a
-recorded reduce/redesign/retire/extend decision.
+elapsed-time, and execution-cost budget. This is one projection of the
+existing four-field goal `Budget`, not a second tuple:
+`attemptLimit` is the attempt limit, `elapsedLimit` is the elapsed
+limit, and `reservedJobMinutesLimit` is the aggregate execution-cost
+limit in minutes across jobs and governed runs;
+`activeJobLimit` remains the fourth concurrency limit. Governed runs
+reserve declared minutes and terminal records replace the reservation
+with observed whole minutes in the same budget projection.
+
+Every admitted launch counts, regardless of failure cause. A different
+red does not reset the counter. Successful discharge or a
+human-authorized obligation revision may reset it. On terminalization
+of attempt N, the terminal transition applies the observation and cost,
+then checks all limits. If the attempt is non-green and any limit is
+reached, that same terminal record sets `exhausted`, appends retro debt,
+preserves all evidence, and closes admission before it reports
+completion. The next launch is refused because the fence already
+exists; no request for N+1 is needed to produce learning. Extension
+requires one recorded
+reduce/redesign/retire/extend decision and a complete replacement
+budget on a new human-authorized goal revision.
 
 The tuple is complete and human-set. The machinery does not infer a
 number from prose, insert a default, add grace, or reset on a new
@@ -245,7 +473,17 @@ Continue-and-collect remains inside one run so an expensive attempt
 teaches everything its declared dependencies permit. The budget
 boundary controls whether another run may launch.
 
+Forecasts remain typed inferences in the run report. They cannot alter
+the tuple, clear `ASSUMPTION_DRIFT`, discharge the obligation, or
+authorize another attempt. This is the evidence-backed prediction-
+laundering rule and remains a candidate paper addition; here it is
+enforced by the existing admission boundary rather than by a new
+optimism detector.
+
 ### Independent economic path
+
+This path is a target state conditional on the queued counselor goal
+landing; it is not credited as present assurance:
 
 - Counselor observes proof cost, process/product inversion, and
   repeated unsupported assurances, then reports them to Wido without
@@ -257,6 +495,15 @@ boundary controls whether another run may launch.
 - Coordinator supplies records and implements the ruling. It cannot
   close or lower the review.
 
+The reconciled ledger's verifier, orchestration, product, fixture, and
+decision-error classifications remain narrative evidence. They are not
+collapsed into a ratio or used as a mechanical extension metric: the
+rows permit mixed conditions and do not contain a reproducible primary-
+cause numerator. The cause-blind breaker owns the stop. Once the queued
+counselor goal lands, the counselor may cite the rows and cumulative
+cost in an independent value brief, but no assurance claim in this
+design depends on that unlanded path.
+
 Economist sensing merges into the counselor charter, and the
 economist goal closes as a duplicate. If Wido wants a separate
 economist, R-1’s conflict test runs first: name a power that the
@@ -264,35 +511,96 @@ counselor cannot lawfully hold, prove that combining it would create
 a responsibility conflict, and obtain human approval for the new
 seat.
 
+### Ruling ownership and review sweep
+
+The standing rulings register remains the one ruling record. A new or
+superseding ruling cannot acquire governing effect unless its row names
+one accountable owner at minting. It carries a review date or observable
+event only when explicitly classified
+`temporary|experimental|delegated-authority|assumption-dependent`.
+Stable standing rulings have no scheduled review. Corrections,
+class-level adoption, review, and withdrawal append superseding
+entries; they never rewrite history.
+
+The existing `ruling-review-sweep` goal owns the steward addition. The
+sweep evaluates only active rulings in those four review classes. Due
+items are delivered in one check-in digest, at most once per rolling
+twenty-four hours, with a hard ceiling of five decision items. Overflow
+remains visible and rolls into the next digest; it never creates extra
+interruptions. Each item carries its owner, due evidence, and one
+bounded adopt/revise/withdraw choice. Until disposition, an expired
+ruling cannot grant new acceptance, spend, or broader authority; an
+existing protective refusal remains fail-closed and names the appeal.
+
+Legacy migration is one class-level adoption ruling in the activation
+package, not one question per old row. It assigns Wido as accountable
+owner for the pre-activation stable human rulings as a class and lists
+only exceptions: R-14 and R-20b are expired temporary overnight
+delegations to withdraw; R-3 is assumption-dependent and enters the
+retirement-window review; and R-21-m1 is superseded by the correction
+above. Any additional exception discovered by the register scan is
+listed in that same row before Wido accepts it. The migration therefore
+costs one ruling and one bounded exception list, not twenty-two
+adopt-or-withdraw decisions.
+
+This adds no record-writer coordinator. The landed machine-suffixed ID
+minting law prevents concurrent ID collisions, and the landed union
+merge for append-only registers preserves concurrent rows. Before
+building a competing register repair, the recorded origin/sibling
+check is still required. These concurrent-writer laws are evidence-
+backed candidate additions to Chapter 8; the design references their
+existing owners rather than replacing them.
+
 ### Duplicate-pair dispositions
 
 - Full-validator launchers: retain one admitted full-validator path
   and delete both wrappers.
-- Coverage delta: make `commit.sh`, or one shared lower-level
-  function, the sole execution owner. `land.sh` passes any ratchet
-  argument through instead of running the check twice.
+- Coverage delta: `scripts/agents/commit.sh` is the single execution
+  owner. `land.sh` removes its own execution and passes `--ratchet`
+  through to `commit.sh`, so one prospective commit produces exactly
+  one delta verdict.
 - Per-landing delta versus full ratchet: retain both provisionally
   with distinct purposes. The delta stops coverage debt at the
   landing that creates it; the full ratchet audits the repository.
-  After a declared milestone window, the coverage owner reviews
-  whether the full sweep still catches unique debt.
+  The m1 coordinator is the coverage-review owner. After the same next
+  two classifiable weight-triggered direct validations used by the
+  retirement window, the coordinator compares their full-ratchet
+  findings with every intervening `commit.sh` delta verdict and brings
+  Wido the unique-catch set. Zero unique catches is evidence to retire
+  the full ratchet; any unique catch retains it and names the missing
+  delta protection.
 - Counselor versus economist: merge unless a human-approved R-1
   power conflict justifies separation.
 - `run` versus standalone shell custody: only admitted `run`
   evidence may discharge a governed obligation.
-- VM versus adopt bed: retain them with their separate invariant
-  statements and separate review conditions.
+- Adoption bed: `scripts/adopt-fixtures.sh` owns the invariant that a
+  freshly adopted delivered tree contains the declared payload,
+  preserves app-owned bytes, and validates using its own shipped
+  engine and configuration. Its stage-results condition class is
+  `adoption-fixtures`. The m1 coordinator is the named adoption
+  custodian; review event: the delivered payload or adoption contract
+  changes.
+- VM validation: the m1 coordinator, as named supported-platform
+  custodian, owns the invariant that the retained direct
+  validator succeeds on the declared Lima/Debian guest with the guest's
+  actual kernel, filesystem, process table, shell tools, and Go
+  toolchain. Review event: the supported platform, guest image, or
+  toolchain contract changes. Adoption green cannot discharge VM
+  validation, and VM green cannot discharge adoption.
 
-## Minimal ownership and proof matrix
+## Minimal ownership and acceptance matrix
 
-| Obligation | Decision owner | Mechanical owner | Acceptance evidence |
-|---|---|---|---|
-| Incident record | Post-mortem owner | Reconciled envelope ledger | 24 rows sum exactly |
-| Attempt budget | Wido | Run/steward admission | N+1 refused at boundary |
-| Rule activation | Wido as legislator | Base action boundary | Exact accepted revision and scope |
-| Economic warning | Counselor | Steward carriage | Durable brief delivered independently |
-| Orchestration retirement | R-21 custodian | Same deletion landing | No code/docs reference remains |
-| Duplicate protection | Named condition owner | Existing gate owner | Purpose plus review/end condition |
+| Obligation or law | Ruling or decision owner | Mechanical owner | Review condition | Acceptance evidence |
+|---|---|---|---|---|
+| Incident record | Post-mortem owner | Reconciled envelope ledger | A source contradicts a classified row or total | 24 rows sum exactly |
+| Law 1 — budget and assumptions | Wido as legislator | Run terminalization plus steward observation | First live exhaustion; any launch past a limit; or any drift/unavailable observation | Attempt N itself raises retro and closes admission; `ASSUMPTION_DRIFT` reopens without reset |
+| Law 2 — consequence authority | Wido as legislator | Base action boundary | Review-policy, model-roster, authority-scope, or missed-trigger change | Exact accepted revision, executable trigger data, required independent result, and scope |
+| Law 3 — ownership and scoped review | Wido as legislator | Standing-register custodian plus steward sweep | A temporary, experimental, delegated-authority, or assumption-dependent ruling becomes due | Owner present at minting; one digest per 24 hours, at most five items, with overflow retained |
+| Economic warning | Counselor once its queued goal lands | Steward carriage | Budget extension or process/product inversion evidence | Narrative evidence and cost brief delivered independently; no ratio |
+| Orchestration retirement | Wido as ruling owner | m1 coordinator plus steward observer | A stage-results section-ID miss, unavailable restoration, or completion of two classifiable direct validations | Per-run catch-class diff; tested tag restoration; no live wrapper reference |
+| Coverage pair | Wido decides retention | `commit.sh` executes; m1 coordinator reviews | Two classifiable direct validations complete | One delta execution per commit plus a named unique-catch comparison |
+| Adoption protection | Wido decides contract change | `scripts/adopt-fixtures.sh`; m1 coordinator is adoption custodian | Delivered-payload or adoption contract changes | `adoption-fixtures` proves the delivered-tree invariant independently of VM proof |
+| VM protection | Wido decides platform change | Direct validator on Lima; m1 coordinator is platform custodian | Guest image, supported platform, or toolchain contract changes | Guest-native direct validation proves the environment invariant independently of adoption |
 
 ## Round 1 dispositions
 
@@ -309,167 +617,224 @@ seat.
 | BPM-09 | Corrected status to “retirement ruled; deletion pending” and specified the one-landing clean cut. |
 | BPM-10 | Disposed of each current duplicate pair, while retaining the coverage pair provisionally and VM/adopt as distinct protections with review conditions. |
 | BPM-11 | Replaced the proposed mechanism family with three laws and one shared attempt record, then assigned owners and acceptance proof in the matrix. |
+| Round 2 pre-critique note | Superseded by the accepted Round 2 dispositions below. The final fold keeps three laws and one existing goal/run record family, but removes the ratio, universal ruling reviews, retry-as-governance, and the certainty claim. |
 
-## The proof (m1, written over the folded design, as demanded)
+## Round 2 dispositions — all eleven accepted
 
-Wido's demand: prove that this design fixes all the fuck-ups around
-the battery so they can never happen again. Proof, well argued.
+| Finding | What changed |
+|---|---|
+| 1 — authoritative R-21 | Made the activation package append a machine-suffixed ruling that supersedes R-21-m1's 23-run and consecutive-red language; history is not rewritten. |
+| 2 — duplicate dispositions | Named `commit.sh` as the sole coverage-delta executor, `land.sh` as pass-through, the two-direct-validation review window and m1 review owner, and separate adoption/VM invariants, custodians, stages, and review events. |
+| 3 — executable Chapter 6 policy | Replaced mismatched prose with closed trigger fields, added `severeHarm` and test strength explicitly, made A the Chapter 6 implementation, and marked B/C as recorded departures; C remains the daily-use-safe start. |
+| 4 — retirement evidence | Added the named restoration tag and restoration test, an active steward observer, per-run diffs owned by the m1 custodian, and stage-results section `id` as the condition-class representation. |
+| 5 — assumption drift | Put fixed typed assumption and observation fields on the existing goal/run records, assigned evaluation to the steward tick, and made unavailable observation fail closed. |
+| 6 — non-reproducible ratio | Deleted the 13/24 ratio and counselor-specific metric workflow; the ledger classifications remain narrative evidence and the cause-blind breaker owns stopping. |
+| 7 — exhaustion timing | Assigned exhaustion to terminalization of attempt N. The red terminal raises retro and closes admission; N+1 is not the learning trigger. |
+| 8 — certainty overclaim | Deleted the necessary-conditions proof and its one-condition conclusion. The replacement is the conditional assurance matrix below, including explicit rows for boundary completeness, independent trigger classification, and the unlanded counselor path. |
+| 9 — implementation readiness | Added the appendix below with target files, the single budget-family projection, goal/run binding and transaction semantics, exact validator command, obsolete fixture list, command grammar, and named acceptance tests. |
+| SIM-1 — free experiments | Deleted automatic retry as an independent governance trigger. Only standing shared execution or a recognized consequence enters governance. |
+| SIM-2 — bounded ruling attention | Kept ownership mandatory at minting, limited review conditions to four non-stable classes, batched due items into one five-item daily digest, and replaced per-row legacy review with one class-level adoption ruling and exception list. |
 
-THE CLAIM, stated precisely. Two parts. Part A, argued to certainty:
-the observed disaster class — an unbudgeted recurring obligation
-retried without bound, its aggregate cost invisible, judged only by
-its own author, its learning gated on its own success, with human
-conduct as the only safeguard — CANNOT RECUR once the three laws are
-active, because the disaster is a conjunction and every conjunct is
-mechanically negated at a boundary my conduct cannot cross. Part B,
-argued honestly: novel failure classes are not excluded by any finite
-design — but under the same laws any novel runaway is BOUNDED and
-LOUD by construction, so the specific inexcusable shape — thirty
-hours and twenty-four launches before a human forces the question —
-is impossible for ANY future mechanism, known or novel.
+## Conditional assurance matrix: bounded assurance under named prerequisites
 
-PART A, BY NECESSARY CONDITIONS. The disaster required ALL of:
+The honest headline is **bounded assurance under named prerequisites,
+never certainty**. These rows state what must be true for each boundary
+to constrain this incident class, how that prerequisite can fail, and
+the focused test that must make the dependency visible. A missing or
+red row reduces the assurance; activation does not talk around it.
 
-(1) EXISTENCE WITHOUT A BUDGET. Negated by Law 1: a recurring
-governed run does not launch without a human-authorized revision and
-complete budget tuple. The refusal sits in run/steward ADMISSION in
-the base engine — the same boundary that already refuses budgetless
-goal claims today, a mechanism proven refusing in production. I
-cannot supply the tuple myself: R-13 (machinery never invents
-values) already binds, and Law 2 forbids the coordinator rebudgeting
-its own mechanism. The battery existed unbudgeted for ten days; under
-Law 1 it cannot exist governed for one launch.
+| Boundary | Prerequisite | Failure mode | Code owner | Acceptance test |
+|---|---|---|---|---|
+| Governed-run admission | **Boundary completeness:** every standing shared process is launched or registered through the governed `run` path and bound to a claimed goal revision. | An unenumerated launcher spends outside the attempt and cost projection. | `cmd/metasystem/run.go` | `TestGovernedExecutionBoundaryCoversStandingProcesses` |
+| Recognized consequence | **Boundary completeness:** refuse/accept work, discharge/reset obligation, promote authority, and authorize governed launch/spend all call one base authorization check. | A new or side-channel consequence takes effect without trigger data or authority. | `internal/authority` | `TestConsequenceBoundaryInventoryCoversEveryRecognizedEffect` |
+| Trigger disposition | **Classification independence:** the builder may propose fields but cannot be the only classifier or erase a raised trigger; the policy-required reviewer appends the disposition. | Author-controlled `no` values bypass the selected review policy. | `internal/authority` | `TestTriggerClassificationRequiresIndependentDisposition` |
+| Attempt terminalization | The goal reservation and terminal run record share an idempotent operation identity, and terminalization checks the post-attempt projection. | Attempt N turns red but retro/fence creation waits for N+1 or is lost between records. | `internal/run` | `TestTerminalAttemptRaisesRetroDebtAtExactLimitWithoutAnotherLaunch` |
+| Budget projection | Governed run attempts, elapsed time, and minutes join the existing goal `Budget`; pending accounting is treated as spent. | A second tuple diverges, or a crash makes cost disappear and admission reopen. | `internal/goal` | `TestExecutionCostProjectsIntoExistingGoalBudget` |
+| Assumption observation | The steward can read every fixed observation before launch and at terminalization; unavailable is fail-closed. | Stale or unobservable evidence discharges an obligation as if assumptions matched. | `internal/steward` | `TestGovernedRunLaunchRefusesUnavailableAssumption` |
+| Independent economic warning | **Counselor landing:** the queued counselor goal and steward carriage have landed and their live delivery test passes. Until then, the breaker works but no independent economic-warning assurance is claimed. | The coordinator remains the only source of a value warning, or the design claims an unlanded seat. | `internal/steward` | `TestCounselorWarningReachesDigestWithoutCoordinator` |
+| Ruling review | Minting enforces an owner; only the four scoped classes become due; the steward preserves overflow beyond the five-item daily ceiling. | Ownerless authority governs, or routine reviews create an unbounded Wido inbox. | `internal/steward` | `TestRulingReviewDigestCeilingAndOverflow` |
+| Retirement observation | Both direct validations publish complete stage-results ledgers, and the steward diffs section IDs against the frozen catch-class inventory. | A retained check disappears while the two verdicts still look classifiable. | `internal/steward` | `TestRetirementWindowDiffsStageResultIDs` |
+| Retirement restoration | The named tag remains readable and the archived wrappers, modes, hashes, and fixture entrypoints materialize in a temporary checkout. | A qualifying miss occurs but the promised restoration route is gone or untested. | `scripts/validate-metasystem.sh` | `TestBatteryRestorationTagMaterializesArchivedWrappers` |
 
-(2) UNBOUNDED RETRY. Negated by the cause-blind budget: every
-admitted launch counts — setup failures, aborts, stale subjects,
-invalid results included — and a different red does not reset the
-counter. This is not conduct; it is the same admission check reading
-the same attempt record. Launch N+1 past the limit is REFUSED the
-way an over-budget reservation is refused today. The twenty-four
-launches happened because nothing counted; under Law 1 the count IS
-the admission input.
+## Implementation appendix
 
-(3) INVISIBLE AGGREGATE COST. Negated structurally, not by a
-reporting habit: the attempt record that admission reads is the cost
-line — one fact store, two views. The narrator digest renders it
-(delivery proven live in every Stop payload since the digest
-landing), but even if narration failed entirely, admission still
-refuses at the limit, because visibility and enforcement read the
-same record. The disaster needed cost to be both unenforced and
-unseen; now enforcement does not depend on seeing.
+### Target files and responsibilities
 
-(4) SELF-JUDGMENT AND SELF-PROMOTION. Negated by Law 2: no mechanism
-acquires governing effect — refusing work, discharging an
-obligation, resetting weight, authorizing spend — without Wido's
-recorded authorization checked at the base action boundary, per
-ch.13 (legislator) and ch.15 (a change cannot be its own witness).
-DRAFT and OBSERVE states can only record what they would have done.
-I authored, operated, and judged the battery; under Law 2 the third
-seat is structurally not mine to hold, and the check runs in the
-base engine, not in anything I can edit into agreement.
+| Target | Required change |
+|---|---|
+| `internal/goal/budget.go` | Keep `Budget` as the only limit family. Extend its projection to include governed-run reservations and terminal minutes; do not add an obligation tuple. |
+| `internal/goal/file.go`, `internal/goal/verbs.go`, `internal/goal/validate.go` | Store the typed `EvidenceAssumptions`, append idempotent attempt reservations/terminal accounting and retro debt to the exact claimed revision, validate complete fields, and reject hand-edited or partial state. |
+| `internal/run/run.go`, `internal/run/verbs.go` | Extend the existing run record and launch parameters with the obligation binding and observation fields below; make every terminal class consume its reservation; make terminalization own exhaustion. |
+| `cmd/metasystem/run.go` | Add the governed `--goal` and `--reserved-min` grammar to launch/register, populate the currently empty `GoalId`, resolve and record the claimed revision, and leave unbound diagnostics unable to cause a recognized consequence. |
+| `internal/authority/authority.go`, `cmd/metasystem/authority.go` | Own the closed consequence and trigger enums, the A/B/C mappers, append-only trigger raising/disposition, and the inventory of every recognized consequence. |
+| `internal/steward/tick.go`, `internal/steward/health.go`, `internal/steward/narrate.go` | Evaluate assumptions, heal pending terminal accounting, carry retro and cost lines, produce the bounded ruling digest, and run the retirement stage-ID observer. Counselor carriage is added here only when its existing queued goal lands. |
+| `scripts/agents/commit.sh`, `scripts/agents/land.sh`, `scripts/agents/land-fixtures.sh` | Execute the staged coverage delta once in `commit.sh`; pass the optional ratchet argument through `land.sh`; prove one execution and one verdict. |
+| `scripts/agents/milestone-battery.sh`, `scripts/agents/battery.sh`, `scripts/agents/battery.conf.local.template`, `scripts/agents/gate-run-freeze-fixtures.sh` | Delete these wrapper-owned paths after the named restoration tag and restoration test exist. |
+| `scripts/validate-metasystem.sh`, `scripts/agents/validate-section-selector.sh`, `docs/collaboration.md` | Retain the direct validator and stage-results format, remove wrapper inventory/selector/docs, add the retirement observer and restoration acceptance legs. |
+| `memory/rulings.md` | In the activation change only, append the R-21 correction and one legacy class-adoption row with owners/exceptions; never rewrite existing rows. |
 
-(5) SUCCESS-GATED LEARNING. Negated by making the failure retro the
-TERMINAL OUTPUT of an exhausted budget: the retro debt rises at the
-halt, mechanically, from the same admission event. The battery's
-retro was waiting for the green that never came; under Law 1 the
-retro is what exhaustion produces.
+### One budget family and the run binding
 
-(6) CONDUCT AS THE LAST SAFEGUARD. Negated by composition: every
-negation above fires at an admission or action boundary in the base
-engine. My optimism cannot authorize a launch (the binding forecast
-rule: forecasts never authorize; only the recorded budget does — and
-the budget is not mine to set). My diligence is no longer required
-for any protection to hold; it is redundant on top of refusal. The
-counselor-steward carriage delivers the economic warning on the
-steward's schedule, which I cannot suppress — the independent seat
-uses machinery that already survives me (the steward has run
-unattended through this entire saga).
+The Law 1 three-control language is a projection of the current
+four-field `goal.Budget`: `elapsedLimit`, `attemptLimit`, and
+`reservedJobMinutesLimit` control elapsed time, attempts, and aggregate
+execution minutes; `activeJobLimit` continues to bound concurrency.
+`budget.go` remains the only parser, validator, and formatter. Runs and
+jobs both feed the existing projection for the bound goal revision.
+There is no `ObligationBudget`, no second cost unit, and no default.
+The cost unit is one execution minute: a live run reserves the positive
+integer supplied at admission; terminal accounting charges
+`ceil(observed duration / one minute)`, with a nonzero attempt charging
+at least one minute, and releases any unused reservation.
 
-A conjunction with every conjunct false is false. The observed
-disaster class cannot recur. That is Part A, and I state it with
-certainty CONDITIONAL on exactly one thing, named below.
+`run.Record` keeps its existing `GoalId` and adds:
 
-EVIDENCE COMPLETENESS. The twenty-four-row ledger above assigns
-every launch of the saga to a terminal class. Walk the classes:
-orchestration self-defects (the largest class) die with the deleted
-orchestration — a mechanism that does not exist cannot fail; its
-deletion is verified by the clean-cut landing spec (no runnable path
-or doc names the retired entrypoints). Debt-discovery reds (coverage,
-callers, fixture-law lag) are covered by per-landing gates that run
-at every landing at real HEAD — and those gates are themselves
-protected by Law 3's single-owner rule from silently duplicating or
-decaying. The two real product defects are found identically by the
-retained direct validator — retirement removed the wrapper, not one
-check. Coordinator decision errors (double-launch, stale-subject
-launch, landing past a red gate) are absorbed by (2): they consume
-budget and hit the breaker instead of compounding invisibly. No row
-of the ledger falls outside a negated class. The mapping is total
-over everything observed.
+- `GoalRevision uint64` — exact claimed revision resolved by the engine;
+- `AttemptOrdinal uint64` — cause-blind ordinal allocated by the goal
+  transaction;
+- `ReservedMinutes uint64` — the declared reservation from
+  `--reserved-min`;
+- `AssumptionObservation` — the fixed fields and state defined above;
+  and
+- `GoalAccountingState pending|applied` plus the idempotent accounting
+  operation ID.
 
-PART B, THE HONEST BOUNDARY. Per ch.6 and ch.15, no proof exceeds
-its boundary, and a design cannot exclude failure classes nobody has
-imagined — claiming otherwise would be the exact fluent false
-certainty that fed this disaster. What the laws guarantee for ANY
-future mechanism, novel failures included: it launches with a
-human-set budget or it has no governing effect at all; it spends at
-most its tuple before admission halts it and raises the retro; its
-cumulative cost is one durable record readable by human, counselor,
-and admission alike; and it cannot judge or promote itself. The
-worst possible novel failure is therefore: a mechanism spends
-exactly its human-authorized budget, stops, and files for its own
-post-mortem — in the open, at a cost Wido chose in advance. The
-inexcusable shape — unbounded, invisible, self-judged — is
-unreachable for mechanisms that do not yet exist, which is the
-strongest claim about the unknown that honesty permits.
+The public governed forms are:
 
-THE ONE CONDITION. This proof holds when the three laws are LANDED
-and ACTIVATED — and per Law 2 itself, activation is Wido's act as
-legislator, not mine. Until his word, the protections are conduct,
-and conduct is exactly what this document proves insufficient. The
-proof therefore ends in a request, not a declaration: authorize the
-three laws, and the machinery makes this class of failure
-impossible; every day before that word, the only safeguard is the
-one that already failed.
+```sh
+bin/metasystem run launch --root <root> --id <run-id> --kind <kind> --display <line> --log <path> --goal <goal-id> --reserved-min <positive-int> -- <command...>
+bin/metasystem run register --root <root> --id <run-id> --kind <kind> --display <line> --log <path> --goal <goal-id> --reserved-min <positive-int> --pid <pid>
+```
+
+The engine, not the caller, resolves `GoalRevision` and
+`AttemptOrdinal`. A free diagnostic omits `--goal`; base consequence
+verbs reject its evidence. A standing shared process must supply the
+governed binding even when it cannot itself cause another consequence.
+
+Admission is one write-ahead protocol. The goal transaction first
+reserves the ordinal and minutes under the run ID/operation ID, checks
+the budget and current assumption observation, and then the run store
+writes the pending record before spawn, preserving today's launch
+ordering. Failure to write or spawn terminalizes that same reservation
+as `launch-failed`; retrying the operation ID returns the existing
+reservation. At terminalization, the run lock writes the terminal
+status, observed minutes, assumption state, exhaustion result, and
+retro intent together, then idempotently projects them into the goal
+record. If the goal write is interrupted, `GoalAccountingState=pending`
+is itself spent and admission stays closed; the steward tick completes
+the projection. Thus no cross-record crash can make attempt N or its
+retro disappear.
+
+### Retained command and obsolete fixtures
+
+The retained validator command is exactly:
+
+```sh
+scripts/validate-metasystem.sh
+```
+
+The obsolete list is exact: delete
+`scripts/agents/milestone-battery.sh`,
+`scripts/agents/battery.sh`,
+`scripts/agents/battery.conf.local.template`, and
+`scripts/agents/gate-run-freeze-fixtures.sh`; remove only their rows
+from the validator asset inventory, shell-syntax list, section
+selector, and collaboration text. Keep
+`scripts/agents/witness-gate-fixtures.sh`,
+`scripts/agents/suite-progress-fixtures.sh`,
+`scripts/adopt-fixtures.sh`, the `internal/gaterun` tests, the direct
+stage-results writer, and VM validation.
+
+### Focused acceptance tests
+
+| Owner | Test names |
+|---|---|
+| Goal/run budget | `TestGovernedRunLaunchBindsClaimedGoalRevision`; `TestEveryAttemptTerminalClassConsumesBudget`; `TestExecutionCostProjectsIntoExistingGoalBudget`; `TestTerminalAttemptRaisesRetroDebtAtExactLimitWithoutAnotherLaunch`; `TestPendingTerminalAccountingKeepsAdmissionClosed` |
+| Assumptions | `TestGovernedRunLaunchRefusesUnavailableAssumption`; `TestStewardReopensOnTypedAssumptionDrift`; `TestTimingEnvelopeSixHundredSecondsUsesObservedLoadFields` |
+| Consequence authority | `TestConsequencePolicyAImplementsChapter6TriggerSchema`; `TestConsequencePoliciesBandCAreRecordedDepartures`; `TestConsequenceBoundaryInventoryCoversEveryRecognizedEffect`; `TestTriggerClassificationRequiresIndependentDisposition` |
+| Simplicity boundary | `TestFreeRepeatingDiagnosticHasNoGovernanceRecord`; `TestStandingSharedProcessRequiresGovernedBinding` |
+| Rulings | `TestRulingMintRequiresOwnerAndScopedReview`; `TestRulingReviewDigestCeilingAndOverflow`; `TestLegacyRulingsMigrateByOneClassAdoption` |
+| Duplicate and retirement | `TestCoverageDeltaRunsOnceThroughCommit`; `TestAdoptionAndVMInvariantsRemainSeparate`; `TestRetirementWindowDiffsStageResultIDs`; `TestBatteryRestorationTagMaterializesArchivedWrappers` |
 
 ## The paper and the design, reconciled (m1, on Wido's order)
 
-IN LINE: Law 1 applies ch.5/ch.11 budgets-that-stop; Law 2 applies
-ch.13 legislator authority and ch.15 no-self-witnessing; Law 3 and
-the retirement apply ch.4 archaeology and ch.14 duplication removal;
-the whole disaster was pre-catalogued in ch.3's failure table.
+IN LINE: Law 1 applies ch.5/ch.11 budgets-that-stop and ch.10 recorded
+assumptions and drift; Law 2 applies ch.6's bounded proof and review
+triggers, ch.13 legislator authority, and ch.15
+no-self-witnessing; Law 3 applies ch.13 ruling ownership and review;
+the retirement applies ch.4 archaeology and ch.14 replacement
+evidence and clean removal. The whole disaster was pre-catalogued in
+ch.3's failure table.
 
-FOUND BUT NOT IN THE PAPER (candidate paper additions, each needing
-Wido's word and the paper's own gate):
+USED IN THIS DESIGN BUT NOT YET IN THE PAPER (candidate paper
+additions, each still needing Wido's word and the paper's own gate):
 1. The honest verifier that fails itself: an artificial verification
    context manufacturing false reds until the system services its
-   verifier instead of its product; detection signal = the ratio of
-   verifier-self-defects to product findings. Thirteen of
-   twenty-four envelopes. Belongs beside ch.3's failure modes or
+   verifier instead of its product. The ledger preserves this as
+   narrative evidence, while the cause-blind breaker stops without a
+   disputed causal ratio. This belongs beside ch.3's failure modes or
    ch.9's hostile world, which covers only DISHONEST tools.
 2. Optimism under authority (prediction laundering): operator
-   forecasts functioning as human permission across cycles; the
-   binding rule - forecasts never authorize, only recorded budgets
-   authorize. Belongs in ch.3 or ch.13.
+   forecasts functioning as human permission across cycles. Law 1 now
+   binds forecasts as inferences that can authorize nothing. This
+   belongs in ch.3 or ch.13.
 3. The recurring obligation as a budget-bearing unit with a
-   cause-blind counter - offered as evidence-from-use against
-   ch.16's open runaway-spend problem.
-4. Concurrent lawful record-writers (id minting, union registers,
-   sibling-fix checks) - a ch.8 gap, possibly implementation-level;
-   offer and let the gate decide.
+   cause-blind counter is now Law 1's unit, offered as
+   evidence-from-use against ch.16's open runaway-spend problem, not
+   as its solution.
+4. Concurrent lawful record-writers are now referenced in Law 3:
+   machine-suffixed id minting and union merging are already landed,
+   and the recorded origin/sibling check is the pre-build guard against
+   parallel repair becoming silent duplication. This remains a
+   possible ch.8 addition or an implementation-level lesson.
 
-IN THE PAPER BUT MISSING FROM THE DESIGN (design additions):
-1. MODEL-CORRELATED JUDGMENT (ch.6): every builder and critic here
-   is one model; fresh-mind gives context-independence, not
-   model-independence. Required: the limitation recorded as
-   standing, plus a Wido-ruled policy for when a second model or
-   human review is mandatory. THE LARGEST UNCOVERED HAZARD.
-2. Replacement evidence window (ch.14): the battery retirement
-   carries a declared observation window; a missed class within it
-   reopens the decision.
-3. Ruling ownership and review (ch.13): every register ruling gains
-   an owner and review condition; ownerless rules are reviewed or
-   withdrawn, never governed by inertia as R-3 did.
-4. Recorded assumptions on mechanisms (ch.10): what makes a
-   mechanism's evidence meaningful is recorded so drift is
-   detectable - the battery's 600-second assumption was never a
-   record, so its drift was invisible.
+PAPER DEBTS NOW FOLDED INTO THE DESIGN:
+1. Chapter 6's model-correlated judgment limitation is specified
+   verbatim in Law 2, every trigger is executable authorization data,
+   A is the compliant implementation, and B/C are explicit departures
+   for Wido to accept or reject.
+2. Chapter 14's replacement evidence window runs through two
+   classifiable weight-triggered direct validations under an active
+   stage-ID observer, with a tested tag restoration route.
+3. Chapter 13's ownership law is Law 3. Ownership is mandatory at
+   minting; review is scheduled only for four non-stable ruling
+   classes; legacy adoption and due delivery are bounded batches.
+4. Chapter 10's evidence assumptions are part of every Law 1
+   obligation revision; `ASSUMPTION_DRIFT` is a named reopen trigger,
+   including for the former unstated 600-second expectation.
+
+## The daily-use criterion (Wido, 2026-08-30, binding on this design)
+
+"Look from the angle of simplicity and intuitive use. We should not
+restrict to the point where we get stuck in administration and rigid
+rules." This is R-11 sharpened into a usability test: the design is
+converged only if an ordinary day under it carries LESS ceremony
+than today, not more. The escape valves survive by name: R-12 (do
+not block on the human for obvious things), fix-forward, and the
+rule that experiments may exist and run freely — only GOVERNING
+EFFECT is gated. A law whose daily cost is administration without a
+protection story fails this criterion and is cut before activation.
+
+The binding walk-through is therefore:
+
+- An ordinary small fix creates no obligation, authorization, tuple,
+  ruling, or review item: zero added ceremony.
+- An ordinary delegated pass on an already claimed goal reuses that
+  goal's one existing budget and automatically records its bindings:
+  zero new tuple and zero Wido approval.
+- A one-shot or repeating self-contained diagnostic has no governing
+  effect: zero registration, tuple, or review.
+- An exhausted governed validator raises one
+  reduce/redesign/retire/extend decision at terminal attempt N while
+  fix-forward product work remains free; only another governed launch
+  is fenced.
+- Ruling housekeeping can create at most one digest of five items in a
+  rolling twenty-four hours, and stable standing rulings create none.
+- Initial activation is one package. C is the named daily-use-safe
+  start only if Wido records its Chapter 6 departure; A or B may replace
+  it when measured review volume justifies their extra protection.
+
+Any implementation that adds per-pass approval, a second budget tuple,
+registration for a free diagnostic loop, per-ruling legacy questions,
+or a second counselor approval fails this section even if its other
+tests pass.
