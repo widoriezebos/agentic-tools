@@ -47,7 +47,6 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	scribbled := filepath.Join(engine.Root, "scripts", "assert-turn-prompt.sh")
@@ -107,7 +106,6 @@ func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
 	// recovery window expires before its real fact on every retry.
 	// Real scale until the recovery windows are audited — tracked
 	// under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
 	if err != nil {
@@ -162,7 +160,6 @@ func TestWallRecoveryLeavesLedgerDomainToTheHuman(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	tampered, err := os.ReadFile(ledgerPath)
@@ -207,7 +204,6 @@ func TestWallRecoveryStickyViolationOutranksTheRung(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	recorded := "undeclared host-authored change: ghost.txt (recorded before a crash)"
@@ -235,7 +231,6 @@ func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	block := map[string]any{
@@ -275,7 +270,6 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	block := map[string]any{
@@ -357,7 +351,6 @@ func TestWallRecoveryRefusesRepeatOffense(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	state := readTestDoc(t, statePath)
@@ -410,7 +403,6 @@ func TestWallRecoveryLateMutationFailsTheReverification(t *testing.T) {
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 
 	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
 	writeText(t, filepath.Join(engine.Root, "host-scribble.txt"), "junk\n")

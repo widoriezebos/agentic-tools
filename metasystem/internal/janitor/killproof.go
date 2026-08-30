@@ -55,6 +55,11 @@ func DefaultShapes() []Shape {
 		{Name: "adapter-cli-claude", Includes: []string{"claude", "-p"}, TagFlag: "--name"},
 		{Name: "adapter-cli-devin", Includes: []string{"devin", "-p"}, TagFlag: "--config", TagPathBase: true},
 		{Name: "tagged-hold", Includes: []string{"metasystem", "util", "hold"}, TagFlag: "--tag"},
+		{Name: "mission-run-loop", Includes: []string{"metasystem", "mission", "run-loop"}, TagFlag: "--instance-tag"},
+		{Name: "host-codex-start-turn", Includes: []string{"codex.sh", "start-turn"}, TagFlag: "--instance-tag"},
+		{Name: "host-claude-start-turn", Includes: []string{"claude.sh", "start-turn"}, TagFlag: "--instance-tag"},
+		{Name: "host-devin-start-turn", Includes: []string{"devin.sh", "start-turn"}, TagFlag: "--instance-tag"},
+		{Name: "host-fake-start-turn", Includes: []string{"fake.sh", "start-turn"}, TagFlag: "--instance-tag"},
 	}
 }
 

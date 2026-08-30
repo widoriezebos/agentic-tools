@@ -981,6 +981,11 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 	// cannot finish inside its verify window. Real scale until the
 	// chain'''s windows are audited individually — tracked under
 	// timing-tests-synthetic-clock.
+	// The one remaining compression wedge (timing slice 3 evidence,
+	// 2026-08-30): under scale 50 the NESTED runner start never writes
+	// its verification signal inside the floored window — the wedge is
+	// inside the child runner's own compounded start path, not the
+	// launcher's window. Every other former pin lifted the same day.
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
 	engine := equipFullCycleBed(t, buildPreflightBed(t, "FAKEHOST:close-stream", true))
 	statePath := filepath.Join(engine.missionDir(), "state.json")
