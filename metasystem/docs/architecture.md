@@ -123,7 +123,7 @@ One line per package; the package doc is the full story.
 | `dispatch` | the delegate-job control plane: record CAS spine, attestation, envelopes, mission proof, mirroring, close, critique policy, owner lock, briefs, usage |
 | `events` | the flight-recorder emitter |
 | `evidence` | the durable-evidence collector: mirrored chains, residue pruning, archive aging |
-| `gaterun` | gate-run markers plus milestone-battery weight and checkpoint transactions |
+| `gaterun` | gate-run markers plus the direct-validation weight accumulator and authorized discharge boundary |
 | `hooks` | self-check that the repo runs under its own metasystem |
 | `host` | per-turn host work around one CLI invocation: envelopes, usage, return extraction |
 | `identity` | provable process identity: pid plus start time, never claims |

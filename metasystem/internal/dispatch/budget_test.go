@@ -64,6 +64,36 @@ func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
 	}
 }
 
+func TestUnconsumedDischargeJSONCannotResetTheBudgetProjection(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	file := budgetGoal()
+	file.Obligation = &goal.GovernedObligation{Revision: 6}
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "validation-weight.json"), map[string]any{
+		"schema": 1, "generation": 2, "accumulated": 0, "landings": 0, "sinceUtc": "2026-08-28T09:30:00Z", "lastCommit": "landed",
+		"lastDecision": map[string]any{"runId": "green-proof", "goalId": "bounded", "obligationRevision": 6,
+			"decidedAt": "2026-08-28T09:30:00Z", "applied": true,
+			"resetDecision":     map[string]any{"apply": true, "wouldRefuse": false, "reason": "authorized"},
+			"dischargeDecision": map[string]any{"apply": true, "wouldRefuse": false, "reason": "authorized"}},
+	})
+	for _, job := range []struct {
+		id, operation, started, status string
+		cap                            int
+	}{
+		{id: "before", operation: "before", started: "2026-08-28T09:00:00Z", status: "completed", cap: 30},
+		{id: "after", operation: "after", started: "2026-08-28T09:45:00Z", status: "running", cap: 20},
+	} {
+		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job.id+".json"), map[string]any{
+			"jobId": job.id, "operationId": job.operation, "goalId": "bounded", "goalRevision": 3,
+			"capMin": job.cap, "status": job.status, "startedAt": job.started,
+		})
+	}
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetUnknown || projection.Unknown == nil ||
+		!strings.Contains(projection.Unknown.Reason, "consumed") {
+		t.Fatalf("forged discharge JSON reset the projection without consuming a proof: %+v", projection)
+	}
+}
+
 func TestPublishedSetupRetainsAttemptAndReservedMinutes(t *testing.T) {
 	root := budgetProjectionRoot(t)
 	stage := t.TempDir()

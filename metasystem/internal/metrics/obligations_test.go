@@ -159,7 +159,7 @@ func runGitAt(t *testing.T, directory string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func TestO8MalformedSourcesRejectByNameAndFallbackIsUsable(t *testing.T) {
+func TestO8MalformedSourcesRejectByNameAndArchivedBatteryEvidenceIsIgnored(t *testing.T) {
 	f := newFixtureRepo(t)
 	f.seedFullWorld()
 	f.write("metasystem/artifacts/agents/jobs/truncated.json", "{")
@@ -187,12 +187,12 @@ func TestO8MalformedSourcesRejectByNameAndFallbackIsUsable(t *testing.T) {
 	if err := os.Chtimes(fallback, mtime, mtime); err != nil {
 		t.Fatal(err)
 	}
+	f.write("metasystem/artifacts/agents/battery/retired.codes", "retired=0\n")
 	w, err := loadWorld(f.root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jobDetails := strings.Join(w.JobCoverage.Details, "\n")
-	proofDetails := strings.Join(w.ProofCoverage.Details, "\n")
 	if w.JobCoverage.Rejected != 3 || !strings.Contains(jobDetails, "truncated.json") || !strings.Contains(jobDetails, "trailing.json") || !strings.Contains(jobDetails, "bad-time.json") {
 		t.Fatalf("malformed jobs not rejected by name: %+v", w.JobCoverage)
 	}
@@ -208,17 +208,13 @@ func TestO8MalformedSourcesRejectByNameAndFallbackIsUsable(t *testing.T) {
 	if !foundRunning {
 		t.Fatalf("lawful in-flight job was not retained cleanly: %+v", w.Jobs)
 	}
-	if w.ProofCoverage.Rejected < 1 || !strings.Contains(proofDetails, "torn-envelope") {
-		t.Fatalf("torn envelope not rejected by name: %+v", w.ProofCoverage)
+	if w.ProofCoverage.Found != 1 || w.ProofCoverage.Rejected != 0 {
+		t.Fatalf("archived battery evidence changed live proof coverage: %+v", w.ProofCoverage)
 	}
-	foundFallback := false
 	for _, proof := range w.Proofs {
-		if proof.Path == fallback && proof.Fallback {
-			foundFallback = true
+		if strings.Contains(proof.Path, "suite-failures") || strings.Contains(proof.Path, "battery") {
+			t.Fatalf("archived battery evidence became live proof input: %+v", proof)
 		}
-	}
-	if !foundFallback {
-		t.Fatalf("outcome-only envelope did not use mtime fallback: %+v", w.Proofs)
 	}
 	if row := computeCost(w, mustPeriod(t, weeklyOptions(f)), ""); row.Value == "unavailable" || row.Coverage[0].Usable != 3 {
 		t.Fatalf("metric did not compute over the usable job remainder: %+v", row)

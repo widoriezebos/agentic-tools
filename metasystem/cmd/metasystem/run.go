@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -56,7 +57,29 @@ func runStore(root string) *run.Store {
 			return nil, false
 		}
 		return view.ClaimEpoch, true
+	}, AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+		return dispatchcore.EvaluateGovernedRunAdmission(root, request, time.Now().UTC())
+	}, ObserveGoverned: func(record *run.Record, now time.Time) run.AssumptionObservation {
+		return dispatchcore.ObserveGovernedRun(root, record, now)
 	}}
+}
+
+func holdGovernedGoalRevision(root, goalID string, obligationRevision uint64, standing bool, tag string) (func(), error) {
+	if goalID == "" && obligationRevision == 0 && !standing {
+		return func() {}, nil
+	}
+	if goalID == "" || obligationRevision == 0 {
+		return nil, fmt.Errorf("a governed run requires both goal id and obligation revision")
+	}
+	binding, err := dispatchcore.ResolveGoalBinding(root, goalID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	held, err := goalrevision.Acquire(root, goalID, binding.Revision, tag)
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = held.Release() }, nil
 }
 
 // watchLine is THE printed waiter command — one grammar, everywhere.
@@ -78,6 +101,9 @@ func runRunLaunch(args []string) int {
 	expectHung := flags.String("expect-hung", "", "continuation on hang")
 	expectUnknown := flags.String("expect-unknown", "", "continuation on unknown")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
+	goalID := flags.String("goal", "", "claimed goal owning a governed run")
+	obligationRevision := flags.Uint64("obligation-revision", 0, "immutable governed-obligation revision")
+	standingShared := flags.Bool("standing-shared-process", false, "this is a recurring shared process, not a private experiment")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -91,11 +117,18 @@ func runRunLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	release, err := holdGovernedGoalRevision(*root, *goalID, *obligationRevision, *standingShared, "governed-run-launch")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer release()
 	store := runStore(*root)
 	nonce, err := store.Launch(caller, run.LaunchParams{
 		Id: *id, Kind: *kind, Display: *display, Log: *log,
 		StaleAfterMin: *stale, WindDownMin: *windDown,
 		Expect: run.Expect{Green: *expectGreen, Red: *expectRed, Hung: *expectHung, Unknown: *expectUnknown},
+		GoalId: *goalID, ObligationRevision: *obligationRevision, StandingShared: *standingShared,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -212,6 +245,9 @@ func runRunRegister(args []string) int {
 	pattern := flags.String("verdict-pattern", "", "RE2 over the log tail (adopted records only)")
 	stale := flags.Int("stale-after-min", 0, "hung threshold minutes")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
+	goalID := flags.String("goal", "", "claimed goal owning a governed run")
+	obligationRevision := flags.Uint64("obligation-revision", 0, "immutable governed-obligation revision")
+	standingShared := flags.Bool("standing-shared-process", false, "this is a recurring shared process, not a private experiment")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -220,9 +256,16 @@ func runRunRegister(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	release, err := holdGovernedGoalRevision(*root, *goalID, *obligationRevision, *standingShared, "governed-run-register")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer release()
 	store := runStore(*root)
 	if err := store.Register(caller, run.LaunchParams{
 		Id: *id, Kind: *kind, Display: *display, Log: *log, StaleAfterMin: *stale,
+		GoalId: *goalID, ObligationRevision: *obligationRevision, StandingShared: *standingShared,
 	}, *pid, *pattern); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

@@ -149,6 +149,16 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
 	goalStops := runBreachStopCustodian(repoRoot, time.Now())
+	governedRefreshFailures := refreshGovernedObligations(repoRoot, time.Now())
+	if len(governedRefreshFailures) > 0 {
+		return degradedTick(repoRoot, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
+	}
+	if err := observeDirectValidationWindow(repoRoot, time.Now()); err != nil {
+		return degradedTick(repoRoot, "direct-validation observation failed: "+err.Error())
+	}
+	if err := sweepRulingReviews(repoRoot, time.Now()); err != nil {
+		return degradedTick(repoRoot, "ruling review sweep failed: "+err.Error())
+	}
 
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.

@@ -90,7 +90,8 @@ No engine change; no arm-supervision change; no new device.
 - No engine changes; only supervision-fixtures.sh and
   validate-metasystem.sh.
 - Attended stdout verdict lines byte-unchanged on green runs.
-- battery.sh untouched (gate-run-freeze, m1).
+- Historical note: the later R-22-m1 clean cut retired `battery.sh` and its
+  gate-run-freeze fixture; direct validator custody remains with `run`.
 
 ## Acceptance (fast tests, no battery)
 

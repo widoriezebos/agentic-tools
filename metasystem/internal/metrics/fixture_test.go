@@ -249,14 +249,12 @@ func (f *fixtureRepo) seedFullWorld() {
 		}
 	}
 
-	envelope := filepath.Join(f.evidence, "suite-failures", "green-run")
-	if err := os.MkdirAll(envelope, 0o755); err != nil {
+	enumeration := filepath.Join(f.root, "artifacts", "agents", "enumeration-report.txt")
+	if err := os.WriteFile(enumeration, []byte("section\tdirect-validation\tretained validator\tpass\t0\n"), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(envelope, "outcome.json"), []byte(`{"verdict":"green"}`+"\n"), 0o644); err != nil {
-		f.t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(envelope, "timings.json"), []byte(`{"startedAt":"2026-08-14T00:00:00Z","endedAt":"2026-08-15T00:00:00Z"}`+"\n"), 0o644); err != nil {
+	proofAt := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(enumeration, proofAt, proofAt); err != nil {
 		f.t.Fatal(err)
 	}
 
@@ -325,7 +323,7 @@ func TestO1EachMetricComputesValueAndCoverageFromCannedTree(t *testing.T) {
 		},
 		{
 			key:      "stale_checks",
-			value:    "milestone-battery days_since_green=9.000",
+			value:    "suite:direct-validation days_since_green=9.000",
 			coverage: []string{"source=proof-evidence found=1 usable=1 rejected=0 missing=0"},
 		},
 		{

@@ -34,6 +34,22 @@ if [[ ${1:-} == --push ]]; then
   shift
 fi
 
+ratchet=
+commit_args=()
+while (( $# )); do
+  if [[ "$1" == --ratchet ]]; then
+    [[ $# -ge 2 && -z "$ratchet" ]] || {
+      echo "commit refused: --ratchet requires one path" >&2
+      exit 2
+    }
+    ratchet=$2
+    shift 2
+    continue
+  fi
+  commit_args+=("$1")
+  shift
+done
+
 started=$("$ms" proc started-at --pid $$) || {
   echo "agent commit wrapper refused: wrapper process start time is unreadable" >&2
   exit 1
@@ -46,7 +62,7 @@ trap 'rm -f -- "$token"' EXIT
 # on both remotes every time: refuse it at the door. The message
 # arguments are scanned, not the repository — the wrapper stays a
 # wrapper.
-for arg in "$@"; do
+for arg in "${commit_args[@]}"; do
   if [[ "$arg" == *"claude.ac/"* ]]; then
     echo "commit refused: the session trailer says claude.ac — the domain is claude.ai" >&2
     exit 2
@@ -56,17 +72,20 @@ done
 # Direct commits receive the same staged-package coverage boundary as landings.
 # The delta checker owns package discovery and reports every package below its
 # floor before it refuses.
-bash "$root/scripts/agents/coverage-delta.sh" --staged || {
+coverage_arguments=(--staged)
+if [[ -n "$ratchet" ]]; then
+  coverage_arguments+=(--ratchet "$ratchet")
+fi
+bash "$root/scripts/agents/coverage-delta.sh" "${coverage_arguments[@]}" || {
   echo "agent commit refused: staged Go package coverage check failed" >&2
   exit 1
 }
 # IL-28 static re-proof: no landing goes red on a static check. The
 # boundary re-proves gofmt, vet, staticcheck, and the engine build via
 # the fast gate — plus the always-loaded word audit — before any commit
-# concludes. This is the last-line static re-proof, never the landing
-# gate: the full battery (go-gate, mission-fixtures, dispatch-fixtures)
-# remains the landing requirement. No environment escape: the gate's
-# own header explains why a switch that outlives its edit loop would
+# concludes. This is the last-line static re-proof; weight-triggered full
+# validation is a separately governed direct run. No environment escape: the
+# gate's own header explains why a switch that outlives its edit loop would
 # silently weaken the boundary, and the same reasoning holds here. On a
 # non-Go adopted checkout the fast gate skips itself; a damaged or
 # unbuildable tree refuses the commit.
@@ -241,7 +260,7 @@ proved_head=$(git -C "$root" rev-parse --verify --quiet HEAD || true)
 machine_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
 [[ -n "$machine_nickname" ]] \
   || { echo "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine" >&2; exit 2; }
-git -C "$root" commit --trailer "Machine: ${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}" "$@"
+git -C "$root" commit --trailer "Machine: ${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}" "${commit_args[@]}"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
 if [[ "$landed_tree" != "$proved_tree" ]]; then
   if [[ -n "$proved_head" ]]; then
@@ -278,9 +297,9 @@ fi
 
 # The landing weighed LAST, after every remote the caller asked for
 # has accepted it — a failed push exits above and adds nothing. The
-# due line is a NUDGE toward the milestone battery (findings fix
+# due line is a NUDGE toward the governed direct validator (findings fix
 # forward), and weight bookkeeping never refuses a concluded landing.
 git -C "$root" show --no-renames --numstat -z --format= HEAD 2>/dev/null \
   | "$policy_engine" gate weight-add --root "$root" --prefix "$prefix" \
       --commit "$(git -C "$root" rev-parse --short HEAD)" \
-  || echo "battery-weight bookkeeping skipped (non-fatal)" >&2
+  || echo "validation-weight bookkeeping skipped (non-fatal)" >&2

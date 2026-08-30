@@ -48,7 +48,6 @@ agent-protocol-fixtures	agent protocol fixtures
 dispatcher-adapter-and-mission-runner-fixtures	dispatcher, adapter, and mission-runner fixtures
 workflow-tooling-fixtures	workflow tooling fixtures
 adoption-fixtures	adoption fixtures
-gate-run-freeze-fixtures	gate-run freeze fixtures
 watch-background-jobs-fixtures	background-job watcher fixtures
 EOF
 }
@@ -76,7 +75,7 @@ selected_sections() {
   while IFS=$'\t' read -r section_id section_name; do
     if [[ "$context" == adopted ]]; then
       case "$section_id" in
-        witness-gate-fixtures | suite-progress-fixtures | land-fixtures | adoption-fixtures | gate-run-freeze-fixtures)
+        witness-gate-fixtures | suite-progress-fixtures | land-fixtures | adoption-fixtures)
           continue
           ;;
       esac

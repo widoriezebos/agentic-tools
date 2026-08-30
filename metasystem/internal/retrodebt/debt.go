@@ -24,8 +24,8 @@ import (
 const Schema = 1
 
 const (
-	KindBattery = "milestone-battery"
-	KindArc     = "arc-goal"
+	KindArc        = "arc-goal"
+	KindObligation = "governed-obligation"
 )
 
 type Entry struct {
@@ -115,7 +115,7 @@ func load(repoRoot string) (State, error) {
 	seen := map[string]bool{}
 	for _, entry := range state.Entries {
 		if entry.ID == "" || entry.Source == "" || entry.RaisedAt == "" || entry.ReceiptOffset < 0 ||
-			len(entry.ReceiptPrefixSHA256) != 64 || (entry.Kind != KindBattery && entry.Kind != KindArc) || seen[entry.ID] {
+			len(entry.ReceiptPrefixSHA256) != 64 || (entry.Kind != KindArc && entry.Kind != KindObligation) || seen[entry.ID] {
 			return State{}, fmt.Errorf("malformed retro debt record: invalid entry %q", entry.ID)
 		}
 		seen[entry.ID] = true
@@ -153,7 +153,7 @@ func digest(data []byte) string {
 
 // Raise records one idempotent debt at the receipt ledger's current edge.
 func Raise(repoRoot, kind, source string, now time.Time) (Entry, error) {
-	if source == "" || (kind != KindBattery && kind != KindArc) {
+	if source == "" || (kind != KindArc && kind != KindObligation) {
 		return Entry{}, fmt.Errorf("retro debt requires a known kind and nonempty source")
 	}
 	lock, err := acquire(repoRoot)

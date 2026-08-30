@@ -69,12 +69,10 @@ type journalRecord struct {
 }
 
 type proofRecord struct {
-	Path      string
-	Surface   string
-	Verdict   string
-	StartedAt time.Time
-	At        time.Time
-	Fallback  bool
+	Path    string
+	Surface string
+	Verdict string
+	At      time.Time
 }
 
 type critiqueChain struct {
@@ -721,101 +719,6 @@ func loadJournals(root string) ([]journalRecord, Coverage) {
 func loadProofs(root string) ([]proofRecord, Coverage) {
 	coverage := Coverage{Source: "proof-evidence"}
 	var records []proofRecord
-	if evidence := evidenceRoot(root); evidence != "" {
-		directories, _ := filepath.Glob(filepath.Join(evidence, "suite-failures", "*"))
-		sort.Strings(directories)
-		for _, directory := range directories {
-			info, statErr := os.Stat(directory)
-			if statErr != nil || !info.IsDir() {
-				continue
-			}
-			coverage.Found++
-			outcomePath := filepath.Join(directory, "outcome.json")
-			data, err := os.ReadFile(outcomePath)
-			if err != nil {
-				coverage.Rejected++
-				coverage.Details = append(coverage.Details, "path="+outcomePath+" torn envelope without outcome.json")
-				continue
-			}
-			var outcome struct {
-				Verdict string `json:"verdict"`
-			}
-			if json.Unmarshal(data, &outcome) != nil || outcome.Verdict == "" {
-				coverage.Rejected++
-				coverage.Details = append(coverage.Details, "path="+outcomePath+" malformed verdict")
-				continue
-			}
-			stamp := info.ModTime().UTC()
-			fallback := false
-			timingsPath := filepath.Join(directory, "timings.json")
-			if timingData, timingErr := os.ReadFile(timingsPath); timingErr == nil {
-				var timing struct {
-					StartedAt string `json:"startedAt"`
-					EndedAt   string `json:"endedAt"`
-				}
-				if json.Unmarshal(timingData, &timing) != nil {
-					coverage.Rejected++
-					coverage.Details = append(coverage.Details, "path="+timingsPath+" malformed timings")
-					continue
-				}
-				parsed, parseErr := time.Parse(time.RFC3339, timing.EndedAt)
-				if parseErr != nil {
-					coverage.Rejected++
-					coverage.Details = append(coverage.Details, "path="+timingsPath+" invalid endedAt")
-					continue
-				}
-				stamp = parsed.UTC()
-				if timing.StartedAt != "" {
-					started, startErr := time.Parse(time.RFC3339, timing.StartedAt)
-					if startErr != nil || started.After(stamp) {
-						coverage.Rejected++
-						coverage.Details = append(coverage.Details, "path="+timingsPath+" invalid startedAt")
-						continue
-					}
-					records = append(records, proofRecord{Path: directory, Surface: "milestone-battery", Verdict: outcome.Verdict, StartedAt: started.UTC(), At: stamp})
-					continue
-				}
-			} else if os.IsNotExist(timingErr) {
-				fallback = true
-			} else {
-				coverage.Rejected++
-				coverage.Details = append(coverage.Details, "path="+timingsPath+" unreadable")
-				continue
-			}
-			records = append(records, proofRecord{Path: directory, Surface: "milestone-battery", Verdict: outcome.Verdict, At: stamp, Fallback: fallback})
-		}
-	}
-
-	codes, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "battery", "*.codes"))
-	sort.Strings(codes)
-	for _, path := range codes {
-		coverage.Found++
-		data, err := os.ReadFile(path)
-		info, statErr := os.Stat(path)
-		if err != nil || statErr != nil {
-			coverage.Rejected++
-			coverage.Details = append(coverage.Details, "path="+path+" unreadable")
-			continue
-		}
-		valid := false
-		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-			name, code, found := strings.Cut(line, "=")
-			if !found || name == "" {
-				continue
-			}
-			valid = true
-			verdict := "non-green"
-			if code == "0" {
-				verdict = "green"
-			}
-			records = append(records, proofRecord{Path: path, Surface: "local-battery:" + name, Verdict: verdict, At: info.ModTime().UTC()})
-		}
-		if !valid {
-			coverage.Rejected++
-			coverage.Details = append(coverage.Details, "path="+path+" malformed codes")
-		}
-	}
-
 	enumeration := filepath.Join(root, "artifacts", "agents", "enumeration-report.txt")
 	if data, err := os.ReadFile(enumeration); err == nil {
 		coverage.Found++

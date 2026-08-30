@@ -27,6 +27,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -84,33 +86,105 @@ type Expect struct {
 	Unknown string `json:"unknown"`
 }
 
+const (
+	AssumptionMatch       = "match"
+	AssumptionDrift       = "drift"
+	AssumptionUnavailable = "unavailable"
+	BreakerClosed         = "CLOSED"
+	BreakerExhausted      = "EXHAUSTED"
+	BreakerAssumption     = "ASSUMPTION_FAILED"
+)
+
+// AssumptionObservation is filled by terminalization and rechecked by the
+// steward. Unavailable evidence is a typed failure, never a healthy default.
+type AssumptionObservation struct {
+	ObservedAt        string   `json:"observedAt"`
+	Platform          string   `json:"platform"`
+	ToolchainIdentity string   `json:"toolchainIdentity"`
+	SurfaceDigest     string   `json:"surfaceDigest"`
+	ActiveJobs        uint64   `json:"activeJobs"`
+	DurationSeconds   uint64   `json:"durationSeconds"`
+	AssumptionState   string   `json:"assumptionState"`
+	DriftedFields     []string `json:"driftedFields"`
+}
+
+// GovernedAttempt binds a recurring run to one immutable obligation and the
+// existing four-field budget. Admission and terminalization write the two
+// halves of this same record.
+type GovernedAttempt struct {
+	GoalRevision         uint64                           `json:"goalRevision"`
+	ObligationRevision   uint64                           `json:"obligationRevision"`
+	WeightGeneration     *uint64                          `json:"weightGeneration"`
+	Recurrence           governance.RecurrenceClass       `json:"recurrence"`
+	ExecutionCostMinutes uint64                           `json:"executionCostMinutes"`
+	ObservedCostMinutes  *uint64                          `json:"observedCostMinutes,omitempty"`
+	AttemptOrdinal       uint64                           `json:"attemptOrdinal"`
+	ReservedBefore       uint64                           `json:"reservedBefore"`
+	Budget               goalbudget.Budget                `json:"budget"`
+	BudgetStartedAt      string                           `json:"budgetStartedAt"`
+	BudgetEpoch          *uint64                          `json:"budgetEpoch,omitempty"`
+	CorrelationPolicy    string                           `json:"correlationPolicy"`
+	ExpectedAssumptions  governance.ObligationAssumptions `json:"expectedAssumptions"`
+	AdmissionDecision    governance.ConsequenceDecision   `json:"admissionDecision"`
+	Observation          *AssumptionObservation           `json:"observation,omitempty"`
+	Breaker              string                           `json:"breaker"`
+	Exhausted            bool                             `json:"exhausted"`
+	ExhaustionReason     string                           `json:"exhaustionReason,omitempty"`
+	RetroDebtRaised      bool                             `json:"retroDebtRaised,omitempty"`
+}
+
+// TerminalGovernedRunIDReuseError is the stable refusal outcome for an ID
+// that has already carried a terminal governed attempt. It remains detectable
+// after the corresponding run evidence is pruned.
+type TerminalGovernedRunIDReuseError struct {
+	RunID  string
+	Record string
+}
+
+func (err *TerminalGovernedRunIDReuseError) Error() string {
+	return fmt.Sprintf("REFUSED-TERMINAL-GOVERNED-ID: run id %s already owns terminal governed state in %s", err.RunID, err.Record)
+}
+
+// GovernedAdmissionRequest and Result keep policy outside this package. The
+// command layer wires dispatch's accepted-goal evaluator into the run store.
+type GovernedAdmissionRequest struct {
+	GoalID             string
+	ObligationRevision uint64
+	StandingShared     bool
+}
+
+type GovernedAdmissionResult struct {
+	Attempt GovernedAttempt
+}
+
 // Record is the run record, schema v1.
 type Record struct {
-	SchemaVersion int      `json:"schemaVersion"`
-	RunId         string   `json:"runId"`
-	Kind          string   `json:"kind"`
-	Display       string   `json:"display"`
-	Custody       string   `json:"custody"`
-	Generation    int      `json:"generation"`
-	Pid           *int64   `json:"pid"`
-	PidStartedAt  *int64   `json:"pidStartedAt"`
-	PidStartTicks int64    `json:"pidStartTicks,omitempty"`
-	BootID        string   `json:"bootId,omitempty"`
-	Pgid          *int64   `json:"pgid"`
-	LaunchNonce   string   `json:"launchNonce"`
-	Log           string   `json:"log"`
-	StartedAt     string   `json:"startedAt"`
-	MainId        *string  `json:"mainId"`
-	OwnerLineage  *string  `json:"ownerLineage"`
-	ClaimEpoch    *int64   `json:"claimEpoch"`
-	SessionId     string   `json:"sessionId"`
-	GoalId        string   `json:"goalId"`
-	StaleAfterMin int      `json:"staleAfterMin"`
-	HungSince     *string  `json:"hungSince"`
-	WindDownMin   int      `json:"windDownMin"`
-	Evidence      Evidence `json:"evidence"`
-	Expect        Expect   `json:"expect"`
-	Status        string   `json:"status"`
+	SchemaVersion int              `json:"schemaVersion"`
+	RunId         string           `json:"runId"`
+	Kind          string           `json:"kind"`
+	Display       string           `json:"display"`
+	Custody       string           `json:"custody"`
+	Generation    int              `json:"generation"`
+	Pid           *int64           `json:"pid"`
+	PidStartedAt  *int64           `json:"pidStartedAt"`
+	PidStartTicks int64            `json:"pidStartTicks,omitempty"`
+	BootID        string           `json:"bootId,omitempty"`
+	Pgid          *int64           `json:"pgid"`
+	LaunchNonce   string           `json:"launchNonce"`
+	Log           string           `json:"log"`
+	StartedAt     string           `json:"startedAt"`
+	MainId        *string          `json:"mainId"`
+	OwnerLineage  *string          `json:"ownerLineage"`
+	ClaimEpoch    *int64           `json:"claimEpoch"`
+	SessionId     string           `json:"sessionId"`
+	GoalId        string           `json:"goalId"`
+	Governed      *GovernedAttempt `json:"governed,omitempty"`
+	StaleAfterMin int              `json:"staleAfterMin"`
+	HungSince     *string          `json:"hungSince"`
+	WindDownMin   int              `json:"windDownMin"`
+	Evidence      Evidence         `json:"evidence"`
+	Expect        Expect           `json:"expect"`
+	Status        string           `json:"status"`
 	// ProvisionalVerdict freezes at draining ENTRY: adopted-pattern
 	// evidence is evaluated once there, so descendants writing the log
 	// later cannot change it.
@@ -155,6 +229,10 @@ type Store struct {
 	// GroupPresent is the kernel's direct process-group existence proof.
 	// Production leaves it nil; tests can pin absent, present, or unknown.
 	GroupPresent func(pgid int64) (present, certain bool)
+	// AdmitGoverned is mandatory only for a standing shared run or a run that
+	// explicitly names an obligation revision.
+	AdmitGoverned   func(GovernedAdmissionRequest) (GovernedAdmissionResult, error)
+	ObserveGoverned func(*Record, time.Time) AssumptionObservation
 }
 
 func (s *Store) getpgid(pid int64) (int64, error) {
@@ -387,6 +465,37 @@ func Validate(r *Record) []string {
 	}
 	if len(r.Display) > MaxDisplayBytes {
 		add("display exceeds %d bytes", MaxDisplayBytes)
+	}
+	if r.Governed != nil {
+		g := r.Governed
+		if r.GoalId == "" || g.GoalRevision == 0 || g.ObligationRevision == 0 || g.WeightGeneration == nil || g.AttemptOrdinal == 0 ||
+			g.ExecutionCostMinutes == 0 || g.BudgetStartedAt == "" || g.Budget.Validate() != nil {
+			add("governed attempt is missing its goal, revisions, ordinal, cost, budget, or start")
+		}
+		if g.Recurrence != governance.SingleExperiment && g.Recurrence != governance.StandingSharedProcess {
+			add("governed recurrence enum violated: %q", g.Recurrence)
+		}
+		if g.BudgetEpoch != nil && (g.WeightGeneration == nil || *g.WeightGeneration <= *g.BudgetEpoch) {
+			add("governed attempt weight generation does not follow its budget epoch")
+		}
+		if err := g.ExpectedAssumptions.Validate(); err != nil {
+			add("governed expected assumptions are invalid: %v", err)
+		}
+		if g.Breaker != BreakerClosed && g.Breaker != BreakerExhausted && g.Breaker != BreakerAssumption {
+			add("governed breaker enum violated: %q", g.Breaker)
+		}
+		if Terminal(r.Status) && g.Observation == nil {
+			add("terminal governed attempt requires an assumption observation")
+		}
+		if g.Observation != nil {
+			if g.Observation.AssumptionState != AssumptionMatch && g.Observation.AssumptionState != AssumptionDrift &&
+				g.Observation.AssumptionState != AssumptionUnavailable {
+				add("governed assumption-state enum violated: %q", g.Observation.AssumptionState)
+			}
+			if _, err := time.Parse(time.RFC3339, g.Observation.ObservedAt); err != nil {
+				add("governed observation timestamp is invalid")
+			}
+		}
 	}
 	switch r.Custody {
 	case CustodyWrapped, CustodyAdoptedVerified, CustodyAdoptedUnverified:

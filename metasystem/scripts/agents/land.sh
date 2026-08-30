@@ -128,6 +128,58 @@ run_required_step() { # name, command...
 }
 
 branch=
+check_rulings_id_mints() {
+  local changed_paths path rulings_diff line
+  local added_id removed_id paired already_offending
+  local -a removed_bare_ids=()
+  local -a offending_bare_ids=()
+
+  changed_paths=$(git diff --cached --name-only --) || return $?
+  while IFS= read -r path; do
+    case "$path" in
+      metasystem/memory/rulings.md|memory/rulings.md)
+        ;;
+      *) continue ;;
+    esac
+
+    rulings_diff=$(git diff --cached --no-ext-diff --no-textconv -- "$path") || return $?
+    removed_bare_ids=()
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^-\|\ (R-[0-9]+[a-z]?)\ \| ]]; then
+        removed_bare_ids+=("${BASH_REMATCH[1]}")
+      fi
+    done <<<"$rulings_diff"
+
+    while IFS= read -r line; do
+      [[ "$line" =~ ^\+\|\ (R-[0-9]+[a-z]?)\ \| ]] || continue
+      added_id=${BASH_REMATCH[1]}
+      paired=0
+      for removed_id in "${removed_bare_ids[@]}"; do
+        if [[ "$added_id" == "$removed_id" ]]; then
+          paired=1
+          break
+        fi
+      done
+      (( paired )) && continue
+
+      already_offending=0
+      for removed_id in "${offending_bare_ids[@]}"; do
+        if [[ "$added_id" == "$removed_id" ]]; then
+          already_offending=1
+          break
+        fi
+      done
+      (( already_offending )) || offending_bare_ids+=("$added_id")
+    done <<<"$rulings_diff"
+  done <<<"$changed_paths"
+
+  if (( ${#offending_bare_ids[@]} > 0 )); then
+    echo "land refused: new rulings ids must be machine-suffixed (R-<n>-<machine>); see the register header (a rewritten historical row must keep its id; only new mints need the suffix)" >&2
+    printf '  %s\n' "${offending_bare_ids[@]}" >&2
+    return 2
+  fi
+}
+
 verify_checks() {
   branch=$(git symbolic-ref --quiet --short HEAD) || {
     echo "land refused: HEAD is not on a branch" >&2
@@ -136,13 +188,9 @@ verify_checks() {
   # Register-id minting law (register-id-minting): a NEW rulings entry
   # must carry a machine-suffixed id (R-<n>-<machine>). Two machines
   # minting the bare same number in one hour is how R-15 and R-20
-  # collided; the suffix makes collision impossible by construction.
-  if git diff --cached --name-only -- | grep -qx 'metasystem/memory/rulings.md\|memory/rulings.md'; then
-    if git diff --cached -- '*memory/rulings.md' | grep -E '^\+\| R-[0-9]+[a-z]? \|' >&2; then
-      echo "land refused: new rulings ids must be machine-suffixed (R-<n>-<machine>); see the register header" >&2
-      return 2
-    fi
-  fi
+  # collided; the suffix makes collision impossible by construction. A
+  # historical bare id is not minted again when its row is rewritten.
+  check_rulings_id_mints || return $?
   if (( staged_only )); then
     git diff --cached --check --
     return $?
@@ -176,15 +224,11 @@ stage_changes() {
 }
 
 commit_changes() {
-  bash "$root/scripts/agents/commit.sh" -F "$message_file"
-}
-
-check_staged_coverage() {
-  local arguments=(--staged)
+  local arguments=(-F "$message_file")
   if [[ -n "$ratchet" ]]; then
-    arguments+=(--ratchet "$ratchet")
+    arguments=(--ratchet "$ratchet" "${arguments[@]}")
   fi
-  bash "$root/scripts/agents/coverage-delta.sh" "${arguments[@]}"
+  bash "$root/scripts/agents/commit.sh" "${arguments[@]}"
 }
 
 require_clean_after_commit() {
@@ -222,7 +266,6 @@ fi
 
 run_required_step "verify checks" verify_checks
 run_required_step "stage caller paths" stage_changes
-run_required_step "coverage delta for staged Go packages" check_staged_coverage
 run_required_step "commit" commit_changes
 run_required_step "verify clean after commit" require_clean_after_commit
 run_required_step "fetch origin" fetch_origin

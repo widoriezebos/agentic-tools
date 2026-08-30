@@ -4,7 +4,7 @@ set -euo pipefail
 # The landing chain is exercised against ordinary repositories and local bare
 # remotes. Only the commit wrapper is reduced to its Git and ancestry-token
 # boundaries so the fixture proves the driver's ordering without invoking the
-# repository's independent static battery for every leg.
+# repository's independent static proof for every leg.
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source_engine=$root/bin/metasystem
 [[ -x "$source_engine" ]] \
@@ -55,6 +55,9 @@ nonce=$("$root/bin/metasystem" util token-hex --bytes 16)
   --path "$token" --pid $$ --start "$started" --nonce "$nonce"
 trap 'rm -f -- "$token"' EXIT
 git commit "$@"
+git show --no-renames --numstat -z --format= HEAD \
+  | "$root/bin/metasystem" gate weight-add --root "$root" \
+      --commit "$(git rev-parse --short HEAD)"
 SH
   chmod +x "$leg_seed/scripts/agents/land.sh" \
     "$leg_seed/scripts/agents/coverage-delta.sh" \
@@ -64,11 +67,12 @@ SH
     "$leg_seed/bin/metasystem"
   printf 'seed\n' >"$leg_seed/payload.txt"
   printf 'existing plan\n' >"$leg_seed/plans/existing.md"
+  printf 'artifacts/\n' >"$leg_seed/.gitignore"
   git -C "$leg_seed" init -q
   git -C "$leg_seed" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" config user.name fixture
   git -C "$leg_seed" config user.email fixture@example.invalid
-  git -C "$leg_seed" add -- scripts bin payload.txt plans/existing.md
+  git -C "$leg_seed" add -- scripts bin payload.txt plans/existing.md .gitignore
   git -C "$leg_seed" commit -qm seed
   git init --bare -q "$leg_remote"
   git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
@@ -139,6 +143,14 @@ grep -Fq '== STEP: fetch origin after push attempt 1' "$retry_output"
 grep -Fq '== STEP: rebase onto origin/main after push attempt 1' "$retry_output"
 grep -Fq '== STEP: push origin (attempt 2 of 3)' "$retry_output"
 grep -Fq '== STEP: sync transport' "$retry_output"
+[[ -f "$leg_local/artifacts/agents/validation-weight.json" ]]
+[[ ! -d "$leg_local/plans/goals" || -z $(find "$leg_local/plans/goals" -type f -print -quit) ]] \
+  || { echo "land push-retry fixture: ordinary landing created a goal/authority record" >&2; exit 1; }
+[[ ! -d "$leg_local/artifacts/agents/runs" || -z $(find "$leg_local/artifacts/agents/runs" -name '*.json' -type f -print -quit) ]] \
+  || { echo "land push-retry fixture: ordinary landing created a governed run authority record" >&2; exit 1; }
+[[ ! -d "$leg_local/artifacts/agents/governed-obligations" || -z $(find "$leg_local/artifacts/agents/governed-obligations" -name '*.json' -type f -print -quit) ]] \
+  || { echo "land push-retry fixture: ordinary landing created an obligation execution authority record" >&2; exit 1; }
+echo "ordinary landing zero-ceremony rehearsal passed"
 retry_local_head=$(git -C "$leg_local" rev-parse HEAD)
 retry_peer_head=$(git -C "$leg_peer" rev-parse HEAD)
 retry_remote_head=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)

@@ -4,24 +4,15 @@ set -euo pipefail
 # Run classification belongs to the validation root. Capture inherited proof
 # before any producer can arm a witness, then revoke the output capability so
 # descendant validations cannot publish over the root's artifact.
-witness_present_at_validation_entry=0
-[[ -z "${METASYSTEM_GATE_WITNESS:-}" ]] || witness_present_at_validation_entry=1
 witness_engine_reused=0
-battery_run_class_out=${METASYSTEM_BATTERY_RUN_CLASS_OUT:-}
-battery_run_class_writer=${METASYSTEM_BATTERY_ROOT_CLASS_WRITER:-0}
 stage_results_requested=${METASYSTEM_VALIDATION_STAGE_RESULTS_OUT:-}
 stage_results_writer=${METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER:-0}
 enumeration_engine_dependency=${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-}
-unset METASYSTEM_BATTERY_RUN_CLASS_OUT METASYSTEM_BATTERY_ROOT_CLASS_WRITER \
-  METASYSTEM_VALIDATION_STAGE_RESULTS_OUT METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER \
+unset METASYSTEM_VALIDATION_STAGE_RESULTS_OUT METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER \
   METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY \
   METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE METASYSTEM_GATE_WITNESS_WRITE \
   METASYSTEM_GATE_WITNESS_CONTROLLER_PID METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT \
   METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID
-if [[ -n "$battery_run_class_out" && "$battery_run_class_writer" != 1 ]]; then
-  echo "battery run-class output is reserved for the isolated validation root" >&2
-  exit 1
-fi
 if [[ -n "$stage_results_requested" && "$stage_results_writer" != 1 ]]; then
   echo "validation stage-results output is reserved for the isolated validation root" >&2
   exit 1
@@ -165,8 +156,6 @@ if (( ! suite_progress_worker )); then
       METASYSTEM_SUITE_PROGRESS_TMP="$suite_progress_tmp" \
       METASYSTEM_SUITE_PROGRESS_TMP_OWNER=validate-metasystem \
       METASYSTEM_SUITE_PROGRESS_LOG="$suite_progress_log" \
-      METASYSTEM_BATTERY_RUN_CLASS_OUT="$battery_run_class_out" \
-      METASYSTEM_BATTERY_ROOT_CLASS_WRITER="$battery_run_class_writer" \
       METASYSTEM_VALIDATION_STAGE_RESULTS_OUT="$stage_results_requested" \
       METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER="$stage_results_writer" \
       METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY="$enumeration_engine_dependency" \
@@ -220,9 +209,8 @@ if (( enumerate_mode )); then
 fi
 
 # The progress worker supplies the workspace while the sequencer records every section outcome.
-# Every section writes one result row. The milestone battery supplies an
-# output path inside its run directory; direct runs get a unique durable path
-# under artifacts so a later evidence collector can copy the same format.
+# Every section writes one result row. Direct runs get a unique durable path
+# under artifacts so the steward can compare the next two governed validations.
 if [[ -n "$stage_results_requested" ]]; then
   stage_results_file=$stage_results_requested
   [[ "$stage_results_file" == /* && ! -e "$stage_results_file" \
@@ -404,24 +392,6 @@ if section_selected static-placeholder-scan; then
   [[ "$last_section_status" != fail ]] || exit "$last_section_rc"
 fi
 
-publish_battery_run_class() { # FULL|WITNESS-ASSISTED
-  [[ -n "$battery_run_class_out" ]] || return 0
-  case "$1" in FULL|WITNESS-ASSISTED) ;; *) return 1 ;; esac
-  [[ "$battery_run_class_out" == /* && ! -e "$battery_run_class_out" \
-    && ! -L "$battery_run_class_out" ]] || return 1
-  local class_parent class_name class_stage
-  class_parent=${battery_run_class_out%/*}
-  class_name=${battery_run_class_out##*/}
-  [[ -n "$class_name" && -d "$class_parent" && ! -L "$class_parent" ]] || return 1
-  class_parent=$(cd "$class_parent" && pwd -P) || return 1
-  class_stage=$class_parent/.${class_name}.stage.$$
-  [[ ! -e "$class_stage" && ! -L "$class_stage" ]] || return 1
-  umask 077
-  printf '%s\n' "$1" >"$class_stage" || return 1
-  chmod 600 "$class_stage" || return 1
-  mv "$class_stage" "$battery_run_class_out"
-}
-
 # Disk-hygiene headroom guard (backlog item 19, slice 1): make a full
 # disk NAME ITSELF before the suite assumes space. The ENOSPC incident
 # that motivated the goal remounted the guest read-only and looked like
@@ -601,7 +571,7 @@ go_engine_gate_section() {
   # nested delivery-contract runs this suite spawns. Dirty roots, seed,
   # force, or any refusal fall back to the plain worktree gate, no
   # witness, exactly as before. The machinery lives in the sourced
-  # helper so standalone battery stages (adopt-fixtures) arm the same
+  # helper so standalone direct-validator stages (adopt-fixtures) arm the same
   # witness instead of re-proving identical bytes per nested run. The
   # fallback is FORCED here: canonical validation always runs a real
   # gate when the witness cannot arm, immune to ambient state. The
@@ -647,16 +617,6 @@ if section_selected go-engine-gate && (( ! delegate_scope )) && (( metasystem_go
     engine_dependency=failed
   fi
 fi
-
-validation_run_class=FULL
-if (( witness_present_at_validation_entry && witness_engine_reused )); then
-  validation_run_class=WITNESS-ASSISTED
-fi
-publish_battery_run_class_section() {
-  publish_battery_run_class "$validation_run_class" \
-    || { echo "validation root could not publish its run class" >&2; exit 1; }
-}
-run_section battery-run-class-publication needs-engine publish_battery_run_class_section
 
 # The engine-seam tripwire and the Go-vs-python census conformance
 # harnesses (signature, fingerprint, run) retired with the migration:
@@ -1015,9 +975,6 @@ for link in \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/static-reproof-fixtures.sh \
-  scripts/agents/milestone-battery.sh \
-  scripts/agents/battery.conf.local.template \
-  scripts/agents/gate-run-freeze-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/suite-progress-fixtures.sh \
   scripts/agents/land-fixtures.sh \
@@ -1113,8 +1070,6 @@ bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
-bash -n scripts/agents/milestone-battery.sh
-bash -n scripts/agents/gate-run-freeze-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/land.sh
@@ -2919,9 +2874,6 @@ fi
 if (( template_mode )) && section_selected adoption-fixtures; then
   run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
 fi
-if (( template_mode )) && section_selected gate-run-freeze-fixtures; then
-  run_section gate-run-freeze-fixtures needs-engine bash scripts/agents/gate-run-freeze-fixtures.sh
-fi
 if (( template_mode )) && section_selected witness-gate-fixtures; then
   run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
 fi
@@ -3140,9 +3092,8 @@ elif (( delegate_scope )); then
   echo "orchestrator still owes these process-visibility sections:"
   printf -- '- %s\n' "${delegate_skipped_sections[@]}"
 else
-  # The isolated milestone controller owns checkpoint consumption against the
-  # real checkout. A direct validation proves this tree but has no transaction
-  # identity and therefore resets nothing.
+  # The retained direct validator owns this proof. Validation weight changes
+  # only at the separate, governed gate weight-discharge consequence boundary.
   echo "metasystem validation passed"
 fi
 echo "stage results: $stage_results_file"

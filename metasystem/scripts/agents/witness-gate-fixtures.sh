@@ -342,38 +342,7 @@ run_refusal deleted-witness "$leg_tree" "$leg_bin" "$witness_path" "$witness_roo
 make_leg broken-full-fallback
 run_refusal broken-full-fallback "$leg_tree" "$leg_bin" "" "" "" ""
 
-# 13. Only FULL publishes reset provenance; WITNESS-ASSISTED abandons intact.
-assisted_root=$tmp/weight-assisted
-assisted_envelope=$tmp/weight-assisted-envelope
-mkdir -p "$assisted_envelope"
-printf '1\t0\tdocs/a.md\0' | "$source_engine" gate weight-add \
-  --root "$assisted_root" --commit assisted >/dev/null
-"$source_engine" gate weight-checkpoint --root "$assisted_root" --run-id assisted \
-  --subject assisted --runner-pid $$ --envelope "$assisted_envelope" >/dev/null
-set +e
-"$source_engine" gate weight-reset --root "$assisted_root" --run-id assisted \
-  --run-class WITNESS-ASSISTED >"$tmp/assisted-reset.out" 2>&1
-assisted_reset_rc=$?
-set -e
-[[ $assisted_reset_rc == 3 && ! -e "$assisted_envelope/reset.json" ]]
-"$source_engine" gate weight-abandon --root "$assisted_root" --run-id assisted \
-  --reason witness-assisted >/dev/null
-[[ -f "$assisted_envelope/abandoned.json" && ! -e "$assisted_envelope/reset.json" ]]
-[[ "$("$source_engine" json get --file "$assisted_root/artifacts/agents/battery-weight.json" --field accumulated)" == 1 ]]
-
-full_root=$tmp/weight-full
-full_envelope=$tmp/weight-full-envelope
-mkdir -p "$full_envelope"
-printf '1\t0\tdocs/a.md\0' | "$source_engine" gate weight-add \
-  --root "$full_root" --commit full >/dev/null
-"$source_engine" gate weight-checkpoint --root "$full_root" --run-id full \
-  --subject full --runner-pid $$ --envelope "$full_envelope" >/dev/null
-"$source_engine" gate weight-reset --root "$full_root" --run-id full --run-class FULL >/dev/null
-[[ -f "$full_envelope/reset.json" ]]
-[[ "$("$source_engine" json get --file "$full_envelope/reset.json" --field runClass)" == FULL ]]
-[[ "$("$source_engine" json get --file "$full_root/artifacts/agents/battery-weight.json" --field accumulated)" == 0 ]]
-
-# 14. A dirty source arms from a private frozen export instead of falling
+# 13. A dirty source arms from a private frozen export instead of falling
 # back to the live-tree gate.
 make_leg dirty-tree-arms
 cp "$root/scripts/agents/witness-gate.sh" "$leg_tree/scripts/agents/witness-gate.sh"

@@ -66,7 +66,7 @@ func TestOpenRefusesReceiptLedgerChangesBeneathDebt(t *testing.T) {
 			if err := os.WriteFile(receipts, []byte(original), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Raise(root, KindBattery, "battery-1", time.Now()); err != nil {
+			if _, err := Raise(root, KindObligation, "governed-1", time.Now()); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(receipts, []byte(test.changed), 0o644); err != nil {
@@ -86,7 +86,8 @@ func TestRaiseRefusesUnknownDebtIdentity(t *testing.T) {
 		source string
 	}{
 		{kind: "unknown", source: "battery-1"},
-		{kind: KindBattery, source: ""},
+		{kind: KindObligation, source: ""},
+		{kind: "milestone-battery", source: "retired"},
 	} {
 		if _, err := Raise(t.TempDir(), test.kind, test.source, time.Now()); err == nil {
 			t.Fatalf("invalid debt identity kind=%q source=%q was accepted", test.kind, test.source)

@@ -384,9 +384,6 @@ func computeStaleChecks(w world, period Period, limits thresholds) metricRow {
 		if limits.Stale.Invalid == "" && age > float64(limits.Stale.Value) {
 			crossed = true
 		}
-		if proof.Fallback {
-			row.Details = append(row.Details, detail{Text: "milestone-battery uses labelled envelope mtime fallback: " + proof.Path, MachineOnly: true})
-		}
 	}
 	for _, variant := range sortedStrings(variants) {
 		row.Details = append(row.Details, detail{Text: "proof verdict variant: " + variant})
@@ -544,7 +541,7 @@ func concludingEpoch(file *goal.GoalFile) (claim time.Time, done time.Time, epoc
 }
 
 func computeWaiting(w world, period Period, goalID string, limits thresholds) metricRow {
-	row := metric("Time waiting on checks", "time_waiting_on_checks", "fleet-synced", "draft naming the slowest recorded whole-battery proof surface", "coordinator")
+	row := metric("Time waiting on checks", "time_waiting_on_checks", "fleet-synced", "draft naming the slowest retained direct-validation proof surface", "coordinator")
 	goals := selectedGoals(w, period, goalID)
 	usableGoals, usableLandings := 0, 0
 	var values []string
@@ -580,20 +577,6 @@ func computeWaiting(w world, period Period, goalID string, limits thresholds) me
 		}
 		share := proving.Seconds() / total.Seconds()
 		values = append(values, fmt.Sprintf("%s building_hours=%s proving_hours=%s waiting_share=%s epochs=%d", record.File.Id, formatHours(building), formatHours(proving), formatFloat(share), epochs))
-		var batteryWall time.Duration
-		batteryRuns := 0
-		for _, proof := range w.Proofs {
-			if proof.Surface != "milestone-battery" || proof.StartedAt.IsZero() || proof.At.Before(claim) || proof.At.After(done) {
-				continue
-			}
-			batteryRuns++
-			batteryWall += proof.At.Sub(proof.StartedAt)
-		}
-		if batteryRuns == 0 {
-			row.Details = append(row.Details, detail{Text: "goal=" + record.File.Id + " whole-battery wall time unavailable", MachineOnly: true})
-		} else {
-			row.Details = append(row.Details, detail{Text: fmt.Sprintf("goal=%s whole_battery_wall_hours=%s records=%d", record.File.Id, formatHours(batteryWall), batteryRuns), MachineOnly: true})
-		}
 		if judgment == nil || share > limits.Waiting.Value {
 			copy := share
 			judgment = &copy
@@ -613,13 +596,6 @@ func computeWaiting(w world, period Period, goalID string, limits thresholds) me
 	}
 	row.Coverage = []Coverage{goalCoverage, landingCoverage}
 	row.Thresholds = []string{limits.Waiting.judgment("proving share", judgment)}
-	proofCoverage := withUsable(w.ProofCoverage, 0)
-	for _, proof := range w.Proofs {
-		if proof.Surface == "milestone-battery" && !proof.StartedAt.IsZero() {
-			proofCoverage.Usable++
-		}
-	}
-	row.Details = append(row.Details, detail{Text: "whole-battery detail " + proofCoverage.String(), MachineOnly: true})
 	row.Details = append(row.Details, joinedDetails(goalCoverage, landingCoverage)...)
 	return row
 }

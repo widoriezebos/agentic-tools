@@ -53,6 +53,7 @@ const (
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
 	RoleNonterminalJobs     HealthRole = "nonterminal-jobs"
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
+	RoleGovernedObligations HealthRole = "governed-obligations"
 )
 
 var healthRoleOrder = []HealthRole{
@@ -65,6 +66,7 @@ var healthRoleOrder = []HealthRole{
 	RoleSessionMain,
 	RoleHookFreshness,
 	RoleClaimedGoalBudget,
+	RoleGovernedObligations,
 	RoleNonterminalJobs,
 	RoleCapabilitySnapshots,
 }
@@ -246,6 +248,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		checkSessionMain(repoRoot, prober),
 		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
 		checkClaimedGoalBudgets(repoRoot, now),
+		checkGovernedObligations(repoRoot),
 		checkNonterminalJobs(repoRoot, prober),
 		checkCapabilitySnapshots(repoRoot, metasystemRoot, now),
 	}

@@ -20,6 +20,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
@@ -114,6 +116,9 @@ func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimE
 		Generation: revision, Revision: revision, Machine: machine, ClaimEpoch: claimEpoch,
 	}
 	f.StopFence = nil
+	// A fresh claim or budget revision cannot inherit authority from an older
+	// obligation. The human creates a new immutable binding explicitly.
+	f.Obligation = nil
 	return nil
 }
 
@@ -124,6 +129,7 @@ func clearClaimBinding(f *GoalFile) error {
 	f.Claimed = nil
 	f.StopCapability = nil
 	f.StopFence = nil
+	f.Obligation = nil
 	return nil
 }
 
@@ -518,6 +524,65 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
+}
+
+// SetObligation records the human decision that turns an already claimed,
+// budgeted goal into a governed recurrence. It replaces the complete record;
+// no field-level mutation can rewrite an earlier obligation revision.
+func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof *humanauthority.Proof) (PublishResult, error) {
+	if r.Actor.Human == "" || proof == nil || !proof.ValidFor(r.Endpoint.Root) {
+		return PublishResult{}, fmt.Errorf("set-obligation requires freshly observed enrolled-human authority")
+	}
+	if !validObligationState(proposed.State) {
+		return PublishResult{}, fmt.Errorf("unknown obligation state %q", proposed.State)
+	}
+	policy, err := config.CorrelationPolicy(r.Endpoint.Root)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	if (proposed.State == ObligationLimited || proposed.State == ObligationEnforced) && policy == "" {
+		return PublishResult{}, fmt.Errorf("LIMITED and ENFORCED remain unavailable while Wido's correlation-policy slot is empty")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "set-obligation", Targets: []string{id}, Args: intentArgs(r, map[string]string{
+			"state": string(proposed.State), "owner": proposed.Owner,
+		})},
+		Message: "goal set-obligation " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil || f.State != StateClaimed || f.Claimed == nil || f.Budget == nil {
+				return nil, fmt.Errorf("goal %s must be claimed with a complete budget before it can own an obligation", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.StopFence != nil {
+				return nil, fmt.Errorf("goal %s is breach-stopped; resume with a fresh tuple before creating another obligation", id)
+			}
+			o := proposed
+			o.Revision = f.Revision + 1
+			o.BudgetRevision = f.Claimed.Revision
+			if o.State == ObligationDraft || o.State == ObligationObserve {
+				o.AuthorizedBy, o.AuthorizedAt, o.AuthorityOperation, o.ReviewPolicy, o.ReviewOutcome, o.AuthorizedEffects = "", "", "", "", "", nil
+			} else {
+				o.AuthorizedBy, o.AuthorizedAt, o.AuthorityOperation = r.Actor.Human, r.stamp(), r.opid()
+				o.ReviewPolicy, o.ReviewOutcome = policy, "human-approved"
+				o.AuthorizedEffects = append([]GoverningEffect(nil), o.Effects...)
+			}
+			if err := validateGovernedObligation(&o, o.Revision, f.Claimed, f.Budget); err != nil {
+				return nil, err
+			}
+			touch(f, r, "set-obligation", []string{id})
+			f.Obligation = &o
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
 }
 
 // Release returns the actor's claimed goal to the queue.

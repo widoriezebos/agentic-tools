@@ -90,7 +90,7 @@ func TestLaunchReservationAndFence(t *testing.T) {
 	if record == nil || record.Error == nil || record.TerminalSeq == nil {
 		t.Fatalf("launch-failed record wrong: %+v", record)
 	}
-	// A terminal id is reusable — with a fresh lifecycle.
+	// A terminal ungoverned id is reusable — with a fresh lifecycle.
 	if _, err := s.Launch(mainCaller, LaunchParams{Id: "suite-a", Kind: "suite", Log: "y.log"}); err != nil {
 		t.Fatalf("terminal id not reusable: %v", err)
 	}

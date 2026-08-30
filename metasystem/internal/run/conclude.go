@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
 // The conclusion engine: evidence rules only, never opinion. Unknown
@@ -222,6 +224,7 @@ func (s *Store) terminalizeWithVerdict(record *Record, verdict string, exitCode 
 		now := s.nowISO()
 		endedAt = &now
 	}
+	raiseDebt := false
 	_, err = s.cas(record.RunId, from, record.Generation, func(r *Record) error {
 		r.Status = verdict
 		r.ProvisionalVerdict = nil
@@ -229,7 +232,8 @@ func (s *Store) terminalizeWithVerdict(record *Record, verdict string, exitCode 
 		r.ExitCode = exitCode
 		r.Error = note
 		r.EndedAt = endedAt
-		return nil
+		raiseDebt, err = s.applyGovernedTerminal(r, verdict, *endedAt)
+		return err
 	})
 	if err == nil {
 		result.Transitioned, result.From, result.To = true, from, verdict
@@ -237,6 +241,11 @@ func (s *Store) terminalizeWithVerdict(record *Record, verdict string, exitCode 
 			"runId": record.RunId, "from": from, "to": verdict,
 			"generation": fmt.Sprint(record.Generation),
 		})
+		if raiseDebt {
+			if debtErr := s.raiseGovernedDebt(record.RunId); debtErr != nil {
+				return debtErr
+			}
+		}
 	}
 	return err
 }
@@ -248,6 +257,7 @@ func (s *Store) terminalize(record *Record, status string, exitCode *int64, note
 		return err
 	}
 	from := record.Status
+	raiseDebt := false
 	_, err = s.cas(record.RunId, from, record.Generation, func(r *Record) error {
 		r.Status = status
 		r.TerminalSeq = &seq
@@ -257,7 +267,8 @@ func (s *Store) terminalize(record *Record, status string, exitCode *int64, note
 			stamped := s.nowISO()
 			r.EndedAt = &stamped
 		}
-		return nil
+		raiseDebt, err = s.applyGovernedTerminal(r, status, *r.EndedAt)
+		return err
 	})
 	if err == nil {
 		result.Transitioned, result.From, result.To = true, from, status
@@ -265,8 +276,84 @@ func (s *Store) terminalize(record *Record, status string, exitCode *int64, note
 			"runId": record.RunId, "from": from, "to": status,
 			"generation": fmt.Sprint(record.Generation),
 		})
+		if raiseDebt {
+			if debtErr := s.raiseGovernedDebt(record.RunId); debtErr != nil {
+				return debtErr
+			}
+		}
 	}
 	return err
+}
+
+func (s *Store) applyGovernedTerminal(record *Record, verdict, endedAt string) (bool, error) {
+	if record.Governed == nil {
+		return false, nil
+	}
+	ended, endedErr := time.Parse(time.RFC3339, endedAt)
+	started, startedErr := time.Parse(time.RFC3339, record.StartedAt)
+	observation := AssumptionObservation{ObservedAt: s.now().UTC().Format(time.RFC3339),
+		AssumptionState: AssumptionUnavailable, DriftedFields: []string{"observation"}}
+	if s.ObserveGoverned != nil {
+		observation = s.ObserveGoverned(record, ended)
+	} else if endedErr != nil || startedErr != nil || ended.Before(started) {
+		observation.DriftedFields = []string{"durationSeconds"}
+	}
+	record.Governed.Observation = &observation
+	durationSeconds := uint64(0)
+	if endedErr == nil && startedErr == nil && !ended.Before(started) {
+		durationSeconds = uint64(ended.Sub(started) / time.Second)
+	}
+	observedMinutes := (durationSeconds + 59) / 60
+	if observedMinutes == 0 {
+		observedMinutes = 1
+	}
+	record.Governed.ObservedCostMinutes = &observedMinutes
+	if observation.AssumptionState != AssumptionMatch {
+		record.Governed.Breaker = BreakerAssumption
+		record.Governed.ExhaustionReason = "ASSUMPTION_DRIFT"
+	}
+	startedBudget, budgetErr := time.Parse(time.RFC3339, record.Governed.BudgetStartedAt)
+	reached := record.Governed.AttemptOrdinal >= record.Governed.Budget.AttemptLimit ||
+		record.Governed.ReservedBefore+observedMinutes >= record.Governed.Budget.ReservedJobMinutesLimit ||
+		(budgetErr == nil && !ended.Before(startedBudget) && ended.Sub(startedBudget) >= record.Governed.Budget.ElapsedDuration())
+	failing := verdict != StatusGreen || observation.AssumptionState != AssumptionMatch
+	if failing && reached {
+		record.Governed.Exhausted = true
+		record.Governed.Breaker = BreakerExhausted
+		record.Governed.ExhaustionReason = "terminal non-green attempt reached the human-set tuple"
+	}
+	weightGeneration := uint64(0)
+	if record.Governed.WeightGeneration != nil {
+		weightGeneration = *record.Governed.WeightGeneration
+	}
+	if err := obligationstate.RecordTerminal(s.Root, record.GoalId, record.Governed.GoalRevision,
+		record.Governed.ObligationRevision, obligationstate.TerminalAttempt{
+			RunID: record.RunId, Status: verdict, StartedAt: record.StartedAt, EndedAt: endedAt,
+			AttemptOrdinal: record.Governed.AttemptOrdinal, ExecutionCostMinutes: record.Governed.ExecutionCostMinutes,
+			ObservedCostMinutes: observedMinutes, WeightGeneration: weightGeneration, BudgetEpoch: record.Governed.BudgetEpoch,
+			Breaker:   record.Governed.Breaker,
+			Exhausted: record.Governed.Exhausted, ExhaustionReason: record.Governed.ExhaustionReason,
+		}); err != nil {
+		return false, fmt.Errorf("terminal governed run %s could not publish durable obligation state: %w", record.RunId, err)
+	}
+	return record.Governed.Exhausted, nil
+}
+
+func (s *Store) raiseGovernedDebt(runID string) error {
+	record, err := s.Read(runID)
+	if err != nil || record == nil || record.Governed == nil {
+		return fmt.Errorf("terminal governed run %s cannot be reread for retro debt", runID)
+	}
+	source := fmt.Sprintf("%s-r%d-%s", record.GoalId, record.Governed.ObligationRevision, record.RunId)
+	if _, err := retrodebt.Raise(s.Root, retrodebt.KindObligation, source, s.now()); err != nil {
+		return fmt.Errorf("terminal governed run %s raised exhaustion but retro debt failed: %w", runID, err)
+	}
+	if err := obligationstate.MarkRetroDebt(s.Root, record.GoalId, record.Governed.GoalRevision,
+		record.Governed.ObligationRevision, runID); err != nil {
+		return fmt.Errorf("terminal governed run %s raised debt but could not mark durable obligation state: %w", runID, err)
+	}
+	record.Governed.RetroDebtRaised = true
+	return s.write(record)
 }
 
 func readTail(path string, limit int64) ([]byte, error) {

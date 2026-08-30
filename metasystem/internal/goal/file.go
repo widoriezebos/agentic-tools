@@ -36,6 +36,9 @@ type GoalFile struct {
 	Pinned  string
 	Budget  *Budget
 	Claimed *ClaimRecord
+	// Obligation is the human-governed recurrence bound to this goal's
+	// existing budget. Its revision changes only by replacing the whole record.
+	Obligation *GovernedObligation
 	// StopCapability is the narrow authority minted with one claimed
 	// revision. StopFence is present only after that authority closed launch
 	// admission for the revision.
@@ -232,6 +235,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("Budget: %v", err)
 		}
 	}
+	if f.Obligation != nil {
+		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget); err != nil {
+			addProblem("%v", err)
+		}
+	}
 	if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision == 0 && f.Budget != nil {
 		addProblem("Budget: a structured tuple requires a revision-bound claim record")
 	}
@@ -358,6 +366,35 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.Budget = &budget
+	case "Obligation":
+		obligation, err := parseObligationRecord(value)
+		if err != nil {
+			addProblem("Obligation: %v", err)
+			return
+		}
+		f.Obligation = obligation
+	case "ObligationAssumptions":
+		if f.Obligation == nil {
+			addProblem("ObligationAssumptions appears before Obligation")
+			return
+		}
+		assumptions, err := parseObligationAssumptions(value)
+		if err != nil {
+			addProblem("ObligationAssumptions: %v", err)
+			return
+		}
+		f.Obligation.Assumptions = assumptions
+	case "ObligationTriggers":
+		if f.Obligation == nil {
+			addProblem("ObligationTriggers appears before Obligation")
+			return
+		}
+		triggers, err := parseObligationTriggers(value)
+		if err != nil {
+			addProblem("ObligationTriggers: %v", err)
+			return
+		}
+		f.Obligation.Triggers = triggers
 	case "Claimed":
 		// appetite= has no budget authority. Discarding it keeps the claim
 		// readable so admission can name the record whose structured tuple is
@@ -526,6 +563,24 @@ func RenderFile(f *GoalFile) []byte {
 	if f.Budget != nil {
 		fmt.Fprintf(&b, "- Budget: elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d\n",
 			f.Budget.ElapsedLimit, f.Budget.AttemptLimit, f.Budget.ReservedJobMinutesLimit, f.Budget.ActiveJobLimit)
+	}
+	if f.Obligation != nil {
+		o := f.Obligation
+		empty := func(value string) string {
+			if value == "" {
+				return "-"
+			}
+			return value
+		}
+		fmt.Fprintf(&b, "- Obligation: revision=%d budgetRevision=%d state=%s owner=%s authorizedBy=%s authorizedAt=%s authorityOperation=%s reviewPolicy=%s reviewOutcome=%s effects=%s authorizedEffects=%s\n",
+			o.Revision, o.BudgetRevision, o.State, o.Owner, empty(o.AuthorizedBy), empty(o.AuthorizedAt), empty(o.AuthorityOperation),
+			empty(o.ReviewPolicy), empty(o.ReviewOutcome), renderEffects(o.Effects), renderEffects(o.AuthorizedEffects))
+		fmt.Fprintf(&b, "- ObligationAssumptions: recurrence=%s platform=%s toolchainIdentity=%s surfaceDigest=%s maxActiveJobs=%d timingEnvelopeSeconds=%d observationSource=%s\n",
+			o.Assumptions.Recurrence, o.Assumptions.Platform, o.Assumptions.ToolchainIdentity, o.Assumptions.SurfaceDigest,
+			o.Assumptions.MaxActiveJobs, o.Assumptions.TimingEnvelopeSeconds, o.Assumptions.ObservationSource)
+		fmt.Fprintf(&b, "- ObligationTriggers: valueJudgment=%s reversibility=%s severeHarm=%s unfamiliarApproach=%s testDiscrimination=%s correlatedAssumptionRisk=%s authorityScopeChange=%s destructiveReach=%s\n",
+			o.Triggers.ValueJudgment, o.Triggers.Reversibility, o.Triggers.SevereHarm, o.Triggers.UnfamiliarApproach,
+			o.Triggers.TestDiscrimination, o.Triggers.CorrelatedAssumptionRisk, o.Triggers.AuthorityScopeChange, o.Triggers.DestructiveReach)
 	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)

@@ -50,7 +50,7 @@ func TestHealthExitCodeArms(t *testing.T) {
 
 func TestRetroDebtIsDeadUntilRetroReceiptLands(t *testing.T) {
 	root := t.TempDir()
-	if _, err := retrodebt.Raise(root, retrodebt.KindBattery, "battery-42", time.Now()); err != nil {
+	if _, err := retrodebt.Raise(root, retrodebt.KindObligation, "governed-42", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	dead := checkRetroDebt(root)

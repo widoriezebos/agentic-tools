@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 )
 
 // The verbs. Every mutation holds the runs lock for the whole operation;
@@ -42,6 +43,8 @@ type LaunchParams struct {
 	WindDownMin            int
 	Expect                 Expect
 	GoalId                 string
+	ObligationRevision     uint64
+	StandingShared         bool
 }
 
 // Launch writes the PENDING record — before any process exists — and
@@ -59,6 +62,9 @@ func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) 
 		if existing != nil && !Terminal(existing.Status) {
 			return fmt.Errorf("run id %s is live (%s); ids are unique among live records", p.Id, existing.Status)
 		}
+		if err := s.refuseTerminalGovernedIDReuse(p.Id, existing); err != nil {
+			return err
+		}
 		minted, err := mintNonce()
 		if err != nil {
 			return err
@@ -69,12 +75,29 @@ func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) 
 			return err
 		}
 		mainId, lineage, epoch := caller.coordinates()
+		var governed *GovernedAttempt
+		if p.StandingShared || p.ObligationRevision > 0 {
+			if p.GoalId == "" || p.ObligationRevision == 0 {
+				return fmt.Errorf("a governed run requires both goal id and obligation revision")
+			}
+			if s.AdmitGoverned == nil {
+				return fmt.Errorf("governed run admission is unavailable; refusing before launch")
+			}
+			admission, admissionErr := s.AdmitGoverned(GovernedAdmissionRequest{
+				GoalID: p.GoalId, ObligationRevision: p.ObligationRevision, StandingShared: p.StandingShared,
+			})
+			if admissionErr != nil {
+				return admissionErr
+			}
+			attempt := admission.Attempt
+			governed = &attempt
+		}
 		record := &Record{
 			SchemaVersion: 1, RunId: p.Id, Kind: p.Kind, Display: p.Display,
 			Custody: CustodyWrapped, Generation: 1, LaunchNonce: minted,
 			Log: logPath, StartedAt: s.nowISO(),
 			MainId: mainId, OwnerLineage: lineage, ClaimEpoch: epoch,
-			SessionId: caller.SessionId, GoalId: p.GoalId,
+			SessionId: caller.SessionId, GoalId: p.GoalId, Governed: governed,
 			StaleAfterMin: defaulted(p.StaleAfterMin, 30),
 			WindDownMin:   defaulted(p.WindDownMin, DefaultWindDown),
 			Evidence:      Evidence{Mode: EvidenceSidecar},
@@ -146,6 +169,9 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 		if existing != nil && !Terminal(existing.Status) {
 			return fmt.Errorf("run id %s is live (%s)", p.Id, existing.Status)
 		}
+		if err := s.refuseTerminalGovernedIDReuse(p.Id, existing); err != nil {
+			return err
+		}
 		exact, state, _ := s.prober().Probe(pid)
 		if state != identity.Alive {
 			return fmt.Errorf("register: pid %d is not provably alive", pid)
@@ -169,6 +195,23 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 		started := exact.StartedAt.Unix()
 		pgid64 := pgid
 		mainId, lineage, epoch := caller.coordinates()
+		var governed *GovernedAttempt
+		if p.StandingShared || p.ObligationRevision > 0 {
+			if p.GoalId == "" || p.ObligationRevision == 0 {
+				return fmt.Errorf("a governed run requires both goal id and obligation revision")
+			}
+			if s.AdmitGoverned == nil {
+				return fmt.Errorf("governed run admission is unavailable; refusing before registration")
+			}
+			admission, admissionErr := s.AdmitGoverned(GovernedAdmissionRequest{
+				GoalID: p.GoalId, ObligationRevision: p.ObligationRevision, StandingShared: p.StandingShared,
+			})
+			if admissionErr != nil {
+				return admissionErr
+			}
+			attempt := admission.Attempt
+			governed = &attempt
+		}
 		mode := EvidenceNone
 		if verdictPattern != "" {
 			mode = EvidencePattern
@@ -180,7 +223,7 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 			PidStartTicks: exact.StartTicks, BootID: exact.BootID,
 			Log: logPath, StartedAt: s.nowISO(),
 			MainId: mainId, OwnerLineage: lineage, ClaimEpoch: epoch,
-			SessionId: caller.SessionId, GoalId: p.GoalId,
+			SessionId: caller.SessionId, GoalId: p.GoalId, Governed: governed,
 			StaleAfterMin: defaulted(p.StaleAfterMin, 30),
 			WindDownMin:   defaulted(p.WindDownMin, DefaultWindDown),
 			Evidence:      Evidence{Mode: mode, VerdictPattern: verdictPattern},
@@ -331,6 +374,61 @@ func (s *Store) Ack(caller Caller, id string) error {
 	})
 }
 
+// RecordGovernedObservation is the steward tick's one lawful update to a live
+// attempt. It changes only the typed observation and breaker state.
+func (s *Store) RecordGovernedObservation(id string, observation AssumptionObservation) error {
+	return s.withLock(func() error {
+		record, err := s.Read(id)
+		if err != nil || record == nil {
+			return fmt.Errorf("no readable run record %s", id)
+		}
+		if Terminal(record.Status) || record.Governed == nil {
+			return nil
+		}
+		_, err = s.cas(id, record.Status, record.Generation, func(current *Record) error {
+			current.Governed.Observation = &observation
+			if observation.AssumptionState == AssumptionMatch {
+				current.Governed.Breaker = BreakerClosed
+			} else {
+				current.Governed.Breaker = BreakerAssumption
+				current.Governed.ExhaustionReason = "ASSUMPTION_DRIFT"
+			}
+			return nil
+		})
+		return err
+	})
+}
+
+// RepairGovernedDebt completes a debt publication owned by an earlier
+// terminalization whose record is already exhausted. It never changes the
+// breaker or authorizes another attempt.
+func (s *Store) RepairGovernedDebt(id string) error {
+	return s.withLock(func() error {
+		record, err := s.Read(id)
+		if err != nil || record == nil {
+			return fmt.Errorf("no readable run record %s", id)
+		}
+		if record.Governed == nil || !record.Governed.Exhausted || record.Governed.RetroDebtRaised {
+			return nil
+		}
+		return s.raiseGovernedDebt(id)
+	})
+}
+
+func (s *Store) refuseTerminalGovernedIDReuse(id string, existing *Record) error {
+	if existing != nil && Terminal(existing.Status) && existing.Governed != nil {
+		return &TerminalGovernedRunIDReuseError{RunID: id, Record: filepath.ToSlash(strings.TrimPrefix(RecordPath(s.Root, id), s.Root+string(filepath.Separator)))}
+	}
+	attempt, record, err := obligationstate.FindRun(s.Root, id)
+	if err != nil {
+		return fmt.Errorf("BUDGET_UNKNOWN record=%s reason=%v", record, err)
+	}
+	if attempt != nil {
+		return &TerminalGovernedRunIDReuseError{RunID: id, Record: record}
+	}
+	return nil
+}
+
 // Prune drops ACKED terminal records older than 14 days, with their
 // sidecars, reporting every drop.
 func (s *Store) Prune(caller Caller) (dropped []string, err error) {
@@ -354,6 +452,15 @@ func (s *Store) Prune(caller Caller) (dropped []string, err error) {
 			ended, err := time.Parse("2006-01-02T15:04:05Z", *record.EndedAt)
 			if err != nil || ended.After(cutoff) {
 				continue
+			}
+			if record.Governed != nil {
+				if record.Governed.Exhausted && !record.Governed.RetroDebtRaised {
+					return fmt.Errorf("refusing to prune exhausted governed run %s before its retro debt is durable", record.RunId)
+				}
+				if err := obligationstate.MarkPruned(s.Root, record.GoalId, record.Governed.GoalRevision,
+					record.Governed.ObligationRevision, record.RunId, s.now()); err != nil {
+					return fmt.Errorf("refusing to prune governed run %s without durable obligation state: %w", record.RunId, err)
+				}
 			}
 			for gen := 1; gen <= record.Generation; gen++ {
 				os.Remove(SidecarPath(s.Root, record.RunId, gen))

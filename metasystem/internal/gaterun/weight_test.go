@@ -1,1011 +1,223 @@
 package gaterun
 
 import (
-	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-type probeAnswer struct {
-	exact identity.Exact
-	live  identity.Liveness
-	err   error
+func TestDraftWouldRefuseIsRecordedButCannotResetWeight(t *testing.T) {
+	prior := WeightState{Schema: 1, Generation: 4, Accumulated: 73, Landings: 6, SinceUTC: "2026-08-30T00:00:00Z"}
+	decision := WeightDecision{RunID: "draft", ResetDecision: governance.ConsequenceDecision{
+		WouldRefuse: true, Reason: "DRAFT has no consequence authority"}, DischargeDecision: governance.ConsequenceDecision{
+		WouldRefuse: true, Reason: "DRAFT has no consequence authority"}, PriorWeight: prior.Accumulated, PriorLandings: prior.Landings}
+	got, recorded := recordInertWeightDecision(prior, decision)
+	if !recorded || got.LastDecision == nil || !got.LastDecision.ResetDecision.WouldRefuse || !got.LastDecision.DischargeDecision.WouldRefuse {
+		t.Fatalf("would-refuse was not recorded: %+v", got)
+	}
+	if got.Accumulated != prior.Accumulated || got.Landings != prior.Landings || got.LastDecision.Applied {
+		t.Fatalf("DRAFT changed the governing state: before=%+v after=%+v", prior, got)
+	}
 }
 
-type weightProber map[int64]probeAnswer
+type proofProber struct {
+	alive   bool
+	started time.Time
+}
 
-func (p weightProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
-	answer, ok := p[pid]
-	if !ok {
+func (prober *proofProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if !prober.alive {
 		return identity.Exact{}, identity.Dead, nil
 	}
-	return answer.exact, answer.live, answer.err
+	return identity.Exact{Pid: pid, StartedAt: prober.started}, identity.Alive, nil
 }
 
-func alive(pid, second, ticks int64, boot string) probeAnswer {
-	return probeAnswer{exact: identity.Exact{Pid: pid, StartedAt: time.Unix(second, 0), StartTicks: ticks, BootID: boot}, live: identity.Alive}
-}
-
-func fixedClock(t *testing.T, at *time.Time) {
+func governedWeightBed(t *testing.T, now time.Time) (string, *goal.GoalFile) {
 	t.Helper()
-	prior := weightNow
-	weightNow = func() time.Time { return at.UTC() }
-	t.Cleanup(func() { weightNow = prior })
-}
-
-func add(t *testing.T, root, commit, row string) WeightState {
-	t.Helper()
-	state, _, err := WeightAdd(root, commit, []byte(row), "", 60)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return state
-}
-
-func openCheckpoint(t *testing.T, root, run, subject, envelope string, pid int64, prober identity.Prober) CheckpointResult {
-	t.Helper()
-	result, err := WeightCheckpointOpen(root, CheckpointRequest{
-		RunID: run, Subject: subject, RunnerPID: pid, RepairDestination: envelope,
-	}, prober)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return result
-}
-
-func TestLandingWeightUsesLandingProjectionAndNULPaths(t *testing.T) {
-	rows := strings.Join([]string{
-		"10\t2\tinternal/covenant/covenant.go",
-		"40\t0\tinternal/covenant/covenant_test.go",
-		"6\t1\tscripts/validate-metasystem.sh",
-		"9\t0\tplans/goals.md",
-		"1\t1\tdocs/white space\n$meta;name.md",
-	}, "\x00") + "\x00"
-	weight, err := LandingWeight([]byte(rows), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if weight != 6 {
-		t.Fatalf("LANDING projection weight = %d, want 6", weight)
-	}
-	nested, err := LandingWeight([]byte("4\t0\tmetasystem/plans/goals.md\x001\t0\tmetasystem/docs/x.md\x001\t0\tbenchmark/extra.go\x00"), "metasystem/")
-	if err != nil || nested != 4 {
-		t.Fatalf("nested projection weight = %d, %v; want 4", nested, err)
-	}
-}
-
-func TestStableSiblingLockSurvivesStateRename(t *testing.T) {
 	root := t.TempDir()
-	lock, err := acquireWeightLock(root)
+	runGit := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=C\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("init", "-q", "-b", "main")
+	runGit("config", "user.name", "fixture")
+	runGit("config", "user.email", "fixture@example.invalid")
+	runGit("config", "goal.sync-remote", "local")
+	policy, err := behaviorsurface.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.release()
-	if err := os.WriteFile(weightPath(root)+".new", []byte(`{"sinceUtc":"2026-01-01T00:00:00Z"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(weightPath(root)+".new", weightPath(root)); err != nil {
-		t.Fatal(err)
-	}
-	other, err := os.OpenFile(WeightLockPath(root), os.O_CREATE|os.O_RDWR, 0o644)
+	digest, err := policy.Digest(root, behaviorsurface.Engine)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer other.Close()
-	if err := unix.Flock(int(other.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
-		t.Fatalf("sibling lock stopped excluding after state rename: %v", err)
+	file := &goal.GoalFile{Id: "bounded", State: goal.StateClaimed, Intent: "Bound direct validation", Origin: goal.OriginMain,
+		NextStep: "Run direct validation.", OpenedAt: now.Add(-time.Hour).Format(time.RFC3339), Revision: 3,
+		Claimed:        &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: now.Add(-30 * time.Minute).Format(time.RFC3339), Revision: 2},
+		Budget:         &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1},
+		StopCapability: &goal.StopCapability{Generation: 2, Revision: 2, Machine: "bed-m1", ClaimEpoch: 7},
+		History: []goal.HistoryLine{
+			{At: now.Add(-time.Hour).Format(time.RFC3339), Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-m1-00000000", Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
+			{At: now.Add(-30 * time.Minute).Format(time.RFC3339), Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-m1-00000001", Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
+			{At: now.Add(-20 * time.Minute).Format(time.RFC3339), Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000002", Verb: "set-obligation", Actor: "human:Wido", Targets: []string{"bounded"}, Keep: -1},
+		},
 	}
-	if WeightLockPath(root) == weightPath(root) {
-		t.Fatal("state inode was used as the lock")
-	}
-}
-
-func TestWeightLockHelperProcess(t *testing.T) {
-	if os.Getenv("METASYSTEM_WEIGHT_LOCK_HELPER") != "1" {
-		return
-	}
-	root := os.Getenv("METASYSTEM_WEIGHT_LOCK_ROOT")
-	commit := os.Getenv("METASYSTEM_WEIGHT_LOCK_COMMIT")
-	if root == "" || commit == "" {
-		t.Fatal("weight lock helper environment is incomplete")
-	}
-	if attempt := os.Getenv("METASYSTEM_WEIGHT_LOCK_ATTEMPT"); attempt != "" {
-		beforeWeightLockWait = func() {
-			if err := os.WriteFile(attempt, []byte("waiting\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	if signal := os.Getenv("METASYSTEM_WEIGHT_LOCK_SIGNAL"); signal != "" {
-		release := os.Getenv("METASYSTEM_WEIGHT_LOCK_RELEASE")
-		priorWriter := writeWeightState
-		writeWeightState = func(root string, state WeightState) error {
-			if err := os.WriteFile(signal, []byte("locked\n"), 0o600); err != nil {
-				return err
-			}
-			deadline := time.Now().Add(5 * time.Second)
-			for {
-				if _, err := os.Stat(release); err == nil {
-					break
-				}
-				if time.Now().After(deadline) {
-					return errors.New("helper timed out waiting for release")
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			return priorWriter(root, state)
-		}
-	}
-	if _, _, err := WeightAdd(root, commit, []byte("1\t0\tdocs/a.md\x00"), "", 60); err != nil {
+	effects := []goal.GoverningEffect{goal.EffectAuthorizeSpend, goal.EffectResetWeight, goal.EffectDischargeObligation}
+	file.Obligation = &goal.GovernedObligation{Revision: 3, BudgetRevision: 2, State: goal.ObligationEnforced,
+		Owner: "Wido", AuthorizedBy: "Wido", AuthorizedAt: now.Add(-20 * time.Minute).Format(time.RFC3339),
+		AuthorityOperation: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000002", ReviewPolicy: "C", ReviewOutcome: "human-approved",
+		Effects: effects, AuthorizedEffects: effects,
+		Assumptions: goal.ObligationAssumptions{Recurrence: goal.StandingSharedProcess, Platform: runtime.GOOS + "/" + runtime.GOARCH,
+			ToolchainIdentity: runtime.Version(), SurfaceDigest: digest, MaxActiveJobs: 1, TimingEnvelopeSeconds: 60,
+			ObservationSource: "run-terminal-record"},
+		Triggers: goal.HumanReviewTriggers{ValueJudgment: "no", Reversibility: "reversible", SevereHarm: "no",
+			UnfamiliarApproach: "no", TestDiscrimination: "strong", CorrelatedAssumptionRisk: "no",
+			AuthorityScopeChange: "no", DestructiveReach: "none"}}
+	goalPath := filepath.Join(root, "plans", "goals", "bounded.md")
+	if err := os.MkdirAll(filepath.Dir(goalPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestStableSiblingLockSerializesSeparateProcesses(t *testing.T) {
-	root := t.TempDir()
-	signal := filepath.Join(root, "holder-locked")
-	release := filepath.Join(root, "release-holder")
-	attempt := filepath.Join(root, "follower-at-lock")
-	startHelper := func(commit string, hold bool, attemptPath string, output *strings.Builder) *exec.Cmd {
-		command := exec.Command(os.Args[0], "-test.run=^TestWeightLockHelperProcess$")
-		command.Env = append(os.Environ(),
-			"METASYSTEM_WEIGHT_LOCK_HELPER=1",
-			"METASYSTEM_WEIGHT_LOCK_ROOT="+root,
-			"METASYSTEM_WEIGHT_LOCK_COMMIT="+commit,
-		)
-		if hold {
-			command.Env = append(command.Env,
-				"METASYSTEM_WEIGHT_LOCK_SIGNAL="+signal,
-				"METASYSTEM_WEIGHT_LOCK_RELEASE="+release,
-			)
-		}
-		if attemptPath != "" {
-			command.Env = append(command.Env, "METASYSTEM_WEIGHT_LOCK_ATTEMPT="+attemptPath)
-		}
-		command.Stdout, command.Stderr = output, output
-		if err := command.Start(); err != nil {
-			t.Fatal(err)
-		}
-		return command
-	}
-	var holderOutput, followerOutput strings.Builder
-	holder := startHelper("holder", true, "", &holderOutput)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(signal); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = holder.Process.Kill()
-			t.Fatalf("holder never acquired the cross-process lock:\n%s", holderOutput.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	follower := startHelper("follower", false, attempt, &followerOutput)
-	followerDone := make(chan error, 1)
-	go func() { followerDone <- follower.Wait() }()
-	deadline = time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(attempt); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = holder.Process.Kill()
-			_ = follower.Process.Kill()
-			t.Fatalf("follower never reached the held lock:\n%s", followerOutput.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	select {
-	case err := <-followerDone:
-		_ = os.WriteFile(release, []byte("release\n"), 0o600)
-		_ = holder.Wait()
-		t.Fatalf("second process crossed a held flock: %v\n%s", err, followerOutput.String())
-	default:
-	}
-	if err := os.WriteFile(release, []byte("release\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(&goal.RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
+	}), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := holder.Wait(); err != nil {
-		t.Fatalf("holder failed: %v\n%s", err, holderOutput.String())
+	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if err := <-followerDone; err != nil {
-		t.Fatalf("follower failed after release: %v\n%s", err, followerOutput.String())
+	runGit("add", "metasystem.conf", "plans/goals")
+	runGit("commit", "-q", "-m", "governed weight bed")
+	runGit("update-ref", goal.AcceptedRef, "HEAD")
+	return root, file
+}
+
+func completeGreenProof(t *testing.T, root, id string, now *time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.Generation != 2 || state.Landings != 2 || state.Accumulated != 2 {
-		t.Fatalf("serialized process additions interleaved or were lost: %+v %v", state, err)
+	prober := &proofProber{alive: true, started: *now}
+	store := &run.Store{Root: root, Now: func() time.Time { return *now }, Prober: prober,
+		Getpgid: func(pid int64) (int64, error) { return pid, nil }, AllPids: func() ([]int64, error) { return nil, nil }}
+	store.AdmitGoverned = func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+		return dispatch.EvaluateGovernedRunAdmission(root, request, *now)
+	}
+	store.ObserveGoverned = func(record *run.Record, ended time.Time) run.AssumptionObservation {
+		return dispatch.ObserveGovernedRun(root, record, ended)
+	}
+	nonce, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: id, Kind: "suite",
+		Display: "weight-triggered direct validation", Log: filepath.Join("artifacts", id+".log"), GoalId: "bounded",
+		ObligationRevision: 3, StandingShared: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Bind(id, nonce, 4242, 4242); err != nil {
+		t.Fatal(err)
+	}
+	*now = (*now).Add(time.Minute)
+	if err := store.WriteSidecar(id, 1, nonce, 0); err != nil {
+		t.Fatal(err)
+	}
+	prober.alive = false
+	result, err := store.Assess(id)
+	if err != nil || !result.Transitioned || result.To != run.StatusGreen {
+		t.Fatalf("green proof did not terminalize through real run files: %+v %v", result, err)
 	}
 }
 
-func TestCheckpointResetPreservesConcurrentAddsAndProvenance(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	state := add(t, root, "subject", "10\t2\tinternal/a.go\x00")
-	if state.Generation != 1 || state.Accumulated != 3 || state.Landings != 1 {
-		t.Fatalf("initial add: %+v", state)
+func TestWeightDischargeConsumesExactFreshProofRaisesRetroAndReplayChangesNothing(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	root, file := governedWeightBed(t, now)
+	priorNow := weightNow
+	weightNow = func() time.Time { return now }
+	t.Cleanup(func() { weightNow = priorNow })
+	if _, _, err := WeightAdd(root, "landing-one", []byte("1\t0\tdirect.go\n"), "", 1); err != nil {
+		t.Fatal(err)
 	}
-	prober := weightProber{100: alive(100, 1000, 55, "boot-a")}
-	checkpoint := openCheckpoint(t, root, "run-1", "subject", envelope, 100, prober)
-	if checkpoint.Checkpoint.OpenedGeneration != 2 || checkpoint.Checkpoint.Runner.StartTicks != 55 {
-		t.Fatalf("checkpoint identity/generation incomplete: %+v", checkpoint)
-	}
+	completeGreenProof(t, root, "green-g1", &now)
 	now = now.Add(time.Minute)
-	state = add(t, root, "newer", "0\t0\tplans/goals.md\x00")
-	post := state.PostCheckpointSinceUTC
-	if post != now.Format(time.RFC3339) || state.Generation != 3 || state.LastCommit != "newer" {
-		t.Fatalf("zero-weight post-checkpoint add not recorded: %+v", state)
-	}
-	now = now.Add(time.Minute)
-	state = add(t, root, "newest", "1\t0\tdocs/after.md\x00")
-	if state.PostCheckpointSinceUTC != post {
-		t.Fatalf("later add replaced first post-checkpoint time: %+v", state)
-	}
-	state, report, err := WeightReset(root, "run-1", FullRun)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Accumulated != 1 || state.Landings != 2 || state.SinceUTC != post {
-		t.Fatalf("concurrent additions were not preserved: %+v", state)
-	}
-	if state.LastCommit != "newest" || report.Subject != "subject" || report.LastCommit != "newest" || report.RunClass != FullRun {
-		t.Fatalf("reset confused subject with newest landing: state=%+v report=%+v", state, report)
-	}
-	if state.Generation != 6 || report.ResetGeneration != 5 {
-		t.Fatalf("reset mutations did not each advance one generation: state=%+v report=%+v", state, report)
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "reset.json")); err != nil {
-		t.Fatal(err)
-	}
-	staleState, _, err := WeightReset(root, "run-1", FullRun)
-	if !errors.Is(err, ErrStaleCheckpoint) {
-		t.Fatalf("consumed checkpoint reset did not refuse stale: %v", err)
-	}
-	if staleState.Generation != state.Generation || staleState.Accumulated != state.Accumulated {
-		t.Fatalf("stale reset mutated state: before=%+v after=%+v", state, staleState)
-	}
-}
-
-func TestGreenBatteryRaisesDebtClearedOnlyByRetroReceipt(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	add(t, root, "battery-subject", "2\t0\tinternal/a.go\x00")
-	openCheckpoint(t, root, "green-run", "battery-subject", envelope, 100,
-		weightProber{100: alive(100, 1000, 55, "boot-a")})
-	if _, _, err := WeightReset(root, "green-run", FullRun); err != nil {
-		t.Fatal(err)
+	result, err := WeightDischarge(root, "bounded", 3, "green-g1")
+	if err != nil || !result.Decision.Applied || result.Decision.WeightGeneration != 1 || len(result.State.ConsumedProofs) != 1 {
+		t.Fatalf("fresh real proof did not discharge exactly once: %+v %v", result, err)
 	}
 	open, err := retrodebt.Open(root)
-	if err != nil || len(open) != 1 || open[0].Kind != retrodebt.KindBattery || open[0].Source != "green-run" {
-		t.Fatalf("green discharge did not raise its retro debt: %+v %v", open, err)
+	if err != nil || len(open) != 1 || open[0].Kind != retrodebt.KindObligation || !strings.Contains(open[0].Source, "weight-g1-green-g1") {
+		t.Fatalf("green discharge did not raise its retained retro obligation: %+v %v", open, err)
 	}
-	legacyMarker := receipt.Retro(receipt.Options{
-		Root: root, File: filepath.Join(root, "memory", "receipts.log"), Summary: "cadence marker only",
-		Now: func() time.Time { return now },
-	})
-	if legacyMarker.Code != 0 {
-		t.Fatalf("legacy retro marker failed: %+v", legacyMarker)
+	projection := dispatch.ProjectBudget(root, file, now.Add(time.Minute))
+	if projection.Status != dispatch.BudgetKnown || !projection.StartedAt.Equal(now) || projection.WeightEpoch == nil ||
+		*projection.WeightEpoch != 1 || projection.Attempts != 0 {
+		t.Fatalf("real consumed proof did not become the budget epoch: %+v unknown=%+v", projection, projection.Unknown)
 	}
-	if open, err = retrodebt.Open(root); err != nil || len(open) != 1 {
-		t.Fatalf("a RETRO cadence marker discharged receipt-gated debt: %+v %v", open, err)
+	completeGreenProof(t, root, "same-second-g2", &now)
+	projection = dispatch.ProjectBudget(root, file, now)
+	if projection.Status != dispatch.BudgetKnown || projection.Attempts != 1 {
+		t.Fatalf("exact generation failed to count a post-discharge proof launched in the discharge second: %+v", projection)
 	}
-	ordinary := receipt.Add(receipt.Options{
-		Root: root, File: filepath.Join(root, "memory", "receipts.log"), Type: "review", Outcome: "shipped",
-		Skills: "none", Verify: "clean", Corrections: "0", StopLoss: "no", Now: func() time.Time { return now },
-	})
-	if ordinary.Code != 0 {
-		t.Fatalf("ordinary receipt failed: %+v", ordinary)
-	}
-	if open, err = retrodebt.Open(root); err != nil || len(open) != 1 {
-		t.Fatalf("a non-retro receipt discharged the debt: %+v %v", open, err)
-	}
-	retro := receipt.Add(receipt.Options{
-		Root: root, File: filepath.Join(root, "memory", "receipts.log"), Type: "retro", Outcome: "shipped",
-		Skills: "none", Verify: "clean", Corrections: "0", StopLoss: "no", Note: "lessons landed",
-		Now: func() time.Time { return now.Add(time.Minute) },
-	})
-	if retro.Code != 0 {
-		t.Fatalf("retro receipt was refused: %+v", retro)
-	}
-	if open, err = retrodebt.Open(root); err != nil || len(open) != 0 {
-		t.Fatalf("retro receipt did not discharge the debt: %+v %v", open, err)
-	}
-}
-
-func TestFullResetRestartsWindowWithoutChangingLastCommit(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 25, 11, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	add(t, root, "landing", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "run", "subject", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	now = now.Add(time.Hour)
-	state, _, err := WeightReset(root, "run", FullRun)
+	before, err := loadWeight(root, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Accumulated != 0 || state.Landings != 0 || state.SinceUTC != now.Format(time.RFC3339) || state.LastCommit != "landing" {
-		t.Fatalf("full reset violated state ownership: %+v", state)
+	if _, _, err := WeightAdd(root, "landing-two", []byte("1\t0\tnext.go\n"), "", 1); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestWitnessAssistedRunCannotResetAndAbandonsWithoutSubtracting(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "landing", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "assisted", "subject", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	before, _, err := WeightCheck(root, 60)
+	if _, err := WeightDischarge(root, "bounded", 3, "green-g1"); err == nil || !strings.Contains(err.Error(), "REFUSED-PROOF-CONSUMED") {
+		t.Fatalf("consumed proof replay was not typed refusal: %v", err)
+	}
+	after, err := loadWeight(root, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := WeightReset(root, "assisted", WitnessAssistedRun); !errors.Is(err, ErrResetRequiresFull) {
-		t.Fatalf("witness-assisted reset did not refuse by class: %v", err)
-	}
-	afterRefusal, _, err := WeightCheck(root, 60)
-	if err != nil || afterRefusal.Generation != before.Generation || afterRefusal.Accumulated != before.Accumulated || afterRefusal.Checkpoint == nil {
-		t.Fatalf("class refusal mutated or terminalized the checkpoint: before=%+v after=%+v err=%v", before, afterRefusal, err)
-	}
-	result, err := WeightAbandon(root, "assisted", "witness-assisted", false)
-	if err != nil || result.WeightPreserved != before.Accumulated {
-		t.Fatalf("witness-assisted abandonment did not preserve weight: %+v %v", result, err)
-	}
-	terminal, _, err := WeightCheck(root, 60)
-	if err != nil || terminal.Checkpoint != nil || terminal.Accumulated != before.Accumulated || terminal.Landings != before.Landings {
-		t.Fatalf("witness-assisted terminalization subtracted weight: %+v %v", terminal, err)
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "reset.json")); !os.IsNotExist(err) {
-		t.Fatalf("witness-assisted run published reset evidence: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "abandoned.json")); err != nil {
-		t.Fatalf("witness-assisted run did not publish abandonment evidence: %v", err)
+	if after.LastDecision == nil || before.LastDecision == nil || after.LastDecision.DecidedAt != before.LastDecision.DecidedAt ||
+		after.Generation != before.Generation+1 || after.Accumulated == 0 {
+		t.Fatalf("refused replay changed the discharge decision or reset weight: before=%+v after=%+v", before, after)
 	}
 }
 
-func TestCheckpointLivenessAndSupersession(t *testing.T) {
-	root := t.TempDir()
-	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	prober := weightProber{10: alive(10, 100, 9, "boot"), 20: alive(20, 200, 10, "boot")}
-	openCheckpoint(t, root, "first", "one", t.TempDir(), 10, prober)
-	add(t, root, "two", "1\t0\tdocs/b.md\x00")
-	if _, err := WeightCheckpointOpen(root, CheckpointRequest{RunID: "second", Subject: "one", RunnerPID: 20, RepairDestination: t.TempDir()}, prober); !errors.Is(err, ErrCheckpointLive) {
-		t.Fatalf("live runner did not block second checkpoint: %v", err)
+func TestWeightDischargeRefusesProofOlderThanCurrentWeightEpoch(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	root, _ := governedWeightBed(t, now)
+	priorNow := weightNow
+	weightNow = func() time.Time { return now }
+	t.Cleanup(func() { weightNow = priorNow })
+	if _, _, err := WeightAdd(root, "landing-one", []byte("1\t0\tdirect.go\n"), "", 1); err != nil {
+		t.Fatal(err)
 	}
-	prober[10] = probeAnswer{live: identity.Unknown, err: errors.New("permission denied")}
-	if _, err := WeightCheckpointOpen(root, CheckpointRequest{RunID: "second", Subject: "one", RunnerPID: 20, RepairDestination: t.TempDir()}, prober); !errors.Is(err, ErrCheckpointUnknown) {
-		t.Fatalf("unknown runner authorized supersession: %v", err)
+	completeGreenProof(t, root, "green-old", &now)
+	if _, _, err := WeightAdd(root, "landing-two", []byte("1\t0\tchanged.go\n"), "", 1); err != nil {
+		t.Fatal(err)
 	}
-	// The pid exists but its start identity differs: AliveRef treats reuse as
-	// the recorded runner being dead.
-	prober[10] = alive(10, 101, 11, "boot")
-	result, err := WeightCheckpointOpen(root, CheckpointRequest{RunID: "second", Subject: "one", RunnerPID: 20, RepairDestination: t.TempDir()}, prober)
+	stateBefore, err := loadWeight(root, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Superseded == nil || result.Superseded.RunID != "first" || result.State.Accumulated != 2 {
-		t.Fatalf("dead-runner supersession lost transition or weight: %+v", result)
+	if _, err := WeightDischarge(root, "bounded", 3, "green-old"); err == nil || !strings.Contains(err.Error(), "REFUSED-PROOF-STALE") {
+		t.Fatalf("stale proof did not receive a typed refusal: %v", err)
 	}
-	if result.State.Generation != 4 || result.State.PostCheckpointSinceUTC != "" {
-		t.Fatalf("supersession did not make one clean checkpoint mutation: %+v", result.State)
-	}
-}
-
-func TestAbandonmentRetiresCheckpointTimestampAndPreservesWeight(t *testing.T) {
-	root, firstEnvelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 25, 13, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	prober := weightProber{1: alive(1, 10, 0, ""), 2: alive(2, 20, 0, "")}
-	openCheckpoint(t, root, "red", "one", firstEnvelope, 1, prober)
-	now = now.Add(time.Minute)
-	add(t, root, "two", "1\t0\tdocs/b.md\x00")
-	result, err := WeightAbandon(root, "red", "validation-red", false)
-	if err != nil || !result.AppendixPublished {
-		t.Fatalf("abandonment did not publish: %+v %v", result, err)
-	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.Accumulated != 2 || state.Checkpoint != nil || state.PostCheckpointSinceUTC != "" {
-		t.Fatalf("abandonment changed weight or left checkpoint lifetime state: %+v %v", state, err)
-	}
-	if state.Generation != 5 {
-		t.Fatalf("abandonment generation = %d, want 5", state.Generation)
-	}
-	second := openCheckpoint(t, root, "next", "two", t.TempDir(), 2, prober)
-	if second.State.PostCheckpointSinceUTC != "" {
-		t.Fatalf("later checkpoint inherited prior lifetime timestamp: %+v", second.State)
-	}
-}
-
-func TestBestEffortAbandonmentClearsAfterAppendixFailure(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "copy-failed", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	priorPublisher := publishWeightAppendix
-	publishWeightAppendix = func(string, any) error { return errors.New("injected copy destination failure") }
-	result, err := WeightAbandon(root, "copy-failed", "evidence-copy-failed", true)
-	publishWeightAppendix = priorPublisher
-	if err != nil || result.AppendixPublished || result.AppendixError == "" {
-		t.Fatalf("best-effort abandonment result = %+v, %v", result, err)
-	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.Checkpoint != nil || state.Accumulated != 1 || state.Generation != 4 {
-		t.Fatalf("best-effort abandonment did not preserve and unblock: %+v %v", state, err)
-	}
-}
-
-func TestAbandonmentStateWriteFailureLeavesOpenCheckpointAndNoTerminalAppendix(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "red", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	priorWriter := writeWeightState
-	writeWeightState = func(string, WeightState) error { return errors.New("injected abandonment state write") }
-	_, err := WeightAbandon(root, "red", "validation-red", false)
-	writeWeightState = priorWriter
-	if err == nil {
-		t.Fatal("injected abandonment state failure passed")
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "abandoned.json")); !os.IsNotExist(err) {
-		t.Fatalf("terminal appendix appeared before the state transition: %v", err)
-	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.Checkpoint == nil || state.Checkpoint.RunID != "red" || state.PendingAbandon != nil {
-		t.Fatalf("failed abandonment did not leave one OPEN story: %+v %v", state, err)
-	}
-}
-
-func TestAbandonmentAppendixFailureLeavesRepairableTerminalState(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "red", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	priorPublisher := publishWeightAppendix
-	publishWeightAppendix = func(string, any) error { return errors.New("injected abandonment appendix failure") }
-	result, err := WeightAbandon(root, "red", "validation-red", false)
-	publishWeightAppendix = priorPublisher
-	if err == nil || result.AppendixPublished || result.AppendixError == "" {
-		t.Fatalf("appendix failure result = %+v, %v", result, err)
-	}
-	data, readErr := os.ReadFile(weightPath(root))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	var persisted WeightState
-	if err := json.Unmarshal(data, &persisted); err != nil || persisted.Checkpoint != nil || persisted.PendingAbandon == nil {
-		t.Fatalf("appendix failure did not persist one terminal repair story: %+v %v", persisted, err)
-	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.Checkpoint != nil || state.PendingAbandon != nil {
-		t.Fatalf("abandonment read-side repair failed: %+v %v", state, err)
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "abandoned.json")); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestPublishedAbandonmentWithCleanupFailureHasOneTerminalStory(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	prober := weightProber{1: alive(1, 10, 0, ""), 2: alive(2, 20, 0, "")}
-	openCheckpoint(t, root, "red", "one", envelope, 1, prober)
-	priorWriter := writeWeightState
-	writes := 0
-	writeWeightState = func(root string, state WeightState) error {
-		writes++
-		if writes == 2 {
-			return errors.New("injected abandonment cleanup write")
-		}
-		return priorWriter(root, state)
-	}
-	result, err := WeightAbandon(root, "red", "validation-red", false)
-	writeWeightState = priorWriter
-	if err == nil || !result.AppendixPublished {
-		t.Fatalf("cleanup failure result = %+v, %v", result, err)
-	}
-	data, readErr := os.ReadFile(weightPath(root))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	var persisted WeightState
-	if err := json.Unmarshal(data, &persisted); err != nil || persisted.Checkpoint != nil || persisted.PendingAbandon == nil {
-		t.Fatalf("published abandonment lost its terminal repair record: %+v %v", persisted, err)
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "abandoned.json")); err != nil {
-		t.Fatal(err)
-	}
-	next, err := WeightCheckpointOpen(root, CheckpointRequest{
-		RunID: "next", Subject: "one", RunnerPID: 2, RepairDestination: t.TempDir(),
-	}, prober)
-	if err != nil || next.State.PendingAbandon != nil || next.Checkpoint.RunID != "next" {
-		t.Fatalf("new checkpoint did not finish terminal repair first: %+v %v", next, err)
-	}
-}
-
-func TestAddDuringPendingAbandonmentRoundTrips(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "red", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	priorWriter := writeWeightState
-	writes := 0
-	writeWeightState = func(root string, state WeightState) error {
-		writes++
-		if writes == 2 {
-			return errors.New("injected abandonment cleanup write")
-		}
-		return priorWriter(root, state)
-	}
-	result, err := WeightAbandon(root, "red", "validation-red", false)
-	writeWeightState = priorWriter
-	if err == nil || !result.AppendixPublished {
-		t.Fatalf("cleanup failure result = %+v, %v", result, err)
-	}
-
-	added, _, err := WeightAdd(root, "two", []byte("1\t0\tdocs/b.md\x00"), "", 60)
-	if err != nil || added.PendingAbandon == nil || added.Accumulated != 2 || added.Landings != 2 || added.Generation != 4 {
-		t.Fatalf("add did not fold around pending abandonment: %+v %v", added, err)
-	}
-	loaded, err := loadWeightLocked(root, weightNow())
-	if err != nil || loaded.PendingAbandon == nil || loaded.Accumulated != 2 || loaded.Landings != 2 || loaded.LastCommit != "two" {
-		t.Fatalf("folded pending abandonment did not round-trip: %+v %v", loaded, err)
-	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.PendingAbandon != nil || state.Accumulated != 2 || state.Landings != 2 || state.LastCommit != "two" {
-		t.Fatalf("read-side repair lost the folded landing: %+v %v", state, err)
-	}
-}
-
-func TestMalformedStateRefusesUnchanged(t *testing.T) {
-	root := t.TempDir()
-	path := weightPath(root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	want := []byte(`{"accumulated":`)
-	if err := os.WriteFile(path, want, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := WeightCheck(root, 60); err == nil {
-		t.Fatal("malformed state read as zero")
-	}
-	got, err := os.ReadFile(path)
-	if err != nil || string(got) != string(want) {
-		t.Fatalf("malformed state changed: %q %v", got, err)
-	}
-}
-
-func TestSyntacticallyValidCorruptStateRefusesUnchanged(t *testing.T) {
-	now := "2026-08-25T13:00:00Z"
-	tests := []struct {
-		name  string
-		state WeightState
-	}{
-		{
-			name: "positive accumulator without a landing",
-			state: WeightState{
-				Generation: 1, Accumulated: 1, SinceUTC: now,
-			},
-		},
-		{
-			name: "checkpoint accumulator without checkpoint landings",
-			state: WeightState{
-				Generation: 2, Accumulated: 1, Landings: 1, SinceUTC: now, LastCommit: "one",
-				Checkpoint: &WeightCheckpoint{
-					RunID: "run", Subject: "one", OpenedGeneration: 2, Accumulated: 1,
-					OpenedAtUTC: now, Runner: RunnerIdentity{PID: 1, StartedAtSec: 1}, RepairDestination: t.TempDir(),
-				},
-			},
-		},
-		{
-			name: "checkpoint generation and landing provenance disagree",
-			state: WeightState{
-				Generation: 4, Accumulated: 2, Landings: 2, SinceUTC: now, LastCommit: "two", PostCheckpointSinceUTC: now,
-				Checkpoint: &WeightCheckpoint{
-					RunID: "run", Subject: "one", OpenedGeneration: 2, Accumulated: 1, Landings: 1,
-					OpenedAtUTC: now, Runner: RunnerIdentity{PID: 1, StartedAtSec: 1}, RepairDestination: t.TempDir(),
-				},
-			},
-		},
-		{
-			name: "post-checkpoint timestamp without a later landing",
-			state: WeightState{
-				Generation: 2, Accumulated: 1, Landings: 1, SinceUTC: now, LastCommit: "one", PostCheckpointSinceUTC: now,
-				Checkpoint: &WeightCheckpoint{
-					RunID: "run", Subject: "one", OpenedGeneration: 2, Accumulated: 1, Landings: 1,
-					OpenedAtUTC: now, Runner: RunnerIdentity{PID: 1, StartedAtSec: 1}, RepairDestination: t.TempDir(),
-				},
-			},
-		},
-		{
-			name: "relative checkpoint repair destination",
-			state: WeightState{
-				Generation: 2, Accumulated: 1, Landings: 1, SinceUTC: now, LastCommit: "one",
-				Checkpoint: &WeightCheckpoint{
-					RunID: "run", Subject: "one", OpenedGeneration: 2, Accumulated: 1, Landings: 1,
-					OpenedAtUTC: now, Runner: RunnerIdentity{PID: 1, StartedAtSec: 1}, RepairDestination: "relative",
-				},
-			},
-		},
-		{
-			name: "pending reset remainder accumulator without landings",
-			state: WeightState{
-				Generation: 3, Accumulated: 1, SinceUTC: now, LastCommit: "one",
-				PendingReset: &PendingReset{
-					Destination: t.TempDir(),
-					Result: ResetResult{
-						RunID: "run", Subject: "one", CheckpointGeneration: 2, ResetGeneration: 3,
-						ResetAtUTC: now, CheckpointAccumulated: 1, CheckpointLandings: 1,
-						RemainingAccumulated: 1, RemainingSinceUTC: now, LastCommit: "one",
-					},
-				},
-			},
-		},
-		{
-			name: "pending reset generation and landing provenance disagree",
-			state: WeightState{
-				Generation: 6, Accumulated: 2, Landings: 2, SinceUTC: now, LastCommit: "two",
-				PendingReset: &PendingReset{
-					Destination: t.TempDir(),
-					Result: ResetResult{
-						RunID: "run", Subject: "one", CheckpointGeneration: 2, ResetGeneration: 3,
-						ResetAtUTC: now, CheckpointAccumulated: 1, CheckpointLandings: 1,
-						RemainingSinceUTC: now, LastCommit: "one",
-					},
-				},
-			},
-		},
-		{
-			name: "pending reset counts exceed state",
-			state: WeightState{
-				Generation: 5, Accumulated: 1, Landings: 1, SinceUTC: now, LastCommit: "one",
-				PendingReset: &PendingReset{
-					Destination: t.TempDir(),
-					Result: ResetResult{
-						RunID: "run", Subject: "one", CheckpointGeneration: 3, ResetGeneration: 5,
-						ResetAtUTC: now, CheckpointAccumulated: 1, CheckpointLandings: 1,
-						RemainingAccumulated: 2, RemainingLandings: 1, RemainingSinceUTC: now,
-					},
-				},
-			},
-		},
-		{
-			name: "pending reset counts do not equal state",
-			state: WeightState{
-				Generation: 5, Accumulated: 2, Landings: 2, SinceUTC: now, LastCommit: "two",
-				PendingReset: &PendingReset{
-					Destination: t.TempDir(),
-					Result: ResetResult{
-						RunID: "run", Subject: "one", CheckpointGeneration: 3, ResetGeneration: 5,
-						ResetAtUTC: now, CheckpointAccumulated: 1, CheckpointLandings: 1,
-						RemainingAccumulated: 1, RemainingLandings: 1, RemainingSinceUTC: now, LastCommit: "one",
-					},
-				},
-			},
-		},
-		{
-			name: "pending reset generation predates checkpoint",
-			state: WeightState{
-				Generation: 5, Accumulated: 0, Landings: 0, SinceUTC: now,
-				PendingReset: &PendingReset{
-					Destination: t.TempDir(),
-					Result: ResetResult{
-						RunID: "run", Subject: "one", CheckpointGeneration: 5, ResetGeneration: 4,
-						ResetAtUTC: now, RemainingSinceUTC: now,
-					},
-				},
-			},
-		},
-		{
-			name: "pending abandonment weight without landings",
-			state: WeightState{
-				Generation: 3, Accumulated: 1, Landings: 1, SinceUTC: now, LastCommit: "one",
-				PendingAbandon: &PendingAbandon{
-					Destination: t.TempDir(),
-					Result: AbandonResult{
-						RunID: "red", Subject: "one", Reason: "red", AbandonedAtUTC: now,
-						Generation: 3, WeightPreserved: 1, AppendixPublished: true,
-					},
-				},
-			},
-		},
-		{
-			name: "pending abandonment claims unpublished result",
-			state: WeightState{
-				Generation: 3, Accumulated: 1, Landings: 1, SinceUTC: now, LastCommit: "one",
-				PendingAbandon: &PendingAbandon{
-					Destination: t.TempDir(),
-					Result: AbandonResult{
-						RunID: "red", Subject: "one", Reason: "red", AbandonedAtUTC: now,
-						Generation: 3, WeightPreserved: 1, LandingsPreserved: 1,
-					},
-				},
-			},
-		},
-		{
-			name: "pending abandonment counts do not equal state",
-			state: WeightState{
-				Generation: 3, Accumulated: 2, Landings: 2, SinceUTC: now, LastCommit: "two",
-				PendingAbandon: &PendingAbandon{
-					Destination: t.TempDir(),
-					Result: AbandonResult{
-						RunID: "red", Subject: "one", Reason: "red", AbandonedAtUTC: now,
-						Generation: 3, WeightPreserved: 1, LandingsPreserved: 1, AppendixPublished: true,
-					},
-				},
-			},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			path := weightPath(root)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			want, err := json.Marshal(test.state)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, want, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if _, _, err := WeightCheck(root, 60); err == nil {
-				t.Fatal("materially corrupt state was accepted")
-			}
-			got, err := os.ReadFile(path)
-			if err != nil || string(got) != string(want) {
-				t.Fatalf("refused state changed: %q %v", got, err)
-			}
-		})
-	}
-}
-
-func TestValidCrossFieldAccumulatorAndTerminalProvenance(t *testing.T) {
-	now := "2026-08-25T13:00:00Z"
-	tests := []struct {
-		name  string
-		state WeightState
-	}{
-		{
-			name: "zero-weight landing",
-			state: WeightState{
-				Generation: 1, Landings: 1, SinceUTC: now, LastCommit: "one",
-			},
-		},
-		{
-			name: "open checkpoint with one later landing",
-			state: WeightState{
-				Generation: 3, Accumulated: 2, Landings: 2, SinceUTC: now, LastCommit: "two", PostCheckpointSinceUTC: now,
-				Checkpoint: &WeightCheckpoint{
-					RunID: "run", Subject: "one", OpenedGeneration: 2, Accumulated: 1, Landings: 1,
-					OpenedAtUTC: now, Runner: RunnerIdentity{PID: 1, StartedAtSec: 1}, RepairDestination: t.TempDir(),
-				},
-			},
-		},
-		{
-			name: "pending reset with two later landings",
-			state: WeightState{
-				Generation: 5, Accumulated: 2, Landings: 2, SinceUTC: now, LastCommit: "three",
-				PendingReset: &PendingReset{
-					Destination: t.TempDir(),
-					Result: ResetResult{
-						RunID: "run", Subject: "one", CheckpointGeneration: 2, ResetGeneration: 3,
-						ResetAtUTC: now, CheckpointAccumulated: 1, CheckpointLandings: 1,
-						RemainingSinceUTC: now, LastCommit: "one",
-					},
-				},
-			},
-		},
-		{
-			name: "pending abandonment with two later landings",
-			state: WeightState{
-				Generation: 5, Accumulated: 3, Landings: 3, SinceUTC: now, LastCommit: "three",
-				PendingAbandon: &PendingAbandon{
-					Destination: t.TempDir(),
-					Result: AbandonResult{
-						RunID: "red", Subject: "one", Reason: "red", AbandonedAtUTC: now,
-						Generation: 3, WeightPreserved: 1, LandingsPreserved: 1, AppendixPublished: true,
-					},
-				},
-			},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if err := validateWeightState(test.state); err != nil {
-				t.Fatalf("valid state refused: %v", err)
-			}
-		})
-	}
-}
-
-func TestResetWriteFailureLeavesCheckpointOpen(t *testing.T) {
-	root := t.TempDir()
-	now := time.Date(2026, 8, 25, 14, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "run", "one", t.TempDir(), 1, weightProber{1: alive(1, 10, 0, "")})
-	priorWriter := writeWeightState
-	writeWeightState = func(string, WeightState) error { return errors.New("injected reset write") }
-	_, _, err := WeightReset(root, "run", FullRun)
-	writeWeightState = priorWriter
-	if err == nil {
-		t.Fatal("injected reset write passed")
-	}
-	state, _, checkErr := WeightCheck(root, 60)
-	if checkErr != nil || state.Checkpoint == nil || state.Accumulated != 1 {
-		t.Fatalf("failed reset changed disk state: %+v %v", state, checkErr)
-	}
-}
-
-func TestDurabilityUnknownResetStateReportsFailureAndRepairs(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "run", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-
-	priorWriter := writeWeightState
-	injected := false
-	writeWeightState = func(root string, state WeightState) error {
-		if err := priorWriter(root, state); err != nil {
-			return err
-		}
-		if !injected {
-			injected = true
-			return errors.New("injected post-rename durability uncertainty")
-		}
-		return nil
-	}
-	t.Cleanup(func() { writeWeightState = priorWriter })
-
-	if _, _, err := WeightReset(root, "run", FullRun); err == nil {
-		t.Fatal("durability-unknown reset reported success")
-	}
-	writeWeightState = priorWriter
-
-	persisted, err := loadWeightLocked(root, weightNow())
-	if err != nil || persisted.Checkpoint != nil || persisted.PendingReset == nil || persisted.Accumulated != 0 {
-		t.Fatalf("published durability-unknown state is not a valid pending reset: %+v %v", persisted, err)
-	}
-	state, _, err := WeightCheck(root, 60)
-	if err != nil || state.Checkpoint != nil || state.PendingReset != nil || state.Accumulated != 0 {
-		t.Fatalf("read-side repair did not reconcile the durability-unknown reset: %+v %v", state, err)
-	}
-	if _, err := os.Stat(filepath.Join(envelope, "reset.json")); err != nil {
-		t.Fatalf("read-side repair did not publish reset.json: %v", err)
-	}
-}
-
-func TestMissingResetAppendixRepairsOnReadWithoutSecondSubtraction(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 25, 15, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "run", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	priorPublisher := publishWeightAppendix
-	publishWeightAppendix = func(string, any) error { return errors.New("injected appendix failure") }
-	state, _, err := WeightReset(root, "run", FullRun)
-	if state.PendingReset == nil {
-		t.Fatalf("failed appendix lost replay data: %+v", state)
-	}
-	var pending *ResetAppendixPendingError
-	if !errors.As(err, &pending) {
-		t.Fatalf("wrong reset failure: %v", err)
-	}
-	if _, _, repairErr := WeightCheck(root, 60); repairErr == nil {
-		t.Fatal("failed read-side repair did not report")
-	}
-	publishWeightAppendix = priorPublisher
-	state, _, err = WeightAdd(root, "two", []byte("1\t0\tdocs/b.md\x00"), "", 60)
-	if err != nil || state.PendingReset == nil || state.Accumulated != 1 {
-		t.Fatalf("landing overwrote pending reset replay data: %+v %v", state, err)
-	}
-	state, _, err = WeightCheck(root, 60)
-	if err != nil || state.PendingReset != nil || state.Accumulated != 1 || state.LastCommit != "two" {
-		t.Fatalf("read-side repair failed or subtracted again: %+v %v", state, err)
-	}
-	if state.Generation != 5 {
-		t.Fatalf("repair cleanup generation = %d, want 5", state.Generation)
-	}
-	generation := state.Generation
-	state, _, err = WeightCheck(root, 60)
-	if err != nil || state.Generation != generation || state.Accumulated != 1 {
-		t.Fatalf("repeated repair was not idempotent: %+v %v", state, err)
-	}
-}
-
-func TestConflictingResetAppendixLeavesRepairForRetry(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	openCheckpoint(t, root, "run", "one", envelope, 1, weightProber{1: alive(1, 10, 0, "")})
-	priorPublisher := publishWeightAppendix
-	publishWeightAppendix = func(string, any) error { return errors.New("injected first publication failure") }
-	if _, _, err := WeightReset(root, "run", FullRun); err == nil {
-		t.Fatal("fixture reset unexpectedly published")
-	}
-	publishWeightAppendix = priorPublisher
-	appendix := filepath.Join(envelope, "reset.json")
-	if err := os.WriteFile(appendix, []byte("{}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := WeightCheck(root, 60); err == nil || !strings.Contains(err.Error(), "conflicts") {
-		t.Fatalf("conflicting reset facts were accepted: %v", err)
-	}
-	data, err := os.ReadFile(weightPath(root))
+	stateAfter, err := loadWeight(root, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var state WeightState
-	if err := json.Unmarshal(data, &state); err != nil || state.PendingReset == nil {
-		t.Fatalf("failed repair discarded replay data: %+v %v", state, err)
-	}
-	if err := os.Remove(appendix); err != nil {
-		t.Fatal(err)
-	}
-	state, _, err = WeightCheck(root, 60)
-	if err != nil || state.PendingReset != nil {
-		t.Fatalf("later retry did not repair: %+v %v", state, err)
-	}
-}
-
-func TestPublishedAppendixWithPendingCleanupRepairsBeforeNextCheckpoint(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 25, 16, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	add(t, root, "one", "1\t0\tdocs/a.md\x00")
-	prober := weightProber{1: alive(1, 10, 0, ""), 2: alive(2, 20, 0, "")}
-	openCheckpoint(t, root, "run", "one", envelope, 1, prober)
-	priorWriter := writeWeightState
-	writes := 0
-	writeWeightState = func(root string, state WeightState) error {
-		writes++
-		if writes == 2 {
-			return errors.New("injected pending cleanup write")
-		}
-		return priorWriter(root, state)
-	}
-	state, _, err := WeightReset(root, "run", FullRun)
-	writeWeightState = priorWriter
-	if state.PendingReset == nil || err == nil {
-		t.Fatalf("cleanup failure did not retain repair record: %+v %v", state, err)
-	}
-	result, err := WeightCheckpointOpen(root, CheckpointRequest{RunID: "next", Subject: "one", RunnerPID: 2, RepairDestination: t.TempDir()}, prober)
-	if err != nil || result.State.PendingReset != nil || result.Checkpoint.RunID != "next" {
-		t.Fatalf("new checkpoint overwrote repair before completing it: %+v %v", result, err)
-	}
-}
-
-func TestPartialResetWithoutPostTimestampFallsBackToResetTime(t *testing.T) {
-	root, envelope := t.TempDir(), t.TempDir()
-	now := time.Date(2026, 8, 25, 17, 0, 0, 0, time.UTC)
-	fixedClock(t, &now)
-	state := WeightState{
-		Generation: 4, Accumulated: 2, Landings: 2, SinceUTC: now.Add(-time.Hour).Format(time.RFC3339), LastCommit: "newer",
-		Checkpoint: &WeightCheckpoint{
-			RunID: "legacy", Subject: "subject", OpenedGeneration: 3, Accumulated: 1, Landings: 1,
-			OpenedAtUTC: now.Add(-30 * time.Minute).Format(time.RFC3339), Runner: RunnerIdentity{PID: 1, StartedAtSec: 1}, RepairDestination: envelope,
-		},
-	}
-	data, _ := json.Marshal(state)
-	if err := os.MkdirAll(filepath.Dir(weightPath(root)), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(weightPath(root), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	reset, _, err := WeightReset(root, "legacy", FullRun)
-	if err != nil || reset.SinceUTC != now.Format(time.RFC3339) || reset.Accumulated != 1 {
-		t.Fatalf("fallback reset time not adopted: %+v %v", reset, err)
+	if stateAfter.Generation != stateBefore.Generation || stateAfter.Accumulated != stateBefore.Accumulated || !reflect.DeepEqual(stateAfter.LastDecision, stateBefore.LastDecision) {
+		t.Fatalf("stale refusal changed weight state: before=%+v after=%+v", stateBefore, stateAfter)
 	}
 }

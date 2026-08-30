@@ -32,60 +32,41 @@ Keep reviews small and cheap:
 - Commit messages state intent and observable effect. Follow the project's authorship convention for agent-written changes.
 - Credentials and secrets never enter commits, logs, plans, or handoff notes. If one leaks into history, escalate immediately. Removal is a human-reserved decision.
 
-## The Milestone Battery, Weight-Triggered
+## Weight-Triggered Direct Validation
 
-Verification is tiered so ordinary landings stay fast and accumulated change
-still receives the expensive proof. While a change is moving, and at its
-landing boundary, run the TOUCHED-SURFACE tier: the changed packages' tests,
-the fixture legs the diff touches, and the static proof built from the
-prospective landing. The landing wrapper weighs exactly the behavior-surface
-policy's `LANDING` projection. Coordination-only changes weigh zero; the due
-line is a scheduling nudge, never a landing refusal.
-
-When accumulated feature weight reaches the configured threshold, run the
-FULL milestone battery once with:
+Ordinary landings keep the existing touched-package, touched-fixture, and
+static checks. They add no governance command or form. The landing path only
+adds behavior-surface weight; when the configured threshold is due, the
+standing validator's custodian runs the retained validator directly through
+the governed run boundary:
 
 ```sh
-scripts/agents/milestone-battery.sh
+bin/metasystem run launch --root "$PWD" --id "direct-validation-<id>" \
+  --kind suite --display "weight-triggered direct validation" \
+  --log "artifacts/agents/runs/direct-validation-<id>.log" \
+  --goal "<standing-validator-goal>" --obligation-revision "<revision>" \
+  --standing-shared-process -- scripts/validate-metasystem.sh
 ```
 
-That command records the current commit, creates an independent local clone
-detached at it, builds and validates with that clone's own engine and the
-shared Go cache, and reports the exact subject commit it judged. Live goal
-writes, commits, rebases, checkouts, configuration edits, and supervision use
-different state and cannot change the recorded subject. The clone receives
-only the committed generic battery configuration; the live `conf.local` and
-the live supervision registry are not copied.
+Watch that exact run with the command printed by `run launch`. A green run may
+discharge weight only through `gate weight-discharge` with the same goal,
+obligation revision, and run id. Direct shell diagnostics remain free to run,
+but cannot discharge weight or another obligation.
 
-Every outcome publishes a run-scoped evidence envelope to the durable
-evidence home before teardown. A green run then consumes only the accumulator
-portion it checkpointed, preserving landings that arrived during validation.
-A red or aborted run abandons its checkpoint and resets nothing. Evidence-copy
-failure retains the clone and forbids reset; reset-appendix publication is
-repairable from the accumulator on the next weight read. Findings from a
-milestone battery fix forward.
+The retirement observation window is the next two weight-triggered direct
+validations. The steward is the observer and mechanically compares their
+stage-result section ids with the retained catch classes. Wido is the
+custodian. Findings fix forward; no per-landing gate or retry is introduced.
 
-The isolated validation root publishes one structural run class. `FULL` means
-that root performed the complete engine proof itself; witness reuse by its
-descendants is only deduplication and does not change the class.
-`WITNESS-ASSISTED` means the root imported engine proof. Only `FULL` consumes
-the weight checkpoint. A witness-assisted run abandons the checkpoint without
-subtracting weight, and a conclusion that relies on milestone-battery
-acceptance must procedurally cite a `FULL` run.
-
-Two rules keep its wall clock and proof transfer honest:
-
-- One suite run, not two. The engine gate (`scripts/agents/go-gate.sh`) runs
-  the race suite with coverage; a separate plain `go test ./...` before it
-  proves nothing the gate does not re-prove.
-- One proof per byte projection. The versioned behavior-surface owner names
-  `ENGINE`, `LANDING`, and `PAYLOAD` separately. Any explicit `ENGINE`
-  consumer descended from the witness's exact live controller may skip only
-  the policy's witness-engine family when policy version, `ENGINE` digest, and
-  independent toolchain identity match. Delivery reuse is a separate policy
-  scope: it additionally requires `PAYLOAD` equality and a rebuilt-binary
-  stamp before an enumerated delivery family may skip. A mismatch runs the
-  omitted proof instead of accepting reuse.
+Ownership of the retained overlaps is explicit. `commit.sh` alone executes the
+per-landing coverage delta; `land.sh` only passes its ratchet argument through.
+`go-gate.sh` owns the repository-wide coverage ratchet. Wido owns the review,
+after the next declared milestone, of whether that sweep still catches debt
+the landing delta cannot. `validate-metasystem.sh` owns VM delivery and
+guest-runtime invariants; `adopt-fixtures.sh` owns installed-tree and update
+invariants. Wido reviews those distinct owners after the same two-run
+retirement window. The steward puts a due review in its single ceilinged
+ruling digest; none has a per-row delivery.
 
 ## Review Guide in Reports
 

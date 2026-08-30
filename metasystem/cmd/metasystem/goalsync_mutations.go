@@ -392,6 +392,77 @@ func runGoalEnrollTerminal(args []string) int {
 	return 0
 }
 
+func runGoalSetObligation(args []string) int {
+	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "claimed goal id")
+	by := flags.String("by", "", "directing human")
+	lineage := flags.String("lineage", "", "coordinator lineage")
+	state := flags.String("state", "", "DRAFT|OBSERVE|LIMITED|ENFORCED")
+	owner := flags.String("owner", "", "person accountable for the obligation")
+	recurrence := flags.String("recurrence", "", "single-experiment|standing-shared-process")
+	platform := flags.String("platform", "", "authorized operating-system/architecture token")
+	toolchain := flags.String("toolchain-identity", "", "authorized toolchain identity")
+	surface := flags.String("surface-digest", "", "authorized behavior-surface digest")
+	maxActiveJobs := flags.Uint64("max-active-jobs", 0, "greatest active-job observation permitted")
+	timingEnvelope := flags.Uint64("timing-envelope-sec", 0, "maximum terminal duration")
+	var effects repeatedStrings
+	flags.Var(&effects, "effect", "governing effect (repeatable)")
+	valueJudgment := flags.String("value-judgment", "", "yes|no|unknown")
+	reversibility := flags.String("reversibility", "", "reversible|compensable|irreversible|unknown")
+	severeHarm := flags.String("severe-harm", "", "yes|no|unknown")
+	unfamiliarApproach := flags.String("unfamiliar-approach", "", "yes|no|unknown")
+	testDiscrimination := flags.String("test-discrimination", "", "strong|weak|unknown")
+	correlatedRisk := flags.String("correlated-assumption-risk", "", "yes|no|unknown")
+	authorityScopeChange := flags.String("authority-scope-change", "", "yes|no|unknown")
+	destructiveReach := flags.String("destructive-reach", "", "none|reversible-local|destructive|unknown")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *id == "" || *by == "" || *state == "" || *owner == "" || *recurrence == "" ||
+		*platform == "" || *toolchain == "" || *surface == "" || *maxActiveJobs == 0 || *timingEnvelope == 0 ||
+		len(effects) == 0 || *valueJudgment == "" || *reversibility == "" || *severeHarm == "" ||
+		*unfamiliarApproach == "" || *testDiscrimination == "" || *correlatedRisk == "" || *authorityScopeChange == "" || *destructiveReach == "" {
+		fmt.Fprintln(os.Stderr, "goal set-obligation requires identity, recurrence, platform/toolchain/surface observations, active/timing ceilings, effects, and every typed review trigger")
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal set-obligation works only with the synced backlog")
+		return 1
+	}
+	proof, err := humanauthority.Prove(*root, int64(os.Getppid()), nil, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "goal set-obligation could not prove enrolled human ancestry:", err)
+		return 1
+	}
+	req, err := syncReq(*root, *by, *lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	operationID := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+	if err := humanauthority.RecordProof(*root, operationID, "goal set-obligation", proof); err != nil {
+		fmt.Fprintln(os.Stderr, "goal set-obligation could not record its authority proof:", err)
+		return 1
+	}
+	governingEffects := make([]goal.GoverningEffect, len(effects))
+	for index, effect := range effects {
+		governingEffects[index] = goal.GoverningEffect(effect)
+	}
+	obligation := goal.GovernedObligation{
+		State: goal.ObligationState(*state), Owner: *owner, Effects: governingEffects,
+		Assumptions: goal.ObligationAssumptions{Recurrence: goal.RecurrenceClass(*recurrence),
+			Platform: *platform, ToolchainIdentity: *toolchain, SurfaceDigest: *surface,
+			MaxActiveJobs: *maxActiveJobs, TimingEnvelopeSeconds: *timingEnvelope,
+			ObservationSource: "run-terminal-record"},
+		Triggers: goal.HumanReviewTriggers{ValueJudgment: *valueJudgment, Reversibility: *reversibility,
+			SevereHarm: *severeHarm, UnfamiliarApproach: *unfamiliarApproach, TestDiscrimination: *testDiscrimination,
+			CorrelatedAssumptionRisk: *correlatedRisk, AuthorityScopeChange: *authorityScopeChange, DestructiveReach: *destructiveReach},
+	}
+	res, err := goal.SetObligation(req, *id, obligation, &proof)
+	return printSyncResult(res, err)
+}
+
 var (
 	runGoalClaim = runSyncOnly("claim", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		budget, err := f.budgetTuple(false)

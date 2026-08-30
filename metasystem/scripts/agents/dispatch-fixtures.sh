@@ -1495,6 +1495,7 @@ sg_actual=$(shasum -a 256 "$sg_prompt" | cut -d' ' -f1)
 # prints the exact watch command, and the watch verb exits with the
 # terminal status while holding the waiter record the verdict reads.
 watch_line_out="$agent_fixture/watch-line.out"
+wait_for_agent_census_fresh watch-line-job
 (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic \
   --brief "$happy_brief" --job-id watch-line-job) >"$watch_line_out" 2>&1
 grep -Fq 'watch it with: scripts/agents/dispatch.sh watch --job watch-line-job' "$watch_line_out" \
