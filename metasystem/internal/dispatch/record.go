@@ -78,10 +78,12 @@ var immutableFields = map[string]bool{
 // protects invariants that a status-only compare cannot express. Generic
 // record patches must not bypass that owner.
 var dedicatedMetadataFields = map[string]bool{
-	"findingRegister":      true,
-	"findingRegisterRound": true,
-	"boundedCritiqueStart": true,
-	"critiqueExhaustions":  true,
+	"findingRegister":           true,
+	"findingRegisterRound":      true,
+	"boundedCritiqueStart":      true,
+	"critiqueExhaustions":       true,
+	"independentCritiqueJobRef": true,
+	"liveProofEvidenceRef":      true,
 }
 
 // The only fields a terminal record still accepts: its evidence mirror, the
@@ -89,7 +91,7 @@ var dedicatedMetadataFields = map[string]bool{
 // a finished job is final. Critique exhaustions have their own locked owner.
 var terminalMetadataFields = map[string]bool{
 	"mirror": true, "chainClosed": true, "chainUsage": true,
-	"runnerClosed": true, "independentCritiqueJobRef": true, "liveProofEvidenceRef": true,
+	"runnerClosed": true,
 }
 
 // OpError carries the process exit code a lifecycle refusal must surface. An
@@ -332,6 +334,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["goalId"], current["goalId"]) ||
 			!sameValue(record["goalRevision"], current["goalRevision"]) ||
 			!sameValue(record["machineId"], current["machineId"]) ||
+			!sameValue(record["reviews"], current["reviews"]) ||
 			!sameValue(record["approvedRef"], current["approvedRef"]) ||
 			!sameValue(record["sliceApprovalClaim"], current["sliceApprovalClaim"]) ||
 			!sameValue(record["capMin"], current["capMin"]) {

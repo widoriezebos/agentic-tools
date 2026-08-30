@@ -135,6 +135,7 @@ func families() []family {
 				{"validate-mission", "validate a mission id and lease for dispatch", runDispatchValidateMission},
 				{"mirror", "mirror a job's evidence with a manifest", runDispatchMirror},
 				{"close-check", "validate a chain is closable", runDispatchCloseCheck},
+				{"review-reference-reconcile", "derive a pre-stamping review evidence pointer", runDispatchReviewReferenceReconcile},
 				{"critique-register-advance", "fold one critic round into its canonical register", runDispatchCritiqueRegisterAdvance},
 				{"critique-open-finding-ids", "print a critic register's open finding identifiers", runDispatchCritiqueOpenFindingIDs},
 				{"critique-exhaustion-advance", "atomically advance register-backed critique exhaustion", runDispatchCritiqueExhaustionAdvance},

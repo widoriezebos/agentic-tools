@@ -307,7 +307,7 @@ func BuildRecord(p BuildRecordParams) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Runtime, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfiguration(p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return err
 	}
 	if p.ReasoningEffort != configuration.BuilderReasoningEffort {
@@ -554,7 +554,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfiguration(runtimeName, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfiguration(p.Root, runtimeName, model, p.DestructiveReach); err != nil {
 		return err
 	}
 	capMinutes, ok := numInt(authority.capMin)

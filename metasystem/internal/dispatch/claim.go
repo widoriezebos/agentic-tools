@@ -50,6 +50,7 @@ type ClaimLaunchParams struct {
 	GoalID               string
 	GoalRevision         uint64
 	MachineID            string
+	Reviews              string
 	ApprovedRef          string
 	AdapterVerb          string
 	DefaultCapMinutes    int64
@@ -73,7 +74,10 @@ func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 	}
 	params.Request.GoalID = params.GoalID
 	params.Request.GoalRevision = params.GoalRevision
-	if err := ValidateRuntimeHazardConfiguration(params.Request.Runtime, params.Request.DestructiveReach); err != nil {
+	if err := validateClaimReviews(params.Request.Role, params.Reviews); err != nil {
+		return ClaimResult{}, err
+	}
+	if err := ValidateRuntimeHazardConfiguration(params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
 		return ClaimResult{}, err
 	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
@@ -113,6 +117,10 @@ func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 	base["recordedFingerprintVersion"] = recordedVersion
 	if recordedDigest != fingerprint.Digest {
 		base["reason"] = "fingerprint-equality-gate-failed"
+		return claimResult(ClaimRefusedOpIDMismatch, fingerprint, base), nil
+	}
+	if asString(record["reviews"]) != params.Reviews {
+		base["reason"] = "standing-record-reviews-binding-does-not-match"
 		return claimResult(ClaimRefusedOpIDMismatch, fingerprint, base), nil
 	}
 	return claimResult(ClaimPreflightMatched, fingerprint, base), nil
@@ -206,6 +214,9 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	// them from the fingerprint while still recording them on the reservation.
 	params.Request.GoalID = params.GoalID
 	params.Request.GoalRevision = params.GoalRevision
+	if err := validateClaimReviews(params.Request.Role, params.Reviews); err != nil {
+		return ClaimResult{}, err
+	}
 	if params.AdapterVerb != "dispatch" && params.AdapterVerb != "follow-up" {
 		return ClaimResult{}, fmt.Errorf("claim-launch adapter verb must be dispatch or follow-up")
 	}
@@ -213,7 +224,7 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
-	if err := ValidateRuntimeHazardConfiguration(params.Request.Runtime, params.Request.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfiguration(params.Root, params.Request.Runtime, params.Request.Model, params.Request.DestructiveReach); err != nil {
 		return ClaimResult{}, err
 	}
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
@@ -355,7 +366,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 		record, readErr := readObject(recordPath)
 		if readErr == nil {
 			found = true
-			result, readErr = resolveSameOpID(params.OpID, params.OperationID, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
+			result, readErr = resolveSameOpID(params.OpID, params.OperationID, params.Reviews, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
 			return readErr
 		}
 		if !os.IsNotExist(readErr) {
@@ -392,7 +403,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 		return withRecordLock(params.Root, params.OpID, func(recordPath string) error {
 			record, readErr := readObject(recordPath)
 			if readErr == nil {
-				result, readErr = resolveSameOpID(params.OpID, params.OperationID, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
+				result, readErr = resolveSameOpID(params.OpID, params.OperationID, params.Reviews, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
 				return readErr
 			}
 			if !os.IsNotExist(readErr) {
@@ -449,7 +460,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 				return fmt.Errorf("claim-launch capability source returned an invalid value")
 			}
 			capabilityDigest := sha256.Sum256([]byte(launchCapability))
-			record = claimReservationRecord(params.OpID, params.OperationID, fingerprint, provenance, instanceTag, params.AdapterVerb, hex.EncodeToString(capabilityDigest[:]), creatorBreadcrumb, occupancy.FreeEvidence, createdAt)
+			record = claimReservationRecord(params.OpID, params.OperationID, params.Reviews, fingerprint, provenance, instanceTag, params.AdapterVerb, hex.EncodeToString(capabilityDigest[:]), creatorBreadcrumb, occupancy.FreeEvidence, createdAt)
 			record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
 			generation, publishErr := transaction.publishBusy(classifySessionRecord(params.OpID, record))
 			if publishErr != nil {
@@ -460,6 +471,9 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 			}
 			if writeErr := writeRecord(recordPath, record); writeErr != nil {
 				return writeErr
+			}
+			if stampErr := StampClaimedReviewReference(params.Root, params.OpID); stampErr != nil {
+				return stampErr
 			}
 			result = claimResult(ClaimWON, fingerprint, map[string]any{
 				"resolution":              "reservation-created",
@@ -478,7 +492,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 	return result, err
 }
 
-func resolveSameOpID(opid, operationID, recordPath string, record map[string]any, fingerprint LaunchFingerprint, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (ClaimResult, error) {
+func resolveSameOpID(opid, operationID, reviews, recordPath string, record map[string]any, fingerprint LaunchFingerprint, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (ClaimResult, error) {
 	base := map[string]any{
 		"resolution": "same-opid",
 		"recordPath": recordPath,
@@ -501,6 +515,10 @@ func resolveSameOpID(opid, operationID, recordPath string, record map[string]any
 	}
 	if recordedDigest != fingerprint.Digest {
 		base["reason"] = "fingerprint-equality-gate-failed"
+		return claimResult(ClaimRefusedOpIDMismatch, fingerprint, base), nil
+	}
+	if asString(record["reviews"]) != reviews {
+		base["reason"] = "standing-record-reviews-binding-does-not-match"
 		return claimResult(ClaimRefusedOpIDMismatch, fingerprint, base), nil
 	}
 	if asString(record["proofLevel"]) != "proven" {
@@ -586,7 +604,7 @@ func resolveSameOpID(opid, operationID, recordPath string, record map[string]any
 	}
 }
 
-func claimReservationRecord(opid, operationID string, fingerprint LaunchFingerprint, provenance claimReservationProvenance, instanceTag, adapterVerb, capabilityDigest string, creator map[string]any, freeEvidence []SessionOccupant, createdAt time.Time) map[string]any {
+func claimReservationRecord(opid, operationID, reviews string, fingerprint LaunchFingerprint, provenance claimReservationProvenance, instanceTag, adapterVerb, capabilityDigest string, creator map[string]any, freeEvidence []SessionOccupant, createdAt time.Time) map[string]any {
 	request := fingerprint.Request
 	roots := make([]any, 0, len(request.ProductRoots))
 	for _, root := range request.ProductRoots {
@@ -625,6 +643,7 @@ func claimReservationRecord(opid, operationID string, fingerprint LaunchFingerpr
 		"runtime":                    request.Runtime,
 		"canonicalModelKey":          request.CanonicalModelKey,
 		"role":                       request.Role,
+		"reviews":                    nullableString(reviews),
 		"launchMode":                 request.LaunchMode,
 		"permissionEnvelopeDigest":   request.PermissionEnvelopeDigest,
 		"productRoots":               roots,
@@ -648,6 +667,24 @@ func claimReservationRecord(opid, operationID string, fingerprint LaunchFingerpr
 		"reconciliationHandoff":      nil,
 		"sessionOccupancyEvidence":   occupancyEvidence,
 	}
+}
+
+func validateClaimReviews(role, reviews string) error {
+	switch role {
+	case "code-critic", "warden":
+		if !validJobID.MatchString(reviews) {
+			return fmt.Errorf("claim-launch role %s requires a valid reviews job id", role)
+		}
+	case "verifier":
+		if reviews != "" && !validJobID.MatchString(reviews) {
+			return fmt.Errorf("claim-launch verifier reviews must be a valid job id")
+		}
+	default:
+		if reviews != "" {
+			return fmt.Errorf("claim-launch reviews is only valid for code-critic, warden, and verifier roles")
+		}
+	}
+	return nil
 }
 
 func recordReconciliationHandoff(recordPath string, record map[string]any, now time.Time, reason string) (map[string]any, error) {

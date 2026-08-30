@@ -26,7 +26,7 @@ func CloseCheck(repoRoot, root string) error {
 			return fmt.Errorf("cannot close a chain with a non-terminal record")
 		}
 	}
-	if err := validateHazardCompletion(jobsDir, root, members); err != nil {
+	if err := validateHazardCompletion(repoRoot, jobsDir, root, members); err != nil {
 		return err
 	}
 	rootRecord, err := readObject(filepath.Join(jobsDir, root+".json"))

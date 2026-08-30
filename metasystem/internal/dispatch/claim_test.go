@@ -72,8 +72,12 @@ func TestClaimLaunchRefusesOperationIdentityReuseByAncestor(t *testing.T) {
 
 func TestClaimLaunchRefusesHazardWithoutExecutableRuntimeEffort(t *testing.T) {
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("runtime.claude.maximal-models=claude-fable-5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	params := claimParamsForTest(root, "claude-destructive")
 	params.Request.Runtime = "claude"
+	params.Request.Model = "claude-non-maximal"
 	params.Request.DestructiveReach = HazardDestructiveReach
 	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
 	_, err := ClaimLaunch(params, claimDependenciesForTest(&now, identity.Verification{}))

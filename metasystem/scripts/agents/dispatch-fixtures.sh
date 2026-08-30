@@ -1568,6 +1568,8 @@ run_agent_fixture_captured delegate-derived-worktree delegate-derived-worktree \
 delegate_implementer_record="$agent_repo/artifacts/agents/jobs/delegate-derived-worktree.json"
 grep -Fq '"outcome":"WON"' "$agent_fixture/delegate-derived-worktree.out" \
   && [[ "$("$engine" json get --file "$delegate_implementer_record" --field launchMode)" == worktree ]] \
+  && [[ "$("$engine" json get --file "$delegate_implementer_record" --field reasoningEffort)" == xhigh ]] \
+  && [[ "$("$engine" json get --file "$delegate_implementer_record" --field configurationObligations.builderReasoningEffort)" == xhigh ]] \
   || { echo "the public writable delegate did not return a typed launch on derived worktree custody" >&2; cat "$agent_fixture/delegate-derived-worktree.out" "$delegate_implementer_record" >&2; exit 1; }
 echo "live delegate isolation probe passed"
 
@@ -1581,11 +1583,23 @@ review_target_root=$("$engine" json get --file "$agent_repo/artifacts/agents/job
   || { echo "the implementer role lost its existing writable worktree envelope" >&2; cat "$review_target_effective" >&2; exit 1; }
 run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --permissions none --job-id flag-runtime --wait
 flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
+review_target_record="$agent_repo/artifacts/agents/jobs/review-target.json"
 [[ "$("$engine" json get --file "$flag_runtime_record" --field runtime)" == fake \
    && "$("$engine" json get --file "$flag_runtime_record" --field overridden)" == true ]] \
   || { echo "flag runtime override was not recorded as overridden fake" >&2; exit 1; }
 [[ "$("$engine" json get --file "$flag_runtime_record" --field reviews)" == review-target ]] \
   || { echo "flag-runtime record lost its reviews binding" >&2; cat "$flag_runtime_record" >&2; exit 1; }
+[[ "$("$engine" json get --file "$review_target_record" --field independentCritiqueJobRef)" == flag-runtime ]] \
+  || { echo "critic claim did not derive its reference onto the reviewed chain root" >&2; cat "$review_target_record" >&2; exit 1; }
+# The production roster keeps verifier work in the current main session. This
+# isolated adapter fixture selects the configured fake default without an
+# authority-bearing runtime override, then restores the production-shaped
+# roster immediately after the launch.
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]verifier[.]runtime=.*$'
+run_agent_fixture review-proof review-proof "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --reviews review-target --permissions none --job-id review-proof --wait
+cp "$good_agent_conf" "$agent_repo/metasystem.conf"
+[[ "$("$engine" json get --file "$review_target_record" --field liveProofEvidenceRef)" == review-proof ]] \
+  || { echo "verifier claim did not derive its reference onto the reviewed chain root" >&2; cat "$review_target_record" >&2; exit 1; }
 investigator_brief="$agent_fixture/investigator.md"
 make_agent_brief "$investigator_brief" take-a-step-back
 run_agent_fixture investigator-role investigator-role "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --permissions none --job-id investigator-role --wait

@@ -361,8 +361,8 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if !goalSeen || !roleSeen || !briefSeen || !destructiveReachSeen {
 		return nil, "", fmt.Errorf("delegate requires --role, --brief, --goal <id|none-explicit>, and --destructive-reach <class>")
 	}
-	if reviewsSeen && role != "code-critic" && role != "warden" {
-		return nil, "", fmt.Errorf("--reviews is only valid for the code-critic and warden roles")
+	if reviewsSeen && role != "code-critic" && role != "warden" && role != "verifier" {
+		return nil, "", fmt.Errorf("--reviews is only valid for the code-critic, warden, and verifier roles")
 	}
 	return out, "dispatch", nil
 }

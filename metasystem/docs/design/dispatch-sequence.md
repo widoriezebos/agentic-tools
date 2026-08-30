@@ -117,13 +117,15 @@ the cap must stay below the live watcher's attested ceiling
 the reservation record is built or published.
 
 **9. The two-phase reservation (engine writes, shell sequences —
-by ruling).** `job build-setup` reads the final cap resolution and
-renders a pending-setup record whose immutable `capMin`, operation ID,
-goal ID, and goal revision are already complete. `__record-create`
-(RecordCreate, record.go) publishes that spending fact under the
-per-record lock before workspace or adapter setup. A crash before
-publication consumes nothing; a crash afterward retains the attempt
-and reserved minutes even if setup is later terminalized.
+by ruling).** `job claim-launch` publishes the pending-setup record with
+its immutable reservation identity before workspace or adapter setup. For a
+fresh code-critic, warden, or review-linked verifier, that same claim derives
+the chain root named by `reviews` and stamps the evidence job pointer under
+the reviewed root's record lock. The pointer grants nothing: close-check
+still validates the completed evidence's role, independence, effort, and
+coverage of the terminal work round. A crash before publication consumes
+nothing; a crash afterward retains the attempt and reserved minutes even if
+setup is later terminalized.
 
 **10. Workspace (plumbing).** `--worktree` creates
 `artifacts/agents/worktrees/<job>` on a fresh `agent/<job>` branch;
@@ -319,6 +321,13 @@ lands as a self-edge CAS on the root. Mirroring itself
 stamping the whole chain from one job's mirror once wrote durability
 claims for evidence that never landed, and the close then refused a
 chain every record of which CLAIMED to be mirrored.
+
+A pre-stamping critic, warden, or verifier can be linked only through
+`close --reconcile-evidence <job>`. The typed reconciliation owner requires
+completed evidence, derives the reviewed chain rather than accepting a raw
+pointer, requires terminal-round coverage, and requires a critic attempt to
+already be folded before it stamps the root. Close then mirrors the changed
+root and runs the unchanged hazard gate.
 
 ## What is deliberately shell
 

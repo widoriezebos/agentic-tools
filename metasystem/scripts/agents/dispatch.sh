@@ -7,7 +7,7 @@ Usage:
   scripts/agents/dispatch.sh status --job <job-id>
   scripts/agents/dispatch.sh watch --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
-  scripts/agents/dispatch.sh close --job <root-id> [--runner-closed]
+  scripts/agents/dispatch.sh close --job <root-id> [--runner-closed] [--reconcile-evidence <job-id>]
   scripts/agents/dispatch.sh reap [--job <job-id>]
 
 Exit codes: 0 success/completed; 2 usage; 3 failed; 4 timeout;
@@ -1225,8 +1225,13 @@ dispatch_job() {
     [[ -f "$jobs/$reviews.json" ]] || die 1 "$role dispatch cannot review unknown implementer job: $reviews"
     [[ "$(json_field "$jobs/$reviews.json" role 2>/dev/null || true)" == implementer ]] \
       || die 1 "$role dispatch --reviews must name an implementer job: $reviews"
+  elif [[ "$role" == verifier && -n "$reviews" ]]; then
+    valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
+    [[ -f "$jobs/$reviews.json" ]] || die 1 "verifier dispatch cannot review unknown implementer job: $reviews"
+    [[ "$(json_field "$jobs/$reviews.json" role 2>/dev/null || true)" == implementer ]] \
+      || die 1 "verifier dispatch --reviews must name an implementer job: $reviews"
   elif [[ -n "$reviews" ]]; then
-    die 2 "--reviews is only valid for the code-critic and warden roles"
+    die 2 "--reviews is only valid for the code-critic, warden, and verifier roles"
   fi
   [[ ! ( $use_worktree -eq 1 && -n "$workspace" ) ]] || die 2 "--workspace and --worktree are mutually exclusive"
   if (( approve_escalation )) && { [[ ! -t 0 ]] || [[ ! -t 2 ]]; }; then
@@ -1454,6 +1459,7 @@ dispatch_job() {
     --operation-id "$job" \
     --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
@@ -1484,6 +1490,7 @@ dispatch_job() {
     --operation-id "$job" \
     --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
@@ -1662,7 +1669,7 @@ append_critique_open_ids() { # source message, output message, critic root
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal
+  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal reviews=
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp=
@@ -1742,6 +1749,7 @@ follow_up() {
   # session, even though the adapter opens a new session for the child.
   resumed_for_claim=$session
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
+  reviews=$(json_field "$latest" reviews 2>/dev/null || true); [[ "$reviews" == null ]] && reviews=
   destructive_reach=$(json_field "$latest" destructiveReach 2>/dev/null || true)
   [[ "$destructive_reach" == MECHANICAL || "$destructive_reach" == DESIGN-BEARING || "$destructive_reach" == DESTRUCTIVE-REACH ]] \
     || die 1 "follow-up chain has no admitted destructiveReach class; start a fresh typed delegate chain"
@@ -1913,6 +1921,7 @@ follow_up() {
 	--operation-id "$operation_id" \
     --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
@@ -1943,6 +1952,7 @@ follow_up() {
 	--operation-id "$operation_id" \
     --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
@@ -2042,13 +2052,17 @@ cancel_job() {
 }
 
 close_chain() {
-  local job= root_id root_record status patch runner_closed=false
+  local job= root_id root_record status patch runner_closed=false reconcile_evidence=
   [[ ${1:-} == --job && $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2
-  if [[ ${1:-} == --runner-closed && $# -eq 1 ]]; then
-    runner_closed=true
-    shift
-  fi
-  (($# == 0)) || { usage; exit 2; }
+  while (($#)); do
+    case "$1" in
+      --runner-closed) runner_closed=true; shift ;;
+      --reconcile-evidence)
+        [[ $# -ge 2 && -z "$reconcile_evidence" ]] || { usage; exit 2; }
+        reconcile_evidence=$2; shift 2 ;;
+      *) usage; exit 2 ;;
+    esac
+  done
   lease_entry_check
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
   root_id=$(root_job_id "$job") || die 1 "cannot resolve job chain"
@@ -2061,6 +2075,11 @@ close_chain() {
   exit_cleanup_chain=$root_id
   trap 'release_chain_lock "$exit_cleanup_chain"' EXIT
   root_record="$jobs/$root_id.json"
+  if [[ -n "$reconcile_evidence" ]]; then
+    valid_id "$reconcile_evidence" || die 2 "invalid review evidence job id: $reconcile_evidence"
+    lease_run_held "$current_claim_epoch" "$0" __review-reference-reconcile \
+      --root-job "$root_id" --evidence-job "$reconcile_evidence"
+  fi
   # Closing asserts the chain's evidence is durable, so make it durable
   # first for EVERY terminal member: a reap mirrors only its own job's
   # round, and follow-up rounds otherwise reach this point unmirrored.
@@ -2447,6 +2466,7 @@ case "$command" in
     ;;
   __critique-register-advance) internal_critique_mutation critique-register-advance "$@" ;;
   __critique-exhaustion-advance) internal_critique_mutation critique-exhaustion-advance "$@" ;;
+  __review-reference-reconcile) internal_critique_mutation review-reference-reconcile "$@" ;;
   __launch) internal_launch "$@" ;;
   __handshake-timeout) internal_handshake_timeout "$@" ;;
   __reap-held) internal_reap_held "$@" ;;

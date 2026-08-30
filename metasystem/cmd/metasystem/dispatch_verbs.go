@@ -186,6 +186,7 @@ func runDispatchClaimLaunch(args []string) int {
 	goalID := flags.String("goal", "", "goal id this launch serves")
 	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this launch binds")
 	machineID := flags.String("machine-id", "", "claiming machine for the bound goal")
+	reviews := flags.String("reviews", "", "reviewed job id for critic, warden, or verifier evidence")
 	approvedRef := flags.String("approved-ref", "", "recorded approval reference")
 	destructiveReach := flags.String("destructive-reach", "", "admitted hazard class")
 	adapterVerb := flags.String("adapter-verb", "", "actual adapter launch verb")
@@ -240,6 +241,7 @@ func runDispatchClaimLaunch(args []string) int {
 		Root: *root, OpID: *opid, OperationID: *operationID,
 		MainID: *mainID, ClaimEpoch: *claimEpoch, GoalID: *goalID,
 		GoalRevision: *goalRevision, MachineID: *machineID, ApprovedRef: *approvedRef, AdapterVerb: *adapterVerb,
+		Reviews: *reviews,
 		Request: dispatchcore.LaunchFingerprintRequest{
 			SessionKey: *session, DispatchMode: dispatchcore.DispatchMode(*dispatchMode),
 			ResumedSessionID: &resumed, Runtime: *runtimeName, Model: *model, Role: *role,
@@ -1348,6 +1350,24 @@ func runDispatchCloseCheck(args []string) int {
 		return 2
 	}
 	return recordExit(dispatchcore.CloseCheck(*repo, *root))
+}
+
+func runDispatchReviewReferenceReconcile(args []string) int {
+	if refuseRepeatedFlags("job review-reference-reconcile", args) {
+		return 2
+	}
+	flags := flag.NewFlagSet("job review-reference-reconcile", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	rootJob := flags.String("root-job", "", "reviewed chain root job id")
+	evidenceJob := flags.String("evidence-job", "", "completed critic, warden, or verifier job id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *repo == "" || *rootJob == "" || *evidenceJob == "" {
+		fmt.Fprintln(os.Stderr, "job review-reference-reconcile: --repo, --root-job, and --evidence-job are required")
+		return 2
+	}
+	return recordExit(dispatchcore.ReconcileReviewReference(*repo, *rootJob, *evidenceJob))
 }
 
 // refuseRepeatedFlags is the strict-parse gate for authority-bearing

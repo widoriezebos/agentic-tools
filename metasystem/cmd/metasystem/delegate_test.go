@@ -31,6 +31,16 @@ func TestNormalizeDelegateFreshForwardsReviewsForCriticRoles(t *testing.T) {
 	}
 }
 
+func TestNormalizeDelegateFreshForwardsReviewsForVerifier(t *testing.T) {
+	got, mode, err := normalizeDelegateArgs([]string{
+		"--reviews", "implementer-a", "--role", "verifier", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "DESTRUCTIVE-REACH",
+	})
+	want := []string{"dispatch", "--reviews", "implementer-a", "--role", "verifier", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "DESTRUCTIVE-REACH"}
+	if err != nil || mode != "dispatch" || !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalize verifier reviews = %v, %q, %v; want %v", got, mode, err, want)
+	}
+}
+
 func TestDelegateReviewsRefusesNonCriticRole(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -42,7 +52,7 @@ func TestDelegateReviewsRefusesNonCriticRole(t *testing.T) {
 			"--role", "implementer", "--reviews", "implementer-a", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL",
 		})
 	})
-	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "--reviews is only valid for the code-critic and warden roles") {
+	if code != 2 || !strings.Contains(out, `"outcome":"REFUSED-REQUEST"`) || !strings.Contains(out, "--reviews is only valid for the code-critic, warden, and verifier roles") {
 		t.Fatalf("non-critic reviews exit=%d output=%q", code, out)
 	}
 }

@@ -138,7 +138,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: string(p.DestructiveReach), Detail: err.Error()}
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Runtime, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfiguration(p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: p.Runtime, Detail: err.Error()}
 	}
 

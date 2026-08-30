@@ -41,6 +41,7 @@ func hasProblem(problems []string, substr string) bool {
 
 const validConf = "metasystem.version=1\n" +
 	"metasystem.runtimes=claude,codex,fake\n" +
+	"runtime.claude.maximal-models=claude-fable-5\n" +
 	"evidence.root=@EVIDENCE@\n" +
 	"role.default.runtime=fake\n" +
 	"role.default.model.fake=fake-model\n" +
@@ -86,6 +87,21 @@ func TestValidateRejections(t *testing.T) {
 			name:   "malformed line",
 			conf:   validConf + "no-equals-here\n",
 			expect: "expected key=value",
+		},
+		{
+			name:   "maximal mapping for unsupported runtime",
+			conf:   validConf + "runtime.ghost.maximal-models=ghost-model\n",
+			expect: "runtime.ghost.maximal-models names unsupported runtime 'ghost'",
+		},
+		{
+			name:   "empty maximal mapping member",
+			conf:   strings.Replace(validConf, "runtime.claude.maximal-models=claude-fable-5", "runtime.claude.maximal-models=claude-fable-5,", 1),
+			expect: "runtime.claude.maximal-models must contain only non-empty comma-separated model names",
+		},
+		{
+			name:   "duplicate maximal mapping member",
+			conf:   strings.Replace(validConf, "runtime.claude.maximal-models=claude-fable-5", "runtime.claude.maximal-models=claude-fable-5,claude-fable-5", 1),
+			expect: "runtime.claude.maximal-models contains duplicate model 'claude-fable-5'",
 		},
 		{
 			name:   "unsupported runtime",

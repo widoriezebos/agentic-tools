@@ -230,7 +230,7 @@ func TestHazardConfigurationRefusesRuntimeWithoutExecutableMaximum(t *testing.T)
 	composition := filepath.Join(temp, "composition.json")
 	_, err := ComposeRolePacket(ComposeRolePacketParams{
 		Root: root, Role: "verifier", Brief: brief, JobID: "verify-a", Runtime: "claude",
-		Model: "claude-model", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardDestructiveReach,
+		Model: "claude-non-maximal", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardDestructiveReach,
 		Output: prompt, CompositionOutput: composition,
 	})
 	var refusal *CompositionRefusal
@@ -241,6 +241,45 @@ func TestHazardConfigurationRefusesRuntimeWithoutExecutableMaximum(t *testing.T)
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 			t.Fatalf("refused hazard composition wrote %s", path)
 		}
+	}
+}
+
+func TestHazardConfigurationAcceptsConfiguredMaximalModel(t *testing.T) {
+	root := compositionRepoRoot(t)
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	if err := os.WriteFile(brief, []byte("Working Mode: review\nReview the focused change.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	record, err := ComposeRolePacket(ComposeRolePacketParams{
+		Root: root, Role: "code-critic", Brief: brief, JobID: "claude-maximal", Runtime: "claude",
+		Model: "claude-fable-5", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardDesignBearing,
+		Output: filepath.Join(temp, "prompt.md"), CompositionOutput: filepath.Join(temp, "composition.json"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Runtime != "claude" || record.Model != "claude-fable-5" ||
+		record.ConfigurationObligations.BuilderEffortTier != "maximal" ||
+		record.ConfigurationObligations.BuilderReasoningEffort != "xhigh" {
+		t.Fatalf("configured maximal-model composition = %+v", record)
+	}
+}
+
+func TestHazardConfigurationUsesResolvedLocalMaximalModelMapping(t *testing.T) {
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("runtime.claude.maximal-models=claude-base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf+".local", []byte("runtime.claude.maximal-models=claude-fable-5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateRuntimeHazardConfiguration(root, "claude", "claude-fable-5", HazardDesignBearing); err != nil {
+		t.Fatalf("resolved local maximal model refused: %v", err)
+	}
+	if err := ValidateRuntimeHazardConfiguration(root, "claude", "claude-base", HazardDesignBearing); err == nil || !strings.Contains(err.Error(), "no executable maximal-effort mapping") {
+		t.Fatalf("shadowed committed maximal model result = %v", err)
 	}
 }
 
@@ -295,9 +334,17 @@ func writeHandwrittenHazardEvidenceJob(t *testing.T, repo, job string, record ma
 func stampHazardEvidenceAdmission(t *testing.T, repo, job string, class HazardClass, record map[string]any) {
 	t.Helper()
 	digest := strings.Repeat("a", 64)
+	runtimeName := asString(record["runtime"])
+	if runtimeName == "" {
+		runtimeName = "fake"
+	}
+	model := asString(record["requestedModel"])
+	if model == "" {
+		model = "fake-model"
+	}
 	request := CanonicalLaunchRequest{
 		SessionKey: "session-" + job, DispatchMode: DispatchModeFresh, ResumedSessionID: "",
-		Runtime: "fake", CanonicalModelKey: "fake-model", Role: asString(record["role"]),
+		Runtime: runtimeName, CanonicalModelKey: model, Role: asString(record["role"]),
 		LaunchMode: LaunchModeSharedCheckout, PermissionEnvelopeDigest: digest,
 		ProductRoots: []string{repo}, CapMinutes: 30, InputHash: strings.Repeat("b", 64),
 		DestructiveReach: class,
@@ -318,6 +365,7 @@ func stampHazardEvidenceAdmission(t *testing.T, repo, job string, class HazardCl
 	record["resumedSessionId"] = request.ResumedSessionID
 	record["runtime"] = request.Runtime
 	record["canonicalModelKey"] = request.CanonicalModelKey
+	record["requestedModel"] = model
 	record["launchMode"] = request.LaunchMode
 	record["permissionEnvelopeDigest"] = request.PermissionEnvelopeDigest
 	record["productRoots"] = request.ProductRoots
@@ -363,8 +411,7 @@ func TestHazardDutiesGateChainCompletion(t *testing.T) {
 			"sessionId": "critic-session", "reasoningEffort": "xhigh",
 			"configurationObligations": requiredConfigurationByHazard[HazardDestructiveReach],
 		})
-		patch := writeJSON(t, filepath.Join(t.TempDir(), "critique-link.json"), map[string]any{"independentCritiqueJobRef": "critic-job"})
-		if _, err := RecordCAS(repo, job, "completed", "completed", patch); err != nil {
+		if err := StampClaimedReviewReference(repo, "critic-job"); err != nil {
 			t.Fatalf("could not attach post-work critique evidence: %v", err)
 		}
 		refreshHazardMirror(t, repo, evidence, job)
@@ -373,8 +420,7 @@ func TestHazardDutiesGateChainCompletion(t *testing.T) {
 		writeHazardEvidenceJob(t, repo, "live-proof-job", HazardDestructiveReach, map[string]any{
 			"role": "verifier", "reviews": job,
 		})
-		patch = writeJSON(t, filepath.Join(t.TempDir(), "live-proof-link.json"), map[string]any{"liveProofEvidenceRef": "live-proof-job"})
-		if _, err := RecordCAS(repo, job, "completed", "completed", patch); err != nil {
+		if err := StampClaimedReviewReference(repo, "live-proof-job"); err != nil {
 			t.Fatalf("could not attach post-work live proof evidence: %v", err)
 		}
 		refreshHazardMirror(t, repo, evidence, job)
@@ -388,6 +434,31 @@ func TestHazardDutiesGateChainCompletion(t *testing.T) {
 		if err := CloseCheck(repo, job); err != nil {
 			t.Fatalf("mechanical chain required hazard evidence: %v", err)
 		}
+	})
+
+	t.Run("configured claude maximal model closes critique duty", func(t *testing.T) {
+		repo, _, job := closeReadyHazardChain(t, HazardDesignBearing)
+		if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("runtime.claude.maximal-models=claude-fable-5\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeHazardEvidenceJob(t, repo, "claude-critic", HazardDesignBearing, map[string]any{
+			"role": "code-critic", "reviews": job, "parentJob": nil,
+			"dispatchMode": DispatchModeFresh, "resumedSessionId": nil,
+			"runtime": "claude", "requestedModel": "claude-fable-5",
+			"sessionId": "claude-critic-session", "reasoningEffort": "xhigh",
+			"configurationObligations": requiredConfigurationByHazard[HazardDesignBearing],
+		})
+		path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+		record := readJSONFile(t, path)
+		record["independentCritiqueJobRef"] = "claude-critic"
+		writeRecord(path, record)
+		if err := CloseCheck(repo, job); err != nil {
+			t.Fatalf("configured Claude maximal critic did not discharge the chain: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("runtime.claude.maximal-models=claude-other\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		wantHazardClosureRefusal(t, CloseCheck(repo, job), "REFUSED-R22-M1-RULING-O-INDEPENDENT-CRITIQUE")
 	})
 
 	t.Run("dangling critique reference", func(t *testing.T) {

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // HazardClass is the closed configuration class carried by every delegated
@@ -86,7 +88,7 @@ func MinimumHazardConfiguration(class HazardClass) (ConfigurationObligations, er
 // ValidateRuntimeHazardConfiguration refuses a class when the selected
 // adapter has no executable channel for the class's minimum effort. Recording
 // a duty that the launcher cannot enforce would not satisfy admission.
-func ValidateRuntimeHazardConfiguration(runtime string, class HazardClass) error {
+func ValidateRuntimeHazardConfiguration(root, runtime, model string, class HazardClass) error {
 	configuration, err := MinimumHazardConfiguration(class)
 	if err != nil {
 		return err
@@ -94,10 +96,46 @@ func ValidateRuntimeHazardConfiguration(runtime string, class HazardClass) error
 	if configuration.BuilderReasoningEffort != "xhigh" {
 		return nil
 	}
-	if runtime != "codex" && runtime != "fake" {
+	proven, err := runtimeProvesMaximalExecution(root, runtime, model)
+	if err != nil {
+		return err
+	}
+	if !proven {
 		return fmt.Errorf("runtime %s has no executable maximal-effort mapping for destructiveReach %s", runtime, class)
 	}
 	return nil
+}
+
+func runtimeProvesMaximalExecution(root, runtime, model string) (bool, error) {
+	if runtime == "codex" || runtime == "fake" {
+		return true, nil
+	}
+	key := "runtime." + runtime + ".maximal-models"
+	value, _, err := config.Get(config.GetParams{
+		Key: key, ConfPath: filepath.Join(root, "metasystem.conf"), Default: "", DefaultSet: true,
+	})
+	if err != nil {
+		return false, fmt.Errorf("resolve %s: %w", key, err)
+	}
+	if value == "" {
+		return false, nil
+	}
+	seen := map[string]bool{}
+	matched := false
+	for _, configuredModel := range strings.Split(value, ",") {
+		configuredModel = strings.TrimSpace(configuredModel)
+		if configuredModel == "" {
+			return false, fmt.Errorf("%s must contain only non-empty comma-separated model names", key)
+		}
+		if seen[configuredModel] {
+			return false, fmt.Errorf("%s contains duplicate model %s", key, configuredModel)
+		}
+		seen[configuredModel] = true
+		if configuredModel == model {
+			matched = true
+		}
+	}
+	return matched, nil
 }
 
 func configurationObligationsMatchObject(expected ConfigurationObligations, object map[string]any) bool {
@@ -124,7 +162,7 @@ type hazardFinalWorkState struct {
 	endedAt time.Time
 }
 
-func validateHazardCompletion(jobsDir, root string, members []chainMember) error {
+func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMember) error {
 	var governed *ConfigurationObligations
 	var rootRecord map[string]any
 	memberIDs := make(map[string]bool, len(members))
@@ -163,7 +201,7 @@ func validateHazardCompletion(jobsDir, root string, members []chainMember) error
 		return &OpError{Code: 9, Reason: hazardRecordClosureRefusal, Message: detail}
 	}
 	if governed.IndependentCritiqueRequired {
-		if err := validateIndependentCritiqueReference(jobsDir, rootRecord, memberIDs, memberSessions, *governed, finalState); err != nil {
+		if err := validateIndependentCritiqueReference(repoRoot, jobsDir, rootRecord, memberIDs, memberSessions, *governed, finalState); err != nil {
 			return err
 		}
 	}
@@ -220,7 +258,7 @@ func finalHazardWorkState(members []chainMember) (hazardFinalWorkState, string) 
 	return final, ""
 }
 
-func validateIndependentCritiqueReference(jobsDir string, rootRecord map[string]any, memberIDs, memberSessions map[string]bool, required ConfigurationObligations, finalState hazardFinalWorkState) error {
+func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord map[string]any, memberIDs, memberSessions map[string]bool, required ConfigurationObligations, finalState hazardFinalWorkState) error {
 	ref := asString(rootRecord["independentCritiqueJobRef"])
 	if !validJobID.MatchString(ref) || memberIDs[ref] {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, "chain completion requires a distinct independent-critique job reference")
@@ -233,7 +271,7 @@ func validateIndependentCritiqueReference(jobsDir string, rootRecord map[string]
 		return hazardClosureRefusal(hazardEvidenceProvenanceRefusal, detail)
 	}
 	role := asString(critic["role"])
-	if role != "code-critic" && role != "design-critic" {
+	if role != "code-critic" && role != "design-critic" && role != "warden" {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique reference %q is not a critic job", ref))
 	}
 	if asString(critic["reviews"]) != finalState.job {
@@ -250,6 +288,10 @@ func validateIndependentCritiqueReference(jobsDir string, rootRecord map[string]
 	if !ok || asString(configuration["builderEffortTier"]) != required.IndependentCritiqueEffortTier ||
 		asString(configuration["builderReasoningEffort"]) != required.IndependentCritiqueReasoningEffort ||
 		asString(critic["reasoningEffort"]) != required.IndependentCritiqueReasoningEffort {
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique job %q does not prove the required maximum critic effort", ref))
+	}
+	proven, proofErr := runtimeProvesMaximalExecution(repoRoot, asString(critic["runtime"]), asString(critic["requestedModel"]))
+	if proofErr != nil || !proven {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique job %q does not prove the required maximum critic effort", ref))
 	}
 	endedAt, err := parseRecordTime(asString(critic["endedAt"]))

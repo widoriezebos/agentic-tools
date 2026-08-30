@@ -128,6 +128,28 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	for _, r := range unsupported {
 		add("metasystem.runtimes names unsupported runtime %s", pyRepr(r))
 	}
+	for _, key := range order {
+		match := maximalModelsKey.FindStringSubmatch(key)
+		if match == nil {
+			continue
+		}
+		runtime := match[1]
+		if !runtimereg.Supported(runtime) {
+			add("%s names unsupported runtime %s", key, pyRepr(runtime))
+		}
+		seen := map[string]bool{}
+		for _, model := range strings.Split(values[key], ",") {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				add("%s must contain only non-empty comma-separated model names", key)
+				continue
+			}
+			if seen[model] {
+				add("%s contains duplicate model %s", key, pyRepr(model))
+			}
+			seen[model] = true
+		}
+	}
 
 	// Capability floors must name a rostered runtime and a canonical model, and
 	// carry a positive integer.
@@ -408,6 +430,7 @@ var (
 	tierKeyPattern    = regexp.MustCompile(`^model\.tier\.([1-9][0-9]*)$`)
 	plainModelKey     = regexp.MustCompile(`^role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
 	modeModelKey      = regexp.MustCompile(`^mode\.([a-z0-9-]+)\.role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
+	maximalModelsKey  = regexp.MustCompile(`^runtime\.([a-z0-9-]+)\.maximal-models$`)
 	roleComponentKey  = regexp.MustCompile(`^role\.([a-z0-9-]+)\.(?:runtime|model\.[a-z0-9-]+)$`)
 	modeComponentKey  = regexp.MustCompile(`^mode\.([a-z0-9-]+)\.role\.([a-z0-9-]+)\.(?:runtime|model\.[a-z0-9-]+)$`)
 )

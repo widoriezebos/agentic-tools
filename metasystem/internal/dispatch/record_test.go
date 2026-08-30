@@ -209,10 +209,12 @@ func TestRecordCASRefusesCritiqueOwnerWrite(t *testing.T) {
 	setupPending(t, root, "job-a")
 
 	for field, value := range map[string]any{
-		"findingRegister":      []any{},
-		"findingRegisterRound": 1,
-		"boundedCritiqueStart": map[string]any{"round": 1, "openFindingIds": []any{"F-1"}},
-		"critiqueExhaustions":  []any{map[string]any{"round": 3}},
+		"findingRegister":           []any{},
+		"findingRegisterRound":      1,
+		"boundedCritiqueStart":      map[string]any{"round": 1, "openFindingIds": []any{"F-1"}},
+		"critiqueExhaustions":       []any{map[string]any{"round": 3}},
+		"independentCritiqueJobRef": "critic-job",
+		"liveProofEvidenceRef":      "proof-job",
 	} {
 		t.Run(field, func(t *testing.T) {
 			patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{field: value})

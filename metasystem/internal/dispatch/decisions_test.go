@@ -444,6 +444,73 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	}
 }
 
+func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("runtime.claude.maximal-models=claude-fable-5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "base"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	capResolution := filepath.Join(tmp, "cap.json")
+	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
+		t.Fatal(err)
+	}
+	permissions := writeJSONFile(t, tmp, "perm.json", map[string]any{
+		"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+	base := BuildRecordParams{
+		Root: root, Job: "claude-record", Role: "code-critic", Runtime: "claude",
+		Workspace: workspace, CapResolution: capResolution, Model: "claude-fable-5",
+		Snapshot: "artifacts/agents/capabilities/claude.json", InputBytes: 12, InputHash: "h",
+		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		DestructiveReach: HazardDesignBearing, ReasoningEffort: "xhigh",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/claude-record-stream.jsonl",
+	}
+	base.Output = filepath.Join(tmp, "maximal.json")
+	if err := BuildRecord(base); err != nil {
+		t.Fatalf("configured maximal Claude record refused: %v", err)
+	}
+	maximal := readJSONFile(t, base.Output)
+	obligations, _ := maximal["configurationObligations"].(map[string]any)
+	if maximal["runtime"] != "claude" || maximal["requestedModel"] != "claude-fable-5" ||
+		maximal["reasoningEffort"] != "xhigh" || obligations["builderReasoningEffort"] != "xhigh" {
+		t.Fatalf("configured maximal Claude record = %+v", maximal)
+	}
+
+	nonMaximal := base
+	nonMaximal.Output = filepath.Join(tmp, "non-maximal-refused.json")
+	nonMaximal.Model = "claude-other"
+	if err := BuildRecord(nonMaximal); err == nil || !strings.Contains(err.Error(), "no executable maximal-effort mapping") {
+		t.Fatalf("non-maximal Claude design-bearing record result = %v", err)
+	}
+
+	ordinary := nonMaximal
+	ordinary.Output = filepath.Join(tmp, "ordinary.json")
+	ordinary.DestructiveReach = HazardMechanical
+	ordinary.ReasoningEffort = "medium"
+	if err := BuildRecord(ordinary); err != nil {
+		t.Fatalf("ordinary Claude record refused: %v", err)
+	}
+	ordinaryRecord := readJSONFile(t, ordinary.Output)
+	ordinaryObligations, _ := ordinaryRecord["configurationObligations"].(map[string]any)
+	if ordinaryRecord["reasoningEffort"] != "medium" || ordinaryObligations["builderReasoningEffort"] != "medium" {
+		t.Fatalf("ordinary Claude record overstated effort: %+v", ordinaryRecord)
+	}
+}
+
 // Mission provenance is complete-or-refused at build, bound from the
 // mission's own fences, and a follow-up refuses when the mission has been
 // re-provisioned under a new incarnation.
