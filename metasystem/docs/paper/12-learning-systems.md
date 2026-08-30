@@ -2,7 +2,7 @@
 
 **Recovering is not learning; a system has learned only when next time goes differently.**
 
-*In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches live traffic on the weekend when clocks move forward. A few sessions expire at the wrong moment: one comparison uses local clock time instead of elapsed time. The releaser stops the expansion and restores the previous behavior.*
+> *In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches live traffic on the weekend when clocks move forward. A few sessions expire at the wrong moment: one comparison uses local clock time instead of elapsed time. The releaser stops the expansion and restores the previous behavior.*
 
 That is recovery, and by itself it changes nothing; the same mistake can ship again next month. This chapter solves one problem: how one failure becomes changed future behavior, without piling up rules nobody owns or notes nobody reads. What follows is design, told through the example, not a description of an existing system.
 
@@ -32,7 +32,7 @@ The governance record states the broken-check response and its scope. At adoptio
 
 Every new rule goes through the same trial. Before it may refuse anything, it runs in marking mode, and the builder who proposed it reviews what it marked.
 
-*In the clock rule's trial, one mark turns out to be a false alarm: a calendar that formats a timestamp for display. One real problem gets no mark at all: a helper that hides the same comparison under another name. A builder repairs that miss in the application, not in the check: all time reading moves into one module, and the rule becomes an import ban that is easy to verify.*
+> *In the clock rule's trial, one mark turns out to be a false alarm: a calendar that formats a timestamp for display. One real problem gets no mark at all: a helper that hides the same comparison under another name. A builder repairs that miss in the application, not in the check: all time reading moves into one module, and the rule becomes an import ban that is easy to verify.*
 
 From here the path is the same for every rule. An independent examiner tests it with changes that must be blocked and changes that must pass. The whole rule set also runs against every rule's must-pass cases, because two sensible refusals can combine to block all valid work. Activation is gradual, and the owner advances each step: warnings first, then refusal in an isolated setting, then refusal for a limited class of changes, then full power. A step is advanced only while the rule behaves within the bounds its record states, such as how many of its refusals turn out to be false alarms. And full power is not permanent trust. The check tests for local clock time, not for the danger itself, and the two can drift apart: a new time interface can carry the same danger past the old pattern, and a builder blocked by the rule can reach the same result another way. The known-bad case, the review date and the appeal route are how that drift gets seen.
 
@@ -40,7 +40,7 @@ From here the path is the same for every rule. An independent examiner tests it 
 
 While its check still discriminates, a landed rule is a tested floor. When an ordinary rule falls back to marking, the report states that its floor is not being enforced. When a severe rule's check breaks, the gate closes its recorded scope until a tested protection is restored or the responsible authority changes the rule.
 
-*Months later a faster session implementation arrives, and the clock rule catches it: the new code reads local wall time in its expiry comparison. The check refuses it, and nobody had to remember the incident.*
+> *Months later a faster session implementation arrives, and the clock rule catches it: the new code reads local wall time in its expiry comparison. The check refuses it, and nobody had to remember the incident.*
 
 A floor holds a minimum, not a direction, and can be repealed through its appeal route when the condition it protects no longer exists.
 
