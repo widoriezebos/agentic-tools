@@ -5,7 +5,7 @@
 - Origin: human
 - Next step: SLICE ONE LANDED 1cdb948 (both remotes, 2026-08-25 ~04:40); full record in the previous revision. REMAINING SLICES with two Wido additions (2026-08-25 morning, study-areas ruling) AND the case-study-day coverage mapping (2026-08-30 audit, Wido 2026-08-25 evening order): slice 2 (drift brief, 1d) - the brief ADDITIONALLY gains the PROOF-COST-VS-CHANGE-RISK trend (class 4: the battery-weight accumulator's history against the landed diffs' risk class, with the threshold's honesty a standing sitting question) and the PROCESS-VS-PRODUCT ratio (class 2: ledger landings and conclusions against paperwork acts, computed from durable records); slice 3 (sitting + accepted-risk register, 6h) - the sitting agenda ADDITIONALLY gains the FIVE-WHYS pass (Toyota study area), the PATTERN-APPLICABILITY pass, the SELF-APPLICATION review (class 3: did we apply our own doctrine to ourselves this period; the roster row is its mechanical echo), and NEAR-MISS AGGREGATION BY CLASS (class 5: every 'Wido had to tell me' reminder is a specimen; consumes the near-miss register); slice 4 (ambient noticings, 4h) - the process-vs-product inversion signal must fire AMBIENTLY during a stretch (class 2's live half), not wait for the sitting. Queue: after the study-area goals per the recorded order; the retro may reorder.
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 8
+- Revision: 9
 - Arc: app-guardrail-program
 
 History:
@@ -17,4 +17,5 @@ History:
 - 2026-08-25T01:59:36Z Q4W6692EB374M4N4SE6B76KMYJ-m1-bf243850 release actor=m1+coordinator targets=counselor
 - 2026-08-25T06:55:15Z J6NNFTV8K6Y5WG7D9YJRSRY33K-m1-bf243850 edit actor=m1+coordinator targets=counselor
 - 2026-08-30T06:24:38Z GJBVGJTNMX8C6AQZCKMMXJ0R2T-m2-bc1be9cb edit actor=m2+mac-coordinator targets=counselor
-Integrity: sha256=f943a83d6ede977f43c7dfcc2f4c2f4662705019f1f53e9c97b830b1be7530a1
+- 2026-08-30T09:55:35Z TQV32ECWYA3N6A28807PRBVB1K-m1-bf243850 edit actor=m1+coordinator targets=counselor
+Integrity: sha256=bef2a551e727e4f72d9fdcc8eca2d66e8cfeabbcb1398a90308137a81a263d2b
