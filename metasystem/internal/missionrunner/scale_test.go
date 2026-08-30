@@ -13,14 +13,12 @@ import (
 // gauntlet's fast-test law instead of costing twenty-four minutes. An
 // explicitly exported scale (CI, a triage session) is respected.
 func TestMain(m *testing.M) {
-	// Compression stays OPT-IN: at scale 50 the suite exposed an
-	// order-dependent hang (a compressed test leaks state that wedges
-	// TestWallMechanicalRecoveryRestoresTheComposedTree even after env
-	// restore) plus second-granular taint identity and compounding
-	// nested-start windows — each named in its pinned test. The
-	// conversion arc (timing-tests-synthetic-clock) owns making
-	// compression the default; until then export the scale explicitly
-	// to run the audit mode.
+	// Compression is SAFE but not DEFAULT — measured 2026-08-30 after
+	// every wedge closed (the pins are gone; scale 50 runs the package
+	// green repeatedly): compressed 897s vs default 890s. The waits no
+	// longer dominate — real subprocess and git work does — so the flip
+	// buys nothing and costs timing fidelity. Export a scale to compress
+	// for triage; the numbers above are the reason the default stands.
 	if err := prepareMissionBedTemplates(); err != nil {
 		fmt.Fprintf(os.Stderr, "prepare mission-bed templates: %v\n", err)
 		os.Exit(1)

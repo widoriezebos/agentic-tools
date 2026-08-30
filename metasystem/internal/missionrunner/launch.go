@@ -646,7 +646,12 @@ func (e *Engine) launch(mode string, foreground bool) error {
 	if err != nil {
 		return err
 	}
-	verifyWindow, err := ScaledWaitAtLeast(15, 5*time.Second)
+	// The verification window bounds REAL work — the child runner's boot,
+	// preflight, and first host spawn are git-heavy and do not compress —
+	// and the poll loop exits the moment the signal lands, so generosity
+	// is free. Floor at the full base: compression must never shrink it
+	// (the nested-birth wedge: a 5s floor under a ~8s real nested birth).
+	verifyWindow, err := ScaledWaitAtLeast(15, 15*time.Second)
 	if err != nil {
 		return err
 	}
