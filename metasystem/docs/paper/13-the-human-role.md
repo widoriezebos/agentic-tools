@@ -8,7 +8,9 @@ One question from Thursday morning could not be settled by evidence: does silent
 
 The record holds more than the three answers: the source and scope of the authority behind the ruling, the delegation it rests on, the evidence and reasons considered, who answers for the decision and where an appeal goes.
 
-The human role has two halves. The first is work: people still engineer. The second is authority: identifiable people keep the last word where purpose, value, irreversible consequence, the power to make an enforced rule or accountability is at stake. That authority does not require continuous presence. Machinery may prepare a decision and examine its evidence; it may not make a value ruling or inherit responsibility for one. Whoever holds the last word is called the responsible authority: a named person or body with recorded authority for a stated decision.
+That ruling shows one half of the human role: authority, the last word where purpose, value, irreversible consequence, the power to make an enforced rule or accountability is at stake. Whoever holds the last word is called the responsible authority: a named person or body with recorded authority for a stated decision. Holding it does not require continuous presence: machinery may prepare a decision and examine its evidence; it may not make a value ruling or inherit responsibility for one.
+
+The other half of the human role is work: people still engineer. This chapter takes the work first, then returns to the authority.
 
 ## The work that stays human
 
@@ -20,7 +22,7 @@ The delivery system itself is engineered by people: its rules, budgets, roles an
 
 The manager is not a role in this design. Chapter 7's anti-mimicry test already rejected a coordinator proposed only because teams usually have one; what the test exposes is that the familiar job combines two kinds of work. Coordination — assigning, sequencing, tracking, reporting — goes to mechanisms: records expose state, watches detect silent stopping, budgets limit spending, enforced rules order conflicting actions, and Chapter 7's dispatch delegate starts work it may neither examine nor accept. Judgment — what is worth building, what it may cost, which risks are acceptable, who answers — stays with the named people who hold authority in this chapter. Managers also handle pay, development and interpersonal conflict; organizations still need that work, and this paper does not redesign it.
 
-The rest of this chapter is the second half: the decisions that stay with people even when every working role is held by machinery.
+The rest of this chapter returns to the authority: the decisions that stay with people even when every working role is held by machinery.
 
 ## Legislator: authority over enforced rules
 
