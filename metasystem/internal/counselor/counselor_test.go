@@ -45,6 +45,11 @@ func TestComputeSignalsFromFixtureRecords(t *testing.T) {
 			{OperationID: "budget", At: stamp("2026-08-11T11:00:00Z"), Class: GoalBudget},
 			{OperationID: "done", At: stamp("2026-08-15T11:00:00Z"), Class: GoalDone},
 		},
+		RegisterEntries: []RegisterEntry{
+			registerEntry("risk-one", RegisterAcceptedRisk, "capacity", stamp("2026-08-10T12:00:00Z")),
+			registerEntry("miss-one", RegisterNearMiss, "fixture-blindness", stamp("2026-08-11T12:00:00Z")),
+			registerEntry("miss-two", RegisterNearMiss, "fixture-blindness", stamp("2026-08-12T12:00:00Z")),
+		},
 	}
 
 	brief := Compute(records, stamp("2026-08-25T12:00:00Z"))
@@ -74,6 +79,23 @@ func TestComputeSignalsFromFixtureRecords(t *testing.T) {
 	}
 	if brief.ProcessVsProduct.Windows[1].Ratio.Value != nil {
 		t.Fatalf("zero-denominator ratio must stay undefined: %+v", brief.ProcessVsProduct.Windows[1].Ratio)
+	}
+	register := brief.AcceptedRiskRegister
+	if register.Source != acceptedRiskRegisterSource || !strings.Contains(register.CountingRule, "Each nonblank line must be exactly one JSON object") {
+		t.Fatalf("register source and rule not carried: %+v", register)
+	}
+	if len(register.Classes) != 2 {
+		t.Fatalf("register classes mismatch: %+v", register.Classes)
+	}
+	if register.Classes[0].Class != "capacity" || register.Classes[0].AcceptedRisks != 1 || register.Classes[0].NearMisses != 0 {
+		t.Fatalf("accepted-risk class mismatch: %+v", register.Classes[0])
+	}
+	if register.Classes[1].Class != "fixture-blindness" || register.Classes[1].AcceptedRisks != 0 || register.Classes[1].NearMisses != 2 ||
+		strings.Join(register.Classes[1].EntryIDs, ",") != "miss-one,miss-two" {
+		t.Fatalf("near-miss class aggregation mismatch: %+v", register.Classes[1])
+	}
+	if !hasLimitation(register.Limitations, "Register citation resolution") {
+		t.Fatalf("register citation boundary was not carried as a named limitation: %+v", register.Limitations)
 	}
 }
 
@@ -149,6 +171,8 @@ func TestRenderCarriesNamedLimitationsInNarrative(t *testing.T) {
 		"Limitation — Path classification:",
 		"Limitation — Goal-verb coverage:",
 		"Limitation — Register-edit classification:",
+		"Accepted risk and near-miss register reads records/counselor/accepted-risk-register.jsonl",
+		"Counting rule: Blank lines are ignored.",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("narrative missing %q:\n%s", expected, text)
@@ -270,6 +294,199 @@ func TestBuildReadsDurableFixtureSources(t *testing.T) {
 	if !hasLimitation(brief.SpendVsOutcome.Limitations, "Active-run boundary") {
 		t.Fatalf("active run omission was not carried as data: %+v", brief.SpendVsOutcome.Limitations)
 	}
+	if !hasLimitation(brief.AcceptedRiskRegister.Limitations, "Accepted-risk register evidence") {
+		t.Fatalf("missing register did not become a limitation: %+v", brief.AcceptedRiskRegister.Limitations)
+	}
+}
+
+func TestAcceptedRiskRegisterRendersEntriesAndCitations(t *testing.T) {
+	stamp := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	brief := Compute(RecordSet{
+		RegisterEntries: []RegisterEntry{
+			{
+				ID: "risk-one", RecordedAt: stamp, Kind: RegisterAcceptedRisk, Class: "capacity",
+				Title: "Accepted capacity residual", AcceptanceStatus: "accepted and not fixed",
+				AcceptanceReason: "The residual is accepted until a replacement proof exists.",
+				SpecimenFacts: []RegisterSpecimenFact{{
+					Fact:      "A durable commit recorded the acceptance.",
+					Citations: []RegisterCitation{{Kind: "commit", Target: "fd25663c8f27660ad51593bd53c67b117add5972", Detail: "removed failing workflow"}},
+				}},
+				ReviewLinks: []RegisterReviewLink{{Kind: "record", Target: "records/misc/known-issues-closure-design.md", Detail: "accepted residual"}},
+			},
+			{
+				ID: "miss-one", RecordedAt: stamp, Kind: RegisterNearMiss, Class: "fixture-blindness",
+				Title: "Fixture covered only the happy path", AcceptanceStatus: "recorded for review",
+				AcceptanceReason: "A guard caught the gap before the register consumed it as a solved case.",
+				SpecimenFacts: []RegisterSpecimenFact{{
+					Fact: "The test covered only the integer happy path.",
+					Citations: []RegisterCitation{
+						{Kind: "record", Target: "records/acp/acp-s1-code-critique.md", Detail: "finding 1"},
+						{Kind: "job", Target: "acp-s1-code-critique", Detail: "implementation critique"},
+					},
+				}},
+				ReviewLinks: []RegisterReviewLink{{Kind: "goal", Target: "counselor", Detail: "next sitting consumes the class"}},
+			},
+		},
+	}, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
+	var output bytes.Buffer
+	if err := Render(&output, brief); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"Class capacity has 1 valid entry: 1 accepted risk and 0 near misses.",
+		"Entry risk-one is an accepted risk recorded at 2026-08-12T12:00:00Z: Accepted capacity residual.",
+		"Class fixture-blindness has 1 valid entry: 0 accepted risks and 1 near miss.",
+		"Entry miss-one is a near miss recorded at 2026-08-12T12:00:00Z: Fixture covered only the happy path.",
+		"Acceptance status: recorded for review.",
+		"Specimen fact: The test covered only the integer happy path. Citations: record records/acp/acp-s1-code-critique.md (finding 1); job acp-s1-code-critique (implementation critique).",
+		"Review linkage: goal counselor (next sitting consumes the class).",
+		"Limitation — Register citation resolution:",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("register narrative missing %q:\n%s", expected, text)
+		}
+	}
+}
+
+func TestBuildReadsAcceptedRiskRegisterAndNamesMalformedGaps(t *testing.T) {
+	root := t.TempDir()
+	valid := acceptedRiskRegisterLine{
+		SchemaVersion: 1, ID: "valid", RecordedAt: "2026-08-12T12:00:00Z", Kind: string(RegisterNearMiss),
+		Class: "fixture-blindness", Title: "Valid near miss", AcceptanceStatus: "recorded for review",
+		AcceptanceReason: "The specimen is retained for the counselor sitting.",
+		SpecimenFacts: []acceptedRiskRegisterSpecimenFact{{
+			Fact: "A durable record carried the specimen.",
+			Citations: []acceptedRiskRegisterCitation{
+				{Kind: "record", Target: "records/acp/acp-s1-code-critique.md", Detail: "finding 1"},
+			},
+		}},
+		ReviewLinks: []acceptedRiskRegisterReviewLink{{Kind: "goal", Target: "counselor", Detail: "sitting intake"}},
+	}
+	duplicate := valid
+	duplicate.ID = "duplicate"
+	incomplete := valid
+	incomplete.ID = "incomplete"
+	incomplete.SpecimenFacts = nil
+	unsupportedSchema := valid
+	unsupportedSchema.ID = "unsupported-schema"
+	unsupportedSchema.SchemaVersion = 2
+	badRecordedAt := valid
+	badRecordedAt.ID = "bad-recorded-at"
+	badRecordedAt.RecordedAt = "not-a-time"
+	missingTitle := valid
+	missingTitle.ID = "missing-title"
+	missingTitle.Title = " "
+	missingReason := valid
+	missingReason.ID = "missing-reason"
+	missingReason.AcceptanceReason = " "
+	lines := []string{
+		registerLine(t, valid),
+		"{not json",
+		registerLine(t, incomplete),
+		registerLine(t, unsupportedSchema),
+		registerLine(t, badRecordedAt),
+		registerLine(t, missingTitle),
+		registerLine(t, missingReason),
+		registerLine(t, duplicate),
+		registerLine(t, duplicate),
+	}
+	writeFixture(t, filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)), []byte(strings.Join(lines, "\n")+"\n"))
+
+	brief := Build(Options{Root: root, Now: func() time.Time {
+		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	}})
+	register := brief.AcceptedRiskRegister
+	if len(register.Entries) != 1 || register.Entries[0].ID != "valid" {
+		t.Fatalf("register did not retain exactly the valid unique entry: %+v", register.Entries)
+	}
+	if len(register.Classes) != 1 || register.Classes[0].Class != "fixture-blindness" || register.Classes[0].NearMisses != 1 {
+		t.Fatalf("register class aggregation mismatch: %+v", register.Classes)
+	}
+	for _, name := range []string{"Accepted-risk register shape", "Accepted-risk register identity"} {
+		if !hasLimitation(register.Limitations, name) {
+			t.Fatalf("missing %s limitation: %+v", name, register.Limitations)
+		}
+	}
+	if !hasLimitation(register.Limitations, "Register citation resolution") {
+		t.Fatalf("register citation boundary was not carried for built records: %+v", register.Limitations)
+	}
+	var output bytes.Buffer
+	if err := Render(&output, brief); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"schemaVersion 1",
+		"recordedAt",
+		"title",
+		"acceptance reason",
+		"Duplicate identifiers are checked only after a line passes JSON and required-field validation",
+		"Accepted-risk register shape:",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("register output omitted auditable exclusion %q:\n%s", expected, text)
+		}
+	}
+}
+
+func TestAcceptedRiskRegisterRejectsIncompleteReferencesAndSortsTies(t *testing.T) {
+	valid := acceptedRiskRegisterLine{
+		SchemaVersion: 1, ID: "valid", RecordedAt: "2026-08-12T12:00:00Z", Kind: string(RegisterAcceptedRisk),
+		Class: "capacity", Title: "Accepted residual", AcceptanceStatus: "accepted",
+		AcceptanceReason: "The durable review accepted this residual.",
+		SpecimenFacts: []acceptedRiskRegisterSpecimenFact{{
+			Fact:      "A record exists.",
+			Citations: []acceptedRiskRegisterCitation{{Kind: "commit", Target: "fd25663c8f27660ad51593bd53c67b117add5972"}},
+		}},
+		ReviewLinks: []acceptedRiskRegisterReviewLink{{Kind: "record", Target: "records/misc/known-issues-closure-design.md"}},
+	}
+	entry, outcome := parseAcceptedRiskRegisterLine(registerLine(t, valid))
+	if outcome != acceptedRiskLineValid || entry.RecordedAt.Location() != time.UTC || entry.SpecimenFacts[0].Citations[0].Detail != "" {
+		t.Fatalf("valid register line was not accepted and normalized: outcome=%v entry=%+v", outcome, entry)
+	}
+	if got := renderRegisterReference("goal", "counselor", ""); got != "goal counselor" {
+		t.Fatalf("empty-detail reference rendered as %q", got)
+	}
+	if got := renderRegisterKindWithArticle(RegisterEntryKind("candidate")); got != "candidate" {
+		t.Fatalf("unknown kind rendered as %q", got)
+	}
+
+	extra := registerLine(t, valid) + " " + registerLine(t, valid)
+	if _, outcome := parseAcceptedRiskRegisterLine(extra); outcome != acceptedRiskLineMalformed {
+		t.Fatalf("extra JSON payload outcome = %v, want malformed", outcome)
+	}
+	unsupportedKind := valid
+	unsupportedKind.Kind = "candidate"
+	if _, outcome := parseAcceptedRiskRegisterLine(registerLine(t, unsupportedKind)); outcome != acceptedRiskLineIncomplete {
+		t.Fatalf("unsupported kind outcome = %v, want incomplete", outcome)
+	}
+	missingCitationTarget := valid
+	missingCitationTarget.ID = "missing-citation-target"
+	missingCitationTarget.SpecimenFacts[0].Citations[0].Target = ""
+	if _, outcome := parseAcceptedRiskRegisterLine(registerLine(t, missingCitationTarget)); outcome != acceptedRiskLineIncomplete {
+		t.Fatalf("missing citation target outcome = %v, want incomplete", outcome)
+	}
+	missingReviewTarget := valid
+	missingReviewTarget.ID = "missing-review-target"
+	missingReviewTarget.ReviewLinks[0].Target = ""
+	if _, outcome := parseAcceptedRiskRegisterLine(registerLine(t, missingReviewTarget)); outcome != acceptedRiskLineIncomplete {
+		t.Fatalf("missing review target outcome = %v, want incomplete", outcome)
+	}
+
+	sameTime := entry.RecordedAt
+	entries := []RegisterEntry{
+		registerEntry("zeta", RegisterNearMiss, "same", sameTime),
+		registerEntry("alpha", RegisterNearMiss, "same", sameTime),
+		registerEntry("earlier", RegisterNearMiss, "same", sameTime.Add(-time.Hour)),
+	}
+	sortRegisterEntries(entries)
+	if got := strings.Join([]string{entries[0].ID, entries[1].ID, entries[2].ID}, ","); got != "earlier,alpha,zeta" {
+		t.Fatalf("register entry sort order = %s", got)
+	}
+	if got := sanitizeEvidenceDetail("line one\nline two.\r"); got != "line one line two" {
+		t.Fatalf("sanitized evidence detail = %q", got)
+	}
 }
 
 func TestGovernedRunReconciliationAndLaunchFailureBoundaries(t *testing.T) {
@@ -322,6 +539,35 @@ func TestGovernedRunReconciliationAndLaunchFailureBoundaries(t *testing.T) {
 	}
 }
 
+func TestLaunchFailedRunWithUnparsableEndIsRejected(t *testing.T) {
+	root := t.TempDir()
+	writeRunFixture(t, root, run.Record{
+		SchemaVersion: 1, RunId: "launch-failed-missing-end", Kind: "suite", Display: "missing end", Custody: run.CustodyWrapped,
+		Generation: 1, LaunchNonce: strings.Repeat("e", 32), StartedAt: "2026-08-11T10:00:00Z", StaleAfterMin: 5,
+		WindDownMin: run.DefaultWindDown, Evidence: run.Evidence{Mode: run.EvidenceNone}, Status: run.StatusLaunchFailed,
+		TerminalSeq: int64Pointer(1),
+	})
+	writeRunFixture(t, root, run.Record{
+		SchemaVersion: 1, RunId: "launch-failed-bad-end", Kind: "suite", Display: "bad end", Custody: run.CustodyWrapped,
+		Generation: 1, LaunchNonce: strings.Repeat("f", 32), StartedAt: "2026-08-11T11:00:00Z", StaleAfterMin: 5,
+		WindDownMin: run.DefaultWindDown, Evidence: run.Evidence{Mode: run.EvidenceNone}, Status: run.StatusLaunchFailed,
+		TerminalSeq: int64Pointer(1), EndedAt: stringPointer("not-a-time"),
+	})
+
+	brief := Build(Options{Root: root, Now: func() time.Time {
+		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	}})
+	window := brief.SpendVsOutcome.Windows[0]
+	if window.Tracked.Runs != 1 || window.Tracked.Outcomes.LaunchFailed != 1 || window.Tracked.Duration != 0 {
+		t.Fatalf("unparsable launch-failed end folded into the missing-end case: %+v", window.Tracked)
+	}
+	for _, name := range []string{"Launch-failed timing", "Run-end timestamp shape", "Tracked-run evidence"} {
+		if !hasLimitation(brief.SpendVsOutcome.Limitations, name) {
+			t.Fatalf("missing %s limitation: %+v", name, brief.SpendVsOutcome.Limitations)
+		}
+	}
+}
+
 func TestBuildTurnsUnavailableSourcesIntoCounselLimitations(t *testing.T) {
 	brief := Build(Options{Root: t.TempDir(), Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
@@ -335,6 +581,21 @@ func TestBuildTurnsUnavailableSourcesIntoCounselLimitations(t *testing.T) {
 	}
 	if len(brief.SpendVsOutcome.Windows) != 1 {
 		t.Fatalf("evidence loss prevented the current brief: %+v", brief.SpendVsOutcome.Windows)
+	}
+}
+
+func TestGitRootResolutionLimitationIsReadable(t *testing.T) {
+	brief := Build(Options{Root: t.TempDir(), Now: func() time.Time {
+		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	}})
+	limitation, ok := findLimitation(brief.SpendVsOutcome.Limitations, "Git landing evidence")
+	if !ok {
+		t.Fatalf("missing Git landing evidence limitation: %+v", brief.SpendVsOutcome.Limitations)
+	}
+	if !strings.Contains(limitation.Detail, "the supplied root is not inside a Git worktree") ||
+		strings.Contains(limitation.Detail, "gittree toplevel") ||
+		strings.Contains(limitation.Detail, "rev-parse") {
+		t.Fatalf("root-resolution limitation is not human-readable: %q", limitation.Detail)
 	}
 }
 
@@ -416,10 +677,37 @@ func int64Pointer(value int64) *int64    { return &value }
 func stringPointer(value string) *string { return &value }
 
 func hasLimitation(limitations []Limitation, name string) bool {
+	_, ok := findLimitation(limitations, name)
+	return ok
+}
+
+func findLimitation(limitations []Limitation, name string) (Limitation, bool) {
 	for _, limitation := range limitations {
 		if limitation.Name == name {
-			return true
+			return limitation, true
 		}
 	}
-	return false
+	return Limitation{}, false
+}
+
+func registerEntry(id string, kind RegisterEntryKind, class string, recordedAt time.Time) RegisterEntry {
+	return RegisterEntry{
+		ID: id, RecordedAt: recordedAt, Kind: kind, Class: class,
+		Title: "Fixture register entry", AcceptanceStatus: "recorded for review",
+		AcceptanceReason: "Fixture keeps the entry complete.",
+		SpecimenFacts: []RegisterSpecimenFact{{
+			Fact:      "Fixture fact carried with a durable citation.",
+			Citations: []RegisterCitation{{Kind: "record", Target: "records/fixture.md", Detail: "fixture"}},
+		}},
+		ReviewLinks: []RegisterReviewLink{{Kind: "goal", Target: "counselor", Detail: "fixture"}},
+	}
+}
+
+func registerLine(t *testing.T, line acceptedRiskRegisterLine) string {
+	t.Helper()
+	data, err := json.Marshal(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

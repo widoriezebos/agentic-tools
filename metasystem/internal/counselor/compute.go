@@ -3,13 +3,16 @@ package counselor
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	windowRule         = "Each observation is a completed half-open Coordinated Universal Time calendar week that carries retained evidence, plus the most recently completed week; the active week is excluded."
-	classificationRule = "Goal events are deduplicated by operation identifier. Exact open, edit, claim, and set-budget events plus non-carrier record-only landings are process activities; exact done events plus product landings are product outcomes. A Git landing whose Goal-Transaction trailer matches a counted goal operation is that operation's carrier, is shown separately, and is not counted again. Every other landing is record-only when it changes at least one path and every changed path is under memory/, plans/, or records/. A landing with any other changed path is product, and a landing with no numstat path is unclassified."
+	windowRule                       = "Each observation is a completed half-open Coordinated Universal Time calendar week that carries retained evidence, plus the most recently completed week; the active week is excluded."
+	classificationRule               = "Goal events are deduplicated by operation identifier. Exact open, edit, claim, and set-budget events plus non-carrier record-only landings are process activities; exact done events plus product landings are product outcomes. A Git landing whose Goal-Transaction trailer matches a counted goal operation is that operation's carrier, is shown separately, and is not counted again. Every other landing is record-only when it changes at least one path and every changed path is under memory/, plans/, or records/. A landing with any other changed path is product, and a landing with no numstat path is unclassified."
+	acceptedRiskRegisterSource       = "records/counselor/accepted-risk-register.jsonl"
+	acceptedRiskRegisterCountingRule = "Blank lines are ignored. Each nonblank line must be exactly one JSON object with only accepted register fields; parse failures, unknown fields, and extra JSON payloads are malformed lines and are excluded. A parsed entry is otherwise valid only when it has schemaVersion 1, a non-empty identifier, an RFC3339 recordedAt timestamp, kind accepted-risk or near-miss, a non-empty class, title, acceptance status, acceptance reason, at least one specimen fact with text and a durable citation whose kind is commit, goal, ruling, job, or record and whose target is non-empty, and at least one review link with one of those kinds and a non-empty target. Entries that fail those required fields are excluded. Duplicate identifiers are checked only after a line passes JSON and required-field validation; every otherwise-valid line with a duplicated identifier is excluded. Each remaining entry counts once, grouped by exact class text after trimming whitespace, with kind accepted-risk incrementing accepted-risk count and kind near-miss incrementing near-miss count."
 )
 
 // Build reads the checkout's durable evidence and computes both advisory
@@ -39,6 +42,20 @@ func Compute(records RecordSet, now time.Time) Brief {
 			ClassificationRule: classificationRule,
 			Limitations:        append([]Limitation(nil), records.ActivityLimitations...),
 		},
+		AcceptedRiskRegister: AcceptedRiskRegister{
+			Source:       acceptedRiskRegisterSource,
+			CountingRule: acceptedRiskRegisterCountingRule,
+			Entries:      sortedRegisterEntries(records.RegisterEntries),
+			Limitations:  append([]Limitation(nil), records.RegisterLimitations...),
+		},
+	}
+	brief.AcceptedRiskRegister.Classes = aggregateRegisterClasses(brief.AcceptedRiskRegister.Entries)
+	if len(brief.AcceptedRiskRegister.Entries) > 0 {
+		brief.AcceptedRiskRegister.Limitations = appendUniqueLimitations(brief.AcceptedRiskRegister.Limitations, Limitation{
+			Name:       "Register citation resolution",
+			Detail:     "The accepted-risk register reader validates that each specimen fact has non-empty durable-reference citations of allowed kinds, but it does not dereference commit, goal, ruling, job, or record targets during intake.",
+			Enrichment: "Add cross-record citation resolution that checks each target before an entry can count.",
+		})
 	}
 	for index, window := range windows {
 		brief.SpendVsOutcome.Windows[index].Window = window
@@ -197,6 +214,45 @@ func Compute(records RecordSet, now time.Time) Brief {
 		})
 	}
 	return brief
+}
+
+func sortedRegisterEntries(entries []RegisterEntry) []RegisterEntry {
+	result := append([]RegisterEntry(nil), entries...)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Class != result[j].Class {
+			return result[i].Class < result[j].Class
+		}
+		if !result[i].RecordedAt.Equal(result[j].RecordedAt) {
+			return result[i].RecordedAt.Before(result[j].RecordedAt)
+		}
+		return result[i].ID < result[j].ID
+	})
+	return result
+}
+
+func aggregateRegisterClasses(entries []RegisterEntry) []RegisterClassSummary {
+	byClass := map[string]*RegisterClassSummary{}
+	for _, entry := range entries {
+		summary := byClass[entry.Class]
+		if summary == nil {
+			summary = &RegisterClassSummary{Class: entry.Class}
+			byClass[entry.Class] = summary
+		}
+		switch entry.Kind {
+		case RegisterAcceptedRisk:
+			summary.AcceptedRisks++
+		case RegisterNearMiss:
+			summary.NearMisses++
+		}
+		summary.EntryIDs = append(summary.EntryIDs, entry.ID)
+	}
+	classes := make([]RegisterClassSummary, 0, len(byClass))
+	for _, summary := range byClass {
+		summary.EntryIDs = append([]string(nil), summary.EntryIDs...)
+		classes = append(classes, *summary)
+	}
+	sort.Slice(classes, func(i, j int) bool { return classes[i].Class < classes[j].Class })
+	return classes
 }
 
 func pluralCount(count int, singular, plural string) string {

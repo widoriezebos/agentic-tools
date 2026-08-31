@@ -1,9 +1,12 @@
 package counselor
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -36,7 +39,246 @@ func loadRecordSet(root string) RecordSet {
 
 	records.GoalEvents, trackedLimitations = loadGoalEvents(root)
 	records.ActivityLimitations = append(records.ActivityLimitations, trackedLimitations...)
+	registerEntries, registerLimitations := loadAcceptedRiskRegister(root)
+	records.RegisterEntries = registerEntries
+	records.RegisterLimitations = append(records.RegisterLimitations, registerLimitations...)
 	return records
+}
+
+type acceptedRiskRegisterLine struct {
+	SchemaVersion    int                                `json:"schemaVersion"`
+	ID               string                             `json:"id"`
+	RecordedAt       string                             `json:"recordedAt"`
+	Kind             string                             `json:"kind"`
+	Class            string                             `json:"class"`
+	Title            string                             `json:"title"`
+	AcceptanceStatus string                             `json:"acceptanceStatus"`
+	AcceptanceReason string                             `json:"acceptanceReason"`
+	SpecimenFacts    []acceptedRiskRegisterSpecimenFact `json:"specimenFacts"`
+	ReviewLinks      []acceptedRiskRegisterReviewLink   `json:"reviewLinks"`
+}
+
+type acceptedRiskRegisterSpecimenFact struct {
+	Fact      string                         `json:"fact"`
+	Citations []acceptedRiskRegisterCitation `json:"citations"`
+}
+
+type acceptedRiskRegisterCitation struct {
+	Kind   string `json:"kind"`
+	Target string `json:"target"`
+	Detail string `json:"detail"`
+}
+
+type acceptedRiskRegisterReviewLink struct {
+	Kind   string `json:"kind"`
+	Target string `json:"target"`
+	Detail string `json:"detail"`
+}
+
+func loadAcceptedRiskRegister(root string) ([]RegisterEntry, []Limitation) {
+	path := filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource))
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register is absent at "+acceptedRiskRegisterSource+", so accepted risks and near misses are absent.", "Create the append-only register at "+acceptedRiskRegisterSource+" with one validated JSON object per line.")}
+	}
+	if err != nil {
+		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register could not be read, so accepted risks and near misses are absent.", "Restore readable durable register bytes at "+acceptedRiskRegisterSource+".")}
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var entries []RegisterEntry
+	malformed := 0
+	incomplete := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		entry, outcome := parseAcceptedRiskRegisterLine(line)
+		switch outcome {
+		case acceptedRiskLineValid:
+			entries = append(entries, entry)
+		case acceptedRiskLineMalformed:
+			malformed++
+		case acceptedRiskLineIncomplete:
+			incomplete++
+		}
+	}
+	var limitations []Limitation
+	if err := scanner.Err(); err != nil {
+		limitations = append(limitations, acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register reader stopped early: "+sanitizeEvidenceDetail(err.Error())+".", "Restore register lines below the scanner limit and keep the file readable."))
+	}
+	if malformed > 0 || incomplete > 0 {
+		var details []string
+		if malformed > 0 {
+			details = append(details, pluralCount(malformed, "accepted-risk register line was", "accepted-risk register lines were")+" not exactly one JSON object with only accepted register fields and were excluded.")
+		}
+		if incomplete > 0 {
+			details = append(details, pluralCount(incomplete, "accepted-risk register entry failed", "accepted-risk register entries failed")+" schemaVersion 1, non-empty identifier, RFC3339 recordedAt, accepted kind, non-empty class, title, acceptance status, acceptance reason, specimen fact, durable citation, or review link requirements and were excluded.")
+		}
+		limitations = append(limitations, acceptedRiskRegisterLimitation("Accepted-risk register shape", strings.Join(details, " "), "Rewrite malformed lines as single JSON objects and fill every required field instead of relying on memory or chat context."))
+	}
+	entries, duplicateLimitations := excludeDuplicateRegisterIDs(entries)
+	limitations = append(limitations, duplicateLimitations...)
+	sortRegisterEntries(entries)
+	return entries, limitations
+}
+
+type acceptedRiskLineOutcome int
+
+const (
+	acceptedRiskLineValid acceptedRiskLineOutcome = iota
+	acceptedRiskLineMalformed
+	acceptedRiskLineIncomplete
+)
+
+func parseAcceptedRiskRegisterLine(line string) (RegisterEntry, acceptedRiskLineOutcome) {
+	decoder := json.NewDecoder(strings.NewReader(line))
+	decoder.DisallowUnknownFields()
+	var raw acceptedRiskRegisterLine
+	if err := decoder.Decode(&raw); err != nil {
+		return RegisterEntry{}, acceptedRiskLineMalformed
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return RegisterEntry{}, acceptedRiskLineMalformed
+	}
+	entry, ok := buildAcceptedRiskRegisterEntry(raw)
+	if !ok {
+		return RegisterEntry{}, acceptedRiskLineIncomplete
+	}
+	return entry, acceptedRiskLineValid
+}
+
+func buildAcceptedRiskRegisterEntry(raw acceptedRiskRegisterLine) (RegisterEntry, bool) {
+	if raw.SchemaVersion != 1 {
+		return RegisterEntry{}, false
+	}
+	id := strings.TrimSpace(raw.ID)
+	kind := RegisterEntryKind(strings.TrimSpace(raw.Kind))
+	class := strings.TrimSpace(raw.Class)
+	title := strings.TrimSpace(raw.Title)
+	status := strings.TrimSpace(raw.AcceptanceStatus)
+	reason := strings.TrimSpace(raw.AcceptanceReason)
+	recordedAt, timeErr := time.Parse(time.RFC3339, strings.TrimSpace(raw.RecordedAt))
+	if id == "" || class == "" || title == "" || status == "" || reason == "" || timeErr != nil {
+		return RegisterEntry{}, false
+	}
+	if kind != RegisterAcceptedRisk && kind != RegisterNearMiss {
+		return RegisterEntry{}, false
+	}
+	facts, ok := buildRegisterSpecimenFacts(raw.SpecimenFacts)
+	if !ok {
+		return RegisterEntry{}, false
+	}
+	reviewLinks, ok := buildRegisterReviewLinks(raw.ReviewLinks)
+	if !ok {
+		return RegisterEntry{}, false
+	}
+	return RegisterEntry{
+		ID: id, RecordedAt: recordedAt.UTC(), Kind: kind, Class: class, Title: title,
+		AcceptanceStatus: status, AcceptanceReason: reason, SpecimenFacts: facts, ReviewLinks: reviewLinks,
+	}, true
+}
+
+func buildRegisterSpecimenFacts(rawFacts []acceptedRiskRegisterSpecimenFact) ([]RegisterSpecimenFact, bool) {
+	if len(rawFacts) == 0 {
+		return nil, false
+	}
+	facts := make([]RegisterSpecimenFact, 0, len(rawFacts))
+	for _, raw := range rawFacts {
+		fact := strings.TrimSpace(raw.Fact)
+		if fact == "" || len(raw.Citations) == 0 {
+			return nil, false
+		}
+		citations := make([]RegisterCitation, 0, len(raw.Citations))
+		for _, rawCitation := range raw.Citations {
+			citation := RegisterCitation{
+				Kind:   strings.TrimSpace(rawCitation.Kind),
+				Target: strings.TrimSpace(rawCitation.Target),
+				Detail: strings.TrimSpace(rawCitation.Detail),
+			}
+			if !validRegisterReferenceKind(citation.Kind) || citation.Target == "" {
+				return nil, false
+			}
+			citations = append(citations, citation)
+		}
+		facts = append(facts, RegisterSpecimenFact{Fact: fact, Citations: citations})
+	}
+	return facts, true
+}
+
+func buildRegisterReviewLinks(rawLinks []acceptedRiskRegisterReviewLink) ([]RegisterReviewLink, bool) {
+	if len(rawLinks) == 0 {
+		return nil, false
+	}
+	links := make([]RegisterReviewLink, 0, len(rawLinks))
+	for _, raw := range rawLinks {
+		link := RegisterReviewLink{
+			Kind:   strings.TrimSpace(raw.Kind),
+			Target: strings.TrimSpace(raw.Target),
+			Detail: strings.TrimSpace(raw.Detail),
+		}
+		if !validRegisterReferenceKind(link.Kind) || link.Target == "" {
+			return nil, false
+		}
+		links = append(links, link)
+	}
+	return links, true
+}
+
+func validRegisterReferenceKind(kind string) bool {
+	switch kind {
+	case "commit", "goal", "ruling", "job", "record":
+		return true
+	default:
+		return false
+	}
+}
+
+func excludeDuplicateRegisterIDs(entries []RegisterEntry) ([]RegisterEntry, []Limitation) {
+	counts := make(map[string]int, len(entries))
+	for _, entry := range entries {
+		counts[entry.ID]++
+	}
+	duplicates := 0
+	for _, count := range counts {
+		if count > 1 {
+			duplicates++
+		}
+	}
+	if duplicates == 0 {
+		return entries, nil
+	}
+	result := make([]RegisterEntry, 0, len(entries))
+	for _, entry := range entries {
+		if counts[entry.ID] == 1 {
+			result = append(result, entry)
+		}
+	}
+	return result, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register identity", pluralCount(duplicates, "accepted-risk register identifier appeared", "accepted-risk register identifiers appeared")+" on more than one valid line; every duplicated identifier was excluded rather than silently deduplicated.", "Keep each accepted-risk register identifier globally unique.")}
+}
+
+func sortRegisterEntries(entries []RegisterEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Class != entries[j].Class {
+			return entries[i].Class < entries[j].Class
+		}
+		if !entries[i].RecordedAt.Equal(entries[j].RecordedAt) {
+			return entries[i].RecordedAt.Before(entries[j].RecordedAt)
+		}
+		return entries[i].ID < entries[j].ID
+	})
+}
+
+func sanitizeEvidenceDetail(detail string) string {
+	detail = strings.NewReplacer("\r", " ", "\n", " ").Replace(detail)
+	return strings.TrimSuffix(strings.TrimSpace(detail), ".")
+}
+
+func acceptedRiskRegisterLimitation(name, detail, enrichment string) Limitation {
+	return evidenceLimitation(name, detail, enrichment)
 }
 
 type governedEvidence struct {
@@ -130,6 +372,7 @@ func loadTrackedRuns(root string, governed map[string]governedEvidence, invalidG
 	missingGoverned := 0
 	contradictions := 0
 	launchFailuresWithoutEnd := 0
+	malformedEndStamps := 0
 	for index := range records {
 		record := &records[index]
 		if !run.Terminal(record.Status) {
@@ -138,13 +381,15 @@ func loadTrackedRuns(root string, governed map[string]governedEvidence, invalidG
 		}
 		started, startedErr := time.Parse(time.RFC3339, record.StartedAt)
 		outcome, outcomeOK := asOutcome(record.Status)
-		ended, endedOK := parseRunEnd(record)
-		launchFailedWithoutEnd := startedErr == nil && record.Status == run.StatusLaunchFailed && !endedOK
+		ended, endState := parseRunEnd(record)
+		if endState == runEndMalformed {
+			malformedEndStamps++
+		}
+		launchFailedWithoutEnd := startedErr == nil && record.Status == run.StatusLaunchFailed && endState == runEndAbsent
 		if launchFailedWithoutEnd {
 			ended = started.UTC()
-			endedOK = true
 		}
-		if !endedOK || startedErr != nil || !outcomeOK || ended.Before(started) {
+		if startedErr != nil || !outcomeOK || (!launchFailedWithoutEnd && endState != runEndParsed) || ended.Before(started) {
 			unreadable = append(unreadable, run.RecordPath(root, record.RunId)+": terminal timing or outcome is unusable")
 			continue
 		}
@@ -175,6 +420,13 @@ func loadTrackedRuns(root string, governed map[string]governedEvidence, invalidG
 	if len(unreadable) > 0 {
 		limitations = append(limitations, evidenceLimitation("Tracked-run evidence", fmt.Sprintf("%d retained run records were unreadable and were excluded from spend.", len(unreadable)), "Repair or restore the retained run records so the run store validates them."))
 	}
+	if malformedEndStamps > 0 {
+		detail := fmt.Sprintf("%d terminal run records carried unparsable endedAt timestamps and were excluded instead of being treated as missing end timestamps.", malformedEndStamps)
+		if malformedEndStamps == 1 {
+			detail = "1 terminal run record carried an unparsable endedAt timestamp and was excluded instead of being treated as a missing end timestamp."
+		}
+		limitations = append(limitations, evidenceLimitation("Run-end timestamp shape", detail, "Rewrite endedAt as RFC3339, or omit it only for launch-failed records whose failure timestamp is truly absent."))
+	}
 	if active > 0 {
 		limitations = append(limitations, evidenceLimitation("Active-run boundary", fmt.Sprintf("%d active runs have no completed duration or terminal outcome and are excluded until they conclude.", active), "Record a distinct in-progress spend observation if partial-run cost is needed."))
 	}
@@ -190,12 +442,23 @@ func loadTrackedRuns(root string, governed map[string]governedEvidence, invalidG
 	return observations, limitations
 }
 
-func parseRunEnd(record *run.Record) (time.Time, bool) {
+type runEndState int
+
+const (
+	runEndParsed runEndState = iota
+	runEndAbsent
+	runEndMalformed
+)
+
+func parseRunEnd(record *run.Record) (time.Time, runEndState) {
 	if record.EndedAt == nil {
-		return time.Time{}, false
+		return time.Time{}, runEndAbsent
 	}
 	stamp, err := time.Parse(time.RFC3339, *record.EndedAt)
-	return stamp.UTC(), err == nil
+	if err != nil {
+		return time.Time{}, runEndMalformed
+	}
+	return stamp.UTC(), runEndParsed
 }
 
 func terminalContradiction(record *run.Record, attempt obligationstate.TerminalAttempt) bool {
@@ -319,15 +582,15 @@ func loadLandings(root string) ([]LandingObservation, []Limitation) {
 	workspace := gittree.Workspace{Dir: root}
 	top, err := workspace.TopLevel()
 	if err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable("the repository top level could not be resolved: " + err.Error())}
+		return nil, []Limitation{gitEvidenceUnavailable(gitResolutionFailure("repository top-level resolution", err))}
 	}
 	prefix, err := workspace.Prefix()
 	if err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable("the checkout prefix could not be resolved: " + err.Error())}
+		return nil, []Limitation{gitEvidenceUnavailable(gitResolutionFailure("checkout prefix resolution", err))}
 	}
 	head, unborn, err := workspace.HeadCommit()
 	if err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable("the current branch tip could not be resolved: " + err.Error())}
+		return nil, []Limitation{gitEvidenceUnavailable(gitResolutionFailure("current branch tip resolution", err))}
 	}
 	if unborn {
 		return nil, nil
@@ -414,6 +677,17 @@ func parseGitLog(log, prefix string) ([]LandingObservation, int) {
 		landings = append(landings, landing)
 	}
 	return landings, rejected
+}
+
+func gitResolutionFailure(scope string, err error) string {
+	detail := sanitizeEvidenceDetail(err.Error())
+	if strings.Contains(detail, "not a git repository") {
+		return scope + " failed because the supplied root is not inside a Git worktree"
+	}
+	if detail == "" {
+		return scope + " failed"
+	}
+	return scope + " failed: " + detail
 }
 
 func gitEvidenceUnavailable(reason string) Limitation {

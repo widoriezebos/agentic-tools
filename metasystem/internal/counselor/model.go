@@ -125,12 +125,74 @@ type ProcessVsProductTrend struct {
 	Limitations        []Limitation
 }
 
+// RegisterEntryKind names the durable accepted-risk register entry family.
+type RegisterEntryKind string
+
+const (
+	RegisterAcceptedRisk RegisterEntryKind = "accepted-risk"
+	RegisterNearMiss     RegisterEntryKind = "near-miss"
+)
+
+// RegisterCitation points one specimen fact at a durable record.
+type RegisterCitation struct {
+	Kind   string
+	Target string
+	Detail string
+}
+
+// RegisterSpecimenFact is one observed fact retained with its evidence.
+type RegisterSpecimenFact struct {
+	Fact      string
+	Citations []RegisterCitation
+}
+
+// RegisterReviewLink names the durable review surface that should consume the
+// entry. The counselor only reports the link; the sitting owns consumption.
+type RegisterReviewLink struct {
+	Kind   string
+	Target string
+	Detail string
+}
+
+// RegisterEntry is one accepted risk or near miss from the append-only
+// register. Every entry is classed so repeated specimens can aggregate.
+type RegisterEntry struct {
+	ID               string
+	RecordedAt       time.Time
+	Kind             RegisterEntryKind
+	Class            string
+	Title            string
+	AcceptanceStatus string
+	AcceptanceReason string
+	SpecimenFacts    []RegisterSpecimenFact
+	ReviewLinks      []RegisterReviewLink
+}
+
+// RegisterClassSummary is the auditable aggregate for one exact class string.
+type RegisterClassSummary struct {
+	Class         string
+	AcceptedRisks int
+	NearMisses    int
+	EntryIDs      []string
+}
+
+// AcceptedRiskRegister is the counselor's read-only view of the durable
+// register and its named evidence limits.
+type AcceptedRiskRegister struct {
+	Source       string
+	CountingRule string
+	Entries      []RegisterEntry
+	Classes      []RegisterClassSummary
+	Limitations  []Limitation
+}
+
 // Brief is the counselor's complete read-only observation at one instant.
 type Brief struct {
-	GeneratedAt      time.Time
-	WindowRule       string
-	SpendVsOutcome   SpendVsOutcomeTrend
-	ProcessVsProduct ProcessVsProductTrend
+	GeneratedAt          time.Time
+	WindowRule           string
+	SpendVsOutcome       SpendVsOutcomeTrend
+	ProcessVsProduct     ProcessVsProductTrend
+	AcceptedRiskRegister AcceptedRiskRegister
 }
 
 // RunKind identifies which durable owner supplied one completed run.
@@ -196,8 +258,10 @@ type RecordSet struct {
 	Runs                []RunObservation
 	Landings            []LandingObservation
 	GoalEvents          []GoalEventObservation
+	RegisterEntries     []RegisterEntry
 	SpendLimitations    []Limitation
 	ActivityLimitations []Limitation
+	RegisterLimitations []Limitation
 }
 
 func completedWeekStart(stamp time.Time) time.Time {

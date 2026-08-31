@@ -10,11 +10,12 @@ import (
 
 var buildCounselorBrief = counselor.Build
 var renderCounselorBrief = counselor.Render
-var resolveCounselorRoot = func() (string, error) { return upMetasystemRoot("") }
+var resolveCounselorRoot = upMetasystemRoot
 
 func runCounselorBrief(args []string) int {
 	flags := flag.NewFlagSet("counselor brief", flag.ContinueOnError)
 	dryRun := flags.Bool("dry-run", false, "print the current advisory brief without writing state")
+	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (defaults to installed binary root)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -26,7 +27,7 @@ func runCounselorBrief(args []string) int {
 		fmt.Fprintln(os.Stderr, "counselor brief currently requires --dry-run; steward carriage is outside this slice")
 		return 2
 	}
-	root, err := resolveCounselorRoot()
+	root, err := resolveCounselorRoot(*metasystemRoot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "counselor brief root: %v\n", err)
 		return 1

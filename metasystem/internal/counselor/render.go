@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -75,7 +76,97 @@ func Render(writer io.Writer, brief Brief) error {
 			return err
 		}
 	}
-	return renderLimitations(writer, brief.ProcessVsProduct.Limitations)
+	if err := renderLimitations(writer, brief.ProcessVsProduct.Limitations); err != nil {
+		return err
+	}
+
+	return renderAcceptedRiskRegister(writer, brief.AcceptedRiskRegister)
+}
+
+func renderAcceptedRiskRegister(writer io.Writer, register AcceptedRiskRegister) error {
+	if register.Source == "" && register.CountingRule == "" && len(register.Classes) == 0 && len(register.Entries) == 0 && len(register.Limitations) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(writer, "\nAccepted risk and near-miss register reads %s and aggregates valid entries by class.\n", register.Source); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "Counting rule: %s\n", register.CountingRule); err != nil {
+		return err
+	}
+	if len(register.Classes) == 0 {
+		if _, err := fmt.Fprintln(writer, "No accepted risks or near misses were loaded from the durable register."); err != nil {
+			return err
+		}
+	} else {
+		entriesByClass := map[string][]RegisterEntry{}
+		for _, entry := range register.Entries {
+			entriesByClass[entry.Class] = append(entriesByClass[entry.Class], entry)
+		}
+		for _, class := range register.Classes {
+			if _, err := fmt.Fprintf(writer, "Class %s has %s: %s and %s.\n",
+				class.Class, renderCount(len(class.EntryIDs), "valid entry", "valid entries"),
+				renderCount(class.AcceptedRisks, "accepted risk", "accepted risks"),
+				renderCount(class.NearMisses, "near miss", "near misses")); err != nil {
+				return err
+			}
+			for _, entry := range entriesByClass[class.Class] {
+				if err := renderAcceptedRiskEntry(writer, entry); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return renderLimitations(writer, register.Limitations)
+}
+
+func renderAcceptedRiskEntry(writer io.Writer, entry RegisterEntry) error {
+	if _, err := fmt.Fprintf(writer, "Entry %s is %s recorded at %s: %s. Acceptance status: %s. Acceptance reason: %s\n",
+		entry.ID, renderRegisterKindWithArticle(entry.Kind), entry.RecordedAt.UTC().Format(time.RFC3339), entry.Title, entry.AcceptanceStatus, entry.AcceptanceReason); err != nil {
+		return err
+	}
+	for _, fact := range entry.SpecimenFacts {
+		if _, err := fmt.Fprintf(writer, "Specimen fact: %s Citations: %s.\n", fact.Fact, renderRegisterCitations(fact.Citations)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(writer, "Review linkage: %s.\n", renderRegisterReviewLinks(entry.ReviewLinks)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func renderRegisterKindWithArticle(kind RegisterEntryKind) string {
+	switch kind {
+	case RegisterAcceptedRisk:
+		return "an accepted risk"
+	case RegisterNearMiss:
+		return "a near miss"
+	default:
+		return string(kind)
+	}
+}
+
+func renderRegisterCitations(citations []RegisterCitation) string {
+	parts := make([]string, 0, len(citations))
+	for _, citation := range citations {
+		parts = append(parts, renderRegisterReference(citation.Kind, citation.Target, citation.Detail))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func renderRegisterReviewLinks(links []RegisterReviewLink) string {
+	parts := make([]string, 0, len(links))
+	for _, link := range links {
+		parts = append(parts, renderRegisterReference(link.Kind, link.Target, link.Detail))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func renderRegisterReference(kind, target, detail string) string {
+	if detail == "" {
+		return kind + " " + target
+	}
+	return kind + " " + target + " (" + detail + ")"
 }
 
 func renderLimitations(writer io.Writer, limitations []Limitation) error {
