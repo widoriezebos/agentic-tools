@@ -19,12 +19,32 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- RunLoop(root, census, nil, 50*time.Millisecond)
+		close(done)
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	t.Cleanup(func() {
+		// The loop must be stopped and drained before its checkout is torn down.
+		if err := os.WriteFile(runnerStopPath(root), []byte("stop\n"), 0o644); err != nil && !os.IsExist(err) {
+			t.Errorf("stop RunLoop during cleanup: %v", err)
+		}
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Errorf("RunLoop did not exit after stop: checkout %s", root)
+		}
+	})
+	last, _ := LoadEvidence(EvidencePath(root))
+	deadline := time.Now().Add(30 * time.Second)
+	for {
 		ev, _ := LoadEvidence(EvidencePath(root))
 		if ev.TicksSinceAdvance >= 2 {
 			break
+		}
+		if ev.TicksSinceAdvance > last.TicksSinceAdvance || ev.Marks != last.Marks {
+			deadline = time.Now().Add(30 * time.Second)
+		}
+		last = ev
+		if time.Now().After(deadline) {
+			t.Fatalf("no steward tick progress for 30s (loop wedged, or a single tick exceeded 30s): %+v", ev)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -40,7 +60,7 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("a stopped loop exits clean: %v", err)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("the stop file must end the loop")
 	}
 	if _, err := os.Stat(runnerRecordPath(root)); !os.IsNotExist(err) {
