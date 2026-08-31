@@ -317,7 +317,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
    landed changed lines; zero payload → DENSITY prints
    "unavailable (no landed lines)" and never fires (R2-10).
    Threshold: either ratio outside its band. Action: draft naming
-   the goal and direction. Owner: coordinator.
+   the goal and direction. Owner: dispatch delegate.
 2. **Stale checks** [this-machine] — per proof surface, days since
    the newest GREEN evidence at the report instant (D-I): envelopes
    whose outcome.json verdict is exactly `green` (every other
@@ -341,7 +341,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
    / items receipted in period. Critique rounds print as a
    this-machine DETAIL line, never summed in. Thresholds:
    metrics.rework.max-per-item, .max-share. Action: fix the brief
-   or the diagnosis. Owner: coordinator.
+   or the diagnosis. Owner: dispatch delegate.
 4. **Friction rate** [this-machine, context-only until
    classification exists] — per verb: rejected terminal operations
    / all terminal operations from the journal (F4b), numerator and
@@ -349,7 +349,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
    labelled "classification is a human read"; the counselor
    inherits classification when it exists. No threshold. Action:
    classify at retro; build the missing surface when a class
-   repeats. Owner: coordinator today, counselor when built.
+   repeats. Owner: human today, counselor when built.
 5. **Time waiting on checks** [fleet-synced] — per concluded goal
    with a regular lifecycle: the CONCLUDING EPOCH is the last claim
    row before the done row (R1-03); building = claim→last
@@ -360,7 +360,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
    epochs count. Battery wall time from envelope timings
    (this-machine detail). Threshold: metrics.waiting.max-share.
    Action: draft naming the slowest recorded proof surface
-   (whole-battery granularity today — F5). Owner: coordinator.
+   (whole-battery granularity today — F5). Owner: dispatch delegate.
 6. **Debt age** [fleet-synced] — ages at the report instant (D-I),
    listed by name: parked goals from Parked at=; queued goals with
    no parseable appetite (unsized debt) from OpenedAt — the chosen
@@ -368,7 +368,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
    re-aged. No residue register exists (`residue-demands-a-token`
    queued); the report names that gap. Threshold:
    metrics.debt-age.max-days. Action: own it or close it (draft per
-   aging item). Owner: coordinator.
+   aging item). Owner: dispatch delegate.
 7. **Built by delegates** [fleet-synced] — share of landed work
    items BUILT by delegates: items with `built_by=delegate` /
    items carrying `built_by=` in period (the R2-04 ruling); mixed
@@ -377,8 +377,8 @@ sources) — threshold — paired action — owner — scope label (D-E).
    cannot classify (F11: it lists critics too). Landed BYTES stay
    deferred until post-ruling provenance accumulates; the report
    says so. Threshold: metrics.delegates.min-share. Action: draft
-   asking why the coordinator built instead of delegating (or why
-   the builder went unrecorded). Owner: coordinator.
+   asking why the builder built instead of delegating (or why
+   the builder went unrecorded). Owner: dispatch delegate.
 8. **Cross-machine collisions** [mixed scopes, separated] — the
    THRESHOLD binds on TRUE cross-machine evidence only (R2-06):
    fleet-synced displaced= History rows and steal verbs (F4; both
@@ -389,7 +389,7 @@ sources) — threshold — paired action — owner — scope label (D-E).
    (eventual success, F4b); attempts>1 prints as contention
    context. Transport push failures have no record — MISSING
    coverage. Threshold: metrics.collisions.max-per-period. Action:
-   draft naming the goal, verb, and class. Owner: coordinator.
+   draft naming the goal, verb, and class. Owner: dispatch delegate.
 9. **Cost per result** [this-machine; context-only BY RATIFIED
    RULING — "context/trend only, not a trigger" (Wido 2026-08-25,
    bf957fb)] — per concluded goal and per period, DIMENSIONED
@@ -400,8 +400,8 @@ sources) — threshold — paired action — owner — scope label (D-E).
    period's result count = goals concluded in-window; per-result
    division printed only where both sides are defined, never a
    collapsed cross-dimension total. No threshold BY RULING.
-   Standing action: the coordinator reads the trend at retro.
-   Owner: coordinator (R1-13).
+   Standing action: the human reads the trend at retro.
+   Owner: human (R1-13).
 
 ## Slice plan
 

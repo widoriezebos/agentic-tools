@@ -108,8 +108,9 @@ The human may explicitly suspend gates and checks for a declared emergency. Susp
 ## Coordinator session capacity
 
 The Claude Code harness caps each session at 200 spawned subagents
-(a runaway-loop backstop). A continuous coordinator session dispatches
-an agent for every build, critique, and fix round, so 200 is roughly
+(a runaway-loop backstop). A continuous seat session claims the
+dispatch-delegate role for each build, critique, and fix-round dispatch,
+so 200 is roughly
 one working day — hitting the cap mid-queue stalls lawful work
 (first sighting 2026-08-27 01:30, five idle hours). Launch
 coordinator sessions with the limit raised:

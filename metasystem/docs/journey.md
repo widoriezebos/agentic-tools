@@ -102,7 +102,7 @@ the human. The slicing law: large work is never embarked on in one
 piece — it is split into iterative, independently deployable slices.
 The two compose: appetite says what a feature is worth, slicing says
 how anything big gets delivered. Intake got a draft state so the
-backlog itself stays clean, and the coordinator owns its order.
+backlog itself stays clean, and the dispatch delegate sequences it within recorded priorities.
 
 The same day, a second machine joined. Its first act was to orient,
 read the laws, propose an appetite, and have it ratified — the
@@ -196,8 +196,8 @@ The wall is one of the system's central safety rules: when a run
 operates unattended, the coordinating agent may design, review, and
 approve — but it must never write the product's code itself. Every
 change must come from a worker agent and pass review first. The
-rule keeps an unsupervised coordinator from quietly doing whatever
-it likes and calling it reviewed.
+rule keeps the builder and custodial mechanics in separate hands instead
+of letting one actor quietly do whatever it likes and call it reviewed.
 
 This night the rule got its exact wording. The one authoritative
 sentence now appears, word for word, in both of the instruction
@@ -779,8 +779,8 @@ machinery: continue-and-collect, caller sweeps, coverage deltas at
 the landing gate. The register grew five rulings in a day, every
 one traceable to a named failure. m2 completed the four trees in
 parallel and claimed its next arc. What remains is the custody
-applications, the delegate and watch verbs that retire the
-coordinator's hands, and one forty-five-minute human session that
+applications, the delegate and watch verbs that retire the hands of the
+dispatch delegate and custodial mechanics, and one forty-five-minute human session that
 turns the resident generation — steward, watcher, and a narrator
 currently reading new records with old eyes — onto the engines
 this night built.

@@ -98,13 +98,13 @@ implementation-selected projection.
 Every agent packet begins with the exact task direction, role instructions,
 required skill instructions, response contract, tool names and generated
 runtime notices. Those bytes are accepted engine material selected by the
-role and hazard recipe. A coordinator cannot add a skill, notice or source at
+role and hazard recipe. A dispatch delegate cannot add a skill, notice or source at
 dispatch. Task-specific history is not a skill instruction.
 
 The public `--brief` file required by Ruling B contains only the task
 direction. It contains no source list or copied context. For an independent
 examination its bytes and hash are part of the accepted goal revision before
-construction begins. A later coordinator explanation is not an examiner
+construction begins. A later dispatch-delegate explanation is not an examiner
 brief.
 
 The rest of each packet is fixed as follows.
@@ -113,7 +113,7 @@ The rest of each packet is fixed as follows.
 | --- | --- | --- |
 | Builder | Goal id and revision; outcome; constraints; acceptance-condition ids and text; hazard class; cited law, ruling and task-document blobs; immutable base snapshot; same-lineage builder continuation when present; accepted examination findings bound to the parent candidate when the task is correction. | Write a private candidate workspace and builder record; run admitted tools. It cannot examine, accept, land or alter live state. |
 | Independent examiner | Goal id and revision; outcome; constraints; acceptance-condition ids and text; cited law, ruling and task-document blobs; exact normative candidate snapshot with base and digest; raw captured results for the predeclared evidence conditions. | Read the candidate; write scratch data and an examination result; run admitted read/test tools. It cannot change the candidate, read construction history, accept or land. |
-| Coordinator | Goal id, revision and state; job id, role, state and typed outcome; candidate, evidence and examination ids, digests and states; the next permitted transition. | Request a transition. It cannot create qualifying evidence, examine a candidate it directed, accept it, or read sealed delegation payloads. |
+| Dispatch delegate (with custodial mechanics) | Goal id, revision and state; job id, role, state and typed outcome; candidate, evidence and examination ids, digests and states; the next permitted transition. | Request a transition. It cannot create qualifying evidence, examine a candidate it directed, accept it, or read sealed delegation payloads. |
 | Custodian | Goal id and revision; exact candidate and base digests; complete required-condition id set; each required evidence and examination id, candidate digest and pass/refuse state; reversal-proof id and state when required; delegation proof state; proposed custody transition. | Append the authorized acceptance or refusal for that exact tuple. It cannot explore, reinterpret, waive, repair or substitute. This is a deterministic function, not an agent session. |
 | Steward | Job id; lifecycle state; heartbeat and lease times; budget state; capsule state; candidate digest-change flag; permitted recovery action. | Probe, stop, restart or reassign through the existing narrow authority. It cannot read task, prompt, tool or result bytes and cannot erase history. |
 | Narrator | Accepted intent fields; typed state transitions; ruling, candidate, evidence, examination and custody ids and states; source links for every material claim. | Produce an account. It cannot change, accept, release or hide state. |
@@ -130,7 +130,7 @@ The accepted goal revision owns a dependency list before construction. Each
 law, ruling and task document must be cited by one exact constraint or
 acceptance condition. Each offered result must satisfy one evidence condition
 declared in that same revision. L13 derives the packet from those links. The
-coordinator cannot select additional sources, and the builder cannot add a
+dispatch delegate cannot select additional sources, and the builder cannot add a
 persuasive result whose evidence condition was not already named.
 
 The task direction, role instruction, response contract and tool surface are
@@ -237,7 +237,7 @@ Its sealed audit section contains:
 
 The ordinary projection exposes only record id, role, goal revision,
 candidate digest, proof state, result digest, lifecycle state and refusal
-code. Coordinator and custodian receive that projection. They cannot open
+code. Dispatch delegate and custodian receive that projection. They cannot open
 the prompt, locators, packet bytes or event payloads. Only the named auditor
 can open the sealed audit section. Thus a composition record cannot launder
 builder or examiner paths into a role whose packet excludes them.
@@ -309,7 +309,7 @@ or authority system; it uses the accepted ones.
 ## Honest bootstrap before L13
 
 Before the capsule and L13 custody gate land, recorded conduct can narrow a
-brief. The coordinator can use a new provider session, send only accepted
+brief. The dispatch delegate can use a new provider session, send only accepted
 intent, a normative candidate projection and required raw evidence, omit
 known construction history, disable visible tools and memory, and record the
 chosen bytes.
@@ -333,7 +333,7 @@ adapter reports that read roots are not enforced. Composition today can limit
 the brief but cannot limit agent reach. Therefore no current Codex, Claude or
 Devin launch is a proved independent examiner under this design. Any such
 pass is advisory and cannot satisfy custody. The current interactive
-coordinator is also outside the boundary and cannot compose its own already-
+dispatch delegate is also outside the boundary and cannot compose its own already-
 exposed session.
 
 If the capsule or a qualifying provider profile cannot be supplied, the
@@ -365,7 +365,7 @@ a fast mechanical fixture:
   attachments.
 - The examiner cannot write the candidate, and the result is refused if its
   candidate digest differs at any binding point.
-- Coordinator and custodian can read the proof projection but cannot open
+- Dispatch delegate and custodian can read the proof projection but cannot open
   sealed packet or event bytes. An auditor can rebuild every delivery and
   obtain a binary proved/not-proven verdict.
 - Every prompt caller and resident generation uses L13 in the replacement

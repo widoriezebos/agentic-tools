@@ -85,7 +85,7 @@ has a format and a consumer (slice 3).
 
 - AMBIENT: one-line noticings on the steward's existing durable notify
   channel, sparse — the nudge, not the lecture.
-- THE SITTING: a periodic net review on the coordinator seat, the same
+- THE SITTING: a periodic net review on the human's seat, the same
   conversational pattern as the inception interview, triggered by
   cadence (every N concluded goals, or on demand). The counselor
   arrives with a prepared brief — the ledger-vs-covenant diff since
@@ -142,19 +142,19 @@ arrival makes explicit:
 - THE HUMAN — the top custody tier. Owns: rulings, conclusions of
   human-origin goals, taint resolutions, identity and battery changes,
   the seal. Nothing below may absorb any of these.
-- THE COORDINATOR SEAT — the human-facing chair. Owns: backlog order,
+- THE SEAT (dispatch delegate + custodial mechanics) — the human-facing chair. Owns: backlog order,
   appetites, intake, the interview CHAIRS (inception and the
   counselor's sittings run ON this seat), landing discipline. The
-  counselor's absorbed doctrine adds ONE question to the coordinator's
+  counselor's absorbed doctrine adds ONE question to the dispatch delegate's
   intake: "what does the net need to grow to bound this goal?" — the
-  counselor owns the question's content, the coordinator asks it.
+  counselor owns the question's content, the dispatch delegate asks it.
 - THE COUNSELOR — advisory, ambient, about content. Owns: the drift
   model, the brief, the evidence table's rederivation, the
   accepted-risk register, the sitting's substance. Boundary: never
   judges liveness (the steward's), never adjudicates changes (the
   warden's), never rules (the human's), never holds the chair (the
-  coordinator's). Brief PREPARATION may run as a dispatched job; the
-  sitting itself is the coordinator seat channeling the counselor's
+  human's). Brief PREPARATION may run as a dispatched job; the
+  sitting itself is the human's seat channeling the counselor's
   brief to the human.
 - THE WARDEN — adversarial, transactional, about changes to the net.
   Owns: the review lane for guardrail-classed changes. Boundary with

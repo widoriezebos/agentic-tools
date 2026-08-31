@@ -136,23 +136,23 @@ claim; no safe local quarantine → retain and report.
   runs launch them inside the namespace via `run launch`; legacy
   ones are report-only.
 
-## The sweep, the report, and the one coordinator (r2 F9, F10)
+## The sweep, the report, and the one operation custodian (r2 F9, F10)
 
 `janitor sweep` enforces janitor-owned classes with the journal
 discipline and collects delegated owners' outcomes. One
 immutable, bounded report per sweep, compiled from the journal;
 new reports record old-report evictions.
 
-**One coordinator lock** (r2 F9): both public entrypoints — the
+**One operation-custodian lock** (r2 F9): both public entrypoints — the
 janitor sweep and the standalone evidence-GC wrapper the Stop
-hook invokes — acquire the SAME operation coordinator exactly
+hook invokes — acquire the SAME operation custodian exactly
 once, in one fixed order relative to the checkout lease (lease
 first, matching the shipped wrapper). A combined pass calls an
 UNLOCKED in-process GC primitive so it cannot self-deadlock.
 Lock location, holder identity, death-only takeover, bounded
 wait, and a structured busy outcome are specified. The GC's
 current tolerate-concurrent-collectors behavior is superseded by
-the coordinator for both entrypoints.
+the operation custodian for both entrypoints.
 
 **Active logs are writer-owned and unreapable** (r2 F10):
 hooks.log's concurrent appenders make rename-rotation unsafe (a
@@ -340,7 +340,7 @@ recovery table exercised at every crash boundary; quarantine
 device-mismatch refusal; suite-root writer-set enrollment and
 the detached-writer survival case; log-sealed gating including
 the shared-leash-log alias case; per-invocation hook records
-under concurrent Stop hooks; coordinator lock ordering across
+under concurrent Stop hooks; operation-custodian lock ordering across
 both entrypoints with the lease, including the busy outcome and
 death takeover; GOCACHE warm/cold gate timing and the gate-lease
 eviction block; failure-promotion atomicity across devices;
@@ -352,10 +352,10 @@ mixed-version running-suite migration fixture.
 ## Blast radius
 
 internal/janitor (registry, sweep, journal, transaction, report,
-pressure, coordinator), cmd/metasystem (janitor verbs, headroom),
+pressure, operation custodian), cmd/metasystem (janitor verbs, headroom),
 internal/run (log-sealed state, launch-owned logs, ownership
 transfer, alias checks, prune refusal), internal/evidence
-(subclass publication, unlocked primitive, coordinator
+(subclass publication, unlocked primitive, operation-custodian
 integration, reservedDirs), internal/events (rotation sealing),
 cmd/metasystem/supervise_owner.go (rotation),
 scripts/agents/supervision-hook.sh (per-invocation records),
@@ -369,7 +369,7 @@ migration), the benchmark kit (bootstrap headroom, envelope
 registration calls, the kit state machine — kit-owned), docs,
 fixtures. NOT touched: the user's shared Go cache, the GC's
 archive-verification logic (it gains subclass publication and
-the coordinator, not new policy — except the lock-temp exception
+the operation custodian, not new policy — except the lock-temp exception
 is now NAMED rather than silent), the kit's grading logic.
 
 ## Loop discipline
@@ -387,7 +387,7 @@ writer-set enrollment for suite roots can be implemented without
 the suite knowing every future detached writer's identity at
 root creation; whether log-sealed is achievable for the leash
 pattern (a poller writing until its own exit); whether the
-coordinator supersession of the GC's two-collector tolerance
+operation-custodian supersession of the GC's two-collector tolerance
 breaks the Stop hook under real concurrency; whether the
 single-GOCACHE boundary genuinely covers every go invocation in
 the repo (name one outside it); whether the kit envelope's

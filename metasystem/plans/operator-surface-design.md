@@ -64,8 +64,8 @@ current controls and Wido's word.
 THE BOOTSTRAP POSTURE (binding until revoked): the current state
 cannot be relied on to run its own rescue. Until each protection
 demonstrably works again, this work uses only the minimal trusted
-core — direct delegation (plain codex execution, coordinator-
-monitored), the existing landing gate, the coordinator's own
+core — direct delegation (plain codex execution, seat-
+monitored), the existing landing gate, the seat's own
 verification by execution, and Wido's authenticated acceptance. No
 slice depends on machinery a later slice builds (round-1 findings
 02/07/08 caught three violations; the slice plan below is
@@ -132,7 +132,7 @@ from top-level help and operator docs.
    The roles-alive verdict, typed per role: alive | dead |
    unknown. TOTALITY (R1-14): every state has an owner and a
    behavior — dead → the named remedy verb + the owner (tick
-   auto-restart / coordinator / Wido by alert); unknown → held one
+   auto-restart / custodial mechanics / Wido by alert); unknown → held one
    interval, then escalates to Wido if it persists (unknown is
    never silently tolerated); aggregate exit codes 0 healthy,
    1 unhealthy, 2 unknown-present. Repeated failure of one role

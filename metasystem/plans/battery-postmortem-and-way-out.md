@@ -38,7 +38,7 @@ The six columns pair run ID with subject and duration with terminal
 class so that all eight required facts remain present without making
 the ledger unreadable.
 
-| Run ID / subject | Duration / terminal class | Discovered condition | Orchestration defect | Coordinator decision error | Surviving protection |
+| Run ID / subject | Duration / terminal class | Discovered condition | Orchestration defect | Dispatch-delegate decision error | Surviving protection |
 |---|---|---|---|---|---|
 | `20260829T000530Z-0da77f55d9be-10613` / `0da77f55d9be` | 25:43 / red | The full coverage ratchet found debt in evidence, fixture authority, goal, receipt, state root, steward, and supervision, plus packages with no floor. | None established; the full validator correctly refused. | The due obligation was deferred until checkpoint 662/60, after 27 landings. | The full coverage ratchet remains necessary; the per-landing delta should prevent new local debt but does not replace the sweep. |
 | `20260829T005229Z-597bac3ff259-84365` / `597bac3ff259` | 24:42 / red | A second coverage tranche remained: missing floors and receipt, state-root, steward, and supervision debt. | None established; the full validator correctly refused. | Another full launch was authorized without an obligation budget or recorded stop boundary. | Full coverage ratchet, with floors-at-birth and per-landing delta as cheaper earlier checks. |
@@ -137,7 +137,7 @@ The whole-paper reread supports that narrower conclusion:
   `DRAFT -> OBSERVE -> LIMITED -> ENFORCED` states come from the
   operator-surface design, not from Chapter 12 itself.
 - Chapter 13 assigns promotion authority here to Wido as legislator;
-  the coordinator may propose evidence but may not promote its own
+  the seat may propose evidence but may not promote its own
   mechanism. It also requires ownerless rules to be reviewed or
   withdrawn rather than allowed to govern by inertia.
 - Chapter 14 requires a declared purpose and end condition for
@@ -203,7 +203,7 @@ artifact, not an irreversible deletion:
 That landing opens an actively observed replacement-evidence window.
 The condition-class representation is the `id` column in the retained
 `metasystem-validation-stage-results-v1` stage-results file. At the
-archive tag, the m1 coordinator, as named retirement-window custodian,
+archive tag, the m1 seat (custodial mechanics), as named retirement-window custodian,
 freezes the set of section IDs that correspond to real validator
 catch-classes in the twenty-four-row ledger; wrapper setup, copy,
 checkpoint, selector, and controller classes are excluded. On
@@ -286,7 +286,7 @@ standing shared process or crosses a recognized consequence boundary.
   acceptance.
 - `DRAFT` and `OBSERVE` record would-refuse outcomes only; they
   cannot refuse.
-- Wido authorizes `LIMITED` or `ENFORCED`. The coordinator cannot
+- Wido authorizes `LIMITED` or `ENFORCED`. The seat cannot
   promote, rebudget, or accept its own authority mechanism.
 - The authorization record carries the closed Chapter 6 trigger record
   and the review outcome required by Wido's selected policy. A missing
@@ -489,10 +489,10 @@ landing; it is not credited as present assurance:
   repeated unsupported assurances, then reports them to Wido without
   refusal power.
 - Steward independently schedules and carries that signal. It cannot
-  be suppressed by the coordinator and does not compose or judge the
+  be suppressed by the seat and does not compose or judge the
   counselor’s content.
 - Wido rules on value, budgets, and mechanism authority.
-- Coordinator supplies records and implements the ruling. It cannot
+- The narrator supplies records; the builder implements the ruling. It cannot
   close or lower the review.
 
 The reconciled ledger's verifier, orchestration, product, fixture, and
@@ -543,7 +543,7 @@ listed in that same row before Wido accepts it. The migration therefore
 costs one ruling and one bounded exception list, not twenty-two
 adopt-or-withdraw decisions.
 
-This adds no record-writer coordinator. The landed machine-suffixed ID
+This adds no record-writer seat. The landed machine-suffixed ID
 minting law prevents concurrent ID collisions, and the landed union
 merge for append-only registers preserves concurrent rows. Before
 building a competing register repair, the recorded origin/sibling
@@ -562,9 +562,9 @@ existing owners rather than replacing them.
 - Per-landing delta versus full ratchet: retain both provisionally
   with distinct purposes. The delta stops coverage debt at the
   landing that creates it; the full ratchet audits the repository.
-  The m1 coordinator is the coverage-review owner. After the same next
+  The m1 seat is the coverage-review owner. After the same next
   two classifiable weight-triggered direct validations used by the
-  retirement window, the coordinator compares their full-ratchet
+  retirement window, the m1 seat compares their full-ratchet
   findings with every intervening `commit.sh` delta verdict and brings
   Wido the unique-catch set. Zero unique catches is evidence to retire
   the full ratchet; any unique catch retains it and names the missing
@@ -577,10 +577,10 @@ existing owners rather than replacing them.
   freshly adopted delivered tree contains the declared payload,
   preserves app-owned bytes, and validates using its own shipped
   engine and configuration. Its stage-results condition class is
-  `adoption-fixtures`. The m1 coordinator is the named adoption
+  `adoption-fixtures`. The m1 seat is the named adoption
   custodian; review event: the delivered payload or adoption contract
   changes.
-- VM validation: the m1 coordinator, as named supported-platform
+- VM validation: the m1 seat, as named supported-platform
   custodian, owns the invariant that the retained direct
   validator succeeds on the declared Lima/Debian guest with the guest's
   actual kernel, filesystem, process table, shell tools, and Go
@@ -597,10 +597,10 @@ existing owners rather than replacing them.
 | Law 2 — consequence authority | Wido as legislator | Base action boundary | Review-policy, model-roster, authority-scope, or missed-trigger change | Exact accepted revision, executable trigger data, required independent result, and scope |
 | Law 3 — ownership and scoped review | Wido as legislator | Standing-register custodian plus steward sweep | A temporary, experimental, delegated-authority, or assumption-dependent ruling becomes due | Owner present at minting; one digest per 24 hours, at most five items, with overflow retained |
 | Economic warning | Counselor once its queued goal lands | Steward carriage | Budget extension or process/product inversion evidence | Narrative evidence and cost brief delivered independently; no ratio |
-| Orchestration retirement | Wido as ruling owner | m1 coordinator plus steward observer | A stage-results section-ID miss, unavailable restoration, or completion of two classifiable direct validations | Per-run catch-class diff; tested tag restoration; no live wrapper reference |
-| Coverage pair | Wido decides retention | `commit.sh` executes; m1 coordinator reviews | Two classifiable direct validations complete | One delta execution per commit plus a named unique-catch comparison |
-| Adoption protection | Wido decides contract change | `scripts/adopt-fixtures.sh`; m1 coordinator is adoption custodian | Delivered-payload or adoption contract changes | `adoption-fixtures` proves the delivered-tree invariant independently of VM proof |
-| VM protection | Wido decides platform change | Direct validator on Lima; m1 coordinator is platform custodian | Guest image, supported platform, or toolchain contract changes | Guest-native direct validation proves the environment invariant independently of adoption |
+| Orchestration retirement | Wido as ruling owner | m1 seat plus steward observer | A stage-results section-ID miss, unavailable restoration, or completion of two classifiable direct validations | Per-run catch-class diff; tested tag restoration; no live wrapper reference |
+| Coverage pair | Wido decides retention | `commit.sh` executes; m1 seat reviews | Two classifiable direct validations complete | One delta execution per commit plus a named unique-catch comparison |
+| Adoption protection | Wido decides contract change | `scripts/adopt-fixtures.sh`; m1 seat is adoption custodian | Delivered-payload or adoption contract changes | `adoption-fixtures` proves the delivered-tree invariant independently of VM proof |
+| VM protection | Wido decides platform change | Direct validator on Lima; m1 seat is platform custodian | Guest image, supported platform, or toolchain contract changes | Guest-native direct validation proves the environment invariant independently of adoption |
 
 ## Round 1 dispositions
 

@@ -75,7 +75,7 @@ member is queued, unblocked, appetite-tokened, and unreserved —
 a unit with one ineligible member is excluded BEFORE selection,
 so it can never consume attempts or starve later candidates.
 Units order by (oldest member OpenedAt, id); the pull takes the
-first, and the launched coordinator claims a solo goal with the
+first, and the launched dispatch delegate claims a solo goal with the
 plain claim and an arc with the arc claim.
 
 ## The reservation convention, made real — and proven complete
@@ -97,11 +97,11 @@ One launcher, two intents. The staged-intent record gains a KIND
 (continuation | pull); completion is kind-aware — a continuation
 still requires the revive verdict, a pull re-verifies the idle
 conditions under the lock at completion time. The pull dispatches
-the new coordinator-pull role, whose return schema closes the
+the new fleet-pull role, whose return schema closes the
 outcome field: claimed | idle-no-work | refused. THE LAUNCH
 INJECTS IDENTITY MECHANICALLY: the dispatch boundary sets the
 lineage to the pinned value fleet-pull, so every claim, edit, and
-release the coordinator makes publishes as <nickname>+fleet-pull —
+release the dispatch delegate makes publishes as <nickname>+fleet-pull —
 the role never invents identity, and a missing lineage can never
 refuse the claim before the race is even run.
 
@@ -164,9 +164,9 @@ human-gated prose.
 - F12: fetch degraded → no pull, named degradation, other duties
   proceed.
 - F13: an arc with one reserved member is never selected; a fully
-  eligible arc is claimed WHOLE by the launched coordinator.
+  eligible arc is claimed WHOLE by the launched dispatch delegate.
 - F14: the injected lineage — every mutation the pulled
-  coordinator publishes carries <nickname>+fleet-pull.
+  dispatch delegate publishes carries <nickname>+fleet-pull.
 
 ## Design-obligation matrix
 
@@ -179,8 +179,8 @@ human-gated prose.
 | FP-O5 | HIGH | fleet-pull-design r3 state | The transition table, exhaustively; crash reads as failure; five launches then trip; rearm-pull verb | internal/steward evidence + verb | pullState struct + transitions | F5, F8, F10, F11 + Observe-merge unit test | a scripted five-failure trip in the suite | MISSING | implement |
 | FP-O6 | HIGH | fleet-pull-design r3 notify | Delivery precedes dispatch; notifier failure aborts | internal/steward notify/stage | ordering in the launch path | F1 both directions | notification visible before the job record's timestamp | MISSING | implement |
 | FP-O7 | HIGH | fleet-pull-design r3 reservation | Convention documented; live goals migrated; completeness reviewed | docs + ledger migration | intake section + migration commit | F4 | reviewer's enumerated migration list in the landing | MISSING | implement |
-| FP-O8 | HIGH | fleet-pull-design r3 arcs | Selection over claim units; arcs atomic; ineligible units excluded before selection | pull selector | unit builder | F13, F9 | arc-claim by a pulled coordinator in the suite | MISSING | implement |
-| FP-O9 | MEDIUM | fleet-pull-design r3 role | coordinator-pull role with closed outcome schema | roles + schemas | role + schema files | schema fixture + F8 | a fake-runtime pull returning idle-no-work | MISSING | implement |
+| FP-O8 | HIGH | fleet-pull-design r3 arcs | Selection over claim units; arcs atomic; ineligible units excluded before selection | pull selector | unit builder | F13, F9 | arc-claim by a pulled dispatch delegate in the suite | MISSING | implement |
+| FP-O9 | MEDIUM | fleet-pull-design r3 role | fleet-pull role with closed outcome schema | roles + schemas | role + schema files | schema fixture + F8 | a fake-runtime pull returning idle-no-work | MISSING | implement |
 
 ## Dispositions of round 2
 

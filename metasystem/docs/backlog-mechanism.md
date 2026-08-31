@@ -59,7 +59,7 @@ enforces both the citation and the evidence-carrying refutation rule.
 Items are shaped in `plans/goals-drafts/` — free-form files, no
 grammar, no budget required. "Draft" is the status name. The
 backlog itself holds only ready items: promotion (`goal open`) is
-the coordinator's explicit intake act, performed after the checklist
+the dispatch delegate's explicit intake act, performed after the checklist
 below passes. Delete the draft file in the same change that
 promotes it.
 
@@ -82,11 +82,12 @@ Before promoting any draft:
       goal written as steps binds its executor to the author's
       context and goes stale the moment reality shifts; intent
       survives both. The test: a different machine claims it and
-      executes without consulting the author. The coordinator
+      executes without consulting the author. The dispatch delegate
       rewrites script-shaped next-steps at intake.
 - [ ] The ROSTER is named before work starts: who implements, who
       critiques — and they are never the same session, and neither is
-      the coordinator, who briefs, verifies, and lands (Wido's ruling
+      the dispatch delegate, which briefs, nor the custodian, which runs
+      gates and lands (Wido's ruling
       2026-08-25). The metasystem's delivery roles apply to work ON
       the metasystem exactly as they apply to every app; a rule that
       exists for the system's outputs binds the system's own work
@@ -115,11 +116,11 @@ A machine's own frontier (goal next) skips goals pinned elsewhere —
 they are not claimable there, and reporting them ready would hide
 genuinely claimable work.
 
-## Coordinator ownership
+## Dispatch delegate sequencing
 
-Backlog order — priorities, item shape, intake — is the
-coordinator's standing responsibility on every machine. Disorder is
-fixed by discussing it with Wido: never reordered by fiat, never
+Backlog sequencing within recorded priorities, mechanical item shaping,
+and checklist-governed intake are the dispatch delegate's responsibilities
+during a claimed change. Disorder is raised to Wido: never reordered by fiat, never
 silently tolerated.
 
 ## Concluding a goal

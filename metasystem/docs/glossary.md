@@ -313,7 +313,7 @@ the engine's `metasystem goal` family (`internal/goal`).
   split into iterative, independently deployable slices. Slicing
   governs delivery shape; the budget limits one claimed revision.
 - **Draft** — a backlog item still being shaped, living in
-  `plans/goals-drafts/`, invisible to the fleet until the coordinator
+  `plans/goals-drafts/`, invisible to the fleet until the dispatch delegate
   promotes it through the intake checklist.
 - **Steward** — the always-running idle watchdog (`metasystem steward`):
   open delegated work is never silently idle, and what the steward
