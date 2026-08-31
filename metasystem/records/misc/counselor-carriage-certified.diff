@@ -1,0 +1,614 @@
+diff --git a/internal/config/validate.go b/internal/config/validate.go
+index 2dda40f8..c5a7cac4 100644
+--- a/internal/config/validate.go
++++ b/internal/config/validate.go
+@@ -332,7 +332,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
+ 	for _, knob := range []string{
+ 		"exec.local-timeout-sec", "exec.network-timeout-sec",
+ 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
+-		"census.log-max-bytes",
++		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours",
+ 	} {
+ 		if raw, present := values[knob]; present {
+ 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
+diff --git a/internal/config/validate_test.go b/internal/config/validate_test.go
+index 4156c14c..4f8a32e0 100644
+--- a/internal/config/validate_test.go
++++ b/internal/config/validate_test.go
+@@ -224,6 +224,7 @@ func TestValidateNumericKnobs(t *testing.T) {
+ 		{"unit suffix", "exec.local-timeout-sec=300s\n", "exec.local-timeout-sec must be a positive integer"},
+ 		{"zero bound", "exec.network-timeout-sec=0\n", "exec.network-timeout-sec must be a positive integer"},
+ 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
++		{"zero counselor cadence", "metasystem.counselor.brief-cadence-hours=0\n", "metasystem.counselor.brief-cadence-hours must be a positive integer"},
+ 		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
+ 		{"share over 100", "census.max-interval-share-percent=150\n", "census.max-interval-share-percent must be an integer between 1 and 100"},
+ 		{"negative elapsed grace", "metasystem.budget.elapsed-grace-percent=-1\n", "metasystem.budget.elapsed-grace-percent must be an integer between 0 and 200"},
+@@ -238,7 +239,7 @@ func TestValidateNumericKnobs(t *testing.T) {
+ 		}
+ 	}
+ 	// Valid knobs raise nothing.
+-	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n"
++	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\nmetasystem.counselor.brief-cadence-hours=24\n"
+ 	if problems := validateRepo(t, good); len(problems) != 0 {
+ 		t.Fatalf("valid knobs rejected: %v", problems)
+ 	}
+diff --git a/internal/counselor/compute.go b/internal/counselor/compute.go
+index 6a3fab4c..5b4c2227 100644
+--- a/internal/counselor/compute.go
++++ b/internal/counselor/compute.go
+@@ -146,9 +146,9 @@ func Compute(records RecordSet, now time.Time) Brief {
+ 			Enrichment: "Add a non-prunable terminal ledger for ordinary tracked runs.",
+ 		},
+ 		Limitation{
+-			Name:       "Window horizon",
+-			Detail:     "The repository defines no counselor-specific cadence, so the brief reuses completed Coordinated Universal Time calendar weeks and omits the active partial week and empty older weeks.",
+-			Enrichment: "Record a counselor cadence and durable brief cursor when the human adopts one.",
++			Name:       "Window resolution",
++			Detail:     "Delivery follows the repository's counselor cadence, while the signal windows remain completed Coordinated Universal Time calendar weeks and omit the active partial week and empty older weeks.",
++			Enrichment: "Record finer-grained durable evidence before producing windows shorter than one week.",
+ 		},
+ 		Limitation{
+ 			Name:       "Landing size",
+@@ -184,9 +184,9 @@ func Compute(records RecordSet, now time.Time) Brief {
+ 			Enrichment: "Require every goal-record mutation to retain its goal operation identifier in the landing commit.",
+ 		},
+ 		Limitation{
+-			Name:       "Window horizon",
+-			Detail:     "The repository defines no counselor-specific cadence, so the brief reuses completed Coordinated Universal Time calendar weeks and omits the active partial week and empty older weeks.",
+-			Enrichment: "Record a counselor cadence and durable brief cursor when the human adopts one.",
++			Name:       "Window resolution",
++			Detail:     "Delivery follows the repository's counselor cadence, while the signal windows remain completed Coordinated Universal Time calendar weeks and omit the active partial week and empty older weeks.",
++			Enrichment: "Record finer-grained durable evidence before producing windows shorter than one week.",
+ 		},
+ 	)
+ 	if unmatchedGoalCarriers > 0 {
+diff --git a/internal/narratordigest/digest.go b/internal/narratordigest/digest.go
+index 28582060..cc4458dd 100644
+--- a/internal/narratordigest/digest.go
++++ b/internal/narratordigest/digest.go
+@@ -27,6 +27,15 @@ type Entry struct {
+ 	SourceID   string
+ }
+ 
++// Payload is one source-linked digest item whose body must reach the human
++// byte for byte. Unlike Entry, its body is not normalized into a single line.
++type Payload struct {
++	Kind       string
++	Body       []byte
++	SourceType string
++	SourceID   string
++}
++
+ type PendingDigest struct {
+ 	Message      string `json:"message"`
+ 	Cursor       int64  `json:"cursor"`
+@@ -139,6 +148,51 @@ func Append(repoRoot string, entries []Entry, now time.Time) error {
+ 	return nil
+ }
+ 
++// AppendPayload writes a complete source-linked body without filtering,
++// truncating, or normalizing it. A retry with the same source is idempotent,
++// including the crash window between this append and a caller's cursor write.
++func AppendPayload(repoRoot string, payload Payload, now time.Time) error {
++	kind := strings.ToUpper(flatten(payload.Kind))
++	marker := sourceMarker(Entry{SourceType: payload.SourceType, SourceID: payload.SourceID})
++	if (kind != "HIGHLIGHT" && kind != "LOWLIGHT") || len(payload.Body) == 0 ||
++		payload.SourceType == "" || payload.SourceID == "" {
++		return fmt.Errorf("narrator digest payload requires highlight/lowlight bytes and a source")
++	}
++
++	lock, err := acquire(repoRoot)
++	if err != nil {
++		return err
++	}
++	defer lock.release()
++	path := Path(repoRoot)
++	existing, err := os.ReadFile(path)
++	if err != nil && !os.IsNotExist(err) {
++		return err
++	}
++	sourceSignature := []byte(" — RAW-PAYLOAD " + marker + " bytes=")
++	if bytes.Contains(existing, sourceSignature) {
++		return nil
++	}
++
++	header := fmt.Sprintf("%s %s — RAW-PAYLOAD %s bytes=%d\n",
++		now.UTC().Format(time.RFC3339), kind, marker, len(payload.Body))
++	body := make([]byte, 0, len(existing)+len(header)+len(payload.Body)+1)
++	body = append(body, existing...)
++	body = append(body, header...)
++	body = append(body, payload.Body...)
++	if payload.Body[len(payload.Body)-1] != '\n' {
++		body = append(body, '\n')
++	}
++	durable, err := atomicfile.WriteText(path, string(body), repoRoot)
++	if err != nil {
++		return err
++	}
++	if !durable {
++		return fmt.Errorf("narrator digest payload published with directory durability unknown")
++	}
++	return nil
++}
++
+ func digest(data []byte) string {
+ 	sum := sha256.Sum256(data)
+ 	return hex.EncodeToString(sum[:])
+@@ -187,10 +241,10 @@ func Pending(repoRoot string) (PendingDigest, error) {
+ 	if cursor.Cursor > int64(len(data)) || digest(data[:cursor.Cursor]) != cursor.PrefixSHA256 {
+ 		return PendingDigest{}, fmt.Errorf("narrator digest changed before the last check-in cursor")
+ 	}
+-	pending := strings.TrimSpace(string(data[cursor.Cursor:]))
++	pending := data[cursor.Cursor:]
+ 	message := ""
+-	if pending != "" {
+-		message = "NARRATOR DIGEST since last check-in:\n" + pending
++	if len(bytes.TrimSpace(pending)) != 0 {
++		message = "NARRATOR DIGEST since last check-in:\n" + string(pending)
+ 	}
+ 	return PendingDigest{Message: message, Cursor: int64(len(data)), PrefixSHA256: digest(data)}, nil
+ }
+diff --git a/internal/narratordigest/digest_test.go b/internal/narratordigest/digest_test.go
+index deddda18..c90ff34f 100644
+--- a/internal/narratordigest/digest_test.go
++++ b/internal/narratordigest/digest_test.go
+@@ -1,12 +1,66 @@
+ package narratordigest
+ 
+ import (
++	"bytes"
+ 	"os"
++	"strconv"
+ 	"strings"
+ 	"testing"
+ 	"time"
+ )
+ 
++func rawPayloadBody(t *testing.T, data []byte, source string) []byte {
++	t.Helper()
++	marker := []byte(" — RAW-PAYLOAD (source: " + source + ") bytes=")
++	start := bytes.Index(data, marker)
++	if start < 0 {
++		t.Fatalf("raw payload source marker %q is absent from %q", source, data)
++	}
++	headerEnd := bytes.IndexByte(data[start:], '\n')
++	if headerEnd < 0 {
++		t.Fatalf("raw payload header has no newline: %q", data[start:])
++	}
++	headerEnd += start
++	sizeStart := start + len(marker)
++	size, err := strconv.Atoi(string(data[sizeStart:headerEnd]))
++	if err != nil || headerEnd+1+size > len(data) {
++		t.Fatalf("raw payload header has an invalid byte count: %q", data[start:headerEnd])
++	}
++	return data[headerEnd+1 : headerEnd+1+size]
++}
++
++func TestRawPayloadPreservesRendererBytesAndDeduplicatesItsSource(t *testing.T) {
++	root := t.TempDir()
++	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
++	rendered := []byte("Counselor heading.\n\nWarning:  spaces stay.\n")
++	payload := Payload{Kind: "lowlight", Body: rendered, SourceType: "counselor-brief", SourceID: "period-1"}
++	if err := AppendPayload(root, payload, now); err != nil {
++		t.Fatal(err)
++	}
++	retry := payload
++	retry.Body = []byte("a retry rendered different bytes\n")
++	if err := AppendPayload(root, retry, now.Add(time.Minute)); err != nil {
++		t.Fatal(err)
++	}
++	data, err := os.ReadFile(Path(root))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got := rawPayloadBody(t, data, "counselor-brief period-1"); !bytes.Equal(got, rendered) {
++		t.Fatalf("digest softened the rendered bytes:\n got %q\nwant %q", got, rendered)
++	}
++	if count := bytes.Count(data, []byte("RAW-PAYLOAD")); count != 1 {
++		t.Fatalf("one source produced %d payload frames", count)
++	}
++	pending, err := Pending(root)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !strings.HasSuffix(pending.Message, string(rendered)) {
++		t.Fatalf("pending delivery changed the payload suffix: %q", pending.Message)
++	}
++}
++
+ func TestPendingCursorLeavesEventsAppendedDuringDelivery(t *testing.T) {
+ 	root := t.TempDir()
+ 	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
+diff --git a/internal/steward/counselor_carriage.go b/internal/steward/counselor_carriage.go
+new file mode 100644
+index 00000000..81506419
+--- /dev/null
++++ b/internal/steward/counselor_carriage.go
+@@ -0,0 +1,192 @@
++package steward
++
++import (
++	"bytes"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"math"
++	"os"
++	"path/filepath"
++	"strconv"
++	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
++)
++
++const (
++	counselorBriefCadenceKey          = "metasystem.counselor.brief-cadence-hours"
++	defaultCounselorBriefCadenceHours = 24
++	counselorBriefDelivered           = "DELIVERED"
++	counselorBriefRenderFailed        = "RENDER_FAILED"
++)
++
++type counselorBriefCursor struct {
++	Schema       int    `json:"schema"`
++	PeriodStart  string `json:"periodStart"`
++	CadenceHours int    `json:"cadenceHours"`
++	Status       string `json:"status"`
++	RecordedAt   string `json:"recordedAt"`
++	Failure      string `json:"failure,omitempty"`
++}
++
++func counselorBriefCursorPath(repoRoot string) string {
++	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "counselor-brief-cursor.json")
++}
++
++func counselorBriefCadenceHours(repoRoot string) (int, error) {
++	value, _, err := config.Get(config.GetParams{
++		Key: counselorBriefCadenceKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"),
++		Default: strconv.Itoa(defaultCounselorBriefCadenceHours), DefaultSet: true,
++	})
++	if err != nil {
++		if !errors.Is(err, os.ErrNotExist) {
++			return 0, err
++		}
++		value = strconv.Itoa(defaultCounselorBriefCadenceHours)
++	}
++	hours, err := strconv.Atoi(value)
++	if err != nil || hours < 1 || hours > int(math.MaxInt64/int64(time.Hour)) {
++		return 0, fmt.Errorf("%s must be a positive integer that fits a time duration", counselorBriefCadenceKey)
++	}
++	return hours, nil
++}
++
++func counselorBriefPeriodStart(now time.Time, cadenceHours int) time.Time {
++	periodSeconds := int64(cadenceHours) * int64(time.Hour/time.Second)
++	epoch := now.UTC().Unix()
++	remainder := epoch % periodSeconds
++	if remainder < 0 {
++		remainder += periodSeconds
++	}
++	return time.Unix(epoch-remainder, 0).UTC()
++}
++
++func counselorBriefSourceID(periodStart time.Time, cadenceHours int) string {
++	return periodStart.UTC().Format("20060102T150405Z") + "-" + strconv.Itoa(cadenceHours) + "h"
++}
++
++func loadCounselorBriefCursor(repoRoot string) (counselorBriefCursor, error) {
++	data, err := os.ReadFile(counselorBriefCursorPath(repoRoot))
++	if os.IsNotExist(err) {
++		return counselorBriefCursor{Schema: 1}, nil
++	}
++	if err != nil {
++		return counselorBriefCursor{}, err
++	}
++	var cursor counselorBriefCursor
++	decoder := json.NewDecoder(bytes.NewReader(data))
++	decoder.DisallowUnknownFields()
++	if err := decoder.Decode(&cursor); err != nil {
++		return counselorBriefCursor{}, fmt.Errorf("counselor brief cursor is malformed: %w", err)
++	}
++	if err := decoder.Decode(&struct{}{}); err != io.EOF {
++		return counselorBriefCursor{}, fmt.Errorf("counselor brief cursor has trailing JSON or an unknown contract")
++	}
++	if cursor.Schema != 1 || cursor.CadenceHours < 1 ||
++		(cursor.Status != counselorBriefDelivered && cursor.Status != counselorBriefRenderFailed) {
++		return counselorBriefCursor{}, fmt.Errorf("counselor brief cursor has an unknown contract")
++	}
++	if _, err := time.Parse(time.RFC3339, cursor.PeriodStart); err != nil {
++		return counselorBriefCursor{}, fmt.Errorf("counselor brief cursor period is invalid")
++	}
++	if _, err := time.Parse(time.RFC3339, cursor.RecordedAt); err != nil {
++		return counselorBriefCursor{}, fmt.Errorf("counselor brief cursor timestamp is invalid")
++	}
++	if (cursor.Status == counselorBriefDelivered && cursor.Failure != "") ||
++		(cursor.Status == counselorBriefRenderFailed && cursor.Failure == "") {
++		return counselorBriefCursor{}, fmt.Errorf("counselor brief cursor status contradicts its failure evidence")
++	}
++	return cursor, nil
++}
++
++func saveCounselorBriefCursor(repoRoot string, cursor counselorBriefCursor) error {
++	data, err := json.MarshalIndent(cursor, "", "  ")
++	if err != nil {
++		return err
++	}
++	durable, err := atomicfile.WriteText(counselorBriefCursorPath(repoRoot), string(data)+"\n", repoRoot)
++	if err != nil {
++		return err
++	}
++	if !durable {
++		return fmt.Errorf("counselor brief cursor durability is unknown")
++	}
++	return nil
++}
++
++func counselorBriefPeriodRecorded(cursor counselorBriefCursor, periodStart time.Time, cadenceHours int, status string) bool {
++	return cursor.PeriodStart == periodStart.UTC().Format(time.RFC3339) &&
++		cursor.CadenceHours == cadenceHours && cursor.Status == status
++}
++
++func recordCounselorRenderFailure(repoRoot string, cursor counselorBriefCursor, periodStart time.Time,
++	cadenceHours int, now time.Time, renderErr error) error {
++	failure := renderErr.Error()
++	if counselorBriefPeriodRecorded(cursor, periodStart, cadenceHours, counselorBriefRenderFailed) && cursor.Failure == failure {
++		return nil
++	}
++	sourceID := counselorBriefSourceID(periodStart, cadenceHours)
++	line := fmt.Sprintf("HEALTH unhealthy — counselor=dead (brief render failed for the period beginning %s: %v; remedy: repair the counselor renderer and run metasystem steward tick --repo %q)",
++		periodStart.Format(time.RFC3339), renderErr, repoRoot)
++	if err := narratordigest.Append(repoRoot, []narratordigest.Entry{{
++		Kind: "lowlight", Text: line, SourceType: "counselor-brief-health", SourceID: sourceID,
++	}}, now); err != nil {
++		return fmt.Errorf("publish counselor render health: %w", err)
++	}
++	if err := NarrateHealthLine(repoRoot, line); err != nil {
++		return fmt.Errorf("narrate counselor render health: %w", err)
++	}
++	return saveCounselorBriefCursor(repoRoot, counselorBriefCursor{
++		Schema: 1, PeriodStart: periodStart.Format(time.RFC3339), CadenceHours: cadenceHours,
++		Status: counselorBriefRenderFailed, RecordedAt: now.UTC().Format(time.RFC3339), Failure: failure,
++	})
++}
++
++// sweepCounselorBrief carries the complete renderer output directly into the
++// narrator digest. No caller supplies a transformation, limit, or policy.
++func sweepCounselorBrief(repoRoot string, now time.Time) error {
++	now = now.UTC().Truncate(time.Second)
++	cadenceHours, err := counselorBriefCadenceHours(repoRoot)
++	if err != nil {
++		return err
++	}
++	periodStart := counselorBriefPeriodStart(now, cadenceHours)
++	cursor, err := loadCounselorBriefCursor(repoRoot)
++	if err != nil {
++		return err
++	}
++	if cursor.RecordedAt != "" {
++		recordedAt, _ := time.Parse(time.RFC3339, cursor.RecordedAt)
++		if now.Before(recordedAt) {
++			return fmt.Errorf("counselor brief clock regressed behind its durable cursor")
++		}
++	}
++	if counselorBriefPeriodRecorded(cursor, periodStart, cadenceHours, counselorBriefDelivered) {
++		return nil
++	}
++
++	brief := counselor.Build(counselor.Options{Root: repoRoot, Now: func() time.Time { return now }})
++	var rendered bytes.Buffer
++	if err := counselor.Render(&rendered, brief); err != nil {
++		return recordCounselorRenderFailure(repoRoot, cursor, periodStart, cadenceHours, now, err)
++	}
++	if rendered.Len() == 0 {
++		return recordCounselorRenderFailure(repoRoot, cursor, periodStart, cadenceHours, now,
++			fmt.Errorf("the counselor renderer produced no bytes"))
++	}
++	if err := narratordigest.AppendPayload(repoRoot, narratordigest.Payload{
++		Kind: "lowlight", Body: rendered.Bytes(), SourceType: "counselor-brief",
++		SourceID: counselorBriefSourceID(periodStart, cadenceHours),
++	}, now); err != nil {
++		return fmt.Errorf("publish counselor brief: %w", err)
++	}
++	return saveCounselorBriefCursor(repoRoot, counselorBriefCursor{
++		Schema: 1, PeriodStart: periodStart.Format(time.RFC3339), CadenceHours: cadenceHours,
++		Status: counselorBriefDelivered, RecordedAt: now.Format(time.RFC3339),
++	})
++}
+diff --git a/internal/steward/counselor_carriage_test.go b/internal/steward/counselor_carriage_test.go
+new file mode 100644
+index 00000000..995aa237
+--- /dev/null
++++ b/internal/steward/counselor_carriage_test.go
+@@ -0,0 +1,163 @@
++package steward
++
++import (
++	"bytes"
++	"errors"
++	"os"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
++)
++
++func writeCounselorConfig(t *testing.T, root, body string) {
++	t.Helper()
++	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(body), 0o644); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func counselorPayloads(t *testing.T, data []byte) [][]byte {
++	t.Helper()
++	var payloads [][]byte
++	for searchAt := 0; ; {
++		relative := bytes.Index(data[searchAt:], []byte(" — RAW-PAYLOAD (source: counselor-brief "))
++		if relative < 0 {
++			return payloads
++		}
++		start := searchAt + relative
++		headerEndRelative := bytes.IndexByte(data[start:], '\n')
++		if headerEndRelative < 0 {
++			t.Fatalf("counselor payload header has no newline: %q", data[start:])
++		}
++		headerEnd := start + headerEndRelative
++		sizeMarker := bytes.LastIndex(data[start:headerEnd], []byte(" bytes="))
++		if sizeMarker < 0 {
++			t.Fatalf("counselor payload header has no byte count: %q", data[start:headerEnd])
++		}
++		sizeStart := start + sizeMarker + len(" bytes=")
++		size, err := strconv.Atoi(string(data[sizeStart:headerEnd]))
++		bodyStart := headerEnd + 1
++		if err != nil || size < 1 || bodyStart+size > len(data) {
++			t.Fatalf("counselor payload byte count is invalid: %q", data[start:headerEnd])
++		}
++		payloads = append(payloads, append([]byte(nil), data[bodyStart:bodyStart+size]...))
++		searchAt = bodyStart + size
++	}
++}
++
++func renderedCounselorBrief(t *testing.T, root string, now time.Time) []byte {
++	t.Helper()
++	brief := counselor.Build(counselor.Options{Root: root, Now: func() time.Time { return now }})
++	var rendered bytes.Buffer
++	if err := counselor.Render(&rendered, brief); err != nil {
++		t.Fatal(err)
++	}
++	return rendered.Bytes()
++}
++
++func TestCounselorBriefCarriageDeliversOncePerConfiguredPeriod(t *testing.T) {
++	root := t.TempDir()
++	writeCounselorConfig(t, root, counselorBriefCadenceKey+"=12\n")
++	first := time.Date(2026, 8, 30, 1, 0, 0, 0, time.UTC)
++	if err := sweepCounselorBrief(root, first); err != nil {
++		t.Fatal(err)
++	}
++	if err := sweepCounselorBrief(root, first.Add(10*time.Hour)); err != nil {
++		t.Fatal(err)
++	}
++	data, err := os.ReadFile(narratordigest.Path(root))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if payloads := counselorPayloads(t, data); len(payloads) != 1 {
++		t.Fatalf("one twelve-hour period produced %d counselor briefs", len(payloads))
++	}
++	cursor, err := loadCounselorBriefCursor(root)
++	if err != nil || cursor.Status != counselorBriefDelivered || cursor.CadenceHours != 12 {
++		t.Fatalf("the delivered period cursor is incomplete: %+v %v", cursor, err)
++	}
++
++	if err := sweepCounselorBrief(root, first.Add(12*time.Hour)); err != nil {
++		t.Fatal(err)
++	}
++	data, err = os.ReadFile(narratordigest.Path(root))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if payloads := counselorPayloads(t, data); len(payloads) != 2 {
++		t.Fatalf("two twelve-hour periods produced %d counselor briefs", len(payloads))
++	}
++}
++
++func TestCounselorBriefCarriagePreservesRendererBytes(t *testing.T) {
++	root := t.TempDir()
++	writeCounselorConfig(t, root, "")
++	now := time.Date(2026, 8, 30, 13, 15, 0, 0, time.UTC)
++	expected := renderedCounselorBrief(t, root, now)
++	if hours, err := counselorBriefCadenceHours(root); err != nil || hours != defaultCounselorBriefCadenceHours {
++		t.Fatalf("absent counselor cadence did not resolve to the twenty-four-hour default: hours=%d err=%v", hours, err)
++	}
++	if err := sweepCounselorBrief(root, now); err != nil {
++		t.Fatal(err)
++	}
++	data, err := os.ReadFile(narratordigest.Path(root))
++	if err != nil {
++		t.Fatal(err)
++	}
++	payloads := counselorPayloads(t, data)
++	if len(payloads) != 1 || !bytes.Equal(payloads[0], expected) {
++		t.Fatalf("digest payload differs from renderer output:\n got %q\nwant %q", payloads, expected)
++	}
++	pending, err := narratordigest.Pending(root)
++	if err != nil || !strings.HasSuffix(pending.Message, string(expected)) {
++		t.Fatalf("pending human delivery softened the rendered suffix: err=%v message=%q", err, pending.Message)
++	}
++}
++
++type failingCounselorWriter struct{}
++
++func (failingCounselorWriter) Write([]byte) (int, error) {
++	return 0, errors.New("fixture renderer closed")
++}
++
++func TestCounselorRenderFailureSurfacesCounselorNamedHealth(t *testing.T) {
++	root := t.TempDir()
++	now := time.Date(2026, 8, 30, 13, 15, 0, 0, time.UTC)
++	period := counselorBriefPeriodStart(now, defaultCounselorBriefCadenceHours)
++	renderErr := counselor.Render(failingCounselorWriter{}, counselor.Brief{})
++	if renderErr == nil {
++		t.Fatal("the fixture did not produce a real counselor render failure")
++	}
++	cursor := counselorBriefCursor{Schema: 1}
++	if err := recordCounselorRenderFailure(root, cursor, period, defaultCounselorBriefCadenceHours, now, renderErr); err != nil {
++		t.Fatal(err)
++	}
++	recorded, err := loadCounselorBriefCursor(root)
++	if err != nil || recorded.Status != counselorBriefRenderFailed || !strings.Contains(recorded.Failure, "fixture renderer closed") {
++		t.Fatalf("render failure cursor is incomplete: %+v %v", recorded, err)
++	}
++	digest, err := os.ReadFile(narratordigest.Path(root))
++	if err != nil {
++		t.Fatal(err)
++	}
++	healthLine := "HEALTH unhealthy — counselor=dead"
++	if !bytes.Contains(digest, []byte(healthLine)) || !bytes.Contains(digest, []byte("source: counselor-brief-health")) {
++		t.Fatalf("render failure did not reach the counselor-named digest health line: %s", digest)
++	}
++	narration, err := os.ReadFile(NarrationPath(root))
++	if err != nil || !bytes.Contains(narration, []byte(healthLine)) {
++		t.Fatalf("render failure did not reach health narration: %q %v", narration, err)
++	}
++	if err := recordCounselorRenderFailure(root, recorded, period, defaultCounselorBriefCadenceHours, now.Add(time.Minute), renderErr); err != nil {
++		t.Fatal(err)
++	}
++	afterRetry, err := os.ReadFile(narratordigest.Path(root))
++	if err != nil || bytes.Count(afterRetry, []byte(healthLine)) != 1 {
++		t.Fatalf("the same failed period repeated its health line: %q %v", afterRetry, err)
++	}
++}
+diff --git a/internal/steward/tick.go b/internal/steward/tick.go
+index daeacb0b..732dad19 100644
+--- a/internal/steward/tick.go
++++ b/internal/steward/tick.go
+@@ -159,6 +159,9 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
+ 	if err := sweepRulingReviews(repoRoot, time.Now()); err != nil {
+ 		return degradedTick(repoRoot, "ruling review sweep failed: "+err.Error())
+ 	}
++	if err := sweepCounselorBrief(repoRoot, time.Now()); err != nil {
++		return degradedTick(repoRoot, "counselor brief carriage failed: "+err.Error())
++	}
+ 
+ 	// Close finished continuations first: the guard a reap frees must
+ 	// not suppress this same tick's decision.
+diff --git a/metasystem.conf b/metasystem.conf
+index 71182c7e..b0300a3a 100644
+--- a/metasystem.conf
++++ b/metasystem.conf
+@@ -11,6 +11,7 @@ metasystem.budget.slice-norm-hours=4
+ # correlation policy may affect work.
+ metasystem.governance.correlation-policy=C
+ validation.weight-threshold=60
++metasystem.counselor.brief-cadence-hours=24
+ 
+ retro.max-receipts=25
+ retro.max-age-days=30
