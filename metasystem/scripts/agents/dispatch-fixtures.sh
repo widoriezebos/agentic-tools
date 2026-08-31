@@ -1364,7 +1364,10 @@ set +e
     [[ "$1" == 310 ]] && return 0
     (( owned_group_alive ))
   }
-  group_owned() { [[ "$2" == 320 ]]; }
+  group_owned() {
+    [[ "${group_owned_mode:-}" == indeterminate ]] && return 3
+    [[ "$2" == 320 ]]
+  }
   kill() {
     printf '%s\n' "$*" >>"$wind_down_signal"
     owned_group_alive=0
@@ -1379,6 +1382,31 @@ grep -Fq 'refusing to signal unowned process group 310' "$agent_fixture/wind-dow
   || { echo "cross-group wind-down did not record the recycled group refusal" >&2; exit 1; }
 grep -Fq -- '-TERM -- -320' "$wind_down_signal" \
   || { echo "cross-group wind-down stopped before signalling the later owned group" >&2; exit 1; }
+
+# An indeterminate ownership scan is fail-closed in the same pre-TERM path as
+# a known foreign group: no signal is sent and the refusal remains visible.
+wind_down_indeterminate_signal="$agent_fixture/wind-down-indeterminate-signal"
+set +e
+(
+  source "$agent_dispatch"
+  ms="$wind_down_ms"
+  group_owned_mode=indeterminate
+  group_alive() { return 0; }
+  group_owned() {
+    [[ "${group_owned_mode:-}" == indeterminate ]] && return 3
+    return 0
+  }
+  kill() { printf '%s\n' "$*" >>"$wind_down_indeterminate_signal"; }
+  wind_down_one_group "$agent_fixture/unused-record.json" 330
+) 2>"$agent_fixture/wind-down-indeterminate.err"
+wind_down_indeterminate_rc=$?
+set -e
+[[ $wind_down_indeterminate_rc -ne 0 ]] \
+  || { echo "indeterminate group ownership allowed wind-down" >&2; exit 1; }
+grep -Fq 'refusing to signal unowned process group 330' "$agent_fixture/wind-down-indeterminate.err" \
+  || { echo "indeterminate group ownership did not use the pre-TERM refusal" >&2; exit 1; }
+[[ ! -e "$wind_down_indeterminate_signal" ]] \
+  || { echo "indeterminate group ownership allowed a signal" >&2; cat "$wind_down_indeterminate_signal" >&2; exit 1; }
 
 # The custodial critique scenarios travel with the delegate --role path
 # (operator-surface L13); until that verb lands there is no custodial entry
