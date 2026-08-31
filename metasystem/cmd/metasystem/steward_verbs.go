@@ -21,6 +21,7 @@ import (
 	"time"
 
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
@@ -495,8 +496,8 @@ func runStewardArm(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
 		return 2
 	}
-	if (*temporaryWord == "") != (*reviewBy == "") {
-		fmt.Fprintln(os.Stderr, "steward arm: --temporary-human-word and --review-by travel together")
+	if err := humanauthority.ValidateTemporaryWordPair(*temporaryWord, *reviewBy); err != nil {
+		fmt.Fprintln(os.Stderr, "steward arm:", err)
 		return 2
 	}
 	if *temporaryWord == "" {

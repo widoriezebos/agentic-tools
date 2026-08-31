@@ -78,11 +78,19 @@ type GovernedObligation struct {
 	AuthorityOperation string
 	ReviewPolicy       string
 	ReviewOutcome      string
+	AuthorityOutcome   string
+	AuthorityReviewBy  string
 	Effects            []GoverningEffect
 	AuthorizedEffects  []GoverningEffect
 	Assumptions        ObligationAssumptions
 	Triggers           HumanReviewTriggers
 }
+
+const (
+	ReviewOutcomeHumanApproved         = "human-approved"
+	AuthorityOutcomeTemporaryHumanWord = "TEMPORARY_HUMAN_WORD"
+	authorityReviewByDateLayout        = "2006-01-02"
+)
 
 type ConsequenceDecision struct {
 	Apply       bool
@@ -90,11 +98,33 @@ type ConsequenceDecision struct {
 	Reason      string
 }
 
+// ValidateAuthorityProvenance protects the durable landed marker for
+// temporary human-word authority without turning observation-only states into
+// consequence authority.
+func (o *GovernedObligation) ValidateAuthorityProvenance() error {
+	if o == nil {
+		return nil
+	}
+	if o.AuthorityOutcome == "" && o.AuthorityReviewBy == "" {
+		return nil
+	}
+	if o.AuthorityOutcome != AuthorityOutcomeTemporaryHumanWord {
+		return fmt.Errorf("AuthorityOutcome is missing or invalid")
+	}
+	if _, err := time.Parse(authorityReviewByDateLayout, o.AuthorityReviewBy); err != nil {
+		return fmt.Errorf("AuthorityReviewBy is missing or invalid")
+	}
+	return nil
+}
+
 // ValidateAuthorizationCompleteness protects the authorization tuple required
 // before an active obligation can apply a governing effect.
 func (o *GovernedObligation) ValidateAuthorizationCompleteness() error {
 	if o == nil {
 		return fmt.Errorf("authorization record is missing")
+	}
+	if err := o.ValidateAuthorityProvenance(); err != nil {
+		return err
 	}
 	if o.AuthorizedBy == "" {
 		return fmt.Errorf("AuthorizedBy is missing")
@@ -111,7 +141,7 @@ func (o *GovernedObligation) ValidateAuthorizationCompleteness() error {
 	if o.ReviewPolicy != "A" && o.ReviewPolicy != "B" && o.ReviewPolicy != "C" {
 		return fmt.Errorf("ReviewPolicy is missing or invalid")
 	}
-	if o.ReviewOutcome != "human-approved" {
+	if o.ReviewOutcome != ReviewOutcomeHumanApproved {
 		return fmt.Errorf("ReviewOutcome is missing or not human-approved")
 	}
 	return nil

@@ -530,9 +530,10 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 // budgeted goal into a governed recurrence. It replaces the complete record;
 // no field-level mutation can rewrite an earlier obligation revision.
 func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof *humanauthority.Proof) (PublishResult, error) {
-	if r.Actor.Human == "" || proof == nil || !proof.ValidFor(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("set-obligation requires freshly observed enrolled-human authority")
+	if r.Actor.Human == "" || proof == nil || !proof.AuthorizesSetObligation(r.Endpoint.Root) {
+		return PublishResult{}, fmt.Errorf("set-obligation requires freshly observed enrolled-human authority or a recorded temporary human word")
 	}
+	temporaryAuthority := proof.TemporarySetObligationFor(r.Endpoint.Root)
 	if !validObligationState(proposed.State) {
 		return PublishResult{}, fmt.Errorf("unknown obligation state %q", proposed.State)
 	}
@@ -571,8 +572,12 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 				o.AuthorizedBy, o.AuthorizedAt, o.AuthorityOperation, o.ReviewPolicy, o.ReviewOutcome, o.AuthorizedEffects = "", "", "", "", "", nil
 			} else {
 				o.AuthorizedBy, o.AuthorizedAt, o.AuthorityOperation = r.Actor.Human, r.stamp(), r.opid()
-				o.ReviewPolicy, o.ReviewOutcome = policy, "human-approved"
+				o.ReviewPolicy, o.ReviewOutcome = policy, ReviewOutcomeHumanApproved
 				o.AuthorizedEffects = append([]GoverningEffect(nil), o.Effects...)
+			}
+			o.AuthorityOutcome, o.AuthorityReviewBy = "", ""
+			if temporaryAuthority {
+				o.AuthorityOutcome, o.AuthorityReviewBy = AuthorityOutcomeTemporaryHumanWord, proof.ReviewBy
 			}
 			if err := validateGovernedObligation(&o, o.Revision, f.Claimed, f.Budget); err != nil {
 				return nil, err

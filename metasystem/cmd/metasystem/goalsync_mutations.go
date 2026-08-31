@@ -416,7 +416,13 @@ func runGoalSetObligation(args []string) int {
 	correlatedRisk := flags.String("correlated-assumption-risk", "", "yes|no|unknown")
 	authorityScopeChange := flags.String("authority-scope-change", "", "yes|no|unknown")
 	destructiveReach := flags.String("destructive-reach", "", "none|reversible-local|destructive|unknown")
+	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; authorizes set-obligation TEMPORARILY with the word recorded on its proof")
+	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
 	if flags.Parse(args) != nil {
+		return 2
+	}
+	if err := humanauthority.ValidateTemporaryWordPair(*temporaryWord, *reviewBy); err != nil {
+		fmt.Fprintln(os.Stderr, "goal set-obligation:", err)
 		return 2
 	}
 	if flags.NArg() != 0 || *id == "" || *by == "" || *state == "" || *owner == "" || *recurrence == "" ||
@@ -430,10 +436,21 @@ func runGoalSetObligation(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal set-obligation works only with the synced backlog")
 		return 1
 	}
-	proof, err := humanauthority.Prove(*root, int64(os.Getppid()), nil, time.Now().UTC())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal set-obligation could not prove enrolled human ancestry:", err)
-		return 1
+	var proof humanauthority.Proof
+	var err error
+	if *temporaryWord == "" {
+		proof, err = humanauthority.Prove(*root, int64(os.Getppid()), nil, time.Now().UTC())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "goal set-obligation could not prove enrolled human ancestry:", err)
+			return 1
+		}
+	} else {
+		proof, err = humanauthority.TemporaryProof(*root, *temporaryWord, *reviewBy, time.Now().UTC())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "goal set-obligation could not bind its temporary human word:", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "goal set-obligation: TEMPORARY authority under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
 	}
 	req, err := syncReq(*root, *by, *lineage)
 	if err != nil {
@@ -441,10 +458,6 @@ func runGoalSetObligation(args []string) int {
 		return 1
 	}
 	operationID := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
-	if err := humanauthority.RecordProof(*root, operationID, "goal set-obligation", proof); err != nil {
-		fmt.Fprintln(os.Stderr, "goal set-obligation could not record its authority proof:", err)
-		return 1
-	}
 	governingEffects := make([]goal.GoverningEffect, len(effects))
 	for index, effect := range effects {
 		governingEffects[index] = goal.GoverningEffect(effect)
@@ -460,7 +473,16 @@ func runGoalSetObligation(args []string) int {
 			CorrelatedAssumptionRisk: *correlatedRisk, AuthorityScopeChange: *authorityScopeChange, DestructiveReach: *destructiveReach},
 	}
 	res, err := goal.SetObligation(req, *id, obligation, &proof)
-	return printSyncResult(res, err)
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	if res.Outcome == goal.OutcomeConfirmed {
+		if err := humanauthority.RecordSetObligationProof(*root, operationID, proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal set-obligation could not record its authority proof:", err)
+			return 1
+		}
+	}
+	return printSyncResult(res, nil)
 }
 
 var (

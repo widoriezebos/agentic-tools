@@ -100,6 +100,43 @@ func TestDecideFailsClosedWithoutALawfulState(t *testing.T) {
 	}
 }
 
+func TestTemporaryAuthorityProvenanceRequiresOutcomeAndRealReviewDate(t *testing.T) {
+	valid := governance.GovernedObligation{
+		AuthorityOutcome:  governance.AuthorityOutcomeTemporaryHumanWord,
+		AuthorityReviewBy: "2026-09-06",
+	}
+	if err := valid.ValidateAuthorityProvenance(); err != nil {
+		t.Fatalf("valid temporary authority provenance was refused: %v", err)
+	}
+	var absent *governance.GovernedObligation
+	if err := absent.ValidateAuthorityProvenance(); err != nil {
+		t.Fatalf("nil obligation carries no provenance to refuse: %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*governance.GovernedObligation)
+		want string
+	}{
+		{name: "missing outcome", edit: func(o *governance.GovernedObligation) { o.AuthorityOutcome = "" }, want: "AuthorityOutcome"},
+		{name: "unknown outcome", edit: func(o *governance.GovernedObligation) { o.AuthorityOutcome = "HUMAN_AUTHORITY_PROVEN" }, want: "AuthorityOutcome"},
+		{name: "missing review date", edit: func(o *governance.GovernedObligation) { o.AuthorityReviewBy = "" }, want: "AuthorityReviewBy"},
+		{name: "non-date review", edit: func(o *governance.GovernedObligation) { o.AuthorityReviewBy = "whenever" }, want: "AuthorityReviewBy"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			obligation := valid
+			test.edit(&obligation)
+			if err := obligation.ValidateAuthorityProvenance(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("invalid authority provenance did not refuse by %s: %v", test.want, err)
+			}
+		})
+	}
+	active := authorizedObligation(governance.ObligationEnforced)
+	active.AuthorityOutcome = "HUMAN_AUTHORITY_PROVEN"
+	if decision := active.Decide(governance.EffectAuthorizeSpend); decision.Apply || !strings.Contains(decision.Reason, "AuthorityOutcome") {
+		t.Fatalf("active obligation with malformed authority provenance did not fail closed: %+v", decision)
+	}
+}
+
 func TestObligationAssumptionsValidateClosedVocabulary(t *testing.T) {
 	valid := governance.ObligationAssumptions{
 		Recurrence: governance.SingleExperiment, Platform: "fixture/os", ToolchainIdentity: "fixture-go",

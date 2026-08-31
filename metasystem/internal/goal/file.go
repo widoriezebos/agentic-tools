@@ -572,9 +572,13 @@ func RenderFile(f *GoalFile) []byte {
 			}
 			return value
 		}
-		fmt.Fprintf(&b, "- Obligation: revision=%d budgetRevision=%d state=%s owner=%s authorizedBy=%s authorizedAt=%s authorityOperation=%s reviewPolicy=%s reviewOutcome=%s effects=%s authorizedEffects=%s\n",
+		fmt.Fprintf(&b, "- Obligation: revision=%d budgetRevision=%d state=%s owner=%s authorizedBy=%s authorizedAt=%s authorityOperation=%s reviewPolicy=%s reviewOutcome=%s effects=%s authorizedEffects=%s",
 			o.Revision, o.BudgetRevision, o.State, o.Owner, empty(o.AuthorizedBy), empty(o.AuthorizedAt), empty(o.AuthorityOperation),
 			empty(o.ReviewPolicy), empty(o.ReviewOutcome), renderEffects(o.Effects), renderEffects(o.AuthorizedEffects))
+		if o.AuthorityOutcome != "" || o.AuthorityReviewBy != "" {
+			fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", empty(o.AuthorityOutcome), empty(o.AuthorityReviewBy))
+		}
+		b.WriteByte('\n')
 		fmt.Fprintf(&b, "- ObligationAssumptions: recurrence=%s platform=%s toolchainIdentity=%s surfaceDigest=%s maxActiveJobs=%d timingEnvelopeSeconds=%d observationSource=%s\n",
 			o.Assumptions.Recurrence, o.Assumptions.Platform, o.Assumptions.ToolchainIdentity, o.Assumptions.SurfaceDigest,
 			o.Assumptions.MaxActiveJobs, o.Assumptions.TimingEnvelopeSeconds, o.Assumptions.ObservationSource)

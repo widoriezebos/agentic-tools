@@ -59,6 +59,11 @@ type HumanReviewTriggers = governance.HumanReviewTriggers
 // tuple. A replacement is a new goal revision; earlier bytes remain in Git.
 type GovernedObligation = governance.GovernedObligation
 
+const (
+	ReviewOutcomeHumanApproved         = governance.ReviewOutcomeHumanApproved
+	AuthorityOutcomeTemporaryHumanWord = governance.AuthorityOutcomeTemporaryHumanWord
+)
+
 // ConsequenceDecision is recorded at the base action boundary. WouldRefuse is
 // deliberately inert in DRAFT and OBSERVE.
 type ConsequenceDecision = governance.ConsequenceDecision
@@ -101,6 +106,9 @@ func validateGovernedObligation(o *GovernedObligation, fileRevision uint64, clai
 	}
 	if !validObligationState(o.State) || strings.TrimSpace(o.Owner) == "" {
 		return fmt.Errorf("obligation requires a known state and owner")
+	}
+	if err := o.ValidateAuthorityProvenance(); err != nil {
+		return fmt.Errorf("obligation authority provenance: %w", err)
 	}
 	if err := o.Assumptions.Validate(); err != nil {
 		return fmt.Errorf("obligationAssumptions: %v", err)
@@ -178,7 +186,8 @@ func parseEffects(value string) ([]GoverningEffect, error) {
 
 func parseObligationRecord(value string) (*GovernedObligation, error) {
 	rec, err := parseKVRecord(value,
-		[]string{"revision", "budgetRevision", "state", "owner", "authorizedBy", "authorizedAt", "authorityOperation", "reviewPolicy", "reviewOutcome", "effects", "authorizedEffects"}, nil, "")
+		[]string{"revision", "budgetRevision", "state", "owner", "authorizedBy", "authorizedAt", "authorityOperation", "reviewPolicy", "reviewOutcome", "effects", "authorizedEffects"},
+		[]string{"authorityOutcome", "authorityReviewBy"}, "")
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +208,8 @@ func parseObligationRecord(value string) (*GovernedObligation, error) {
 		Revision: revision, BudgetRevision: budgetRevision, State: ObligationState(rec["state"]), Owner: rec["owner"],
 		AuthorizedBy: normalize(rec["authorizedBy"]), AuthorizedAt: normalize(rec["authorizedAt"]),
 		AuthorityOperation: normalize(rec["authorityOperation"]), ReviewPolicy: normalize(rec["reviewPolicy"]),
-		ReviewOutcome: normalize(rec["reviewOutcome"]), Effects: effects, AuthorizedEffects: authorizedEffects,
+		ReviewOutcome: normalize(rec["reviewOutcome"]), AuthorityOutcome: normalize(rec["authorityOutcome"]),
+		AuthorityReviewBy: normalize(rec["authorityReviewBy"]), Effects: effects, AuthorizedEffects: authorizedEffects,
 	}, nil
 }
 

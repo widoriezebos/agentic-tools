@@ -12,6 +12,7 @@ func TestGovernedObligationRoundTripsTypedAssumptionsAndTriggers(t *testing.T) {
 	f.Budget = &Budget{ElapsedLimit: "2h", AttemptLimit: 3, ReservedJobMinutesLimit: 90, ActiveJobLimit: 1}
 	f.Obligation = &GovernedObligation{
 		Revision: 3, BudgetRevision: 2, State: ObligationDraft, Owner: "Wido",
+		AuthorityOutcome: AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-06",
 		Effects: []GoverningEffect{EffectAuthorizeSpend, EffectRefuseWork},
 		Assumptions: ObligationAssumptions{Recurrence: StandingSharedProcess, Platform: "darwin/arm64",
 			ToolchainIdentity: "go1.25.0", SurfaceDigest: strings.Repeat("a", 64), MaxActiveJobs: 1,
@@ -26,6 +27,12 @@ func TestGovernedObligationRoundTripsTypedAssumptionsAndTriggers(t *testing.T) {
 	}
 	if parsed.Obligation == nil || parsed.Obligation.Triggers.SevereHarm != "unknown" || parsed.Obligation.BudgetRevision != 2 {
 		t.Fatalf("typed obligation changed in round trip: %+v", parsed.Obligation)
+	}
+	if parsed.Obligation.AuthorityOutcome != AuthorityOutcomeTemporaryHumanWord || parsed.Obligation.AuthorityReviewBy != "2026-09-06" {
+		t.Fatalf("temporary authority provenance did not round trip: %+v", parsed.Obligation)
+	}
+	if rendered := string(RenderFile(f)); !strings.Contains(rendered, "authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06") {
+		t.Fatalf("temporary authority provenance was not rendered in the landed record:\n%s", rendered)
 	}
 }
 

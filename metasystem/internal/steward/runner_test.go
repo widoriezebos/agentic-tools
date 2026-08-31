@@ -13,6 +13,25 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
+func TestArmTemporaryRefusesContentFreeRemoteWord(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		word     string
+		reviewBy string
+		want     string
+	}{
+		{name: "whitespace word", word: " \t ", reviewBy: "2026-09-06", want: "non-whitespace"},
+		{name: "non-date review", word: "Wido authorizes this enrollment", reviewBy: "whenever", want: "real date"},
+		{name: "missing pair", want: "requires the verbatim word"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := ArmTemporary(t.TempDir(), "/bin/true", test.word, test.reviewBy); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("temporary arm validation did not refuse by the expected cause: %v", err)
+			}
+		})
+	}
+}
+
 func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 	root := gitRepoWithCurrentGoal(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}

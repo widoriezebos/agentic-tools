@@ -31,6 +31,9 @@ const (
 	OutcomeArgvUnreadable  = "ARGV_UNREADABLE"
 	OutcomeReused          = "PROCESS_REUSED"
 	OutcomeCycle           = "ANCESTRY_CYCLE"
+	OutcomeTemporary       = "TEMPORARY_HUMAN_WORD"
+	TemporaryWordDeparture = "R-29-m1/m2"
+	reviewByDateLayout     = "2006-01-02"
 )
 
 // ProcessRef is the stable birth identity recorded in enrollments and proofs.
@@ -72,6 +75,9 @@ type Proof struct {
 	SignatureSetDigest string     `json:"signatureSetDigest"`
 	Outcome            string     `json:"outcome"`
 	Nodes              []Node     `json:"nodes"`
+	TemporaryHumanWord string     `json:"temporaryHumanWord,omitempty"`
+	ReviewBy           string     `json:"reviewBy,omitempty"`
+	Departure          string     `json:"departure,omitempty"`
 	observedRoot       string
 	observed           bool
 }
@@ -82,7 +88,8 @@ type Proof struct {
 func (p Proof) Valid() bool {
 	if !p.observed || p.Schema != 1 || p.Outcome != OutcomeProven || p.CheckedAt.IsZero() ||
 		p.InvokerRef.PID < 1 || p.TerminalRef.PID < 1 || p.TerminalGeneration == 0 ||
-		len(p.SignatureSetDigest) != 64 || len(p.Nodes) == 0 {
+		len(p.SignatureSetDigest) != 64 || len(p.Nodes) == 0 || p.TemporaryHumanWord != "" ||
+		p.ReviewBy != "" || p.Departure != "" {
 		return false
 	}
 	for _, node := range p.Nodes {
@@ -100,6 +107,71 @@ func (p Proof) Valid() bool {
 func (p Proof) ValidFor(root string) bool {
 	abs, err := filepath.Abs(root)
 	return err == nil && p.Valid() && p.observedRoot == filepath.Clean(abs)
+}
+
+// AuthorizesSetObligation accepts either enrolled-terminal ancestry or the
+// one temporary remote-word form scoped to set-obligation. Other human-only
+// mutations continue to depend on ValidFor and therefore cannot consume it.
+func (p Proof) AuthorizesSetObligation(root string) bool {
+	return p.ValidFor(root) || p.temporaryValidFor(root)
+}
+
+// TemporarySetObligationFor reports whether the proof is the one temporary
+// remote-word form scoped to set-obligation.
+func (p Proof) TemporarySetObligationFor(root string) bool {
+	return p.temporaryValidFor(root)
+}
+
+// ValidateTemporaryWordPair validates the optional temporary authority flag
+// pair used by set-obligation and steward arm.
+func ValidateTemporaryWordPair(humanWord, reviewBy string) error {
+	if (humanWord == "") != (reviewBy == "") {
+		return fmt.Errorf("--temporary-human-word and --review-by travel together")
+	}
+	if humanWord == "" {
+		return nil
+	}
+	if strings.TrimSpace(humanWord) == "" {
+		return fmt.Errorf("--temporary-human-word must contain non-whitespace human words")
+	}
+	if _, err := time.Parse(reviewByDateLayout, reviewBy); err != nil {
+		return fmt.Errorf("--review-by must be a real date in YYYY-MM-DD form")
+	}
+	return nil
+}
+
+func (p Proof) temporaryValidFor(root string) bool {
+	abs, err := filepath.Abs(root)
+	if err != nil || !p.observed || p.observedRoot != filepath.Clean(abs) || p.Schema != 1 ||
+		p.Outcome != OutcomeTemporary || p.CheckedAt.IsZero() || p.Departure != TemporaryWordDeparture {
+		return false
+	}
+	if err := ValidateTemporaryWordPair(p.TemporaryHumanWord, p.ReviewBy); err != nil || p.TemporaryHumanWord == "" {
+		return false
+	}
+	return p.InvokerRef == (ProcessRef{}) && p.TerminalRef == (ProcessRef{}) &&
+		p.TerminalGeneration == 0 && p.SignatureSetDigest == "" && len(p.Nodes) == 0
+}
+
+// TemporaryProof binds a verbatim remote human word and its re-approval date
+// to one checkout. It deliberately carries no ancestry facts and cannot pass
+// ValidFor; only the set-obligation boundary recognizes this proof form.
+func TemporaryProof(root, humanWord, reviewBy string, now time.Time) (Proof, error) {
+	if err := ValidateTemporaryWordPair(humanWord, reviewBy); err != nil {
+		return Proof{}, err
+	}
+	if humanWord == "" || now.IsZero() {
+		return Proof{}, fmt.Errorf("temporary human authority requires the verbatim word, review-by date, and observation time")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Proof{}, err
+	}
+	return Proof{
+		Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeTemporary,
+		TemporaryHumanWord: humanWord, ReviewBy: reviewBy, Departure: TemporaryWordDeparture,
+		observedRoot: filepath.Clean(abs), observed: true,
+	}, nil
 }
 
 // Snapshot is one process read used by the stable ancestry walk.
@@ -424,11 +496,23 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 	return proof, fmt.Errorf("%s", proof.Outcome)
 }
 
+const setObligationAction = "goal set-obligation"
+
 // RecordProof stores the observed proof beside the local authority records,
 // bound to the exact operation. The record is audit evidence, never a token a
 // later process may present as authority.
 func RecordProof(root, operationID, action string, proof Proof) error {
-	if operationID == "" || filepath.Base(operationID) != operationID || action == "" || !proof.ValidFor(root) {
+	return recordProof(root, operationID, action, proof, proof.ValidFor(root))
+}
+
+// RecordSetObligationProof stores the proof for the one verb allowed to
+// consume the temporary remote-word authority form.
+func RecordSetObligationProof(root, operationID string, proof Proof) error {
+	return recordProof(root, operationID, setObligationAction, proof, proof.AuthorizesSetObligation(root))
+}
+
+func recordProof(root, operationID, action string, proof Proof, recordable bool) error {
+	if operationID == "" || filepath.Base(operationID) != operationID || action == "" || !recordable {
 		return fmt.Errorf("cannot record an incomplete human authority proof")
 	}
 	record := struct {

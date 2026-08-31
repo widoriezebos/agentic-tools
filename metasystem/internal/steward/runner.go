@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -152,6 +153,12 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 // record itself, so the temporary state is visible to every reader until
 // a terminal re-arm mints the next generation without them.
 func ArmTemporary(repoRoot, binaryPath, humanWord, reviewBy string) (string, error) {
+	if err := humanauthority.ValidateTemporaryWordPair(humanWord, reviewBy); err != nil {
+		return "", err
+	}
+	if humanWord == "" {
+		return "", fmt.Errorf("temporary steward arm requires the verbatim word and review-by date")
+	}
 	return arm(repoRoot, binaryPath, true, humanWord, reviewBy)
 }
 

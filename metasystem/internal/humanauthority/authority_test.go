@@ -326,3 +326,109 @@ func TestProofRefusesAnEmptyInvokerPID(t *testing.T) {
 		t.Fatalf("empty invoker PID did not fail closed: proof=%+v err=%v", proof, err)
 	}
 }
+
+func TestTemporarySetObligationProofIsDurableAndDistinct(t *testing.T) {
+	root := authorityRoot(t)
+	reader := enrolledReader()
+	enrollTestTerminal(t, root, reader)
+	terminalProof, err := Prove(root, 30, reader, time.Unix(1400, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalOperationID := "01J5X00000000000000000TERM-mac-m1-00000001"
+	if err := RecordSetObligationProof(root, terminalOperationID, terminalProof); err != nil {
+		t.Fatalf("record terminal proof: %v", err)
+	}
+	terminalRecord, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "authority", "proofs", terminalOperationID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(terminalRecord), "temporaryHumanWord") || strings.Contains(string(terminalRecord), "reviewBy") ||
+		strings.Contains(string(terminalRecord), "departure") {
+		t.Fatalf("an enrolled-terminal record was marked temporary: %s", terminalRecord)
+	}
+
+	humanWord := "  Wido's verbatim remote authorization  "
+	temporaryProof, err := TemporaryProof(root, humanWord, "2026-09-06", time.Unix(1500, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if temporaryProof.Departure != "R-29-m1/m2" {
+		t.Fatalf("temporary proof named the wrong departure rulings: %q", temporaryProof.Departure)
+	}
+	if temporaryProof.Valid() || temporaryProof.ValidFor(root) {
+		t.Fatal("a temporary word became an enrolled-terminal ancestry proof")
+	}
+	if !temporaryProof.AuthorizesSetObligation(root) || temporaryProof.AuthorizesSetObligation(t.TempDir()) {
+		t.Fatal("the temporary word was not scoped to set-obligation in its observed root")
+	}
+	if !terminalProof.AuthorizesSetObligation(root) {
+		t.Fatal("the ordinary enrolled-terminal proof stopped authorizing set-obligation")
+	}
+	if temporaryProof.Outcome == terminalProof.Outcome {
+		t.Fatal("temporary and enrolled-terminal proofs share an indistinguishable outcome")
+	}
+
+	operationID := "01J5X00000000000000000TEMP-mac-m1-00000001"
+	if err := RecordProof(root, operationID+"-generic", "goal set-obligation", temporaryProof); err == nil {
+		t.Fatal("the generic recorder accepted temporary authority by matching an action string")
+	}
+	if err := RecordSetObligationProof(root, operationID, temporaryProof); err != nil {
+		t.Fatalf("record temporary proof: %v", err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "authority", "proofs", operationID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		Action string `json:"action"`
+		Proof  Proof  `json:"proof"`
+	}
+	if err := json.Unmarshal(encoded, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Action != "goal set-obligation" || record.Proof.TemporaryHumanWord != humanWord ||
+		record.Proof.ReviewBy != "2026-09-06" || record.Proof.Departure != TemporaryWordDeparture ||
+		record.Proof.Outcome != OutcomeTemporary {
+		t.Fatalf("temporary proof record lost its explicit provenance: %s", encoded)
+	}
+	if err := RecordProof(root, operationID+"-resume", "goal resume", temporaryProof); err == nil {
+		t.Fatal("a temporary set-obligation proof was recordable for goal resume")
+	}
+}
+
+func TestTemporaryProofRequiresTheWholeRemoteWordPair(t *testing.T) {
+	root := authorityRoot(t)
+	for _, values := range []struct {
+		name     string
+		word     string
+		reviewBy string
+		want     string
+	}{
+		{name: "missing review date", word: "word", want: "travel together"},
+		{name: "missing word", reviewBy: "2026-09-06", want: "travel together"},
+		{name: "missing pair", want: "requires the verbatim word"},
+		{name: "whitespace word", word: " \t\n ", reviewBy: "2026-09-06", want: "non-whitespace"},
+		{name: "non-date review", word: "word", reviewBy: "whenever", want: "real date"},
+		{name: "impossible review date", word: "word", reviewBy: "2026-09-31", want: "real date"},
+	} {
+		if _, err := TemporaryProof(root, values.word, values.reviewBy, time.Unix(1500, 0)); err == nil || !strings.Contains(err.Error(), values.want) {
+			t.Fatalf("incomplete temporary word pair was accepted: %+v", values)
+		}
+	}
+}
+
+func TestTemporaryProofReviewByIsARecordedDateNotAnExpiry(t *testing.T) {
+	root := authorityRoot(t)
+	proof, err := TemporaryProof(root, "Wido authorizes this obligation", "2026-09-06", time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proof.AuthorizesSetObligation(root) {
+		t.Fatal("the review-by date became an expiry instead of recorded re-approval provenance")
+	}
+	proof.ReviewBy = "whenever"
+	if proof.AuthorizesSetObligation(root) {
+		t.Fatal("a temporary proof with a mutated non-date review-by still authorized set-obligation")
+	}
+}
