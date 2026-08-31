@@ -11,10 +11,10 @@ engine-side expectations, with refusal for wrong-lane launches.
 
 # Workspace
 
-The dispatch-created job worktree. Read everything; write nothing but
-your return. The design file to critique is
-plans/role-lane-packets-design.md in the reviewed job's worktree —
-the dispatch machinery composes it into your packet.
+The dispatch-created job worktree, branched from main. Read everything;
+write nothing but your return. The design file to critique is
+plans/role-lane-packets-design.md, landed on main at commit 13ab8563
+and present in your worktree.
 
 # Threat model (findings outside it close as out-of-scope)
 
