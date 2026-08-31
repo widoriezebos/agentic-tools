@@ -1,17 +1,12 @@
 # standing-validation
 
-- State: claimed
+- State: queued
 - Intent: The standing milestone-validation obligation's carrier: this goal owns the governed direct validation recurrence - the full validator run that discharges accumulated landing weight (gate weight-check fires at threshold 60). Opened at the 2026-08-31 takeover per the handoff's weight-discharge sequence and the seat record's R-29 departure clause; the obligation record on this goal is the durable authorization trail.
 - Origin: main
 - Next step: Standing shared process: when weight-check fires, claim, run the governed validation green under the obligation's budget, discharge at the exact green-run boundary (gate weight-discharge), release. First discharge: weight 123/60 over 8 landings since 2026-08-30, under Wido's tuple 2/24h/120m/1 and his LIMITED word (2026-08-31 in-session decision-ask). FIRST DISCHARGE IN PROGRESS: attempt 1 load-killed (watchdog observation gap, goaled); extended under R-32-m2 with fresh epoch (tuple 2/24h/150m/1, obligation r7); attempt 2 (run -c) completed clean of load kills and went red on two wall-clock-patience test failures - steward-tick-load-flake (handed to m3's shelf) and missionrunner-terminate-flake (opened). ONE attempt remains in the 24h window (to ~2026-09-01 12:48Z): rerun after both fixes land, quiet window coordinated with m3. NIGHT OF 2026-08-31 FULL TIMELINE: seven attempts. Two watchdog/admission refusals taught the kill-observation gap and digest freshness; -c red on two flaky tests (both fixed and certified); -e red solely on a split package's missing coverage floor (registered with a 95.5 percent covering test); -f red on four stale fixtures unmasked by the first-ever passing gate (all four repaired and certified through a full critique chain); -a (attempt seven) red on ONE test: the sharpened leak test caught a REAL wind-down-to-census handoff defect - goal:winddown-census-handoff-leak, HIGH. Envelope at its ceiling (10 attempts / 900 job-minutes / touched every bound). BLOCKED on that defect fix plus Wido's word to resume; the day burned real budget and repaid it in seven certified fixes plus one real custody hole found before it bit production.
 - OpenedAt: 2026-08-31T10:47:20Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=900 activeJobLimit=1
-- Obligation: revision=21 budgetRevision=20 state=LIMITED owner=Wido authorizedBy=wido authorizedAt=2026-08-31T22:08:44Z authorityOperation=WX1G6X0PD88RN80T76JYFDHKX3-m2-bc1be9cb reviewPolicy=C reviewOutcome=human-approved effects=authorize-governed-launch,authorize-spend,discharge-obligation authorizedEffects=authorize-governed-launch,authorize-spend,discharge-obligation authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06
-- ObligationAssumptions: recurrence=standing-shared-process platform=darwin/amd64 toolchainIdentity=go1.26.6 surfaceDigest=c2d2302b4aeea66eee429c044676c8f943fd9e31490aada111a203c4e941e748 maxActiveJobs=1 timingEnvelopeSeconds=7200 observationSource=run-terminal-record
-- ObligationTriggers: valueJudgment=no reversibility=reversible severeHarm=no unfamiliarApproach=no testDiscrimination=strong correlatedAssumptionRisk=no authorityScopeChange=no destructiveReach=none
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-31T22:08:13Z revision=20
-- StopCapability: generation=20 revision=20 machine=m2 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-31T10:47:20Z H03B8PM6P6FCS5DQND5F7R3MKX-m2-bc1be9cb open actor=m2+mac-coordinator targets=standing-validation
@@ -36,4 +31,5 @@ History:
 - 2026-08-31T22:08:13Z 2FYYJZPZ23N64FMWQYWK6N25TC-m2-bc1be9cb set-budget actor=human:wido targets=standing-validation
 - 2026-08-31T22:08:44Z WX1G6X0PD88RN80T76JYFDHKX3-m2-bc1be9cb set-obligation actor=human:wido targets=standing-validation
 - 2026-08-31T22:43:01Z G8347S6XEKN739RMB7DGWV0MQT-m2-bc1be9cb edit actor=m2+mac-coordinator targets=standing-validation
-Integrity: sha256=55e2708eae4e32a0b7b9f0a24ae631b6f5104ddf12996abf9f2a0f7054cb6d4c
+- 2026-08-31T22:43:23Z 3SF4G8GR9YNF7T6PNSMQW8NHQD-m2-bc1be9cb release actor=m2+mac-coordinator targets=standing-validation
+Integrity: sha256=085b374d413290ff25e3e9edc85e0c4f29621a3c75d5d16a6fd55dea58ac41c1
