@@ -1,20 +1,16 @@
-# Alert Channel Design — alert-escalation-channel (revision 4)
+# Alert Channel Design — alert-escalation-channel (revision 5)
 
-Status: revision 4 folds the three round-3 Sol findings
-(one critical). Nothing is left unfolded. The critical is answered
-with a testable completion-merge law (§5a): the sender's completion
-write reloads the current episode under the alert lock and merges
-ONLY receipt fields, so an acknowledgment or clearing recorded while
-transport was in flight survives by law, not by luck. Email reply
-ancestry is fixed by defining `MessageRef.ThreadID` as
-adapter-owned threading state with a stated sufficiency invariant —
-for email it carries the complete References chain (§3a). The launch
-gate cutover leaves slice 1 entirely: the legacy gate stands
-untouched until every legacy-queue producer has a channel route, and
-the cutover is its own slice behind a configuration default (§6,
-§11). Round 3 also closed two lines as SOUND: the receive-half
-reservation (§2b) and multipart receipt outcomes (§2/§9); they are
-unchanged.
+Status: revision 5 folds the single round-4 finding — the email
+References trimming rule now has a concrete boundary (a fixed design
+constant, `emailReferencesMaxBytes = 8192`, with exact boundary
+behavior and the standard misattribution corrected: RFC 5322 imposes
+no total References limit, so the cap is this design's own, §3a).
+With that fold, EVERY finding from all four critique rounds — eleven,
+then five, then three, then one — is folded or independently judged
+sound, and no finding remains open. Round 4 confirmed the §5a
+completion-merge law and all other lines SOUND; this revision touches
+only the trimming rule, the status line, the disposition table, and
+the self-grade.
 
 Design for the promoted goal `plans/goals/alert-escalation-channel.md`:
 escalations and blocked-on-human states reach Wido IMMEDIATELY over an
@@ -250,18 +246,33 @@ Per shipped adapter:
   `ID`; `ThreadID` is empty.
 - **WhatsApp**: replies set `context.message_id` from the latest
   `ID`; `ThreadID` is empty.
-- **Email**: `ThreadID` carries the COMPLETE References ancestry —
-  the value the next reply's References header must contain. On each
-  send the adapter composes In-Reply-To from the latest `ID`
-  (the parent's Message-ID) and References from the latest
-  `ThreadID` followed by the latest `ID`, per RFC 5322 §3.6.4, and
-  returns the new message's `MessageRef` with `ThreadID` set to
-  exactly that new References value. The full chain is thereby
-  retained INDUCTIVELY in the single latest reference, for chains of
-  any length. When the accumulated chain would exceed header limits,
-  the adapter trims middle entries, always keeping the first and the
-  most recent — RFC 5322 permits trimming, and first-plus-recent
-  preserves the join for both common threaders.
+- **Email**: `ThreadID` carries the References ancestry — the value
+  the next reply's References header must contain. On each send the
+  adapter composes In-Reply-To from the latest `ID` (the parent's
+  Message-ID) and References from the latest `ThreadID` followed by
+  the latest `ID`, per RFC 5322 §3.6.4, and returns the new
+  message's `MessageRef` with `ThreadID` set to exactly that new
+  References value — the chain is retained inductively in the single
+  latest reference. The chain is BOUNDED by a design constant, not a
+  standard: **`emailReferencesMaxBytes = 8192`** (8 KiB of the
+  unfolded References value, roughly one hundred typical message
+  identifiers). RFC 5322 imposes NO total limit on an unfolded
+  References field (its §2.2.3 998-character limit is a
+  physical-LINE limit, satisfied by folding) and specifies no
+  trimming; the cap exists solely for interoperability with
+  implementation-specific server header-section limits, and 8 KiB is
+  a conservative constant this design fixes so every implementation
+  emits identical ancestry. Behavior at the boundary, exactly: after
+  appending the parent's Message-ID, while the value exceeds the
+  cap, remove the entry at POSITION 2 (the oldest non-root entry)
+  repeatedly — the root identifier (position 1) and the most recent
+  contiguous suffix, ending in the parent's Message-ID, are always
+  kept. In the pathological case where the root plus the parent
+  identifier alone exceed the cap, keep only the parent identifier.
+  The email adapter's provider-test slice must include a long-chain
+  fixture: a chain long enough to cross the cap, asserting the root
+  is preserved, the kept suffix is contiguous and most recent, and
+  the parent's Message-ID is last.
 
 ## 4. Configuration key shape
 
@@ -568,17 +579,19 @@ corrected record:
 | AC2-RECEIPT-001 | Folded, §2/§9: channel layer defined concretely; SendResult with per-chunk outcomes and spans; split ownership fixed in the interface. |
 | AC2-SLICE-001 | Folded, §11: slice 1 narrowed to a 4-hour alert path with floor and redaction inside it. Rev 3 kept the gate swap in the slice, which round 3 proved unsafe; rev 4 removed it (see AC3-SLICE-GATE-CUTOVER-001). |
 | AC3-SENDER-MERGE-001 (critical) | Folded, §5a: completion is a reload-and-merge critical section touching only the stamped attempt's receipt fields and the derived transport summary; the invariant is stated verbatim for a fixture, with the concurrent-acknowledge and concurrent-clear test cases named. |
-| AC3-THREAD-ANCESTRY-001 | Folded, §3a: ThreadID defined as adapter-owned threading state under a sufficiency invariant; for email it carries the complete References chain, retained inductively in the latest reference per RFC 5322 §3.6.4, with bounded trimming that keeps first and most recent. |
+| AC3-THREAD-ANCESTRY-001 | Folded, §3a: ThreadID defined as adapter-owned threading state under a sufficiency invariant; for email the References chain is retained inductively in the latest reference per RFC 5322 §3.6.4. Rev 4's trimming clause was unimplementable (round 4's finding); rev 5 bounds it. |
 | AC3-SLICE-GATE-CUTOVER-001 | Folded, §6/§11: slice 1 no longer touches the gate — the legacy check and legacy queue delivery stay byte-for-byte, making the slice purely additive; the cutover is its own slice behind `channel.gate` (default `legacy`), landing only after queue retirement restores the gate's guarantee. |
 | Round 3: receive-half reservation; multipart receipts | Judged SOUND by the round-3 critic; unchanged. |
+| AC4-EMAIL-TRIM-BOUNDARY-001 | Folded, §3a: the trimming boundary is the fixed design constant `emailReferencesMaxBytes = 8192` bytes of unfolded References value, honestly attributed to this design (RFC 5322 §2.2.3 limits physical lines only, handled by folding, and §3.6.4 specifies no trimming); boundary behavior is deterministic (drop position-2 entries until the value fits, keeping root and the most recent contiguous suffix; parent-only in the pathological case) and a long-chain fixture is required in the email adapter's provider tests. |
+| Round 4: §5a merge law and every other line | Judged SOUND by the round-4 critic; unchanged. NO FINDING REMAINS OPEN across all four rounds. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 4)
+## 13. Self-grade (R-24-m1, refreshed for revision 5)
 
-- **Confidence:** 0.78. The three rounds have converged: eleven
-  findings became five, then three, and the round-3 criticals land on
-  laws stated precisely enough to test (the §5a merge invariant, the
-  §3a sufficiency invariant) rather than on new mechanism; two lines
-  are independently judged sound and untouched.
+- **Confidence:** 0.8. Four critique rounds have converged (eleven
+  findings, then five, three, one, zero): every law an implementer
+  must code is now stated with a testable invariant or a named
+  constant, and the final round judged all but one line sound before
+  this revision bounded that line.
 - **Weakest claim:** the §5a refusal branch — when the reloaded
   attempt is absent or no longer PENDING the completion is refused
   and journaled as a defect, but the design does not enumerate every
@@ -586,10 +599,11 @@ corrected record:
   operator repair, a future migration); a refusal that fires on a
   lawful write would strand a real receipt, and only the
   implementation's fixtures will show whether the enumeration is
-  complete. Second-weakest: the email trimming rule (keep first and
-  most recent) is asserted from common threader behavior, not from a
-  normative requirement — RFC 5322 permits trimming but does not
-  bless any particular strategy.
+  complete. Second-weakest: the 8192-byte References cap is a
+  conservative constant chosen for uniformity, not derived from any
+  measured server limit; a mail path with a smaller header-section
+  ceiling would truncate downstream of this design's control, which
+  the long-chain fixture cannot detect.
 - **Reject condition:** reject this revision if the completion-merge
   invariant cannot be held as one critical section on the actual
   episode file layout (for example if a future store shards attempts
