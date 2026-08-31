@@ -1,11 +1,12 @@
 # fleet-pull
 
-- State: queued
+- State: parked
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
 - Next step: RE-SCOPE AUTHORIZED (Wido, 2026-08-24 afternoon): the reserved 1-day re-scope proceeds, queued BEHIND inception in the backlog order. The standing rulings bound it: agents are repo-scoped (no multi-repo pull — 'just launch a set of agents across machines for a specific repo'), the steward owns orphaned claims, and the FP-R3-01..07 findings from the stopped design chain are the starting material. Deliverable: a converged single-repo design (fleet claim/release across machines, orphan recovery through the steward's existing ladder) ready for an implementation appetite.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 13
+- Revision: 14
+- Parked: by=m0+main-1788178136-1684505-4ffe42 at=2026-08-31T18:03:47Z because=R-33 triage: merged into ledger-attention - one steward-tick mechanism notices ledger changes AND picks claimable work; two entries carried one mechanism
 
 History:
 - 2026-08-23T08:06:12Z B9R7HVR9Z1H2XQ1C9GGHX63018-widos-m5-pro-bf243850 open actor=widos-m5-pro+coordinator targets=fleet-pull
@@ -21,4 +22,5 @@ History:
 - 2026-08-23T19:38:59Z CHYYSAFJQWJM4FW507826PHZDM-m1-bf243850 edit actor=human:wido targets=fleet-pull
 - 2026-08-23T19:43:33Z SP0DCX5170EA643KVZ73C0XEXQ-m1-bf243850 edit actor=human:wido targets=fleet-pull
 - 2026-08-24T13:14:35Z QGWDYRDQ7KZ3FR3K41BBH4N9PV-m1-bf243850 edit actor=m1+coordinator targets=fleet-pull
-Integrity: sha256=8b695247a3a600fe2892fea354505cf80cd5a0e8dc95d45744af360f90ee5145
+- 2026-08-31T18:03:47Z 9F097ACD5YYA3K71XVQP62PJ97-m0-c5dbf036 park actor=m0+main-1788178136-1684505-4ffe42 targets=fleet-pull reason=R-33 triage: merged into ledger-attention - one steward-tick mechanism notices ledger changes AND picks claimable work; two entries carried one mechanism
+Integrity: sha256=ba9e5f816d60359cf41ef21ee464368a6130b190c2a36b180bbd222dd0633f0b
