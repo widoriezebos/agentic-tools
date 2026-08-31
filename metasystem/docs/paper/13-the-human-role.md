@@ -20,7 +20,7 @@ Stating intent is design work too (Chapter 2 describes how to do it well), and a
 
 The delivery system itself is engineered by people: its rules, budgets, roles and records are design decisions humans own and revise. Only the default for ordinary construction changes, for Chapter 11's economic reasons, not by prohibition: where machinery protects the outcome at lower total cost, human attention is better spent elsewhere; where it does not, a person is the builder.
 
-The manager is not a role in this design. Chapter 7's anti-mimicry test already rejected a coordinator proposed only because teams usually have one; what the test exposes is that the familiar job combines two kinds of work. Coordination — assigning, sequencing, tracking, reporting — goes to mechanisms: records expose state, watches detect silent stopping, budgets limit spending, enforced rules order conflicting actions, and Chapter 7's dispatch delegate starts work it may neither examine nor accept. Judgment — what is worth building, what it may cost, which risks are acceptable, who answers — stays with the named people who hold authority in this chapter. Managers also handle pay, development and interpersonal conflict; organizations still need that work, and this paper does not redesign it.
+The manager is not a role in this design. Chapter 7's anti-mimicry test already rejected a coordinator proposed only because teams usually have one; what the test exposes is that the familiar job combines two kinds of work. Coordination (assigning, sequencing, tracking, reporting) goes to mechanisms: records expose state, watches detect silent stopping, budgets limit spending, enforced rules order conflicting actions, and Chapter 7's dispatch delegate starts work it may neither examine nor accept. Judgment (what is worth building, what it may cost, which risks are acceptable, who answers) stays with the named people who hold authority in this chapter. Managers also handle pay, development and interpersonal conflict; organizations still need that work, and this paper does not redesign it.
 
 The rest of this chapter returns to the authority: the decisions that stay with people even when every working role is held by machinery.
 
@@ -42,7 +42,7 @@ Resolving that named case is the judge's work. Named cases include a value confl
 
 The record keeps the judge's identity, authority, reasons, evidence, scope and expiry attached to the decision. If the exception causes harm, the organization can determine who had the duty to decide, what that person knew and whether the decision exceeded its authority; if later evidence changes the balance, another responsible authority can reconsider it.
 
-Machinery may assemble the case on each side, expose missing evidence and test options against constraints; over these named cases, final decision-making power remains with a responsible authority, without condition. A long history of correct recommendations improves the preparation of judgment; it does not turn responsibility into a machine property. Delegation feels the same pull: machinery can hold narrow mechanical permissions, and each success invites widening them toward the value choices. Every widening is a delegation like any other — named source, scope, conditions, end — and a value ruling stays outside it.
+Machinery may assemble the case on each side, expose missing evidence and test options against constraints; over these named cases, final decision-making power remains with a responsible authority, without condition. A long history of correct recommendations improves the preparation of judgment; it does not turn responsibility into a machine property. Delegation feels the same pull: machinery can hold narrow mechanical permissions, and each success invites widening them toward the value choices. Every widening is a delegation like any other, with a named source, scope, conditions and end, and a value ruling stays outside it.
 
 A machine worker can turn human approval into a habit without ever lying: after each failed attempt it predicts the next will pass, and after enough cycles the approval is routine, not a decision. The protection is Chapter 11's stop rule: a recorded budget set before work starts. At any limit, further work needs a recorded decision from the responsible authority or an authorized delegate within its scope. A forecast can inform that decision; it never authorizes another attempt. The decision can also exist in advance: after a third failed attempt, stop, keep the attempts and their evidence, and return the question to the backlog. Then the recorded default applies and nobody is disturbed. The judge is for the cases nobody decided in advance, not for every stop.
 
@@ -64,7 +64,7 @@ Chapter 6 defines the evidentiary triggers that begin human review and treats a 
 
 The reviewer's identity, decision, reasons and accountability remain with the record. A bare approval cannot explain which risk was accepted; an unexplained refusal cannot be distinguished from preference or delay. "A human reviewed it" is not an accountable safety claim.
 
-Appeal remains possible after release, and after a change was classified routine. If repeated sign-ins impose a burden the original measures missed, an affected person must be able to reach another responsible authority — not the mechanism that made the disputed classification. The appeal record connects the challenge, the earlier decision, the new evidence and the later ruling, so correction does not erase how the harm arose.
+Appeal remains possible after release, and after a change was classified routine. If repeated sign-ins impose a burden the original measures missed, an affected person must be able to reach another responsible authority, not the mechanism that made the disputed classification. The appeal record connects the challenge, the earlier decision, the new evidence and the later ruling, so correction does not erase how the harm arose.
 
 ## Multi-human governance
 
@@ -72,11 +72,11 @@ Appeal remains possible after release, and after a change was classified routine
 
 Each claim may be sincere and supported, yet the intentions conflict. If construction proceeds by selecting whichever request arrived last, the system has hidden a value decision inside record handling.
 
-The disagreement is recorded before construction continues: the affected domains, the represented interests, the points of agreement, the unresolved tradeoff and the evidence behind each claim — then who holds binding authority, under what delegation, with what scope and expiry, and where appeal goes.
+The disagreement is recorded before construction continues: the affected domains, the represented interests, the points of agreement, the unresolved tradeoff and the evidence behind each claim. The record then names who holds binding authority, under what delegation, with what scope and expiry, and where appeal goes.
 
 The form can vary: one responsible executive, a standing group, several authorities protecting different domains. The condition does not: conflicting intent is visible, binding power is explicit, accountability is human, and a challenge can reach a person who did not make the disputed decision.
 
-Delegation does not dissolve responsibility: the delegating authority answers for the limits it set, the delegate for decisions within them. When the named authority cannot be reached, the question waits and the delegation gets repaired — a deputy named or the scope revised — not filled by whoever is nearby. If nobody can be identified at all, machinery must not infer authority from seniority, activity or access. The disputed work stops.
+Delegation does not dissolve responsibility: the delegating authority answers for the limits it set, the delegate for decisions within them. When the named authority cannot be reached, the question waits and the delegation gets repaired: a deputy named or the scope revised, not the gap filled by whoever is nearby. If nobody can be identified at all, machinery must not infer authority from seniority, activity or access. The disputed work stops.
 
 ## Ordering records cannot settle values
 
