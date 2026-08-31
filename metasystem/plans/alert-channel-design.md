@@ -1,19 +1,20 @@
-# Alert Channel Design — alert-escalation-channel (revision 2)
+# Alert Channel Design — alert-escalation-channel (revision 3)
 
-Status: revision 2 folds the full Sol critique
-(design-critic-2ea477763ee73bd1dbc0ddec, eleven findings, one
-critical) and Wido's three new words of 2026-08-31: Telegram is
-CONFIRMED first, the contract bears the session bridge as a second
-consumer, and thread identity is a contract concern. Every finding is
-folded (accepted and designed in); none is refuted; the per-finding
-disposition table is §12. No findings remain unfolded.
+Status: revision 3 folds all five round-2 Sol findings
+(design-critic-e17645332f616ee62bcc806f, two critical). Nothing is
+left unfolded. Two folds change earlier claims rather than add to
+them, and say so: the lock split is replaced by ONE implementation (a
+kernel-enforced single-flight sender, §5) with its laws argued, and
+the receive half of the bridge is EXPLICITLY withdrawn from this
+contract and reserved, with its obligations enumerated, for the
+seat-mutual-awareness design (§2b) — revision 2's disposition table
+claimed that fold complete when it was not, and §12 now records both
+rounds honestly.
 
 Design for the promoted goal `plans/goals/alert-escalation-channel.md`:
 escalations and blocked-on-human states reach Wido IMMEDIATELY over an
-external channel, so he is notified the moment machinery lawfully needs
-his judgment — instead of escalations terminating in a git-landed log he
-must poll. Driving specimen: `records/misc/idle-loss-2026-08-31.md` —
-three hours lost, nine escalations written, none delivered.
+external channel instead of terminating in a git-landed log he must
+poll. Driving specimen: `records/misc/idle-loss-2026-08-31.md`.
 
 Wido's design requirement, verbatim, binding:
 
@@ -21,11 +22,11 @@ Wido's design requirement, verbatim, binding:
 > email, slack, telegram, whatsapp etc underneath by simple
 > configuration."
 
-And his two additions of 2026-08-31 (verbatim): "We can use the same
+And his additions of 2026-08-31 (verbatim): "We can use the same
 mechanism for the session bridge too, so there is a bit of reuse
 there" and "Another one would be slack, which has threaded messages.
 that also needs to fit the design of the alert channel and session
-bridge."
+bridge." Telegram is confirmed as the first adapter.
 
 Design only. No code ships with this document.
 
@@ -33,160 +34,206 @@ Design only. No code ships with this document.
 
 - **The alert episode store** (`internal/steward/alert_episode.go`):
   one JSON file per episode under `artifacts/agents/steward/alerts/`,
-  flock-serialized, with an attempts journal
+  flock-serialized, attempts journal
   (PENDING/TRANSPORT_SUBMITTED/TRANSPORT_FAILED), digest-keyed dedup,
-  crash-safe pending recovery, `AcknowledgeAlert`. Two laws in it are
-  health-specific and must NOT generalize (§7): a new finding resolves
-  every non-matching open episode, and one Deliver call happens INSIDE
-  the exclusive alert lock.
-- **The transport seam** (`internal/steward/notify.go`): `Deliver`
-  runs the git-config command `metasystem.steward.notify-command` or
-  macOS `osascript`, synchronously, 15-second timeout, and embeds raw
-  command output in its returned error.
-- **A second durable delivery state exists**: the pending-notification
-  queue (`internal/steward/intervene.go`,
-  `artifacts/agents/steward/pending/`), fed by revival failures
-  (`runner.go`), reap notices (`reap.go`), tick messages, and narrator
-  noticings; `DeliverPending` retries it each tick and deletes entries
-  on success — delivered messages leave no receipt.
-- **The launch gate**: `EnsureRunner` and `arm`
-  (`internal/steward/runner.go`) refuse when `NotifyCommand` reports
-  no channel — an AVAILABILITY check, not a send.
-- **The narrator digest register** (`internal/narratordigest/`)
-  already has a byte-offset plus prefix-hash cursor, and the runtime
-  Stop hook (`scripts/agents/supervision-hook.sh`) is its existing
-  consumer: it reads the register from the cursor and advances it
-  after showing the human the payload.
-- **The tick** (`internal/steward/tick.go`) calls
-  `UpdateAlertEpisodes` synchronously before completing.
-- **Acknowledgment**: `metasystem health acknowledge-alert --episode
-  <id>` exists and is kept unchanged.
+  crash-safe pending reuse, `AcknowledgeAlert`. The transport send
+  currently runs INSIDE the alert lock (lines 324–356).
+- **The outer lock is wider than revision 2 admitted**: `RunTick`
+  (`internal/steward/tick.go` 102–112) takes the repository
+  ARBITRATION lock for the whole tick and still holds it through
+  `UpdateAlertEpisodes` (lines 237–265); lease announcement
+  (`internal/lease/verbs.go` 106–110) and revival
+  (`internal/steward/revive.go` 32–36, 68–74) contend on that same
+  lock. Releasing only the alert lock therefore frees nothing that
+  matters, and releasing both invites concurrent senders.
+- **The transport seam** (`internal/steward/notify.go`): synchronous
+  `Deliver`, git-config command or macOS `osascript`, 15-second
+  timeout, raw output embedded in errors.
+- **The pending-notification queue** (`internal/steward/intervene.go`,
+  fed from `runner.go`, `reap.go`, tick, noticings): durable second
+  delivery state, delete-on-success, no receipts. Retired by §7.
+- **The launch gate**: `EnsureRunner` and `arm` refuse when
+  `NotifyCommand` reports no channel — availability check, no send.
+- **The narrator digest register** (`internal/narratordigest/`): byte
+  offset plus prefix-hash cursor; the Stop hook
+  (`scripts/agents/supervision-hook.sh`) is its existing consumer.
+- **The health verdict line is already plumbed to both floors**: the
+  tick narrates `health.Line()` durably and the Stop hook composes
+  health plus digest — so a fact added to the health verdict line
+  reaches the terminal verb AND the Stop-hook payload with no new
+  plumbing (used by §10's floor and §11's slice 1).
 - **Real human answering verbs** (verified in
-  `cmd/metasystem/main.go`): `metasystem goal resume` (human-only
-  restart after a stop batch) and `metasystem mission-runner answer`
-  (record a human answer to an open ask). No `goal approve` or `goal
-  reject` verb exists; revision 1's example was wrong and is replaced
-  (§6).
+  `cmd/metasystem/main.go`): `metasystem goal resume` and `metasystem
+  mission-runner answer`. No approve/reject verb exists.
+- **Provider facts** (from the round-2 critique's cited official
+  documentation, adopted as design constraints): Slack incoming
+  webhooks return no message timestamp — threading needs the Web API
+  (`chat.postMessage` returns `ts`); Telegram replies need
+  `reply_to_message_id` and its polling owns an update offset,
+  mutually exclusive with webhooks; email replies need
+  Message-ID/In-Reply-To/References (RFC 5322); WhatsApp replies need
+  `context.message_id` and inbound delivery is an HTTPS callback.
 - **The configuration idiom** (`internal/config/resolve.go`): flag >
   derived environment variable > uncommitted `metasystem.conf.local` >
   committed `metasystem.conf` > default.
 
-## 2. The channel contract — two consumers, one abstraction
+## 2. The channel contract — outbound, shared by three callers
 
-(Folds AC-CONTRACT-001, critical, together with Wido's words 2–3.)
+(Folds AC2-CONTRACT-001 and AC2-RECEIPT-001; rescopes revision 2's
+over-claim.)
 
-The contract serves TWO consumers from day one:
-
-1. **The human alert channel** (this goal): alerts and digests to
-   Wido.
-2. **The session bridge** (goal seat-mutual-awareness): addressed,
-   bidirectional, runtime-agnostic seat-to-seat messages.
-
-Revision 1's `Send(class, msg)` with one fixed destination per class
-could not carry the second consumer without leaking adapters into call
-sites; the contract itself changes:
+**Definition, to remove the round-2 ambiguity:** the CHANNEL LAYER is
+one concrete engine package, `internal/channel`, the sole
+implementation of the caller-facing contract below. It sits between
+callers (the episode store's sender, the digest batcher, the bridge's
+outbound path) and adapters, and it owns destination resolution,
+secret scrubbing, chunking, and the conversation reference store
+(§3). Adapters implement a NARROWER internal interface (§2a) and stay
+stateless.
 
 ```
-// A Destination is a NAMED, configuration-resolved place messages go
-// (a Telegram chat, a Slack channel, a mailbox, a seat's inbox).
-// Callers name destinations, never adapters.
-type DestinationName string
+type DestinationName string   // named, configuration-resolved place
 
 type Message struct {
     Class          MessageClass // "alert" | "digest" | "bridge"
-    Sender         string       // asserted origin identity, e.g. "steward@mac-m3", "seat:m2"
-    ConversationID string       // stable correlation key; threads live here (§3)
-    InReplyTo      string       // prior MessageRef.ID this answers, or empty
+    Sender         string       // asserted origin label (see §2b: NOT authenticated identity)
+    ConversationID string       // caller's stable correlation key
     Deadline       time.Time    // zero, or when an unanswered ask escalates
-    // Human-alert content (empty for bridge messages, which carry Body):
-    Happened, Asked, Answer string
-    Body           string       // pre-composed text (digest batches, bridge payloads)
-    EpisodeID      string       // empty unless an alert episode backs it
+    Happened, Asked, Answer string // human-alert content; empty for bridge/digest
+    Body           string       // pre-composed text (digests, bridge payloads)
+    Spans          []ContentSpan // digest only: ordered source-entry spans
+                                 // (register byte ranges) composing Body
+    EpisodeID      string
 }
 
 type MessageRef struct {
-    ID       string // transport-assigned handle (Telegram message_id, Slack ts)
-    ThreadID string // transport thread identity when the adapter threads
+    ID       string // provider message handle (Telegram message_id, Slack ts,
+                    // email Message-ID, WhatsApp message id)
+    ThreadID string // provider thread identity when the adapter threads
 }
 
+// One transport submission's outcome. A Message may take several
+// submissions (§9); every one is visible to the caller.
+type ChunkOutcome struct {
+    Ref   MessageRef
+    Span  ContentSpan // the slice of Body/Spans this submission carried
+    Err   error       // nil, or typed+sanitized (ErrUnconfigured | ErrSendFailed)
+}
+
+type SendResult struct { Chunks []ChunkOutcome } // ordered
+
 type Channel interface {
-    // Send submits one message to one destination. A returned
-    // MessageRef enables replies and threading. Errors are TYPED:
-    // ErrUnconfigured (no adapter/credentials) vs ErrSendFailed
-    // (transport said no), and are SANITIZED (§10) before return.
-    Send(dest DestinationName, msg Message) (MessageRef, error)
-
-    // Ready reports, WITHOUT network side effects, whether a
-    // destination resolves to a fully configured adapter (adapter
-    // named, required settings and credentials present). This is the
-    // launch gate's operation (§5); it never sends.
-    Ready(dest DestinationName) (bool, string)
-
-    // Capabilities reports the resolved adapter's declared facts for
-    // a destination: threads (bool), receive (bool),
-    // maxMessageBytes (int). Callers adapt composition, never
-    // adapter choice.
-    Capabilities(dest DestinationName) AdapterCapabilities
+    Send(dest DestinationName, msg Message) (SendResult, error)
+    Ready(dest DestinationName) (bool, string)        // no side effects; §6 gate
+    Capabilities(dest DestinationName) AdapterCapabilities // threads, maxMessageBytes
 }
 ```
 
-Adapters implement `Send`/`Ready`/`Capabilities` plus, when they
-declare `receive`, a `Receive` poll operation returning inbound
-`Message`s with their `MessageRef` and `ConversationID` mapped back
-from the transport's thread identity. The RECEIVE/REPLY LOOP — who
-polls, how a seat answers, response commitments, deadlines-as-conduct
-— is the session bridge's own design under seat-mutual-awareness;
-what THIS design fixes is the shared contract those loops ride:
-addressed destinations, sender identity, conversation identity,
-message references, deadlines, typed sanitized errors, and declared
-capabilities. The bridge is a caller, not a fork of the mechanism.
+`Send`'s top-level error covers only pre-transport failure (unknown
+destination, unconfigured); once submissions begin, every outcome —
+success or failure, per submission — is a `ChunkOutcome`. This is the
+per-chunk receipt AC2-RECEIPT-001 found unrepresentable: the episode
+owner journals one attempt per outcome (§7), and the digest owner
+advances its cursor from the outcomes' spans (§9).
 
-Adapters still hold NO state, do NO retries, keep NO queue; a send
-that cannot complete within the 15-second timeout is a failed attempt.
-The registry ships `email`, `slack`, `telegram`, `whatsapp`,
-`command`, `desktop`, `none`. Adding a NAMED adapter is engine code,
-once, in the registry; enabling and configuring any SHIPPED adapter is
-configuration alone, and call sites never name adapters — the
-requirement's letter, now scoped honestly (see AC-CONTRACT-002 fold,
-§9 and §12).
+### 2a. The adapter interface
 
-## 3. Threading law
+```
+AdapterSend(resolved DestinationConfig, text string,
+            conv ConversationState) (MessageRef, error)
+```
 
-(Folds Wido's word 3.)
+One submission, one reference, one typed sanitized error. No
+chunking, no retries, no state: `ConversationState` (the
+conversation's first and latest known `MessageRef`, read from §3's
+store by the channel layer) is passed IN, which is how Telegram sets
+`reply_to_message_id`, email sets In-Reply-To/References, WhatsApp
+sets `context.message_id`, and Slack sets `thread_ts` — without any
+adapter owning storage. Registry: `email`, `slack`, `telegram`,
+`whatsapp`, `command`, `desktop`, `none`. The Slack adapter uses the
+Web API with a bot token (`chat.postMessage`), NOT an incoming
+webhook, because the webhook returns no `ts` and therefore cannot
+thread — a provider fact, folded (§1): its settings are
+`slack.channel-id` plus secret `slack.bot-token`.
 
-`ConversationID` is the caller's stable correlation key: for an alert
-episode it IS the episode id — the alert, its updates, and its
-acknowledgment echo are one conversation; for a bridge exchange it is
-the exchange id minted by the asking seat. The mapping to transport
-threads is the ADAPTER's job, invisible to callers:
+### 2b. The reuse boundary with the session bridge — stated honestly
 
-- A THREADED adapter (Slack) keeps a small conversation map
-  (ConversationID → thread ts) in its per-destination scratch under
-  `artifacts/agents/channel/<destination>/threads.json` — a derived
-  CACHE, rebuildable by starting a fresh thread, never a truth store:
-  losing it degrades threading, never content.
-- A REPLY-CAPABLE flat adapter (Telegram) uses reply-to-message-id
-  against the conversation's first MessageRef where it has one.
-- A FLAT adapter (email subject tagging aside, SMS-like transports,
-  `command`, `desktop`) degrades HONESTLY: the composed text carries a
-  short bracketed conversation tag (`[re: alert-ab12…-1]`) so a human
-  can correlate; nothing else changes.
+Revision 2 claimed this design fixes "the shared contract those loops
+ride" while the contract had no receive half; the disposition table
+then claimed the fold complete. Both statements were wrong. The
+honest scope, this revision's law:
 
-No per-adapter thread behavior appears at any call site: callers set
-`ConversationID` and nothing else.
+**This design's contract is the OUTBOUND half only.** Three callers
+share it: alerts, digests, and the bridge's outbound sends. The
+INBOUND half — receiving a seat's or a human's reply over a provider
+transport — is NOT in this contract and is owned by the
+seat-mutual-awareness design. It is real contract work, not a
+boolean: the enumerated obligations reserved for that design are
+(1) per-provider ingress transport — Telegram `getUpdates` with an
+owned update offset, mutually exclusive with webhooks; Slack Events;
+WhatsApp HTTPS callbacks — which requires a listener or poller this
+design's stateless adapters deliberately cannot be; (2) a durable
+inbound handoff store with checkpoint/acknowledgment tokens;
+(3) ordering and duplicate semantics; (4) typed receive errors; and
+(5) AUTHENTICATED sender provenance — `Message.Sender` here is an
+asserted label sufficient for a human reading an alert, and this
+design explicitly does NOT claim it satisfies seat-mutual-awareness's
+assertable-seat-identity requirement.
+
+What the bridge REUSES from here, matching Wido's "a bit of reuse":
+the destination registry and configuration idiom, the credential and
+redaction laws, the adapters' outbound sends, the conversation
+vocabulary (`ConversationID`, `MessageRef`) and the §3 reference
+store, so a bridge exchange threads on threaded transports. The
+acknowledgment path for ALERTS needs no ingress at all: it is the
+existing `health acknowledge-alert` CLI verb, which is why the alert
+channel ships without the receive half.
+
+## 3. Threading and the conversation reference store
+
+(Folds AC2-THREAD-001.)
+
+`ConversationID` remains all a CALLER sets. But revision 2 hid the
+provider-reference problem inside one Slack map; in fact ALL four
+named transports need a prior provider message reference to reply or
+thread (§1 provider facts). The named common owner:
+
+**The conversation reference store**, owned by the channel layer (not
+adapters, not callers), at
+`artifacts/agents/channel/<destination>/conversations.json`: for each
+`ConversationID`, the first and latest `MessageRef` returned by
+successful submissions, written by the channel layer after each
+`ChunkOutcome`, read to build the `ConversationState` passed into
+`AdapterSend`. Additionally every episode attempt retains its returned
+`MessageRef` (§7), so the truth store carries the provider handles of
+its own alerts independently of the reference store.
+
+Degradation, stated without the round-2 euphemism: the store is
+derived state whose LOSS is survivable but not free. A lost store
+means the next message in a conversation starts a fresh thread or
+sends unlinked — content is never lost, but the JOIN is: a late reply
+arriving on an old provider thread can no longer be correlated to its
+exchange by this design's data. For the ALERT channel that is
+acceptable by construction (acknowledgment is the CLI verb, not a
+thread reply). For the BRIDGE, exchange-join durability is one of the
+§2b reserved obligations, and the bridge design decides whether the
+reference store's durability must be raised or its ingress store owns
+the join. Flat adapters (`command`, `desktop`) degrade to a bracketed
+conversation tag in the text; adapters without a usable prior
+reference send unthreaded. No caller changes in any of these cases.
 
 ## 4. Configuration key shape
 
-Destinations are first-class; classes and the bridge point at them:
+Unchanged from revision 2 except the Slack settings (§2a):
 
 ```
 channel.destination.wido-urgent.adapter=telegram
 channel.destination.wido-urgent.telegram.chat-id=<id>
 channel.destination.wido-urgent.telegram.bot-token=<SECRET — never committed, §10>
 channel.destination.wido-quiet.adapter=telegram
-channel.destination.wido-quiet.telegram.chat-id=<a DIFFERENT chat>
 channel.destination.seat-m2.adapter=slack
-channel.destination.seat-m2.slack.webhook-url=<SECRET>
+channel.destination.seat-m2.slack.channel-id=<id>
+channel.destination.seat-m2.slack.bot-token=<SECRET>
 
 channel.alert.destination=wido-urgent
 channel.alert.fallback-destination=local-desktop
@@ -195,287 +242,241 @@ channel.digest.batch-minutes=240
 channel.digest.batch-max-bytes=3500
 ```
 
-General shape: `channel.destination.<name>.adapter` selects;
-`channel.destination.<name>.<adapter>.<setting>` configures;
-`channel.<class>.destination` binds a message class. Distinct
-destinations give alerts and digests distinct identities (alerts never
-drown in narrative); the bridge addresses `seat-<id>` destinations by
-name. The legacy git-config key `metasystem.steward.notify-command`
-remains honored as an implicit `command`-adapter destination named
-`local-command` when no alert destination is configured — existing
-installations keep working; migration is one config edit.
+Classes bind destinations; the bridge addresses `seat-<id>`
+destinations by name; distinct destinations keep alerts out of
+narrative. The legacy `metasystem.steward.notify-command` git-config
+key remains honored as an implicit `command` destination
+(`local-command`) when no alert destination is configured.
 
-Per-adapter non-secret settings are frozen AT EACH ADAPTER'S SLICE
-with that slice's provider-constraint tests (§11); this document fixes
-only the shape and the Telegram set (`chat-id`; secret `bot-token`).
+## 5. The single-flight sender
 
-## 5. Sending discipline and the launch gate
+(Folds AC2-LOCK-001 — one implementation, chosen, with its laws.)
 
-(Folds AC-BLOCK-001 and AC-BLOCK-002.)
+Revision 2's split was impossible both ways: keeping the arbitration
+lock around delivery blocks lease and revival machinery on network;
+dropping it lets two writers both apply the PENDING-reuse rule and
+double-send under one attempt. The chosen implementation:
 
-Revision 1's "never-blocking law" was false as stated: the shipped
-path sends INSIDE the exclusive alert lock, and the tick waits on it.
-The honest, redesigned law is BOUNDED BLOCKING, OUTSIDE THE LOCK:
+**Journaling and transport are separate phases with separate,
+never-nested guards; transport has exactly one flight per repository,
+enforced by the kernel.**
 
-- `UpdateAlertEpisodes` splits into journal and transport phases. The
-  lock covers journaling only: the pending attempt is written, the
-  lock is RELEASED, the send runs with no lock held, the lock is
-  re-acquired to journal completion. `AcknowledgeAlert` and other lock
-  contenders therefore never wait on the network; the crash-gap law is
-  unchanged (a pending attempt found at recovery is the same
-  at-least-once reuse as today).
-- The tick's delivery phase runs after its decision work, bounded by a
-  per-tick send budget (`channel.max-sends-per-tick`, default 3, each
-  bounded by the 15-second timeout); remaining pending sends wait for
-  the next tick. A tick can be DELAYED by at most budget × timeout of
-  transport time; it is never gated on delivery OUTCOME, and no goal
-  transition, dispatch, or decision waits on a send. The design says
-  "bounded", not "never", and means it.
+1. **Journal phase** (inside the tick, arbitration and alert locks as
+   today): `UpdateAlertEpisodes` loses its transport call entirely. It
+   opens/refreshes episodes and, where a send is due, ensures a
+   PENDING attempt exists. It performs NO network work, so nothing
+   new ever waits on the network under either lock. (`tick.go` line
+   264's call becomes journal-only; the tick's contract is otherwise
+   unchanged.)
+2. **Transport phase** (`DeliverDueAlerts`, called by the steward
+   runner AFTER `RunTick` returns and its deferred arbitration
+   release has run): acquire a NEW dedicated sender flock,
+   `artifacts/agents/steward/alerts-sender.flock`, with
+   LOCK_EX|LOCK_NB. If it is held, return immediately — the live
+   holder is the single flight, and the next tick retries. Holding
+   it: briefly take the alert lock to read due PENDING attempts and
+   stamp each with this sender's identity; release the alert lock;
+   perform sends (per-pass budget `channel.max-sends-per-tick`,
+   default 3, each 15-second-bounded); re-take the alert lock briefly
+   per completion to journal each `ChunkOutcome` as its attempt
+   result (§7). The alert lock is never held across network work; the
+   arbitration lock is never held at all in this phase.
 
-The LAUNCH GATE is representable now: `EnsureRunner` and `arm` replace
-their `NotifyCommand` availability check with `Ready` on the
-alert-class destination chain — the gate passes when the primary OR
-the fallback destination is fully configured (any adapter: Telegram on
-Linux passes without the legacy command; macOS passes on `desktop`).
-`Ready` performs no send and emits nothing. The gate's meaning is
-preserved exactly — "an unreachable watchdog guards nothing" — and the
-policy split is now explicit: ONLY the launch gate consults readiness
-as a refusal; every other consumer treats unconfigured as a typed,
-non-blocking degradation (§8). No new alert class ever gates.
+Why each stated law now holds:
 
-## 6. Alert content
+- **No machinery waits on a send.** Lease, revival, ticks, and
+  acknowledgment contend only on arbitration and alert locks, and
+  neither is ever held across transport. Worst added contention is
+  the sender's brief journal reads/writes.
+- **One try, one receipt; no duplicate concurrent sends.** Only a
+  sender-flock holder performs transport or completes attempts, and
+  LOCK_EX admits one holder per repository at a time. Two processes
+  can no longer both act on one PENDING attempt, so the reuse rule
+  has a single reader by construction. (In practice the resident
+  steward runner is the only routine caller; the flock exists so a
+  concurrent manual `health`-family invocation or a second runner
+  during takeover cannot become a second flight.)
+- **At-least-once across crashes, unchanged.** A flock dies with its
+  process (kernel-released on exit), so a sender crash mid-send
+  strands no lock and leaves the stamped PENDING attempt; the next
+  sender reuses exactly that attempt (destination-matched, §7) — the
+  same crash-gap law as today, duplicate-possible, never
+  double-receipted.
+- **Bounded, disclosed latency.** An alert journaled while a sender
+  pass is in flight waits for the next pass (at most one tick
+  interval plus the pass bound). The design says "immediate" means
+  within one sender pass, not within the journaling write — that is
+  the honest cost of not blocking machinery, and it is minutes-scale
+  worst case against a specimen measured in hours.
 
-Every alert carries WHAT HAPPENED (first sentence, plain words —
-`docs/seat-communication.md` binds every human-facing channel), WHAT
-IS ASKED, and THE EXACT ANSWERING ACT, with the acknowledgment line
-appended automatically:
+## 6. Alert content and the launch gate
 
-```
-ALERT: work is stopped and waiting for your word.
-Asked: restart the stopped goal (its budget stop completed).
-Answer with: metasystem goal resume --goal <id> ...
-Acknowledge receipt: metasystem health acknowledge-alert --episode <id>
-```
-
-(Folds part of AC-DEDUP-001.) Revision 1's example named a
-non-existent `goal approve` verb. Corrected law: the `Answer` field
-names a REAL act — the traced verbs are `metasystem goal resume` (a
-stop awaiting resume) and `metasystem mission-runner answer` (an open
-ask); each producer slice supplies its own verb and its acceptance
-test proves the named verb exists in `metasystem help` output. The
-composer refuses an alert with an empty `Happened`, `Asked`, or
-`Answer` — refusal surfaces at the producer, never as a silent drop.
+Alert content is unchanged from revision 2 (WHAT HAPPENED / WHAT IS
+ASKED / the exact ANSWERING ACT — only verbs proven to exist, e.g.
+`metasystem goal resume`, `metasystem mission-runner answer`; the
+acknowledgment line appended; composer refuses empty fields;
+`docs/seat-communication.md` binds the register). The launch gate:
+`EnsureRunner` and `arm` replace the `NotifyCommand` check with
+`Ready` over the alert destination chain (primary or fallback
+configured passes; no send, no output). Readiness refusal exists ONLY
+at the launch gate; everywhere else unconfigured is a typed,
+non-blocking degradation.
 
 ## 7. One truth layer: episodes, receipts, dedup
 
-**The episode store is the ONLY durable delivery state for the alert
-class.** (Folds AC-STATE-001.) The pending-notification queue is
-RETIRED, not preserved: every current `QueueNotification` caller
-(revival failures, reap notices, tick messages, narrator noticings)
-migrates — actionable ones become episodes; narrative noticings become
-digest-register entries and ride the digest class. `DeliverPending`
-and the pending directory are removed at the migration slice, with the
-same one-time compatibility drain the store already performs for
-legacy health notifications. After that slice there is exactly one
-owner of "was this delivered": episode attempt journals (alerts) and
-per-consumer digest cursors (digests, §8).
+Unchanged laws from revision 2: the pending-notification queue is
+retired with every caller migrated (episodes or digest register); the
+episode store is the only durable delivery state for the alert class;
+resolution is class-scoped (the resolve-all-others law stays
+health-only); the producer table (stop id / mission ask id / minted
+ask id / enrolled-engine identity / claim-approval deferred to its
+mechanism) stands as written in revision 2.
 
-**Receipts represent every transport try.** (Folds AC-RECEIPT-001.)
-Each try — primary or fallback — is its OWN `AlertAttempt` with its
-own `Channel` (destination name), result, problem, and monotonically
-increasing sequence. Specified semantics revision 1 left open: a
-primary failure followed by fallback success is TWO attempts (failed
-+ submitted); episode-level `TransportResult` is SUBMITTED when any
-attempt submitted, and the episode records `SubmittedVia` (the
-successful destination). Pending-recovery narrows: a PENDING attempt
-found at recovery is reused only when its `Channel` matches the
-destination about to be tried; otherwise it is completed as FAILED
-("interrupted") and a new attempt opens. Retries stop at SUBMITTED.
+Receipt law, completed for chunks and references (folds the receipt
+halves of AC2-LOCK-001, AC2-THREAD-001, AC2-RECEIPT-001): one
+`AlertAttempt` per `ChunkOutcome`, each carrying sequence, timestamps,
+destination name (`Channel`), result, sanitized problem, AND the
+returned `MessageRef`. Alerts are composed under one chunk by
+construction (§9), so the normal case stays one attempt per try; a
+fallback try is its own attempt; `SubmittedVia` records the successful
+destination; PENDING reuse is destination-matched and, per §5,
+exercised only ever by the single-flight sender.
 
-**Dedup and resolution are class-scoped.** (Folds AC-DEDUP-001.) The
-current update law — a new finding resolves every non-matching open
-episode — is HEALTH-CLASS ONLY (correct there: one health verdict at a
-time) and does not apply to blocked-on-human episodes, which coexist
-and resolve each by its OWN clear event. The producer table, with
-traced identities:
+## 8. Digests and the cursor law
 
-| Blocked state | Subject identity (traced) | Clear event |
-| --- | --- | --- |
-| Stop awaiting resume | stop id, `internal/goal/stop.go` | the human `goal resume` for that stop |
-| Open mission ask | ask id, `internal/missionrunner/answer.go` | the recorded `mission-runner answer` |
-| Decision-ask (free-form) | ask id MINTED AT COMPOSITION; the composer refuses an unidentified ask | the producer's recorded answer against that id |
-| Enrollment drift awaiting re-arm | the enrolled-engine identity (`ENROLLMENT_DRIFT` itself is an ephemeral result) | the next successful enrollment verification, observed by the steward tick |
-| Claim awaiting approval | its approval object's id, traced AT ITS SLICE — no verb exists today (§1), so this producer lands only with the mechanism it alerts on | that mechanism's recorded decision |
+Unchanged from revision 2: the external digest channel is a second
+NAMED consumer of the register's existing byte-offset-plus-prefix-hash
+cursor mechanism; per-consumer cursor records; the cursor is conceded
+as named, bounded delivery state; a lost cursor re-sends at most the
+retained register once, flagged in the batch header. Completed by §9:
+the cursor advances using `ChunkOutcome.Span`.
 
-Episode key: stable digest of (class, subject identity). One
-actionable state, one episode, one alert; recurrence after clearing
-opens a new episode id, per the store's existing evidence law.
+## 9. Message size law and chunking — owned by the channel layer
 
-## 8. Two message classes, digests, and the cursor law
-
-Alerts send individually and immediately (within §5's bounds), with a
-fixed `ALERT:` lead; digests are one batched message per window with a
-`digest:` lead; the two classes share nothing but the contract, so an
-alert is never inside or behind a batch.
-
-(Folds AC-STATE-002.) Revision 1's new timestamp cursor is DROPPED. The
-narrator digest register already owns a byte-offset plus prefix-hash
-cursor with the Stop hook as its consumer; the external digest channel
-becomes a SECOND NAMED CONSUMER of the SAME mechanism: the register
-grows per-consumer cursor records (`stop-hook`, `external-digest`),
-each with the existing offset+hash law, and no consumer deletes or
-consumes entries destructively — each reads forward from its own
-cursor. "Delivered" has one definition per consumer: that consumer's
-cursor covers the entry. The external cursor advances only after the
-transport accepted the batch; a crash between send and advance repeats
-one bounded batch. Conceded honestly: this cursor is irreducible
-delivery state — the register cannot say what an external transport
-accepted — so it is named AS state, owned by the register (not the
-adapter), and bounded: composition takes at most
-`channel.digest.batch-max-bytes` per window (§9), and a LOST cursor
-re-sends at most the retained register once, flagged in the batch
-header ("cursor was rebuilt; entries may repeat"). The Stop hook's
-existing behavior is untouched except for the cursor file gaining a
-consumer name (its migration is part of the digest slice).
-
-## 9. Message size law
-
-(Folds AC-CONTRACT-002.) Telegram caps a message at 4096 characters;
-the digest window was unbounded. The law: COMPOSITION is bounded, and
-the channel layer chunks.
+(Folds AC2-RECEIPT-001's ownership half.)
 
 - Alerts are bounded at composition (`channel.alert.max-bytes`,
-  default 1500); an over-cap alert is truncated with a tail naming the
-  episode id — the full text lives in the episode, which is the truth.
+  default 1500, under every named provider cap); an over-cap alert is
+  truncated with a tail naming the episode id. One alert, one chunk.
 - A digest batch composes at most `channel.digest.batch-max-bytes`
-  (default 3500, under the smallest known provider cap) of entries;
-  remaining entries simply wait — the consumer cursor advances only
-  over entries actually included in an ACCEPTED send, so partial
-  windows are ordinary, not partial failures.
-- When a composed message still exceeds the destination's declared
-  `maxMessageBytes`, the channel layer splits it into sequential
-  chunks in the same conversation; each chunk is its own send with its
-  own receipt, and for digests the cursor advances per accepted
-  chunk's entry span. Multipart partial success is therefore
-  representable: accepted chunks are delivered and covered, the failed
-  chunk retries next window.
+  of entries and carries their `Spans`. When the destination's
+  declared `maxMessageBytes` is smaller, the CHANNEL LAYER (§2's
+  concrete package — not the adapter, not the caller) splits Body on
+  span boundaries into sequential submissions in the same
+  conversation, calling `AdapterSend` per piece, and returns every
+  outcome in `SendResult.Chunks` with its span.
+- Cursor advance rule: the digest consumer's cursor advances to the
+  end of the longest PREFIX of accepted chunks. A failed middle chunk
+  stops advancement there; later accepted chunks will be re-sent next
+  window — disclosed at-least-once duplication, matching the alert
+  law, never a silent gap.
 
-The "configuration-only" claim is scoped honestly: enabling a SHIPPED
-adapter is configuration-only at call sites; SHIPPING an adapter is
-engine code, and each adapter slice carries provider-constraint tests
-(size cap, secret redaction, thread mapping) against recorded provider
-behavior — a fake endpoint proves call-site neutrality, not provider
-correctness, and the slice plan says which test proves which (§11).
+The configuration-only claim stays scoped as in revision 2: enabling
+a shipped adapter is configuration-only at call sites; shipping one
+is engine code with that provider's constraint tests (size cap,
+redaction, reference mapping).
 
 ## 10. Credentials and failure honesty
 
-Secrets (`bot-token`, `webhook-url`, `smtp-password`, `api-token`)
-resolve ONLY from the environment or `metasystem.conf.local`:
-(mechanical guard, folds part of AC-CREDENTIAL-001) the channel
-layer's resolution of a secret-named setting SKIPS the committed file
-— a secret committed anyway is ignored and the destination reports
-unconfigured with the reason "secret found in committed configuration".
-The committed-secret validation rule (§11 slice 1b) adds repository
-hygiene on top, with its law-becomes-software governance record.
+Unchanged from revision 2: secrets resolve only from environment or
+`metasystem.conf.local` (the channel layer skips the committed file
+for secret-named settings and reports why); adapters must redact
+their configured secrets from all error text and the channel layer
+literal-scrubs every resolved secret from every problem string before
+journaling, logging, or printing, with the known-bad fixture shipping
+in slice 1; failed sends journal and retry next pass; the fallback
+destination is its own journaled attempt.
 
-**Sanitized errors are a contract invariant.** (Folds
-AC-CREDENTIAL-001.) Telegram puts the bot token in the request URL and
-Slack's webhook URL is itself the secret, and the current notifier
-already embeds raw output in errors. Therefore: an adapter must
-redact every secret it was configured with from any error text it
-returns (`<redacted:bot-token>`), and the channel layer additionally
-literal-scrubs all resolved secret values from every problem string as
-defense in depth, BEFORE anything is journaled, logged, or printed.
-The known-bad fixture — an error string carrying a live-shaped token
-must come out scrubbed — ships with slice 1 and must keep failing
-unscrubbed.
-
-**Failure floor** (unchanged in substance, now with an owner, §11): a
-failed send journals TRANSPORT_FAILED and retries next tick; the
-fallback destination is tried as its own journaled attempt; an episode
-failed on both is an UNDELIVERED alert surfaced on surfaces already
-touched — one `metasystem health` line ("N alert(s) undelivered,
-oldest M minutes") and the same line in the Stop-hook payload, making
-the seat's own next message the last hop. Undelivered digest windows
-count separately, lower urgency. Delivery outcome never gates
-machinery; the ONLY readiness refusal is the launch gate (§5).
+The floor, now with the one-change plumbing §1 traced: the
+undelivered-alert count joins the HEALTH VERDICT LINE itself ("N
+alert(s) undelivered, oldest M minutes"). Because the tick already
+narrates that line durably and the Stop hook already composes health
+into its payload, ONE change lights both floors — the agent-free
+terminal (`metasystem health`) and every seat's turn end — with no
+new surface, which is what makes it fit slice 1 (§11). Undelivered
+digest windows count separately, lower urgency. Delivery outcome
+never gates machinery; only the launch gate refuses on readiness.
 
 ## 11. Slice plan
 
-(Folds AC-SLICE-001 and the slice half of AC-CONTRACT-002.) Each slice
-independently deployable; Telegram first is CONFIRMED by Wido.
+(Folds AC2-SLICE-001: slice 1 is again at most 4 hours AND
+independently deployable with the floor, by NARROWING slice 1 —
+threading, chunking, and digests move out; gate, floor, and redaction
+move in. No live-token precondition outside the slice remains.)
 
-1. **Contract, Telegram, gate, floor, redaction (the specimen-killer;
-   ≤ 4 hours is no longer claimed for all of it — 1a is the 4-hour
-   cut).**
-   - 1a: the `Channel` contract (Send/Ready/Capabilities, typed
-     sanitized errors), destination configuration, the Telegram
-     adapter with its size cap and redaction fixtures, alert sends
-     rerouted outside the lock (§5 journal/transport split),
-     per-try attempt receipts, `desktop`/legacy-command fallback.
-   - 1b (same slice, required before 1a is ENABLED on a live token):
-     the launch gate moved to `Ready`, the health and Stop-hook
-     undelivered lines with their acceptance tests (health output
-     asserts the count line; the hook fixture asserts the payload
-     line), the committed-layer secret skip, and the committed-secret
-     validation rule entering in MARKING mode with its governance
-     record — owner: this goal's owner seat; activation criterion:
-     refusal power after 14 days of marking with zero false marks, by
-     the owner's recorded decision.
-2. **Digest class**: batch composition with the size law, the named
-   second consumer cursor on the existing register mechanism, Stop
-   hook cursor migration, noticings redirected into the register.
-3. **Queue retirement**: every `QueueNotification` caller migrated to
-   episodes or register entries; `DeliverPending` and the pending
-   directory removed; compatibility drain.
-4. **Blocked-on-human producers**: the class-scoped resolution law in
-   the store, then the §7 producer table wired producer by producer,
-   each with its real answering verb proven to exist; the
-   claim-approval producer waits for its mechanism.
-5. **Remaining adapters** — Slack (threaded; the thread map), email,
-   WhatsApp — each one registry entry plus that provider's constraint
-   tests; enabling each is configuration-only at call sites.
-6. **Bridge destinations**: `seat-<id>` destinations and the
-   `receive` capability, consumed by seat-mutual-awareness's own
-   design for the ask/answer loop.
+1. **Alert path end to end, Telegram, ≤ 4 hours, live-token
+   deployable.** The contract with single-chunk `Send` (SendResult
+   carrying one outcome; the chunking path is dormant until slice 3),
+   destination configuration for the alert class with the
+   secret-layer skip, the UNTHREADED Telegram adapter (no
+   conversation store yet — alerts do not need threads to reach a
+   phone), the §5 journal/transport split with the sender flock, the
+   redaction invariant with its known-bad fixture, the `Ready` launch
+   gate swap, and the undelivered count in the health verdict line —
+   which §1 shows reaches terminal and Stop hook through existing
+   plumbing. Rough arithmetic, stated so it can be challenged:
+   contract skeleton and config 1h, Telegram adapter and fixtures 1h,
+   sender split 1h, gate + health line + redaction fixture 1h.
+   Everything the round-1 floor finding demanded ships INSIDE this
+   slice; enabling a live token at its end is lawful.
+2. **Digest class**: batch composition, the named second consumer
+   cursor, Stop-hook cursor-record migration, noticings redirected.
+3. **Chunking and spans**: multi-chunk SendResult live, digest span
+   accounting, prefix cursor advance.
+4. **Conversation reference store and the threaded Slack adapter**
+   (Web API), plus reply mapping for Telegram/email/WhatsApp as each
+   ships; attempt `MessageRef` retention lands here with the store.
+5. **Queue retirement**: every `QueueNotification` caller migrated;
+   `DeliverPending` and the pending directory removed.
+6. **Blocked-on-human producers**: the class-scoped resolution law
+   and the §7 producer table, producer by producer.
+7. **Remaining adapters** (email, WhatsApp) with provider tests; the
+   committed-secret validation rule with its governance record and
+   marking-mode activation criterion.
+8. **Bridge destinations**: `seat-<id>` outbound; the receive half
+   proceeds under seat-mutual-awareness's design per §2b.
 
-## 12. Finding dispositions (Sol round 1)
+## 12. Finding dispositions — both rounds, honestly
+
+Round-2 fold-fidelity correction: revision 2's table marked
+AC-CONTRACT-001, AC-RECEIPT-001, and AC-SLICE-001 "folded" while the
+receive half, per-chunk receipts, and the 4-hour deployable slice
+were respectively missing, unrepresentable, and withdrawn. The
+corrected record:
 
 | Finding | Disposition |
 | --- | --- |
-| AC-CONTRACT-001 (critical) | Folded, §2–§4: addressed destinations, sender/conversation/reply/deadline fields, MessageRef, capabilities, receive; the bridge is a contract consumer. |
-| AC-BLOCK-001 | Folded, §5: never-blocking restated as bounded-blocking; send moves outside the alert lock; per-tick send budget. |
-| AC-BLOCK-002 | Folded, §5: `Ready` (non-side-effecting) replaces the NotifyCommand check; gate passes on primary-or-fallback configured; only the gate refuses. |
-| AC-STATE-001 | Folded, §7/§11-3: pending queue retired, all callers migrated, one delivery-state owner. |
-| AC-RECEIPT-001 | Folded, §7: one attempt per try, `SubmittedVia`, narrowed pending-recovery, episode-level result law specified. |
-| AC-DEDUP-001 | Folded, §6/§7: class-scoped resolution, traced producer identities, minted ask ids, real verbs only (bogus example removed). |
-| AC-STATE-002 | Folded, §8: new cursor dropped; per-consumer cursors on the existing register mechanism; cursor conceded as named, bounded delivery state. |
-| AC-CREDENTIAL-001 | Folded, §10: adapter redaction invariant plus channel-layer scrub, known-bad fixture in slice 1; committed-layer secret skip. |
-| AC-SLICE-001 | Folded, §11: gate, floor surfaces, and redaction own slice 1b with acceptance tests; secret rule has owner and activation criterion. |
-| AC-CONTRACT-002 | Folded, §9: size law, chunking with per-chunk receipts, digest bound, configuration-only claim rescoped, per-adapter provider tests. |
-| Telegram-first (undisputed) | Confirmed by Wido; kept. |
+| Round 1 AC-CONTRACT-001 | Partially folded in rev 2 (outbound fields, destinations); COMPLETED in rev 3 by §2's SendResult contract and §2b's explicit, obligation-enumerated receive boundary. The rev-2 table over-claimed. |
+| Round 1 AC-BLOCK-001/002 | Rev-2 fold was unsound (missed the arbitration lock); REPLACED by §5's single-flight sender. Gate fold (Ready) stands. |
+| Round 1 AC-STATE-001, AC-DEDUP-001, AC-STATE-002, AC-CREDENTIAL-001 | Folded in rev 2; unchanged and standing (§7, §8, §10). |
+| Round 1 AC-RECEIPT-001 | Rev-2 fold incomplete; completed by §2/§7/§9 (ChunkOutcome, per-outcome attempts, MessageRef retention). |
+| Round 1 AC-SLICE-001 / AC-CONTRACT-002 | Rev-2 fold regressed the 4-hour requirement; repaired by §11's narrowed slice 1; size law completed by §9. |
+| AC2-LOCK-001 (critical) | Folded, §5: one implementation, kernel-enforced single flight, laws argued individually; "immediate" honestly redefined as within one sender pass. |
+| AC2-CONTRACT-001 (critical) | Folded, §2b: receive explicitly withdrawn from this contract and reserved with five enumerated obligations for seat-mutual-awareness; sender authentication disclaimed; the disposition dishonesty corrected in this table. |
+| AC2-THREAD-001 | Folded, §3: channel-layer-owned conversation reference store for ALL adapters, ConversationState into AdapterSend, MessageRef on attempts, Slack moved to the Web API, join-loss on store loss disclosed. |
+| AC2-RECEIPT-001 | Folded, §2/§9: channel layer defined concretely; SendResult with per-chunk outcomes and spans; split ownership fixed in the interface. |
+| AC2-SLICE-001 | Folded, §11: slice 1 narrowed to a 4-hour, live-token-deployable alert path WITH gate, floor, and redaction inside it. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 2)
+## 13. Self-grade (R-24-m1, refreshed for revision 3)
 
-- **Confidence:** 0.7. The contract now carries both confirmed
-  consumers and the control-flow, state, and receipt laws are stated
-  against traced code rather than asserted; the drop from 0.75
-  reflects that revision 2 widens scope (bridge fields, receive
-  capability, queue retirement) on one uncritiqued pass.
-- **Weakest claim:** that the journal/transport split of §5 preserves
-  the store's crash-gap at-least-once law under concurrent writers —
-  releasing the lock between the pending write and the completion
-  write introduces an interleaving revision 1 did not have, and the
-  narrowed pending-recovery rule (§7) is designed but not yet
-  adversarially traced. Second-weakest: the Slack thread map as a
-  rebuildable cache assumes losing a thread mid-conversation is
-  acceptable degradation for both consumers; the bridge's design may
-  find it is not.
-- **Reject condition:** reject this revision if the session bridge's
-  own design needs SYNCHRONOUS receive or delivery guarantees stronger
-  than at-least-once-with-receipts — that would make the shared
-  contract the wrong home and the reuse Wido named would need to live
-  at the adapter registry instead; or if the queue retirement (§7)
-  turns out to break a `DeliverPending` caller whose message is
-  neither actionable (episode) nor narrative (register), a third kind
-  this design says does not exist.
+- **Confidence:** 0.72. The two criticals now rest on mechanisms with
+  arguable laws (a kernel-enforced single flight; an explicit scope
+  boundary with enumerated reserved obligations) rather than on
+  adjectives, and the dishonest table is corrected in place.
+- **Weakest claim:** the slice-1 arithmetic — four one-hour estimates
+  asserted, not measured; the slice is narrowed enough that each part
+  is small, but a contract skeleton that later slices must extend
+  without call-site changes is exactly where an hour estimate slips.
+  Second-weakest: §5's claim that the resident runner plus the
+  non-blocking sender flock yields prompt delivery assumes the runner
+  reliably runs a transport pass every tick; a wedged runner delays
+  alerts by exactly the mechanism meant to announce wedging, and the
+  design's answer (the health-line floor still lights on the next
+  human-side read) deserves adversarial critique.
+- **Reject condition:** reject this revision if Wido intended the
+  bridge's RECEIVE half to live inside this contract now — §2b is
+  then the wrong boundary and the design reopens at the contract; or
+  if slice 1 cannot in fact land inside 4 hours with the floor
+  included, which refutes the narrowing and sends the slice plan back;
+  or if any platform in use does not release the sender flock on
+  process death, which voids §5's crash law.
