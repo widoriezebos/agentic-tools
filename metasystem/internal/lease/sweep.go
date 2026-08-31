@@ -206,9 +206,8 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 }
 
 // groupOwnsTag reports whether any live process in the given process group
-// carries tag in its command line. provable is false only when the process
-// table cannot be read at all, which the sweep treats as inability to prove
-// ownership.
+// carries tag in its command line. A scan with no live group-member
+// observations proves neither ownership nor non-ownership.
 // The sweep's process-table reads go through seams so the refusal rows —
 // the branches standing between a takeover sweep and SIGTERM-ing a
 // recycled group — are testable.
@@ -229,6 +228,7 @@ func groupOwnsTag(pgid int64, tag string, probe identity.FixtureProbe) (owned, p
 	if err != nil {
 		return false, false
 	}
+	observations := 0
 	for _, pid := range pids {
 		pg, err := sweepGetpgid(pid)
 		if err != nil {
@@ -250,11 +250,12 @@ func groupOwnsTag(pgid int64, tag string, probe identity.FixtureProbe) (owned, p
 			// unprovable, not disproven.
 			return false, false
 		}
+		observations++
 		if strings.Contains(command, tag) {
 			return true, true
 		}
 	}
-	return false, true
+	return false, observations > 0
 }
 
 // acquireRecordLock takes a blocking exclusive lock on a job's record lock,

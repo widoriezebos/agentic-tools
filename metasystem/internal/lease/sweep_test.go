@@ -3,17 +3,33 @@ package lease
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
+	savedPids, savedPgid, savedCmd, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
+	defer func() {
+		sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill = savedPids, savedPgid, savedCmd, savedKill
+	}()
+	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
+	sweepGetpgid = func(pid int64) (int64, error) { return 999999, nil }
+	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "different-tag", true }
+	sweepKill = func(pgid int64, sig unix.Signal) error {
+		t.Fatal("a provably unowned group must not be signaled")
+		return nil
+	}
+
 	root := t.TempDir()
 	jobs := filepath.Join(root, "artifacts/agents/jobs")
-	// Stale, in-flight, and in a process group we do not own (999999 matches
-	// nothing) so the sweep marks it failed without killing anything.
+	// Stale, in-flight, and in a process group whose observed member does not
+	// carry the tag, so the sweep marks it failed without killing anything.
 	writeJSON(t, filepath.Join(jobs, "job-a.json"),
 		`{"jobId":"job-a","claimEpoch":4,"status":"running","pgid":999999,"instanceTag":"tag-a"}`)
 	// Current generation: not older than the sweep epoch, untouched.
@@ -43,6 +59,9 @@ func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 }
 
 func TestGroupOwnsTag(t *testing.T) {
+	savedPids := sweepAllPids
+	defer func() { sweepAllPids = savedPids }()
+
 	self := os.Getpid()
 	pgid, err := unix.Getpgid(self)
 	if err != nil {
@@ -86,6 +105,52 @@ func TestGroupOwnsTag(t *testing.T) {
 			t.Fatalf("absent tag never became provable: owned=%v provable=%v", owned, provable)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+
+	// An empty member scan contains no observation that could disprove
+	// ownership.
+	sweepAllPids = func() ([]int64, error) { return nil, nil }
+	if owned, provable := groupOwnsTag(int64(pgid), command, nil); owned || provable {
+		t.Fatalf("an empty member scan must be unprovable: owned=%v provable=%v", owned, provable)
+	}
+}
+
+func TestSweepStaleContinuesPastUnprovableOwnership(t *testing.T) {
+	root := t.TempDir()
+	runs := filepath.Join(root, "artifacts", "agents", "runs")
+	writeJSON(t, filepath.Join(runs, "a-unprovable.json"),
+		`{"schemaVersion":1,"runId":"a-unprovable","kind":"suite","display":"first stale run","custody":"wrapped","generation":1,"pid":101,"pidStartedAt":1,"pgid":101,"launchNonce":"11111111111111111111111111111111","log":"a.log","startedAt":"2026-08-30T10:00:00Z","claimEpoch":1,"staleAfterMin":30,"windDownMin":10,"evidence":{"mode":"exit-sidecar"},"expect":{},"status":"running"}`)
+	writeJSON(t, filepath.Join(runs, "b-owned.json"),
+		`{"schemaVersion":1,"runId":"b-owned","kind":"suite","display":"second stale run","custody":"wrapped","generation":1,"pid":202,"pidStartedAt":1,"pgid":202,"launchNonce":"22222222222222222222222222222222","log":"b.log","startedAt":"2026-08-30T11:00:00Z","claimEpoch":1,"staleAfterMin":30,"windDownMin":10,"evidence":{"mode":"exit-sidecar"},"expect":{},"status":"running"}`)
+
+	store := &run.Store{
+		Root:         root,
+		AllPids:      func() ([]int64, error) { return nil, nil },
+		Getpgid:      func(pid int64) (int64, error) { return pid, nil },
+		GroupPresent: func(pgid int64) (bool, bool) { return false, true },
+	}
+	var killed []int64
+	err := store.SweepStale(2,
+		func(pgid int64, nonce string) (bool, bool) {
+			if pgid == 101 {
+				return false, false
+			}
+			return true, true
+		},
+		func(pgid int64) error { killed = append(killed, pgid); return nil })
+	if err == nil || !strings.Contains(err.Error(), "a-unprovable group ownership scan unprovable") {
+		t.Fatalf("the unprovable scan must surface by its own reason: %v", err)
+	}
+	if len(killed) != 1 || killed[0] != 202 {
+		t.Fatalf("the later owned group must still be swept: %v", killed)
+	}
+	first, readErr := store.Read("a-unprovable")
+	if readErr != nil || first.Status != run.StatusRunning {
+		t.Fatalf("the unprovable run must remain untouched: record=%+v err=%v", first, readErr)
+	}
+	second, readErr := store.Read("b-owned")
+	if readErr != nil || second.Status != run.StatusEndedUnknown {
+		t.Fatalf("the later owned run must be concluded: record=%+v err=%v", second, readErr)
 	}
 }
 

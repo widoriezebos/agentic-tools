@@ -273,6 +273,12 @@ func TestGroupOwnsTagUnprovableRows(t *testing.T) {
 	savedPids, savedPgid, savedCmd := sweepAllPids, sweepGetpgid, sweepProcessCommand
 	defer func() { sweepAllPids, sweepGetpgid, sweepProcessCommand = savedPids, savedPgid, savedCmd }()
 
+	// An empty scan has no live observation and cannot disprove ownership.
+	sweepAllPids = func() ([]int64, error) { return nil, nil }
+	if owned, provable := groupOwnsTag(42, "t", nil); owned || provable {
+		t.Fatalf("an empty scan must be unprovable: owned=%v provable=%v", owned, provable)
+	}
+
 	// Process table unreadable: unprovable.
 	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
 	if _, provable := groupOwnsTag(42, "t", nil); provable {
@@ -286,10 +292,11 @@ func TestGroupOwnsTagUnprovableRows(t *testing.T) {
 		t.Fatal("a failed pgid read was ruled provable")
 	}
 
-	// ESRCH is genuine absence: provable, not owned.
+	// ESRCH contributes no live observation, so an otherwise empty scan is
+	// unprovable rather than disproof.
 	sweepGetpgid = func(pid int64) (int64, error) { return 0, unix.ESRCH }
-	if owned, provable := groupOwnsTag(42, "t", nil); !provable || owned {
-		t.Fatalf("ESRCH must be provable absence: owned=%v provable=%v", owned, provable)
+	if owned, provable := groupOwnsTag(42, "t", nil); owned || provable {
+		t.Fatalf("an ESRCH-only scan must be unprovable: owned=%v provable=%v", owned, provable)
 	}
 
 	// A live member with unreadable identity: unprovable, never disproven.
@@ -347,12 +354,25 @@ func TestSweepStopVerdictRows(t *testing.T) {
 		return path
 	}
 
+	// An empty ownership scan cannot authorize a signal.
+	sweepAllPids = func() ([]int64, error) { return nil, nil }
+	var emptyScanKills int
+	sweepKill = func(pgid int64, sig unix.Signal) error { emptyScanKills++; return nil }
+	c, _ := newClaimer(t.TempDir())
+	err := c.stopStaleGroup(map[string]any{"pgid": float64(424242), "instanceTag": "stale-tag"}, "stale")
+	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership") {
+		t.Fatalf("an empty scan must stay unprovable: %v", err)
+	}
+	if emptyScanKills != 0 {
+		t.Fatalf("an empty scan authorized %d signals", emptyScanKills)
+	}
+
 	// Unprovable ownership: the sweep refuses BEFORE any stamp.
 	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
 	root := t.TempDir()
 	recordPath := staleJob(t, root)
 	refusalClaimer, _ := newClaimer(root)
-	err := refusalClaimer.cleanupStaleJobs(5)
+	err = refusalClaimer.cleanupStaleJobs(5)
 	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership of stale job stale") {
 		t.Fatalf("unprovable ownership must refuse the sweep: %v", err)
 	}

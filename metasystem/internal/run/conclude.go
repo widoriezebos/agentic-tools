@@ -392,6 +392,7 @@ func (s *Store) SweepStale(epoch int64,
 		if len(unreadable) > 0 {
 			return fmt.Errorf("run sweep refused: %s", unreadable[0])
 		}
+		var unprovableRun string
 		for i := range records {
 			record := &records[i]
 			if record.ClaimEpoch == nil || *record.ClaimEpoch >= epoch {
@@ -408,7 +409,10 @@ func (s *Store) SweepStale(epoch int64,
 			}
 			owned, provable := proof(*record.Pgid, record.LaunchNonce)
 			if !provable {
-				return fmt.Errorf("run sweep cannot prove ownership of stale run %s", record.RunId)
+				if unprovableRun == "" {
+					unprovableRun = record.RunId
+				}
+				continue
 			}
 			if !owned {
 				return fmt.Errorf("run sweep refused: stale run %s group ownership disproven; surfacing", record.RunId)
@@ -436,6 +440,9 @@ func (s *Store) SweepStale(epoch int64,
 				}
 			}
 			s.emit("run-swept", map[string]string{"runId": record.RunId, "reason": "stale-claim-epoch"})
+		}
+		if unprovableRun != "" {
+			return fmt.Errorf("run sweep surfaced: stale run %s group ownership scan unprovable", unprovableRun)
 		}
 		return nil
 	})
