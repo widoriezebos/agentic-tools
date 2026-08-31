@@ -5,10 +5,10 @@
 - Origin: main
 - Next step: Standing shared process: when weight-check fires, claim, run the governed validation green under the obligation's budget, discharge at the exact green-run boundary (gate weight-discharge), release. First discharge: weight 123/60 over 8 landings since 2026-08-30, under Wido's tuple 2/24h/120m/1 and his LIMITED word (2026-08-31 in-session decision-ask). FIRST DISCHARGE IN PROGRESS: attempt 1 load-killed (watchdog observation gap, goaled); extended under R-32-m2 with fresh epoch (tuple 2/24h/150m/1, obligation r7); attempt 2 (run -c) completed clean of load kills and went red on two wall-clock-patience test failures - steward-tick-load-flake (handed to m3's shelf) and missionrunner-terminate-flake (opened). ONE attempt remains in the 24h window (to ~2026-09-01 12:48Z): rerun after both fixes land, quiet window coordinated with m3.
 - OpenedAt: 2026-08-31T10:47:20Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=600 activeJobLimit=1
-- Obligation: revision=18 budgetRevision=16 state=LIMITED owner=Wido authorizedBy=wido authorizedAt=2026-08-31T19:34:22Z authorityOperation=XDFEMQQ65Z6YYNGQ5NE0BVZCXP-m2-bc1be9cb reviewPolicy=C reviewOutcome=human-approved effects=authorize-governed-launch,authorize-spend,discharge-obligation authorizedEffects=authorize-governed-launch,authorize-spend,discharge-obligation authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06
-- ObligationAssumptions: recurrence=standing-shared-process platform=darwin/amd64 toolchainIdentity=go1.26.6 surfaceDigest=4b75d47abf2e224cd77891730e043c5435f2c81b56f30bc687d86da122a50b6f maxActiveJobs=1 timingEnvelopeSeconds=7200 observationSource=run-terminal-record
+- Obligation: revision=19 budgetRevision=16 state=LIMITED owner=Wido authorizedBy=wido authorizedAt=2026-08-31T20:09:17Z authorityOperation=W1N9686GKF8G1QQZ1Y2AE05384-m2-bc1be9cb reviewPolicy=C reviewOutcome=human-approved effects=authorize-governed-launch,authorize-spend,discharge-obligation authorizedEffects=authorize-governed-launch,authorize-spend,discharge-obligation authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06
+- ObligationAssumptions: recurrence=standing-shared-process platform=darwin/amd64 toolchainIdentity=go1.26.6 surfaceDigest=518e8818a397a97a0c03af33eca3a3c87c400a335c7a059d56b5023fa5c7fbb2 maxActiveJobs=1 timingEnvelopeSeconds=7200 observationSource=run-terminal-record
 - ObligationTriggers: valueJudgment=no reversibility=reversible severeHarm=no unfamiliarApproach=no testDiscrimination=strong correlatedAssumptionRisk=no authorityScopeChange=no destructiveReach=none
 - Claimed: machine=m2 lineage=mac-coordinator at=2026-08-31T19:11:43Z revision=16
 - StopCapability: generation=16 revision=16 machine=m2 claimEpoch=1 fenceEpoch=0
@@ -32,4 +32,5 @@ History:
 - 2026-08-31T19:11:43Z ZD95JDT9GSQY65H1PMN36W283Q-m2-bc1be9cb set-budget actor=human:wido targets=standing-validation
 - 2026-08-31T19:32:54Z GAG6MDBD7VG5ZAKTFNN9JF6ABQ-m2-bc1be9cb set-obligation actor=human:wido targets=standing-validation
 - 2026-08-31T19:34:22Z XDFEMQQ65Z6YYNGQ5NE0BVZCXP-m2-bc1be9cb set-obligation actor=human:wido targets=standing-validation
-Integrity: sha256=1a1911a5fae50f646f038282df88f61e7b93ce717d9d8f9e0e12be1374408048
+- 2026-08-31T20:09:17Z W1N9686GKF8G1QQZ1Y2AE05384-m2-bc1be9cb set-obligation actor=human:wido targets=standing-validation
+Integrity: sha256=9e255065435cf8db82582afda87abd7ee58761c02c50884cecbc6293b340e15d
