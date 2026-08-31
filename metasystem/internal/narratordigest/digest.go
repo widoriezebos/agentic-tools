@@ -27,6 +27,15 @@ type Entry struct {
 	SourceID   string
 }
 
+// Payload is one source-linked digest item whose body must reach the human
+// byte for byte. Unlike Entry, its body is not normalized into a single line.
+type Payload struct {
+	Kind       string
+	Body       []byte
+	SourceType string
+	SourceID   string
+}
+
 type PendingDigest struct {
 	Message      string `json:"message"`
 	Cursor       int64  `json:"cursor"`
@@ -139,6 +148,51 @@ func Append(repoRoot string, entries []Entry, now time.Time) error {
 	return nil
 }
 
+// AppendPayload writes a complete source-linked body without filtering,
+// truncating, or normalizing it. A retry with the same source is idempotent,
+// including the crash window between this append and a caller's cursor write.
+func AppendPayload(repoRoot string, payload Payload, now time.Time) error {
+	kind := strings.ToUpper(flatten(payload.Kind))
+	marker := sourceMarker(Entry{SourceType: payload.SourceType, SourceID: payload.SourceID})
+	if (kind != "HIGHLIGHT" && kind != "LOWLIGHT") || len(payload.Body) == 0 ||
+		payload.SourceType == "" || payload.SourceID == "" {
+		return fmt.Errorf("narrator digest payload requires highlight/lowlight bytes and a source")
+	}
+
+	lock, err := acquire(repoRoot)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	path := Path(repoRoot)
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	sourceSignature := []byte(" — RAW-PAYLOAD " + marker + " bytes=")
+	if bytes.Contains(existing, sourceSignature) {
+		return nil
+	}
+
+	header := fmt.Sprintf("%s %s — RAW-PAYLOAD %s bytes=%d\n",
+		now.UTC().Format(time.RFC3339), kind, marker, len(payload.Body))
+	body := make([]byte, 0, len(existing)+len(header)+len(payload.Body)+1)
+	body = append(body, existing...)
+	body = append(body, header...)
+	body = append(body, payload.Body...)
+	if payload.Body[len(payload.Body)-1] != '\n' {
+		body = append(body, '\n')
+	}
+	durable, err := atomicfile.WriteText(path, string(body), repoRoot)
+	if err != nil {
+		return err
+	}
+	if !durable {
+		return fmt.Errorf("narrator digest payload published with directory durability unknown")
+	}
+	return nil
+}
+
 func digest(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
@@ -187,10 +241,10 @@ func Pending(repoRoot string) (PendingDigest, error) {
 	if cursor.Cursor > int64(len(data)) || digest(data[:cursor.Cursor]) != cursor.PrefixSHA256 {
 		return PendingDigest{}, fmt.Errorf("narrator digest changed before the last check-in cursor")
 	}
-	pending := strings.TrimSpace(string(data[cursor.Cursor:]))
+	pending := data[cursor.Cursor:]
 	message := ""
-	if pending != "" {
-		message = "NARRATOR DIGEST since last check-in:\n" + pending
+	if len(bytes.TrimSpace(pending)) != 0 {
+		message = "NARRATOR DIGEST since last check-in:\n" + string(pending)
 	}
 	return PendingDigest{Message: message, Cursor: int64(len(data)), PrefixSHA256: digest(data)}, nil
 }

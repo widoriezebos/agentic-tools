@@ -332,7 +332,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	for _, knob := range []string{
 		"exec.local-timeout-sec", "exec.network-timeout-sec",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
-		"census.log-max-bytes",
+		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours",
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {

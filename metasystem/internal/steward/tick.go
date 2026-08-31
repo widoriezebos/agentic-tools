@@ -159,6 +159,9 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err := sweepRulingReviews(repoRoot, time.Now()); err != nil {
 		return degradedTick(repoRoot, "ruling review sweep failed: "+err.Error())
 	}
+	if err := sweepCounselorBrief(repoRoot, time.Now()); err != nil {
+		return degradedTick(repoRoot, "counselor brief carriage failed: "+err.Error())
+	}
 
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.

@@ -1,11 +1,65 @@
 package narratordigest
 
 import (
+	"bytes"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func rawPayloadBody(t *testing.T, data []byte, source string) []byte {
+	t.Helper()
+	marker := []byte(" — RAW-PAYLOAD (source: " + source + ") bytes=")
+	start := bytes.Index(data, marker)
+	if start < 0 {
+		t.Fatalf("raw payload source marker %q is absent from %q", source, data)
+	}
+	headerEnd := bytes.IndexByte(data[start:], '\n')
+	if headerEnd < 0 {
+		t.Fatalf("raw payload header has no newline: %q", data[start:])
+	}
+	headerEnd += start
+	sizeStart := start + len(marker)
+	size, err := strconv.Atoi(string(data[sizeStart:headerEnd]))
+	if err != nil || headerEnd+1+size > len(data) {
+		t.Fatalf("raw payload header has an invalid byte count: %q", data[start:headerEnd])
+	}
+	return data[headerEnd+1 : headerEnd+1+size]
+}
+
+func TestRawPayloadPreservesRendererBytesAndDeduplicatesItsSource(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
+	rendered := []byte("Counselor heading.\n\nWarning:  spaces stay.\n")
+	payload := Payload{Kind: "lowlight", Body: rendered, SourceType: "counselor-brief", SourceID: "period-1"}
+	if err := AppendPayload(root, payload, now); err != nil {
+		t.Fatal(err)
+	}
+	retry := payload
+	retry.Body = []byte("a retry rendered different bytes\n")
+	if err := AppendPayload(root, retry, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rawPayloadBody(t, data, "counselor-brief period-1"); !bytes.Equal(got, rendered) {
+		t.Fatalf("digest softened the rendered bytes:\n got %q\nwant %q", got, rendered)
+	}
+	if count := bytes.Count(data, []byte("RAW-PAYLOAD")); count != 1 {
+		t.Fatalf("one source produced %d payload frames", count)
+	}
+	pending, err := Pending(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(pending.Message, string(rendered)) {
+		t.Fatalf("pending delivery changed the payload suffix: %q", pending.Message)
+	}
+}
 
 func TestPendingCursorLeavesEventsAppendedDuringDelivery(t *testing.T) {
 	root := t.TempDir()

@@ -224,6 +224,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"unit suffix", "exec.local-timeout-sec=300s\n", "exec.local-timeout-sec must be a positive integer"},
 		{"zero bound", "exec.network-timeout-sec=0\n", "exec.network-timeout-sec must be a positive integer"},
 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
+		{"zero counselor cadence", "metasystem.counselor.brief-cadence-hours=0\n", "metasystem.counselor.brief-cadence-hours must be a positive integer"},
 		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
 		{"share over 100", "census.max-interval-share-percent=150\n", "census.max-interval-share-percent must be an integer between 1 and 100"},
 		{"negative elapsed grace", "metasystem.budget.elapsed-grace-percent=-1\n", "metasystem.budget.elapsed-grace-percent must be an integer between 0 and 200"},
@@ -238,7 +239,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n"
+	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\nmetasystem.counselor.brief-cadence-hours=24\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
 	}

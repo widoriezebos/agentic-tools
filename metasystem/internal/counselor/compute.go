@@ -146,9 +146,9 @@ func Compute(records RecordSet, now time.Time) Brief {
 			Enrichment: "Add a non-prunable terminal ledger for ordinary tracked runs.",
 		},
 		Limitation{
-			Name:       "Window horizon",
-			Detail:     "The repository defines no counselor-specific cadence, so the brief reuses completed Coordinated Universal Time calendar weeks and omits the active partial week and empty older weeks.",
-			Enrichment: "Record a counselor cadence and durable brief cursor when the human adopts one.",
+			Name:       "Window resolution",
+			Detail:     "Delivery follows the repository's counselor cadence, while the signal windows remain completed Coordinated Universal Time calendar weeks and omit the active partial week and empty older weeks.",
+			Enrichment: "Record finer-grained durable evidence before producing windows shorter than one week.",
 		},
 		Limitation{
 			Name:       "Landing size",
@@ -184,9 +184,9 @@ func Compute(records RecordSet, now time.Time) Brief {
 			Enrichment: "Require every goal-record mutation to retain its goal operation identifier in the landing commit.",
 		},
 		Limitation{
-			Name:       "Window horizon",
-			Detail:     "The repository defines no counselor-specific cadence, so the brief reuses completed Coordinated Universal Time calendar weeks and omits the active partial week and empty older weeks.",
-			Enrichment: "Record a counselor cadence and durable brief cursor when the human adopts one.",
+			Name:       "Window resolution",
+			Detail:     "Delivery follows the repository's counselor cadence, while the signal windows remain completed Coordinated Universal Time calendar weeks and omit the active partial week and empty older weeks.",
+			Enrichment: "Record finer-grained durable evidence before producing windows shorter than one week.",
 		},
 	)
 	if unmatchedGoalCarriers > 0 {
