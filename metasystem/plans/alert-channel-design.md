@@ -1,16 +1,21 @@
-# Alert Channel Design — alert-escalation-channel (revision 5)
+# Alert Channel Design — alert-escalation-channel (revision 6)
 
-Status: revision 5 folds the single round-4 finding — the email
-References trimming rule now has a concrete boundary (a fixed design
-constant, `emailReferencesMaxBytes = 8192`, with exact boundary
-behavior and the standard misattribution corrected: RFC 5322 imposes
-no total References limit, so the cap is this design's own, §3a).
-With that fold, EVERY finding from all four critique rounds — eleven,
-then five, then three, then one — is folded or independently judged
-sound, and no finding remains open. Round 4 confirmed the §5a
-completion-merge law and all other lines SOUND; this revision touches
-only the trimming rule, the status line, the disposition table, and
-the self-grade.
+Status: revision 6 answers the Sol implementer's GAP-STOP on slice 1
+— seven places where the design referenced something without
+mechanically defining it. New section §11a (the slice-1 mechanical
+specification, subsections 11a.1–11a.7 answering gaps 1–7) supplies
+the sender stamp's persisted fields and the refusal journal's schema
+and location, the five previously undefined contract types, the
+unconfigured-send outcome law, the implicit-destination synthesis
+that leaves legacy bytes untouched, the exact undelivered-counting
+semantics, the health alert's three-field mapping, and the Telegram
+seam (request encoding, response validation, timeout ownership,
+fake-endpoint injection, character-based capability). Slice-1
+minimums are stated where the full mechanism belongs to a later
+slice, each as a MARKED deferral. The critique record is unchanged:
+every finding from all four critique rounds remains folded or
+independently judged sound; this revision adds specification, not
+new mechanism.
 
 Design for the promoted goal `plans/goals/alert-escalation-channel.md`:
 escalations and blocked-on-human states reach Wido IMMEDIATELY over an
@@ -126,7 +131,7 @@ type SendResult struct { Chunks []ChunkOutcome } // ordered
 type Channel interface {
     Send(dest DestinationName, msg Message) (SendResult, error)
     Ready(dest DestinationName) (bool, string)        // no side effects; §6 gate
-    Capabilities(dest DestinationName) AdapterCapabilities // threads, maxMessageBytes
+    Capabilities(dest DestinationName) AdapterCapabilities // fields defined in §14.2
 }
 ```
 
@@ -350,10 +355,10 @@ law:
    pre-send in-memory snapshot is dead at this point and must not be
    saved, in whole or in part, except for the receipt values below.
 2. Locate the stamped attempt in the RELOADED episode by sequence
-   number and sender stamp. If it is absent or no longer PENDING,
-   REFUSE the completion (journal the refusal as a transport-phase
-   defect, matching the shipped "attempt changed before completion"
-   error); never create a substitute attempt.
+   number and sender stamp (stamp fields and matching rule in
+   §11a.1). If it is absent, no longer PENDING, or bears a foreign
+   stamp, REFUSE the completion and journal the refusal to the
+   refusal journal of §11a.1; never create a substitute attempt.
 3. Merge ONLY these fields into the reloaded episode: the stamped
    attempt's `CompletedAt`, `Result`, sanitized `Problem`, and
    `MessageRef`; then derive `TransportResult` and `SubmittedVia`
@@ -466,7 +471,7 @@ the cursor advances using `ChunkOutcome.Span`.
   truncated with a tail naming the episode id. One alert, one chunk.
 - A digest batch composes at most `channel.digest.batch-max-bytes`
   of entries and carries their `Spans`. When the destination's
-  declared `maxMessageBytes` is smaller, the CHANNEL LAYER (§2's
+  declared message-size limits (§14.2) are smaller, the CHANNEL LAYER (§2's
   concrete package — not the adapter, not the caller) splits Body on
   span boundaries into sequential submissions in the same
   conversation, calling `AdapterSend` per piece, and returns every
@@ -558,6 +563,242 @@ slice, behind `channel.gate`, strictly after queue retirement.)
 9. **Bridge destinations**: `seat-<id>` outbound; the receive half
    proceeds under seat-mutual-awareness's design per §2b.
 
+## 11a. Slice-1 mechanical specification (revision 6)
+
+The Sol implementer gap-stopped slice 1 with seven gaps — places the
+design referenced something without mechanically defining it. Each
+subsection below closes one gap with exact fields, persisted
+representations, and behavior; the numbering 11a.N answers gap N of
+the gap-stop. Where slice 1 needs less than the full mechanism, the
+slice-1 minimum is stated and the remainder carries a MARKED deferral
+to its owning slice.
+
+### 11a.1 The sender stamp and the refusal journal
+
+**Sender identity.** The transport phase's identity is the sender
+PROCESS, probed from itself with the same kernel prober the
+acknowledgment verb already uses (`identity.KernelProber{}.Probe` on
+the sender's own process id): the pair (process id, process start
+time in epoch seconds) that the census and `AlertInvoker` already
+treat as a process identity.
+
+**Persisted stamp.** Three additive fields on `AlertAttempt` (episode
+schema stays 1; absent fields read as zero):
+
+```
+senderPid          int64  // stamping process id
+senderPidStartedAt int64  // its start time, epoch seconds
+stampedAt          string // RFC 3339 UTC
+```
+
+**Stamping rule.** Under the alert lock, the flock-holding sender
+stamps every due PENDING attempt it is about to send by writing those
+three fields and saving the episode. A PENDING attempt bearing a
+FOREIGN stamp is a dead sender's (the sender flock is held
+exclusively and released by the kernel at process death, so no other
+stamper can be alive); the holder RESTAMPS it with its own identity
+and proceeds — this is the crash-gap reuse, now observable in the
+journal. Matching at completion means: same `senderPid` AND same
+`senderPidStartedAt` as the completing process.
+
+**The refusal journal.** A refused completion (§5a step 2: attempt
+absent, not PENDING, or stamp mismatch) appends one line to
+`artifacts/agents/steward/alerts-refusals.ndjson` — newline-delimited
+JSON, one object per line, written under the alert lock with the
+read-append-rewrite atomic pattern the narration file already uses,
+capped at the newest 1000 lines (`alertRefusalCapLines = 1000`).
+Line schema:
+
+```
+{"schema":1,"at":"<RFC3339 UTC>","episodeId":"...",
+ "attemptSequence":N,
+ "reason":"attempt-missing"|"attempt-not-pending"|"stamp-mismatch",
+ "senderPid":N,"senderPidStartedAt":N,"details":"<sanitized>"}
+```
+
+After journaling a refusal the sender writes nothing else to that
+episode in the same pass. The refusal file is evidence, not a queue:
+nothing consumes it, and the undelivered-alert floor (11a.5) already
+surfaces the stranded state because the episode remains
+not-SUBMITTED.
+
+### 11a.2 The five contract types, exactly
+
+```
+type MessageClass string
+// Valid values exactly: "alert", "digest", "bridge".
+// Slice 1 uses only "alert"; any other value is caller misuse
+// (11a.3). "digest" activates in slice 2, "bridge" in slice 9.
+
+type ContentSpan struct {
+    Start int64 // inclusive byte offset into the digest register
+    End   int64 // exclusive; 0 <= Start <= End
+}
+// Slice-1 minimum: alerts carry no spans; ChunkOutcome.Span is the
+// zero value. Real spans are owned by slices 2–3 (MARKED deferral).
+
+type AdapterCapabilities struct {
+    Threads         bool
+    Receive         bool
+    MaxMessageChars int // Unicode code points; 0 = no character limit
+    MaxMessageBytes int // UTF-8 bytes;         0 = no byte limit
+}
+// Two limit fields because providers count differently (Telegram
+// counts characters, byte-oriented transports count bytes). The
+// channel layer enforces every nonzero limit; characters are counted
+// as Unicode code points of the message text after UTF-8 decoding.
+
+type DestinationConfig struct {
+    Name     DestinationName
+    Adapter  string            // registry name
+    Settings map[string]string // non-secret settings, committed keys allowed
+    Secrets  map[string]string // resolved ONLY from env/.local (§10)
+}
+// A setting is a Secret iff its name is in the fixed list
+// secretSettingNames = {"bot-token","webhook-url","smtp-password",
+// "api-token"}; everything else is a Setting.
+
+type ConversationState struct {
+    First  MessageRef
+    Latest MessageRef
+}
+// Slice-1 minimum: always the zero value (the conversation store is
+// slice 4, MARKED deferral); every adapter must accept the zero
+// value and send unthreaded/unlinked.
+```
+
+### 11a.3 The unconfigured-send outcome law
+
+Two disjoint failure surfaces, so every alert-sender invocation has
+exactly one journalable outcome per tried destination:
+
+- **Caller misuse** — unknown destination name (no
+  `channel.destination.<name>.*` key and no 11a.4 synthesis applies),
+  invalid `MessageClass`, an empty required compose field, or a
+  message exceeding the destination's declared limits (chunking is
+  dormant in slice 1) — returns a TOP-LEVEL typed error
+  (`ErrInvalidSend`) and an empty `SendResult`. The alert sender
+  journals it as one `AlertAttempt` with `Result=TRANSPORT_FAILED`,
+  `Channel=<the destination name it tried>`, and `Problem` prefixed
+  `"send-refused: "`.
+- **Unconfigured destination** — the name resolves but the adapter
+  is unset, a required setting or secret is missing, or a secret was
+  found only in the committed file (§10) — is NOT a top-level error:
+  `Send` returns nil error and `SendResult{Chunks:[exactly one
+  ChunkOutcome]}` whose `Err` is `ErrUnconfigured` and whose `Ref` is
+  zero. The sender journals it as `Result=TRANSPORT_FAILED` with
+  `Problem` prefixed `"unconfigured: "`.
+
+No new persisted result value exists: the episode-store vocabulary
+stays PENDING/TRANSPORT_SUBMITTED/TRANSPORT_FAILED, and the
+unconfigured/refused distinction lives in the machine-checkable
+problem prefix. The fallback destination is then tried as its own
+attempt under the same law. Transport failures after submission
+begins arrive per `ChunkOutcome` as already specified (§2).
+
+### 11a.4 The implicit destination, without touching legacy bytes
+
+The channel layer implements its OWN `command` and `desktop` adapters
+inside `internal/channel` — it never calls, wraps, or receives an
+injected `notify.go` transport, and `notify.go` plus the legacy queue
+remain byte-for-byte as shipped, serving their existing callers and
+the legacy launch gate. The channel's `command` adapter runs the
+value of setting `exec` via `/bin/sh -c` with the composed text in
+environment variable `STEWARD_MESSAGE` and the class in
+`STEWARD_CLASS`; zero exit is submission (`MessageRef` zero). The
+`desktop` adapter runs the `osascript` notification on darwin and
+returns `ErrUnconfigured` elsewhere.
+
+Implicit synthesis, exact: when `channel.alert.destination` is UNSET,
+the channel layer synthesizes, in order:
+
+1. If the git-config key `metasystem.steward.notify-command` is
+   nonempty: destination `local-command`, adapter `command`, setting
+   `exec` = that value (READ-only reuse of the legacy key; the legacy
+   code path is not invoked).
+2. Else, on darwin: destination `local-desktop`, adapter `desktop`.
+3. Else: the alert destination is unconfigured (11a.3).
+
+`channel.alert.fallback-destination` defaults to `local-desktop` and
+resolves through the same synthesis. An EXPLICIT
+`channel.destination.local-command.*` or `.local-desktop.*` block
+overrides the synthesized one key-by-key.
+
+### 11a.5 Undelivered counting, exactly
+
+An episode is UNDELIVERED iff ALL hold:
+
+- `Cleared` is false;
+- `Acknowledged` is false (an acknowledged alert reached a human by
+  stronger evidence than any transport receipt);
+- `TransportResult` is not `TRANSPORT_SUBMITTED` (so PENDING and
+  TRANSPORT_FAILED both count, including an in-flight stamped
+  attempt);
+- `len(Attempts) >= 1` (a held episode that never reached the alert
+  boundary is silent by design and does not count).
+
+Age runs from the FIRST attempt's `AttemptedAt` (the moment delivery
+first became due). `M = floor(minutes since the earliest qualifying
+first-attempt time)`, an integer. The health verdict line appends,
+byte-exactly, `; N alert(s) undelivered, oldest M minute(s)` — the
+literal strings `alert(s)` and `minute(s)`, no plural logic. When
+N would be 0, NOTHING is appended: the line is byte-identical to
+today's, so quiet narration diffs stay quiet. When the episode store
+cannot be read, the line instead appends `; alert delivery state
+unreadable: <sanitized error>` and never fabricates a zero.
+
+### 11a.6 The health alert's three fields
+
+The health producer persists only its precomposed verdict line; the
+three-field alert is composed AT SEND TIME, so no persisted schema
+changes:
+
+- `Happened` = the episode's stored `Message` (the health verdict
+  line), verbatim.
+- `Asked` = the fixed string `Check this repository's health and
+  repair or clear the failing component.`
+- `Answer` = the fixed string `metasystem health --repo <repository
+  path>` with the repository's absolute path substituted — a verb
+  that exists today.
+
+The acknowledgment line is appended by the composer as already
+specified (§6). Richer per-verdict asks are lawful later precisely
+because composition is send-time; any such enrichment is a design
+change, not an implementer choice (MARKED deferral, unowned).
+
+### 11a.7 The Telegram seam, exactly
+
+- **Request**: HTTP POST to `<base-url>/bot<bot-token>/sendMessage`,
+  `Content-Type: application/json`, body exactly
+  `{"chat_id": <chat-id setting as a JSON string>, "text": <composed
+  message as a JSON string>}`. No `parse_mode` (plain text; no
+  entity escaping rules exist to get wrong).
+- **Base URL**: non-secret setting `base-url`, default
+  `https://api.telegram.org`. FAKE-ENDPOINT INJECTION is exactly
+  this setting: tests point `base-url` at a local test server;
+  no other injection seam exists.
+- **Response validation**: submission succeeded iff HTTP status is
+  200 AND the body is JSON with `"ok": true` AND
+  `result.message_id` is present as an integer. `MessageRef.ID` is
+  that integer's decimal string; `ThreadID` is empty. Anything else
+  is `ErrSendFailed`; its sanitized problem carries the HTTP status
+  and, when present, the response `description` truncated to 200
+  bytes. The adapter NEVER places the request URL in any error — the
+  URL embeds the token (§10's redaction is the second line of
+  defense, not the first).
+- **Timeout ownership**: the CHANNEL LAYER wraps every `AdapterSend`
+  in a context bounded by the existing 15-second notify timeout;
+  adapters set no timeout of their own and must honor context
+  cancellation.
+- **Capability**: `AdapterCapabilities{Threads: false, Receive:
+  false, MaxMessageChars: 4096, MaxMessageBytes: 0}` — Telegram's
+  limit is character-based, which the 11a.2 two-field shape now
+  expresses without ambiguity. Slice-1 guarantee: the compose-side
+  alert cap of 1500 bytes bounds the text at 1500 code points, under
+  4096; a message that nevertheless exceeds a declared limit is
+  caller misuse per 11a.3 (never silent truncation at the channel
+  layer — truncation is compose-side only, §9).
+
 ## 12. Finding dispositions — all rounds, honestly
 
 Round-2 fold-fidelity correction: revision 2's table marked
@@ -584,26 +825,34 @@ corrected record:
 | Round 3: receive-half reservation; multipart receipts | Judged SOUND by the round-3 critic; unchanged. |
 | AC4-EMAIL-TRIM-BOUNDARY-001 | Folded, §3a: the trimming boundary is the fixed design constant `emailReferencesMaxBytes = 8192` bytes of unfolded References value, honestly attributed to this design (RFC 5322 §2.2.3 limits physical lines only, handled by folding, and §3.6.4 specifies no trimming); boundary behavior is deterministic (drop position-2 entries until the value fits, keeping root and the most recent contiguous suffix; parent-only in the pathological case) and a long-chain fixture is required in the email adapter's provider tests. |
 | Round 4: §5a merge law and every other line | Judged SOUND by the round-4 critic; unchanged. NO FINDING REMAINS OPEN across all four rounds. |
+| Sol implementer gap-stop (seven gaps, slice 1) | Folded, §11a: gap 1 → 11a.1 (sender stamp fields and refusal journal), gap 2 → 11a.2 (the five contract types), gap 3 → 11a.3 (unconfigured-send outcome law), gap 4 → 11a.4 (own command/desktop adapters plus implicit-destination synthesis, legacy bytes untouched), gap 5 → 11a.5 (undelivered counting and the unreadable-store line), gap 6 → 11a.6 (health alert three-field mapping with a real answering verb), gap 7 → 11a.7 (Telegram request/validation/timeout/fake-endpoint/capability). A gap-stop is correct delegate behavior; these were design debts, not implementer questions. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 5)
+## 13. Self-grade (R-24-m1, refreshed for revision 6)
 
-- **Confidence:** 0.8. Four critique rounds have converged (eleven
-  findings, then five, three, one, zero): every law an implementer
-  must code is now stated with a testable invariant or a named
-  constant, and the final round judged all but one line sound before
-  this revision bounded that line.
-- **Weakest claim:** the §5a refusal branch — when the reloaded
-  attempt is absent or no longer PENDING the completion is refused
-  and journaled as a defect, but the design does not enumerate every
-  path that could legitimately produce that state (a concurrent
-  operator repair, a future migration); a refusal that fires on a
-  lawful write would strand a real receipt, and only the
-  implementation's fixtures will show whether the enumeration is
-  complete. Second-weakest: the 8192-byte References cap is a
-  conservative constant chosen for uniformity, not derived from any
-  measured server limit; a mail path with a smaller header-section
-  ceiling would truncate downstream of this design's control, which
-  the long-chain fixture cannot detect.
+- **Confidence:** 0.78. The critique record converged to zero open
+  findings, and the gap-stop's seven implementability debts are now
+  answered with exact fields, schemas, and laws; the slight drop
+  from revision 5 reflects that §11a is a large body of NEW exact
+  specification written in one pass, which the next implementer
+  attempt — not a critic — will test.
+- **Weakest claim:** the §11a.1 stamp-and-restamp rule — it derives
+  "a foreign stamp on a PENDING attempt belongs to a dead sender"
+  from the sender flock's exclusivity, which holds only while every
+  sender honors the flock discipline; a code path that sends without
+  the flock (a future manual verb, a test harness shortcut) would
+  make restamping a live sender's attempt possible, and nothing in
+  the persisted state can detect that violation. Second-weakest: the
+  §5a refusal-branch enumeration, unchanged from revision 5 — its
+  completeness is proven only by the implementation's fixtures.
+- **Reject condition:** reject this revision if the implementer's
+  next attempt still gap-stops on slice 1 — that would mean §11a's
+  specification level is systematically short of mechanical, and the
+  design should then be split into a separate implementation
+  specification document rather than grown further; or if reading
+  the legacy git-config notify key from the channel layer (11a.4)
+  is ruled to violate the byte-for-byte legacy constraint even as a
+  read-only reuse, which removes the implicit destination and makes
+  an unset alert destination simply unconfigured.
 - **Reject condition:** reject this revision if the completion-merge
   invariant cannot be held as one critical section on the actual
   episode file layout (for example if a future store shards attempts
