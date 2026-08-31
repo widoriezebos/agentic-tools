@@ -60,7 +60,7 @@ Intent remains answerable to evidence. The authorized person can be wrong about 
 
 This is a decision within the reviewer's recorded permission, and the releaser may not ignore it.
 
-Chapter 6 defines the evidentiary triggers that begin human review and treats a missed trigger as a defect; this chapter defines what the reviewer may do once review or appeal begins. An authorized human reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance. The authorization states what the reviewer controls; it grants no general right to rewrite intent or enforced rules.
+Chapter 6 defines when human review must begin and treats skipping it as a defect; this chapter defines what the reviewer may do once review or appeal begins. An authorized human reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance. The authorization states what the reviewer controls; it grants no general right to rewrite intent or enforced rules.
 
 The reviewer's identity, decision, reasons and accountability remain with the record. A bare approval cannot explain which risk was accepted; an unexplained refusal cannot be distinguished from preference or delay. "A human reviewed it" is not an accountable safety claim.
 
