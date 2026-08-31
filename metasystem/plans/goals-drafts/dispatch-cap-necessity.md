@@ -22,5 +22,12 @@ reservation caps, demoting the cap to pure fail-stop? Interacts with
 R-13 (structured limits are the only budget law), R-17 (slice-norm
 governs capMin), and the stop-loss machinery.
 
+Third specimen, same day (records/misc/idle-loss-2026-08-31.md): m2's
+Fable critique could not be admitted because every delegate job
+reserves a flat 120 minutes regardless of size against a 210-minute
+pool — the budget ask that froze m2's seat for four hours existed ONLY
+because of the flat reservation. The cap question is now load-bearing
+for the incident's root-cause list, not a hygiene nicety.
+
 Status: draft awaiting Wido's word (R-2: design-bearing, touches budget
 law). Not opened as a goal.
