@@ -52,9 +52,6 @@ func TestRuntimeVerbContract(t *testing.T) {
 		{"instruction-file", runRuntimeInstructionFile, []string{"claude"}, 0, "CLAUDE.md\n"},
 		{"session-env", runRuntimeSessionEnv, []string{"devin"}, 0, "DEVIN_PROJECT_DIR\n"},
 		{"session-env absent", runRuntimeSessionEnv, []string{"codex"}, 1, ""},
-		{"config-identity-filter", runRuntimeConfigIdentityFilter, []string{"claude"}, 0, "claude-config-filter.v1.json\n"},
-		{"config-identity-filter absent", runRuntimeConfigIdentityFilter, []string{"fake"}, 1, ""},
-		{"config-identity-filter unknown", runRuntimeConfigIdentityFilter, []string{"nope"}, 1, ""},
 	}
 	for _, row := range rows {
 		t.Run(strings.ReplaceAll(row.name, " ", "-"), func(t *testing.T) {

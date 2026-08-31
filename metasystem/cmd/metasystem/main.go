@@ -316,7 +316,6 @@ func families() []family {
 				{"self-check", "a runtime's live self-check vendored marker", runRuntimeSelfCheck},
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
 				{"session-env", "a runtime's project-dir environment variable", runRuntimeSessionEnv},
-				{"config-identity-filter", "a runtime's config identity filter filename", runRuntimeConfigIdentityFilter},
 				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
 			},
 		},

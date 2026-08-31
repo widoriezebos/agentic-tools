@@ -73,9 +73,6 @@ type Declaration struct {
 	// SelfCheck declares the live repository self-check (claude only
 	// today); nil when the runtime has none.
 	SelfCheck *LiveSelfCheck
-	// ConfigIdentityFilter is the scripts/agents/adapters filter
-	// filename config identity hashes ("" when none — fake).
-	ConfigIdentityFilter string
 	// ExpectedEnvelopeEnforcement is the static declaration the suite
 	// asserts against the adapter's snapshot shape, over exactly
 	// EnforcementFields. Nil for fake, whose declaration is
@@ -172,7 +169,6 @@ var declarations = []Declaration{
 		InstructionFile:          "AGENTS.md",
 		RegistrationDirs:         []string{".agents/skills"},
 		ShippedEnforcementConfig: "codex-hooks.json",
-		ConfigIdentityFilter:     "codex-config-filter.v1.json",
 		ExpectedEnvelopeEnforcement: map[string]Enforcement{
 			"writeRoots": Mapped, "readRoots": NotEnforced, "network": Mapped,
 		},
@@ -191,7 +187,6 @@ var declarations = []Declaration{
 		InstructionFile:          "AGENTS.md",
 		RegistrationDirs:         []string{".agents/skills", ".devin/skills", ".devin/agents"},
 		ShippedEnforcementConfig: "devin-hooks.json",
-		ConfigIdentityFilter:     "devin-config-filter.v1.json",
 		// Measured truth, not a weakening: devin has been observed
 		// writing and reading outside
 		// the declared roots.
@@ -229,7 +224,6 @@ var declarations = []Declaration{
 		RegistrationDirs:         []string{".claude/skills", ".claude/agents"},
 		ShippedEnforcementConfig: "claude-code-hooks.json",
 		SelfCheck:                &LiveSelfCheck{VendoredMarker: "$CLAUDE_PROJECT_DIR/metasystem"},
-		ConfigIdentityFilter:     "claude-config-filter.v1.json",
 		ExpectedEnvelopeEnforcement: map[string]Enforcement{
 			"writeRoots": Mapped, "readRoots": Mapped, "network": Mapped,
 		},
@@ -440,7 +434,7 @@ func Validate() []string {
 				add("%s: registration dir %q is not clean-relative", d.Name, relative)
 			}
 		}
-		for _, emitted := range []string{d.ShippedEnforcementConfig, d.ConfigIdentityFilter, d.InstructionFile} {
+		for _, emitted := range []string{d.ShippedEnforcementConfig, d.InstructionFile} {
 			if emitted != "" && !cleanRelative(emitted) {
 				add("%s: declared path %q is not clean-relative", d.Name, emitted)
 			}

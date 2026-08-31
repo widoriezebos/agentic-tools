@@ -25,15 +25,14 @@ func runConfigIdentity(args []string) int {
 	flags := flag.NewFlagSet("config identity", flag.ContinueOnError)
 	runtime := flags.String("runtime", "", "runtime name")
 	version := flags.String("version", "", "CLI version")
-	filter := flags.String("filter", "", "path to the version-gated key filter")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *runtime == "" || *version == "" || *filter == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem config identity --runtime R --version V --filter F [sources...]")
+	if *runtime == "" || *version == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem config identity --runtime R --version V [sources...]")
 		return 2
 	}
-	identity, err := config.BuildConfigIdentity(*runtime, *version, *filter, flags.Args())
+	identity, err := config.BuildConfigIdentity(*runtime, *version, flags.Args())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

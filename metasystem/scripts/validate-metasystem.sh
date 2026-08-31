@@ -999,9 +999,6 @@ for link in \
   scripts/agents/schemas/wall-evidence.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
-  scripts/agents/adapters/codex-config-filter.v1.json \
-  scripts/agents/adapters/claude-config-filter.v1.json \
-  scripts/agents/adapters/devin-config-filter.v1.json \
   scripts/agents/conformance-fixtures.sh \
   scripts/agents/instruction-bearing-paths.txt \
   scripts/assert-return-complete.sh; do
