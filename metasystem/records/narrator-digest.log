@@ -124,13 +124,10 @@ Cost: During 2026-08-03 through 2026-08-10 (end excluded), the governed run coun
 Run outcomes during that window were governed green 0, red 0, ended unknown 0, and launch failed 0; retained tracked green 0, red 0, ended unknown 0, and launch failed 0.
 Git landing count was 267, touching 988 files with 61578 text insertions; 0 binary files had no insertion count.
 Cost: During 2026-08-10 through 2026-08-17 (end excluded), the governed run count was 0 with 0 minutes spent, and the retained tracked run count was 0 with 0 minutes spent.
-Run outcomes during that window were governed green 0, red 0, ended unknown 0, and launch failed 0; retained tracked green 0, red 0, ended unknown 0, and launch failed 0.
 Git landing count was 656, touching 2657 files with 147678 text insertions; 0 binary files had no insertion count.
 Cost: During 2026-08-17 through 2026-08-24 (end excluded), the governed run count was 0 with 0 minutes spent, and the retained tracked run count was 0 with 0 minutes spent.
-Run outcomes during that window were governed green 0, red 0, ended unknown 0, and launch failed 0; retained tracked green 0, red 0, ended unknown 0, and launch failed 0.
 Git landing count was 467, touching 1801 files with 69388 text insertions; 0 binary files had no insertion count.
 Cost: During 2026-08-24 through 2026-08-31 (end excluded), the governed run count was 0 with 0 minutes spent, and the retained tracked run count was 0 with 0 minutes spent.
-Run outcomes during that window were governed green 0, red 0, ended unknown 0, and launch failed 0; retained tracked green 0, red 0, ended unknown 0, and launch failed 0.
 Git landing count was 813, touching 3052 files with 137194 text insertions; 0 binary files had no insertion count.
 Limitation — Risk-class evidence: Current durable records carry landing counts and size but no landing risk class, so this signal reports spend versus outcome and makes no risk verdict. Enrichment: Record a risk class with each landing.
 Limitation — Threshold history: Configuration exposes a current scalar validation-weight threshold, but durable run and landing records do not preserve which threshold was effective in each window, so the brief makes no threshold comparison. Enrichment: Record the effective threshold value and its source with each weight generation.
@@ -155,7 +152,6 @@ Limitation — Goal-verb coverage: Only exact open, edit, claim, set-budget, and
 Limitation — Goal-history retention: The signal reads retained live, concluded, and legacy goal files; pruning can remove concluded records, so this is not guaranteed all-time activity. Enrichment: Retain an append-only goal-event journal independent of pruned goal files.
 Limitation — Register-edit classification: Registers and receipts both resolve under the broad memory/ record root, so register edits cannot be separated from other record-only landings and remain inside that count. Enrichment: Publish a dedicated register path or a durable typed landing class that distinguishes register edits from other records.
 Limitation — Cross-source attribution: A matching Goal-Transaction trailer prevents a counted goal operation's carrier commit from being counted twice. A goal-record change without a matching trailer cannot be joined, so a mixed product commit can still contribute both a goal event and a product landing. Enrichment: Require every goal-record mutation to retain its goal operation identifier in the landing commit.
-Limitation — Window resolution: Delivery follows the repository's counselor cadence, while the signal windows remain completed Coordinated Universal Time calendar weeks and omit the active partial week and empty older weeks. Enrichment: Record finer-grained durable evidence before producing windows shorter than one week.
 Limitation — Goal-carrier reconciliation: 60 Git landings carried Goal-Transaction identifiers that did not match a classified retained goal operation; those landings were classified by path instead of being silently discarded. Enrichment: Restore the matching retained goal history or add a closed activity class for the operation's verb.
 2026-08-31T10:32:06Z HIGHLIGHT — A landing moved the repository storyline to commit bf2d3cfa33e5. (source: commit bf2d3cfa33e5bddeb47f1dcb65fffedf5a861db9)
 2026-08-31T10:32:06Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-bf2d3cfa33e5bddeb47f1dcb65fffedf5a861db9)
@@ -177,3 +173,8 @@ Limitation — Goal-carrier reconciliation: 60 Git landings carried Goal-Transac
 2026-08-31T14:07:32Z HIGHLIGHT — A landing moved the repository storyline to commit f20a75a69df3. (source: commit f20a75a69df3b004d7ede1ac47499f9f05dcb563)
 2026-08-31T14:17:51Z HIGHLIGHT — A landing moved the repository storyline to commit 4a5ef499b620. (source: commit 4a5ef499b6202131f3d44bfc106326c2d49bc982)
 2026-08-31T14:28:09Z HIGHLIGHT — A landing moved the repository storyline to commit 2eb506c11162. (source: commit 2eb506c1116221b0bca596d6154c8d18efb7d15f)
+2026-08-31T10:54:20Z HIGHLIGHT — A landing moved the repository storyline to commit ff49bb17ea91. (source: commit ff49bb17ea911247f98c9379766c5f720f560582)
+2026-08-31T10:54:20Z LOWLIGHT — A budget breach-stop for goal revision 0 reached failed. (source: episode breach--r0-failed)
+2026-08-31T10:54:20Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-ff49bb17ea911247f98c9379766c5f720f560582)
+2026-08-31T17:25:43Z HIGHLIGHT — A landing moved the repository storyline to commit cca66e443cea. (source: commit cca66e443ceaa56297c6db7847806ac60bd60627)
+2026-08-31T17:25:43Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-cca66e443ceaa56297c6db7847806ac60bd60627)
