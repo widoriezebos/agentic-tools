@@ -89,6 +89,82 @@ func TestRulingSweepObservesNamedEventAndFlagsUnobservableEvent(t *testing.T) {
 	}
 }
 
+func TestRulingSweepSurfacesRegisterDefectsBeforeDueReviews(t *testing.T) {
+	root := t.TempDir()
+	writeRulingRegister(t, root, []string{
+		"| R-ownerless | 2026-08-30 | decision | evidence | | class=temporary due=2026-08-29 |",
+		"| R-malformed | 2026-08-30 | decision | evidence | Wido | class=temporary whenever=soon |",
+		"| R-due | 2026-08-30 | decision | evidence | Wido | class=temporary due=2026-08-29 |",
+	})
+	if err := sweepRulingReviews(root, time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("register content defects degraded the sweep: %v", err)
+	}
+	data, err := os.ReadFile(narratordigest.Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	ownerless := strings.Index(text, "R-ownerless defect=no accountable owner choice=adopt|withdraw")
+	malformed := strings.Index(text, "R-malformed defect=unknown review condition key")
+	due := strings.Index(text, "R-due owner=Wido")
+	if ownerless < 0 || malformed < 0 || due < 0 || ownerless > due || malformed > due {
+		t.Fatalf("defects were not named before the due review with the prescribed ownerless choice: %s", text)
+	}
+}
+
+func TestRulingSweepDoesNotSurfaceUnobservableEventBeforeFutureDueDate(t *testing.T) {
+	root := t.TempDir()
+	writeRulingRegister(t, root, []string{
+		"| R-future | 2026-08-30 | decision | evidence | Wido | class=assumption-dependent due=2026-09-06 event=unknown-event |",
+	})
+	if err := sweepRulingReviews(root, time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(narratordigest.Path(root)); !os.IsNotExist(err) {
+		t.Fatalf("future review with an unobservable event entered the digest: data=%s err=%v", data, err)
+	}
+}
+
+func TestRulingSweepSurfacesObservedEventBeforeFutureDueDate(t *testing.T) {
+	root := t.TempDir()
+	writeRulingRegister(t, root, []string{
+		"| R-future | 2026-08-30 | decision | evidence | Wido | class=assumption-dependent due=2026-09-06 event=superseded-by-r22-m1 |",
+		"| R-22-m1 | 2026-08-30 | decision | evidence | Wido | class=temporary due=2026-09-07 |",
+	})
+	if err := sweepRulingReviews(root, time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(narratordigest.Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "R-future") || !strings.Contains(text, "event-observed=superseded-by-r22-m1") {
+		t.Fatalf("mechanically observed event did not override the future due date: %s", text)
+	}
+	if strings.Contains(text, "R-22-m1 owner=") {
+		t.Fatalf("the future backstop row itself was surfaced early: %s", text)
+	}
+}
+
+func TestRulingSweepLabelsMalformedColumnByRegisterRowPosition(t *testing.T) {
+	root := t.TempDir()
+	writeRulingRegister(t, root, []string{
+		"| R-good | 2026-08-30 | decision | evidence | Wido | class=temporary due=2026-09-07 |",
+		"| R-untrusted | too | few | columns |",
+	})
+	if err := sweepRulingReviews(root, time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("malformed column content degraded the sweep: %v", err)
+	}
+	data, err := os.ReadFile(narratordigest.Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(data); !strings.Contains(text, "row=2 defect=wrong column count: got 4, want 6") {
+		t.Fatalf("malformed row did not use its register-row position and column count: %s", text)
+	}
+}
+
 func TestRulingRegisterHasOwnersAndOnlyTypedScheduledReviews(t *testing.T) {
 	reviews, err := readRulingReviews(filepath.Join("..", ".."))
 	if err != nil {

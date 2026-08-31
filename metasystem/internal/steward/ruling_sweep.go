@@ -31,6 +31,12 @@ type dueRulingReview struct {
 	Evidence string
 }
 
+type rulingReviewDefect struct {
+	Label     string
+	Reason    string
+	Ownerless bool
+}
+
 type rulingSweepState struct {
 	Schema       int    `json:"schema"`
 	AfterID      string `json:"afterId,omitempty"`
@@ -71,39 +77,56 @@ func parseReviewCondition(value string) (class, due, event string, err error) {
 	return class, due, event, nil
 }
 
-func readRulingReviews(repoRoot string) ([]rulingReview, error) {
+func readRulingReviewRegister(repoRoot string) ([]rulingReview, []rulingReviewDefect, error) {
 	file, err := os.Open(filepath.Join(repoRoot, "memory", "rulings.md"))
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
 	var reviews []rulingReview
+	var defects []rulingReviewDefect
 	scanner := bufio.NewScanner(file)
+	rowPosition := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "| R-") {
 			continue
 		}
+		rowPosition++
 		fields := strings.Split(line, "|")
 		if len(fields) != 8 {
-			return nil, fmt.Errorf("ruling row has %d columns, want 6", len(fields)-2)
+			defects = append(defects, rulingReviewDefect{
+				Label:  fmt.Sprintf("row=%d", rowPosition),
+				Reason: fmt.Sprintf("wrong column count: got %d, want 6", len(fields)-2),
+			})
+			continue
 		}
 		id, owner, condition := strings.TrimSpace(fields[1]), strings.TrimSpace(fields[5]), strings.TrimSpace(fields[6])
 		if owner == "" {
-			return nil, fmt.Errorf("ruling %s has no accountable owner", id)
+			defects = append(defects, rulingReviewDefect{Label: id, Reason: "no accountable owner", Ownerless: true})
+			continue
 		}
 		class, due, event, err := parseReviewCondition(condition)
 		if err != nil {
-			return nil, fmt.Errorf("ruling %s: %w", id, err)
+			defects = append(defects, rulingReviewDefect{Label: id, Reason: err.Error()})
+			continue
 		}
 		if class != "" {
 			reviews = append(reviews, rulingReview{ID: id, Owner: owner, Class: class, Due: due, Event: event})
 		}
 	}
-	return reviews, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
+	}
+	return reviews, defects, nil
+}
+
+func readRulingReviews(repoRoot string) ([]rulingReview, error) {
+	reviews, _, err := readRulingReviewRegister(repoRoot)
+	return reviews, err
 }
 
 func rulingSweepPath(repoRoot string) string {
@@ -150,23 +173,23 @@ func saveRulingSweep(repoRoot string, state rulingSweepState) error {
 	return nil
 }
 
-func rulingEventEvidence(repoRoot, event string, reviews []rulingReview) (observed bool, evidence string) {
+func rulingEventEvidence(repoRoot, event string, reviews []rulingReview) (observed bool, evidence string, mechanicallyObservable bool) {
 	switch event {
 	case "first-measured-report-exists", "first-measured-would-have-triggered-report-exists":
 		path := filepath.Join(repoRoot, "artifacts", "agents", "governance", "correlation-policy-a-report.json")
 		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			return true, "event-observed=" + event
+			return true, "event-observed=" + event, true
 		}
-		return false, ""
+		return false, "", true
 	case "superseded-by-r22-m1":
 		for _, review := range reviews {
 			if review.ID == "R-22-m1" {
-				return true, "event-observed=" + event
+				return true, "event-observed=" + event, true
 			}
 		}
-		return false, ""
+		return false, "", true
 	default:
-		return true, "needs-attention=event-condition-unobservable:" + event
+		return true, "needs-attention=event-condition-unobservable:" + event, false
 	}
 }
 
@@ -179,7 +202,8 @@ func eligibleRulingReviews(repoRoot string, reviews []rulingReview, now time.Tim
 			continue
 		}
 		if review.Event != "" {
-			if observed, evidence := rulingEventEvidence(repoRoot, review.Event, reviews); observed {
+			observed, evidence, mechanicallyObservable := rulingEventEvidence(repoRoot, review.Event, reviews)
+			if observed && (review.Due == "" || mechanicallyObservable) {
 				due = append(due, dueRulingReview{rulingReview: review, Evidence: evidence})
 			}
 		}
@@ -234,10 +258,44 @@ func dueRulingReviewText(due, shown []dueRulingReview, ceiling int) string {
 	return text
 }
 
+func rulingReviewDefectText(defects []rulingReviewDefect, ceiling int) string {
+	if len(defects) == 0 || ceiling < 1 {
+		return ""
+	}
+	count := len(defects)
+	if count > ceiling {
+		count = ceiling
+	}
+	items := make([]string, count)
+	for index := 0; index < count; index++ {
+		items[index] = fmt.Sprintf("%s defect=%s", defects[index].Label, defects[index].Reason)
+		if defects[index].Ownerless {
+			items[index] += " choice=adopt|withdraw"
+		}
+	}
+	text := strings.Join(items, "; ")
+	if len(defects) > count {
+		text += fmt.Sprintf("; +%d more behind the %d-item attention ceiling", len(defects)-count, ceiling)
+	}
+	return text
+}
+
+func rulingReviewSweepText(defects []rulingReviewDefect, due, shown []dueRulingReview, ceiling int) string {
+	defectText := rulingReviewDefectText(defects, ceiling)
+	dueText := dueRulingReviewText(due, shown, ceiling)
+	if defectText == "" {
+		return dueText
+	}
+	if dueText == "" {
+		return "Ruling review sweep: " + defectText
+	}
+	return "Ruling review sweep: " + defectText + "; " + strings.TrimPrefix(dueText, "Ruling review sweep: ")
+}
+
 // sweepRulingReviews emits at most one digest entry. Rows never acquire their
 // own delivery or notification path.
 func sweepRulingReviews(repoRoot string, now time.Time) error {
-	reviews, err := readRulingReviews(repoRoot)
+	reviews, defects, err := readRulingReviewRegister(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -253,7 +311,7 @@ func sweepRulingReviews(repoRoot string, now time.Time) error {
 	}
 	due := eligibleRulingReviews(repoRoot, reviews, now)
 	shown := rotatedRulingReviews(due, state.AfterID, rulingDigestCeiling)
-	text := dueRulingReviewText(due, shown, rulingDigestCeiling)
+	text := rulingReviewSweepText(defects, due, shown, rulingDigestCeiling)
 	if text == "" {
 		return nil
 	}
@@ -262,7 +320,9 @@ func sweepRulingReviews(repoRoot string, now time.Time) error {
 		SourceType: "ruling-review-sweep", SourceID: sourceID}}, now); err != nil {
 		return err
 	}
-	state.AfterID = shown[len(shown)-1].ID
+	if len(shown) > 0 {
+		state.AfterID = shown[len(shown)-1].ID
+	}
 	state.LastDigestAt = now.UTC().Format(time.RFC3339)
 	return saveRulingSweep(repoRoot, state)
 }
