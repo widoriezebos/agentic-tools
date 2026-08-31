@@ -8,22 +8,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
 
-// BuildConfigIdentity produces one runtime adapter's versioned, canonical
-// configuration identity — a stable fingerprint of the configuration that
-// actually affects behavior. Volatile keys named by a version-gated filter are
-// excluded so a cosmetic change does not read as a capability change. Sources
-// are merged in order (a later source overrides an earlier key), missing
-// sources are skipped, and an unparsable existing source is a hard error.
-func BuildConfigIdentity(runtime, version, filterPath string, sourcePaths []string) (map[string]any, error) {
+// BuildConfigIdentity produces one runtime adapter's canonical configuration
+// identity. Sources are merged in order (a later source overrides an earlier
+// key), missing sources are skipped, and an unparsable existing source is a
+// hard error.
+func BuildConfigIdentity(runtime, version string, sourcePaths []string) (map[string]any, error) {
 	flattened := map[string]any{}
 	for _, raw := range sourcePaths {
 		path := expandPath(raw)
@@ -40,25 +36,12 @@ func BuildConfigIdentity(runtime, version, filterPath string, sourcePaths []stri
 		}
 	}
 
-	filteredPaths, warning := loadConfigFilter(filterPath, version)
-	if warning != "" {
-		fmt.Fprintf(os.Stderr, "warning: %s configuration filter %s %s; hashing all canonical configuration keys\n",
-			runtime, filterPath, warning)
-	}
-
-	identity := map[string]any{}
-	for key, value := range flattened {
-		if !excludedKey(key, filteredPaths) {
-			identity[key] = value
-		}
-	}
-
-	encoded, err := canonicalJSON(identity)
+	encoded, err := canonicalJSON(flattened)
 	if err != nil {
 		return nil, err
 	}
 	keyHashes := map[string]any{}
-	for key, value := range identity {
+	for key, value := range flattened {
 		vEncoded, err := canonicalJSON(value)
 		if err != nil {
 			return nil, err
@@ -201,123 +184,4 @@ func sortedKeys(m map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// excludedKey reports whether a flattened key is covered by a filtered path —
-// either the exact key or a table prefix naming its leaves.
-func excludedKey(key string, filteredPaths []string) bool {
-	for _, path := range filteredPaths {
-		if key == path || strings.HasPrefix(key, path+".") {
-			return true
-		}
-	}
-	return false
-}
-
-// loadConfigFilter reads the version-gated exclusion filter, returning the
-// excluded key paths, or a warning (and no exclusions) when the filter is
-// malformed or the version falls outside its declared range.
-func loadConfigFilter(path, version string) (paths []string, warning string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Sprintf("is malformed or unparsable: %v", err)
-	}
-	var filter struct {
-		CLIVersionRange *struct {
-			Min *string `json:"min"`
-			Max *string `json:"max"`
-		} `json:"cliVersionRange"`
-		Keys *[]struct {
-			Path   string `json:"path"`
-			Reason string `json:"reason"`
-			Source string `json:"source"`
-		} `json:"keys"`
-	}
-	// Strict: exactly cliVersionRange and keys.
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil {
-		return nil, fmt.Sprintf("is malformed or unparsable: %v", err)
-	}
-	if len(top) != 2 || top["cliVersionRange"] == nil || top["keys"] == nil {
-		return nil, "is malformed or unparsable: top level must contain exactly cliVersionRange and keys"
-	}
-	if err := json.Unmarshal(data, &filter); err != nil {
-		return nil, fmt.Sprintf("is malformed or unparsable: %v", err)
-	}
-	if filter.CLIVersionRange == nil || filter.CLIVersionRange.Min == nil || filter.CLIVersionRange.Max == nil {
-		return nil, "is malformed or unparsable: cliVersionRange must contain string min and max values"
-	}
-	if filter.Keys == nil {
-		return nil, "is malformed or unparsable: keys must be an array"
-	}
-	for _, entry := range *filter.Keys {
-		if entry.Path == "" || entry.Reason == "" || entry.Source == "" {
-			return nil, "is malformed or unparsable: each key must contain non-empty path, reason, and source strings"
-		}
-		paths = append(paths, entry.Path)
-	}
-	minimum, maximum := *filter.CLIVersionRange.Min, *filter.CLIVersionRange.Max
-	if !versionInRange(version, minimum, maximum) {
-		return nil, fmt.Sprintf("CLI version %s is outside filter range %s through %s", version, minimum, maximum)
-	}
-	return paths, ""
-}
-
-var numericVersionPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*$`)
-
-func numericVersion(value string) []int {
-	if !numericVersionPattern.MatchString(value) {
-		return nil
-	}
-	parts := strings.Split(value, ".")
-	out := make([]int, len(parts))
-	for i, part := range parts {
-		out[i], _ = strconv.Atoi(part)
-	}
-	return out
-}
-
-// versionInRange reports whether version is within [minimum, maximum], where a
-// maximum ending in ".x" is a prefix wildcard (e.g. "5.x" matches any 5.*).
-func versionInRange(version, minimum, maximum string) bool {
-	actual := numericVersion(version)
-	lower := numericVersion(minimum)
-	wildcard := strings.HasSuffix(maximum, ".x")
-	upperText := maximum
-	if wildcard {
-		upperText = maximum[:len(maximum)-2]
-	}
-	upper := numericVersion(upperText)
-	if actual == nil || lower == nil || upper == nil {
-		return false
-	}
-	width := max(len(actual), max(len(lower), len(upper)))
-	if compareVersions(pad(actual, width), pad(lower, width)) < 0 {
-		return false
-	}
-	if wildcard {
-		if len(actual) < len(upper) {
-			return false
-		}
-		return compareVersions(actual[:len(upper)], upper) == 0
-	}
-	return compareVersions(pad(actual, width), pad(upper, width)) <= 0
-}
-
-func pad(v []int, width int) []int {
-	out := make([]int, width)
-	copy(out, v)
-	return out
-}
-
-func compareVersions(a, b []int) int {
-	for i := range a {
-		if a[i] != b[i] {
-			if a[i] < b[i] {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
 }

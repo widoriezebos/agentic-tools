@@ -183,15 +183,6 @@ func runRuntimeSessionEnv(args []string) int {
 		"no session environment declared for "+declaration.Name)
 }
 
-func runRuntimeConfigIdentityFilter(args []string) int {
-	declaration, code := runtimeArg(args, "config-identity-filter")
-	if code != 0 {
-		return code
-	}
-	return singleValue(declaration.ConfigIdentityFilter,
-		"no config identity filter declared for "+declaration.Name)
-}
-
 func runRuntimeRegistration(args []string) int {
 	declaration, code := runtimeArg(args, "registration")
 	if code != 0 {
