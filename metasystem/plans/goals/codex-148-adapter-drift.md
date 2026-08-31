@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Bump the filter range to cover 0.148.x through the lanes (Sol implements, small mechanical change), verifying which canonical keys changed between 0.146 and 0.148; land with a receipt naming the code-mode-host install
 - OpenedAt: 2026-08-31T12:57:44Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=3d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-31T12:57:44Z 4F2MG3NFZ2E4HVTW9VAZ2CHSFG-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=codex-148-adapter-drift
-Integrity: sha256=7252c7710b944c19a5419ca1db6b93379abfad01012128badd4ed165977ecccd
+- 2026-08-31T12:57:44Z V1975H9RWY2PVW2DZ6XKFDMZMY-m0-c5dbf036 set-budget actor=human:Wido targets=codex-148-adapter-drift
+Integrity: sha256=9082a5bca90e5178e7aaa33f2da4fb43a3b67b01d4fd448752acf21a8d3eceed
