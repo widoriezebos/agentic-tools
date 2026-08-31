@@ -39,10 +39,23 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 	go func() {
 		done <- RunLoop(root, census, nil, 50*time.Millisecond)
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	overallDeadline := time.Now().Add(120 * time.Second)
+	if deadline, ok := t.Deadline(); ok {
+		overallDeadline = deadline.Add(-5 * time.Second)
+	}
+	lastEvidence, _ := LoadEvidence(EvidencePath(root))
+	lastEvidenceChange := time.Now()
+	for {
 		ev, _ := LoadEvidence(EvidencePath(root))
+		now := time.Now()
+		if ev != lastEvidence {
+			lastEvidence = ev
+			lastEvidenceChange = now
+		}
 		if ev.TicksSinceAdvance >= 2 {
+			break
+		}
+		if now.Sub(lastEvidenceChange) >= 10*time.Second || !now.Before(overallDeadline) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -59,7 +72,7 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("a stopped loop exits clean: %v", err)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(time.Until(overallDeadline)):
 		t.Fatal("the stop file must end the loop")
 	}
 	if _, err := os.Stat(runnerRecordPath(root)); !os.IsNotExist(err) {

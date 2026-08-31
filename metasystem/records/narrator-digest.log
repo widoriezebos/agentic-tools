@@ -173,3 +173,5 @@ Limitation — Goal-carrier reconciliation: 60 Git landings carried Goal-Transac
 2026-08-31T13:26:30Z LOWLIGHT — The steward escalated: a live worker with no progress for 15 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-bf2d3cfa33e5bddeb47f1dcb65fffedf5a861db9)
 2026-08-31T13:36:45Z LOWLIGHT — The steward escalated: a live worker with no progress for 16 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-bf2d3cfa33e5bddeb47f1dcb65fffedf5a861db9)
 2026-08-31T13:46:59Z LOWLIGHT — The steward escalated: a live worker with no progress for 17 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-bf2d3cfa33e5bddeb47f1dcb65fffedf5a861db9)
+2026-08-31T13:57:14Z HIGHLIGHT — A landing moved the repository storyline to commit 566572b110a0. (source: commit 566572b110a093752f8edad275f7b555a19be68d)
+2026-08-31T14:07:32Z HIGHLIGHT — A landing moved the repository storyline to commit f20a75a69df3. (source: commit f20a75a69df3b004d7ede1ac47499f9f05dcb563)
