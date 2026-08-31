@@ -5,13 +5,10 @@
 - Origin: main
 - Next step: Standing shared process: when weight-check fires, claim, run the governed validation green under the obligation's budget, discharge at the exact green-run boundary (gate weight-discharge), release. First discharge: weight 123/60 over 8 landings since 2026-08-30, under Wido's tuple 2/24h/120m/1 and his LIMITED word (2026-08-31 in-session decision-ask). FIRST DISCHARGE IN PROGRESS: attempt 1 load-killed (watchdog observation gap, goaled); extended under R-32-m2 with fresh epoch (tuple 2/24h/150m/1, obligation r7); attempt 2 (run -c) completed clean of load kills and went red on two wall-clock-patience test failures - steward-tick-load-flake (handed to m3's shelf) and missionrunner-terminate-flake (opened). ONE attempt remains in the 24h window (to ~2026-09-01 12:48Z): rerun after both fixes land, quiet window coordinated with m3.
 - OpenedAt: 2026-08-31T10:47:20Z
-- Revision: 10
-- Budget: elapsedLimit=3d attemptLimit=2 reservedJobMinutesLimit=210 activeJobLimit=1
-- Obligation: revision=10 budgetRevision=9 state=LIMITED owner=Wido authorizedBy=wido authorizedAt=2026-08-31T13:41:18Z authorityOperation=CEQPDNRH476DQEDZD1BQNM5HAY-m2-bc1be9cb reviewPolicy=C reviewOutcome=human-approved effects=authorize-governed-launch,authorize-spend,discharge-obligation authorizedEffects=authorize-governed-launch,authorize-spend,discharge-obligation authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06
-- ObligationAssumptions: recurrence=standing-shared-process platform=darwin/amd64 toolchainIdentity=go1.26.6 surfaceDigest=0eb6243f9c17400cb05c0891367ab3ebae725dc6e1db608344fcc51e606d384e maxActiveJobs=1 timingEnvelopeSeconds=7200 observationSource=run-terminal-record
-- ObligationTriggers: valueJudgment=no reversibility=reversible severeHarm=no unfamiliarApproach=no testDiscrimination=strong correlatedAssumptionRisk=no authorityScopeChange=no destructiveReach=none
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-31T13:40:40Z revision=9
-- StopCapability: generation=9 revision=9 machine=m2 claimEpoch=1 fenceEpoch=0
+- Revision: 11
+- Budget: elapsedLimit=3d attemptLimit=2 reservedJobMinutesLimit=450 activeJobLimit=1
+- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-31T17:43:28Z revision=11
+- StopCapability: generation=11 revision=11 machine=m2 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-31T10:47:20Z H03B8PM6P6FCS5DQND5F7R3MKX-m2-bc1be9cb open actor=m2+mac-coordinator targets=standing-validation
@@ -24,4 +21,5 @@ History:
 - 2026-08-31T12:34:55Z F4TP2H9V7AJFM2XN8A69TGRWMP-m2-bc1be9cb edit actor=m2+mac-coordinator targets=standing-validation
 - 2026-08-31T13:40:40Z 7D9VWANVXM5D4C5NZYGZ3DW2RK-m2-bc1be9cb set-budget actor=human:wido targets=standing-validation
 - 2026-08-31T13:41:18Z CEQPDNRH476DQEDZD1BQNM5HAY-m2-bc1be9cb set-obligation actor=human:wido targets=standing-validation
-Integrity: sha256=ba89fd9b815a243c72877c143c9b7fa06d8f7ee897df7123e9a97b35fcb4644e
+- 2026-08-31T17:43:28Z CR70F83HP822J8TTGVASSQY6GH-m2-bc1be9cb set-budget actor=human:wido targets=standing-validation
+Integrity: sha256=82a68de779aa9c60ee27fdef65db907c9b8386cfa5873651504879e41f64d8da
