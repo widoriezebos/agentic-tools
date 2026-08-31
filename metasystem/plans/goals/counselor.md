@@ -1,15 +1,13 @@
 # counselor
 
-- State: claimed
+- State: queued
 - Intent: The counselor — the third seat: advisory and ambient, about content; it holds the standing model of the gap between what the app is becoming and what the net actually bounds, and speaks to the human in briefs and sittings, never refusals; no pen — proposals flow through the warden lane and the human tier (name and shape ratified by Wido, 2026-08-24)
 - Origin: human
 - Next step: PROGRESS: slice 1 landed 1cdb948; DRIFT-BRIEF SIGNAL LAYER landed 6cbc3e99 (2026-08-30) through the first fully machinery-enforced chain (counselor-drift-s1: Sol built, Fable critiqued at gate-proven maximal, hazard gate closed on terminal-round coverage) - spend-versus-outcome and process-versus-product from durable records, auditable counting rules in the brief, every gap a named limitation with enrichment; two non-material lows recorded in the chain (unparsable end stamps fold to absent; root-resolution error message) ride the next slice. REMAINING: (a) STEWARD CARRIAGE (4h, next, steward seam): the tick renders and delivers the brief on cadence, fail-closed - the coordinator cannot suppress or soften it (the TEETH bindings recorded in this goal's history); (b) sitting + accepted-risk register (6h) with FIVE-WHYS, PATTERN-APPLICABILITY, SELF-APPLICATION, NEAR-MISS AGGREGATION BY CLASS - today's specimens queued: the ruling-enforcement sweep miss, the fixture-blind happy paths, the coordinator conflict-label near-miss; (c) ambient noticings (4h): process-vs-product inversion fires during a stretch, not at the sitting. Teeth binding 2 (warning JOINED at budget-extension decisions) implements with (a); binding 3 (lifecycle) governs its promotion
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 15
+- Revision: 16
 - Arc: app-guardrail-program
 - Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2
-- Claimed: machine=m1 lineage=coordinator at=2026-08-30T14:53:12Z revision=13
-- StopCapability: generation=13 revision=13 machine=m1 claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-08-24T13:49:17Z 6GX63SFRD9E7S38SSPDM4AB1VS-m1-bf243850 open actor=human:wido targets=counselor
@@ -27,4 +25,5 @@ History:
 - 2026-08-30T14:53:12Z 5E2JH3XFVCPFS7VV0JFHCJ839Z-m1-bf243850 claim actor=m1+coordinator targets=counselor
 - 2026-08-30T18:19:48Z 9FHCJVSCDD1WCG6S6RYPZX6CK8-m1-bf243850 edit actor=m1+coordinator targets=counselor
 - 2026-08-30T18:27:04Z Y4QAF48QEQFCX0V65ANBD77J8N-m1-bf243850 edit actor=m1+coordinator targets=counselor
-Integrity: sha256=43e21e3405ca67998f385c65346d755fb6294251748b094bfc3337976c347a5b
+- 2026-08-31T06:11:08Z VX83MAJAZEAWQK8E9N0P7AFFPQ-m1-bf243850 release actor=m1+coordinator targets=counselor
+Integrity: sha256=0772164a53f2dbe3dff8a6389f3df901b9badc28e20c4c007434ec6459d5af54
