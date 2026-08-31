@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: One small slice: add the cleanup handshake from machine/m0's version to the landed test; prove with -race -count=20 under 8x CPU load (the profile that exposed both defects). Under 4h, robustness gain (R-33)
 - OpenedAt: 2026-08-31T19:08:58Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=3 reservedJobMinutesLimit=120 activeJobLimit=1
 
 History:
 - 2026-08-31T19:08:58Z GNN3P2ZYCMZTKRHWPGVWPMGVGS-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=steward-tick-stop-on-failure
-Integrity: sha256=303e3fe57a45fb0957d7d1d87882c2fe778cf99df74bdebf4a766829b3c3c16d
+- 2026-08-31T19:59:35Z 1Y5FJN7Q92K04NVSAGBTJDXSXG-m0-c5dbf036 set-budget actor=human:Wido targets=steward-tick-stop-on-failure
+Integrity: sha256=8b77d665b3c461a373979c787199ae112e92009c96b1b0c88e63a0a9f4f4b3fc
