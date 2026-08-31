@@ -709,11 +709,20 @@ func TestLaunchOwnerReportsEarlyExitAndPublicationFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		options := armingOptions(root)
+		var mkdirErr error
 		options.Command = func(args ...string) (*exec.Cmd, error) {
 			gate := processArgument(args, "--gate")
-			return exec.Command("sh", "-c", `mkdir "$1"; sleep 30`, "sh", gate), nil
+			mkdirErr = os.Mkdir(gate, 0o755)
+			if mkdirErr != nil {
+				return nil, mkdirErr
+			}
+			return exec.Command("sh", "-c", "sleep 30"), nil
 		}
-		if _, err := launchOwner(options, "owner-tag"); err == nil {
+		_, err := launchOwner(options, "owner-tag")
+		if mkdirErr != nil {
+			t.Fatal(mkdirErr)
+		}
+		if err == nil {
 			t.Fatal("an owner whose start gate was blocked was accepted")
 		}
 	})
