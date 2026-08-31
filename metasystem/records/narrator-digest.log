@@ -178,5 +178,7 @@ Limitation — Goal-carrier reconciliation: 60 Git landings carried Goal-Transac
 2026-08-31T10:54:20Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-ff49bb17ea911247f98c9379766c5f720f560582)
 2026-08-31T17:25:43Z HIGHLIGHT — A landing moved the repository storyline to commit cca66e443cea. (source: commit cca66e443ceaa56297c6db7847806ac60bd60627)
 2026-08-31T17:25:43Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-cca66e443ceaa56297c6db7847806ac60bd60627)
+2026-08-31T17:33:48Z HIGHLIGHT — A landing moved the repository storyline to commit 0249921d2e5a. (source: commit 0249921d2e5a41430964cde9173572b462e34ae1)
 2026-08-31T17:36:03Z HIGHLIGHT — A landing moved the repository storyline to commit 2df11b3e6bcf. (source: commit 2df11b3e6bcfef1b42d75876b17af8b9bbd2f374)
 2026-08-31T17:36:03Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-2df11b3e6bcfef1b42d75876b17af8b9bbd2f374)
+2026-08-31T18:15:10Z HIGHLIGHT — A landing moved the repository storyline to commit 410f6b3815d9. (source: commit 410f6b3815d9d985f16ea8fdda6b124219323a7a)
