@@ -353,8 +353,8 @@ type ResumeRequest struct {
 // Resume verifies the exact stop batch during the transaction, installs the
 // complete fresh tuple, creates a new revision, and clears the old fence.
 func Resume(r ResumeRequest) (PublishResult, error) {
-	if r.Actor.Human == "" || r.Authority == nil || !r.Authority.ValidFor(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("goal resume requires a live enrolled-ancestry human authority proof")
+	if r.Actor.Human == "" || r.Authority == nil || !r.Authority.AuthorizesResume(r.Endpoint.Root) {
+		return PublishResult{}, fmt.Errorf("goal resume requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
 	}
 	if err := r.Budget.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid fresh budget: %w", err)
@@ -364,6 +364,7 @@ func Resume(r ResumeRequest) (PublishResult, error) {
 
 func resumeRequest(r ResumeRequest) PublishRequest {
 	args := budgetIntentArgs(r.Budget)
+	temporaryAuthority := r.Authority.TemporaryResumeFor(r.Endpoint.Root)
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "resume", Targets: []string{r.GoalID}, Args: intentArgs(r.VerbRequest, args)},
@@ -380,6 +381,11 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			if opidLanded(f, r.VerbRequest) {
 				return nil, AlreadyApplied{}
 			}
+			if temporaryAuthority {
+				if err := repeatedRelayedActError(t.Root, f, "resume", r.Authority.Departure); err != nil {
+					return nil, err
+				}
+			}
 			fence := *f.StopFence
 			if err := VerifyStopBatchComplete(r.Endpoint.Root, r.GoalID, *f.StopCapability, fence); err != nil {
 				return nil, err
@@ -393,6 +399,9 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			f.Budget = &budget
 			f.NormApproval = approval
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
+			if temporaryAuthority {
+				f.History[len(f.History)-1].recordTemporaryRelay(r.Authority.ReviewBy, r.Authority.Departure, r.Authority.TemporaryHumanWord)
+			}
 			if err := bindClaim(f, machine, lineage, r.stamp(), f.Revision, claimEpoch); err != nil {
 				return nil, err
 			}

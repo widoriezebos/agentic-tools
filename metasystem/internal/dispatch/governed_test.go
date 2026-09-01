@@ -88,6 +88,46 @@ func TestGovernedAdmissionRefusesAcceptedGoalWithoutObligationTuple(t *testing.T
 	}
 }
 
+func TestGovernedAdmissionKeepsRecordedRelayConsequencesActive(t *testing.T) {
+	root := revisionBindingBed(t, 2)
+	revision := installEnforcedObligation(t, root, 4)
+	path := filepath.Join(root, "plans", "goals", "bounded.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 || file.Obligation == nil {
+		t.Fatalf("enforced fixture did not parse: %v", problems)
+	}
+	file.Obligation.AuthorizedBy = "recorded-relay"
+	file.Obligation.ReviewOutcome = goal.ReviewOutcomeRecordedRelay
+	file.Obligation.AuthorityOutcome = goal.AuthorityOutcomeTemporaryHumanWord
+	file.Obligation.AuthorityReviewBy = "2026-09-06"
+	file.Obligation.AuthorityRuling = goal.TemporaryGoalAuthorityRuling
+	file.Obligation.TemporaryHumanWord = "Wido authorizes governed admission"
+	last := &file.History[len(file.History)-1]
+	last.AuthorityOutcome = goal.AuthorityOutcomeTemporaryHumanWord
+	last.AuthorityReviewBy = "2026-09-06"
+	last.AuthorityRuling = goal.TemporaryGoalAuthorityRuling
+	last.TemporaryHumanWord = "Wido authorizes governed admission"
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "recorded relay obligation"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		if output, runErr := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); runErr != nil {
+			t.Fatalf("git %v: %v: %s", args, runErr, output)
+		}
+	}
+	admission, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
+		GoalID: "bounded", ObligationRevision: revision, StandingShared: true,
+	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	if err != nil || !admission.Attempt.AdmissionDecision.Apply ||
+		!strings.Contains(admission.Attempt.AdmissionDecision.Reason, "human provenance not verified") {
+		t.Fatalf("recorded relay became inert or overstated at governed admission: admission=%+v err=%v", admission, err)
+	}
+}
+
 func TestDraftAdmissionRecordsWouldRefuseButDoesNotRefuseTheRun(t *testing.T) {
 	root := revisionBindingBed(t, 2)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=\n"), 0o644); err != nil {

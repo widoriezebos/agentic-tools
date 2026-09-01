@@ -80,6 +80,8 @@ type GovernedObligation struct {
 	ReviewOutcome      string
 	AuthorityOutcome   string
 	AuthorityReviewBy  string
+	AuthorityRuling    string
+	TemporaryHumanWord string
 	Effects            []GoverningEffect
 	AuthorizedEffects  []GoverningEffect
 	Assumptions        ObligationAssumptions
@@ -88,9 +90,56 @@ type GovernedObligation struct {
 
 const (
 	ReviewOutcomeHumanApproved         = "human-approved"
+	ReviewOutcomeRecordedRelay         = "recorded-relay"
+	AuthorizedByRecordedRelay          = "recorded-relay"
 	AuthorityOutcomeTemporaryHumanWord = "TEMPORARY_HUMAN_WORD"
+	TemporaryGoalAuthorityRuling       = "R-32-m1"
+	TemporaryGoalAuthorityHorizon      = "2026-09-06"
 	authorityReviewByDateLayout        = "2006-01-02"
 )
+
+// RecordedTemporaryAuthority is the durable tuple copied from a successful
+// relayed grant. It records the supplied words and ruling; it does not prove
+// who supplied the words.
+type RecordedTemporaryAuthority struct {
+	Outcome   string
+	ReviewBy  string
+	Ruling    string
+	HumanWord string
+}
+
+func (a RecordedTemporaryAuthority) empty() bool {
+	return a.Outcome == "" && a.ReviewBy == "" && a.Ruling == "" && a.HumanWord == ""
+}
+
+// ValidateRecorded checks only the stable wire shape of a landed fact. Grant
+// policy belongs to the authority boundary: a later ruling or horizon must
+// never make an already-landed ledger unreadable.
+func (a RecordedTemporaryAuthority) ValidateRecorded() error {
+	if a.empty() {
+		return nil
+	}
+	if a.Outcome != AuthorityOutcomeTemporaryHumanWord {
+		return fmt.Errorf("AuthorityOutcome is missing or invalid")
+	}
+	_, err := time.Parse(authorityReviewByDateLayout, a.ReviewBy)
+	if err != nil {
+		return fmt.Errorf("AuthorityReviewBy is missing or invalid")
+	}
+	// The first landed form predated ruling/word fields and carried exactly
+	// outcome+reviewBy. It remains a readable historical fact; new grants use
+	// the complete four-field form below.
+	if a.Ruling == "" && a.HumanWord == "" {
+		return nil
+	}
+	if a.Ruling == "" {
+		return fmt.Errorf("AuthorityRuling is missing")
+	}
+	if a.HumanWord == "" {
+		return fmt.Errorf("TemporaryHumanWord is missing")
+	}
+	return nil
+}
 
 type ConsequenceDecision struct {
 	Apply       bool
@@ -98,23 +147,16 @@ type ConsequenceDecision struct {
 	Reason      string
 }
 
-// ValidateAuthorityProvenance protects the durable landed marker for
-// temporary human-word authority without turning observation-only states into
-// consequence authority.
-func (o *GovernedObligation) ValidateAuthorityProvenance() error {
+// ValidateRecordedAuthority protects the fixed shape of a landed temporary
+// marker without treating its recorded word as proof of human provenance.
+func (o *GovernedObligation) ValidateRecordedAuthority() error {
 	if o == nil {
 		return nil
 	}
-	if o.AuthorityOutcome == "" && o.AuthorityReviewBy == "" {
-		return nil
-	}
-	if o.AuthorityOutcome != AuthorityOutcomeTemporaryHumanWord {
-		return fmt.Errorf("AuthorityOutcome is missing or invalid")
-	}
-	if _, err := time.Parse(authorityReviewByDateLayout, o.AuthorityReviewBy); err != nil {
-		return fmt.Errorf("AuthorityReviewBy is missing or invalid")
-	}
-	return nil
+	return (RecordedTemporaryAuthority{
+		Outcome: o.AuthorityOutcome, ReviewBy: o.AuthorityReviewBy,
+		Ruling: o.AuthorityRuling, HumanWord: o.TemporaryHumanWord,
+	}).ValidateRecorded()
 }
 
 // ValidateAuthorizationCompleteness protects the authorization tuple required
@@ -123,11 +165,20 @@ func (o *GovernedObligation) ValidateAuthorizationCompleteness() error {
 	if o == nil {
 		return fmt.Errorf("authorization record is missing")
 	}
-	if err := o.ValidateAuthorityProvenance(); err != nil {
+	if err := o.ValidateRecordedAuthority(); err != nil {
 		return err
 	}
+	recorded := RecordedTemporaryAuthority{
+		Outcome: o.AuthorityOutcome, ReviewBy: o.AuthorityReviewBy,
+		Ruling: o.AuthorityRuling, HumanWord: o.TemporaryHumanWord,
+	}
+	recordedRelay := !recorded.empty()
+	legacyRelay := recordedRelay && recorded.Ruling == "" && recorded.HumanWord == ""
 	if o.AuthorizedBy == "" {
 		return fmt.Errorf("AuthorizedBy is missing")
+	}
+	if recordedRelay && !legacyRelay && o.AuthorizedBy != AuthorizedByRecordedRelay {
+		return fmt.Errorf("AuthorizedBy must identify recorded-relay authority, not a verified person")
 	}
 	if _, err := time.Parse(time.RFC3339, o.AuthorizedAt); err != nil {
 		return fmt.Errorf("AuthorizedAt is missing or invalid")
@@ -141,7 +192,14 @@ func (o *GovernedObligation) ValidateAuthorizationCompleteness() error {
 	if o.ReviewPolicy != "A" && o.ReviewPolicy != "B" && o.ReviewPolicy != "C" {
 		return fmt.Errorf("ReviewPolicy is missing or invalid")
 	}
-	if o.ReviewOutcome != ReviewOutcomeHumanApproved {
+	if recordedRelay {
+		if legacyRelay && o.ReviewOutcome != ReviewOutcomeHumanApproved {
+			return fmt.Errorf("ReviewOutcome is missing or invalid for the legacy recorded relay")
+		}
+		if !legacyRelay && o.ReviewOutcome != ReviewOutcomeRecordedRelay {
+			return fmt.Errorf("ReviewOutcome is missing or not a recorded relay")
+		}
+	} else if o.ReviewOutcome != ReviewOutcomeHumanApproved {
 		return fmt.Errorf("ReviewOutcome is missing or not human-approved")
 	}
 	return nil
@@ -165,10 +223,14 @@ func (o *GovernedObligation) Decide(effect GoverningEffect) ConsequenceDecision 
 	if err := o.ValidateAuthorizationCompleteness(); err != nil {
 		return ConsequenceDecision{Reason: "human authorization is incomplete: " + err.Error()}
 	}
+	authority := "recorded enrolled-human authorization"
+	if o.AuthorityOutcome != "" || o.AuthorityReviewBy != "" || o.AuthorityRuling != "" || o.TemporaryHumanWord != "" {
+		authority = "recorded relayed authority (human provenance not verified)"
+	}
 	for _, allowed := range o.AuthorizedEffects {
 		if allowed == effect {
-			return ConsequenceDecision{Apply: true, Reason: "recorded human authorization covers " + string(effect)}
+			return ConsequenceDecision{Apply: true, Reason: authority + " covers " + string(effect)}
 		}
 	}
-	return ConsequenceDecision{Reason: "recorded human authorization does not cover " + string(effect)}
+	return ConsequenceDecision{Reason: authority + " does not cover " + string(effect)}
 }

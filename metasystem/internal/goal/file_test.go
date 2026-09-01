@@ -198,6 +198,53 @@ func TestHistoryGrammarRoundTripsEveryField(t *testing.T) {
 	}
 }
 
+func TestResumeHistoryRoundTripsVerbatimTemporaryAuthority(t *testing.T) {
+	line := HistoryLine{
+		At: "2026-09-01T10:00:00Z", Opid: "01J5X0000000000000000000F6-intel-nuc-9f8e7d6c",
+		Verb: "resume", Actor: "human:Wido", Targets: []string{"a-goal"}, Keep: -1,
+		AuthorityOutcome: AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-06",
+		AuthorityRuling:    TemporaryGoalAuthorityRuling,
+		TemporaryHumanWord: "  Wido authorizes\nthis reason=exact resume\t  ",
+		Reason:             "a separate reason remains free text with temporaryHumanWord=inside it",
+	}
+	rendered := RenderHistoryLine(line)
+	parsed, err := ParseHistoryLine(rendered)
+	if err != nil {
+		t.Fatalf("parse temporary resume history: %v", err)
+	}
+	if parsed.TemporaryHumanWord != line.TemporaryHumanWord || parsed.AuthorityRuling != TemporaryGoalAuthorityRuling || parsed.Reason != line.Reason {
+		t.Fatalf("temporary authority did not round trip verbatim: %+v", parsed)
+	}
+	if RenderHistoryLine(parsed) != rendered {
+		t.Fatalf("temporary resume history is not a fixed point:\n%s\n%s", rendered, RenderHistoryLine(parsed))
+	}
+}
+
+func TestLandedTemporaryAuthorityRoundTripsAfterRulingRenewal(t *testing.T) {
+	line := HistoryLine{
+		At: "2026-09-07T10:00:00Z", Opid: "01J5X0000000000000000000F7-intel-nuc-9f8e7d6c",
+		Verb: "resume", Actor: "human:Wido", Targets: []string{"a-goal"}, Keep: -1,
+		AuthorityOutcome: AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-07",
+		AuthorityRuling:    "R-33-m1",
+		TemporaryHumanWord: "Wido renews this resume",
+	}
+	rendered := RenderHistoryLine(line)
+	parsed, err := ParseHistoryLine(rendered)
+	if err != nil {
+		t.Fatalf("a landed authority fact was re-judged against today's ruling or horizon: %v", err)
+	}
+	if RenderHistoryLine(parsed) != rendered {
+		t.Fatalf("renewed authority history is not a fixed point:\n%s\n%s", rendered, RenderHistoryLine(parsed))
+	}
+}
+
+func TestHistoryReasonCannotSupplyAMissingRecordedWord(t *testing.T) {
+	line := `- 2026-09-01T10:00:00Z 01J5X0000000000000000000F8-intel-nuc-9f8e7d6c resume actor=human:Wido targets=a-goal authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 reason=mentions temporaryHumanWord="not a marker"`
+	if _, err := ParseHistoryLine(line); err == nil || !strings.Contains(err.Error(), "TemporaryHumanWord is missing") {
+		t.Fatalf("reason text completed an otherwise malformed authority marker: %v", err)
+	}
+}
+
 func TestPruneKeepFieldIsLawful(t *testing.T) {
 	parsed, err := ParseHistoryLine("- 2026-08-20T03:00:00Z 01J5X0000000000000000000A6-mac-studio-1a2b3c4d prune actor=mac-studio+session-a targets=old-one,old-two keep=50")
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -327,7 +328,7 @@ func TestProofRefusesAnEmptyInvokerPID(t *testing.T) {
 	}
 }
 
-func TestTemporarySetObligationProofIsDurableAndDistinct(t *testing.T) {
+func TestTemporaryGoalProofIsDurableAndDistinct(t *testing.T) {
 	root := authorityRoot(t)
 	reader := enrolledReader()
 	enrollTestTerminal(t, root, reader)
@@ -348,19 +349,22 @@ func TestTemporarySetObligationProofIsDurableAndDistinct(t *testing.T) {
 		t.Fatalf("an enrolled-terminal record was marked temporary: %s", terminalRecord)
 	}
 
-	humanWord := "  Wido's verbatim remote authorization  "
-	temporaryProof, err := TemporaryProof(root, humanWord, "2026-09-06", time.Unix(1500, 0))
+	humanWord := "  words relayed as Wido's authorization  "
+	temporaryProof, err := temporaryGoalProofAt(root, humanWord, "2026-09-06", time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if temporaryProof.Departure != "R-29-m1/m2" {
-		t.Fatalf("temporary proof named the wrong departure rulings: %q", temporaryProof.Departure)
+	if temporaryProof.Departure != "R-32-m1" {
+		t.Fatalf("temporary proof named the wrong authorizing ruling: %q", temporaryProof.Departure)
 	}
 	if temporaryProof.Valid() || temporaryProof.ValidFor(root) {
 		t.Fatal("a temporary word became an enrolled-terminal ancestry proof")
 	}
 	if !temporaryProof.AuthorizesSetObligation(root) || temporaryProof.AuthorizesSetObligation(t.TempDir()) {
 		t.Fatal("the temporary word was not scoped to set-obligation in its observed root")
+	}
+	if !temporaryProof.AuthorizesResume(root) || temporaryProof.AuthorizesResume(t.TempDir()) {
+		t.Fatal("the temporary word was not scoped to resume in its observed root")
 	}
 	if !terminalProof.AuthorizesSetObligation(root) {
 		t.Fatal("the ordinary enrolled-terminal proof stopped authorizing set-obligation")
@@ -388,12 +392,35 @@ func TestTemporarySetObligationProofIsDurableAndDistinct(t *testing.T) {
 		t.Fatal(err)
 	}
 	if record.Action != "goal set-obligation" || record.Proof.TemporaryHumanWord != humanWord ||
-		record.Proof.ReviewBy != "2026-09-06" || record.Proof.Departure != TemporaryWordDeparture ||
+		record.Proof.ReviewBy != "2026-09-06" || record.Proof.Departure != TemporaryWordRuling ||
 		record.Proof.Outcome != OutcomeTemporary {
 		t.Fatalf("temporary proof record lost its explicit provenance: %s", encoded)
 	}
-	if err := RecordProof(root, operationID+"-resume", "goal resume", temporaryProof); err == nil {
-		t.Fatal("a temporary set-obligation proof was recordable for goal resume")
+	if err := RecordResumeProof(root, operationID+"-resume", temporaryProof); err != nil {
+		t.Fatalf("record temporary resume proof: %v", err)
+	}
+	if err := RecordProof(root, operationID+"-split", "goal split", temporaryProof); err == nil {
+		t.Fatal("a temporary goal proof was recordable for an unrelated human-only verb")
+	}
+}
+
+func TestTemporaryGoalProofUsesTheRealWallClock(t *testing.T) {
+	root := authorityRoot(t)
+	horizon, err := time.Parse(reviewByDateLayout, governance.TemporaryGoalAuthorityHorizon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now().UTC()
+	proof, grantErr := TemporaryGoalProof(root, "Wido authorizes this goal mutation", governance.TemporaryGoalAuthorityHorizon)
+	after := time.Now().UTC()
+	if before.Truncate(24 * time.Hour).After(horizon) {
+		if grantErr == nil || !strings.Contains(grantErr.Error(), "is in the past") {
+			t.Fatalf("an expired wall-clock grant did not refuse as past: proof=%+v err=%v", proof, grantErr)
+		}
+		return
+	}
+	if grantErr != nil || proof.CheckedAt.Before(before) || proof.CheckedAt.After(after) {
+		t.Fatalf("temporary grant did not bind the real wall clock: checkedAt=%s before=%s after=%s err=%v", proof.CheckedAt, before, after, grantErr)
 	}
 }
 
@@ -407,28 +434,46 @@ func TestTemporaryProofRequiresTheWholeRemoteWordPair(t *testing.T) {
 	}{
 		{name: "missing review date", word: "word", want: "travel together"},
 		{name: "missing word", reviewBy: "2026-09-06", want: "travel together"},
-		{name: "missing pair", want: "requires the verbatim word"},
+		{name: "missing pair", want: "requires the supplied word"},
 		{name: "whitespace word", word: " \t\n ", reviewBy: "2026-09-06", want: "non-whitespace"},
+		{name: "too short", word: "Wido authorizes", reviewBy: "2026-09-06", want: "at least three words"},
 		{name: "non-date review", word: "word", reviewBy: "whenever", want: "real date"},
 		{name: "impossible review date", word: "word", reviewBy: "2026-09-31", want: "real date"},
 	} {
-		if _, err := TemporaryProof(root, values.word, values.reviewBy, time.Unix(1500, 0)); err == nil || !strings.Contains(err.Error(), values.want) {
+		if _, err := temporaryGoalProofAt(root, values.word, values.reviewBy, time.Unix(1500, 0)); err == nil || !strings.Contains(err.Error(), values.want) {
 			t.Fatalf("incomplete temporary word pair was accepted: %+v", values)
 		}
 	}
 }
 
-func TestTemporaryProofReviewByIsARecordedDateNotAnExpiry(t *testing.T) {
+func TestTemporaryGoalProofEnforcesReviewExpiryAndHorizon(t *testing.T) {
 	root := authorityRoot(t)
-	proof, err := TemporaryProof(root, "Wido authorizes this obligation", "2026-09-06", time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC))
+	for _, test := range []struct {
+		name     string
+		now      time.Time
+		reviewBy string
+		want     string
+	}{
+		{name: "past", now: time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC), reviewBy: "2026-09-01", want: "--review-by 2026-09-01 is in the past"},
+		{name: "beyond horizon", now: time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC), reviewBy: "2026-09-07", want: "--review-by 2026-09-07 exceeds temporary goal authority horizon 2026-09-06"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := temporaryGoalProofAt(root, "Wido authorizes this goal mutation", test.reviewBy, test.now); err == nil || err.Error() != test.want {
+				t.Fatalf("temporary authority expiry refusal mismatch: %v", err)
+			}
+		})
+	}
+}
+
+func TestEnrolledAncestryTakesPrecedenceOverTemporaryFlags(t *testing.T) {
+	root := authorityRoot(t)
+	reader := enrolledReader()
+	enrollTestTerminal(t, root, reader)
+	proof, err := ProveOrTemporaryGoalAuthority(root, 30, reader, "one", "not-a-date", time.Unix(1600, 0))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("proved ancestry was shadowed by invalid temporary flags: %v", err)
 	}
-	if !proof.AuthorizesSetObligation(root) {
-		t.Fatal("the review-by date became an expiry instead of recorded re-approval provenance")
-	}
-	proof.ReviewBy = "whenever"
-	if proof.AuthorizesSetObligation(root) {
-		t.Fatal("a temporary proof with a mutated non-date review-by still authorized set-obligation")
+	if !proof.ValidFor(root) || proof.Outcome != OutcomeProven || proof.TemporaryHumanWord != "" || proof.ReviewBy != "" || proof.Departure != "" {
+		t.Fatalf("the strong path did not win cleanly: %+v", proof)
 	}
 }

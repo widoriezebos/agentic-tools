@@ -100,8 +100,8 @@ func EvaluateGovernedRunAdmission(repoRoot string, request run.GovernedAdmission
 	if active && policy == "" {
 		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: correlation policy slot is empty; LIMITED and ENFORCED consequences are not active")
 	}
-	if active && (o.ReviewPolicy != policy || o.ReviewOutcome != "human-approved") {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: authorization was not reviewed under active policy %s", policy)
+	if active && o.ReviewPolicy != policy {
+		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: authorization was not recorded under active policy %s", policy)
 	}
 	if active && !decision.Apply {
 		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: %s", decision.Reason)

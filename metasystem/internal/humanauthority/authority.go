@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -32,7 +33,7 @@ const (
 	OutcomeReused          = "PROCESS_REUSED"
 	OutcomeCycle           = "ANCESTRY_CYCLE"
 	OutcomeTemporary       = "TEMPORARY_HUMAN_WORD"
-	TemporaryWordDeparture = "R-29-m1/m2"
+	TemporaryWordRuling    = governance.TemporaryGoalAuthorityRuling
 	reviewByDateLayout     = "2006-01-02"
 )
 
@@ -110,20 +111,35 @@ func (p Proof) ValidFor(root string) bool {
 }
 
 // AuthorizesSetObligation accepts either enrolled-terminal ancestry or the
-// one temporary remote-word form scoped to set-obligation. Other human-only
-// mutations continue to depend on ValidFor and therefore cannot consume it.
+// temporary recorded-relay form scoped to the two goal mutations that can
+// consume it. The relay records the supplied words but cannot verify who
+// supplied them. Other human-only mutations continue to depend on ValidFor.
 func (p Proof) AuthorizesSetObligation(root string) bool {
 	return p.ValidFor(root) || p.temporaryValidFor(root)
 }
 
-// TemporarySetObligationFor reports whether the proof is the one temporary
-// remote-word form scoped to set-obligation.
+// TemporarySetObligationFor reports whether the proof is the temporary
+// recorded-relay form scoped to set-obligation.
 func (p Proof) TemporarySetObligationFor(root string) bool {
 	return p.temporaryValidFor(root)
 }
 
-// ValidateTemporaryWordPair validates the optional temporary authority flag
-// pair used by set-obligation and steward arm.
+// AuthorizesResume accepts the same two proof classes at the breach-stop
+// boundary without making temporary authority valid for any other verb.
+func (p Proof) AuthorizesResume(root string) bool {
+	return p.ValidFor(root) || p.temporaryValidFor(root)
+}
+
+// TemporaryResumeFor reports whether a resume is using the temporary proof
+// form rather than enrolled-terminal ancestry.
+func (p Proof) TemporaryResumeFor(root string) bool {
+	return p.temporaryValidFor(root)
+}
+
+// ValidateTemporaryWordPair checks only the optional relay pair's transport
+// shape; recording the supplied words does not verify human provenance. The
+// goal relay applies stricter grant-time substance, past-date, and horizon
+// rules than the steward relay.
 func ValidateTemporaryWordPair(humanWord, reviewBy string) error {
 	if (humanWord == "") != (reviewBy == "") {
 		return fmt.Errorf("--temporary-human-word and --review-by travel together")
@@ -140,28 +156,59 @@ func ValidateTemporaryWordPair(humanWord, reviewBy string) error {
 	return nil
 }
 
+func validateTemporaryGoalAuthority(humanWord, reviewBy string, checkedAt time.Time) error {
+	if err := ValidateTemporaryWordPair(humanWord, reviewBy); err != nil {
+		return err
+	}
+	if len(strings.Fields(humanWord)) < 3 {
+		return fmt.Errorf("--temporary-human-word must contain at least three words; this is a minimum-of-substance guard, not proof of human provenance")
+	}
+	if checkedAt.IsZero() {
+		return fmt.Errorf("temporary human authority requires a non-zero observation time")
+	}
+	reviewDate, _ := time.Parse(reviewByDateLayout, reviewBy)
+	checkedUTC := checkedAt.UTC()
+	checkedDate := time.Date(checkedUTC.Year(), checkedUTC.Month(), checkedUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if reviewDate.Before(checkedDate) {
+		return fmt.Errorf("--review-by %s is in the past", reviewBy)
+	}
+	horizon, _ := time.Parse(reviewByDateLayout, governance.TemporaryGoalAuthorityHorizon)
+	if reviewDate.After(horizon) {
+		return fmt.Errorf("--review-by %s exceeds temporary goal authority horizon %s", reviewBy, governance.TemporaryGoalAuthorityHorizon)
+	}
+	return nil
+}
+
 func (p Proof) temporaryValidFor(root string) bool {
 	abs, err := filepath.Abs(root)
 	if err != nil || !p.observed || p.observedRoot != filepath.Clean(abs) || p.Schema != 1 ||
-		p.Outcome != OutcomeTemporary || p.CheckedAt.IsZero() || p.Departure != TemporaryWordDeparture {
+		p.Outcome != OutcomeTemporary || p.CheckedAt.IsZero() || p.Departure != TemporaryWordRuling {
 		return false
 	}
-	if err := ValidateTemporaryWordPair(p.TemporaryHumanWord, p.ReviewBy); err != nil || p.TemporaryHumanWord == "" {
+	if err := validateTemporaryGoalAuthority(p.TemporaryHumanWord, p.ReviewBy, p.CheckedAt); err != nil || p.TemporaryHumanWord == "" {
 		return false
 	}
 	return p.InvokerRef == (ProcessRef{}) && p.TerminalRef == (ProcessRef{}) &&
 		p.TerminalGeneration == 0 && p.SignatureSetDigest == "" && len(p.Nodes) == 0
 }
 
-// TemporaryProof binds a verbatim remote human word and its re-approval date
-// to one checkout. It deliberately carries no ancestry facts and cannot pass
-// ValidFor; only the set-obligation boundary recognizes this proof form.
-func TemporaryProof(root, humanWord, reviewBy string, now time.Time) (Proof, error) {
-	if err := ValidateTemporaryWordPair(humanWord, reviewBy); err != nil {
-		return Proof{}, err
+// TemporaryGoalProof records relayed words presented as the human's and a
+// re-approval date against the real wall clock. It cannot verify who supplied
+// the words, carries no ancestry facts, and is recognized only by resume and
+// set-obligation.
+func TemporaryGoalProof(root, humanWord, reviewBy string) (Proof, error) {
+	return temporaryGoalProofAt(root, humanWord, reviewBy, time.Now().UTC())
+}
+
+// temporaryGoalProofAt keeps evaluation at a supplied instant inside the
+// authority owner. Callers outside this package enter through
+// TemporaryGoalProof, which always reads the real wall clock.
+func temporaryGoalProofAt(root, humanWord, reviewBy string, now time.Time) (Proof, error) {
+	if humanWord == "" && reviewBy == "" {
+		return Proof{}, fmt.Errorf("temporary recorded-relay authority requires the supplied word and review-by date")
 	}
-	if humanWord == "" || now.IsZero() {
-		return Proof{}, fmt.Errorf("temporary human authority requires the verbatim word, review-by date, and observation time")
+	if err := validateTemporaryGoalAuthority(humanWord, reviewBy, now); err != nil {
+		return Proof{}, err
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -169,9 +216,24 @@ func TemporaryProof(root, humanWord, reviewBy string, now time.Time) (Proof, err
 	}
 	return Proof{
 		Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeTemporary,
-		TemporaryHumanWord: humanWord, ReviewBy: reviewBy, Departure: TemporaryWordDeparture,
+		TemporaryHumanWord: humanWord, ReviewBy: reviewBy, Departure: TemporaryWordRuling,
 		observedRoot: filepath.Clean(abs), observed: true,
 	}, nil
+}
+
+// ProveOrTemporaryGoalAuthority preserves the authority preference order for
+// the two goal relay verbs. A proved enrolled-terminal path wins even when
+// temporary flags are present or malformed; relay validation starts only
+// after enrolled ancestry fails and reads its own real wall clock.
+func ProveOrTemporaryGoalAuthority(root string, invokerPID int64, reader Reader, humanWord, reviewBy string, ancestryNow time.Time) (Proof, error) {
+	proof, ancestryErr := Prove(root, invokerPID, reader, ancestryNow)
+	if ancestryErr == nil {
+		return proof, nil
+	}
+	if humanWord == "" && reviewBy == "" {
+		return Proof{}, ancestryErr
+	}
+	return TemporaryGoalProof(root, humanWord, reviewBy)
 }
 
 // Snapshot is one process read used by the stable ancestry walk.
@@ -496,7 +558,10 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 	return proof, fmt.Errorf("%s", proof.Outcome)
 }
 
-const setObligationAction = "goal set-obligation"
+const (
+	setObligationAction = "goal set-obligation"
+	resumeAction        = "goal resume"
+)
 
 // RecordProof stores the observed proof beside the local authority records,
 // bound to the exact operation. The record is audit evidence, never a token a
@@ -509,6 +574,11 @@ func RecordProof(root, operationID, action string, proof Proof) error {
 // consume the temporary remote-word authority form.
 func RecordSetObligationProof(root, operationID string, proof Proof) error {
 	return recordProof(root, operationID, setObligationAction, proof, proof.AuthorizesSetObligation(root))
+}
+
+// RecordResumeProof stores either accepted proof form for one exact resume.
+func RecordResumeProof(root, operationID string, proof Proof) error {
+	return recordProof(root, operationID, resumeAction, proof, proof.AuthorizesResume(root))
 }
 
 func recordProof(root, operationID, action string, proof Proof, recordable bool) error {

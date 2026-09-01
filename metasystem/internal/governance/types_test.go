@@ -100,16 +100,65 @@ func TestDecideFailsClosedWithoutALawfulState(t *testing.T) {
 	}
 }
 
-func TestTemporaryAuthorityProvenanceRequiresOutcomeAndRealReviewDate(t *testing.T) {
+func TestRecordedTemporaryAuthorityRequiresACompleteWireTuple(t *testing.T) {
 	valid := governance.GovernedObligation{
-		AuthorityOutcome:  governance.AuthorityOutcomeTemporaryHumanWord,
-		AuthorityReviewBy: "2026-09-06",
+		AuthorityOutcome:   governance.AuthorityOutcomeTemporaryHumanWord,
+		AuthorityReviewBy:  "2026-09-06",
+		AuthorityRuling:    governance.TemporaryGoalAuthorityRuling,
+		TemporaryHumanWord: "Wido authorizes this obligation",
 	}
-	if err := valid.ValidateAuthorityProvenance(); err != nil {
+	if err := valid.ValidateRecordedAuthority(); err != nil {
 		t.Fatalf("valid temporary authority provenance was refused: %v", err)
 	}
+	historical := valid
+	historical.AuthorityReviewBy = "2026-09-07"
+	historical.AuthorityRuling = "R-33-m1"
+	if err := historical.ValidateRecordedAuthority(); err != nil {
+		t.Fatalf("a landed authority fact was re-judged against today's grant policy: %v", err)
+	}
+	legacy := valid
+	legacy.AuthorityRuling, legacy.TemporaryHumanWord = "", ""
+	if err := legacy.ValidateRecordedAuthority(); err != nil {
+		t.Fatalf("a landed two-field authority fact became unreadable: %v", err)
+	}
+	historicalActive := authorizedObligation(governance.ObligationEnforced)
+	historicalActive.AuthorizedBy = governance.AuthorizedByRecordedRelay
+	historicalActive.ReviewOutcome = governance.ReviewOutcomeRecordedRelay
+	historicalActive.AuthorityOutcome = historical.AuthorityOutcome
+	historicalActive.AuthorityReviewBy = historical.AuthorityReviewBy
+	historicalActive.AuthorityRuling = historical.AuthorityRuling
+	historicalActive.TemporaryHumanWord = historical.TemporaryHumanWord
+	if decision := historicalActive.Decide(governance.EffectAuthorizeSpend); !decision.Apply ||
+		!strings.Contains(decision.Reason, "human provenance not verified") {
+		t.Fatalf("a renewed historical marker disabled an already-authorized active consequence: %+v", decision)
+	}
+	legacyActive := authorizedObligation(governance.ObligationEnforced)
+	legacyActive.AuthorityOutcome = legacy.AuthorityOutcome
+	legacyActive.AuthorityReviewBy = legacy.AuthorityReviewBy
+	if decision := legacyActive.Decide(governance.EffectAuthorizeSpend); !decision.Apply ||
+		!strings.Contains(decision.Reason, "human provenance not verified") {
+		t.Fatalf("a legacy two-field marker disabled an already-authorized active consequence: %+v", decision)
+	}
+	invalidLegacy := legacyActive
+	invalidLegacy.ReviewOutcome = governance.ReviewOutcomeRecordedRelay
+	if decision := invalidLegacy.Decide(governance.EffectAuthorizeSpend); decision.Apply ||
+		!strings.Contains(decision.Reason, "invalid for the legacy recorded relay") {
+		t.Fatalf("a legacy marker accepted a review outcome it never carried: %+v", decision)
+	}
+	overclaimed := historicalActive
+	overclaimed.ReviewOutcome = governance.ReviewOutcomeHumanApproved
+	if decision := overclaimed.Decide(governance.EffectAuthorizeSpend); decision.Apply ||
+		!strings.Contains(decision.Reason, "not a recorded relay") {
+		t.Fatalf("a complete relayed marker still claimed human-approved provenance: %+v", decision)
+	}
+	overclaimed = historicalActive
+	overclaimed.AuthorizedBy = "Wido"
+	if decision := overclaimed.Decide(governance.EffectAuthorizeSpend); decision.Apply ||
+		!strings.Contains(decision.Reason, "not a verified person") {
+		t.Fatalf("a complete relayed marker still claimed a verified person: %+v", decision)
+	}
 	var absent *governance.GovernedObligation
-	if err := absent.ValidateAuthorityProvenance(); err != nil {
+	if err := absent.ValidateRecordedAuthority(); err != nil {
 		t.Fatalf("nil obligation carries no provenance to refuse: %v", err)
 	}
 	for _, test := range []struct {
@@ -121,11 +170,13 @@ func TestTemporaryAuthorityProvenanceRequiresOutcomeAndRealReviewDate(t *testing
 		{name: "unknown outcome", edit: func(o *governance.GovernedObligation) { o.AuthorityOutcome = "HUMAN_AUTHORITY_PROVEN" }, want: "AuthorityOutcome"},
 		{name: "missing review date", edit: func(o *governance.GovernedObligation) { o.AuthorityReviewBy = "" }, want: "AuthorityReviewBy"},
 		{name: "non-date review", edit: func(o *governance.GovernedObligation) { o.AuthorityReviewBy = "whenever" }, want: "AuthorityReviewBy"},
+		{name: "missing ruling", edit: func(o *governance.GovernedObligation) { o.AuthorityRuling = "" }, want: "AuthorityRuling"},
+		{name: "missing word", edit: func(o *governance.GovernedObligation) { o.TemporaryHumanWord = "" }, want: "TemporaryHumanWord"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			obligation := valid
 			test.edit(&obligation)
-			if err := obligation.ValidateAuthorityProvenance(); err == nil || !strings.Contains(err.Error(), test.want) {
+			if err := obligation.ValidateRecordedAuthority(); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("invalid authority provenance did not refuse by %s: %v", test.want, err)
 			}
 		})

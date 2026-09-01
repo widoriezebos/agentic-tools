@@ -122,17 +122,67 @@ type ParkRecord struct {
 //
 //   - <iso8601> <opid> <verb> actor=<...> [targets=<ids>]
 //     [displaced=<machine>+<lineage>@<at>] [ack] [keep=<n>]
+//     [authorityOutcome=<...> authorityReviewBy=<date>
+//     authorityRuling=<id> temporaryHumanWord=<quoted words>]
 //     [reason=<rest of line>]
 type HistoryLine struct {
-	At        string
-	Opid      string
-	Verb      string
-	Actor     string // machine+lineage or human:<name>
-	Targets   []string
-	Displaced string
-	Ack       bool
-	Keep      int // -1 when absent; prune's root-record line only
-	Reason    string
+	At                 string
+	Opid               string
+	Verb               string
+	Actor              string // machine+lineage or human:<name>
+	Targets            []string
+	Displaced          string
+	Ack                bool
+	Keep               int // -1 when absent; prune's root-record line only
+	AuthorityOutcome   string
+	AuthorityReviewBy  string
+	AuthorityRuling    string
+	TemporaryHumanWord string
+	Reason             string
+}
+
+func (h *HistoryLine) recordTemporaryRelay(reviewBy, ruling, word string) {
+	h.AuthorityOutcome = AuthorityOutcomeTemporaryHumanWord
+	h.AuthorityReviewBy = reviewBy
+	h.AuthorityRuling = ruling
+	h.TemporaryHumanWord = word
+}
+
+func firstRecordedRelayedActIn(historyLines []HistoryLine, goalID, verb, ruling string) (HistoryLine, bool) {
+	for _, history := range historyLines {
+		if history.Verb == verb && history.AuthorityOutcome == AuthorityOutcomeTemporaryHumanWord &&
+			history.AuthorityRuling == ruling && (goalID == "" || contains(history.Targets, goalID)) {
+			return history, true
+		}
+	}
+	return HistoryLine{}, false
+}
+
+// firstRecordedRelayedAct finds the first landed use under one ruling. A new
+// ruling starts a new bounded authority window; historical rulings remain
+// readable facts but do not consume the renewed grant. Root history retains
+// markers for pruned incarnations of the same goal identifier.
+func firstRecordedRelayedAct(root *RootRecord, f *GoalFile, verb, ruling string) (HistoryLine, bool) {
+	if root != nil {
+		if history, ok := firstRecordedRelayedActIn(root.History, f.Id, verb, ruling); ok {
+			return history, true
+		}
+	}
+	return firstRecordedRelayedActIn(f.History, "", verb, ruling)
+}
+
+func repeatedRelayedActError(root *RootRecord, f *GoalFile, verb, ruling string) error {
+	first, ok := firstRecordedRelayedAct(root, f, verb, ruling)
+	if !ok {
+		return nil
+	}
+	return fmt.Errorf("goal %s already used relayed %s authority on %s with recorded word %q; a further %s needs freshly observed enrolled-terminal authority",
+		f.Id, verb, first.At, first.TemporaryHumanWord, verb)
+}
+
+func recordedRelayedAct(history HistoryLine) bool {
+	return history.AuthorityOutcome == AuthorityOutcomeTemporaryHumanWord &&
+		(history.Verb == "resume" || history.Verb == "set-obligation")
 }
 
 // States, closed.
@@ -578,6 +628,36 @@ func parseKVRecord(s string, required, optional []string, freeTail string) (map[
 	return out, nil
 }
 
+// cutQuotedRecordField removes one quoted key=value field without changing
+// its decoded bytes or any surrounding free-text tail.
+func cutQuotedRecordField(s, key string) (without, value string, present bool, err error) {
+	marker := " " + key + "="
+	tokenStart := strings.Index(s, marker)
+	valueStart := 0
+	if tokenStart >= 0 {
+		valueStart = tokenStart + len(marker)
+	} else if strings.HasPrefix(s, key+"=") {
+		tokenStart = 0
+		valueStart = len(key) + 1
+	} else {
+		return s, "", false, nil
+	}
+	quoted, quoteErr := strconv.QuotedPrefix(s[valueStart:])
+	if quoteErr != nil {
+		return "", "", true, fmt.Errorf("%s= must be one quoted string: %v", key, quoteErr)
+	}
+	decoded, quoteErr := strconv.Unquote(quoted)
+	if quoteErr != nil {
+		return "", "", true, fmt.Errorf("%s= must be one quoted string: %v", key, quoteErr)
+	}
+	tail := s[valueStart+len(quoted):]
+	if tail != "" && tail[0] != ' ' && tail[0] != '\t' {
+		return "", "", true, fmt.Errorf("%s= has an invalid trailing token", key)
+	}
+	without = strings.TrimSpace(s[:tokenStart] + tail)
+	return without, decoded, true, nil
+}
+
 // splitParkTail extracts because= (rest of value, after any displaced=).
 func splitParkTail(s string) (because, displaced string) {
 	// TOKEN boundaries, never substrings: a because= or displaced=
@@ -670,8 +750,11 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Obligation: revision=%d budgetRevision=%d state=%s owner=%s authorizedBy=%s authorizedAt=%s authorityOperation=%s reviewPolicy=%s reviewOutcome=%s effects=%s authorizedEffects=%s",
 			o.Revision, o.BudgetRevision, o.State, o.Owner, empty(o.AuthorizedBy), empty(o.AuthorizedAt), empty(o.AuthorityOperation),
 			empty(o.ReviewPolicy), empty(o.ReviewOutcome), renderEffects(o.Effects), renderEffects(o.AuthorizedEffects))
-		if o.AuthorityOutcome != "" || o.AuthorityReviewBy != "" {
+		if (o.AuthorityOutcome != "" || o.AuthorityReviewBy != "") && o.AuthorityRuling == "" && o.TemporaryHumanWord == "" {
 			fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", empty(o.AuthorityOutcome), empty(o.AuthorityReviewBy))
+		} else if o.AuthorityOutcome != "" || o.AuthorityReviewBy != "" || o.AuthorityRuling != "" || o.TemporaryHumanWord != "" {
+			fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s authorityRuling=%s temporaryHumanWord=%s",
+				empty(o.AuthorityOutcome), empty(o.AuthorityReviewBy), empty(o.AuthorityRuling), strconv.Quote(o.TemporaryHumanWord))
 		}
 		b.WriteByte('\n')
 		fmt.Fprintf(&b, "- ObligationAssumptions: recurrence=%s platform=%s toolchainIdentity=%s surfaceDigest=%s maxActiveJobs=%d timingEnvelopeSeconds=%d observationSource=%s\n",
@@ -748,6 +831,17 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	h := HistoryLine{Keep: -1}
 	rest := strings.TrimPrefix(line, "- ")
 
+	reasonIndex := strings.Index(rest, " reason=")
+	authorityIndex := strings.Index(rest, " authorityOutcome=")
+	wordIndex := strings.Index(rest, " temporaryHumanWord=")
+	if authorityIndex >= 0 && wordIndex >= 0 && (reasonIndex < 0 || authorityIndex < reasonIndex && wordIndex < reasonIndex) {
+		withoutWord, humanWord, _, err := cutQuotedRecordField(rest, "temporaryHumanWord")
+		if err != nil {
+			return h, err
+		}
+		rest, h.TemporaryHumanWord = withoutWord, humanWord
+	}
+
 	// reason= is always last and consumes the remainder.
 	if i := strings.Index(rest, " reason="); i >= 0 {
 		h.Reason = rest[i+len(" reason="):]
@@ -801,6 +895,21 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, fmt.Errorf("keep= wants an integer: %q", tok)
 			}
 			h.Keep = n
+		case strings.HasPrefix(tok, "authorityOutcome="):
+			if err := dup("authorityOutcome"); err != nil {
+				return h, err
+			}
+			h.AuthorityOutcome = strings.TrimPrefix(tok, "authorityOutcome=")
+		case strings.HasPrefix(tok, "authorityReviewBy="):
+			if err := dup("authorityReviewBy"); err != nil {
+				return h, err
+			}
+			h.AuthorityReviewBy = strings.TrimPrefix(tok, "authorityReviewBy=")
+		case strings.HasPrefix(tok, "authorityRuling="):
+			if err := dup("authorityRuling"); err != nil {
+				return h, err
+			}
+			h.AuthorityRuling = strings.TrimPrefix(tok, "authorityRuling=")
 		default:
 			return h, fmt.Errorf("unknown History key %q", tok)
 		}
@@ -810,6 +919,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	}
 	if !validStamp(h.At) {
 		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
+	}
+	if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
+		return h, fmt.Errorf("recorded temporary authority: %v", err)
 	}
 	return h, nil
 }
@@ -829,6 +941,12 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.Keep >= 0 {
 		fmt.Fprintf(&b, " keep=%d", h.Keep)
+	}
+	if (h.AuthorityOutcome != "" || h.AuthorityReviewBy != "") && h.AuthorityRuling == "" && h.TemporaryHumanWord == "" {
+		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", h.AuthorityOutcome, h.AuthorityReviewBy)
+	} else if h.AuthorityOutcome != "" || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
+		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s authorityRuling=%s temporaryHumanWord=%s",
+			h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, strconv.Quote(h.TemporaryHumanWord))
 	}
 	if h.Reason != "" {
 		b.WriteString(" reason=" + h.Reason)

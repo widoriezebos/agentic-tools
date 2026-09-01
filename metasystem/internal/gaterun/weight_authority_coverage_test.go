@@ -113,7 +113,7 @@ func TestWeightDischargeRefusesWrongRevisionAndPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := WeightDischarge(root, "bounded", 3, "policy-proof"); err == nil ||
-			!strings.Contains(err.Error(), "current human authorization and policy") {
+			!strings.Contains(err.Error(), "current recorded authority and policy") {
 			t.Fatalf("policy mismatch did not refuse discharge: %v", err)
 		}
 	})

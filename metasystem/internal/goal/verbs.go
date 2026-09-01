@@ -552,7 +552,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 // no field-level mutation can rewrite an earlier obligation revision.
 func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof *humanauthority.Proof) (PublishResult, error) {
 	if r.Actor.Human == "" || proof == nil || !proof.AuthorizesSetObligation(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("set-obligation requires freshly observed enrolled-human authority or a recorded temporary human word")
+		return PublishResult{}, fmt.Errorf("set-obligation requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
 	}
 	temporaryAuthority := proof.TemporarySetObligationFor(r.Endpoint.Root)
 	if !validObligationState(proposed.State) {
@@ -583,6 +583,11 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
+			if temporaryAuthority {
+				if err := repeatedRelayedActError(t.Root, f, "set-obligation", proof.Departure); err != nil {
+					return nil, err
+				}
+			}
 			if f.StopFence != nil {
 				return nil, fmt.Errorf("goal %s is breach-stopped; resume with a fresh tuple before creating another obligation", id)
 			}
@@ -596,14 +601,23 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 				o.ReviewPolicy, o.ReviewOutcome = policy, ReviewOutcomeHumanApproved
 				o.AuthorizedEffects = append([]GoverningEffect(nil), o.Effects...)
 			}
-			o.AuthorityOutcome, o.AuthorityReviewBy = "", ""
+			o.AuthorityOutcome, o.AuthorityReviewBy, o.AuthorityRuling, o.TemporaryHumanWord = "", "", "", ""
 			if temporaryAuthority {
 				o.AuthorityOutcome, o.AuthorityReviewBy = AuthorityOutcomeTemporaryHumanWord, proof.ReviewBy
+				o.AuthorityRuling, o.TemporaryHumanWord = proof.Departure, proof.TemporaryHumanWord
+				if o.State == ObligationLimited || o.State == ObligationEnforced {
+					// A relay authorizes this temporary act but cannot authenticate
+					// the person named by --by.
+					o.AuthorizedBy, o.ReviewOutcome = AuthorizedByRecordedRelay, ReviewOutcomeRecordedRelay
+				}
 			}
 			if err := validateGovernedObligation(&o, o.Revision, f.Claimed, f.Budget); err != nil {
 				return nil, err
 			}
 			touch(f, r, "set-obligation", []string{id})
+			if temporaryAuthority {
+				f.History[len(f.History)-1].recordTemporaryRelay(proof.ReviewBy, proof.Departure, proof.TemporaryHumanWord)
+			}
 			f.Obligation = &o
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
@@ -1394,6 +1408,13 @@ func pruneRequest(r VerbRequest, keep int) PublishRequest {
 			var dropped []string
 			for _, id := range ids {
 				if !keepSet[id] {
+					for _, history := range t.Done[id].History {
+						if recordedRelayedAct(history) {
+							retained := history
+							retained.Targets = []string{id}
+							t.Root.History = append(t.Root.History, retained)
+						}
+					}
 					changes = append(changes, Change{Path: archivedPath(t, id), Delete: true})
 					dropped = append(dropped, id)
 				}

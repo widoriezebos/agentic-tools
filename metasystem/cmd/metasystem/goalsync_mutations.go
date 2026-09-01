@@ -86,7 +86,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
-	lineage, digest, elapsedLimit, approvedRef                               string
+	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit                    int64
 	labels, unlabels                                                         repeatedStrings
 	claim, refreshOnly                                                       bool
@@ -122,6 +122,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.Int64Var(&f.attemptLimit, "attempt-limit", 0, "positive reservation-attempt limit")
 	fs.Int64Var(&f.reservedJobMinutesLimit, "reserved-job-minutes-limit", 0, "positive reserved job-minute limit")
 	fs.Int64Var(&f.activeJobLimit, "active-job-limit", 0, "positive concurrent-job limit")
+	if name == "resume" {
+		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
+		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
+	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
 	fs.Var(&f.unlabels, "unlabel", "label token to remove (repeatable; edit only)")
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
@@ -338,7 +342,16 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 	}
 }
 
+type goalAuthorityProver func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error)
+
 func runGoalResume(args []string) int {
+	return runGoalResumeWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+// runGoalResumeWithAuthority gives package tests a direct, non-CLI seam for an
+// already-granted proof. The shipped command always enters through
+// runGoalResume, whose authority owner reads the real wall clock.
+func runGoalResumeWithAuthority(args []string, prove goalAuthorityProver) int {
 	f, ok := parseSyncFlags("resume", args)
 	if !ok {
 		return 2
@@ -356,11 +369,22 @@ func runGoalResume(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	proof, err := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
+	ancestryNow, err := goalCommandNow(f.root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal resume could not prove enrolled human ancestry:", err)
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	proof, err := prove(
+		f.root, int64(os.Getppid()), nil, f.temporaryWord, f.reviewBy, ancestryNow)
+	if err != nil {
+		if f.temporaryWord == "" && f.reviewBy == "" {
+			fmt.Fprintln(os.Stderr, "goal resume could not prove enrolled human ancestry:", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, "goal resume could not bind its temporary recorded relay:", err)
+		return 2
+	}
+	temporaryAuthority := proof.TemporaryResumeFor(f.root)
 	req, err := syncReq(f.root, f.by, f.lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -382,11 +406,14 @@ func runGoalResume(args []string) int {
 		return 1
 	}
 	defer held.Release()
-	if err := humanauthority.RecordProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal resume", proof); err != nil {
+	if err := humanauthority.RecordResumeProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), proof); err != nil {
 		fmt.Fprintln(os.Stderr, "goal resume could not record its authority proof:", err)
 		return 1
 	}
 	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
+	if err == nil && res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
+		fmt.Printf("goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+	}
 	return printSyncResult(res, err)
 }
 
@@ -525,6 +552,12 @@ func runGoalEnrollTerminal(args []string) int {
 }
 
 func runGoalSetObligation(args []string) int {
+	return runGoalSetObligationWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+// runGoalSetObligationWithAuthority is the test-only entry seam paired with
+// runGoalResumeWithAuthority; no flag, config, or environment value selects it.
+func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver) int {
 	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	id := flags.String("id", "", "claimed goal id")
@@ -548,13 +581,9 @@ func runGoalSetObligation(args []string) int {
 	correlatedRisk := flags.String("correlated-assumption-risk", "", "yes|no|unknown")
 	authorityScopeChange := flags.String("authority-scope-change", "", "yes|no|unknown")
 	destructiveReach := flags.String("destructive-reach", "", "none|reversible-local|destructive|unknown")
-	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; authorizes set-obligation TEMPORARILY with the word recorded on its proof")
-	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
+	temporaryWord := flags.String("temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; authorizes set-obligation TEMPORARILY")
+	reviewBy := flags.String("review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	if flags.Parse(args) != nil {
-		return 2
-	}
-	if err := humanauthority.ValidateTemporaryWordPair(*temporaryWord, *reviewBy); err != nil {
-		fmt.Fprintln(os.Stderr, "goal set-obligation:", err)
 		return 2
 	}
 	if flags.NArg() != 0 || *id == "" || *by == "" || *state == "" || *owner == "" || *recurrence == "" ||
@@ -568,22 +597,22 @@ func runGoalSetObligation(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal set-obligation works only with the synced backlog")
 		return 1
 	}
-	var proof humanauthority.Proof
-	var err error
-	if *temporaryWord == "" {
-		proof, err = humanauthority.Prove(*root, int64(os.Getppid()), nil, time.Now().UTC())
-		if err != nil {
+	ancestryNow, err := goalCommandNow(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	proof, err := prove(
+		*root, int64(os.Getppid()), nil, *temporaryWord, *reviewBy, ancestryNow)
+	if err != nil {
+		if *temporaryWord == "" && *reviewBy == "" {
 			fmt.Fprintln(os.Stderr, "goal set-obligation could not prove enrolled human ancestry:", err)
 			return 1
 		}
-	} else {
-		proof, err = humanauthority.TemporaryProof(*root, *temporaryWord, *reviewBy, time.Now().UTC())
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "goal set-obligation could not bind its temporary human word:", err)
-			return 1
-		}
-		fmt.Fprintf(os.Stderr, "goal set-obligation: TEMPORARY authority under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
+		fmt.Fprintln(os.Stderr, "goal set-obligation could not bind its temporary recorded relay:", err)
+		return 2
 	}
+	temporaryAuthority := proof.TemporarySetObligationFor(*root)
 	req, err := syncReq(*root, *by, *lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -613,6 +642,9 @@ func runGoalSetObligation(args []string) int {
 			fmt.Fprintln(os.Stderr, "goal set-obligation could not record its authority proof:", err)
 			return 1
 		}
+	}
+	if res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
+		fmt.Printf("goal set-obligation: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", *reviewBy)
 	}
 	return printSyncResult(res, nil)
 }

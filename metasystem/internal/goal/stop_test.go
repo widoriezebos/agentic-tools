@@ -177,6 +177,82 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	}
 }
 
+func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000000S100", "mac-a"), "one-relayed-resume", "Bound this work.", "main", "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	claim := verbReq(root, "01J5X00000000000000000S110", "mac-a")
+	claim.ClaimEpoch = 9
+	if result, err := Claim(claim, "one-relayed-resume", Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", result, err)
+	}
+
+	closeAndComplete := func(ulid, stopID string, now time.Time) {
+		t.Helper()
+		projection, err := Project(endpointFor(root), true, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file := projection.Tree.Live["one-relayed-resume"]
+		request := CloseStopRequest{
+			VerbRequest: VerbRequest{
+				Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+				Ulid: ulid, Now: now, ClaimEpoch: 9,
+			},
+			GoalID: "one-relayed-resume", StopID: stopID, Reason: StopReasonElapsedLimit,
+			Capability: *file.StopCapability,
+		}
+		if result, err := CloseStop(request); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("close stop: %+v %v", result, err)
+		}
+		projection, err = Project(endpointFor(root), true, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stopped := projection.Tree.Live["one-relayed-resume"]
+		stamp := now.UTC().Format(time.RFC3339)
+		batch := StopBatch{
+			StopID: stopID, GoalID: "one-relayed-resume", GoalRevision: stopped.Claimed.Revision,
+			FenceEpoch: stopped.StopFence.Epoch, CapabilityGeneration: stopped.StopCapability.Generation,
+			Machine: "mac-a", ClaimEpoch: 9, Reason: StopReasonElapsedLimit,
+			State: StopBatchComplete, OpenedAt: stamp, UpdatedAt: stamp, CompletedAt: stamp, Pass: 1,
+		}
+		if err := WriteStopBatch(root, batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	firstAt := claim.Now.Add(time.Minute)
+	closeAndComplete("01J5X00000000000000000S120", "stop-one-relayed-resume-r2-f1", firstAt)
+	firstProof := testTemporaryGoalProof(t, root, "Wido authorizes first resume", "2026-09-06")
+	first := ResumeRequest{
+		VerbRequest: VerbRequest{
+			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "Wido"},
+			Ulid: "01J5X00000000000000000S130", Now: firstAt, ClaimEpoch: 9,
+		},
+		GoalID: "one-relayed-resume", Budget: Budget{ElapsedLimit: "2h", AttemptLimit: 4, ReservedJobMinutesLimit: 80, ActiveJobLimit: 2},
+		Authority: &firstProof,
+	}
+	if result, err := Resume(first); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("first relayed resume did not confirm: %+v %v", result, err)
+	}
+
+	secondAt := firstAt.Add(time.Minute)
+	closeAndComplete("01J5X00000000000000000S140", "stop-one-relayed-resume-r4-f1", secondAt)
+	secondProof := testTemporaryGoalProof(t, root, "Wido authorizes second resume", "2026-09-06")
+	second := first
+	second.Ulid = "01J5X00000000000000000S150"
+	second.Now = secondAt
+	second.Authority = &secondProof
+	result, err := Resume(second)
+	want := `goal one-relayed-resume already used relayed resume authority on 2026-08-20T22:01:00Z with recorded word "Wido authorizes first resume"; a further resume needs freshly observed enrolled-terminal authority`
+	if err != nil || result.Outcome != OutcomeRejected || result.Detail != want {
+		t.Fatalf("second relayed resume refusal mismatch: result=%+v err=%v", result, err)
+	}
+}
+
 func TestResumeRequiresHumanAuthority(t *testing.T) {
 	_, err := Resume(ResumeRequest{
 		VerbRequest: VerbRequest{Actor: Actor{Human: "argv-is-not-authority"}},

@@ -352,9 +352,9 @@ func WeightDischarge(root, goalID string, obligationRevision uint64, runID strin
 		return result, writeWeight(root, state)
 	}
 	policy, policyErr := config.CorrelationPolicy(root)
-	if policyErr != nil || policy == "" || obligation.ReviewPolicy != policy || obligation.ReviewOutcome != "human-approved" ||
+	if policyErr != nil || policy == "" || obligation.ReviewPolicy != policy ||
 		!resetDecision.Apply || !dischargeDecision.Apply {
-		return result, fmt.Errorf("weight discharge refused: current human authorization and policy do not permit reset-weight")
+		return result, fmt.Errorf("weight discharge refused: current recorded authority and policy do not permit reset-weight")
 	}
 	projection := dispatch.ProjectBudget(root, binding.File, now)
 	if projection.Status != dispatch.BudgetKnown {

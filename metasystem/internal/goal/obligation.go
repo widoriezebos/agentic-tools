@@ -61,8 +61,17 @@ type GovernedObligation = governance.GovernedObligation
 
 const (
 	ReviewOutcomeHumanApproved         = governance.ReviewOutcomeHumanApproved
+	ReviewOutcomeRecordedRelay         = governance.ReviewOutcomeRecordedRelay
+	AuthorizedByRecordedRelay          = governance.AuthorizedByRecordedRelay
 	AuthorityOutcomeTemporaryHumanWord = governance.AuthorityOutcomeTemporaryHumanWord
+	TemporaryGoalAuthorityRuling       = governance.TemporaryGoalAuthorityRuling
 )
+
+func validateRecordedTemporaryAuthority(outcome, reviewBy, ruling, humanWord string) error {
+	return (governance.RecordedTemporaryAuthority{
+		Outcome: outcome, ReviewBy: reviewBy, Ruling: ruling, HumanWord: humanWord,
+	}).ValidateRecorded()
+}
 
 // ConsequenceDecision is recorded at the base action boundary. WouldRefuse is
 // deliberately inert in DRAFT and OBSERVE.
@@ -107,8 +116,8 @@ func validateGovernedObligation(o *GovernedObligation, fileRevision uint64, clai
 	if !validObligationState(o.State) || strings.TrimSpace(o.Owner) == "" {
 		return fmt.Errorf("obligation requires a known state and owner")
 	}
-	if err := o.ValidateAuthorityProvenance(); err != nil {
-		return fmt.Errorf("obligation authority provenance: %w", err)
+	if err := o.ValidateRecordedAuthority(); err != nil {
+		return fmt.Errorf("obligation recorded authority: %w", err)
 	}
 	if err := o.Assumptions.Validate(); err != nil {
 		return fmt.Errorf("obligationAssumptions: %v", err)
@@ -185,9 +194,13 @@ func parseEffects(value string) ([]GoverningEffect, error) {
 }
 
 func parseObligationRecord(value string) (*GovernedObligation, error) {
-	rec, err := parseKVRecord(value,
+	withoutWord, humanWord, _, err := cutQuotedRecordField(value, "temporaryHumanWord")
+	if err != nil {
+		return nil, err
+	}
+	rec, err := parseKVRecord(withoutWord,
 		[]string{"revision", "budgetRevision", "state", "owner", "authorizedBy", "authorizedAt", "authorityOperation", "reviewPolicy", "reviewOutcome", "effects", "authorizedEffects"},
-		[]string{"authorityOutcome", "authorityReviewBy"}, "")
+		[]string{"authorityOutcome", "authorityReviewBy", "authorityRuling"}, "")
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +222,8 @@ func parseObligationRecord(value string) (*GovernedObligation, error) {
 		AuthorizedBy: normalize(rec["authorizedBy"]), AuthorizedAt: normalize(rec["authorizedAt"]),
 		AuthorityOperation: normalize(rec["authorityOperation"]), ReviewPolicy: normalize(rec["reviewPolicy"]),
 		ReviewOutcome: normalize(rec["reviewOutcome"]), AuthorityOutcome: normalize(rec["authorityOutcome"]),
-		AuthorityReviewBy: normalize(rec["authorityReviewBy"]), Effects: effects, AuthorizedEffects: authorizedEffects,
+		AuthorityReviewBy: normalize(rec["authorityReviewBy"]), AuthorityRuling: normalize(rec["authorityRuling"]),
+		TemporaryHumanWord: humanWord, Effects: effects, AuthorizedEffects: authorizedEffects,
 	}, nil
 }
 

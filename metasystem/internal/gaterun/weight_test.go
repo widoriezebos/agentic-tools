@@ -193,6 +193,44 @@ func TestWeightDischargeConsumesExactFreshProofRaisesRetroAndReplayChangesNothin
 	}
 }
 
+func TestWeightDischargeAcceptsRecordedRelayReviewOutcome(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	root, file := governedWeightBed(t, now)
+	file.Obligation.AuthorizedBy = "recorded-relay"
+	file.Obligation.ReviewOutcome = goal.ReviewOutcomeRecordedRelay
+	file.Obligation.AuthorityOutcome = goal.AuthorityOutcomeTemporaryHumanWord
+	file.Obligation.AuthorityReviewBy = "2026-09-06"
+	file.Obligation.AuthorityRuling = goal.TemporaryGoalAuthorityRuling
+	file.Obligation.TemporaryHumanWord = "Wido authorizes weight discharge"
+	last := &file.History[len(file.History)-1]
+	last.AuthorityOutcome = goal.AuthorityOutcomeTemporaryHumanWord
+	last.AuthorityReviewBy = "2026-09-06"
+	last.AuthorityRuling = goal.TemporaryGoalAuthorityRuling
+	last.TemporaryHumanWord = "Wido authorizes weight discharge"
+	goalPath := filepath.Join(root, "plans", "goals", "bounded.md")
+	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "recorded relay weight authority"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	priorNow := weightNow
+	weightNow = func() time.Time { return now }
+	t.Cleanup(func() { weightNow = priorNow })
+	if _, _, err := WeightAdd(root, "relay-landing", []byte("1\t0\tdirect.go\n"), "", 1); err != nil {
+		t.Fatal(err)
+	}
+	completeGreenProof(t, root, "relay-green", &now)
+	now = now.Add(time.Minute)
+	result, err := WeightDischarge(root, "bounded", 3, "relay-green")
+	if err != nil || !result.Decision.Applied ||
+		!strings.Contains(result.Decision.ResetDecision.Reason, "human provenance not verified") {
+		t.Fatalf("recorded relay became inert or overstated at weight discharge: result=%+v err=%v", result, err)
+	}
+}
+
 func TestWeightDischargeRefusesProofOlderThanCurrentWeightEpoch(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	root, _ := governedWeightBed(t, now)
