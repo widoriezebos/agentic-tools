@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Small mechanical item, 4h box (R-44-m0b): design note from the spike's implied rule, Sol critique, build in internal/dispatch record writers, every incarnation-comparison caller run
 - OpenedAt: 2026-09-01T21:26:07Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T21:26:07Z YGRS58CS27XPHHVC7FAVCK8B9R-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=job-record-birth-token
-Integrity: sha256=f186416aaf12b4ab21488ab0e0a147471975da3eef64d8a5d46faa47bc84a6bf
+- 2026-09-01T21:26:10Z 3ENA11H1YYQ6XEAJTD6C9KB5VG-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=job-record-birth-token
+Integrity: sha256=257ece17ad8a9ccc4314315b37b66a1acc87b429bcdb7e02ea90b50640fe51a2
