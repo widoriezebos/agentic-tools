@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "enginePolicyVersion": 1,
+  "classes": [
+    {
+      "id": "register-carriage",
+      "pathRule": "register-carriage-allowlist",
+      "requiredFields": [],
+      "authorizedBy": "R-35-m0"
+    },
+    {
+      "id": "exact-revert",
+      "pathRule": "tree-shaped-exact-inverse",
+      "requiredFields": ["revert-of"],
+      "authorizedBy": "R-35-m0"
+    }
+  ]
+}

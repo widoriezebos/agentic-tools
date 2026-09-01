@@ -29,6 +29,12 @@ git -C "$repository" add tracked.txt
   echo "pre-commit guard fixture: classifier failure gated a human tracked-file commit" >&2
   exit 1
 }
+observation_log=$fixture_root/artifacts/agents/landing-observe.log
+grep -Eq '^schemaVersion=1 boundary=pre-commit tree=[0-9a-f]{40,64} verdict=would-refuse code=classifier-unavailable$' \
+  "$observation_log" || {
+  echo "pre-commit guard fixture: classifier failure left no durable would-refuse observation" >&2
+  exit 1
+}
 
 # The unrelated existing new-plan safeguard remains active after the human
 # authority path fails open.

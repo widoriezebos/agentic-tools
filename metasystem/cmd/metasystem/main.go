@@ -89,6 +89,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "landing",
+			summary: "classify and record the two bars for a prospective landing",
+			verbs: []verb{
+				{"observe", "emit a non-refusing provenance verdict for the prospective project tree", runLandingObserve},
+			},
+		},
+		{
 			name:    "job",
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{

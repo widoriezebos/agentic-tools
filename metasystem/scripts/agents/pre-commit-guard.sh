@@ -26,16 +26,29 @@ fi
 guard_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
 ms="${METASYSTEM_BIN:-$guard_root/bin/metasystem}"
-if [[ -x "$ms" ]]; then
-  classification=
-  caller_class=
-  if classification=$("$ms" lease classify --root "$guard_root" --caller-pid "$$" 2>/dev/null) \
-    && caller_class=$("$ms" json get --value "$classification" --field class 2>/dev/null); then
-    :
-  fi
+record_unevaluable_observation() {
+  local tree log
+  tree=$(git write-tree 2>/dev/null || true)
+  [[ "$tree" =~ ^[0-9a-f]{40,64}$ ]] || tree=unknown
+  log=$guard_root/artifacts/agents/landing-observe.log
+  mkdir -p "${log%/*}" 2>/dev/null || return 0
+  printf 'schemaVersion=1 boundary=pre-commit tree=%s verdict=would-refuse code=classifier-unavailable\n' \
+    "$tree" >>"$log" 2>/dev/null || true
+}
+
+classification=
+caller_class=
+if [[ ! -x "$ms" ]] \
+  || ! classification=$("$ms" lease classify --root "$guard_root" --caller-pid "$$" 2>/dev/null) \
+  || ! caller_class=$("$ms" json get --value "$classification" --field class 2>/dev/null) \
+  || [[ -z "$caller_class" ]]; then
+  # Observe mode remains non-refusing, but an unavailable identity decision is
+  # itself evidence: keep it instead of turning fail-open into invisible data.
+  record_unevaluable_observation
+else
   # Human commits are sovereign. A broken classifier cannot positively prove
-  # agent ancestry, so this hook leaves the commit untouched; valid agent
-  # classifications still require the live wrapper token below.
+  # agent ancestry, so observe mode leaves the commit untouched after recording
+  # the uncertainty; valid agent classifications still require the wrapper.
   if [[ -n "$caller_class" && "$caller_class" != HUMAN ]]; then
     token=$guard_root/artifacts/agents/mains/worktree-commit-token.json
     # The wrapper-token proof: the token's fields must be valid, the wrapper

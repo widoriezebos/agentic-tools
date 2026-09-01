@@ -58,6 +58,11 @@ case "$1 $2" in
   "proc started-at") echo 1 ;;
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token") : ;;
+  "json get")
+    case " $* " in
+      *" --field provenance "*) echo "none change=0000000000000000000000000000000000000000000000000000000000000000" ;;
+      *" --field verdictTrailer "*) echo "would-refuse code=missing-declaration" ;;
+    esac ;;
   "behavior-surface select")
     while IFS= read -r -d '' path; do
       case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|metasystem.conf.local) ;;
@@ -81,6 +86,8 @@ case "$1 $2" in
       esac
     done ;;
   "gate weight-add") echo "proof-engine weight refusal" >&2; exit 1 ;;
+  "landing observe")
+    echo '{"provenance":"none change=0000000000000000000000000000000000000000000000000000000000000000","verdictTrailer":"would-refuse code=missing-declaration"}' ;;
   *) : ;;
 esac
 SH
@@ -146,6 +153,11 @@ git -C "$fixture_root" add scripts/agents/go-gate.sh
   || { echo "static re-proof fixture: a green fast gate blocked the commit" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes green" ]] \
   || { echo "static re-proof fixture: the green-gate commit did not land" >&2; exit 1; }
+green_message=$(git -C "$fixture_root" log -1 --format=%B)
+grep -Fq 'Landing-Provenance: none change=0000000000000000000000000000000000000000000000000000000000000000' <<<"$green_message" \
+  || { echo "static re-proof fixture: the observer provenance did not reach the commit" >&2; exit 1; }
+grep -Fq 'Landing-Provenance-Verdict: would-refuse code=missing-declaration' <<<"$green_message" \
+  || { echo "static re-proof fixture: the observer verdict did not reach the commit" >&2; exit 1; }
 [[ -f "$STATIC_REPROOF_POLICY_ENGINE_MARKER" ]] \
   || { echo "static re-proof fixture: the proof-built policy engine branch was not exercised" >&2; exit 1; }
 
@@ -159,6 +171,11 @@ case "$1 $2" in
   "proc started-at") echo 1 ;;
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token") : ;;
+  "json get")
+    case " $* " in
+      *" --field provenance "*) echo "none change=0000000000000000000000000000000000000000000000000000000000000000" ;;
+      *" --field verdictTrailer "*) echo "would-refuse code=missing-declaration" ;;
+    esac ;;
   "behavior-surface select")
     while IFS= read -r -d '' path; do
       case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|metasystem.conf.local) ;;

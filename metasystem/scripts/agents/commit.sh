@@ -35,19 +35,57 @@ if [[ ${1:-} == --push ]]; then
 fi
 
 ratchet=
+landing_chain=
+landing_direct_fix=
+landing_revert_of=
 commit_args=()
 while (( $# )); do
-  if [[ "$1" == --ratchet ]]; then
-    [[ $# -ge 2 && -z "$ratchet" ]] || {
-      echo "commit refused: --ratchet requires one path" >&2
-      exit 2
-    }
-    ratchet=$2
-    shift 2
-    continue
-  fi
-  commit_args+=("$1")
-  shift
+  case "$1" in
+    --ratchet)
+      [[ $# -ge 2 && -z "$ratchet" ]] || {
+        echo "commit refused: --ratchet requires one path" >&2
+        exit 2
+      }
+      ratchet=$2
+      shift 2
+      ;;
+    --chain)
+      [[ $# -ge 2 && -z "$landing_chain" ]] || {
+        echo "commit refused: --chain requires one chain root" >&2
+        exit 2
+      }
+      landing_chain=$2
+      shift 2
+      ;;
+    --direct-fix)
+      [[ $# -ge 2 && -z "$landing_direct_fix" ]] || {
+        echo "commit refused: --direct-fix requires one class" >&2
+        exit 2
+      }
+      landing_direct_fix=$2
+      shift 2
+      ;;
+    --revert-of)
+      [[ $# -ge 2 && -z "$landing_revert_of" ]] || {
+        echo "commit refused: --revert-of requires one commit" >&2
+        exit 2
+      }
+      landing_revert_of=$2
+      shift 2
+      ;;
+    --)
+      commit_args+=("$1")
+      shift
+      while (( $# )); do
+        commit_args+=("$1")
+        shift
+      done
+      ;;
+    *)
+      commit_args+=("$1")
+      shift
+      ;;
+  esac
 done
 
 started=$("$ms" proc started-at --pid $$) || {
@@ -244,6 +282,33 @@ if [[ "$settled_tree" != "$proved_tree" ]] || [[ -s "$settled_unbound" ]]; then
   exit 1
 fi
 rm -f "$settled_unbound"
+
+# Observe the exact project tree the commit is about to record. Policy
+# mismatches never stop observe mode: the evaluator returns a would-refuse
+# value, and even an unavailable or malformed evaluator has a fixed fallback
+# verdict. Both values ride the commit, so a later rebase and push carry the
+# observation with the landing instead of leaving the only copy in scratch
+# state.
+landing_tree=$settled_tree
+if [[ -n "$prefix" ]]; then
+  resolved_landing_tree=$(git -C "$root" rev-parse "$settled_tree:${prefix%/}" 2>/dev/null || true)
+  [[ -z "$resolved_landing_tree" ]] || landing_tree=$resolved_landing_tree
+fi
+landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
+[[ -z "$landing_chain" ]] || landing_observe_args+=(--chain "$landing_chain")
+[[ -z "$landing_direct_fix" ]] || landing_observe_args+=(--direct-fix "$landing_direct_fix")
+[[ -z "$landing_revert_of" ]] || landing_observe_args+=(--revert-of "$landing_revert_of")
+landing_provenance="none change=unknown"
+landing_verdict="would-refuse code=evaluator-unavailable"
+landing_observation=
+if landing_observation=$("$policy_engine" "${landing_observe_args[@]}" 2>/dev/null); then
+  observed_provenance=$("$ms" json get --value "$landing_observation" --field provenance 2>/dev/null || true)
+  observed_verdict=$("$ms" json get --value "$landing_observation" --field verdictTrailer 2>/dev/null || true)
+  if [[ -n "$observed_provenance" && -n "$observed_verdict" ]]; then
+    landing_provenance=$observed_provenance
+    landing_verdict=$observed_verdict
+  fi
+fi
 # The proof binds THE INDEX; the postcondition proves the commit
 # recorded exactly that tree. This replaces any argument grammar
 # (IL28-R2-2, IL28-R3-2, IL28-R4-1, IL28-R4-5): whatever selected
@@ -260,7 +325,10 @@ proved_head=$(git -C "$root" rev-parse --verify --quiet HEAD || true)
 machine_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
 [[ -n "$machine_nickname" ]] \
   || { echo "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine" >&2; exit 2; }
-git -C "$root" commit --trailer "Machine: ${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}" "${commit_args[@]}"
+git -C "$root" commit --trailer "Machine: ${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}" \
+  --trailer "Landing-Provenance: $landing_provenance" \
+  --trailer "Landing-Provenance-Verdict: $landing_verdict" \
+  "${commit_args[@]}"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
 if [[ "$landed_tree" != "$proved_tree" ]]; then
   if [[ -n "$proved_head" ]]; then
