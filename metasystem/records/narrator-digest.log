@@ -386,3 +386,5 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-01T06:32:28Z LOWLIGHT — The steward escalated: a live worker with no progress for 13 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-84f847aac131521f4b655d041d0cb3f66959c378)
 2026-09-01T06:42:50Z LOWLIGHT — The steward escalated: a live worker with no progress for 14 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-84f847aac131521f4b655d041d0cb3f66959c378)
 2026-09-01T06:53:12Z LOWLIGHT — The steward escalated: a live worker with no progress for 15 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-84f847aac131521f4b655d041d0cb3f66959c378)
+2026-09-01T06:43:43Z HIGHLIGHT — A landing moved the repository storyline to commit e0bd071c1254. (source: commit e0bd071c1254d26a289497bbb8536b70793bf892)
+2026-09-01T06:43:43Z LOWLIGHT — A budget breach-stop for goal alert-escalation-channel revision 18 reached complete. (source: episode stop-alert-escalation-channel-r18-f1)
