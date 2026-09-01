@@ -5,10 +5,11 @@ Date: 2026-09-01
 # Goal
 
 Independent design critique of revision 7 of
-metasystem/plans/alert-channel-design.md — the terminal round of job
-implementer-0d40e4f087fbb016d455fd35 (the exact reviewed tree and diff are the
-round's persisted conformance artifacts; review that tree, not the shared
-checkout). Revision 7 exists to close the second slice-1 gap-stop: four
+metasystem/plans/alert-channel-design.md, landed on main and present in your
+worktree — authored by the Fable design lane in job
+implementer-0d40e4f087fbb016d455fd35 (its round evidence is durable under
+artifacts/agents/). Review the document in your worktree; write nothing but
+your return. Revision 7 exists to close the second slice-1 gap-stop: four
 cross-section contradictions introduced by section 11a, plus Wido's binding
 2026-09-01 word (two new slice-1 producer classes: delegate-job-failed under a
 claimed goal, and the breach-stop's stop-awaiting-resume).
