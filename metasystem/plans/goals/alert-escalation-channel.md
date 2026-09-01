@@ -5,11 +5,10 @@
 - Origin: human
 - Next step: Appetite: build phase. Design at revision 6 (da3d74b8), register closed at rev 5; OWED: revision 7 - the four cross-section contradictions of the second gap-stop (see fold6 brief) PLUS Wido's morning word 2026-09-01, binding: the alert classes MUST include 'delegate job failed under a claimed goal' and the breach-stop's stop-awaiting-resume must be wired as a producer in slice 1 - the 2026-09-01 six-hour idle (records/misc/idle-loss-2026-09-01.md) is the specimen; a failed worker told no one while the machinery knew in seconds. Then rebuild slice 1 per section 11a; then cross-family implementation critique; then covenant landing. Wido's earlier design words all stand (adapter abstraction, Telegram first, bridge reuse, Slack threading)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 20
-- Budget: elapsedLimit=4h attemptLimit=3 reservedJobMinutesLimit=90 activeJobLimit=1
-- Claimed: machine=m3 lineage=mac-m3 at=2026-08-31T22:14:44Z revision=18
-- StopCapability: generation=18 revision=18 machine=m3 claimEpoch=1 fenceEpoch=1
-- StopFence: stopId=stop-alert-escalation-channel-r18-f1 revision=18 epoch=1 capabilityGeneration=18 closedAt=2026-09-01T04:16:39Z reason=ELAPSED_LIMIT
+- Revision: 21
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Claimed: machine=m3 lineage=mac-m3 at=2026-09-01T12:39:02Z revision=21
+- StopCapability: generation=21 revision=21 machine=m3 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-29T06:19:06Z 6RYCTDER5WR9E3X1VDDVPWJDGF-m1-bf243850 open actor=human:wido targets=alert-escalation-channel
@@ -32,4 +31,5 @@ History:
 - 2026-08-31T22:14:44Z X4Z6TYYR8P7Q3N080MA1V8J4DY-m3-a5da21ff claim actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-09-01T04:16:39Z 4TAHPSFMAR8HRHMYK2D5GZNGKV-m3-43182c96 breach-stop actor=m3+goal-stop-custodian targets=alert-escalation-channel
 - 2026-09-01T06:45:55Z MAWTSQ57M8WJCKGRQSPJZ3D24Z-m3-a5da21ff edit actor=m3+mac-m3 targets=alert-escalation-channel
-Integrity: sha256=c5659f6f3e914d7e8bebd9f06cad3c5da223842e955ed4647d6d9746abfdcb34
+- 2026-09-01T12:39:02Z 5049KYTGS8AM79Y6Y382KRX71S-m3-a5da21ff resume actor=human:wido targets=alert-escalation-channel authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="free M0-B's alert-escalation-channel goal"
+Integrity: sha256=2c04b85c3c6e8a908b01d6f64f20550a7306db724d24740792ecbdba04e4e7b0
