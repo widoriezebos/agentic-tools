@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
-- Next step: Appetite: 3h — design then build. PROMOTED by Wido 2026-08-31; design round done (landed 578eba43), Sol critique in flight, fold next. Wido's design words, verbatim, all binding on the fold: (1) "it needs to have an abstraction/adapter. I want to be able to have email, slack, telegram, whatsapp etc underneath by simple configuration"; (2) Telegram confirmed as the first example implementation; (3) "We can use the same mechanism for the session bridge too, so there is a bit of reuse there" — the adapter contract bears a second consumer, runtime-agnostic seat-to-seat messaging (goal:seat-mutual-awareness); (4) "Another one would be slack, which has threaded messages. that also needs to fit the design of the alert channel and session bridge" — the contract must carry conversation/thread identity such that a threaded adapter (Slack) threads naturally (an episode's alert, updates, and acknowledgment as one thread; a seat-to-seat exchange as one thread) while flat adapters degrade honestly (reply-chains or flattening), never per-adapter leakage into call sites. DRIVING SPECIMEN: records/misc/idle-loss-2026-08-31.md. Alert classes: Ruling L escalations plus every blocked-on-human state; episode store is sole truth; delivery never blocks machinery; credentials outside the repository
+- Next step: Appetite: build phase. Design at revision 6 (da3d74b8), register closed at rev 5; OWED: revision 7 - the four cross-section contradictions of the second gap-stop (see fold6 brief) PLUS Wido's morning word 2026-09-01, binding: the alert classes MUST include 'delegate job failed under a claimed goal' and the breach-stop's stop-awaiting-resume must be wired as a producer in slice 1 - the 2026-09-01 six-hour idle (records/misc/idle-loss-2026-09-01.md) is the specimen; a failed worker told no one while the machinery knew in seconds. Then rebuild slice 1 per section 11a; then cross-family implementation critique; then covenant landing. Wido's earlier design words all stand (adapter abstraction, Telegram first, bridge reuse, Slack threading)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=4h attemptLimit=3 reservedJobMinutesLimit=90 activeJobLimit=1
 - Claimed: machine=m3 lineage=mac-m3 at=2026-08-31T22:14:44Z revision=18
 - StopCapability: generation=18 revision=18 machine=m3 claimEpoch=1 fenceEpoch=1
@@ -31,4 +31,5 @@ History:
 - 2026-08-31T22:14:17Z DN4XG7VC9CP0QKSMX0CEDPSST2-m3-a5da21ff release actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-08-31T22:14:44Z X4Z6TYYR8P7Q3N080MA1V8J4DY-m3-a5da21ff claim actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-09-01T04:16:39Z 4TAHPSFMAR8HRHMYK2D5GZNGKV-m3-43182c96 breach-stop actor=m3+goal-stop-custodian targets=alert-escalation-channel
-Integrity: sha256=3a8916e302cb11e9fa67705ec9a8a81e96dd1b9da7b8d3d041537945e52d6e49
+- 2026-09-01T06:45:55Z MAWTSQ57M8WJCKGRQSPJZ3D24Z-m3-a5da21ff edit actor=m3+mac-m3 targets=alert-escalation-channel
+Integrity: sha256=c5659f6f3e914d7e8bebd9f06cad3c5da223842e955ed4647d6d9746abfdcb34
