@@ -146,9 +146,10 @@ func readAt(root string, now time.Time) Snapshot {
 		return summarize(sections)
 	}
 	health, healthState, healthProblem := readHealth(root, now)
+	jobs := readJobRecords(root)
 	sections := []Section{
-		readJobs(root),
-		readCompletedRounds(root),
+		readJobs(now, health, jobs),
+		readCompletedRounds(root, jobs),
 		readCensus(root),
 		healthSection(health, healthState, healthProblem),
 		readDelivery(root, health, healthState, healthProblem),
@@ -234,8 +235,9 @@ func itemNeedsAttention(class TrackedClass, item Item) bool {
 	switch class {
 	case ClassJobs:
 		// Goal-bound terminal outcomes need the delivery producer's recovery
-		// join. Explicit no-goal failures have no such owner and remain visible.
-		return item.GoalField == GoalFieldNull &&
+		// join. A terminal newer than that verdict is no longer covered by it.
+		// Explicit no-goal failures have no such owner and remain visible.
+		return (item.GoalField == GoalFieldNull || item.GoalField == GoalFieldBound && item.Stage == "STALE") &&
 			(item.Verdict == "failed" || item.Verdict == "timeout")
 	case ClassCensus:
 		return item.Verdict != "SUCCESS" && item.Verdict != VerdictUnreadable
@@ -253,19 +255,30 @@ func itemNeedsAttention(class TrackedClass, item Item) bool {
 	}
 }
 
-func readJobs(root string) Section {
-	store := "artifacts/agents/jobs"
-	section := newSection(ClassJobs, store)
-	paths, problem := jsonFiles(root, store)
+type jobRecord struct {
+	record   map[string]json.RawMessage
+	item     Item
+	evidence string
+}
+
+type jobRecords struct {
+	records    []jobRecord
+	unreadable []Item
+	problem    string
+}
+
+func readJobRecords(root string) jobRecords {
+	var result jobRecords
+	paths, problem := jsonFiles(root, "artifacts/agents/jobs")
 	if problem != "" {
-		return degrade(section, store, problem)
+		result.problem = problem
+		return result
 	}
 	for _, path := range paths {
 		rel := relativeEvidence(root, path)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			section.Items = append(section.Items, unreadableItem("job", fileID(path), rel, err))
-			section.Verdict = SectionDegraded
+			result.unreadable = append(result.unreadable, unreadableItem("job", fileID(path), rel, err))
 			continue
 		}
 		var record map[string]json.RawMessage
@@ -273,15 +286,13 @@ func readJobs(root string) Section {
 			if err == nil {
 				err = fmt.Errorf("record is not a JSON object")
 			}
-			section.Items = append(section.Items, unreadableItem("job", fileID(path), rel, err))
-			section.Verdict = SectionDegraded
+			result.unreadable = append(result.unreadable, unreadableItem("job", fileID(path), rel, err))
 			continue
 		}
 		id, idOK := rawString(record["jobId"])
 		status, statusOK := rawString(record["status"])
 		if !idOK || id == "" || id != fileID(path) || !knownJobStatus(status) || !statusOK {
-			section.Items = append(section.Items, unreadableItem("job", fileID(path), rel, fmt.Errorf("job identity or status is incomplete")))
-			section.Verdict = SectionDegraded
+			result.unreadable = append(result.unreadable, unreadableItem("job", fileID(path), rel, fmt.Errorf("job identity or status is incomplete")))
 			continue
 		}
 		goalID, goalState := goalField(record)
@@ -291,6 +302,41 @@ func readJobs(root string) Section {
 		}
 		if goalState == GoalFieldAbsent || goalState == GoalFieldEmpty || goalState == GoalFieldInvalid {
 			item.Problem = "goalId has a corrupt or legacy-unknown wire shape"
+		}
+		result.records = append(result.records, jobRecord{record: record, item: item, evidence: rel})
+	}
+	return result
+}
+
+func readJobs(now time.Time, health steward.HealthVerdict, jobs jobRecords) Section {
+	store := "artifacts/agents/jobs"
+	section := newSection(ClassJobs, store)
+	if jobs.problem != "" {
+		return degrade(section, store, jobs.problem)
+	}
+	section.Items = append(section.Items, jobs.unreadable...)
+	if len(jobs.unreadable) > 0 {
+		section.Verdict = SectionDegraded
+	}
+	for _, job := range jobs.records {
+		item := job.item
+		if item.GoalField == GoalFieldBound && (item.Verdict == "failed" || item.Verdict == "timeout") {
+			endedText, endedPresent := rawString(job.record["endedAt"])
+			if endedPresent {
+				endedAt, err := time.Parse(time.RFC3339, endedText)
+				if err != nil || endedAt.After(now) {
+					item.Problem = "goal-bound terminal job endedAt is not a current or past RFC 3339 time"
+					section.Verdict = SectionDegraded
+				} else {
+					item.ObservedAt = endedAt.UTC().Format(time.RFC3339)
+					if !health.ObservedAt.IsZero() && endedAt.After(health.ObservedAt) {
+						item.Stage = "STALE"
+						item.Problem = "goal-bound terminal verdict is newer than the owning health observation"
+					}
+				}
+			}
+		}
+		if item.GoalField == GoalFieldAbsent || item.GoalField == GoalFieldEmpty || item.GoalField == GoalFieldInvalid {
 			section.Verdict = SectionDegraded
 		}
 		section.Items = append(section.Items, item)
@@ -299,45 +345,27 @@ func readJobs(root string) Section {
 	return section
 }
 
-// readCompletedRounds exposes the only mechanically provable risk window:
-// a completed goal-bound round whose terminal timestamp is later than that
-// goal's newest landing receipt. Job records persist no return-consumption
-// marker, so every such item remains UNKNOWN-CONSUMPTION instead of guessing.
-func readCompletedRounds(root string) Section {
+// readCompletedRounds exposes completed goal-bound rounds whose consumption
+// is not proven. A folded critic round has a canonical consumption marker;
+// other roles rely on landing receipts and remain UNKNOWN-CONSUMPTION when
+// no receipt exists or completion postdates the newest one.
+func readCompletedRounds(root string, jobs jobRecords) Section {
 	store := "artifacts/agents/jobs + memory/receipts.log"
 	section := newSection(ClassCompletedRounds, store)
 	receipts, receiptState, receiptProblem := readLandingReceiptTimes(root)
 	if receiptState == SectionDegraded {
 		return degrade(section, "memory/receipts.log", receiptProblem)
 	}
-	paths, problem := jsonFiles(root, "artifacts/agents/jobs")
-	if problem != "" {
-		return degrade(section, "artifacts/agents/jobs", problem)
+	if jobs.problem != "" {
+		return degrade(section, "artifacts/agents/jobs", jobs.problem)
 	}
-	for _, path := range paths {
-		rel := relativeEvidence(root, path)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			section.Items = append(section.Items, unreadableItem("completed-round-consumption", fileID(path), rel, err))
-			section.Verdict = SectionDegraded
-			continue
-		}
-		var record map[string]json.RawMessage
-		if err := json.Unmarshal(data, &record); err != nil || record == nil {
-			if err == nil {
-				err = fmt.Errorf("record is not a JSON object")
-			}
-			section.Items = append(section.Items, unreadableItem("completed-round-consumption", fileID(path), rel, err))
-			section.Verdict = SectionDegraded
-			continue
-		}
-		id, idOK := rawString(record["jobId"])
-		status, statusOK := rawString(record["status"])
-		if !idOK || id == "" || id != fileID(path) || !statusOK || !knownJobStatus(status) {
-			section.Items = append(section.Items, unreadableItem("completed-round-consumption", fileID(path), rel, fmt.Errorf("job identity or status is incomplete")))
-			section.Verdict = SectionDegraded
-			continue
-		}
+	byID := make(map[string]jobRecord, len(jobs.records))
+	for _, job := range jobs.records {
+		byID[job.item.ID] = job
+	}
+	for _, job := range jobs.records {
+		record, rel := job.record, job.evidence
+		id, status := job.item.ID, string(job.item.Verdict)
 		if status != "completed" {
 			continue
 		}
@@ -347,18 +375,18 @@ func readCompletedRounds(root string) Section {
 			section.Verdict = SectionDegraded
 			continue
 		}
-		goalID, goalState := goalField(record)
+		goalID, goalState := job.item.GoalID, job.item.GoalField
 		if goalState != GoalFieldBound {
 			continue
 		}
 		receiptAt, hasReceipt := receipts[goalID]
-		if !hasReceipt {
-			continue
-		}
 		var round int64
 		if err := json.Unmarshal(record["round"], &round); err != nil || round < 1 {
 			section.Items = append(section.Items, unreadableItem("completed-round-consumption", id, rel, fmt.Errorf("completed delegate record has no positive round")))
 			section.Verdict = SectionDegraded
+			continue
+		}
+		if critiqueRoundWasConsumed(job, role, round, byID) {
 			continue
 		}
 		endedText, endedOK := rawString(record["endedAt"])
@@ -368,8 +396,13 @@ func readCompletedRounds(root string) Section {
 			section.Verdict = SectionDegraded
 			continue
 		}
-		if !endedAt.After(receiptAt) {
+		if hasReceipt && !endedAt.After(receiptAt) {
 			continue
+		}
+		problem := "job records persist no return-consumption marker; goal has no landing receipt"
+		if hasReceipt {
+			problem = fmt.Sprintf("job records persist no return-consumption marker; completion postdates goal %s landing receipt at %s",
+				goalID, receiptAt.UTC().Format(time.RFC3339))
 		}
 		section.Items = append(section.Items, Item{
 			Kind:       "completed-round-consumption",
@@ -380,12 +413,38 @@ func readCompletedRounds(root string) Section {
 			GoalID:     goalID,
 			GoalField:  GoalFieldBound,
 			ObservedAt: endedAt.UTC().Format(time.RFC3339),
-			Problem: fmt.Sprintf("job records persist no return-consumption marker; completion postdates goal %s landing receipt at %s",
-				goalID, receiptAt.UTC().Format(time.RFC3339)),
+			Problem:    problem,
 		})
 	}
 	finishSection(&section)
 	return section
+}
+
+func critiqueRoundWasConsumed(job jobRecord, role string, round int64, byID map[string]jobRecord) bool {
+	switch role {
+	case "design-critic", "code-critic", "warden":
+	default:
+		return false
+	}
+	root := job
+	seen := map[string]bool{}
+	for {
+		if seen[root.item.ID] {
+			return false
+		}
+		seen[root.item.ID] = true
+		parent, hasParent := rawString(root.record["parentJob"])
+		if !hasParent || parent == "" {
+			break
+		}
+		var present bool
+		root, present = byID[parent]
+		if !present {
+			return false
+		}
+	}
+	var foldedRound int64
+	return json.Unmarshal(root.record["findingRegisterRound"], &foldedRound) == nil && foldedRound >= round
 }
 
 func readLandingReceiptTimes(root string) (map[string]time.Time, SectionVerdict, string) {

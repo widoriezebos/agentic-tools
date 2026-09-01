@@ -148,6 +148,94 @@ func TestCompletedRoundNewerThanLandingReceiptHasUnknownConsumption(t *testing.T
 	}
 }
 
+func TestCompletedRoundWithNoLandingReceiptHasUnknownConsumption(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	writeWatchHealth(t, root, now.Add(-time.Minute), "healthy", "alive")
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	job := fmt.Sprintf(`{"jobId":"first-return","role":"implementer","round":1,"status":"completed","goalId":"goal-one","endedAt":%q}`, now.Add(-time.Minute).Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(jobs, "first-return.json"), []byte(job), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := readAt(root, now)
+	completed := snapshot.Sections[1]
+	if completed.Verdict != SectionReadable || len(completed.Items) != 1 ||
+		completed.Items[0].Verdict != VerdictUnknownConsumption ||
+		!strings.Contains(completed.Items[0].Problem, "goal has no landing receipt") ||
+		snapshot.Aggregate != AggregateUnknown {
+		t.Fatalf("a first completed round without a receipt was silent: %+v", snapshot)
+	}
+}
+
+func TestFoldedCriticRoundIsNotUnknownConsumption(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	writeWatchHealth(t, root, now.Add(-time.Minute), "healthy", "alive")
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	job := fmt.Sprintf(`{"jobId":"critic-one","role":"code-critic","round":1,"status":"completed","goalId":"goal-one","parentJob":null,"findingRegister":[],"findingRegisterRound":2,"endedAt":%q}`, now.Add(-2*time.Minute).Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(jobs, "critic-one.json"), []byte(job), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	job = fmt.Sprintf(`{"jobId":"critic-two","role":"code-critic","round":2,"status":"completed","goalId":"goal-one","parentJob":"critic-one","endedAt":%q}`, now.Add(-time.Minute).Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(jobs, "critic-two.json"), []byte(job), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := readAt(root, now)
+	if completed := snapshot.Sections[1]; completed.Verdict != SectionEmpty || len(completed.Items) != 0 {
+		t.Fatalf("a critic return proven consumed by its finding-register marker remained noisy: %+v", completed)
+	}
+}
+
+func TestGoalBoundFailureNewerThanHealthObservationNeedsAttention(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	writeWatchHealth(t, root, now.Add(-time.Minute), "healthy", "alive")
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	job := fmt.Sprintf(`{"jobId":"later-failure","status":"failed","goalId":"goal-one","endedAt":%q}`, now.Add(-30*time.Second).Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(jobs, "later-failure.json"), []byte(job), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := readAt(root, now)
+	item := snapshot.Sections[0].Items[0]
+	if snapshot.Aggregate != AggregateAttention || snapshot.ExitCode() != 1 || item.Stage != "STALE" ||
+		!strings.Contains(item.Problem, "newer than the owning health observation") {
+		t.Fatalf("a fresh summary hid its later goal-bound failure: %+v", snapshot)
+	}
+}
+
+func TestUnreadableJobAppearsOnlyOnce(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	writeWatchHealth(t, root, now.Add(-time.Minute), "healthy", "alive")
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "broken.json"), []byte("not-json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := readAt(root, now)
+	if len(snapshot.Sections[0].Items) != 1 || snapshot.Sections[0].Items[0].Verdict != VerdictUnreadable {
+		t.Fatalf("the jobs class lost its typed per-record error: %+v", snapshot.Sections[0])
+	}
+	if len(snapshot.Sections[1].Items) != 0 || snapshot.Sections[1].Verdict != SectionEmpty {
+		t.Fatalf("the completed-rounds class duplicated the job parse error: %+v", snapshot.Sections[1])
+	}
+}
+
 func TestMissingCheckoutDoesNotBecomeHealthy(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "absent")
 	snapshot := Read(root)

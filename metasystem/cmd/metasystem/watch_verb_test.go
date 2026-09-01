@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -108,6 +109,19 @@ func TestWatchAbsentHealthIsDeadAndZeroWrite(t *testing.T) {
 
 func TestWatchStaleHealthAndGoalFailurePrintsDeadRecordAge(t *testing.T) {
 	root := t.TempDir()
+	globalConfig := filepath.Join(t.TempDir(), "global.gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[metasystem \"steward\"]\n\ttick-seconds = 7200\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	command := exec.Command("git", "init", "--quiet", root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("initialize isolated watch fixture: %v: %s", err, output)
+	}
+	command = exec.Command("git", "-C", root, "config", "metasystem.steward.tick-seconds", "600")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("set isolated watch cadence: %v: %s", err, output)
+	}
 	now := time.Now().UTC().Truncate(time.Second)
 	watchWriteJSON(t, root, "artifacts/agents/jobs/goal-failure.json", map[string]any{
 		"jobId": "goal-failure", "round": 1, "role": "implementer", "status": "failed", "goalId": "goal-one",
