@@ -1524,12 +1524,31 @@ func runDispatchCapResolution(args []string) int {
 func runDispatchBriefMode(args []string) int {
 	flags := flag.NewFlagSet("job brief-mode", flag.ContinueOnError)
 	brief := flags.String("brief", "", "brief file")
+	baseTree := flags.String("base-tree", "", "Git checkout whose HEAD is the delegate base tree")
+	diskRoot := flags.String("disk-root", "", "live checkout root for runtime artifact paths")
+	authorityOnly := flags.Bool("authority-only", false, "check cited authority without requiring a Working Mode header")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *brief == "" {
 		fmt.Fprintln(os.Stderr, "job brief-mode: --brief is required")
 		return 2
+	}
+	if (*baseTree == "") != (*diskRoot == "") {
+		fmt.Fprintln(os.Stderr, "job brief-mode: --base-tree and --disk-root must be provided together")
+		return 2
+	}
+	if *authorityOnly && *baseTree == "" {
+		fmt.Fprintln(os.Stderr, "job brief-mode: --authority-only requires --base-tree and --disk-root")
+		return 2
+	}
+	if *baseTree != "" {
+		if err := dispatchcore.ValidateBriefAuthority(*brief, *baseTree, *diskRoot); err != nil {
+			return recordExit(err)
+		}
+	}
+	if *authorityOnly {
+		return 0
 	}
 	mode, err := dispatchcore.BriefMode(*brief)
 	if err != nil {

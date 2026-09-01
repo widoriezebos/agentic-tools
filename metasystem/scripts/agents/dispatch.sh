@@ -662,6 +662,10 @@ brief_mode() { # brief
   "$ms" job brief-mode --brief "$1"
 }
 
+brief_authority() { # brief, delegate base tree
+  "$ms" job brief-mode --authority-only --brief "$1" --base-tree "$2" --disk-root "$repo_scope"
+}
+
 # Roster resolution, tier ranking, and escalation classification moved to
 # `job resolve-roster` (script-orchestration-02) — including the lessons the
 # retired shell helpers carried: tiers read through the MERGED resolver so
@@ -1144,7 +1148,7 @@ dispatch_job() {
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
   local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort=
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
   local -a product_root_args=() composition_source_args=()
   while (($#)); do
     case "$1" in
@@ -1335,6 +1339,13 @@ dispatch_job() {
       || die 1 "could not derive the delegate operation identity"
   fi
   valid_id "$job" || die 2 "invalid job id: $job"
+  authority_base=$repo_scope
+  if (( use_worktree )) && [[ -d "$worktrees/$job" ]]; then
+    authority_base=$worktrees/$job
+  elif (( workspace_selected )); then
+    authority_base=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
+  fi
+  brief_authority "$brief" "$authority_base" || die 1 "brief authority admission refused"
   # A new operation has no retry fingerprint to compare. Run the global
   # budget gate before process setup; standing operations defer it until the
   # exact v2 preflight has established replay versus mismatch.
@@ -1832,6 +1843,7 @@ follow_up() {
         || die 1 "design-critic follow-up cannot resolve the workspace commit"
     fi
   fi
+  brief_authority "$message" "$workspace" || die 1 "follow-up brief authority admission refused"
   # The completed critic attempt is folded and the cap is checked while no
   # successor record exists. A terminal human raise therefore cannot strand a
   # pending-setup husk, and retrying the same round id remains possible.
