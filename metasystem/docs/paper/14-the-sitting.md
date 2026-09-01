@@ -2,7 +2,7 @@
 
 **The partner who helped shape a design is the last one who may judge it.**
 
-Chapter 1's day begins at 8:40, when the responsible authority records an outcome. The paper has not yet shown where that record came from. A request arrives as one sentence. An outcome precise enough to guide construction is a different thing. The distance between them is crossed in a conversation. This chapter describes that conversation: what it is, who takes part, what it must leave behind and how it ends. This paper calls it a sitting: a working conversation between a responsible human and the delivery system's machinery, whose purpose is to end in records. Most of this chapter concerns the sitting that shapes intent or a design; the same form returns later, inside the delivery loop, when a human reviews.
+Chapter 1's day begins at 8:40, when the responsible authority records an outcome. We have not yet seen where that record came from. A request arrives as one sentence. An outcome precise enough to guide construction is a different thing. The distance between them is crossed in a conversation. We now describe that conversation: what it is, who takes part, what it must leave behind and how it ends. We call it a sitting: a working conversation between a responsible human and the delivery system's machinery, whose purpose is to end in records. Most of what follows concerns the sitting that shapes intent or a design; the same form returns later, inside the delivery loop, when a human reviews.
 
 > *Thursday, 8:05. The responsible authority for account security reads the request: change how long a user stays signed in. Instead of writing a task, they start a conversation with the delivery system.*
 
@@ -46,7 +46,7 @@ The thoroughness of the room is not a reason to skip that challenge. It is the r
 
 > *The machinery lays out what the service can observe about a device and how reliable each observation is. Nothing stored today says whether a session runs on a shared computer. The authority rules on the boundary and gives the reason: when in doubt, treat the device as shared and do not restore the page. The ruling is recorded as it is spoken, and the open questions around device detection are written down beside it.*
 
-The second scene is the recurring case, and it is Chapter 10's clinic brought back to the table. The first sitting in this chapter created intent where none existed. This one revises intent and reopens design because production evidence disproved an assumption. Both follow the same discipline. A delivery system holds sittings for as long as it lives, and what this one framed goes on to construction and to examination by workers who were not in the room.
+The second scene is the recurring case, and it is Chapter 10's clinic brought back to the table. The morning sitting created intent where none existed. This one revises intent and reopens design because production evidence disproved an assumption. Both follow the same discipline. A delivery system holds sittings for as long as it lives, and what this one framed goes on to construction and to examination by workers who were not in the room.
 
 ## The review sitting
 
@@ -66,4 +66,4 @@ Proportion applies here as everywhere. A mechanical repair with a clear defect n
 
 ## What has changed
 
-Of everything in this paper, the sitting looks most like current practice: people and their tools talking through a design. What has changed is what the talk must produce. It leaves decisions instead of impressions, anchored facts instead of recollections, and open questions instead of silence. And it has changed who may judge the result: not those who produced it, however good the conversation was, but a fresh mind with the record in front of it.
+Of everything we have described, the sitting looks most like current practice: people and their tools talking through a design. What has changed is what the talk must produce. It leaves decisions instead of impressions, anchored facts instead of recollections, and open questions instead of silence. And it has changed who may judge the result: not those who produced it, however good the conversation was, but a fresh mind with the record in front of it.

@@ -32,7 +32,7 @@ Memory existed during the attempt but did not survive it. Machine workers are st
 
 > *Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely.*
 
-To an observer, all four look the same: a worker that needs more time. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
+To an observer, all four look the same: a worker that needs more time. We call that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
 > *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
 
@@ -46,7 +46,7 @@ Long attempts introduce another failure.
 
 > *A builder begins with the authorized request, follows a nearby problem, improves that problem and returns with a result that no longer serves the original outcome.*
 
-Nothing in the final work is obviously absurd; the attempt just changed direction. This paper calls that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
+Nothing in the final work is obviously absurd; the attempt just changed direction. We call that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
 
 Even the identity of an active attempt can be unclear. A delayed message may come from the original worker, a retry or a replacement. Two apparent attempts may share the same hidden context. A resumed worker may look fresh while retaining the assumption an independent examiner was meant to challenge. Where independence or custody is at stake, the system needs evidence of which actor performed which action, what context it received and which exact candidate it judged.
 

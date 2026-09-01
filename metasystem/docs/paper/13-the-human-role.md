@@ -2,7 +2,7 @@
 
 **Machinery can prepare a decision and examine it; answering for it stays human.**
 
-One question from Thursday morning could not be settled by evidence: does silent reading count as active work? The builder left it, with two others, for one human ruling at 9:12; Chapter 6 explains why evidence could not answer it. This chapter follows that ruling: who may make it, what may be delegated, who answers for it and where a challenge can go.
+One question from Thursday morning could not be settled by evidence: does silent reading count as active work? The builder left it, with two others, for one human ruling at 9:12; in Chapter 6 we saw why evidence could not answer it. We now follow that ruling: who may make it, what may be delegated, who answers for it and where a challenge can go.
 
 > *At 9:12 the ruling request reaches the responsible authority for account security. The authority rules on the three questions, and the ruling becomes recorded intent. The builder resumes.*
 
@@ -10,19 +10,19 @@ The record holds more than the three answers: the source and scope of the author
 
 That ruling shows one half of the human role: authority, the last word where purpose, value, irreversible consequence, the power to make an enforced rule or accountability is at stake. Whoever holds the last word is called the responsible authority: a named person or body with recorded authority for a stated decision. Holding it does not require continuous presence: machinery may prepare a decision and examine its evidence; it may not make a value ruling or inherit responsibility for one.
 
-The other half of the human role is work: people still engineer. This chapter takes the work first, then returns to the authority.
+The other half of the human role is work: people still engineer. We take the work first, then return to the authority.
 
 ## The work that stays human
 
 Nothing in this design retires the human engineer. Before any record exists, someone must want something: decide that a product should exist, imagine its shape, choose the first architecture worth trying. Machinery can explore alternatives and expose contradictions; it cannot want.
 
-Stating intent is design work too (Chapter 2 describes how to do it well), and any working role from Chapter 7 can be held by a person under the same records, permissions and separations. A responsibility moves to machinery only when evidence shows machinery can perform the action and contain its consequences (Chapter 15). Review in particular is not sign-off: the reviewer later in this chapter notices that the tests share a time source with the implementation and knows which case would expose it. That is engineering, done in the examiner's seat.
+Stating intent is design work too (in Chapter 2 we saw how to do it well), and any working role from Chapter 7 can be held by a person under the same records, permissions and separations. A responsibility moves to machinery only when evidence shows machinery can perform the action and contain its consequences (Chapter 15). Review in particular is not sign-off: the reviewer later in this chapter notices that the tests share a time source with the implementation and knows which case would expose it. That is engineering, done in the examiner's seat.
 
 The delivery system itself is engineered by people: its rules, budgets, roles and records are design decisions humans own and revise. Only the default for ordinary construction changes, for Chapter 11's economic reasons, not by prohibition: where machinery protects the outcome at lower total cost, human attention is better spent elsewhere; where it does not, a person is the builder.
 
-The manager is not a role in this design. Chapter 7's anti-mimicry test already rejected a coordinator proposed only because teams usually have one; what the test exposes is that the familiar job combines two kinds of work. Coordination (assigning, sequencing, tracking, reporting) goes to mechanisms: records expose state, watches detect silent stopping, budgets limit spending, enforced rules order conflicting actions, and Chapter 7's dispatch delegate starts work it may neither examine nor accept. Judgment (what is worth building, what it may cost, which risks are acceptable, who answers) stays with the named people who hold authority in this chapter. Managers also handle pay, development and interpersonal conflict; organizations still need that work, and this paper does not redesign it.
+The manager is not a role in this design. Chapter 7's anti-mimicry test already rejected a coordinator proposed only because teams usually have one; what the test exposes is that the familiar job combines two kinds of work. Coordination (assigning, sequencing, tracking, reporting) goes to mechanisms: records expose state, watches detect silent stopping, budgets limit spending, enforced rules order conflicting actions, and Chapter 7's dispatch delegate starts work it may neither examine nor accept. Judgment (what is worth building, what it may cost, which risks are acceptable, who answers) stays with the named people who hold authority in this chapter. Managers also handle pay, development and interpersonal conflict; organizations still need that work, and we do not redesign it here.
 
-The rest of this chapter returns to the authority: the decisions that stay with people even when every working role is held by machinery.
+We return now to the authority: the decisions that stay with people even when every working role is held by machinery.
 
 ## Legislator: authority over enforced rules
 
@@ -60,7 +60,7 @@ Intent remains answerable to evidence. The authorized person can be wrong about 
 
 This is a decision within the reviewer's recorded permission, and the releaser may not ignore it.
 
-Chapter 6 defines when human review must begin and treats skipping it as a defect; this chapter defines what the reviewer may do once review or appeal begins. An authorized human reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance. The authorization states what the reviewer controls; it grants no general right to rewrite intent or enforced rules.
+In Chapter 6 we defined when human review must begin and treated skipping it as a defect; here we define what the reviewer may do once review or appeal begins. An authorized human reviewer, independent of construction, may demand more evidence, narrow or stop exposure, authorize acceptance within scope or refuse it; the custodian still performs the acceptance. The authorization states what the reviewer controls; it grants no general right to rewrite intent or enforced rules.
 
 The reviewer's identity, decision, reasons and accountability remain with the record. A bare approval cannot explain which risk was accepted; an unexplained refusal cannot be distinguished from preference or delay. "A human reviewed it" is not an accountable safety claim.
 

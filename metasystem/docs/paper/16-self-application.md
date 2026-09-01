@@ -10,7 +10,7 @@ If the proposal can install itself and then judge whether its own evidence is su
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
-This stress test is necessary for the paper's proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
+This stress test is necessary for our proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
 
 ## The distinctive self-change problem
 
@@ -58,7 +58,7 @@ Self-application is a necessary but insufficient test. Failure directly contradi
 
 Consider three organizations that adopt the proposed principles for different applications. They record more checks, clearer authority and successful self-changes, yet escaped harm repeatedly rises, and total delivery cost remains higher than under simpler controls. If the comparison covers similar risk and does not just count a difficult transition period, that result weighs against the thesis. The proposal cannot preserve itself by calling every failure incomplete adoption.
 
-The paper's claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations (because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority) count against them. Retained human ceremonies that outperform proposed replacements at serving the same need, across comparable cases and costs, count against the claim that those replacements are better.
+Our claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations (because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority) count against them. Retained human ceremonies that outperform proposed replacements at serving the same need, across comparable cases and costs, count against the claim that those replacements are better.
 
 Support must come from reproducible evidence across different teams, risk levels, applications and operating conditions. It must include negative results, unsuccessful transitions and comparisons with simpler approaches. Evidence gathered by the system about itself may contribute one case, but it cannot be the only case. Independent examiners must be able to inspect the assumptions, measures, missed harms and selection of examples.
 

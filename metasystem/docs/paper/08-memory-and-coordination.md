@@ -16,11 +16,11 @@ If all three reports can determine the state of the work, "ready" has no stable 
 
 The remedy is one authoritative record: a structured, history-preserving source that alone determines the current state. For the case established in Chapter 1, it binds every state transition to the actor, authority, exact candidate and evidence that support it. Earlier states remain visible to authorized readers rather than being rewritten to make the final path look clean. A private note can help a worker think, but it cannot make a candidate accepted or an enforced rule passed until the relevant fact enters the authoritative record.
 
-One source does not mean one view for everyone. The record must be complete enough to recover and audit the work, while each role sees only what its task requires. Chapter 9 applies the same limit to both information and action: permission to examine a finished change does not imply permission to read every thought that produced it. This protects sensitive information and reduces the chance that irrelevant material steers the task.
+One source does not mean one view for everyone. The record must be complete enough to recover and audit the work, while each role sees only what its task requires. In Chapter 9 we will apply the same limit to both information and action: permission to examine a finished change does not imply permission to read every thought that produced it. This protects sensitive information and reduces the chance that irrelevant material steers the task.
 
 Access limits have a hard limit. They can prevent a mind from reading something next; they cannot remove what that mind has already learned. A person who built the session change does not become independent by receiving a new label and losing access to the earlier notes. A machine worker that has already absorbed the builder's sequence of ideas and failed attempts cannot supply a fresh view even if later permissions hide that sequence. Role-scoped access provides least authority. Only a fresh mind provides a fresh perspective.
 
-When Chapter 6 requires independent examination free from the builder's path, the independent examiner must be a distinct person or a newly started machine worker that has never received that path. Machine workers make this separation inexpensive because a new mind can begin with selected context. Human exposure is largely permanent.
+In Chapter 6 we required independent examination free from the builder's path, so the independent examiner must be a distinct person or a newly started machine worker that has never received that path. Machine workers make this separation inexpensive because a new mind can begin with selected context. Human exposure is largely permanent.
 
 ## What each role may read
 
@@ -46,7 +46,7 @@ The test also exposes what must be recorded before an action completes. A builde
 
 Two builders propose different ways to protect an upload while ending the ordinary session. The record can ensure that they do not overwrite each other's candidates. It can show which proposal arrived first, preserve both and require an authorized choice before either becomes current. None of those operations decides whether uninterrupted work is worth a wider security exception.
 
-Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation or accountability conflict, a responsible authority must weigh the choice and bind the decision. Chapter 13 develops that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
+Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation or accountability conflict, a responsible authority must weigh the choice and bind the decision. In Chapter 13 we will develop that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
 
 ## Two audiences, one source
 
