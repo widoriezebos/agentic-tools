@@ -1,15 +1,13 @@
 # alert-escalation-channel
 
-- State: claimed
+- State: queued
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
 - Next step: STOP-LOSS HALT by the seat (six identical runtime deaths): every Fable design-lane round on this document now dies at the $5 runtime spend cap after finishing its work and before returning — authoring rounds r7/r8/r9 and now even the r9 RECOVERY round (whose 346-insertion worktree diff exceeds the 181-line diff it was told to apply and is uncertifiable without a return; preserved at artifacts/agents/implementer-1c02098be765d44a941cb0b1/rounds/1/recovered.diff, alongside the certified-authoring r9 diff at implementer-6df0467b2f1db45f5cecccdf/rounds/1/recovered.diff). Cost driver: the ~1000-line design plus register is most of $5 before writing begins. Reserved 480/600. HALTED pending Wido's two words (asked in-session): pool 600 to 780, and the Fable-lane runtime cap $5 to $10. On his cap word: one recovery certifies the CERTIFIED-AUTHORED r9 diff (the 181-line one, not the uncertified 346), then Sol round 3, then build. If the fence closes first, the certified-design state is the clean stop
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 29
+- Revision: 30
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
-- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T13:51:37Z revision=26
-- StopCapability: generation=26 revision=26 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-29T06:19:06Z 6RYCTDER5WR9E3X1VDDVPWJDGF-m1-bf243850 open actor=human:wido targets=alert-escalation-channel
@@ -41,4 +39,5 @@ History:
 - 2026-09-01T14:19:03Z NT7QS1JG58X0J6QRNQP90451QG-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T14:43:58Z QJ4ZSYGJ2ERZRQPWPYZQ46FAVM-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T15:04:56Z ZFZAJXAX2DKKJXYQ1DKNRKH89B-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=847bf3299b0a0024ab989e0093a1b8fc062780ee6c1be8793a647820bb1d7490
+- 2026-09-01T16:59:06Z Y532HTHYZFXBF68CHBVWH7BW2E-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=4cfb8bedc909f340ec4eb7c1072cecaa597379d7aa9a5b9c4016dbc666133cb5
