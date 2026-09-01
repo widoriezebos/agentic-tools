@@ -1,60 +1,82 @@
-# Alert Channel Design — alert-escalation-channel (revision 10)
+# Alert Channel Design — alert-escalation-channel (revision 11)
 
-Status: revision 10 folds all five material findings of the Sol
-round-3 critique of revision 9 (return durable at
-`artifacts/agents/design-critic-a27506cb4736a12e5dcfc31c/rounds/1/return.json`),
-none refuted — every one checked true against the shipped code. The
-critical fold: revision 9 keyed the episode digest and the retention
-pin on (class, job id) alone, while `RecordCreate` refuses a job id
-only WHILE its record file exists — once evidence GC collects the
-record the identifier is reusable, so an old incarnation's episode
-could both suppress the new incarnation's alert and satisfy its
-collection pin. Revision 10 keys the digest and the pin on the
-record's persisted BIRTH TOKEN as well (`createdAt` — every shipped
-creation path writes it at birth; fallback traced in §1), adds the
-identifier-reuse row to 11a.12's interleaving table, and proves a
-collected digest unre-mintable across incarnations
-(AC9-JOB-ID-ABA-001, 11a.10/11a.12/11a.8). The other folds:
-producer-class episodes are NAMED by their full digest —
-`alert-<64 hex>` is legal under the shipped id validator — so
-episode addressing is ONE primitive, exists-by-digest = one stat of
-the digest-named path, shared by the collector's pin and both scans'
-dedup index; revision 9's authorship-seam contradiction (full-store
-load in 11a.8 versus digest-named stat in 11a.12) dissolves into it
-(AC9-RETENTION-DIGEST-ADDRESSING-001, 11a.10/11a.12); both scans get
-an explicit per-tick OPEN CONTRACT — two directory listings, one
-bounded read per listed job record (the birth token's disclosed
-price), ZERO episode-file opens, every touched set enumerated with a
-named size owner (AC9-SCAN-BOUNDEDNESS-001, 11a.8/11a.9); the
-pre-send recheck's fence-gone branch becomes the SUPPRESSION CLEAR,
-§5a's named second transition — the same reload-and-match critical
-section as the completion merge, writing exactly `Cleared`/
-`ClearedAt`, cancelling before any `AdapterSend` call — and §5a's
-field-ownership invariant is scoped to completions, dissolving the
-merge contradiction (AC9-STOP-SUPPRESSION-MERGE-001, §5a/11a.9/§5);
-and 11a.8's Answer advertises the resume command ONLY where the
-shipped dispatcher accepts it — a total four-row action table over
-(status, error, resumable session) decided at journal time,
-fresh dispatch otherwise, aimed at the chain-root id
+Status: revision 11 folds all four material findings of the Sol
+round-4 critique of revision 10
+(`records/misc/alert-channel-critique-r10.md`, critic
+design-critic-0868feb318b6458c6637b500) — a convergence stall the
+loop answered with an EXECUTABLE EVIDENCE SPIKE
+(`records/misc/alert-channel-spike-verdicts.md`, job
+implementer-142fd88a8c93640bc0f9969e: the four disputed mechanisms
+prototyped against the real shipped writers, tests run, nothing
+landed). Every fold below writes a spike-TESTED rule into the
+design; none is re-derived here. The critical fold: the spike
+REFUTED revision 10's `createdAt` birth token by executing the
+shipped writers — `RecordCreate` persists a record with NO
+`createdAt` and `RecordCAS` rewrites it (to 1999-01-01 in the
+probe), so the identifier-reuse ABA reproduces with identical
+digests, and NO shipped field qualifies (`startedAt` and
+`claimEpoch` are immutable but optional and caller-supplied; inode
+and file birth change on every atomic rewrite). The pin key and the
+episode digest therefore use a machine-MINTED BIRTH GENERATION —
+timestamp plus nonce, minted by every create path itself under the
+record lock ignoring any caller-supplied value, immutable in
+`immutableFields` — whose record-contract change is goal
+`job-record-birth-token` (opened and budgeted 2026-09-01); this
+design DEPENDS on that goal and says so (§1, 11a.8, 11a.10,
+11a.12), and the interleaving table's reuse row is proven against
+the minted token per the spike, with NO clock model
+(AC9-JOB-ID-ABA-001). The other folds: the producer scans'
+filename-index open contract STANDS as revision 10 wrote it — the
+spike measured 8.4 ms over 10,020 names with zero episode opens —
+and the retained HEALTH path gains the spike's rule: the health
+load opens only health-NAMED files under the existing filename
+grammar, which dropped the spike's 10,020 decodes in 110 ms under
+the alert lock to 20 opens in 10.6 ms (AC9-SCAN-BOUNDEDNESS-001,
+11a.8/11a.10/§1); the round-4 stop-lifecycle regression is REAL —
+spike-reproduced: a submitted stop episode stays uncleared forever
+after `goal resume`, because the one-way digest filename cannot
+yield the old goal and revision and a submitted attempt is never
+due for the pre-send recheck — and is closed by the spike's
+reversible journal-time marker, `alerts/stop-open/<goal>-r<revision>`
+containing the digest, written durably BEFORE the episode, listed
+by the clear phase, bounded by open stop episodes, draining on
+clear, zero episode opens on the no-resume path — the spike
+demonstrated this rule restoring the clear
+(AC10-STOP-CLEAR-READSET-001, 11a.9); and 11a.8's Answer now
+journals the failed record's own immutable `reviews` field and
+renders it into the fresh-dispatch command — the spike proved the
+advertised line otherwise refuses CATEGORICALLY for code-critic and
+warden roles, whose fresh dispatch requires `--reviews` — derives
+the chain root by the shipped parentJob WALK at journal time (the
+suffix-strip rule is spike-REFUTED on a lawful `task-r1` fixture),
+and states row 1's follow-up validity as JOURNAL-TIME-ONLY with the
+pin's coverage boundary honest: completed chain roots are not
+pinned, so the advertised follow-up can be refused once the root is
+collected or a newer round lands non-accepted — a loud dispatcher
+refusal, disclosed, never a silent wrong action
 (AC9-ANSWER-FOLLOWUP-ACTION-001, 11a.8/11a.10/§1).
 SELF-CONSISTENCY PASS: performed this revision over every changed
 rule and its touched sections — the pairs read together and made to
-agree are 11a.10↔11a.8/11a.12 (one digest derivation — class, job
-id, birth token — stated once in 11a.10, consumed by the scan and
-the pin with the same fallback order); 11a.10↔§1 (the episode-id
-rule checked against the shipped validator, path, and health-namer
-traces); 11a.12↔11a.8 (exists-by-digest is both the pin's check and
-the scans' dedup index; the pins-drain argument restated over the
-reuse row); 11a.8↔§6 (both Answer byte layouts' tokens enumerated
-under the placeholder law, the fresh-dispatch line included);
-11a.8↔11a.10 (the facts keys extended — birth, answerAction, role —
-with the write-once law kept); 11a.8↔§7 (dedup per job incarnation
-in both); §5a↔11a.9 (the suppression clear stated once in §5a,
-referenced from the recheck); §5↔§5a (phase 2 names the suppression
-clear as the transport phase's only Cleared-writing transition);
-11a.9↔11a.5 (a suppressed episode still leaves due and undelivered
-together); and §12↔§13 (dispositions and self-grade refreshed
-against the five folds).
+agree are 11a.10↔11a.8/11a.12 (ONE birth derivation — the minted
+generation, fallback `createdAt` then `startedAt` then empty for
+records born before the depended-on contract — stated once,
+consumed identically by the scan and the pin); §1↔11a.8/11a.12 (the
+dependency on goal `job-record-birth-token` stated with the same
+requirements everywhere: minted under the record lock, caller
+ignored, immutable, LF-free, nonce-unique within a second);
+11a.9↔11a.8 (the `stop-open` marker directory lives under `alerts/`
+but its entries never match the digest filename grammar, so 11a.8's
+shared index is undisturbed); 11a.9↔§5a (the marker-drain clear and
+the suppression clear are disjoint `Cleared` writers — the marker
+drains only in the journal phase, and a suppression-cleared or
+collected episode still drains its marker there); 11a.9↔11a.12 (the
+converse collection rule's fence-gone proof and the marker drain
+lean on the same positive predicate); 11a.8↔§6 (the `--reviews`
+token enumerated under the placeholder law, total when the fact is
+empty, like the `role` rule); 11a.8↔§1 (the parentJob-walk trace,
+its refusal modes, and the walk-refusal composition fallback
+agree); and §12↔§13 (dispositions and self-grade refreshed against
+the four folds and the spike evidence).
 
 Design for the promoted goal `plans/goals/alert-escalation-channel.md`:
 escalations and blocked-on-human states reach Wido IMMEDIATELY over an
@@ -96,7 +118,11 @@ Design only. No code ships with this document.
   full-digest id `alert-<64 hex>` is legal, and can never collide
   with a health id (a health id's tail always contains a second
   hyphen inside any 64-character span; a full-digest id's tail is
-  unbroken hex).
+  unbroken hex). The health path's shipped per-tick cost, traced
+  for 11a.8's fold: `UpdateAlertEpisodes` lists and decodes EVERY
+  episode file (lines 126–149) while the exclusive alert lock is
+  held (231–240) — the load 11a.10's filename-grammar restriction
+  now bounds to health-named files.
 - **The outer lock is wider than revision 2 admitted**: `RunTick`
   (`internal/steward/tick.go` 102–112) takes the repository
   ARBITRATION lock for the whole tick and still holds it through
@@ -177,23 +203,37 @@ Design only. No code ships with this document.
   carrying a `StopFence` whose batch is COMPLETE is therefore the
   exact durable awaiting-resume state, present every tick until the
   human acts.
-- **Job-identifier reuse and the record's birth field** (traced for
-  11a.10/11a.12's AC9-JOB-ID-ABA-001 fold): `RecordCreate` refuses a
-  job id ONLY while `jobs/<id>.json` exists
+- **Job-identifier reuse and the record's birth generation** (traced
+  for 11a.10/11a.12's AC9-JOB-ID-ABA-001 fold): `RecordCreate`
+  refuses a job id ONLY while `jobs/<id>.json` exists
   (`internal/dispatch/record.go` 246–249, "job id collision") — no
   tombstone or generation number survives collection, so once
   evidence GC removes a record its identifier is lawfully reusable
-  by an explicit fresh dispatch. Every shipped creation path stamps
-  a birth field in the record's first write: `BuildSetup` writes
-  `"createdAt": nowISO()` into every pending-setup reservation
-  (`internal/dispatch/build.go` 115, 163), the indexed
-  claim-reservation path writes the same field
-  (`internal/dispatch/claim.go` 705), and `nowISO` renders RFC 3339
-  UTC at second precision (`record.go` 709–711). Records born before
-  the field existed may lack it; the shipped read-side fallback
-  order is `createdAt` then `startedAt`
-  (`internal/steward/delivery.go` 248–262). Neither string can
-  contain an LF, which 11a.10's digest joining requires.
+  by an explicit fresh dispatch. NO SHIPPED FIELD qualifies as a
+  birth token — the spike executed the shipped writers and proved
+  it: `createdAt` is neither mandatory (`RecordCreate` validates
+  only job identity and pending-setup status before persisting the
+  caller-supplied object, lines 222–272, and persisted a record
+  without it) nor immutable (it is absent from the
+  `immutableFields` map, lines 60–75, so `RecordCAS` rewrote it);
+  `startedAt` and `claimEpoch` are immutable but optional and
+  caller-supplied; inode and file birth change on every atomic
+  record rewrite. The birth identity is therefore a DEPENDED-ON
+  CONTRACT CHANGE, goal `job-record-birth-token` (opened and
+  budgeted 2026-09-01): every create path MINTS the birth
+  generation itself under the record lock — a timestamp plus a
+  nonce, any caller-supplied value ignored — and the field joins
+  `immutableFields`, so no patch path can rewrite it. This design's
+  requirements on that token, stated once and consumed by 11a.8,
+  11a.10, and 11a.12: minted at first write, unique per incarnation
+  (the nonce splits same-second reuse — the spike proved a
+  second-precision timestamp mint alone still collides), immutable,
+  and a single LF-free line (11a.10's digest joining requires it).
+  Records born BEFORE that goal lands may carry only the legacy
+  caller-supplied fields; the read-side fallback order for them is
+  `createdAt` then `startedAt` (the shipped readers' own order,
+  `internal/steward/delivery.go` 248–262), else empty — a disclosed
+  degradation, not a proof.
 - **The dispatcher's real follow-up eligibility** (traced for
   11a.8's Answer): `metasystem delegate --follow-up <root-id>`
   refuses a closed chain ("job chain is closed",
@@ -204,11 +244,22 @@ Design only. No code ships with this document.
   running, timeout, or process-lost"); and separately dies when the
   resumed record carries no session id (line 1746: "follow-up has no
   resumable session id"). The verb's argument is the CHAIN ROOT id,
-  never a round record's own id; a round record's id is the root
-  plus `-r<N>`, and the shipped suffix rule is `-r[0-9]+$`
-  (`internal/evidence/gc.go` 67, 392). `chainClosed` is terminal
-  metadata (`record.go`'s terminal-metadata set), so it may flip
-  true AFTER a record terminalizes.
+  never a round record's own id. The shipped root derivation is the
+  PARENTJOB WALK, not an id-suffix rule: `usage.RootJobID`
+  (`internal/usage/usage.go` 43–68) follows each record's
+  `parentJob` field to the first record with no parent — a record
+  whose `parentJob` is null or absent is its OWN root even when its
+  id happens to end in `-r<N>` (a lawful fresh id like `task-r1`,
+  the spike's refuting fixture) — and REFUSES on a cyclic chain or
+  an unreadable ancestor record. The `-r[0-9]+$` suffix rule
+  (`internal/evidence/gc.go` 67, 392) is GC's grouping heuristic,
+  not root identity. Separately: a FRESH `code-critic` or `warden`
+  dispatch hard-requires `--reviews <implementer-job-id>` naming an
+  existing implementer record (`dispatch.sh` 1226–1231, "$role
+  dispatch requires --reviews"), and `reviews` — like `parentJob` —
+  is an IMMUTABLE record field (`record.go` 62). `chainClosed` is
+  terminal metadata (`record.go`'s terminal-metadata set), so it
+  may flip true AFTER a record terminalizes.
 - **Both tick drivers already end with a delivery step, on success
   AND failure** (traced): the resident runner loop calls `RunTick`,
   prints a failed tick to stderr WITHOUT returning, and reaches its
@@ -585,9 +636,12 @@ alert-lock hold:
 The completion invariant does not apply because no completion
 occurs: no submission was made, so there is no receipt to merge. The
 suppression clear is the ONE transition outside `AcknowledgeAlert`,
-the health-class clear loop, and 11a.9's journal-phase clear that
+the health-class clear loop, and 11a.9's journal-phase marker-drain
+clear that
 may set `Cleared`, and it runs only in the transport phase under the
-sender flock. It needs no goal re-read under the alert lock because
+sender flock. It never touches `stop-open` markers: the
+journal-phase drain owns them, and its already-cleared row removes
+a suppression-cleared episode's marker on the next pass (11a.9). It needs no goal re-read under the alert lock because
 fence-gone is MONOTONE for the episode's revision: `goal resume`
 clears the fence into a fresh revision in one transaction (§1's
 trace of `internal/goal/stop.go` 353–355) and no shipped path
@@ -814,9 +868,13 @@ slice, behind `channel.gate`, strictly after queue retirement.)
    `metasystem steward tick` command, §5), the 11a.12 retention
    handshake followed by the two 2026-09-01 producers
    (`delegate-job-failed`, 11a.8, and
-   `stop-awaiting-resume`, 11a.9 — Wido's word pins both to this
+   `stop-awaiting-resume`, 11a.9, with its stop-open marker —
+   Wido's word pins both to this
    slice; the handshake's pin lands BEFORE the scans whose source it
-   protects, 11a.12), the
+   protects, and the whole handshake-and-producers increment lands
+   only AFTER goal `job-record-birth-token`'s record-contract
+   change, the depended-on birth mint of §1 — ordering law in
+   11a.12), the
    redaction invariant with its known-bad fixture, and the
    undelivered count in the health verdict line — which §1 shows
    reaches terminal and Stop hook through existing plumbing. The
@@ -1173,13 +1231,21 @@ The alert class "delegate job failed under a claimed goal" — the
   current-revision spending facts, and 11a.12's pins, which drain on
   the first completed tick after an outage), never history. (2) One
   bounded read of EACH listed record file per tick, for exactly the
-  fields the class consumes: `status`, `goalId`, `error`,
-  `createdAt` (fallback `startedAt` — §1's birth trace), `sessionId`,
-  and `role`; the count is bounded by the same listing. This is
-  revision 10's disclosed regression from revision 9's zero-read
-  steady state: the digest now covers the birth token
-  (AC9-JOB-ID-ABA-001's fix), and the token lives INSIDE the record,
-  so no filename-only skip can exist. Decided against, recorded: a
+  fields the class consumes: `status`, `goalId`, `error`, the
+  minted birth generation (fallback `createdAt` then `startedAt` —
+  §1's birth trace), `sessionId`, `role`, `reviews`, and
+  `parentJob`; the count is bounded by the same listing, PLUS — for
+  a failed record whose `parentJob` is nonempty — the journal-time
+  parentJob walk's ancestor record reads (§1's `RootJobID` trace),
+  bounded by that record's chain length and paid at most once per
+  incarnation ever, because episodes are write-once and a journaled
+  digest is skipped by the index before any walk. This is revision
+  10's disclosed regression from revision 9's zero-read steady
+  state: the digest covers the birth token (AC9-JOB-ID-ABA-001's
+  fix), and the token lives INSIDE the record, so no filename-only
+  skip can exist — the spike priced the whole-record read path at
+  13.3 ms for 1,000 padded records, which stands as the accepted
+  cost. Decided against, recorded: a
   by-source skip index would buy back these bounded small reads at
   the price of a second durable index whose deletion must interlock
   with GC's collection ordering — a new crash-ordering proof traded
@@ -1188,14 +1254,30 @@ The alert class "delegate job failed under a claimed goal" — the
   episode-digest index from FILENAMES ALONE under 11a.10's
   addressing rule (a name matching `alert-<64 lowercase hex>.json`
   contributes its digest) — shared with 11a.9, and ZERO episode
-  files are opened by either producer scan; size owners: closed
+  files are opened by either producer scan (11a.9's marker-drain
+  clear opens exactly the episodes it clears, one per drained
+  marker, and nothing on the no-resume path — its own contract);
+  size owners: closed
   producer episodes leave through 11a.12's converse collection rule,
   while unacknowledged producer episodes and health episodes
   accumulate with no numeric cap — each is owed a human act and
   surfaced by 11a.5's floor, and each costs the scans one listing
-  entry, never an open. (The shipped health path's own full-episode
-  load inside `UpdateAlertEpisodes` stands as shipped behavior for
-  the health class; neither producer scan depends on it.) The
+  entry, never an open. This contract STANDS as revision 10 wrote
+  it, now with executed numbers: the spike's filename-only digest
+  index took 8.4 ms over 10,020 names with zero file opens. The
+  HEALTH path gains the spike's rule (the fold of
+  AC9-SCAN-BOUNDEDNESS-001's retained-load half): the health load
+  inside `UpdateAlertEpisodes` — §1's trace of its
+  every-episode decode under the exclusive alert lock — is
+  RESTRICTED to health-NAMED files by the existing filename grammar:
+  it opens only listing entries that do NOT match
+  `alert-<64 lowercase hex>.json` (health ids always do not —
+  §1's naming trace — and producer episodes always do, by 11a.10's
+  addressing), so its under-lock cost is bounded by the
+  health-episode count regardless of producer accumulation. No new
+  index exists; the grammar already separates the classes. The
+  spike's measurement of exactly this rule: 10,020 decodes in
+  110 ms under the lock dropped to 20 opens in 10.6 ms. The
   per-entry decision: compute 11a.10's digest from (class, filename
   stem, birth token read in open 2); an entry whose digest is in the
   index is skipped with no further work — episodes are WRITE-ONCE
@@ -1212,14 +1294,19 @@ The alert class "delegate job failed under a claimed goal" — the
   also waited for a sender pass.
 - **Carried facts** (persisted shape in 11a.10): goal id, job id,
   the birth token, failure reason — the record's `error` field when
-  nonempty, else the terminal status word — and the Answer's two
-  journal-time decision facts, `answerAction` and `role` (the action
-  table below; exact keys in 11a.10).
+  nonempty, else the terminal status word — and the Answer's
+  journal-time decision facts: `answerAction`, `role`, `chainRoot`
+  (the parentJob-walk result, derived at journal time while the
+  chain's records are readable), and `reviews` (the failed record's
+  own immutable `reviews` field, verbatim; may be empty) — the
+  action table below; exact keys in 11a.10.
 - **Dedup, per job incarnation**: the episode digest is 11a.10's
   encoding of the triple (`delegate-job-failed`, job id, birth
-  token). The birth token is the record's `createdAt` string
-  verbatim, fallback `startedAt`, else empty for a record born
-  before the field existed (§1's trace); the scan and 11a.12's pin
+  token). The birth token is the record's MINTED BIRTH GENERATION
+  string verbatim (goal `job-record-birth-token`'s field — §1's
+  dependency trace), fallback `createdAt` then `startedAt`, else
+  empty, only for a record born before that contract landed; the
+  scan and 11a.12's pin
   apply this SAME derivation to the same record bytes, so they agree
   per incarnation. It rides the store's existing
   digest-keyed dedup (§1) — one episode per job INCARNATION ever
@@ -1238,7 +1325,11 @@ The alert class "delegate job failed under a claimed goal" — the
   11a.12's collection because collection requires the source record
   to be ALREADY GONE, and re-minting a collected digest would need a
   record with the same id AND the same birth token — ruled out by
-  the reuse row's clock argument.
+  the reuse row's mint argument: the create path mints the
+  generation itself under the record lock, ignoring any caller
+  value, and the nonce splits even same-second reuse (§1's
+  depended-on contract; the spike executed exactly this rule and
+  the reuse test passed with no clock assumption).
 - **Composition at send time (the 11a.6 pattern)**: `Happened` =
   `delegate job <job-id> failed under goal <goal-id>: <failure
   reason>`; `Asked` = the fixed string `Delegated work under this
@@ -1271,31 +1362,65 @@ The alert class "delegate job failed under a claimed goal" — the
   state with no remedy owed — is not selected at all. The follow-up
   Answer bytes: `metasystem delegate --follow-up ` + the CHAIN ROOT
   id + ` --brief <corrective-brief-file>`, single spaces, no
-  trailing space. The chain root id is the record's job id with any
-  trailing `-r<N>` round suffix stripped (`-r[0-9]+$`, §1's trace) —
-  the verb addresses chains by root, and a round record's own id
-  would be refused. SUBSTITUTED: the chain-root job id only.
+  trailing space. The chain root id is the `chainRoot` fact: the
+  shipped PARENTJOB WALK's result (`usage.RootJobID`, §1's trace),
+  computed AT JOURNAL TIME from the failed record while the chain's
+  records are readable — revision 10's suffix-strip rule
+  (`-r[0-9]+$`) is REMOVED, spike-refuted on a lawful `task-r1`
+  fixture whose id ends in a round suffix but whose absent
+  `parentJob` makes it its own root. Total rule for the walk's
+  refusal modes (cyclic chain, unreadable ancestor — §1's trace):
+  the `chainRoot` fact is journaled empty and the Answer composes
+  the literal token `<chain-root-id>` VERBATIM in its place — the
+  same total pattern as the empty-`role` rule below; the human
+  resolves the root the walk could not read.
+  SUBSTITUTED: the chain-root job id only.
   VERBATIM: `<corrective-brief-file>` — its literal 23 bytes,
   brackets included — because the corrective brief does not exist
   yet; the human authors it and replaces the token with its path.
   The fresh-dispatch Answer bytes: `metasystem delegate --role ` +
   the record's role + ` --brief <fresh-brief-file> --goal ` + the
-  goal id + ` --destructive-reach <destructive-reach-class>`, single
+  goal id, then — ONLY when the record's role is `code-critic` or
+  `warden` — ` --reviews ` + the reviews target, then for every
+  role ` --destructive-reach <destructive-reach-class>`; single
   spaces, no trailing space — the operator interface's own dispatch
-  line. SUBSTITUTED: the role (from the `role` fact; every shipped
+  line, now satisfying the dispatcher's hard `--reviews`
+  requirement for those two roles (§1's trace of `dispatch.sh`
+  1226–1231; the spike proved the revision-10 line refused
+  CATEGORICALLY at journal time for them). SUBSTITUTED: the role
+  (from the `role` fact; every shipped
   creation path writes it, and if the fact is empty on a hand-made
   record the literal token `<role>` is composed VERBATIM instead — a
-  total rule) and the goal id (nonempty by this class's selection).
+  total rule), the goal id (nonempty by this class's selection),
+  and the reviews target (from the `reviews` fact — the failed
+  record's own IMMUTABLE `reviews` field, `record.go` 62, so the
+  journaled value cannot go stale; if the fact is empty on a
+  `code-critic` or `warden` record the literal token
+  `<implementer-job-id>` — the dispatcher's own usage wording — is
+  composed VERBATIM instead, the same total rule). Other roles get
+  no `--reviews` segment at all.
   VERBATIM: `<fresh-brief-file>` and `<destructive-reach-class>` —
   the new brief and the new dispatch's reach class are exactly the
-  human's decisions. Residual, disclosed: `chainClosed` is terminal
-  metadata a chain may gain AFTER the episode is journaled (§1's
-  trace), so an advertised follow-up can be refused by the
-  dispatcher if the chain closes between journal time and the human
-  acting — a LOUD refusal naming its reason, never a silent wrong
-  action; the write-once episode is not re-derived for bookkeeping
+  human's decisions. **Row 1's validity is JOURNAL-TIME-ONLY,
+  stated plainly** (the spike executed both refusal paths): the
+  follow-up line is byte-for-byte the dispatcher's accepted case at
+  the moment it is journaled, and the design does NOT promise it
+  stays accepted. The pin's coverage boundary, honest: 11a.12 pins
+  only terminal `failed`/`timeout` goal-carrying records — the
+  COMPLETED chain root the advertised command addresses is NOT
+  pinned, so evidence GC may lawfully collect it and the dispatcher
+  then refuses with its no-record error (spike-reproduced: "no
+  record file"); a newer round landing in a non-accepted state, or
+  `chainClosed` flipping true (terminal metadata, §1's trace),
+  refuses the same way. Every one is a LOUD refusal naming its
+  reason, never a silent wrong action; the write-once episode is
+  not re-derived for bookkeeping
   changes BY DECISION (the facts are the failure's, not the
-  chain's). Richer per-failure asks follow 11a.6's enrichment law
+  chain's), and the pin is NOT widened to completed chain records
+  BY DECISION — pinning records whose own delivery obligation is
+  closed would trade the disclosed refusal for open-ended retention
+  keyed to another record's acknowledgment. Richer per-failure asks
+  follow 11a.6's enrichment law
   (design change, not implementer choice).
 
 ### 11a.9 The stop-awaiting-resume class (slice 1; Wido's word, 2026-09-01, binding)
@@ -1313,7 +1438,8 @@ slice-1 producer, not a later-slice deferral.
   the batch reads cleanly, is COMPLETE, AND binds the exact stopped
   authority, goal id, goal revision, fence epoch, capability
   generation, machine, claim epoch, and reason all equal — ensures
-  the episode keyed by 11a.10's digest (folds
+  FIRST the stop-open marker, THEN the episode keyed by 11a.10's
+  digest (ordering law owned by the clear-index rule below; folds
   AC8-STOP-BATCH-BINDING-001: the scan demands exactly the evidence
   the prescribed verb will demand, so "alert" and "resume will
   accept" are one predicate). Read set and bound (the 11a.9 half of
@@ -1321,10 +1447,14 @@ slice-1 producer, not a later-slice deferral.
   scan's explicit per-tick open contract: the tick's EXISTING single
   goal-tree projection plus one `ReadStopBatch` per live claimed
   goal carrying a fence — size owner: the claimed-goal count of the
-  goal tree, a human-scale live set, no history walk — and the same
+  goal tree, a human-scale live set, no history walk — the same
   per-tick episode-digest index as 11a.8 (one shared `ReadDir` of
   the alerts directory, digests from FILENAMES alone, zero episode
-  files opened). Nothing else is touched. §1 traces why this condition
+  files opened), plus the clear phase's one `ReadDir` of
+  `alerts/stop-open/` (bounded by OPEN stop episodes, because
+  markers drain on clear) and one episode open per marker actually
+  DRAINED this pass — zero on the no-resume path. Nothing else is
+  touched. §1 traces why this condition
   is exact durable proof: `EnsureBreachStop` writes the fence only
   when closing launch, and `goal resume` verifies batch completeness
   then clears the fence into a fresh revision — so the condition
@@ -1368,13 +1498,57 @@ slice-1 producer, not a later-slice deferral.
   change), skipped by digest on every later tick; its exit is owned
   by the lifecycle rule below, and a later stop lands on a fresh
   resumed revision, hence a fresh digest.
+- **The stop-open marker — the reversible clear index** (folds
+  AC10-STOP-CLEAR-READSET-001; the rule is the spike's, executed):
+  revision 10's regression was REAL and the spike reproduced it —
+  the scan owed the clear transition but was forbidden episode
+  opens, the SHA-256 filename is ONE-WAY (it cannot yield the
+  episode's stored goal id and revision), and a successfully
+  SUBMITTED attempt is never due again, so the pre-send recheck
+  never revisits it: after `goal resume`, a submitted stop episode
+  stayed uncleared across every subsequent scan. The closing
+  mechanism is a reversible JOURNAL-TIME marker: before the episode
+  write, the scan durably writes
+  `artifacts/agents/steward/alerts/stop-open/<goal-id>-r<revision>`,
+  whose entire content is the episode's 64-hex digest, using the
+  store's atomic durable write pattern under the alert lock. THE
+  ORDERING LAW: marker first, then episode — an episode is never
+  durable before its marker; re-deriving is idempotent (same name,
+  same content). The filename is REVERSIBLE by construction: goal
+  ids are the shipped lowercase id grammar and the revision is the
+  trailing `-r<base-10>` — stripping the final `-r[0-9]+` yields
+  (goal id, revision) unambiguously. THE CLEAR PHASE, part of this
+  same journal-phase scan every tick: one `ReadDir` of
+  `alerts/stop-open/` — bounded by OPEN stop episodes, because
+  draining removes markers — then, per marker, evaluate the SAME
+  positive fence-gone predicate (the lifecycle rule below) against
+  the goal projection already in hand. Fence still bound → the
+  marker stays, zero opens. Fence GONE → DRAIN: read the marker's
+  digest, open `alerts/alert-<digest>.json` — if present and not
+  yet `Cleared`, set exactly `Cleared`/`ClearedAt` under the alert
+  lock — then remove the marker file; if the episode is absent (a
+  crash between marker and episode write followed by resume, or an
+  episode already collected under 11a.12) or already cleared (§5a's
+  suppression clear got there first — it never touches markers),
+  remove the marker alone: after the human acted no alert is owed.
+  A crash between the episode clear and the marker removal re-runs
+  the already-cleared row next pass — idempotent. The spike
+  demonstrated exactly this rule restoring the clear, with ZERO
+  episode opens on the no-resume path. The `stop-open` directory
+  entry inside `alerts/` never matches `alert-<64 lowercase
+  hex>.json`, so 11a.8's shared filename index is undisturbed.
 - **Episode lifecycle — one positive predicate each way** (folds
   AC8-STOP-INDETERMINATE-LIFECYCLE-001): CREATE only when
   `VerifyStopBatchComplete` passes — the verdict table's sole
   alerting row. CLEAR only on positive proof the fence is GONE: the
   goal's current state shows no `StopFence` bound to the episode's
   revision — the fence field absent, or the goal revision superseded
-  (`goal resume` does both in one transaction, §1's trace).
+  (`goal resume` does both in one transaction, §1's trace). The
+  scan EXECUTES its clears through the marker drain (the clear-index
+  rule above — the marker, not the one-way filename, is what tells
+  the scan which goal and revision an existing episode asserts);
+  §5a's suppression clear remains the transport phase's own
+  fence-gone branch for a stamped due attempt.
   Everything else — a batch reading INDETERMINATE, an unreadable
   batch or goal file, a binding comparison failing on a previously
   verified fence — is **HOLD**: the episode and its PENDING attempt
@@ -1448,12 +1622,20 @@ class string            // json "class,omitempty":
                         // "stop-awaiting-resume"
 facts map[string]string // json "facts,omitempty"; exact keys:
                         // delegate-job-failed:  goalId, jobId,
-                        //   birth, reason, answerAction, role
-                        //   (birth = the record's createdAt string
-                        //   verbatim, fallback startedAt, else ""
-                        //   — §1's birth trace; answerAction =
-                        //   "follow-up" | "fresh-dispatch" per
-                        //   11a.8's table; role may be "")
+                        //   birth, reason, answerAction, role,
+                        //   chainRoot, reviews
+                        //   (birth = the record's minted birth
+                        //   generation verbatim — §1's depended-on
+                        //   contract, goal job-record-birth-token
+                        //   — fallback createdAt then startedAt,
+                        //   else "" for pre-contract records;
+                        //   answerAction = "follow-up" |
+                        //   "fresh-dispatch" per 11a.8's table;
+                        //   role may be ""; chainRoot = the
+                        //   journal-time parentJob-walk result,
+                        //   "" on walk refusal; reviews = the
+                        //   record's immutable reviews field
+                        //   verbatim, may be "")
                         // stop-awaiting-resume: goalId, revision
                         //   (base-10, no leading zeros), stopId
 ```
@@ -1472,20 +1654,31 @@ two new classes compose per 11a.8/11a.9 from `facts`.
 **Digest encoding, exact**: the episode digest is the lowercase
 64-hex SHA-256 of the UTF-8 bytes of the tuple's elements — class
 literal first — joined by single LF (`\n`) bytes, no trailing
-newline (LF is safe: no id, revision, or record timestamp contains
-one — §1's birth trace). So
+newline (LF is safe: no id or revision contains one, the minted
+birth generation is LF-free by §1's depended-on contract, and the
+legacy fallback timestamps cannot contain one — §1's birth
+trace). So
 `delegate-job-failed` + LF + job id + LF + birth token (the `birth`
 fact's exact bytes; folds AC9-JOB-ID-ABA-001 — the token is what
-makes two incarnations of one reused job id distinct episodes; an
-EMPTY birth token, possible only for a record born before
-`createdAt` existed, degrades that one record to revision-9
-identity semantics, a disclosed residual closed for every record a
-shipped creator makes today); `stop-awaiting-resume` + LF +
+makes two incarnations of one reused job id distinct episodes; it
+is the MINTED birth generation of §1's depended-on contract, goal
+`job-record-birth-token`, whose mint-under-the-record-lock,
+immutability, and LF-freedom this design requires; an EMPTY birth
+token — a record carrying neither the minted field nor the legacy
+`createdAt`/`startedAt` fallbacks — degrades that one record to
+revision-9 identity semantics, a disclosed residual for records
+born before the depended-on contract lands);
+`stop-awaiting-resume` + LF +
 goal id + LF + revision base-10 (goal revisions never repeat within
 a goal — resume always mints a fresh revision — so no birth token is
 needed there). This satisfies the store's
 `validEvidenceDigest` (64 lowercase hex,
-`component_evidence.go` 441–444). Pinned fixture vectors:
+`component_evidence.go` 441–444). The birth element is OPAQUE BYTES
+to this encoding: the vectors below pin the joining, hashing, and
+casing, not the token's internal shape, which goal
+`job-record-birth-token` owns — when that contract fixes the
+shape, the fixtures gain one vector using a real minted value.
+Pinned fixture vectors:
 `delegate-job-failed\nimplementer-c002e6035a243bdbc1400067\n2026-08-31T18:02:11Z` →
 `67d29d2adfffb3f29f5ce647444f7e24c0f75f5920da3d8aebb0a55b0253187f`;
 the legacy empty-birth form
@@ -1524,7 +1717,15 @@ one primitive.
 shipped healthy verdict clears EVERY episode, `alert_episode.go`
 246–268): `UpdateAlertEpisodes`' healthy-clear loop and its
 resolve-all-others loop are restricted to episodes whose `class` is
-`""` (health). `delegate-job-failed` episodes are NEVER auto-cleared
+`""` (health), and the restriction is enforced BEFORE ANY OPEN by
+the filename grammar (11a.8's health-load rule, the
+AC9-SCAN-BOUNDEDNESS-001 fold): the health path opens only listing
+entries NOT matching `alert-<64 lowercase hex>.json`, which by
+construction of this section's addressing are exactly the health
+episodes — a producer-named file is never opened by the health
+path at all, and the `class` field check on what IS opened remains
+as the fixture's assertion. `delegate-job-failed` episodes are
+NEVER auto-cleared
 — acknowledgment is their terminal human step, and never clearing is
 what makes one-episode-per-incarnation hold under the
 uncleared-digest
@@ -1532,15 +1733,17 @@ dedup match; the proof survives 11a.12's collection because an
 episode may leave the store only after its source record is already
 gone, and re-minting its digest would need a record with the same
 job id AND the same birth token, which 11a.12's reuse row rules out
-— a collected episode's digest is unre-mintable by construction.
-`stop-awaiting-resume` episodes clear
-ONLY on 11a.9's positive fence-gone proof (its scan or §5a's
-suppression clear); anything unreadable HOLDS them (11a.9's
-lifecycle rule —
+by the mint (record-lock minting, nonce, immutability — no clock
+model) — a collected episode's digest is unre-mintable by
+construction. `stop-awaiting-resume` episodes clear
+ONLY on 11a.9's positive fence-gone proof (its marker-drain clear
+or §5a's suppression clear); anything unreadable HOLDS them
+(11a.9's lifecycle rule —
 a clear is never inferred from a failed read).
 `AcknowledgeAlert` is unchanged for all classes. The class-scoped
 clearing fixture: a healthy health verdict must clear health
-episodes and leave both producer classes' episodes byte-untouched.
+episodes and leave both producer classes' episodes byte-untouched
+AND unopened.
 
 ### 11a.11 The tick drivers' delivery law, both branches
 
@@ -1581,9 +1784,11 @@ id, birth token) exists durably under
 check needs no new state: GC already reads the whole record before
 any prune decision (`gc.go` 380 — its semantic-hash and
 `keepsSpendingFact` checks require it), so the job id (the
-filename stem), the birth token (`createdAt`, fallback `startedAt`,
-else empty — §1's trace, the SAME derivation 11a.8's scan applies
-to the same bytes), and therefore the digest are all in hand;
+filename stem), the birth token (the minted birth generation,
+fallback `createdAt` then `startedAt`, else empty — §1's
+depended-on contract and trace, the SAME derivation 11a.8's scan
+applies to the same bytes), and therefore the digest are all in
+hand;
 existence is 11a.10's exists-by-digest primitive — one stat of
 `alerts/alert-<digest>.json`. `cancelled` and goalless records are
 untouched — the pin
@@ -1598,7 +1803,7 @@ covers exactly the records 11a.8 alerts on, nothing more.
 | The tick crashes after the episode write, before delivery | The episode is durable (§1: atomic, durability-verified save) → GC may collect the record; delivery is owed by the episode store's shipped at-least-once crash law, and the facts ride the episode (11a.10) — pruning the record loses nothing. |
 | The tick crashes between its `ReadDir` and the episode write | No episode exists → the pin holds → the next tick re-derives (11a.8's idempotent scan). |
 | GC's existence check races the tick's episode write | The pin errs only toward RETENTION: collection needs positive existence proof, a stale "no episode" read merely retains the record one extra pass, and a false "exists" read cannot occur — an episode file, once durably written, is removed only by the converse rule below, which itself requires the record to be already gone. |
-| IDENTIFIER REUSE, the ABA interleaving the round-3 critical proved missing (AC9-JOB-ID-ABA-001): old record with id J and birth token T1 fails; its episode (digest D1) is journaled; GC collects the old record — the pin is satisfied by D1; a fresh dispatch lawfully reuses id J (§1: `RecordCreate` refuses only while the record file exists) with birth token T2; the new record fails | The new incarnation's digest D2 covers T2, and T2 ≠ T1: collection runs no earlier than the grace window after the old record's mirror, so under a clock monotone across that window the two birth readings — second-precision timestamps separated by at least 5,400 seconds — cannot be equal, hence D2 ≠ D1. The old episode therefore does NOT suppress the new alert (11a.8's scan finds no episode at D2 and journals one) and does NOT satisfy the new record's pin (the pin stats D2's path, empty until the new episode is durable) — the reused-id record survives until its OWN episode exists. Residual, disclosed: a wall clock stepped BACKWARD across incarnations by more than the grace window could repeat a birth token; the design's clock model is monotone-across-the-window, and this is the one interleaving that leans on it. |
+| IDENTIFIER REUSE, the ABA interleaving the round-3 critical proved missing and the round-4 critique proved still open against the shipped writers (AC9-JOB-ID-ABA-001): old record with id J and birth token T1 fails; its episode (digest D1) is journaled; GC collects the old record — the pin is satisfied by D1; a fresh dispatch lawfully reuses id J (§1: `RecordCreate` refuses only while the record file exists) with birth token T2; the new record fails | The new incarnation's digest D2 covers T2, and T2 ≠ T1 BY THE MINT, not by any clock model: under §1's depended-on contract (goal `job-record-birth-token`) each create path mints the birth generation itself under the record lock — a timestamp plus a nonce, any caller-supplied value ignored — and the field is immutable, so no create or patch path can replay T1 into the new record, and the nonce splits even same-second reuse. The spike executed exactly this row: with the shipped `createdAt` the ABA REPRODUCED with identical digests (the caller omits or repeats the field, and `RecordCAS` can rewrite it); with a second-precision timestamp mint it still collided on same-second reuse; with the minted generation the reuse test PASSED with no clock assumption. So D2 ≠ D1: the old episode does NOT suppress the new alert (11a.8's scan finds no episode at D2 and journals one) and does NOT satisfy the new record's pin (the pin stats D2's path, empty until the new episode is durable) — the reused-id record survives until its OWN episode exists. Residual, disclosed: a record born BEFORE the depended-on contract lands carries only the caller-supplied legacy fields and degrades to revision-9 identity semantics for this row (11a.10's empty-birth disclosure). |
 
 Pins DRAIN: a pinned record is precisely one whose digest 11a.8's
 scan has not yet journaled, so the first completed tick after any
@@ -1631,7 +1836,12 @@ owed attention, which is 11a.5's floor doing its job, not a leak.
 producers' increment and ordered BEFORE the producers within it — a
 producer running against a collector without the pin is the reopened
 window, while the pin without the producers only delays collection
-until the same increment completes.
+until the same increment completes. DEPENDENCY, stated as ordering:
+the increment lands only after goal `job-record-birth-token`'s
+record-contract change (§1) — the digest and the pin key on the
+minted generation, and producers running before the mint exists
+would journal every incarnation under the fallback-degraded
+identity the reuse row discloses for legacy records only.
 
 ## 12. Finding dispositions — all rounds, honestly
 
@@ -1658,7 +1868,7 @@ corrected record:
 | AC3-SLICE-GATE-CUTOVER-001 | Folded, §6/§11: slice 1 no longer touches the gate — the legacy check and legacy queue delivery stay byte-for-byte, making the slice purely additive; the cutover is its own slice behind `channel.gate` (default `legacy`), landing only after queue retirement restores the gate's guarantee. |
 | Round 3: receive-half reservation; multipart receipts | Judged SOUND by the round-3 critic; unchanged. |
 | AC4-EMAIL-TRIM-BOUNDARY-001 | Folded, §3a: the trimming boundary is the fixed design constant `emailReferencesMaxBytes = 8192` bytes of unfolded References value, honestly attributed to this design (RFC 5322 §2.2.3 limits physical lines only, handled by folding, and §3.6.4 specifies no trimming); boundary behavior is deterministic (drop position-2 entries until the value fits, keeping root and the most recent contiguous suffix; parent-only in the pathological case) and a long-chain fixture is required in the email adapter's provider tests. |
-| Round 4: §5a merge law and every other line | Judged SOUND by the round-4 critic; unchanged. NO FINDING REMAINS OPEN across all four rounds. |
+| First-chain round 4: §5a merge law and every other line | Judged SOUND by that chain's round-4 critic; unchanged. No finding of the FIRST critique chain remains open. (The later Sol chain's rounds — AC7 through AC10 — have their own rows below; its round 4 is the four-finding critique revision 11 folds.) |
 | Sol implementer gap-stop (seven gaps, slice 1) | Folded, §11a: gap 1 → 11a.1 (sender stamp fields and refusal journal), gap 2 → 11a.2 (the five contract types), gap 3 → 11a.3 (unconfigured-send outcome law), gap 4 → 11a.4 (own command/desktop adapters plus implicit-destination synthesis, legacy bytes untouched), gap 5 → 11a.5 (undelivered counting and the unreadable-store line), gap 6 → 11a.6 (health alert three-field mapping with a real answering verb), gap 7 → 11a.7 (Telegram request/validation/timeout/fake-endpoint/capability). A gap-stop is correct delegate behavior; these were design debts, not implementer questions. |
 | Second implementer gap-stop (four cross-section contradictions, slice 1) | Folded, revision 7: contradiction 1 → `MessageRef` retention decided INTO slice 1 (§5a, §7, §11 slices 1 and 4 agree); contradiction 2 → `context.Context` added to `AdapterSend` (§2a) and 11a.7 restated over it, one contract; contradiction 3 → `DeliverDueAlerts` wired into BOTH tick drivers in slice 1 (§5, §11), external report bytes unchanged; contradiction 4 → exact truncation law in §9 (tail bytes, code-point boundary, Happened-only shortening). Root cause was skipping a self-consistency pass after §11a's one-pass addition; the pass is now performed and recorded in the status line. |
 | Wido's 2026-09-01 binding addition (idle-loss specimen) | Folded: `delegate-job-failed` (11a.8) and `stop-awaiting-resume` (11a.9) enter the enumerated classes (§1 traced facts, §7 producer table) as slice-1 producers (§11). |
@@ -1677,45 +1887,58 @@ corrected record:
 | AC8-SCAN-BOUNDEDNESS-001 | Folded, 11a.8/11a.9/11a.12: enumerated per-tick read sets (two directory listings steady-state; one `ReadStopBatch` per live fenced goal), write-once episodes with the episode store as the durable checkpoint, cursorlessness argued from in-place record mutability, and both directories bounded — jobs by GC's contract plus draining pins, alerts by the converse collection rule. |
 | AC8-STOP-INDETERMINATE-LIFECYCLE-001 | Folded, 11a.9/11a.10: one positive predicate each way — create on verify-pass, clear only on fence-gone proof, HOLD on anything unreadable or indeterminate; revision 8's clear-when-condition-false rule, which silently cancelled delivery, is removed from both sections. |
 | AC8-ANSWER-BYTES-AND-ACTION-001 | Folded, §6/11a.8/11a.9: the placeholder law makes every angle-bracketed token SUBSTITUTED or VERBATIM with each class enumerating its own; 11a.8's Answer fixes the corrective-brief token as literal bytes; 11a.9's Answer carries resume's real interface — `--id`, `--by`, and the mandatory complete budget tuple — with the fresh budget values verbatim because they are the decision being asked. Revision 9's totality claim for the follow-up verb was FALSE; superseded by AC9-ANSWER-FOLLOWUP-ACTION-001's fold below. |
-| AC9-JOB-ID-ABA-001 (critical) | Folded, 11a.10/11a.12/11a.8/§1: the episode digest and the retention pin now carry the record's persisted birth token (`createdAt`, every shipped creation path writes it; fallback `startedAt`, else empty for pre-field legacy records); `RecordCreate`'s reuse hole is traced in §1; 11a.12's interleaving table gains the identifier-reuse row proving the old episode neither suppresses the new incarnation's alert nor satisfies its pin; re-minting a collected digest is ruled out by the grace-window-separated clock argument, with the clock-regression residual disclosed. |
+| AC9-JOB-ID-ABA-001 (critical) | Rev-10 fold (a `createdAt` birth token with a clock argument) was REFUTED by round 4 and the spike: the field is neither mandatory nor immutable in the shipped record contract, and the ABA reproduced through the shipped writers. Superseded by the round-4 row below. |
 | AC9-RETENTION-DIGEST-ADDRESSING-001 | Folded, 11a.10/11a.12/§1: producer-class episode ids are `alert-<64-hex-digest>` — legal under the shipped `validEpisodeID` and collision-free against health naming — so episode addressing is ONE primitive, exists-by-digest = one stat of the `alertPath`-derived digest-named file, with its key derivation stated once and shared by the collector's pin and both scans' dedup index; journaling writes the exact path the primitive stats, closing the 11a.8-versus-11a.12 authorship-seam contradiction. |
-| AC9-SCAN-BOUNDEDNESS-001 | Folded, 11a.8/11a.9: each scan gets an explicit per-tick open contract enumerating every touched set with a named size owner — the jobs listing (owner: evidence GC plus draining pins), one bounded read per listed record (the birth token's disclosed price, with the rejected by-source index recorded), the alerts listing read as filenames only — and ZERO episode files are opened by either producer scan; unacknowledged and health episodes' capless accumulation is honestly owned by the floor and the converse collection rule, costing the scans one listing entry each. |
+| AC9-SCAN-BOUNDEDNESS-001 | Rev-10 fold (the enumerated open contract) was judged by round 4 to enumerate without bounding, chiefly through the retained health load. Completed by the round-4 row below: the producer-scan contract stands with the spike's measured numbers, and the health load is filename-restricted. |
 | AC9-STOP-SUPPRESSION-MERGE-001 | Folded, §5a/11a.9/§5: the pre-send fence-gone branch is now the SUPPRESSION CLEAR, §5a's named second transition — same reload-and-stamped-attempt-match critical section, writes exactly `Cleared`/`ClearedAt`, cancel point before any `AdapterSend`, refusal branch journaled — and §5a's field-ownership invariant is explicitly scoped to completions, so no transition both must and must not change `Cleared`; fence-gone monotonicity (resume's one-transaction trace) makes the clear safe without a goal re-read under the alert lock. |
-| AC9-ANSWER-FOLLOWUP-ACTION-001 | Folded, 11a.8/11a.10/§1: the dispatcher's real eligibility is traced (accepted: `completed` or `failed`+`protocol_error` with a resumable session; everything else refused naming fresh dispatch); 11a.8's total four-row action table decides `answerAction` at journal time from the record's own fields, advertises `--follow-up` only for the accepted case and aims it at the CHAIN ROOT id, and advertises the operator interface's fresh-dispatch line otherwise; the post-journal `chainClosed` staleness residual is disclosed as a loud dispatcher refusal, never a silent wrong action. |
+| AC9-ANSWER-FOLLOWUP-ACTION-001 | Rev-10 fold (the four-row action table) was reopened by round 4 on three shipped preconditions the table ignored: the mandatory `--reviews` for code-critic/warden fresh dispatches, the chain-level state the follow-up gate checks against records the pin does not cover, and the suffix-strip root rule that contradicts the shipped parentJob walk. Completed by the round-4 row below. |
+| Round-4 evidence spike (`records/misc/alert-channel-spike-verdicts.md`, job implementer-142fd88a8c93640bc0f9969e) | The round-4 convergence stall (the critic's standing gap: no implementation of the disputed mechanisms existed to execute) was answered by an executable spike prototyping all four mechanisms against the real shipped writers, tests run, nothing landed. Revision 11 folds its verdicts as evidence; the spike's full return with transcripts is durable in the round evidence. |
+| Round 4 AC9-JOB-ID-ABA-001 (critical) | Folded, rev 11, §1/11a.8/11a.10/11a.12: spike-REFUTED `createdAt` (not mandatory, not immutable, ABA reproduced with identical digests; no shipped field qualifies) is replaced by the machine-MINTED birth generation — timestamp plus nonce, minted by every create path under the record lock ignoring the caller, immutable in `immutableFields` — whose record-contract change is goal `job-record-birth-token` (opened, budgeted); this design DEPENDS on it and orders slice 1's producer increment after it. The reuse row is proven against the minted token with NO clock model (spike-executed), and the clock-regression residual is retired with the clock argument; the remaining residual is the disclosed legacy degradation for pre-contract records. |
+| Round 4 AC9-SCAN-BOUNDEDNESS-001 | Folded, rev 11, 11a.8/11a.10/§1: the producer scans' filename-index open contract STANDS as revision 10 wrote it, now evidenced by execution (8.4 ms over 10,020 names, zero opens; 13.3 ms for 1,000 whole-record reads); the retained health load gains the spike's rule — restricted to health-NAMED files by the existing filename grammar, no new index — dropping 10,020 under-lock decodes in 110 ms to 20 opens in 10.6 ms, so the under-lock cost is bounded by the health-episode count regardless of producer accumulation. |
+| Round 4 AC10-STOP-CLEAR-READSET-001 | Folded, rev 11, 11a.9: the regression is real and spike-REPRODUCED (a submitted stop episode stays uncleared forever after resume — one-way filename, submitted attempts never due). Closed by the spike's reversible journal-time marker `alerts/stop-open/<goal>-r<revision>` containing the digest, written durably before the episode, listed by the clear phase, bounded by open stop episodes, draining on clear — spike-demonstrated restoring the clear with zero episode opens on the no-resume path. |
+| Round 4 AC9-ANSWER-FOLLOWUP-ACTION-001 | Folded, rev 11, 11a.8/11a.10/§1: the producer journals the failed record's own immutable `reviews` field and renders it into the fresh-dispatch line for code-critic and warden roles (fixing the spike-proven categorical refusal); the chain root is the shipped parentJob WALK's result derived at journal time (suffix-strip spike-refuted on a lawful `task-r1` fixture), with a total verbatim-token fallback on walk refusal; row 1's follow-up validity is stated as JOURNAL-TIME-ONLY with the pin's coverage boundary honest — completed chain roots are not pinned, so post-journal collection, a newer non-accepted round, or a closing chain each yield a loud dispatcher refusal, disclosed, and the pin is deliberately NOT widened to completed chain records. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 10)
+## 13. Self-grade (R-24-m1, refreshed for revision 11)
 
-- **Confidence:** 0.73. All five round-3 findings were checked
-  against the shipped code they cite before folding (all five
-  verified true; none refutable) — including the critical one, which
-  proved revision 9's identity model blind to a lawful dispatcher
-  behavior (`RecordCreate` refuses a job id only while its record
-  file exists, §1). Priced for: the two heaviest folds again REUSE
-  shipped facts instead of adding machinery — the birth token is a
-  field every shipped creation path already writes, and the
-  addressing primitive is the store's own id-to-path rule — the
-  direction that has historically survived this document's critique
-  rounds. Priced against, and why the grade drops from 0.74:
-  revision 10 re-keys the digest, which costs revision 9's zero-read
-  scan (now one bounded read per listed record, disclosed in 11a.8),
-  introduces a clock-model dependency (the reuse row's
-  monotone-across-the-grace-window assumption), and grows §5a a
-  second transition in one pass — mitigated by the recorded
-  self-consistency pass over every changed pair and by the pinned
-  digest vectors being recomputed against the new encoding.
+- **Confidence:** 0.78. Every disputed mechanism in this revision
+  now rests on an EXECUTED rule, not an argued one: the four
+  round-4 findings were prototyped by the evidence spike against
+  the real shipped writers (the ABA reproduced and then closed by
+  the mint; the scan costs measured, not estimated; the stop-clear
+  regression reproduced and then restored by the marker; both
+  Answer refusal paths executed), and revision 11 folds those
+  verdicts without re-deriving them. Priced for: execution evidence
+  is a stronger grounding than any prior revision had, and the
+  grade rises accordingly. Priced against, and why it is not
+  higher: the critical fold's proof now DEPENDS on a record-contract
+  change that has not landed (goal `job-record-birth-token`) — the
+  design is internally consistent but conditionally so, and the
+  spike tested the rule's prototype, not the landed contract; the
+  stop-open marker adds a second durable artifact whose
+  marker-before-episode ordering is argued, not enforced by any
+  shared mechanism; and the parentJob walk at journal time reads
+  ancestor records whose retention this design deliberately does
+  not pin.
 - **Reject condition, stated plainly:** reject this revision if the
   implementer gap-stops on slice 1 a THIRD time. A third stop means
   revision-scale patching cannot make this document mechanical, and
   the design must then be split into a separate implementation
   specification rebuilt from the episode store's and channel layer's
   actual types, not grown further.
-- **Weakest claim (new):** the reuse row's re-mint impossibility
-  rests on a CLOCK MODEL — birth tokens are second-precision
-  wall-clock readings, and their inequality across incarnations is
-  guaranteed only by the grace window separating them under a
-  monotone clock; a clock stepped backward by more than the grace
-  window silently reopens the ABA hole, and no persisted state would
-  detect it (disclosed in the row itself). Second (new): the
+- **Weakest claim (new):** the identity proof is only as good as
+  the DEPENDED-ON contract: the reuse row's re-mint impossibility
+  holds for records carrying the minted birth generation, and goal
+  `job-record-birth-token` has not landed — until it does, every
+  record degrades to the disclosed revision-9 fallback identity,
+  and a slice-1 increment landed out of the stated order would ship
+  that degradation silently; the ordering is discipline in §11a.12,
+  not mechanism. Second (new): the stop-open marker's
+  marker-before-episode ordering and its drain-on-clear are argued
+  interleaving by interleaving, but nothing structural prevents a
+  future writer from creating a stop episode without its marker —
+  such an episode would be exactly revision 10's uncollectable
+  regression again, and only the marker fixture would notice.
+  Third: the
   suppression clear is a second lawful writer of `Cleared` whose
   safety depends on every implementation routing fence-gone
   suppression through §5a's exact reload-and-match steps — a
@@ -1736,7 +1959,8 @@ corrected record:
   sender honors the flock discipline; a code path that sends without
   the flock (a future manual verb, a test harness shortcut) would
   make restamping a live sender's attempt possible, and nothing in
-  the persisted state can detect that violation. Second-weakest: the
+  the persisted state can detect that violation. Also still
+  standing: the
   §5a refusal-branch enumeration, unchanged from revision 5 — its
   completeness is proven only by the implementation's fixtures.
 - **Reject condition:** reject this revision if the implementer's
