@@ -386,7 +386,12 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			}
 			machine, lineage, claimEpoch := f.Claimed.Machine, f.Claimed.Lineage, f.StopCapability.ClaimEpoch
 			budget := r.Budget
+			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
+			if err != nil {
+				return nil, err
+			}
 			f.Budget = &budget
+			f.NormApproval = approval
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
 			if err := bindClaim(f, machine, lineage, r.stamp(), f.Revision, claimEpoch); err != nil {
 				return nil, err

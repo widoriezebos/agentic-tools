@@ -33,9 +33,16 @@ type GoalFile struct {
 	// Pinned names the ONE machine that may claim this goal — set when
 	// the work needs a setup, network, or resource only that machine
 	// has. Empty means any machine may claim.
-	Pinned  string
-	Budget  *Budget
-	Claimed *ClaimRecord
+	Pinned string
+	Budget *Budget
+	// NormApproval is the published proof for an admitted over-norm tuple.
+	// It names the pre-touch goal revision the human approved.
+	NormApproval *GoalNormApprovalClaim
+	// Sliced is the irreversible pre-reservation boundary. Once present, the
+	// parent can only advance through Split.
+	Sliced   *SlicedRecord
+	Ratified *SplitRatification
+	Claimed  *ClaimRecord
 	// Obligation is the human-governed recurrence bound to this goal's
 	// existing budget. Its revision changes only by replacing the whole record.
 	Obligation *GovernedObligation
@@ -47,6 +54,22 @@ type GoalFile struct {
 	Parked         *ParkRecord
 	Legacy         []string // LegacyNotes: verbatim non-field prose from migration
 	History        []HistoryLine
+}
+
+// GoalNormApprovalClaim is the durable scope-norm exception beside a budget.
+type GoalNormApprovalClaim struct {
+	ApprovedRef  string
+	Minutes      uint64
+	GoalRevision uint64
+}
+
+// SlicedRecord proves that a claimed revision crossed the slicing boundary
+// before dispatch published any reservation for that revision.
+type SlicedRecord struct {
+	Machine  string
+	Lineage  string
+	Revision uint64
+	At       string
 }
 
 // ClaimRecord is the ownership record of a claimed goal.
@@ -235,6 +258,21 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("Budget: %v", err)
 		}
 	}
+	if f.NormApproval != nil {
+		if f.NormApproval.ApprovedRef == "" || f.NormApproval.Minutes == 0 || f.NormApproval.GoalRevision == 0 {
+			addProblem("NormApproval is incomplete")
+		}
+	}
+	if f.Sliced != nil {
+		if f.Sliced.Machine == "" || f.Sliced.Lineage == "" || f.Sliced.Revision == 0 || !validStamp(f.Sliced.At) {
+			addProblem("Sliced is incomplete")
+		}
+	}
+	if f.Ratified != nil {
+		if err := f.Ratified.Validate(); err != nil {
+			addProblem("Ratified: %v", err)
+		}
+	}
 	if f.Obligation != nil {
 		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget); err != nil {
 			addProblem("%v", err)
@@ -366,6 +404,46 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.Budget = &budget
+	case "NormApproval":
+		rec, err := parseKVRecord(value, []string{"approvedRef", "minutes", "goalRevision"}, nil, "")
+		if err != nil {
+			addProblem("NormApproval: %v", err)
+			return
+		}
+		minutes, minutesErr := strconv.ParseUint(rec["minutes"], 10, 64)
+		revision, revisionErr := strconv.ParseUint(rec["goalRevision"], 10, 64)
+		if minutesErr != nil || minutes == 0 || revisionErr != nil || revision == 0 {
+			addProblem("NormApproval has invalid numeric coordinates")
+			return
+		}
+		f.NormApproval = &GoalNormApprovalClaim{ApprovedRef: rec["approvedRef"], Minutes: minutes, GoalRevision: revision}
+	case "Sliced":
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "revision", "at"}, nil, "")
+		if err != nil {
+			addProblem("Sliced: %v", err)
+			return
+		}
+		revision, revisionErr := strconv.ParseUint(rec["revision"], 10, 64)
+		if revisionErr != nil || revision == 0 {
+			addProblem("Sliced has invalid revision")
+			return
+		}
+		f.Sliced = &SlicedRecord{Machine: rec["machine"], Lineage: rec["lineage"], Revision: revision, At: rec["at"]}
+	case "Ratified":
+		rec, err := parseKVRecord(value, []string{"tier", "draftSha256"}, []string{"by", "mainId", "claimEpoch"}, "")
+		if err != nil {
+			addProblem("Ratified: %v", err)
+			return
+		}
+		epoch := int64(0)
+		if rec["claimEpoch"] != "" {
+			epoch, err = strconv.ParseInt(rec["claimEpoch"], 10, 64)
+			if err != nil {
+				addProblem("Ratified claimEpoch is not an integer")
+				return
+			}
+		}
+		f.Ratified = &SplitRatification{Tier: rec["tier"], By: rec["by"], MainID: rec["mainId"], ClaimEpoch: epoch, DraftSHA256: rec["draftSha256"]}
 	case "Obligation":
 		obligation, err := parseObligationRecord(value)
 		if err != nil {
@@ -563,6 +641,23 @@ func RenderFile(f *GoalFile) []byte {
 	if f.Budget != nil {
 		fmt.Fprintf(&b, "- Budget: elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d\n",
 			f.Budget.ElapsedLimit, f.Budget.AttemptLimit, f.Budget.ReservedJobMinutesLimit, f.Budget.ActiveJobLimit)
+	}
+	if f.NormApproval != nil {
+		fmt.Fprintf(&b, "- NormApproval: approvedRef=%s minutes=%d goalRevision=%d\n",
+			f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.GoalRevision)
+	}
+	if f.Sliced != nil {
+		fmt.Fprintf(&b, "- Sliced: machine=%s lineage=%s revision=%d at=%s\n",
+			f.Sliced.Machine, f.Sliced.Lineage, f.Sliced.Revision, f.Sliced.At)
+	}
+	if f.Ratified != nil {
+		fmt.Fprintf(&b, "- Ratified: tier=%s", f.Ratified.Tier)
+		if f.Ratified.Tier == RatifierHuman {
+			fmt.Fprintf(&b, " by=%s", f.Ratified.By)
+		} else {
+			fmt.Fprintf(&b, " mainId=%s claimEpoch=%d", f.Ratified.MainID, f.Ratified.ClaimEpoch)
+		}
+		fmt.Fprintf(&b, " draftSha256=%s\n", f.Ratified.DraftSHA256)
 	}
 	if f.Obligation != nil {
 		o := f.Obligation

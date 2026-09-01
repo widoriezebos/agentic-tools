@@ -119,6 +119,86 @@ func TestConcurrentSameGoalRaceNamesOneWinner(t *testing.T) {
 	}
 }
 
+func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X00000000000000000CJ00", "mac-a"), "concurrent-parent", "Independent work.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open parent: %+v %v", res, err)
+	}
+	members := []MemberDraft{
+		{ID: "concurrent-one", Intent: "First independent member.", NextStep: "Work one."},
+		{ID: "concurrent-two", Intent: "Second independent member.", NextStep: "Work two."},
+	}
+	if res, err := Split(verbReq(a, "01J5X00000000000000000CJ10", "mac-a"), "concurrent-parent", members, mainRatification("concurrent-parent", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("split: %+v %v", res, err)
+	}
+
+	var start, done sync.WaitGroup
+	start.Add(1)
+	results := make([]PublishResult, 2)
+	errs := make([]error, 2)
+	for index, leg := range []struct {
+		root, id, machine, ulid string
+	}{{a, "concurrent-one", "mac-a", "01J5X00000000000000000CJ20"}, {b, "concurrent-two", "mac-b", "01J5X00000000000000000CJ30"}} {
+		done.Add(1)
+		go func(slot int, root, id, machine, ulid string) {
+			defer done.Done()
+			start.Wait()
+			results[slot], errs[slot] = Claim(verbReq(root, ulid, machine), id, testBudget())
+		}(index, leg.root, leg.id, leg.machine, leg.ulid)
+	}
+	start.Done()
+	done.Wait()
+	for index := range results {
+		if errs[index] != nil || results[index].Outcome != OutcomeConfirmed {
+			t.Fatalf("independent claimant %d: %+v %v", index, results[index], errs[index])
+		}
+	}
+	advanced, err := FetchAdvance(endpointFor(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := loadTree(a, advanced.Tip)
+	if err != nil || tree.Live["concurrent-one"].Claimed.Machine != "mac-a" || tree.Live["concurrent-two"].Claimed.Machine != "mac-b" {
+		t.Fatalf("both independent claims did not converge: %+v %v", tree, err)
+	}
+	if err := ValidateCommit(a, advanced.Tip); err != nil {
+		t.Fatalf("mixed claimant tree did not validate: %v", err)
+	}
+	if res, err := Open(verbReq(a, "01J5X00000000000000000CJ40", "mac-a"), "quota-bystander", "Unrelated claim.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open bystander: %+v %v", res, err)
+	}
+	quota, err := Claim(verbReq(a, "01J5X00000000000000000CJ50", "mac-a"), "quota-bystander", testBudget())
+	if err != nil || quota.Outcome != OutcomeRejected || !strings.Contains(quota.Detail, "quota") {
+		t.Fatalf("mixed arc weakened the per-machine quota: %+v %v", quota, err)
+	}
+}
+
+func TestSplitMemberDependencyStillOwnsClaimOrdering(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X00000000000000000CD00", "mac-a"), "dependency-parent", "Ordered work.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	members := testMembers("dependency-parent")
+	if res, err := Split(verbReq(a, "01J5X00000000000000000CD10", "mac-a"), "dependency-parent", members, mainRatification("dependency-parent", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("split: %+v %v", res, err)
+	}
+	blocked, err := Claim(verbReq(b, "01J5X00000000000000000CD20", "mac-b"), "dependency-parent-two", testBudget())
+	if err != nil || blocked.Outcome != OutcomeRejected || !strings.Contains(blocked.Detail, "dependency-parent-one") {
+		t.Fatalf("unmet member dependency did not refuse by name: %+v %v", blocked, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000CD30", "mac-a"), "dependency-parent-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim predecessor: %+v %v", res, err)
+	}
+	if res, err := Done(verbReq(a, "01J5X00000000000000000CD40", "mac-a"), "dependency-parent-one", "Predecessor done."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("complete predecessor: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(b, "01J5X00000000000000000CD50", "mac-b"), "dependency-parent-two", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim after dependency completion: %+v %v", res, err)
+	}
+}
+
 func TestAcceptedRefCASHoldsUnderRaceAndNeverRewinds(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)

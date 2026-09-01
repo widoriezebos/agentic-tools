@@ -879,10 +879,11 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	if len(pairs) != 1 {
 		t.Fatalf("ONE displaced pair across the cascade (R10-M06): %v", pairs)
 	}
-	// The displaced agent cannot lift the human's pause itself.
+	// The displaced agent skips every human-parked member, so the cascade
+	// is an explicit no-op rather than a refusal that blocks other members.
 	res, err = UnparkArc(verbReq(a, "01J5X00000000000000000C215", "mac-a"), "casc-one")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human's pause") {
-		t.Fatalf("an agent lifting a human's park refuses by name: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "nothing to move") {
+		t.Fatalf("an agent skips human-parked members: %+v %v", res, err)
 	}
 	// The displaced pair's next History-appending publication
 	// piggybacks ONE automatic root-record ack line answering the
@@ -1004,7 +1005,8 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000D340", "mac-a"), "anchor2", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim join-arc: %+v %v", res, err)
 	}
-	// A stranger cannot move a queued goal into the claimed arc.
+	// A stranger may join the planning arc, but cannot inherit its foreign
+	// claim: the member lands queued.
 	if res, err := Open(verbReq(b, "01J5X00000000000000000D350", "mac-b"), "joiner", "Wants in.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open joiner: %+v %v", res, err)
 	}
@@ -1012,11 +1014,18 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 		t.Fatalf("budget joiner: %+v %v", res, err)
 	}
 	res, err := SetArc(verbReq(b, "01J5X00000000000000000D360", "mac-b"), "joiner", "join-arc")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "stranger") {
-		t.Fatalf("a stranger's move into a claimed arc rejects: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a stranger's queued join: %+v %v", res, err)
+	}
+	tForeign, err := loadTree(b, res.Tip)
+	if err != nil || tForeign.Live["joiner"].State != StateQueued || tForeign.Live["joiner"].Claimed != nil {
+		t.Fatalf("foreign join inherited claim authority: %+v %v", tForeign.Live["joiner"], err)
+	}
+	if res, err := Detach(verbReq(b, "01J5X00000000000000000D365", "mac-b"), "joiner"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("detach queued joiner for own-pair row: %+v %v", res, err)
 	}
 	// The claimant's own move auto-claims the joiner under the
-	// standing claim — the arc stays one unit.
+	// caller's own claim.
 	res, err = SetArc(verbReq(a, "01J5X00000000000000000D370", "mac-a"), "joiner", "join-arc")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the claimant's move proceeds: %+v %v", res, err)

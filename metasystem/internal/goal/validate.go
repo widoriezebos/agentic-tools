@@ -167,6 +167,13 @@ func ValidateTree(t *TreeGoals) []Problem {
 			addf("%s%s.md: also present in the archive", goalsPrefix, id)
 		}
 	}
+	if t.Root != nil {
+		for _, entry := range t.Root.Decomposed {
+			if _, live := t.Live[entry.Id]; live {
+				addf("%s%s.md: decomposed parent %s is live again", goalsPrefix, entry.Id, entry.Id)
+			}
+		}
+	}
 
 	exists := func(id string) bool {
 		_, live := t.Live[id]
@@ -195,6 +202,10 @@ func ValidateTree(t *TreeGoals) []Problem {
 			addf("%s: %v", where, err)
 		} else if strings.Join(canonical, ",") != strings.Join(f.Labels, ",") {
 			addf("%s: Labels must be sorted and deduplicated on a published tree", where)
+		}
+		if f.Budget != nil && f.NormApproval != nil && f.NormApproval.Minutes < f.Budget.ReservedJobMinutesLimit {
+			addf("%s: NormApproval proves %d minutes but Budget reserves %d minutes", where,
+				f.NormApproval.Minutes, f.Budget.ReservedJobMinutesLimit)
 		}
 	})
 	// Acyclicity over the COMPOSED blocked graph (live and done
@@ -268,47 +279,6 @@ func ValidateTree(t *TreeGoals) []Problem {
 				ids[i] = f.Id
 			}
 			addf("machine %s claims %s: the quota is one claim per machine (one arc counts once)", m, strings.Join(ids, ", "))
-		}
-	}
-
-	// Arc uniformity: an arc moves whole — after ANY
-	// transaction every live member of an arc shares one state, and
-	// a claimed arc has exactly one claimant pair. A split arc is a
-	// split claim, the exact ownership confusion the arc exists to
-	// prevent.
-	arcs := map[string][]*GoalFile{}
-	arcOrder := []string{}
-	for _, id := range sortedGoalIds(t.Live) {
-		f := t.Live[id]
-		if f.Arc == "" {
-			continue
-		}
-		if len(arcs[f.Arc]) == 0 {
-			arcOrder = append(arcOrder, f.Arc)
-		}
-		arcs[f.Arc] = append(arcs[f.Arc], f)
-	}
-	sort.Strings(arcOrder)
-	for _, arc := range arcOrder {
-		members := arcs[arc]
-		first := members[0]
-		for _, m := range members[1:] {
-			if m.State != first.State {
-				addf("arc %s mixes states: %s is %s while %s is %s — an arc moves whole", arc, first.Id, first.State, m.Id, m.State)
-			}
-		}
-		if first.State != StateClaimed {
-			continue
-		}
-		for _, m := range members[1:] {
-			if m.Claimed == nil || first.Claimed == nil {
-				continue // claimed-without-record is already named above
-			}
-			if m.Claimed.Machine != first.Claimed.Machine || m.Claimed.Lineage != first.Claimed.Lineage {
-				addf("arc %s has two claimant pairs: %s under %s+%s, %s under %s+%s — one arc, one claimant", arc,
-					first.Id, first.Claimed.Machine, first.Claimed.Lineage,
-					m.Id, m.Claimed.Machine, m.Claimed.Lineage)
-			}
 		}
 	}
 

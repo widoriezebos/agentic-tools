@@ -9,7 +9,7 @@ import (
 
 func clearBudgetLawEnvironment(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{ElapsedGracePercentKey, SliceNormHoursKey} {
+	for _, key := range []string{ElapsedGracePercentKey, SliceNormHoursKey, GoalNormJobMinutesKey} {
 		name := EnvName(key)
 		previous, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
@@ -61,13 +61,24 @@ func TestBudgetLawConfigurationRequiresCommittedProductionSources(t *testing.T) 
 	if _, err = SliceNormHours(conf); err == nil || !strings.Contains(err.Error(), "committed root configuration") {
 		t.Fatalf("production accepted environment slice-norm authority: %v", err)
 	}
+	_ = os.Unsetenv(EnvName(SliceNormHoursKey))
+	putFile(t, conf, GoalNormJobMinutesKey+"=1440\n")
+	putFile(t, conf+".local", GoalNormJobMinutesKey+"=2000\n")
+	if _, err = GoalNormJobMinutes(conf); err == nil || !strings.Contains(err.Error(), "committed root configuration") {
+		t.Fatalf("production accepted local goal-norm authority: %v", err)
+	}
+	_ = os.Remove(conf + ".local")
+	t.Setenv(EnvName(GoalNormJobMinutesKey), "2000")
+	if _, err = GoalNormJobMinutes(conf); err == nil || !strings.Contains(err.Error(), "committed root configuration") {
+		t.Fatalf("production accepted environment goal-norm authority: %v", err)
+	}
 }
 
 func TestBudgetLawConfigurationAllowsFixtureAuthorizedOverrides(t *testing.T) {
 	clearBudgetLawEnvironment(t)
 	conf := filepath.Join(t.TempDir(), "metasystem.conf")
-	putFile(t, conf, "metasystem.runtimes=fake\n"+ElapsedGracePercentKey+"=25\n"+SliceNormHoursKey+"=6\n")
-	putFile(t, conf+".local", ElapsedGracePercentKey+"=75\n"+SliceNormHoursKey+"=7\n")
+	putFile(t, conf, "metasystem.runtimes=fake\n"+ElapsedGracePercentKey+"=25\n"+SliceNormHoursKey+"=6\n"+GoalNormJobMinutesKey+"=1440\n")
+	putFile(t, conf+".local", ElapsedGracePercentKey+"=75\n"+SliceNormHoursKey+"=7\n"+GoalNormJobMinutesKey+"=1800\n")
 
 	if percent, err := ElapsedGracePercent(conf); err != nil || percent != 75 {
 		t.Fatalf("fixture local grace: percent=%d err=%v", percent, err)
@@ -75,13 +86,20 @@ func TestBudgetLawConfigurationAllowsFixtureAuthorizedOverrides(t *testing.T) {
 	if hours, err := SliceNormHours(conf); err != nil || hours != 7 {
 		t.Fatalf("fixture local slice norm: hours=%d err=%v", hours, err)
 	}
+	if minutes, err := GoalNormJobMinutes(conf); err != nil || minutes != 1800 {
+		t.Fatalf("fixture local goal norm: minutes=%d err=%v", minutes, err)
+	}
 	t.Setenv(EnvName(ElapsedGracePercentKey), "125")
 	t.Setenv(EnvName(SliceNormHoursKey), "8")
+	t.Setenv(EnvName(GoalNormJobMinutesKey), "2000")
 	if percent, err := ElapsedGracePercent(conf); err != nil || percent != 125 {
 		t.Fatalf("fixture environment grace: percent=%d err=%v", percent, err)
 	}
 	if hours, err := SliceNormHours(conf); err != nil || hours != 8 {
 		t.Fatalf("fixture environment slice norm: hours=%d err=%v", hours, err)
+	}
+	if minutes, err := GoalNormJobMinutes(conf); err != nil || minutes != 2000 {
+		t.Fatalf("fixture environment goal norm: minutes=%d err=%v", minutes, err)
 	}
 }
 
@@ -155,5 +173,27 @@ func TestSliceNormHoursUsesDefaultAndRefusesMalformedSources(t *testing.T) {
 	t.Setenv(name, "four")
 	if _, err := SliceNormHours(conf); err == nil || !strings.Contains(err.Error(), "positive integer") {
 		t.Fatalf("malformed environment slice norm was accepted: %v", err)
+	}
+}
+
+func TestGoalNormJobMinutesUsesDefaultAndRefusesMalformedSources(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "")
+	if minutes, err := GoalNormJobMinutes(conf); err != nil || minutes != DefaultGoalNormJobMinutes {
+		t.Fatalf("absent goal norm: minutes=%d err=%v", minutes, err)
+	}
+	putFile(t, conf, "metasystem.runtimes=fake\n"+GoalNormJobMinutesKey+"=1800\n")
+	if minutes, err := GoalNormJobMinutes(conf); err != nil || minutes != 1800 {
+		t.Fatalf("configured goal norm: minutes=%d err=%v", minutes, err)
+	}
+	putFile(t, conf+".local", GoalNormJobMinutesKey+"=0\n")
+	if _, err := GoalNormJobMinutes(conf); err == nil || !strings.Contains(err.Error(), "positive integer") {
+		t.Fatalf("zero local goal norm was accepted: %v", err)
+	}
+	putFile(t, conf+".local", GoalNormJobMinutesKey+"=1800\n")
+	t.Setenv(EnvName(GoalNormJobMinutesKey), "many")
+	if _, err := GoalNormJobMinutes(conf); err == nil || !strings.Contains(err.Error(), "positive integer") {
+		t.Fatalf("malformed environment goal norm was accepted: %v", err)
 	}
 }

@@ -394,6 +394,7 @@ func families() []family {
 				{"prune", "drop done goals beyond the newest ten, reporting every drop", runGoalPrune},
 				{"claim", "claim a goal (or its whole arc with --arc) for this machine", runGoalClaim},
 				{"set-budget", "set all four budget limits and bind them to a new goal revision", runGoalSetBudget},
+				{"split", "atomize one goal into independently claimable arc members; conclude the parent as decomposed", runGoalSplit},
 				{"set-obligation", "human-only: bind a governed recurrence and typed assumptions to the existing budget", runGoalSetObligation},
 				{"enroll-terminal", "enroll this agent-free interactive terminal for human-only goal authority", runGoalEnrollTerminal},
 				{"resume", "human-only: start a fresh revision and budget after a complete stop batch", runGoalResume},

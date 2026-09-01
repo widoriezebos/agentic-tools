@@ -12,7 +12,7 @@ import (
 // human-reserved, edit checks authority, steal cascades, reopen
 // adopts the arc's standing state, set-arc composes under the
 // membership matrix, prune's closure seeds from keep survivors, and
-// the validator proves arc uniformity.
+// arc members remain independently claimable.
 
 func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	_, a, _ := twoClones(t)
@@ -202,10 +202,18 @@ func TestReopenAdoptsTheArcState(t *testing.T) {
 		t.Fatalf("done: %+v %v", res, err)
 	}
 
-	// An outside agent cannot inject the member back into the claim.
+	// A foreign claim no longer owns the arc: an outside agent reopens
+	// the member queued instead of injecting it into that claim.
 	res, err := Reopen(verbReq(b, "01J5X00000000000000000RA81", "mac-b"), "ra-two")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "inject work") {
-		t.Fatalf("stranger reopen into a claimed arc refuses: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("stranger reopen into a mixed arc: %+v %v", res, err)
+	}
+	foreignTree, loadErr := loadTree(b, res.Tip)
+	if loadErr != nil || foreignTree.Live["ra-two"].State != StateQueued {
+		t.Fatalf("stranger must reopen queued without adopting a foreign claim: %+v %v", foreignTree.Live["ra-two"], loadErr)
+	}
+	if res, err := Done(verbReq(b, "01J5X00000000000000000RA87", "mac-b"), "ra-two", "Queued reopen checked."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("archive the queued reopen: %+v %v", res, err)
 	}
 	// The claimant's reopen rejoins CLAIMED under the standing pair.
 	res, err = Reopen(verbReq(a, "01J5X00000000000000000RA82", "mac-a"), "ra-two")
@@ -358,8 +366,8 @@ func TestPruneRetainsKeepSurvivorsBlockers(t *testing.T) {
 	}
 }
 
-func TestValidatorProvesArcUniformity(t *testing.T) {
-	// Mixed states in one arc refuse by name.
+func TestValidatorAllowsIndependentArcMembers(t *testing.T) {
+	// An arc is grouping only: members may be in different states.
 	one := vGoal("mix-one", StateQueued)
 	one.Arc = "the-arc"
 	two := vGoal("mix-two", StateParked)
@@ -367,12 +375,13 @@ func TestValidatorProvesArcUniformity(t *testing.T) {
 	problems := ValidateTree(&TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{
 		"mix-one": one, "mix-two": two,
 	}, Done: map[string]*GoalFile{}})
-	if !problemsContain(problems, "arc the-arc mixes states") {
-		t.Fatalf("a split-state arc refuses by name: %v", problems)
+	for _, problem := range problems {
+		if strings.Contains(string(problem), "arc the-arc") {
+			t.Fatalf("mixed member states are lawful: %v", problems)
+		}
 	}
 
-	// Two claimant pairs in one arc refuse by name — same state,
-	// split ownership.
+	// Two claimant pairs in one arc are likewise independent.
 	ca := vGoal("pair-one", StateClaimed)
 	ca.Arc = "held-arc"
 	cb := vGoal("pair-two", StateClaimed)
@@ -381,11 +390,13 @@ func TestValidatorProvesArcUniformity(t *testing.T) {
 	problems = ValidateTree(&TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{
 		"pair-one": ca, "pair-two": cb,
 	}, Done: map[string]*GoalFile{}})
-	if !problemsContain(problems, "two claimant pairs") {
-		t.Fatalf("a split-claim arc refuses by name: %v", problems)
+	for _, problem := range problems {
+		if strings.Contains(string(problem), "two claimant pairs") {
+			t.Fatalf("independent claimant pairs are lawful: %v", problems)
+		}
 	}
 
-	// A uniform claimed arc under one pair passes.
+	// A uniform claimed arc remains lawful too.
 	cc := vGoal("uni-one", StateClaimed)
 	cc.Arc = "clean-arc"
 	cd := vGoal("uni-two", StateClaimed)
@@ -400,7 +411,193 @@ func TestValidatorProvesArcUniformity(t *testing.T) {
 	}
 }
 
-func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
+func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	for index, id := range []string{"mixed-one", "mixed-two", "mixed-parked"} {
+		ulid := []string{"01J5X00000000000000000MC00", "01J5X00000000000000000MC10", "01J5X00000000000000000MC20"}[index]
+		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Mixed member.", OriginMain, "Work independently."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		if res, err := SetArc(verbReq(a, ulid[:len(ulid)-1]+"1", "mac-a"), id, "mixed-cascade"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("set arc %s: %+v %v", id, res, err)
+		}
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000MC30", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim A: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(b, "01J5X00000000000000000MC40", "mac-b"), "mixed-two", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim B: %+v %v", res, err)
+	}
+	park := verbReq(a, "01J5X00000000000000000MC50", "mac-a")
+	if res, err := Park(park, "mixed-parked", "not a mover"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("park budgetless sibling: %+v %v", res, err)
+	}
+	pin := verbReq(a, "01J5X00000000000000000MC60", "mac-a")
+	pin.Actor.Human = "wido"
+	if res, err := SetPin(pin, "mixed-parked", "mac-z"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("pin unrelated sibling: %+v %v", res, err)
+	}
+
+	// Releasing A skips B's independent claim instead of refusing the
+	// operation on a sibling A does not own.
+	if res, err := ReleaseArc(verbReq(a, "01J5X00000000000000000MC70", "mac-a"), "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("mixed release: %+v %v", res, err)
+	}
+	tree, err := loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
+	if err != nil || tree.Live["mixed-one"].State != StateQueued || tree.Live["mixed-two"].Claimed == nil || tree.Live["mixed-two"].Claimed.Machine != "mac-b" {
+		t.Fatalf("release moved a foreign sibling: %+v %v", tree, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000MC80", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("reclaim A: %+v %v", res, err)
+	}
+
+	// Steal follows B's pair only. The independently claimed A member and
+	// the pinned, parked, budgetless sibling cannot veto or move.
+	steal := verbReq(a, "01J5X00000000000000000MC90", "mac-c")
+	steal.Actor.Human = "wido"
+	if res, err := Steal(steal, "mixed-two"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("mover-scoped steal: %+v %v", res, err)
+	}
+	tree, err = loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
+	if err != nil || tree.Live["mixed-one"].Claimed.Machine != "mac-a" || tree.Live["mixed-two"].Claimed.Machine != "mac-c" || tree.Live["mixed-parked"].State != StateParked {
+		t.Fatalf("steal crossed an independent-member boundary: %+v %v", tree, err)
+	}
+
+	// A human park may displace both independent pairs. Every member keeps
+	// its actual marker, so the acknowledgment fold sees two pairs.
+	humanPark := verbReq(a, "01J5X00000000000000000MCA0", "mac-h")
+	humanPark.Actor.Human = "wido"
+	if res, err := ParkArc(humanPark, "mixed-one", "whole planning group pause"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("multi-pair park: %+v %v", res, err)
+	}
+	tree, err = loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	markers := map[string]bool{}
+	for _, id := range []string{"mixed-one", "mixed-two"} {
+		if tree.Live[id].Parked == nil || tree.Live[id].Parked.Displaced == "" {
+			t.Fatalf("displaced pair missing on %s: %+v", id, tree.Live[id])
+		}
+		markers[tree.Live[id].Parked.Displaced] = true
+	}
+	if len(markers) != 2 {
+		t.Fatalf("distinct claimant pairs collapsed into one displacement marker: %v", markers)
+	}
+
+	humanUnpark := verbReq(a, "01J5X00000000000000000MCB0", "mac-h")
+	humanUnpark.Actor.Human = "wido"
+	if res, err := UnparkArc(humanUnpark, "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("human unpark: %+v %v", res, err)
+	}
+	if res, err := Park(verbReq(a, "01J5X00000000000000000MCC0", "mac-a"), "mixed-parked", "remain parked"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("repark pinned sibling: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000MCD0", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim anchor: %+v %v", res, err)
+	}
+	// Asking through the parked member still sweeps the queued remainder.
+	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000MCE0", "mac-a"), "mixed-parked", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim cascade through parked member: %+v %v", res, err)
+	}
+	tree, err = loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
+	if err != nil || tree.Live["mixed-two"].State != StateClaimed || tree.Live["mixed-two"].Claimed.Machine != "mac-a" || tree.Live["mixed-parked"].State != StateParked {
+		t.Fatalf("claim cascade did not sweep only the queued remainder: %+v %v", tree, err)
+	}
+}
+
+func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
+	t.Run("all parked copies newest", func(t *testing.T) {
+		_, root := oneClone(t)
+		seedLedger(t, root)
+		for index, id := range []string{"park-old", "park-new", "park-join"} {
+			ulid := []string{"01J5X00000000000000000MJ00", "01J5X00000000000000000MJ10", "01J5X00000000000000000MJ20"}[index]
+			if res, err := Open(verbReq(root, ulid, "mac-a"), id, "Park join.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("open %s: %+v %v", id, res, err)
+			}
+		}
+		for index, id := range []string{"park-old", "park-new"} {
+			ulid := []string{"01J5X00000000000000000MJ30", "01J5X00000000000000000MJ40"}[index]
+			if res, err := SetArc(verbReq(root, ulid, "mac-a"), id, "park-destination"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("set arc %s: %+v %v", id, res, err)
+			}
+		}
+		old := verbReq(root, "01J5X00000000000000000MJ50", "mac-a")
+		old.Actor.Human = "wido"
+		old.Now = old.Now.Add(-time.Hour)
+		if res, err := Park(old, "park-old", "older word"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("old park: %+v %v", res, err)
+		}
+		newest := verbReq(root, "01J5X00000000000000000MJ60", "mac-a")
+		newest.Actor.Human = "wido"
+		if res, err := Park(newest, "park-new", "newest word"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("new park: %+v %v", res, err)
+		}
+		join := verbReq(root, "01J5X00000000000000000MJ70", "mac-a")
+		join.Actor.Human = "wido"
+		res, err := SetArc(join, "park-join", "park-destination")
+		if err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("all-parked join: %+v %v", res, err)
+		}
+		tree, err := loadTree(root, res.Tip)
+		joined := tree.Live["park-join"]
+		if err != nil || joined.State != StateParked || joined.Parked == nil || joined.Parked.Because != "newest word" || joined.Parked.Displaced != "" {
+			t.Fatalf("join did not copy the newest record without displacement: %+v %v", joined, err)
+		}
+	})
+
+	t.Run("reconcile matches own-pair verb", func(t *testing.T) {
+		_, a, b := twoClones(t)
+		seedLedger(t, a)
+		for index, id := range []string{"join-own", "join-foreign", "join-candidate"} {
+			ulid := []string{"01J5X00000000000000000MR00", "01J5X00000000000000000MR10", "01J5X00000000000000000MR20"}[index]
+			if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Reconcile join.", OriginMain, "Join."); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("open %s: %+v %v", id, res, err)
+			}
+		}
+		if res, err := SetBudget(verbReq(a, "01J5X00000000000000000MR25", "mac-a"), "join-candidate", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("budget candidate: %+v %v", res, err)
+		}
+		for index, id := range []string{"join-own", "join-foreign"} {
+			ulid := []string{"01J5X00000000000000000MR30", "01J5X00000000000000000MR40"}[index]
+			if res, err := SetArc(verbReq(a, ulid, "mac-a"), id, "join-destination"); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("set arc %s: %+v %v", id, res, err)
+			}
+		}
+		if res, err := Claim(verbReq(a, "01J5X00000000000000000MR50", "mac-a"), "join-own", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim own: %+v %v", res, err)
+		}
+		if res, err := Claim(verbReq(b, "01J5X00000000000000000MR60", "mac-b"), "join-foreign", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim foreign: %+v %v", res, err)
+		}
+		advanced, err := FetchAdvance(endpointFor(a))
+		if err != nil {
+			t.Fatal(err)
+		}
+		handTree, err := loadTree(a, advanced.Tip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hand := verbReq(a, "01J5X00000000000000000MR70", "mac-a")
+		hand.Actor.Human = "wido"
+		if _, err := applyRow(handTree, hand, MappedVerb{Verb: "set-arc", Id: "join-candidate", Arc: "join-destination", BaseState: StateQueued}, newReplaySession()); err != nil {
+			t.Fatalf("reconcile application: %v", err)
+		}
+		verbResult, err := SetArc(verbReq(a, "01J5X00000000000000000MR80", "mac-a"), "join-candidate", "join-destination")
+		if err != nil || verbResult.Outcome != OutcomeConfirmed {
+			t.Fatalf("verb join: %+v %v", verbResult, err)
+		}
+		verbTree, err := loadTree(a, verbResult.Tip)
+		handJoined, verbJoined := handTree.Live["join-candidate"], verbTree.Live["join-candidate"]
+		if err != nil || handJoined.State != verbJoined.State || handJoined.Claimed == nil || verbJoined.Claimed == nil ||
+			handJoined.Claimed.Machine != verbJoined.Claimed.Machine || handJoined.Claimed.Lineage != verbJoined.Claimed.Lineage {
+			t.Fatalf("reconcile and verb diverged: hand=%+v verb=%+v err=%v", handJoined, verbJoined, err)
+		}
+	})
+}
+
+func TestClaimedArcToForeignClaimedArcLandsQueuedOnBothSurfaces(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	arcBed(t, a, "trade-src", "ts", "TS")
@@ -419,29 +616,49 @@ func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
 	if err != nil || claimRes.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim dest arc: %+v %v", claimRes, err)
 	}
-	// The VERB refuses the one-move trade even under a human.
+	// A caller that owns the destination claim but would displace the source
+	// claimant still hits the two-pair refusal on both executable surfaces.
+	destinationOwner := verbReq(b, "01J5X00000000000000000TD94", "mac-b")
+	destinationOwner.Actor.Human = "wido"
+	trade, tradeErr := SetArc(destinationOwner, "ts-one", "trade-dst")
+	if tradeErr != nil || trade.Outcome != OutcomeRejected || !strings.Contains(trade.Detail, "release it first") {
+		t.Fatalf("two-pair verb trade did not refuse: %+v %v", trade, tradeErr)
+	}
+	tradeTree, err := loadTree(b, claimRes.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, handErr := applyRow(tradeTree, destinationOwner, MappedVerb{
+		Verb: "set-arc", Id: "ts-one", Arc: "trade-dst", BaseArc: "trade-src", BaseState: StateClaimed,
+	}, newReplaySession()); handErr == nil || !strings.Contains(handErr.Error(), "release it first") {
+		t.Fatalf("two-pair hand trade did not refuse: %v", handErr)
+	}
+	// With no caller-owned claim in the destination, the mixed-arc rule
+	// releases the source member and lands it queued. A foreign destination
+	// claim is neither inherited nor displaced.
 	humanMove := verbReq(a, "01J5X00000000000000000TD95", "mac-a")
 	humanMove.Actor.Human = "wido"
 	res, err := SetArc(humanMove, "ts-two", "trade-dst")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "release it first") {
-		t.Fatalf("the two-claimant trade refuses on the verb (R2-14): %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("foreign claimed destination did not take the queued fallback: %+v %v", res, err)
 	}
-	// The HAND surface refuses the same trade: a reconcile set-arc
-	// row moving a member out of one claimant's arc into another
-	// claimant's arc conflicts instead of trading — removing the
-	// replay-side guard alone must turn this red.
+	verbTree, err := loadTree(a, res.Tip)
+	if err != nil || verbTree.Live["ts-two"].State != StateQueued || verbTree.Live["ts-two"].Claimed != nil {
+		t.Fatalf("verb fallback inherited a foreign claim: %+v %v", verbTree.Live["ts-two"], err)
+	}
+	// Reconcile uses the identical queued fallback on the pre-move tip.
 	tree, err := loadTree(b, claimRes.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hand := verbReq(b, "01J5X00000000000000000TD97", "mac-b")
+	hand := verbReq(b, "01J5X00000000000000000TD97", "mac-a")
 	hand.Actor.Human = "wido"
 	_, handErr := applyRow(tree, hand, MappedVerb{
 		Verb: "set-arc", Id: "ts-two", Arc: "trade-dst",
 		BaseArc: "trade-src", BaseState: StateClaimed,
 	}, newReplaySession())
-	if handErr == nil || !strings.Contains(handErr.Error(), "release it first") {
-		t.Fatalf("the two-claimant trade must refuse on the hand replay too: %v", handErr)
+	if handErr != nil || tree.Live["ts-two"].State != StateQueued || tree.Live["ts-two"].Claimed != nil {
+		t.Fatalf("hand replay diverged from queued fallback: %+v %v", tree.Live["ts-two"], handErr)
 	}
 }
 

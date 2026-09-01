@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -312,18 +311,7 @@ func goalActor(root string, human string) (goal.Actor, error) {
 }
 
 func goalUlid() (string, error) {
-	// A ULID-shaped random id: 26 chars, Crockford base32. The
-	// timestamp prefix is not load-bearing for uniqueness here — the
-	// opid appends machine and lineage — so randomness suffices.
-	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-	raw := make([]byte, 26)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	for i := range raw {
-		raw[i] = alphabet[int(raw[i])%len(alphabet)]
-	}
-	return string(raw), nil
+	return goal.NewOperationULID()
 }
 
 // runGoalMigrate is the cutover: one commit, one opid, the reviewed

@@ -34,7 +34,10 @@ func cloneBed(t *testing.T, second bool) (origin, a, b string) {
 	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("seed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mustGit(t, seed, "add", "README.md")
+	if err := os.WriteFile(filepath.Join(seed, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.budget.goal-norm-job-minutes=1440\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, seed, "add", "README.md", "metasystem.conf")
 	mustGit(t, seed, "commit", "-qm", "seed")
 	mustGit(t, seed, "push", "-q", "origin", "main")
 	a = filepath.Join(t.TempDir(), "clone-a")

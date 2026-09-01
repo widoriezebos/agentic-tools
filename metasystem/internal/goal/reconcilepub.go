@@ -474,58 +474,50 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		default:
 			return nil, conflict("state", "arc membership moves live goals; %s is %s", row.Id, f.State)
 		}
-		var standing *GoalFile
-		for _, liveId := range sortedGoalIds(t.Live) {
-			m := t.Live[liveId]
-			if m.Arc == row.Arc && m.Id != row.Id {
-				standing = m
-				break
-			}
-		}
+		standing := classifyArcJoin(t, row.Arc, row.Id, r.Actor)
 		switch {
-		case standing == nil || standing.State == StateQueued:
+		case standing.count == 0:
 			if f.State == StateParked {
-				return nil, conflict("state", "a parked member joins a queued arc after unpark")
+				f.State = StateQueued
+				f.Parked = nil
 			}
-		case standing.State == StateClaimed && standing.Claimed != nil:
+		case standing.allParked:
+			parked := standing.newestParked.Parked
+			f.State = StateParked
+			f.Parked = &ParkRecord{By: parked.By, At: parked.At, Because: parked.Because}
+		case standing.ownClaimed != nil:
 			if handSourceWasClaimed {
 				// Two displaced pairs in one hand move refuses exactly
 				// as the verb refuses it: release first.
 				return nil, conflict("state", "the member moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first")
-			}
-			if f.State == StateParked {
-				return nil, conflict("state", "a claimed arc admits queued members with done blockers only")
 			}
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
 					return nil, conflict("blockedBy", "blocker %s is not done; it cannot join the claimed arc unclaimed-late", dep)
 				}
 			}
-			if !ownPair(standing.Claimed, r.Actor) {
-				// A human injection into another pair's claim is
-				// displacement-bearing: the runner hears its scope
-				// changed.
-				setArcDisplaced = pairMarker(standing.Claimed)
-			}
-			if err := pinRefusal(f, standing.Claimed.Machine, "the reconciled arc join"); err != nil {
+			if err := pinRefusal(f, r.Actor.Machine, "the reconciled arc join"); err != nil {
 				return nil, err
 			}
 			if f.Budget == nil {
 				return nil, conflict("budget", "goal %s has no structured budget; run goal set-budget before joining a claimed arc", f.Id)
 			}
-			f.State = StateClaimed
-			claimEpoch := r.ClaimEpoch
-			if claimEpoch < 1 && standing.StopCapability != nil {
-				claimEpoch = standing.StopCapability.ClaimEpoch
+			if err := requireWithinGoalNorm(r.Endpoint.Root, *f.Budget, f.Id, "joins a claimed arc during reconcile"); err != nil {
+				return nil, conflict("budget", "%v", err)
 			}
-			if err := bindClaim(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+			f.NormApproval = nil
+			f.State = StateClaimed
+			f.Parked = nil
+			claimEpoch := r.ClaimEpoch
+			if claimEpoch < 1 && standing.ownClaimed.StopCapability != nil {
+				claimEpoch = standing.ownClaimed.StopCapability.ClaimEpoch
+			}
+			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
 				return nil, conflict("claim", "%v", err)
 			}
-		case standing.State == StateParked && standing.Parked != nil:
-			// A queued or parked incoming member parks with the arc's
-			// record — a human act, which a reconcile always is.
-			f.State = StateParked
-			f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
+		default:
+			f.State = StateQueued
+			f.Parked = nil
 		}
 		f.Arc = row.Arc
 		session.moved[row.Id] = true

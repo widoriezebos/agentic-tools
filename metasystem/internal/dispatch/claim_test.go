@@ -130,6 +130,7 @@ func claimDependenciesForTest(now *time.Time, process identity.Verification) Cla
 		Occupancy:        fixedOccupancyReader{},
 		Nonce:            func() (string, error) { return "0123456789abcdef", nil },
 		LaunchCapability: func() (string, error) { return "launch-capability-for-test", nil },
+		MarkFirstSlice:   func(ClaimLaunchParams, time.Time) error { return nil },
 	}
 }
 
@@ -580,5 +581,29 @@ func TestClaimRejectsInvalidFingerprintRequestWithoutCreatingARecord(t *testing.
 	}
 	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "jobs", params.OpID+".json")); !os.IsNotExist(err) {
 		t.Fatalf("invalid request left a record: %v", err)
+	}
+}
+
+func TestClaimLaunchRefusesBeforeReservationWhenSliceStartCannotLand(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
+	params := claimParamsForTest(root, "job-slice-start-fails")
+	dependencies := claimDependenciesForTest(&now, identity.Verification{})
+	called := false
+	dependencies.MarkFirstSlice = func(got ClaimLaunchParams, at time.Time) error {
+		called = true
+		if got.GoalID != params.GoalID || !at.Equal(now) {
+			t.Fatalf("slice marker coordinates = goal %s at %s", got.GoalID, at)
+		}
+		return fmt.Errorf("SLICE_START_UNRECORDED: injected shared-ledger failure")
+	}
+	if _, err := ClaimLaunch(params, dependencies); err == nil || !strings.Contains(err.Error(), "SLICE_START_UNRECORDED") {
+		t.Fatalf("slice-start failure did not refuse launch: %v", err)
+	}
+	if !called {
+		t.Fatal("winning launch path did not call the slice-start marker")
+	}
+	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "jobs", params.OpID+".json")); !os.IsNotExist(err) {
+		t.Fatalf("slice-start failure created a reservation record: %v", err)
 	}
 }

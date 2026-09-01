@@ -356,7 +356,7 @@ func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
 	}
 }
 
-func TestHandJoinIntoAClaimedArcAutoClaimsAndDisplaces(t *testing.T) {
+func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 	a, _ := reconcileBed(t)
 	// A foreign pair claims an arc; the hand moves a fresh queued
 	// goal into it.
@@ -392,11 +392,11 @@ func TestHandJoinIntoAClaimedArcAutoClaimsAndDisplaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := tree.Live["editable"]
-	if joined.State != StateClaimed || joined.Claimed == nil || joined.Claimed.Machine != "mac-b" {
-		t.Fatalf("the join auto-claims under the STANDING pair: %+v", joined)
+	if joined.State != StateQueued || joined.Claimed != nil {
+		t.Fatalf("a foreign destination claim was inherited by the joiner: %+v", joined)
 	}
 	last := joined.History[len(joined.History)-1]
-	if !strings.HasPrefix(last.Displaced, "mac-b+lin-1@") {
-		t.Fatalf("the injection is displacement-bearing (R9-05): %+v", last)
+	if last.Displaced != "" {
+		t.Fatalf("a queued join displaced a foreign claimant it did not move: %+v", last)
 	}
 }

@@ -79,10 +79,10 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-    "$fixture_bed_script" migration-recovery labels-and-filtering structured-budget archive-and-prune
+    "$fixture_bed_script" migration-recovery labels-and-filtering structured-budget scope-bounds archive-and-prune
 fi
 case "$fixture_scenario" in
-  migration-recovery | labels-and-filtering | structured-budget | archive-and-prune) ;;
+  migration-recovery | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -434,6 +434,70 @@ other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
 grep -q '"outcome":"confirmed"' <<<"$other_claim" \
   || { echo "a complete-tuple claim did not confirm: $other_claim" >&2; exit 1; }
 unset METASYSTEM_GOAL_NOW
+fi
+
+if [[ "$fixture_scenario" == scope-bounds ]]; then
+"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+
+# An over-norm existing goal and the revisionless open-and-claim shortcut both
+# exercise the typed refusal. The remedy must name split; no refusal fixture
+# infers success from a parser-only unit.
+"$ms" goal open --root "$clone" --id norm-parent \
+  --intent "Hold a large intent before decomposition." --next "Split it first." >/dev/null
+if norm_refusal=$("$ms" goal set-budget --root "$clone" --id norm-parent \
+  --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
+  --active-job-limit 1 2>&1); then
+  echo "over-norm set-budget succeeded without strict approval" >&2; exit 1
+fi
+grep -q 'GOAL_NORM_REFUSED: goal norm-parent' <<<"$norm_refusal" \
+  && grep -q 'goal split --id norm-parent --members' <<<"$norm_refusal" \
+  || { echo "the norm refusal did not name its type and split remedy: $norm_refusal" >&2; exit 1; }
+if open_claim_refusal=$("$ms" goal open --root "$clone" --id norm-open-claim \
+  --intent "Must not enter claimed over norm." --next "Stop." --claim \
+  --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
+  --active-job-limit 1 2>&1); then
+  echo "over-norm open --claim succeeded" >&2; exit 1
+fi
+grep -q 'GOAL_NORM_REFUSED: goal norm-open-claim' <<<"$open_claim_refusal" \
+  && grep -q 'open it queued' <<<"$open_claim_refusal" \
+  || { echo "open --claim did not exercise its three-step refusal: $open_claim_refusal" >&2; exit 1; }
+
+# The real split command parses a closed draft, publishes both members and the
+# parent conclusion atomically, and retires the parent identifier permanently.
+"$ms" goal open --root "$clone" --id split-parent \
+  --intent "Deliver the two-part fixture." --next "Atomize it." --label fixture >/dev/null
+draft="$tmp/split-parent.md"
+{
+  printf '%s\n' '# split split-parent'
+  printf '%s\n' '' '## member split-parent-one'
+  printf '%s\n' '- Intent: Deliver part one.' '- Next step: Build part one.'
+  printf '%s\n' '' '## member split-parent-two'
+  printf '%s\n' '- Intent: Deliver part two.' '- Next step: Build part two.' '- BlockedBy: split-parent-one'
+} >"$draft"
+split_out=$("$ms" goal split --root "$clone" --id split-parent --members "$draft")
+grep -q '"outcome":"confirmed"' <<<"$split_out" \
+  || { echo "goal split did not confirm: $split_out" >&2; exit 1; }
+split_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$split_tip:plans/goals/split-parent-one.md" >"$tmp/split-one.md"
+git -C "$clone" cat-file -p "$split_tip:records/goals/split-parent.md" >"$tmp/split-parent-done.md"
+git -C "$clone" cat-file -p "$split_tip:plans/goals/backlog.md" >"$tmp/split-root.md"
+grep -q '^- Arc: split-parent$' "$tmp/split-one.md" \
+  && grep -q '^- Ratified: tier=main ' "$tmp/split-parent-done.md" \
+  && grep -q 'goal:split-parent-one' "$tmp/split-parent-done.md" \
+  && grep -q '^- split-parent opid=' "$tmp/split-root.md" \
+  || { echo "the atomic split records are incomplete" >&2; exit 1; }
+if reopen_refusal=$("$ms" goal reopen --root "$clone" --id split-parent 2>&1); then
+  echo "a decomposed parent reopened" >&2; exit 1
+fi
+grep -q 'a decomposed parent never returns' <<<"$reopen_refusal" \
+  || { echo "reopen did not name permanent decomposition: $reopen_refusal" >&2; exit 1; }
+"$ms" goal prune --root "$clone" --keep 0 >/dev/null
+if recreate_refusal=$("$ms" goal open --root "$clone" --id split-parent \
+  --intent "Illicit resurrection." --next "Stop." 2>&1); then
+  echo "a pruned decomposed parent id was recreated" >&2; exit 1
+fi
+grep -q 'goal id split-parent is retired' <<<"$recreate_refusal" \
+  || { echo "the decomposition registry did not survive prune: $recreate_refusal" >&2; exit 1; }
 fi
 
 if [[ "$fixture_scenario" == archive-and-prune ]]; then

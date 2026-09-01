@@ -39,14 +39,15 @@ dead under `claimed-goal-appetite` and names this remedy:
 goal's next step is ordinary human prose. No parser or enforcement path
 reads it.
 
-**Slicing is the way (Wido's ruling, 2026-08-22).** Slicing is the
-delivery law: large pieces of
-work are NEVER built in one go. They are split into iterative,
-independently DEPLOYABLE pieces — each slice lands whole, works on
-its own, and leaves the system better — and the backlog carries the
-next slice plus a note naming the remainder, sliced when its turn
-comes. The structured budget limits one claimed revision; slicing
-governs how anything large gets delivered. The two laws compose.
+**Split before slicing.** A large intent may enter the backlog intact so its
+authority and desired outcome are recorded honestly. It may not be claimed
+with more than the configured goal norm unless the human records the strict
+approval. Ordinarily `goal split` first atomizes that parent into an arc of
+small, independently claimable members and concludes the parent with pointers
+to them. Dependency edges own member order. Only then does the delivery law
+slice each member into iterative, independently deployable changes. The
+structured budget limits one claimed revision; the goal norm limits the normal
+scope of one member.
 
 **Reviews carry round budgets and threat models.** A review brief
 declares both up front; a TRUE finding outside that threat model
@@ -68,12 +69,12 @@ promotes it.
 Before promoting any draft:
 
 - [ ] The intent says what DONE looks like, in one line.
-- [ ] It is one DEPLOYABLE piece (the delivery law): it lands whole,
-      works on its own, and leaves the system better. Anything
-      larger is sliced first — the item carries its next slice, a
-      note names the remainder.
-- [ ] The item is small enough to claim as one deployable slice; its
-      structured budget will be supplied as one complete tuple at claim.
+- [ ] It may be large at intake, but its intent and desired outcome are one
+      coherent authority envelope. Before slicing or an ordinary over-norm
+      claim, `goal split` must turn it into small arc members.
+- [ ] Each member is independently deployable and claimable; explicit blocker
+      edges record ordering, and its complete structured budget is supplied at
+      claim.
 - [ ] Origin is honest (`human` for Wido's asks — they carry his
       authority gates; `main` otherwise).
 - [ ] It does not duplicate or belong inside an existing item.

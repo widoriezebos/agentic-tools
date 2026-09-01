@@ -392,6 +392,29 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			add("environment source %s: %v", EnvName(SliceNormHoursKey), parseErr)
 		}
 	}
+	if raw, present := values[GoalNormJobMinutesKey]; present {
+		if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
+			add("%v", parseErr)
+		}
+	}
+	if isFile(localPath) {
+		if raw, present, lookupErr := ConfLookup(localPath, GoalNormJobMinutesKey); lookupErr != nil {
+			add("%v", lookupErr)
+		} else if present {
+			if !fixtureBudgetOverrides {
+				add("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", GoalNormJobMinutesKey, localPath)
+			} else if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
+				add("%s: %v", localPath, parseErr)
+			}
+		}
+	}
+	if raw, present := os.LookupEnv(EnvName(GoalNormJobMinutesKey)); present {
+		if !fixtureBudgetOverrides {
+			add("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", GoalNormJobMinutesKey, EnvName(GoalNormJobMinutesKey))
+		} else if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
+			add("environment source %s: %v", EnvName(GoalNormJobMinutesKey), parseErr)
+		}
+	}
 	// The evidence root is required, must be absolute, and must live outside the
 	// repository so job records never write inside the tree they observe.
 	evidence := values["evidence.root"]

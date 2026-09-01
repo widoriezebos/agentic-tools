@@ -7,9 +7,47 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
+
+func seedClaimLaunchGoal(t *testing.T, root string) {
+	t.Helper()
+	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
+	goalSyncMutationGit(t, root, "config", "user.name", "fixture")
+	goalSyncMutationGit(t, root, "config", "user.email", "fixture@example.invalid")
+	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "local")
+	goalSyncMutationGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
+	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stamp := "2026-08-20T00:00:00Z"
+	rootRecord := &goal.RootRecord{Identity: "01J5X00000000000000000CA00", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
+	file := &goal.GoalFile{
+		Id: "goal-a", State: goal.StateClaimed, Intent: "Exercise claim launch.", Origin: goal.OriginMain,
+		NextStep: "Launch it.", OpenedAt: stamp, Revision: 3,
+		Budget:         &goal.Budget{ElapsedLimit: "8h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1},
+		Claimed:        &goal.ClaimRecord{Machine: "m-test", Lineage: "lin-claim", At: stamp, Revision: 3},
+		StopCapability: &goal.StopCapability{Generation: 3, Revision: 3, Machine: "m-test", ClaimEpoch: 5},
+		History: []goal.HistoryLine{
+			{At: stamp, Opid: goal.Opid("01J5X00000000000000000CA01", "m-test", "lin-claim"), Verb: "open", Actor: "m-test+lin-claim", Keep: -1},
+			{At: stamp, Opid: goal.Opid("01J5X00000000000000000CA02", "m-test", "lin-claim"), Verb: "set-budget", Actor: "m-test+lin-claim", Keep: -1},
+			{At: stamp, Opid: goal.Opid("01J5X00000000000000000CA03", "m-test", "lin-claim"), Verb: "claim", Actor: "m-test+lin-claim", Keep: -1},
+		},
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(rootRecord), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "goal-a.md"), goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "plans/goals")
+	goalSyncMutationGit(t, root, "commit", "-qm", "seed goal ledger")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+}
 
 func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.DispatchMode) {
 	t.Helper()
@@ -24,6 +62,7 @@ func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.Dispa
 
 func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	root := t.TempDir()
+	seedClaimLaunchGoal(t, root)
 	product := filepath.Join(root, "artifacts", "agents", "worktrees", "claim-cli")
 	if err := os.MkdirAll(product, 0o755); err != nil {
 		t.Fatal(err)
@@ -93,6 +132,14 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	}
 	if record["operationId"] != "claim-cli" || record["goalRevision"] != float64(3) || record["machineId"] != "m-test" {
 		t.Fatalf("setup-comparable provenance = operationId:%v goalRevision:%v machineId:%v", record["operationId"], record["goalRevision"], record["machineId"])
+	}
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	if err != nil || projection.Tree.Live["goal-a"].Sliced == nil {
+		t.Fatalf("claim launch did not publish slice-start before its reservation: %+v %v", projection.Tree.Live["goal-a"], err)
 	}
 	roots, ok := record["productRoots"].([]any)
 	canonicalProduct, err := filepath.EvalSymlinks(product)

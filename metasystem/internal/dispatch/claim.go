@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -183,6 +184,10 @@ type ClaimLaunchDependencies struct {
 	Occupancy        SessionOccupancyReader
 	Nonce            func() (string, error)
 	LaunchCapability func() (string, error)
+	// MarkFirstSlice publishes the irreversible goal-side boundary before the
+	// reservation becomes visible. Tests inject it because most claim fixtures
+	// intentionally do not construct a goal ledger.
+	MarkFirstSlice func(ClaimLaunchParams, time.Time) error
 	// Reconcile runs the nonce-global adoption engine after a same-operation
 	// read reaches RECONCILING. The command boundary binds production census;
 	// tests bind a deterministic process table.
@@ -332,7 +337,49 @@ func claimDependenciesWithDefaults(dependencies ClaimLaunchDependencies) ClaimLa
 	if dependencies.LaunchCapability == nil {
 		dependencies.LaunchCapability = claimLaunchCapability
 	}
+	if dependencies.MarkFirstSlice == nil {
+		dependencies.MarkFirstSlice = markFirstSlice
+	}
 	return dependencies
+}
+
+func markFirstSlice(params ClaimLaunchParams, now time.Time) error {
+	if params.GoalID == "" {
+		return nil
+	}
+	binding, err := ResolveGoalBinding(params.Root, params.GoalID, now)
+	if err != nil {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact could not land on the shared ledger; the reservation is refused: %w", params.GoalID, err)
+	}
+	if binding.Revision != params.GoalRevision || binding.Machine != params.MachineID {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's accepted claim is %s revision %d, not reservation binding %s revision %d", params.GoalID, binding.Machine, binding.Revision, params.MachineID, params.GoalRevision)
+	}
+	if binding.File.Sliced != nil {
+		return nil
+	}
+	ulid, err := goal.NewOperationULID()
+	if err != nil {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing identity could not be minted; the reservation is refused: %w", params.GoalID, err)
+	}
+	endpoint, err := goal.ResolveEndpoint(params.Root)
+	if err != nil {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's shared endpoint could not be resolved; the reservation is refused: %w", params.GoalID, err)
+	}
+	result, err := goal.MarkSliced(goal.VerbRequest{
+		Endpoint: endpoint, Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage},
+		Ulid: ulid, Now: now,
+	}, params.GoalID)
+	if err != nil {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact could not land on the shared ledger; the reservation is refused: %w", params.GoalID, err)
+	}
+	if result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeAbandoned {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact ended %s; the reservation is refused", params.GoalID, result.Outcome)
+	}
+	verified, err := ResolveGoalBinding(params.Root, params.GoalID, now)
+	if err != nil || verified.File.Sliced == nil {
+		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact is absent after publication; the reservation is refused", params.GoalID)
+	}
+	return nil
 }
 
 func claimNonce() (string, error) {
@@ -462,6 +509,9 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 			capabilityDigest := sha256.Sum256([]byte(launchCapability))
 			record = claimReservationRecord(params.OpID, params.OperationID, params.Reviews, fingerprint, provenance, instanceTag, params.AdapterVerb, hex.EncodeToString(capabilityDigest[:]), creatorBreadcrumb, occupancy.FreeEvidence, createdAt)
 			record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
+			if sliceErr := dependencies.MarkFirstSlice(params, createdAt); sliceErr != nil {
+				return sliceErr
+			}
 			generation, publishErr := transaction.publishBusy(classifySessionRecord(params.OpID, record))
 			if publishErr != nil {
 				return publishErr

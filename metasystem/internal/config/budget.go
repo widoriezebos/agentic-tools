@@ -12,6 +12,8 @@ const (
 	MaxElapsedGracePercent     = uint64(200)
 	SliceNormHoursKey          = "metasystem.budget.slice-norm-hours"
 	DefaultSliceNormHours      = uint64(4)
+	GoalNormJobMinutesKey      = "metasystem.budget.goal-norm-job-minutes"
+	DefaultGoalNormJobMinutes  = uint64(1440)
 )
 
 // ElapsedGracePercent resolves the grace band from the committed root. A root
@@ -59,6 +61,29 @@ func parseSliceNormHours(value string) (uint64, error) {
 		return 0, fmt.Errorf("%s must be a positive integer, got %q", SliceNormHoursKey, value)
 	}
 	return hours, nil
+}
+
+// GoalNormJobMinutes resolves the ordinary total job-minute bound for one
+// goal. Like the slice norm, this law is rooted only in committed
+// configuration outside explicitly fake fixture roots.
+func GoalNormJobMinutes(confPath string) (uint64, error) {
+	value, err := budgetLawValue(confPath, GoalNormJobMinutesKey,
+		strconv.FormatUint(DefaultGoalNormJobMinutes, 10))
+	if err != nil {
+		return 0, fmt.Errorf("resolve %s: %w", GoalNormJobMinutesKey, err)
+	}
+	return parseGoalNormJobMinutes(value)
+}
+
+func parseGoalNormJobMinutes(value string) (uint64, error) {
+	if !digitsOnlyValue.MatchString(value) {
+		return 0, fmt.Errorf("%s must be a positive integer, got %q", GoalNormJobMinutesKey, value)
+	}
+	minutes, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || minutes == 0 {
+		return 0, fmt.Errorf("%s must be a positive integer, got %q", GoalNormJobMinutesKey, value)
+	}
+	return minutes, nil
 }
 
 func budgetLawValue(confPath, key, fallback string) (string, error) {

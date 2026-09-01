@@ -9,6 +9,7 @@ package goal
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -22,9 +23,18 @@ type RootRecord struct {
 	ManifestDigest string // absent on bare migrations and adoptions
 	MigrationMode  string // bare | manifest | adoption
 	Free           *FreeRecord
+	Decomposed     []DecomposedEntry
 	Legacy         []string // root-level LegacyNotes from migration
 	Revision       uint64
 	History        []HistoryLine
+}
+
+// DecomposedEntry permanently retires one parent identifier after split.
+type DecomposedEntry struct {
+	Id     string
+	Opid   string
+	At     string
+	OldArc string
 }
 
 // FreeRecord is the Goal-free declaration in the new ledger.
@@ -66,6 +76,8 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 			sawHeading = true
 		case line == "History:":
 			section = "history"
+		case line == "Decomposed:":
+			section = "decomposed"
 		case line == "LegacyNotes:":
 			section = "legacy"
 		case section == "history" && strings.HasPrefix(line, "- "):
@@ -77,6 +89,13 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 			r.History = append(r.History, h)
 		case section == "legacy" && line != "":
 			r.Legacy = append(r.Legacy, strings.TrimPrefix(line, "  "))
+		case section == "decomposed" && strings.HasPrefix(line, "- "):
+			entry, entryErr := parseDecomposedEntry(strings.TrimPrefix(line, "- "))
+			if entryErr != nil {
+				addProblem("Decomposed line %d: %v", i+1, entryErr)
+				continue
+			}
+			r.Decomposed = append(r.Decomposed, entry)
 		case strings.HasPrefix(line, "- "):
 			parseRootField(r, strings.TrimPrefix(line, "- "), seen, addProblem)
 		case strings.TrimSpace(line) == "":
@@ -118,7 +137,44 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 	if r.Free != nil && !validStamp(r.Free.Declared) {
 		addProblem("Goal-free declared=%q is not an RFC3339 timestamp", r.Free.Declared)
 	}
+	seenDecomposed := map[string]bool{}
+	for _, entry := range r.Decomposed {
+		if seenDecomposed[entry.Id] {
+			addProblem("Decomposed contains duplicate parent %s", entry.Id)
+		}
+		seenDecomposed[entry.Id] = true
+	}
 	return r, problems
+}
+
+func parseDecomposedEntry(value string) (DecomposedEntry, error) {
+	fields := strings.Fields(value)
+	if len(fields) != 4 || !validId(fields[0]) {
+		return DecomposedEntry{}, fmt.Errorf("expected <goal-id> opid=<opid> at=<RFC3339> oldArc=<goal-id|->")
+	}
+	opid, opidFound := strings.CutPrefix(fields[1], "opid=")
+	at, atFound := strings.CutPrefix(fields[2], "at=")
+	oldArc, oldArcFound := strings.CutPrefix(fields[3], "oldArc=")
+	if !opidFound || !atFound || !oldArcFound || !validOpidShape(opid) || !validStamp(at) ||
+		(oldArc != "-" && !validId(oldArc)) {
+		return DecomposedEntry{}, fmt.Errorf("expected <goal-id> opid=<opid> at=<RFC3339> oldArc=<goal-id|->")
+	}
+	if oldArc == "-" {
+		oldArc = ""
+	}
+	return DecomposedEntry{Id: fields[0], Opid: opid, At: at, OldArc: oldArc}, nil
+}
+
+func rootDecomposed(root *RootRecord, id string) (DecomposedEntry, bool) {
+	if root == nil {
+		return DecomposedEntry{}, false
+	}
+	for _, entry := range root.Decomposed {
+		if entry.Id == id {
+			return entry, true
+		}
+	}
+	return DecomposedEntry{}, false
 }
 
 // ulidShaped admits exactly the 26-character Crockford base32 form
@@ -218,6 +274,23 @@ func RenderRoot(r *RootRecord) []byte {
 			// Indented for the same reason as the goal files': the
 			// carried prose stays opaque to the structural parser.
 			b.WriteString("  " + l + "\n")
+		}
+	}
+	if len(r.Decomposed) > 0 {
+		entries := append([]DecomposedEntry(nil), r.Decomposed...)
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].At == entries[j].At {
+				return entries[i].Id < entries[j].Id
+			}
+			return entries[i].At < entries[j].At
+		})
+		b.WriteString("\nDecomposed:\n")
+		for _, entry := range entries {
+			oldArc := entry.OldArc
+			if oldArc == "" {
+				oldArc = "-"
+			}
+			fmt.Fprintf(&b, "- %s opid=%s at=%s oldArc=%s\n", entry.Id, entry.Opid, entry.At, oldArc)
 		}
 	}
 	b.WriteString("\nHistory:\n")

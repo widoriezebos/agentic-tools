@@ -50,6 +50,22 @@ func TestRootWithGoalFreeRoundTrips(t *testing.T) {
 	}
 }
 
+func TestRootDecompositionRetainsOldArcAfterArchivePrune(t *testing.T) {
+	r := rootGolden()
+	r.Decomposed = []DecomposedEntry{{
+		Id: "split-parent", Opid: "01J5X0000000000000000000A1-mac-studio-1a2b3c4d",
+		At: "2026-08-20T00:32:00Z", OldArc: "former-arc",
+	}}
+	parsed, problems := ParseRoot(RenderRoot(r))
+	if len(problems) != 0 {
+		t.Fatalf("decomposition registry must parse cleanly: %v", problems)
+	}
+	entry, ok := rootDecomposed(parsed, "split-parent")
+	if !ok || entry.OldArc != "former-arc" {
+		t.Fatalf("prune-stable old-arc coordinate was lost: %+v", entry)
+	}
+}
+
 func TestRootRefusalsAreNamed(t *testing.T) {
 	r := rootGolden()
 	r.Identity = ""

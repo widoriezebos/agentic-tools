@@ -1372,3 +1372,38 @@ the `PublishRequest` field and its two txn call sites and two
 recovery call sites); item 6 adds the holder classification gate in
 `runGoalSplit` and the `internal/dispatch/claim.go` slice-start call.
 The fixtures named per mechanism above join the slice-2 proof list.
+
+
+## 12. The joint round's in-line decisions (gsb-joint, 2026-09-01)
+
+Recorded by the seat from the builder's returns per the lane
+exception's terms (the builder may not write under plans/); the code
+and its tests are the primary record, this section is the map.
+
+1. Goal-operation identity: one shared generator now serves both the
+   command package and dispatch's claim-launch path, so MarkSliced
+   gets its 26-character operation id from the same minting seam as
+   every other goal operation - no second identity scheme exists.
+2. Slice-start recovery: a dead created-phase slice-start ABANDONS
+   without marking the goal sliced; recovery treats an absent
+   postcondition as no-evidence rather than completion, so a crash
+   before the first reservation leaves the goal unsliced and honest.
+3. Human-origin split ratification: the human path mints a proven
+   human token (tier=human with the ratifier named via --by); a
+   human-classified caller WITHOUT --by refuses toward explicit
+   attribution - recorded and tested as a deliberate divergence from
+   SS11.1's looser wording (GJ-R1-007).
+4. MAIN-holder without a claim epoch: split refuses toward lease
+   establishment rather than inventing an epoch or proceeding
+   epoch-less.
+5. Over-norm steal recovery: a stranded steal REJECTS toward a fresh
+   authenticated attempt; recovery never replays the stripped human
+   actor.
+Round 2 additions under the same terms: mover-scoped steal preflight;
+the cascade verbs (reopen, set-arc, reconcile) share one caller-pair
+and newest-all-parked rule; the decomposition registry entry is
+written before parent conclusion and survives archive pruning
+(closing the cross-machine recovery wedge); duplicate approval
+triples refuse by occurrence count; deterministic join ordering. All
+certified at zero material by the safeguard critique chain
+(gsb-joint-crit, three rounds).

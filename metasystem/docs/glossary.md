@@ -301,17 +301,19 @@ the engine's `metasystem goal` family (`internal/goal`).
   remote, so all machines read the same truth; a checkout catches up
   with an ordinary pull.
 - **Claim** — one machine's exclusive hold on one goal (one claim per
-  machine at a time). An **arc** is a set of goals that claim and move
-  as a whole.
+  machine at a time). An **arc** groups related goals; every member remains
+  independently claimable, and dependency edges — not arc membership — own
+  ordering. Cascade verbs are explicit conveniences, never an invariant.
 - **Budget** — the complete four-field limit tuple supplied by a human
   when a goal is claimed: elapsed duration, attempts, reserved job
   minutes, and active jobs. Dispatch admission projects spending from
   authoritative job records and refuses at a limit boundary. Claimed
   goals without a tuple are unhealthy and refused; queued goals need
   no budget.
-- **Slicing law** — large work is never embarked on in one piece; it is
-  split into iterative, independently deployable slices. Slicing
-  governs delivery shape; the budget limits one claimed revision.
+- **Scope norm and splitting law** — an over-norm goal may enter intake, but
+  before slicing begins it is atomized with `goal split` into independently
+  claimable arc members. Slicing then governs each member's delivery shape;
+  the budget limits one claimed revision.
 - **Draft** — a backlog item still being shaped, living in
   `plans/goals-drafts/`, invisible to the fleet until the dispatch delegate
   promotes it through the intake checklist.

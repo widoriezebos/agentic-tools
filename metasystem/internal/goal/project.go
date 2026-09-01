@@ -90,15 +90,6 @@ type NextVerdict struct {
 func Next(p Projection, machine string, requiredLabels ...string) NextVerdict {
 	v := NextVerdict{}
 	t := p.Tree
-	// An arc claims as one unit, so one member pinned elsewhere makes
-	// EVERY member unclaimable on this machine — the whole arc leaves
-	// this machine's frontier, not just the pinned member.
-	foreignPinnedArc := map[string]bool{}
-	for _, f := range t.Live {
-		if f.Arc != "" && f.Pinned != "" && f.Pinned != machine {
-			foreignPinnedArc[f.Arc] = true
-		}
-	}
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
 		switch f.State {
@@ -110,14 +101,9 @@ func Next(p Projection, machine string, requiredLabels ...string) NextVerdict {
 			if !MatchesLabels(f.Labels, requiredLabels) {
 				continue
 			}
-			// A goal pinned to another machine — or any member of an
-			// arc with such a member — is invisible to this machine's
-			// frontier: it can never claim it, so reporting it ready
-			// would hide genuinely claimable work behind it.
+			// Pinning belongs to this member only. Arc siblings remain
+			// independently claimable; dependency edges own ordering.
 			if f.Pinned != "" && f.Pinned != machine {
-				continue
-			}
-			if f.Arc != "" && foreignPinnedArc[f.Arc] {
 				continue
 			}
 			ready := true

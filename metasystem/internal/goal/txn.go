@@ -485,6 +485,10 @@ type PublishRequest struct {
 	// between capture and push to force the CAS legs. Nil in
 	// production.
 	BeforePush func(attempt int) error
+	// AfterConfirmed runs after the operation's trailer is visible at tip but
+	// before the journal may terminalize confirmed. It is reserved for an
+	// idempotent local effect whose omission would make confirmation a lie.
+	AfterConfirmed func(tip string) error
 }
 
 // PublishResult is the transaction's terminal classification.
@@ -612,7 +616,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 
 		changes, err := req.Mutate(tip)
 		if err != nil {
-			return terminalFromMutate(e, req.Opid, tip, err)
+			return terminalFromMutate(e, req, tip, err)
 		}
 		commit, err := BuildCommit(e, req.Opid, tip, changes, req.Message)
 		if err != nil {
@@ -669,6 +673,12 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 						Detail: "pushed; the opid is not visible on the refetched tip and the journal entry stays pushed"},
 					fmt.Errorf("postcondition unresolved after a landed push (present=%v err=%v)", present, trErr)
 			}
+			if req.AfterConfirmed != nil {
+				if hookErr := req.AfterConfirmed(newTip); hookErr != nil {
+					return PublishResult{Outcome: "", Tip: newTip, Commit: commit,
+						Detail: "pushed; the confirmed follow-on effect failed and the journal entry stays pushed"}, hookErr
+				}
+			}
 			if err := MarkTerminal(e.Root, req.Opid, OutcomeConfirmed, "opid verified on "+short(newTip)); err != nil {
 				return PublishResult{}, err
 			}
@@ -716,9 +726,15 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 
 // terminalFromMutate maps the mutation callback's classification of
 // a (re)built tip onto the journal.
-func terminalFromMutate(e Endpoint, opid, tip string, err error) (PublishResult, error) {
+func terminalFromMutate(e Endpoint, req PublishRequest, tip string, err error) (PublishResult, error) {
+	opid := req.Opid
 	switch v := err.(type) {
 	case AlreadyApplied:
+		if req.AfterConfirmed != nil {
+			if hookErr := req.AfterConfirmed(tip); hookErr != nil {
+				return PublishResult{Outcome: "", Tip: tip, Detail: "already applied; the confirmed follow-on effect failed and the journal entry stays open"}, hookErr
+			}
+		}
 		if mErr := MarkTerminal(e.Root, opid, OutcomeConfirmed, "already applied at "+tip); mErr != nil {
 			return PublishResult{}, mErr
 		}

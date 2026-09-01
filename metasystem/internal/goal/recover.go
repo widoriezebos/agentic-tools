@@ -73,6 +73,9 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 		report := RecoveryReport{Opid: entry.Opid, Action: action}
 		switch action {
 		case ActionConfirm:
+			if err := recoverSplitConfirmedEffect(e, tip, entry); err != nil {
+				return reports, err
+			}
 			if err := MarkTerminal(e.Root, entry.Opid, OutcomeConfirmed, "opid found on "+short(tip)+" by recovery"); err != nil {
 				return reports, err
 			}
@@ -88,11 +91,22 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 			}
 			CleanupRefs(e, entry.Opid)
 		case ActionConfirmLate:
+			if err := recoverSplitConfirmedEffect(e, tip, entry); err != nil {
+				return reports, err
+			}
 			if err := CorrectLate(e.Root, entry.Opid, "opid found on "+short(tip)+" by recovery"); err != nil {
 				return reports, err
 			}
 			report.Detail = "belief corrected to confirmed-late"
 		case ActionComplete:
+			if entry.Intent.Verb == "slice-start" {
+				if err := MarkTerminal(e.Root, entry.Opid, OutcomeAbandoned, "slice-start owner died before its postcondition landed; dispatch never acquired reservation authority"); err != nil {
+					return reports, err
+				}
+				CleanupRefs(e, entry.Opid)
+				report.Detail = "slice-start abandoned without marking the goal sliced; no reservation was authorized"
+				break
+			}
 			detail, err := completeFromIntent(e, entry, policy)
 			if err != nil {
 				return reports, err
@@ -131,6 +145,22 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 	}
 	if taken.Intent.Verb == "resume" {
 		detail := "human authority cannot be recovered from journal text; rerun goal resume from the enrolled terminal"
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
+			return "", err
+		}
+		CleanupRefs(e, entry.Opid)
+		return "escalation required: " + detail, nil
+	}
+	if taken.Intent.Verb == "steal" {
+		detail := "human authority cannot be recovered from journal text; rerun goal steal from the enrolled terminal and pass its --approved-ref again when the goal is over norm"
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
+			return "", err
+		}
+		CleanupRefs(e, entry.Opid)
+		return "escalation required: " + detail, nil
+	}
+	if taken.Intent.Verb == "split" && taken.Intent.Args["ratifierTier"] == RatifierHuman {
+		detail := "human split ratification cannot be recovered from journal text; rerun goal split from the enrolled terminal against the recorded draft"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -181,10 +211,11 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return PublishRequest{}, fmt.Errorf("the entry's opid %q is not <ulid>-<machine>-<hash>; close it by hand", entry.Opid)
 	}
 	r := VerbRequest{
-		Endpoint: e,
-		Actor:    actorFromEntry(entry),
-		Ulid:     entry.Opid[:26],
-		Now:      timeNowUTC(),
+		Endpoint:    e,
+		Actor:       actorFromEntry(entry),
+		Ulid:        entry.Opid[:26],
+		Now:         timeNowUTC(),
+		ApprovedRef: entry.Intent.Args["approvedRef"],
 	}
 	if raw := entry.Intent.Args["claimEpoch"]; raw != "" {
 		epoch, err := strconv.ParseInt(raw, 10, 64)
@@ -231,6 +262,20 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			return PublishRequest{}, err
 		}
 		return setBudgetRequest(r, target, budget), nil
+	case "split":
+		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
+		if err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored split members do not parse: %w", err)
+		}
+		epoch, err := strconv.ParseInt(in.Args["ratifierClaimEpoch"], 10, 64)
+		if err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored split ratifier claim epoch is invalid: %w", err)
+		}
+		ratification := SplitRatification{
+			Tier: in.Args["ratifierTier"], MainID: in.Args["ratifierMainId"],
+			ClaimEpoch: epoch, DraftSHA256: in.Args["draftSha256"],
+		}
+		return splitRequest(r, target, members, ratification, nil)
 	case "release":
 		if cascade {
 			return releaseArcRequest(r, target), nil
@@ -299,6 +344,16 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return declareFreeRequest(r, in.Args["origin"], in.Args["digest"]), nil
 	}
 	return PublishRequest{}, fmt.Errorf("verb %q re-runs from its own entry point (reconcile from the checkout it captures, migrate from its reviewed inputs); this entry closes toward that path", in.Verb)
+}
+
+func recoverSplitConfirmedEffect(e Endpoint, tip string, entry Entry) error {
+	if entry.Intent.Verb != "split" {
+		return nil
+	}
+	if len(entry.Intent.Targets) != 1 {
+		return fmt.Errorf("confirmed split %s has no unique parent target", entry.Opid)
+	}
+	return raiseSplitOldArcDebt(e, tip, entry.Intent.Targets[0], entry.Opid, timeNowUTC())
 }
 
 func actorFromEntry(entry Entry) Actor {

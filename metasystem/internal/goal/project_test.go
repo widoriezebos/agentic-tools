@@ -70,6 +70,21 @@ func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
 	}
 }
 
+func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
+	foreign := vGoal("foreign-pinned", StateQueued)
+	foreign.Arc = "shared-arc"
+	foreign.Pinned = "mac-b"
+	local := vGoal("local-member", StateQueued)
+	local.Arc = "shared-arc"
+	p := Projection{Tree: &TreeGoals{Live: map[string]*GoalFile{
+		foreign.Id: foreign, local.Id: local,
+	}, Done: map[string]*GoalFile{}}}
+	verdict := Next(p, "mac-a")
+	if strings.Join(verdict.Ready, ",") != "local-member" {
+		t.Fatalf("a sibling's foreign pin hid an independently claimable member: %+v", verdict)
+	}
+}
+
 func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 	repo := soloLedgerRepo(t)
 	e := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}

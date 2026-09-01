@@ -101,6 +101,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.Budget != nil {
 				return nil, fmt.Errorf("%s: a hand-created goal carries no budget; open it, then use goal set-budget", d.Path)
 			}
+			if edited.NormApproval != nil || edited.Sliced != nil || edited.Ratified != nil {
+				return nil, fmt.Errorf("%s: a hand-created goal carries generated scope-boundary evidence; admission and split are the only writers", d.Path)
+			}
 			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
 				Intent: &edited.Intent, NextStep: &edited.NextStep,
 				Blocked: &edited.Blocked, Labels: &edited.Labels,
@@ -211,6 +214,17 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	}
 	if edited.OpenedAt != base.OpenedAt {
 		return nil, fmt.Errorf("%s: OpenedAt is a generated field; the engine synthesizes it", p)
+	}
+	if !sameGoalNormApproval(edited.NormApproval, base.NormApproval) {
+		return nil, fmt.Errorf("%s: NormApproval is a generated field; admission publishes it", p)
+	}
+	if (edited.Sliced == nil) != (base.Sliced == nil) ||
+		(edited.Sliced != nil && *edited.Sliced != *base.Sliced) {
+		return nil, fmt.Errorf("%s: Sliced is an immutable generated field; dispatch publishes it before the first reservation", p)
+	}
+	if (edited.Ratified == nil) != (base.Ratified == nil) ||
+		(edited.Ratified != nil && *edited.Ratified != *base.Ratified) {
+		return nil, fmt.Errorf("%s: Ratified is a generated field; split publishes it", p)
 	}
 	// A hand park of a CLAIMED goal lawfully clears the Claimed line
 	// — that is the park's own effect, synthesized either way at

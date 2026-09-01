@@ -48,6 +48,9 @@ type VerbRequest struct {
 	Actor    Actor
 	Ulid     string // caller-minted; the opid derives from it
 	Now      time.Time
+	// ApprovedRef names a recorded human exception for verbs that admit an
+	// over-norm goal budget. Other verbs reject the flag at the command edge.
+	ApprovedRef string
 	// ClaimEpoch is the authenticated checkout lease generation. Only
 	// transitions that create a claimed revision consume it.
 	ClaimEpoch int64
@@ -288,13 +291,18 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 // replayed as an AGENT — refused by its own gates or written with
 // machine attribution.
 func intentArgs(r VerbRequest, args map[string]string) map[string]string {
-	if r.Actor.Human == "" {
+	if r.Actor.Human == "" && r.ApprovedRef == "" {
 		return args
 	}
 	if args == nil {
 		args = map[string]string{}
 	}
-	args["by"] = r.Actor.Human
+	if r.Actor.Human != "" {
+		args["by"] = r.Actor.Human
+	}
+	if r.ApprovedRef != "" {
+		args["approvedRef"] = r.ApprovedRef
+	}
 	return args
 }
 
@@ -358,6 +366,9 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, labels []st
 			t, err := loadTree(r.Endpoint.Root, tip)
 			if err != nil {
 				return nil, err
+			}
+			if retired, ok := rootDecomposed(t.Root, id); ok {
+				return nil, fmt.Errorf("goal id %s is retired: it names a decomposed parent (split opid %s); pick a different id", id, retired.Opid)
 			}
 			if f, exists := t.Live[id]; exists {
 				if opidLanded(f, r) {
@@ -453,8 +464,13 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
+			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
+			if err != nil {
+				return nil, err
+			}
 			f.State = StateClaimed
 			f.Budget = &budget
+			f.NormApproval = approval
 			touch(f, r, "claim", []string{id})
 			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
 				return nil, err
@@ -501,8 +517,12 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 			if f.State == StateParked && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is parked; changing a parked goal's budget is a human act", id)
 			}
+			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
+			if err != nil {
+				return nil, err
+			}
 			bound := f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision > 0
-			if f.Budget != nil && *f.Budget == budget && (f.State != StateClaimed || bound) {
+			if f.Budget != nil && *f.Budget == budget && sameGoalNormApproval(f.NormApproval, approval) && (f.State != StateClaimed || bound) {
 				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
 			}
 			displaced := ""
@@ -510,6 +530,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 				displaced = pairMarker(f.Claimed)
 			}
 			f.Budget = &budget
+			f.NormApproval = approval
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
 			if f.State == StateClaimed && f.Claimed != nil {
 				claimEpoch := r.ClaimEpoch
@@ -921,6 +942,9 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 			if !archived {
 				return nil, fmt.Errorf("goal %s is not in the archive; reopen moves archived goals back", id)
 			}
+			if _, decomposed := rootDecomposed(t.Root, id); decomposed {
+				return nil, fmt.Errorf("goal %s was decomposed into arc %s; a decomposed parent never returns — reopen or claim its member goals, or open a new goal under a new id", id, id)
+			}
 			// Reopening under claimed dependents is the transition
 			// closure's refusal: a claimed goal's blockers must stay
 			// done.
@@ -935,54 +959,49 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 					}
 				}
 			}
-			// The member rejoins its arc under the arc's STANDING state
-			//: a claimed arc adopts it under the standing
-			// claimant (claimant or human only — an outside agent
-			// cannot inject work into someone's claim; the member's
-			// blockers must be done); a parked arc is human-only
-			// and the member lands parked with the arc's record.
+			// A mixed arc has no single standing state. Reopen defaults
+			// queued, except that an all-parked destination copies its
+			// newest park record under human authority, while the caller's
+			// own claimed member may adopt this member after the ordinary
+			// blocker, pin, budget, and norm guards.
 			f.State = StateQueued
 			f.Conclude = ""
 			if f.Arc != "" {
-				var standing *GoalFile
-				for _, liveId := range sortedGoalIds(t.Live) {
-					if t.Live[liveId].Arc == f.Arc {
-						standing = t.Live[liveId]
-						break
-					}
-				}
+				standing := classifyArcJoin(t, f.Arc, id, r.Actor)
 				switch {
-				case standing == nil:
+				case standing.count == 0:
 					// The arc has no live members; the reopen re-founds it queued.
-				case standing.State == StateClaimed && standing.Claimed != nil:
-					if !ownPair(standing.Claimed, r.Actor) && r.Actor.Human == "" {
-						return nil, fmt.Errorf("goal %s rejoins arc %s, which %s+%s holds; an outside agent cannot inject work into someone's claim", id, f.Arc, standing.Claimed.Machine, standing.Claimed.Lineage)
+				case standing.allParked:
+					if r.Actor.Human == "" {
+						return nil, fmt.Errorf("goal %s rejoins arc %s, whose every live member is parked; reopening into an all-parked arc is a human act", id, f.Arc)
 					}
+					parked := standing.newestParked.Parked
+					f.State = StateParked
+					f.Parked = &ParkRecord{By: parked.By, At: parked.At, Because: parked.Because}
+				case standing.ownClaimed != nil:
 					for _, dep := range f.Blocked {
 						if depState(t, dep) != StateDone {
 							return nil, fmt.Errorf("goal %s rejoins a claimed arc but is blocked by %s, which is not done", id, dep)
 						}
 					}
-					if err := pinRefusal(f, standing.Claimed.Machine, "rejoining the claimed arc"); err != nil {
+					if err := pinRefusal(f, r.Actor.Machine, "rejoining the claimed arc"); err != nil {
 						return nil, err
 					}
 					if f.Budget == nil {
 						return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it rejoins a claimed arc", f.Id)
 					}
-					f.State = StateClaimed
-					claimEpoch := r.ClaimEpoch
-					if claimEpoch < 1 && standing.StopCapability != nil {
-						claimEpoch = standing.StopCapability.ClaimEpoch
-					}
-					if err := bindClaim(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+					if err := requireWithinGoalNorm(r.Endpoint.Root, *f.Budget, f.Id, "rejoins a claimed arc"); err != nil {
 						return nil, err
 					}
-				case standing.State == StateParked && standing.Parked != nil:
-					if r.Actor.Human == "" {
-						return nil, fmt.Errorf("goal %s rejoins arc %s, which is parked; reopening into a parked arc is a human act", id, f.Arc)
+					f.NormApproval = nil
+					f.State = StateClaimed
+					claimEpoch := r.ClaimEpoch
+					if claimEpoch < 1 && standing.ownClaimed.StopCapability != nil {
+						claimEpoch = standing.ownClaimed.StopCapability.ClaimEpoch
 					}
-					f.State = StateParked
-					f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
+					if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+						return nil, err
+					}
 				}
 			}
 			touch(f, r, "reopen", []string{id})
@@ -1183,14 +1202,16 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			if ownPair(f.Claimed, r.Actor) {
 				return nil, NothingToDo{Reason: "already claimed by this pair (not by this operation)"}
 			}
-			// The claim binds the ARC: stealing any member
-			// reassigns every live member the standing pair holds, one
-			// transaction, one quota slot — a partial steal would split
-			// the arc's ownership. Every touched line carries the
-			// displaced marker.
+			// Steal follows the selected old pair across the arc. Other
+			// independently claimed, parked, or queued members neither move
+			// nor lend their fence, pin, or budget to this preflight.
 			oldPair := f.Claimed
 			members := arcMembers(t, id)
+			approvals := map[string]*GoalNormApprovalClaim{}
 			for _, member := range members {
+				if member.State != StateClaimed || !ownPair(member.Claimed, Actor{Machine: oldPair.Machine, Lineage: oldPair.Lineage}) {
+					continue
+				}
 				if member.StopFence != nil {
 					return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may replace its claim authority", member.Id, member.StopFence.StopID)
 				}
@@ -1200,6 +1221,11 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 				if member.Budget == nil {
 					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before stealing its claim", member.Id)
 				}
+				approval, err := goalNormApproval(r.Endpoint.Root, t, member, *member.Budget, r.ApprovedRef)
+				if err != nil {
+					return nil, err
+				}
+				approvals[member.Id] = approval
 			}
 			targets := make([]string, 0, len(members))
 			for _, m := range members {
@@ -1208,9 +1234,10 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			var changes []Change
 			for _, m := range members {
 				if m.State != StateClaimed || !ownPair(m.Claimed, Actor{Machine: oldPair.Machine, Lineage: oldPair.Lineage}) {
-					continue // uniformity is validated; ride over strays defensively
+					continue // independently owned or idle members stay untouched
 				}
 				displaced := pairMarker(m.Claimed)
+				m.NormApproval = approvals[m.Id]
 				touchDisplaced(m, r, "steal", targets, displaced)
 				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
 					return nil, err
@@ -1258,6 +1285,9 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 			if err != nil {
 				return nil, err
 			}
+			if retired, ok := rootDecomposed(t.Root, id); ok {
+				return nil, fmt.Errorf("goal id %s is retired: it names a decomposed parent (split opid %s); pick a different id", id, retired.Opid)
+			}
 			if f, exists := t.Live[id]; exists {
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
@@ -1266,6 +1296,9 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 			}
 			if _, archived := t.Done[id]; archived {
 				return nil, fmt.Errorf("goal %s is in the archive; reopen is the explicit exception", id)
+			}
+			if err := requireWithinGoalNorm(r.Endpoint.Root, budget, id, "cannot open --claim"); err != nil {
+				return nil, fmt.Errorf("%v; open it queued, run goal set-budget --approved-ref against revision 1, then goal claim", err)
 			}
 			f := &GoalFile{
 				Id: id, State: StateClaimed, Intent: intent, Origin: origin,
@@ -1422,10 +1455,46 @@ func arcMembers(t *TreeGoals, id string) []*GoalFile {
 	return members
 }
 
-// ClaimArc claims a goal AND its arc's live members as one unit
-// under one claimant counting once against the quota. Every
-// member's blockers must be done; a standing foreign claim on any
-// member loses the whole cascade.
+// arcJoinState classifies a mixed destination without inventing a single
+// "standing member". An own claimed member is selected deterministically;
+// all-parked destinations carry the newest park record, with lexical id as
+// the total tie-break.
+type arcJoinState struct {
+	count        int
+	allParked    bool
+	ownClaimed   *GoalFile
+	newestParked *GoalFile
+}
+
+func classifyArcJoin(t *TreeGoals, arc, excludeID string, actor Actor) arcJoinState {
+	state := arcJoinState{allParked: true}
+	for _, liveID := range sortedGoalIds(t.Live) {
+		member := t.Live[liveID]
+		if member.Id == excludeID || member.Arc != arc {
+			continue
+		}
+		state.count++
+		if member.State != StateParked || member.Parked == nil {
+			state.allParked = false
+		}
+		if state.ownClaimed == nil && member.State == StateClaimed && member.Claimed != nil && ownPair(member.Claimed, actor) {
+			state.ownClaimed = member
+		}
+		if member.State == StateParked && member.Parked != nil &&
+			(state.newestParked == nil || member.Parked.At > state.newestParked.Parked.At ||
+				(member.Parked.At == state.newestParked.Parked.At && member.Id < state.newestParked.Id)) {
+			state.newestParked = member
+		}
+	}
+	if state.count == 0 {
+		state.allParked = false
+	}
+	return state
+}
+
+// ClaimArc is an opt-in cascade over one planning arc. It claims queued
+// members, skips already-owned and parked members, and loses atomically to
+// any foreign claim it encounters.
 func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
@@ -1476,6 +1545,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 					}
 					return nil, LostToCompetitor{Winner: lastOpid(m)}
 				}
+				if m.State == StateParked {
+					continue // parked members are not movable; claim the queued remainder
+				}
 				if m.State != StateQueued {
 					return nil, fmt.Errorf("arc member %s is %s; the cascade claims queued members only", m.Id, m.State)
 				}
@@ -1491,8 +1563,13 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				if err != nil {
 					return nil, err
 				}
+				approval, err := goalNormApproval(r.Endpoint.Root, t, m, budget, r.ApprovedRef)
+				if err != nil {
+					return nil, err
+				}
 				m.State = StateClaimed
 				m.Budget = &budget
+				m.NormApproval = approval
 				touch(m, r, "claim", targets)
 				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
 					return nil, err
@@ -1508,7 +1585,8 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 	}
 }
 
-// ReleaseArc releases the actor's whole claimed arc as one unit.
+// ReleaseArc releases the members movable by this actor and skips independent
+// claims belonging to other pairs (a human may still release them explicitly).
 func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseArcRequest(r, id))
 }
@@ -1543,7 +1621,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 					continue // queued or parked members ride along untouched
 				}
 				if !ownPair(m.Claimed, r.Actor) && r.Actor.Human == "" {
-					return nil, fmt.Errorf("arc member %s is claimed by %s+%s; a foreign release is a human act", m.Id, m.Claimed.Machine, m.Claimed.Lineage)
+					continue // another pair's independently claimed member is not movable
 				}
 				displaced := ""
 				if !ownPair(m.Claimed, r.Actor) {
@@ -1565,11 +1643,10 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 	}
 }
 
-// ParkArc pauses a whole arc as one unit. Parking a foreign claim
-// anywhere in the cascade is a human act, and the design pins ONE
-// acknowledgment for the displaced pair across the whole cascade
-// : the displaced= field rides every touched history line,
-// but the pair is recorded once per claimant, not once per member.
+// ParkArc pauses every member the caller may move. Independently held or
+// human-reserved members are skipped for an agent. A human may displace
+// several pairs; each touched member carries its own pair marker so the
+// acknowledgment fold emits one line per distinct pair.
 func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 	if strings.TrimSpace(because) == "" {
 		return PublishResult{}, fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
@@ -1600,23 +1677,6 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 			for _, m := range members {
 				targets = append(targets, m.Id)
 			}
-			// One acknowledgment per displaced PAIR: collect the
-			// foreign claimants once before touching anything.
-			displacedPair := ""
-			for _, m := range members {
-				if m.Origin == OriginHuman && r.Actor.Human == "" {
-					return nil, fmt.Errorf("arc member %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", m.Id)
-				}
-				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
-					if r.Actor.Human == "" {
-						return nil, fmt.Errorf("arc member %s is claimed by %s+%s; parking another's claim is a human act", m.Id, m.Claimed.Machine, m.Claimed.Lineage)
-					}
-					pair := pairMarker(m.Claimed)
-					if displacedPair == "" {
-						displacedPair = pair
-					}
-				}
-			}
 			var changes []Change
 			for _, m := range members {
 				if opidLanded(m, r) {
@@ -1625,12 +1685,18 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 				if m.State == StateParked {
 					continue // already parked members ride along
 				}
+				if r.Actor.Human == "" && m.Origin == OriginHuman {
+					continue // an agent cannot move the human's standing reservation
+				}
+				if r.Actor.Human == "" && m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
+					continue // another pair's claim is not movable by this agent
+				}
 				if m.State != StateQueued && m.State != StateClaimed {
 					return nil, fmt.Errorf("arc member %s is %s; only queued or claimed goals park", m.Id, m.State)
 				}
 				memberDisplaced := ""
 				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
-					memberDisplaced = displacedPair
+					memberDisplaced = pairMarker(m.Claimed)
 				}
 				m.State = StateParked
 				m.Parked = &ParkRecord{
@@ -1657,7 +1723,8 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 	}
 }
 
-// UnparkArc restores a whole parked arc to the queue as one unit.
+// UnparkArc restores every parked member the caller may move and skips all
+// other states; an agent also skips parks carrying human authority.
 func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, unparkArcRequest(r, id))
 }
@@ -1692,7 +1759,7 @@ func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 					continue
 				}
 				if m.Parked != nil && strings.HasPrefix(m.Parked.By, "human:") && r.Actor.Human == "" {
-					return nil, fmt.Errorf("arc member %s was parked by %s; lifting a human's pause is a human act", m.Id, m.Parked.By)
+					continue // a human pause is not movable by this agent
 				}
 				m.State = StateQueued
 				m.Parked = nil
@@ -1777,10 +1844,9 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 // ONE transaction under the stricter of the two rules. Leaving a
 // claimed arc releases the member on the way out (never a quota
 // split); a parked source or a parked destination is human-only; a
-// claimed destination auto-claims a queued member with done
-// blockers under the STANDING claimant — a stranger refuses, and a
-// human injecting into another machine's claim leaves the
-// displacement signal.
+// caller-owned claimed destination may auto-claim a member with done
+// blockers; otherwise a mixed destination leaves it queued. An all-parked
+// destination copies the newest park record under human authority.
 // SetPin pins a goal to one machine (or clears the pin with "-"): only
 // that machine may claim it afterwards, because it alone has the
 // setup, network, or resources the work needs. Pinning is directive,
@@ -1926,22 +1992,24 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 			default:
 				return nil, fmt.Errorf("goal %s is %s; arc membership moves live goals", id, f.State)
 			}
-			// The destination side: the arc's standing state rules the
-			// join (an empty destination founds a queued arc).
-			var standing *GoalFile
-			for _, liveId := range sortedGoalIds(t.Live) {
-				m := t.Live[liveId]
-				if m.Arc == arc && m.Id != id {
-					standing = m
-					break
-				}
-			}
+			// The destination is classified across every member. Mixed
+			// states default queued; only all-parked and caller-owned claim
+			// cases inherit authority-bearing state.
+			standing := classifyArcJoin(t, arc, id, r.Actor)
 			switch {
-			case standing == nil || standing.State == StateQueued:
+			case standing.count == 0:
 				if f.State == StateParked {
-					return nil, fmt.Errorf("goal %s is parked; a parked member joins a queued arc after unpark", id)
+					f.State = StateQueued
+					f.Parked = nil
 				}
-			case standing.State == StateClaimed && standing.Claimed != nil:
+			case standing.allParked:
+				if r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc %s has every live member parked; changing its membership is a human act", arc)
+				}
+				parked := standing.newestParked.Parked
+				f.State = StateParked
+				f.Parked = &ParkRecord{By: parked.By, At: parked.At, Because: parked.Because}
+			case standing.ownClaimed != nil:
 				if sourceWasClaimed {
 					// TWO displaced pairs in one move — the source
 					// claimant losing a member and the destination
@@ -1950,48 +2018,33 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					// release first, then join.
 					return nil, fmt.Errorf("goal %s moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first", id)
 				}
-				if f.State == StateParked {
-					return nil, fmt.Errorf("goal %s is parked; a claimed arc admits queued members with done blockers only", id)
-				}
-				if !ownPair(standing.Claimed, r.Actor) && r.Actor.Human == "" {
-					return nil, fmt.Errorf("arc %s is claimed by %s+%s; a stranger cannot move goals into a claimed arc", arc, standing.Claimed.Machine, standing.Claimed.Lineage)
-				}
 				for _, dep := range f.Blocked {
 					if depState(t, dep) != StateDone {
 						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done; it cannot join the claimed arc unclaimed-late", id, dep)
 					}
 				}
-				if !ownPair(standing.Claimed, r.Actor) {
-					// A human injection into another machine's claim is
-					// displacement-bearing: the runner hears its scope
-					// changed.
-					displaced = pairMarker(standing.Claimed)
-				}
-				// The join auto-claims under the standing claimant: the
-				// arc stays one unit under one pair.
-				if err := pinRefusal(f, standing.Claimed.Machine, "joining the claimed arc"); err != nil {
+				if err := pinRefusal(f, r.Actor.Machine, "joining the claimed arc"); err != nil {
 					return nil, err
 				}
 				if f.Budget == nil {
 					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it joins a claimed arc", f.Id)
 				}
-				f.State = StateClaimed
-				claimEpoch := r.ClaimEpoch
-				if claimEpoch < 1 && standing.StopCapability != nil {
-					claimEpoch = standing.StopCapability.ClaimEpoch
-				}
-				if err := bindClaim(f, standing.Claimed.Machine, standing.Claimed.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+				if err := requireWithinGoalNorm(r.Endpoint.Root, *f.Budget, f.Id, "joins a claimed arc"); err != nil {
 					return nil, err
 				}
-			case standing.State == StateParked && standing.Parked != nil:
-				if r.Actor.Human == "" {
-					return nil, fmt.Errorf("arc %s is parked; a parked arc's membership edits are human acts", arc)
+				f.NormApproval = nil
+				f.State = StateClaimed
+				f.Parked = nil
+				claimEpoch := r.ClaimEpoch
+				if claimEpoch < 1 && standing.ownClaimed.StopCapability != nil {
+					claimEpoch = standing.ownClaimed.StopCapability.ClaimEpoch
 				}
-				// A queued or parked incoming member parks with the
-				// arc's record; the released-on-detach path lands here
-				// queued and parks the same way.
-				f.State = StateParked
-				f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
+				if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
+					return nil, err
+				}
+			default:
+				f.State = StateQueued
+				f.Parked = nil
 			}
 			f.Arc = arc
 			touchDisplaced(f, r, "set-arc", []string{id}, displaced)

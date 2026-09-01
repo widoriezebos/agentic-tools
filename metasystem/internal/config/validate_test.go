@@ -232,6 +232,8 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"elapsed grace over 200", "metasystem.budget.elapsed-grace-percent=201\n", "metasystem.budget.elapsed-grace-percent must be an integer between 0 and 200"},
 		{"zero slice norm", "metasystem.budget.slice-norm-hours=0\n", "metasystem.budget.slice-norm-hours must be a positive integer"},
 		{"nonnumeric slice norm", "metasystem.budget.slice-norm-hours=four\n", "metasystem.budget.slice-norm-hours must be a positive integer"},
+		{"zero goal norm", GoalNormJobMinutesKey + "=0\n", GoalNormJobMinutesKey + " must be a positive integer"},
+		{"nonnumeric goal norm", GoalNormJobMinutesKey + "=many\n", GoalNormJobMinutesKey + " must be a positive integer"},
 	} {
 		problems := validateRepo(t, validConf+tc.line)
 		if !hasProblem(problems, tc.expect) {
@@ -239,7 +241,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\nmetasystem.counselor.brief-cadence-hours=24\n"
+	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + GoalNormJobMinutesKey + "=1440\nmetasystem.counselor.brief-cadence-hours=24\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
 	}
@@ -258,10 +260,11 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 		{
 			name:  "production local overrides",
 			conf:  validConf,
-			local: ElapsedGracePercentKey + "=75\n" + SliceNormHoursKey + "=6\n",
+			local: ElapsedGracePercentKey + "=75\n" + SliceNormHoursKey + "=6\n" + GoalNormJobMinutesKey + "=1800\n",
 			expect: []string{
 				ElapsedGracePercentKey + " accepts only committed root configuration",
 				SliceNormHoursKey + " accepts only committed root configuration",
+				GoalNormJobMinutesKey + " accepts only committed root configuration",
 			},
 		},
 		{
@@ -270,19 +273,22 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 			environment: map[string]string{
 				ElapsedGracePercentKey: "75",
 				SliceNormHoursKey:      "6",
+				GoalNormJobMinutesKey:  "1800",
 			},
 			expect: []string{
 				"environment source " + EnvName(ElapsedGracePercentKey) + " is refused",
 				"environment source " + EnvName(SliceNormHoursKey) + " is refused",
+				"environment source " + EnvName(GoalNormJobMinutesKey) + " is refused",
 			},
 		},
 		{
 			name:  "malformed fixture local overrides",
 			conf:  fixtureConf,
-			local: ElapsedGracePercentKey + "=201\n" + SliceNormHoursKey + "=0\n",
+			local: ElapsedGracePercentKey + "=201\n" + SliceNormHoursKey + "=0\n" + GoalNormJobMinutesKey + "=0\n",
 			expect: []string{
 				ElapsedGracePercentKey + " must be an integer between 0 and 200",
 				SliceNormHoursKey + " must be a positive integer",
+				GoalNormJobMinutesKey + " must be a positive integer",
 			},
 		},
 		{
@@ -291,20 +297,24 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 			environment: map[string]string{
 				ElapsedGracePercentKey: "many",
 				SliceNormHoursKey:      "none",
+				GoalNormJobMinutesKey:  "many",
 			},
 			expect: []string{
 				"environment source " + EnvName(ElapsedGracePercentKey),
 				"environment source " + EnvName(SliceNormHoursKey),
+				"environment source " + EnvName(GoalNormJobMinutesKey),
 			},
 		},
 		{
 			name: "ambiguous fixture local overrides",
 			conf: fixtureConf,
 			local: ElapsedGracePercentKey + "=25\n" + ElapsedGracePercentKey + "=50\n" +
-				SliceNormHoursKey + "=4\n" + SliceNormHoursKey + "=6\n",
+				SliceNormHoursKey + "=4\n" + SliceNormHoursKey + "=6\n" +
+				GoalNormJobMinutesKey + "=1440\n" + GoalNormJobMinutesKey + "=1800\n",
 			expect: []string{
 				"duplicate metasystem configuration key: " + ElapsedGracePercentKey,
 				"duplicate metasystem configuration key: " + SliceNormHoursKey,
+				"duplicate metasystem configuration key: " + GoalNormJobMinutesKey,
 			},
 		},
 	}

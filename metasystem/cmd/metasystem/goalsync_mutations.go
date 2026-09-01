@@ -85,12 +85,12 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // syncFlags is the shared flag surface; each verb reads the fields
 // it consumes and ignores the rest.
 type syncFlags struct {
-	root, by, id, intent, next, origin, because, conclude, arc, pin string
-	lineage, digest, elapsedLimit                                   string
-	attemptLimit, reservedJobMinutesLimit, activeJobLimit           int64
-	labels, unlabels                                                repeatedStrings
-	claim, refreshOnly                                              bool
-	keep                                                            int
+	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
+	lineage, digest, elapsedLimit, approvedRef                               string
+	attemptLimit, reservedJobMinutesLimit, activeJobLimit                    int64
+	labels, unlabels                                                         repeatedStrings
+	claim, refreshOnly                                                       bool
+	keep                                                                     int
 }
 
 type repeatedStrings []string
@@ -114,8 +114,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.conclude, "conclude", "", "the conclusion")
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
 	fs.StringVar(&f.pin, "pin", "", "the machine nickname a goal is pinned to (\"-\" clears)")
+	fs.StringVar(&f.members, "members", "", "split member draft path")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
+	fs.StringVar(&f.approvedRef, "approved-ref", "", "recorded human approval reference for an over-norm goal budget")
 	fs.StringVar(&f.elapsedLimit, "elapsed-limit", "", "positive elapsed duration, for example 4h")
 	fs.Int64Var(&f.attemptLimit, "attempt-limit", 0, "positive reservation-attempt limit")
 	fs.Int64Var(&f.reservedJobMinutesLimit, "reserved-job-minutes-limit", 0, "positive reserved job-minute limit")
@@ -140,6 +142,14 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	}
 	if name != "open" && name != "claim" && name != "set-budget" && name != "resume" && f.hasAnyBudgetFlag() {
 		fmt.Fprintf(os.Stderr, "goal %s does not take budget flags\n", name)
+		return nil, false
+	}
+	if f.approvedRef != "" && name != "claim" && name != "set-budget" && name != "resume" && name != "steal" {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --approved-ref\n", name)
+		return nil, false
+	}
+	if f.members != "" && name != "split" {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --members\n", name)
 		return nil, false
 	}
 	return f, true
@@ -183,6 +193,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 		fmt.Fprintln(os.Stderr, err)
 		return 1, true
 	}
+	req.ApprovedRef = f.approvedRef
 	need := func(val, flagName string) bool {
 		if val == "" {
 			fmt.Fprintf(os.Stderr, "goal %s needs --%s\n", name, flagName)
@@ -320,6 +331,7 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
+		req.ApprovedRef = f.approvedRef
 		res, runErr := run(req, f)
 		code := printSyncResult(res, runErr)
 		return code
@@ -354,6 +366,7 @@ func runGoalResume(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	req.ApprovedRef = f.approvedRef
 	binding, err := dispatchcore.ResolveGoalBinding(f.root, f.id, req.Now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -375,6 +388,125 @@ func runGoalResume(args []string) int {
 	}
 	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
 	return printSyncResult(res, err)
+}
+
+func runGoalSplit(args []string) int {
+	f, ok := parseSyncFlags("split", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) {
+		fmt.Fprintln(os.Stderr, "goal split works the synced backlog; this checkout still carries the legacy ledger")
+		return 1
+	}
+	if f.id == "" || f.members == "" {
+		fmt.Fprintln(os.Stderr, "goal split needs --id and --members")
+		return 2
+	}
+	draftBytes, err := os.ReadFile(f.members)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "goal split could not read its member draft:", err)
+		return 1
+	}
+	members, err := goal.ParseMemberDraft(draftBytes, f.id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "goal split draft refused:", err)
+		return 1
+	}
+	req, err := syncReq(f.root, f.by, f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	projection, err := goal.Project(req.Endpoint, false, req.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	parent := projection.Tree.Live[f.id]
+	if parent == nil {
+		if projection.Tree.Done[f.id] != nil {
+			fmt.Fprintf(os.Stderr, "goal %s is in the archive; there is nothing to split\n", f.id)
+		} else {
+			fmt.Fprintf(os.Stderr, "goal %s does not exist\n", f.id)
+		}
+		return 1
+	}
+	digest := goal.SplitDraftSHA256(f.id, members)
+	var proof *humanauthority.Proof
+	var ratification goal.SplitRatification
+	if f.by != "" {
+		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
+		if proofErr != nil {
+			fmt.Fprintln(os.Stderr, "SPLIT_RATIFY_REFUSED: goal split could not prove enrolled human ancestry:", proofErr)
+			return 1
+		}
+		proof = &observed
+		ratification = goal.SplitRatification{Tier: goal.RatifierHuman, By: f.by, DraftSHA256: digest}
+	} else {
+		classification, classErr := lease.ClassifyVerb(f.root, int64(os.Getppid()))
+		if classErr != nil {
+			fmt.Fprintln(os.Stderr, "SPLIT_RATIFY_REFUSED: caller classification failed:", classErr)
+			return 1
+		}
+		if parent.Origin != goal.OriginMain {
+			fmt.Fprintf(os.Stderr, "SPLIT_RATIFY_REFUSED: goal %s's split draft must be ratified by its origin tier — use --by from the enrolled human terminal for human-origin work, or run from the MAIN checkout-lease holder for main-origin work\n", f.id)
+			return 1
+		}
+		ratification, err = mainSplitRatification(f.id, digest, classification)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+
+	var held *goalrevision.Held
+	if parent.State == goal.StateClaimed && parent.Claimed != nil && parent.Claimed.Machine == req.Actor.Machine && parent.Claimed.Lineage == req.Actor.Lineage {
+		held, err = goalrevision.Acquire(f.root, f.id, parent.Claimed.Revision, "goal-split")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "goal split could not acquire the goal-revision lock:", err)
+			return 1
+		}
+		defer held.Release()
+		spend := dispatchcore.ProjectBudget(f.root, parent, req.Now)
+		if spend.Status != dispatchcore.BudgetKnown {
+			detail := "unknown spending evidence"
+			if spend.Unknown != nil {
+				detail = spend.Unknown.Record + ": " + spend.Unknown.Reason
+			}
+			fmt.Fprintf(os.Stderr, "goal %s revision %d cannot prove zero work: %s\n", f.id, parent.Claimed.Revision, detail)
+			return 1
+		}
+		if spend.Attempts != 0 || spend.ActiveJobs != 0 || spend.ReservedJobMinutes != 0 {
+			fmt.Fprintf(os.Stderr, "goal %s revision %d has recorded work (%d attempts, %d active jobs, %d reserved minutes); split is a before-slicing act — conclude the slice or take the parent to the human\n", f.id, parent.Claimed.Revision, spend.Attempts, spend.ActiveJobs, spend.ReservedJobMinutes)
+			return 1
+		}
+	}
+	if proof != nil {
+		if err := humanauthority.RecordProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal split", *proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal split could not record its authority proof:", err)
+			return 1
+		}
+	}
+	res, err := goal.Split(req, f.id, members, ratification, proof)
+	return printSyncResult(res, err)
+}
+
+func mainSplitRatification(id, digest string, classification lease.ClassifyResult) (goal.SplitRatification, error) {
+	if classification.Class == lease.ClassHuman {
+		// HUMAN classification proves terminal ancestry but deliberately
+		// carries no person's name. The accepted tier=human token does name
+		// its ratifier, so only explicit --by can mint it without fabricating
+		// identity from an authentication class.
+		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: caller is human-classified, but the accepted human ratification token must name its person; re-run goal split with --by from the enrolled human terminal")
+	}
+	if classification.Class != lease.ClassMain || !classification.Holder {
+		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s is main-origin; its split draft is ratified by the coordinator — re-run goal split from the MAIN checkout-lease holder session (a human may also run it with --by)", id)
+	}
+	if classification.ClaimEpoch == nil {
+		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem up to establish the authenticated lease, then retry", id)
+	}
+	return goal.SplitRatification{Tier: goal.RatifierMain, MainID: classification.MainId, ClaimEpoch: *classification.ClaimEpoch, DraftSHA256: digest}, nil
 }
 
 func runGoalEnrollTerminal(args []string) int {

@@ -348,6 +348,8 @@ func TestRecoveryHandlesOwnEntriesAndDoneRebuild(t *testing.T) {
 func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
+	seedGoalNormConfig(t, a)
+	seedGoalNormConfig(t, b)
 	for i, id := range []string{"rv-one", "rv-two"} {
 		ulid := fmt.Sprintf("01J5X00000000000000000Q%d40", i)
 		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Arc "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -386,7 +388,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	stealOpid := Opid("01J5X00000000000000000Q170", "mac-b", "lin-1")
 	strandEntryAt(t, b, stealOpid, "mac-b", PhaseCreated, Intent{
 		Verb: "steal", Targets: []string{"rv-one"},
-		Args: map[string]string{"by": "wido"},
+		Args: map[string]string{"by": "wido", "approvedRef": "R-25b"},
 	})
 	reports, err := Recover(endpointFor(b))
 	if err != nil {
@@ -403,6 +405,9 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	entry, err := ReadEntry(b, stealOpid)
 	if err != nil || entry.Outcome != OutcomeRejected {
 		t.Fatalf("the unauthorized steal journal did not close rejected: entry=%+v err=%v reports=%+v", entry, err, reports)
+	}
+	if !strings.Contains(entry.Evidence, "human authority cannot be recovered") || !strings.Contains(entry.Evidence, "--approved-ref again") {
+		t.Fatalf("over-norm steal recovery did not direct a fresh authenticated rerun: %+v", entry)
 	}
 }
 
@@ -475,5 +480,125 @@ func TestRecoveryNeverPromotesAHumanStringFromJournaledIntent(t *testing.T) {
 	entry, err := ReadEntry(a, liveReq.Opid)
 	if err != nil || entry.Outcome != OutcomeRejected {
 		t.Fatalf("the human-shaped journal did not close rejected: entry=%+v err=%v", entry, err)
+	}
+}
+
+func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T) {
+	t.Run("created main split completes", func(t *testing.T) {
+		_, root := oneClone(t)
+		seedLedger(t, root)
+		if res, err := Open(verbReq(root, "01J5X00000000000000000RM00", "mac-a"), "recover-main-split", "Recover the split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open: %+v %v", res, err)
+		}
+		members := testMembers("recover-main-split")
+		request := verbReq(root, "01J5X00000000000000000RM10", "mac-a")
+		rebuilt, err := splitRequest(request, "recover-main-split", members, mainRatification("recover-main-split", members), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		strandEntry(t, root, rebuilt.Opid, PhaseCreated, rebuilt.Intent)
+		reports, err := Recover(endpointFor(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, readErr := ReadEntry(root, rebuilt.Opid)
+		projection, projectErr := Project(endpointFor(root), false, time.Now())
+		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeConfirmed ||
+			projection.Tree.Done["recover-main-split"] == nil || projection.Tree.Live["recover-main-split-one"] == nil {
+			t.Fatalf("main split did not recover atomically: entry=%+v reports=%+v read=%v project=%v", entry, reports, readErr, projectErr)
+		}
+	})
+
+	t.Run("human ratification remains fresh authority", func(t *testing.T) {
+		_, root := oneClone(t)
+		seedLedger(t, root)
+		if res, err := Open(verbReq(root, "01J5X00000000000000000RH00", "mac-a"), "recover-human-split", "Human-ratified split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open: %+v %v", res, err)
+		}
+		members := testMembers("recover-human-split")
+		request := verbReq(root, "01J5X00000000000000000RH10", "mac-a")
+		request.Actor.Human = "wido"
+		ratification := SplitRatification{Tier: RatifierHuman, By: "wido", DraftSHA256: SplitDraftSHA256("recover-human-split", members)}
+		rebuilt, err := splitRequest(request, "recover-human-split", members, ratification, testHumanAuthority(t, root, request.Now))
+		if err != nil {
+			t.Fatal(err)
+		}
+		strandEntry(t, root, rebuilt.Opid, PhaseCreated, rebuilt.Intent)
+		reports, err := Recover(endpointFor(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, readErr := ReadEntry(root, rebuilt.Opid)
+		projection, projectErr := Project(endpointFor(root), false, time.Now())
+		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeRejected || projection.Tree.Live["recover-human-split"] == nil || projection.Tree.Done["recover-human-split"] != nil {
+			t.Fatalf("human journal text changed the parent: entry=%+v reports=%+v read=%v project=%v", entry, reports, readErr, projectErr)
+		}
+		if !strings.Contains(entry.Evidence, "human split ratification cannot be recovered") {
+			t.Fatalf("human recovery did not name the fresh-authority remedy: %+v", entry)
+		}
+	})
+
+	t.Run("doctored stored members fail their digest", func(t *testing.T) {
+		_, root := oneClone(t)
+		seedLedger(t, root)
+		if res, err := Open(verbReq(root, "01J5X00000000000000000RD00", "mac-a"), "recover-doctored", "Digest-bound split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open: %+v %v", res, err)
+		}
+		members := testMembers("recover-doctored")
+		request := verbReq(root, "01J5X00000000000000000RD10", "mac-a")
+		rebuilt, err := splitRequest(request, "recover-doctored", members, mainRatification("recover-doctored", members), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rebuilt.Intent.Args["members"] = strings.Replace(rebuilt.Intent.Args["members"], "Deliver the first part.", "Doctored first part.", 1)
+		strandEntry(t, root, rebuilt.Opid, PhaseCreated, rebuilt.Intent)
+		if _, err := Recover(endpointFor(root)); err != nil {
+			t.Fatal(err)
+		}
+		entry, readErr := ReadEntry(root, rebuilt.Opid)
+		projection, projectErr := Project(endpointFor(root), false, time.Now())
+		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "digest") ||
+			projection.Tree.Live["recover-doctored"] == nil || projection.Tree.Live["recover-doctored-one"] != nil {
+			t.Fatalf("doctored members did not close rejected by digest with parent untouched: entry=%+v read=%v project=%v", entry, readErr, projectErr)
+		}
+	})
+}
+
+func TestRecoveryClassifiesOldArcDebtAfterDecomposedParentWasPruned(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	if res, err := Open(verbReq(root, "01J5X00000000000000000RP00", "mac-a"), "pruned-split", "Prune after split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	if res, err := SetArc(verbReq(root, "01J5X00000000000000000RP10", "mac-a"), "pruned-split", "old-pruned-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("set old arc: %+v %v", res, err)
+	}
+	members := testMembers("pruned-split")
+	request := verbReq(root, "01J5X00000000000000000RP20", "mac-a")
+	if res, err := Split(request, "pruned-split", members, mainRatification("pruned-split", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("split: %+v %v", res, err)
+	}
+	if res, err := Prune(verbReq(root, "01J5X00000000000000000RP30", "mac-a"), 0); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("prune parent: %+v %v", res, err)
+	}
+	entry, err := ReadEntry(root, request.opid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry.Phase = PhasePushed
+	entry.Outcome = ""
+	entry.Evidence = ""
+	entry.TerminalAt = ""
+	entry.Owner = OwnerIdentity{Pid: 99999999, PidStartedAt: 1}
+	if err := writeEntry(root, entry); err != nil {
+		t.Fatal(err)
+	}
+	reports, err := Recover(endpointFor(root))
+	if err != nil {
+		t.Fatalf("pruned-parent recovery wedged: %v", err)
+	}
+	entry, err = ReadEntry(root, request.opid())
+	if err != nil || entry.Outcome != OutcomeConfirmed {
+		t.Fatalf("registry coordinates did not let recovery terminalize: %+v %v reports=%+v", entry, err, reports)
 	}
 }
