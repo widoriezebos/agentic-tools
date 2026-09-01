@@ -1,4 +1,4 @@
-# 15. Self-Application
+# 16. Self-Application
 
 **A rule change must never be its own judge.**
 

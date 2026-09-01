@@ -15,9 +15,9 @@ One ordinary change, how long a user stays signed in, runs as an example through
 
 **Part III: The principles and the machinery (chapters 5-10).** A short statement of the principles comes first: serve revisable intent, prefer evidence to trust, keep durable records, enforce important rules, spend in proportion to risk and reserve named decisions for humans. Later chapters elaborate the machinery: bounded proof, independent roles derived from actual hazards (specific ways the work can go wrong), coordination through records, liveness (knowing whether work is alive and moving) and protection against hostile conditions (input, tools and dependencies that cannot be trusted), and care of software after release. One ordinary change (changing how long users stay signed in) continues through every chapter to keep the principles concrete.
 
-**Part IV: The economy, the learning loop, the human (chapters 11-13).** Four shared questions tie verification effort and total cost to how severe the harm could be, how unfamiliar the approach is, how many users or systems it can affect and how much change has accumulated, including the cost of judging parallel attempts. Incidents can produce new automatic checks, but those checks need evidence, owners, tests, a review point and a named route for challenge. People still engineer: any working role can be held by a person, and construction moves to machinery only as evidence and economics justify it. Humans govern values and exceptions through clearly bounded authority, including delegation and challenge when several people hold conflicting intent.
+**Part IV: The economy, the learning loop, the human (chapters 11-14).** Four shared questions tie verification effort and total cost to how severe the harm could be, how unfamiliar the approach is, how many users or systems it can affect and how much change has accumulated, including the cost of judging parallel attempts. Incidents can produce new automatic checks, but those checks need evidence, owners, tests, a review point and a named route for challenge. People still engineer: any working role can be held by a person, and construction moves to machinery only as evidence and economics justify it. Humans govern values and exceptions through clearly bounded authority, including delegation and challenge when several people hold conflicting intent. The part closes with the sitting: the working conversation in which a human and the machinery shape intent or a design before the governed loop begins.
 
-**Part V: The transition, the stress test and the horizon (chapters 14-16).** Existing teams reach the new model by inferring current intent, running old and new controls together, transferring authority only as evidence justifies it and preserving rollback as an option. Self-application then tests the distinctive case of machinery changing its own safeguards; it is necessary but cannot show by itself that the approach works beyond the system that ran it. The horizon asks what engineering becomes when delivery systems, within clear economic limits, become the durable asset.
+**Part V: The transition, the stress test and the horizon (chapters 15-17).** Existing teams reach the new model by inferring current intent, running old and new controls together, transferring authority only as evidence justifies it and preserving rollback as an option. Self-application then tests the distinctive case of machinery changing its own safeguards; it is necessary but cannot show by itself that the approach works beyond the system that ran it. The horizon asks what engineering becomes when delivery systems, within clear economic limits, become the durable asset.
 
 ## Chapters
 
@@ -34,6 +34,7 @@ One ordinary change, how long a user stays signed in, runs as an example through
 11. [The Economy of Machine Engineering](11-economy.md)
 12. [A System That Learns](12-learning-systems.md)
 13. [The Human Role](13-the-human-role.md)
-14. [The Transition](14-the-transition.md)
-15. [Self-Application](15-self-application.md)
-16. [What Engineering Becomes](16-outlook.md)
+14. [The Sitting](14-the-sitting.md)
+15. [The Transition](15-the-transition.md)
+16. [Self-Application](16-self-application.md)
+17. [What Engineering Becomes](17-outlook.md)

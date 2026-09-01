@@ -1,4 +1,4 @@
-# Critique ledger: draft chapter "The Sitting" (docs/paper/13a-the-sitting.md)
+# Critique ledger: chapter "The Sitting" (docs/paper/14-the-sitting.md)
 
 Critic: Codex (fresh context, cross-family). Budget: three rounds. Materiality criterion: would a reader understand something different, or wrong, because of this finding.
 
@@ -37,4 +37,25 @@ Round 2 non-material: R2-05 (the count of returning questions), smoothed in pass
 
 ## Round 4: closure check on the single open finding
 
-R2-01 verified resolved: the passage now states Chapter 7's conditional rule accurately and makes its own argument that sitting exposure defeats the needed independence, with Chapter 8's withheld discarded arguments as support. No new findings. Material findings: 0. The loop is closed; the chapter awaits the human's reading and the numbering decision (insertion as Chapter 14 renumbers the later chapters and updates the index).
+R2-01 verified resolved: the passage now states Chapter 7's conditional rule accurately and makes its own argument that sitting exposure defeats the needed independence, with Chapter 8's withheld discarded arguments as support. No new findings. Material findings: 0. The loop closed on the chapter; a later clarity pass removed the citation-chain style at the human's direction without changing any validated claim.
+
+## Batch rounds: three principle additions and the renumbering
+
+After the chapter landed as Chapter 14 (later chapters renumbered 15 to 17, index and four cross-references updated), three paragraph-scale additions went in: the materiality test for stopping examination (Chapter 6), the single-coordinating-actor warning (Chapter 7), and slicing as delivery law (Chapter 11), plus a pointer sentence in Chapter 2.
+
+### Round A1: 4 material findings, all accepted; 1 not-material defect also fixed
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| A1-01 | accept | The materiality test ("change, or be judged wrong") excluded evidence deficiencies that leave a candidate unproven. | Test rewritten: must the candidate change, or does the evidence stop supporting its claim. |
+| A1-02 | accept | A finding-free round was equated with a completed search, though a round can be cut short by budget, and later differently aimed examinations can still find faults. | Only a full round with no material issue completes the search; repeating the same search adds little, while a differently aimed examination can still find what it missed. |
+| A1-03 | accept | The example slices violated the recorded intent (a limit without its warning breaks the ruling) and slices were not bound to intent versions. | Slices reordered so each stage honors the rulings; added that a slice binds to its intent version, the intermediate state must be acceptable to the authority, and shortfalls are recorded and authorized. |
+| A1-04 | accept | "Keeps the four questions small" conflated slicing with gradual release; slicing does not reduce severity, novelty or exposure. | Scoped to the fourth question (accumulated change, shorter path back), with an explicit sentence that the other three do not shrink and exposure belongs to the release. |
+| A1-05 | accept (not-material, fixed anyway) | The slicing insertion had swallowed the "Parallel attempts include the cost of judging" heading. | Heading restored. |
+
+### Round A2: A1-01, A1-02, A1-04, A1-05 verified resolved; A1-03 reopened; 1 new material finding, both accepted
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| A1-03 (reopened) | accept | The revised slice sequence omitted the upload continuation, so the first slice still broke the standing ruling it now cites. | The first slice carries the limit, the warning and the upload continuation together. |
+| A2-01 | accept | The broadened materiality test made evidence-only findings material, but the earlier sentence sent every material finding to candidate repair. | The sentence now routes a finding either to candidate repair or to stronger evidence, with the changed result examined again in either case. |

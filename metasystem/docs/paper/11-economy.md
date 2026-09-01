@@ -36,6 +36,16 @@ When a limit is reached, an enforced rule stops or narrows the work. The record 
 
 This stop rule also makes failure visible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent or cost model is wrong and needs examination of its own.
 
+## Large work lands in slices
+
+The session-expiry change could be delivered as one piece: the new limit, the warning, the upload continuation, the migration of existing sessions and the restored page, landing together. If the release then misbehaves, the observation cannot say which part is wrong, and the reversal takes back all of it, including the parts that worked.
+
+Large work is therefore split into pieces that each land whole, work on their own and leave the application better: first the inactivity limit for new sessions with its warning and the upload continuation the ruling requires, then the migration that brings existing sessions under the same rule, then the restored page after signing in again. Each piece is released, observed and reversible by itself. The record carries the next piece and names the remainder, which is split in turn when its time comes.
+
+A slice is still governed work. It binds to the intent version it serves, and the state it leaves behind must be one the responsible authority can accept. A stage that breaks a standing ruling, such as signing readers out with no warning, does not qualify as a slice, however convenient the split. Where an intermediate state meets only part of the outcome, that shortfall is recorded and authorized rather than discovered.
+
+Slicing is a different discipline from the budget. A budget limits what one attempt may consume; slicing governs the shape of what any attempt may deliver, and the two compose: each slice receives its own budget, and a piece that cannot be made to land whole is evidence that the design needs another look before more is spent on it. Slicing serves the fourth risk question directly: each slice carries less accumulated change and leaves a shorter path back. It does not shrink the other three. A small slice on an authorization boundary is as severe as ever, and how many users meet it is controlled by the gradual release, not by the split.
+
 ## Parallel attempts include the cost of judging
 
 > *Two builders propose different session designs. One records a fixed expiry time and grants uploads a narrow continuation. The other keeps a separate activity history and derives expiry when each request arrives.*

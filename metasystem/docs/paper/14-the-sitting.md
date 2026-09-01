@@ -1,4 +1,4 @@
-# The Sitting
+# 14. The Sitting
 
 **The partner who helped shape a design is the last one who may judge it.**
 

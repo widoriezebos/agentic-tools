@@ -1,4 +1,4 @@
-# 14. The Transition
+# 15. The Transition
 
 **Authority follows demonstrated protection, and every transferred responsibility keeps a tested way back.**
 
