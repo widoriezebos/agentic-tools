@@ -4,7 +4,7 @@ Date: 2026-09-02
 
 # Goal
 
-Author metasystem/plans/supervision-hook-root-design.md: the design fixing
+Author the design document supervision-hook-root-design.md, a NEW file you create in the metasystem plans directory: the design fixing
 the harness hook's root resolution so every seat's turn signal reports the
 metasystem world it actually works in. Small goal, 4-hour box.
 
@@ -44,13 +44,11 @@ Self-grade with reject condition per the house rule.
 
 # Constraints
 
-Wall-clock budget: 25 minutes. Design document only; write exactly one new
-file metasystem/plans/supervision-hook-root-design.md.
+Wall-clock budget: 25 minutes. Design document only; write exactly one new file, supervision-hook-root-design.md, in the metasystem plans directory.
 
 # Expected Return
 
-Version-2 implementer JSON; diffBoundary exactly
-metasystem/plans/supervision-hook-root-design.md (that one file).
+Version-2 implementer JSON; diffBoundary lists exactly the one new design file you created in the metasystem plans directory.
 
 # Gap Rule
 
