@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: One small slice: add '-b main' (or equivalent) to every bed init in internal/missionrunner tests that asserts a branch name; prove by running the TestScope family with init.defaultBranch unset. Budget tuple is Wido's word at claim
 - OpenedAt: 2026-09-01T09:50:49Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T09:50:49Z 96K61N4VHV674ZV5SFQ188AYCF-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
-Integrity: sha256=ff98a3180cc64b947788cd9b89dd237cc082c4b652cd43a275a87fbc754b8e82
+- 2026-09-01T20:26:45Z YZVJT8TF4AEWR65BD8BYHDQJ80-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=fixture-default-branch-assumption
+Integrity: sha256=f6d42db566242be90adbad49262bbf1cecfb0fb07eb5ce1ca51ec5cc309aad83
