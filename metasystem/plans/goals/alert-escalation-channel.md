@@ -5,10 +5,11 @@
 - Origin: human
 - Next step: Appetite: 3h — design then build. PROMOTED by Wido 2026-08-31; design round done (landed 578eba43), Sol critique in flight, fold next. Wido's design words, verbatim, all binding on the fold: (1) "it needs to have an abstraction/adapter. I want to be able to have email, slack, telegram, whatsapp etc underneath by simple configuration"; (2) Telegram confirmed as the first example implementation; (3) "We can use the same mechanism for the session bridge too, so there is a bit of reuse there" — the adapter contract bears a second consumer, runtime-agnostic seat-to-seat messaging (goal:seat-mutual-awareness); (4) "Another one would be slack, which has threaded messages. that also needs to fit the design of the alert channel and session bridge" — the contract must carry conversation/thread identity such that a threaded adapter (Slack) threads naturally (an episode's alert, updates, and acknowledgment as one thread; a seat-to-seat exchange as one thread) while flat adapters degrade honestly (reply-chains or flattening), never per-adapter leakage into call sites. DRIVING SPECIMEN: records/misc/idle-loss-2026-08-31.md. Alert classes: Ruling L escalations plus every blocked-on-human state; episode store is sole truth; delivery never blocks machinery; credentials outside the repository
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=4h attemptLimit=3 reservedJobMinutesLimit=90 activeJobLimit=1
 - Claimed: machine=m3 lineage=mac-m3 at=2026-08-31T22:14:44Z revision=18
-- StopCapability: generation=18 revision=18 machine=m3 claimEpoch=1 fenceEpoch=0
+- StopCapability: generation=18 revision=18 machine=m3 claimEpoch=1 fenceEpoch=1
+- StopFence: stopId=stop-alert-escalation-channel-r18-f1 revision=18 epoch=1 capabilityGeneration=18 closedAt=2026-09-01T04:16:39Z reason=ELAPSED_LIMIT
 
 History:
 - 2026-08-29T06:19:06Z 6RYCTDER5WR9E3X1VDDVPWJDGF-m1-bf243850 open actor=human:wido targets=alert-escalation-channel
@@ -29,4 +30,5 @@ History:
 - 2026-08-31T21:59:31Z WPE6HZ7506N7TN5FZ06VFPZYWE-m3-a5da21ff claim actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-08-31T22:14:17Z DN4XG7VC9CP0QKSMX0CEDPSST2-m3-a5da21ff release actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-08-31T22:14:44Z X4Z6TYYR8P7Q3N080MA1V8J4DY-m3-a5da21ff claim actor=m3+mac-m3 targets=alert-escalation-channel
-Integrity: sha256=b7dd82a38fe11742828a72640cfccea539219f5e5c54c32c1e61f8af5827a75f
+- 2026-09-01T04:16:39Z 4TAHPSFMAR8HRHMYK2D5GZNGKV-m3-43182c96 breach-stop actor=m3+goal-stop-custodian targets=alert-escalation-channel
+Integrity: sha256=3a8916e302cb11e9fa67705ec9a8a81e96dd1b9da7b8d3d041537945e52d6e49
