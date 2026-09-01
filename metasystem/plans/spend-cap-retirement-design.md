@@ -44,6 +44,17 @@ the number it calibrated no longer exists (R-43-m0b). The open scenario
 (goal uncapped-delegate-fanout) and the enforcer-liveness residuals stay
 recorded exactly as they were, with unchanged ownership.
 
+Revision 5 (2026-09-01): folds the one material finding of the round-4
+critique (`records/misc/spend-cap-critique-r4.md`):
+SCR-R4-COMMENT-PROVENANCE-001 — the specified `ClaudeBudget` doc comment
+cited its provenance (this design and ruling R-43-m0b), and the
+repository's comment law has a source comment state the constraint in the
+system's own language — components, invariants, failure modes — never the
+process that produced it. The specified comment text in item 1 of the
+specification is rewritten accordingly; the provenance stays in this
+design, not in the source. The non-material SCR-R4-REJECT-SCOPE-002 is
+dispositioned ruled-sound. Nothing else changes.
+
 ## Verdict up front
 
 Assumption 2 (the cap harms us) is VERIFIED in full: the record shows at least
@@ -289,11 +300,15 @@ hundreds of dollars worst case; inventory item 2).
    `invalid_native_budget` (an explicitly SET empty string is a set value,
    fails the regexp today, and keeps failing). The turns half of the
    function — default `"150"`, override, `invalid_native_turn_limit` — is
-   untouched. The doc comment (lines 220–226) updates to say: no default
-   native dollar limit; time (wall-clock caps, watchdog) and count (the
-   turn limit) are the law, the turn limit being the surviving in-process
-   coarse dollar bound; `METASYSTEM_CLAUDE_MAX_BUDGET_USD` is the explicit
-   operator opt-in, validated when set; citing this design and R-43-m0b.
+   untouched. The doc comment (lines 220–226) updates to state the
+   constraint in the system's own language: the `--max-budget-usd` flag
+   is omitted unless the operator sets
+   `METASYSTEM_CLAUDE_MAX_BUDGET_USD`; the worker is bounded by its
+   wall-clock cap and its turn limit, the turn limit being the surviving
+   in-process coarse dollar bound; a set value is validated, and a
+   malformed one is the `invalid_native_budget` protocol error. The
+   comment carries no provenance — no ruling ids, no design or critique
+   history (SCR-R4-COMMENT-PROVENANCE-001).
 2. **Flag shape: omitted when empty.** `BuildClaudeCommand` (line 300)
    appends the `--max-budget-usd <value>` pair only when `budget` is
    nonempty; `--max-turns` continues to be appended always. The CLI's
