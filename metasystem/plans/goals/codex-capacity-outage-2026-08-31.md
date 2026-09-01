@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Bookkeeping + pattern watch. m2 conduct during the outage: one codex job at a time, small slices first (the counselor b1 slice was split in half for this reason), 20-30min retry cadence, no Sol-lane substitution (the takeover word authorizes substitution for Fable lanes only). Close when codex holds steady for a working session; if the intermittency persists into 2026-09-01, this becomes a budget question for Wido: capacity deaths burn attempts that budgets were sized without.
 - OpenedAt: 2026-08-31T08:01:48Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-31T08:01:48Z WC80WEH42WVZG41D4R0QRK3038-m2-bc1be9cb open actor=m2+mac-coordinator targets=codex-capacity-outage-2026-08-31
-Integrity: sha256=e1c3cd43ffb36505e3d0d8a9e07059014d6ad410ec3d728b7763461717862f70
+- 2026-09-01T20:26:28Z FCF62KV2DWHQWPP3J07MDH3PM4-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=codex-capacity-outage-2026-08-31
+Integrity: sha256=3e29146d55603fe91a384ab12ed4c45d26606704ed51a7c6f27edf08a63513e1
