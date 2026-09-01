@@ -56,7 +56,7 @@ Pressure will test these protections. A faster path may omit a reviewer. A cheap
 
 One organization's delivery system produces evidence that a second organization must rely on. The second cannot inspect every tool, rule and dependency behind it, yet a simple badge of approval may conceal important differences in risk. How evidence travels across organizational boundaries without becoming either an unreadable archive or an unsupported claim remains open.
 
-Federation and portable evidence require independent systems to recognize identity, origin, scope and assurance without surrendering judgment. Common standards may help, but can freeze weak assumptions or favor those able to shape them. We propose no settled format.
+Federation and portable evidence require independent systems to recognize identity, origin, scope and assurance without surrendering judgment. Common standards may help, but can freeze weak assumptions or favor those able to shape them. I propose no settled format.
 
 Liability and audit are similarly unresolved. A complete record can show which builder acted, which enforced rule passed, which responsible authority ruled and which reviewer accepted the evidence. It does not by itself decide legal responsibility when those actors cross employers and jurisdictions or when the machinery behaves in an unforeseen way. Audit also needs limits so that accountability does not become indiscriminate surveillance of workers and users.
 

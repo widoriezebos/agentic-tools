@@ -6,7 +6,7 @@
 
 The request is one sentence; the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behavior, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but the responsibility covers everything between wanting it and depending on it.
 
-For consequential or repeatedly delivered software, we propose a shift in ownership: machinery absorbs more of construction and delivery, and engineering moves toward designing and governing that machinery. The application remains what people use; the system that produces and cares for it becomes a primary object of engineering.
+For consequential or repeatedly delivered software, I propose a shift in ownership: machinery absorbs more of construction and delivery, and engineering moves toward designing and governing that machinery. The application remains what people use; the system that produces and cares for it becomes a primary object of engineering.
 
 ## The ladder already climbed
 
@@ -68,7 +68,7 @@ Questions like that stay with people: choices between values, decisions someone 
 
 ## The question before the design
 
-We make a design argument. We do not claim that such systems are already common practice. The claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained and does human authority remain real where it is needed?
+I make a design argument. I do not claim that such systems are already common practice. The claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behavior, do failures become visible and contained and does human authority remain real where it is needed?
 
 Scope also counts. A disposable script may not justify elaborate production machinery; software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk, and not every project needs the same amount of machinery.
 
