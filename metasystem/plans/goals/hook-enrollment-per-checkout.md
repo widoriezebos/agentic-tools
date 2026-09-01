@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: INTENT: move guard-chain assurance to a per-checkout boundary (metasystem up's preflight, adoption, or steward health - the probe machinery exists and is reusable). CONSTRAINTS: reuse ensureGuardEnrolled's probe-and-propagate proof verbatim (exit-42 propagation, no forged acks); the shared-hooksPath refusal stays. FREEDOMS: which boundary hosts the check, and whether an uncovered checkout heals automatically or only alarms. TEST SHAPE: a checkout with empty hooks gains a verified chain at the chosen boundary; a hook chain that swallows the probe exit refuses enrollment and surfaces as unhealthy.
 - OpenedAt: 2026-09-01T13:20:54Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T13:20:54Z R8B8A0WRNGXFJ4X8V88HCKBEG5-m0-c5dbf036 open actor=human:Wido targets=hook-enrollment-per-checkout
-Integrity: sha256=05ed1db9abf02a7a4d8e80d17ada078f88de35c7ef0ae74d82d21abc0198e16d
+- 2026-09-01T20:26:51Z TFZG2ETZMMM9YKWH2BX5JB06GG-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=hook-enrollment-per-checkout
+Integrity: sha256=9d48de02c347a8542f5b4bb6ef2067c1d5def9faa4cf42dcaea8d9b922d2e951
