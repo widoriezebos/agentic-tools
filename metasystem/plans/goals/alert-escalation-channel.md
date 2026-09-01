@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
-- Next step: Appetite: build phase. Design at revision 6 (da3d74b8), register closed at rev 5; OWED: revision 7 - the four cross-section contradictions of the second gap-stop (see fold6 brief) PLUS Wido's morning word 2026-09-01, binding: the alert classes MUST include 'delegate job failed under a claimed goal' and the breach-stop's stop-awaiting-resume must be wired as a producer in slice 1 - the 2026-09-01 six-hour idle (records/misc/idle-loss-2026-09-01.md) is the specimen; a failed worker told no one while the machinery knew in seconds. Then rebuild slice 1 per section 11a; then cross-family implementation critique; then covenant landing. Wido's earlier design words all stand (adapter abstraction, Telegram first, bridge reuse, Slack threading)
+- Next step: Design at revision 7 (landed 7544c931), Sol re-critique round 1 COMPLETE: nine material findings, one critical (AC7-PRODUCER-ATOMICITY-001: a crash between the source transition and the episode write can permanently suppress a required alert), eight high — verbatim register at records/misc/alert-channel-critique-r7.md. OWED: revision 8 folding or refuting all nine by id (Fable design lane), then Sol re-critique, then the slice-1 build per section 11a. BLOCKED ON BUDGET: reserved job-minutes 220/240 used by reservation (not runtime); nothing more can be admitted. Wido's raise 240 to 600 unblocks revision 8 tonight. Fence discipline: Wido's intended 8h appetite is the real fence (claimed 2026-09-01 ~10:5xZ); this goal has spent its one relayed resume — no rescue exists if it stops again.
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 24
+- Revision: 25
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T12:45:46Z revision=23
@@ -36,4 +36,5 @@ History:
 - 2026-09-01T12:40:05Z DZ4ZD878TPS757S0PX92PN7KSH-m3-a5da21ff release actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-09-01T12:45:46Z ZYYK2HFSS6KZWPPWE5Q08VAE1F-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T12:46:38Z CHAQ85YRCH4SCG9R6B8FAQR8VZ-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=c7955e736a7e0fa0ca426b190c363366ab5c00757b150c3fabe8cf070b41029b
+- 2026-09-01T13:21:46Z SFY92F54V6YHYXBXKW2AEM498T-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=12b34edb50788a4b793c80476b93ba48d4f937cdb2eec12b547956043b49fcea
