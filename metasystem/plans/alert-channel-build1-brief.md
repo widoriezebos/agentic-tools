@@ -5,10 +5,13 @@ Date: 2026-09-01
 # Goal
 
 Slice 1 of the alert channel, implemented exactly per the ACCEPTED
-design plans/alert-channel-design.md (revision 5, landed 1a0fdcc3,
-critique register closed with zero findings): the alert path with the
-working unthreaded Telegram adapter — purely additive, no legacy
-behavior changes.
+design plans/alert-channel-design.md (revision 6, landed da3d74b8:
+revision 5 closed the critique register with zero findings, and
+revision 6 added section 11a — the slice-1 mechanical specification
+answering your own seven-gap gap-stop, one numbered subsection per
+gap): the alert path with the working unthreaded Telegram adapter —
+purely additive, no legacy behavior changes. Section 11a binds
+exactly like every other section.
 
 # Workspace
 
