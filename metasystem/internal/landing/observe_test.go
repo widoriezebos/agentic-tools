@@ -33,7 +33,7 @@ func newObserveFixture(t *testing.T) *observeFixture {
 		}
 		f.writeBytes(filepath.Join("scripts", "agents", policyFile), content)
 	}
-	f.write("memory/rulings.md", "R-1 | existing ruling\n")
+	f.write("memory/rulings.md", "| R-1 | existing ruling |\n| R-35-m0 | landing class authority |\n")
 	f.write("memory/receipts.log", "receipt=existing\n")
 	f.write("records/narrator-digest.log", "digest=existing\n")
 	f.git("add", ".")
@@ -357,7 +357,11 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				carriage.write(register, string(original)+"appended row\n")
+				appended := "appended row\n"
+				if register == "memory/rulings.md" {
+					appended = "| R-36-m0 | appended ruling |\n"
+				}
+				carriage.write(register, string(original)+appended)
 				got := Observe(ObserveParams{
 					RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
 				})
@@ -373,6 +377,51 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 					t.Fatalf("rewritten append-only register classified as %+v", got)
 				}
 			})
+		}
+	})
+
+	t.Run("rulings carriage requires rows and preserves mode", func(t *testing.T) {
+		malformed := newObserveFixture(t)
+		original, err := os.ReadFile(filepath.Join(malformed.root, "memory", "rulings.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		malformed.write("memory/rulings.md", string(original)+"free text\n")
+		got := Observe(ObserveParams{
+			RepoRoot: malformed.root, CandidateTree: malformed.tree(), DirectFix: "register-carriage",
+		})
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
+			t.Fatalf("malformed ruling carriage classified as %+v", got)
+		}
+
+		modeChanged := newObserveFixture(t)
+		modeOriginal, err := os.ReadFile(filepath.Join(modeChanged.root, "memory", "rulings.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		modeChanged.write("memory/rulings.md", string(modeOriginal)+"| R-36-m0 | appended ruling |\n")
+		if err := os.Chmod(filepath.Join(modeChanged.root, "memory", "rulings.md"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got = Observe(ObserveParams{
+			RepoRoot: modeChanged.root, CandidateTree: modeChanged.tree(), DirectFix: "register-carriage",
+		})
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
+			t.Fatalf("mode-changing ruling carriage classified as %+v", got)
+		}
+	})
+
+	t.Run("landing class authority must name an existing ruling row", func(t *testing.T) {
+		missing := newObserveFixture(t)
+		missing.write("memory/rulings.md", "| R-1 | unrelated ruling |\n")
+		missing.git("add", "memory/rulings.md")
+		missing.git("commit", "-qm", "remove landing class authority")
+		missing.write("memory/receipts.log", "receipt=existing\nreceipt=carried\n")
+		got := Observe(ObserveParams{
+			RepoRoot: missing.root, CandidateTree: missing.tree(), DirectFix: "register-carriage",
+		})
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-policy-unreadable" {
+			t.Fatalf("manifest with absent authority row classified as %+v", got)
 		}
 	})
 

@@ -460,7 +460,11 @@ func registerCarriage(root, candidateTree string, changedPaths []string) error {
 			return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", changedPath)}
 		}
 		switch changedPath {
-		case "memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log":
+		case "memory/rulings.md":
+			if err := addRulingRowsOnly(workspace, baseTree, candidateTree); err != nil {
+				return &carriageError{code: "register-carriage-not-append-only", err: err}
+			}
+		case "memory/receipts.log", "records/narrator-digest.log":
 			if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
 				return &carriageError{code: "register-carriage-not-append-only", err: err}
 			}
@@ -490,9 +494,14 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
 		manifest.EnginePolicyVersion != 1 || len(manifest.Classes) != 2 {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is malformed")}
 	}
+	rulings, present, err := workspace.FileAt(baseTree, "memory/rulings.md")
+	if err != nil || !present {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("rulings register is unreadable")}
+	}
+	rulingRows := parseRulingRows(rulings)
 	found := map[string]bool{}
 	for _, class := range manifest.Classes {
-		if found[class.ID] || !rulingID.MatchString(class.AuthorizedBy) {
+		if found[class.ID] || !rulingID.MatchString(class.AuthorizedBy) || !rulingRows[class.AuthorizedBy] {
 			return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is malformed")}
 		}
 		switch class.ID {
@@ -560,6 +569,19 @@ func carriagePathAllowed(changedPath string, patterns []carriagePattern) bool {
 }
 
 func appendOnly(workspace gittree.Workspace, baseTree, candidateTree, changedPath string) error {
+	baseEntries, err := workspace.Entries(baseTree, []string{changedPath})
+	if err != nil {
+		return err
+	}
+	candidateEntries, err := workspace.Entries(candidateTree, []string{changedPath})
+	if err != nil {
+		return err
+	}
+	if baseEntry, existed := baseEntries[changedPath]; existed {
+		if candidateEntry, present := candidateEntries[changedPath]; !present || candidateEntry.Mode != baseEntry.Mode {
+			return fmt.Errorf("append-only register %s was deleted or changed mode", changedPath)
+		}
+	}
 	before, existed, err := workspace.FileAt(baseTree, changedPath)
 	if err != nil {
 		return err
@@ -581,6 +603,52 @@ func appendOnly(workspace gittree.Workspace, baseTree, candidateTree, changedPat
 		return fmt.Errorf("append-only register %s deletes or rewrites an existing line", changedPath)
 	}
 	return nil
+}
+
+func addRulingRowsOnly(workspace gittree.Workspace, baseTree, candidateTree string) error {
+	const rulingsPath = "memory/rulings.md"
+	before, existed, err := workspace.FileAt(baseTree, rulingsPath)
+	if err != nil {
+		return err
+	}
+	if !existed {
+		return fmt.Errorf("rulings register does not exist in the landing base")
+	}
+	if err := appendOnly(workspace, baseTree, candidateTree, rulingsPath); err != nil {
+		return err
+	}
+	after, _, err := workspace.FileAt(candidateTree, rulingsPath)
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(after[len(before):]), "\n"), "\n") {
+		if _, ok := rulingRowID(line); !ok {
+			return fmt.Errorf("rulings carriage appended a malformed ruling row")
+		}
+	}
+	return nil
+}
+
+func parseRulingRows(data []byte) map[string]bool {
+	rows := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		if id, ok := rulingRowID(line); ok {
+			rows[id] = true
+		}
+	}
+	return rows
+}
+
+func rulingRowID(line string) (string, bool) {
+	if !strings.HasPrefix(line, "| ") {
+		return "", false
+	}
+	remainder := strings.TrimPrefix(line, "| ")
+	id, remainder, ok := strings.Cut(remainder, " |")
+	if !ok || !rulingID.MatchString(id) || (remainder != "" && !strings.HasPrefix(remainder, " ")) {
+		return "", false
+	}
+	return id, true
 }
 
 func observeDirectFix(params ObserveParams, change string) Observation {

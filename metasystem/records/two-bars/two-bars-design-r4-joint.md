@@ -37,7 +37,7 @@ law adds after conformance review:
 
 Observe mode runs now at the final settled-index seam in `commit.sh`. It never
 turns bar (c) into an exit failure. It stamps two trailers on every wrapper
-commit: exactly one of the five `Landing-Provenance` forms below, followed by
+commit: exactly one of the eight `Landing-Provenance` forms below, followed by
 exactly one verdict form.
 
 ```text
@@ -46,6 +46,9 @@ Landing-Provenance: chain=<root> direct-fix class=register-carriage change=<64-h
 Landing-Provenance: direct-fix class=register-carriage change=<64-hex>
 Landing-Provenance: direct-fix class=exact-revert revert-of=<commit> change=<64-hex>
 Landing-Provenance: none change=<64-hex-or-unknown>
+Landing-Provenance: invalid change=<64-hex>
+Landing-Provenance: chain=<root> change=<64-hex>
+Landing-Provenance: direct-fix class=exact-revert change=<64-hex>
 Landing-Provenance-Verdict: pass bar=a
 Landing-Provenance-Verdict: pass bar=a carriage=register-carriage
 Landing-Provenance-Verdict: pass bar=b

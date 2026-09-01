@@ -36,6 +36,27 @@ grep -Eq '^schemaVersion=1 boundary=pre-commit tree=[0-9a-f]{40,64} verdict=woul
   exit 1
 }
 
+# Observation-storage failures remain non-refusing but are operator-visible.
+rm -rf "$fixture_root/artifacts"
+printf 'blocks observation directory\n' >"$fixture_root/artifacts"
+if ! (cd "$repository" && "$fixture_root/scripts/agents/pre-commit-guard.sh" \
+  >"$tmp/mkdir-failure.out" 2>"$tmp/mkdir-failure.err"); then
+  echo "pre-commit guard fixture: observation-directory failure refused a human commit" >&2
+  exit 1
+fi
+grep -Fq 'classifier unavailable and its observation directory could not be created' "$tmp/mkdir-failure.err"
+
+rm -f "$fixture_root/artifacts"
+mkdir -p "$fixture_root/artifacts/agents/landing-observe.log"
+if ! (cd "$repository" && "$fixture_root/scripts/agents/pre-commit-guard.sh" \
+  >"$tmp/write-failure.out" 2>"$tmp/write-failure.err"); then
+  echo "pre-commit guard fixture: observation-write failure refused a human commit" >&2
+  exit 1
+fi
+grep -Fq 'classifier unavailable and its observation could not be written' "$tmp/write-failure.err"
+rm -rf "$fixture_root/artifacts"
+mkdir -p "$fixture_root/artifacts/agents"
+
 # The unrelated existing new-plan safeguard remains active after the human
 # authority path fails open.
 printf 'new plan\n' >"$repository/plans/new.md"

@@ -9,6 +9,83 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 
+TestRealCommitWrapperStampsParseableObservation() {
+  local fixture real_engine wrapper candidate_tree observation expected_provenance expected_verdict message
+  fixture="$tmp/real-observer"
+  real_engine="$tmp/real-metasystem"
+  wrapper="$root/scripts/agents/commit.sh"
+  mkdir -p "$fixture/scripts/agents" "$fixture/scripts" "$fixture/bin" "$fixture/artifacts/agents/mains"
+
+  (cd "$root" && go build -o "$real_engine" ./cmd/metasystem)
+  cp "$wrapper" "$fixture/scripts/agents/commit.sh"
+  cp "$root/scripts/agents/coverage-delta.sh" "$fixture/scripts/agents/coverage-delta.sh"
+  cat >"$fixture/bin/metasystem" <<SH
+#!/usr/bin/env bash
+case "\$1 \${2:-}" in
+  "lease require-holder") echo '{}' ;;
+  "proc started-at") echo 1 ;;
+  "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
+  "lease commit-token") : ;;
+  *) exec "$real_engine" "\$@" ;;
+esac
+SH
+  cat >"$fixture/scripts/audit-metasystem.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  cat >"$fixture/scripts/agents/go-gate.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+proof_out=
+while ((\$#)); do
+  case "\$1" in
+    --proof-out) proof_out=\$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ -n "\$proof_out" ]]
+cp "$real_engine" "\$proof_out"
+SH
+  chmod +x "$fixture/scripts/audit-metasystem.sh" "$fixture/scripts/agents/go-gate.sh" "$fixture/bin/metasystem"
+
+  fixture_git() {
+    env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$fixture" "$@"
+  }
+  fixture_git init -q -b main
+  fixture_git config user.name fixture
+  fixture_git config user.email fixture@example.invalid
+  fixture_git config metasystem.goal.machine fixture-machine
+  printf 'artifacts/\n' >"$fixture/.gitignore"
+  printf 'before\n' >"$fixture/README"
+  fixture_git add -A
+  fixture_git commit -qm seed
+  printf 'after\n' >"$fixture/README"
+  fixture_git add README
+
+  candidate_tree=$(fixture_git write-tree)
+  observation=$("$real_engine" landing observe --root "$fixture" --tree "$candidate_tree")
+  expected_provenance=$("$real_engine" json get --value "$observation" --field provenance)
+  expected_verdict=$("$real_engine" json get --value "$observation" --field verdictTrailer)
+  env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+    "$fixture/scripts/agents/commit.sh" __lease-held human -q -m "real observed landing"
+  message=$(fixture_git log -1 --format=%B)
+
+  grep -Fqx "Landing-Provenance: $expected_provenance" <<<"$message" \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: commit lost the real evaluator provenance" >&2; exit 1; }
+  grep -Fqx "Landing-Provenance-Verdict: $expected_verdict" <<<"$message" \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: commit lost the real evaluator verdict" >&2; exit 1; }
+  [[ "$expected_provenance" =~ ^none\ change=[0-9a-f]{64}$ && "$expected_verdict" == "would-refuse code=missing-declaration" ]] \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: real evaluator returned unexpected provenance '$expected_provenance' and verdict '$expected_verdict'" >&2; exit 1; }
+  echo "TestRealCommitWrapperStampsParseableObservation: PASSED"
+}
+
+if [[ ${1:-} == --real-observer-only ]]; then
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-real-observer.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  TestRealCommitWrapperStampsParseableObservation
+  exit 0
+fi
+
 # Leg 1: shape. The re-proof invokes the fast gate before the commit and
 # carries no environment switch that could outlive an edit loop.
 wrapper="$root/scripts/agents/commit.sh"
@@ -402,5 +479,7 @@ grep -Fq "docs" <<<"$directory_symlink" \
   || { echo "static re-proof fixture: the directory symlink refusal did not name the path: $directory_symlink" >&2; exit 1; }
 grep -Fq "internal/gaterun" <<<"$directory_symlink" \
   || { echo "static re-proof fixture: the projected subdirectory symlink refusal did not name the path: $directory_symlink" >&2; exit 1; }
+
+TestRealCommitWrapperStampsParseableObservation
 
 echo "static re-proof fixtures: PASSED"

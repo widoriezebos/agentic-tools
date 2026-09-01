@@ -31,9 +31,14 @@ record_unevaluable_observation() {
   tree=$(git write-tree 2>/dev/null || true)
   [[ "$tree" =~ ^[0-9a-f]{40,64}$ ]] || tree=unknown
   log=$guard_root/artifacts/agents/landing-observe.log
-  mkdir -p "${log%/*}" 2>/dev/null || return 0
-  printf 'schemaVersion=1 boundary=pre-commit tree=%s verdict=would-refuse code=classifier-unavailable\n' \
-    "$tree" >>"$log" 2>/dev/null || true
+  if ! mkdir -p "${log%/*}" 2>/dev/null; then
+    echo "pre-commit guard: classifier unavailable and its observation directory could not be created" >&2
+    return 0
+  fi
+  if ! printf 'schemaVersion=1 boundary=pre-commit tree=%s verdict=would-refuse code=classifier-unavailable\n' \
+    "$tree" >>"$log" 2>/dev/null; then
+    echo "pre-commit guard: classifier unavailable and its observation could not be written" >&2
+  fi
 }
 
 classification=
