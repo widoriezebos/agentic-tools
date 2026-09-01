@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
-- Next step: Design at revision 7 (landed 7544c931), Sol re-critique round 1 COMPLETE: nine material findings, one critical (AC7-PRODUCER-ATOMICITY-001: a crash between the source transition and the episode write can permanently suppress a required alert), eight high — verbatim register at records/misc/alert-channel-critique-r7.md. OWED: revision 8 folding or refuting all nine by id (Fable design lane), then Sol re-critique, then the slice-1 build per section 11a. BLOCKED ON BUDGET: reserved job-minutes 220/240 used by reservation (not runtime); nothing more can be admitted. Wido's raise 240 to 600 unblocks revision 8 tonight. Fence discipline: Wido's intended 8h appetite is the real fence (claimed 2026-09-01 ~10:5xZ); this goal has spent its one relayed resume — no rescue exists if it stops again.
+- Next step: Design revision 8 AUTHORED and preserved (folds all nine AC7 findings, producers become idempotent derivation scans over durable source state; the authoring round implementer-c002e6035a243bdbc1400067 died on the $5 runtime spend cap before returning — fourth budget-death-on-return specimen; product diff safe at artifacts/agents/implementer-c002e6035a243bdbc1400067/rounds/1/recovered.diff, recovery brief plans/alert-channel-fold8-recover-brief.md ready). DISPATCH WEDGED machine-wide: census CENSUS-FAILED on the vm-epoch-identity-drift rounding defect (root cause proven, recorded on that goal) and the seat's harness permission layer now refuses metasystem up/arm — Wido runs 'bin/metasystem up --repo .' in ~/m0b/agentic-tools/metasystem (possibly 2-3 times; each arm is a coin flip against the rounding bug) to unwedge; then the recovery round, Sol re-critique, slice-1 build. Budget healthy: 600 minutes under R-40-m0b. Fence: Wido's 8h intent from claim ~10:50Z; the wedge hours are machinery, not work — extension is his call
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 26
+- Revision: 27
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T13:51:37Z revision=26
@@ -38,4 +38,5 @@ History:
 - 2026-09-01T12:46:38Z CHAQ85YRCH4SCG9R6B8FAQR8VZ-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T13:21:46Z SFY92F54V6YHYXBXKW2AEM498T-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T13:51:37Z 68K5TVKAGQJ13AJJH1VRJNEJTZ-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=ed8c1ed4c668b86ddb7cf9fc7f35137ef469cba4295a225198df3669b57ef24b
+- 2026-09-01T14:19:03Z NT7QS1JG58X0J6QRNQP90451QG-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=e7219a9a2b3aba8f30793aaa401c6fd761edd8b8af8ca4afafd6c7abf278aea2
