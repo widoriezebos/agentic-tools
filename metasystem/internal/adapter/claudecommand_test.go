@@ -9,7 +9,7 @@ import (
 
 func TestClaudeBudgetPolicy(t *testing.T) {
 	budget, turns, err := ClaudeBudget(stubEnv(nil))
-	if err != nil || budget != "5.00" || turns != "150" {
+	if err != nil || budget != "" || turns != "150" {
 		t.Fatalf("defaults = (%s,%s,%v)", budget, turns, err)
 	}
 	budget, turns, err = ClaudeBudget(stubEnv(map[string]string{
@@ -103,6 +103,23 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 		joined := strings.Join(command, " ")
 		if !strings.Contains(joined, "--permission-mode acceptEdits") || strings.Contains(joined, "--settings") {
 			t.Fatalf("host argv = %s", joined)
+		}
+	})
+	t.Run("empty budget omits native spend flag", func(t *testing.T) {
+		command, err := BuildClaudeCommand("", "opus", "{}", "", "", "", "50", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{
+			"claude", "-p", "--output-format", "json", "--model", "opus",
+			"--json-schema", "{}",
+			"--permission-mode", "acceptEdits",
+			"--tools", "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit",
+			"--allowedTools", "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit",
+			"--max-turns", "50",
+		}
+		if strings.Join(command, "\x00") != strings.Join(want, "\x00") {
+			t.Fatalf("argv:\n got %q\nwant %q", command, want)
 		}
 	})
 }

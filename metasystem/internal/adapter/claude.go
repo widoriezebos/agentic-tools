@@ -217,24 +217,23 @@ func ClaudeSessionSignal(r io.Reader, signalPath, eventsPath string) (string, er
 const claudeFullTools = "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit"
 const claudeReadOnlyTools = "Read,Glob,Grep"
 
-// ClaudeBudget validates the native budget policy from the environment:
-// METASYSTEM_CLAUDE_MAX_BUDGET_USD (default 5.00, a positive decimal) and
-// METASYSTEM_CLAUDE_MAX_TURNS (default 150, a positive integer — issue
-// #6: 50 cut off a mission's tool-heavy DESIGN turn before any delegate
-// ran; the sealed time cap is the real bound, this is the guard). The two
-// refusals are distinct so the adapter maps them to its two protocol
-// errors (invalid_native_budget, invalid_native_turn_limit).
+// ClaudeBudget validates the native budget and turn-limit policy from the
+// environment. The --max-budget-usd flag is omitted unless the operator sets
+// METASYSTEM_CLAUDE_MAX_BUDGET_USD. The worker is bounded by its wall-clock cap
+// and its turn limit, with the turn limit serving as the surviving in-process
+// coarse dollar bound. A set budget is validated, and a malformed value is the
+// invalid_native_budget protocol error. The turn limit defaults to 150, and a
+// malformed value is the invalid_native_turn_limit protocol error.
 func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, err error) {
-	budget = "5.00"
 	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_BUDGET_USD"); ok {
 		budget = value
+		if !regexp.MustCompile(`^[0-9]+([.][0-9]+)?$`).MatchString(budget) || budget == "0" || budget == "0.0" {
+			return "", "", fmt.Errorf("invalid_native_budget")
+		}
 	}
 	turns = "150"
 	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_TURNS"); ok {
 		turns = value
-	}
-	if !regexp.MustCompile(`^[0-9]+([.][0-9]+)?$`).MatchString(budget) || budget == "0" || budget == "0.0" {
-		return "", "", fmt.Errorf("invalid_native_budget")
 	}
 	if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(turns) {
 		return "", "", fmt.Errorf("invalid_native_turn_limit")
@@ -297,7 +296,10 @@ func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget
 	if instanceTag != "" {
 		command = append(command, "--name", instanceTag)
 	}
-	command = append(command, "--max-budget-usd", budget, "--max-turns", turns)
+	if budget != "" {
+		command = append(command, "--max-budget-usd", budget)
+	}
+	command = append(command, "--max-turns", turns)
 	for _, dir := range addDirs {
 		command = append(command, "--add-dir", dir)
 	}
