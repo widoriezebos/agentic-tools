@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Appetite: one 4h design slice + one 4h build slice. Design a GENERIC seam for live records - one convention every self-writing surface adopts, not a digest patch. Candidate shapes (choose or better): (a) live records are untracked by convention, each with a landed snapshot/rotation the landing stages deliberately (append-only journal outside the tree, periodic fold-in - job artifacts already work this way); (b) a declared live-record registry land.sh consults: registered paths get re-staged atomically between clean-tree check and commit, bounded to the registry so the guard stays honest for everything else; (c) writers honor the landing lease (pause-and-flush). Constraints: the no-softening byte-equality law on counselor appends (dcc44ca9) survives - no dropped or reordered bytes on any live record; the registry/convention must be adoptable by a new role without touching land.sh again; the first migration proves it on the narrator digest. Straight-to-backlog per R-2; design lane may wait for Fable per the takeover's design-bearing-waits law.
 - OpenedAt: 2026-08-31T06:33:12Z
-- Revision: 2
+- Revision: 3
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-31T06:33:12Z KFB8KVH382K28YV4NKXY01EX9Q-m2-bc1be9cb open actor=m2+mac-coordinator targets=digest-landing-race
 - 2026-08-31T06:33:58Z PPF0FG3CDQXSZ5S74FE62RK7QW-m2-bc1be9cb edit actor=m2+mac-coordinator targets=digest-landing-race
-Integrity: sha256=d3eeb4fb1acc9173c64ba87fd1c56468e41e5848864b590c8efea5f13ca078c8
+- 2026-09-01T20:26:42Z EMT0MFMJ8GJRPRA1B7VFMRCNKP-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=digest-landing-race
+Integrity: sha256=8580c00a09b9a775c3e733d8e9cdd500c5bcf2a07a17fcfc5295e480c72f7501
