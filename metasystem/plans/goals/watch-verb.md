@@ -5,8 +5,9 @@
 - Origin: human
 - Next step: Appetite: 2 slices of 4h. Slice 1: the read side - every tracked run, job, and delegation with liveness verdicts (work-product mtimes + probe + timed verdict per the harness-silent-death law), typed output. Slice 2: the acting side - stall detection triggers the lawful remedy chain (nudge, revive via typed delegate --revive, mark, escalate) with every action recorded; PLUS bounded infrastructure-failure recovery (added 2026-08-30 after the Sol capacity outage killed a pass mid-run at 231k tokens): a run whose terminal evidence shows a provider-side infrastructure failure (capacity, auth, network - a typed cause class, never inferred from silence) may be retried ONCE automatically within the goal's attempt tuple, cause-blind counted, with the retry recorded as such; a second infrastructure failure escalates instead of retrying - forecasts never authorize attempts, but evidenced external causes authorize exactly one mechanical recovery. Design is settled in plans/operator-surface-design.md verb 3; Sol implements, Fable critiques (R-25)
 - OpenedAt: 2026-08-30T15:15:43Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=6d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2
+- Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=5 at=2026-09-01T13:38:29Z
 - Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T13:17:36Z revision=5
 - StopCapability: generation=5 revision=5 machine=m0 claimEpoch=1 fenceEpoch=0
 
@@ -16,4 +17,5 @@ History:
 - 2026-08-30T17:56:29Z 44QXYD721BR66PD3QWDPR9NR1G-m1-bf243850 edit actor=m1+coordinator targets=watch-verb
 - 2026-09-01T07:44:01Z K7KBM0B6FSH7J76QFBSKAK78JP-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
 - 2026-09-01T13:17:36Z M88F9BQEMXWM299RJ4YCWQ4857-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
-Integrity: sha256=1273608c535186baf9a778a150382ef589106efd6fd0f8b159798a9951ddd848
+- 2026-09-01T13:38:29Z 9JQSBMXY4ZM9VWGA0QSJE649HE-m0-c5dbf036 slice-start actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
+Integrity: sha256=b21188df2ef98343a4690f5736fb4d220cb67e1f3fad0f86b63c1e6b2d7ee726
