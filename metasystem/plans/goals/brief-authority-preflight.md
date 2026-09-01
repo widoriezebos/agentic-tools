@@ -1,15 +1,13 @@
 # brief-authority-preflight
 
-- State: claimed
+- State: queued
 - Intent: Dispatch admission verifies a brief's cited authority mechanically: every repository path a brief names must exist in the delegate's base tree, and a declared diff boundary must parse repo-relative, or the dispatch refuses with a typed message naming the missing path - the orchestration doc's conduct rule become machinery. Three specimens in one day (2026-09-01, m0): an unlanded critique record, an overwritten round artifact, a frozen follow-up worktree - each cost a full delegate round to a gap-stop. IL-33.
 - Origin: main
 - Next step: DONE TWICE OVER, landed by m0 (account Wido@M0): the original gate plus both same-day defect fixes - output-path exemption (input-wins) and return-side DIFF_BOUNDARY_INVALID. IL-33's effect armed.
 - OpenedAt: 2026-09-01T20:27:44Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=2d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=3 at=2026-09-01T20:55:43Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T23:12:45Z revision=9
-- StopCapability: generation=9 revision=9 machine=m0 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T20:27:44Z 03QJ5FXGE1A8DJCTGPE6JEJ5JD-m0-c5dbf036 open actor=human:Wido targets=brief-authority-preflight
@@ -22,4 +20,5 @@ History:
 - 2026-09-01T23:02:50Z 0SNSFKBW8M9EJSK6SEZCGTJ47M-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=brief-authority-preflight
 - 2026-09-01T23:12:45Z Q5J97DWCJ5K0TG9MNHD7RZRJWC-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=brief-authority-preflight
 - 2026-09-01T23:22:55Z 4SR2TB7V7T822DFY7B8CB1C0A1-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=brief-authority-preflight
-Integrity: sha256=3200c9ed63ad073c7a3e926b883aa747ed139d4e6e362afe1e3dc5f55e3e67d9
+- 2026-09-01T23:22:59Z 461Q082F8AHVR2V6NVFX45540F-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=brief-authority-preflight
+Integrity: sha256=8b4b1bbf35579cea037bd0cd6219da910224e3c86cf969a7d05682245c33c876
