@@ -3,9 +3,9 @@
 - State: queued
 - Intent: Design changes take the loop, mechanical defects take a direct fix, declared and audited
 - Origin: main
-- Next step: OBSERVE SLICE LANDED 1afcef82 by m0 (account Wido@M0): every landing evaluated against the three bars, verdicts durably stamped, refusing nothing yet. Chain two-bars-joint-round-b closed with independent critique at zero material findings (three Fable rounds, 20 findings, all material ones folded; records/two-bars/ carries the full history). REMAINING LEGS: (1) an observation window - the durable verdict record accumulates while the fleet lands normally; (2) the six low findings from critique round 3 (trailer-form doc, guard observation durability, end-to-end wrapper test, rulings add-rows-only check, authorizedBy depth, conformance round-overwrite) as a small hardening slice; (3) PROMOTION TO ENFORCEMENT - a human-authorized act per Law 2, Wido reviews the observation record and speaks; the design's promotion procedure is in the joint design record section 3. Claim released for whoever takes the hardening slice.
+- Next step: OBSERVE SLICE LANDED 1afcef82 by m0 (account Wido@M0): every landing evaluated against the three bars, verdicts durably stamped, refusing nothing yet; chain closed at zero material findings; records/two-bars/ carries the full history. RE-SLICED AT WIDO'S INTAKE ORDER (2026-09-01, relayed via the paper-seat assessment; sequencing only, nothing in the r3 rulings or D90 re-litigated): (1) FIRST ENFORCING SLICE, promoted ahead of the rest - exactly the Change-Class trailer grammar, the never-direct-fix manifest read from both trees, and FAIL-CLOSED refusal of an unclassified or ambiguous AGENT commit at the commit gate commit.sh already calls; all landed observe machinery for these three exists at 1afcef82, so this slice is the narrow refusal flip for them alone, under Law 2's human-authorization shape with this recorded order as the word. Rationale on the record: combined with commit-goal-binding, this slice alone means a seat-authored design-bearing change cannot land without declaring the loop - the guard reaches the incident's actual path before the evidence-witness half exists. (2) The tree-bound witness, defect-identity growth fuse, and audit join stay deferred to later slices, with the six low findings from critique round 3 riding them. (3) Full promotion of the remaining bars after the observation window, Wido's word. DEPENDENCY NOTE: manifest-floor-at-dispatch (new, human-origin) consumes this goal's manifest contract - the contract-settling step precedes it; the blocker edge is recorded on that goal.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=6d attemptLimit=14 reservedJobMinutesLimit=1560 activeJobLimit=2
 - NormApproval: approvedRef=R-36-m0 minutes=1560 goalRevision=11
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
@@ -25,4 +25,5 @@ History:
 - 2026-09-01T11:47:20Z TH2KYDCDMP3ZYGD18PHS4EJXGN-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
 - 2026-09-01T12:39:53Z XZ0CNM1AH0ZZ5HRA3VX2KD10ZE-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T12:40:02Z QZWKWM75FFYR5QZEHE89Z4XJ76-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
-Integrity: sha256=55bd7c6a8f409467264c8b03400093929c9681fa11a5cf22a81121fdf0797814
+- 2026-09-01T13:21:13Z XKQVPKK44WY0AD3A5PQ08ZCHZM-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
+Integrity: sha256=0fa881f80102ccb3771833767841fcdbd456c1edff808ab61fd068b21bc206b8
