@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: SECOND MACHINE SIGHTING with root cause proven (m0b, 2026-09-01 ~14:00Z): supervision owner/watcher/reaper pids 507765/507778/507786 all probe alive, but every recorded pidStartedAt is EXACTLY +1s over every fresh probe with identical startTicks and bootId. Mechanism now visible: the probed start is 1788270727.640000 micro — the ARM path ROUNDS UP to 1788270728 while probes TRUNCATE to 1788270727; any component born in the second half of a wall-clock second gets a poisoned identity record (~50 percent of arms). m0's original specimens (.59 and .17 micro... the .59 rounds up, matching) fit the same rule. Consequences reproduced: census CENSUS-FAILED on supervision-not-live errors, dispatch admission fail-closed, arm-supervision --rearm did NOT recover (stale lock of the live-but-mismatched owner; see also arming-dead-owner-takeover). Interim repair on m0b, disclosed: owner.json pidStartedAt corrected by hand to the thrice-probed value. FIX DIRECTION for the design lane: one truncation rule at every epoch write (write what the probe would read), or compare on (startTicks,bootId) which were stable in all five specimens
 - OpenedAt: 2026-08-31T19:08:52Z
-- Revision: 2
+- Revision: 3
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-31T19:08:52Z XDNTREHCEDRG7S7TF62T9VWMEF-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=vm-epoch-identity-drift
 - 2026-09-01T14:18:10Z CNB1FH512YJJ30JNCQ7RQF0HWK-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=vm-epoch-identity-drift
-Integrity: sha256=5396e35c935356ddfdd0ef603bcfd906e672089d931c0cad593cfe154f6a19a4
+- 2026-09-01T14:27:15Z 34AQATQ7REJVZYFB62MQ3J0EF6-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=vm-epoch-identity-drift
+Integrity: sha256=981e9185d994529712a5d3df3a8d6bdeaa11c6220900fc6c6adce6b2a3dfab37
