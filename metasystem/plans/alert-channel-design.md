@@ -1,21 +1,29 @@
-# Alert Channel Design — alert-escalation-channel (revision 6)
+# Alert Channel Design — alert-escalation-channel (revision 7)
 
-Status: revision 6 answers the Sol implementer's GAP-STOP on slice 1
-— seven places where the design referenced something without
-mechanically defining it. New section §11a (the slice-1 mechanical
-specification, subsections 11a.1–11a.7 answering gaps 1–7) supplies
-the sender stamp's persisted fields and the refusal journal's schema
-and location, the five previously undefined contract types, the
-unconfigured-send outcome law, the implicit-destination synthesis
-that leaves legacy bytes untouched, the exact undelivered-counting
-semantics, the health alert's three-field mapping, and the Telegram
-seam (request encoding, response validation, timeout ownership,
-fake-endpoint injection, character-based capability). Slice-1
-minimums are stated where the full mechanism belongs to a later
-slice, each as a MARKED deferral. The critique record is unchanged:
-every finding from all four critique rounds remains folded or
-independently judged sound; this revision adds specification, not
-new mechanism.
+Status: revision 7 resolves the SECOND slice-1 gap-stop — four
+cross-section contradictions that §11a's one-pass addition introduced
+— and folds Wido's 2026-09-01 binding word: two producers join slice
+1 (the delegate-job-failed class, new 11a.8, and the breach-stop
+stop-awaiting-resume class, new 11a.9; specimen
+`records/misc/idle-loss-2026-09-01.md`). The four resolutions:
+attempt `MessageRef` retention is decided INTO slice 1 (§5a, §7, and
+§11 slices 1 and 4 now agree); `AdapterSend` gains a
+`context.Context` first parameter created by the channel layer (§2a
+and 11a.7 are one contract); `DeliverDueAlerts` is wired into BOTH
+tick drivers in slice 1 — the resident runner and the external
+`metasystem steward tick` command (§5, §11); and the compose-side
+truncation law is exact — tail bytes, UTF-8 code-point boundary,
+Happened-only shortening (§9, echoed by 11a.7). SELF-CONSISTENCY
+PASS: performed this revision, rule by rule, over every §11a rule and
+the sections it touches — the section pairs read together and made to
+agree are 11a.1↔§5/§5a/§7; 11a.2↔§2/§2a/§3/§9 (two dangling "§14.2"
+references repaired to 11a.2); 11a.3↔§2/§7/§9/§10; 11a.4↔§1/§4/§6;
+11a.5↔§1/§7/§10; 11a.6↔§1/§6; 11a.7↔§2a/§5/§9/§10;
+11a.8↔§1/§5/§7/§11; 11a.9↔§1/§5/§7/§11; plus the contradiction pairs
+§5a↔§11(slices 1 and 4) and §5↔§11↔both tick drivers. Revision 6
+failed precisely for skipping this pass. The critique record is
+unchanged: no critic finding is reopened; this revision changes only
+what the four resolutions, Wido's addition, and the pass require.
 
 Design for the promoted goal `plans/goals/alert-escalation-channel.md`:
 escalations and blocked-on-human states reach Wido IMMEDIATELY over an
@@ -71,6 +79,24 @@ Design only. No code ships with this document.
 - **Real human answering verbs** (verified in
   `cmd/metasystem/main.go`): `metasystem goal resume` and `metasystem
   mission-runner answer`. No approve/reject verb exists.
+- **Job-failure and breach-stop facts, traced for the 2026-09-01
+  producers**: a delegate job record
+  (`artifacts/agents/jobs/<job-id>.json`) carries a `goalId` field
+  (read back by dispatch, `scripts/agents/dispatch.sh` 1759) and
+  reaches terminal failure only through the record CAS's transition
+  table — `failed` or `timeout`, distinct from deliberate `cancelled`
+  (`internal/dispatch/record.go` 39–46) — with an optional `error`
+  field carrying the reason; the reaper performs the process-loss and
+  timeout transitions within seconds of death. The breach-stop
+  custodian runs INSIDE `RunTick` (`internal/steward/tick.go` 153,
+  69–90) and returns one `BreachStopReport{GoalID, Revision, StopID,
+  State}` per stopped revision.
+- **Both tick drivers already end with a delivery step** (traced):
+  the resident runner loop calls `RunTick` then `DeliverPending`
+  (`internal/steward/runner.go` 99, 131), and the external
+  `metasystem steward tick` command does the same
+  (`cmd/metasystem/steward_verbs.go` 231, 270) — each has a natural
+  additive slot for §5's transport phase.
 - **Provider facts** (from the round-2 critique's cited official
   documentation, adopted as design constraints): Slack incoming
   webhooks return no message timestamp — threading needs the Web API
@@ -131,7 +157,7 @@ type SendResult struct { Chunks []ChunkOutcome } // ordered
 type Channel interface {
     Send(dest DestinationName, msg Message) (SendResult, error)
     Ready(dest DestinationName) (bool, string)        // no side effects; §6 gate
-    Capabilities(dest DestinationName) AdapterCapabilities // fields defined in §14.2
+    Capabilities(dest DestinationName) AdapterCapabilities // fields defined in 11a.2
 }
 ```
 
@@ -145,11 +171,15 @@ advances its cursor from the outcomes' spans (§9).
 ### 2a. The adapter interface
 
 ```
-AdapterSend(resolved DestinationConfig, text string,
-            conv ConversationState) (MessageRef, error)
+AdapterSend(ctx context.Context, resolved DestinationConfig,
+            text string, conv ConversationState) (MessageRef, error)
 ```
 
-One submission, one reference, one typed sanitized error. No
+One submission, one reference, one typed sanitized error. The `ctx`
+is created per submission by the channel layer and carries the
+15-second transport bound (ownership and duration in 11a.7); an
+adapter sets no timeout of its own and returns promptly with a typed
+sanitized error when the context cancels. No
 chunking, no retries, no state: `ConversationState` (the
 conversation's first and latest known `MessageRef`, read from §3's
 store by the channel layer) is passed IN, which is how Telegram sets
@@ -324,10 +354,19 @@ enforced by the kernel.**
    PENDING attempt exists. It performs NO network work, so nothing
    new ever waits on the network under either lock. (`tick.go` line
    264's call becomes journal-only; the tick's contract is otherwise
-   unchanged.)
-2. **Transport phase** (`DeliverDueAlerts`, called by the steward
-   runner AFTER `RunTick` returns and its deferred arbitration
-   release has run): acquire a NEW dedicated sender flock,
+   unchanged.) Journaling is not tick-exclusive: the 11a.8 producer
+   journals from the job-record transition writer and the 11a.9
+   producer journals in this same tick phase from the custodian's
+   reports; every journal write takes the alert lock, and only
+   TRANSPORT (phase 2) is single-flight.
+2. **Transport phase** (`DeliverDueAlerts`, called AFTER `RunTick`
+   returns — and with it the arbitration release, which `RunTick`
+   holds only internally — by BOTH tick drivers: the resident steward
+   runner's loop and the external `metasystem steward tick` command,
+   each alongside its existing legacy `DeliverPending` call at the
+   §1-traced call sites. The external command's printed report is
+   byte-unchanged; this phase's outcomes live in the episode journal
+   and surface through the 11a.5 floor): acquire a NEW dedicated sender flock,
    `artifacts/agents/steward/alerts-sender.flock`, with
    LOCK_EX|LOCK_NB. If it is held, return immediately — the live
    holder is the single flight, and the next tick retries. Holding
@@ -441,7 +480,15 @@ episode store is the only durable delivery state for the alert class;
 resolution is class-scoped (the resolve-all-others law stays
 health-only); the producer table (stop id / mission ask id / minted
 ask id / enrolled-engine identity / claim-approval deferred to its
-mechanism) stands as written in revision 2.
+mechanism) stands as written in revision 2, EXTENDED by Wido's
+2026-09-01 binding word (specimen
+`records/misc/idle-loss-2026-09-01.md`) with two classes that are
+SLICE-1 producers, not deferrals: `delegate-job-failed` — a delegate
+job failed under a claimed goal; carries goal id, job id, and failure
+reason; deduplicated per job; mechanics in 11a.8 — and
+`stop-awaiting-resume` — a breach-stop closed a claimed revision's
+fence and the goal waits for `metasystem goal resume`; mechanics in
+11a.9.
 
 Receipt law, completed for chunks and references (folds the receipt
 halves of AC2-LOCK-001, AC2-THREAD-001, AC2-RECEIPT-001): one
@@ -469,9 +516,26 @@ the cursor advances using `ChunkOutcome.Span`.
 - Alerts are bounded at composition (`channel.alert.max-bytes`,
   default 1500, under every named provider cap); an over-cap alert is
   truncated with a tail naming the episode id. One alert, one chunk.
+  The truncation law, exact: the cap counts UTF-8 BYTES of the whole
+  composed message. Only `Happened` may be shortened; `Asked`,
+  `Answer`, and the acknowledgment line are never cut — they carry
+  the acting verb, which is the alert's point. The tail is the
+  message's final line: a newline then `[truncated; episode
+  <episode-id>]` — 22 bytes plus the episode id's bytes, ASCII apart
+  from the id. Composition: if the full text fits the cap, send it
+  tailless; otherwise give `Happened` the budget cap − bytes(all
+  never-cut parts) − bytes(tail), and cut `Happened` at the largest
+  length ≤ that budget ending on a UTF-8 code-point boundary (back up
+  past continuation bytes; code points, not grapheme clusters, are
+  the unit), possibly to zero bytes — §6's non-empty check runs on
+  the pre-truncation field. Degenerate case, total by rule: when the
+  budget is negative (never-cut parts plus tail alone exceed the
+  cap), send the never-cut parts plus tail uncut — the compose cap is
+  a courtesy bound, and the destination's DECLARED limit stays the
+  hard refusal (caller misuse, 11a.3).
 - A digest batch composes at most `channel.digest.batch-max-bytes`
   of entries and carries their `Spans`. When the destination's
-  declared message-size limits (§14.2) are smaller, the CHANNEL LAYER (§2's
+  declared message-size limits (11a.2) are smaller, the CHANNEL LAYER (§2's
   concrete package — not the adapter, not the caller) splits Body on
   span boundaries into sequential submissions in the same
   conversation, calling `AdapterSend` per piece, and returns every
@@ -510,21 +574,32 @@ never gates machinery; only the launch gate refuses on readiness.
 
 ## 11. Slice plan
 
-(Folds AC2-SLICE-001 and AC3-SLICE-GATE-CUTOVER-001: slice 1 is at
-most 4 hours and independently deployable because it CHANGES NO
-LEGACY BEHAVIOR — the legacy queue keeps draining through
-`NotifyCommand` and the legacy launch gate stands byte-for-byte; the
-new episode path is purely additive. The gate cutover is its own
+(Folds AC2-SLICE-001 and AC3-SLICE-GATE-CUTOVER-001: slice 1 lands
+as remote-landed increments of at most 4 hours each and is
+independently deployable because it CHANGES NO LEGACY BEHAVIOR — the
+legacy queue keeps draining through `NotifyCommand` and the legacy
+launch gate stands byte-for-byte; the new episode path is purely
+additive, including the one additive `DeliverDueAlerts` call each
+tick driver gains (§5). The gate cutover is its own
 slice, behind `channel.gate`, strictly after queue retirement.)
 
-1. **Alert path, Telegram, ≤ 4 hours, additive and live-token
+1. **Alert path, Telegram, additive and live-token
    deployable.** The contract with single-chunk `Send` (SendResult
    carrying one outcome; the chunking path is dormant until slice 3),
    destination configuration for the alert class with the
    secret-layer skip, the UNTHREADED Telegram adapter (no
    conversation store yet — alerts do not need threads to reach a
    phone), the §5 journal/transport split with the sender flock and
-   the §5a completion merge WITH its concurrent-writer fixture, the
+   the §5a completion merge WITH its concurrent-writer fixture —
+   including attempt `MessageRef` retention, which is SLICE-1 WORK:
+   §5a step 3 merges the returned reference and the Telegram adapter
+   already returns the message id (11a.7); only the conversation
+   store that CONSUMES references is slice 4 — `DeliverDueAlerts`
+   wired into BOTH tick drivers (the resident runner and the external
+   `metasystem steward tick` command, §5), the two 2026-09-01
+   producers (`delegate-job-failed`, 11a.8, and
+   `stop-awaiting-resume`, 11a.9 — Wido's word pins both to this
+   slice), the
    redaction invariant with its known-bad fixture, and the
    undelivered count in the health verdict line — which §1 shows
    reaches terminal and Stop hook through existing plumbing. The
@@ -535,7 +610,13 @@ slice, behind `channel.gate`, strictly after queue retirement.)
    alerts, removes none. Rough arithmetic, stated so it can be
    challenged: contract skeleton and config 1h, Telegram adapter and
    fixtures 1h, sender split plus completion-merge fixture 1.5h,
-   health line plus redaction fixture 0.5h. The round-1 floor
+   health line plus redaction fixture 0.5h, the two producers plus
+   the second driver call site 0.5h — ≈4.5 hours total, grown by the
+   2026-09-01 producers and disclosed rather than absorbed into the
+   older estimates. The 4-hour law is a LANDING cadence, so the slice
+   lands as two remote-landed increments — the alert path and adapter
+   first, the producers and floor second — each under 4 hours and
+   each leaving the tree deployable. The round-1 floor
    (fallback, undelivered surfaces, redaction) ships inside the
    slice; enabling a live token at its end is lawful because nothing
    legacy stopped working.
@@ -545,8 +626,10 @@ slice, behind `channel.gate`, strictly after queue retirement.)
    accounting, prefix cursor advance.
 4. **Conversation reference store and the threaded Slack adapter**
    (Web API), plus reply mapping for Telegram/email/WhatsApp as each
-   ships under the §3a invariant; attempt `MessageRef` retention
-   lands here with the store.
+   ships under the §3a invariant. Attempt `MessageRef` retention is
+   NOT here: it lands in slice 1 with the completion merge (§5a);
+   this slice adds only the store and threading that consume the
+   retained references.
 5. **Queue retirement**: every `QueueNotification` caller migrated;
    `DeliverPending` and the pending directory removed.
 6. **Gate cutover**: `channel.gate=channel` becomes available and
@@ -556,7 +639,9 @@ slice, behind `channel.gate`, strictly after queue retirement.)
    guarantee is true again. Flipping the default to `channel` is a
    separate recorded decision once a deployment has run cut over.
 7. **Blocked-on-human producers**: the class-scoped resolution law
-   and the §7 producer table, producer by producer.
+   and the §7 producer table, producer by producer — MINUS the two
+   producers Wido's 2026-09-01 word moved into slice 1 (11a.8,
+   11a.9).
 8. **Remaining adapters** (email, WhatsApp) with provider tests; the
    committed-secret validation rule with its governance record and
    marking-mode activation criterion.
@@ -571,7 +656,9 @@ subsection below closes one gap with exact fields, persisted
 representations, and behavior; the numbering 11a.N answers gap N of
 the gap-stop. Where slice 1 needs less than the full mechanism, the
 slice-1 minimum is stated and the remainder carries a MARKED deferral
-to its owning slice.
+to its owning slice. Revision 7 adds 11a.8 and 11a.9 — the two
+producers of Wido's 2026-09-01 binding word — and repairs in place
+the four cross-section contradictions the second gap-stop proved.
 
 ### 11a.1 The sender stamp and the refusal journal
 
@@ -786,18 +873,83 @@ change, not an implementer choice (MARKED deferral, unowned).
   bytes. The adapter NEVER places the request URL in any error — the
   URL embeds the token (§10's redaction is the second line of
   defense, not the first).
-- **Timeout ownership**: the CHANNEL LAYER wraps every `AdapterSend`
-  in a context bounded by the existing 15-second notify timeout;
-  adapters set no timeout of their own and must honor context
+- **Timeout ownership**: the CHANNEL LAYER creates, per submission, a
+  `context.Context` bounded by the existing 15-second notify timeout
+  and passes it as `AdapterSend`'s FIRST PARAMETER — the §2a
+  signature carries it, so the adapter honors a context it is
+  actually handed (one contract). Adapters set no timeout of their
+  own and return promptly with a typed sanitized error on
   cancellation.
 - **Capability**: `AdapterCapabilities{Threads: false, Receive:
   false, MaxMessageChars: 4096, MaxMessageBytes: 0}` — Telegram's
   limit is character-based, which the 11a.2 two-field shape now
-  expresses without ambiguity. Slice-1 guarantee: the compose-side
-  alert cap of 1500 bytes bounds the text at 1500 code points, under
-  4096; a message that nevertheless exceeds a declared limit is
+  expresses without ambiguity. Slice-1 guarantee: in the normal case
+  the compose-side cap (§9, 1500 bytes) bounds the text at ≤ 1500
+  code points, under 4096; in §9's disclosed degenerate overflow the
+  hard law is unchanged — a message that exceeds a declared limit is
   caller misuse per 11a.3 (never silent truncation at the channel
   layer — truncation is compose-side only, §9).
+
+### 11a.8 The delegate-job-failed class (slice 1; Wido's word, 2026-09-01, binding)
+
+The alert class "delegate job failed under a claimed goal" — the
+2026-09-01 six-hour idle's missing class — is a slice-1 producer.
+
+- **Trigger, exact**: a job record under `artifacts/agents/jobs/`
+  transitions into terminal status `failed` or `timeout` (never
+  `cancelled`: a deliberate cancellation is not a failure) while the
+  record's `goalId` field is nonempty. The transition writer journals
+  in the same operation — the reaper's process-loss and timeout
+  transitions (which mark the record within seconds of death, §1),
+  and every other path that moves such a record through the record
+  CAS's transition table (§1). Journal-only, §5 phase-1 discipline:
+  open/refresh the episode and ensure a PENDING attempt under the
+  alert lock; no network; delivery on the next sender pass of either
+  tick driver.
+- **Carried facts**: goal id, job id, and failure reason — the
+  record's `error` field when nonempty, else the terminal status
+  word.
+- **Dedup, per job**: the episode digest key is the pair
+  (`delegate-job-failed`, job id), riding the store's existing
+  digest-keyed dedup (§1) — one episode per job ever; a repeated
+  observation refreshes that episode and never mints a second.
+- **Composition at send time (the 11a.6 pattern)**: `Happened` =
+  `delegate job <job-id> failed under goal <goal-id>: <failure
+  reason>`; `Asked` = the fixed string `Delegated work under this
+  claimed goal stopped; decide whether to redispatch, follow up, or
+  hand the work over.`; `Answer` = the fixed string `metasystem
+  delegate --follow-up <job-id> --brief <corrective-brief-file>` with
+  the job id substituted — the recorded correction verb, which the
+  typed delegate path makes total even for a session that cannot be
+  resumed. Richer per-failure asks follow 11a.6's enrichment law
+  (design change, not implementer choice).
+
+### 11a.9 The stop-awaiting-resume class (slice 1; Wido's word, 2026-09-01, binding)
+
+The breach-stop's stop-awaiting-resume alert is an EXPLICITLY WIRED
+slice-1 producer, not a later-slice deferral.
+
+- **Wiring, exact**: the breach-stop custodian already runs INSIDE
+  `RunTick` and returns `BreachStopReport{GoalID, Revision, StopID,
+  State}` per stopped revision (§1). The tick's journal phase (§5
+  phase 1 — the same slice-1 edit that makes `UpdateAlertEpisodes`
+  journal-only) additionally ensures one episode per report carrying
+  a goal id and revision, completed and failed stop states alike (a
+  failed stop is at least as alarming). The custodian's
+  route-resolution failure report carries no goal and stays with the
+  ordinary health breaker, the tick's stated sole escalation owner —
+  unchanged law.
+- **Dedup**: episode digest key (`stop-awaiting-resume`, goal id,
+  revision) — a stop observed across many ticks refreshes one
+  episode.
+- **Composition at send time**: `Happened` = `goal <goal-id> revision
+  <revision> hit its budget fence: breach-stop <stop-id> reached
+  <state>; the goal waits for resume.` (the literal `unknown` when
+  the stop id is empty); `Asked` = the fixed string `The budget fence
+  closed this revision and nothing will move it without you; decide
+  whether to resume the goal.`; `Answer` = the fixed string
+  `metasystem goal resume` with the goal id appended — the human verb
+  §1 already traces as real.
 
 ## 12. Finding dispositions — all rounds, honestly
 
@@ -826,15 +978,24 @@ corrected record:
 | AC4-EMAIL-TRIM-BOUNDARY-001 | Folded, §3a: the trimming boundary is the fixed design constant `emailReferencesMaxBytes = 8192` bytes of unfolded References value, honestly attributed to this design (RFC 5322 §2.2.3 limits physical lines only, handled by folding, and §3.6.4 specifies no trimming); boundary behavior is deterministic (drop position-2 entries until the value fits, keeping root and the most recent contiguous suffix; parent-only in the pathological case) and a long-chain fixture is required in the email adapter's provider tests. |
 | Round 4: §5a merge law and every other line | Judged SOUND by the round-4 critic; unchanged. NO FINDING REMAINS OPEN across all four rounds. |
 | Sol implementer gap-stop (seven gaps, slice 1) | Folded, §11a: gap 1 → 11a.1 (sender stamp fields and refusal journal), gap 2 → 11a.2 (the five contract types), gap 3 → 11a.3 (unconfigured-send outcome law), gap 4 → 11a.4 (own command/desktop adapters plus implicit-destination synthesis, legacy bytes untouched), gap 5 → 11a.5 (undelivered counting and the unreadable-store line), gap 6 → 11a.6 (health alert three-field mapping with a real answering verb), gap 7 → 11a.7 (Telegram request/validation/timeout/fake-endpoint/capability). A gap-stop is correct delegate behavior; these were design debts, not implementer questions. |
+| Second implementer gap-stop (four cross-section contradictions, slice 1) | Folded, revision 7: contradiction 1 → `MessageRef` retention decided INTO slice 1 (§5a, §7, §11 slices 1 and 4 agree); contradiction 2 → `context.Context` added to `AdapterSend` (§2a) and 11a.7 restated over it, one contract; contradiction 3 → `DeliverDueAlerts` wired into BOTH tick drivers in slice 1 (§5, §11), external report bytes unchanged; contradiction 4 → exact truncation law in §9 (tail bytes, code-point boundary, Happened-only shortening). Root cause was skipping a self-consistency pass after §11a's one-pass addition; the pass is now performed and recorded in the status line. |
+| Wido's 2026-09-01 binding addition (idle-loss specimen) | Folded: `delegate-job-failed` (11a.8) and `stop-awaiting-resume` (11a.9) enter the enumerated classes (§1 traced facts, §7 producer table) as slice-1 producers (§11). |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 6)
+## 13. Self-grade (R-24-m1, refreshed for revision 7)
 
-- **Confidence:** 0.78. The critique record converged to zero open
-  findings, and the gap-stop's seven implementability debts are now
-  answered with exact fields, schemas, and laws; the slight drop
-  from revision 5 reflects that §11a is a large body of NEW exact
-  specification written in one pass, which the next implementer
-  attempt — not a critic — will test.
+- **Confidence:** 0.74. The four repairs are consistency work whose
+  correctness is checkable by reading section pairs side by side,
+  and that reading was performed and recorded (status line). The
+  drop from 0.78 prices the pattern: each one-pass addition to this
+  document has seeded the next round's contradictions, and revision
+  7 adds 11a.8–11a.9 in one pass too — mitigated, not disproven, by
+  the recorded pass.
+- **Reject condition, stated plainly:** reject this revision if the
+  implementer gap-stops on slice 1 a THIRD time. A third stop means
+  revision-scale patching cannot make this document mechanical, and
+  the design must then be split into a separate implementation
+  specification rebuilt from the episode store's and channel layer's
+  actual types, not grown further.
 - **Weakest claim:** the §11a.1 stamp-and-restamp rule — it derives
   "a foreign stamp on a PENDING attempt belongs to a dead sender"
   from the sender flock's exclusivity, which holds only while every
