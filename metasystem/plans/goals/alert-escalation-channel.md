@@ -5,8 +5,9 @@
 - Origin: human
 - Next step: Appetite: build phase. Design at revision 6 (da3d74b8), register closed at rev 5; OWED: revision 7 - the four cross-section contradictions of the second gap-stop (see fold6 brief) PLUS Wido's morning word 2026-09-01, binding: the alert classes MUST include 'delegate job failed under a claimed goal' and the breach-stop's stop-awaiting-resume must be wired as a producer in slice 1 - the 2026-09-01 six-hour idle (records/misc/idle-loss-2026-09-01.md) is the specimen; a failed worker told no one while the machinery knew in seconds. Then rebuild slice 1 per section 11a; then cross-family implementation critique; then covenant landing. Wido's earlier design words all stand (adapter abstraction, Telegram first, bridge reuse, Slack threading)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 23
+- Revision: 24
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T12:45:46Z revision=23
 - StopCapability: generation=23 revision=23 machine=m0b claimEpoch=1 fenceEpoch=0
 
@@ -34,4 +35,5 @@ History:
 - 2026-09-01T12:39:02Z 5049KYTGS8AM79Y6Y382KRX71S-m3-a5da21ff resume actor=human:wido targets=alert-escalation-channel authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="free M0-B's alert-escalation-channel goal"
 - 2026-09-01T12:40:05Z DZ4ZD878TPS757S0PX92PN7KSH-m3-a5da21ff release actor=m3+mac-m3 targets=alert-escalation-channel
 - 2026-09-01T12:45:46Z ZYYK2HFSS6KZWPPWE5Q08VAE1F-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=e81e1840e19435627c3b718b2b7a7fce48cd0096f9d8ba949d17fe9ded9946fc
+- 2026-09-01T12:46:38Z CHAQ85YRCH4SCG9R6B8FAQR8VZ-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=c7955e736a7e0fa0ca426b190c363366ab5c00757b150c3fabe8cf070b41029b
