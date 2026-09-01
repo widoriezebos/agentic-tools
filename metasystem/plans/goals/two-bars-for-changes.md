@@ -5,11 +5,11 @@
 - Origin: main
 - Next step: OBSERVE SLICE HARDENED, landed f8092e23 by m0 (account Wido@M0): all five open lows closed (trailer-form doc, loud guard fallback, real end-to-end commit-to-evaluator test, add-rows-only rulings carriage, authorizedBy resolving to real register rows); the sixth landed earlier as conformance-round-immutability. REMAINING LEGS unchanged: the observation window accumulates verdicts; the narrow fail-closed promotion slice (re-sliced at Wido's intake order, his recorded word as the Law 2 authorization) is CLAIMABLE NOW by any machine; full promotion after the window is Wido's. m0 releases.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 20
-- Budget: elapsedLimit=2d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
+- Revision: 21
+- Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T23:29:38Z revision=20
-- StopCapability: generation=20 revision=20 machine=m0 claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T23:32:50Z revision=21
+- StopCapability: generation=21 revision=21 machine=m0 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=two-bars-for-changes
@@ -32,4 +32,5 @@ History:
 - 2026-09-01T22:54:38Z 4R81C965R4V1JKDM89161YWECN-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T22:54:42Z 2XHEDEVXK0B9XMDGQPSVR9WDT9-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T23:29:38Z MNGNQHXW18808C9YM3722ZSDKC-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
-Integrity: sha256=ed91a9963a94ee8b17f77be9bc7f13c7325e8fd5b34dc8012a36ce6143dff7ba
+- 2026-09-01T23:32:50Z E63Y8K8DAAB7ZCFXAEMT4HV72P-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
+Integrity: sha256=5f15b104887a9a9addc1cdeaf7dab943712526d1d19d7535ae49dea37e221694
