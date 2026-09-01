@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
-- Next step: Design revision 8 AUTHORED and preserved (folds all nine AC7 findings, producers become idempotent derivation scans over durable source state; the authoring round implementer-c002e6035a243bdbc1400067 died on the $5 runtime spend cap before returning — fourth budget-death-on-return specimen; product diff safe at artifacts/agents/implementer-c002e6035a243bdbc1400067/rounds/1/recovered.diff, recovery brief plans/alert-channel-fold8-recover-brief.md ready). DISPATCH WEDGED machine-wide: census CENSUS-FAILED on the vm-epoch-identity-drift rounding defect (root cause proven, recorded on that goal) and the seat's harness permission layer now refuses metasystem up/arm — Wido runs 'bin/metasystem up --repo .' in ~/m0b/agentic-tools/metasystem (possibly 2-3 times; each arm is a coin flip against the rounding bug) to unwedge; then the recovery round, Sol re-critique, slice-1 build. Budget healthy: 600 minutes under R-40-m0b. Fence: Wido's 8h intent from claim ~10:50Z; the wedge hours are machinery, not work — extension is his call
+- Next step: Design revision 8 landed (3b6a5a7f) and critiqued round 2: SIX material findings, one critical (AC8-JOB-SOURCE-RETENTION-001: the delegate-job-failed derivation scan's sole source is garbage-collected job records, so a runner outage longer than retention re-opens the permanent-loss window) — register at records/misc/alert-channel-critique-r8.md. OWED: revision 9 folding all six by id (retention pin or journal-first handoff for the critical; stop-scan evidence parity with the resume command; resume-race suppression; bounded scans with a durable cursor; the unreadable-batch lifecycle rule; byte-exact Answer composition). Then Sol round 3, then slice-1 build. Budget after round 2: ~360/600 reserved; r9+crit3+build fits. Fence ~3.5h left of Wido's 8h intent
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T13:51:37Z revision=26
@@ -39,4 +39,5 @@ History:
 - 2026-09-01T13:21:46Z SFY92F54V6YHYXBXKW2AEM498T-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T13:51:37Z 68K5TVKAGQJ13AJJH1VRJNEJTZ-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T14:19:03Z NT7QS1JG58X0J6QRNQP90451QG-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=e7219a9a2b3aba8f30793aaa401c6fd761edd8b8af8ca4afafd6c7abf278aea2
+- 2026-09-01T14:43:58Z QJ4ZSYGJ2ERZRQPWPYZQ46FAVM-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=80ba2aafefcc0943b36f5ae3713d0f3e144ffe0e074d76c9dfa3dd56239e9017
