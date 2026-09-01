@@ -1,4 +1,5 @@
 memory/receipts.log merge=union
+records/narrator-digest.log merge=union
 memory/rulings.md merge=union
 memory/flake-registry.md merge=union
 memory/known-issues.md merge=union

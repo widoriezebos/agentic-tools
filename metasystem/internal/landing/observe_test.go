@@ -35,6 +35,7 @@ func newObserveFixture(t *testing.T) *observeFixture {
 	}
 	f.write("memory/rulings.md", "R-1 | existing ruling\n")
 	f.write("memory/receipts.log", "receipt=existing\n")
+	f.write("records/narrator-digest.log", "digest=existing\n")
 	f.git("add", ".")
 	f.git("commit", "-qm", "base")
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
@@ -349,7 +350,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 	})
 
 	t.Run("register carriage append-only", func(t *testing.T) {
-		for _, register := range []string{"memory/rulings.md", "memory/receipts.log"} {
+		for _, register := range []string{"memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log"} {
 			t.Run(register, func(t *testing.T) {
 				carriage := newObserveFixture(t)
 				original, err := os.ReadFile(filepath.Join(carriage.root, register))
@@ -379,7 +380,11 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		for _, changedPath := range []string{"records/narrator-digest.log", "plans/handoff-current.md"} {
 			t.Run(changedPath, func(t *testing.T) {
 				carriage := newObserveFixture(t)
-				carriage.write(changedPath, "carried register\n")
+				content := "carried register\n"
+				if changedPath == "records/narrator-digest.log" {
+					content = "digest=existing\ndigest=carried\n"
+				}
+				carriage.write(changedPath, content)
 				got := Observe(ObserveParams{
 					RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
 				})
@@ -417,6 +422,18 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 			t.Fatalf("manifest self-change classified as %+v", got)
 		}
 	})
+}
+
+func TestObserveRegisterCarriageRefusesStagedNarratorDigestRewrite(t *testing.T) {
+	f := newObserveFixture(t)
+	f.write("records/narrator-digest.log", "digest=rewritten\n")
+
+	got := Observe(ObserveParams{
+		RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage",
+	})
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
+		t.Fatalf("staged narrator digest rewrite classified as %+v", got)
+	}
 }
 
 func TestObserveUndeclaredLandingRecordsWouldRefuse(t *testing.T) {

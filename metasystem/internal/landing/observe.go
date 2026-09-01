@@ -460,7 +460,7 @@ func registerCarriage(root, candidateTree string, changedPaths []string) error {
 			return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", changedPath)}
 		}
 		switch changedPath {
-		case "memory/rulings.md", "memory/receipts.log":
+		case "memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log":
 			if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
 				return &carriageError{code: "register-carriage-not-append-only", err: err}
 			}
