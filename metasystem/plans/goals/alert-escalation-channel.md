@@ -5,11 +5,11 @@
 - Origin: human
 - Next step: RESUMED on Wido's direct word 2026-09-01 evening (verbatim: 'well, keep working then. did you stop?') — the 8h fence intent renews from this word; the spend-cap retirement is landed so design rounds no longer die at $5. Sequence: certify the preserved revision-9 diff (recovery round over implementer-6df0467b2f1db45f5cecccdf's certified-authored 181-line diff — NOT the uncertified 346-line recovery attempt), then Sol round-3 critique against the r8 register's six findings, then slice-1 build per section 11a, then Fable code critique, then landing
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 32
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1
+- Revision: 33
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
-- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T19:42:26Z revision=31
-- StopCapability: generation=31 revision=31 machine=m0b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T21:44:24Z revision=33
+- StopCapability: generation=33 revision=33 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-29T06:19:06Z 6RYCTDER5WR9E3X1VDDVPWJDGF-m1-bf243850 open actor=human:wido targets=alert-escalation-channel
@@ -44,4 +44,5 @@ History:
 - 2026-09-01T16:59:06Z Y532HTHYZFXBF68CHBVWH7BW2E-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T19:42:26Z 3VJ50EVQRFM1PG3GG3450R9EBE-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T20:17:50Z 9KFNHYK8RFK6GRN1YCY2B5SXSY-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=b6d20edbb9e87260f94bf69728052fdc7238331c85058e2285493684c4103da7
+- 2026-09-01T21:44:24Z 03SAD0ARR9VC6QJ50P1YBKHAEE-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=6dc70eaf0ba3d80da9ea6b34a1e3a13f9c279eeebaa8476d7fb25c172d6e56f7
