@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Design changes take the loop, mechanical defects take a direct fix, declared and audited
 - Origin: main
-- Next step: OBSERVE SLICE LANDED 1afcef82 by m0 (account Wido@M0): every landing evaluated against the three bars, verdicts durably stamped, refusing nothing yet; chain closed at zero material findings; records/two-bars/ carries the full history. RE-SLICED AT WIDO'S INTAKE ORDER (2026-09-01, relayed via the paper-seat assessment; sequencing only, nothing in the r3 rulings or D90 re-litigated): (1) FIRST ENFORCING SLICE, promoted ahead of the rest - exactly the Change-Class trailer grammar, the never-direct-fix manifest read from both trees, and FAIL-CLOSED refusal of an unclassified or ambiguous AGENT commit at the commit gate commit.sh already calls; all landed observe machinery for these three exists at 1afcef82, so this slice is the narrow refusal flip for them alone, under Law 2's human-authorization shape with this recorded order as the word. Rationale on the record: combined with commit-goal-binding, this slice alone means a seat-authored design-bearing change cannot land without declaring the loop - the guard reaches the incident's actual path before the evidence-witness half exists. (2) The tree-bound witness, defect-identity growth fuse, and audit join stay deferred to later slices, with the six low findings from critique round 3 riding them. (3) Full promotion of the remaining bars after the observation window, Wido's word. DEPENDENCY NOTE: manifest-floor-at-dispatch (new, human-origin) consumes this goal's manifest contract - the contract-settling step precedes it; the blocker edge is recorded on that goal.
+- Next step: OBSERVE SLICE HARDENED, landed f8092e23 by m0 (account Wido@M0): all five open lows closed (trailer-form doc, loud guard fallback, real end-to-end commit-to-evaluator test, add-rows-only rulings carriage, authorizedBy resolving to real register rows); the sixth landed earlier as conformance-round-immutability. REMAINING LEGS unchanged: the observation window accumulates verdicts; the narrow fail-closed promotion slice (re-sliced at Wido's intake order, his recorded word as the Law 2 authorization) is CLAIMABLE NOW by any machine; full promotion after the window is Wido's. m0 releases.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 17
+- Revision: 18
 - Budget: elapsedLimit=2d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
 - Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T22:38:22Z revision=17
@@ -29,4 +29,5 @@ History:
 - 2026-09-01T13:21:13Z XKQVPKK44WY0AD3A5PQ08ZCHZM-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T22:38:17Z 29M70KQRAVJG05XRZ669DCH9QG-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
 - 2026-09-01T22:38:22Z 89A445DM1HKXJEN0PH1Z65SP15-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
-Integrity: sha256=092dbd8ac61b705da5ccdb560dc29cc4e367ddcec4ae8678b03f2af7b9d889b8
+- 2026-09-01T22:54:38Z 4R81C965R4V1JKDM89161YWECN-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
+Integrity: sha256=089670d20baf75189f234bc5149ec802b3b3d3e54a838701069a478b91043306
