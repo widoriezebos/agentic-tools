@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 1.5h. INTENT: two new escalation classes following the existing stalled-idle episode pattern exactly (internal/steward, escalation episodes). CONSTRAINTS: episode store is source of truth; deduplicate per job and per stop; no new delivery machinery (the external channel remains alert-escalation-channel's scope - this is the internal surfacing that should have existed all along); fixtures prove a failed job under a claimed goal escalates within one tick and a breach-stop escalates at fire time. Specimen: records/misc/idle-loss-2026-09-01.md
 - OpenedAt: 2026-09-01T06:47:55Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=6d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
 
 History:
 - 2026-09-01T06:47:55Z B6SQ8S2CXS5Y0XBQFSGB8GN425-m3-a5da21ff open actor=m3+mac-m3 targets=failed-job-attention
-Integrity: sha256=daf0c1bdbe380bff88ce364360d27ff60ed4e6a9df88ea1b2cd750ac2f87dcd1
+- 2026-09-01T13:50:53Z 9HGXC1MR08ZMJWENMSPQNQ7SVT-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=failed-job-attention
+Integrity: sha256=b2602a641acc876486d11e2f289bb745e3409c2d7de7e096abe298d47029f292
