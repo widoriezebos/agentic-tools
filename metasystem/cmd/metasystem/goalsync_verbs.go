@@ -411,6 +411,43 @@ func runGoalFetch(args []string) int {
 	return 0
 }
 
+// runGoalRepair deliberately accepts the current canonical tip after
+// the ordinary read-side advance has refused a rewind.
+func runGoalRepair(args []string) int {
+	flags := flag.NewFlagSet("goal repair", flag.ContinueOnError)
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "usage: metasystem goal repair --accept-remote --by <human> --root <checkout>")
+		flags.PrintDefaults()
+	}
+	acceptRemote := flags.Bool("accept-remote", false, "accept the current remote tip despite a rewind")
+	by := flags.String("by", "", "human authorizing the repair")
+	root := flags.String("root", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if !*acceptRemote {
+		fmt.Fprintln(os.Stderr, "goal repair: --accept-remote is required")
+		flags.Usage()
+		return 2
+	}
+	if *root == "" {
+		fmt.Fprintln(os.Stderr, "goal repair: --root is required")
+		return 2
+	}
+	endpoint, err := goal.ResolveEndpoint(*root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "goal repair: %v\n", err)
+		return 1
+	}
+	res, err := goal.RepairAcceptRemote(endpoint, *by)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "goal repair: %v\n", err)
+		return 1
+	}
+	fmt.Printf("advanced=%v tip=%s %s\n", res.Advanced, res.Tip, res.Detail)
+	return 0
+}
+
 // hexDigestOf helps the rehearsal scripts compute the reviewed
 // literal without a python detour.
 func runGoalSourceDigest(args []string) int {
