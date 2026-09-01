@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: INTENT: persisted review evidence survives every later invocation. CONSTRAINTS: the certified-output locator landed with two-bars reads all rounds/N directories already - the fix must keep that locator's contract; refusal message names the existing artifact and the lawful path (invoke with the follow-up round id). FREEDOMS: new-round-dir vs refuse; whether close-time consumes a specific round or the newest valid. Budget 4h (raise to 8h if bigger, split beyond - Wido 2026-09-01). TEST SHAPE: conformance twice on one root id leaves round 1 byte-identical; the second invocation either creates rounds/2 or refuses naming rounds/1.
 - OpenedAt: 2026-09-01T20:28:48Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=2d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T20:28:48Z HPJMQZ27J41VFN0CP4GC0PM16V-m0-c5dbf036 open actor=human:Wido targets=conformance-round-immutability
-Integrity: sha256=adb46efd1770928f3901f6056b898077b0f81670aedbafb792fd56eb13e88ced
+- 2026-09-01T20:28:56Z BZSVGNZA35BN8534VMS5KQXTTV-m0-c5dbf036 set-budget actor=human:Wido targets=conformance-round-immutability
+Integrity: sha256=231b5da57c35b9209121d9d0f6bdbad53cc81f27e84954c154e3eaa741207587
