@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,19 +15,24 @@ import (
 )
 
 type claimedDeliveryGoal struct {
-	id       string
-	claimAt  time.Time
-	receipt  time.Time
-	jobs     []deliveryJob
-	failures []string
+	id           string
+	claimAt      time.Time
+	elapsedLimit time.Duration
+	elapsedLabel string
+	receipt      time.Time
+	jobs         []deliveryJob
+	failures     []string
 }
 
 type deliveryJob struct {
-	id         string
-	status     string
-	errorText  string
-	reservedAt time.Time
-	endedAt    time.Time
+	id          string
+	status      string
+	errorText   string
+	reservedAt  time.Time
+	createdAt   time.Time
+	endedAt     time.Time
+	capMin      int64
+	capDeadline time.Time
 }
 
 func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
@@ -62,6 +68,14 @@ func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
 		if parseErr != nil {
 			entry.failures = append(entry.failures, fmt.Sprintf("goal %s has unreadable claim time %q", id, file.Claimed.At))
 		}
+		if file.Budget == nil {
+			entry.failures = append(entry.failures, fmt.Sprintf("goal %s has no elapsed limit", id))
+		} else if elapsed, ok := goal.ParseWorkingDuration(file.Budget.ElapsedLimit); !ok {
+			entry.failures = append(entry.failures, fmt.Sprintf("goal %s has unreadable elapsed limit %q", id, file.Budget.ElapsedLimit))
+		} else {
+			entry.elapsedLimit = elapsed
+			entry.elapsedLabel = file.Budget.ElapsedLimit
+		}
 		claimed[id] = entry
 	}
 	if len(claimed) == 0 {
@@ -77,7 +91,7 @@ func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
 	if err != nil {
 		return deliveryDead("the slice norm configuration is unreadable: " + err.Error())
 	}
-	thresholdHours := float64(normHours) * 1.5
+	norm := time.Duration(normHours) * time.Hour
 	var dead, alive []string
 	for _, id := range ids {
 		entry, ok := claimed[id]
@@ -93,21 +107,30 @@ func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
 				id, failure.id, deliveryAge(now, failure.endedAt), failure.errorText))
 			continue
 		}
-		claimAge := now.Sub(entry.claimAt)
-		reserved := 0
+		sliceBurned := false
 		for _, job := range entry.jobs {
-			if job.reservedAt.After(entry.claimAt) {
-				reserved++
+			if deliveryTerminalStatus(job.status) || entry.receipt.After(job.createdAt) {
+				continue
+			}
+			burnBoundary := job.capDeadline.Add(time.Duration(job.capMin) * time.Minute / 2)
+			if burnBoundary.Before(now) {
+				overrunPercent := float64(now.Sub(job.capDeadline)) / float64(time.Duration(job.capMin)*time.Minute) * 100
+				dead = append(dead, fmt.Sprintf("goal %s has burned without delivery: job %s exceeded its own %d-minute budget by %.1f%% without a newer landing receipt",
+					id, job.id, job.capMin, overrunPercent))
+				sliceBurned = true
+				break
 			}
 		}
-		if claimAge.Hours() > thresholdHours && reserved > 0 && !entry.receipt.After(entry.claimAt) {
-			jobWord := "jobs"
-			if reserved == 1 {
-				jobWord = "job"
-			}
-			dead = append(dead, fmt.Sprintf("goal %s has burned without delivery: claim age %.1f hours exceeds the %.1f-hour threshold; %d %s reserved since claim",
-				id, claimAge.Hours(), thresholdHours, reserved, jobWord))
+		if sliceBurned {
 			continue
+		}
+		if entry.elapsedLimit < norm && !entry.receipt.After(entry.claimAt) {
+			claimBoundary := entry.claimAt.Add(entry.elapsedLimit + entry.elapsedLimit/2)
+			if claimBoundary.Before(now) {
+				dead = append(dead, fmt.Sprintf("goal %s has burned without delivery: claim age %s exceeds 150%% of its own %s elapsed limit",
+					id, deliveryAge(now, entry.claimAt), entry.elapsedLabel))
+				continue
+			}
 		}
 		if entry.receipt.IsZero() {
 			alive = append(alive, fmt.Sprintf("goal %s has no landing receipt yet", id))
@@ -183,8 +206,41 @@ func readDeliveryJobs(repoRoot string, claimed map[string]*claimedDeliveryGoal) 
 				continue
 			}
 		}
+		if !deliveryTerminalStatus(status) {
+			job.createdAt, err = deliveryRecordTime(value, "createdAt")
+			if err != nil {
+				entry.failures = append(entry.failures, fmt.Sprintf("goal %s cannot read creation time in job record %s: %v", goalID, path, err))
+				continue
+			}
+			job.capMin, err = deliveryJobCapMinutes(value)
+			if err != nil {
+				entry.failures = append(entry.failures, fmt.Sprintf("goal %s has incomplete non-terminal job record %s: %v", goalID, path, err))
+				continue
+			}
+			job.capDeadline, err = deliveryRecordTime(value, "capDeadline")
+			if err != nil {
+				entry.failures = append(entry.failures, fmt.Sprintf("goal %s has incomplete non-terminal job record %s: %v", goalID, path, err))
+				continue
+			}
+		}
 		entry.jobs = append(entry.jobs, job)
 	}
+}
+
+func deliveryTerminalStatus(status string) bool {
+	return status == "completed" || status == "failed" || status == "cancelled"
+}
+
+func deliveryJobCapMinutes(value map[string]any) (int64, error) {
+	raw, ok := value["capMin"].(json.Number)
+	if !ok {
+		return 0, fmt.Errorf("capMin is missing")
+	}
+	minutes, err := strconv.ParseInt(raw.String(), 10, 64)
+	if err != nil || minutes <= 0 || minutes > int64(time.Duration(1<<63-1)/time.Minute) {
+		return 0, fmt.Errorf("capMin %q is not a positive integer number of minutes", raw)
+	}
+	return minutes, nil
 }
 
 func deliveryJobReservationTime(value map[string]any) (time.Time, error) {
