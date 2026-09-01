@@ -100,6 +100,38 @@ func TestBriefAuthorityTreatsMetasystemDiffBoundaryExampleAsPrefixOnly(t *testin
 	}
 }
 
+func TestBriefAuthorityExemptsDeclaredOutputsUnlessTheyAreAlsoInputs(t *testing.T) {
+	repo := newBriefAuthorityRepo(t)
+	brief := writeBriefAuthorityFile(t, repo, "brief.md", strings.Join([]string{
+		"Working Mode: implement",
+		"# Workspace",
+		"May-write: records/identity/epoch-drift-design.md",
+		"May touch: records/identity/second-output.md",
+		"Create `records/identity/third-output.md`.",
+		"# Goal",
+		"Produce the listed deliverables.",
+	}, "\n"))
+	if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+		t.Fatalf("absent paths declared only as outputs were refused: %v", err)
+	}
+
+	brief = writeBriefAuthorityFile(t, repo, "brief.md", strings.Join([]string{
+		"Working Mode: implement",
+		"# Workspace",
+		"May-write: records/identity/epoch-drift-design.md",
+		"# Inputs",
+		"Follow the authority in records/identity/epoch-drift-design.md.",
+	}, "\n"))
+	err := ValidateBriefAuthority(brief, repo, repo)
+	var refusal *BriefAuthorityRefusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("path cited as both output and input error = %v, want typed BriefAuthorityRefusal", err)
+	}
+	if !reflect.DeepEqual(refusal.MissingPaths, []string{"records/identity/epoch-drift-design.md"}) {
+		t.Fatalf("input citation did not win over output declaration: %v", refusal.MissingPaths)
+	}
+}
+
 func newBriefAuthorityRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

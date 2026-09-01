@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,6 +199,74 @@ func TestAdjudicateTurnAfterRepairInvalidGoesProtocolError(t *testing.T) {
 	got, err := AdjudicateTurn(p)
 	if err != nil || got != "protocol-error" {
 		t.Fatalf("verdict = %q err=%v, want protocol-error", got, err)
+	}
+}
+
+func TestAdjudicateTurnRepairsBareImplementerDiffBoundaryAtAcceptance(t *testing.T) {
+	dir := t.TempDir()
+	schemaSource, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "implementer.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaDir := filepath.Join(dir, "scripts", "agents", "schemas")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(schemaDir, "implementer.schema.json"), schemaSource, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	jobsDir := filepath.Join(dir, "artifacts", "agents", "jobs")
+	roundDir := filepath.Join(dir, "artifacts", "agents", "job-1", "rounds", "1")
+	for _, path := range []string{jobsDir, roundDir} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record := filepath.Join(jobsDir, "job-1.json")
+	writeFile(t, record, `{"jobId":"job-1","role":"implementer","round":1,"runtime":"codex","sessionId":"observed-session","effectiveModel":"observed-model","parentJob":null}`)
+	returnObject := func(boundary string) string {
+		return fmt.Sprintf(`{
+  "schemaVersion":2,"claimed":{"sessionId":null,"model":null},
+  "jobId":"job-1","round":1,"runtime":"codex","sessionId":"observed-session",
+  "model":{"requested":"requested-model","effective":"observed-model"},
+  "evidence":[],"gaps":[],"mode":"implement","riskiestPart":"acceptance grammar",
+  "diffBoundary":[%q],"whatWasDone":"tested return acceptance"
+}`, boundary)
+	}
+	badCandidate := filepath.Join(dir, "bad-return.json")
+	goodCandidate := filepath.Join(dir, "good-return.json")
+	writeFile(t, badCandidate, returnObject("internal/dispatch/brief.go"))
+	writeFile(t, goodCandidate, returnObject("metasystem/internal/dispatch/brief.go"))
+	p := AdjudicateParams{
+		Stage:            "initial",
+		Root:             dir,
+		Job:              "job-1",
+		RecordPath:       record,
+		SessionID:        "observed-session",
+		SchemaPath:       filepath.Join(schemaDir, "implementer.schema.json"),
+		CandidatePath:    badCandidate,
+		ReturnPath:       filepath.Join(roundDir, "return.json"),
+		MarkdownPath:     filepath.Join(roundDir, "return.md"),
+		ViolationPath:    filepath.Join(roundDir, "protocol-violation.txt"),
+		RepairPromptPath: filepath.Join(roundDir, "repair-1.prompt.md"),
+		HandshakeDone:    true,
+		RepairAvailable:  true,
+	}
+	verdict, err := AdjudicateTurn(p)
+	if err != nil || verdict != "repair" {
+		t.Fatalf("bare boundary acceptance verdict = %q err=%v, want repair", verdict, err)
+	}
+	violation, err := os.ReadFile(p.ViolationPath)
+	if err != nil || !strings.Contains(string(violation), "DIFF_BOUNDARY_INVALID") ||
+		!strings.Contains(string(violation), `"internal/dispatch/brief.go"`) {
+		t.Fatalf("typed violation did not name the bad entry: %q err=%v", violation, err)
+	}
+
+	p.Stage = "after-repair"
+	p.RepairCandidate = goodCandidate
+	verdict, err = AdjudicateTurn(p)
+	if err != nil || verdict != "finish completed null completed" {
+		t.Fatalf("corrected repair acceptance verdict = %q err=%v, want completed", verdict, err)
 	}
 }
 

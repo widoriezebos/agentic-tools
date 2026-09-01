@@ -18,7 +18,10 @@ import (
 // and sessionId identity between the return and the record. It returns the
 // violations found (empty means pass).
 
-var returnJobIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+var (
+	returnJobIDRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	returnDiffBoundary = regexp.MustCompile(`^metasystem/.+`)
+)
 
 var returnAllowedRoles = map[string]bool{
 	"orchestrator": true, "design-critic": true, "implementer": true,
@@ -213,12 +216,28 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	if role == "behavior-judge" && resultObj != nil {
 		c.checkJudgeAnchors(resultObj)
 	}
+	if role == "implementer" && resultObj != nil {
+		c.checkDiffBoundary(resultObj)
+	}
 	if mode == "job" && resultObj != nil && record != nil {
 		for _, name := range []string{"jobId", "round", "runtime", "sessionId"} {
 			if !jsonSame(resultObj[name], record[name]) {
 				c.violation("$.%s identity mismatch: return has %s, job record has %s",
 					name, jsonRepr(resultObj[name]), jsonRepr(record[name]))
 			}
+		}
+	}
+}
+
+func (c *returnChecker) checkDiffBoundary(result map[string]any) {
+	boundary, ok := result["diffBoundary"].([]any)
+	if !ok {
+		return
+	}
+	for _, raw := range boundary {
+		entry, ok := raw.(string)
+		if ok && !returnDiffBoundary.MatchString(entry) {
+			c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", entry)
 		}
 	}
 }

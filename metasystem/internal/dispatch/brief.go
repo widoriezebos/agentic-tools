@@ -13,6 +13,9 @@ import (
 var (
 	briefPathTokenRun = regexp.MustCompile(`[A-Za-z0-9_.*\-/<>{}$]+`)
 	briefPathToken    = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.*-]+)+$`)
+	briefHeading      = regexp.MustCompile(`^\s*(#{1,6})\s+(.+?)\s*$`)
+	briefOutputLine   = regexp.MustCompile(`(?i)^\s*(?:[-*]\s*)?may[- ](?:write|touch)\s*:`)
+	briefCreatePrefix = regexp.MustCompile("(?i)(?:new[ \\t]+file|create)[ \\t]*:?[ \\t]*[`\\\"']?[ \\t]*$")
 )
 
 var briefAuthorityDirectories = map[string]bool{
@@ -116,11 +119,27 @@ func treeDirectories(baseTree, treeish string) (map[string]bool, error) {
 }
 
 func extractBriefAuthorityPaths(brief string, topDirectories, nestedDirectories map[string]bool) []string {
-	seen := map[string]bool{}
+	type pathUse struct {
+		input  bool
+		output bool
+	}
+	uses := map[string]pathUse{}
+	workspaceHeadingLevel := 0
 	for _, line := range strings.Split(brief, "\n") {
+		if heading := briefHeading.FindStringSubmatch(line); heading != nil {
+			level := len(heading[1])
+			name := strings.TrimSpace(strings.TrimRight(heading[2], "#"))
+			if strings.EqualFold(name, "Workspace") {
+				workspaceHeadingLevel = level
+			} else if workspaceHeadingLevel > 0 && level <= workspaceHeadingLevel {
+				workspaceHeadingLevel = 0
+			}
+		}
 		lowerLine := strings.ToLower(line)
 		boundaryExample := strings.Contains(lowerLine, "diffboundary") && strings.Contains(lowerLine, "example")
-		for _, token := range briefPathTokenRun.FindAllString(line, -1) {
+		workspaceOutputLine := workspaceHeadingLevel > 0 && briefOutputLine.MatchString(line)
+		for _, location := range briefPathTokenRun.FindAllStringIndex(line, -1) {
+			token := strings.TrimRight(line[location[0]:location[1]], ".")
 			if strings.ContainsAny(token, "*<>${") || !briefPathToken.MatchString(token) {
 				continue
 			}
@@ -130,14 +149,23 @@ func extractBriefAuthorityPaths(brief string, topDirectories, nestedDirectories 
 				eligible = topDirectories["metasystem"] && briefAuthorityDirectories[parts[1]] &&
 					(nestedDirectories[parts[1]] || parts[1] == "artifacts")
 			}
-			if eligible && !(boundaryExample && strings.HasPrefix(token, "metasystem/")) {
-				seen[token] = true
+			if !eligible || (boundaryExample && strings.HasPrefix(token, "metasystem/")) {
+				continue
 			}
+			use := uses[token]
+			if workspaceOutputLine || briefCreatePrefix.MatchString(line[:location[0]]) {
+				use.output = true
+			} else {
+				use.input = true
+			}
+			uses[token] = use
 		}
 	}
-	paths := make([]string, 0, len(seen))
-	for path := range seen {
-		paths = append(paths, path)
+	paths := make([]string, 0, len(uses))
+	for path, use := range uses {
+		if use.input || !use.output {
+			paths = append(paths, path)
+		}
 	}
 	sort.Strings(paths)
 	return paths
