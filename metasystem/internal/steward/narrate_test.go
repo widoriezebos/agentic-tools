@@ -117,3 +117,29 @@ func TestNoticingsReachTheHumanOncePerCondition(t *testing.T) {
 		t.Fatalf("one building condition holds one pending slot, got %d", count)
 	}
 }
+
+func TestLedgerAttentionNarrationNamesEveryAttentionFact(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	event := LedgerAttentionEvent{
+		SourceID: strings.Repeat("c", 40), Tip: strings.Repeat("d", 40),
+		Claimable: []string{"claimable-goal"}, Pins: []string{"pinned-goal"},
+		QueueWas: []string{"pinned-goal", "claimable-goal"}, QueueNow: []string{"claimable-goal", "pinned-goal"},
+	}
+	if err := NarrateDigest(root, Evidence{}, TickResult{LedgerAttention: LedgerAttentionReport{Pending: []LedgerAttentionEvent{event}}}, now); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(narratordigest.Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phrase := range []string{"new claimable goal", "pin(s) addressed to this machine", "queue reordered", "source: ledger " + event.SourceID} {
+		if !strings.Contains(string(data), phrase) {
+			t.Fatalf("ledger narration omitted %q: %s", phrase, data)
+		}
+	}
+	nudge := ledgerAttentionNotification(event, "mac-a")
+	if nudge.Nonce != "ledger-attention-"+event.SourceID || !strings.Contains(nudge.Message, "queue reordered") {
+		t.Fatalf("per-change nudge grammar changed: %+v", nudge)
+	}
+}

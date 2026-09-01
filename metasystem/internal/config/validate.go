@@ -392,6 +392,29 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			add("environment source %s: %v", EnvName(SliceNormHoursKey), parseErr)
 		}
 	}
+	if raw, present := values[LedgerAttentionStaleMinutesKey]; present {
+		if _, parseErr := parseLedgerAttentionStaleMinutes(raw); parseErr != nil {
+			add("%v", parseErr)
+		}
+	}
+	if isFile(localPath) {
+		if raw, present, lookupErr := ConfLookup(localPath, LedgerAttentionStaleMinutesKey); lookupErr != nil {
+			add("%v", lookupErr)
+		} else if present {
+			if !fixtureBudgetOverrides {
+				add("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", LedgerAttentionStaleMinutesKey, localPath)
+			} else if _, parseErr := parseLedgerAttentionStaleMinutes(raw); parseErr != nil {
+				add("%s: %v", localPath, parseErr)
+			}
+		}
+	}
+	if raw, present := os.LookupEnv(EnvName(LedgerAttentionStaleMinutesKey)); present {
+		if !fixtureBudgetOverrides {
+			add("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", LedgerAttentionStaleMinutesKey, EnvName(LedgerAttentionStaleMinutesKey))
+		} else if _, parseErr := parseLedgerAttentionStaleMinutes(raw); parseErr != nil {
+			add("environment source %s: %v", EnvName(LedgerAttentionStaleMinutesKey), parseErr)
+		}
+	}
 	if raw, present := values[GoalNormJobMinutesKey]; present {
 		if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
 			add("%v", parseErr)

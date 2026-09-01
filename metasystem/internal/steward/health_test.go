@@ -776,3 +776,24 @@ func TestForwardClockMovementExpiresComponentFreshness(t *testing.T) {
 		t.Fatalf("a forward clock movement expires freshness immediately: %+v", role)
 	}
 }
+
+func TestLedgerAttentionHealthRowUsesConfiguredStalenessGrammar(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nsteward.ledger-attention-stale-minutes=30\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	state := ledgerAttentionState{
+		Schema: ledgerAttentionStateSchema, LastOutcome: "current",
+		RemoteTip: strings.Repeat("a", 40), ExaminedTip: strings.Repeat("b", 40),
+		MovedAt: now.Add(-47 * time.Minute).Format(time.RFC3339Nano),
+	}
+	if err := saveLedgerAttentionState(root, state); err != nil {
+		t.Fatal(err)
+	}
+	row := checkLedgerAttention(root, now)
+	want := "the shared ledger moved to aaaaaaaaaaaa 47m ago and is unexamined past 30m"
+	if row.Status != HealthDead || row.Reason != want || !row.NoAutomaticRemedy {
+		t.Fatalf("ledger-attention health grammar changed: %+v", row)
+	}
+}

@@ -126,6 +126,8 @@ type sessionState struct {
 	OpenWorkSignature    string   `json:"openWorkSignature"`
 	BlockedGoalRevisions []string `json:"blockedGoalRevisions"`
 	BlockedFreeDigests   []string `json:"blockedFreeDigests"`
+	BlockedQueueDigests  []string `json:"blockedQueueDigests,omitempty"`
+	ObservedQueueDigest  string   `json:"observedQueueDigest,omitempty"`
 	WatchdogSurfaced     *string  `json:"watchdogSurfaced"`
 	// The monitor facility's two additive slots: the
 	// unwatched-work block-once digests and the green cursor riding the
@@ -394,14 +396,29 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 			} else {
 				display = append(display, "NOTHING LEFT TO WORK ON; the current goal is "+facts.Id+" ("+facts.NextStep+")")
 			}
+			if first, digest := s.queuedFrontier(); digest != "" {
+				if session.ObservedQueueDigest == "" {
+					session.ObservedQueueDigest = digest
+				} else if digest != session.ObservedQueueDigest {
+					session.ObservedQueueDigest = digest
+					queueNow := "is now empty"
+					if first != "" {
+						queueNow = "now starts with " + first
+					}
+					blockGoal(fmt.Sprintf("the shared goal queue changed while %s remains claimed here; it %s", facts.Id, queueNow))
+				}
+			}
 		case "queued-only":
 			first, digest := s.queuedFrontier()
 			if first == "" {
 				display = append(display, "no goal is claimed here and the queue is empty; `goal open` starts one")
 				break
 			}
-			if !contains(session.BlockedGoalRevisions, digest) {
-				session.BlockedGoalRevisions = appendCapped(session.BlockedGoalRevisions, digest, maxGoalRevisions)
+			if contains(session.BlockedGoalRevisions, digest) && !contains(session.BlockedQueueDigests, digest) {
+				session.BlockedQueueDigests = appendCapped(session.BlockedQueueDigests, digest, maxGoalRevisions)
+			}
+			if !contains(session.BlockedQueueDigests, digest) {
+				session.BlockedQueueDigests = appendCapped(session.BlockedQueueDigests, digest, maxGoalRevisions)
 				blockGoal(fmt.Sprintf("no current goal; the queue holds %s: `goal promote %s` or park it", first, first))
 			} else {
 				display = append(display, "no current goal; the queue holds "+first)
@@ -536,7 +553,7 @@ func (s *Store) queuedFrontier() (first, digest string) {
 			}
 		}
 		if len(rows) == 0 {
-			return "", ""
+			return "", sha256Hex(nil)
 		}
 		sort.Slice(rows, func(i, j int) bool {
 			if rows[i].opened != rows[j].opened {
@@ -551,8 +568,11 @@ func (s *Store) queuedFrontier() (first, digest string) {
 		return rows[0].id, sha256Hex([]byte(strings.Join(lines, "\n")))
 	}
 	ledger, _, _ := s.ReadLedger()
-	if ledger == nil || len(ledger.Queued) == 0 {
+	if ledger == nil {
 		return "", ""
+	}
+	if len(ledger.Queued) == 0 {
+		return "", sha256Hex(nil)
 	}
 	return ledger.Queued[0].Id, ledger.QueuedDigest()
 }

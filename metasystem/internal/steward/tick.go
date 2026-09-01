@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -49,10 +50,11 @@ type TickResult struct {
 	Reaped   []ReapReport // continuations this tick closed
 	// ProviderOutage reports a standing outage mark, for the narration
 	// and the long-outage noticing; Outage carries the mark itself.
-	ProviderOutage bool
-	Outage         outage.Mark
-	Health         HealthVerdict
-	GoalStops      []BreachStopReport
+	ProviderOutage  bool
+	Outage          outage.Mark
+	Health          HealthVerdict
+	GoalStops       []BreachStopReport
+	LedgerAttention LedgerAttentionReport
 }
 
 // BreachStopReport is machinery history for one heal-before-notify stop pass.
@@ -169,6 +171,19 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err != nil {
 		return degradedTick(repoRoot, "reaping failed: "+err.Error())
 	}
+	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, selfExact.Ref(), time.Now())
+	if err != nil {
+		return TickResult{}, fmt.Errorf("record ledger-attention attempt: %w", err)
+	}
+	ledgerReport := RunLedgerAttention(repoRoot, time.Now())
+	ledgerResult, ledgerOutcome, ledgerEvidence := ComponentOK, "PASS_COMPLETE", ledgerReport.Outcome
+	if ledgerReport.Outcome == "failed" {
+		ledgerResult, ledgerOutcome, ledgerEvidence = ComponentError, ledgerReport.FailureKind, ledgerReport.Failure
+	}
+	if _, err := completeComponentAttempt(repoRoot, "ledger-attention", generation, ledgerAttempt.AttemptSeq,
+		ledgerResult, ledgerOutcome, ledgerEvidence, time.Now()); err != nil {
+		return TickResult{}, fmt.Errorf("record ledger-attention completion: %w", err)
+	}
 
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
@@ -210,9 +225,24 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		}
 	}
 	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
-		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops}
+		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops,
+		LedgerAttention: ledgerReport}
 	if err := NarrateDigest(repoRoot, prev, result, time.Now()); err != nil {
 		return result, fmt.Errorf("write narrator digest: %w", err)
+	}
+	machine := "this machine"
+	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
+		machine = enrolled
+	}
+	var surfaced []string
+	for _, event := range ledgerReport.Pending {
+		if err := QueueNotification(repoRoot, ledgerAttentionNotification(event, machine)); err != nil {
+			return result, fmt.Errorf("queue ledger-attention notification: %w", err)
+		}
+		surfaced = append(surfaced, event.SourceID)
+	}
+	if err := PersistLedgerAttentionMark(repoRoot, surfaced); err != nil {
+		return result, fmt.Errorf("mark ledger-attention events surfaced: %w", err)
 	}
 	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
 		return result, err
@@ -222,7 +252,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// narration notices also reaches the operator, one gated message
 	// per building condition.
 	Narrate(repoRoot, result, cfg)
-	ReachTheHuman(repoRoot, noticings(result, cfg))
+	ReachTheHuman(repoRoot, noticingsAt(repoRoot, result, cfg, time.Now()))
 	if err := completeTickHealth(repoRoot, &result, generation, selfExact.Ref()); err != nil {
 		return result, err
 	}

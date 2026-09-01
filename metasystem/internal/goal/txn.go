@@ -91,7 +91,7 @@ func goalGit(root string, extraEnv []string, args ...string) (string, error) {
 		// voice, and losing it turned every CAS race into "transport
 		// unknown". Only the SUCCESS return is the parsed channel.
 		combined := stdout.String() + stderr.String()
-		return combined, fmt.Errorf("git %s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return combined, fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
 }

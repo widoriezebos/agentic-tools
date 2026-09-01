@@ -46,6 +46,18 @@ func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
 // write failure fails the tick before its observation high-water advances.
 func NarrateDigest(repoRoot string, previous Evidence, result TickResult, now time.Time) error {
 	var entries []narratordigest.Entry
+	machine := "this machine"
+	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
+		machine = enrolled
+	}
+	for _, event := range result.LedgerAttention.Pending {
+		entries = append(entries, narratordigest.Entry{
+			Kind:       "highlight",
+			Text:       fmt.Sprintf("The shared goal ledger moved to %s: %s.", shortLedgerTip(event.Tip), strings.Join(ledgerAttentionSegments(event, machine), "; ")),
+			SourceType: "ledger",
+			SourceID:   event.SourceID,
+		})
+	}
 	commit := result.Evidence.Marks.HeadOid
 	if commit != "" && commit != "no-head" && commit != previous.Marks.HeadOid {
 		shown := commit
@@ -147,6 +159,14 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 	if len(result.Reaped) > 0 {
 		notes = append(notes, fmt.Sprintf("closed %d finished helper run(s)", len(result.Reaped)))
 	}
+	if len(result.LedgerAttention.Pending) > 0 {
+		claimable, pins := 0, 0
+		for _, event := range result.LedgerAttention.Pending {
+			claimable += len(event.Claimable)
+			pins += len(event.Pins)
+		}
+		notes = append(notes, fmt.Sprintf("the shared ledger moved (%d change(s), %d claimable, %d pinned here)", len(result.LedgerAttention.Pending), claimable, pins))
+	}
 	for _, stop := range result.GoalStops {
 		if stop.State == "COMPLETE" {
 			notes = append(notes, fmt.Sprintf("breach-stop completed for %s revision %d", stop.GoalID, stop.Revision))
@@ -160,7 +180,7 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 	if result.Decision.Action == ActRevive {
 		notes = append(notes, "reviving stalled work: "+result.Decision.Reason)
 	}
-	notes = append(notes, noticingLines(noticings(result, cfg))...)
+	notes = append(notes, noticingLines(noticingsAt(repoRoot, result, cfg, now))...)
 	sentence := now.Format("2006-01-02 15:04") + "  " + machine + " is " + doing
 	if len(notes) > 0 {
 		sentence += "; " + strings.Join(notes, "; ")
@@ -196,6 +216,10 @@ func noticingLines(items []Noticing) []string {
 const longOutageAfter = 10 * time.Minute
 
 func noticings(result TickResult, cfg TickConfig) []Noticing {
+	return noticingsAt("", result, cfg, time.Now())
+}
+
+func noticingsAt(repoRoot string, result TickResult, cfg TickConfig, now time.Time) []Noticing {
 	cfg = cfg.withDefaults()
 	var out []Noticing
 	// The long-outage alert is provider-INDEPENDENT by construction:
@@ -204,12 +228,26 @@ func noticings(result TickResult, cfg TickConfig) []Noticing {
 	// when the operator most needs to hear the outage is still on.
 	if result.ProviderOutage {
 		if since, err := time.Parse(time.RFC3339, result.Outage.Since); err == nil {
-			if age := time.Since(since); age >= longOutageAfter {
+			if age := ledgerAge(now, since); age >= longOutageAfter {
 				out = append(out, Noticing{
 					Key: "provider-outage-standing",
 					Line: fmt.Sprintf(
 						"noticing: the model provider has been overloaded for %d minutes (%d failure(s) recorded); local work continues and the clocks stay paused — a long outage is worth a look at the provider's status",
 						int(age.Minutes()), result.Outage.ConsecutiveFailures),
+				})
+			}
+		}
+	}
+	if !result.LedgerAttention.MovedAt.IsZero() {
+		if minutes, err := ledgerAttentionStaleMinutes(repoRoot); err == nil {
+			threshold := time.Duration(minutes) * time.Minute
+			age := ledgerAge(now, result.LedgerAttention.MovedAt)
+			if age > 0 && age < threshold {
+				out = append(out, Noticing{
+					Key: "ledger-unexamined",
+					Line: fmt.Sprintf(
+						"noticing: the shared goal ledger moved %s ago (tip %s) and nothing here has examined it — a journaling goal verb clears this (health goes red at %dm)",
+						roundedLedgerAge(age), shortLedgerTip(result.LedgerAttention.Tip), minutes),
 				})
 			}
 		}
@@ -236,6 +274,39 @@ func noticings(result TickResult, cfg TickConfig) []Noticing {
 		})
 	}
 	return out
+}
+
+func ledgerAttentionSegments(event LedgerAttentionEvent, machine string) []string {
+	var segments []string
+	if len(event.Claimable) > 0 {
+		segments = append(segments, fmt.Sprintf("%d new claimable goal(s): %s", len(event.Claimable), strings.Join(event.Claimable, ", ")))
+	}
+	if len(event.Pins) > 0 {
+		segments = append(segments, fmt.Sprintf("%d pin(s) addressed to %s: %s", len(event.Pins), machine, strings.Join(event.Pins, ", ")))
+	}
+	if event.QueueWas != nil || event.QueueNow != nil {
+		segments = append(segments, fmt.Sprintf("the queue reordered: now %s (was %s)", renderLedgerQueue(event.QueueNow), renderLedgerQueue(event.QueueWas)))
+	}
+	return segments
+}
+
+func renderLedgerQueue(ids []string) string {
+	shown := ids
+	if len(shown) > 5 {
+		shown = shown[:5]
+	}
+	text := strings.Join(shown, ",")
+	if len(ids) > 5 {
+		text += fmt.Sprintf(", +%d more", len(ids)-5)
+	}
+	return text
+}
+
+func ledgerAttentionNotification(event LedgerAttentionEvent, machine string) PendingNotification {
+	return PendingNotification{
+		Nonce:   "ledger-attention-" + event.SourceID,
+		Message: fmt.Sprintf("steward: the shared goal ledger moved to %s — %s", shortLedgerTip(event.Tip), strings.Join(ledgerAttentionSegments(event, machine), "; ")),
+	}
 }
 
 // ReachTheHuman queues each noticing on the delivery-gated channel,

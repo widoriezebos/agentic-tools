@@ -154,6 +154,130 @@ func TestQueuedOnlyVerdict(t *testing.T) {
 	}
 }
 
+func TestQueuedOnlyVerdictMigratesLegacyQueueDigest(t *testing.T) {
+	s := testStore(t)
+	mustOpen(t, s, mainHolder, "legacy-queue", "legacy queued goal", "Promote it.")
+	if _, err := s.Done(mainHolder, "legacy-queue", "landed", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reopen(mainHolder, "legacy-queue", "Queue it again."); err != nil {
+		t.Fatal(err)
+	}
+	first, digest := s.queuedFrontier()
+	if first != "legacy-queue" || digest == "" {
+		t.Fatalf("queued frontier missing: first=%q digest=%q", first, digest)
+	}
+	state := &verdictState{SchemaVersion: 1, Sessions: map[string]*sessionState{
+		"legacy-queue-session": {
+			LastTouched: s.nowISO(), BlockedGoalRevisions: []string{digest},
+		},
+	}}
+	if err := s.saveVerdictState(state); err != nil {
+		t.Fatal(err)
+	}
+
+	verdict, err := s.TurnVerdict(ScanResult{}, "legacy-queue-session", "", "")
+	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "queue holds legacy-queue") {
+		t.Fatalf("legacy queue digest re-blocked during migration: %+v %v", verdict, err)
+	}
+	migrated, err := s.loadVerdictState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := migrated.Sessions["legacy-queue-session"]
+	if session == nil || !contains(session.BlockedQueueDigests, digest) {
+		t.Fatalf("legacy queue digest was not migrated to its dedicated field: %+v", session)
+	}
+}
+
+func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	mustGit(t, root, "config", "metasystem.goal.machine", "mac-a")
+	request := verbReq(root, "01J5X00000000000000000TV10", "mac-a")
+	if result, err := Open(request, "claimed-here", "Keep working here.", OriginMain, "Continue it."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open claimed goal: %+v %v", result, err)
+	}
+	request.Ulid = "01J5X00000000000000000TV11"
+	if result, err := Claim(request, "claimed-here", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim goal: %+v %v", result, err)
+	}
+	request.Ulid = "01J5X00000000000000000TV12"
+	if result, err := Open(request, "queued-pin", "Wait in the queue.", OriginMain, "Claim later."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open queued goal: %+v %v", result, err)
+	}
+	store := &Store{Root: root, Now: func() time.Time { return request.Now }}
+	first, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+	if err != nil || !first.ShouldBlock {
+		t.Fatalf("initial claimed world did not block: %+v %v", first, err)
+	}
+	spent, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+	if err != nil || spent.ShouldBlock {
+		t.Fatalf("unchanged claimed world reblocked: %+v %v", spent, err)
+	}
+	request.Ulid = "01J5X00000000000000000TV13"
+	request.Actor.Human = "Wido"
+	if result, err := SetPin(request, "queued-pin", "mac-a"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("pin queued goal: %+v %v", result, err)
+	}
+	changed, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+	if err != nil || !changed.ShouldBlock || !strings.Contains(changed.Display, "shared goal queue changed") || !strings.Contains(changed.Display, "queued-pin") {
+		t.Fatalf("queue change did not reblock the claimed session once: %+v %v", changed, err)
+	}
+	again, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+	if err != nil || again.ShouldBlock {
+		t.Fatalf("unchanged queue digest reblocked twice: %+v %v", again, err)
+	}
+	request.Ulid = "01J5X00000000000000000TV14"
+	if result, err := SetPin(request, "queued-pin", "-"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("clear queued pin: %+v %v", result, err)
+	}
+	cleared, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+	if err != nil || !cleared.ShouldBlock {
+		t.Fatalf("pin clearing did not reblock the claimed session: %+v %v", cleared, err)
+	}
+	request.Ulid = "01J5X00000000000000000TV15"
+	request.Actor = Actor{Machine: "mac-b", Lineage: "turn-verdict-fixture"}
+	if result, err := Claim(request, "queued-pin", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim the last queued goal elsewhere: %+v %v", result, err)
+	}
+	emptied, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+	if err != nil || !emptied.ShouldBlock || !strings.Contains(emptied.Display, "now empty") {
+		t.Fatalf("the final queue departure did not reblock the claimed session: %+v %v", emptied, err)
+	}
+}
+
+func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	mustGit(t, root, "config", "metasystem.goal.machine", "mac-a")
+	request := verbReq(root, "01J5X00000000000000000TV20", "mac-a")
+	if result, err := Open(request, "steady-claim", "Keep the steady claim.", OriginMain, "Continue it."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open steady claim: %+v %v", result, err)
+	}
+	request.Ulid = "01J5X00000000000000000TV21"
+	if result, err := Claim(request, "steady-claim", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim steady goal: %+v %v", result, err)
+	}
+	store := &Store{Root: root, Now: func() time.Time { return request.Now }}
+	first, err := store.TurnVerdict(ScanResult{}, "fresh-steady-session", "", "")
+	if err != nil || !first.ShouldBlock || strings.Contains(first.Display, "shared goal queue changed") {
+		t.Fatalf("a fresh session falsely described its empty queue baseline as a change: %+v %v", first, err)
+	}
+	state, err := store.loadVerdictState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Sessions["fresh-steady-session"].ObservedQueueDigest = ""
+	if err := store.saveVerdictState(state); err != nil {
+		t.Fatal(err)
+	}
+	rollout, err := store.TurnVerdict(ScanResult{}, "fresh-steady-session", "", "")
+	if err != nil || rollout.ShouldBlock || strings.Contains(rollout.Display, "shared goal queue changed") {
+		t.Fatalf("an upgraded pre-existing session falsely described its steady queue as a change: %+v %v", rollout, err)
+	}
+}
+
 // A goal-free declaration over a moved world blocks
 // once; renewal re-arms the all-clear.
 func TestGoalFreeStaleness(t *testing.T) {

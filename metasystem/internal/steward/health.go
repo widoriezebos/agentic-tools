@@ -49,6 +49,7 @@ const (
 	RoleRetroDebt         HealthRole = "retro-debt"
 	RoleSessionMain       HealthRole = "session-main"
 	RoleHookFreshness     HealthRole = "hook-freshness"
+	RoleLedgerAttention   HealthRole = "ledger-attention"
 	// Keep the published role name stable for existing health consumers.
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
 	RoleNonterminalJobs     HealthRole = "nonterminal-jobs"
@@ -65,6 +66,7 @@ var healthRoleOrder = []HealthRole{
 	RoleRetroDebt,
 	RoleSessionMain,
 	RoleHookFreshness,
+	RoleLedgerAttention,
 	RoleClaimedGoalBudget,
 	RoleGovernedObligations,
 	RoleNonterminalJobs,
@@ -247,6 +249,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		checkRetroDebt(repoRoot),
 		checkSessionMain(repoRoot, prober),
 		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
+		checkLedgerAttention(repoRoot, now),
 		checkClaimedGoalBudgets(repoRoot, now),
 		checkGovernedObligations(repoRoot),
 		checkNonterminalJobs(repoRoot, prober),
