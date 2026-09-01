@@ -5,8 +5,9 @@
 - Origin: main
 - Next step: THIRD CONSEQUENCE SPECIMEN (2026-09-01 evening): m0b's seat ended a turn on a self-invented stop while claimable work existed, and the blind turn signal could not refuse the quiet exit — the mechanism whose job that is resolves the outer repository on all three seats. Fix per the goal: derive the toplevel from the invoking checkout, fixture covers nested layouts generally. Small item, 4h box (R-44-m0b)
 - OpenedAt: 2026-09-01T07:25:56Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=6 at=2026-09-01T22:28:54Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T22:27:35Z revision=6
 - StopCapability: generation=6 revision=6 machine=m0b claimEpoch=1 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-01T20:25:08Z S5WF9QRVKT4BYY75R5KTYJQCT2-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T20:27:36Z R4E2ZEDCD08WGMAMXPT868345Q-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T22:27:35Z P90TZBA3Z73HR3ZBG5NV1QXBYY-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
-Integrity: sha256=32d800276a5150b16b0c364cf3f8f531e07a8a75082fe021a3eda15768364dc3
+- 2026-09-01T22:28:54Z CB1V3T4WTDEN0P0KBMQKR4WHMV-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
+Integrity: sha256=2731c3b0a4964b6cf528009c0e52e330e69961b5c80e1120628f1b82046d761d
