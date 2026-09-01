@@ -1,15 +1,13 @@
 # fixture-default-branch-assumption
 
-- State: claimed
+- State: queued
 - Intent: Five missionrunner wall-scope test beds (TestScopeCleanBedPasses and siblings) run 'git init' without '-b main' and assume the machine's init.defaultBranch is main - red on any host without that global config (git's own default is master through at least 2.39). Found by m0 (Debian guest, 2026-09-01) during the two-bars joint-round verification: the failures predate the round (proven by stash-revert at HEAD) and vanish when the guest sets init.defaultBranch=main. m0 healed its own environment; the portable fix is the beds passing -b main explicitly like the nested bed at wallscope_test.go:471 already does. R-33: robustness gain, well under 4h. Second sighting of the environment-assumption class after supervise-start-gate-linux-red.
 - Origin: main
 - Next step: DONE, landed by m0 (account Wido@M0): one-line explicit -b main in the shared bed; five tests green under GIT_CONFIG_GLOBAL=/dev/null; every other git init in the tree branch-agnostic and untouched.
 - OpenedAt: 2026-09-01T09:50:49Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=2d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=4 at=2026-09-01T21:16:15Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T21:16:09Z revision=4
-- StopCapability: generation=4 revision=4 machine=m0 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T09:50:49Z 96K61N4VHV674ZV5SFQ188AYCF-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
@@ -18,4 +16,5 @@ History:
 - 2026-09-01T21:16:09Z J3111RM9TPRD71MY26V9PJMANN-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
 - 2026-09-01T21:16:15Z 5FYJSQRY56KP9VYHCF8134KYAP-m0-c5dbf036 slice-start actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
 - 2026-09-01T21:30:26Z DT802804WH5XHZQ1EWNR3ZCQQ1-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
-Integrity: sha256=da77d85ef6a19f144bf9a598a6a7215905f07cd7cdac557955e223766aaaedc1
+- 2026-09-01T21:30:31Z RR4W4C7QE9Z8A1NWQ1Z9VY188N-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
+Integrity: sha256=ed5c334f221dd712a80262fa469a3bd2fab89e963dee965504bc82e9ac6851f3
