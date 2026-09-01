@@ -5,11 +5,12 @@
 - Origin: main
 - Next step: Design loop state: r2 landed e0bd071c and critiqued (14 material findings, records/two-bars/two-bars-lp-critique-r2.md, all accepted). Round 3 must be AUTHORED FRESH - the r3 session died before writing anything (its worktree file is byte-identical to r2, proven by the r3-recover gap-stop, which also noted the R2B findings overturn several round-1 fold claims in r2's own disposition table). m0 pauses again for Wido's tripwire refinement (per-slice budget overrun replaces the flat 6h norm), then returns to author fold round 3 against all 14 R2B findings.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 11
-- Budget: elapsedLimit=6d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2
+- Revision: 12
+- Budget: elapsedLimit=6d attemptLimit=14 reservedJobMinutesLimit=1560 activeJobLimit=2
+- NormApproval: approvedRef=R-36-m0 minutes=1560 goalRevision=11
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T08:06:42Z revision=11
-- StopCapability: generation=11 revision=11 machine=m0 claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T11:47:20Z revision=12
+- StopCapability: generation=12 revision=12 machine=m0 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=two-bars-for-changes
@@ -23,4 +24,5 @@ History:
 - 2026-09-01T07:47:05Z EN5ZBTF2Q04CK4N38DQVB9QW7D-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T07:47:09Z ZHB0CN3K549KPQW14VF0N7KKZ3-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T08:06:42Z C5VRHCQQYRGAM963441PCQZ9CY-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
-Integrity: sha256=a010cd5fc9dcaafbbea5319e564d4947c076ee691f930189cbbe8aebb5cc0b60
+- 2026-09-01T11:47:20Z TH2KYDCDMP3ZYGD18PHS4EJXGN-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
+Integrity: sha256=2eedca4890b6bf145ed5a0f9d664e2ded1a4598a43f9eeb934652471bc8e8df8
