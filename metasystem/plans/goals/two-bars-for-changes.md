@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Design changes take the loop, mechanical defects take a direct fix, declared and audited
 - Origin: main
-- Next step: PAUSED BY WIDO'S PRIORITY ORDER (2026-09-01 morning, verbatim: 'I need this to be fixed before you do anything else... Only resume work after these problems are fixed, proven with tests' - the delivery-tripwire fix outranks this chain). State at pause: design r2 landed e0bd071c (all 24 accepted critique findings folded, adoption-verified); Sol re-critique round two-bars-critique-r2 was mid-flight and is CANCELLED - re-dispatch it verbatim from the recorded brief when work resumes. m0 releases the claim to take burn-without-delivery-tripwire.
+- Next step: Design loop state: r2 landed e0bd071c and critiqued (14 material findings, records/two-bars/two-bars-lp-critique-r2.md, all accepted). Round 3 must be AUTHORED FRESH - the r3 session died before writing anything (its worktree file is byte-identical to r2, proven by the r3-recover gap-stop, which also noted the R2B findings overturn several round-1 fold claims in r2's own disposition table). m0 pauses again for Wido's tripwire refinement (per-slice budget overrun replaces the flat 6h norm), then returns to author fold round 3 against all 14 R2B findings.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 8
+- Revision: 9
 - Budget: elapsedLimit=6d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
 - Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T07:14:21Z revision=7
@@ -20,4 +20,5 @@ History:
 - 2026-09-01T06:50:31Z APV30VH98FNYH9YKYYDKCK9KZN-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T07:14:21Z RSFFBNXTE4X0KZFBF70G75TQKE-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T07:14:29Z K2HK6FZ9E66BJWEWVC49SCZ2DA-m0-c5dbf036 slice-start actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
-Integrity: sha256=c6ad2e7cb4631c6160c5e504067ce4d922999bdaf07032a9cab08675997aef65
+- 2026-09-01T07:47:05Z EN5ZBTF2Q04CK4N38DQVB9QW7D-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
+Integrity: sha256=c16e73441f4d9fe519ab523433d68fb6bc361605a2a22f5f19cab587b2c7646d
