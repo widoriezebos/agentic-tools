@@ -38,7 +38,19 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- RunLoop(root, census, nil, 50*time.Millisecond)
+		close(done)
 	}()
+	t.Cleanup(func() {
+		// The loop must be stopped and drained before its checkout is torn down.
+		if err := os.WriteFile(runnerStopPath(root), []byte("stop\n"), 0o644); err != nil && !os.IsExist(err) {
+			t.Errorf("stop RunLoop during cleanup: %v", err)
+		}
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Errorf("RunLoop did not exit after stop: checkout %s", root)
+		}
+	})
 	overallDeadline := time.Now().Add(120 * time.Second)
 	if deadline, ok := t.Deadline(); ok {
 		overallDeadline = deadline.Add(-5 * time.Second)
