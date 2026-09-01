@@ -5,10 +5,10 @@
 - Origin: main
 - Next step: SECOND STRIKE (2026-09-01 ~17:10Z, same machine): recorded owner start 1788202835 vs live probe 1788202834 - exactly -1s again; census CENSUS-FAILED, dispatch admission refused. Healed by the recorded sequence (lawful owner shutdown + re-arm), this time self-served under the R-34-m0 permission approval - downtime minutes, not hours. RECURRENCE CADENCE: twice in ~30 hours on the clock-disciplined guest; the design leg (tolerance band vs canonical time source vs stricter resolution, Fable lane) is now recurring-cost-justified under R-33 and should be claimed soon; the fixer runs every caller of the comparison (Ruling R) and reads missionrunner-terminate-flake, whose identity-proof failures share the signature.
 - OpenedAt: 2026-08-31T19:08:52Z
-- Revision: 5
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T21:35:36Z revision=5
-- StopCapability: generation=5 revision=5 machine=m0 claimEpoch=1 fenceEpoch=0
+- Revision: 6
+- Budget: elapsedLimit=2d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T21:35:39Z revision=6
+- StopCapability: generation=6 revision=6 machine=m0 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-31T19:08:52Z XDNTREHCEDRG7S7TF62T9VWMEF-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=vm-epoch-identity-drift
@@ -16,4 +16,5 @@ History:
 - 2026-09-01T14:27:15Z 34AQATQ7REJVZYFB62MQ3J0EF6-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=vm-epoch-identity-drift
 - 2026-09-01T17:01:41Z EQA9TFFNMBDNMWVYGRHYGJSYJS-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=vm-epoch-identity-drift
 - 2026-09-01T21:35:36Z GJ1JJDKHVK52GP2WERF0T4S4C7-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=vm-epoch-identity-drift
-Integrity: sha256=10ca47869031957cd105fb542becbbe96c6609b792ad4dcc9a9eaf37e9be57d3
+- 2026-09-01T21:35:39Z FS0QK29NAB6JS1H55DVTJ1X2TY-m0-c5dbf036 set-budget actor=human:Wido targets=vm-epoch-identity-drift
+Integrity: sha256=3a3bcb5da4c55799e3cecc2c2c420405c5c8622cff48469342d88998e3eaaaf7
