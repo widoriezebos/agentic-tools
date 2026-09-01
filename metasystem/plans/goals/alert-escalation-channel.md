@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
-- Next step: Design at revision 11 (landed, spike-evidence-backed), round-5 critique dispatching. DISCLOSED: the prior revision's six attempts closed with four spent on dispatch-admission refusals from the new brief-authority checker (prefix form, punctuation-swallowing) — cause-blind by R-22, re-boxed 8h/6/240m/1 under the R-44 standing delegation; the checker's benign-variation fragility is recorded for its owner. After a clean round 5: slice-1 build (channel core, Telegram adapter against the fake endpoint, the two producers per 11a with the birth-token dependency on goal job-record-birth-token), Fable code critique, landing
+- Next step: PAUSED AT A SCOPE FORK, Wido's word requested (round-7 register records/misc/alert-channel-critique-r13.md): the remedy-advertisement corner diverged (1-2-3 findings across rounds 5-7, all its own; the rest of the design stable three rounds). Option A, seat-recommended: the alert advertises stale-proof facts only (goal id, job id, failure reason, where to look) plus the one resume command his word requires on the stop class, marked verified-at-journal-time best-effort — one fold, likely clean critique, then build. Option B: keep folding the dispatcher-precondition mirror (evidence says it diverges). His morning word required the two producer classes in slice 1; it did not require command-advertisement machinery. Work continues elsewhere meanwhile (retro due)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 34
+- Revision: 35
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T21:44:24Z revision=33
@@ -46,4 +46,5 @@ History:
 - 2026-09-01T20:17:50Z 9KFNHYK8RFK6GRN1YCY2B5SXSY-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T21:44:24Z 03SAD0ARR9VC6QJ50P1YBKHAEE-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T21:44:29Z AT2VPJ7GPVYE16K8CA24BZ108S-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=7b44f242b9ac64bd87d48bc96c6a397a8ea28da84ecbe7a8c01ff26d58235019
+- 2026-09-01T22:26:50Z E1Q0T18AXDTEWSCZPEQAWE1KHN-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=98cdb809e72c1f0672eb58da146e955a3121eb52583dec67dc12db9c9fbe20b9
