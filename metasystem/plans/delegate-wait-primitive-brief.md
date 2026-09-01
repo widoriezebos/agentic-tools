@@ -4,61 +4,65 @@ Date: 2026-09-01
 
 # Goal
 
-One honest wait: `scripts/agents/wait-job.sh <job-id>` blocks until the
-job's record reaches a terminal status, always terminates, and always
-reports what happened — replacing every hand-rolled wait. Two seats in
-two days waited on artifacts a dead worker would never write
-(records/misc/idle-loss-2026-08-31.md, idle-loss-2026-09-01.md).
+An engine verb, `metasystem job wait --job <id> [--repo <root>]`, in
+Go: blocks until the job's record reaches a terminal status, always
+terminates, always reports what happened. Wido's word binds the form:
+"hard deterministic machinery... Go territory enforcing your
+behaviour." Two seats in two days waited on artifacts a dead worker
+never writes (records/misc/idle-loss-2026-08-31.md,
+idle-loss-2026-09-01.md); this verb is the one lawful way to wait.
 
 # Workspace
 
-The dispatch-created job worktree, branched from main. May touch
-EXACTLY (inside the metasystem/ project):
-
-- scripts/agents/wait-job.sh (new)
-- scripts/agents/wait-job-fixtures.sh (new)
+The dispatch-created job worktree, branched from main. Expected
+touched paths (declare all, WITH the metasystem/ prefix): a new file
+in internal/dispatch (wait.go + wait_test.go), the verb wiring in
+cmd/metasystem (follow how existing job verbs register), and
+optionally a thin scripts/agents/wait-job.sh shim relaying to the
+engine per the kill-shell pattern (see scripts/receipt.sh for the shim
+idiom). Nothing else.
 
 # Mechanical rules — no judgment calls
 
-1. Input: one job id (validated against the existing valid_id shape in
-   dispatch.sh). The job record is
+1. Input: --job (validated by the same id shape the dispatch verbs
+   use), --repo defaulting like sibling verbs. Record path:
    artifacts/agents/jobs/<id>.json.
-2. Poll the record every 5 seconds. TERMINAL statuses are exactly the
-   set the engine's terminalStatuses map recognizes
-   (internal/dispatch/close.go territory — read the code, mirror the
-   set, name it in a comment as mirroring that map).
-3. Patience per the R-35 law — progress-based, never bare wall-clock:
-   track the record file's mtime and size; if the record has not
-   CHANGED for 15 minutes AND the status is non-terminal, exit 3
-   (stalled) after printing the last-seen status. Overall hard bound:
-   2 hours, exit 4 (bound), printing the same.
-4. A missing record file: wait up to 60 seconds for it to appear
-   (dispatch may still be writing), then exit 5 (no-record).
-5. On terminal: print one line
+2. TERMINAL statuses: the engine's existing terminalStatuses map is
+   the single source of truth — reference it directly, never a copied
+   list.
+3. Poll cadence 5 seconds. Patience per the R-35 law, progress-based:
+   track the record's bytes (hash or mtime+size); unchanged for 15
+   minutes while non-terminal → exit 3 after printing the last-seen
+   status. Overall hard bound 2 hours → exit 4, same printing. Both
+   bounds and the cadence injectable (flags or config) so tests run in
+   milliseconds — injectability is for tests, the defaults are the
+   law.
+4. Missing record: wait up to 60 seconds (injectable) for it to
+   appear, then exit 5.
+5. On terminal, print exactly one line to stdout:
    `job=<id> status=<status> failureReason=<reason-or-none>`
-   and exit 0 for completed, 1 for failed, 2 for any other terminal.
-6. No state written anywhere; read-only against the record.
+   Exit 0 completed, 1 failed, 2 any other terminal.
+6. Read-only: the verb writes no state anywhere.
 
-FIXTURES (wait-job-fixtures.sh, self-contained temp dir, same idiom as
-the sibling *-fixtures.sh scripts): (a) a record that goes terminal
-completed while waiting → exit 0 and the line; (b) a record already
-failed → immediate exit 1 with failureReason printed; (c) no record →
-exit 5 after the grace; (d) a record that never changes → exit 3 at
-the stall bound (shrink the bounds via env override variables the
-script honors for testing — document them).
+TESTS (Go, in wait_test.go, no process visibility needed — records are
+plain files in a temp dir): (a) record flips to completed mid-wait →
+exit 0 semantics and the exact line; (b) record already failed with a
+failureReason → immediate failed result carrying it; (c) no record →
+no-record result after the grace; (d) unchanged non-terminal record →
+stalled at the (shrunk) bound; (e) hard bound fires when the record
+keeps changing but never terminates. Follow the cmd/metasystem verb
+test idiom for the CLI wiring.
 
 # Constraints
 
-- Bash only, no engine changes. shellcheck-clean if available;
-  `bash -n` clean regardless. Wall-clock budget: 30 minutes.
+- Go only for the machinery; the optional shim contains zero logic.
+- gofmt/vet clean; no test weakened. Wall-clock budget: 35 minutes.
 
 # Expected Return
 
-Version-2 implementer JSON; diffBoundary exactly the two files WITH
-the metasystem/ prefix; evidence includes running the fixture script
-(it needs no process visibility — records are plain files — so it MUST
-run green in your sandbox; a red here is a product red, not
-environment).
+Version-2 implementer JSON; complete prefixed diffBoundary; evidence
+includes `go test ./internal/dispatch/ -run Wait -count=1` (must be
+green in your sandbox — plain files only) and `go build ./...`.
 
 # Gap Rule
 
