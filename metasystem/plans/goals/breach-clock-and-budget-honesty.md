@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: one 4h slice, Sol builds + Fable critiques. Fix 1: the elapsed clock anchors on the claim episode's ORIGINAL moment, surviving raises; only release-and-reclaim or an explicit human re-time restarts it; tests prove raises cannot outrun the breaker. Fix 2: for budget elapsed limits h=clock hour, d=24 clock hours, inputs stored verbatim; legacy canonical strings stay readable; the live budget records re-set from each human's recorded verbatim word (verify each against its goal history). SEAM: internal/goal, internal/goalbudget, internal/dispatch/budget.go - m2's claim; m3 works the disjoint steward-seam tripwire (burn-without-delivery-tripwire) in parallel. CLAIMED under Wido's fix-first order as the budget word.
 - OpenedAt: 2026-09-01T06:54:30Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=360 activeJobLimit=1
 
 History:
 - 2026-09-01T06:54:30Z XQ8RYAX5R7JBZ9DH0TX694ENCA-m2-bc1be9cb open actor=m2+mac-coordinator targets=breach-clock-and-budget-honesty
-Integrity: sha256=31fc2ffdb6210c5f50b97ba809f9bb4b5a709a9ecf2d48abe166f0051c7ec269
+- 2026-09-01T06:55:38Z 92DH70PXTT5QZTPCC72369W4M4-m2-bc1be9cb set-budget actor=human:wido targets=breach-clock-and-budget-honesty
+Integrity: sha256=bcddf4f0bb61aab4acb1870215bc601a9f77c2f5de7e4e619f370a5096fb35f1
