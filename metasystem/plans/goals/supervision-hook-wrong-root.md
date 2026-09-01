@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: The harness supervision hook resolves the wrong repository on nested checkouts: run from metasystem/ inside the agentic-tools-m3 clone it derives the git toplevel (the outer repo) as its metasystem root, reports a bootstrap world (no ledger, no steward), and its turn evidence never lands where health's hook-freshness role reads - m3 has hook-freshness=dead since enrollment with the hook firing every turn. DONE means the hook resolves the metasystem project root deterministically on nested checkouts, its turn evidence lands, and hook-freshness goes alive, proven by a fixture running the hook from a nested layout
 - Origin: main
-- Next step: THIRD CONSEQUENCE SPECIMEN (2026-09-01 evening): m0b's seat ended a turn on a self-invented stop while claimable work existed, and the blind turn signal could not refuse the quiet exit — the mechanism whose job that is resolves the outer repository on all three seats. Fix per the goal: derive the toplevel from the invoking checkout, fixture covers nested layouts generally. Small item, 4h box (R-44-m0b)
+- Next step: Design at revision 3, round-3 critique returned TWO findings (converging 5-5-2; register records/misc/hook-root-critique-r3.md). Re-boxed under R-44 with disclosure: the prior box's six attempts were spent by six ladder rounds (~15min each), not by work size — R-44 CALIBRATION FINDING for Wido: a full ladder (design + folds + critiques + build + code critique) is 7+ rounds, so attempt-limit 6 cannot fit one ladder; either the tuple's attempt count rises or attempts should count failures, not rounds. Sequence: fold-4 (two findings, brief landed), closing critique, build, code critique
 - OpenedAt: 2026-09-01T07:25:56Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=6 at=2026-09-01T22:28:54Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T22:27:35Z revision=6
@@ -19,4 +19,5 @@ History:
 - 2026-09-01T20:27:36Z R4E2ZEDCD08WGMAMXPT868345Q-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T22:27:35Z P90TZBA3Z73HR3ZBG5NV1QXBYY-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T22:28:54Z CB1V3T4WTDEN0P0KBMQKR4WHMV-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
-Integrity: sha256=2731c3b0a4964b6cf528009c0e52e330e69961b5c80e1120628f1b82046d761d
+- 2026-09-01T23:34:07Z 4080GD1YPFG2RJ5Z4ZYD9WX56Z-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
+Integrity: sha256=fb01241211bda50462a247c895b4d322f83ba914d375696d842b3177533b5a0d
