@@ -5,9 +5,8 @@
 - Origin: main
 - Next step: OBSERVE SLICE LANDED 1afcef82 by m0 (account Wido@M0): every landing evaluated against the three bars, verdicts durably stamped, refusing nothing yet; chain closed at zero material findings; records/two-bars/ carries the full history. RE-SLICED AT WIDO'S INTAKE ORDER (2026-09-01, relayed via the paper-seat assessment; sequencing only, nothing in the r3 rulings or D90 re-litigated): (1) FIRST ENFORCING SLICE, promoted ahead of the rest - exactly the Change-Class trailer grammar, the never-direct-fix manifest read from both trees, and FAIL-CLOSED refusal of an unclassified or ambiguous AGENT commit at the commit gate commit.sh already calls; all landed observe machinery for these three exists at 1afcef82, so this slice is the narrow refusal flip for them alone, under Law 2's human-authorization shape with this recorded order as the word. Rationale on the record: combined with commit-goal-binding, this slice alone means a seat-authored design-bearing change cannot land without declaring the loop - the guard reaches the incident's actual path before the evidence-witness half exists. (2) The tree-bound witness, defect-identity growth fuse, and audit join stay deferred to later slices, with the six low findings from critique round 3 riding them. (3) Full promotion of the remaining bars after the observation window, Wido's word. DEPENDENCY NOTE: manifest-floor-at-dispatch (new, human-origin) consumes this goal's manifest contract - the contract-settling step precedes it; the blocker edge is recorded on that goal.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 15
-- Budget: elapsedLimit=6d attemptLimit=14 reservedJobMinutesLimit=1560 activeJobLimit=2
-- NormApproval: approvedRef=R-36-m0 minutes=1560 goalRevision=11
+- Revision: 16
+- Budget: elapsedLimit=2d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
 
 History:
@@ -26,4 +25,5 @@ History:
 - 2026-09-01T12:39:53Z XZ0CNM1AH0ZZ5HRA3VX2KD10ZE-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T12:40:02Z QZWKWM75FFYR5QZEHE89Z4XJ76-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T13:21:13Z XKQVPKK44WY0AD3A5PQ08ZCHZM-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
-Integrity: sha256=0fa881f80102ccb3771833767841fcdbd456c1edff808ab61fd068b21bc206b8
+- 2026-09-01T22:38:17Z 29M70KQRAVJG05XRZ669DCH9QG-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
+Integrity: sha256=5b034c01b12b564c8c506350d8eec74bbbc97a4e48f5f55292dc50df1d02bad1
