@@ -294,37 +294,58 @@ func (r *conformanceRun) refuseOutsideProjectChanges(repoTree string) []string {
 	return nil
 }
 
+func (r *conformanceRun) refuseExistingReview(reviewFile string, existingReview []byte) ([]string, []string, int) {
+	var persisted map[string]any
+	_ = json.Unmarshal(existingReview, &persisted)
+	artifact, err := filepath.Rel(r.root, reviewFile)
+	if err != nil {
+		artifact = reviewFile
+	}
+	return r.fail(fmt.Sprintf(
+		"conformance failure: immutable conformance review already exists: artifact=%s reviewedTree=%s; invoke conformance with the follow-up round's job id to write a new round, or leave the existing artifact untouched because it is chain evidence",
+		quoted(filepath.ToSlash(artifact)), quoted(persisted["reviewedTree"])))
+}
+
 // reviewStage snapshots the worktree through the shared gittree primitive
-// (the wall's one projection owner), persists the diff artifact, and checks
-// the changed paths against the cumulative declared boundary. review.json
-// is written only when the boundary holds.
+// (the wall's one projection owner), checks the changed paths against the
+// cumulative declared boundary, and then persists the review artifacts. A
+// completed review is immutable unless an identical invocation reuses it.
 func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []string, int) {
+	existingReview, readErr := os.ReadFile(reviewFile)
+	reviewExists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return r.fail(fmt.Sprintf("conformance failure: %v", readErr))
+	}
+	fail := func(lines ...string) ([]string, []string, int) {
+		if reviewExists {
+			return r.refuseExistingReview(reviewFile, existingReview)
+		}
+		return r.fail(lines...)
+	}
+
 	workspace := r.projectWorkspace()
 	reviewedTree, err := workspace.Snapshot("HEAD")
 	if err != nil {
-		return r.fail("conformance failure: could not snapshot the implementer worktree")
+		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	repoSnapshot, err := (gittree.Workspace{Dir: r.workspace}).Snapshot("HEAD")
 	if err != nil {
-		return r.fail("conformance failure: could not snapshot the implementer worktree")
+		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	if violations := r.refuseOutsideProjectChanges(repoSnapshot); len(violations) > 0 {
-		return r.fail("conformance failure: " + violations[0])
+		return fail("conformance failure: " + violations[0])
 	}
 	boundaryBaseTree, err := workspace.TreeOf(r.boundaryBase)
 	if err != nil {
-		return r.fail("conformance failure: could not resolve the boundary base tree")
+		return fail("conformance failure: could not resolve the boundary base tree")
 	}
 	diff, err := workspace.Diff(boundaryBaseTree, reviewedTree)
 	if err != nil {
-		return r.fail("conformance failure: could not snapshot the implementer worktree")
-	}
-	if err := os.WriteFile(diffFile, diff, 0o644); err != nil {
-		return r.fail(fmt.Sprintf("conformance failure: %v", err))
+		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	paths, err := workspace.ChangedPaths(boundaryBaseTree, reviewedTree)
 	if err != nil {
-		return r.fail("conformance failure: could not snapshot the implementer worktree")
+		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	violations := r.boundaryViolations(paths)
 
@@ -430,6 +451,9 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 			quotedList(outside)))
 	}
 	if len(violations) > 0 {
+		if reviewExists {
+			return r.refuseExistingReview(reviewFile, existingReview)
+		}
 		for _, violation := range violations {
 			r.errs = append(r.errs, "conformance failure: "+violation)
 		}
@@ -443,9 +467,21 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	}
 	encoded, err := json.MarshalIndent(review, "", "  ")
 	if err != nil {
+		return fail(fmt.Sprintf("conformance failure: %v", err))
+	}
+	reviewBytes := append(encoded, '\n')
+	if reviewExists {
+		existingDiff, diffErr := os.ReadFile(diffFile)
+		if diffErr == nil && bytes.Equal(existingReview, reviewBytes) && bytes.Equal(existingDiff, diff) {
+			r.out = append(r.out, "reviewedTree="+reviewedTree, "diffArtifact="+diffFile)
+			return r.out, r.errs, 0
+		}
+		return r.refuseExistingReview(reviewFile, existingReview)
+	}
+	if err := os.WriteFile(diffFile, diff, 0o644); err != nil {
 		return r.fail(fmt.Sprintf("conformance failure: %v", err))
 	}
-	if err := os.WriteFile(reviewFile, append(encoded, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(reviewFile, reviewBytes, 0o644); err != nil {
 		return r.fail(fmt.Sprintf("conformance failure: %v", err))
 	}
 	r.out = append(r.out, "reviewedTree="+reviewedTree, "diffArtifact="+diffFile)

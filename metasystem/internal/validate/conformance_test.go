@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -162,15 +163,6 @@ func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
 	f.writeImplementer("", "source.txt")
 
-	out, _ := expectConformance(t, f, "review", 0, "reviewedTree=")
-	if !strings.HasPrefix(out[1], "diffArtifact=") {
-		t.Fatalf("review did not report the diff artifact: %v", out)
-	}
-	diffPath := filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1", "diff.patch")
-	if data, err := os.ReadFile(diffPath); err != nil || !strings.Contains(string(data), "source.txt") {
-		t.Fatalf("diff.patch wrong: %v %s", err, data)
-	}
-
 	// An undeclared change refuses and names the path.
 	appendFile(t, filepath.Join(f.worktree, "extra.txt"), "undeclared\n")
 	_, errs := expectConformance(t, f, "review", 1, "some implementation round must declare every changed path")
@@ -188,6 +180,15 @@ func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
 	os.WriteFile(filepath.Join(f.worktree, "artifacts", "agents", "tamper"), []byte("tamper\n"), 0o644)
 	expectConformance(t, f, "review", 1, "agent control plane contains delegate-created files")
 	os.RemoveAll(filepath.Join(f.worktree, "artifacts"))
+
+	out, _ := expectConformance(t, f, "review", 0, "reviewedTree=")
+	if !strings.HasPrefix(out[1], "diffArtifact=") {
+		t.Fatalf("review did not report the diff artifact: %v", out)
+	}
+	diffPath := filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1", "diff.patch")
+	if data, err := os.ReadFile(diffPath); err != nil || !strings.Contains(string(data), "source.txt") {
+		t.Fatalf("diff.patch wrong: %v %s", err, data)
+	}
 
 	expectConformance(t, f, "review", 0, "")
 	reviewedTree := f.reviewedTree()
@@ -228,6 +229,57 @@ func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
 	}
 	appendFile(t, filepath.Join(f.controller, "metasystem.conf"), "independence=session-only\n")
 	expectConformance(t, f, "merge", 0, "independence=session-only recorded in gate evidence")
+}
+
+func TestConformanceReviewRefusesToOverwriteRoundEvidence(t *testing.T) {
+	f := newConformanceFixture(t)
+	appendFile(t, filepath.Join(f.worktree, "source.txt"), "first review\n")
+	f.writeImplementer("", "source.txt")
+	expectConformance(t, f, "review", 0, "reviewedTree=")
+
+	roundDir := filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1")
+	reviewPath := filepath.Join(roundDir, "review.json")
+	diffPath := filepath.Join(roundDir, "diff.patch")
+	originalReview, err := os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDiff, err := os.ReadFile(diffPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var review map[string]string
+	if err := json.Unmarshal(originalReview, &review); err != nil {
+		t.Fatal(err)
+	}
+
+	appendFile(t, filepath.Join(f.worktree, "source.txt"), "intervening tree change\n")
+	want := fmt.Sprintf(
+		"conformance failure: immutable conformance review already exists: artifact='artifacts/agents/impl/rounds/1/review.json' reviewedTree='%s'; invoke conformance with the follow-up round's job id to write a new round, or leave the existing artifact untouched because it is chain evidence",
+		review["reviewedTree"])
+	_, errs := expectConformance(t, f, "review", 1, want)
+	if len(errs) != 1 || errs[0] != want {
+		t.Fatalf("overwrite refusal changed:\n got: %v\nwant: %s", errs, want)
+	}
+	t.Log(errs[0])
+	if after, err := os.ReadFile(reviewPath); err != nil || !bytes.Equal(after, originalReview) {
+		t.Fatalf("review.json changed after refusal: %v", err)
+	}
+	if after, err := os.ReadFile(diffPath); err != nil || !bytes.Equal(after, originalDiff) {
+		t.Fatalf("diff.patch changed after refusal: %v", err)
+	}
+}
+
+func TestConformanceReviewIdenticalRerunIsIdempotent(t *testing.T) {
+	f := newConformanceFixture(t)
+	appendFile(t, filepath.Join(f.worktree, "source.txt"), "reviewed once\n")
+	f.writeImplementer("", "source.txt")
+	firstOut, _ := expectConformance(t, f, "review", 0, "reviewedTree=")
+
+	secondOut, errs := expectConformance(t, f, "review", 0, "reviewedTree=")
+	if len(errs) != 0 || strings.Join(secondOut, "\n") != strings.Join(firstOut, "\n") {
+		t.Fatalf("identical review rerun changed its successful result: first=%v second=%v errs=%v", firstOut, secondOut, errs)
+	}
 }
 
 func TestConformanceMissingCriticConfiguration(t *testing.T) {
