@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
-- Next step: RESUMED on Wido's direct word 2026-09-01 evening (verbatim: 'well, keep working then. did you stop?') — the 8h fence intent renews from this word; the spend-cap retirement is landed so design rounds no longer die at $5. Sequence: certify the preserved revision-9 diff (recovery round over implementer-6df0467b2f1db45f5cecccdf's certified-authored 181-line diff — NOT the uncertified 346-line recovery attempt), then Sol round-3 critique against the r8 register's six findings, then slice-1 build per section 11a, then Fable code critique, then landing
+- Next step: Design at revision 11 (landed, spike-evidence-backed), round-5 critique dispatching. DISCLOSED: the prior revision's six attempts closed with four spent on dispatch-admission refusals from the new brief-authority checker (prefix form, punctuation-swallowing) — cause-blind by R-22, re-boxed 8h/6/240m/1 under the R-44 standing delegation; the checker's benign-variation fragility is recorded for its owner. After a clean round 5: slice-1 build (channel core, Telegram adapter against the fake endpoint, the two producers per 11a with the birth-token dependency on goal job-record-birth-token), Fable code critique, landing
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 33
+- Revision: 34
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T21:44:24Z revision=33
@@ -45,4 +45,5 @@ History:
 - 2026-09-01T19:42:26Z 3VJ50EVQRFM1PG3GG3450R9EBE-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T20:17:50Z 9KFNHYK8RFK6GRN1YCY2B5SXSY-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T21:44:24Z 03SAD0ARR9VC6QJ50P1YBKHAEE-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=6dc70eaf0ba3d80da9ea6b34a1e3a13f9c279eeebaa8476d7fb25c172d6e56f7
+- 2026-09-01T21:44:29Z AT2VPJ7GPVYE16K8CA24BZ108S-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=7b44f242b9ac64bd87d48bc96c6a397a8ea28da84ecbe7a8c01ff26d58235019
