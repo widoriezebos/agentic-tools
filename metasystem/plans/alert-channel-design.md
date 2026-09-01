@@ -1,6 +1,64 @@
-# Alert Channel Design — alert-escalation-channel (revision 12)
+# Alert Channel Design — alert-escalation-channel (revision 13)
 
-Status: revision 12 folds the ONE material finding of the Sol
+Status: revision 13 folds BOTH material findings of the Sol round-6
+critique of revision 12
+(`records/misc/alert-channel-critique-r12.md`, critic
+design-critic-137ec854313e987c87cdfc1f), two refinements of the one
+remedy-eligibility corner, and RE-SCOPES the advertised-validity
+claim to its honest ceiling.
+AC12-ANSWER-JOURNAL-ATOMICITY-001 — revision 12's journal-time
+eligibility checks read mutable chain and reviews-target state with
+no consistency boundary joining the check to the durable episode
+save: a concurrent follow-up, chain close, or evidence-GC collection
+landing between the loaded-table check and the journal write left
+the row advertising a command the dispatcher already refused. The
+fold (11a.8): THE SNAPSHOT RULE — the eligibility decision and the
+episode's durable write happen under the SAME alert-lock hold the
+journal phase already takes for that write, each gated fact read
+exactly ONCE into the decision and never re-read between decision
+and save; the current-goal fact, which comes from the tick's earlier
+goal-tree projection and cannot be read under that hold without a
+new open, is checked BEST-EFFORT and its degradation clause says so.
+The rule is honest about its reach: no gated fact's own writers
+serialize on the alert lock (chain state moves under the
+dispatcher's chain lock, the reviews target under evidence GC, the
+goal under the goal-revision lock), so the checks verify ONE
+journal-time snapshot, nothing stronger.
+AC12-ANSWER-GOAL-ELIGIBILITY-001 — revision 12 equated a nonempty
+historical `goalId` with a currently claimed accepted goal, while
+the shipped dispatcher gates BOTH advertised commands on goal
+binding (`dispatch.sh` 1327–1335 fresh, 1770–1781 follow-up;
+`internal/dispatch/stop.go` 54–56 refuses any goal not presently
+claimed and accepted) and the design's own outage proof retains
+records past their goal's unclaiming. The fold (11a.8, §1): the
+CURRENT-GOAL GATE joins the mirrored precondition set as check (e),
+LAST in each row's order (the dispatcher's own order: goal binding
+follows the chain gates on follow-up and the reviews checks on
+fresh dispatch), read from the tick's existing goal-tree projection
+at zero additional opens, with its own degradation clause; it is
+evaluated even on the walk-refusal fallback, which needs only the
+goal id. THE RE-SCOPED CLAIM (11a.8): rounds 5 and 6 both attacked
+the same unreachable guarantee — ANY advertised command can go
+stale between journal time and the moment the human reads and acts,
+so journal-time verification can never make the advertisement more
+than a best-effort hint. The design now claims exactly what any
+implementation can deliver: VERIFIED AT JOURNAL TIME against one
+snapshot, BEST-EFFORT AT READ TIME, every staleness a loud
+dispatcher refusal naming its reason, degradation rows carrying the
+exact failed check. SELF-CONSISTENCY PASS (revision 13): 11a.8↔§1
+(the goal gate and the snapshot rule cite the shipped goal-binding
+and chain-lock lines, verified against the current tree);
+11a.8↔11a.9 (the goal fact reads the SAME single per-tick goal-tree
+projection 11a.9's scan already contracts; neither scan gains an
+open); 11a.8↔11a.10 (the `answerReason` fact still journals the
+first failed check's exact rendered clause — the goal clause's
+best-effort qualifier lives inside the clause bytes, so the fact
+definition is unchanged); 11a.8↔§6 (the degraded Answer line obeys
+the placeholder law unchanged — one substituted token); §12↔§13
+(disposition rows added; self-grade refreshed; every reject
+condition unchanged).
+
+Revision 12's status, retained: revision 12 folds the ONE material finding of the Sol
 round-5 critique of revision 11
 (`records/misc/alert-channel-critique-r11.md`, critic
 design-critic-91af2db9aaa1803a17478ab9):
@@ -328,7 +386,25 @@ Design only. No code ships with this document.
   (this section's evidence-GC trace), after which the fresh
   dispatch line dies at 1229. `chainClosed` is
   terminal metadata (`record.go`'s terminal-metadata set), so it
-  may flip true AFTER a record terminalizes.
+  may flip true AFTER a record terminalizes. BOTH verbs end with
+  the GOAL-BINDING gate, traced for 11a.8's check (e): fresh
+  dispatch (`dispatch.sh` 1327–1335, AFTER the reviews checks at
+  1226–1231) and follow-up (1770–1781, AFTER the chain gates at
+  1724–1757) each call `job goal-binding`, which refuses any goal
+  that is not presently a claimed accepted goal in the live goal
+  projection (`internal/dispatch/stop.go` 54–56: the goal must
+  appear in `Tree.Live` with state claimed and a claim record) —
+  so a record whose historical `goalId` names an unclaimed or
+  completed goal gets both advertised commands refused regardless
+  of chain or reviews state. Lock facts, traced for 11a.8's
+  snapshot rule: follow-up creation runs under the launch chain
+  lock (`dispatch.sh` 1704) and chain closure under the chain lock
+  (2082); evidence GC takes no alert lock (this section's GC
+  trace); `goal resume` serializes on the goal-revision lock (this
+  section's race fact). NONE of these writers takes the episode
+  store's alert lock, so no journal-phase lock hold can serialize
+  the eligibility facts against their own writers — the fact
+  11a.8's snapshot rule and re-scoped validity claim are built on.
 - **Both tick drivers already end with a delivery step, on success
   AND failure** (traced): the resident runner loop calls `RunTick`,
   prints a failed tick to stderr WITHOUT returning, and reaches its
@@ -1319,9 +1395,14 @@ The alert class "delegate job failed under a claimed goal" — the
   the shipped `chainMembers`/`lineageRoot` (§1's newest-member
   trace: a walk that leaves the table, cycles, or hits a
   non-string parent attributes the record to NO chain) — reads
-  `chainClosed` from the root's own set-2 read, and decides
+  `chainClosed` from the root's own set-2 read, decides
   reviews-target existence from set 1's listing plus the target's
-  set-2 `role` field. This is revision
+  set-2 `role` field, and evaluates the current-goal gate (check
+  (e) below) against the tick's EXISTING single goal-tree
+  projection — the same one-per-tick projection 11a.9's scan
+  already contracts — so the gate costs neither scan an open; the
+  projection is current goal state, not a history walk, and the
+  no-goal-history clause above is undisturbed. This is revision
   10's disclosed regression from revision 9's zero-read steady
   state: the digest covers the birth token (AC9-JOB-ID-ABA-001's
   fix), and the token lives INSIDE the record, so no filename-only
@@ -1478,7 +1559,8 @@ The alert class "delegate job failed under a claimed goal" — the
   they are NOT evaluated and row 1 keeps its table action,
   unchanged from revision 11 — no concrete command is advertised
   there: the composed line is a template the human completes after
-  resolving the root the walk could not read.
+  resolving the root the walk could not read. Check (e) below
+  needs no chain root and IS still evaluated on that fallback.
   Rows 2–4 (fresh dispatch): the fresh-dispatch verb opens a NEW
   chain and enforces no chain-state gate, so no chain check
   applies. ONLY when the record's role is `code-critic` or
@@ -1491,8 +1573,54 @@ The alert class "delegate job failed under a claimed goal" — the
   (d) that listed record's `role` field reads `implementer` —
   failing clause: `the reviews target ` + the reviews id + ` is
   not an implementer record` (§1's trace of `dispatch.sh`
-  1226–1231). Every other role and state passes with no check —
-  the dispatcher enforces nothing else this producer can read.
+  1226–1231).
+  EVERY row, LAST in its row's order — the dispatcher's own
+  order: goal binding runs AFTER the chain gates on follow-up and
+  AFTER the reviews checks on fresh dispatch (§1's goal-binding
+  trace of `dispatch.sh` 1327–1335 and 1770–1781):
+  (e) THE CURRENT-GOAL GATE (folds
+  AC12-ANSWER-GOAL-ELIGIBILITY-001): the record's `goalId` names a
+  goal that is PRESENTLY a claimed accepted goal — present in the
+  tick's goal-tree projection's live set with state claimed and a
+  claim record, the same predicate the dispatcher's `job
+  goal-binding` enforces (`internal/dispatch/stop.go` 54–56, §1's
+  trace) — failing clause: `the goal ` + the goal id + ` is not
+  currently a claimed accepted goal (checked best-effort from this
+  tick's goal projection)`. The parenthetical qualifier is owed by
+  the snapshot rule below: the goal fact is the one gated fact
+  read outside the journal hold. This gate needs only the goal id
+  (nonempty by this class's selection), which is why it is
+  evaluated even on row 1's walk-refusal fallback — a template
+  advertised under a dead goal would still be dead on arrival,
+  exactly the finding. For every other role and state the
+  (c)–(d) pair does not apply and check (e) is the ONLY gate — the
+  dispatcher enforces nothing else this producer can read.
+  **The snapshot rule** (folds
+  AC12-ANSWER-JOURNAL-ATOMICITY-001): the eligibility decision and
+  the episode's durable write happen under the SAME alert-lock
+  hold the journal phase already takes for that write — one
+  critical section: read, decide, journal. Each gated fact is read
+  exactly ONCE into the decision and never re-read between
+  decision and save: checks (a)–(d) read from set 1's listing and
+  set 2's record reads, performed under that hold; check (e) reads
+  the tick's goal-tree projection, taken earlier in the tick and
+  NOT re-readable under the hold without a new open (the open
+  contract above), so it is checked BEST-EFFORT and its clause
+  says so. What the one hold buys: no other episode-store writer
+  interleaves between decision and save, and the journaled
+  `answerAction`/`answerReason` pair reflects ONE internally
+  consistent snapshot. What it deliberately cannot buy, stated so
+  no implementer invents a lock or a final recheck: NONE of the
+  gated facts' own writers serializes on the alert lock (§1's lock
+  facts: follow-up creation and chain closure move under the
+  dispatcher's chain lock, the reviews target under evidence GC,
+  goal state under the goal-revision lock), so a fact can lawfully
+  change between its snapshot read and the durable save. The
+  checks therefore verify one journal-time snapshot, nothing
+  stronger — the re-scoped validity claim below owns exactly this
+  ceiling, and a mutation landing inside that window resolves as
+  the dispatcher's loud refusal like every other post-snapshot
+  change.
   A degraded row's Answer bytes: `no command is valid at journal
   time: ` + the `answerReason` fact's exact bytes, single space
   after the colon, no trailing space. SUBSTITUTED: the reason
@@ -1551,14 +1679,28 @@ The alert class "delegate job failed under a claimed goal" — the
   no `--reviews` segment at all.
   VERBATIM: `<fresh-brief-file>` and `<destructive-reach-class>` —
   the new brief and the new dispatch's reach class are exactly the
-  human's decisions. **Advertised validity is JOURNAL-TIME-ONLY,
-  and now VERIFIED rather than assumed** (the spike executed both
-  refusal paths; the eligibility check above closes what the spike
-  did not cover — its follow-up case began from an intact chain
-  and its reviews check tested only nonemptiness): an ADVERTISED
-  line has passed the dispatcher's own preconditions for that
-  command at the moment it is journaled, and the design does NOT
-  promise it stays accepted. The pin's coverage boundary, honest:
+  human's decisions. **Advertised validity, re-scoped to its
+  honest ceiling (revision 13)** (the spike executed both refusal
+  paths; the eligibility check above closes what the spike did not
+  cover — its follow-up case began from an intact chain and its
+  reviews check tested only nonemptiness; rounds 5 and 6 then each
+  attacked a residue of the same unreachable guarantee, and the
+  claim now matches what any implementation can honestly deliver):
+  an ADVERTISED line has passed the dispatcher's mirrored
+  preconditions against ONE journal-time snapshot — the snapshot
+  rule above — and VERIFIED AT JOURNAL TIME means exactly that,
+  nothing more. By the time a human reads and acts, ANY advertised
+  command is a BEST-EFFORT HINT: every gated fact moves under
+  locks this producer never holds, and the human acts after an
+  unbounded delay, so no journal-time verification — however
+  atomic — can promise acceptance at read time. The design
+  promises exactly three things: verification against the
+  journal-time snapshot, in the dispatcher's own check order; that
+  every staleness — landed inside the journal hold or hours later
+  — resolves as the dispatcher's LOUD refusal naming its reason,
+  never a silent wrong action; and that a degraded row journals
+  the exact failed check as its `answerReason`, rendered into the
+  Answer the human reads. The pin's coverage boundary, honest:
   11a.12 pins
   only terminal `failed`/`timeout` goal-carrying records — the
   COMPLETED chain root the advertised command addresses is NOT
@@ -2063,8 +2205,10 @@ corrected record:
 | Round 4 AC10-STOP-CLEAR-READSET-001 | Folded, rev 11, 11a.9: the regression is real and spike-REPRODUCED (a submitted stop episode stays uncleared forever after resume — one-way filename, submitted attempts never due). Closed by the spike's reversible journal-time marker `alerts/stop-open/<goal>-r<revision>` containing the digest, written durably before the episode, listed by the clear phase, bounded by open stop episodes, draining on clear — spike-demonstrated restoring the clear with zero episode opens on the no-resume path. |
 | Round 4 AC9-ANSWER-FOLLOWUP-ACTION-001 | Folded, rev 11, 11a.8/11a.10/§1: the producer journals the failed record's own immutable `reviews` field and renders it into the fresh-dispatch line for code-critic and warden roles (fixing the spike-proven categorical refusal); the chain root is the shipped parentJob WALK's result derived at journal time (suffix-strip spike-refuted on a lawful `task-r1` fixture), with a total verbatim-token fallback on walk refusal; row 1's follow-up validity is stated as JOURNAL-TIME-ONLY with the pin's coverage boundary honest — completed chain roots are not pinned, so post-journal collection, a newer non-accepted round, or a closing chain each yield a loud dispatcher refusal, disclosed, and the pin is deliberately NOT widened to completed chain records. Round 5 REOPENED the journal-time half of this claim: the rev-11 producer derived the action from the failed record alone. Completed by the round-5 row below. |
 | Round 5 AC11-ANSWER-JOURNAL-ELIGIBILITY-001 | Folded, rev 12, 11a.8/11a.10/§1: revision 11's journal-time-validity claim was derived from the failed record ALONE while the shipped dispatcher also gates follow-up on chain closure and the newest chain member and gates critic-role fresh dispatch on the reviews referent's continued existence (`dispatch.sh` 1724–1757, 1226–1231 — §1's trace extended with the `LatestChainRecord`/`chainMembers`/`lineageRoot` selection mechanics and its line cites refreshed to the current tree). The producer now mirrors exactly those gates at journal time, in the dispatcher's own check order, from the scan's contracted read set (three fields — `jobId`, `round`, `chainClosed` — join the existing per-record read; zero additional opens), degrading the selected row to `answerAction=none-with-reason` with the exact failed precondition journaled as the new `answerReason` fact and rendered into the Answer under §6's placeholder law (one substituted token). The line equating `reviews`-field immutability with reference validity is corrected in both §1 and 11a.8. Post-journal staleness stays a disclosed loud refusal, and the pin is still deliberately not widened. |
+| Round 6 AC12-ANSWER-JOURNAL-ATOMICITY-001 | Folded, rev 13, 11a.8/§1: the SNAPSHOT RULE — the eligibility decision and the episode's durable write happen under one alert-lock hold, each gated fact read exactly once and never re-read between decision and save; §1's new lock facts prove no gated fact's own writers serialize on that hold (chain state under the dispatcher's chain lock, the reviews target under evidence GC, goal state under the goal-revision lock), so the checks verify ONE journal-time snapshot and claim nothing stronger; the goal fact, read from the tick's earlier projection, is best-effort and its degradation clause says so; the advertised-validity claim is re-scoped to the honest ceiling — verified at journal time against the snapshot, best-effort at read time, every staleness a loud dispatcher refusal. |
+| Round 6 AC12-ANSWER-GOAL-ELIGIBILITY-001 | Folded, rev 13, 11a.8/§1: the CURRENT-GOAL GATE joins the mirrored precondition set as check (e), LAST in each row per the dispatcher's own order (goal binding after the chain gates on follow-up and the reviews checks on fresh dispatch — `dispatch.sh` 1327–1335, 1770–1781; `internal/dispatch/stop.go` 54–56's claimed-accepted predicate), read from the tick's existing goal-tree projection at zero additional opens, with its own degradation clause; the gate needs only the goal id, so it is evaluated on the walk-refusal fallback too — a record whose goal was unclaimed during an outage now degrades to `none-with-reason` instead of advertising a command the dispatcher immediately refuses. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 12)
+## 13. Self-grade (R-24-m1, refreshed for revision 13)
 
 - **Confidence:** 0.78. Every disputed mechanism of revision 11
   rests on an EXECUTED rule, not an argued one: the four
@@ -2093,7 +2237,16 @@ corrected record:
   shared mechanism; the parentJob walk at journal time reads
   ancestor records whose retention this design deliberately does
   not pin; and the eligibility mirror adds a new drift surface
-  (weakest claims below).
+  (weakest claims below). Revision 13's two folds are grounded the
+  same way as revision 12's — READ traces of the shipped
+  goal-binding and lock code, verified against the current tree
+  (`dispatch.sh` 1327–1335/1770–1781/1704/2082,
+  `internal/dispatch/stop.go` 54–56), not new execution — and the
+  grade holds at 0.78 on a deliberate trade: the claim re-scope
+  removes the last over-claim (a journal-time snapshot plus a
+  loud refusal on every staleness is deliverable by construction,
+  where "verified at the journal moment" was not), while the
+  mirror gains a fifth gate and so a wider drift surface.
 - **Reject condition, stated plainly:** reject this revision if the
   implementer gap-stops on slice 1 a THIRD time. A third stop means
   revision-scale patching cannot make this document mechanical, and
@@ -2111,7 +2264,12 @@ corrected record:
   The design mitigates by citing the exact shipped lines it
   mirrors and by keeping every post-journal divergence a loud
   dispatcher refusal, but the coupling is discipline, not
-  mechanism.
+  mechanism. Revision 13 widens this surface by one gate (the
+  goal-binding mirror, check (e)) while narrowing its blast
+  radius: the re-scoped claim promises only the journal-time
+  snapshot, so a future un-mirrored gate degrades the
+  advertisement's usefulness, not the design's truthfulness — the
+  refusal stays loud either way.
 - **Weakest claim (revision 11):** the identity proof is only as good as
   the DEPENDED-ON contract: the reuse row's re-mint impossibility
   holds for records carrying the minted birth generation, and goal
