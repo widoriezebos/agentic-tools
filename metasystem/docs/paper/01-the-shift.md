@@ -26,7 +26,7 @@ One further premise is needed now. Machinery can increasingly carry an iterative
 
 Suppose every sensitive data export must leave an audit trail. A team can place that requirement in a review guide. It can also make the rule enforceable: a change affecting exports cannot proceed unless it produces the required record and passes the relevant checks.
 
-The application then stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. To do those things again, the system needs a statement of the intended outcome, limits on action, checks that separate a supported claim from a guess, and records of what happened. Together those form a durable asset. The title's word for that governed system is the metasystem. Part of it is generic machinery; the rest is specific to this application. We will return to the difference in Chapter 17.
+The application then stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. To do those things again, the system needs a statement of the intended outcome, limits on action, checks that separate a supported claim from a guess and records of what happened. Together those form a durable asset. The title's word for that governed system is the metasystem. Part of it is generic machinery; the rest is specific to this application. We will return to the difference in Chapter 17.
 
 Some limits need authority. A suggestion may be ignored; an enforced rule can refuse a change. We call the governing rules laws; "enforced rule" names a law implemented at the action it can stop. The legal metaphor identifies who may decide, what may be refused and how a decision may be challenged. It does not imply a 'machine court' or mimicked legal ceremony. A law here is a rule with enough authority to stop action when a named condition has not been met.
 
@@ -34,7 +34,7 @@ Human responsibility does not disappear. The responsible authority decides outco
 
 ## A hypothetical day
 
-The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. Enforced rules and a releaser that acts only within authorized bounds limit what the machinery may do.
+The following day describes a possible end state that is not yet common practice today. It follows the session-expiry request from the opening of this chapter through one working day. A responsible authority sets the outcome, makes the value choices and remains accountable. The builder and independent examiner are machinery. One constructs the change. The other tries to break it. What construction produces we call a candidate: a version of the change that still has to be judged. Enforced rules and a releaser that acts only within authorized bounds limit what the machinery may do.
 
 > *At 8:40, the responsible authority for account security records an outcome: "sign users out after thirty minutes without activity. Do not interrupt active work. Apply the change to existing sessions as well as new ones. After signing in again, return the user to the page they were using". No design or task list is prescribed.*
 
@@ -44,11 +44,11 @@ The following day describes a possible end state that is not yet common practice
 
 > *The responsible authority makes one ruling. Passive reading alone does not extend an ordinary session, but the reader receives a warning and can extend it through direct action. Background refresh does not extend the session. A user-started upload receives a separate, limited continuation. The ruling becomes recorded intent. Only then does the builder turn it into checks: an unresponsive reader is warned and signed out; a reader who responds remains signed in; refresh does not postpone expiry; an authorized upload can finish without reviving the session; existing sessions adopt the new limit; and signing in again restores the page the user was using.*
 
-> *The responsible authority returns to other work. The builder proposes a design and constructs a 'candidate': a version of the change that still has to be judged. An independent examination challenges the candidate (the design and code) rather than inheriting its claims. The candidate is tested using a controlled clock: one second before expiry, the exact boundary and one second after. The examination tries two devices, a sleeping laptop, an upload that crosses expiry, a stale page and a delayed response. The first candidate fails because a late background response can revive an expired session.*
+> *The responsible authority returns to other work. The builder proposes a design and constructs a candidate. An independent examination challenges the candidate (the design and code) rather than inheriting its claims. The candidate is tested using a controlled clock: one second before expiry, the exact boundary and one second after. The examination tries two devices, a sleeping laptop, an upload that crosses expiry, a stale page and a delayed response. The first candidate fails because a late background response can revive an expired session.*
 
 > *An enforced rule refuses that candidate. No person is asked to inspect a convincing explanation or notice the failure of the tests in some stream of output. The builder revises the design so that expiry is final and the upload has only its narrow permission. The examination repeats the new checks, runs the existing sign-in and account-recovery checks and verifies rollback.*
 
-Results bind to the exact candidate; earlier evidence cannot authorize a later one.
+The evidence belongs to the exact candidate that was examined. When the builder revises the candidate, the old results cannot authorize the new one, so the new candidate must pass its own examination.
 
 > *Another enforced rule refuses release unless live observation can distinguish an expected rise in sign-ins from a broken loop that ejects responsive users.*
 
@@ -64,7 +64,7 @@ The shift does not depend on machinery writing one plausible patch. It depends o
 
 From each of those failures we take a rule. Because silent stopping makes waiting look like work, progress needs a durable record and each active attempt needs a visible deadline. Because several attempts can share the same mistaken assumption, a proposal needs challenge grounded independently of the builder's explanation. Because a plausible mistake can cross from code into user harm, permissions must be narrow enough to contain what construction and release may do. Because evidence cannot resolve the value choice hidden in "active work," that choice needs a named human authority before it becomes a check.
 
-Questions like that stay with people: choices between values, decisions someone must answer for, and risks big enough to want a judge from outside the machinery. The aim is that people spend their attention where their authority is needed, while machinery does the repeatable work inside limits people can inspect and change. Nobody is removed from consequential work.
+Questions like that stay with people: choices between values, decisions someone must answer for and risks big enough to want a judge from outside the machinery. The aim is that people spend their attention where their authority is needed, while machinery does the repeatable work inside limits people can inspect and change. Nobody is removed from consequential work.
 
 ## The question before the design
 

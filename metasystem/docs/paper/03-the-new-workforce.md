@@ -4,7 +4,7 @@
 
 > *A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.*
 
-Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system I propose must be built for what this workforce actually is, not for what people hope or fear it is.
+Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work and new failure modes become important. The delivery system I propose must be built for what this workforce actually is, not for what people hope or fear it is.
 
 ## What falls or changes shape
 
@@ -14,7 +14,7 @@ A second attempt also becomes easier to start. There is no need to wait for the 
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
-Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay.
+Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction and tools can stop. What falls away is fatigue; cost and failure stay.
 
 ## What actually goes away
 
@@ -34,7 +34,7 @@ Memory existed during the attempt but did not survive it. Machine workers are st
 
 To an observer, all four look the same: a worker that needs more time. We call that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
-> *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
+> *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
 
 Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
 

@@ -2,7 +2,7 @@
 
 **A ceremony can be performed perfectly while nothing it protected is happening.**
 
-> *Imagine that at nine each morning, six machine workers receive a prompt called "standup". Each produces three tidy sentences about yesterday, today and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach, and none has challenged the assumption that a background refresh proves a user is active.*
+> *Imagine that at nine each morning, six machine workers receive a prompt called "standup". Each produces three tidy sentences about yesterday, today and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach and none has challenged the assumption that a background refresh proves a user is active.*
 
 The ceremony is present, but the protection is not.
 
@@ -26,7 +26,7 @@ The answers are imperfect, but they let people discuss commitments and competing
 
 > *A developer finishes a change that looks correct to its author. Another developer reads it, finds an unchecked edge case and learns how that part of the application works.*
 
-Code review adds a second perspective while spreading knowledge that would otherwise remain with one person. It serves two needs: scrutiny independent enough to find faults, and continuity beyond the original author.
+Code review adds a second perspective while spreading knowledge that would otherwise remain with one person. It serves two needs: scrutiny independent enough to find faults and continuity beyond the original author.
 
 > *When the person who understands a service leaves, the next person reconstructs its assumptions from incidents and old messages.*
 

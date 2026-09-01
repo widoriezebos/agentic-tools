@@ -38,7 +38,7 @@ An independent examiner judges a finished candidate without prior exposure to th
 
 A custodian keeps the records that connect intent, candidate, evidence and acceptance, so the work survives any single worker. When every required fact is present, it performs the acceptance action. It builds nothing and examines nothing.
 
-A releaser moves an accepted candidate into production and stands watch over it. It exposes the change to a small part of live traffic first, compares what production reports against the bounds recorded with the intent, and expands, pauses, contains or restores within those bounds. It builds nothing, examines nothing and accepts nothing; its authority begins where the custodian's ends and reaches no further than its recorded bounds.
+A releaser moves an accepted candidate into production and stands watch over it. It exposes the change to a small part of live traffic first, compares what production reports against the bounds recorded with the intent and expands, pauses, contains or restores within those bounds. It builds nothing, examines nothing and accepts nothing; its authority begins where the custodian's ends and reaches no further than its recorded bounds.
 
 A liveness watcher observes whether active workers are alive and making progress. Within narrow, checked authority it may stop or replace work that has gone silent, and it may not erase the record of why a worker stopped.
 

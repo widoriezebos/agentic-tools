@@ -10,11 +10,11 @@ Chapter 1's day begins at 8:40, when the responsible authority records an outcom
 
 > *The authority states the wish: an unattended account should stop working after thirty minutes. The machinery answers with cases at the edge. A person reads a long page without touching anything. A laptop sleeps with the page open. A session created last week meets the new rule. Each case sharpens a clause. The limit counts from last activity, not from signing in. Active work must not be interrupted. Existing sessions receive the limit as well. A person who signs in again returns to the page they were using.*
 
-> *The machinery then points at the words that can still be read two ways: what counts as activity, and what happens to work already in flight when the limit arrives. The authority declines to decide those in advance. Construction will show which readings matter, and the questions will come back with their consequences attached. At 8:40 the authority records the outcome, and the sitting ends.*
+> *The machinery then points at the words that can still be read two ways: what counts as activity and what happens to work already in flight when the limit arrives. The authority declines to decide those in advance. Construction will show which readings matter, and the questions will come back with their consequences attached. At 8:40 the authority records the outcome, and the sitting ends.*
 
 ## A conversation with no authority
 
-Some things are discovered only by talking. A sitting with one authority discovers the authority's own unstated wishes, and the conflicts hidden inside them: in the first scene, the wish for thirty minutes turned out to contain four separate clauses nobody had written down. When several people hold conflicting wishes, the sitting holds their negotiation, with machinery preparing the examples and recording the rulings; the disagreement stays between the people.
+Some things are discovered only by talking. A sitting with one authority discovers the authority's own unstated wishes and the conflicts hidden inside them: in the first scene, the wish for thirty minutes turned out to contain four separate clauses nobody had written down. When several people hold conflicting wishes, the sitting holds their negotiation, with machinery preparing the examples and recording the rulings; the disagreement stays between the people.
 
 The room itself has no authority. Nothing said in a sitting binds anyone until it becomes a record: a ruling, a stated outcome, a framed design. The sitting proposes; only records rule.
 
@@ -42,7 +42,7 @@ Then the governed loop takes over. If the sitting produced intent, construction 
 
 The thoroughness of the room is not a reason to skip that challenge. It is the reason to hold it. Everything the room agreed on, it agreed on from inside one shared framing.
 
-> *Months later, evidence from the release has arrived: restoring the last page after sign-in exposed one person's work to the next person on a clinic computer. The implementation had followed the written rule. A sitting convenes: the responsible authority, and machinery carrying the release observations, the support reports and the original rulings.*
+> *Months later, evidence from the release has arrived: restoring the last page after sign-in exposed one person's work to the next person on a clinic computer. The implementation had followed the written rule. A sitting convenes: the responsible authority and machinery carrying the release observations, the support reports and the original rulings.*
 
 > *The machinery lays out what the service can observe about a device and how reliable each observation is. Nothing stored today says whether a session runs on a shared computer. The authority rules on the boundary and gives the reason: when in doubt, treat the device as shared and do not restore the page. The ruling is recorded as it is spoken, and the open questions around device detection are written down beside it.*
 
@@ -62,8 +62,8 @@ Not an approval performed for show. A sitting gives that failure more room than 
 
 And the preparation must not quietly supply the values. When every option arrives pre-weighed, choosing the recommended one every time is the approval habit in conversational form. The guard is the same as elsewhere: the human's decision is recorded with their reasons, and a run of sittings whose rulings always match the preparation is itself evidence worth examining.
 
-Proportion applies here as everywhere. A mechanical repair with a clear defect needs no sitting to shape what is already stated; holding one would cost more than it protects. The repair does not thereby escape review: whether the evidence requires an independent human look is answered by consequence, not by how obvious the repair seems. The sitting is for what conversation alone can produce: intent nobody has stated yet, and design directions not yet framed.
+Proportion applies here as everywhere. A mechanical repair with a clear defect needs no sitting to shape what is already stated; holding one would cost more than it protects. The repair does not thereby escape review: whether the evidence requires an independent human look is answered by consequence, not by how obvious the repair seems. The sitting is for what conversation alone can produce: intent nobody has stated yet and design directions not yet framed.
 
 ## What has changed
 
-Of everything we have described, the sitting looks most like current practice: people and their tools talking through a design. What has changed is what the talk must produce. It leaves decisions instead of impressions, anchored facts instead of recollections, and open questions instead of silence. And it has changed who may judge the result: not those who produced it, however good the conversation was, but a fresh mind with the record in front of it.
+Of everything we have described, the sitting looks most like current practice: people and their tools talking through a design. What has changed is what the talk must produce. It leaves decisions instead of impressions, anchored facts instead of recollections and open questions instead of silence. And it has changed who may judge the result: not those who produced it, however good the conversation was, but a fresh mind with the record in front of it.
