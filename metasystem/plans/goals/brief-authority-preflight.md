@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: INTENT: refuse at the door what gap-stops after launch. CONSTRAINTS: path extraction is conservative (explicit repo paths in the brief text; no NLP guessing - unparseable references stay the delegate's gap duty); the check reads the delegate's actual base tree, not the seat's checkout. FREEDOMS: where in admission it runs; whether follow-up rounds re-verify against their frozen base. Budget 4h (Wido 2026-09-01: raise to 8h if bigger, split beyond). TEST SHAPE: a brief citing an absent path refuses naming it; the same brief after landing the path dispatches.
 - OpenedAt: 2026-09-01T20:27:44Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=2d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T20:27:44Z 03QJ5FXGE1A8DJCTGPE6JEJ5JD-m0-c5dbf036 open actor=human:Wido targets=brief-authority-preflight
-Integrity: sha256=a6f526b629d996d0a2684f91c64276691f886e39254ec1eb827b6a11697e3ba4
+- 2026-09-01T20:27:50Z JRXCNW3HPKQ5JDHCYS6M3CB1AV-m0-c5dbf036 set-budget actor=human:Wido targets=brief-authority-preflight
+Integrity: sha256=9430c7b8e7f6d18f47b117deac93b95a0c2f6467bb339ff5dd60d90ffe6e3082
