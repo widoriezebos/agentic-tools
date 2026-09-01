@@ -19,6 +19,20 @@ withdrawn), SCR-R1-OWNER-003 (correct wall-clock owners and the backstop's
 real purpose), and SCR-R1-ENVELOPE-004 (the no-fan-out claim is withdrawn;
 one OPEN unowned spend scenario is recorded).
 
+Revision 3 (2026-09-01): folds the two material findings of the round-2
+critique (`records/misc/spend-cap-critique-r2.md`, chain
+design-critic-0671f76f743c4926c1a39e8f): SCR-R2-LEVEL-001 (the level is
+rederived against the TRUE permitted horizon — the 150-minute derived
+watcher ceiling, not the 120-minute dispatch cap — and now satisfies the
+strictly-greater rule with stated headroom; the default becomes $200.00)
+and SCR-R2-PROTECTION-002 (the worst-single-call overshoot is repriced at
+low tens of dollars from the installed catalog, and the exposure bound is
+restated). It also corrects the one impossible-scenario sentence of
+non-material SCR-R2-OWNER-003 (the custodian IS the adapter supervisor)
+and records Wido's disposition R-42-m0b (`memory/rulings.md`): the open
+Bash-launched-session scenario does NOT block this change and is owned by
+goal uncapped-delegate-fanout.
+
 ## Verdict up front
 
 Assumption 2 (the cap harms us) is VERIFIED in full: the record shows at least
@@ -28,8 +42,10 @@ recorded firings that stopped an actual runaway.
 
 Assumption 1 (the machinery already bounds runaway spend) is VERIFIED while
 the time enforcers are alive but REFUTED in the liveness-failure residual
-(SCR-R1-OWNER-003): a live-but-wedged custodian whose adapter supervisor is
-dead and whose dispatcher is unavailable has NO hard bound — accepted
+(SCR-R1-OWNER-003): a live-but-wedged custodian — the adapter supervisor
+itself, its own deadline enforcement wedged (SCR-R2-OWNER-003: the
+custodian IS the adapter supervisor, per f4-orphan-window-design.md) —
+with the dispatcher unavailable has NO hard bound — accepted
 explicitly as a residual in `records/misc/f4-orphan-window-design.md`
 (lines 108–114) — and a mission host turn's cap is enforced by the mission
 runner (`internal/missionrunner/host.go` `superviseHostToExit`, lines
@@ -38,15 +54,18 @@ the native Claude limit is the ONLY bound left on the primary process.
 Revision 1's pricing-anomaly refutation is withdrawn: the native counter
 measures list cost, so it cannot own a provider billing anomaly at all
 (SCR-R1-PROTECTION-002). A second, genuinely OPEN scenario — a
-Bash-launched fresh paid session — is recorded below with no owner
-(SCR-R1-ENVELOPE-004).
+Bash-launched fresh paid session — is recorded below
+(SCR-R1-ENVELOPE-004); per Wido's disposition R-42-m0b it does not block
+this change and is owned by goal uncapped-delegate-fanout.
 
 Per the mandate's own escape clause ("if a real unowned runaway scenario
 emerges, the design says so and proposes the minimal owner instead"), this
 design specifies the minimal owner: **the flag stays, the default rises from
-$5.00 to a never-hit backstop of $150.00**, the level derived from measured
-elapsed-time burn rates and the 120-minute wall-clock horizon the time
-enforcers permit (SCR-R1-LEVEL-001; derivation in the specification). This
+$5.00 to a never-hit backstop of $200.00**, the level derived from measured
+elapsed-time burn rates and the TRUE permitted horizon — the 150-minute
+derived watcher ceiling, the largest wall clock supervision permits any
+dispatched process (SCR-R1-LEVEL-001, SCR-R2-LEVEL-001; derivation in the
+specification). This
 converts the cap from a thing that fires on finished work (all fourteen
 recorded firings) into a last-line liveness backstop on the one primary
 process, sized never to fire on legitimate work within the permitted
@@ -150,8 +169,8 @@ observed legitimate burn.
 | Expensive re-read loop in few turns | Wall-clock kill (inner adapter-supervisor `capDeadline`; outer dispatch reap ladder) | burn × capMin at measured rates: ≈$39 at a 40-min cap, ≈$117 at the built-in 120-min cap and the worst observed $0.974/min |
 | Stuck stream (process alive, no output) | Wall-clock kill; watcher CAPPED inactivity signal surfaces it earlier | Near zero — a hung stream is not sampling; at most one in-flight turn |
 | Native subagent fan-out | Task tool absent from the envelope (claude.go:217) | Zero — the tool does not exist in the delegate envelope |
-| Bash-launched fresh paid session (incl. `claude --bg`) | **OPEN — no owner.** See the open-scenario section below (SCR-R1-ENVELOPE-004) | Unbounded by anything this repository controls; a foreground child in the recorded process group dies at capMin, but a background/detached session may escape wind-down and inherits no `--max-budget-usd` |
-| Time enforcers unavailable: live-but-wedged custodian whose adapter supervisor is gone AND whose dispatcher is unavailable (f4-orphan-window-design.md:108–114 accepts "NO hard bound"); mission runner dead during a host turn (host.go:421–450 puts the turn cap in the runner) | **The native cap — this is its real purpose** (SCR-R1-OWNER-003) | Native default per process: $150.00 measured list cost, plus one indivisible call of overshoot (next section) |
+| Bash-launched fresh paid session (incl. `claude --bg`) | **OPEN — owned by goal uncapped-delegate-fanout** (R-42-m0b; does not block this change). See the open-scenario section below (SCR-R1-ENVELOPE-004) | Unbounded by anything this repository controls; a foreground child in the recorded process group dies at capMin, but a background/detached session may escape wind-down and inherits no `--max-budget-usd` |
+| Time enforcers unavailable: live-but-wedged custodian — the adapter supervisor itself, its own deadline enforcement wedged (SCR-R2-OWNER-003) — with the dispatcher unavailable (f4-orphan-window-design.md:108–114 accepts "NO hard bound"); mission runner dead during a host turn (host.go:421–450 puts the turn cap in the runner) | **The native cap — this is its real purpose** (SCR-R1-OWNER-003) | Native default per process: $200.00 measured list cost, plus one indivisible call of overshoot — worst case low tens of dollars, ≈$222 total (next section, SCR-R2-PROTECTION-002) |
 | Provider billing anomaly invisible to list cost | **No owner in this repository** — the native counter measures list cost and never moves (SCR-R1-PROTECTION-002); provider-side account limits are not verifiable from here and this design does not lean on them | Unbounded here; explicitly NOT owned by the backstop |
 
 The time-enforcers-unavailable row is the refutation of assumption 1 and the
@@ -167,19 +186,28 @@ checks a running cost counter between calls and refuses the NEXT call, so a
 job always completes the indivisible call that crosses the line. Observed:
 the four recorded budget deaths terminated at $5.047, $5.150, $5.218, and
 $5.343 against a $5.00 threshold — up to ~$0.35 of overshoot on ordinary
-calls. The worst overshoot is the list cost of ONE maximal indivisible call
-past the threshold: on the priciest rostered model with a full context
-window, order single dollars at list prices — and it scales with any
-anomaly that list cost DOES reflect, because that one call cannot be
-stopped mid-flight.
+calls. Those observations establish ORDINARY behavior, not the maximum
+(SCR-R2-PROTECTION-002). The worst overshoot is the list cost of ONE
+maximal indivisible call past the threshold, and on the priciest rostered
+model that is LOW TENS of dollars, not single dollars: Claude Code 2.1.252
+lists a one-million-token context window, a 64,000-token default maximum
+output, and rates of $10 per million direct input tokens, $50 per million
+output tokens, and $20 per million one-hour cache-write tokens, so a
+maximal call (≈936,000 input tokens plus 64,000 output tokens) costs
+≈$12.56 with direct input and ≈$21.92 with one-hour cache creation. The
+backstop's worst-case exposure is therefore threshold plus one maximal
+call: ≈$222 at the $200.00 default. And that one call scales with any
+anomaly that list cost DOES reflect, because it cannot be stopped
+mid-flight.
 
 The counter's accounting basis is LIST cost, not authoritative provider
 billing: every raw result records `costBasis: "list"` in its `modelUsage`
 block. Therefore:
 
 - **What the backstop can own:** bounding the CLI-measured list-cost spend
-  of the ONE process the flag is passed to, to threshold-plus-one-call,
-  even when every outer time enforcer is dead. That is the liveness-residual
+  of the ONE process the flag is passed to, to threshold-plus-one-call —
+  ≈$222 worst case at the $200.00 default (SCR-R2-PROTECTION-002) — even
+  when every outer time enforcer is dead. That is the liveness-residual
   row above, and it is the whole justification.
 - **What it cannot own:** billed dollars that diverge from list cost (an
   anomaly invisible to the counter never moves it), and any process it was
@@ -188,7 +216,7 @@ block. Therefore:
 Revision 1's claim that the flag "caps a 10× pricing anomaly at $50 per
 job" is withdrawn as false on both counts.
 
-## Open unowned spend scenario (SCR-R1-ENVELOPE-004)
+## Open spend scenario (SCR-R1-ENVELOPE-004) — owned by goal uncapped-delegate-fanout
 
 A Bash-capable delegate can launch a fresh paid Claude session with plain
 `claude`, or with `claude --bg`, which Claude Code 2.1.252 documents as
@@ -204,14 +232,16 @@ this repository controls, until a human acts on the census signal or a
 provider-side account limit (unverifiable from here) intervenes. This
 exposure predates this design — the $5.00 flag never bound a Bash-spawned
 child either — so retiring the low cap neither widens nor narrows it; but
-revision 1 wrongly listed it as covered, and it is recorded here as OPEN
-and unowned. **Candidate owners:** (a) the delegate permission preset,
-refusing `claude` invocation from delegate Bash; (b) extending census /
-kill-guard reach over signature-matched agent processes in repository
-scope; (c) a follow-on goal deciding the containment rule. Whether this
-scenario must gain its owner before or after the cap change ships is a
-disposition above this design; this design records it and claims no part
-of it for the backstop.
+revision 1 wrongly listed it as covered, and it is recorded here as OPEN.
+**Disposition (R-42-m0b, Wido, 2026-09-01, `memory/rulings.md`):** the
+scenario does NOT block the cap change shipping — "the retired $5 default
+never covered spawned sessions either, so the change worsens nothing" —
+and the hole is owned by its own backlog goal, uncapped-delegate-fanout,
+awaiting his budget tuple. The containment mechanism (the delegate
+permission preset refusing `claude` invocation from delegate Bash,
+extended census / kill-guard reach over signature-matched agent processes,
+or another rule) is that goal's decision; this design records the scenario
+and claims no part of it for the backstop.
 
 The critic's unproven-residual gaps, recorded verbatim and NOT resolved
 here:
@@ -262,7 +292,7 @@ and is unaffected by this design.
 One code change, one test change, one comment.
 
 1. **`internal/adapter/claude.go`, `ClaudeBudget` (line 228):** the default
-   becomes `budget = "150.00"`. Nothing else in the function changes: the
+   becomes `budget = "200.00"`. Nothing else in the function changes: the
    `METASYSTEM_CLAUDE_MAX_BUDGET_USD` override survives unchanged as the
    explicit operator tool (both directions — m0's recorded $15 design-round
    sizing keeps working, and an operator can still tighten), the validation
@@ -272,27 +302,43 @@ One code change, one test change, one comment.
    220–226) to name the backstop's purpose: a last-line liveness backstop
    bounding the one primary Claude process's measured list-cost spend when
    the time enforcers are unavailable, sized from elapsed-time burn
-   evidence never to fire on legitimate work within the 120-minute shipped
-   horizon, with the wall-clock cap as the real per-job bound, citing this
-   design.
-2. **Why $150.00 (the derivation, SCR-R1-LEVEL-001):** the never-hit
-   condition is level > worst-observed-legitimate-burn × the wall-clock
-   horizon the time enforcers permit. Worst observed legitimate burn:
-   $0.974 per elapsed minute — the highest of the seven measured raw
-   rounds, itself a legitimate completion. Permitted horizon: 120 minutes,
-   the shipped `dispatch.cap-min` default and the largest cap
-   `metasystem.conf` grants without an explicit per-dispatch override.
-   Product: ≈$117. Headroom for the sample's thinness (seven rounds, one
-   workload class, the three legitimate rates all from rounds under seven
-   minutes): round the rate up to $1.25/minute, giving 1.25 × 120 =
-   **$150.00**. Revision 1's $50 was derived from reservation allowances
-   rather than elapsed time and is withdrawn as dishonest arithmetic: at
-   the observed $0.974/min, a legitimate round would hit $50 after about
-   51 minutes — well inside the permitted horizon, reproducing exactly the
-   fires-on-finished-work failure this design exists to kill. Operator
-   rule: a dispatch explicitly capped above 120 minutes needs a matching
-   `METASYSTEM_CLAUDE_MAX_BUDGET_USD` override sized at ≥ $1.25 per capped
-   minute.
+   evidence never to fire on legitimate work within the 150-minute
+   permitted horizon (the shipped derived watcher ceiling), with the
+   wall-clock cap as the real per-job bound, citing this design.
+2. **Why $200.00 (the derivation, SCR-R1-LEVEL-001 as corrected by
+   SCR-R2-LEVEL-001):** the never-hit condition is level STRICTLY GREATER
+   THAN worst-assumed-legitimate-burn × the true permitted horizon —
+   strictly, because the installed Claude Code predicate stops at
+   accumulated cost greater than or EQUAL to the threshold, so a level
+   equal to the product still kills a legitimate run at the horizon.
+   Worst observed legitimate burn: $0.974 per elapsed minute — the highest
+   of the seven measured raw rounds, itself a legitimate completion.
+   Assumed burn, with headroom for the sample's thinness (seven rounds,
+   one workload class, the three legitimate rates all from rounds under
+   seven minutes): $1.25/minute, ≈28% above the worst observation. TRUE
+   permitted horizon: 150 minutes — NOT the 120-minute `dispatch.cap-min`
+   default, but the derived watcher ceiling that bounds every dispatched
+   process: `internal/supervise/ceiling.go` `DeriveCeiling` takes the
+   maximum of the 120-minute floor, `dispatch.cap-min` (shipped 120),
+   `fence.job-cap-min`, and every `cap.min.*` source, then adds the
+   30-minute allowance, giving 150 with the shipped configuration
+   (`ceiling_test.go:28` pins exactly this); dispatch refuses caps at or
+   above the attested ceiling (`internal/dispatch/attest.go:136–138`), so
+   150 minutes is the largest wall clock a legitimate process can hold
+   before supervision's own backstop kills it — exactly the window the
+   native backstop must survive when the primary owners are dead. Product:
+   1.25 × 150 = $187.50. The strictly-greater rule with stated headroom:
+   **$200.00**, which clears the product by $12.50 (≈6.7%) on top of the
+   ≈28% rate headroom, and clears the raw worst observation
+   (0.974 × 150 ≈ $146) by ≈37%. Revision 2's $150.00 violated the
+   design's own rule by choosing equality (1.25 × 120 = 150 exactly) on
+   the wrong horizon and is withdrawn (SCR-R2-LEVEL-001). Revision 1's
+   $50 was derived from reservation allowances rather than elapsed time
+   and stays withdrawn as dishonest arithmetic. Operator rule, restated
+   against the ceiling arithmetic: a dispatch explicitly capped above 120
+   minutes raises the derived watcher ceiling to capMin + 30 at the next
+   re-arm, so it needs a matching `METASYSTEM_CLAUDE_MAX_BUDGET_USD`
+   override STRICTLY GREATER than $1.25 × (capMin + 30).
 3. **Flag shape:** the flag continues to be passed always;
    `BuildClaudeCommand` (line 300) is untouched, so the argv byte order
    `claudecommand_test.go` pins is untouched. No "omit when unset" branch, no
@@ -301,7 +347,7 @@ One code change, one test change, one comment.
    the alternative below).
 4. **Tests:** exactly one assertion changes —
    `internal/adapter/claudecommand_test.go` `TestClaudeBudgetPolicy` line 12,
-   `budget != "5.00"` becomes `budget != "150.00"`. Every other occurrence of
+   `budget != "5.00"` becomes `budget != "200.00"`. Every other occurrence of
    `5.00` is an explicit argument, not the default: the argv-pinning tests
    pass `"5.00"` as the `budget` parameter (claudecommand_test.go lines 52,
    77, 99, 115; events_test.go line 221) and pin wire byte order, which this
@@ -312,9 +358,15 @@ One code change, one test change, one comment.
    `host.max-budget-usd` still exports `METASYSTEM_CLAUDE_MAX_BUDGET_USD`
    for the host turn (`internal/missionrunner/host.go` lines 320–322) and
    overrides the new default exactly as it overrode the old one; an unsealed
-   contract now gives its host the $150 backstop instead of a $5 tripwire,
+   contract now gives its host the $200 backstop instead of a $5 tripwire,
    which is the fix, not a regression — the sealed time fences remain the
-   mission's real exposure bound.
+   mission's real exposure bound. One horizon caveat per SCR-R2-LEVEL-001:
+   `host.turn-cap-min` is required (`internal/contract/contract.go:72–93`)
+   while `host.max-budget-usd` is optional, and the turn cap does not feed
+   the watcher-ceiling derivation — so a contract sealing a turn cap above
+   120 minutes must also seal `host.max-budget-usd` strictly greater than
+   $1.25 × (host.turn-cap-min + 30), the same sizing rule as the dispatch
+   override.
 6. **Codex (and Devin):** no equivalent cap exists to judge.
    `scripts/agents/adapters/codex.sh` declares `"nativeBudget": false` (line
    78) and `internal/adapter/codex.go` builds no budget flag; Devin likewise
@@ -337,13 +389,17 @@ where today the native limit is the last surviving fence.
 
 - **Confidence:** 0.85 that the backstop is the right call — the direction
   is now critic-affirmed ("directionally safer than the clean kill") — and
-  0.7 that $150 is the right level: the derivation is honest arithmetic on
-  measured elapsed-time rates, but its inputs are thin.
+  0.75 that $200 is the right level: the derivation now uses the true
+  150-minute permitted horizon and satisfies the strictly-greater rule
+  with stated headroom, but its burn-rate inputs remain thin.
 - **Weakest claims:** (a) the headroom step. The $1.25/minute rounding
   (≈28% above the worst observed legitimate rate) is judgment atop seven
   measured rounds from one workload class, with all three legitimate rates
   coming from rounds under seven minutes — a long legitimate round could
-  sustain a rate no specimen has shown. (b) The three unproven residuals
+  sustain a rate no specimen has shown; the further $12.50 above the
+  $187.50 product is a stated margin, not measurement. (b) The worst-call
+  overshoot (≈$12.56–$21.92) is priced from the installed catalog's list
+  rates, not from an observed maximal call. (c) The unproven residuals
   recorded verbatim in the open-scenario section, which this design leaves
   deliberately unresolved rather than settling by assertion.
 - **Reject this design if:** (a) the human rules the liveness residual
@@ -353,6 +409,7 @@ where today the native limit is the last surviving fence.
   and the clean-kill alternative above is the right specification; (b)
   anyone produces a recorded firing where the $5 cap stopped a genuine
   runaway — none was found, but that evidence would re-price the whole
-  trade; or (c) the human rules that the OPEN Bash-launch scenario must
-  gain its owner before any cap change ships — then this design waits on
-  that owner.
+  trade. Former condition (c) — the human ruling that the OPEN Bash-launch
+  scenario must gain its owner before any cap change ships — is RESOLVED
+  the other way by R-42-m0b: it does not block, and goal
+  uncapped-delegate-fanout owns it.
