@@ -76,3 +76,28 @@ so the property moves to machinery: the interim session-level idle guard now,
 the OS-scheduled idle-watchdog steward when it lands (design converged,
 `records/misc/idle-watchdog-design.md`). The conduct rule stays as an optimization
 nothing depends on. Tracked as IL-26.
+
+## Retro 2026-09-01 (m0 seat, 31 receipts, span 6.4 days)
+
+Period numbers: receipts=31 shipped=28 reworked=1 blocked=1 parked=1;
+corrections=81; caught_by_verify=17; critique_waivers=0; landings since
+2026-08-26: 877 commits (mostly per-op ledger materializations - watched
+as a process-weight signal, not yet an inversion; verification stayed
+high). Verdicts: IL-25 KEPT (goal-scope-bounds used the declared
+failsafe). IL-26 AMENDED -> IL-36 (violated twice on m0 - the 8h idle
+night and the 70-minute unconsumed critique - both conduct failures; the
+machinery half landed as the delivery tripwire and the watch read
+surface). IL-27 KEPT (strongest evidence: two-bars stalled 25->14->12
+under machinery-adding folds, converged 13->9->2->0 under inversion).
+IL-28 KEPT (ran every landing). IL-29 KEPT-UNPROVEN, first strike.
+IL-30 AMENDED -> IL-37 (the transport topology died with the GitHub
+migration). IL-31 KEPT (exercised verbatim at Wido's intake order).
+IL-32 KEPT.
+
+| Id | Retro | Change | Owner doc | Evidence pattern | Expected effect | Review by | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| IL-33 | retro-2026-09-01 | Dispatch refuses a brief citing a repository path absent from the delegate base tree, or a boundary declaration failing the repo-relative grammar (goal brief-authority-preflight) | docs/orchestration.md + internal/dispatch | Three invisible-input gap-stops in one day (unlanded record, overwritten artifact, frozen follow-up worktree), each costing a full round | Zero invisible-input gap-stops next period | next retro | ADOPTED |
+| IL-34 | retro-2026-09-01 | Append-only fleet logs (narrator digest, allowlisted registers) merge by union mechanically (goal digest-union-merge) | scripts/agents/land.sh + .gitattributes | ~10 hand-resolved digest conflicts in one session; every fleet landing collides on the same append-only file | Zero hand-resolved digest conflicts next period | next retro | ADOPTED |
+| IL-35 | retro-2026-09-01 | A conformance run writes a new round directory or refuses; re-runs never overwrite persisted review artifacts (goal conformance-round-immutability) | internal/validate/conformance.go | rounds/1/review.json overwritten destroying chain evidence; flagged independently by two critics (F2-7, watch chain) | The overwrite class never recurs | next retro | ADOPTED |
+| IL-36 | retro-2026-09-01 | Amends IL-26: every watch a session arms is harness-tracked; the claimed-goal-delivery tripwire is the mechanical floor on every enrolled machine | docs/orchestration.md | m0's two conduct failures this period; the tripwire and watch surface landed | No silent-stall incident on any machine running the tripwire | next retro | ADOPTED |
+| IL-37 | retro-2026-09-01 | Amends IL-30: the transport-mirrors-origin rule binds only checkouts with a transport remote; sync-transport no-ops gracefully elsewhere | scripts/agents/sync-transport.sh | The GitHub migration froze the transport relay; every m0 landing tripped the sync step | No landing fails its transport step on a machine without the remote | next retro | ADOPTED |
