@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Design changes take the loop, mechanical defects take a direct fix, declared and audited
 - Origin: main
-- Next step: Design loop state: r2 landed e0bd071c and critiqued (14 material findings, records/two-bars/two-bars-lp-critique-r2.md, all accepted). Round 3 must be AUTHORED FRESH - the r3 session died before writing anything (its worktree file is byte-identical to r2, proven by the r3-recover gap-stop, which also noted the R2B findings overturn several round-1 fold claims in r2's own disposition table). m0 pauses again for Wido's tripwire refinement (per-slice budget overrun replaces the flat 6h norm), then returns to author fold round 3 against all 14 R2B findings.
+- Next step: OBSERVE SLICE LANDED 1afcef82 by m0 (account Wido@M0): every landing evaluated against the three bars, verdicts durably stamped, refusing nothing yet. Chain two-bars-joint-round-b closed with independent critique at zero material findings (three Fable rounds, 20 findings, all material ones folded; records/two-bars/ carries the full history). REMAINING LEGS: (1) an observation window - the durable verdict record accumulates while the fleet lands normally; (2) the six low findings from critique round 3 (trailer-form doc, guard observation durability, end-to-end wrapper test, rulings add-rows-only check, authorizedBy depth, conformance round-overwrite) as a small hardening slice; (3) PROMOTION TO ENFORCEMENT - a human-authorized act per Law 2, Wido reviews the observation record and speaks; the design's promotion procedure is in the joint design record section 3. Claim released for whoever takes the hardening slice.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=6d attemptLimit=14 reservedJobMinutesLimit=1560 activeJobLimit=2
 - NormApproval: approvedRef=R-36-m0 minutes=1560 goalRevision=11
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
@@ -25,4 +25,5 @@ History:
 - 2026-09-01T07:47:09Z ZHB0CN3K549KPQW14VF0N7KKZ3-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T08:06:42Z C5VRHCQQYRGAM963441PCQZ9CY-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T11:47:20Z TH2KYDCDMP3ZYGD18PHS4EJXGN-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
-Integrity: sha256=2eedca4890b6bf145ed5a0f9d664e2ded1a4598a43f9eeb934652471bc8e8df8
+- 2026-09-01T12:39:53Z XZ0CNM1AH0ZZ5HRA3VX2KD10ZE-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
+Integrity: sha256=f3f4dddad7c471ff7f74ffdf2da0b780a5f1d24613e02202c169cc74bd9f1992
