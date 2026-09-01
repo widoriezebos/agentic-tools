@@ -5,11 +5,13 @@
 - Origin: human
 - Next step: RESERVED, deliberately last: the scaffold half rides inception's slice; this goal keeps the evolution loop (doctrine critiqued and updated as the app grows), appetite 4-6h after inception lands. App-owned paths under the update-safety law like all app content. ENFORCEMENT RULING FOLDED IN (Wido 2026-08-26, m2 discussion — for m1's design slice), under Wido's role law stated precisely: NO NEW ROLE UNLESS THE CONFLICT TEST DEMANDS ONE — a new seat is justified exactly when assigning the responsibility to an existing seat would create conflicting responsibilities, never refused on principle. Applied: (1) PER-CHANGE ENFORCEMENT passes the conflict test on the CRITIC — the doctrine becomes a binding input to every app-touching critique brief with a converged design's standing; a doctrine violation is material by definition; a brief that CONTRADICTS the doctrine is itself a material finding to surface, never a precedence call the critic makes (judicial only, adjudication stays above); the design must make doctrine inclusion mechanical in the brief path. (2) DRIFT AUDIT passes on the COUNSELOR — doctrine staleness joins its receipts idiom (patterns claimed vs patterns present). (3) EVOLUTION OWNERSHIP is the OPEN conflict-test case the design slice must decide: doctrine authorship is legislative — on the critic it makes the judge write its own law (fails the test), on the dispatch delegate it makes the director of implementations author their measuring rules (tension). Either the standard loop dissolves it (any seat proposes, critique converges, the HUMAN ratifies every doctrine change) or a dedicated ARCHITECT seat is genuinely warranted (owns doctrine coherence and proposals, edits nothing else) — run the conflict test explicitly in the design and bring the answer to Wido. Division otherwise as ruled 2026-08-24: covenant = enforceable net, warden = guards the guards, human = top tier.
 - OpenedAt: 2026-08-23T16:30:15Z
-- Revision: 4
+- Revision: 5
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-23T16:30:15Z QNX0208M1DP6RBHG6PESWWNNSB-m1-bf243850 open actor=human:wido targets=app-doctrine
 - 2026-08-26T06:22:21Z MZPNHJVQ06M5P8TG3CDJ8K0W03-m2-bc1be9cb edit actor=m2+mac-coordinator targets=app-doctrine
 - 2026-08-26T07:49:32Z 4B5JJSPT5KTZEP4HM7V084EF6P-m2-bc1be9cb edit actor=m2+mac-coordinator targets=app-doctrine
 - 2026-08-31T10:14:35Z XWDVXMBMZZ2HGVSPT25NW35PQS-m2-bc1be9cb edit actor=m2+mac-coordinator targets=app-doctrine
-Integrity: sha256=b9ac61ffcfe2c0b02f0aad4453645f900cfc5f83308a7f9bec0005cbc5ce2720
+- 2026-09-01T20:27:57Z H11J7F8SSPW99H2MGQQ2P3AM22-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=app-doctrine
+Integrity: sha256=684347147c7e34833ab4639bf038774052801af6b75220e6f1f50f920a9518d9
