@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Design round first (ladder law R-38-m2): a Fable-lane design answering the draft's question with the four specimens as calibration, then Sol design critique; budget tuple is Wido's word at claim
 - OpenedAt: 2026-09-01T13:49:31Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T13:49:31Z 43EKD9F0H470RXJZ1BDKFH564B-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=dispatch-cap-necessity
-Integrity: sha256=0c4a247f7993f634bdca874cffbe70f3a1c78f37ef9f98841d5a035a20c50d1b
+- 2026-09-01T20:28:29Z WE09W2DGTN02QHE75RDN1K2MF0-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=dispatch-cap-necessity
+Integrity: sha256=c4765915196fc427758a6f77d13d4608e066ceef73a2242112a86ff5106d1952
