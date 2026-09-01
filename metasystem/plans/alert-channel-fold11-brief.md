@@ -5,8 +5,8 @@ Date: 2026-09-01
 # Goal
 
 Revision 11 of metasystem/plans/alert-channel-design.md: fold all four
-round-4 findings (records/misc/alert-channel-critique-r10.md) using the
-EXECUTABLE SPIKE VERDICTS (records/misc/alert-channel-spike-verdicts.md) as
+round-4 findings (metasystem/records/misc/alert-channel-critique-r10.md) using the
+EXECUTABLE SPIKE VERDICTS (metasystem/records/misc/alert-channel-spike-verdicts.md) as
 your evidence base — both landed, in your worktree. Every disputed mechanism
 now has a tested rule; your job is to write those rules into the design
 coherently, not to re-derive them.
