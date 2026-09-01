@@ -1,15 +1,13 @@
 # alert-escalation-channel
 
-- State: claimed
+- State: queued
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
 - Next step: PAUSED AT A SCOPE FORK, Wido's word requested (round-7 register records/misc/alert-channel-critique-r13.md): the remedy-advertisement corner diverged (1-2-3 findings across rounds 5-7, all its own; the rest of the design stable three rounds). Option A, seat-recommended: the alert advertises stale-proof facts only (goal id, job id, failure reason, where to look) plus the one resume command his word requires on the stop class, marked verified-at-journal-time best-effort — one fold, likely clean critique, then build. Option B: keep folding the dispatcher-precondition mirror (evidence says it diverges). His morning word required the two producer classes in slice 1; it did not require command-advertisement machinery. Work continues elsewhere meanwhile (retro due)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 35
+- Revision: 36
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
-- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T21:44:24Z revision=33
-- StopCapability: generation=33 revision=33 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-29T06:19:06Z 6RYCTDER5WR9E3X1VDDVPWJDGF-m1-bf243850 open actor=human:wido targets=alert-escalation-channel
@@ -47,4 +45,5 @@ History:
 - 2026-09-01T21:44:24Z 03SAD0ARR9VC6QJ50P1YBKHAEE-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T21:44:29Z AT2VPJ7GPVYE16K8CA24BZ108S-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T22:26:50Z E1Q0T18AXDTEWSCZPEQAWE1KHN-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=98cdb809e72c1f0672eb58da146e955a3121eb52583dec67dc12db9c9fbe20b9
+- 2026-09-01T22:27:31Z V96VQXWPYYF5Y8XWPP8JHGZ77Z-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=189f3ad374a62a5a082a5cccc78d65938fc29175cddd0126944ecea6c8cf6b21
