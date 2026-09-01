@@ -49,7 +49,7 @@ standing words untouchable.
 # Expected Return
 
 Version-2 implementer JSON; diffBoundary exactly
-metasystem/plans/alert-channel-design.md.
+metasystem/plans/alert-channel-design.md (that one file).
 
 # Gap Rule
 
