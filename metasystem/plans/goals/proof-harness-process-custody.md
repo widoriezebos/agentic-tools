@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 2h, full ladder per R-38-m2 (backlog, design, design critique, build, code critique, tests). Direction for the designer: proof harnesses own their processes DETERMINISTICALLY - a harness runs its load generators in one process group it kills whole on every exit path (trap on EXIT, kill by negative pgid), or better: a small engine verb (proc load-generate --seconds N --workers K) whose group the existing kill-through machinery owns, so no shell job table is ever the custodian. Fixture: a harness killed mid-run leaves zero orphans; the census sees nothing unowned.
 - OpenedAt: 2026-09-01T07:21:28Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T07:21:28Z 9WGMX9SF5S5CXHZYNZ4SY0ZMXY-m2-bc1be9cb open actor=m2+mac-coordinator targets=proof-harness-process-custody
-Integrity: sha256=e488d4c12feb2ff70308ec5bc7b8d90bdec775bca2328a3e82802dffcb750e1c
+- 2026-09-01T20:29:15Z 9E5FFRAKCWM2WP3PZEDNCESZ7G-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=proof-harness-process-custody
+Integrity: sha256=62beee8308c0540c05d663af1f3b0ec47d6dc8ee2a959d270ac6cec52efe2d77
