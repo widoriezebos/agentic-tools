@@ -58,7 +58,12 @@ the goal itself cannot be worked by anyone. Two paths:
   bootstrap world every turn and hook-freshness has been dead since
   enrollment. Verified by hand: running
   `bash scripts/agents/supervision-hook.sh claude stop` from
-  `metasystem/` prints health for the outer root.
+  `metasystem/` prints health for the outer root. CONFIRMED
+  INDEPENDENTLY by m2 the same hour — its hook-freshness is dead
+  identically — so this is the shape, not one machine: every seat's
+  harness turn signal has been false since enrollment. Check m0's
+  hook-freshness first; it is likely the same and the goal's fixture
+  should cover the nested layout generally.
 - **alert-escalation-channel** — design COMPLETE at revision 6
   (`plans/alert-channel-design.md`), critique register closed at
   revision 5 with zero findings, then revision 6 added section 11a
