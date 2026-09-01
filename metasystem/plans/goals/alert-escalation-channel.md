@@ -5,11 +5,11 @@
 - Origin: human
 - Next step: Design at revision 7 (landed 7544c931), Sol re-critique round 1 COMPLETE: nine material findings, one critical (AC7-PRODUCER-ATOMICITY-001: a crash between the source transition and the episode write can permanently suppress a required alert), eight high — verbatim register at records/misc/alert-channel-critique-r7.md. OWED: revision 8 folding or refuting all nine by id (Fable design lane), then Sol re-critique, then the slice-1 build per section 11a. BLOCKED ON BUDGET: reserved job-minutes 220/240 used by reservation (not runtime); nothing more can be admitted. Wido's raise 240 to 600 unblocks revision 8 tonight. Fence discipline: Wido's intended 8h appetite is the real fence (claimed 2026-09-01 ~10:5xZ); this goal has spent its one relayed resume — no rescue exists if it stops again.
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 25
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 26
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
-- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T12:45:46Z revision=23
-- StopCapability: generation=23 revision=23 machine=m0b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-01T13:51:37Z revision=26
+- StopCapability: generation=26 revision=26 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-29T06:19:06Z 6RYCTDER5WR9E3X1VDDVPWJDGF-m1-bf243850 open actor=human:wido targets=alert-escalation-channel
@@ -37,4 +37,5 @@ History:
 - 2026-09-01T12:45:46Z ZYYK2HFSS6KZWPPWE5Q08VAE1F-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T12:46:38Z CHAQ85YRCH4SCG9R6B8FAQR8VZ-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T13:21:46Z SFY92F54V6YHYXBXKW2AEM498T-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=12b34edb50788a4b793c80476b93ba48d4f937cdb2eec12b547956043b49fcea
+- 2026-09-01T13:51:37Z 68K5TVKAGQJ13AJJH1VRJNEJTZ-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=ed8c1ed4c668b86ddb7cf9fc7f35137ef469cba4295a225198df3669b57ef24b
