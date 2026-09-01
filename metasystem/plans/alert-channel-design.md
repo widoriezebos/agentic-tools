@@ -1,29 +1,39 @@
-# Alert Channel Design — alert-escalation-channel (revision 7)
+# Alert Channel Design — alert-escalation-channel (revision 8)
 
-Status: revision 7 resolves the SECOND slice-1 gap-stop — four
-cross-section contradictions that §11a's one-pass addition introduced
-— and folds Wido's 2026-09-01 binding word: two producers join slice
-1 (the delegate-job-failed class, new 11a.8, and the breach-stop
-stop-awaiting-resume class, new 11a.9; specimen
-`records/misc/idle-loss-2026-09-01.md`). The four resolutions:
-attempt `MessageRef` retention is decided INTO slice 1 (§5a, §7, and
-§11 slices 1 and 4 now agree); `AdapterSend` gains a
-`context.Context` first parameter created by the channel layer (§2a
-and 11a.7 are one contract); `DeliverDueAlerts` is wired into BOTH
-tick drivers in slice 1 — the resident runner and the external
-`metasystem steward tick` command (§5, §11); and the compose-side
-truncation law is exact — tail bytes, UTF-8 code-point boundary,
-Happened-only shortening (§9, echoed by 11a.7). SELF-CONSISTENCY
-PASS: performed this revision, rule by rule, over every §11a rule and
-the sections it touches — the section pairs read together and made to
-agree are 11a.1↔§5/§5a/§7; 11a.2↔§2/§2a/§3/§9 (two dangling "§14.2"
-references repaired to 11a.2); 11a.3↔§2/§7/§9/§10; 11a.4↔§1/§4/§6;
-11a.5↔§1/§7/§10; 11a.6↔§1/§6; 11a.7↔§2a/§5/§9/§10;
-11a.8↔§1/§5/§7/§11; 11a.9↔§1/§5/§7/§11; plus the contradiction pairs
-§5a↔§11(slices 1 and 4) and §5↔§11↔both tick drivers. Revision 6
-failed precisely for skipping this pass. The critique record is
-unchanged: no critic finding is reopened; this revision changes only
-what the four resolutions, Wido's addition, and the pass require.
+Status: revision 8 folds all nine material findings of the Sol
+round-1 critique of revision 7
+(`records/misc/alert-channel-critique-r7.md`), no finding narrowed,
+none refuted — every one checked true against the shipped code. The
+load-bearing change: BOTH slice-1 producers become IDEMPOTENT
+DERIVATION SCANS over their durable source state (the terminal job
+record, the closed stop fence plus complete stop batch) run in the
+tick's journal phase — no producer dual-writes, a missed episode
+write self-heals on the next tick, and the crash-window proof is
+stated (AC7-PRODUCER-ATOMICITY-001, folded in 11a.8/11a.9; this also
+makes the wiring writer-independent, folding AC7-JOB-WRITER-001,
+with §1's false only-through-RecordCAS trace corrected —
+`RecordProtocolError` is a second direct terminal writer). The other
+folds: episode `class` and `facts` fields plus class-scoped clearing
+(AC7-PRODUCER-STATE-001, new 11a.10); the stop-outcome verdict table
+— only a closed fence with a COMPLETE batch alerts
+(AC7-STOP-OUTCOME-001, 11a.9); `channel` and `messageRef` persisted
+on `AlertAttempt` (AC7-MESSAGEREF-PERSISTENCE-001, 11a.1); §2
+restated over 11a.3's unconfigured-outcome law, one contract
+(AC7-SEND-OUTCOME-001); the composed message defined byte-exactly,
+labels and separators included (AC7-COMPOSER-BYTES-001, §6/§9); the
+dedup tuple→digest encoding fixed with pinned vectors
+(AC7-DEDUP-ENCODING-001, 11a.10); and the external tick driver's
+failed-RunTick branch assigned an explicit `DeliverDueAlerts` call
+(AC7-TICK-ERROR-PATH-001, new 11a.11). SELF-CONSISTENCY PASS:
+performed this revision over every changed rule and its touched
+sections — the pairs read together and made to agree are
+11a.8↔§1/§5/§7/§11 (scan replaces transition-writer journaling in
+all four); 11a.9↔§1/§5/§7/§11 (same); 11a.10↔§7/11a.5/11a.6/§5
+(class scoping, Message invariant, due definition); 11a.1↔§5a/§7
+(receipt fields named in both); §2↔11a.3 (one outcome contract);
+§6↔§9↔11a.6/11a.8/11a.9 (byte-exact layout and never-cut set);
+11a.11↔§5↔§11↔both tick drivers (every-pass delivery); and
+11a.10↔11a.8/11a.9 (digest encoding used by both producers).
 
 Design for the promoted goal `plans/goals/alert-escalation-channel.md`:
 escalations and blocked-on-human states reach Wido IMMEDIATELY over an
@@ -83,20 +93,42 @@ Design only. No code ships with this document.
   producers**: a delegate job record
   (`artifacts/agents/jobs/<job-id>.json`) carries a `goalId` field
   (read back by dispatch, `scripts/agents/dispatch.sh` 1759) and
-  reaches terminal failure only through the record CAS's transition
-  table — `failed` or `timeout`, distinct from deliberate `cancelled`
-  (`internal/dispatch/record.go` 39–46) — with an optional `error`
-  field carrying the reason; the reaper performs the process-loss and
-  timeout transitions within seconds of death. The breach-stop
-  custodian runs INSIDE `RunTick` (`internal/steward/tick.go` 153,
-  69–90) and returns one `BreachStopReport{GoalID, Revision, StopID,
-  State}` per stopped revision.
-- **Both tick drivers already end with a delivery step** (traced):
-  the resident runner loop calls `RunTick` then `DeliverPending`
-  (`internal/steward/runner.go` 99, 131), and the external
-  `metasystem steward tick` command does the same
-  (`cmd/metasystem/steward_verbs.go` 231, 270) — each has a natural
-  additive slot for §5's transport phase.
+  reaches terminal failure through TWO writers, corrected from
+  revision 7's only-through-the-CAS over-claim: the record CAS's
+  transition table — `failed` or `timeout`, distinct from deliberate
+  `cancelled` (`internal/dispatch/record.go` 39–46, `RecordCAS` 475)
+  — AND `RecordProtocolError` (`record.go` 417–464), which directly
+  stamps a pending or running record `failed` with `error`
+  `protocol_error` without calling `RecordCAS`; both respect the same
+  edge set, and the optional `error` field carries the reason. The
+  reaper performs the process-loss and timeout transitions within
+  seconds of death (`internal/supervise/reaper.go`, through the same
+  CAS). Terminal records STAY in `artifacts/agents/jobs/` — no
+  shipped path deletes them (the reaper mirrors, never removes) — so
+  a terminal record is durable, rescannable source state. The
+  breach-stop custodian runs INSIDE `RunTick`
+  (`internal/steward/tick.go` 153, 69–90) and returns one
+  `BreachStopReport{GoalID, Revision, StopID, State}` per stopped
+  revision; `FindBreachStops` OMITS a fence whose stop batch reads
+  COMPLETE (`internal/dispatch/stop.go` 295–296), so a completed
+  stop's report appears once and never again — but the fence itself
+  persists in the goal file until `metasystem goal resume`, which
+  "verifies the exact stop batch during the transaction, installs
+  the complete fresh tuple, creates a new revision, and clears the
+  old fence" (`internal/goal/stop.go` 353–355). A claimed goal
+  carrying a `StopFence` whose batch is COMPLETE is therefore the
+  exact durable awaiting-resume state, present every tick until the
+  human acts.
+- **Both tick drivers already end with a delivery step, on success
+  AND failure** (traced): the resident runner loop calls `RunTick`,
+  prints a failed tick to stderr WITHOUT returning, and reaches its
+  `DeliverPending` call on every iteration
+  (`internal/steward/runner.go` 99–101, 131); the external
+  `metasystem steward tick` command has TWO branches — a failed
+  `RunTick` calls `DeliverPending` and returns 1
+  (`cmd/metasystem/steward_verbs.go` 234–240), a successful one
+  calls it before printing the report (line 270) — each branch a
+  natural additive slot for §5's transport phase (law in 11a.11).
 - **Provider facts** (from the round-2 critique's cited official
   documentation, adopted as design constraints): Slack incoming
   webhooks return no message timestamp — threading needs the Web API
@@ -161,9 +193,13 @@ type Channel interface {
 }
 ```
 
-`Send`'s top-level error covers only pre-transport failure (unknown
-destination, unconfigured); once submissions begin, every outcome —
-success or failure, per submission — is a `ChunkOutcome`. This is the
+`Send`'s top-level error covers only CALLER MISUSE — exactly 11a.3's
+list: unknown destination name, invalid class, empty required compose
+field, over-limit message. An UNCONFIGURED destination is NOT a
+top-level error: `Send` returns a nil error and exactly one
+`ChunkOutcome` whose `Err` is `ErrUnconfigured` (one contract with
+11a.3, which owns the journaling side). Once submissions begin, every
+outcome — success or failure, per submission — is a `ChunkOutcome`. This is the
 per-chunk receipt AC2-RECEIPT-001 found unrepresentable: the episode
 owner journals one attempt per outcome (§7), and the digest owner
 advances its cursor from the outcomes' spans (§9).
@@ -354,11 +390,12 @@ enforced by the kernel.**
    PENDING attempt exists. It performs NO network work, so nothing
    new ever waits on the network under either lock. (`tick.go` line
    264's call becomes journal-only; the tick's contract is otherwise
-   unchanged.) Journaling is not tick-exclusive: the 11a.8 producer
-   journals from the job-record transition writer and the 11a.9
-   producer journals in this same tick phase from the custodian's
-   reports; every journal write takes the alert lock, and only
-   TRANSPORT (phase 2) is single-flight.
+   unchanged.) BOTH 2026-09-01 producers journal in this same tick
+   phase as IDEMPOTENT DERIVATION SCANS over their durable source
+   state — the terminal job records (11a.8) and the closed stop
+   fences with complete batches (11a.9); no transition writer
+   dual-writes into the episode store. Every journal write takes the
+   alert lock, and only TRANSPORT (phase 2) is single-flight.
 2. **Transport phase** (`DeliverDueAlerts`, called AFTER `RunTick`
    returns — and with it the arbitration release, which `RunTick`
    holds only internally — by BOTH tick drivers: the resident steward
@@ -369,8 +406,12 @@ enforced by the kernel.**
    and surface through the 11a.5 floor): acquire a NEW dedicated sender flock,
    `artifacts/agents/steward/alerts-sender.flock`, with
    LOCK_EX|LOCK_NB. If it is held, return immediately — the live
-   holder is the single flight, and the next tick retries. Holding
-   it: briefly take the alert lock to read due PENDING attempts and
+   holder is the single flight, and the next tick retries. DUE,
+   exactly: an attempt is due iff it is the episode's latest attempt,
+   its `Result` is PENDING, and the episode is neither `Cleared` nor
+   `Acknowledged` — the same exclusions as 11a.5's counting, so a
+   scan-cleared or already-acknowledged episode is never sent late.
+   Holding it: briefly take the alert lock to read due PENDING attempts and
    stamp each with this sender's identity; release the alert lock;
    perform sends (per-pass budget `channel.max-sends-per-tick`,
    default 3, each 15-second-bounded); re-take the alert lock briefly
@@ -449,11 +490,29 @@ Why each stated law now holds:
 
 ## 6. Alert content and the launch gate
 
-Alert content is unchanged from revision 2 (WHAT HAPPENED / WHAT IS
-ASKED / the exact ANSWERING ACT — only verbs proven to exist, e.g.
-`metasystem goal resume`, `metasystem mission-runner answer`; the
-acknowledgment line appended; composer refuses empty fields;
-`docs/seat-communication.md` binds the register). The launch gate
+Alert content keeps revision 2's three fields (WHAT HAPPENED / WHAT
+IS ASKED / the exact ANSWERING ACT — only verbs proven to exist,
+e.g. `metasystem goal resume`, `metasystem mission-runner answer`;
+composer refuses empty fields; `docs/seat-communication.md` binds
+the register), now BYTE-EXACT (folds AC7-COMPOSER-BYTES-001). The
+composed message is exactly four lines joined by single LF bytes
+(`\n`), no trailing newline, labels ASCII verbatim:
+
+```
+WHAT HAPPENED: <Happened>
+WHAT IS ASKED: <Asked>
+ANSWER: <Answer>
+Acknowledge: metasystem health acknowledge-alert --episode <episode-id> --repo <absolute repository path>
+```
+
+Line 4 IS the acknowledgment line — the shipped verb and flags
+(`cmd/metasystem/steward_verbs.go` 77–80: `--episode`, `--repo`),
+with the episode id and the repository's absolute path substituted.
+The NEVER-CUT set of §9 is thereby defined: every byte of the
+composed message EXCEPT the `<Happened>` field value — the three
+label prefixes, the three separator newlines, the Asked and Answer
+values, and the whole acknowledgment line. A composer fixture derives
+every byte before applying the cap without choosing anything. The launch gate
 (folds AC3-SLICE-GATE-CUTOVER-001): the target state is `EnsureRunner`
 and `arm` consulting `Ready` over the alert destination chain
 (primary or fallback configured passes; no send, no output). But the
@@ -517,9 +576,11 @@ the cursor advances using `ChunkOutcome.Span`.
   default 1500, under every named provider cap); an over-cap alert is
   truncated with a tail naming the episode id. One alert, one chunk.
   The truncation law, exact: the cap counts UTF-8 BYTES of the whole
-  composed message. Only `Happened` may be shortened; `Asked`,
-  `Answer`, and the acknowledgment line are never cut — they carry
-  the acting verb, which is the alert's point. The tail is the
+  composed message, whose every byte §6 now fixes. Only the
+  `Happened` field value may be shortened; the never-cut set —
+  defined byte-exactly in §6 as everything else, labels, separators,
+  `Asked`, `Answer`, and the acknowledgment line — carries the
+  acting verb, which is the alert's point. The tail is the
   message's final line: a newline then `[truncated; episode
   <episode-id>]` — 22 bytes plus the episode id's bytes, ASCII apart
   from the id. Composition: if the full text fits the cap, send it
@@ -669,14 +730,32 @@ the sender's own process id): the pair (process id, process start
 time in epoch seconds) that the census and `AlertInvoker` already
 treat as a process identity.
 
-**Persisted stamp.** Three additive fields on `AlertAttempt` (episode
-schema stays 1; absent fields read as zero):
+**Persisted stamp and receipt.** FIVE additive fields on
+`AlertAttempt` (episode schema stays 1; absent fields read as zero;
+folds AC7-MESSAGEREF-PERSISTENCE-001 — the exact durable shape §7
+assigns to slice 1):
 
 ```
-senderPid          int64  // stamping process id
-senderPidStartedAt int64  // its start time, epoch seconds
-stampedAt          string // RFC 3339 UTC
+senderPid          int64  // json "senderPid,omitempty"
+senderPidStartedAt int64  // json "senderPidStartedAt,omitempty"
+stampedAt          string // json "stampedAt,omitempty" — RFC 3339 UTC
+channel            string // json "channel,omitempty" — destination name
+messageRef         object // json "messageRef,omitempty" —
+                          // {"id":"<string>","threadId":"<string>"},
+                          // a *MessageRef in Go, the WHOLE field
+                          // omitted when both members are empty
 ```
+
+`channel` is BOUND AT STAMPING: the journal phase creates PENDING
+attempts with `channel` absent (no destination is resolved under the
+tick); the flock-holding sender writes the destination it will try
+into `channel` in the same stamping write, and a restamp (dead
+foreign sender) may rebind it. §7's destination-matched PENDING
+reuse, mechanically: reuse the latest PENDING attempt whose `channel`
+is empty or equals the destination being tried; a fallback try is its
+own attempt with its own `channel`. `messageRef` is written only by
+the §5a completion merge (step 3). Legacy attempts carry none of the
+five fields and read as zero — no migration.
 
 **Stamping rule.** Under the alert lock, the flock-holding sender
 stamps every due PENDING attempt it is about to send by writing those
@@ -895,24 +974,46 @@ change, not an implementer choice (MARKED deferral, unowned).
 The alert class "delegate job failed under a claimed goal" — the
 2026-09-01 six-hour idle's missing class — is a slice-1 producer.
 
-- **Trigger, exact**: a job record under `artifacts/agents/jobs/`
-  transitions into terminal status `failed` or `timeout` (never
-  `cancelled`: a deliberate cancellation is not a failure) while the
-  record's `goalId` field is nonempty. The transition writer journals
-  in the same operation — the reaper's process-loss and timeout
-  transitions (which mark the record within seconds of death, §1),
-  and every other path that moves such a record through the record
-  CAS's transition table (§1). Journal-only, §5 phase-1 discipline:
-  open/refresh the episode and ensure a PENDING attempt under the
-  alert lock; no network; delivery on the next sender pass of either
-  tick driver.
-- **Carried facts**: goal id, job id, and failure reason — the
-  record's `error` field when nonempty, else the terminal status
-  word.
-- **Dedup, per job**: the episode digest key is the pair
-  (`delegate-job-failed`, job id), riding the store's existing
-  digest-keyed dedup (§1) — one episode per job ever; a repeated
-  observation refreshes that episode and never mints a second.
+- **Producer mechanism — an idempotent derivation scan, not a
+  writer hook** (folds AC7-PRODUCER-ATOMICITY-001 and
+  AC7-JOB-WRITER-001): the tick's journal phase (§5 phase 1) scans
+  `artifacts/agents/jobs/*.json` and, for every record whose status
+  is terminal `failed` or `timeout` (never `cancelled`: a deliberate
+  cancellation is not a failure) with a nonempty `goalId`, ensures
+  the episode keyed by 11a.10's digest exists with its class, facts,
+  Message, and a PENDING attempt — all under the alert lock, no
+  network. NO transition writer touches the episode store: the
+  record writers (`RecordCAS`, `RecordProtocolError`, the reaper —
+  §1's corrected two-writer trace) stay byte-unchanged, and the scan
+  is writer-independent by construction, covering
+  `RecordProtocolError` and any future terminal writer without
+  enumeration. Crash-window proof: the terminal record is durable
+  before any episode work begins, terminal records are never deleted
+  (§1), and the scan re-derives the episode from the record on EVERY
+  tick until it exists — so no crash between the record landing and
+  the episode write can lose the alert, only delay it one tick; once
+  the PENDING attempt exists, the store's shipped at-least-once
+  crash law owns the rest. The only unalertable loss is loss of the
+  source record itself — loss of the very truth the alert reports.
+  This obeys §7's source-of-truth law: the episode store stays the
+  only durable DELIVERY state; the job record stays the system of
+  record for the failure facts. Cost, disclosed: one read pass over
+  the jobs directory per tick, the same order as the watcher's
+  existing per-interval census; an unreadable or unparseable record
+  is skipped this pass (the reaper's own shipped treatment) and
+  retried next tick. Latency, disclosed: journaled at most one tick
+  interval after the record lands and delivered by that same tick's
+  sender pass — no later than revision 7's writer-hook design, which
+  also waited for a sender pass.
+- **Carried facts** (persisted shape in 11a.10): goal id, job id,
+  and failure reason — the record's `error` field when nonempty,
+  else the terminal status word.
+- **Dedup, per job**: the episode digest is 11a.10's encoding of the
+  pair (`delegate-job-failed`, job id), riding the store's existing
+  digest-keyed dedup (§1) — one episode per job ever (these episodes
+  are never auto-cleared, 11a.10, so the uncleared-digest match
+  holds); a repeated observation refreshes that episode's facts and
+  never mints a second.
 - **Composition at send time (the 11a.6 pattern)**: `Happened` =
   `delegate job <job-id> failed under goal <goal-id>: <failure
   reason>`; `Asked` = the fixed string `Delegated work under this
@@ -929,27 +1030,126 @@ The alert class "delegate job failed under a claimed goal" — the
 The breach-stop's stop-awaiting-resume alert is an EXPLICITLY WIRED
 slice-1 producer, not a later-slice deferral.
 
-- **Wiring, exact**: the breach-stop custodian already runs INSIDE
-  `RunTick` and returns `BreachStopReport{GoalID, Revision, StopID,
-  State}` per stopped revision (§1). The tick's journal phase (§5
-  phase 1 — the same slice-1 edit that makes `UpdateAlertEpisodes`
-  journal-only) additionally ensures one episode per report carrying
-  a goal id and revision, completed and failed stop states alike (a
-  failed stop is at least as alarming). The custodian's
-  route-resolution failure report carries no goal and stays with the
-  ordinary health breaker, the tick's stated sole escalation owner —
-  unchanged law.
-- **Dedup**: episode digest key (`stop-awaiting-resume`, goal id,
+- **Producer mechanism — an idempotent derivation scan over the
+  goal tree, not the custodian's reports** (folds
+  AC7-PRODUCER-ATOMICITY-001 for this class): the tick's journal
+  phase (§5 phase 1) projects the goal tree once and, for every LIVE
+  CLAIMED goal whose `StopFence` is present AND whose stop batch
+  (`ReadStopBatch` on the fence's stop id) reads COMPLETE, ensures
+  the episode keyed by 11a.10's digest. §1 traces why this condition
+  is exact durable proof: `EnsureBreachStop` writes the fence only
+  when closing launch, and `goal resume` verifies batch completeness
+  then clears the fence into a fresh revision — so the condition
+  holds on EVERY tick from fence closure until the human resumes,
+  and a missed episode write self-heals next tick.
+  `FindBreachStops`'s omit-completed behavior (§1) is why the
+  custodian's one-shot COMPLETE report could not be the trigger.
+  Crash-window proof: fence and batch are durable before any episode
+  work; the scan re-derives until resume; after resume no alert is
+  owed — the human has acted.
+- **Stop-outcome verdict table, total** (folds
+  AC7-STOP-OUTCOME-001 — the alert asserts a closed fence and
+  prescribes `goal resume`, so it fires only on proof of both):
+  - Closed `StopFence` + batch COMPLETE → **ALERT** (the sole
+    alerting condition; resume's own precondition
+    `VerifyStopBatchComplete` guarantees the prescribed verb will
+    not refuse).
+  - Closed `StopFence` + batch INDETERMINATE or unreadable → **NO
+    ALERT** yet: the fence closed but `goal resume` would refuse an
+    incomplete batch; the route stays visible to the custodian and
+    the ordinary health breaker until the batch completes.
+  - Custodian report FAILED (stop command failed) → **NO ALERT**: no
+    proof any fence closed; the route reappears next tick and the
+    custodian retries; persistent failure is the health breaker's,
+    the tick's stated sole escalation owner.
+  - Route INDETERMINATE (budget unknown, missing stop capability) →
+    **NO ALERT**: no fence was closed.
+  - Goalless FAILED (route-resolution failure) → **NO ALERT**:
+    carries no goal; health breaker — unchanged revision-7 law.
+- **Dedup**: 11a.10's encoding of (`stop-awaiting-resume`, goal id,
   revision) — a stop observed across many ticks refreshes one
-  episode.
-- **Composition at send time**: `Happened` = `goal <goal-id> revision
-  <revision> hit its budget fence: breach-stop <stop-id> reached
-  <state>; the goal waits for resume.` (the literal `unknown` when
-  the stop id is empty); `Asked` = the fixed string `The budget fence
-  closed this revision and nothing will move it without you; decide
-  whether to resume the goal.`; `Answer` = the fixed string
-  `metasystem goal resume` with the goal id appended — the human verb
-  §1 already traces as real.
+  episode; the scan resolves and clears it when the condition no
+  longer holds (11a.10), and a later stop lands on a fresh resumed
+  revision, hence a fresh digest.
+- **Composition at send time** (persisted facts in 11a.10):
+  `Happened` = `goal <goal-id> revision <revision> hit its budget
+  fence: breach-stop <stop-id> is complete; the goal waits for
+  resume.` — no state interpolation: only COMPLETE alerts, and a
+  `StopFence` always carries its stop id (§1's fence validation);
+  `Asked` = the fixed string `The budget fence closed this revision
+  and nothing will move it without you; decide whether to resume the
+  goal.`; `Answer` = the fixed string `metasystem goal resume` with
+  the goal id appended — the human verb §1 already traces as real.
+
+### 11a.10 Episode class, facts, digest encoding, class-scoped lifecycle
+
+(Folds AC7-PRODUCER-STATE-001 and AC7-DEDUP-ENCODING-001.)
+
+Two additive fields on `AlertEpisode` (schema stays 1; absent reads
+as zero — every shipped health episode has neither and is class
+health):
+
+```
+class string            // json "class,omitempty":
+                        // "" (health) | "delegate-job-failed" |
+                        // "stop-awaiting-resume"
+facts map[string]string // json "facts,omitempty"; exact keys:
+                        // delegate-job-failed:  goalId, jobId, reason
+                        // stop-awaiting-resume: goalId, revision
+                        //   (base-10, no leading zeros), stopId
+```
+
+**Message invariant**: the shipped loader refuses an empty `Message`
+(`alert_episode.go` 119–121), so the scans set `Message` at journal
+time to EXACTLY the class's rendered `Happened` line from `facts` —
+deterministic denormalization, refreshed on every scan pass while
+the episode is uncleared; a fixture asserts `Message` equals the
+composer's `Happened`. Send-time composition (11a.6 pattern)
+switches on `class`: health composes per 11a.6 from `Message`; the
+two new classes compose per 11a.8/11a.9 from `facts`.
+
+**Digest encoding, exact**: the episode digest is the lowercase
+64-hex SHA-256 of the UTF-8 bytes of the tuple's elements — class
+literal first — joined by single LF (`\n`) bytes, no trailing
+newline (LF is safe: no id or revision contains one). So
+`delegate-job-failed` + LF + job id; `stop-awaiting-resume` + LF +
+goal id + LF + revision base-10. This satisfies the store's
+`validEvidenceDigest` (64 lowercase hex,
+`component_evidence.go` 441–444). Pinned fixture vectors:
+`delegate-job-failed\nimplementer-c002e6035a243bdbc1400067` →
+`aba14958258cb095ae8f35356c939b238a90044435751584fd029304981f3b95`;
+`stop-awaiting-resume\nalert-escalation-channel\n8` →
+`8a6c1ffb2f72d5ae750e890e30c9a12a72bdceec6914029f73b3956e9f8e790d`.
+
+**Class-scoped lifecycle, mechanical** (§7's law made real — the
+shipped healthy verdict clears EVERY episode, `alert_episode.go`
+246–268): `UpdateAlertEpisodes`' healthy-clear loop and its
+resolve-all-others loop are restricted to episodes whose `class` is
+`""` (health). `delegate-job-failed` episodes are NEVER auto-cleared
+— acknowledgment is their terminal human step, and never clearing is
+what makes one-episode-per-job-ever hold under the uncleared-digest
+dedup match. `stop-awaiting-resume` episodes are resolved and
+cleared by their own scan when the 11a.9 condition no longer holds.
+`AcknowledgeAlert` is unchanged for all classes. The class-scoped
+clearing fixture: a healthy health verdict must clear health
+episodes and leave both producer classes' episodes byte-untouched.
+
+### 11a.11 The tick drivers' delivery law, both branches
+
+(Folds AC7-TICK-ERROR-PATH-001.) Each driver calls
+`DeliverDueAlerts` on EVERY pass, immediately after its existing
+`DeliverPending` call, on the failed-`RunTick` branch as well as the
+successful one — four call sites total: the resident runner's loop
+(one site, reached on success and failure alike, §1) and the
+external command's error branch (`steward_verbs.go` 236–239) plus
+its success path (line 270). Rationale: delivery reads only the
+episode store, and pending episodes from earlier passes exist
+regardless of this tick's outcome; a failed `RunTick` may also have
+journaled before failing. Printed bytes unchanged on both branches
+— the success report and the error branch's stderr are
+byte-identical to shipped; `DeliverDueAlerts`' outcomes live in the
+episode journal and surface through the 11a.5 floor (§5's law,
+restated for the error branch).
 
 ## 12. Finding dispositions — all rounds, honestly
 
@@ -980,23 +1180,39 @@ corrected record:
 | Sol implementer gap-stop (seven gaps, slice 1) | Folded, §11a: gap 1 → 11a.1 (sender stamp fields and refusal journal), gap 2 → 11a.2 (the five contract types), gap 3 → 11a.3 (unconfigured-send outcome law), gap 4 → 11a.4 (own command/desktop adapters plus implicit-destination synthesis, legacy bytes untouched), gap 5 → 11a.5 (undelivered counting and the unreadable-store line), gap 6 → 11a.6 (health alert three-field mapping with a real answering verb), gap 7 → 11a.7 (Telegram request/validation/timeout/fake-endpoint/capability). A gap-stop is correct delegate behavior; these were design debts, not implementer questions. |
 | Second implementer gap-stop (four cross-section contradictions, slice 1) | Folded, revision 7: contradiction 1 → `MessageRef` retention decided INTO slice 1 (§5a, §7, §11 slices 1 and 4 agree); contradiction 2 → `context.Context` added to `AdapterSend` (§2a) and 11a.7 restated over it, one contract; contradiction 3 → `DeliverDueAlerts` wired into BOTH tick drivers in slice 1 (§5, §11), external report bytes unchanged; contradiction 4 → exact truncation law in §9 (tail bytes, code-point boundary, Happened-only shortening). Root cause was skipping a self-consistency pass after §11a's one-pass addition; the pass is now performed and recorded in the status line. |
 | Wido's 2026-09-01 binding addition (idle-loss specimen) | Folded: `delegate-job-failed` (11a.8) and `stop-awaiting-resume` (11a.9) enter the enumerated classes (§1 traced facts, §7 producer table) as slice-1 producers (§11). |
+| AC7-PRODUCER-ATOMICITY-001 (critical) | Folded, 11a.8/11a.9: both producers become idempotent derivation scans over durable source state in the tick's journal phase — no dual-write exists to lose; crash-window proofs stated in each subsection; §1 traces the source durability (records retained, fence persists until resume). |
+| AC7-PRODUCER-STATE-001 | Folded, 11a.10: additive `class` and `facts` episode fields with exact keys, Message-invariant denormalization, and the class-scoped clearing fixture; the shipped clear-everything healthy loop is restricted to class health. |
+| AC7-STOP-OUTCOME-001 | Folded, 11a.9: total verdict table — only closed fence plus COMPLETE batch alerts (resume's own precondition); FAILED, INDETERMINATE, and goalless outcomes enumerated NO ALERT with their owners; the false `<state>` interpolation removed from `Happened`. |
+| AC7-JOB-WRITER-001 | Folded, 11a.8 + §1: the scan is writer-independent, covering `RecordProtocolError` and future writers without enumeration; §1's only-through-the-CAS over-claim corrected to the two-writer trace. |
+| AC7-MESSAGEREF-PERSISTENCE-001 | Folded, 11a.1: `channel` and `messageRef` join the persisted `AlertAttempt` with exact JSON names, omission and zero-read rules, stamping-time channel binding, and the mechanical destination-match rule. |
+| AC7-SEND-OUTCOME-001 | Folded, §2: restated over 11a.3's law — top-level error is caller misuse only; unconfigured is nil error plus one ErrUnconfigured chunk; one contract, cross-referenced both ways. |
+| AC7-COMPOSER-BYTES-001 | Folded, §6: the four-line composed message fixed byte-exactly (labels, LF separators, no trailing newline, the acknowledgment line's shipped verb and flags); §9's never-cut set defined as everything but the Happened value. |
+| AC7-DEDUP-ENCODING-001 | Folded, 11a.10: class-literal-first LF-joined UTF-8 tuple, SHA-256, lowercase 64-hex, no trailing newline, revision base-10; two pinned fixture vectors. |
+| AC7-TICK-ERROR-PATH-001 | Folded, 11a.11: `DeliverDueAlerts` on every pass of both drivers including the external command's failed-`RunTick` branch, printed bytes unchanged. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 7)
+## 13. Self-grade (R-24-m1, refreshed for revision 8)
 
-- **Confidence:** 0.74. The four repairs are consistency work whose
-  correctness is checkable by reading section pairs side by side,
-  and that reading was performed and recorded (status line). The
-  drop from 0.78 prices the pattern: each one-pass addition to this
-  document has seeded the next round's contradictions, and revision
-  7 adds 11a.8–11a.9 in one pass too — mitigated, not disproven, by
-  the recorded pass.
+- **Confidence:** 0.76. The nine folds were each checked against the
+  shipped code they cite before writing (all nine findings verified
+  true; none refutable), and the load-bearing change — derivation
+  scans — REMOVES a mechanism class (dual-writes) rather than adding
+  one, which is the direction that has historically survived this
+  document's critique rounds. The rise from 0.74 prices that
+  simplification against the standing pattern: revision 8 again adds
+  new subsections (11a.10, 11a.11) in one pass, mitigated by the
+  recorded self-consistency pass over every changed pair.
 - **Reject condition, stated plainly:** reject this revision if the
   implementer gap-stops on slice 1 a THIRD time. A third stop means
   revision-scale patching cannot make this document mechanical, and
   the design must then be split into a separate implementation
   specification rebuilt from the episode store's and channel layer's
   actual types, not grown further.
-- **Weakest claim:** the §11a.1 stamp-and-restamp rule — it derives
+- **Weakest claim (new):** the 11a.8 scan's cost law — "same order
+  as the watcher census" is an analogy, not a measurement; a jobs
+  directory grown to many thousands of records makes the per-tick
+  read pass the tick's largest I/O, and the design offers disclosure,
+  not a bound. Previously weakest, still standing: the §11a.1
+  stamp-and-restamp rule — it derives
   "a foreign stamp on a PENDING attempt belongs to a dead sender"
   from the sender flock's exclusivity, which holds only while every
   sender honors the flock discipline; a code path that sends without
