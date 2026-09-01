@@ -5,11 +5,13 @@
 - Origin: main
 - Next step: SECOND SIBLING (m0, 2026-09-01): TestTerminateGroupKillsThroughATermImmuneOwnedGroup fails at HEAD on the guest too - the family flaps between tests, same identity-proof refusal shape. Also observed: internal/supervise TestTakeoverRefusalNamesTheRecordedComponent flapped once under full-suite parallelism and passes 3/3 in isolation - likely cross-package process-group interference from this family's kills. Root-cause lead unchanged: vm-epoch-identity-drift.
 - OpenedAt: 2026-08-31T12:34:34Z
-- Revision: 4
+- Revision: 5
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-31T12:34:34Z EHMH5BQET0RG42HVZKV7C48T4Q-m2-bc1be9cb open actor=m2+mac-coordinator targets=missionrunner-terminate-flake
 - 2026-08-31T17:28:32Z WW69E2ASKTZZ6D5KMNCPKVN5RK-m2-bc1be9cb edit actor=m2+mac-coordinator targets=missionrunner-terminate-flake
 - 2026-09-01T10:05:14Z G4A22GKQ4TPKYZHVQHWJ76ZGBB-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=missionrunner-terminate-flake
 - 2026-09-01T12:38:25Z 1SDECS03JNWQR6CBSDKJ47FQK8-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=missionrunner-terminate-flake
-Integrity: sha256=051043e4c80f578ff653b648f5a42c77265413573eea82ef29125ad2b4ad0a0e
+- 2026-09-01T20:27:06Z RF8SR6Z3ZWWK7B9ZCRPNE7A2ZV-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=missionrunner-terminate-flake
+Integrity: sha256=ad26e3726c60d859a36fbe6cfc0c3f85c3c3d014f354153b8ed6a9ad02f37b66
