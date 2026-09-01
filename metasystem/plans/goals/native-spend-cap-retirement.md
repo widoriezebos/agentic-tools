@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Ladder from the top, no exception: Fable design round (small, focused - the adapter code and protection inventory, not the big alert doc) then Sol design critique then Sol build then Fable code critique then tests. Related: budget-death-on-return (the specimens), dispatch-cap-necessity (the reservation-unit sibling)
 - OpenedAt: 2026-09-01T16:58:42Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-01T16:58:42Z Z9D8J1HM0KPD26ZH925X2SRTM7-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=native-spend-cap-retirement
-Integrity: sha256=b1f905c30f086226af2d1fb4d5138b3b5bd9410158e4d332d5d69ecbd69e0909
+- 2026-09-01T16:58:46Z MYKMR55TB45G5XZXS7FYFVPX5Y-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=native-spend-cap-retirement
+Integrity: sha256=cfe59a718202228a3b2e2fd34e7330a17930b0e22b880b74f27f0beb5436469b
