@@ -1,7 +1,50 @@
-# Alert Channel Design — alert-escalation-channel (revision 11)
+# Alert Channel Design — alert-escalation-channel (revision 12)
 
-Status: revision 11 folds all four material findings of the Sol
-round-4 critique of revision 10
+Status: revision 12 folds the ONE material finding of the Sol
+round-5 critique of revision 11
+(`records/misc/alert-channel-critique-r11.md`, critic
+design-critic-91af2db9aaa1803a17478ab9):
+AC11-ANSWER-JOURNAL-ELIGIBILITY-001 — revision 11 CLAIMED the
+advertised Answer command was the dispatcher's accepted case at
+journal time while deriving it from the failed record ALONE,
+though the shipped dispatcher also gates follow-up on chain
+closure and on the NEWEST chain member
+(`scripts/agents/dispatch.sh` 1724–1757) and gates a fresh
+code-critic or warden dispatch on the reviews target still
+existing as an implementer record (1226–1231). After an outage or
+a delayed first scan, the scan can journal an older protocol-error
+record whose chain is already closed or superseded, or whose
+reviews referent is already collected, so the advertised line
+could be refused at the very moment it was journaled — and
+revision 11's "the journaled value cannot go stale" line wrongly
+equated the `reviews` FIELD's immutability with its REFERENT's
+continued existence. The fold (11a.8, 11a.10, §1): before
+advertising a command, the producer verifies AT JOURNAL TIME the
+same preconditions the dispatcher enforces for that command — for
+the follow-up row, chain not closed and the failed record IS the
+newest chain member by the shipped selection rule; for
+code-critic/warden fresh-dispatch rows, the reviews target exists
+in the jobs listing and is an implementer record — evaluated in
+the dispatcher's own check order, entirely from the scan's
+already-contracted read set (zero additional file opens: three
+fields join the existing per-record read). On any failed check the
+row degrades to `answerAction=none-with-reason` with the exact
+failed precondition journaled as the new `answerReason` fact and
+rendered into the Answer line under §6's placeholder law.
+Advertised validity remains JOURNAL-TIME-ONLY: post-journal
+collection, closure, or a newer round still yields the
+dispatcher's loud refusal, disclosed as before. SELF-CONSISTENCY
+PASS (revision 12): 11a.8↔§1 (the mirrored gate rules cite the
+same shipped lines, refreshed to the current tree; the
+newest-member selection is the shipped `LatestChainRecord` rule
+verbatim); 11a.8↔11a.10 (the `none-with-reason` action value and
+the `answerReason` fact agree, one enumerated clause table);
+11a.8↔§6 (the degraded Answer's bytes obey the placeholder law
+with its one substituted token enumerated); §12↔§13 (disposition
+row added; self-grade refreshed; every reject condition unchanged).
+
+Revision 11's status, retained: revision 11 folded all four
+material findings of the Sol round-4 critique of revision 10
 (`records/misc/alert-channel-critique-r10.md`, critic
 design-critic-0868feb318b6458c6637b500) — a convergence stall the
 loop answered with an EXECUTABLE EVIDENCE SPIKE
@@ -55,7 +98,7 @@ pinned, so the advertised follow-up can be refused once the root is
 collected or a newer round lands non-accepted — a loud dispatcher
 refusal, disclosed, never a silent wrong action
 (AC9-ANSWER-FOLLOWUP-ACTION-001, 11a.8/11a.10/§1).
-SELF-CONSISTENCY PASS: performed this revision over every changed
+SELF-CONSISTENCY PASS (revision 11): performed over every changed
 rule and its touched sections — the pairs read together and made to
 agree are 11a.10↔11a.8/11a.12 (ONE birth derivation — the minted
 generation, fallback `createdAt` then `startedAt` then empty for
@@ -163,7 +206,7 @@ Design only. No code ships with this document.
 - **Job-failure and breach-stop facts, traced for the 2026-09-01
   producers**: a delegate job record
   (`artifacts/agents/jobs/<job-id>.json`) carries a `goalId` field
-  (read back by dispatch, `scripts/agents/dispatch.sh` 1759) and
+  (read back by dispatch, `scripts/agents/dispatch.sh` 1770) and
   reaches terminal failure through TWO writers, corrected from
   revision 7's only-through-the-CAS over-claim: the record CAS's
   transition table — `failed` or `timeout`, distinct from deliberate
@@ -235,15 +278,34 @@ Design only. No code ships with this document.
   `internal/steward/delivery.go` 248–262), else empty — a disclosed
   degradation, not a proof.
 - **The dispatcher's real follow-up eligibility** (traced for
-  11a.8's Answer): `metasystem delegate --follow-up <root-id>`
+  11a.8's Answer; line cites refreshed to the current tree for
+  revision 12): `metasystem delegate --follow-up <root-id>`
   refuses a closed chain ("job chain is closed",
-  `scripts/agents/dispatch.sh` 1713); admits a new round ONLY when
+  `scripts/agents/dispatch.sh` 1724, read from the ROOT record's
+  `chainClosed`); admits a new round ONLY when
   the newest chain record is `completed` or `failed` with `error`
   `protocol_error` — every other state dies naming fresh dispatch as
-  the remedy (line 1742: "use a fresh dispatch after pending,
+  the remedy (line 1753: "use a fresh dispatch after pending,
   running, timeout, or process-lost"); and separately dies when the
-  resumed record carries no session id (line 1746: "follow-up has no
-  resumable session id"). The verb's argument is the CHAIN ROOT id,
+  resumed record carries no session id (line 1757: "follow-up has no
+  resumable session id"). The NEWEST-member selection, traced for
+  11a.8's journal-time eligibility check: `latest_chain_record`
+  (`dispatch.sh` 791–793) execs `metasystem job
+  latest-chain-record` → `LatestChainRecord`
+  (`internal/dispatch/chain.go` 91–115): the highest-`round` chain
+  member wins, a missing round counts as zero, and ties keep the
+  earliest record in ascending path order; membership comes from
+  `chainMembers` (chain.go 48–89) — one glob of `jobs/*.json`
+  loaded into a table keyed by each record's own `jobId` field
+  (a record that cannot name itself joins no chain), each record
+  attributed to the root its `parentJob` lineage resolves to by
+  `lineageRoot` (chain.go 21–46: a walk that leaves the table,
+  cycles, or hits a non-string parent attributes the record to NO
+  chain). The follow-up verb then RESUMES that newest member
+  (`latest`, 1725–1757) — so a follow-up issued for an OLDER
+  failed record is not that record's remedy even when the verb
+  accepts: it addresses a different record. The verb's argument is
+  the CHAIN ROOT id,
   never a round record's own id. The shipped root derivation is the
   PARENTJOB WALK, not an id-suffix rule: `usage.RootJobID`
   (`internal/usage/usage.go` 43–68) follows each record's
@@ -255,9 +317,16 @@ Design only. No code ships with this document.
   (`internal/evidence/gc.go` 67, 392) is GC's grouping heuristic,
   not root identity. Separately: a FRESH `code-critic` or `warden`
   dispatch hard-requires `--reviews <implementer-job-id>` naming an
-  existing implementer record (`dispatch.sh` 1226–1231, "$role
-  dispatch requires --reviews"), and `reviews` — like `parentJob` —
-  is an IMMUTABLE record field (`record.go` 62). `chainClosed` is
+  EXISTING record (`dispatch.sh` 1226–1231: "$role dispatch
+  requires --reviews", then "cannot review unknown implementer
+  job" when `jobs/<reviews>.json` is absent, then "--reviews must
+  name an implementer job" when its `role` field is not
+  `implementer`), and `reviews` — like `parentJob` —
+  is an IMMUTABLE record field (`record.go` 62); immutability
+  preserves the identifier BYTES only, NOT the referenced record's
+  existence — evidence GC may collect the named implementer record
+  (this section's evidence-GC trace), after which the fresh
+  dispatch line dies at 1229. `chainClosed` is
   terminal metadata (`record.go`'s terminal-metadata set), so it
   may flip true AFTER a record terminalizes.
 - **Both tick drivers already end with a delivery step, on success
@@ -1233,13 +1302,26 @@ The alert class "delegate job failed under a claimed goal" — the
   bounded read of EACH listed record file per tick, for exactly the
   fields the class consumes: `status`, `goalId`, `error`, the
   minted birth generation (fallback `createdAt` then `startedAt` —
-  §1's birth trace), `sessionId`, `role`, `reviews`, and
-  `parentJob`; the count is bounded by the same listing, PLUS — for
+  §1's birth trace), `sessionId`, `role`, `reviews`, `parentJob`,
+  `jobId`, `round`, and `chainClosed` (the last three joined the
+  read in revision 12 for the eligibility check — same open, three
+  more fields); the count is bounded by the same listing, PLUS — for
   a failed record whose `parentJob` is nonempty — the journal-time
   parentJob walk's ancestor record reads (§1's `RootJobID` trace),
   bounded by that record's chain length and paid at most once per
   incarnation ever, because episodes are write-once and a journaled
-  digest is skipped by the index before any walk. This is revision
+  digest is skipped by the index before any walk. The JOURNAL-TIME
+  ELIGIBILITY CHECK (the Answer table's gate mirror below) adds NO
+  fourth set and NO extra open: on a tick that journals at least
+  one episode of this class, the scan builds the chain-membership
+  table ONCE from set 2's already-read `jobId`, `parentJob`, and
+  `round` fields — the same loaded-table lineage attribution as
+  the shipped `chainMembers`/`lineageRoot` (§1's newest-member
+  trace: a walk that leaves the table, cycles, or hits a
+  non-string parent attributes the record to NO chain) — reads
+  `chainClosed` from the root's own set-2 read, and decides
+  reviews-target existence from set 1's listing plus the target's
+  set-2 `role` field. This is revision
   10's disclosed regression from revision 9's zero-read steady
   state: the digest covers the birth token (AC9-JOB-ID-ABA-001's
   fix), and the token lives INSIDE the record, so no filename-only
@@ -1295,7 +1377,9 @@ The alert class "delegate job failed under a claimed goal" — the
 - **Carried facts** (persisted shape in 11a.10): goal id, job id,
   the birth token, failure reason — the record's `error` field when
   nonempty, else the terminal status word — and the Answer's
-  journal-time decision facts: `answerAction`, `role`, `chainRoot`
+  journal-time decision facts: `answerAction`, `answerReason` (the
+  first failed eligibility check's rendered clause, empty when
+  every check passed — the table below), `role`, `chainRoot`
   (the parentJob-walk result, derived at journal time while the
   chain's records are readable), and `reviews` (the failed record's
   own immutable `reviews` field, verbatim; may be empty) — the
@@ -1340,10 +1424,12 @@ The alert class "delegate job failed under a claimed goal" — the
   recorded correction verb "stays total" was FALSE: §1's trace shows
   the shipped dispatcher refuses timeout, process-lost, and ordinary
   failed records, and refuses any chain without a resumable session
-  id). The advertised action is decided AT JOURNAL TIME from the
-  record's own fields and persisted as the `answerAction` fact
-  (11a.10), by this TOTAL table over exactly the states this class
-  selects:
+  id). The advertised action is decided AT JOURNAL TIME in two
+  mechanical steps — first this TOTAL table over exactly the
+  states this class selects, from the record's own fields; then
+  the JOURNAL-TIME ELIGIBILITY CHECK below, which may degrade the
+  selected row — and persisted as the `answerAction` fact
+  (11a.10):
   - `status=failed` AND `error=protocol_error` AND nonempty
     `sessionId` → `answerAction=follow-up`. Resume IS the true
     remedy: this is byte-for-byte the dispatcher's accepted case.
@@ -1357,9 +1443,69 @@ The alert class "delegate job failed under a claimed goal" — the
   - `status=timeout` → `answerAction=fresh-dispatch` (same shipped
     refusal).
 
-  NO none-with-reason row exists for this class: every selected
-  terminal state has a lawful next command; `cancelled` — the one
-  state with no remedy owed — is not selected at all. The follow-up
+  The TABLE itself needs no none-with-reason row — every selected
+  terminal state has a lawful next command, and `cancelled`, the
+  one state with no remedy owed, is not selected at all —
+  `none-with-reason` enters ONLY through this degradation:
+
+  **The journal-time eligibility check** (folds
+  AC11-ANSWER-JOURNAL-ELIGIBILITY-001): before the selected row's
+  command is journaled, the producer verifies — from the scan's
+  contracted read set alone (the eligibility sentence in the open
+  contract above; zero additional file opens) — the SAME
+  preconditions the shipped dispatcher enforces for that row's
+  command, in the dispatcher's own check order, and the FIRST
+  failed check degrades the row to `answerAction=none-with-reason`
+  with the `answerReason` fact set to that check's exact rendered
+  clause below (rendered at journal time, its embedded id already
+  substituted). The checks, total:
+  Row 1 (follow-up — the dispatcher's chain gates, §1's trace of
+  `dispatch.sh` 1724–1757):
+  (a) the chain-root record's `chainClosed` is not `true` —
+  failing clause: `the job chain of ` + the chain-root id + ` is
+  closed`;
+  (b) the failed record IS the newest chain member by the shipped
+  selection rule (§1's `LatestChainRecord` trace: highest `round`
+  wins, a missing round counts as zero, ties keep the earliest in
+  ascending path order over the loaded table) — failing clause:
+  `a newer chain member ` + the selected newest member's job id +
+  ` supersedes the failed record`. The follow-up verb RESUMES the
+  newest member (§1's trace), so a command journaled for a
+  superseded record would not even address this failure —
+  degrading is honest, not conservative. Checks (a) and (b)
+  require a resolved chain root; on the walk-refusal fallback
+  below (empty `chainRoot` fact, verbatim `<chain-root-id>` token)
+  they are NOT evaluated and row 1 keeps its table action,
+  unchanged from revision 11 — no concrete command is advertised
+  there: the composed line is a template the human completes after
+  resolving the root the walk could not read.
+  Rows 2–4 (fresh dispatch): the fresh-dispatch verb opens a NEW
+  chain and enforces no chain-state gate, so no chain check
+  applies. ONLY when the record's role is `code-critic` or
+  `warden` AND the `reviews` fact is nonempty (the empty-fact case
+  keeps the verbatim `<implementer-job-id>` rule below — no target
+  exists to verify):
+  (c) `jobs/<reviews>.json` is present in set 1's listing —
+  failing clause: `the reviews target ` + the reviews id + ` no
+  longer exists`;
+  (d) that listed record's `role` field reads `implementer` —
+  failing clause: `the reviews target ` + the reviews id + ` is
+  not an implementer record` (§1's trace of `dispatch.sh`
+  1226–1231). Every other role and state passes with no check —
+  the dispatcher enforces nothing else this producer can read.
+  A degraded row's Answer bytes: `no command is valid at journal
+  time: ` + the `answerReason` fact's exact bytes, single space
+  after the colon, no trailing space. SUBSTITUTED: the reason
+  clause (the composer holds it mechanically — it was journaled
+  with its id already substituted). No other token exists in the
+  degraded line, and the Asked field already carries the human's
+  decision, so the alert stays actionable: the human decides with
+  the exact failed precondition named instead of pasting a command
+  the dispatcher will refuse. The check runs ONCE, at journal
+  time, and the write-once episode is never re-checked or
+  rewritten when chain state later changes — the same
+  no-re-derivation decision stated at the end of this
+  section. The follow-up
   Answer bytes: `metasystem delegate --follow-up ` + the CHAIN ROOT
   id + ` --brief <corrective-brief-file>`, single spaces, no
   trailing space. The chain root id is the `chainRoot` fact: the
@@ -1393,25 +1539,36 @@ The alert class "delegate job failed under a claimed goal" — the
   record the literal token `<role>` is composed VERBATIM instead — a
   total rule), the goal id (nonempty by this class's selection),
   and the reviews target (from the `reviews` fact — the failed
-  record's own IMMUTABLE `reviews` field, `record.go` 62, so the
-  journaled value cannot go stale; if the fact is empty on a
+  record's own IMMUTABLE `reviews` field, `record.go` 62;
+  immutability preserves the identifier BYTES, not the referent:
+  evidence GC may collect the named implementer record (§1's
+  trace), which is exactly why checks (c) and (d) above verify the
+  referent at journal time, and post-journal collection remains a
+  disclosed loud refusal; if the fact is empty on a
   `code-critic` or `warden` record the literal token
   `<implementer-job-id>` — the dispatcher's own usage wording — is
   composed VERBATIM instead, the same total rule). Other roles get
   no `--reviews` segment at all.
   VERBATIM: `<fresh-brief-file>` and `<destructive-reach-class>` —
   the new brief and the new dispatch's reach class are exactly the
-  human's decisions. **Row 1's validity is JOURNAL-TIME-ONLY,
-  stated plainly** (the spike executed both refusal paths): the
-  follow-up line is byte-for-byte the dispatcher's accepted case at
-  the moment it is journaled, and the design does NOT promise it
-  stays accepted. The pin's coverage boundary, honest: 11a.12 pins
+  human's decisions. **Advertised validity is JOURNAL-TIME-ONLY,
+  and now VERIFIED rather than assumed** (the spike executed both
+  refusal paths; the eligibility check above closes what the spike
+  did not cover — its follow-up case began from an intact chain
+  and its reviews check tested only nonemptiness): an ADVERTISED
+  line has passed the dispatcher's own preconditions for that
+  command at the moment it is journaled, and the design does NOT
+  promise it stays accepted. The pin's coverage boundary, honest:
+  11a.12 pins
   only terminal `failed`/`timeout` goal-carrying records — the
   COMPLETED chain root the advertised command addresses is NOT
-  pinned, so evidence GC may lawfully collect it and the dispatcher
+  pinned, so evidence GC may lawfully collect it AFTER journaling
+  and the dispatcher
   then refuses with its no-record error (spike-reproduced: "no
-  record file"); a newer round landing in a non-accepted state, or
-  `chainClosed` flipping true (terminal metadata, §1's trace),
+  record file"); a newer round landing after journaling in a
+  non-accepted state, or
+  `chainClosed` flipping true later (terminal metadata, §1's
+  trace),
   refuses the same way. Every one is a LOUD refusal naming its
   reason, never a silent wrong action; the write-once episode is
   not re-derived for bookkeeping
@@ -1622,15 +1779,23 @@ class string            // json "class,omitempty":
                         // "stop-awaiting-resume"
 facts map[string]string // json "facts,omitempty"; exact keys:
                         // delegate-job-failed:  goalId, jobId,
-                        //   birth, reason, answerAction, role,
-                        //   chainRoot, reviews
+                        //   birth, reason, answerAction,
+                        //   answerReason, role, chainRoot, reviews
                         //   (birth = the record's minted birth
                         //   generation verbatim — §1's depended-on
                         //   contract, goal job-record-birth-token
                         //   — fallback createdAt then startedAt,
                         //   else "" for pre-contract records;
                         //   answerAction = "follow-up" |
-                        //   "fresh-dispatch" per 11a.8's table;
+                        //   "fresh-dispatch" |
+                        //   "none-with-reason" per 11a.8's table
+                        //   and its journal-time eligibility
+                        //   check; answerReason = the first
+                        //   failed eligibility check's exact
+                        //   rendered clause (11a.8's enumerated
+                        //   clause table, ids substituted at
+                        //   journal time), "" unless answerAction
+                        //   is "none-with-reason";
                         //   role may be ""; chainRoot = the
                         //   journal-time parentJob-walk result,
                         //   "" on walk refusal; reviews = the
@@ -1896,36 +2061,58 @@ corrected record:
 | Round 4 AC9-JOB-ID-ABA-001 (critical) | Folded, rev 11, §1/11a.8/11a.10/11a.12: spike-REFUTED `createdAt` (not mandatory, not immutable, ABA reproduced with identical digests; no shipped field qualifies) is replaced by the machine-MINTED birth generation — timestamp plus nonce, minted by every create path under the record lock ignoring the caller, immutable in `immutableFields` — whose record-contract change is goal `job-record-birth-token` (opened, budgeted); this design DEPENDS on it and orders slice 1's producer increment after it. The reuse row is proven against the minted token with NO clock model (spike-executed), and the clock-regression residual is retired with the clock argument; the remaining residual is the disclosed legacy degradation for pre-contract records. |
 | Round 4 AC9-SCAN-BOUNDEDNESS-001 | Folded, rev 11, 11a.8/11a.10/§1: the producer scans' filename-index open contract STANDS as revision 10 wrote it, now evidenced by execution (8.4 ms over 10,020 names, zero opens; 13.3 ms for 1,000 whole-record reads); the retained health load gains the spike's rule — restricted to health-NAMED files by the existing filename grammar, no new index — dropping 10,020 under-lock decodes in 110 ms to 20 opens in 10.6 ms, so the under-lock cost is bounded by the health-episode count regardless of producer accumulation. |
 | Round 4 AC10-STOP-CLEAR-READSET-001 | Folded, rev 11, 11a.9: the regression is real and spike-REPRODUCED (a submitted stop episode stays uncleared forever after resume — one-way filename, submitted attempts never due). Closed by the spike's reversible journal-time marker `alerts/stop-open/<goal>-r<revision>` containing the digest, written durably before the episode, listed by the clear phase, bounded by open stop episodes, draining on clear — spike-demonstrated restoring the clear with zero episode opens on the no-resume path. |
-| Round 4 AC9-ANSWER-FOLLOWUP-ACTION-001 | Folded, rev 11, 11a.8/11a.10/§1: the producer journals the failed record's own immutable `reviews` field and renders it into the fresh-dispatch line for code-critic and warden roles (fixing the spike-proven categorical refusal); the chain root is the shipped parentJob WALK's result derived at journal time (suffix-strip spike-refuted on a lawful `task-r1` fixture), with a total verbatim-token fallback on walk refusal; row 1's follow-up validity is stated as JOURNAL-TIME-ONLY with the pin's coverage boundary honest — completed chain roots are not pinned, so post-journal collection, a newer non-accepted round, or a closing chain each yield a loud dispatcher refusal, disclosed, and the pin is deliberately NOT widened to completed chain records. |
+| Round 4 AC9-ANSWER-FOLLOWUP-ACTION-001 | Folded, rev 11, 11a.8/11a.10/§1: the producer journals the failed record's own immutable `reviews` field and renders it into the fresh-dispatch line for code-critic and warden roles (fixing the spike-proven categorical refusal); the chain root is the shipped parentJob WALK's result derived at journal time (suffix-strip spike-refuted on a lawful `task-r1` fixture), with a total verbatim-token fallback on walk refusal; row 1's follow-up validity is stated as JOURNAL-TIME-ONLY with the pin's coverage boundary honest — completed chain roots are not pinned, so post-journal collection, a newer non-accepted round, or a closing chain each yield a loud dispatcher refusal, disclosed, and the pin is deliberately NOT widened to completed chain records. Round 5 REOPENED the journal-time half of this claim: the rev-11 producer derived the action from the failed record alone. Completed by the round-5 row below. |
+| Round 5 AC11-ANSWER-JOURNAL-ELIGIBILITY-001 | Folded, rev 12, 11a.8/11a.10/§1: revision 11's journal-time-validity claim was derived from the failed record ALONE while the shipped dispatcher also gates follow-up on chain closure and the newest chain member and gates critic-role fresh dispatch on the reviews referent's continued existence (`dispatch.sh` 1724–1757, 1226–1231 — §1's trace extended with the `LatestChainRecord`/`chainMembers`/`lineageRoot` selection mechanics and its line cites refreshed to the current tree). The producer now mirrors exactly those gates at journal time, in the dispatcher's own check order, from the scan's contracted read set (three fields — `jobId`, `round`, `chainClosed` — join the existing per-record read; zero additional opens), degrading the selected row to `answerAction=none-with-reason` with the exact failed precondition journaled as the new `answerReason` fact and rendered into the Answer under §6's placeholder law (one substituted token). The line equating `reviews`-field immutability with reference validity is corrected in both §1 and 11a.8. Post-journal staleness stays a disclosed loud refusal, and the pin is still deliberately not widened. |
 
-## 13. Self-grade (R-24-m1, refreshed for revision 11)
+## 13. Self-grade (R-24-m1, refreshed for revision 12)
 
-- **Confidence:** 0.78. Every disputed mechanism in this revision
-  now rests on an EXECUTED rule, not an argued one: the four
+- **Confidence:** 0.78. Every disputed mechanism of revision 11
+  rests on an EXECUTED rule, not an argued one: the four
   round-4 findings were prototyped by the evidence spike against
   the real shipped writers (the ABA reproduced and then closed by
   the mint; the scan costs measured, not estimated; the stop-clear
   regression reproduced and then restored by the marker; both
-  Answer refusal paths executed), and revision 11 folds those
-  verdicts without re-deriving them. Priced for: execution evidence
-  is a stronger grounding than any prior revision had, and the
-  grade rises accordingly. Priced against, and why it is not
-  higher: the critical fold's proof now DEPENDS on a record-contract
+  Answer refusal paths executed), and revision 11 folded those
+  verdicts without re-deriving them. Revision 12's one fold is the
+  disclosed exception: the journal-time eligibility check is
+  grounded in READ traces of the shipped gate code (`dispatch.sh`
+  1724–1757 and 1226–1231, `internal/dispatch/chain.go` 21–115) —
+  its rules are the shipped rules restated, not a new execution;
+  the round-5 critic's own gap notes the spike never covered the
+  stale conditions this check now closes. Priced for: execution
+  evidence plus the closure of the last known false claim (the
+  advertised command can no longer be dead on arrival at journal
+  time). Priced against, and why the grade holds rather than
+  rises: the critical fold's proof still DEPENDS on a
+  record-contract
   change that has not landed (goal `job-record-birth-token`) — the
   design is internally consistent but conditionally so, and the
   spike tested the rule's prototype, not the landed contract; the
   stop-open marker adds a second durable artifact whose
   marker-before-episode ordering is argued, not enforced by any
-  shared mechanism; and the parentJob walk at journal time reads
+  shared mechanism; the parentJob walk at journal time reads
   ancestor records whose retention this design deliberately does
-  not pin.
+  not pin; and the eligibility mirror adds a new drift surface
+  (weakest claims below).
 - **Reject condition, stated plainly:** reject this revision if the
   implementer gap-stops on slice 1 a THIRD time. A third stop means
   revision-scale patching cannot make this document mechanical, and
   the design must then be split into a separate implementation
   specification rebuilt from the episode store's and channel layer's
   actual types, not grown further.
-- **Weakest claim (new):** the identity proof is only as good as
+- **Weakest claim (new, revision 12):** the journal-time
+  eligibility check is a PARALLEL implementation of the
+  dispatcher's gates — the same rules in two code paths with no
+  shared mechanism. A future `dispatch.sh` gate change (a new
+  precondition, a changed newest-member selection rule) silently
+  un-mirrors the producer, and the advertised command would again
+  be refusable at the moment it is journaled; only a fixture
+  running both sides against the same fixture chains would notice.
+  The design mitigates by citing the exact shipped lines it
+  mirrors and by keeping every post-journal divergence a loud
+  dispatcher refusal, but the coupling is discipline, not
+  mechanism.
+- **Weakest claim (revision 11):** the identity proof is only as good as
   the DEPENDED-ON contract: the reuse row's re-mint impossibility
   holds for records carrying the minted birth generation, and goal
   `job-record-birth-token` has not landed — until it does, every
