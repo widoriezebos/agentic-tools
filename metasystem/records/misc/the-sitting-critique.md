@@ -59,3 +59,9 @@ After the chapter landed as Chapter 14 (later chapters renumbered 15 to 17, inde
 | --- | --- | --- | --- |
 | A1-03 (reopened) | accept | The revised slice sequence omitted the upload continuation, so the first slice still broke the standing ruling it now cites. | The first slice carries the limit, the warning and the upload continuation together. |
 | A2-01 | accept | The broadened materiality test made evidence-only findings material, but the earlier sentence sent every material finding to candidate repair. | The sentence now routes a finding either to candidate repair or to stronger evidence, with the changed result examined again in either case. |
+
+### Round A3: both verified resolved, no new findings. Material findings: 0.
+
+## Duplication pass (human finding)
+
+The human found sentences in Chapter 14 restating earlier chapters near-verbatim, a side effect of the clarity pass that removed citations. Six restatements were cut: Chapter 4's "no machinery can have it for them" and "form present, protection absent" lines, Chapter 8's private-note image and handoff-test line, Chapter 6's same-model-and-data sentence, Chapter 3's shared-framing lesson, and Chapter 13's four-item review list. One-clause applications of established terms were kept. Round D1 verified: no residual duplication, no validated claim broken, style intact. Material findings: 0.

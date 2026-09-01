@@ -14,9 +14,9 @@ Chapter 1's day begins at 8:40, when the responsible authority records an outcom
 
 ## A conversation with no authority
 
-Some things are discovered only by talking. When several people hold conflicting wishes, the disagreement lives between them, and no machinery can have it for them; the sitting then holds that negotiation, with machinery preparing the examples and recording the rulings. A sitting with one authority discovers something different: the authority's own unstated wishes, and the conflicts hidden inside them. In the first scene, the wish for thirty minutes turned out to contain four separate clauses nobody had written down.
+Some things are discovered only by talking. A sitting with one authority discovers the authority's own unstated wishes, and the conflicts hidden inside them: in the first scene, the wish for thirty minutes turned out to contain four separate clauses nobody had written down. When several people hold conflicting wishes, the sitting holds their negotiation, with machinery preparing the examples and recording the rulings; the disagreement stays between the people.
 
-The room itself has no authority. Nothing said in a sitting binds anyone until it becomes a record: a ruling, a stated outcome, a framed design. A private note can help a worker think without changing the state of the work, and a conversation is the same kind of thing. The sitting proposes; only records rule.
+The room itself has no authority. Nothing said in a sitting binds anyone until it becomes a record: a ruling, a stated outcome, a framed design. The sitting proposes; only records rule.
 
 ## Who is in the room
 
@@ -24,11 +24,11 @@ The human is there in two capacities at once. As the responsible authority, they
 
 The machinery is there only in functions that judge nothing. It retrieves earlier rulings and standing rules that touch the topic. It anchors every claim about current behavior in the application itself, so the conversation argues from facts rather than from memory. It produces the cases at the edge and shows where two stated wishes conflict. It writes the record as the conversation moves. These functions may combine in one worker, because none of them accepts work, changes the application or settles a value.
 
-One role is kept out of the room on purpose: the independent examiner. A sitting that produces a design has an author, and the author of a design never judges its own claim. The same problem reaches further than authorship. Whoever sat in the room heard the options that were considered and dropped, the tentative reasoning, the authority thinking aloud. An examiner is valuable precisely because it starts free of all that: it receives the recorded intent and the rulings, not the trail of arguments behind them. A mind cannot unhear what it has heard, so the fresh view must come from a worker who was never in the room. That is also what the separation buys. The people in the sitting can afford to grow attached to an idea, because the challenge to it will come from outside. One caution stands: a fresh worker escapes the room's framing, not every blind spot. A challenger built from the same model and data can still repeat a shared mistake.
+One role is kept out of the room on purpose: the independent examiner. A sitting that produces a design has an author, and the author of a design never judges its own claim. The same problem reaches further than authorship. Whoever sat in the room heard the options that were considered and dropped, the tentative reasoning, the authority thinking aloud. An examiner is valuable precisely because it starts free of all that: it receives the recorded intent and the rulings, not the trail of arguments behind them. A mind cannot unhear what it has heard, so the fresh view must come from a worker who was never in the room. That is also what the separation buys. The people in the sitting can afford to grow attached to an idea, because the challenge to it will come from outside. One caution stands: a fresh worker escapes the room's framing, not every blind spot.
 
 ## The sitting has no memory
 
-The machine partner's session can end at any moment, and records are the only memory that survives it. The human will remember the conversation, but one person's memory is nothing another actor can act on, and a handoff succeeds only when the record alone carries the work. So the sitting deposits records while it runs, not afterward.
+The machine partner's session can end at any moment, and records are the only memory that survives it. The human will remember the conversation, but one person's memory is nothing another actor can act on. So the sitting deposits records while it runs, not afterward.
 
 Three kinds of deposit matter. Facts: each claim about what the application currently does is anchored to the place it can be checked, at the moment it is made. Decisions: each choice the human makes is recorded then and there, with the reasons they gave, not reconstructed later from someone's summary. Open questions: what the room chose not to settle is named, the way the first scene names activity and work in flight, so it cannot be settled later by nobody in particular.
 
@@ -40,7 +40,7 @@ A sitting ends when more conversation stops changing what would be recorded. Wha
 
 Then the governed loop takes over. If the sitting produced intent, construction begins against it, and the questions the room left open return as ruling requests with their consequences attached, the way the builder returns them at 9:12 in Chapter 1. If the sitting produced a design, that design becomes a builder's proposal, and the independent examination that follows challenges the candidate, the design and the code together. In neither case does the room's agreement count as evidence.
 
-The thoroughness of the room is not a reason to skip that challenge. It is the reason to hold it. Everything the room agreed on, it agreed on from inside one shared framing, and a shared framing is where several minds make the same mistake together.
+The thoroughness of the room is not a reason to skip that challenge. It is the reason to hold it. Everything the room agreed on, it agreed on from inside one shared framing.
 
 > *Months later, evidence from the release has arrived: restoring the last page after sign-in exposed one person's work to the next person on a clinic computer. The implementation had followed the written rule. A sitting convenes: the responsible authority, and machinery carrying the release observations, the support reports and the original rulings.*
 
@@ -50,15 +50,15 @@ The second scene is the recurring case, and it is Chapter 10's clinic brought ba
 
 ## The review sitting
 
-A sitting is not only for the start of work. The same form returns inside the loop when human review begins, with the human as examiner rather than intent-holder. A review begins with a bounded question, the relevant evidence, credible options and the cost of delay, and the narrator's report is what brings them into the room. There the human examines as an engineer: asks for the case that was not tried, challenges an assumption the checks share, demands more evidence or accepts a stated risk within their recorded authority.
+A sitting is not only for the start of work. The same form returns inside the loop when human review begins, with the human as examiner rather than intent-holder. The narrator's report brings the review's question and evidence into the room. There the human examines as an engineer: asks for the case that was not tried, challenges an assumption the checks share, demands more evidence or accepts a stated risk within their recorded authority.
 
 What leaves a review sitting is again records: findings answered one by one, a ruling, or a named demand for evidence. A review sitting that ends in a nod has produced nothing anyone can be held to.
 
 ## What a sitting must not become
 
-Not a status meeting. Records already carry the state of the work, and any authorized reader can inspect them. A sitting spent reciting what the records already say is the mimicry trap again: the form present, the protection absent.
+Not a status meeting. Records already carry the state of the work, and any authorized reader can inspect them. A sitting spent reciting what the records already say is the mimicry trap again.
 
-Not an approval performed for show: a person glancing at polished preparation and agreeing. A sitting gives that failure more room, not less, because the preparation is fluent and the conversation is pleasant.
+Not an approval performed for show. A sitting gives that failure more room than a written report does, because the preparation is fluent and the conversation is pleasant.
 
 And the preparation must not quietly supply the values. When every option arrives pre-weighed, choosing the recommended one every time is the approval habit in conversational form. The guard is the same as elsewhere: the human's decision is recorded with their reasons, and a run of sittings whose rulings always match the preparation is itself evidence worth examining.
 
