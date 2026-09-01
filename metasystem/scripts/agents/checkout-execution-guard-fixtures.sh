@@ -54,16 +54,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
-wait_for_file() { # path, fixture name
-  local path=$1 name=$2 deadline=$((SECONDS + fixture_cap)) err
+print_wait_evidence() {
+  local evidence
+  for evidence in "$tmp"/*.out "$tmp"/*.err; do
+    [[ -s "$evidence" ]] || continue
+    echo "--- $evidence ---" >&2
+    tail -5 "$evidence" >&2
+  done
+}
+
+wait_for_file() { # path, fixture name, optional producer pid
+  local path=$1 name=$2 producer_pid=${3:-} deadline=$((SECONDS + fixture_cap))
   while [[ ! -e "$path" ]]; do
+    if [[ -n "$producer_pid" ]] && ! kill -0 "$producer_pid" 2>/dev/null; then
+      [[ -e "$path" ]] && return 0
+      echo "$name producer $producer_pid exited before writing $path" >&2
+      print_wait_evidence
+      return 1
+    fi
     (( SECONDS < deadline )) \
       || { echo "$name timed out after ${fixture_cap}s waiting for $path" >&2
-           for err in "$tmp"/*.err; do
-             [[ -s "$err" ]] || continue
-             echo "--- $err ---" >&2
-             tail -5 "$err" >&2
-           done
+           print_wait_evidence
            return 1; }
     sleep 0.05
   done
@@ -131,17 +142,19 @@ write_control "$dispatch_control" "$tmp/suite-first-dispatch.ready" "$tmp/suite-
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$suite_control" \
   "$root/scripts/validate-metasystem.sh" >"$tmp/suite-first-suite.out" 2>"$tmp/suite-first-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
-wait_for_file "$tmp/suite-first-suite.ready" "suite-first validation"
+wait_for_file "$tmp/suite-first-suite.ready" "suite-first validation" "$suite_pid"
 METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$dispatch_control" \
-  "$root/scripts/agents/dispatch.sh" dispatch --role implementer --brief "$brief" \
+  METASYSTEM_DELEGATE_ROOT="$root" "$engine" delegate --role implementer --brief "$brief" \
+    --goal none-explicit --destructive-reach DESIGN-BEARING \
+    --op "checkout-guard-suite-first-$$" \
   >"$tmp/suite-first-dispatch.out" 2>"$tmp/suite-first-dispatch.err" &
 dispatch_pid=$!; owned_pids+=("$dispatch_pid")
-wait_for_file "$tmp/suite-first-dispatch.attempted" "suite-first dispatch acquisition"
+wait_for_file "$tmp/suite-first-dispatch.attempted" "suite-first dispatch acquisition" "$dispatch_pid"
 [[ ! -e "$tmp/suite-first-dispatch.ready" ]] \
   || { echo "suite-first dispatch entered before validation released" >&2; exit 1; }
 touch "$tmp/suite-first-suite.release"
-wait_for_file "$tmp/suite-first-dispatch.ready" "suite-first dispatch"
+wait_for_file "$tmp/suite-first-dispatch.ready" "suite-first dispatch" "$dispatch_pid"
 touch "$tmp/suite-first-dispatch.release"
 wait "$suite_pid"
 wait "$dispatch_pid"
@@ -155,20 +168,22 @@ write_control "$dispatch_control" "$tmp/dispatch-first-dispatch.ready" "$tmp/dis
 write_control "$suite_control" "$tmp/dispatch-first-suite.ready" "$tmp/dispatch-first-suite.release"
 METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$dispatch_control" \
-  "$root/scripts/agents/dispatch.sh" dispatch --role implementer --brief "$brief" \
+  METASYSTEM_DELEGATE_ROOT="$root" "$engine" delegate --role implementer --brief "$brief" \
+    --goal none-explicit --destructive-reach DESIGN-BEARING \
+    --op "checkout-guard-dispatch-first-$$" \
   >"$tmp/dispatch-first-dispatch.out" 2>"$tmp/dispatch-first-dispatch.err" &
 dispatch_pid=$!; owned_pids+=("$dispatch_pid")
-wait_for_file "$tmp/dispatch-first-dispatch.ready" "dispatch-first dispatch"
+wait_for_file "$tmp/dispatch-first-dispatch.ready" "dispatch-first dispatch" "$dispatch_pid"
 "${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$suite_control" \
   "$root/scripts/validate-metasystem.sh" >"$tmp/dispatch-first-suite.out" 2>"$tmp/dispatch-first-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
-wait_for_file "$tmp/dispatch-first-suite.attempted" "dispatch-first validation acquisition"
+wait_for_file "$tmp/dispatch-first-suite.attempted" "dispatch-first validation acquisition" "$suite_pid"
 [[ ! -e "$tmp/dispatch-first-suite.ready" ]] \
   || { echo "dispatch-first validation entered before dispatch released" >&2; exit 1; }
 touch "$tmp/dispatch-first-dispatch.release"
-wait_for_file "$tmp/dispatch-first-suite.ready" "dispatch-first validation"
+wait_for_file "$tmp/dispatch-first-suite.ready" "dispatch-first validation" "$suite_pid"
 touch "$tmp/dispatch-first-suite.release"
 wait "$dispatch_pid"
 wait "$suite_pid"

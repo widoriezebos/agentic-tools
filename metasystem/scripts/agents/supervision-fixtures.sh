@@ -452,6 +452,8 @@ make_repo() { # destination
   cp -R "$source_root/scripts/agents" "$repo/scripts/"
   cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
   cp "$source_root/scripts/metasystem-config.sh" "$repo/scripts/"
+  mkdir -p "$repo/skills/design-critique"
+  cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
   # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
   # only harness-specific overrides ride --set. The default fake model
@@ -1187,7 +1189,10 @@ become_main "$gate_repo" gate-session
 dispatch_fails() { # name, expected
   local name=$1 expected=$2
   set +e
-  "$gate_repo/scripts/agents/dispatch.sh" dispatch --role design-critic --brief "$brief" --job-id "$name" >"$tmp/$name.out" 2>&1
+  METASYSTEM_DELEGATE_ROOT="$gate_repo" \
+    "$gate_repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+      --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
+      >"$tmp/$name.out" 2>&1
   rc=$?
   set -e
   [[ $rc -ne 0 ]] || { echo "dispatch accepted $name census" >&2; exit 1; }
@@ -1195,7 +1200,9 @@ dispatch_fails() { # name, expected
 }
 dispatch_succeeds() { # name
   local name=$1
-  "$gate_repo/scripts/agents/dispatch.sh" dispatch --role design-critic --brief "$brief" --job-id "$name" \
+  METASYSTEM_DELEGATE_ROOT="$gate_repo" \
+    "$gate_repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+      --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
     >"$tmp/$name.out" 2>&1 \
     || { echo "dispatch refused $name census" >&2; cat "$tmp/$name.out" >&2; exit 1; }
 }

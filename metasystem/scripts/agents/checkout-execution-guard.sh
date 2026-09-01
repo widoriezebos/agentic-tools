@@ -119,7 +119,10 @@ checkout_execution_guard_fixture_wait() {
       || { echo "checkout execution guard fixture: nested dispatch controls are incomplete" >&2; return 2; }
     METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE=$child_control \
       METASYSTEM_BIN="$checkout_execution_guard_engine" \
-      "$root/scripts/agents/dispatch.sh" dispatch --role implementer --brief "$child_brief" &
+      METASYSTEM_DELEGATE_ROOT="$root" \
+      "$checkout_execution_guard_engine" delegate --role implementer --brief "$child_brief" \
+        --goal none-explicit --destructive-reach DESIGN-BEARING \
+        --op "checkout-guard-nested-$$" &
     child_pid=$!
   fi
   deadline=$((SECONDS + cap))

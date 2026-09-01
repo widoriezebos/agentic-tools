@@ -128,12 +128,13 @@ backdate_census_generation() { # census, generation
 }
 
 
-mkdir -p "$repo/scripts" "$repo/docs"
+mkdir -p "$repo/scripts" "$repo/docs" "$repo/skills/design-critique"
 cp -R "$source_root/scripts/agents" "$repo/scripts/"
 cp "$source_root/scripts/metasystem-config.sh" \
   "$source_root/scripts/assert-return-complete.sh" \
   "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
 cp "$source_root/docs/project-rules.md" "$repo/docs/"
+cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
 cp "$source_root/metasystem.conf" "$repo/"
 # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
 # only harness-specific overrides ride --set.
@@ -175,7 +176,6 @@ export METASYSTEM_CENSUS_PROCESS_FILE=$process_fixture
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_fixture
 
 arm=$repo/scripts/agents/arm-supervision.sh
-dispatch=$repo/scripts/agents/dispatch.sh
 state=$repo/artifacts/agents/supervision/state.json
 last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
@@ -235,8 +235,9 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
 
   output=$tmp/dispatch-$iteration.out
   set +e
-  "$dispatch" dispatch --role design-critic --brief "$brief" \
-    --job-id "fingerprint-$iteration" --wait >"$output" 2>&1
+  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+    --goal none-explicit --destructive-reach MECHANICAL \
+    --op "fingerprint-$iteration" --wait >"$output" 2>&1
   status=$?
   set -e
   if grep -Fq 'dispatch refused: census fingerprint does not match' "$output"; then

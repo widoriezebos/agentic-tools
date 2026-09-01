@@ -32,8 +32,8 @@ cp "$root/scripts/agents/validate-section-selector.sh" \
 rm "$template_clone/development/metasystem-design.md"
 [[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" context) == template ]] \
   || { echo "enumeration fixture: an independent template clone classified as adopted" >&2; exit 1; }
-[[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 43 ]] \
-  || { echo "enumeration fixture: an independent template clone did not select 43 sections" >&2; exit 1; }
+[[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 42 ]] \
+  || { echo "enumeration fixture: an independent template clone did not select 42 sections" >&2; exit 1; }
 
 adopted_repo="$tmp/adopted-repo"
 adopted_root="$adopted_repo/metasystem"

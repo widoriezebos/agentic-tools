@@ -189,7 +189,12 @@ harness_fixture_base_cap() { # named harness cap
     go-owner-crashloop) base=30 ;;
     health-state) base=3 ;;
     health-process-wait) base=2 ;;
-    checkout-execution-guard) base=10 ;;
+    # These evidence-driven waits return as soon as their condition appears or
+    # their producer exits. Under the governed scale range, the 120-second base
+    # is a deliberate 16-to-96-minute absolute failsafe for a genuine hang, not
+    # a machine-speed assertion against a loaded validation or delegate process.
+    supervision-hook-evidence) base=120 ;;
+    checkout-execution-guard) base=120 ;;
     suite-watchdog-wait) base=8 ;;
     suite-watchdog-reap) base=5 ;;
     *) echo "unknown fixture cap: $name" >&2; return 1 ;;
