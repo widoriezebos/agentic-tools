@@ -5,9 +5,11 @@
 - Origin: human
 - Next step: Appetite: 4h — RESCOPED TO DESIGN-FIRST after the independent critique judged the built candidate UNSOUND (9 material, 2 critical: candidate code judged its own proof, violating the engine-of-record law; unsigned witnesses mintable by any agent). The build is reverted; the critique (artifacts/agents/critiques/witness-reuse/r1-output.md, archived on m1) is the design input. The design must answer: base-commit engine as the sole digest/policy judge; witness authentication (integrity-bound, provenance-proven, not permissions); engine identity binding actual binary bytes and toolchain; the full loud-fallback precondition table; audit-complete reuse provenance in the envelope. Design, critique, Wido, then build. The battery keeps its full nested gate until this lands lawfully
 - OpenedAt: 2026-08-29T16:49:34Z
-- Revision: 2
+- Revision: 3
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-08-29T16:49:34Z R8RA5K8JWZKC0PQ9AA5VCBMVDA-m1-bf243850 open actor=human:wido targets=nested-gate-witness-reuse
 - 2026-08-29T18:38:59Z 8EF9RQW3JMEAXWT637CV08RFRA-m1-bf243850 edit actor=m1+coordinator targets=nested-gate-witness-reuse
-Integrity: sha256=2a4c9d79358f50048f4ff3e0f04746ee4327d1711189db1a60b28e1b93d6589e
+- 2026-09-01T20:27:09Z N47EAGY2RSKV1CWFSGGT0FSX00-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=nested-gate-witness-reuse
+Integrity: sha256=207152ebe8f1be297b09bf63248129b9ad97772eee00ebbc3e95bb3d18dd6b72
