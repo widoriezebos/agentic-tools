@@ -5,47 +5,33 @@ Date: 2026-09-02
 # Goal
 
 Two-layer implementation critique of the Codex handshake build (job
-ch-build-1c, Sol; diff.patch in its round evidence): first conformance
-against the certified design metasystem/plans/codex-handshake-design.md
-(revision 7; sections 2 and 3 are the contract, section 4 the file
-boundary, section 5 the proof; Sol's four registers are
-metasystem/records/misc/codex-handshake-critique-r1.md to -r4.md), then
-adversarial defect review of the diff. The design's revision 7 fold
-(CHS-R4-FOLD-SCOPE-01: the Claude adapter's two pre-fork failure writes
-carry `launch_failed handshake`) had no Sol round of its own; check it
-with particular care.
+ch-build-1c, Sol; diff.patch in its round evidence, one commit 35b779ef
+"Disable operator plugins for Codex delegates"). The build delivered PART 1
+of the certified design metasystem/plans/codex-handshake-design.md (revision
+7, section 2, D1.1 to D1.6) and then stopped at a specification gap in Part
+2 (D2.3 versus an out-of-boundary test), writing no Part 2 bytes; the gap is
+the orchestrator's and is being folded separately. Critique what was built:
+first conformance of the diff against section 2, then adversarial defect
+review. Sol's four registers are metasystem/records/misc/codex-handshake-critique-r1.md
+to -r4.md.
 
 # Attack surface
 
-- Part 1: `plugins={}` as a `-c` pair after `approval_policy="never"` on
-  BOTH the dispatch and the resume verb in metasystem/internal/adapter/codex.go;
-  the pins named in D1.6.
-- Part 2: the three deadline writers each set `handshakeDeadline` AND
-  `handshakeProgressAt`; the one gate `RefreshHandshakeDeadline`; the
-  capability `handshakeProgressBoundSec` beside the old field and the
-  record field `handshakeBound` immutable; custodian `now >= deadline+1`,
-  waiter `now >= deadline`, reaper `now < deadline+2`.
-- D2.5: `fail_pending` and `finish_running` (failed target only) in
-  metasystem/scripts/agents/adapters/runtime-common.sh call
-  `adapter critic-fold` on ONE line, `set -e` safe, keeping the caller's
-  class when the verb cannot run; `handshakeExitStatus` written only where
-  the design says (0..255, absent otherwise); the fold table is the single
-  source and `criticFailureFold` is one wrapper over the pair form; no
-  double fold on `complete_from_cli`'s path; claude.sh:134 and :138 write
-  `launch_failed handshake`; devin.sh:650-662 and :720 as designed.
-- D2.7: the follow-up gate admits `failed && protocol_error` with no
-  session, the fresh-context road, `--parent-sessionless`, NO
-  `LaunchFingerprintVersion` bump (metasystem/internal/dispatch/claim_fingerprint.go
-  still says 2), `ParentSessionless` under `omitempty`.
-- Fixtures: `no-signal`, `slow-session`, `exit-before-session` (with the
-  round-2 follow-up leg), `hang-gone-dispatcher` in
-  metasystem/scripts/agents/dispatch-fixtures.sh; ADPT-DL-006 to -009 in
-  metasystem/scripts/agents/adapter-deadline-fixtures.sh; every wait
-  carries a named scaled ceiling; no benchmark (R-31).
-- Any hunk outside section 4's file boundary is a finding. Any test the
-  return claims green that the diff does not actually contain is a finding.
-  A weakened refusal or narrowed guarantee to make the gate pass is a
-  finding.
+- Exactly three files change: metasystem/internal/adapter/codex.go, the new
+  codexcommand_test.go beside it, and metasystem/internal/adapter/runtime_test.go (the existing pin).
+  Any other hunk, and any Part 2 byte, is a finding.
+- `plugins={}` is emitted as a `-c` pair immediately after the
+  `approval_policy="never"` pair on BOTH the dispatch and the resume verb
+  (D1.2); the resume verb takes `-c` but no `--sandbox` or `-C` (section 7).
+- The pins are `TestBuildCodexCommand` and
+  `TestBuildCodexCommandDisablesOperatorPlugins` as D1.6 names them, and
+  they assert the pair's position, not merely its presence.
+- The return says the focused adapter tests ran green but the full gate (go
+  build, vet, gofmt, bash -n, go test ./..., fixtures) did NOT run. Read the
+  diff for anything the full suite would catch: another test pinning the
+  exact Codex argv (search the tree for `approval_policy` in _test.go and
+  fixture files) that the new pair now breaks.
+- No weakened refusal, no narrowed guarantee, no benchmark (R-31).
 
 # Constraints
 
