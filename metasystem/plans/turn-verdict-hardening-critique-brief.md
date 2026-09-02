@@ -31,7 +31,7 @@ impossible, or as near as the machinery can get.
 4. ATTACK FAIL CLOSED (section 3): the twenty-one row table; the Stop
    budget re-ordering (ceremonies behind the verdict, timeouts to 20 s) —
    trace it against the hook metasystem/scripts/agents/supervision-hook.sh
-   and the runtime facts in metasystem/internal/runtimes/runtimes.go. Is a
+   and the runtime facts in metasystem/internal/runtimes/runtimes.go (runtime facts). Is a
    fail-closed hook a wedge with no lawful exit on an offline machine, and
    is "human word only" an acceptable exit?
 5. FRESHNESS and HUMANSTOP (sections 4, 5): is the cursor a correctness
