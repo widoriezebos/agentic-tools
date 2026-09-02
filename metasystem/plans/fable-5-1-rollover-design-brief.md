@@ -13,8 +13,10 @@ canonicalModel claude-fable-5-1). You are yourself running on it.
 
 # Workspace
 
-The delegate worktree the dispatcher created for this job. Write exactly one
-new file: metasystem/plans/fable-5-1-rollover-design.md (read anything else).
+The delegate worktree the dispatcher created for this job. Read anything;
+write exactly one new file.
+
+- May write: metasystem/plans/fable-5-1-rollover-design.md
 
 # What the design must settle
 
