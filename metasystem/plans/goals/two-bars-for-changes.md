@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Design changes take the loop, mechanical defects take a direct fix, declared and audited
 - Origin: main
-- Next step: OBSERVE SLICE HARDENED, landed f8092e23 by m0 (account Wido@M0): all five open lows closed (trailer-form doc, loud guard fallback, real end-to-end commit-to-evaluator test, add-rows-only rulings carriage, authorizedBy resolving to real register rows); the sixth landed earlier as conformance-round-immutability. REMAINING LEGS unchanged: the observation window accumulates verdicts; the narrow fail-closed promotion slice (re-sliced at Wido's intake order, his recorded word as the Law 2 authorization) is CLAIMABLE NOW by any machine; full promotion after the window is Wido's. m0 releases.
+- Next step: THE GATE REFUSES, landed 4a351338 by m0 (account Wido@M0) - the landing itself passed bar (a) declared, the first in the program's history. Refusal scope exactly R-40-m0's verbatim order: missing or conflicting agent declarations; the floor code direct-fix-floor-refused stamps observe-only AWAITING WIDO'S PROMOTION WORD (one line in scripts/agents/landing-promotion.json plus his register row, per the Law 2 shape). Remaining legs: full-bar promotion after the observation window (Wido reviews the stamped verdicts); the deferred witness/growth-fuse/audit-join slices; eight riding lows across the chain records. Other machines gain the gate at their next engine rebuild from main - fleet note: rebuild soon, undeclared agent commits will refuse. m0 releases.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
 - Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-01T23:32:50Z revision=21
@@ -33,4 +33,5 @@ History:
 - 2026-09-01T22:54:42Z 2XHEDEVXK0B9XMDGQPSVR9WDT9-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T23:29:38Z MNGNQHXW18808C9YM3722ZSDKC-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-01T23:32:50Z E63Y8K8DAAB7ZCFXAEMT4HV72P-m0-c5dbf036 set-budget actor=human:Wido targets=two-bars-for-changes
-Integrity: sha256=5f15b104887a9a9addc1cdeaf7dab943712526d1d19d7535ae49dea37e221694
+- 2026-09-02T00:41:16Z 2ZS28AQQEYNVVKJQ5ZE9F6Q437-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
+Integrity: sha256=e4173dab335604ae209e8717b191953958eb7017969b27b4d78f253924391b07
