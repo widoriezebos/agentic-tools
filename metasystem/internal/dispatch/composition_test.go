@@ -253,13 +253,13 @@ func TestHazardConfigurationAcceptsConfiguredMaximalModel(t *testing.T) {
 	}
 	record, err := ComposeRolePacket(ComposeRolePacketParams{
 		Root: root, Role: "code-critic", Brief: brief, JobID: "claude-maximal", Runtime: "claude",
-		Model: "claude-fable-5", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardDesignBearing,
+		Model: "claude-fable-5-1", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardDesignBearing,
 		Output: filepath.Join(temp, "prompt.md"), CompositionOutput: filepath.Join(temp, "composition.json"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Runtime != "claude" || record.Model != "claude-fable-5" ||
+	if record.Runtime != "claude" || record.Model != "claude-fable-5-1" ||
 		record.ConfigurationObligations.BuilderEffortTier != "maximal" ||
 		record.ConfigurationObligations.BuilderReasoningEffort != "xhigh" {
 		t.Fatalf("configured maximal-model composition = %+v", record)
