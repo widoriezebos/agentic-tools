@@ -1,6 +1,6 @@
 Working Mode: design
 Orchestrator Identity: m0b+main-1788250419-3170380-8a1fb3 (dispatch delegate under goal fable-5-1-model-rollover)
-Date: 2026-09-02
+Date: 2026-09-02 (round 2; round 1 declined to certify for want of a go run)
 
 # Goal
 
@@ -17,9 +17,15 @@ safety from the local-overlay rule.
 
 # Your mandate
 
-1. Is the test verdict per file correct? Run `go test ./internal/dispatch/
-   -run TestHazardConfiguration -count=1` and grep the other four test files
-   the design clears; confirm none reads the committed conf.
+1. Is the test verdict per file correct? Your sandbox is read-only, so do not
+   run go; verify by READING. Dispatcher's run on main at 2026-09-02 07:38Z,
+   supplied as evidence: `go test ./internal/dispatch -run
+   TestHazardConfigurationAcceptsConfiguredMaximalModel` FAILS with
+   "composition_test.go:260: runtime claude has no executable maximal-effort
+   mapping for destructiveReach DESIGN-BEARING". Confirm from the test source
+   why (which root it composes against, which conf it reads) and grep the
+   other four test files the design clears; confirm none reads the committed
+   conf.
 2. Is the live-round safety argument sound: the maximal gate fires at
    dispatch admission and retroactively at chain closure
    (metasystem/internal/dispatch/hazard.go) — can a seat with an unclosed
