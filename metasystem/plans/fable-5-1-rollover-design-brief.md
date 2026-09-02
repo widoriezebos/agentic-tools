@@ -47,7 +47,7 @@ new file: metasystem/plans/fable-5-1-rollover-design.md. Read anything.
    metasystem/internal/dispatch/decisions_test.go,
    metasystem/internal/dispatch/claim_test.go,
    metasystem/internal/config/validate_test.go and
-   metasystem/cmd/metasystem/delegate_reroute_test.go. Decide whether any of
+   metasystem/cmd/metasystem/delegate_reroute_test.go — decide whether any of
    them asserts against the real committed conf value (then it must change)
    or merely uses the id as an arbitrary string (then leave it). State the
    answer per file with the line.
@@ -69,8 +69,8 @@ essay. Do not edit anything but the design file.
 
 # Expected Return
 
-Version-2 implementer JSON; diffBoundary exactly
-metasystem/plans/fable-5-1-rollover-design.md.
+Version-2 implementer JSON; diffBoundary exactly the one design file named
+under Workspace.
 
 # Gap Rule
 
