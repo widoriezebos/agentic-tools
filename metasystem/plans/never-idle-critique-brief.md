@@ -73,3 +73,23 @@ Wall-clock budget: 40 minutes. Return per the design-critic schema.
 # Gap Rule
 
 stop and report a gap; never fill it silently.
+
+---
+
+## m0 correction note (2026-09-02, added before dispatch, not by the analysis author)
+
+The analysis's strongest claim — "no machine has a working turn-exit gate
+today" — is going STALE as this is read. m0 is landing the CLAUDE-runtime
+turn-exit gate NOW through goal idle-with-backlog-alarm: the Stop hook's
+end-to-end deadline (fail-closed) in scripts/agents/supervision-hook.sh,
+the every-stop block in internal/goal/turnverdict.go, a human-classified
+single-use holder-bound stop marker (internal/goal/sessionstop.go +
+cmd/metasystem session-stop verb), and the steward counting unclaimed
+backlog as work (internal/steward openwork/verdict). The critic should
+GROUND its facts against the landed/landing claude gate, not rediscover
+its absence: for the claude runtime the gate exists; the surviving gap the
+analysis should be judged on is the EVERY-RUNTIME half (codex/devin seats
+with no turn-block hook), already split to goal
+idle-every-runtime-enforcement (steward active re-engagement, marking-mode
++ Law 2 gated). Attack the analysis for whether it still covers a real hole
+once the claude gate is subtracted.
