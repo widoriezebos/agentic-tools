@@ -30,7 +30,7 @@ turn-verdict`; the decision is metasystem/internal/goal/turnverdict.go
 metasystem/internal/report/stopblock.go and the scanners in
 metasystem/internal/report/openwork.go, metasystem/internal/report/scan.go,
 metasystem/internal/report/scanjobs.go and
-metasystem/internal/report/runningwork.go. Read decide() closely: open work
+metasystem/internal/report/runningwork.go — read decide() closely: open work
 blocks ONCE per OpenWorkSignature; the goal ladder blocks once per
 revision/digest (BlockedGoalRevisions, BlockedQueueDigests,
 BlockedFreeDigests, BlockedUnwatchedDigests); scan.Busy (any active
@@ -88,7 +88,7 @@ Also: the Stop hook is a valid re-prompting point but not exclusive or
 mandatory (SSA-R1-STOP-HOOK-NOT-MANDATORY-OR-EXCLUSIVE). State what the
 item owns (hook enrollment check at `up`, version compatibility) and what
 stays a residual. The runtime facts are in
-metasystem/internal/runtimes/runtimes.go.
+metasystem/internal/runtimes/runtimes.go (runtime facts).
 
 # Slices and tests
 
