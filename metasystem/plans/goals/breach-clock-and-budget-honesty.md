@@ -1,13 +1,15 @@
 # breach-clock-and-budget-honesty
 
-- State: queued
+- State: claimed
 - Intent: Wido's highest-priority order (2026-09-01, verbatim: 'This needs to be fixed immediately... Only resume work after these problems are fixed, proven with tests'): two of the three proven breach-machinery breakdowns from the night of 2026-08-31, sharing the goal-machinery seam. (1) THE RAISE-RESET CLOCK: SetBudget re-binds the claim record on every raise and the elapsed breach clock anchors on the current revision's claim timestamp - every budget raise restarts the breach clock (the night reset it five times lawfully; internal/goal/verbs.go SetBudget comment + internal/dispatch/budget.go anchor are the proof). (2) DISHONEST DURATIONS: budget elapsed limits parse through a working-hours grammar (d = 8 hours) and New() normalizes inputs into it - a human's 24h displays as 3d, and a human's 9d is enforced at 72 clock hours, one third of intent, silently, across every live budget.
 - Origin: main
 - Next step: CHAIN STATE 2026-09-02 19:25Z (m0b): design revision 4 landed (rounds breach-design-r2, r3, r4); Sol registers records/misc/breach-design-critique-r1.md (8), -r2.md (3), -r3.md (1, plus the orchestrator's INHERIT addendum), all decided. RESUME RECIPE: (1) delegate --role implementer --brief plans/breach-clock-revision-r5-brief.md --destructive-reach MECHANICAL (Fable, cap 20): folds the one OPEN point (discharge, raise, raise: inherit the third episode key); land the design; (2) write a round-4 critique brief (Sol, cap 40) judging BCD-R3-001's closure by id against internal/goal/verbs.go, file.go and internal/dispatch/budget.go plus no-regression; land its register; (3) on zero material: delegate --role implementer --brief plans/breach-clock-build-brief.md --destructive-reach DESIGN-BEARING (Sol, cap 120); validate conformance --stage review; delegate --role code-critic --reviews <build> (Fable, cap 20); git apply the diff at the repo root; land --chain <build>. OPEN FOR WIDO (not built): should a later human set-obligation inherit a discharge consumed inside the same claim episode. Released cold-resumable by m0b to take codex-handshake-budget-load-fragile first per Wido's order (budget granted 19:00Z via the paper seat). Budget here: 840 reserved minutes, ~3 rounds x 20-40 spent by m0b.
 - OpenedAt: 2026-09-01T06:54:30Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=840 activeJobLimit=1
 - Sliced: machine=m2 lineage=mac-coordinator revision=4 at=2026-09-01T07:31:13Z
+- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-02T18:30:03Z revision=23
+- StopCapability: generation=23 revision=23 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T06:54:30Z XQ8RYAX5R7JBZ9DH0TX694ENCA-m2-bc1be9cb open actor=m2+mac-coordinator targets=breach-clock-and-budget-honesty
@@ -32,4 +34,5 @@ History:
 - 2026-09-02T17:48:09Z S95HRKWH2S0KC382Y1AFF9ZYT6-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
 - 2026-09-02T17:59:40Z S242M7GCCP5QX6QCW275397DCQ-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
 - 2026-09-02T17:59:44Z 8GD2V243M5BH0DRK8X37BXH45B-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
-Integrity: sha256=0616d070030ec17dc7e1da856b7707b6047eaee13beaf2ac3ff20b08e6978c34
+- 2026-09-02T18:30:03Z 2S41SB5VE8XCV0MGCKYS9AC7XH-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
+Integrity: sha256=d74e24b0dc9c4b9f9b99ffdd230d3c90762219a399d083b74e61363e752bf2a5
