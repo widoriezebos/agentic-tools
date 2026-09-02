@@ -1,20 +1,19 @@
 # never-idle-ironclad
 
-- State: claimed
+- State: queued
 - Intent: Wido's order 2026-09-02 (verbatim: 'You must never ever stop as long as you are not stopped by me, and there is backlog to work on left' and 'I want no room for conduct failures. I want the Go app and its background job and roles to be iron clad against this. Is it? Is there backlog for this? Otherwise it is high time to address this with a proper analysis, design and backlog item done the metasystem way'). ANSWER TODAY: it is not iron-clad. The steward detects an idle seat (narration: 'm1 is idle while work waits in the queue', 2026-09-02 13:35) but nothing consumes that verdict: no external delivery (alert-escalation-channel unbuilt), no action (watch-verb unbuilt), no nudge of the seat. The harness Stop hook that could refuse a stop is dead on every seat (supervision-hook-wrong-root) and has a block-once escape by design (idle-with-backlog-alarm builds the gate and the human stop marker; turn-verdict-hardening hardens the verdict). SPECIMENS: m0's eight-hour idle night 2026-09-01; m3's six-hour idle; m1 twice on 2026-09-02 (waiting on a permission classifier, then ending a turn on a decision-ask with 84 goals queued); and a new class the same day: m0, m0b and paper sat idle for hours because the human's remote-control messages stranded unsent in their input boxes (the instruction channel failed silently). The guarantee this goal owns, stated so it can be proven: (1) a seat's turn cannot end while claimable backlog exists and no human stop word is recorded, fail-closed on every hook failure path; (2) if a seat is nonetheless idle with backlog (session died, hook bypassed, channel failed) the steward notices within one tick, re-injects the continue order through the seat's declared channel and re-launches a dead session where lawful; (3) when (1) and (2) fail within a bound, the human is reached externally; (4) the only quiet exit is the human's recorded stop word. This goal is the umbrella that binds idle-with-backlog-alarm, turn-verdict-hardening, watch-verb, alert-escalation-channel, supervision-hook-wrong-root and seat-mutual-awareness into one provable chain; the analysis produces the gap map across them and re-scopes or splits so the guarantee is proven by fixtures replaying every specimen, never assumed.
 - Origin: main
 - Next step: Bug ladder per the paper's chapter 12 and R-38-m2: ANALYSIS first (Fable lane, design mode, 4h): for each specimen, which mechanism should have caught it, whether it exists, and why it did not fire; the complete map of stop paths (harness Stop hook, session death, permission-classifier block, decision-ask ending a turn, undelivered instruction channel) against the mechanisms that exist or are in flight in the six bound goals, with file and line; the residual holes; a proposed split into slices of at most 240 minutes. Then ANALYSIS CRITIQUE (Sol), then DESIGN (the closed chain: exit gate, steward seat-liveness nudge and re-launch, external escalation, the human stop word), DESIGN CRITIQUE, BUILD in slices, CODE CRITIQUE, fixtures replaying the specimens. Big item: 8h/10/240m/1 per R-44/R-45; split when the analysis lands.
 - OpenedAt: 2026-09-02T15:55:13Z
-- Revision: 4
+- Revision: 5
 - Labels: never-idle, robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-02T16:00:04Z
-- Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-02T15:55:34Z revision=3
-- StopCapability: generation=3 revision=3 machine=m1 claimEpoch=4 fenceEpoch=0
 
 History:
 - 2026-09-02T15:55:13Z TWP09N196CSCMSC425TNGDRJGX-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
 - 2026-09-02T15:55:23Z 7S8B03DWXWET976RRBCQWA3YVY-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
 - 2026-09-02T15:55:34Z M3QCKQCVGYVD200QJWZXNXRD6M-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
 - 2026-09-02T16:00:04Z HS3700W445K1X9BK75SSR81EQR-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
-Integrity: sha256=9fadd4379b0bb4dcafdb12336392804d9298840acfd71210eca71b1bb6538b5d
+- 2026-09-02T16:21:27Z 2MTDD0RGRFK2F1DKX5EM3TNPDS-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
+Integrity: sha256=e859f99dd768fa7e6209e145552174dabcaa6a91e47ae4ebf9193ae84f2a3762
