@@ -3,18 +3,31 @@
 Goal: turn-verdict-hardening (plans/goals/turn-verdict-hardening.md, revision 4,
 priority-1). Author: implementer delegate tvh-design-2 under dispatch by
 m0b+main-1788250419-3170380-8a1fb3, 2026-09-02; revision 2 by delegate
-tvh-design-r2 the same day, worktree at commit 19c61d24.
-Revision: 2 — closes the nine material findings of
-records/misc/turn-verdict-hardening-critique-r1.md (each cited as TVH-R1-… at
-the paragraph that closes it) and carries Wido's two words of ruling R-47-m0b
-(memory/rulings.md). Revision 1's requirements stand: the eleven findings of
+tvh-design-r2 the same day, worktree at commit 19c61d24; revision 3 by delegate
+tvh-design-r3b the same day, worktree at commit bb3a55cd.
+Revision: 3 — folds the five material items of
+records/misc/turn-verdict-hardening-critique-r2.md: the three PARTIAL closures
+re-closed (TVH-R1-R3-NAMES-ILLEGAL-EXIT §1.2.1,
+TVH-R1-FAIL-CLOSED-TABLE-OMITS-PREVERDICT-SHELL-EXITS §3.0,
+TVH-R1-STOP-DEADLINE-DOES-NOT-BOUND-EMISSION §3.2) and the two NEW findings
+closed (TVH-R2-SLICE1-HIDDEN-WRONG-ROOT-DEPENDENCY §3/§10,
+TVH-R2-HUMANSTOP-SEAT-AUTHORITY-UNSPECIFIED §5.2), each cited by id at the
+paragraph that closes it; plus Sol's declared gap on the slice-1 estimate (§10)
+and the dispatching seat's sequencing DECISION behind goal
+supervision-hook-wrong-root (§3, §9 ask 7, §10). Revision 2's six closures Sol
+certified real stand unchanged. Revision 2 closed the nine material findings of
+records/misc/turn-verdict-hardening-critique-r1.md (cited as TVH-R1-…) and
+carries Wido's two words of ruling R-47-m0b (memory/rulings.md:91). Revision 1's
+requirements stand: the eleven findings of
 records/misc/seat-stop-analysis-critique-r1.md (cited by id) and the three
 specimens of records/misc/seat-stop-analysis.md.
 Wido's order, verbatim: "we need machinery (not you, your behaviour, yourself but
 deterministic Go code) that should make this impossible or at least give us the
 highest chance of this never happening again."
 
-Every seam cited here was read in this worktree; line numbers are at 19c61d24.
+Every seam cited here was read in this worktree; line numbers are at bb3a55cd
+(revision 3 re-read every seam it touches at that commit; the Go and shell files
+cited are byte-identical to 19c61d24, only plans and records moved between).
 
 ## 0. The object, restated against the code
 
@@ -125,7 +138,8 @@ type ReadyItem struct {
     Revision uint64 // f.Revision of the accepted file (the projected revision)
     Binding  uint64 // f.Claimed.Revision when claimed, else 0 (the dispatch binding)
     Clause   string // "claimed-admissible" | "queued-claimable" | "held-releasable"
-    Move     string // the one lawful move, rendered from verbs the engine accepts
+    Move     []string // the lawful move: one engine-accepted command per element,
+                      // in execution order (§1.2.1 R3 names the exact syntax)
 }
 ```
 
@@ -205,23 +219,88 @@ plus the epoch and quota rules and the replay case (§10).
 | --- | --- | --- | --- |
 | R1 claimed-admissible | `f.State == claimed` ∧ `goal.OwnPair(f.Claimed, machine, lineage)` ∧ `seat.Holder` ∧ `f.StopFence == nil` ∧ the goal is NOT among `dispatch.EvaluateGoalAdmission(root, lineage, now).Refusals` | `EvaluateGoalAdmission` (fence, BUDGET_UNKNOWN, elapsed/attempt/minute/active breaches, all for this pair) | `goal.OwnPair(c *ClaimRecord, machine, lineage string) bool` exported; `ownPair` becomes a one-line wrapper, so there is ONE pair rule. `seat.Holder` is required because dispatch binds the lease holder's claim epoch into every reservation; whether the dispatcher additionally refuses a non-holder was not traced (§9 gap 5), so the safe default is that a non-holder pair's claim is displayed ("claim held by a session that is not the checkout holder; run `metasystem up`") and never READY |
 | R2 queued-claimable | `f.State == queued` ∧ `ClaimAdmission(root, proj.Tree, id, Actor{machine, lineage}, nil, "", seat.ClaimEpoch) == nil` | `ClaimAdmission` (§1.2.0) | nothing |
-| R3 held-releasable | the pair holds a claimed `H` with `H.StopFence == nil` that R1 excludes because `EvaluateGoalAdmission` refuses it with `Breaches ≠ ∅` and `Unknown == nil` (a budget-exhausted, UNFENCED claim) ∧ ∃ queued `g` for which `ClaimAdmission` fails ONLY on `machine-quota` (`QuotaOnly()`) | the same two functions | the move, rendered from verbs the engine accepts for the pair's own unfenced claim: `goal park <H> --because "budget exhausted: <breach names>"` when `H.Origin != OriginHuman` (`verbs.go:842-862`: own pair, no fence → `clearClaimBinding` passes), else `goal release <H>` (`verbs.go:653-666`); then `goal claim <g>` |
+| R3 held-releasable (SET form, revision 3) | R1 yields nothing for this pair ∧ the pair's UNFENCED claims `P₀ = {f : f.State == claimed ∧ OwnPair(f.Claimed, machine, lineage) ∧ f.StopFence == nil}` is non-empty ∧ EVERY `f ∈ P₀` is exhausted (`EvaluateGoalAdmission` refuses it with `Breaches ≠ ∅` and `Unknown == nil`) ∧ ∃ queued `g` for which `ClaimAdmission` over the CURRENT tree fails ONLY on `machine-quota` (`QuotaOnly()`) ∧ `ClaimAdmission` over the LEDGER-AFTER-MOVE `t′(g)` (below) returns nil | the same two functions, plus `ClaimAdmission` a second time over `t′(g)` | the move over the SET `X(g)` (below): one `park` or `release` line per member, then the claim line — every line in the exact syntax `goalsync_mutations.go` accepts, and only when the engine would then accept the claim |
 
-Closes TVH-R1-R3-NAMES-ILLEGAL-EXIT: a FENCED claim (`StopFence != nil`) is
-excluded from every clause. Release, park and done refuse it at
+The set rule, mechanically (closes the PARTIAL half of
+TVH-R1-R3-NAMES-ILLEGAL-EXIT: one machine may lawfully hold several claims
+sharing one non-empty arc, `validate.go:250-283`, so parking ONE of them can
+leave the quota refused and the same advice repeated on every Stop):
+
+1. `X(g) = {f ∈ P₀ : g.Arc == "" ∨ f.Arc ≠ g.Arc}` — every unfenced claim of
+   THIS PAIR that does not share `g`'s non-empty arc. (Claims that share
+   `g`'s arc count once with `g` under the quota and need no move.)
+2. `t′(g)` is a deep copy of `proj.Tree` in which each `f ∈ X(g)` carries the
+   state the Move produces: `State = parked`, `Claimed = nil` when
+   `f.Origin != OriginHuman`; `State = queued`, `Claimed = nil` when
+   `f.Origin == OriginHuman` (park of a human-opened goal is a human act,
+   `verbs.go:845-847`, so the agent's lawful verb there is release,
+   `verbs.go:653-668`). Nothing else changes: another pair's claims on this
+   machine and this pair's FENCED claims stay exactly as they are.
+3. `g` is R3-READY iff
+   `ClaimAdmission(root, t′(g), g.Id, Actor{machine, lineage}, nil, "", seat.ClaimEpoch) == nil`
+   — the FULL admission recomputed over the ledger-after-Move, not the quota
+   alone, so the rendered Move is one the engine would accept at every line.
+   When it still refuses (a claim outside `X(g)` blocks the quota: another
+   pair's claim on this machine, or a fenced claim of this pair), `g` is NOT
+   READY and `Reasons` carries one line naming the blocking claim and its
+   holder: "`<g>` waits on the machine quota held by `<H>` (`<machine>+<lineage>`)"
+   or "… held by `<H>`, breach-stopped; only `goal resume` clears it" (the
+   latter also appears under WaitingOnHuman, as revision 2 specified).
+4. The first qualifying `g` by id is the `ReadyItem`; every other qualifying
+   `g` is named in `Reasons` as "also claimable after the same move".
+5. `Move`, in order, every element byte-exact (the engine name is the
+   operator-facing `metasystem`; `<root>` is the absolute ledger root the
+   verdict read; `<lineage>` is `seat.Lineage`, which already satisfies
+   `validLineage`'s `[A-Za-z0-9._-]{1,128}`, so no quoting arises; breach
+   names are the `Breaches` identifiers, each matching `[a-z-]+`, joined by
+   `", "`):
+   - for each `f ∈ X(g)` sorted by id, when `f.Origin != OriginHuman`:
+     `metasystem goal park --root <root> --id <f.Id> --lineage <lineage> --because "budget exhausted: <breach names>"`
+     (`park` requires `--id` and `--because`, `goalsync_mutations.go:232-241`;
+     own pair, no fence → `clearClaimBinding` passes, `verbs.go:849-864`);
+   - for each `f ∈ X(g)` sorted by id, when `f.Origin == OriginHuman`:
+     `metasystem goal release --root <root> --id <f.Id> --lineage <lineage>`
+     (`release` requires `--id`, `goalsync_mutations.go:676-681`; own pair,
+     no fence → passes, `verbs.go:653-666`);
+   - last: `metasystem goal claim --root <root> --id <g.Id> --lineage <lineage>`
+     (`claim` requires `--id`, `goalsync_mutations.go:653-668`; no budget flags
+     because READY means the complete STORED budget is on the ledger, R-47-m0b
+     word 2, so `budgetTuple(false)` yields nil and `goal.Claim(req, id)` reads
+     the stored tuple, `verbs.go:163-174`).
+   `--lineage` is rendered explicitly on every line because
+   `syncReq` refuses a mutation with neither the flag nor
+   `METASYSTEM_OWNER_LINEAGE` (`goalsync_mutations.go:38-44`), and the seat's
+   shell may carry neither. No positional goal id exists in this grammar
+   (`parseSyncFlags`, `104-159`); revision 2's positional strings are
+   withdrawn.
+
+Revision 2's fenced-claim closure stands: a FENCED claim (`StopFence != nil`)
+is excluded from every clause. Release, park and done refuse it at
 `clearClaimBinding` (`verbs.go:129-131`), steal refuses it (`1229-1231`), and
 only `goal resume` — human-only with observed or relayed authority
 (`stop.go:355-358`) — clears the fence. Such a claim is listed in
 `Frontier.WaitingOnHuman` as "`<H>` is breach-stopped by `<StopID>`; only
 `goal resume` (a human) clears it", and every queued goal that
 `ClaimAdmission` refuses only on the quota is listed beneath it as waiting
-behind the fence. WaitingOnHuman is reported, never blocked (§7 step 7). The
-command `goal park <held> --then <g>` is withdrawn: the converted parser
+behind the fence. WaitingOnHuman is reported, never blocked (§7 step 9). The
+command `goal park <held> --then <g>` stays withdrawn: the converted parser
 declares no `--then` flag (`goalsync_mutations.go:104-159`) and routes park
 straight to `goal.Park` (`232-241`). Named residual (§8): releasing or parking
 an exhausted claim and re-claiming it starts a fresh claim revision whose
 budget window is the engine's rule, not this design's; the verdict reports what
 the engine admits.
+
+The two-arc fixture is in slice 1a's tests (§10,
+`TestReadyHeldReleasableNamesEveryQuotaBlockingClaim`): H1 and H2 held
+exhausted by pair `m+A` in arc `A`, queued `g` with a complete stored budget
+in arc `B` → the Move names BOTH parks then the claim; variant H1 in arc `A`,
+H2 in arc `B`, `g` in arc `B` → the Move names H1 alone; variant seat `m+B`
+holds H3 in arc `C` → `g` is not READY for `m+A` and `Reasons` names H3 and
+`m+B`; variant H1 human-origin → its line is `release`, not `park`. The test's
+decisive assertion executes the rendered Move, line by line, through the REAL
+verbs against a copy of the fixture ledger and requires `OutcomeConfirmed` on
+every line and `g` claimed by `m+A` afterwards — "a Move the engine would then
+accept" is proven by running it, not by reading it.
 
 Excluded by construction and listed in `Reasons`: queued goals without a
 complete stored budget (R-47-m0b word 2: READY means claimable now with the
@@ -246,8 +325,8 @@ READY(seat) ∧ ¬RELEVANT-INFLIGHT(seat) ∧ ¬HUMANSTOP-CONSUMED → ShouldBlo
     BlockSource = "ready-work", every Stop, no session memory consulted or written.
 ```
 
-The display names the first `ReadyItem` and its `Move`, byte-verbatim in the
-block reason as today (`supervision-hook.sh:290-297`). `stopblock.go:11-13`
+The display names the first `ReadyItem` and its `Move`, one command per line,
+byte-verbatim in the block reason as today (`supervision-hook.sh:290-297`). `stopblock.go:11-13`
 loses the sentence "This refusal does not repeat for the same work." and reads:
 "The goal ledger holds work this seat can lawfully advance and nothing relevant
 is in flight. Claim it, dispatch it, or park or release an exhausted claim;
@@ -407,32 +486,54 @@ state is repaired (class B) or a human sets HUMANSTOP (class A); the steward
 escalation surfaces the loop; this is the chosen direction because the
 alternative was the bypass the specimens took.
 
-Sequencing: the wrong-root fix (`plans/supervision-hook-root-design.md`, goal
-supervision-hook-wrong-root) MUST land before slice 2 (the hook slice). Under
-this table an unresolved identity is a BLOCK, so the hook rows on a wrong-root
-fleet would wedge every seat on every Stop. Its silent-exit rows are
-re-dispositioned below; its skew and missing-engine lines keep their text,
-prefixed into the block reason.
+Sequencing (closes TVH-R2-SLICE1-HIDDEN-WRONG-ROOT-DEPENDENCY; the dispatching
+seat's DECISION, recorded in §9 ask 7): the wrong-root fix
+(`plans/supervision-hook-root-design.md` at revision 3, goal
+supervision-hook-wrong-root) lands BEFORE slice 1a, the first slice of this
+design. Sol is right that on the affected fleet seats today's hook exits at the
+missing-engine branch (`supervision-hook.sh:26-30`: the delegate worktree
+carries no `bin/metasystem`, so `$ms` is not executable and the hook prints its
+HEALTH-unknown line and exits 0) before any verdict runs, so no slice of this
+design can refuse a specimen at the deployed Stop boundary until the root fix
+is in. Under this table an unresolved identity is a BLOCK, so the hook rows on
+a wrong-root fleet would wedge every seat on every Stop. Its silent-exit rows
+are re-dispositioned below; its skew and missing-engine lines keep their text,
+prefixed into the block reason. What each slice lands on top of the root fix
+is stated in §10.
 
-### 3.0 The hook's structure: the trap is the first thing (closes TVH-R1-FAIL-CLOSED-TABLE-OMITS-PREVERDICT-SHELL-EXITS)
+### 3.0 The hook's structure: the trap is the first thing, the emitter is the only writer (re-closes TVH-R1-FAIL-CLOSED-TABLE-OMITS-PREVERDICT-SHELL-EXITS)
 
 `supervision-hook.sh` runs `set -euo pipefail` (line 2) and, before any
 verdict, performs unguarded `cd`/`pwd -P` (23-24), `mktemp` and `cat` (42-44),
 `mkdir -p` (263-264), a second `mktemp` (273), and command substitutions in
 assignments that `set -e` treats as failures (278-280, 297-304). Each is a
-silent exit today. The rewritten Stop path has this fixed shape, in this
-order, and an implementer follows it line for line:
+silent exit today. Sol's round-2 refutation of revision 2 is accepted: its
+rule 4 let only `emit_stop_payload` set `emitted=1` while P2 and rows F1, F2
+and F5 printed their own JSON and exited, so the EXIT trap then printed a
+SECOND object. Revision 3 makes one function the only thing that can write to
+stdout. The rewritten Stop path has this fixed shape, in this order, and an
+implementer follows it line for line:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
+# The clock starts HERE, before any external command (§3.2(b)); builtins only.
+hook_entry_us=${EPOCHREALTIME:+${EPOCHREALTIME/./}}
 runtime=${1:-}; event=${2:-}
 emitted=0; fail_line=0
 on_err() { fail_line=$1; }
+# emit_json is the ONLY statement in this file that writes to stdout on a Stop
+# path, and the ONLY place emitted is set. Builtins only.
+emit_json() { # one already-serialized JSON object
+  if command printf '%s\n' "$1"; then emitted=1; fi
+}
+block_json() { # a FIXED literal reason from this file (plus digits); never engine or user text
+  emit_json '{"decision":"block","reason":"'"$1"'"}'
+}
 on_exit() {
   rm -f "${payload:-}" "${response_file:-}" "${verdict_stderr:-}" 2>/dev/null || true
   if [[ "$event" == stop && $emitted -ne 1 ]]; then
-    command printf '{"decision":"block","reason":"turn-exit gate did not reach a verdict (supervision-hook.sh line %s). The metasystem could not judge this turn end, so it refuses it. Repair the hook or engine (metasystem up --repo <path>; rebuild bin/metasystem), then end the turn again. No human stop applies here: the machinery that would honour it did not run."}\n' "$fail_line"
+    block_json "turn-exit gate did not reach a verdict (supervision-hook.sh line ${fail_line}). The metasystem could not judge this turn end, so it refuses it. Repair the hook or engine (metasystem up --repo <path>; rebuild bin/metasystem), then end the turn again. No human stop applies here: the machinery that would honour it did not run."
     exit 0
   fi
 }
@@ -444,44 +545,70 @@ Rules: (1) the two traps are armed before the runtime-name and event checks
 (today's lines 18-19), so a Stop event with a malformed runtime argument emits
 the block instead of `exit 2`; an unrecognised EVENT still exits 2 (the hook
 cannot know it is a Stop) — that is hook drift, caught by `hooks check`; (2)
-the trap body uses only builtins and `command printf`; the reason is a fixed
-literal plus a line number (digits only), so no escaping question exists; (3)
-`exit 0` inside the EXIT trap overrides the failing status, so exit codes are
-never the delivery channel; (4) `emit_stop_payload` sets `emitted=1`
-immediately after its successful `printf` to stdout and nowhere else; (5) the
-existing `trap 'rm -f "$payload"' EXIT` (line 43) is deleted — it would replace
-the fallback trap; cleanup lives in `on_exit`; (6) no `exit 0` remains on a
-Stop path before emission (today's 30, 62, 65 become block rows below).
+`emit_json`, `block_json` and the trap body use only builtins; `block_json`
+accepts only FIXED literals written in this file (the one variable part is
+`fail_line`, digits only), so no escaping question exists — any reason that
+carries engine or user text (F10's stderr line, the verdict display, the
+health line) is serialized by the engine (`report stop-block`, `json object`)
+and the whole object is handed to `emit_json`; (3) `exit 0` inside the EXIT
+trap overrides the failing status, so exit codes are never the delivery
+channel; (4) ONE EMITTER: `emit_json` is the only writer to stdout on a Stop
+path and the only place `emitted` is set; `emit_stop_payload` calls
+`emit_json` for its write and keeps only the bookkeeping around it (response
+file, `hook-complete`, `digest-advance`); P2, F1, F2, F4, F5 and the trap call
+`block_json`; so exactly one object leaves the hook on every path — after a
+successful `emit_json` the trap prints nothing, and before one only the trap
+prints; (5) the existing `trap 'rm -f "$payload"' EXIT` (line 43) is deleted
+— it would replace the fallback trap; cleanup lives in `on_exit`; (6) no
+`exit` on a Stop path precedes a successful `emit_json`: today's early exits
+(30, 62, 65) become `block_json …; exit 0` rows below, and `emit_json` failing
+leaves `emitted=0` so the trap tries once more (F19 when that fails too); (7)
+STDOUT DISCIPLINE, mechanically checkable: every other command on a Stop path
+has its stdout captured by `$(...)`, redirected to a file or `/dev/null`, sent
+to `>&2`, or piped; the outputs of `surface_json`, `report stop-block` and
+`json object` are captured into `response` and reach stdout only through
+`emit_json`. The static test `TestHookStopPathHasOneStdoutWriter` (slice 2)
+scans the hook for every `printf`/`echo` and requires each to be the one
+inside `emit_json` or to carry a redirection or pipe.
 
-Every pre-verdict operation maps to a row:
+Every pre-verdict operation maps to a row (line numbers today; after the root
+fix the world block moves, the rows keep their meaning):
 
-| # | Operation (today's line) | Outcome under the trap |
+| # | Operation (today's line) | Outcome |
 | --- | --- | --- |
 | P1 | `script_dir`/`harness_root` resolution fails (23-24) | ERR trap → block, line named |
-| P2 | `runtime list` fails or runtime unregistered (32-40) | explicit block JSON via `command printf` (F5), exit 0 |
-| P3 | payload `mktemp` or `cat` fails (42-44) | ERR trap → block |
-| P4 | `read_payload` (47) cannot run the engine | already `|| true`; empty cwd falls to F6/F2 |
-| P5 | session-env query failure (62-63) | block (F6) |
-| P6 | `git rev-parse --show-toplevel` fails (65) | block (F2) |
+| P2 | `runtime list` fails or runtime unregistered (32-40) | `block_json` (F5), then `exit 0` |
+| P3 | payload `mktemp` fails (42), or the bounded `cat` of stdin fails or expires (44; §3.2(c)) | ERR trap → block |
+| P4 | `read_payload session_id` (67) cannot run the engine | `session-$PPID` as today (68); not decision-bearing |
+| P5 | session-env query (52-63) | deleted by the root fix (§3 sequencing); no row |
+| P6 | world identification or `path state-root` fails (root design Decision 2 rows 1-6 and 9-10, silent exit 0 there; today's 65) | `block_json` (F2, F4), then `exit 0`; the verb's own exit 1 stays F3 |
 | P7 | `turn_key`/`hook-attempt` failure (86-101) | rides the reason (F9); never exits |
 | P8 | `mkdir -p "$supervision_dir"` fails (264) | ERR trap → block |
 | P9 | `mktemp` for verdict stderr fails (273) | ERR trap → block |
 | P10 | verdict `json get` field reads fail (278-280) | ERR trap → block (F10) |
 | P11 | `report stop-block` / `json object` response construction fails (297-304) | ERR trap → block |
-| P12 | `emit_stop_payload` cannot print to stdout (196-201) | residual F19 |
+| P12 | `emit_json` cannot print to stdout (196-201) | residual F19 |
+| P13 | a bounded call expires (rc 124) or is skipped for lack of budget (rc 125; §3.2(c)) | the call's own row in the §3.2(c) table: display-only calls → their fixed "(bounded)" line; identity calls → F7; the verdict → F17 |
 
 The two `mktemp` calls and `evidence-gc` keep their `|| true` where they have
-it; a row's block is the trap's, not a bespoke branch.
+it; a row's block is the trap's, not a bespoke branch. Fixture
+`hook-single-response` (slice 2, `supervision-fixtures.sh`) fires a Stop under
+F1 (no engine at the world), F2 (the hook staged outside any git repository),
+F5 (a stub engine whose `runtime list` prints nothing), a trap exit (an
+unwritable `TMPDIR` so `mktemp` fails), and one ordinary READY block, and
+asserts on each: stdout is exactly one line, that line is one JSON object
+whose `decision` is `block` (`json get --field decision`), and the exit status
+is 0.
 
 ### 3.1 The outcome table
 
 | # | Condition | Detected where | Class | Hook decision and recovery named in the reason |
 | --- | --- | --- | --- | --- |
-| F1 | engine missing at the resolved world | hook, literal test (26-31) | B | BLOCK via literal `printf` JSON: rebuild `bin/metasystem` (`go build -o bin/metasystem ./cmd/metasystem`) |
-| F2 | world identification fails (git query, parse, common-dir shape, mapping, shape check) | hook (root design Decision 2 rows 1-6, were silent exit 0) | B | BLOCK: "the hook cannot identify its world"; `metasystem up --repo <path>` |
+| F1 | engine missing at the resolved world | hook, literal test (26-31) | B | BLOCK through `block_json` (§3.0 rule 4; no engine exists to serialize anything): rebuild `bin/metasystem` (`go build -o bin/metasystem ./cmd/metasystem`) |
+| F2 | world identification fails (git query, parse, common-dir shape, mapping, shape check) | hook (root design Decision 2 rows 1-6, were silent exit 0) | B | BLOCK through `block_json`: "the hook cannot identify its world"; `metasystem up --repo <path>` |
 | F3 | `path state-root` exit 1: the engine proves an ungoverned installation | engine verb | — | ALLOW with a visible line (proven absence, not a guess) |
-| F4 | `path state-root` other failure or empty (engine/hook skew) | hook | B | BLOCK: skew line as reason; rebuild or re-adopt |
-| F5 | runtime registry query fails or runtime not registered | hook (32-40, today exit rc / exit 2) | B | BLOCK JSON; exit 0 |
+| F4 | `path state-root` other failure or empty (engine/hook skew) | hook | B | BLOCK through `block_json`: the fixed skew line as reason; rebuild or re-adopt |
+| F5 | runtime registry query fails or runtime not registered | hook (32-40, today exit rc / exit 2) | B | BLOCK through `block_json`; exit 0 |
 | F6 | runtime session-env lookup fails | deleted by the root fix (cwd no longer participates); until then | B | BLOCK |
 | F7 | identity unknown: no runtime ancestor and no recorded main, `lease classify` empty or erroring, class not MAIN, or lineage empty | verb (§1.1) | B | BLOCK: "the hook cannot tell whose turn this is; run `metasystem up`" (exactly what the wrong root produced on every fleet seat) |
 | F8 | caller classified advisor (MAIN, not holder) | verb (`ClassifyResult.Holder == false`) | A | the verdict runs in full: READY is empty by `ClaimAdmission`'s `no-claim-epoch` refusal and R1's holder rule (§1.2), so the outcome is the no-READY path (F16 applies); the OWNED-ELSEWHERE line rides the display (removes today's early exit at 232-247, which bypassed open-work display) |
@@ -493,76 +620,194 @@ it; a row's block is the trap's, not a bespoke branch.
 | F14 | `scan.Unreadable` or `scan.RunUnreadable` non-empty | `decide:384-387`, `decideRuns` | A | BLOCK, `BlockSource = "unreadable"` (was display only) |
 | F15 | `Frontier.State == "unknown"` (READY could not be computed) | readywork | A | BLOCK |
 | F16 | freshness unproven (§4) and `Frontier.State == "none"` | verdict | A | BLOCK, `BlockSource = "stale-board"`; recovery: the network returns and the next Stop's fetch succeeds, or the ledger is in local sync mode (§4) |
-| F17 | Stop budget: the verdict's own deadline exceeded at a phase boundary | verb, `--deadline-ms` (§3.2) | A | verb exits 0 with `ShouldBlock = true`, `BlockSource = "deadline"`, the phase named; the marker step still runs (a single bounded file read); the hook emits immediately |
-| F18 | Stop budget: the runtime kills the hook before emission | runtime | — | RESIDUAL: the runtime's default applies (allow). Made improbable by §3.2 (every step bounded, sum below the budget); recorded, not closed |
+| F17 | Stop budget: the verdict's own deadline exceeded at a phase boundary, or the hook's remaining budget is below the verdict floor before the verb is called | verb, `--deadline-ms` (§3.2(d)); hook (§3.2(c)) | A (verb) / B (hook-side: no verb ran, no marker consulted) | verb exits 0 with `ShouldBlock = true`, `BlockSource = "deadline"`, the phase named; the marker phase still runs under its own 500 ms lock cap (§5.3); the hook emits immediately. Hook-side: `block_json` naming "budget exhausted before the verdict", class B |
+| F18 | Stop budget: the runtime kills the hook before emission | runtime | — | RESIDUAL: the runtime's default applies (allow). Made improbable by §3.2 (the clock runs from hook entry; every non-exempt command is bounded by min(cap, remaining); the verdict and emission reserves are subtracted before every cap; the exempt steps are named with why they cannot block); recorded, not closed |
 | F19 | emission failure (`printf` to stdout fails) | hook (196-201) | — | RESIDUAL: `hook-complete --outcome EMISSION_FAILED` is recorded; the steward's hook-freshness sees it; the runtime's default applies |
 | F20 | HUMANSTOP marker unreadable or malformed | verdict | — | treated as absent: normal rules (a broken marker authorizes nothing) |
 | F21 | verdict state file malformed | `loadVerdictState:645-647` resets today | — | unchanged: the state holds only non-ready memory now, so a reset can only cause an extra notice, never an allowed exit |
 | P1–P11 | pre-verdict shell exits (§3.0) | hook trap | B | BLOCK via the EXIT trap, line named |
 
-### 3.2 The Stop budget (closes TVH-R1-STOP-DEADLINE-DOES-NOT-BOUND-EMISSION)
+### 3.2 The Stop budget (re-closes TVH-R1-STOP-DEADLINE-DOES-NOT-BOUND-EMISSION)
 
-Sol's three refutations are accepted: a `context.WithDeadline` cancels nothing
-in `report.Scan`, `Project`, `FetchAdvance` or their git children because none
-takes a context (`goal.go:543` runs the scan before `TurnVerdict`;
-`fetchadvance.go:30`, `project.go:31`, `txn.go:71` take none); `date +%s%N` is
-GNU-only; and ceremonies moved behind the verdict can still be killed before
-the runtime reads the emission. Decisions:
+Sol's three round-1 refutations stand accepted: a `context.WithDeadline`
+cancels nothing in `report.Scan`, `Project`, `FetchAdvance` or their git
+children because none takes a context (`goal.go:543` runs the scan before
+`TurnVerdict`; `fetchadvance.go:30`, `project.go:31`, `txn.go:71` take none);
+`date +%s%N` is GNU-only; and ceremonies moved behind the verdict can still be
+killed before the runtime reads the emission. Sol's round-2 refutations of
+revision 2 are accepted too: the clock started after the engine test, so the
+world mapping was uncharged; only the named ceremonies and the verdict were
+bounded while root mapping, runtime lookup, payload handling, hook-attempt
+recording, ancestor discovery, lease classification, JSON extraction and
+response construction were not; the marker lock's five-second wait exceeded the
+verdict's 3.5 s worst-case allowance; and `up` is sequential, not atomic
+(`up.go:412-500`). Decisions:
 
-(a) **Declared budget.** `runtimes.Declaration` gains `StopHookBudgetSec int`
-(codex 20, devin 20, claude 20, fake 5); `metasystem runtime stop-budget
-<name>` prints it; all THREE shipped files move their Stop `timeout` to 20
-(§6 owns the per-runtime check).
+(a) **Declared budget.** Unchanged from revision 2: `runtimes.Declaration`
+gains `StopHookBudgetSec int` (codex 20, devin 20, claude 20, fake 5);
+`metasystem runtime stop-budget <name>` prints it; all THREE shipped files move
+their Stop `timeout` to 20 (§6 owns the per-runtime check).
 
-(b) **Portable clock.** The hook reads `"$ms" util now-ns`
-(`cmd/metasystem/slug.go:55-58`, Go `time.Now().UnixNano()`, identical on
-Linux and Darwin) once at entry — after the engine test, since without an
-engine F1 emits at once and no budget arithmetic is needed — and computes
-`elapsed_ms=$(( ($("$ms" util now-ns) - entry_ns) / 1000000 ))` in bash
-64-bit integer arithmetic. `date` is not used for timing.
+(b) **The clock starts at hook entry, in bash.** `hook_entry_us` is captured on
+the second line of the script (§3.0 shape), before the runtime-name check,
+the world mapping, and every external command, from `$EPOCHREALTIME` (bash ≥
+5.0, microseconds; present on the fleet's bash 5.2.15, read on this seat).
+`elapsed_ms` is a shell function of builtins only:
 
-(c) **Every step bounded, and the sum below the budget.** A new verb
-`metasystem util run-bounded --deadline-ms N -- <argv...>` runs the child
-through `boundedexec.Run` (`internal/boundedexec/boundedexec.go:84-113`:
-`Setpgid`, SIGKILL to the process group on expiry, bounded reap) and exits 124
-on expiry. The hook wraps each ceremony in it with a fixed cap, in this order,
-each skipped with its fixed "HEALTH unknown" line when its cap exceeds the
-remaining budget or when it returns 124:
+```bash
+elapsed_prev=0
+elapsed_ms() { # monotone non-decreasing; rounds UP; never runs a command
+  local now
+  if [[ -n "${EPOCHREALTIME:-}" ]]; then
+    now=$(( (${EPOCHREALTIME/./} - hook_entry_us + 999) / 1000 ))
+  else
+    now=$(( (SECONDS + 1) * 1000 ))   # bash 3.2: whole seconds since shell start, rounded up
+  fi
+  (( now > elapsed_prev )) && elapsed_prev=$now
+  printf '%s' "$elapsed_prev"
+}
+```
 
-| Step | Cap (ms) | On expiry |
-| --- | --- | --- |
-| `up` (148-156) | 5000 | "supervision arming unfinished (bounded)"; `up` is idempotent and re-runs next Stop — a kill mid-way is what today's 5 s runtime timeout already does to it |
-| `health --hook-preview` (161) | 2000 | the fixed unknown line (163) |
-| `steward digest-pending` (166) | 1500 | "NARRATOR DIGEST unavailable (bounded)" |
-| `supervise watchdog-report` (256) | 1500 | empty digest |
-| `evidence-gc` (265) | 1000 | already `|| true` |
-| `report turn-verdict` | reserve: `min(8000, 20000×0.8 − elapsed − 1500)`; never below 3000 — if less remains, the hook emits F17 itself without calling the verb | F17 |
-| emission | 1500 reserved | — |
+Without `EPOCHREALTIME` (a stock Darwin bash 3.2) the charge is coarse but
+never under-counts: `SECONDS` counts whole seconds from shell start and the
+`+ 1` rounds up, costing at most 1 000 ms of budget, which is charged, never
+allowed. The hook no longer calls `util now-ns` (the verb stays; nothing else
+used it in the hook). Both clocks are wall clocks: a forward step shortens the
+budget (the fail-closed direction); a backward step is clamped by the
+`elapsed_prev` rule, so a step of s seconds can extend the budget by at most s
+— residual F18, named in §8. The pre-engine git queries of the root design
+are charged by this clock even though they are exempt from bounding (c).
 
-Worst case: the ceremonies consume their full 11 000 ms, leaving the verdict
-`min(8 000, 16 000 − 11 000 − 1 500) = 3 500` ms, above its 3 000 ms floor;
-11 000 + 3 500 + the 1 500 ms emission reserve is 16 000 ms, 80% of the 20 s
-budget. The block is therefore emitted before the runtime's timeout by
-construction, without any ceremony running after emission. Any residual is
-F18.
+(c) **Every non-exempt command bounded by min(cap, remaining); the reserves
+subtracted before every cap.** Numbers: `U = 16 000` (80% of the 20 s budget);
+`E = 1 500` emission reserve; `V = 3 000` verdict floor; the plumbing
+allowance `A = U − E − V = 11 500`. A new verb `metasystem util run-bounded
+--deadline-ms N --kill-grace-ms G -- <argv...>` runs the child through
+`boundedexec` with stdin, stdout and stderr INHERITED (so `$(bounded …)`
+captures stdout exactly as today and `bounded 1000 cat >"$payload"` reads the
+runtime's stdin), `Setpgid`, SIGKILL to the process group on expiry
+(`boundedexec.go:92, 106-108`), exit 124 on expiry; the reap after the kill
+is bounded by `G` (a new `Bound.KillGrace` field; the package constant
+`killGraceWindow` of 5 s, `boundedexec.go:38`, stays the default for every
+other caller; the hook passes 200 ms — a child that outlives SIGKILL by 200 ms
+is in kernel D-state and is abandoned, not waited for). The hook wraps every
+engine call and the stdin read in one function:
 
-(d) **The verb bounds itself.** `report turn-verdict --deadline-ms N` computes
-a deadline and runs phases in this order, checking the deadline at each phase
-boundary and returning F17 (phase named) when exceeded: identity (§1.1, one
-lease read) → bounded fetch (§4) → projection → scan → READY → relevance →
-marker (§5.3) → state file under `withLock` → marshal. Every git child in this
-path becomes bounded: `goalGit` and `gitIn` gain context-taking variants
-(`goalGitContext(ctx, root, extraEnv, args...)`, `gitInContext`) built on
-`exec.CommandContext` with the same process-group kill as `boundedexec` and a
-`WaitDelay` of 500 ms; `FetchAdvanceContext(ctx, e)`, `ProjectContext(ctx, e,
-fetchFirst, now)` and `loadTreeContext` are added, and the existing functions
-become `context.Background()` wrappers, so no other caller changes.
-`report.Scan` spawns no subprocess (the only `exec` in the package is
-`frontier.go:158`, outside the Stop path) and is file reads plus probes; it
-moves INSIDE the verb's phase sequence (`goal.go:543` today runs it before
-`TurnVerdict`) so its cost is charged to the deadline, with the cooperative
-check before and after it. The marker step is one bounded file read and one
-rename and always runs, even under F17.
+```bash
+bounded() { # cap_ms argv... ; rc = the child's, 124 on expiry, 125 when skipped
+  local cap=$1; shift
+  local left=$(( 11500 - $(elapsed_ms) ))
+  (( left >= 100 )) || return 125
+  (( cap <= left )) || cap=$left
+  "$ms" util run-bounded --deadline-ms "$cap" --kill-grace-ms 200 -- "$@"
+}
+```
+
+The table (line numbers today):
+
+| Class | Calls | Cap (ms) | Outcome on rc 124 or 125 |
+| --- | --- | --- | --- |
+| payload | `cat` of the runtime's stdin (44) | 1 000 | P3 → trap block (a runtime that never closes stdin cannot be judged) |
+| pure engine | `runtime list` (32); every `json get` (67, 97-98, 116-117, 123-125, 133-135, 168-170, 223-224, 278-280); `util sha256` (73, 86, 258); `util slug` (143); `report stop-block` / `json object` (140, 297-304) | 300 each | `runtime list` → F5; a `json get` on a decision field → that field's row (F10 for verdict fields, F7 for identity fields); the rest leave the value empty and ride the display as today |
+| world | `path state-root` (root design replacement block) | 500 | F4 |
+| identity | `proc find-ancestor` (109); `lease classify` (122, 131) | 1 000 each | F7 |
+| evidence | `steward hook-attempt` (92) | 1 000 | F9 (rides the reason) |
+| lease | `lease protocol-growth` (221); `lease renew` (249) | 500 each | empty or skipped, as today's `|| true` |
+| ceremonies | `health --hook-preview` (161) | 2 000 | the fixed unknown line (163) |
+| | `steward digest-pending` (166) | 1 500 | "NARRATOR DIGEST unavailable (bounded)" |
+| | `supervise watchdog-report` (256) | 1 500 | empty digest |
+| | `evidence-gc.sh` (265) | 1 000 | already `|| true` |
+| verdict | `report turn-verdict` (274) | `min(8 000, 14 500 − elapsed)`; when that is below `V = 3 000` the hook emits F17 itself through `block_json` without calling the verb | F17 |
+| post-emission (inside `E`) | `steward hook-complete` (185-211): 500; `steward digest-advance` (204): 300; `lease protocol-advance` (244, 323): 300 | — | already `|| true`; the emission is recorded as today |
+
+`up` (148-156) is no longer on the Stop path — (e). The construction is NOT
+"the caps sum below the budget" (the class caps above sum past `A`, and that is
+fine): it is that `A` is subtracted from every cap, so however many calls run,
+the verdict starts with at least `V` and the emission with at least `E`, and a
+call that finds fewer than 100 ms of allowance is skipped (rc 125) and takes
+its row. Worst case in numbers: plumbing ≤ 11 500; verdict ≤ min(8 000,
+14 500 − elapsed) and ≥ 3 000; emission ≤ 1 500; total ≤ 16 000 = 80% of
+20 000. The remaining 4 000 ms cover what the allowance does not charge
+exactly: bash builtins, the exempt commands below, the fork and exec of
+`run-bounded` itself (one extra engine start per bounded call, tens of
+milliseconds each, charged to elapsed by the next clock read), and the 200 ms
+kill grace.
+
+**Exempt steps, and why they cannot block.** Bash builtins (`cd`, `pwd -P`,
+`printf`, `read`, `[[ ]]`, arithmetic, `trap`, `exit`) run inside the hook's
+own process. The coreutils calls `mkdir -p`, `mktemp`, `rm -f`, `basename`,
+`dirname`, `date -u`, `tail -1` on a file the hook itself wrote, `grep -Fxq`
+on a here-string, and the pre-engine `git rev-parse` queries of the root design
+(`--path-format=absolute --git-dir --git-common-dir`; `--show-toplevel`) each
+touch only the local filesystem at an already-resolved path, take no lock,
+open no network, and read no stdin from another party; they block only when
+the local filesystem itself hangs — and then bash's own reading of the script
+file hangs identically, so no in-script bound could fire. That case is F18,
+and so is an engine binary whose exec itself hangs (the bounding primitive is
+the engine; it cannot bound its own start). Nothing else is exempt.
+
+(d) **The verb bounds itself.** `report turn-verdict --deadline-ms N` (`N ≥
+3 000` by (c)) computes a deadline `D` and reserves `M = 600` ms for the
+marker phase (a 500 ms lock cap, §5.3, plus 100 ms for the read and rename)
+and 100 ms for marshal. The phases identity (§1.1, one lease read) → bounded
+fetch (§4) → projection → scan → READY → relevance run under `D − 700`, with
+the cooperative check at each boundary and F17 (phase named) when exceeded;
+then the marker phase ALWAYS runs under its own cap; then the state-file phase
+runs only when at least 50 ms remain before `D − 100`, with `withLock`'s wait
+bounded to `min(2 000, D − 100 − now)` through a `withLockDeadline(d)` variant
+of `goalverbs.go:96-118` (its constant `lockDeadline` is 2 s, `goalverbs.go:91`)
+— a skipped or timed-out state write is F11 (block, `state-unavailable`),
+never an exit; then marshal. So `V = 3 000` decomposes as 2 300 for the phases,
+600 for the marker, 100 for marshal, and the marker's 500 ms lock cap fits
+inside the floor by construction — revision 2's 5 s wait is withdrawn. Every
+git child in this path becomes bounded: `goalGit` and `gitIn` gain
+context-taking variants (`goalGitContext(ctx, root, extraEnv, args...)`,
+`gitInContext`) built on `exec.CommandContext` with the same process-group
+kill as `boundedexec` and a `WaitDelay` of 500 ms; `FetchAdvanceContext(ctx,
+e)`, `ProjectContext(ctx, e, fetchFirst, now)` and `loadTreeContext` are added,
+and the existing functions become `context.Background()` wrappers, so no other
+caller changes. `report.Scan` spawns no subprocess (the only `exec` in the
+package is `frontier.go:158`, outside the Stop path) and is file reads plus
+probes; it moves INSIDE the verb's phase sequence (`goal.go:543` today runs it
+before `TurnVerdict`) so its cost is charged to the deadline, with the
+cooperative check before and after it.
+
+(e) **`up` leaves the Stop path.** Sol's note is accepted and traced.
+`ordinary()` (`up.go:412-500`) runs preflight → enrollment open → session
+identity → `AnnounceWithProofAt` under the steward arbitration flock
+(kernel-released on death, `arbitration.go:38`) → arming-log append →
+`ClassifyVerbAt` → `EnsureArmed` → `EnsureRunner`, sequentially. Inside
+`EnsureArmed` (`arming.go:658-763`) the cap-authority lock is a pid-keyed lock
+directory whose dead holder a later claimant takes over by probing the recorded
+pid (`ownerlock.go:60-102`) — that part self-repairs. But `os.Mkdir(ownerLockDir)`
+(684) followed by `launchOwner` (599-647: the owner is spawned with `Setsid`
+at 613, so it survives a kill of `up`'s process group; the owner record is
+written at 638 and the start gate at 642 only after the owner's identity is
+readable, up to 5 s scaled) leaves, on a kill inside that window, a lock
+directory WITHOUT an owner record. The next `up` then reads no record, waits
+5 s scaled, and fails "supervision lock has no provable owner" (701-710);
+nothing removes an ownerless lock directory (`releaseDeadOwnerLock` needs a
+record, 715-724). So the next `up` does NOT repair a mid-kill in that window,
+and revision 2's idempotence claim — taken from the hook's own comment at
+351-353 — is withdrawn. Sol's declared gap is also accepted: today's runtime
+timeout may kill the hook alone and leave `up` (a child) to finish, so a group
+kill by `run-bounded` would introduce the hazard, not inherit it. DECISION:
+the Stop hook calls no `up` in either branch (148-156); `up` stays on
+SessionStart (348-355, its 15 s timeout unchanged) and in the operator's
+Ring 3 entry (`up --recover-only --if-down`). Consequences, stated:
+supervision that dies mid-session is re-armed at the next session start or
+scheduler tick rather than at the next Stop (a revival-latency regression,
+§8); every Stop still SHOWS supervision state through `health --hook-preview`,
+whose line names each supervised role's status, reason and remedy
+(`health.go:153-167`); a missing or stale announcement no longer self-heals at
+Stop — the verdict then reaches F7 (identity unknown, class-B BLOCK) whose
+reason names `metasystem up --repo <path>` as the repair the seat runs in its
+next turn, the fail-closed direction §3 chose; the `up_failure` line (157-159)
+and its display wiring leave the Stop path; the advisor path (232-247) keeps
+working because it reads classification, not `up`. The root design's Decision
+4 row for lines 148-155 becomes moot for Stop once slice 2 lands; its
+SessionStart rows stand. The ceremonies' worst case drops from 11 000 to
+6 000 ms with `up` gone.
 
 ## 4. Closure 4 — FRESHNESS (closes TVH-R1-FRESH-CURSOR-IS-NOT-A-CURRENTNESS-WITNESS)
 
@@ -627,45 +872,143 @@ seat, written atomically. Fields:
 | `provenance` | `{kind: "enrolled-terminal" \| "temporary-relay", terminalRef, terminalGeneration, checkedAt}` for the enrolled form (copied from the proof), or `{kind: "temporary-relay", relayedBy: "<machine>+<lineage>" of the invoking seat, recordedWord: <the directive, verbatim>, reviewBy: <YYYY-MM-DD>, checkedAt, ruling: "R-47-m0b"}` for the relay form |
 | `consumed` | `null`, or `{at, session, turnKey, attemptSeq}` |
 
-### 5.2 Who may set it (carries R-47-m0b word 1; closes §9 ask 1)
+### 5.2 Who may set it, and for whom (carries R-47-m0b word 1; closes §9 ask 1; closes TVH-R2-HUMANSTOP-SEAT-AUTHORITY-UNSPECIFIED)
 
-Verb: `metasystem goal humanstop --directive "<words>" [--ttl 8h] [--session
-<id>] [--review-by YYYY-MM-DD]`. Authority is
-`humanauthority.ProveOrTemporaryGoalAuthority(root, invokerPID, KernelReader{},
-directive, reviewBy, now)` (`authority.go:228-237`): the enrolled-terminal
-proof (`Prove`, `ValidFor(root)`, `authority.go:89-111`: enrolled terminal
-ancestry, no agent runtime on the chain, the installed signature set) wins
-when it holds; when it fails and `--review-by` is present, the temporary relay
-proof is minted from the directive as the recorded word (`TemporaryGoalProof`,
-`199-222`: ≥ 3 words, a real review date not in the past and inside the
-governance horizon, `159-180`). Wido's word (R-47-m0b, decided): a RELAYED
-human word carried through the temporary-human-word path MAY mint the
-single-use marker. The path's residual is exactly Sol's
-(SSA-R1-HUMANSTOP-RELAY-LAUNDERING; `authority.go:195-198`: it "cannot verify
-who supplied the words") and it is recorded here as a HUMAN-RATIFIED EXCEPTION,
-not a hole: the marker records the relay provenance verbatim (`provenance.kind
-= temporary-relay`, `relayedBy`, `recordedWord`, `reviewBy`), the audit line in
-the Stop display names it as relayed — "HUMAN STOP (relayed by
-<machine>+<lineage>, recorded word: "<directive>", review by <date>)" — and the
-marker's history line in `hooks.log` carries the same text. The hook's own
-`lease classify` HUMAN class (`classify.go:369-377`: "no recognised ancestor
-and a controlling terminal") remains too weak for minting — a pseudo-terminal
-allocated by an agent satisfies it — and is NOT accepted. Redirecting work is
+Verb: `metasystem goal humanstop --root <root> --directive "<words>" [--ttl 8h]
+[--session <id>] [--review-by YYYY-MM-DD]`. It has NO `--machine`, NO
+`--lineage` and, under the relay form, NO `--seat` flag; it never reads
+`METASYSTEM_OWNER_LINEAGE`; and it does not go through `syncReq`
+(`goalsync_mutations.go:26-71`, whose lineage comes from a flag or the
+environment) because it mutates no ledger — it writes one marker file.
+
+**Authorization, HUMANSTOP-scoped.** The proof is
+`humanauthority.ProveOrTemporaryGoalAuthority(root, int64(os.Getppid()), nil,
+directive, reviewBy, now)` (`authority.go:228-237`), the same entry `goal
+resume` uses (`goalsync_mutations.go:377-378`): the enrolled-terminal proof
+(`Prove`, `ValidFor(root)`, `authority.go:89-111`: enrolled terminal ancestry,
+no agent runtime on the chain, the installed signature set) wins when it holds;
+when it fails and `--review-by` is present, the temporary relay proof is minted
+from the directive as the recorded word (`temporaryGoalProofAt`, `206-222`:
+≥ 3 words, a real review date not in the past and inside the governance
+horizon, `159-180`). Sol is right that the shipped `Proof` exposes only
+`AuthorizesSetObligation` and `AuthorizesResume` (`authority.go:117-131`),
+each scoped to its verb, so a new method is added beside them:
+
+```go
+// AuthorizesHumanstop accepts enrolled-terminal ancestry or the temporary
+// recorded-relay form for exactly one act: minting the single-use HUMANSTOP
+// marker. The relay form is admitted here by Wido's ruling R-47-m0b, word 1
+// (memory/rulings.md:91), verbatim: "a RELAYED human word carried through the
+// temporary-human-word path MAY mint the single-use HUMANSTOP marker that lets
+// a seat end its turn on ready work". The relay records the supplied words
+// but cannot verify who supplied them (TemporaryGoalProof); the marker's
+// provenance and the Stop display name that fact.
+func (p Proof) AuthorizesHumanstop(root string) bool {
+    return p.ValidFor(root) || p.temporaryValidFor(root)
+}
+func (p Proof) TemporaryHumanstopFor(root string) bool { return p.temporaryValidFor(root) }
+// RecordHumanstopProof stores the proof for the one act that may consume it.
+func RecordHumanstopProof(root, operationID string, proof Proof) error {
+    return recordProof(root, operationID, "goal humanstop", proof, proof.AuthorizesHumanstop(root))
+}
+```
+
+The proof's own `Departure` stays `TemporaryWordRuling` (`R-32-m1`,
+`governance/types.go:96`, the temporary-word path's ruling, which
+`temporaryValidFor` checks at `authority.go:185`); the MARKER's
+`provenance.ruling` is `R-47-m0b`, the ruling that admits that path to
+HUMANSTOP. Both ids appear in the audit line. `AuthorizesResume` and
+`AuthorizesSetObligation` are not reused: a proof is scoped to the act it
+authorizes, and `recordProof` refuses to record a proof under an action whose
+authorizer does not accept it (`584-586`).
+
+**The seat is derived from the SAME authenticated classification the verdict
+uses — never from flags.** The command calls
+`lease.ClassifyVerbAt(root, metasystemRoot, int64(os.Getppid()))`
+(`lease/verbs.go:294-322`): exactly §1.1's call, over the invoker's parent,
+walking ancestry to the authenticated announcement (`classify.go:324-342`).
+Then:
+
+- **Relay form** (`proof.TemporaryHumanstopFor(root)`): require `view.Class ==
+  MAIN` with `view.Announcement != nil` and a non-empty
+  `lease.AnnouncementLineage(view.Announcement)` (the export of
+  `announcementLineage`, `lease.go:131-136`: `ownerLineage`, else `mainId` —
+  §1.1's rule). `machine = goal.ResolveMachine(root)`. The marker's `machine`,
+  `lineage` and `provenance.relayedBy` are all this one pair, by construction
+  equal; `relayedBy` stays as an explicit audit field. A `--seat` flag under
+  this form is refused: "the relay form mints only for the invoking seat".
+  Every other classification is refused by name: HUMAN ("no seat: the relay
+  form runs from the seat's own session; at an enrolled terminal use the
+  enrolled form"), DELEGATE, STEWARD, SUPERVISION, ADAPTER-SUPERVISOR, an
+  empty class, or a classification error. So a caller-controlled lineage
+  cannot mint for another seat and cannot forge `relayedBy`: neither value is
+  read from anything the caller supplies.
+- **Enrolled-terminal form** (`proof.ValidFor(root)`): the chain is
+  agent-free by construction (`Prove` refuses `OutcomeAgent`,
+  `authority.go:533-538`), and MAIN classification requires an announced
+  runtime process among the ancestors (`classify.go:324-342`), so this form
+  can NEVER carry a classification-derived seat; the caller classifies HUMAN
+  (`369-377`). ASSUMPTION A3-HUMANSTOP-SEAT, flagged for the dispatching seat
+  (§9 ask 9): under this form the human names the target with
+  `--seat <machine>+<lineage>`; `machine` must equal
+  `goal.ResolveMachine(root)` (a marker is machine-local: its path is under
+  this root) and `lineage` must satisfy `validLineage`; the marker records
+  `provenance.kind = enrolled-terminal`, `seatNamedBy = "enrolled-terminal"`,
+  and no `relayedBy`. The human is the authority here, so a named target is
+  not the forgery Sol's finding names. If the assumption is overruled, the
+  enrolled form is withdrawn entirely and the human stops a seat by speaking
+  the word to it (which relays) or by the redirect verbs.
+
+**Minting is for the minting seat's own pair (relay form).** The marker path
+`<root>/artifacts/agents/humanstop/<machine>+<lineage>.json` is built from the
+derived pair, and the file's `machine`/`lineage` fields are the same values;
+`world` is `goal.ExistingLedgerIdentity(root)`. The marker additionally
+carries `proofOpid`, the operation id under which `RecordHumanstopProof` wrote
+the proof record; §5.3's compare-and-consume requires that record to exist with
+action `goal humanstop` and a proof form matching `provenance.kind` — a marker
+whose proof record is missing or mismatched authorizes nothing. This raises a
+hand-forged marker from one file to two consistent files; it does not close
+same-user filesystem authority, which the ledger's announcements and locks
+already live under (§8).
+
+Wido's word (R-47-m0b, decided): a RELAYED human word carried through the
+temporary-human-word path MAY mint the single-use marker. The path's residual
+is exactly Sol's (SSA-R1-HUMANSTOP-RELAY-LAUNDERING; `authority.go:195-198`:
+it "cannot verify who supplied the words") and it is recorded here as a
+HUMAN-RATIFIED EXCEPTION, not a hole: the marker records the relay provenance
+verbatim (`provenance.kind = temporary-relay`, `relayedBy`, `recordedWord`,
+`reviewBy`, `ruling = R-47-m0b`), the audit line in the Stop display names it
+as relayed — "HUMAN STOP (relayed by <machine>+<lineage>, recorded word:
+"<directive>", review by <date>, R-47-m0b over R-32-m1)" — and the marker's
+history line in `hooks.log` carries the same text. The hook's own `lease
+classify` HUMAN class (`classify.go:369-377`: "no recognised ancestor and a
+controlling terminal") remains too weak for minting — a pseudo-terminal
+allocated by an agent satisfies it — and is NOT accepted as authority; it is
+only the classification the enrolled form is expected to carry. `--session`
+is caller-supplied and stays so: it can only NARROW the marker (a wrong
+session never consumes), so it needs no authentication. Redirecting work is
 not HUMANSTOP: `goal park`, `steal`, `set-pin`, `open` are the human's redirect
 verbs and leave READY to be recomputed.
 
 ### 5.3 Compare-and-consume, bound to one Stop
 
 At the verb's marker phase (§3.2(d)), under the marker directory's OWN lock
-(`humanstop/.lock`, flock with the 5 s bound of `withWaiterLock`,
-`waiter.go:66-88`) — independent of the verdict-state flock so that F11 cannot
-prevent consumption — and only when the decision so far is a class-A block
-(READY, open work, F12, F14, F15, F16, F17, F11):
+(`humanstop/.lock`: `withHumanstopLock(root, 500*time.Millisecond)`, the same
+20 ms flock poll shape as `withWaiterLock`, `waiter.go:66-88`, with a 500 ms
+deadline instead of that function's 5 s — revision 2's 5 s exceeded the
+verdict's worst-case allowance; 500 ms fits inside the 600 ms marker reserve of
+§3.2(d)) — independent of the verdict-state flock so that F11 cannot prevent
+consumption — and only when the decision so far is a class-A block (READY,
+open work, F12, F14, F15, F16, F17, F11). A lock that is still busy at 500 ms
+is "marker unknown": nothing is consumed, the class-A block stands, the display
+says "HUMANSTOP marker busy; not consumed", and the human's word is not spent —
+the next Stop retries.
 
 1. Read the marker for `(machine, lineage)`. Absent, unreadable, wrong `world`,
-   wrong pair, `runtimeSession` set and ≠ this session, `now ≥ expiresAt`, or
-   `consumed ≠ null` → no HUMANSTOP; an expired or foreign marker is named in
-   the display, never consumed.
+   wrong pair, `runtimeSession` set and ≠ this session, `now ≥ expiresAt`,
+   `consumed ≠ null`, or a `proofOpid` whose proof record is missing or was not
+   recorded under action `goal humanstop` (§5.2) → no HUMANSTOP; an expired,
+   foreign or unproven marker is named in the display, never consumed.
 2. Otherwise write `consumed = {at: now, session, turnKey, attemptSeq}` by
    atomic rename FIRST (the hook passes the `turn_key` it already computes at
    `supervision-hook.sh:86` as `--turn-key`, and `hook_attempt_seq` as
