@@ -1,7 +1,7 @@
 # Design: the breach machinery stops lying
 
 Goal: breach-clock-and-budget-honesty (plans/goals/breach-clock-and-budget-honesty.md,
-revision 14). Design revision 6, 2026-09-02, Fable-lane designer, folding
+revision 14). Design revision 6a, 2026-09-02, the orchestrator's hand-fold of Sol's round-5 register (BCD-R5-001 to -003, wording only) onto revision 6, which was the Fable-lane designer's fold of
 the three Fix 3 gaps at which Sol's build breach-build-1b stopped (no bytes
 written, no commit), decided by the orchestrator in
 records/misc/breach-build-1b-gaps.md: Gap 1, the state model and the package
@@ -853,10 +853,11 @@ ownership rule; its siblings stay claimed and workable throughout.
   in full: for each machine, if any claimed file carries a `StopFence`, the
   machine holds no claim outside that goal's arc — an unarced fenced goal
   admits no other claim at all; an arced fenced goal admits claims only on
-  members of its own arc (which the quota already counts as one claim). For
+  members of its own arc (which the quota already counts as one claim; the quota's unit is the machine and the arc, never the lineage, BCD-R5-003). For
   each claim outside the fenced goal's arc add
   `"machine %s claims %s outside the arc of %s, which is breach-stopped by %s; a fenced claim admits no claim beyond its own arc until it is released or parked into parked-with-breach"`
-  (the offending goal, the fenced goal, the fenced goal, the stop id). It is
+  (the four substitutions in order: the machine, the offending goal, the
+  fenced goal, the stop id; BCD-R5-001). It is
   enforced by `ValidateCommit` on every publication, so it covers claim,
   open-claim, the arc claim cascade, steal, arc move, reopen into an arc, and
   reconcile, with no per-verb code.
@@ -901,7 +902,7 @@ ownership rule; its siblings stay claimed and workable throughout.
   | Serving projection, goalverbs.go:820-823 | unchanged; the claimed set is exactly today's set (the quota is unchanged and the invariant admits nothing the quota refuses), so its first map hit is today's first map hit; launches on the fenced member are refused by admission.go:133-142 as today |
   | Turn verdict, turnverdict.go:483-490 | unchanged; same reason |
   | Steward open-work, openwork.go:49 | unchanged; `WorkOwned` while the fenced claim or any claimed sibling stands, `WorkNone`/queued once the machine holds no claim, because parked-with-breach is not this machine's work |
-  | Steward claimed-goal delivery, internal/steward/delivery.go:56-79 (build gap 3) | UNCHANGED. A claimed-and-fenced goal stays in the set and its verdict reads as today: it has failed to deliver, the role saying so is true, and the role acts on nothing (no automatic remedy, delivery.go:297-301). A parked-with-breach goal leaves the set as any parked goal does (`State != claimed` at delivery.go:63), so the machine's health no longer carries the stopped goal once it is released. The role reads `Budget.ElapsedLimit` through the legacy reader `goal.ParseWorkingDuration` (delivery.go:73), which Fix 2 keeps for stored tokens; the day-token inventory carries it in the legacy-reader class |
+  | Steward claimed-goal delivery, internal/steward/delivery.go:56-79 (build gap 3) | UNCHANGED. A claimed-and-fenced goal stays in the set and its verdict reads as today, alive or dead by the same receipts, jobs, norm and claim age as any claim (a fence records exhaustion or an over-limit state, not necessarily missing delivery evidence; BCD-R5-002), and the role acts on nothing either way (no automatic remedy, delivery.go:297-301). A parked-with-breach goal leaves the set as any parked goal does (`State != claimed` at delivery.go:63), so the machine's health no longer carries the stopped goal once it is released. The role reads `Budget.ElapsedLimit` through the legacy reader `goal.ParseWorkingDuration` (delivery.go:73), which Fix 2 keeps for stored tokens; the day-token inventory carries it in the legacy-reader class |
   | Machine-wide admission, admission.go:57-105 | unchanged; the fenced claim is listed as a refusal with its stop id, as today |
   | Custodian routes, stop.go:288-334 | extended to parked-with-breach (above) |
   | Arc claim cascade own-claim scan, verbs.go:1501 | unchanged; the tree invariant refuses a cascade that claims outside a fenced goal's arc and does not refuse claims on members of the fenced goal's own arc; the cascade's own guards are unchanged |
@@ -1107,8 +1108,8 @@ Fix 3 — internal/goal unless noted:
   `ValidateCommit`: (1) an arced goal A, fenced, and its arc sibling B
   claimed by the same pair: ACCEPTED, no problem at all; (2) the same tree
   plus a claim C of a different arc by the same machine: refused, the
-  problem list carrying the exact new invariant wording naming C, A, A, and
-  A's stop id (the unchanged quota wording is present beside it, because the
+  problem list carrying the exact new invariant wording naming the machine,
+  C, A, and A's stop id in that order (the unchanged quota wording is present beside it, because the
   block adds both); (3) an unarced fenced goal A with any second claim B by
   the same machine: refused with the exact new wording.
 - `TestCloseStopOnAnArcMemberLeavesTheSiblingClaimed` (stop_test.go,
@@ -1280,8 +1281,21 @@ else in revision 5 changes.
 | Build gap | Disposition | Where | Tree seams verified |
 | --- | --- | --- | --- |
 | Gap 1: the state model ("either shape → queued by goal resume") and the package rule (claimed shape follows today's path and stays claimed) disagreed | Closed by change: the package rule is right, the state-model sentence was wrong. Resume from claimed-and-fenced keeps the claim and starts a fresh episode (`State: claimed`); from parked-with-breach it binds no claim (`State: queued`); the sentence appears once in the state model and once in the package rule, identically | Fix 3, "Decision and state model"; "Resume, package" | stop.go:378-411 (`bindClaim` at :405 on the same machine and lineage) |
-| Gap 2: the revision-5 only-claim invariant ("the machine's only claim … same arc or not"), enforced by `ValidateCommit` on every publication, refused `CloseStop`'s own commit on a member of a claimed arc, and no atomic sibling transition was supplied | Closed by change: the invariant's unit is the quota's unit; exact new wording recorded; consequences stated for `CloseStop` on an arc member (never conflicts), a different-arc or unarced second claim (refused as before), the orientation branch (every claim checked, the way out names the fenced goal), and release of the fenced member (siblings stay claimed); two rejected alternatives recorded; three tests named (the validate test with three trees, the `CloseStop` test on a two-member arc, the orientation test with the fenced goal not first). Sol round 5 judges this rule by id | Fix 3, "One claim per machine, at the quota's unit"; proof plan | validate.go:250-283 (one arc under one claimant counts once); goal.go:469-472 (`v.Claimed[0]` today) |
+| Gap 2: the revision-5 only-claim invariant ("the machine's only claim … same arc or not"), enforced by `ValidateCommit` on every publication, refused `CloseStop`'s own commit on a member of a claimed arc, and no atomic sibling transition was supplied | Closed by change: the invariant's unit is the quota's unit; exact new wording recorded; consequences stated for `CloseStop` on an arc member (never conflicts), a different-arc or unarced second claim (refused as before), the orientation branch (every claim checked, the way out names the fenced goal), and release of the fenced member (siblings stay claimed); two rejected alternatives recorded; three tests named (the validate test with three trees, the `CloseStop` test on a two-member arc, the orientation test with the fenced goal not first). Sol round 5 judges this rule by id | Fix 3, "One claim per machine, at the quota's unit"; proof plan | validate.go:250-283 (one machine's claims sharing one non-empty arc count once; the validator never compares lineage, BCD-R5-003); goal.go:469-472 (`v.Claimed[0]` today) |
 | Gap 3: internal/steward/delivery.go constructs this machine's claimed set and the consumer table omitted it | Closed by change: the row is added, UNCHANGED, with the reason (a claimed-and-fenced goal stays in the set and its failed-to-deliver verdict is true and acts on nothing; a parked-with-breach goal leaves the set as any parked goal does); the legacy reader `goal.ParseWorkingDuration` is added to the day-token inventory's legacy-reader class as a reader row, which was missing; both traced-facts consumer lists gain the site | Fix 3, consumer table; proof plan, "Day-token inventory"; "Traced facts"; "Deliberately unchanged" | delivery.go:56-79, 73, 297-301; internal/goal/budget.go:11-16 |
+
+## Critique round 5: disposition of every finding
+
+Sol's round-5 register (records/misc/breach-design-critique-r5.md, job
+breach-design-crit5, reviewed commit ec16d741) judged revision 6: ONE
+material finding and two non-material notes, folded by hand by the
+orchestrator (Fable lane) as revision 6a; the code critique is the check.
+
+| Finding | Disposition | Where |
+| --- | --- | --- |
+| BCD-R5-001 (medium, material): the fenced-claim diagnostic's substitution list ("the offending goal, the fenced goal, the fenced goal, the stop id") contradicted its format string and the proof's "C, A, A" | Closed by change: the four substitutions are the machine, the offending goal, the fenced goal, the stop id, in the rule and in the proof plan | Fix 3, "One claim per machine, at the quota's unit"; proof plan |
+| BCD-R5-002 (low): the delivery-consumer rationale said a fenced claim "has failed to deliver" | Closed by change: the verdict reads as today, alive or dead by the same evidence; the consumer stays unchanged | consumer table |
+| BCD-R5-003 (low): "one arc under one claimant" misdescribes the validator, which groups by machine and arc and never compares lineage | Closed by change: the quota's unit is stated as the machine and the arc | Fix 3 rule; build-gap table |
 
 ## Self-grade
 
