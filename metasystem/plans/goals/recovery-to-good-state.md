@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Bug ladder per the paper's chapter 12 and R-38-m2: ANALYSIS first (Fable lane, design mode, 4h; brief plans/recovery-analysis-brief.md): for each specimen, the state the system was in, the command a seat could lawfully run, why it refused or hung, with file and line; the inventory of every refusal text on the up, arm, census, and delegate paths and whether its remedy is seat-runnable; the map of partial states against the eight partial goals; the root-cause statement confirmed or corrected; a proposed arc of slices of at most 240 minutes with the rehearsal fixture per slice. Then ANALYSIS CRITIQUE (Sol), DESIGN, DESIGN CRITIQUE, BUILD, CODE CRITIQUE. Big item: 8h/10/240m/1 per R-44/R-45; split when the analysis lands. Any seat with a free claim slot may claim it; m1 holds never-idle-ironclad until its analysis lands.
 - OpenedAt: 2026-09-02T16:03:45Z
-- Revision: 1
+- Revision: 2
 - Labels: recovery, robustness
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T16:03:45Z 1Y28RYS1Z6HBKZXBBPZC5NA9AS-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
-Integrity: sha256=21c4d80e467441b5d5a1e3d49d4d92b76b7f207d7b115eb16b747ee7cbca6dfb
+- 2026-09-02T16:04:04Z V4P2C3ZZKKTYMH33GKJVT5Q6W1-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
+Integrity: sha256=3a465afbfdba1c22cf4fddca0dab76b2d9f151542447a1a713715d249fc094b9
