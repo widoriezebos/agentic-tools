@@ -5,11 +5,11 @@
 - Origin: main
 - Next step: FOURTH SPECIMEN (m1, relayed 2026-09-02): m1 ended its turn at 15:45 on a decision-ask while 84 goals were queued and a Claude-lane round needed no answer; Wido had to wake it. Nothing mechanical refused the stop - the turn-exit gate and the stop marker are not landed yet. This is a CLAUDE-lane seat idling, reinforcing fork option (a): the un-landed claude turn-exit gate would have caught exactly this; land it, do not wait for the every-runtime version. --- AT THE EVERY-RUNTIME WALL, AWAITING WIDO (third critique, not converging 6->6->7). The bar splits: the CLAUDE-runtime honest-agent case is closeable now (fail-closed + hook + single-use marker, plus six fixable fold holes the critique names: library-auth bypass, world-detection fail-open, 5s deadline not end-to-end, template state-root split, live-process-treated-as-work, marker no-hook lifecycle). IMPOSSIBLE on codex/devin requires the steward to ACTIVELY RE-ENGAGE an idle seat (the watch-verb acting side, a large separate mechanism). FORK: (a) close the six holes, land CLAUDE-runtime-impossible now, make every-runtime its own goal building steward re-engagement; (b) hold and build steward re-engagement first (big, likely joint-round per R-39-m0). m0 recommends (a). Four specimens now - m0's 8h night, m1 twice, m1 again 15:45 - all CLAUDE seats, all catchable by the un-landed claude gate.
 - OpenedAt: 2026-09-02T05:47:20Z
-- Revision: 13
-- Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1
+- Revision: 14
+- Budget: elapsedLimit=2d attemptLimit=14 reservedJobMinutesLimit=900 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=3 at=2026-09-02T05:49:11Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T14:27:34Z revision=11
-- StopCapability: generation=11 revision=11 machine=m0 claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T17:42:44Z revision=14
+- StopCapability: generation=14 revision=14 machine=m0 claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-02T05:47:20Z AQM3YVNMMY0P3G0XSSDCBZDT2T-m0-c5dbf036 open actor=human:Wido targets=idle-with-backlog-alarm
@@ -25,4 +25,5 @@ History:
 - 2026-09-02T14:27:34Z HPKFBT5J48N2R1EPWXZ5ZJ5573-m0-c5dbf036 set-budget actor=human:Wido targets=idle-with-backlog-alarm
 - 2026-09-02T14:47:45Z ZKHTTHV7AJ3QE6DA71JAZCP6R1-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
 - 2026-09-02T15:52:16Z JE70VXX6THH25MRW8JBV28BAWF-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
-Integrity: sha256=be9f7a1787784c49e17a8322c8987974a2fd33dd535819d7c39824195d726cd4
+- 2026-09-02T17:42:44Z 2XFYRMCKF9WJCX4WP1JMV8QTCZ-m0-c5dbf036 set-budget actor=human:Wido targets=idle-with-backlog-alarm
+Integrity: sha256=8ad705de886be3b279b3d111b74632bd571662ea44d83ff755f7fb44264d0e06
