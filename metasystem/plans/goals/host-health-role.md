@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Small item (4h): design paragraph (the facts read, the thresholds, what counts as ours via the census, the alert text), Sol critique, Sol build, Fable code critique, land with --chain. Depends on nothing; the alert channel goal later carries its episodes externally.
 - OpenedAt: 2026-09-02T16:28:16Z
-- Revision: 1
+- Revision: 2
 - Labels: robustness
+- Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T16:28:16Z 879DSYMN4C7E7TFRJGPMYNA5FF-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=host-health-role
-Integrity: sha256=337460ca1d68f0defbabdd1dd92b88ab2b940a4b3a16be17c949ed3e63b06116
+- 2026-09-02T16:28:28Z GZWV4SHCAQ6J8NGC28GPREP8WF-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=host-health-role
+Integrity: sha256=f307940b65bc5b7f4f5a7261d6013303ab315ca77bf98c7377e1ee1461b9d28a
