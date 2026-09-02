@@ -1,11 +1,16 @@
 # Design: the breach machinery stops lying
 
 Goal: breach-clock-and-budget-honesty (plans/goals/breach-clock-and-budget-honesty.md,
-revision 14). Design revision 2, 2026-09-02, Fable-lane designer. Revision 1
-(2026-09-01) drew eight material findings from Sol's design critique
-(records/misc/breach-design-critique-r1.md); this revision closes each one by
-changing the design or refutes it against the tree, and carries the second
-specimen the goal record added. Standard (Wido, verbatim): "hard deterministic
+revision 14). Design revision 3, 2026-09-02, Fable-lane designer, folding
+Sol's round-2 critique (records/misc/breach-design-critique-r2.md): three
+material findings, BCD-R2-001, BCD-R2-002, and BCD-R2-003, each folded here
+per the orchestrator's decision recorded at the bottom of that register, and
+each closure marked with its id where it lands. Revision 2 (2026-09-02)
+closed the eight round-1 findings of records/misc/breach-design-critique-r1.md
+by changing the design or refuting each against the tree, and carried the
+second specimen the goal record added; round 2 held seven of those closures
+and reopened BCD-R1-003 (as BCD-R2-001) and BCD-R1-006 (as BCD-R2-002 and
+BCD-R2-003). Standard (Wido, verbatim): "hard deterministic
 machinery. This is Go territory enforcing your behaviour" — every mechanism
 below is engine-enforced; nothing here is conduct guidance. No finding is
 closed by softening a requirement, weakening a refusal, or narrowing a
@@ -260,14 +265,21 @@ EpisodeRevision uint64
   `budgetStartedAt.After(claimedAt)` (budget.go:353, 442, 480). The
   reservation revision filters (`recordRevision != revision`, budget.go:350,
   392, 422) are untouched — see the residue non-goal.
-- **Discharge proofs bind to the episode, not the revision (closes
-  BCD-R1-003).** Revision 1 left the proof filters at budget.go:133-135 and
-  146-157 revision-bound; the critic showed that a raise then drops the
+- **Discharge proofs bind to the episode on the claim axis; the obligation
+  axis holds today's governance (closes BCD-R1-003; revised in round 2,
+  closes BCD-R2-001).** Revision 1 left the proof filters at budget.go:133-135
+  and 146-157 revision-bound; the critic showed that a raise then drops the
   consumed proof (the rebind clears `Obligation`, verbs.go:124, and the
   filter demands `goalRevision == Claimed.Revision`), so
   `obligationBudgetStart` falls back to the episode origin and the clock
   REWINDS to before the discharge — a false breach in the unfavorable
-  direction. The rule becomes:
+  direction. Revision 2 replaced BOTH filters with the episode axis, which
+  Sol showed (BCD-R2-001) changes what a human `set-obligation` means, a
+  governance seam the goal record does not authorize this goal to move. The
+  orchestrator's decision: the episode axis replaces ONLY the claim-revision
+  filter; whenever an obligation is live, a proof must still carry the live
+  obligation revision exactly as budget.go:133-134 and :148 demand today.
+  The rule becomes:
   - `obligationBudgetStart(repoRoot, file, episodeAt, episodeRevision)`.
   - Short-circuit (replaces budget.go:78-80): return `episodeAt` when
     `file.Obligation == nil && episodeRevision == file.Claimed.Revision`. This
@@ -279,28 +291,45 @@ EpisodeRevision uint64
     obligation.
   - Eligibility (replaces budget.go:133-135): a proof counts when
     `goalId == file.Id`, `episodeRevision <= goalRevision <= Claimed.Revision`,
-    `!consumedAt.Before(episodeAt)`, and it is later than the latest so far
-    (ties broken by the higher weight generation, as today).
+    `!consumedAt.Before(episodeAt)`, AND, whenever `file.Obligation != nil`,
+    `obligationRevision == file.Obligation.Revision` exactly as budget.go:134
+    demands today; and it is later than the latest so far (ties broken by the
+    higher weight generation, as today). When `file.Obligation == nil` after
+    a raise (the rebind clears it, verbs.go:122-124) no obligation-revision
+    filter applies and the episode-scoped proof counts.
   - Durable green match (replaces budget.go:146-157): the matched obligation
     state is the one whose `(GoalRevision, ObligationRevision)` equals the
-    LATEST PROOF'S OWN pair, not the live file's; the attempt match
-    (run green, breaker closed, not exhausted, same weight generation) is
-    unchanged. Every other refusal in the function (malformed ledger,
-    unauthorized entry, duplicate proof, applied discharge without a ledger)
-    is unchanged.
+    LATEST PROOF'S OWN pair, not the live file's. With a live obligation the
+    proof's own `obligationRevision` equals `file.Obligation.Revision` by the
+    eligibility rule, so the match keeps today's obligation-revision
+    exactness (budget.go:148) and only the claim-revision half moves to the
+    episode axis; with no obligation (after a raise) the proof's own pair is
+    the only pair there is. The attempt match (run green, breaker closed, not
+    exhausted, same weight generation) is unchanged. Every other refusal in
+    the function (malformed ledger, unauthorized entry, duplicate proof,
+    applied discharge without a ledger) is unchanged.
   - Legacy claims (no episode keys) have `episodeRevision == Claimed.Revision`
     and `episodeAt == Claimed.At`, so the rule is byte-for-byte today's for
     them.
-  - Consequence, stated because it changes a behavior: inside one episode, a
-    discharge consumed under obligation revision 5 still holds the moved start
-    after a human `set-obligation` installs revision 7 (no rebind happens:
-    verbs.go:568-626). Today's code drops that proof and rewinds the clock to
-    the claim. Under Fix 1's thesis only an ownership restart or the human's
-    re-time moves the clock, and set-obligation is neither; the alternative
-    (keep revision-exactness before a raise, episode scope after it) would let
-    a raise move the start LATER than it was the moment before, which is the
-    favorable-direction dishonesty this goal exists to remove. Designer
-    decision, named for the critic.
+  - Consequences, both mechanical from the rule above:
+    - A raise leaves the start exactly where it was the moment before. Before
+      the raise the proof under obligation revision 5 counted and the start
+      sat at the discharge; after the raise `Obligation` is nil, the ledger is
+      read (a rebind happened inside the episode), the proof's `goalRevision`
+      lies inside `[episodeRevision, Claimed.Revision]`, no obligation filter
+      applies, and the same proof counts. This is the closure of BCD-R1-003,
+      unchanged from revision 2.
+    - A human `set-obligation` (verbs.go:568-626, no rebind) keeps its shipped
+      meaning: the fresh obligation revision 7 supersedes every discharge
+      consumed under revision 5 (the proof fails the exact obligation-revision
+      filter), and the start returns to the episode origin. That is what
+      budget.go:133-134 does today with `claimedAt` in the origin's place, so
+      no governance seam moves; after a raise the return is to the episode
+      origin, never to the raise moment, so the return is never in the
+      favorable direction.
+  - Whether a later `set-obligation` should inherit a discharge consumed
+    inside the same episode is an open question for Wido, recorded here and
+    NOT built by this goal.
   - Governed dispatch snapshots `StartedAt` and the weight epoch from this
     projection (governed.go:150), so post-raise governed runs carry the same
     epoch the projection finds and internal/run/conclude.go:315-318 stays
@@ -403,7 +432,7 @@ the human already types hours.
   is refused when set; a `d` in an existing record is a legacy token meaning
   eight hours per day and is re-set by hand with the human's recorded word.
 
-### Rollout and rollback (closes BCD-R1-006)
+### Rollout and rollback (closes BCD-R1-006; the writer inventory closes BCD-R2-003)
 
 The claim is now: **no binary, old or new, can misread a record written by
 the other**, because the only byte whose meaning differs between readers is
@@ -415,20 +444,51 @@ reading a NEW record (say `216h`):
 | Goal file `Budget:` line, `parseBudgetRecord` (goal/budget.go:35-70) | parses 216 hours | correct |
 | Governed run snapshot, `Store.Read` permissive decode (run.go:383-389) then `conclude.go:318` | decodes the tuple, enforces 216 hours | correct |
 | Stop batch `validateStopFiringEvidence` (goal/stop.go:145-157) | parses `216h`, recomputes the same boundary | correct |
-| Journal replay `budgetFromIntentArgs` (goal/budget.go:98) recovering a NEW binary's dead set-budget entry | `NewBudget("216h")` parses 216 hours and RE-RENDERS the token as `27d` into the goal file | enforcement identical (27 × 8 = 216 hours under both binaries); the record's display regresses to a legacy `d` token for that one goal until re-set |
 
 And a new binary reading an OLD record (`9d`, `1d`): the unchanged parser
 reads eight hours per `d`, which is that record's meaning since it was
 written; correct by definition.
 
-So the one mixed-deployment effect is a display regression written by an OLD
-binary's normalizing paths (its journal recovery above, and its own
-`goal set-budget`), never a misread by any reader. It cannot change what any
-fence enforces. The design names it and asks Wido to accept it as the
-rollout residue, and the deployment rule stays: deploy the new binary on both
-machines before the first new-grammar write. Revision 1's claim that the
-closed record grammar would refuse loudly (file.go:616) applied only to the
-Markdown record and is withdrawn; it is no longer needed.
+**Every old-binary writer (closes BCD-R2-003).** Revision 2 named two
+writers (journal recovery and `goal set-budget`) and said "that one goal
+until re-set"; Sol showed the set is larger. An old binary normalizes a
+supplied tuple in exactly one function, `goal.NewBudget` (the re-export of
+`goalbudget.New`, which re-renders through `FormatWorkingDuration`), and the
+CLI reaches it through one builder, `budgetTuple`
+(cmd/metasystem/goalsync_mutations.go:166-180, `goal.NewBudget` at :176).
+Every old-binary path that runs the builder or the constructor on a
+new-grammar token, and what happens on each, after a rollback to the old
+binary:
+
+| Old-binary writer | Where it runs | What it writes after rollback | What it enforces | How the new binary reads it back | Cure |
+| --- | --- | --- | --- | --- | --- |
+| `budgetTuple`, the shared CLI builder (goalsync_mutations.go:166-180) | every verb row below | a supplied `216h` becomes `27d` in the goal file | 216 hours (27 × 8), unchanged | legacy reader: eight-hour days, 216 hours, enforcement identical | the next write of that goal's tuple by a new binary |
+| open-claim (goalsync_mutations.go:217-224) | `goal open --claim` with a tuple | `27d` for a typed `216h` | 216 hours | as above | as above |
+| resume (goalsync_mutations.go:367-413) | `goal resume` with the human's fresh tuple | `27d` for a typed `216h` | 216 hours | as above | as above |
+| claim with a supplied budget (goalsync_mutations.go:653-667) | `goal claim`, with or without `--arc`, when a tuple is supplied | `27d` for a typed `216h` | 216 hours | as above | as above |
+| set-budget (goalsync_mutations.go:669-675) | `goal set-budget` | `27d` for a typed `216h` | 216 hours | as above | as above |
+| journal recovery, `budgetFromIntentArgs` (goal/budget.go:81-99, `NewBudget` at :98) | recovering a NEW binary's dead claim, open-claim, or set-budget entry whose args carry `216h` | `27d` into the goal file, with no human at the console | 216 hours | as above | as above |
+
+Rows two through five are one defect reached through four verbs: the
+pre-fix constructor doing what it did before the fix to whatever token a
+human types at an old binary. Old-binary mutations that take no tuple carry
+the stored token verbatim, because `parseBudgetRecord` stores it verbatim
+and the `Budget:` line renders the stored string (revision 2's traced
+facts); they rewrite nothing.
+
+Stated plainly: after a rollback the residue is **display-only, per write,
+on any goal** an old binary writes a tuple to, until the fleet stops running
+the old binary. No write by any binary changes what any fence enforces; the
+sole effect is that a new `h`/`m` token regresses to a legacy `d` token on
+the goal the old binary wrote, and the next new-binary write of that goal's
+tuple cures it. **No rollback wall is built.** A mechanism that refuses an
+old binary's write into a tree a new binary has written is a separate
+mechanism, out of this goal's scope, and this design claims none. The
+design names the residue and asks Wido to accept it as the rollout residue;
+the deployment rule stays: deploy the new binary on both machines before
+the first new-grammar write. Revision 1's claim that the closed record
+grammar would refuse loudly (file.go:616) applied only to the Markdown
+record and is withdrawn; it is no longer needed.
 
 ### Migration (closes BCD-R1-008)
 
@@ -745,9 +805,15 @@ Fix 1 — internal/dispatch/budget_test.go unless noted:
   durable green attempt; projection at T0+3h30 reports `StartedAt == T0+3h`;
   raise at T0+3h40 (new claim revision, obligation cleared); projection at
   T0+4h still reports `StartedAt == T0+3h`, `Elapsed == 1h`, no breach.
-- `TestSetObligationDoesNotRewindADischargedClock`: same discharge, then a
-  human set-obligation to a new obligation revision with no raise; the start
-  stays at the discharge. Pins the stated consequence.
+- `TestSetObligationReturnsTheStartToTheEpisodeOrigin` (renamed from
+  revision 2's `TestSetObligationDoesNotRewindADischargedClock`, which pinned
+  the behavior BCD-R2-001 withdrew): same discharge at T0+3h under obligation
+  revision 5, then a human set-obligation installing revision 7 with no
+  raise; the projection reports `StartedAt == T0`, today's shipped meaning
+  (the fresh obligation supersedes the discharge). Twin sequence in the same
+  test: discharge, raise (the start stays at T0+3h, as the test above pins),
+  then set-obligation; `StartedAt == T0`, the episode origin, never the raise
+  moment. Pins both halves of the round-2 decision.
 - `TestReleaseReclaimStartsNewEpisode` and `TestStealStartsNewEpisode`
   (internal/goal/verbs_test.go): a genuine ownership restart writes fresh
   episode keys.
@@ -785,6 +851,51 @@ Fix 2 — internal/goalbudget/budget_test.go unless noted:
   `FiringEvidence.AdmissionLimit == "216h"` and whose `BreachBoundary` equals
   216h plus grace, and `ReadStopBatch` validates it; the same for a legacy
   `9d` fixture with a 72h-plus-grace boundary.
+- **Day-token inventory (closes BCD-R2-002).** Every shipped site that
+  carries a `d` duration token in scripts, docs, fixtures, and `_test.go`
+  files, found by two searches over this worktree on 2026-09-02 (a
+  `<digits>d` token at a word boundary, and a compound
+  `<digits>d<digits>[hm]`), one row per site, each classified as exactly one
+  of (a) legacy-reader coverage: a stored `d` read by the new binary,
+  unchanged; (b) converted to hours: the row's intent survives with the hour
+  token that means the same; (c) explicit day-refusal coverage: the row
+  asserts the new refusal wording. The one row whose only subject is the
+  deleted formatter is marked retired, the disposition the brief names for
+  the formatter's own tests. The searches excluded hits that are not
+  duration tokens: the benchmark id `bm-2d` (docs and
+  internal/behaviorsurface/policy_test.go), `printf` width specifiers such as
+  `%03d`, `Phase 0d` in scripts/agents/go-gate.sh, and the supervise
+  package's own age formatter (`humanAge`, internal/supervise/watchdog_test.go:143,
+  `"2d"`), a different grammar the budget parser never reads.
+
+  | Site | Today | Class | Change |
+  | --- | --- | --- | --- |
+  | scripts/agents/goal-cli-fixtures.sh:387 | `open --claim --elapsed-limit 8h` (:384) must store `elapsedLimit=1d` | (b) | assert `^- Budget: elapsedLimit=8h attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1$`; the admission checks at :395-410 are unchanged (8 hours plus grace is the same boundary) |
+  | scripts/agents/goal-cli-fixtures.sh:416 | `set-budget --elapsed-limit 8h` (:413) must store `elapsedLimit=1d` | (b) | assert `^- Budget: elapsedLimit=8h attemptLimit=3 reservedJobMinutesLimit=180 activeJobLimit=2$` |
+  | scripts/agents/goal-cli-fixtures.sh:448 | `set-budget --elapsed-limit 1d` on norm-parent expecting `GOAL_NORM_REFUSED` and the split remedy | (b) | `--elapsed-limit 8h`; the norm assertions at :452-454 are unchanged. Under the new constructor a `1d` here would refuse in the shared builder (`budgetTuple`, goalsync_mutations.go:166-180) before the norm check ran, so a norm row cannot stay on `d` |
+  | scripts/agents/goal-cli-fixtures.sh:457 | `open --claim --elapsed-limit 1d` on norm-open-claim expecting the three-step norm refusal | (b) | `--elapsed-limit 8h`; the assertions at :461-463 are unchanged, so both norm shapes (set-budget's split remedy and open --claim's "open it queued") keep their coverage |
+  | scripts/agents/goal-cli-fixtures.sh, NEW row after :454 | none | (c) | `goal set-budget --root "$clone" --id norm-parent --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1` must exit non-zero, its stderr must contain `elapsedLimit "1d" is refused: d is ambiguous` and `for example 24h`, and the goal file at the tip must carry no `Budget:` line. One row covers every verb because the refusal fires in the shared builder before any verb runs |
+  | scripts/agents/dispatch-fixtures.sh:1092 | `goal claim --elapsed-limit 1d` then a confirmed claim | (b) | `--elapsed-limit 8h`; the confirmation assertion at :1093-1094 and every later expectation stand, because `8h` enforces the same eight hours `1d` did |
+  | internal/goal/project_test.go:151-160 (`TestWorkingDurationGrammar`, `"1d2h"` at :155) | parses each token through the goal package's re-export and round-trips it through `FormatWorkingDuration` | (a), formatter half retired | keep the parse table verbatim, `"1d2h"` → 10 hours included, as legacy-reader coverage of the re-exported parser; drop the `FormatWorkingDuration` round-trip from the assertion at :158-159, which retires with the function (its re-export at internal/goal/budget.go:18-22 is deleted). The invalid-token loop at :162-166 is unchanged |
+  | internal/goal/budget_test.go:14 (`TestBudgetTupleIsCompletePositiveAndCanonical`) | `NewBudget("8h", 3, 180, 2)` must yield `ElapsedLimit == "1d"` | (b) | assert `"8h"` verbatim and rename the test `TestBudgetTupleIsCompletePositiveAndVerbatim`; the `parseBudgetRecord` refusals at :18-26 are unchanged |
+  | internal/goal/budget_test.go:97 (`TestStoredBudgetRequiresCompleteNumericLimits`) | `budgetFromIntentArgs` with `elapsedLimit=8h` must yield `"1d"` | (b) | assert `"8h"`; the same seam `TestJournalReplayPreservesTheStoredToken` (above) covers for a legacy `1d` and a new `216h` |
+  | internal/goalbudget/budget_test.go:17-18 (`TestParseWorkingDurationReadsCompoundsAndRefusesMalformed`, `"1d"` and `"1d2h30m"`) | parser table: `1d` is 8 hours | (a) | unchanged; the parser is unchanged |
+  | internal/goalbudget/budget_test.go:36, 42 (`TestFormatWorkingDurationUsesEightHourDaysAndRoundTrips`) | pins the formatter | retired | deleted with the function it pins (revision 2 already records this) |
+  | internal/goalbudget/budget_test.go:58 (`TestNewNormalizesAndRefusesIncompleteTuples`) | `New("24h", 6, 960, 2)` must store `"3d"` | (b) | rewritten to assert `"24h"` verbatim (revision 2 already records this); `TestNewStoresTheTypedTokenVerbatim` above carries the positive cases |
+  | internal/goalbudget/budget_test.go:104 | `Budget{ElapsedLimit: "1000000000d"}` overflow guard on `ElapsedBreachDuration` | (a) | unchanged; `Validate` and the breach computation keep reading `d` |
+  | internal/evidence/gc_test.go:243 | struct-literal `Budget{ElapsedLimit: "1d"}` rendered into a goal file and read back by the engine | (a) | unchanged |
+  | internal/metrics/fixture_test.go:182 | struct-literal `Budget{ElapsedLimit: "1d"}` on a done goal | (a) | unchanged |
+  | internal/dispatch/servinggoal_test.go:92 | struct-literal `Budget{ElapsedLimit: "1d"}` on the claimed fixture the stop tests share | (a) | unchanged |
+  | internal/dispatch/stop_test.go:74 | the batch's `AdmissionLimit` must equal the stored `"1d"`, boundary `12h0m0s` | (a) | unchanged; the producer copies the stored legacy token, the same seam `TestBreachStopEvidenceCarriesTheStoredToken` covers for `216h` and `9d` |
+  | docs/backlog-mechanism.md:18 | "such as 4h or 1d; one working day is eight hours" | doc, not a fixture | rewritten as Fix 2's record changes already state (minutes and hours only; `d` refused when set; a stored `d` is a legacy eight-hour token) |
+
+  The table is complete for the two search patterns over scripts, docs,
+  `_test.go` files, and the fixtures and testdata trees of this worktree on
+  2026-09-02. It does not cover live goal records under plans/goals (the
+  specimen alert-escalation-channel carries `elapsedLimit=1d` and is handled
+  by the Migration section, not by a fixture), and it does not cover a `d`
+  token spelled without a leading digit, which the parser refuses today and
+  the new constructor refuses by the same character test.
 
 Fix 3 — internal/goal unless noted:
 
@@ -908,32 +1019,53 @@ non-goals.
 | --- | --- | --- | --- |
 | BCD-R1-001 (high): parked resume unreachable through the command | Closed by change: `ResolveStopAuthority`; the command resolves and locks on the capability revision; test at the command seam | Fix 3, "Resume, command"; proof plan | goalsync_mutations.go:394-413; dispatch/stop.go:41-64 |
 | BCD-R1-002 (critical): release strands cancellation | Closed by change: the invariant "a fence is never off the route"; custodian resolves both shapes; routes include parked-with-breach; human done gated on COMPLETE; two named tests | Fix 3, cancellation-duty invariant | dispatch/stop.go:102-192, 288-314; tick.go:69-99; dispatch.sh:2267-2305 |
-| BCD-R1-003 (high): raise after discharge rewinds | Closed by change: proofs bind to the episode; durable match on the proof's own pair; consequence for set-obligation stated; two tests | Fix 1, "Discharge proofs bind to the episode" | budget.go:77-164, 133-135, 146-157; verbs.go:122-124 |
+| BCD-R1-003 (high): raise after discharge rewinds | Closed by change: proofs bind to the episode on the claim axis; durable match on the proof's own pair; two tests. Revised in round 2 (BCD-R2-001): the obligation axis holds today's governance | Fix 1, "Discharge proofs bind to the episode on the claim axis" | budget.go:77-164, 133-135, 146-157; verbs.go:122-124 |
 | BCD-R1-004 (high): two claims, nondeterministic projections | Closed by change: quota unchanged; new only-claim tree invariant; release is the one step to workability; orientation names it; every consumer enumerated | Fix 3, "One claim per machine" | validate.go:250-283; goal.go:469-472; goalverbs.go:820-823; turnverdict.go:483-490; openwork.go:49; admission.go:57-105; verbs.go:1501 |
 | BCD-R1-005 (high): marker not wired into the producer | Closed by change: the marker field is removed; the producer copies the stored token and the validator uses the same parser; test moved to the producer seam | Fix 2, "Stop firing evidence"; proof plan | dispatch/stop.go:134-139; goal/stop.go:145-157 |
 | BCD-R1-006 (high): fail-closed claim false for run snapshots and journal | Closed by change: no ambiguous byte enters a new record; reader-by-reader table; the one old-binary display regression named for Wido | Fix 2, "Rollout and rollback" | run.go:123, 383-389; conclude.go:315-318; goal/budget.go:81-99 |
 | BCD-R1-007 (medium): parked invariant breaks ordinary hand-park, no hand-done | Closed by change: split parse rule; tolerated set; `stopClearedByDone`; fence not hand-deletable; three operations and four tests named | Fix 3, "Parse invariants and the hand-edit mapper" | reconcilemap.go:131-147, 229-248; reconcilepub_test.go:295-326; file.go:289-291, 334-355 |
 | BCD-R1-008 (high): migration cannot re-set a fenced budget | Closed by change: no engine migration; the seat re-sets unfenced goals only; a fenced goal's honest word arrives with the human's resume; specimen before/after shown; revision 1's instruction withdrawn, the refusal kept | Fix 2, "Migration" | verbs.go:514-515; stop.go:355-412; plans/goals/alert-escalation-channel.md:9, 33-34 |
 
+## Critique round 2: disposition of every finding
+
+Register: records/misc/breach-design-critique-r2.md (Sol, job
+breach-design-crit2c, reviewed commit 46bbdc8c). Seven round-1 closures held
+(BCD-R1-001, 002, 004, 005, 007, 008, and the mechanics of 003); each of the
+three material findings below is folded per the orchestrator's decision
+recorded at the bottom of that register.
+
+| Finding | Disposition | Where | Tree seams verified |
+| --- | --- | --- | --- |
+| BCD-R2-001 (high): the episode-scoped discharge rule exceeds the goal's authority on the set-obligation seam | Closed by change, holding today's governance: the episode axis replaces only the claim-revision filter; the obligation-revision filter and the durable match's obligation exactness stay as shipped; a raise keeps the post-discharge start, so BCD-R1-003 stays closed; a human set-obligation keeps its shipped meaning; whether a later set-obligation should inherit a discharge is recorded as open for Wido and NOT built; the revision-2 consequence bullet and its self-grade risk entry are struck; the test is renamed to pin today's behavior | Fix 1, "Discharge proofs bind to the episode on the claim axis"; proof plan, `TestSetObligationReturnsTheStartToTheEpisodeOrigin` | budget.go:77-80, 133-135, 146-149; verbs.go:122-124, 568-626 |
+| BCD-R2-002 (high): shipped fixtures assert the normalization being removed, and their classification was left to the implementer | Closed by change: a complete day-token inventory, one row per site, each (a), (b), or (c); both norm rows kept in hours and one new (c) row added so norm coverage is not weakened; the formatter test in project_test.go keeps its parse rows and retires its formatter half; the two search patterns, their scope, and their named exclusions recorded, with the two places the table does not reach | Proof plan, Fix 2, "Day-token inventory" | goal-cli-fixtures.sh:387, 416, 448, 457; dispatch-fixtures.sh:1092; project_test.go:151-160; goal/budget_test.go:14, 97; goalbudget/budget_test.go:17-18, 36, 42, 58, 104; evidence/gc_test.go:243; metrics/fixture_test.go:182; dispatch/servinggoal_test.go:92; dispatch/stop_test.go:74; docs/backlog-mechanism.md:18 |
+| BCD-R2-003 (medium): the old-binary display regression has more writers than the two revision 2 named | Closed by change: a table of every old-binary path through the shared builder and the constructor (the builder, open-claim, resume, claim with a supplied budget, set-budget, journal recovery), each with what it writes after rollback, what it enforces, how the new binary reads it back, and its cure; the residue stated as display-only, per write, on any goal, until the fleet stops running the old binary; no rollback wall built, named as a separate mechanism out of this goal's scope | Fix 2, "Rollout and rollback", "Every old-binary writer" | goalsync_mutations.go:166-180, 217-224, 367-413, 653-667, 669-675; goal/budget.go:81-99 |
+
 ## Self-grade
 
-- **Confidence:** medium-high that every finding is closed against this
-  tree, and high that no closure weakens a refusal or narrows a guarantee:
-  two revision-1 promises were replaced by stronger mechanisms (release
-  without a quota exclusion; a refused `d` instead of a marked one) and each
-  replacement is named as such.
-- **Weakest claim:** the episode-scoped discharge rule (Fix 1, BCD-R1-003)
-  changes what a set-obligation does to a discharged clock inside one episode.
-  I read it as a consequence of the goal's own thesis, and the alternative
-  provably produces a favorable-direction clock move on a raise, but it is a
-  behavior change on the governance seam that the goal's three defects did
-  not name. The second-weakest is the reading of the second specimen: the
-  goal record says `1d` enforces 24 hours; the parser at budget.go:38 says 8.
-  I carried the code's reading and flagged the record's.
+- **Confidence:** high that the three round-2 findings are closed against
+  this tree and that no closure weakens a refusal or narrows a guarantee:
+  BCD-R2-001 is closed by holding a shipped filter rather than moving it,
+  and BCD-R2-002 and BCD-R2-003 are closed by enumeration against the tree,
+  every row naming its seam. Medium-high that the seven round-1 closures
+  Sol held still hold; revision 3 changed none of their mechanics, and the
+  two revision-1 promises revision 2 replaced with stronger mechanisms
+  (release without a quota exclusion; a refused `d` instead of a marked one)
+  stand as named.
+- **Weakest claim:** the completeness of the day-token inventory rests on
+  two recorded search patterns over a named scope; a `d` token in a shape
+  neither pattern matches would surface as a gate failure, not a silent
+  miss, and the two places the table deliberately does not reach are named
+  under it. Second-weakest is the reading of the second specimen: the goal
+  record says `1d` enforces 24 hours; the parser at budget.go:38 says 8. I
+  carried the code's reading and flagged the record's.
 - **Reject condition:** reject this revision if the critic finds any
   publication path that can put a `StopFence` into the live tree in a state
   `FindBreachStops` does not route (that would falsify "a fence is never off
-  the route"), or any writer left in the engine that emits a `d` token into a
-  record (that would falsify "the marker is the letter itself"), or any
-  consumer of the claimed set that can observe two claims on one machine
-  after `ValidateCommit` has accepted the tree.
+  the route"), or any writer left in the NEW engine that emits a `d` token
+  into a record (that would falsify "the marker is the letter itself"), or
+  any old-binary path that normalizes a supplied tuple and is missing from
+  the rollout writer table, or any consumer of the claimed set that can
+  observe two claims on one machine after `ValidateCommit` has accepted the
+  tree, or any ordering of discharge, raise, and set-obligation under which
+  the eligibility rule moves the start somewhere other than where Fix 1's
+  two consequences say.
