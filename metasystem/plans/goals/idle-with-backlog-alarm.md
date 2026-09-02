@@ -5,11 +5,11 @@
 - Origin: main
 - Next step: INTENT: a causal invariant, not another alarm. CONSTRAINTS: fix the two decision owners (turnverdict.go every-stop block; openwork/verdict shared-backlog-is-work), not a parallel health role that leaves them inert (codex F-OWNER-006); the fresh-ledger 'claimable' binding must be canonical not a stale snapshot (F-LEDGER-009); an explicit human stop is the one lawful quiet exit. FREEDOMS: whether hook-freshness gets the applicability fix here or splits to hook-enrollment-per-checkout. Budget: raise as needed under the envelope, highest priority. TEST SHAPE: second unchanged stop with claimable work + nothing running = blocked; explicit stop = quiet; zero claimable = quiet; work in flight = quiet.
 - OpenedAt: 2026-09-02T05:47:20Z
-- Revision: 5
-- Budget: elapsedLimit=1d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 6
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=3 at=2026-09-02T05:49:11Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T05:47:27Z revision=3
-- StopCapability: generation=3 revision=3 machine=m0 claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T06:37:33Z revision=6
+- StopCapability: generation=6 revision=6 machine=m0 claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-02T05:47:20Z AQM3YVNMMY0P3G0XSSDCBZDT2T-m0-c5dbf036 open actor=human:Wido targets=idle-with-backlog-alarm
@@ -17,4 +17,5 @@ History:
 - 2026-09-02T05:47:27Z 97954GZMVSHFPT2ZBFTPPJN22Y-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
 - 2026-09-02T05:49:11Z KDSKX0K6Z5HZ5WCQRPZ7GH5G1H-m0-c5dbf036 slice-start actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
 - 2026-09-02T06:36:46Z 7SYQ3X7MTH7C5BGSJSBRG7SZFP-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
-Integrity: sha256=e74a38378fda3db8d523fde55b61101ff0ab76f66800dbd92c698de5ab629fd6
+- 2026-09-02T06:37:33Z HSXTQDWRBABPTV7M0FJ49HGDBD-m0-c5dbf036 set-budget actor=human:Wido targets=idle-with-backlog-alarm
+Integrity: sha256=ae338ca6a438c27190fb3318dac2cd2fa2c5ac88abcd26a215cc6f9645441229
