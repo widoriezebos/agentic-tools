@@ -5,9 +5,10 @@
 - Origin: main
 - Next step: Bug ladder per the paper's chapter 12 and R-38-m2: ANALYSIS first (Fable lane, design mode, 4h; brief plans/recovery-analysis-brief.md): for each specimen, the state the system was in, the command a seat could lawfully run, why it refused or hung, with file and line; the inventory of every refusal text on the up, arm, census, and delegate paths and whether its remedy is seat-runnable; the map of partial states against the eight partial goals; the root-cause statement confirmed or corrected; a proposed arc of slices of at most 240 minutes with the rehearsal fixture per slice. Then ANALYSIS CRITIQUE (Sol), DESIGN, DESIGN CRITIQUE, BUILD, CODE CRITIQUE. Big item: 8h/10/240m/1 per R-44/R-45; split when the analysis lands. Any seat with a free claim slot may claim it; m1 holds never-idle-ironclad until its analysis lands. WIDO'S DESIGN WORD 2026-09-02 16:40 (verbatim): 'If we can harden / idempotent the metasystem commands then we should. It should be really ease to get the metasystem started, regardless the state. Same for stop: easy to stop (fully, no processes lingering) regardless the state. No terminal tricker should ever be required'. So DONE also means: metasystem up is idempotent from every partial state (a repeat is a no-op on a healthy checkout and a repair on a broken one, replacing drifted owners, stale locks, dead runners and a drifted engine pin by itself); a stop verb brings the checkout fully down with no process lingering, from any state, proven by the census; neither ever requires a human at a terminal. TENSION the analysis must settle, not paper over: the enrollment law makes some acts human-only from an agent-free terminal (engine enrollment, goal resume, set-obligation) to protect the breakers; the design keeps those acts human but reachable without a terminal through the relayed-word path Wido already approved (R-32-m1, R-37-m3), and every machinery act (supervision, steward, engine pin, reaping) becomes seat-runnable and idempotent.
 - OpenedAt: 2026-09-02T16:03:45Z
-- Revision: 5
+- Revision: 6
 - Labels: recovery, robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=5 at=2026-09-02T16:26:36Z
 - Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-02T16:21:38Z revision=5
 - StopCapability: generation=5 revision=5 machine=m1 claimEpoch=4 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-02T16:05:31Z 8R4X1QSQTJV0588XS08QAGZ82J-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
 - 2026-09-02T16:06:09Z 5Z71M4WPZN8D9Y0TAEKKNG4WZH-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
 - 2026-09-02T16:21:38Z TPA2WXZBYBM81C28RKDYWZ6SFK-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
-Integrity: sha256=afe427ab733267260ba61cc5392620aa6ccae976c1e11bb1a360badfc881ee82
+- 2026-09-02T16:26:36Z WKA609SXP96W4DBBBN6KQXTYAT-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
+Integrity: sha256=7187b3a26f4cd96d56a635932ffc50b10a3470c5621fbd691c251ffb9ea6cdc6
