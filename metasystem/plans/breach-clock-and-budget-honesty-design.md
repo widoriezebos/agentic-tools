@@ -1,16 +1,19 @@
 # Design: the breach machinery stops lying
 
 Goal: breach-clock-and-budget-honesty (plans/goals/breach-clock-and-budget-honesty.md,
-revision 14). Design revision 3, 2026-09-02, Fable-lane designer, folding
-Sol's round-2 critique (records/misc/breach-design-critique-r2.md): three
-material findings, BCD-R2-001, BCD-R2-002, and BCD-R2-003, each folded here
-per the orchestrator's decision recorded at the bottom of that register, and
-each closure marked with its id where it lands. Revision 2 (2026-09-02)
-closed the eight round-1 findings of records/misc/breach-design-critique-r1.md
-by changing the design or refuting each against the tree, and carried the
-second specimen the goal record added; round 2 held seven of those closures
-and reopened BCD-R1-003 (as BCD-R2-001) and BCD-R1-006 (as BCD-R2-002 and
-BCD-R2-003). Standard (Wido, verbatim): "hard deterministic
+revision 14). Design revision 4, 2026-09-02, Fable-lane designer, folding
+Sol's round-3 critique (records/misc/breach-design-critique-r3.md): ONE
+material finding, BCD-R3-001 (high), folded per the orchestrator's decision
+recorded at the foot of that register; everything else in revision 3 held.
+Revision 3 (2026-09-02) folded the three round-2 findings of
+records/misc/breach-design-critique-r2.md (BCD-R2-001, 002, 003). Revision 2
+(2026-09-02) closed the eight round-1 findings of
+records/misc/breach-design-critique-r1.md by changing the design or refuting
+each against the tree, and carried the second specimen the goal record added;
+round 2 held seven of those closures and reopened BCD-R1-003 (as BCD-R2-001)
+and BCD-R1-006 (as BCD-R2-002 and BCD-R2-003); round 3 reopened the
+obligation half of BCD-R1-003 once more (as BCD-R3-001), closed here by a
+third episode key. Standard (Wido, verbatim): "hard deterministic
 machinery. This is Go territory enforcing your behaviour" — every mechanism
 below is engine-enforced; nothing here is conduct guidance. No finding is
 closed by softening a requirement, weakening a refusal, or narrowing a
@@ -206,35 +209,63 @@ recorded here.
 
 ### Record and schema changes
 
-`ClaimRecord` (file.go:76-84) gains two fields:
+`ClaimRecord` (file.go:76-84) gains three fields (the third added in
+revision 4, closes BCD-R3-001):
 
 ```go
 // EpisodeAt and EpisodeRevision pin the moment this ownership episode
 // began; a budget raise re-binds At and Revision but never these.
 EpisodeAt       string
 EpisodeRevision uint64
+// EpisodeObligationRevision is the revision of the obligation that was
+// live the moment before the latest raise (0 when none was). A raise clears
+// the live obligation; this key carries forward WHICH one it cleared, so a
+// discharge proof consumed under it keeps counting and a proof the human
+// has superseded keeps not counting.
+EpisodeObligationRevision uint64
 ```
 
-- **Grammar.** The `Claimed:` line's closed key set (file.go:530) gains the
-  optional keys `episodeAt` and `episodeRevision`, both-or-neither. Render
-  (file.go:767-772) appends ` episodeAt=%s episodeRevision=%d` when
-  `EpisodeRevision > 0`. Absent keys mean a legacy record: the episode is the
-  claim binding itself (anchor = `Claimed.At`, episode revision =
-  `Claimed.Revision`). Discrimination is key presence, never a heuristic.
-- **Validation.** `ParseFile` adds the problem
-  `"Claimed episode binding is incomplete (episodeAt and episodeRevision travel together)"`
-  when exactly one key is present. `ValidateClaimRevision` (file.go:378-394)
-  is extended: when `EpisodeRevision > 0` it additionally requires
+- **Grammar.** The `Claimed:` line's closed key set (file.go:530) gains
+  three optional keys: `episodeAt` and `episodeRevision`, both-or-neither;
+  and `episodeObligationRevision`, which may appear ONLY when
+  `episodeRevision` is present. Render (file.go:767-772) appends
+  ` episodeAt=%s episodeRevision=%d` when `EpisodeRevision > 0`, and then
+  ` episodeObligationRevision=%d` when additionally
+  `EpisodeObligationRevision > 0`. Absent episode keys mean a legacy record:
+  the episode is the claim binding itself (anchor = `Claimed.At`, episode
+  revision = `Claimed.Revision`, episode obligation revision = 0).
+  Discrimination is key presence, never a heuristic.
+- **Validation.** `ParseFile` adds two problems, exact wording:
+  - `"Claimed episode binding is incomplete (episodeAt and episodeRevision travel together)"`
+    when exactly one of the first two keys is present;
+  - `"Claimed episodeObligationRevision requires the episode binding (episodeAt and episodeRevision)"`
+    when `episodeObligationRevision` appears without `episodeRevision`.
+  A present `episodeObligationRevision` must parse as a positive integer,
+  refused otherwise exactly as `revision` is at file.go:536-541
+  (`"Claimed episodeObligationRevision=%q is not a positive integer"`).
+  `ValidateClaimRevision` (file.go:378-394) is extended: when
+  `EpisodeRevision > 0` it additionally requires
   `EpisodeRevision <= Claimed.Revision`, `EpisodeRevision <= uint64(len(History))`,
   `History[EpisodeRevision-1].At == EpisodeAt`, and parsed
-  `EpisodeAt <= Claimed.At`. Failure wordings, exact:
+  `EpisodeAt <= Claimed.At`; and, independently, `EpisodeObligationRevision > 0`
+  requires `EpisodeRevision > 0`. Failure wordings, exact:
   - `"claimed episodeRevision=%d is later than claim revision=%d"`
   - `"claimed episodeAt=%s contradicts History revision=%d at=%s"`
   - `"claimed episodeAt=%s is later than claimed at=%s"`
+  - `"claimed episodeObligationRevision=%d has no episode binding"`
   These surface through the existing `BUDGET_UNKNOWN %v` prefix (file.go:304),
-  so structured admission refuses rather than guesses.
-- **Mechanics.** `bindClaim` keeps its signature and always writes a FRESH
-  episode (`EpisodeAt = at`, `EpisodeRevision = revision`). One new function:
+  so structured admission refuses rather than guesses. The hand-edit mapper
+  needs nothing new for the third key: reconcilemap.go:232-237 refuses any
+  altered `Claimed` line by whole-struct comparison
+  (`*edited.Claimed != *base.Claimed`), so a hand-changed
+  `episodeObligationRevision` is refused as a generated field with zero new
+  code.
+- **Mechanics.** `bindClaim` (verbs.go:113-126) keeps its signature and
+  always writes a FRESH episode (`EpisodeAt = at`, `EpisodeRevision =
+  revision`, `EpisodeObligationRevision = 0`): a fresh claim inherits no
+  obligation (verbs.go:122-124), so it records none. `clearClaimBinding`
+  (verbs.go:128-137) sets `Claimed = nil`, so it leaves the key 0 by
+  construction. One new function:
 
   ```go
   // rebindClaimKeepEpisode re-binds the claim to a new revision while the
@@ -247,12 +278,18 @@ EpisodeRevision uint64
   prior `(At, Revision)` — the legacy-inheritance rule: the first raise after
   deployment pins the anchor at the pre-raise claim moment (raises that
   happened before deployment are unrecoverable; the engine never mines history
-  for an older one). Everything else (`StopCapability` minting,
-  `StopFence = nil`, `Obligation = nil`) matches `bindClaim`; clearing the
-  obligation on a raise is the existing governance rule at verbs.go:122-124
-  and stays. Call-site rule, mechanical: verbs.go:540 (set-budget) is the ONLY
-  site that switches to `rebindClaimKeepEpisode`; the other eight `bindClaim`
-  sites are unchanged (fresh episode).
+  for an older one). It writes `EpisodeObligationRevision` from
+  `f.Obligation.Revision` at the moment of the raise, read BEFORE the
+  obligation is cleared; when `f.Obligation == nil` at that moment it writes
+  0 (and the key is absent from the rendered line). Everything else
+  (`StopCapability` minting, `StopFence = nil`, `Obligation = nil`) matches
+  `bindClaim`; clearing the obligation on a raise is the existing governance
+  rule at verbs.go:122-124 and stays. Call-site rule, mechanical:
+  verbs.go:540 (set-budget) is the ONLY site that switches to
+  `rebindClaimKeepEpisode`; the other eight `bindClaim` sites are unchanged
+  (fresh episode, key 0). `SetObligation` (verbs.go:594-621) never touches
+  `Claimed`, so the key survives a later set-obligation unchanged and is
+  simply ignored while an obligation is live (rule below).
 - **Projection origin.** In `ProjectBudget` (budget.go:237-282): derive
   `episodeAt, episodeRevision` from `Claimed.EpisodeAt, Claimed.EpisodeRevision`
   when `EpisodeRevision > 0`, else from `Claimed.At, Claimed.Revision`
@@ -266,67 +303,110 @@ EpisodeRevision uint64
   reservation revision filters (`recordRevision != revision`, budget.go:350,
   392, 422) are untouched — see the residue non-goal.
 - **Discharge proofs bind to the episode on the claim axis; the obligation
-  axis holds today's governance (closes BCD-R1-003; revised in round 2,
-  closes BCD-R2-001).** Revision 1 left the proof filters at budget.go:133-135
-  and 146-157 revision-bound; the critic showed that a raise then drops the
-  consumed proof (the rebind clears `Obligation`, verbs.go:124, and the
-  filter demands `goalRevision == Claimed.Revision`), so
-  `obligationBudgetStart` falls back to the episode origin and the clock
-  REWINDS to before the discharge — a false breach in the unfavorable
-  direction. Revision 2 replaced BOTH filters with the episode axis, which
-  Sol showed (BCD-R2-001) changes what a human `set-obligation` means, a
-  governance seam the goal record does not authorize this goal to move. The
-  orchestrator's decision: the episode axis replaces ONLY the claim-revision
-  filter; whenever an obligation is live, a proof must still carry the live
-  obligation revision exactly as budget.go:133-134 and :148 demand today.
-  The rule becomes:
+  axis holds today's governance, and a raise carries forward which
+  obligation was live (closes BCD-R1-003; revised in round 2, closes
+  BCD-R2-001; revised in round 3, closes BCD-R3-001).** Revision 1 left the
+  proof filters at budget.go:133-135 and 146-157 revision-bound; the critic
+  showed that a raise then drops the consumed proof (the rebind clears
+  `Obligation`, verbs.go:124, and the filter demands
+  `goalRevision == Claimed.Revision`), so `obligationBudgetStart` falls back
+  to the episode origin and the clock REWINDS to before the discharge — a
+  false breach in the unfavorable direction. Revision 2 replaced BOTH filters
+  with the episode axis, which Sol showed (BCD-R2-001) changes what a human
+  `set-obligation` means, a governance seam the goal record does not
+  authorize this goal to move. Revision 3 held the live obligation filter
+  and, with no live obligation after a raise, applied NO obligation filter;
+  Sol showed (BCD-R3-001) that this lets a raise resurrect a proof the human
+  had already superseded by `set-obligation` (discharge under revision 5,
+  set-obligation installs 7 and the start returns to the origin, then a
+  raise clears 7 and the revision-5 proof counts again, moving the start
+  forward — a favorable-direction movement at a raise). The orchestrator's
+  decision: a raise records WHICH obligation was live the moment before
+  (`EpisodeObligationRevision`, above), and with no live obligation a proof
+  is eligible only under exactly that recorded revision. The rule becomes:
   - `obligationBudgetStart(repoRoot, file, episodeAt, episodeRevision)`.
   - Short-circuit (replaces budget.go:78-80): return `episodeAt` when
-    `file.Obligation == nil && episodeRevision == file.Claimed.Revision`. This
-    is sound because `Obligation` is cleared only by `bindClaim`,
-    `rebindClaimKeepEpisode`, and `clearClaimBinding` (verbs.go:124, 135); if
-    no rebind happened inside the episode and no obligation stands, none was
-    ever set in it, so no proof can belong to it. When a raise happened
-    (`episodeRevision < Claimed.Revision`) the ledger is read even with a nil
-    obligation.
+    `file.Obligation == nil && file.Claimed.EpisodeObligationRevision == 0`.
+    This is sound because, by the eligibility rule below, a proof can count
+    with no live obligation only under a non-zero recorded revision; when
+    none is recorded no proof can count, so the ledger need not be read,
+    exactly as budget.go:78-80 skips it today whenever `Obligation` is nil.
+    In every other case (a live obligation, or none live but one recorded by
+    a raise) the ledger is read.
   - Eligibility (replaces budget.go:133-135): a proof counts when
     `goalId == file.Id`, `episodeRevision <= goalRevision <= Claimed.Revision`,
-    `!consumedAt.Before(episodeAt)`, AND, whenever `file.Obligation != nil`,
-    `obligationRevision == file.Obligation.Revision` exactly as budget.go:134
-    demands today; and it is later than the latest so far (ties broken by the
-    higher weight generation, as today). When `file.Obligation == nil` after
-    a raise (the rebind clears it, verbs.go:122-124) no obligation-revision
-    filter applies and the episode-scoped proof counts.
+    `!consumedAt.Before(episodeAt)`, AND the obligation-axis test for the
+    file's current shape:
+    - `file.Obligation != nil`: `obligationRevision == file.Obligation.Revision`,
+      exactly as budget.go:134 demands today (the live filter); the recorded
+      `EpisodeObligationRevision` is ignored while an obligation is live;
+    - `file.Obligation == nil`: `Claimed.EpisodeObligationRevision > 0 &&
+      obligationRevision == Claimed.EpisodeObligationRevision` (the recorded
+      filter). Zero means no proof counts.
+    And it is later than the latest so far (ties broken by the higher weight
+    generation, as today).
   - Durable green match (replaces budget.go:146-157): the matched obligation
     state is the one whose `(GoalRevision, ObligationRevision)` equals the
     LATEST PROOF'S OWN pair, not the live file's. With a live obligation the
     proof's own `obligationRevision` equals `file.Obligation.Revision` by the
     eligibility rule, so the match keeps today's obligation-revision
     exactness (budget.go:148) and only the claim-revision half moves to the
-    episode axis; with no obligation (after a raise) the proof's own pair is
-    the only pair there is. The attempt match (run green, breaker closed, not
+    episode axis; with no live obligation the proof's own `obligationRevision`
+    equals the recorded `EpisodeObligationRevision`, the obligation the proof
+    was consumed under. The attempt match (run green, breaker closed, not
     exhausted, same weight generation) is unchanged. Every other refusal in
     the function (malformed ledger, unauthorized entry, duplicate proof,
     applied discharge without a ledger) is unchanged.
-  - Legacy claims (no episode keys) have `episodeRevision == Claimed.Revision`
-    and `episodeAt == Claimed.At`, so the rule is byte-for-byte today's for
-    them.
-  - Consequences, both mechanical from the rule above:
-    - A raise leaves the start exactly where it was the moment before. Before
-      the raise the proof under obligation revision 5 counted and the start
-      sat at the discharge; after the raise `Obligation` is nil, the ledger is
-      read (a rebind happened inside the episode), the proof's `goalRevision`
-      lies inside `[episodeRevision, Claimed.Revision]`, no obligation filter
-      applies, and the same proof counts. This is the closure of BCD-R1-003,
-      unchanged from revision 2.
-    - A human `set-obligation` (verbs.go:568-626, no rebind) keeps its shipped
-      meaning: the fresh obligation revision 7 supersedes every discharge
-      consumed under revision 5 (the proof fails the exact obligation-revision
-      filter), and the start returns to the episode origin. That is what
-      budget.go:133-134 does today with `claimedAt` in the origin's place, so
-      no governance seam moves; after a raise the return is to the episode
-      origin, never to the raise moment, so the return is never in the
-      favorable direction.
+  - Legacy claims (no episode keys) have `episodeRevision == Claimed.Revision`,
+    `episodeAt == Claimed.At`, and `EpisodeObligationRevision == 0`: with a
+    live obligation the live filter is today's filter; with none the
+    short-circuit returns `Claimed.At` as budget.go:78-80 does today. The
+    rule is byte-for-byte today's for them.
+  - Consequences, each a sequence with the start stated after every step.
+    Fixture throughout: claim at T0, a discharge proof consumed at T0+3h
+    under obligation revision 5.
+    - **discharge → raise.** After the discharge: T0+3h (live filter, 5).
+      After the raise: `Obligation` nil, `EpisodeObligationRevision = 5`, the
+      ledger is read, the proof's `goalRevision` lies inside
+      `[episodeRevision, Claimed.Revision]`, the recorded filter admits
+      revision 5: **T0+3h**. The start stays where it was the moment before
+      (the closure of BCD-R1-003, mechanics unchanged from revision 3).
+    - **discharge → set-obligation.** A human `set-obligation`
+      (verbs.go:568-626, no rebind) installs revision 7: the live filter
+      demands 7, the revision-5 proof is excluded: **T0**, today's shipped
+      meaning (budget.go:133-134 with `claimedAt` in the origin's place). No
+      governance seam moves.
+    - **discharge → set-obligation → raise** (the finding's case). After
+      set-obligation: T0 as above. After the raise: `Obligation` nil,
+      `EpisodeObligationRevision = 7` (the obligation live the moment
+      before), the recorded filter demands 7, the revision-5 proof stays
+      excluded: **T0**. The human's supersession survives the raise.
+    - **discharge → raise → set-obligation → raise.** After the first raise:
+      T0+3h (key = 5). After set-obligation installing revision 9 (`Claimed`
+      untouched, key still 5 but ignored): live filter demands 9: T0. After
+      the second raise: key = 9, recorded filter demands 9, the revision-5
+      proof stays excluded: **T0**.
+    Across these four sequences a raise never moves the start in either
+    direction: it reproduces the filter that governed the moment before it.
+    After a raise the origin a superseded proof returns to is the episode
+    origin, never the raise moment, so no return is in the favorable
+    direction.
+    - **OPEN (revision 4, for the orchestrator; NOT decided here):
+      discharge → raise → raise.** After the first raise: T0+3h (key = 5).
+      At the second raise no obligation is live; the rule above as the
+      round-3 decision words it ("0 when no obligation was live") writes
+      key = 0, the recorded filter admits nothing, and the start returns to
+      **T0**: the second raise moves the start backward by three hours,
+      which is the rewind shape BCD-R1-003 named, in the unfavorable
+      direction, and it contradicts "a raise never moves the start in
+      either direction" for this sequence. The one-line alternative is for
+      `rebindClaimKeepEpisode` to inherit the prior record's
+      `EpisodeObligationRevision` when `f.Obligation == nil` at the raise
+      (key stays 5, the start stays T0+3h through any number of raises).
+      The register's decision text and the revision-4 brief both say 0, so
+      this revision writes 0 and records the consequence rather than
+      choosing; the proof-plan test for this sequence carries both
+      expectations until the orchestrator rules.
   - Whether a later `set-obligation` should inherit a discharge consumed
     inside the same episode is an open question for Wido, recorded here and
     NOT built by this goal.
@@ -343,9 +423,11 @@ EpisodeRevision uint64
   verb builders (recover.go:236-264, reconcilepub.go), so the episode is
   reproduced by the same mutation code: a replayed claim writes a fresh
   episode, a replayed set-budget inherits through `rebindClaimKeepEpisode`
-  against the tree at its tip. The hand-edit surface already refuses any
-  altered `Claimed` line as a generated field (reconcilemap.go:232-237), which
-  makes the episode keys tamper-proof there with zero new code.
+  against the tree at its tip, reading the obligation live at that tip for
+  the third key. The hand-edit surface already refuses any altered `Claimed`
+  line as a generated field (reconcilemap.go:232-237, whole-struct
+  comparison), which makes all three episode keys tamper-proof there with
+  zero new code.
 
 ## Fix 2 — the stored token means what it says
 
@@ -799,31 +881,59 @@ Fix 1 — internal/dispatch/budget_test.go unless noted:
   raise at T0+3h, projection at T0+5h reports ELAPSED_BREACH anchored at T0.
 - `TestFiveRaisesCannotOutrunTheBreaker`: five sequential raises (the night's
   exact pattern); elapsed still measures from T0.
-- `TestRaiseAfterDischargeKeepsThePostDischargeStart` (closes BCD-R1-003):
-  claim at T0 with a 4h limit and an obligation; a consumed discharge proof
-  at T0+3h for the claim's (goalRevision, obligationRevision) with its exact
-  durable green attempt; projection at T0+3h30 reports `StartedAt == T0+3h`;
-  raise at T0+3h40 (new claim revision, obligation cleared); projection at
-  T0+4h still reports `StartedAt == T0+3h`, `Elapsed == 1h`, no breach.
-- `TestSetObligationReturnsTheStartToTheEpisodeOrigin` (renamed from
-  revision 2's `TestSetObligationDoesNotRewindADischargedClock`, which pinned
-  the behavior BCD-R2-001 withdrew): same discharge at T0+3h under obligation
-  revision 5, then a human set-obligation installing revision 7 with no
-  raise; the projection reports `StartedAt == T0`, today's shipped meaning
-  (the fresh obligation supersedes the discharge). Twin sequence in the same
-  test: discharge, raise (the start stays at T0+3h, as the test above pins),
-  then set-obligation; `StartedAt == T0`, the episode origin, never the raise
-  moment. Pins both halves of the round-2 decision.
+- `TestRaiseAfterDischargeKeepsThePostDischargeStart` (closes BCD-R1-003;
+  the discharge → raise sequence): claim at T0 with a 4h limit and an
+  obligation (revision 5); a consumed discharge proof at T0+3h for the
+  claim's (goalRevision, obligationRevision) with its exact durable green
+  attempt; projection at T0+3h30 reports `StartedAt == T0+3h`; raise at
+  T0+3h40 (new claim revision, obligation cleared, the claim line carries
+  `episodeObligationRevision=5`); projection at T0+4h still reports
+  `StartedAt == T0+3h`, `Elapsed == 1h`, no breach.
+- One Go test per remaining consequence sequence, each at the projection
+  seam (`obligationBudgetStart` through `ProjectBudget`), all in
+  internal/dispatch/budget_test.go, each starting from the fixture above
+  (discharge at T0+3h under obligation revision 5):
+  - `TestSetObligationReturnsTheStartToTheEpisodeOrigin` (renamed in
+    revision 3 from revision 2's `TestSetObligationDoesNotRewindADischargedClock`;
+    in revision 4 SPLIT so each ordering is its own test by name): the
+    discharge → set-obligation sequence only. A human set-obligation
+    installs revision 7 with no raise; `StartedAt == T0`, today's shipped
+    meaning.
+  - `TestRaiseAfterSetObligationKeepsTheSupersession` (closes BCD-R3-001;
+    the discharge → set-obligation → raise sequence): set-obligation installs
+    revision 7 (`StartedAt == T0`), then a raise; the claim line carries
+    `episodeObligationRevision=7`; `StartedAt == T0`, never T0+3h.
+  - `TestRaiseThenSetObligationThenRaiseStaysAtTheEpisodeOrigin` (the
+    discharge → raise → set-obligation → raise sequence): after the first
+    raise `StartedAt == T0+3h`; after set-obligation installing revision 9
+    `StartedAt == T0`; after the second raise the claim line carries
+    `episodeObligationRevision=9` and `StartedAt == T0`, the episode origin,
+    never the raise moment.
+  - `TestSecondRaiseWithNoLiveObligation` (the discharge → raise → raise
+    sequence; expectation OPEN, see the consequence marked OPEN above):
+    after the first raise `StartedAt == T0+3h`; after the second raise the
+    test asserts whichever the orchestrator rules — key absent and
+    `StartedAt == T0` under the round-3 decision as worded, or
+    `episodeObligationRevision=5` and `StartedAt == T0+3h` under the
+    inheritance alternative. The implementer builds neither until the
+    ruling lands in this file.
 - `TestReleaseReclaimStartsNewEpisode` and `TestStealStartsNewEpisode`
   (internal/goal/verbs_test.go): a genuine ownership restart writes fresh
   episode keys.
 - `TestResumeStartsNewEpisode` (internal/goal/stop_test.go): the human re-time.
 - `TestSetBudgetPinsLegacyAnchor` (verbs_test.go): a raise over a legacy claim
-  (no episode keys) writes episode keys equal to the pre-raise claim binding.
+  (no episode keys) writes episode keys equal to the pre-raise claim binding;
+  with an obligation live at the raise the claim line also carries that
+  obligation's revision as `episodeObligationRevision`; with none it carries
+  no third key.
 - `TestClaimedEpisodeRoundTrip` (internal/goal/grammar_test.go): render→parse
-  identity for the new keys.
-- `TestEpisodeBindingContradictionsRefuse` (file_test.go): each of the three
-  new validation wordings, plus the lone-key incompleteness problem, surfaces
+  identity for the new keys, with and without the third key.
+- `TestEpisodeObligationRevisionParse` (file_test.go): a `Claimed:` line
+  carrying `episodeObligationRevision` alone (no `episodeAt`/`episodeRevision`)
+  is refused with the exact new parse wording; the same key beside the pair
+  is accepted and read back as the same integer.
+- `TestEpisodeBindingContradictionsRefuse` (file_test.go): each of the four
+  new validation wordings, plus the two lone-key parse problems, surfaces
   as BUDGET_UNKNOWN.
 - `TestClockRegressedNamesEpisodeOrigin` (budget_test.go): observation before
   episodeAt yields the new CLOCK_REGRESSED wording.
@@ -972,7 +1082,8 @@ validation suite from inside a sandbox.
   leaves a tree in which every record is readable at its own meaning. No
   window exists where a budget has no defined semantics.
 - **Mixed-era records.** Legacy claim + new raise: the raise pins the episode
-  (legacy-inheritance rule). Legacy `d` budget under the new binary: eight
+  (legacy-inheritance rule) and records the obligation live at that moment,
+  if any, as the third key. Legacy `d` budget under the new binary: eight
   hours per `d`, forever. New `h`/`m` budget under an old binary: identical
   hours; the old binary's normalizing writers may re-render it as a `d` token
   with identical enforcement (named in Fix 2's rollout table). Legacy stop
@@ -1019,7 +1130,7 @@ non-goals.
 | --- | --- | --- | --- |
 | BCD-R1-001 (high): parked resume unreachable through the command | Closed by change: `ResolveStopAuthority`; the command resolves and locks on the capability revision; test at the command seam | Fix 3, "Resume, command"; proof plan | goalsync_mutations.go:394-413; dispatch/stop.go:41-64 |
 | BCD-R1-002 (critical): release strands cancellation | Closed by change: the invariant "a fence is never off the route"; custodian resolves both shapes; routes include parked-with-breach; human done gated on COMPLETE; two named tests | Fix 3, cancellation-duty invariant | dispatch/stop.go:102-192, 288-314; tick.go:69-99; dispatch.sh:2267-2305 |
-| BCD-R1-003 (high): raise after discharge rewinds | Closed by change: proofs bind to the episode on the claim axis; durable match on the proof's own pair; two tests. Revised in round 2 (BCD-R2-001): the obligation axis holds today's governance | Fix 1, "Discharge proofs bind to the episode on the claim axis" | budget.go:77-164, 133-135, 146-157; verbs.go:122-124 |
+| BCD-R1-003 (high): raise after discharge rewinds | Closed by change: proofs bind to the episode on the claim axis; durable match on the proof's own pair; two tests. Revised in round 2 (BCD-R2-001): the obligation axis holds today's governance. Revised in round 3 (BCD-R3-001): a raise records the obligation live the moment before as a third episode key | Fix 1, "Discharge proofs bind to the episode on the claim axis" | budget.go:77-164, 133-135, 146-157; verbs.go:122-124 |
 | BCD-R1-004 (high): two claims, nondeterministic projections | Closed by change: quota unchanged; new only-claim tree invariant; release is the one step to workability; orientation names it; every consumer enumerated | Fix 3, "One claim per machine" | validate.go:250-283; goal.go:469-472; goalverbs.go:820-823; turnverdict.go:483-490; openwork.go:49; admission.go:57-105; verbs.go:1501 |
 | BCD-R1-005 (high): marker not wired into the producer | Closed by change: the marker field is removed; the producer copies the stored token and the validator uses the same parser; test moved to the producer seam | Fix 2, "Stop firing evidence"; proof plan | dispatch/stop.go:134-139; goal/stop.go:145-157 |
 | BCD-R1-006 (high): fail-closed claim false for run snapshots and journal | Closed by change: no ambiguous byte enters a new record; reader-by-reader table; the one old-binary display regression named for Wido | Fix 2, "Rollout and rollback" | run.go:123, 383-389; conclude.go:315-318; goal/budget.go:81-99 |
@@ -1036,28 +1147,47 @@ recorded at the bottom of that register.
 
 | Finding | Disposition | Where | Tree seams verified |
 | --- | --- | --- | --- |
-| BCD-R2-001 (high): the episode-scoped discharge rule exceeds the goal's authority on the set-obligation seam | Closed by change, holding today's governance: the episode axis replaces only the claim-revision filter; the obligation-revision filter and the durable match's obligation exactness stay as shipped; a raise keeps the post-discharge start, so BCD-R1-003 stays closed; a human set-obligation keeps its shipped meaning; whether a later set-obligation should inherit a discharge is recorded as open for Wido and NOT built; the revision-2 consequence bullet and its self-grade risk entry are struck; the test is renamed to pin today's behavior | Fix 1, "Discharge proofs bind to the episode on the claim axis"; proof plan, `TestSetObligationReturnsTheStartToTheEpisodeOrigin` | budget.go:77-80, 133-135, 146-149; verbs.go:122-124, 568-626 |
+| BCD-R2-001 (high): the episode-scoped discharge rule exceeds the goal's authority on the set-obligation seam | Closed by change, holding today's governance: the episode axis replaces only the claim-revision filter; the obligation-revision filter and the durable match's obligation exactness stay as shipped; a raise keeps the post-discharge start, so BCD-R1-003 stays closed; a human set-obligation keeps its shipped meaning; whether a later set-obligation should inherit a discharge is recorded as open for Wido and NOT built; the revision-2 consequence bullet and its self-grade risk entry are struck; the test is renamed to pin today's behavior. Round 3 found the nil-obligation half incomplete (BCD-R3-001, below) | Fix 1, "Discharge proofs bind to the episode on the claim axis"; proof plan, `TestSetObligationReturnsTheStartToTheEpisodeOrigin` | budget.go:77-80, 133-135, 146-149; verbs.go:122-124, 568-626 |
 | BCD-R2-002 (high): shipped fixtures assert the normalization being removed, and their classification was left to the implementer | Closed by change: a complete day-token inventory, one row per site, each (a), (b), or (c); both norm rows kept in hours and one new (c) row added so norm coverage is not weakened; the formatter test in project_test.go keeps its parse rows and retires its formatter half; the two search patterns, their scope, and their named exclusions recorded, with the two places the table does not reach | Proof plan, Fix 2, "Day-token inventory" | goal-cli-fixtures.sh:387, 416, 448, 457; dispatch-fixtures.sh:1092; project_test.go:151-160; goal/budget_test.go:14, 97; goalbudget/budget_test.go:17-18, 36, 42, 58, 104; evidence/gc_test.go:243; metrics/fixture_test.go:182; dispatch/servinggoal_test.go:92; dispatch/stop_test.go:74; docs/backlog-mechanism.md:18 |
 | BCD-R2-003 (medium): the old-binary display regression has more writers than the two revision 2 named | Closed by change: a table of every old-binary path through the shared builder and the constructor (the builder, open-claim, resume, claim with a supplied budget, set-budget, journal recovery), each with what it writes after rollback, what it enforces, how the new binary reads it back, and its cure; the residue stated as display-only, per write, on any goal, until the fleet stops running the old binary; no rollback wall built, named as a separate mechanism out of this goal's scope | Fix 2, "Rollout and rollback", "Every old-binary writer" | goalsync_mutations.go:166-180, 217-224, 367-413, 653-667, 669-675; goal/budget.go:81-99 |
 
+## Critique round 3: disposition of every finding
+
+Register: records/misc/breach-design-critique-r3.md (Sol, job
+breach-design-crit3, reviewed commit 2a072390). Everything else held: the
+day-token inventory complete, the rollout writer table complete, the norm
+rows' intent surviving in hours, Fix 3, Fix 1's record changes, and Fix 2's
+decision and migration unchanged. The one material finding is folded per the
+orchestrator's decision at the foot of that register.
+
+| Finding | Disposition | Where | Tree seams verified |
+| --- | --- | --- | --- |
+| BCD-R3-001 (high): the held nil-obligation rule lets a raise resurrect a proof the human superseded by set-obligation, moving the start forward at a raise | Closed by change: a third episode key, `episodeObligationRevision`, written by `rebindClaimKeepEpisode` from the obligation live the moment before the raise (0 and absent when none); `bindClaim` writes 0, `clearClaimBinding` nils the record; grammar (may appear only beside `episodeRevision`, exact refusal wording), `ValidateClaimRevision` extension (non-zero implies an episode binding), and the mapper's existing whole-struct refusal stated; with no live obligation a proof is eligible only under exactly the recorded non-zero revision, zero admits nothing; short-circuit revised to `Obligation == nil && key == 0`; four sequences stated with the start after every step (discharge→raise T0+3h; discharge→set-obligation T0; discharge→set-obligation→raise T0; discharge→raise→set-obligation→raise T0); one named test per sequence plus a parse test for the third key alone and beside the pair; the revision-3 test split so the finding's ordering is its own test by name. One consequence the decision's wording leaves in the unfavorable direction (discharge→raise→raise) is marked OPEN for the orchestrator, not decided here | Fix 1, "Record and schema changes", "Discharge proofs bind to the episode on the claim axis"; proof plan | verbs.go:113-137, 540, 594-621; file.go:76-84, 378-394, 526-543, 767-772; budget.go:77-80, 133-135, 146-157; reconcilemap.go:232-237 |
+
 ## Self-grade
 
-- **Confidence:** high that the three round-2 findings are closed against
-  this tree and that no closure weakens a refusal or narrows a guarantee:
-  BCD-R2-001 is closed by holding a shipped filter rather than moving it,
-  and BCD-R2-002 and BCD-R2-003 are closed by enumeration against the tree,
-  every row naming its seam. Medium-high that the seven round-1 closures
-  Sol held still hold; revision 3 changed none of their mechanics, and the
-  two revision-1 promises revision 2 replaced with stronger mechanisms
-  (release without a quota exclusion; a refused `d` instead of a marked one)
-  stand as named.
-- **Weakest claim:** the completeness of the day-token inventory rests on
-  two recorded search patterns over a named scope; a `d` token in a shape
-  neither pattern matches would surface as a gate failure, not a silent
-  miss, and the two places the table deliberately does not reach are named
-  under it. Second-weakest is the reading of the second specimen: the goal
-  record says `1d` enforces 24 hours; the parser at budget.go:38 says 8. I
-  carried the code's reading and flagged the record's.
+- **Confidence:** high that BCD-R3-001 is closed for the finding's own
+  sequence and the three the brief names beside it, against this tree, and
+  that the closure weakens no refusal and narrows no guarantee: the live
+  obligation filter is untouched, the nil-obligation case becomes STRICTER
+  (a recorded revision or nothing) rather than looser, and legacy claims
+  read byte-for-byte as today. High that the round-2 and round-1 closures
+  Sol held still hold; revision 4 changes only the nil-obligation branch of
+  the eligibility rule and the short-circuit, and adds one key whose every
+  reader and writer is named.
+- **Weakest claim:** the discharge → raise → raise sequence. The round-3
+  decision's wording writes 0 at a raise with no live obligation, which
+  moves the start backward at the second raise; the design records that
+  consequence as OPEN rather than choosing the inheritance alternative,
+  because that choice is the orchestrator's. Until it is ruled, "a raise
+  never moves the start in either direction" holds for the four named
+  sequences and not for this fifth one. Second-weakest is the completeness
+  of the day-token inventory, which rests on two recorded search patterns
+  over a named scope; a `d` token in a shape neither pattern matches would
+  surface as a gate failure, not a silent miss. Third, the reading of the
+  second specimen: the goal record says `1d` enforces 24 hours; the parser
+  at budget.go:38 says 8. I carried the code's reading and flagged the
+  record's.
 - **Reject condition:** reject this revision if the critic finds any
   publication path that can put a `StopFence` into the live tree in a state
   `FindBreachStops` does not route (that would falsify "a fence is never off
@@ -1068,4 +1198,5 @@ recorded at the bottom of that register.
   observe two claims on one machine after `ValidateCommit` has accepted the
   tree, or any ordering of discharge, raise, and set-obligation under which
   the eligibility rule moves the start somewhere other than where Fix 1's
-  two consequences say.
+  four stated consequences say, or any raise that moves the start forward
+  (the favorable direction) in any ordering at all.

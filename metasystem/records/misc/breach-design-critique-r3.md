@@ -39,3 +39,15 @@ episode origin, which is today's no-obligation reading. A later
 set-obligation installs a live revision and the live filter takes over; the
 next raise records that revision. Under this rule a raise never moves the
 start in either direction, and set-obligation keeps its shipped meaning.
+
+## Orchestrator addendum (m0b, 2026-09-02 19:20Z), after revision 4
+
+Revision 4 (job breach-design-r4) folded the decision above as worded and
+reported one gap: discharge → raise → raise. With "0 when no obligation was
+live" the second raise writes key 0 and rewinds the start to the episode
+origin, the very shape BCD-R1-003 named. Decision: INHERIT. When no
+obligation is live at the raise, `rebindClaimKeepEpisode` carries the prior
+claim binding's `episodeObligationRevision` forward unchanged (0 stays 0 only
+when it was 0). Then every raise reproduces the filter that governed the
+moment before it, and the invariant "a raise never moves the start in either
+direction" holds for all five sequences. Folded by revision 5.
