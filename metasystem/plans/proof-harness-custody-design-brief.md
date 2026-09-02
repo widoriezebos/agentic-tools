@@ -41,7 +41,7 @@ reason; otherwise leave S4 to the umbrella.
    engine verb (proc load-generate --seconds N --workers K) whose group
    the existing kill-through machinery owns, so no shell job table is
    ever the custodian. Decide between them against the existing owners
-   (metasystem/internal/proc, the custody and kill-through verbs in
+   (the proc verbs in metasystem/cmd/metasystem/identity_probes.go and metasystem/internal/census, the custody and kill-through verbs in
    metasystem/cmd/metasystem, the delegate machinery's process-group
    custody that cured the same disease for its own children). Specify
    the verb or the shell contract exactly, and every exit path it covers
