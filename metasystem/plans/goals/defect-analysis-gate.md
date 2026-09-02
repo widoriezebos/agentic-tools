@@ -5,10 +5,12 @@
 - Origin: main
 - Next step: INTENT: machinery makes a diagnosis survive challenge before a fix item exists. CONSTRAINTS: fail-closed at goal intake or dispatch admission (or both) refusing a defect-fix item carrying no challenged analysis; the reproduction primitive is two-bars' Defect-Proof, joined not duplicated; the challenge join is a candidate for the existing validate critique-closed mechanism; a refusal names what is missing. FREEDOMS (design under critique): where the analysis record lives and its schema, how the challenge is recorded and joined, whether the boundary is intake/admission/both, how the low-risk causal test is proven. ROSTER (R-25): Fable designs, Sol critiques the design, Sol builds, Fable critiques the build; the feature takes the FULL ladder (design, adversarial critique to closure, build, code critique, closure, landing). SLICING: expect an arc - the analysis-record schema + reproduction-join as slice 1, the risk-scaled challenge gate as slice 2, the intake/admission enforcement as slice 3. Budget is Wido's word at claim.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1b
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=2
 
 History:
 - 2026-09-02T11:36:02Z X2TBEZEYHEK83X4YNEE0GCHB7S-m0-c5dbf036 open actor=human:Wido targets=defect-analysis-gate
 - 2026-09-02T12:12:53Z ASCJK0K9R11JTSBZBT28RRXTWE-m0-c5dbf036 set-budget actor=human:Wido targets=defect-analysis-gate
-Integrity: sha256=701e4650dd59a08a949e4085878b9dc70d34e26cf7a1cc0e2c3592541033bd67
+- 2026-09-02T16:21:49Z Y4HWG7F2XT63GNKN5XRFZ49N82-m0-c5dbf036 set-pin actor=human:Wido targets=defect-analysis-gate
+Integrity: sha256=d6cbd9feb8629f1e5afb91996424f8194e672254175bc2f38ce0667055bd500d
