@@ -36,19 +36,19 @@ write only that one new analysis file.
 2. THE SPECIMEN MAP. For each of the eight specimens in the goal's Intent:
    the state, the command tried, the exact refusal or hang, its file and
    line, and the hand surgery that finally worked. Use the records:
-   artifacts/agents/supervision/arming.log, artifacts/agents/steward,
-   the health alerts, plans/handoff-m1-2026-09-02.md, the m3 and m2
+   metasystem/artifacts/agents/supervision/arming.log, metasystem/artifacts/agents/steward,
+   the health alerts, metasystem/plans/handoff-m1-2026-09-02.md, the m3 and m2
    handoffs, and the goal records of the eight partial goals.
 3. THE REFUSAL INVENTORY. Every refusal or remedy text on the up, steward
    arm, census, delegate, and goal-fetch paths (grep the Go sources under
-   metasystem/internal/up, internal/steward, internal/lease,
-   internal/dispatch, internal/goal, and cmd/metasystem), with a verdict
+   metasystem/internal/up, metasystem/internal/steward, metasystem/internal/lease,
+   metasystem/internal/dispatch, metasystem/internal/goal, and metasystem/cmd/metasystem), with a verdict
    per text: names a command that exists and the seat can run; names a
    terminal-only command; names a command that does not exist; names
    nothing.
 4. THE LEAK SOURCES. Which fixtures and harnesses spawn real stewards,
-   owners, watchers and adapter loops (scripts/agents/*-fixtures.sh,
-   scripts/validate-metasystem.sh, the Go test beds under internal), how
+   owners, watchers and adapter loops (the fixture scripts under metasystem/scripts/agents whose names end in -fixtures.sh,
+   metasystem/scripts/validate-metasystem.sh, the Go test beds under metasystem/internal), how
    each is supposed to clean up, and why 488 orphans and 8,789 beds
    survived; what the census sees of them (metasystem/internal/census) and
    why nothing reaps non-custody machinery.
