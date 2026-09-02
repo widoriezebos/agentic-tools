@@ -5,11 +5,11 @@
 - Origin: main
 - Next step: AGENT-AGNOSTIC REQUIRED (Wido 2026-09-02: 'this should also work on codex and Devin'). The F-HOOK-COVERAGE gap is NOT deferred: the guarantee must bind every runtime, not only the claude Stop hook. DESIGN DIRECTION: the STEWARD TICK is the universal enforcer - it runs as machinery for every seat regardless of runtime and already owns the openwork/verdict decision; it (not only the per-runtime turn hook) must enforce idle-with-backlog fail-closed, with the claude turn-block as an additional fast path. The in-flight build idle-fix-bar-a does the runtime-INDEPENDENT verdict-logic folds (fail-closed, single-use holder-bound marker, liveness in-flight, legacy world) - all still correct; the added requirement is that the steward is an ENFORCING owner (escalate + the watch-verb acting-side re-engagement), not a detecting one, so a codex/devin seat with backlog cannot sit idle either. Fold this into the next round: name where every runtime's turn boundary meets the invariant, and make the steward the floor that does not depend on any hook loading.
 - OpenedAt: 2026-09-02T05:47:20Z
-- Revision: 10
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
+- Revision: 11
+- Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=3 at=2026-09-02T05:49:11Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T10:29:00Z revision=8
-- StopCapability: generation=8 revision=8 machine=m0 claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T14:27:34Z revision=11
+- StopCapability: generation=11 revision=11 machine=m0 claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-02T05:47:20Z AQM3YVNMMY0P3G0XSSDCBZDT2T-m0-c5dbf036 open actor=human:Wido targets=idle-with-backlog-alarm
@@ -22,4 +22,5 @@ History:
 - 2026-09-02T10:29:00Z S2RC4QA6A52AKSCE2SRX3ZN88S-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
 - 2026-09-02T10:58:04Z CM66N9MPVC694NCC9R7P1BZRDV-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
 - 2026-09-02T11:33:24Z 773WB1B2ACTGY6J7DF15C2EDFP-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
-Integrity: sha256=921fca8453ef6014be1e47c7a33439f3bd6a2f80c29e0391d26837edd87dded7
+- 2026-09-02T14:27:34Z HPKFBT5J48N2R1EPWXZ5ZJ5573-m0-c5dbf036 set-budget actor=human:Wido targets=idle-with-backlog-alarm
+Integrity: sha256=f829371d56145966a7473d5317d0c2e7ceaf5b89b965b6f0e0621f90cec2a295
