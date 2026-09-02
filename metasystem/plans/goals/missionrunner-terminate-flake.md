@@ -5,8 +5,8 @@
 - Origin: main
 - Next step: PARKED COLD-RESUMABLE at the box edge, design NEARLY CLOSED (9 findings converged to 3, register records/misc/missionrunner-patience-critique-r2.md): RESUME RECIPE: fresh box per R-44, one fold of the three custody findings (walk-completeness must treat unreadable argv as incomplete; group custody needs every substantive member not one row; pid continuity needs the birth-token class or walk-ordering proof — note goal job-record-birth-token owns the sibling contract), closing critique, then the build per the design's port section, proof under load per the steward-tick precedent. Attempts spent include one cancelled pre-landing critique (cause-blind, lawful)
 - OpenedAt: 2026-08-31T12:34:34Z
-- Revision: 9
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 10
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=6 at=2026-09-02T00:14:53Z
 
 History:
@@ -19,4 +19,5 @@ History:
 - 2026-09-02T00:14:53Z 9GSA0G82XM4925X22AK5N0FVJN-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=missionrunner-terminate-flake
 - 2026-09-02T01:02:54Z SH4B091ZCFH3AG0GZ3FBYRQ9R7-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=missionrunner-terminate-flake
 - 2026-09-02T01:02:57Z FF9KAYQGVSQT92R7MAP2MFCKRV-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=missionrunner-terminate-flake
-Integrity: sha256=d94b87b1a9e200896f2e4d76fad305d1fec798aafd2f8a4b4884d4b43de599f6
+- 2026-09-02T06:53:14Z YAHFVQVSTHNQS4WSGYJN39T91F-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=missionrunner-terminate-flake
+Integrity: sha256=394c8bf64c944a274d5cc5823377e2ed1232b8e40c22420d02ebb46df5037628
