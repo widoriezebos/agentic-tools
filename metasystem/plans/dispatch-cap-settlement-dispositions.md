@@ -18,3 +18,12 @@ critique brief. Round budget three; failsafe round 3.
 
 Round 1 closes on five accepted findings (one with its refuted
 half recorded); revision 2 goes back to the same critic chain as round 2.
+
+## Fold to revision 2 (job cap-settle-design-r2, Fable lane)
+
+All five findings folded (design sections 1.2-1.5, 3, 4, 5; changelog in
+the header). One interpretation gap reported; the orchestrator's answer:
+
+| Gap | Answer |
+| --- | --- |
+| Rendering of the reserved-minutes refusal: revision 2 keeps every per-limit breach object's text as today (including the `<used>+<proposed> proposed` form) and appends ONE reserved segment `; reserved observed=<n> open-caps=<m> limit=<L>` to every refusal line; revision 1 had decorated the reserved-minutes breach's own text instead. Both, or one? | ONE: revision 2's reading is the intended one. The two numbers appear once per refusal, on every refusal, and the shell beds' substring assertions keep matching. No change. |
