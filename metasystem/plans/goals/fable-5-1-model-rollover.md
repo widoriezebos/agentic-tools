@@ -5,8 +5,9 @@
 - Origin: main
 - Next step: Small item (4h). Design brief -> Fable 5.1 design (one paragraph is enough: the exact conf line, the fixture/test list from grep claude-fable-5 outside artifacts/records/plans) -> Sol critique -> Sol build -> Fable code critique -> land with --chain. Fleet note for m0/m1/m2/m3 operators: in metasystem.conf.local set role.default.model.claude, role.code-critic.model.claude and mode.design.role.implementer.model.claude to claude-fable-5-1 and add cap.min.<role>.claude.claude-fable-5-1 rows mirroring the existing claude-fable-5 rows
 - OpenedAt: 2026-09-02T07:05:41Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=3 at=2026-09-02T07:17:14Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-02T07:05:59Z revision=3
 - StopCapability: generation=3 revision=3 machine=m0b claimEpoch=1 fenceEpoch=0
 
@@ -14,4 +15,5 @@ History:
 - 2026-09-02T07:05:41Z AD00YSGP1Q1K2VNPR1X36FKXSX-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=fable-5-1-model-rollover
 - 2026-09-02T07:05:55Z Z9W8RR79RF8JSV9D2WGCGDBSV5-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=fable-5-1-model-rollover
 - 2026-09-02T07:05:59Z R4TFFXGG6QA1TZ6YER2CQCTR31-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=fable-5-1-model-rollover
-Integrity: sha256=b4cb4578ea19be25fb6ae4b62dcbed64a15d8a9babcb6e669f952fe1ae5f8e8d
+- 2026-09-02T07:17:14Z NMWW34A1XXD1DA5JDHEH6Z9Z95-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=fable-5-1-model-rollover
+Integrity: sha256=120b2a44fb2390943aaf0bd2417178a88ef8c64edb11b09ba2867474ade3a0dd
