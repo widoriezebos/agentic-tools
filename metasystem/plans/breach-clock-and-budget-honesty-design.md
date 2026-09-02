@@ -1,10 +1,15 @@
 # Design: the breach machinery stops lying
 
 Goal: breach-clock-and-budget-honesty (plans/goals/breach-clock-and-budget-honesty.md,
-revision 14). Design revision 4, 2026-09-02, Fable-lane designer, folding
-Sol's round-3 critique (records/misc/breach-design-critique-r3.md): ONE
-material finding, BCD-R3-001 (high), folded per the orchestrator's decision
-recorded at the foot of that register; everything else in revision 3 held.
+revision 14). Design revision 5, 2026-09-02, Fable-lane designer, folding
+the orchestrator's addendum at the foot of
+records/misc/breach-design-critique-r3.md: the one point revision 4 left OPEN
+(the discharge → raise → raise sequence) is decided INHERIT — a raise with no
+live obligation carries the prior claim binding's `episodeObligationRevision`
+forward unchanged, writing the live obligation's revision only when one is
+live. Nothing else changes. Revision 4 (2026-09-02) folded Sol's round-3
+critique (that register): ONE material finding, BCD-R3-001 (high), folded per
+the orchestrator's decision recorded there; everything else in revision 3 held.
 Revision 3 (2026-09-02) folded the three round-2 findings of
 records/misc/breach-design-critique-r2.md (BCD-R2-001, 002, 003). Revision 2
 (2026-09-02) closed the eight round-1 findings of
@@ -218,8 +223,10 @@ revision 4, closes BCD-R3-001):
 EpisodeAt       string
 EpisodeRevision uint64
 // EpisodeObligationRevision is the revision of the obligation that was
-// live the moment before the latest raise (0 when none was). A raise clears
-// the live obligation; this key carries forward WHICH one it cleared, so a
+// live the moment before the latest raise; a raise with no live obligation
+// carries the prior binding's value forward unchanged (0 only when no raise
+// in this episode ever saw a live obligation). A raise clears the live
+// obligation; this key carries forward WHICH one it cleared, so a
 // discharge proof consumed under it keeps counting and a proof the human
 // has superseded keeps not counting.
 EpisodeObligationRevision uint64
@@ -280,8 +287,13 @@ EpisodeObligationRevision uint64
   happened before deployment are unrecoverable; the engine never mines history
   for an older one). It writes `EpisodeObligationRevision` from
   `f.Obligation.Revision` at the moment of the raise, read BEFORE the
-  obligation is cleared; when `f.Obligation == nil` at that moment it writes
-  0 (and the key is absent from the rendered line). Everything else
+  obligation is cleared, when an obligation is live at that moment; when
+  `f.Obligation == nil` at that moment it carries the prior claim binding's
+  `EpisodeObligationRevision` forward unchanged (INHERIT: the orchestrator's
+  addendum at the foot of records/misc/breach-design-critique-r3.md, folded
+  in revision 5). It never writes 0 over a non-zero prior value; a legacy
+  prior record has no key, so 0 is inherited and the key stays absent from
+  the rendered line. Everything else
   (`StopCapability` minting, `StopFence = nil`, `Obligation = nil`) matches
   `bindClaim`; clearing the obligation on a raise is the existing governance
   rule at verbs.go:122-124 and stays. Call-site rule, mechanical:
@@ -323,7 +335,10 @@ EpisodeObligationRevision uint64
   forward — a favorable-direction movement at a raise). The orchestrator's
   decision: a raise records WHICH obligation was live the moment before
   (`EpisodeObligationRevision`, above), and with no live obligation a proof
-  is eligible only under exactly that recorded revision. The rule becomes:
+  is eligible only under exactly that recorded revision. The addendum
+  (folded in revision 5) completes it: a raise that finds no obligation live
+  keeps the revision the prior binding recorded, so every raise reproduces
+  the filter that governed the moment before it. The rule becomes:
   - `obligationBudgetStart(repoRoot, file, episodeAt, episodeRevision)`.
   - Short-circuit (replaces budget.go:78-80): return `episodeAt` when
     `file.Obligation == nil && file.Claimed.EpisodeObligationRevision == 0`.
@@ -386,27 +401,22 @@ EpisodeObligationRevision uint64
       untouched, key still 5 but ignored): live filter demands 9: T0. After
       the second raise: key = 9, recorded filter demands 9, the revision-5
       proof stays excluded: **T0**.
-    Across these four sequences a raise never moves the start in either
-    direction: it reproduces the filter that governed the moment before it.
-    After a raise the origin a superseded proof returns to is the episode
-    origin, never the raise moment, so no return is in the favorable
-    direction.
-    - **OPEN (revision 4, for the orchestrator; NOT decided here):
-      discharge → raise → raise.** After the first raise: T0+3h (key = 5).
-      At the second raise no obligation is live; the rule above as the
-      round-3 decision words it ("0 when no obligation was live") writes
-      key = 0, the recorded filter admits nothing, and the start returns to
-      **T0**: the second raise moves the start backward by three hours,
-      which is the rewind shape BCD-R1-003 named, in the unfavorable
-      direction, and it contradicts "a raise never moves the start in
-      either direction" for this sequence. The one-line alternative is for
-      `rebindClaimKeepEpisode` to inherit the prior record's
-      `EpisodeObligationRevision` when `f.Obligation == nil` at the raise
-      (key stays 5, the start stays T0+3h through any number of raises).
-      The register's decision text and the revision-4 brief both say 0, so
-      this revision writes 0 and records the consequence rather than
-      choosing; the proof-plan test for this sequence carries both
-      expectations until the orchestrator rules.
+    - **discharge → raise → raise** (decided INHERIT by the orchestrator's
+      addendum, folded in revision 5). After the first raise: T0+3h
+      (key = 5). At the second raise no obligation is live, so
+      `rebindClaimKeepEpisode` carries the prior binding's key forward
+      unchanged: key still 5, the ledger is read, the proof's `goalRevision`
+      still lies inside `[episodeRevision, Claimed.Revision]`, the recorded
+      filter admits revision 5: **T0+3h**. The start stays where it was the
+      moment before, and stays there through any number of further raises.
+      (Writing 0 here instead would have returned the start to T0, the
+      rewind shape BCD-R1-003 named; that reading is retired.)
+    Across these five sequences a raise never moves the start in either
+    direction: it reproduces the filter that governed the moment before it,
+    by recording the live obligation when there is one and by carrying the
+    prior record forward when there is none. After a raise the origin a
+    superseded proof returns to is the episode origin, never the raise
+    moment, so no return is in the favorable direction.
   - Whether a later `set-obligation` should inherit a discharge consumed
     inside the same episode is an open question for Wido, recorded here and
     NOT built by this goal.
@@ -424,7 +434,8 @@ EpisodeObligationRevision uint64
   reproduced by the same mutation code: a replayed claim writes a fresh
   episode, a replayed set-budget inherits through `rebindClaimKeepEpisode`
   against the tree at its tip, reading the obligation live at that tip for
-  the third key. The hand-edit surface already refuses any altered `Claimed`
+  the third key, or carrying the replayed prior binding's key forward when
+  none is live there. The hand-edit surface already refuses any altered `Claimed`
   line as a generated field (reconcilemap.go:232-237, whole-struct
   comparison), which makes all three episode keys tamper-proof there with
   zero new code.
@@ -910,13 +921,11 @@ Fix 1 — internal/dispatch/budget_test.go unless noted:
     `episodeObligationRevision=9` and `StartedAt == T0`, the episode origin,
     never the raise moment.
   - `TestSecondRaiseWithNoLiveObligation` (the discharge → raise → raise
-    sequence; expectation OPEN, see the consequence marked OPEN above):
-    after the first raise `StartedAt == T0+3h`; after the second raise the
-    test asserts whichever the orchestrator rules — key absent and
-    `StartedAt == T0` under the round-3 decision as worded, or
-    `episodeObligationRevision=5` and `StartedAt == T0+3h` under the
-    inheritance alternative. The implementer builds neither until the
-    ruling lands in this file.
+    sequence; decided INHERIT in revision 5): after the first raise the
+    claim line carries `episodeObligationRevision=5` and
+    `StartedAt == T0+3h`; after the second raise, with no obligation live,
+    the claim line still carries `episodeObligationRevision=5` and
+    `StartedAt == T0+3h`, never T0.
 - `TestReleaseReclaimStartsNewEpisode` and `TestStealStartsNewEpisode`
   (internal/goal/verbs_test.go): a genuine ownership restart writes fresh
   episode keys.
@@ -925,7 +934,7 @@ Fix 1 — internal/dispatch/budget_test.go unless noted:
   (no episode keys) writes episode keys equal to the pre-raise claim binding;
   with an obligation live at the raise the claim line also carries that
   obligation's revision as `episodeObligationRevision`; with none it carries
-  no third key.
+  no third key (the legacy binding has no key, so 0 is inherited).
 - `TestClaimedEpisodeRoundTrip` (internal/goal/grammar_test.go): render→parse
   identity for the new keys, with and without the third key.
 - `TestEpisodeObligationRevisionParse` (file_test.go): a `Claimed:` line
@@ -1158,36 +1167,41 @@ breach-design-crit3, reviewed commit 2a072390). Everything else held: the
 day-token inventory complete, the rollout writer table complete, the norm
 rows' intent surviving in hours, Fix 3, Fix 1's record changes, and Fix 2's
 decision and migration unchanged. The one material finding is folded per the
-orchestrator's decision at the foot of that register.
+orchestrator's decision at the foot of that register; the one point revision 4
+left OPEN is decided by the addendum beneath that decision and folded in
+revision 5.
 
 | Finding | Disposition | Where | Tree seams verified |
 | --- | --- | --- | --- |
-| BCD-R3-001 (high): the held nil-obligation rule lets a raise resurrect a proof the human superseded by set-obligation, moving the start forward at a raise | Closed by change: a third episode key, `episodeObligationRevision`, written by `rebindClaimKeepEpisode` from the obligation live the moment before the raise (0 and absent when none); `bindClaim` writes 0, `clearClaimBinding` nils the record; grammar (may appear only beside `episodeRevision`, exact refusal wording), `ValidateClaimRevision` extension (non-zero implies an episode binding), and the mapper's existing whole-struct refusal stated; with no live obligation a proof is eligible only under exactly the recorded non-zero revision, zero admits nothing; short-circuit revised to `Obligation == nil && key == 0`; four sequences stated with the start after every step (discharge→raise T0+3h; discharge→set-obligation T0; discharge→set-obligation→raise T0; discharge→raise→set-obligation→raise T0); one named test per sequence plus a parse test for the third key alone and beside the pair; the revision-3 test split so the finding's ordering is its own test by name. One consequence the decision's wording leaves in the unfavorable direction (discharge→raise→raise) is marked OPEN for the orchestrator, not decided here | Fix 1, "Record and schema changes", "Discharge proofs bind to the episode on the claim axis"; proof plan | verbs.go:113-137, 540, 594-621; file.go:76-84, 378-394, 526-543, 767-772; budget.go:77-80, 133-135, 146-157; reconcilemap.go:232-237 |
+| BCD-R3-001 (high): the held nil-obligation rule lets a raise resurrect a proof the human superseded by set-obligation, moving the start forward at a raise | Closed by change: a third episode key, `episodeObligationRevision`, written by `rebindClaimKeepEpisode` from the obligation live the moment before the raise (when none is live, the prior binding's value carried forward unchanged; 0 and absent only when no raise in the episode ever saw one); `bindClaim` writes 0, `clearClaimBinding` nils the record; grammar (may appear only beside `episodeRevision`, exact refusal wording), `ValidateClaimRevision` extension (non-zero implies an episode binding), and the mapper's existing whole-struct refusal stated; with no live obligation a proof is eligible only under exactly the recorded non-zero revision, zero admits nothing; short-circuit revised to `Obligation == nil && key == 0`; five sequences stated with the start after every step (discharge→raise T0+3h; discharge→set-obligation T0; discharge→set-obligation→raise T0; discharge→raise→set-obligation→raise T0; discharge→raise→raise T0+3h); one named test per sequence plus a parse test for the third key alone and beside the pair; the revision-3 test split so the finding's ordering is its own test by name. The fifth sequence, which the round-3 decision's wording ("0 when none was live") would have moved backward, was marked OPEN in revision 4 and is decided INHERIT by the orchestrator's addendum, folded in revision 5 | Fix 1, "Record and schema changes", "Discharge proofs bind to the episode on the claim axis"; proof plan | verbs.go:113-137, 540, 594-621; file.go:76-84, 378-394, 526-543, 767-772; budget.go:77-80, 133-135, 146-157; reconcilemap.go:232-237 |
 
 ## Self-grade
 
 - **Confidence:** high that BCD-R3-001 is closed for the finding's own
-  sequence and the three the brief names beside it, against this tree, and
+  sequence and the four stated beside it, against this tree, and
   that the closure weakens no refusal and narrows no guarantee: the live
   obligation filter is untouched, the nil-obligation case becomes STRICTER
   (a recorded revision or nothing) rather than looser, and legacy claims
   read byte-for-byte as today. High that the round-2 and round-1 closures
-  Sol held still hold; revision 4 changes only the nil-obligation branch of
-  the eligibility rule and the short-circuit, and adds one key whose every
-  reader and writer is named.
-- **Weakest claim:** the discharge → raise → raise sequence. The round-3
-  decision's wording writes 0 at a raise with no live obligation, which
-  moves the start backward at the second raise; the design records that
-  consequence as OPEN rather than choosing the inheritance alternative,
-  because that choice is the orchestrator's. Until it is ruled, "a raise
-  never moves the start in either direction" holds for the four named
-  sequences and not for this fifth one. Second-weakest is the completeness
-  of the day-token inventory, which rests on two recorded search patterns
-  over a named scope; a `d` token in a shape neither pattern matches would
-  surface as a gate failure, not a silent miss. Third, the reading of the
-  second specimen: the goal record says `1d` enforces 24 hours; the parser
-  at budget.go:38 says 8. I carried the code's reading and flagged the
-  record's.
+  Sol held still hold; revision 4 changed only the nil-obligation branch of
+  the eligibility rule and the short-circuit, and added one key whose every
+  reader and writer is named; revision 5 changes only what that key holds
+  at a raise with no live obligation (the prior value, not 0), which touches
+  one writer (`rebindClaimKeepEpisode`) and no reader.
+- **Weakest claim:** that "a raise never moves the start in either
+  direction" now holds for every ordering of discharge, raise, and
+  set-obligation, not only the five stated. The argument is structural: with
+  an obligation live a raise records it, with none live a raise carries the
+  prior record forward, so the nil-obligation filter after any raise equals
+  the filter that governed the moment before, and the live filter is
+  untouched. A sixth ordering that breaks this would be a critic finding
+  against the argument, not against a stated sequence. Second-weakest is
+  the completeness of the day-token inventory, which rests on two recorded
+  search patterns over a named scope; a `d` token in a shape neither
+  pattern matches would surface as a gate failure, not a silent miss.
+  Third, the reading of the second specimen: the goal record says `1d`
+  enforces 24 hours; the parser at budget.go:38 says 8. I carried the
+  code's reading and flagged the record's.
 - **Reject condition:** reject this revision if the critic finds any
   publication path that can put a `StopFence` into the live tree in a state
   `FindBreachStops` does not route (that would falsify "a fence is never off
@@ -1198,5 +1212,5 @@ orchestrator's decision at the foot of that register.
   observe two claims on one machine after `ValidateCommit` has accepted the
   tree, or any ordering of discharge, raise, and set-obligation under which
   the eligibility rule moves the start somewhere other than where Fix 1's
-  four stated consequences say, or any raise that moves the start forward
-  (the favorable direction) in any ordering at all.
+  five stated consequences say, or any raise that moves the start in either
+  direction in any ordering at all.
