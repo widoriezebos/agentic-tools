@@ -1,0 +1,4 @@
+{
+  "schemaVersion": 1,
+  "refuseCodes": ["missing-declaration", "conflicting-declarations"]
+}

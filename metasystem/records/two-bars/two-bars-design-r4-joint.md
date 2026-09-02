@@ -118,7 +118,9 @@ The mechanism follows these existing seams rather than assumed ones:
 The legal combinations are chain alone, chain plus `register-carriage`,
 `register-carriage` alone, or `exact-revert` alone. Chain plus any other direct
 class, and either class with fields belonging to the other, evaluates
-`would-refuse`.
+`would-refuse`. A supplied `--revert-of` without `exact-revert`, or an
+`exact-revert` declaration without its `--revert-of`, is a
+`conflicting-declarations` classification.
 
 The command emits one JSON `Observation` with `schemaVersion`, `mode`, `bar`,
 `verdict`, `code`, `provenance`, and `verdictTrailer`. A valid command
@@ -131,8 +133,9 @@ Landing-Provenance: none change=unknown
 Landing-Provenance-Verdict: would-refuse code=evaluator-unavailable
 ```
 
-This fallback is part of observation, not enforcement. It lets the landing
-continue and preserves the fact that the check could not decide.
+This fallback preserves the fact that the check could not decide. It refuses a
+managed agent commit with an evaluator-failure message and repair instruction;
+a human commit remains sovereign, continues, and carries the fallback stamp.
 
 ### 2.2 Bar (a)
 
@@ -249,11 +252,11 @@ There is no global "unresolved" counter. Each commit and guard event is a
 self-contained observation. A later corrected landing does not rewrite an
 earlier event, and promotion does not infer cleanliness by subtracting events.
 
-## 3. Enforcement design, deliberately not active
+## 3. Full protected-branch enforcement design, deliberately not active
 
 Local hooks cannot enforce a rule in a clone where they were never installed.
-Therefore enforcement is a GitHub protected-branch required check, not a local
-mode bit. The later enforcement slice will:
+Therefore universal enforcement is a GitHub protected-branch required check,
+not a local mode bit. The later enforcement slice will:
 
 1. run the evaluator from the protected base branch, never from candidate
    policy bytes;
@@ -281,13 +284,29 @@ missing pass trailer fails the required check. That is the mechanical answer
 to the unarmed-checkout gap. Local `pre-commit` remains an early explanation,
 not the universal authority.
 
-Promotion is a later human act. It requires a separate reviewed enforcement
-implementation, a successful required-check rehearsal against an exact origin
-range, and Wido enabling that check on the protected branch. No code or local
-configuration in this observe slice can promote itself. The human reviews the
-range's complete observation report, including missing trailers and
-`would-refuse` events; there is no automatic "zero unresolved" claim and no
-four-machine registry to guess at.
+The managed agent commit gate has one narrower promotion before that universal
+check: `scripts/agents/landing-promotion.json` lists the exact observation
+codes that refuse managed agent commits. It mirrors
+`scripts/agents/landing-classes.json` only in the house convention of a
+schema-versioned top-level object with named typed content. Its decoder is
+deliberately stricter than the sibling class-manifest loader: the only
+top-level fields are integer `schemaVersion` with value 1 and string-array
+`refuseCodes`; unknown fields, trailing JSON, unknown codes, duplicate codes,
+and unparseable content make the whole record malformed. An absent file
+preserves the pre-promotion observe-everything state, while a malformed file
+refuses every managed agent commit so a damaged policy cannot silently undo a
+human promotion. The evaluator reads the record from the landing base tree,
+and the file itself remains on the never-direct-fix floor. Human commits do not
+consume this local refusal decision. The shipped two-code promotion is
+authorized by ruling R-40-m0, which lands with this implementation chain and
+is therefore cited here before it appears in this worktree's base register.
+
+Full protected-branch promotion remains a later human act. It requires a
+separate reviewed enforcement implementation, a successful required-check
+rehearsal against an exact origin range, and Wido enabling that check on the
+protected branch. The human reviews the range's complete observation report,
+including missing trailers and `would-refuse` events; there is no automatic
+"zero unresolved" claim and no four-machine registry to guess at.
 
 Human branch-rule bypass remains sovereign and outside D90. Deliberate forged
 pass trailers also remain outside D90 because the remote check has no durable
@@ -295,10 +314,16 @@ agent signing identity. Those are the already separated adversarial goal.
 
 ## 4. Failure behavior
 
-- A policy mismatch returns a `would-refuse` observation and the commit
-  continues.
+- A policy mismatch returns a `would-refuse` observation. An unpromoted code
+  continues; a promoted code refuses a managed agent commit while leaving the
+  human path unchanged.
 - An evaluator crash, missing verb, invalid JSON, or unavailable proof engine
-  produces the fixed fallback trailers and the commit continues.
+  refuses a managed agent commit with the fixed evaluator-unavailable verdict,
+  staged paths, and repair instruction. A human commit remains sovereign and
+  carries the fallback trailers.
+- An unreadable landing base refuses a managed agent commit with its distinct
+  base-unreadable verdict and restoration instruction; it is never reported as
+  a classification failure.
 - A pre-commit classification failure appends the fallback guard event and the
   existing human-sovereignty fail-open continues.
 - Existing static proof, coverage, audit, Git, lease, and new-plan refusals are
@@ -306,8 +331,8 @@ agent signing identity. Those are the already separated adversarial goal.
 - A rebase preserves the trailers. If it changes the landing's delta, the
   stored digest no longer describes the resulting commit; observe mode merely
   records this for later reporting, while the future remote check refuses it.
-- No observe path changes a command's exit status because of bar (a), (b), or
-  (c).
+- `landing observe` returns every policy outcome as data. The managed wrapper
+  changes its own exit status only when that outcome carries refusing mode.
 
 ## 5. Tests and observable proof
 
@@ -374,19 +399,20 @@ promotion decision.
 | TB-OBS-02 | CRITICAL | §2.2 | Bar (a) requires a closed design-bearing implementer root, locates conformance output under either real storage layout, digest-binds certified paths, and evaluates every bundled remainder as declared carriage; five invalid root shapes, tampering, and non-carriage extras refuse | `internal/landing` | internal/landing/observe.go | `TestObserveChainBoundLandingEvaluatesBarA` | `go test ./internal/landing -run TestObserve` | DONE | none |
 | TB-OBS-03 | CRITICAL | §2.3 | Exact-revert checks the whole inverse, postimage, changed-path equality, and broad floor including `bin/`; register-carriage reads protected policy from the base tree, admits only the exact allowlist, and enforces append-only rulings and receipts | `internal/landing` and `internal/gittree` | internal/landing/observe.go, internal/gittree/commit.go, scripts/agents/landing-classes.json, scripts/agents/register-carriage-paths.txt | `TestObserveDeclaredDirectFixEvaluatesPerClassRule` | `go test ./internal/landing -run TestObserve` | DONE | none |
 | TB-OBS-04 | CRITICAL | §2.4 | Missing declaration records bar (c) and both verdict trailers survive the push | `scripts/agents/commit.sh` | scripts/agents/commit.sh | `TestObserveUndeclaredLandingRecordsWouldRefuse`, `TestObserveVerdictSurvivesLanding` | `go test ./internal/landing -run TestObserve` | DONE | none |
-| TB-OBS-05 | HIGH | §1, §2.1 | land.sh carries declaration flags and commit.sh observes the settled project tree with an unavailable-evaluator fallback | `scripts/agents` | scripts/agents/land.sh, scripts/agents/commit.sh | `TestObserveVerdictSurvivesLanding` | `go test ./internal/landing -run TestObserve` | DONE | none |
+| TB-OBS-05 | HIGH | §1, §2.1 | land.sh carries declaration flags and commit.sh observes the settled project tree; an unavailable evaluator refuses managed agents honestly while the human path stamps the fallback and remains sovereign | `scripts/agents` | scripts/agents/land.sh, scripts/agents/commit.sh | `TestObserveVerdictSurvivesLanding`, `static-reproof-fixtures.sh` | `go test ./internal/landing -run TestObserve`; `bash scripts/agents/static-reproof-fixtures.sh` | DONE | none |
 | TB-OBS-06 | HIGH | §2.4 | An unevaluable pre-commit classification writes a durable would-refuse event without refusing | `scripts/agents/pre-commit-guard.sh` | scripts/agents/pre-commit-guard.sh | scripts/agents/pre-commit-guard-fixtures.sh | `bash scripts/agents/pre-commit-guard-fixtures.sh` | DONE | none |
 
 ## 8. Scope and non-claims
 
 This round does not install a GitHub workflow, change branch protection, add a
-remote report, or refuse a landing for provenance. It does not claim that the
-current local observe stamp stops deliberate forgery. It does not replace
-conformance, chain close, leases, static proof, or the human emergency path.
+remote report, or claim universal provenance enforcement. It refuses only the
+named managed-agent cases above. It does not claim that the current local
+observe stamp stops deliberate forgery. It does not replace conformance, chain
+close, leases, static proof, or the human emergency path.
 
 The implemented guarantee is narrow and testable: every successful managed
-wrapper commit gets a durable declaration and observe verdict; both direct
-classes are mechanically bounded; missing declarations and unavailable
-decisions are visible; nothing is refused by two-bars policy. The three bars become
-enforcement only after the separately reviewed remote check and Wido's explicit
-promotion.
+wrapper commit gets a durable declaration and observation verdict; both direct
+classes are mechanically bounded; missing and conflicting declarations refuse
+managed agent commits under the strict promotion record; all other policy
+codes remain observable. Universal enforcement still requires the separately
+reviewed remote check and Wido's explicit protected-branch promotion.

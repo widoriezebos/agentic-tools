@@ -26,7 +26,7 @@ func newObserveFixture(t *testing.T) *observeFixture {
 	f.git("config", "user.email", "landing@example.invalid")
 	f.write(".gitignore", "artifacts/\n")
 	f.write("product.txt", "before\n")
-	for _, policyFile := range []string{"register-carriage-paths.txt", "landing-classes.json"} {
+	for _, policyFile := range []string{"register-carriage-paths.txt", "landing-classes.json", "landing-promotion.json"} {
 		content, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policyFile))
 		if err != nil {
 			t.Fatalf("read repository policy %s: %v", policyFile, err)
@@ -218,14 +218,14 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 			RepoRoot: bundled.root, CandidateTree: bundled.tree(), Chain: "bundle-chain",
 			DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-path-refused" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 			t.Fatalf("chain with a non-allowlisted protected path classified as %+v", got)
 		}
 	})
 	got = Observe(ObserveParams{
 		RepoRoot: f.root, CandidateTree: candidate, Chain: "impl-chain", RevertOf: strings.Repeat("0", 40),
 	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "unexpected-revert-commit" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "conflicting-declarations" || got.Mode != "refuse" {
 		t.Fatalf("chain with direct-fix parameter classified as %+v", got)
 	}
 
@@ -298,6 +298,17 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "not-exact-revert" {
 		t.Fatalf("expanded inverse classified as %+v", got)
 	}
+	if err := os.Remove(filepath.Join(f.root, "extra.txt")); err != nil {
+		t.Fatal(err)
+	}
+	f.write("internal/extra.txt", "floor path outside the inverse\n")
+	got = Observe(ObserveParams{
+		RepoRoot: f.root, CandidateTree: f.tree(),
+		DirectFix: "exact-revert", RevertOf: revertOf,
+	})
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+		t.Fatalf("expanded inverse with a floor path classified as %+v", got)
+	}
 
 	protected := newObserveFixture(t)
 	protected.write("internal/authority.txt", "protected\n")
@@ -311,7 +322,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		RepoRoot: protected.root, CandidateTree: protected.tree(),
 		DirectFix: "exact-revert", RevertOf: protectedCommit,
 	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "not-exact-revert" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 		t.Fatalf("floor-changing inverse classified as %+v", got)
 	}
 
@@ -327,7 +338,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		RepoRoot: nested.root, CandidateTree: nested.tree(),
 		DirectFix: "exact-revert", RevertOf: nestedCommit,
 	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "not-exact-revert" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 		t.Fatalf("nested instruction inverse classified as %+v", got)
 	}
 
@@ -344,7 +355,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 			RepoRoot: engine.root, CandidateTree: engine.tree(),
 			DirectFix: "exact-revert", RevertOf: engineCommit,
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "not-exact-revert" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 			t.Fatalf("committed engine inverse classified as %+v", got)
 		}
 	})
@@ -447,8 +458,18 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got := Observe(ObserveParams{
 			RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Code != "register-carriage-path-refused" {
+		if got.Bar != BarRefusal || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 			t.Fatalf("non-matching handoff path classified as %+v", got)
+		}
+
+		mixed := newObserveFixture(t)
+		mixed.write("adopted.txt", "off-floor miss sorts first\n")
+		mixed.write("internal/protected.txt", "floor miss sorts second\n")
+		got = Observe(ObserveParams{
+			RepoRoot: mixed.root, CandidateTree: mixed.tree(), DirectFix: "register-carriage",
+		})
+		if got.Bar != BarRefusal || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+			t.Fatalf("mixed carriage misses did not give the floor precedence: %+v", got)
 		}
 	})
 
@@ -458,7 +479,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got := Observe(ObserveParams{
 			RepoRoot: policy.root, CandidateTree: policy.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-path-refused" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 			t.Fatalf("allowlist self-change classified as %+v", got)
 		}
 
@@ -467,8 +488,17 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got = Observe(ObserveParams{
 			RepoRoot: manifest.root, CandidateTree: manifest.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-path-refused" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 			t.Fatalf("manifest self-change classified as %+v", got)
+		}
+
+		promotion := newObserveFixture(t)
+		promotion.write("scripts/agents/landing-promotion.json", "{}\n")
+		got = Observe(ObserveParams{
+			RepoRoot: promotion.root, CandidateTree: promotion.tree(), DirectFix: "register-carriage",
+		})
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+			t.Fatalf("promotion record self-change classified as %+v", got)
 		}
 	})
 }
@@ -489,18 +519,103 @@ func TestObserveUndeclaredLandingRecordsWouldRefuse(t *testing.T) {
 	f := newObserveFixture(t)
 	f.write("product.txt", "undeclared change\n")
 	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "missing-declaration" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "missing-declaration" || got.Mode != "refuse" {
 		t.Fatalf("undeclared landing classified as %+v", got)
 	}
 	if got.VerdictTrailer != "would-refuse code=missing-declaration" {
 		t.Fatalf("undeclared landing has non-durable verdict value %q", got.VerdictTrailer)
 	}
-	got = Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: f.tree(), RevertOf: strings.Repeat("0", 40),
-	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "revert-without-direct-fix" {
-		t.Fatalf("orphaned revert parameter classified as %+v", got)
+	for name, params := range map[string]ObserveParams{
+		"orphaned revert parameter": {
+			RepoRoot: f.root, CandidateTree: f.tree(), RevertOf: strings.Repeat("0", 40),
+		},
+		"revert parameter on register carriage": {
+			RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", RevertOf: strings.Repeat("0", 40),
+		},
+		"exact revert missing its commit": {
+			RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "exact-revert",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := Observe(params)
+			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "conflicting-declarations" || got.Mode != "refuse" {
+				t.Fatalf("partial classification parameter classified as %+v", got)
+			}
+		})
 	}
+}
+
+func TestObservePromotionRecordIsStrictAndAbsentMeansObserve(t *testing.T) {
+	t.Run("promoted conflicting declarations refuse", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write("product.txt", "conflicting declaration\n")
+		got := Observe(ObserveParams{
+			RepoRoot: f.root, CandidateTree: f.tree(), Chain: "implementation-chain",
+			DirectFix: "exact-revert",
+		})
+		if got.Mode != "refuse" || got.Code != "conflicting-declarations" || got.VerdictTrailer != "would-refuse code=conflicting-declarations" {
+			t.Fatalf("promoted conflict classified as %+v", got)
+		}
+	})
+
+	t.Run("absent record observes everything", func(t *testing.T) {
+		f := newObserveFixture(t)
+		if err := os.Remove(filepath.Join(f.root, promotionRecordPath)); err != nil {
+			t.Fatal(err)
+		}
+		f.git("add", "-u", promotionRecordPath)
+		f.git("commit", "-qm", "remove promotion policy")
+		f.write("product.txt", "undeclared without promotion\n")
+		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
+		if got.Mode != "observe" || got.Code != "missing-declaration" {
+			t.Fatalf("absent promotion record classified as %+v", got)
+		}
+		got = Observe(ObserveParams{
+			RepoRoot: f.root, CandidateTree: f.tree(), Chain: "implementation-chain",
+			DirectFix: "exact-revert",
+		})
+		if got.Mode != "observe" || got.Code != "conflicting-declarations" {
+			t.Fatalf("absent promotion record promoted a conflict: %+v", got)
+		}
+	})
+
+	malformed := map[string]string{
+		"unparseable":    "{\n",
+		"unknown field":  `{"schemaVersion":1,"refuseCodes":[],"extra":true}` + "\n",
+		"unknown code":   `{"schemaVersion":1,"refuseCodes":["not-a-verdict"]}` + "\n",
+		"duplicate code": `{"schemaVersion":1,"refuseCodes":["missing-declaration","missing-declaration"]}` + "\n",
+		"missing codes":  `{"schemaVersion":1}` + "\n",
+		"wrong schema":   `{"schemaVersion":2,"refuseCodes":[]}` + "\n",
+		"trailing JSON":  `{"schemaVersion":1,"refuseCodes":[]} {}` + "\n",
+	}
+	for name, content := range malformed {
+		t.Run(name, func(t *testing.T) {
+			f := newObserveFixture(t)
+			f.write(promotionRecordPath, content)
+			f.git("add", promotionRecordPath)
+			f.git("commit", "-qm", "install malformed promotion policy")
+			f.write("product.txt", "otherwise lawful classification\n")
+			got := Observe(ObserveParams{
+				RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage",
+			})
+			if got.Mode != "refuse" || got.Code != "promotion-record-malformed" || got.VerdictTrailer != "would-refuse code=promotion-record-malformed" {
+				t.Fatalf("malformed promotion record classified as %+v", got)
+			}
+		})
+	}
+
+	t.Run("unreadable landing base reports its own cause", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write("product.txt", "candidate before base loss\n")
+		candidate := f.tree()
+		f.git("update-ref", "-d", "refs/heads/main")
+		got := Observe(ObserveParams{
+			RepoRoot: f.root, CandidateTree: candidate, DirectFix: "register-carriage",
+		})
+		if got.Mode != "refuse" || got.Code != "promotion-base-unreadable" || got.VerdictTrailer != "would-refuse code=promotion-base-unreadable" {
+			t.Fatalf("unreadable landing base classified as %+v", got)
+		}
+	})
 }
 
 func TestObserveVerdictSurvivesLanding(t *testing.T) {

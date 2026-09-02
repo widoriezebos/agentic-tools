@@ -20,7 +20,9 @@ shift
 expected_epoch=${1:-}
 [[ -n "$expected_epoch" ]] || exit 2
 shift
+agent_commit=0
 if [[ "$expected_epoch" =~ ^[1-9][0-9]*$ ]]; then
+  agent_commit=1
   "$ms" lease require-holder --root "$root" --caller-pid "$$" \
     --expected-epoch "$expected_epoch" >/dev/null
 else
@@ -283,12 +285,10 @@ if [[ "$settled_tree" != "$proved_tree" ]] || [[ -s "$settled_unbound" ]]; then
 fi
 rm -f "$settled_unbound"
 
-# Observe the exact project tree the commit is about to record. Policy
-# mismatches never stop observe mode: the evaluator returns a would-refuse
-# value, and even an unavailable or malformed evaluator has a fixed fallback
-# verdict. Both values ride the commit, so a later rebase and push carry the
-# observation with the landing instead of leaving the only copy in scratch
-# state.
+# Evaluate the exact project tree the commit is about to record. Every outcome
+# remains a durable observation, while the base-tree promotion record may mark
+# a named verdict as refusing for agent commits. Human commits never consume
+# that refusal bit.
 landing_tree=$settled_tree
 if [[ -n "$prefix" ]]; then
   resolved_landing_tree=$(git -C "$root" rev-parse "$settled_tree:${prefix%/}" 2>/dev/null || true)
@@ -300,14 +300,49 @@ landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
 [[ -z "$landing_revert_of" ]] || landing_observe_args+=(--revert-of "$landing_revert_of")
 landing_provenance="none change=unknown"
 landing_verdict="would-refuse code=evaluator-unavailable"
+landing_code="evaluator-unavailable"
+landing_mode="refuse"
 landing_observation=
 if landing_observation=$("$policy_engine" "${landing_observe_args[@]}" 2>/dev/null); then
   observed_provenance=$("$ms" json get --value "$landing_observation" --field provenance 2>/dev/null || true)
   observed_verdict=$("$ms" json get --value "$landing_observation" --field verdictTrailer 2>/dev/null || true)
-  if [[ -n "$observed_provenance" && -n "$observed_verdict" ]]; then
+  observed_code=$("$ms" json get --value "$landing_observation" --field code 2>/dev/null || true)
+  observed_mode=$("$ms" json get --value "$landing_observation" --field mode 2>/dev/null || true)
+  if [[ -n "$observed_provenance" && -n "$observed_verdict" && -n "$observed_code" \
+    && ( "$observed_mode" == observe || "$observed_mode" == refuse ) ]]; then
     landing_provenance=$observed_provenance
     landing_verdict=$observed_verdict
+    landing_code=$observed_code
+    landing_mode=$observed_mode
   fi
+fi
+if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
+  refusal_paths=$(mktemp "${TMPDIR:-/tmp}/metasystem-landing-refusal-paths.XXXXXX")
+  git -C "$root" diff --cached --name-only -z -- >"$refusal_paths"
+  case "$landing_code" in
+    evaluator-unavailable)
+      echo "agent commit refused: the landing evaluator failed or returned an incomplete decision ($landing_verdict)" >&2
+      landing_repair="restore or rebuild the proof-built landing evaluator, then retry"
+      ;;
+    promotion-base-unreadable)
+      echo "agent commit refused: the landing base tree is unreadable ($landing_verdict)" >&2
+      landing_repair="restore a readable landing base tree at HEAD, then retry"
+      ;;
+    promotion-record-malformed)
+      echo "agent commit refused: the landing promotion record is malformed ($landing_verdict)" >&2
+      landing_repair="a human must repair the landing promotion record before an agent retries"
+      ;;
+    *)
+      echo "agent commit refused: promoted landing verdict $landing_verdict" >&2
+      landing_repair=
+      ;;
+  esac
+  echo "staged paths:" >&2
+  show_nul_paths "$refusal_paths"
+  rm -f "$refusal_paths"
+  [[ -z "$landing_repair" ]] || echo "$landing_repair" >&2
+  echo "lawful classification exits: declare the reviewed implementation chain with --chain <root-job-id>, or fix the Change-Class classification and retry" >&2
+  exit 1
 fi
 # The proof binds THE INDEX; the postcondition proves the commit
 # recorded exactly that tree. This replaces any argument grammar

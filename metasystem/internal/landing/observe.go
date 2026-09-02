@@ -56,10 +56,14 @@ type Observation struct {
 	VerdictTrailer string `json:"verdictTrailer"`
 }
 
-// Observe evaluates one prospective landing. Policy mismatches are values,
-// not errors: observe mode must record what enforcement would do and must not
-// stop the commit.
+// Observe evaluates one prospective landing, then applies the promotion
+// policy recorded in the landing base. The caller remains responsible for
+// enforcing Mode only for agent commits; human commits stay sovereign.
 func Observe(params ObserveParams) Observation {
+	return applyPromotion(params, observe(params))
+}
+
+func observe(params ObserveParams) Observation {
 	if !treeOID.MatchString(params.CandidateTree) {
 		return wouldRefuse("malformed-candidate-tree", "none change=unknown")
 	}
@@ -67,19 +71,19 @@ func Observe(params ObserveParams) Observation {
 	if err != nil {
 		return wouldRefuse("candidate-tree-unreadable", "none change=unknown")
 	}
+	if params.RevertOf != "" && params.DirectFix != "exact-revert" {
+		return wouldRefuse("conflicting-declarations", "invalid change="+change)
+	}
+	if params.DirectFix == "exact-revert" && params.RevertOf == "" {
+		return wouldRefuse("conflicting-declarations", "invalid change="+change)
+	}
 	if params.Chain == "" && params.DirectFix == "" {
-		if params.RevertOf != "" {
-			return wouldRefuse("revert-without-direct-fix", "invalid change="+change)
-		}
 		return wouldRefuse("missing-declaration", "none change="+change)
 	}
 	if params.Chain != "" && params.DirectFix != "" && params.DirectFix != "register-carriage" {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
 	if params.Chain != "" {
-		if params.RevertOf != "" {
-			return wouldRefuse("unexpected-revert-commit", "invalid change="+change)
-		}
 		return observeChain(params, change)
 	}
 	return observeDirectFix(params, change)
@@ -455,10 +459,21 @@ func registerCarriage(root, candidateTree string, changedPaths []string) error {
 	if err != nil {
 		return err
 	}
+	var disallowed []string
 	for _, changedPath := range changedPaths {
 		if !carriagePathAllowed(changedPath, patterns) {
-			return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", changedPath)}
+			disallowed = append(disallowed, changedPath)
 		}
+	}
+	for _, changedPath := range disallowed {
+		if neverDirectFix(changedPath) {
+			return &carriageError{code: "direct-fix-floor-refused", err: fmt.Errorf("path %s is on the never-direct-fix floor", changedPath)}
+		}
+	}
+	if len(disallowed) > 0 {
+		return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", disallowed[0])}
+	}
+	for _, changedPath := range changedPaths {
 		switch changedPath {
 		case "memory/rulings.md":
 			if err := addRulingRowsOnly(workspace, baseTree, candidateTree); err != nil {
@@ -655,9 +670,6 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 	switch params.DirectFix {
 	case "register-carriage":
 		provenance := "direct-fix class=register-carriage change=" + change
-		if params.RevertOf != "" {
-			return wouldRefuse("unexpected-revert-commit", provenance)
-		}
 		workspace := gittree.Workspace{Dir: params.RepoRoot}
 		baseTree, err := workspace.HeadTree()
 		if err != nil {
@@ -683,12 +695,27 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		}
 		provenance = fmt.Sprintf("direct-fix class=exact-revert revert-of=%s change=%s", params.RevertOf, change)
 		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf); err != nil {
-			return wouldRefuse("not-exact-revert", provenance)
+			return wouldRefuse(exactRevertRefusalCode(err), provenance)
 		}
 		return pass(BarDirectFix, "exact-revert", provenance)
 	default:
 		return wouldRefuse("unknown-direct-fix-class", "invalid change="+change)
 	}
+}
+
+type exactRevertError struct {
+	code string
+	err  error
+}
+
+func (e *exactRevertError) Error() string { return e.err.Error() }
+
+func exactRevertRefusalCode(err error) string {
+	var revert *exactRevertError
+	if errors.As(err, &revert) {
+		return revert.code
+	}
+	return "not-exact-revert"
 }
 
 func exactRevert(root, candidateTree, revertOf string) error {
@@ -697,30 +724,28 @@ func exactRevert(root, candidateTree, revertOf string) error {
 	if err != nil {
 		return err
 	}
+	candidatePaths, candidateErr := workspace.ChangedPaths(baseTree, candidateTree)
 	parent, err := workspace.SingleParent(revertOf)
 	if err != nil {
-		return err
+		return exactRevertFloorError(candidatePaths, nil, err)
 	}
 	preimageTree, err := workspace.TreeOf(parent)
 	if err != nil {
-		return err
+		return exactRevertFloorError(candidatePaths, nil, err)
 	}
 	postimageTree, err := workspace.TreeOf(revertOf)
 	if err != nil {
-		return err
+		return exactRevertFloorError(candidatePaths, nil, err)
 	}
 	targetPaths, err := workspace.ChangedPaths(preimageTree, postimageTree)
 	if err != nil || len(targetPaths) == 0 {
-		return fmt.Errorf("reverted commit has no decidable changed paths")
+		return exactRevertFloorError(candidatePaths, targetPaths, fmt.Errorf("reverted commit has no decidable changed paths"))
 	}
-	for _, path := range targetPaths {
-		if neverDirectFix(path) {
-			return fmt.Errorf("path %s is on the never-direct-fix floor", path)
-		}
-	}
-	candidatePaths, err := workspace.ChangedPaths(baseTree, candidateTree)
-	if err != nil {
+	if err := exactRevertFloorError(candidatePaths, targetPaths, nil); err != nil {
 		return err
+	}
+	if candidateErr != nil {
+		return candidateErr
 	}
 	sort.Strings(targetPaths)
 	sort.Strings(candidatePaths)
@@ -750,6 +775,18 @@ func exactRevert(root, candidateTree, revertOf string) error {
 		return fmt.Errorf("candidate is not the exact tree-shaped inverse")
 	}
 	return nil
+}
+
+func exactRevertFloorError(candidatePaths, targetPaths []string, fallback error) error {
+	for _, changedPath := range append(append([]string(nil), targetPaths...), candidatePaths...) {
+		if neverDirectFix(changedPath) {
+			return &exactRevertError{
+				code: "direct-fix-floor-refused",
+				err:  fmt.Errorf("path %s is on the never-direct-fix floor", changedPath),
+			}
+		}
+	}
+	return fallback
 }
 
 // The initial floor is deliberately broad. Register carriage is the exact
