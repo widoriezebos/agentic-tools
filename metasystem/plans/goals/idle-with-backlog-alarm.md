@@ -5,11 +5,11 @@
 - Origin: main
 - Next step: ARCHITECTURAL WALL FOUND, AWAITING WIDO (2026-09-02, after ~6 build rounds + terminal critique). THE WALL: Claude Code (the harness) caps how many times a Stop hook may block a turn - so NO hook-based gate can make idle IMPOSSIBLE; after the cap the turn ends regardless of our code. The steward (runtime-independent) actively re-engaging an idle seat is the ONLY floor that can make it impossible - that is goal idle-every-runtime-enforcement, and this finding means it is the ONLY path to Wido's bar, not an optional agnostic extra. Also: the seat's judgment to defer the marker-replay finding as forge-class was REFUTED by the critic (an honest agent reaches it) - a real bar-(a) hole, correction recorded. THE FORK: (a) LAND the hook gate anyway as the best-effort claude layer - fail-closed within its reach, blocks up to the harness cap, single-use marker with the replay hole fixed, steward escalation; it makes idle HARD + LOUD + impossible-by-accident, and is real value, but is NOT 'impossible' and cannot be alone; then idle-every-runtime-enforcement (steward re-engagement) carries the true bar. (b) DROP the hook-gate polishing and go straight to steward active enforcement (the only impossible path) on every runtime, folding the buildable hook pieces into it. m0 recommends (a): land the hard+loud layer now (four specimens all ended quietly; even a capped block would have caught them), and make the steward re-engagement goal the owner of 'impossible'. The harness cap is the reason no turn-exit gate alone suffices - this is the honest end of the hook approach.
 - OpenedAt: 2026-09-02T05:47:20Z
-- Revision: 15
-- Budget: elapsedLimit=2d attemptLimit=14 reservedJobMinutesLimit=900 activeJobLimit=1
+- Revision: 16
+- Budget: elapsedLimit=2d attemptLimit=16 reservedJobMinutesLimit=1080 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=3 at=2026-09-02T05:49:11Z
-- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T17:42:44Z revision=14
-- StopCapability: generation=14 revision=14 machine=m0 claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-02T19:10:25Z revision=16
+- StopCapability: generation=16 revision=16 machine=m0 claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-02T05:47:20Z AQM3YVNMMY0P3G0XSSDCBZDT2T-m0-c5dbf036 open actor=human:Wido targets=idle-with-backlog-alarm
@@ -27,4 +27,5 @@ History:
 - 2026-09-02T15:52:16Z JE70VXX6THH25MRW8JBV28BAWF-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
 - 2026-09-02T17:42:44Z 2XFYRMCKF9WJCX4WP1JMV8QTCZ-m0-c5dbf036 set-budget actor=human:Wido targets=idle-with-backlog-alarm
 - 2026-09-02T17:53:07Z WB778QJH8F1MASFCDRJFTRETNS-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=idle-with-backlog-alarm
-Integrity: sha256=4a46f7fd61a57f4869d646530aa70bded72aff70c7358cf3ba3018d55dad650e
+- 2026-09-02T19:10:25Z XJFPR58RMV5Y2FC39XKC8DTJC9-m0-c5dbf036 set-budget actor=human:Wido targets=idle-with-backlog-alarm
+Integrity: sha256=9d3f4d164255e9554bf97597fe729b67987bb51f6e736094a49c380068c0f4be
