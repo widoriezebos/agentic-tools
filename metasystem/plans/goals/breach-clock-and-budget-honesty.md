@@ -1,13 +1,15 @@
 # breach-clock-and-budget-honesty
 
-- State: queued
+- State: claimed
 - Intent: Wido's highest-priority order (2026-09-01, verbatim: 'This needs to be fixed immediately... Only resume work after these problems are fixed, proven with tests'): two of the three proven breach-machinery breakdowns from the night of 2026-08-31, sharing the goal-machinery seam. (1) THE RAISE-RESET CLOCK: SetBudget re-binds the claim record on every raise and the elapsed breach clock anchors on the current revision's claim timestamp - every budget raise restarts the breach clock (the night reset it five times lawfully; internal/goal/verbs.go SetBudget comment + internal/dispatch/budget.go anchor are the proof). (2) DISHONEST DURATIONS: budget elapsed limits parse through a working-hours grammar (d = 8 hours) and New() normalizes inputs into it - a human's 24h displays as 3d, and a human's 9d is enforced at 72 clock hours, one third of intent, silently, across every live budget.
 - Origin: main
 - Next step: CHAIN STATE 2026-09-02 (m1): design revision 2 landed (job breach-design-r2, Fable 5.1) closing all eight BCD-R1 findings; critique brief landed (plans/breach-clock-critique-brief.md). BLOCKED at Sol's round-2 critique: two dispatches (breach-design-crit2, breach-design-crit2b) died with handshake_timeout because the Codex adapter's 10-second handshake cap is shorter than Codex's 14-second cold start on m1 under load - recorded as goal codex-handshake-budget-load-fragile; attempts 3/6 spent. Resume when the cap is fixed or the machine is quieter: dispatch the design-critic on the landed brief, fold findings, then build (Sol), code critique (Fable), land with --chain. CORRECTED SECOND SPECIMEN: a typed 8h stored as 1d is ENFORCED as 8 hours (internal/goalbudget/budget.go line 38 reads d as 8 working hours); only the display lied. The original m2 finding stands: a typed 9d enforces as 72 clock hours. Revision 2's Fix 2 stores m and h verbatim and refuses any d at set time.
 - OpenedAt: 2026-09-01T06:54:30Z
-- Revision: 17
+- Revision: 18
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=840 activeJobLimit=1
 - Sliced: machine=m2 lineage=mac-coordinator revision=4 at=2026-09-01T07:31:13Z
+- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-02T17:29:46Z revision=18
+- StopCapability: generation=18 revision=18 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T06:54:30Z XQ8RYAX5R7JBZ9DH0TX694ENCA-m2-bc1be9cb open actor=m2+mac-coordinator targets=breach-clock-and-budget-honesty
@@ -27,4 +29,5 @@ History:
 - 2026-09-02T12:06:41Z ETF8T5BGN6D03HM7FHSQP45W9G-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=breach-clock-and-budget-honesty
 - 2026-09-02T12:15:25Z DKX4DBK9MV7GX44HMD3WQK2J7K-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=breach-clock-and-budget-honesty
 - 2026-09-02T13:31:16Z K7GCW40NM2JJDZFNCMCYW07STC-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=breach-clock-and-budget-honesty
-Integrity: sha256=76b86ca11ba62daada00f0f98a9c395b9f3faeb90184ba9aae7f8b206f276f62
+- 2026-09-02T17:29:46Z 4CTSBKH0KB4MN5GQ5BFWH2SPTM-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
+Integrity: sha256=afedb271eb6258414088de4638a1a203f67d77f4700a5808891bb811ab8c4453
