@@ -5,9 +5,10 @@
 - Origin: main
 - Next step: Bug ladder per the paper's chapter 12 and R-38-m2: ANALYSIS first (Fable lane, design mode, 4h): for each specimen, which mechanism should have caught it, whether it exists, and why it did not fire; the complete map of stop paths (harness Stop hook, session death, permission-classifier block, decision-ask ending a turn, undelivered instruction channel) against the mechanisms that exist or are in flight in the six bound goals, with file and line; the residual holes; a proposed split into slices of at most 240 minutes. Then ANALYSIS CRITIQUE (Sol), then DESIGN (the closed chain: exit gate, steward seat-liveness nudge and re-launch, external escalation, the human stop word), DESIGN CRITIQUE, BUILD in slices, CODE CRITIQUE, fixtures replaying the specimens. Big item: 8h/10/240m/1 per R-44/R-45; split when the analysis lands.
 - OpenedAt: 2026-09-02T15:55:13Z
-- Revision: 3
+- Revision: 4
 - Labels: never-idle, robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-02T16:00:04Z
 - Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-02T15:55:34Z revision=3
 - StopCapability: generation=3 revision=3 machine=m1 claimEpoch=4 fenceEpoch=0
 
@@ -15,4 +16,5 @@ History:
 - 2026-09-02T15:55:13Z TWP09N196CSCMSC425TNGDRJGX-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
 - 2026-09-02T15:55:23Z 7S8B03DWXWET976RRBCQWA3YVY-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
 - 2026-09-02T15:55:34Z M3QCKQCVGYVD200QJWZXNXRD6M-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
-Integrity: sha256=4025d3a59cfda7ca5be6d4fce5f8457427e4a9b8d3ffc004cd4a79f6cc59e8ca
+- 2026-09-02T16:00:04Z HS3700W445K1X9BK75SSR81EQR-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
+Integrity: sha256=9fadd4379b0bb4dcafdb12336392804d9298840acfd71210eca71b1bb6538b5d
