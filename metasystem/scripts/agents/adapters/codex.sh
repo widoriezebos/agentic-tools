@@ -68,7 +68,7 @@ probe() {
     '{
       "resume": true,
       "sessionEstablishedSignal": true,
-      "sessionEstablishedTimeoutSec": 10,
+      "sessionEstablishedTimeoutSec": 30,
       "nativeStructuredOutput": true,
       "nativeEvents": true,
       "nativeUsage": true,
