@@ -5,8 +5,8 @@
 - Origin: human
 - Next step: PAUSED AT A SCOPE FORK, Wido's word requested (round-7 register records/misc/alert-channel-critique-r13.md): the remedy-advertisement corner diverged (1-2-3 findings across rounds 5-7, all its own; the rest of the design stable three rounds). Option A, seat-recommended: the alert advertises stale-proof facts only (goal id, job id, failure reason, where to look) plus the one resume command his word requires on the stop class, marked verified-at-journal-time best-effort — one fold, likely clean critique, then build. Option B: keep folding the dispatcher-precondition mirror (evidence says it diverges). His morning word required the two producer classes in slice 1; it did not require command-advertisement machinery. Work continues elsewhere meanwhile (retro due)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 36
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 37
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=23 at=2026-09-01T12:46:38Z
 
 History:
@@ -46,4 +46,5 @@ History:
 - 2026-09-01T21:44:29Z AT2VPJ7GPVYE16K8CA24BZ108S-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T22:26:50Z E1Q0T18AXDTEWSCZPEQAWE1KHN-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-01T22:27:31Z V96VQXWPYYF5Y8XWPP8JHGZ77Z-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
-Integrity: sha256=189f3ad374a62a5a082a5cccc78d65938fc29175cddd0126944ecea6c8cf6b21
+- 2026-09-02T06:53:22Z KBF1D4GA9QFBWVD6NKJN5QGJ18-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
+Integrity: sha256=2bad356e8e434b4d1c95c82763252550fddc13c06bd41aeeb8a51647b5ac35a2
