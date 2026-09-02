@@ -69,8 +69,9 @@ metasystem plans directory.
    mainId; HUMAN -> human), so the trailer cannot claim a person for an
    agent landing. Same seam, cheap; say yes or no with the reason.
 
-5. FIXTURES AND TESTS. metasystem/scripts/agents/static-reproof-
-   fixtures.sh stages callers against commit.sh. Specify the fixture
+5. FIXTURES AND TESTS. The fixture bed
+   metasystem/scripts/agents/static-reproof-fixtures.sh
+   stages callers against commit.sh. Specify the fixture
    cases by name: HUMAN commits with no landing gate; MAIN with an epoch
    is gated and still refuses the promoted codes in
    metasystem/scripts/agents/landing-promotion.json; DELEGATE is
