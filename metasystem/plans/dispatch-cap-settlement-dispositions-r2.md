@@ -16,3 +16,20 @@ five round-1 findings folded.
 
 Trajectory 5 -> 3, falling. Round 3 is the declared failsafe; revision 3
 folds these three and returns to the same critic chain.
+
+## Fold to revision 3 (job cap-settle-design-r3, Fable lane)
+
+All three round-2 findings folded (design sections 1.3, 1.9, 4.3, 5;
+changelog in the header). Three interpretation gaps reported; the
+orchestrator's answers:
+
+| Gap | Answer |
+| --- | --- |
+| Unknown fresh projection at conclusion: exhaust a failing attempt with a reason naming the unknown record (the obligation then waits for the human), or refuse to terminalize the run? | CONFIRMED as revision 3 chose: exhaust with the named reason. A run left non-terminal on disk would be re-assessed by the reaper while admission is already closed by the same unknown; the exhaustion path is the one every tripped breaker already takes. |
+| The final group-absence check: lease cannot import supervise, so `kernelGroupAbsent` moves to the identity package as `identity.GroupAbsent` with supervise pointing at it, rather than a copy inside lease. | CONFIRMED: the move. One owner for the kernel fact, in the package that already owns the process facts. |
+| A present but unparseable `ownershipProof.provenAt` is unknownBudget (fail closed); only an absent or empty one falls back to `startedAt`. | CONFIRMED: corruption fails closed; absence falls back. |
+
+Revision 3 goes to the same critic chain as round 3, the declared
+failsafe. If material findings remain after it and every one is
+mechanical-grain, the principled exit applies (fold as fixture
+obligations, build, mandatory code critique).
