@@ -20,8 +20,8 @@ The delegate worktree the dispatcher created for this job.
 1. Part 1 (section 2): metasystem/internal/adapter/codex.go
    `BuildCodexCommand` gains the `plugins={}` override on both verbs at the
    position D1.2 fixes; the pins in D1.6 in
-   metasystem/internal/adapter/runtime_test.go and
-   metasystem/internal/adapter/codexcommand_test.go.
+   metasystem/internal/adapter/runtime_test.go and the new test file
+   codexcommand_test.go in the same adapter package.
 2. Part 2 (section 3), in the order the design's section 4 lists: the new
    capability and its selection (adapters' probes, select.go, build.go,
    record.go, the fake probe); the three deadline writers (ownership.go,
