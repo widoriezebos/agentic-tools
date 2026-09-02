@@ -17,3 +17,17 @@ round 3.
 
 Round 1 closes on three accepted findings; revision 2 goes back to the
 same critic chain as round 2.
+
+## Fold to revision 2 (job implementer-178d269e0852ac7a8e897657-r2, Fable lane)
+
+All three round-1 findings folded in one pass (design sections 1-4, 6,
+7, 10; changelog in the header). The round reported three gaps; the
+orchestrator's answers:
+
+| Gap | Answer |
+| --- | --- |
+| F13, the pre-commit guard's token geometry: on a guard-enrolled machine a worker's WRAPPED worktree commit is refused because the guard reads the token under the main root while the wrapper mints it under the worktree (pre-commit-guard.sh:26, :58 versus commit.sh:6, :98). | DECIDED: resolution (a) — the guard derives its root from the committing repository's own geometry (toplevel plus prefix, the wrapper's geometry at commit.sh:141-142), never from its install location; the wrapper's token placement is unchanged, so the design's reject condition (c) does not fire. This is a pre-existing defect (today's worker commits take the human path and mint the token under the worktree, and meet the same guard), so it rides as its own slice on two-bars-for-changes, "guard-geometry", sequenced right after this one, not folded into this design. Recorded on the goal. |
+| The Devin ACP server carries no instance tag in argv (devin.sh:338), so the custody join on (pid, start) is primary and the tag a cross-check. | ACCEPTED as the design's decision; the tag stays optional. |
+| Two decisions left to the critic to confirm: `--push` refused on the worker path; the trailer names the custody-joined running job (a follow-up's -rN id). | ACCEPTED by the orchestrator; the round-2 brief asks the critic to confirm them. |
+
+Revision 2 goes to the same critic chain as round 2 of three.
