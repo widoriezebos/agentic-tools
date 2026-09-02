@@ -5,8 +5,8 @@
 - Origin: main
 - Next step: PARKED COLD-RESUMABLE per the design-critique loop's second-exhaustion rule (register records/misc/failed-job-attention-critique-r2.md): design at revision 2, seven findings converged to four of which two are fold-introduced regressions. RESUME RECIPE: fresh box, one fold (ABA prevention not documentation — or an explicit BlockedBy on job-record-birth-token; drop the write-ahead journal for derive-on-next-tick everywhere; a single-lock snapshot rule for queued notifications; name the channel-migration window's owner), closing critique, build, code critique. The design phase's remaining distance is one honest fold
 - OpenedAt: 2026-09-01T06:47:55Z
-- Revision: 9
-- Budget: elapsedLimit=6d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1
+- Revision: 10
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=4 at=2026-09-02T01:03:42Z
 
 History:
@@ -19,4 +19,5 @@ History:
 - 2026-09-02T01:39:14Z BVGTKGEMDSXKSAJPPBSEFPS4FE-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=failed-job-attention
 - 2026-09-02T05:45:02Z XDQ16CGSBBZQMKCCHZVPBDY9SJ-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=failed-job-attention
 - 2026-09-02T05:47:16Z 0RD8AM53B6MWGQQ7DCB2TPXB8M-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=failed-job-attention
-Integrity: sha256=f61a5e6f91f562bec08910c1e43d69f5367fc3ee2585901fddee159eae8608fe
+- 2026-09-02T06:53:18Z B5AQDCN50F10YWGTB2THGPYAYN-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=failed-job-attention
+Integrity: sha256=2a93ebeec3e48310549a722d901a875e23f417d5095173f488b1eeff0edaeb55
