@@ -5,8 +5,10 @@
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 1
+- Revision: 2
+- Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T18:37:50Z DDVQT0QE5B3Z2VM0DBN9YSGE4X-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=lease-sweep-death-evidence
-Integrity: sha256=19f49b3e8f3d44b7e822a2d37573c19bfc9747d606c82bbcc76dddfefe025cc7
+- 2026-09-02T18:38:01Z X8A2VJKV53D5WRDVFAF1WR0CZF-m1b-fad3674e set-budget actor=m1b+main-1788333346-60696-6a3256 targets=lease-sweep-death-evidence
+Integrity: sha256=c948aeb8e0273ab1529b56bb3731d9f19f8f6c474ccc7da3726e40697bb773c3
