@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Small-item ladder per R-38-m2 with R-44/R-45 budgets. Slice 1 (design, 4h): the join sequence as one owner (an engine verb or a script, decided by the design against the existing-owner-before-new-surface rule), the committed roster template, the ledger refspec (add +refs/metasystem/*:refs/metasystem/* at clone or at first goal verb), and every wrong or missing remedy text listed with file and line. Slice 2 (build + code critique, 4h): implement, fix the two refusal messages, land the fixture. Related: repair-accept-remote-verb (same advertise-a-missing-verb class), supervision-hook-wrong-root (m0's SessionStart hook cannot cd to <root>/metasystem on a checkout whose project dir already is metasystem), m1b's design-critique audit on the join question.
 - OpenedAt: 2026-09-02T11:38:06Z
-- Revision: 1
+- Revision: 2
 - Labels: bootstrap, fleet
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T11:38:06Z Z4PYJ5FANGBERA70E3NB535N3D-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
-Integrity: sha256=7d73c2abf2fd7e71ecabd360b387fe0ff2c1bbce6fb7eecc1fa57e4faf143f3b
+- 2026-09-02T11:38:17Z SRNAYVH07JE7R15CR5H5GYXXQQ-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
+Integrity: sha256=6b71e71124e9322f55135072855c60b4f75da06c59f11444bd0a7df231bf5e82
