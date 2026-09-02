@@ -5,10 +5,13 @@ Date: 2026-09-02
 # Goal
 
 Two-layer implementation critique of the breach-clock build (job
-breach-build-1b, Sol; diff.patch in its round evidence, commits in its
-worktree). The design is metasystem/plans/breach-clock-and-budget-honesty-design.md
-at revision 5, certified by Sol's four registers
-metasystem/records/misc/breach-design-critique-r1.md to -r4.md. First
+breach-build-2, Sol; commit 0d8e47ef in its worktree, diff.patch in its
+round evidence). The design is metasystem/plans/breach-clock-and-budget-honesty-design.md
+at revision 6a, certified by Sol's five registers
+metasystem/records/misc/breach-design-critique-r1.md to -r5.md, with the
+build-gap decisions in metasystem/records/misc/breach-build-1b-gaps.md
+(the only-claim invariant at the quota's unit and its exact wording;
+resume from the claimed shape keeps the claim; delivery.go unchanged). First
 conformance of the diff against the three Fix sections and the proof plan,
 then adversarial defect review. The standard is Wido's: hard deterministic
 machinery; no refusal weakened, no guarantee narrowed to make a test pass.
