@@ -9,7 +9,7 @@ breach-build-3b, Sol). Its worktree holds the round-1 build as a cherry-pick
 (commit 0d1f4592, identical in content to 0d8e47ef, which round 1 reviewed)
 and on top of it the fix commit e355c030 touching exactly
 metasystem/internal/goal/verbs.go, metasystem/internal/goal/verbs_test.go and
-metasystem/scripts/agents/goal-cli-fixtures.sh. Round 1 is
+metasystem/scripts/agents/goal-cli-fixtures.sh (three files). Round 1 is
 metasystem/records/misc/breach-code-critique-r1.md (landed; read it first).
 Scope is the fix commit's hunks against the three round-1 decisions; the
 rest of the build stands certified by round 1 and the orchestrator's host
