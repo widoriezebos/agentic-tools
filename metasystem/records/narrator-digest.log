@@ -728,3 +728,4 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-02T08:19:40Z HIGHLIGHT — A landing moved the repository storyline to commit 8895397175b6. (source: commit 8895397175b6e69754cdbf790d83812d6d3e5af9)
 2026-09-02T09:10:02Z LOWLIGHT — The steward escalated: a live worker with no progress for 5 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-8895397175b6e69754cdbf790d83812d6d3e5af9)
 2026-09-02T09:20:06Z LOWLIGHT — The steward escalated: a live worker with no progress for 6 ticks; a live holder is never displaced — operator attention requested. (source: episode escalation-stalled-idle-8895397175b6e69754cdbf790d83812d6d3e5af9)
+2026-09-02T09:30:16Z HIGHLIGHT — A landing moved the repository storyline to commit 19c61d240e00. (source: commit 19c61d240e00886f86f3461ef3c707335c6d7435)
