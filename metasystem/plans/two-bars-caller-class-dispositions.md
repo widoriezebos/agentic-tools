@@ -31,3 +31,5 @@ orchestrator's answers:
 | Two decisions left to the critic to confirm: `--push` refused on the worker path; the trailer names the custody-joined running job (a follow-up's -rN id). | ACCEPTED by the orchestrator; the round-2 brief asks the critic to confirm them. |
 
 Revision 2 goes to the same critic chain as round 2 of three.
+
+Round 2's dispositions are in plans/two-bars-caller-class-dispositions-r2.md (one table per file for the mechanical join).
