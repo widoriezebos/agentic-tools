@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Small item (4h): design paragraph (append semantics, the staleness check against the accepted tip, the refusal text), Sol critique, Sol build with a fixture that replays the empty-read overwrite and proves it refused, Fable code critique, land with --chain.
 - OpenedAt: 2026-09-02T16:27:54Z
-- Revision: 1
+- Revision: 2
 - Labels: robustness
+- Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T16:27:54Z 4TPZGZPR25FVZRHWG7ADWKY5W2-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=goal-edit-next-append
-Integrity: sha256=df3f4bb194784245ad212a322cdd6f5402e27364daa580f4821a83fe34c4c72f
+- 2026-09-02T16:28:05Z 930R2N46704Z7F94JMWWE1ZEZZ-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=goal-edit-next-append
+Integrity: sha256=af9b155eb0986ac73c0775c04cbcef800ea6646e63d5e43fa6d6233ea6a818ec
