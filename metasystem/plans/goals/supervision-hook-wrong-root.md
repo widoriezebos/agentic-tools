@@ -5,8 +5,8 @@
 - Origin: main
 - Next step: WAITS ON WIDO (attempt fence): design at revision 3, TWO findings from closure (register records/misc/hook-root-critique-r3.md; fold-4 brief landed and ready). The prior box's six attempts were spent by six ladder ROUNDS (~15 min each), not failures — the R-44 calibration finding: a full ladder is 7+ rounds, so attempt-limit 6 can never fit one. The machinery refuses both the identical re-box (no new revision) and the split (recorded work). One word resumes it: either a tuple with attempts 10 for this goal, or the standing R-44 tuple amended to attempts 10, or attempts redefined to count failures. Everything is landed; any seat resumes cold from this note
 - OpenedAt: 2026-09-01T07:25:56Z
-- Revision: 10
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 11
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=6 at=2026-09-01T22:28:54Z
 
 History:
@@ -20,4 +20,5 @@ History:
 - 2026-09-01T23:34:07Z 4080GD1YPFG2RJ5Z4ZYD9WX56Z-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T23:35:27Z CDJQKRR80476C6GJPVDJNRH7CP-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T23:35:31Z GTZ8BA0T05NB9DV9KWXY7EJSZH-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
-Integrity: sha256=58f91d820f2c6dc78892dd6279fa95b742763350eb1bee6bdb73e2bc83c10530
+- 2026-09-02T06:53:09Z 504Q8HYVBQSC634T92TB9CZEMJ-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
+Integrity: sha256=6275c4d1f9972b1cd3f3d3e43db95089e58c19c12a65b680407a9844d98edd25
