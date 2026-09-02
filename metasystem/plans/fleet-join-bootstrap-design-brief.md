@@ -9,14 +9,14 @@ metasystem/plans/goals/fleet-join-bootstrap.md first, its Intent is the
 evidence base. Wido's open question, verbatim from the dispatching seat's
 record: "whether a fresh session can boot itself into the fleet unaided".
 Three machines answered no on 2026-09-02 (m1b's fresh host clone, and the
-m0 and m0b guest clones before hand-fixing). Write exactly one NEW file,
-metasystem/plans/fleet-join-bootstrap-design.md. Every claim about the tree
+m0 and m0b guest clones before hand-fixing). Write exactly one NEW file named
+fleet-join-bootstrap-design.md in the metasystem plans directory. Every claim about the tree
 cites file and line; read the seams before you write about them.
 
 # Workspace
 
 The delegate worktree the dispatcher created for this job. Read anything;
-write only the design file.
+write only that one new design file.
 
 # What the design must settle
 
@@ -88,7 +88,7 @@ Wall-clock budget: 45 minutes. Design only; no builds, no benchmarks
 # Expected Return
 
 Version-2 implementer JSON; diffBoundary exactly the one design file named
-under Workspace.
+named under Goal.
 
 # Gap Rule
 
