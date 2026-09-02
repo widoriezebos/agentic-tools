@@ -4,94 +4,90 @@ Date: 2026-09-02
 
 # Goal
 
-Revise metasystem/plans/turn-verdict-hardening-design.md (revision 1, landed;
-edit it in place, bump the revision line) to close Sol's nine material
-findings in metasystem/records/misc/turn-verdict-hardening-critique-r1.md and
-to carry Wido's two words in ruling R-47-m0b (metasystem/memory/rulings.md,
-last row). Every finding is closed by changing the design text, or refuted
-with the code line that refutes it — never by softening the claim. Keep the
-original brief's requirements (metasystem/plans/turn-verdict-hardening-design-brief.md).
+Revision 3 of metasystem/plans/turn-verdict-hardening-design.md (revision 2
+landed, in your worktree). Sol's round-2 register is
+metasystem/records/misc/turn-verdict-hardening-critique-r2.md: four of the
+nine TVH-R1 closures are certified real, three are PARTIAL, and two NEW
+findings were raised. Fold the five material items below, each closure marked
+with the finding identifier. Edit the design in place; the diffBoundary is
+that one file.
 
-# Workspace
+# The folds, by id
 
-The delegate worktree the dispatcher created for this job. Edit exactly one
-existing file, the design; nothing else.
+1. TVH-R1-R3-NAMES-ILLEGAL-EXIT (partial). Two defects. (a) The byte-verbatim
+   Move strings omit the mandatory `--id` flags — read
+   metasystem/cmd/metasystem/goalsync_mutations.go and render the exact
+   accepted syntax, lineage flag included. (b) One machine may lawfully hold
+   several claims sharing one non-empty arc
+   (metasystem/internal/goal/validate.go, the machine-quota rule): if H1 and
+   H2 are held in arc A and queued g is in arc B, parking H1 alone still
+   fails the quota for g, so R3 would repeat unusable advice on every Stop.
+   Specify R3 over the SET of the pair's exhausted claims: the Move must name
+   every claim that has to be parked or released before g admits, or R3 must
+   recompute admission against the ledger-after-Move and only render a Move
+   the engine would then accept. Add the two-arc fixture to slice 1's tests.
+2. TVH-R1-FAIL-CLOSED-TABLE-OMITS-PREVERDICT-SHELL-EXITS (partial). Section
+   3.0 rule 4 says only emit_stop_payload sets emitted=1, yet P2 and rows F1,
+   F2, F5 prescribe direct printf JSON then exit 0 — the EXIT trap then prints
+   a second block object. Make every emission path go through the one
+   emitter (or have the emitter be the only thing that can print) so exactly
+   one JSON response leaves the hook on every path; add a fixture asserting
+   single-response on F1, F2, F5 and on a trap exit.
+3. TVH-R1-STOP-DEADLINE-DOES-NOT-BOUND-EMISSION (partial). The arithmetic is
+   right; the "every step bounded" claim is false: root mapping, runtime
+   lookup, payload handling, hook-attempt recording, ancestor discovery,
+   lease classification, JSON extraction and response construction are
+   outside run-bounded; the clock starts after the engine test so world
+   mapping is uncharged; and the marker lock's five-second wait exceeds the
+   3.5 s verdict allowance. Fix all three: start the clock at hook entry;
+   either bound every external command (git, engine calls, the classifier)
+   under run-bounded with a cap in the table, or state precisely which pure
+   shell steps are exempt and why they cannot block; give the marker lock a
+   cap that fits inside the verdict allowance (or shrink another cap and show
+   the new sum). Note also that `up` is sequential, not atomic
+   (metasystem/internal/up/up.go): state what a mid-kill leaves behind and
+   why the next `up` repairs it, or move `up` out of the Stop path.
+4. TVH-R2-SLICE1-HIDDEN-WRONG-ROOT-DEPENDENCY (critical). Sol is right: on
+   the affected fleet seats the shipped hook exits at the missing-engine
+   branch (metasystem/scripts/agents/supervision-hook.sh lines 26-30) before
+   any slice-1 verdict runs. The dispatching seat's DECISION: slice 1 is
+   SEQUENCED BEHIND goal supervision-hook-wrong-root landing first (its design
+   metasystem/plans/supervision-hook-root-design.md is at revision 3, two
+   folds from closure; the machine's single claim slot moves to it next).
+   Rewrite section 10 so slice 1's row carries that dependency explicitly,
+   state which of slice 1's hook lines then land on top of the root fix, and
+   restate the specimen claim honestly: "slice 1 refuses all three specimens
+   at the verdict boundary; at the deployed Stop boundary once the root fix
+   is in". Slice 2's dependency row is then redundant — say so.
+5. TVH-R2-HUMANSTOP-SEAT-AUTHORITY-UNSPECIFIED (high). Section 5.2 names
+   ProveOrTemporaryGoalAuthority, but that proof only exposes
+   AuthorizesSetObligation and AuthorizesResume
+   (metasystem/internal/humanauthority/authority.go), the command has no
+   caller-pid or seat contract, and `machine`/`lineage`/`relayedBy` would be
+   caller-controlled text. Specify: a HUMANSTOP-scoped authorization method
+   (AuthorizesHumanstop, with the ruling text it must cite); the seat written
+   into the marker derived from the SAME authenticated classification the
+   verdict uses (ClassifyVerbAt over the caller pid, not from flags); a
+   marker may only be minted for the minting seat's own pair; and add the
+   forged-lineage and cross-seat minting cases to slice 4's tests.
 
-# Wido's two words (R-47-m0b, decided — not open any more)
+Also fold Sol's declared gap on the 85-builder-minute estimate: the 207-line
+two-minute precedent was recovered prewritten work, not authored code. Either
+re-estimate from jobs that authored their diff (name them from
+artifacts/agents/jobs) or state the estimate as unsupported and re-cut slice 1
+so that even a doubled estimate fits one 120 cap plus one correction round.
 
-1. Relay counts: a relayed human word through the temporary-human-word path
-   MAY mint HUMANSTOP. Rewrite section 5 accordingly: the marker records the
-   relay provenance verbatim (who relayed, the recorded word, the review
-   date), the audit line names it as relayed, and the design states the
-   residual Sol named (the path cannot verify the speaker) as a
-   human-ratified exception rather than a hole. Section 9 ask 1 is closed.
-2. Stored budget only: READY's queued clause requires the budget already on
-   the ledger; an unbudgeted queued goal is a one-time notice. Section 9 ask
-   2 is closed with this text.
-
-# The nine findings, and what closing each requires
-
-- CLAIM-ADMISSION-OMITS-AUTHORITY-AND-REPLAY: ClaimAdmission must be the
-  proof the claim would succeed — carry the authenticated claim epoch and
-  lease-holder authority (bindClaim at metasystem/internal/goal/verbs.go line
-  475 in the critic's reading), and sit AFTER the opid replay check so an
-  AlreadyApplied replay is not refused. Read the verb; specify the exact
-  call order and signature.
-- R3-NAMES-ILLEGAL-EXIT: release, park and done all refuse a breach-stopped
-  goal (clearClaimBinding); only goal resume, a human transition, clears the
-  fence. R3 must therefore EXCLUDE fenced and budget-closed claims from
-  READY (they are WAITING-ON-HUMAN, reported not blocked) — or name a move
-  the engine actually accepts. Remove the `goal park --then` command that
-  does not exist.
-- SLICE1-IGNORES-GOAL-BOUND-GOVERNED-RUNS: run records already carry
-  goalId, governed.goalRevision, ownerLineage, claimEpoch and liveness. The
-  run join moves INTO slice 1. Read metasystem/internal/run to cite the
-  fields.
-- JOB-LIVENESS-DOWNGRADES-EXACT-IDENTITY: the direct process branch must
-  consume the record's full native identity (start ticks plus boot id on
-  Linux, start microseconds on Darwin); incomplete exact data is UNKNOWN,
-  not alive.
-- FRESH-CURSOR-IS-NOT-A-CURRENTNESS-WITNESS: a ten-minute cursor allows a
-  stale-board exit for ten minutes. Redesign: the allow path on "no READY"
-  requires a bounded fetch attempt in THIS verdict (success → fresh; failure
-  → not fresh → block with the reason), or an explicit local-sync mode; no
-  time window stands in for a fetch.
-- HUMANSTOP-CANNOT-RESCUE-DECISION-OWNER-FAILURES: split the table into
-  rows HUMANSTOP can rescue and rows that need the decision owner repaired;
-  for the latter name the machinery-owned recovery (the steward's
-  escalation, the `up` repair path) instead of a universal "unless
-  HUMANSTOP".
-- FAIL-CLOSED-TABLE-OMITS-PREVERDICT-SHELL-EXITS: the hook runs set -e with
-  unguarded mktemp, cat, mkdir and response construction before any verdict.
-  Specify the hook's structure so that the FIRST thing it does is arm a
-  trap that emits decision:block on any exit before a verdict is emitted;
-  every pre-verdict operation maps to a row.
-- STOP-DEADLINE-DOES-NOT-BOUND-EMISSION: context deadlines do not cancel
-  report.Scan, Project, FetchAdvance or their git subprocesses, and
-  `date +%s%N` is not portable to Darwin. Specify: the block decision is
-  emitted BEFORE any unbounded ceremony (ceremonies run after emission or
-  are each independently bounded), every git subprocess gets a timeout
-  argument or a killed child, the clock is portable.
-- RUNTIME-HOOK-CHECK-OMITS-TWO-SUPPORTED-RUNTIMES: three shipped
-  configurations (Claude, Codex, Devin); the session-start hooks check needs
-  Declaration.SelfCheck which only Claude has. Cover all three timeouts and
-  specify the check per runtime or the honest residual per runtime. Read
-  metasystem/internal/runtimes/runtimes.go (runtime facts).
-
-Also the critic's gap on slice size: give a work breakdown per slice with
-minute estimates against recorded precedent so the 240-minute claim is
-arguable; if slice 1 does not fit after adding the run join, re-cut into
-four slices — the first must still refuse all three specimens.
-
-Self-grade per the house rule.
+Consistency pass over sections 7, 9, 10, 11 (the ladder, the asks — record
+the wrong-root sequencing decision there — the slice table, the self-grade,
+the reject condition). R-31: no benchmarks.
 
 # Constraints
 
-Wall-clock budget: 45 minutes. Design only. R-31: no benchmarks.
+Wall-clock budget: 40 minutes. Design only; edit nothing but the design file.
 
 # Expected Return
 
-Version-2 implementer JSON; diffBoundary exactly the one design file.
+Version-2 implementer JSON; diffBoundary exactly the design file.
 
 # Gap Rule
 
