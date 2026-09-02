@@ -1,5 +1,5 @@
 Working Mode: design
-Orchestrator Identity: <dispatching seat>+<its session main> (dispatch delegate under goal fleet-join-bootstrap)
+Orchestrator Identity: m1+main-1788333680-2840-7f79f4 (dispatch delegate under goal fleet-join-bootstrap)
 Date: 2026-09-02
 
 # Goal
@@ -30,8 +30,8 @@ no record describes what the m0 and m0b guest clones hand-fixed.
    metasystem/internal/goal/txn.go around lines 49-61, 126-127 and
    409-413: does the first goal fetch on a truly fresh clone create the
    accepted pointer, or is there a state (no remote, no main fetched, the
-   sync-mode file absent) where it refuses? Note that origin carries
-   refs/metasystem/machines/m0/accepted and materialized-base; the design
+   sync-mode file absent) where it refuses? Note that origin carries, under its
+   refs namespace for the metasystem ledger, leftover m0 accepted and materialized-base refs; the design
    says nothing in the tree pushes or reads them. Confirm or refute.
 3. WALK THE SEVEN STEPS (section 1): for each, is the precondition
    checkable, is the corrected refusal text true of the code path, does
