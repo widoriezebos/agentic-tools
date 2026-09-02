@@ -20,7 +20,7 @@ READY (stored budget only). Those two words are law, not findings.
    finding said was missing, and the cited code agrees), partial, or
    cosmetic? Read the cited code lines — metasystem/internal/goal/verbs.go
    for the claim rule order and the ClaimAdmission extraction,
-   metasystem/internal/goal/run.go for the run record fields section 2.2
+   metasystem/internal/run/run.go for the run record fields section 2.2
    cites, metasystem/internal/report/scanjobs.go and
    metasystem/internal/lease/verbs.go for the exact-identity liveness in
    section 2.1, metasystem/scripts/agents/supervision-hook.sh for the trap
