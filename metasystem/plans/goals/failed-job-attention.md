@@ -3,9 +3,9 @@
 - State: queued
 - Intent: Wido's order 2026-09-01 (verbatim: 'Designing is not enough, I need this to be fixed before you do anything else... proven with tests'): the machinery that knows a delegate job died must say so loudly through what exists TODAY - the steward tick raises an escalation episode when a job under a claimed goal reaches terminal failed status unacknowledged, and when a breach-stop fires; episodes already reach health output and the digest. DONE means both events produce visible escalations proven by fixtures
 - Origin: main
-- Next step: PARKED COLD-RESUMABLE per the design-critique loop's second-exhaustion rule (register records/misc/failed-job-attention-critique-r2.md): design at revision 2, seven findings converged to four of which two are fold-introduced regressions. RESUME RECIPE: fresh box, one fold (ABA prevention not documentation — or an explicit BlockedBy on job-record-birth-token; drop the write-ahead journal for derive-on-next-tick everywhere; a single-lock snapshot rule for queued notifications; name the channel-migration window's owner), closing critique, build, code critique. The design phase's remaining distance is one honest fold
+- Next step: RESUME RECIPE (any seat where Codex opens a session under the 10-second cap): claim; fill the identity line of plans/failed-job-attention-critique3-brief.md and land it; dispatch the design-critic (Sol, DESIGN-BEARING) as the closing round; land the register under records/misc/failed-job-attention-critique-r3.md; if zero material, the design is certified and the BUILD waits on goal job-record-birth-token (m1 claimed it 2026-09-02 evening and its design round is running; the mechanical BlockedBy edge needs a human hand because goal reconcile refuses a seat-made blocker edit without --by, so the dependency is recorded here in prose until Wido adds the edge or words it; the design's dedup digest reads the minted birth generation), then build (Sol), code critique (Fable), land with --chain. Revision 3 (landed 8fd1420c) removed the write-ahead journal (derive-on-next-tick everywhere) and the birth-token fallback chain, put queued-notification delivery under the tick's lock per item, and gave the channel-migration window an owner and an end; three declared gaps are on the return of job failed-job-fold3 (m1). NOTE for the record's own history: a seat edit at 20:0x briefly replaced this step with the stale parked text because it composed from an unfetched ref; this text restores it (goal goal-edit-next-append owns the footgun).
 - OpenedAt: 2026-09-01T06:47:55Z
-- Revision: 13
+- Revision: 14
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=4 at=2026-09-02T01:03:42Z
 
@@ -23,4 +23,5 @@ History:
 - 2026-09-02T17:00:37Z GWAVPXGH2CTKKZVMXADD5V00J5-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=failed-job-attention
 - 2026-09-02T17:19:49Z QNS17BZGSKDYT1YJSAGS3HCYZV-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=failed-job-attention
 - 2026-09-02T17:21:39Z BP423BVC5J89TR5RJRBXZCS84X-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=failed-job-attention
-Integrity: sha256=c09e93bfb7fc3a9f7a914cc0b5eb6cba30c32b40b6c089084b4463708092a00e
+- 2026-09-02T17:23:48Z 3QW4NX0D2NERNJ1MJ17P8W32NY-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=failed-job-attention
+Integrity: sha256=1488ad79a7db434ffc7b007270992cf109674c3ff0213fa05e737dda2d88d2db
