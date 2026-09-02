@@ -10,14 +10,16 @@ budget is 30 seconds, so every seat including m1 can run these.
 
 | Goal | What is reviewed | Reviewer brief |
 | --- | --- | --- |
-| never-idle-ironclad | analysis: twelve stop paths, eight holes, eleven-slice arc; crux: the steward is the floor | plans/never-idle-critique-brief.md |
+| never-idle-ironclad | REVIEWED (nine material, records/misc/never-idle-analysis-critique-r1.md); the fold waits for minutes | done on m1 |
 | recovery-to-good-state | analysis: root cause confirmed and corrected five ways, seven-slice arc | plans/recovery-critique-brief.md |
 | fleet-join-bootstrap | design: one join script, roster template, corrected refusals, fixture | plans/fleet-join-critique-brief.md |
-| failed-job-attention | design revision 3 (closing round); build blocked on the birth token by R-53-m1 | plans/failed-job-attention-critique3-brief.md |
+| failed-job-attention | closing review RUNNING on m1 | plans/failed-job-attention-critique3-brief.md |
 | job-record-birth-token | design: the birthToken field, three create paths, no back-fill | plans/job-record-birth-token-critique-brief.md |
 | proof-harness-process-custody | design: load-generate custody verb, janitor orphans sweep | plans/proof-harness-custody-critique-brief.md |
 | account-provenance | design revision 2 (closing round); owner question on two new verbs | plans/account-provenance-critique2-brief.md |
-| host-health-role | design: the host-pressure steward role (review running on m1) | plans/host-health-role-critique-brief.md |
+| host-health-role | REVIEWED (seven material, records/misc/host-health-critique-r1.md); the fold waits for minutes | done on m1 |
 
 m1 takes these in order from the top as its claim slot frees; a VM seat
-taking one should claim it first so the two never collide.
+taking one should claim it first so the two never collide. Every goal
+whose pool is spent (240 minutes = two dispatches at cap 120) waits for
+Wido's minute word or the cap-necessity fix (m1b) before its next round.
