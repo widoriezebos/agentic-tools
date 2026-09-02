@@ -1,20 +1,23 @@
-# Design: reservation settlement for delegated jobs (goal dispatch-cap-necessity), revision 3
+# Design: reservation settlement for delegated jobs (goal dispatch-cap-necessity), revision 4
 
 Date: 2026-09-02. Author: Fable design delegate (jobs cap-settle-design,
-cap-settle-design-r2, cap-settle-design-r3) for orchestrator
-m1b+main-1788333346-60696-6a3256. Status: revision 3, for critique round 3
-(the declared failsafe). All line numbers are from this worktree at commit
-160c31f6 (no source under internal/, cmd/ or scripts/ changed since
-revision 1's 4142106d).
+cap-settle-design-r2, cap-settle-design-r3, cap-settle-design-r4) for
+orchestrator m1b+main-1788333346-60696-6a3256. Status: revision 4, for
+the focused follow-up critique on the three round-3 ids. All line numbers
+are from this worktree at commit c34e77a2 (no source under internal/,
+cmd/ or scripts/ changed since revision 1's 4142106d).
 
 Changelog: revision 2 folds critique round 1 (chain cap-settle-crit,
 dispositions in plans/dispatch-cap-settlement-dispositions.md):
 DCS-R1-TIMESTAMP-AUTHORITY, DCS-R1-START-PROOF (accepted in part),
 DCS-R1-REFUSAL-COVERAGE, DCS-R1-DISCHARGED-HUSK, DCS-R1-GOVERNED-COMPONENT-PROOF.
-Revision 3 folds critique round 2 (dispositions in
-plans/dispatch-cap-settlement-dispositions-r2.md):
+Revision 3 folds critique round 2 (plans/dispatch-cap-settlement-dispositions-r2.md):
 DCS-R2-STALE-RESERVED-SNAPSHOT, DCS-R2-END-BEFORE-DEATH,
-DCS-R2-MIXED-START-END-CLOCKS.
+DCS-R2-MIXED-START-END-CLOCKS. Revision 4 folds the failsafe round
+(plans/dispatch-cap-settlement-dispositions-r3.md):
+DCS-R3-RETRY-SELF-PROJECTION, DCS-R3-PROJECTION-WIRING,
+DCS-R3-LATE-START-INSTANT; it also corrects revision 3's import-graph
+claim in 1.9 (measured with `go list`, section 4.3).
 
 ## 0. The defect in one paragraph
 
@@ -25,10 +28,10 @@ A record that ended (`completed`, `failed`, `cancelled`, `timeout`;
 `TerminalStatus`, record.go:45-52) therefore keeps charging the minutes it
 was ALLOWED to run, not the minutes it ran. On the m1b checkout today the
 eight records bound to two-bars-for-changes (revisions 26 and 28) carry
-`capMin` 120 each and ran between 11 seconds and 13 minutes 41 seconds
-measured from the launcher's ownership stamp: old rule 960 minutes,
-observed rule 70 minutes (section 5, case T9). The governed-run path in
-the same function already settles ended attempts to `ObservedCostMinutes`
+`capMin` 120 each and ran between 12 seconds and 13 minutes 42 seconds
+measured from their creation stamp: old rule 960 minutes, observed rule
+70 minutes (section 5, case T9). The governed-run path in the same
+function already settles ended attempts to `ObservedCostMinutes`
 (budget.go:483-487); the delegated-job path never got that settlement.
 Wido's word (R-49-m1b): "Is just a bug ... so far from intent". This
 design is the fix.
@@ -49,12 +52,9 @@ charge(record) :=
   status in {pending-setup, pending, running}        -> capMin            (open: the ceiling it may still consume)
   TerminalStatus(status) and no process identity     -> 0                 (never launched: no delegate ran)
   TerminalStatus(status) and process identity:
-    start := time.Parse(RFC3339, ownershipProof.provenAt)   when the field is present and non-empty
-             else time.Parse(RFC3339, startedAt)            when provenAt is absent or empty
-             (a present, non-empty provenAt that does not parse -> unknownBudget)
-             else unknownBudget
-    end   := time.Parse(RFC3339, endedAt)                   else unknownBudget
-    end before start                                        -> unknownBudget (CLOCK_REGRESSED)
+    start := time.Parse(RFC3339, startedAt)   else unknownBudget
+    end   := time.Parse(RFC3339, endedAt)     else unknownBudget
+    end before start                          -> unknownBudget (CLOCK_REGRESSED)
     -> min(max(1, ceil((end - start) in whole seconds / 60)), capMin)
 ```
 
@@ -67,13 +67,14 @@ fixtures without timestamps stay valid.
 
 ### 1.2 "No process identity" is the proof of "never launched"
 
-The record's `startedAt` is NOT the launch instant: `BuildRecord` and
-`BuildFollowRecord` stamp `startedAt: nowISO()` when the pending record is
-assembled (build.go:423, build.go:635), and the pending-setup husk from
-`BuildSetup` carries only `createdAt` and no `startedAt`, `endedAt` or
-`pid` at all (build.go:148-164). Every built record starts with `"pid":
-nil, "pidStartedAt": nil, "pgid": nil` (build.go:400-402; the indexed husk
-at claim.go:710-716 likewise). The launcher spawns the detached runtime
+The record's `startedAt` is the record's creation stamp, not the launch
+instant: `BuildRecord` and `BuildFollowRecord` stamp `startedAt:
+nowISO()` when the pending record is assembled (build.go:423,
+build.go:635), and the pending-setup husk from `BuildSetup` carries only
+`createdAt` and no `startedAt`, `endedAt` or `pid` at all
+(build.go:148-164). Every built record starts with `"pid": nil,
+"pidStartedAt": nil, "pgid": nil` (build.go:400-402; the indexed husk at
+claim.go:710-716 likewise). The launcher spawns the detached runtime
 (scripts/agents/dispatch.sh:812-820), builds the ownership patch from the
 live process (`job ownership-patch`, dispatch.sh:834-843, which is
 `BuildOwnershipPatch` at internal/dispatch/ownership.go:58-82), lands it
@@ -94,40 +95,44 @@ record.go:39; creator-abandoned at adoption.go:137-142), and a `pending
 charge 0 and are still counted as an attempt (budget.go:362-365 is
 untouched), so the split guard (section 4) still sees work.
 
-### 1.3 The start instant is the launcher's ownership stamp, in the clock domain of `endedAt`
+### 1.3 The start instant is `startedAt`: the earlier stamp, one clock, no fallback
 
-The ownership patch stamps `ownershipProof.provenAt`: the launcher's own
-wall clock at the ownership write (`proven_at=$(now_iso)`,
-dispatch.sh:829; `now_iso` is `date -u +%Y-%m-%dT%H:%M:%SZ`,
-dispatch.sh:108; carried into the proof at ownership.go:75 and required
-non-empty by `validateOwnershipPatch` at ownership.go:163-166). `endedAt`
-is stamped from the same wall clock by every terminal writer (`nowISO()`,
-record.go:709-711; `now.Format(time.RFC3339)`, adoption.go:141;
-`nowStamp()`, lease/lease.go:67). Both ends of the measurement are
-therefore one clock domain.
+Order of events for a dispatch: the record is built (`job build-record`,
+dispatch.sh:1535, which is `BuildRecord` stamping `startedAt: nowISO()`
+at build.go:423; the follow-up record at dispatch.sh:2005 and
+build.go:635), set up (`__record-setup`, dispatch.sh:1602), and only then
+launched (`launch_adapter`, dispatch.sh:2333, whose spawn is at
+:812-820); the launcher samples `proven_at` after the spawn
+(dispatch.sh:829). So `startedAt` precedes the process start and
+`ownershipProof.provenAt` trails it: an interval measured from
+`provenAt` can be short of the runtime by up to a second and charge one
+minute less at a minute boundary, while an interval measured from
+`startedAt` bounds the runtime from ABOVE by the creation-to-spawn gap
+and never from below. That gap is seconds: on every one of the eleven
+goal-bound records on this checkout `provenAt` minus `startedAt` is 0 or
+1 second (the spawn sits between them), so the over-measure is at most
+that gap and, after rounding, at most one minute on a boundary. Both
+stamps are the same wall clock: `nowISO()` (record.go:709-711) for
+`startedAt`, and for `endedAt` `nowISO()` via `RecordCAS`
+(record.go:541-542) and `RecordProtocolError` (record.go:460-461),
+`now.Format(time.RFC3339)` (adoption.go:141) and `nowStamp()`
+(lease/lease.go:67). `startedAt` is immutable for the record's life
+(record.go:63).
 
-`pidStartedAt` is NOT read by the settlement. It stays the census's
-identity fact (census/run.go:56, 256, 361; supervise/watchdog.go:69,
-122). On Linux it is synthesised from the boot-time epoch plus the
-process's start ticks (identity/identity_linux.go:57-58), a wall-clock
-second that moves under a clock step (KI-37, memory/known-issues.md
-line 44), so a start from that source and an end from the wall clock
-would mix two domains.
+Rule: `start` is `startedAt` parsed with `time.Parse(time.RFC3339, ...)`,
+the parser budget.go:354 already applies; there is no fallback. Neither
+`ownershipProof.provenAt` nor `pidStartedAt` is read by the settlement.
+`provenAt` stays the launcher's proof of the ownership write
+(ownership.go:75, 163-166); `pidStartedAt` stays the census's identity
+fact (census/run.go:56, 256, 361; supervise/watchdog.go:69, 122), and on
+Linux it is synthesised from the boot-time epoch plus start ticks
+(identity/identity_linux.go:57-58), a value that moves under a clock step
+(KI-37, memory/known-issues.md line 44), which is the second reason it is
+not a settlement input. The never-launched proof is unchanged (1.2).
 
 Live shape, record cap-settle-crit (artifacts/agents/jobs, runtime
 state): `startedAt` 17:21:04Z, `ownershipProof.provenAt` 17:21:05Z,
-`source` "trusted-launcher", `endedAt` 17:31:16Z. Across the eleven
-goal-bound records on this checkout `provenAt` lies 0 to 1 second after
-`startedAt`.
-
-Rule: `start` is `ownershipProof.provenAt` parsed with
-`time.Parse(time.RFC3339, ...)`, the parser budget.go:354 already applies,
-when `ownershipProof` is an object carrying a non-empty `provenAt`; when
-the record carries `pid` but no `ownershipProof` or an empty `provenAt` (a
-legacy or foreign shape; a shipped launcher always writes both,
-ownership.go:75 and 163-166), fall back to `startedAt`; a present,
-non-empty `provenAt` that does not parse is `unknownBudget`; when neither
-`provenAt` nor `startedAt` parses, `unknownBudget`.
+`endedAt` 17:31:16Z: 612 seconds from `startedAt`, charge 11.
 
 ### 1.4 The post-discharge filter reads `startedAt`, else `createdAt`
 
@@ -186,8 +191,8 @@ patch. Test T11.
 
 Seconds are whole (`end.Sub(start) / time.Second`), minutes are
 `(seconds + 59) / 60`, and a result of 0 becomes 1: byte-for-byte the
-rounding the governed path uses at run/conclude.go:302-309, so an
-11-second handshake failure charges 1 and a 9-minute-4-second critique
+rounding the governed path uses at run/conclude.go:302-309, so a
+12-second handshake failure charges 1 and a 9-minute-4-second critique
 charges 10. The clamp `min(observed, capMin)` is what makes "a job killed
 at its cap settles to its cap or less, never more" true: the reaper stamps
 `endedAt` when it acts, one poll interval after `capDeadline`
@@ -199,11 +204,10 @@ charge; this change can only lower a goal's projected spend.
 
 Return `unknownBudget(file.Id, revision, logicalPath, reason)`
 (budget.go:195-198) with reasons `"the terminal reservation has no
-readable ownership proof time or startedAt"`, `"the terminal reservation
-has an unreadable ownershipProof.provenAt"`, `"the terminal reservation
-has no readable endedAt"`, `"CLOCK_REGRESSED: the terminal reservation
-ended before its ownership was proven"` (mirrors budget.go:267). The
-projection stays typed-unknown rather than all-zero (budget.go:20-22).
+readable startedAt"`, `"the terminal reservation has no readable
+endedAt"`, `"CLOCK_REGRESSED: the terminal reservation ended before it
+was created"` (mirrors budget.go:267). The projection stays
+typed-unknown rather than all-zero (budget.go:20-22).
 
 ### 1.8 No new configuration key
 
@@ -264,23 +268,24 @@ the same ladder dispatch.sh climbs:
 Bound: 4 seconds of waiting plus the two polling granularities per stale
 job, the numbers dispatch.sh uses at :343-352. `sweepGroupAbsent` is a
 fifth seam beside the four at sweep.go:214-224, defaulting to
-`identity.GroupAbsent`. That function is today's `kernelGroupAbsent`
+`supervise.KernelGroupAbsent`: today's unexported `kernelGroupAbsent`
 (supervise/arming.go:356-366: `kill(-pgid, 0)`, `ESRCH` means absent,
-`nil` or `EPERM` means present) moved to the identity package, which
-already owns the kernel process facts (`AllPids`, `TaggedSurvivors`,
-tagstate.go:24); it moves because supervise imports lease (arming.go,
-reaper.go) so lease cannot import supervise. `recordedComponentControl.groupAbsent`
-keeps its behaviour by pointing at the moved function.
+`nil` or `EPERM` means present) exported in place, one owner, no move.
+Revision 3 claimed lease could not import supervise; that was wrong:
+lease already imports steward (lease/classify.go, lease/verbs.go), steward
+imports supervise and dispatch, and neither supervise nor dispatch reaches
+lease (section 4.3 gives the `go list` evidence), so the direct import
+adds no edge the graph does not already close.
 
 When the group will not die the record must not become terminal: on the
 error `concludeStaleJob` writes nothing (the record keeps its status and
 its `endedAt` stays null), `sweepOne` propagates (sweep.go:119, 130),
 `cleanupStaleJobs` returns from its loop (sweep.go:46-52) before
-`sweep-completed` (sweep.go:57), and the caller refuses: the takeover returns without writing its sweep
-stamp (claim.go:263-268), succession (claim.go:201-205) and
-`completeInterruptedSweep` (claim.go:289-294) return the error. Who
-retries: the next lease claim, succession or `up` re-runs
-`cleanupStaleJobs` because the stamp is absent (`stampComplete`,
+`sweep-completed` (sweep.go:57), and the caller refuses: the takeover
+returns without writing its sweep stamp (claim.go:263-268), succession
+(claim.go:201-205) and `completeInterruptedSweep` (claim.go:289-294)
+return the error. Who retries: the next lease claim, succession or `up`
+re-runs `cleanupStaleJobs` because the stamp is absent (`stampComplete`,
 claim.go:310, consulted at 202 and 290), and once the job's cap expires
 the dispatch reap path (dispatch.sh:1066-1081) winds the group down and
 stamps `timeout` under its own ladder. Test T14.
@@ -295,14 +300,14 @@ when the two copies disagree. That reconciliation exists because two
 records hold the number.
 
 The delegated-job path has one authoritative record and, after 1.5 and
-1.9, the settled figure is already on it and owned by transitions: `pid`
-and `ownershipProof` (with `provenAt`) are written once by the ownership
-patch and never rewritten (every `ownershipPatchFields` key,
+1.9, the settled figure is already on it and owned by transitions:
+`startedAt` is immutable (record.go:63), `pid` is written once by the
+ownership patch and never rewritten (every `ownershipPatchFields` key,
 ownership.go:9-13, is refused once `pid` is set, ownership.go:149-151),
-`startedAt` is immutable (record.go:63), `endedAt` is refused in every
-patch and stamped once by a terminal transition acting on death evidence,
-after which a terminal record accepts only `mirror`, `chainClosed`,
-`chainUsage`, `runnerClosed` (record.go:92-95, 530-536). Therefore:
+`endedAt` is refused in every patch and stamped once by a terminal
+transition acting on death evidence, after which a terminal record
+accepts only `mirror`, `chainClosed`, `chainUsage`, `runnerClosed`
+(record.go:92-95, 530-536). Therefore:
 
 - **Decision: compute observed minutes from the record's own timestamps on
   every projection.** No new field, no new writer, no reconciliation.
@@ -406,7 +411,7 @@ and a subtest name in steward/health_test.go:247).
 | Revision admission refusals | admission.go:148-153, 164-166 | evidence added | Same; the proposal breach at :156-162 keeps its `"%d+%d proposed"` text. |
 | Admission renderer | admission.go:203-223 | rendering | Appends `; reserved observed=<n> open-caps=<m> limit=<L>` on every refusal with a known projection. |
 | Governed admission refusal | governed.go:134-141 | rendering | Breach objects unchanged; the error text carries fields and the reserved segment through the shared helper. |
-| Governed exhaustion at conclusion | governed.go:149 (`ReservedBefore`), run/conclude.go:316-318 | decision changes (4.3) | The check re-projects at conclusion; `ReservedBefore` stays on the record as the admission-time fact and no longer decides. |
+| Governed exhaustion at conclusion | governed.go:149 (`ReservedBefore`), run/conclude.go:316-318 | decision changes (4.3) | The check re-projects at conclusion through a store built by the one concluding constructor; `ReservedBefore` stays on the record as the admission-time fact and no longer decides. |
 | Health's over-limit breach | budget.go:531-532 (`finishBudgetProjection`) | unchanged | `budgetIntegerBreach` text as today; the `>` boundary and the `StopReasonCorruptOverLimit` route through `liveStopReason` (stop.go:79-87) are unchanged and fire less often because ended jobs no longer inflate the total. |
 | Health status and BREACH lines | steward/health.go:755-783 | unchanged | Health verdicts are not budget refusals; they print the total, which now means settled plus open. |
 | Split guard | cmd/metasystem/goalsync_mutations.go:507-508 | unchanged | Refuses when attempts, active jobs or reserved minutes are non-zero. A never-launched record charges 0 minutes but still counts 1 attempt (budget.go:365), so "recorded work" is still detected. |
@@ -425,60 +430,138 @@ Under the settled meaning an open cap inside that snapshot may have
 settled to a few minutes by the time the attempt concludes, so the frozen
 figure over-counts and can exhaust an obligation falsely. Rule: the
 check uses a projection taken at the conclusion instant, excluding the
-attempt being concluded, plus that attempt's observed minutes.
+attempt being concluded from both stores it may already occupy, plus that
+attempt's observed minutes.
 
-- **Seam.** `run.Store` gains one injection hook beside `ObserveGoverned`
-  (run/run.go:234-235):
+**The seam.** `run.Store` gains one injection hook beside
+`ObserveGoverned` (run/run.go:234-235):
 
-  ```go
-  // SpendSnapshot is a goal's settled spend at one instant, excluding the
-  // run being concluded: minutes of ended work and ceilings of open work.
-  type SpendSnapshot struct{ ObservedMinutes, OpenCapMinutes uint64 }
-  // ProjectSpend re-projects the goal at conclusion. A non-empty unknown
-  // names the record that prevented a trustworthy projection.
-  ProjectSpend func(record *Record, now time.Time) (snapshot SpendSnapshot, unknown string)
-  ```
+```go
+// SpendSnapshot is a goal's settled spend at one instant, excluding the
+// run being concluded: minutes of ended work and ceilings of open work.
+type SpendSnapshot struct{ ObservedMinutes, OpenCapMinutes uint64 }
+// ProjectSpend re-projects the goal at conclusion. A non-empty unknown
+// names the record that prevented a trustworthy projection.
+ProjectSpend func(record *Record, now time.Time) (snapshot SpendSnapshot, unknown string)
+// ErrNoSpendProjection is returned when a store without ProjectSpend is
+// asked to conclude a governed attempt.
+var ErrNoSpendProjection = errors.New("run store carries no ProjectSpend seam; build it with dispatch.NewConcludingRunStore")
+```
 
-  Production wiring sits where `ObserveGoverned` is wired
-  (cmd/metasystem/run.go:62-64): `ProjectSpend` calls
-  `dispatchcore.SettledSpendAtConclusion(root, record, now)`, a sibling of
-  `ObserveGovernedRun` (governed.go:55-78) that resolves the goal binding
-  and refuses on a revision mismatch exactly as governed.go:63-66 does,
-  then calls `ProjectBudgetWithoutRun(root, binding.File, now,
-  record.RunId)` and returns the projection's `ObservedJobMinutes` and
-  `OpenCapMinutes`, or `"record=<r> reason=<why>"` from
-  `projection.Unknown`. The run package cannot import dispatch (budget.go:17
-  imports run), which is why the seam exists.
-- **How the concluding attempt is excluded.** `ProjectBudget` becomes a
-  wrapper over `ProjectBudgetWithoutRun(repoRoot, file, now, excludeRunID
-  string)` with an empty id; the run-record loop's skip at budget.go:412-414
-  becomes `if record.GoalId != file.Id || record.RunId == excludeRunID {
-  continue }`. That suffices because of the read path: `terminalizeWithVerdict`
-  (conclude.go:216-236) and `terminalize` (conclude.go:254-272) call
-  `applyGovernedTerminal` inside the `s.cas` callback, before the record
-  is written, so the disk copy the projection reads (`Store.Read`,
-  run.go:375-380, called at budget.go:402-404) still holds the pre-terminal
-  status and would otherwise be charged as an open cap at
-  budget.go:451-462; and the durable obligation copy for this run is
-  published only by `RecordTerminal` at conclude.go:329-337, after the
-  check, so budget.go:464-488 cannot see it either.
-- **The check.** conclude.go:317 becomes: with a known snapshot,
-  `snapshot.ObservedMinutes + snapshot.OpenCapMinutes + observedMinutes >=
-  ReservedJobMinutesLimit`; the attempt and elapsed clauses at
-  conclude.go:316 and :318 are unchanged. When the seam is nil or returns
-  a non-empty unknown, fail closed: `reached` is true and, if the attempt
-  is failing, `ExhaustionReason` is `"BUDGET_UNKNOWN at conclusion: " +
-  unknown` (nil seam: `"no spend projection is wired"`), so the obligation
-  waits for the human exactly as any exhausted breaker does
-  (governed.go:121-126). A green, assumption-matching attempt is
-  unaffected: exhaustion needs `failing` (conclude.go:319-320). A real
-  exhaustion's reason names the parts: `"terminal non-green attempt
-  reached the human-set tuple: observed=<n> open-caps=<m> attempt=<o>
-  limit=<L>"`; the same string goes into the durable attempt, so
-  `terminalStateContradiction` (budget.go:498-504) still matches.
-- **`ReservedBefore`** keeps being written at governed.go:149 and read
-  by nothing that decides; it is the admission-time fact for the audit
-  trail. `terminalStateContradiction` does not compare it (budget.go:498-504).
+**One constructor for every store that may terminalize a governed run.**
+The methods that terminalize are `Assess` (conclude.go:72, reaching
+`terminalize` at :90 and `terminalizeWithVerdict` at :114 and :151),
+`SweepStale` (conclude.go:387, forcing `terminalizeWithVerdict` at :438)
+and `FailLaunch` (verbs.go:557-567). Production builds stores for them at
+three sites: cmd/metasystem/run.go:54 (`runStore`, the only one carrying
+the governed seams today), cmd/metasystem/supervise_component.go:245
+(`runPass`, calling `store.Assess` at :258) and lease/sweep.go:67
+(`cleanupStaleRuns`, calling `store.SweepStale` at :68). All three build
+through one constructor in the dispatch package, beside
+`ObserveGovernedRun` (governed.go:55-78):
+
+```go
+// NewConcludingRunStore is the one production constructor for a run
+// store that may terminalize a governed run. currentEpoch may be nil
+// where today's caller wires none.
+func NewConcludingRunStore(root string, currentEpoch func() (*int64, bool)) *run.Store {
+    return &run.Store{Root: root, CurrentEpoch: currentEpoch,
+        AdmitGoverned:   func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) { return EvaluateGovernedRunAdmission(root, request, time.Now().UTC()) },
+        ObserveGoverned: func(record *run.Record, now time.Time) run.AssumptionObservation { return ObserveGovernedRun(root, record, now) },
+        ProjectSpend:    func(record *run.Record, now time.Time) (run.SpendSnapshot, string) { return SettledSpendAtConclusion(root, record, now) }}
+}
+```
+
+`runStore` (cmd/metasystem/run.go:53-65) becomes a call passing its
+lease-based epoch reader (run.go:55-60); `runPass`
+(supervise_component.go:245) and `cleanupStaleRuns` (lease/sweep.go:67)
+call it with a nil epoch reader, exactly the seam they leave nil today.
+`SettledSpendAtConclusion(root, record, now)` resolves the goal binding
+and refuses on a revision mismatch exactly as governed.go:63-66 does,
+then calls `ProjectBudgetWithoutRun(root, binding.File, now,
+record.RunId)` and returns the projection's `ObservedJobMinutes` and
+`OpenCapMinutes`, or `"record=<r> reason=<why>"` from
+`projection.Unknown`.
+
+Import graph, measured with `go list -f '{{join .Imports "\n"}}'` and
+`go list -deps` at this commit: dispatch imports run (budget.go:17) and
+none of lease, steward or supervise; lease imports steward
+(lease/classify.go, lease/verbs.go) and steward imports dispatch and
+supervise; supervise imports dispatch; the transitive dependency set of
+dispatch contains neither lease nor supervise nor steward, and run's
+contains only goalbudget, governance, identity, obligationstate and
+retrodebt. So lease and cmd/metasystem can import dispatch for the
+constructor (lease already reaches it through steward) and no cycle
+appears. The run package cannot import dispatch (dispatch imports run),
+which is why the projection is a seam and the constructor lives in
+dispatch.
+
+**A store without the seam refuses to conclude a governed attempt.** In
+`applyGovernedTerminal` (conclude.go:288), directly after the
+`record.Governed == nil` early return (conclude.go:289-291): `if
+s.ProjectSpend == nil { return false, fmt.Errorf("terminal governed run %s
+cannot settle its spend: %w", record.RunId, ErrNoSpendProjection) }`. The
+error is raised inside the `s.cas` callback (conclude.go:228, 261) before
+`RecordTerminal` (conclude.go:329) and before the record write
+(run.go:413-416), so nothing is written: `Assess` returns it, `SweepStale`
+wraps it as `run sweep could not conclude` (conclude.go:439), `FailLaunch`
+returns it. Never silent exhaustion. Non-governed runs conclude through
+any store as today. Read-only stores stay bare and are safe because they
+never call a terminalizing method: gaterun/weight.go:363 (`Read`),
+dispatch/watch.go:23 (`RegisterWaiter`), counselor/sources.go:369
+(`List`), report/scan.go:196 (`List`), budget.go:404 (`Read`), and the
+five the grep for `run.Store{` also finds: steward/governed.go:18
+(`Read`, `RepairGovernedDebt`, `RecordGovernedObservation`, none of which
+terminalize: verbs.go:379, 405), steward/governed.go:48 (`Read`),
+steward/validation_window.go:157 (`Read`), census/run.go:349 (`List`),
+goal/turnverdict.go:269 (`List`).
+
+**How the concluding attempt is excluded, from both stores.**
+`ProjectBudget` becomes a wrapper over `ProjectBudgetWithoutRun(repoRoot,
+file, now, excludeRunID string)` with an empty id, and the exclusion
+applies in two places:
+
+- the run-record loop's skip at budget.go:412-414 becomes `if
+  record.GoalId != file.Id || record.RunId == excludeRunID { continue }`;
+- the durable collection at budget.go:395-400 skips `attempt.RunID ==
+  excludeRunID` before inserting into `durable`, so the excluded attempt
+  takes part in neither the duplicate check (budget.go:396-398), nor the
+  unpruned-owner check (budget.go:466-468), nor the charge
+  (budget.go:483-487).
+
+Why both: `RecordTerminal` commits the durable terminal spend BEFORE the
+run record's terminal write (obligationstate/state.go:241-243 states the
+order; conclude.go:329-337 runs inside the `s.cas` callback and the write
+follows at run.go:413-416). A retry after a partial commit therefore
+finds an unpruned durable attempt for this run beside a still-open run
+record. Excluding only the run record would leave the attempt in
+`durable`, unseen, and budget.go:466-468 would report `claims unpruned
+spend for missing run` for THIS run id; the retry would then fail closed
+into different terminal fields and `RecordTerminal` would refuse them as
+conflicting (state.go:258-264). With both exclusions the retry projects
+exactly what the first call projected, computes the same `Exhausted`,
+`Breaker` and `ExhaustionReason`, and `RecordTerminal` returns nil by its
+DeepEqual idempotence (state.go:258-261). Ordinary projections (an empty
+exclude id) keep today's fail-closed behaviour during that window: the
+open run record beside its unpruned attempt is `BudgetUnknown`
+(budget.go:466-468) until the retry completes, so admission refuses
+rather than guesses.
+
+**The check.** conclude.go:317 becomes: with a known snapshot,
+`snapshot.ObservedMinutes + snapshot.OpenCapMinutes + observedMinutes >=
+ReservedJobMinutesLimit`; the attempt and elapsed clauses at
+conclude.go:316 and :318 are unchanged. When the seam returns a non-empty
+unknown, fail closed: `reached` is true and, if the attempt is failing,
+`ExhaustionReason` is `"BUDGET_UNKNOWN at conclusion: " + unknown`, so
+the obligation waits for the human exactly as any exhausted breaker does
+(governed.go:121-126). A green, assumption-matching attempt is
+unaffected: exhaustion needs `failing` (conclude.go:319-320). A real
+exhaustion's reason names the parts: `"terminal non-green attempt
+reached the human-set tuple: observed=<n> open-caps=<m> attempt=<o>
+limit=<L>"`; the same string goes into the durable attempt, so
+`terminalStateContradiction` (budget.go:498-504) still matches.
+`ReservedBefore` keeps being written at governed.go:149 and read by
+nothing that decides; `terminalStateContradiction` does not compare it.
 
 ## 5. Tests (internal/dispatch/budget_test.go unless noted)
 
@@ -489,35 +572,36 @@ trailing value-typed parameter:
 type budgetJobLife struct {
     startedAt, endedAt, createdAt string // "" omits the field
     pid                           int    // 0 omits the field; a launched job carries its process identity
-    provenAt                      string // "" omits ownershipProof; else {"provenAt": ..., "source": "trusted-launcher"}
+    provenAt                      string // "" omits ownershipProof; else {"provenAt": ..., "source": "trusted-launcher"} (T12 only)
 }
 func writeBudgetJob(t *testing.T, root, name, operation string, revision, cap uint64, status string, life budgetJobLife)
 ```
 
 Existing open-record call sites pass `budgetJobLife{}`. A launched
 terminal fixture passes `pid` (any positive integer; the rule only tests
-presence and positivity), `provenAt` and `endedAt`.
+presence and positivity), `startedAt` and `endedAt`.
 
 **Named cases** (all with `budgetGoal()`, claim at 08:00:00Z, limit 75,
 projection time 10:00:00Z unless stated; "launched at T" means `pid` 4242
-plus `provenAt` T):
+plus `startedAt` T):
 
 | Case | Fixture | Assertion |
 | --- | --- | --- |
 | T1 `TestCompletedJobChargesObservedMinutesNotItsCap` | `completed`, cap 120, launched at 08:10:00Z, endedAt 08:20:00Z | `ReservedJobMinutes == 10`, `ObservedJobMinutes == 10`, `OpenCapMinutes == 0`, `ActiveJobs == 0`, `Attempts == 1` |
 | T2 `TestRunningJobChargesItsCap` | `running`, cap 45, `budgetJobLife{}` | `ReservedJobMinutes == 45`, `OpenCapMinutes == 45`, `ActiveJobs == 1` (also `pending` and `pending-setup` subtests) |
-| T3 `TestFailedJobThatEndedSecondsAfterStartChargesOneMinute` | `failed`, cap 120, launched at 08:10:00Z, endedAt 08:10:11Z | `ReservedJobMinutes == 1` |
+| T3 `TestFailedJobThatEndedSecondsAfterStartChargesOneMinute` | `failed`, cap 120, launched at 08:10:00Z, endedAt 08:10:12Z | `ReservedJobMinutes == 1` |
 | T4 `TestTimeoutAtTheCapChargesTheCapNeverMore` | `timeout`, cap 120, launched at 08:00:00Z, endedAt 10:01:30Z (reaper lag past the deadline) | `ReservedJobMinutes == 120` |
 | T5 `TestSettledMinutesRoundUpLikeTheGovernedPath` | table over `settledJobMinutes`: 0s to 1, 1s to 1, 60s to 1, 61s to 2, 544s to 10, 711s to 12 with cap 120; 7260s with cap 120 to 120 | equals the run/conclude.go:302-309 arithmetic, then the clamp |
 | T6 `TestNeverLaunchedTerminalRecordChargesZero` | (a) husk shape: `cancelled`, cap 120, no pid, no startedAt, createdAt 08:05:00Z, endedAt 08:12:00Z; (b) `failed`, cap 120, no pid, startedAt 08:10:00Z, endedAt 08:20:00Z; (c) discharge branch, on the bed of governed_budget_coverage_test.go:15-36 (obligation revision 6, consumed proof at 09:30:00Z): a `cancelled` husk with createdAt 09:45:00Z, endedAt 09:46:00Z, no startedAt, no pid; a second husk with createdAt 09:00:00Z; a third with neither startedAt nor createdAt | (a), (b): `Status == BudgetKnown`, `ReservedJobMinutes == 0`, `Attempts == 1`. (c): the 09:45 husk counts (`Attempts == 1`, `ReservedJobMinutes == 0`, `Status == BudgetKnown`); the 09:00 husk is filtered (`Attempts` unchanged); the stampless husk is `BudgetUnknown` naming its record with a reason containing `startedAt or createdAt` |
-| T7 `TestLaunchedTerminalRecordWithoutReadableTimestampsIsUnknown` | pid 4242 and (a) no ownershipProof and no startedAt, (b) no endedAt, (c) `endedAt: "yesterday"`, (d) endedAt 08:09:00Z before provenAt 08:10:00Z, (e) `provenAt: "yesterday"` with startedAt 08:10:00Z | `Status == BudgetUnknown`, `Unknown.Record == "artifacts/agents/jobs/<name>.json"`, reason contains `ownership proof time`, `endedAt`, `endedAt`, `CLOCK_REGRESSED`, `provenAt` respectively |
+| T7 `TestLaunchedTerminalRecordWithoutReadableTimestampsIsUnknown` | pid 4242 and (a) no startedAt, (b) no endedAt, (c) `endedAt: "yesterday"`, (d) endedAt 08:09:00Z before startedAt 08:10:00Z | `Status == BudgetUnknown`, `Unknown.Record == "artifacts/agents/jobs/<name>.json"`, reason contains `startedAt`, `endedAt`, `endedAt`, `CLOCK_REGRESSED` respectively |
 | T8 `TestReservedJobMinutesIsObservedPlusOpenCaps` | (a) delegated: one completed (launched, 10 min), one running cap 45, one never-launched failed. (b) governed: `obligationstate.RecordTerminal(root, "bounded", 3, 6, TerminalAttempt{RunID "settled-run", Status green, StartedAt 08:10:00Z, EndedAt 08:35:00Z, PrunedAt 08:40:00Z, AttemptOrdinal 1, ExecutionCostMinutes 30, ObservedCostMinutes 25, WeightGeneration 1, BudgetEpoch nil, Breaker closed})` plus one live governed run written as governed_test.go:179-186 does (`run.Store{Root, Now, AdmitGoverned}` returning an attempt with `GoalRevision 3, ExecutionCostMinutes 30, BudgetEpoch nil`, then `Launch` with `GoalId "bounded"`). (c) both beds together | (a): `ObservedJobMinutes == 10`, `OpenCapMinutes == 45`, sum 55. (b): `ObservedJobMinutes == 25`, `OpenCapMinutes == 30`, `ReservedJobMinutes == 55`, `Attempts == 2`, `ActiveJobs == 1`. (c): `ObservedJobMinutes == 35`, `OpenCapMinutes == 75`, `ReservedJobMinutes == 110`, `Attempts == 5`; and in every subtest `ReservedJobMinutes == ObservedJobMinutes + OpenCapMinutes` |
-| T9 `TestTwoBarsForChangesSpecimenSettlesToObservedMinutes` | the eight records on the m1b checkout (goal two-bars-for-changes, cap 120, pid set), `ownershipProof.provenAt` and `endedAt` verbatim, all 2026-09-02Z: rev 26: 11:48:40 to 11:48:51, 11:34:36 to 11:46:27, 16:02:00 to 16:15:41, 11:52:23 to 11:52:34, 15:49:33 to 15:58:37, 16:18:11 to 16:29:46; rev 28: 16:35:28 to 16:46:05, 16:48:05 to 16:56:49 | claimed revision 26: `ReservedJobMinutes == 50` (1+12+14+1+10+12), not 720; claimed revision 28: `20` (11+9), not 240 |
+| T9 `TestTwoBarsForChangesSpecimenSettlesToObservedMinutes` | the eight records on the m1b checkout (goal two-bars-for-changes, cap 120, pid set), `startedAt` and `endedAt` verbatim, all 2026-09-02Z: rev 26: 11:48:39 to 11:48:51, 11:34:36 to 11:46:27, 16:01:59 to 16:15:41, 11:52:22 to 11:52:34, 15:49:33 to 15:58:37, 16:18:10 to 16:29:46; rev 28: 16:35:27 to 16:46:05, 16:48:05 to 16:56:49 | per record 1, 12, 14, 1, 10, 12 and 11, 9 minutes; claimed revision 26: `ReservedJobMinutes == 50`, not 720; claimed revision 28: `20`, not 240 |
 | T10 `TestEveryBudgetRefusalNamesObservedAndOpenCaps` (admission_test) | (a) attempt-only: goal with `AttemptLimit 1, ReservedJobMinutesLimit 10000`, one settled 1-minute job, `EvaluateGoalRevisionAdmission` with proposed cap 120; (b) reserved-minutes: limit 240, one settled 50-minute job, one running cap 120, proposed 120; (c) unknown: a revisionless record | (a): breaches `[attemptLimit used=1 limit=1]`, `Reserved == {1, 0, 10000}`, `FormatGoalAdmission` renders exactly `BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=1 limit=1; reserved observed=1 open-caps=0 limit=10000`. (b): breach `reservedJobMinutesLimit used=170+120 proposed limit=240`, `Reserved == {50, 120, 240}`, rendered `...admission closed: reservedJobMinutesLimit used=170+120 proposed limit=240; reserved observed=50 open-caps=120 limit=240`. (c): `Reserved == nil` and the `BUDGET_UNKNOWN` line has no reserved segment. Plus a governed subtest: `EvaluateGovernedRunAdmission` on an active obligation whose cost breaches, error text contains `; reserved observed=` |
 | T11 `TestRecordCASRefusesEndedAtPatch` (record_test.go, beside `TestRecordCASRefusesImmutableField` at :196-204) | `createPending`, `setupPending`; patch `{"endedAt": "2026-08-28T09:00:00Z"}` for pending to running, then for pending to pending; then empty patches pending to running and running to completed; then a terminal metadata patch `{"mirror": ..., "endedAt": "2026-01-01T00:00:00Z"}` | the first two: exit code 1 and message `record patch cannot contain endedAt; the terminal transition stamps it`, record unchanged; after the completion the record's `endedAt` parses as RFC3339; the terminal patch: exit code 1 and the same message, `endedAt` byte-identical to the stamp |
-| T12 `TestObservedMinutesRunFromTheOwnershipStamp` | (a) `completed`, startedAt 08:10:00Z, launched at 08:12:00Z, endedAt 08:22:00Z; (b) fallback: pid 4242, no ownershipProof, startedAt 08:10:00Z, endedAt 08:20:00Z; (c) ownershipProof with `provenAt: ""` and startedAt 08:10:00Z, endedAt 08:20:00Z; (d) `pidStartedAt` set to the epoch of 07:00:00Z beside provenAt 08:12:00Z and endedAt 08:22:00Z | (a): `ReservedJobMinutes == 10`, not 12; (b), (c): `ReservedJobMinutes == 10`; (d): `10`, proving `pidStartedAt` is not read |
-| T13 `TestGovernedExhaustionReprojectsSettledSpendAtConclusion` (dispatch package, on the bed of governed_test.go:194-200 with `ProjectSpend` wired to `SettledSpendAtConclusion`; goal `ReservedJobMinutesLimit` 150, `AttemptLimit` at least 2, obligation `TimingEnvelopeSeconds` 1800 so the cost is 30) | (a) settled cap: a delegated job `running` cap 120; the governed attempt is admitted at equality (used 120, cost 30, `ReservedBefore == 120`); the delegated job then completes (launched at 08:00:00Z, endedAt 08:10:00Z); the attempt starts 09:00:00Z and concludes red at 09:30:00Z. (b) real exhaustion: as (a) but the delegated job stays running. (c) exclusion: no other job, limit 60, cost 30, the attempt concludes red after 30 minutes. (d) unknown: as (b) plus an unreadable job record (duplicate keys, as budget_test.go:159) | (a): `Governed.Exhausted == false`, `Breaker != BreakerExhausted`, `ExhaustionReason == ""` (the old check would have read 120 + 30 >= 150). (b): `Exhausted == true`, reason contains `observed=0 open-caps=120 attempt=30 limit=150`. (c): `Exhausted == false` (an un-excluded run would have read 30 + 30 >= 60). (d): `Exhausted == true`, reason contains `BUDGET_UNKNOWN at conclusion` and the record path |
+| T12 `TestObservedMinutesRunFromTheCreationStampNotTheOwnershipStamp` | (a) `completed`, startedAt 08:10:00Z, provenAt 08:10:30Z, endedAt 08:20:10Z (610 seconds from `startedAt`, 580 from `provenAt`); (b) as (a) with `pidStartedAt` set to the epoch of 07:00:00Z; (c) as (a) without any ownershipProof | (a), (b), (c): `ReservedJobMinutes == 11`, never 10 |
+| T13 `TestGovernedExhaustionReprojectsSettledSpendAtConclusion` (dispatch package, on the bed of governed_test.go:194-200 with the store built by `NewConcludingRunStore(root, nil)` and `Now` frozen; goal `ReservedJobMinutesLimit` 150, `AttemptLimit` at least 2, obligation `TimingEnvelopeSeconds` 1800 so the cost is 30) | (a) settled cap: a delegated job `running` cap 120; the governed attempt is admitted at equality (used 120, cost 30, `ReservedBefore == 120`); the delegated job then completes (launched at 08:00:00Z, endedAt 08:10:00Z); the attempt starts 09:00:00Z and concludes red at 09:30:00Z. (b) real exhaustion: as (a) but the delegated job stays running. (c) exclusion from the run store: no other job, limit 60, cost 30, the attempt concludes red after 30 minutes. (d) unknown: as (b) plus an unreadable job record (duplicate keys, as budget_test.go:159). (e) partial-commit retry: run (b) once with a frozen clock, save the run record's pre-terminal bytes beforehand, restore them after the conclusion so the durable attempt exists (unpruned) beside an open run record, then conclude again with the same frozen clock | (a): `Governed.Exhausted == false`, `Breaker != BreakerExhausted`, `ExhaustionReason == ""` (the old check would have read 120 + 30 >= 150). (b): `Exhausted == true`, reason contains `observed=0 open-caps=120 attempt=30 limit=150`. (c): `Exhausted == false` (an un-excluded run would have read 30 + 30 >= 60). (d): `Exhausted == true`, reason contains `BUDGET_UNKNOWN at conclusion` and the record path. (e): the second conclusion returns nil, the durable state keeps one attempt and its generation, and the run record's `Governed` fields (`ObservedCostMinutes`, `Exhausted`, `Breaker`, `ExhaustionReason`) and `EndedAt` are byte-identical to the first outcome; an ordinary `ProjectBudget` between the two calls is `BudgetUnknown` naming the unpruned attempt |
 | T14 `TestClaimSweepStampsEndedAtOnlyAfterGroupDeath` (lease/sweep_test.go, with the seams as sweep_test.go:17-30 plus `sweepGroupAbsent`) | a stale `running` record with `pgid` and `instanceTag`, ownership provable; `sweepKill` records each signal; `sweepGroupAbsent` scripted: (a) present for the first three polls after SIGTERM, then absent; (b) present until the SIGKILL, absent after it; (c) present forever; (d) SIGTERM returns `ESRCH` | (a): signals `[TERM]`, `endedAt` stamped, status `failed`, `error` `stale-claim-epoch`. (b): signals `[TERM, KILL]`, `endedAt` stamped. (c): signals `[TERM, KILL]`, `concludeStaleJob` returns an error containing `survived SIGKILL`, the record on disk keeps status `running` and no `endedAt`, `cleanupStaleJobs` returns the error and emits no `sweep-completed`, and a takeover through it leaves `stampComplete` false. (d): no wait, `endedAt` stamped |
+| T15 `TestEveryConcludingPathCarriesTheSpendSeam` | (a) `runPass` (cmd/metasystem/supervise_component.go:244-262) over a draining failing governed run whose goal has one settled 10-minute job and limit 150, store from the constructor; (b) `cleanupStaleRuns` (lease/sweep.go:66-76, bed of sweep_run_test.go:14) over a stale wrapped governed run with the same goal; (c) a bare `run.Store{Root: root}`: `Assess`, `SweepStale` and `FailLaunch` on a failing governed attempt; (d) a bare store on a non-governed run | (a), (b): the run is terminal, the durable attempt exists, `Exhausted == false` and the reason is empty (0 + 0 + observed below 150; the revision-3 nil-seam rule would have exhausted it). (c): each returns an error for which `errors.Is(err, run.ErrNoSpendProjection)`, the run record on disk keeps its pre-call status and generation, and no durable attempt exists. (d): concludes as today |
 
 **Existing tests: exact changes.**
 
@@ -554,21 +638,20 @@ plus `provenAt` T):
   `|| projection.ObservedJobMinutes != 0 || projection.OpenCapMinutes != 20`.
 - obligationstate/state_test.go:247 gains `|| projection.ObservedJobMinutes
   != attempt.ObservedCostMinutes || projection.OpenCapMinutes != 0`.
-- Governed conclusion fixtures. `testStore` (run/run_test.go:38) wires
-  `ProjectSpend` to return `SpendSnapshot{}` and an empty unknown, so
-  `TestFailingTerminalAttemptOwnsExhaustionAndRaisesDebt`
+- Governed conclusion fixtures. The run package cannot import dispatch,
+  so `testStore` (run/run_test.go:38) wires `ProjectSpend` to return
+  `SpendSnapshot{}` and an empty unknown; `TestFailingTerminalAttemptOwnsExhaustionAndRaisesDebt`
   (run/governed_test.go:29-60, exhausted through `AttemptLimit` 1) and the
   attempt-limit-2 case at run/governed_authority_coverage_test.go:95-110
   (failing through an unavailable observation, asserts NOT exhausted: 0 +
-  0 + 1 < 10) keep their assertions; without the wiring the second would
-  fail closed into exhaustion. The other Store literals that conclude
-  governed runs (dispatch/governed_test.go five sites,
-  gaterun/weight_test.go:121-125, gaterun/weight_authority_coverage_test.go:30-37,
-  steward/governed_test.go:21) wire `ProjectSpend` to
-  `dispatch.SettledSpendAtConclusion` wherever they already wire
-  `ObserveGoverned` to `dispatch.ObserveGovernedRun`, and to the
-  known-zero stub elsewhere; their green proofs are unaffected either way
-  (exhaustion needs a failing attempt).
+  0 + 1 < 10) keep their assertions; without the wiring both would now
+  return `ErrNoSpendProjection`, never a silent outcome. The other Store
+  literals that conclude governed runs (dispatch/governed_test.go five
+  sites, gaterun/weight_test.go:121-125,
+  gaterun/weight_authority_coverage_test.go:30-37, steward/governed_test.go:21)
+  build through `dispatch.NewConcludingRunStore(root, nil)` and then set
+  `Now` and `Prober` as they do today; their packages already import
+  dispatch.
 - `TestPublishedSetupRetainsAttemptAndReservedMinutes`
   (budget_test.go:97-116): a pending-setup husk charges its cap 30.
   Unchanged.
@@ -579,11 +662,11 @@ plus `provenAt` T):
 - `TestRecordCASRefusesImmutableField` (record_test.go:196-204) and every
   other `RecordCAS` test: no existing patch carries `endedAt` (grep
   `"endedAt"` in internal/dispatch/*_test.go patches: none). Unchanged.
-- Lease sweep tests (sweep_test.go:16-60, 118-200; refusals_test.go:345-400)
-  stub `sweepKill` and the process-table seams; they gain a default
-  `sweepGroupAbsent` stub that returns absent, which reproduces today's
-  immediate stamp, so their assertions are unchanged. T14 scripts the
-  seam explicitly.
+- Lease sweep tests (sweep_test.go:16-60, 118-200; refusals_test.go:345-400;
+  sweep_run_test.go:14) stub `sweepKill` and the process-table seams;
+  they gain a default `sweepGroupAbsent` stub that returns absent, which
+  reproduces today's immediate stamp, so their assertions are unchanged.
+  T14 scripts the seam explicitly.
 - evidence/gc_test.go:259 (`spent`, completed, no timestamps, no pid):
   `before` is `BudgetUnknown` today because `empty-goal.json` (line 273)
   trips budget.go:315-316 first, and the test asserts only `before ==
@@ -601,8 +684,8 @@ attempt limit 1 at line 1092, reserved limit 10000) and `admission closed:
 elapsedLimit` (goal-cli-fixtures.sh:409, 552); both remain substrings of
 the new lines. The `structured-budget-within` job in that bed is a real
 fake-runtime dispatch whose record carries engine-stamped `pid`,
-`ownershipProof.provenAt`, `startedAt`, `endedAt`, so it settles to 1 and
-the attempt boundary still closes admission.
+`startedAt`, `endedAt`, so it settles to 1 and the attempt boundary still
+closes admission.
 
 ## 6. Evidence of intent: a bug, not a choice
 
@@ -632,26 +715,30 @@ the attempt boundary still closes admission.
 ## 7. Unchanged by this design
 
 The reaper's kill line (`CapExpired`, reapfacts.go:134-152) and its
-no-kill-authority rule, `capMin` immutability (record.go:64), the
-ownership write and its one-shot rule (ownership.go:138-166), the census's
-identity facts (`pid`, `pidStartedAt`, which the settlement does not
-read), the slice-norm admission on the cap (goal/norm.go), the attempt and
-active-job counting (budget.go:362-375), the elapsed accounting, the
-governed-run projection path (budget.go:377-488), the `BUDGET_UNKNOWN` and
-exit-code contract of the admission verbs, the steward's health renderer,
-dispatch.sh's own wind-down ladder, and the mission fence ledgers.
+no-kill-authority rule, `capMin` and `startedAt` immutability
+(record.go:63-64), the ownership write and its one-shot rule
+(ownership.go:138-166), the census's identity facts (`pid`,
+`pidStartedAt`) and the launcher's proof (`ownershipProof`), none of which
+the settlement reads, the slice-norm admission on the cap (goal/norm.go),
+the attempt and active-job counting (budget.go:362-375), the elapsed
+accounting, the governed-run projection path apart from the exclusion
+(budget.go:377-488), `RecordTerminal`'s write order and idempotence rule
+(state.go:241-266), the `BUDGET_UNKNOWN` and exit-code contract of the
+admission verbs, the steward's health renderer, dispatch.sh's own
+wind-down ladder, and the mission fence ledgers.
 
 ## 8. Self-grade
 
 - **Confidence: high** on the charge rule, the transition ownership of
-  `endedAt`, the one-clock start instant, the death ladder for the sweep
-  and the re-projection at conclusion (every claim is a read line in this
-  worktree; the specimen arithmetic is from the live records, whose
-  ownership stamp lies 0 to 1 second after `startedAt`). **Medium** on
-  the governed fixture list: the six Store literals were found by grep
-  for `AdmitGoverned` and `ObserveGoverned` assignments; a fixture that
-  builds its store through a helper in another package would escape it,
-  and would then fail closed into exhaustion rather than pass silently.
+  `endedAt`, the `startedAt` start instant and its bound, the death ladder
+  for the sweep, the two-store exclusion and the one constructor (every
+  claim is a read line in this worktree; the import graph was measured
+  with `go list` at this commit; the specimen arithmetic is from the live
+  records). **Medium** on the completeness of the concluding-store
+  inventory: the ten `run.Store{` literals were found by one grep and each
+  is classified by the methods it calls; a store built through a helper in
+  a package not yet grepped would, if it concluded a governed attempt,
+  fail closed with `ErrNoSpendProjection`, never silently.
 - **Residual, recorded not built (KI-45, memory/known-issues.md line 53):**
   a dispatcher that dies between spawning the detached runtime
   (dispatch.sh:812-820) and landing the ownership patch (dispatch.sh:853)
@@ -665,26 +752,43 @@ dispatch.sh's own wind-down ladder, and the mission fence ledgers.
   clock step DURING a job shifts that job's charge by the size of the
   step, bounded above by the clamp to `capMin` (1.6) and below by the
   one-minute floor. No monotonic cross-process measure exists and none is
-  built; the census's clock-step-immune pair (`startTicks` plus `bootId`)
-  proves identity, not duration.
+  built.
+- **Residual, by construction (1.3):** the interval from `startedAt`
+  over-measures the runtime by the creation-to-spawn gap, 0 or 1 second on
+  every live record, at most one minute after rounding on a boundary, and
+  never under-measures. The direction is the safe one: a job is never
+  charged less than it ran.
+- **Residual, pre-existing and out of scope:** a retry after a partial
+  commit converges only when the retry stamps the same `endedAt`: the
+  Assess path stamps it at draining entry (conclude.go:116-121) and reuses
+  it (conclude.go:222-226), but a run that never drained takes `now` at
+  each attempt (conclude.go:266-269) and a second wall-clock second can
+  change `ObservedCostMinutes` at a minute boundary, which `RecordTerminal`
+  refuses as conflicting (state.go:263). This design removes the
+  projection's contribution to that divergence and T13(e) freezes the
+  clock; the stamp's own contribution is unchanged behaviour.
 - **Weakest claim:** that the sweep's 4-second ladder is long enough on a
   loaded machine. dispatch.sh has used the same 2-plus-2 seconds since the
   ladder was written (dispatch.sh:343-352) and a survivor is a refusal
   the next claim retries, never a false stamp, so the failure direction is
   a delayed takeover rather than a wrong settlement.
-- **Reject condition, re-run for revision 3:** reject if any lawful writer
+- **Reject condition, re-run for revision 4:** reject if any lawful writer
   patches `endedAt` through `RecordCAS` on an open record (none found);
   if a terminal job-record writer exists that neither goes through
   `RecordCAS` nor stamps `endedAt` itself, or stamps it without death
-  evidence after 1.9 (the set found is the four in 1.5 and, after the
-  amendment, each acts on death or self-report); if any job-record writer
-  clears or rewrites `pid` or `ownershipProof` on a launched record
-  (`validateOwnershipPatch` forbids the rewrite and no writer clears them);
-  if a shipped launcher writes an ownership proof without `provenAt`
-  (ownership.go:163-166 refuses it); if any path concludes a governed run
-  with the record already terminal on disk (then the exclusion by run id
-  would double-count nothing but the durable copy would already exist:
-  conclude.go:329-337 publishes it inside the same callback, so none was
-  found); or if a validation bed asserts the bare `BUDGET_REFUSED: ...
-  admission closed` line with nothing after it (none does). Any of these
-  reopens the design before build.
+  evidence after 1.9 (the set found is the four in 1.5); if any
+  job-record writer rewrites `startedAt` (immutable, record.go:63) or
+  clears `pid` on a launched record (`validateOwnershipPatch` forbids the
+  rewrite and no writer clears it); if the launcher can spawn the runtime
+  before `job build-record` stamps `startedAt` (the order at
+  dispatch.sh:1535, 1602, 2333 says it cannot); if a production path
+  terminalizes a governed run through a store not built by
+  `NewConcludingRunStore` (the ten literals are classified above; such a
+  path would surface as `ErrNoSpendProjection`, not as a wrong number);
+  if `RecordTerminal` ever runs after the run record's terminal write
+  (state.go:241-243 and conclude.go:329-337 inside the callback say it
+  runs before); if `dispatch` ever imports `lease`, `steward` or
+  `supervise` (the constructor's callers would then form a cycle); or if
+  a validation bed asserts the bare `BUDGET_REFUSED: ... admission closed`
+  line with nothing after it (none does). Any of these reopens the design
+  before build.

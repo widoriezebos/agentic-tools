@@ -21,3 +21,18 @@ follow-up that enumerates the open ids on a fresh three-round budget of
 the same chain. The lane for the fold (pure design lane, or the joint
 round Wido granted twice on this pattern) is his word; the seat
 proceeds on the pure lane meanwhile.
+
+## Fold to revision 4 (job cap-settle-design-r4, Fable lane)
+
+All three failsafe-round findings folded (design sections 1, 1.9, 4.3,
+5, 8; changelog in the header). Three notes reported; the orchestrator's
+answers:
+
+| Gap | Answer |
+| --- | --- |
+| Five more production `run.Store` sites exist beyond the brief's list (steward/governed.go, steward/validation_window.go, census/run.go, goal/turnverdict.go); all read, list or call non-terminalizing verbs and are listed bare-and-safe with the methods they call. | ACCEPTED: the design's complete inventory is the truth; the brief's shorter list was the orchestrator's incomplete grep. |
+| Import-graph correction of revision 3's own claim: measured with `go list`, lease imports steward, steward imports supervise and dispatch, and neither supervise nor dispatch reaches lease; so the group-absence check stays in supervise (exported in place) and the one concluding-store constructor lives in dispatch, reachable from cmd and lease without a cycle. | ACCEPTED as the measured fact; the round-3 dispositions carried revision 3's wrong direction unflagged, which is the orchestrator's miss. The round-4 critic is asked to verify the measured graph. |
+| Residual: a retry after a partial commit converges only when it reuses the same `endedAt` (the drained path does; a never-drained run stamps now at each attempt, conclude.go:267-268) — pre-existing, outside this design's change; T13(e) freezes the clock. | RECORDED, not amended: the design stays inside its box; the never-drained retry stamp is its own small item if it ever bites (no specimen exists). |
+
+Revision 4 goes to the same critic chain as round 4, the first round of
+a fresh three-round budget (failsafe round 6).
