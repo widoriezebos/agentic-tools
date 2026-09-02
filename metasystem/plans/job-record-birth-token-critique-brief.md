@@ -18,7 +18,7 @@ enumeration as its weakest claim and its reject condition.
 
 1. ATTACK THE WRITER ENUMERATION (section 3), the design's own reject
    condition: find every path that writes a job record under
-   artifacts/agents/jobs, including any that replaces a record wholesale
+   metasystem/artifacts/agents/jobs, including any that replaces a record wholesale
    from caller bytes or by rename, in packages the note did not open
    (search Go for the jobs directory path and the record lifecycle
    functions in metasystem/internal and metasystem/cmd, and shell for
