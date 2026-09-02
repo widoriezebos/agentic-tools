@@ -40,7 +40,8 @@ The delegate worktree the dispatcher created for this job.
    metasystem/cmd/metasystem/goalsync_mutations.go, the cancellation-duty
    route in metasystem/internal/dispatch/stop.go and the steward tick, the
    one-claim rule and every consumer of the claimed set, the parse
-   invariants and the hand-edit mapper in metasystem/internal/goal/reconcilemap.go.
+   invariants and the hand-edit mapper in metasystem/internal/goal/reconcilemap.go
+   (the design's own words for each).
 4. Every test and fixture the proof plan names, by its exact name, at the
    seam the plan puts it.
 
