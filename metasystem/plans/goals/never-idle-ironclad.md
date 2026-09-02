@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Bug ladder per the paper's chapter 12 and R-38-m2: ANALYSIS first (Fable lane, design mode, 4h): for each specimen, which mechanism should have caught it, whether it exists, and why it did not fire; the complete map of stop paths (harness Stop hook, session death, permission-classifier block, decision-ask ending a turn, undelivered instruction channel) against the mechanisms that exist or are in flight in the six bound goals, with file and line; the residual holes; a proposed split into slices of at most 240 minutes. Then ANALYSIS CRITIQUE (Sol), then DESIGN (the closed chain: exit gate, steward seat-liveness nudge and re-launch, external escalation, the human stop word), DESIGN CRITIQUE, BUILD in slices, CODE CRITIQUE, fixtures replaying the specimens. Big item: 8h/10/240m/1 per R-44/R-45; split when the analysis lands.
 - OpenedAt: 2026-09-02T15:55:13Z
-- Revision: 1
+- Revision: 2
 - Labels: never-idle, robustness
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T15:55:13Z TWP09N196CSCMSC425TNGDRJGX-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
-Integrity: sha256=42cb6257b3d0b857137ebfa0f7fa4c900fa24dee544427bc0e5d982f220ef2d7
+- 2026-09-02T15:55:23Z 7S8B03DWXWET976RRBCQWA3YVY-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=never-idle-ironclad
+Integrity: sha256=be1c21d86cfad3567c2a21eb9711f926640239cf52ecf0b39ced95356029460e
