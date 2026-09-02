@@ -73,8 +73,7 @@ that one file.
 
 Also fold Sol's declared gap on the 85-builder-minute estimate: the 207-line
 two-minute precedent was recovered prewritten work, not authored code. Either
-re-estimate from jobs that authored their diff (name them from
-artifacts/agents/jobs) or state the estimate as unsupported and re-cut slice 1
+re-estimate from jobs that authored their diff (name them from the job records under the agents artifacts directory) or state the estimate as unsupported and re-cut slice 1
 so that even a doubled estimate fits one 120 cap plus one correction round.
 
 Consistency pass over sections 7, 9, 10, 11 (the ladder, the asks — record
