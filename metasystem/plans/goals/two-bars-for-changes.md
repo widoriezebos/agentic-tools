@@ -1,13 +1,15 @@
 # two-bars-for-changes
 
-- State: queued
+- State: claimed
 - Intent: Design changes take the loop, mechanical defects take a direct fix, declared and audited
 - Origin: main
 - Next step: THE GATE REFUSES, landed 4a351338 by m0 (account Wido@M0) - the landing itself passed bar (a) declared, the first in the program's history. Refusal scope exactly R-40-m0's verbatim order: missing or conflicting agent declarations; the floor code direct-fix-floor-refused stamps observe-only AWAITING WIDO'S PROMOTION WORD (one line in scripts/agents/landing-promotion.json plus his register row, per the Law 2 shape). Remaining legs: full-bar promotion after the observation window (Wido reviews the stamped verdicts); the deferred witness/growth-fuse/audit-join slices; eight riding lows across the chain records. Other machines gain the gate at their next engine rebuild from main - fleet note: rebuild soon, undeclared agent commits will refuse. m0 releases. AUDIT ADDENDUM (m1b 2026-09-02, full text records/misc/design-gate-audit-2026-09-02.md, lands with m1b's first gated landing): OBSERVATION WINDOW MEASURED on origin/main 25782041 - 24 wrapper commits since the gate, 1 pass, 23 would-refuse (15 direct-fix-floor-refused = records/briefs/designs landed under register-carriage the allowlist does not cover; 4 chain-open; 2 unknown-direct-fix-class; 2 missing-declaration that landed despite promotion). PRECONDITION FOR ANY FURTHER PROMOTION: name the lawful landing path for records, briefs, designs and critique records (grow scripts/agents/register-carriage-paths.txt to the record trees with new-file-or-append rules, or make them ride their chains) - otherwise promotion stops every seat on day one; Wido's call. NEW SLICE, THE REFUSE BIT BINDS ON THE CALLER'S CLASS: hazard - commit.sh:8-30 collapses 'no claimEpoch' into the HUMAN branch, and internal/lease RequireHolderAt (verbs.go:365-369) returns success without an epoch for a DELEGATE-classified caller (classify.go:341-346: any process under a runtime adapter with no announced main), so an unannounced agent session or a worker with a shell commits with agent_commit=0 and no landing refusal ever fires (proven live on m1b: lease require-holder from the session -> class DELEGATE, holder false, exit 0). Mechanism: the wrapper branches on the reported CLASS - HUMAN commits sovereign, MAIN with epoch under the gate, every other class (DELEGATE, SUPERVISION, ADAPTER-SUPERVISOR, STEWARD, UNTRUSTED) refuses to commit at all. Refusal shape: 'commit refused: caller is DELEGATE, not a person or an announced main; run metasystem up from the session (steward armed) or commit from a human terminal'. Tests: fixture callers of each class (HUMAN ungated, MAIN gated, DELEGATE refused; epoch-changed refusal unchanged). Builder starts from commit.sh:8-30, verbs.go RequireHolderAt/gateHolder (:359-369, :480-482), classify.go:341-346, static-reproof-fixtures.sh. 4h slice, independent of every other leg, cheapest real teeth available. LATER SLICE, BAR (a) CONSUMES DESIGN PROVENANCE (sequenced behind design-gate-at-dispatch): observeChain (observe.go:106-153) additionally reads the root record's designChain and design-critic job id minted by that gate and stamps would-refuse code=chain-without-design for a DESIGN-BEARING landing whose chain carries none; a human waiver names itself in provenance; observe first, promote with the rest. WIDO'S WORD 2026-09-02 (R-46-m1b): the allowlist GROWS to the record trees under a new-file-or-append rule (chosen over chain-riding); the existing tuple stands; m1b claims and starts with the caller-class slice, then the allowlist growth, both under the full ladder.
 - OpenedAt: 2026-08-20T00:03:00Z
-- Revision: 25
+- Revision: 26
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=7 at=2026-09-01T07:14:29Z
+- Claimed: machine=m1b lineage=main-1788333346-60696-6a3256 at=2026-09-02T11:28:14Z revision=26
+- StopCapability: generation=26 revision=26 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=two-bars-for-changes
@@ -35,4 +37,5 @@ History:
 - 2026-09-02T00:41:30Z 8T99TGMK4PNZ28X1RKBH6PRNYV-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=two-bars-for-changes
 - 2026-09-02T07:39:24Z B8QX7DX4J64ZW6P53GM0CMAQFD-m1b-c9a70020 edit actor=m1b+mac-m1b targets=two-bars-for-changes
 - 2026-09-02T11:28:03Z QTYX2XDNB7B6XH1NZTHTFDZ6XK-m1b-fad3674e edit actor=m1b+main-1788333346-60696-6a3256 targets=two-bars-for-changes
-Integrity: sha256=6ee5587a6ccb1cce1af0b15f4c6bd89e9d58c6c6a0dd53be415957262724f4e9
+- 2026-09-02T11:28:14Z WNPQ57EGG7FBCD0Q5CYVN6CNG3-m1b-fad3674e claim actor=m1b+main-1788333346-60696-6a3256 targets=two-bars-for-changes
+Integrity: sha256=ace7ee2700baa7685b29c1dbb3f4df8e02c5cbf4cad3db317582b10192327c6b
