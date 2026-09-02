@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Design first (Fable 5.1 lane): one design covering the five closures with the outcome table and the two-seat fixtures; then Sol critique; build in slices of at most 240 reserved minutes (slice 1: block-once removal + relevant INFLIGHT + fail-closed table, the three that would have caught all three specimens; slice 2: seat-scoped READY + freshness; slice 3: HUMANSTOP lifecycle); Fable code critique per slice; land with --chain. Sequenced with supervision-hook-wrong-root: either land that fix first or carry its resolution in slice 1
 - OpenedAt: 2026-09-02T07:19:48Z
-- Revision: 1
+- Revision: 2
 - Labels: priority-1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 
 History:
 - 2026-09-02T07:19:48Z KA597TSPF61Y7YC5ZFY7DFCVQ6-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=turn-verdict-hardening
-Integrity: sha256=88667c9156cca7eeb6e4ad8d108f7d1dd39937fa99b8102888f44cc01b9f4af9
+- 2026-09-02T07:19:52Z ACEYSWFMRYQ6B8YR66EJPK077S-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=turn-verdict-hardening
+Integrity: sha256=5a4cad92697a778103982684473bdebcbe4633095366c2491f26812c829b4391
