@@ -5,9 +5,10 @@
 - Origin: main
 - Next step: Small-item ladder per R-38-m2 with R-44/R-45 budgets. Slice 1 (design, 4h): the join sequence as one owner (an engine verb or a script, decided by the design against the existing-owner-before-new-surface rule), the committed roster template, the ledger refspec (add +refs/metasystem/*:refs/metasystem/* at clone or at first goal verb), and every wrong or missing remedy text listed with file and line. Slice 2 (build + code critique, 4h): implement, fix the two refusal messages, land the fixture. Related: repair-accept-remote-verb (same advertise-a-missing-verb class), supervision-hook-wrong-root (m0's SessionStart hook cannot cd to <root>/metasystem on a checkout whose project dir already is metasystem), m1b's design-critique audit on the join question.
 - OpenedAt: 2026-09-02T11:38:06Z
-- Revision: 5
+- Revision: 6
 - Labels: bootstrap, fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=5 at=2026-09-02T16:41:37Z
 - Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-02T16:41:14Z revision=5
 - StopCapability: generation=5 revision=5 machine=m1 claimEpoch=4 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-02T15:50:07Z EM7PG7Y65AATKYADBYXCSNJF9R-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
 - 2026-09-02T15:53:59Z N0ZAM7P8E6H6T9T7CV9P321M91-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
 - 2026-09-02T16:41:14Z V57QSXTV01RD0HDSQXX9A1XKDN-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
-Integrity: sha256=cd8b5c9a9b80a769cccd8f7f3f8fc86395d76f972ec94052ade3026dde1606df
+- 2026-09-02T16:41:37Z J4N80W2DXJAXX8TG1BAPPGXK66-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
+Integrity: sha256=c69d042c96f8fc0dc273033b265e7ed0961adb60295ee3382c18f44dec8121a2
