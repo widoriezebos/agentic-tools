@@ -13,3 +13,18 @@ Fold verification: the critic confirmed all three round-1 findings folded.
 | TBCC-R2-AMBIGUOUS-MACHINE-LINEAGE | accepted | Verified: commit.sh:355-366 passes the caller's message through and appends the wrapper's trailers, so a message already carrying a Machine trailer yields two; RAN: 42 commits since 00:00 today carry more than one Machine trailer, the hand-written one first. A reader taking the first trailer reads the borrowed identity. | Revision 3: the wrapper refuses a commit whose message already carries any wrapper-owned trailer (Machine, Landing-Provenance, Landing-Provenance-Verdict) with a named sentence, before minting the token; a leg proves it; the fleet note that hand-typed Machine trailers now refuse rides the landing message. |
 
 Trajectory 3 -> 3, all three mechanical-grain (a bounded refusal, a status literal, a trailer rule). Round 3 is the declared failsafe; if material findings remain after it and are all mechanical-grain, the principled exit applies: fold them as fixture obligations and build with a mandatory code critique.
+
+## Fold to revision 3 (job implementer-178d269e0852ac7a8e897657-r3, Fable lane)
+
+All three round-2 findings folded in one pass (changelog in the design
+header). The round reported three gaps; the orchestrator's answers:
+
+| Gap | Answer |
+| --- | --- |
+| Two additions beyond the brief's minimum for the trailer monopoly: (a) message sources the wrapper cannot read before committing (-C, -c, --amend, --fixup, --squash, -t, -e, `-F -`, no message) refuse with a named sentence; (b) the post-commit postcondition counts each wrapper-owned key once and rolls back a hook-injected duplicate. | ACCEPTED, both: without (a) a borrowed Machine line rides -C or --amend past the pre-mint check; without (b) a repository hook reopens the hole. No shipped caller uses a refused form (land.sh passes -F <path>; the beds and the consumer-wiring test pass -m). The round-3 critic is asked to confirm or strike them on their merits. |
+| A second engine verb, `lease job-worktree`, for the landing driver's geometry check rather than three rev-parse lines in shell. | ACCEPTED: one owner for the geometry rule (the worker rule's step 1 and land.sh consult the same function); land.sh already depends on the engine through the wrapper. |
+| The pre-commit guard's token geometry (F13), carried as open. | Already DECIDED after round 2 (resolution (a), the guard derives its root from the committing repository; its own slice on the goal, "guard-geometry"); the design may keep it listed as reported, since it does not edit the guard. Not a design change. |
+
+Revision 3 goes to the same critic chain as round 3, the declared
+failsafe. If material findings remain after it and every one is
+mechanical-grain, the principled exit applies.
