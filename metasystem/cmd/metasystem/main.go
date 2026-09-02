@@ -423,6 +423,14 @@ func families() []family {
 			},
 		},
 		{
+			name:    "session",
+			summary: "the announced main session's human-only stop authority",
+			verbs: []verb{
+				{"stop", "human-only: authorize one quiet stop for the current announced main session", runSessionStop},
+				{"end", "retire any unused quiet-stop authorization for one ended session (internal)", runSessionEnd},
+			},
+		},
+		{
 			name:    "steward",
 			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
 			verbs: []verb{

@@ -100,7 +100,7 @@ type GoalFacts struct {
 type Verdict struct {
 	SchemaVersion     int        `json:"schemaVersion"`
 	ShouldBlock       bool       `json:"shouldBlock"`
-	BlockSource       *string    `json:"blockSource"` // "open-work" | "goal" | null
+	BlockSource       *string    `json:"blockSource"` // "open-work" | "goal" | "idle-backlog" | "uncertainty" | null
 	OpenWork          []string   `json:"openWork"`
 	OpenWorkSignature string     `json:"openWorkSignature"`
 	Goal              *GoalFacts `json:"goal"`
@@ -164,8 +164,22 @@ func NormalizeSession(id string) string {
 func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId string) (Verdict, error) {
 	sessionId = NormalizeSession(sessionId)
 	verdict := Verdict{SchemaVersion: 1, LedgerStatus: "ok"}
+	resolvedRoot, err := ResolveStateRoot(s.Root)
+	if err != nil {
+		return failClosedTurnVerdict(err), nil
+	}
+	s.Root = resolvedRoot
 
 	result, err := s.withLock(func() (Result, error) {
+		_, humanAuthorized, markerDetail, err := s.inspectSessionStop(sessionId, mainId)
+		if err != nil {
+			return Result{}, err
+		}
+		var work ClaimableBudgetedWork
+		var workErr error
+		if !humanAuthorized {
+			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober())
+		}
 		state, err := s.loadVerdictState()
 		if err != nil {
 			return Result{}, err
@@ -173,7 +187,14 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		session := state.touch(sessionId, s.nowISO())
 
 		prefix := s.decideRuns(&verdict, scan, session, mainId)
-		s.decide(&verdict, scan, session)
+		s.decide(&verdict, scan, session, &work)
+		if markerDetail != "" {
+			verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
+			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
+		}
+		if !humanAuthorized {
+			s.enforceIdleBacklog(&verdict, &work, workErr)
+		}
 		greens := s.decideGreens(scan, session)
 		verdict.Display = composeDisplay(prefix, verdict.Display, greens)
 		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
@@ -181,13 +202,66 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		if err := s.saveVerdictState(state); err != nil {
 			return Result{}, err
 		}
+		if humanAuthorized {
+			marker, consumed, consumeDetail, err := s.consumeSessionStop(sessionId, mainId)
+			if err != nil {
+				return Result{}, err
+			}
+			if !consumed {
+				if consumeDetail == "" {
+					consumeDetail = "the authorization changed before its single use could be recorded"
+				}
+				return Result{}, fmt.Errorf("session stop authorization could not be completed: %s", consumeDetail)
+			}
+			if consumeDetail != "" {
+				verdict.Diagnostics = append(verdict.Diagnostics, consumeDetail)
+				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + consumeDetail)
+			}
+			verdict.ShouldBlock = false
+			verdict.BlockSource = nil
+			verdict.Display = strings.TrimSpace(verdict.Display + "\nSESSION STOP authorized once by " + marker.By +
+				fmt.Sprintf(" for holder %s at lease epoch %d", marker.HolderMainId, marker.ClaimEpoch))
+		}
 		return Result{}, nil
 	})
 	_ = result
 	if err != nil {
-		return Verdict{}, err
+		return failClosedTurnVerdict(err), nil
 	}
 	return verdict, nil
+}
+
+func failClosedTurnVerdict(err error) Verdict {
+	source := "uncertainty"
+	detail := "cannot prove that stopping is safe: " + err.Error()
+	return Verdict{
+		SchemaVersion: 1, ShouldBlock: true, BlockSource: &source,
+		LedgerStatus: "degraded", Diagnostics: []string{detail}, Display: detail,
+	}
+}
+
+// enforceIdleBacklog owns the agent-path causal invariant. Without a valid
+// attended-human authorization, a failed fresh read and claimable unattended
+// backlog both block the stop.
+func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork, workErr error) {
+	if workErr != nil {
+		verdict.ShouldBlock = true
+		source := "uncertainty"
+		verdict.BlockSource = &source
+		detail := "IDLE WITH BACKLOG cannot be ruled out: the fresh canonical ledger read failed: " + workErr.Error()
+		verdict.Diagnostics = append(verdict.Diagnostics, detail)
+		verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+		return
+	}
+	if work == nil || len(work.Claimable) == 0 || work.HasDelegateJobInFlight() {
+		return
+	}
+	verdict.ShouldBlock = true
+	source := "idle-backlog"
+	verdict.BlockSource = &source
+	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
+		"IDLE WITH BACKLOG: claimable goals await a live claim or job: %s; claim or dispatch one, or an attended human may run `metasystem session stop --by <name>`",
+		strings.Join(work.Claimable, ", ")))
 }
 
 // decideRuns applies the monitor facility's rules OUTSIDE the ladder:
@@ -323,7 +397,7 @@ func composeDisplay(prefix []string, ladder string, greens []string) string {
 }
 
 // decide is the precedence ladder from the design, in order.
-func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState) {
+func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork) {
 	for _, item := range scan.Open {
 		verdict.OpenWork = append(verdict.OpenWork, item.Detail)
 	}
@@ -390,6 +464,10 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 		// The scanner reports nothing at all: the goal has the floor.
 		switch status {
 		case "ok":
+			if work != nil && work.HasDelegateJobInFlight() && len(work.Claimable) > 0 {
+				display = append(display, "WORK IN FLIGHT: a non-terminal delegate job is joined to a live process; claimable shared backlog also includes "+strings.Join(work.Claimable, ", "))
+				break
+			}
 			if !contains(session.BlockedGoalRevisions, facts.Revision) {
 				session.BlockedGoalRevisions = appendCapped(session.BlockedGoalRevisions, facts.Revision, maxGoalRevisions)
 				blockGoal("open work is done; the goal file names the next step: " + facts.NextStep)
@@ -409,20 +487,12 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 				}
 			}
 		case "queued-only":
-			first, digest := s.queuedFrontier()
+			first, _ := s.queuedFrontier()
 			if first == "" {
 				display = append(display, "no goal is claimed here and the queue is empty; `goal open` starts one")
 				break
 			}
-			if contains(session.BlockedGoalRevisions, digest) && !contains(session.BlockedQueueDigests, digest) {
-				session.BlockedQueueDigests = appendCapped(session.BlockedQueueDigests, digest, maxGoalRevisions)
-			}
-			if !contains(session.BlockedQueueDigests, digest) {
-				session.BlockedQueueDigests = appendCapped(session.BlockedQueueDigests, digest, maxGoalRevisions)
-				blockGoal(fmt.Sprintf("no current goal; the queue holds %s: `goal promote %s` or park it", first, first))
-			} else {
-				display = append(display, "no current goal; the queue holds "+first)
-			}
+			display = append(display, "no current goal; the queue holds "+first)
 		case "goal-free":
 			fresh, digest, declared := s.freeState()
 			if fresh {
@@ -631,8 +701,8 @@ func (st *sessionState) watchdog(digest string) bool {
 	return true
 }
 
-// loadVerdictState reads the state file; absence is an empty state, and a
-// malformed file resets rather than wedging every Stop forever.
+// loadVerdictState reads the state file. Absence is the initial empty state;
+// unreadable or malformed bytes are uncertainty and must block the Stop.
 func (s *Store) loadVerdictState() (*verdictState, error) {
 	state := &verdictState{SchemaVersion: 1, Sessions: map[string]*sessionState{}}
 	data, err := os.ReadFile(statePath(s.Root))
@@ -642,8 +712,11 @@ func (s *Store) loadVerdictState() (*verdictState, error) {
 		}
 		return nil, err
 	}
-	if err := json.Unmarshal(data, state); err != nil || state.Sessions == nil {
-		return &verdictState{SchemaVersion: 1, Sessions: map[string]*sessionState{}}, nil
+	if err := json.Unmarshal(data, state); err != nil {
+		return nil, fmt.Errorf("turn verdict state is malformed: %w", err)
+	}
+	if state.SchemaVersion != 1 || state.Sessions == nil {
+		return nil, fmt.Errorf("turn verdict state has an invalid schema")
 	}
 	return state, nil
 }

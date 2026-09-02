@@ -22,7 +22,7 @@
           },
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bash scripts/agents/supervision-hook.sh claude stop",
+            "command": "(cd \"$CLAUDE_PROJECT_DIR\" && bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused.\"}'",
             "timeout": 5
           }
         ]

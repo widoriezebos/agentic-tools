@@ -12,12 +12,13 @@ import "fmt"
 type Verdict string
 
 const (
-	VerdictNoWork      Verdict = "no-work"
-	VerdictHealthy     Verdict = "healthy"
-	VerdictStalledIdle Verdict = "stalled-idle" // live worker, no progress
-	VerdictStalledDead Verdict = "stalled-dead" // proven death with open work
-	VerdictUnknown     Verdict = "unknown"      // liveness not provable
-	VerdictDegraded    Verdict = "degraded"     // ledger/journal unreadable
+	VerdictNoWork          Verdict = "no-work"
+	VerdictHealthy         Verdict = "healthy"
+	VerdictIdleBacklogDead Verdict = "idle-backlog-dead" // claimable backlog with no live joined process
+	VerdictStalledIdle     Verdict = "stalled-idle"      // live worker, no progress
+	VerdictStalledDead     Verdict = "stalled-dead"      // proven death with open work
+	VerdictUnknown         Verdict = "unknown"           // liveness not provable
+	VerdictDegraded        Verdict = "degraded"          // ledger/journal unreadable
 )
 
 // Action is what the tick does about it.
@@ -33,9 +34,11 @@ const (
 type OpenWork string
 
 const (
-	WorkNone     OpenWork = "none"     // valid Goal-free, or validly empty claims and journal
-	WorkOwned    OpenWork = "owned"    // this machine's claim, legacy Current, or an owned journal entry
-	WorkDegraded OpenWork = "degraded" // missing, malformed, mixed, unreadable
+	WorkNone      OpenWork = "none"      // valid Goal-free, or validly empty claims and journal
+	WorkOwned     OpenWork = "owned"     // open work whose broader worker census still decides liveness
+	WorkClaimable OpenWork = "claimable" // claimable backlog with no live claim or job process
+	WorkInFlight  OpenWork = "in-flight" // backlog joined to one or more live process identities
+	WorkDegraded  OpenWork = "degraded"  // missing, malformed, mixed, unreadable
 )
 
 // Workers summarizes the census over enrolled sessions, delegate
@@ -91,6 +94,18 @@ func Decide(s Snapshot) Decision {
 	if s.Work == WorkDegraded {
 		return Decision{VerdictDegraded, ActNotify,
 			"the goal ledger or journal cannot be read; refusing to guess"}
+	}
+	if s.Work == WorkInFlight {
+		if s.ActiveContinuation {
+			return Decision{VerdictHealthy, ActNone,
+				"claimable backlog has a live claim or delegate process in flight; a continuation is already open and unreaped"}
+		}
+		return Decision{VerdictHealthy, ActNone,
+			"claimable backlog has a live claim or delegate process in flight"}
+	}
+	if s.Work == WorkClaimable {
+		return Decision{VerdictIdleBacklogDead, ActNotify,
+			"claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime"}
 	}
 	if s.Work == WorkNone {
 		return Decision{VerdictNoWork, ActNone, "no open work on this machine"}

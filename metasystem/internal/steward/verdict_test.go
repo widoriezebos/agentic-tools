@@ -137,3 +137,19 @@ func TestNoWorkIsQuiet(t *testing.T) {
 		t.Fatalf("a goal-free repository needs nothing: %+v", d)
 	}
 }
+
+func TestIdleBacklogDeadIsActWorthyOnEveryTick(t *testing.T) {
+	for tick := 1; tick <= 2; tick++ {
+		d := Decide(Snapshot{Work: WorkClaimable})
+		if d.Verdict != VerdictIdleBacklogDead || d.Action != ActNotify {
+			t.Fatalf("idle backlog tick %d must escalate: %+v", tick, d)
+		}
+	}
+}
+
+func TestWorkInFlightIsQuietButNotNoWork(t *testing.T) {
+	d := Decide(Snapshot{Work: WorkInFlight})
+	if d.Verdict != VerdictHealthy || d.Action != ActNone {
+		t.Fatalf("a liveness-joined claim or job is healthy in-flight work: %+v", d)
+	}
+}

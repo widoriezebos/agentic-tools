@@ -20,9 +20,12 @@ func writeLedger(t *testing.T, root, content string) {
 func TestCurrentGoalIsOwnedWork(t *testing.T) {
 	root := t.TempDir()
 	writeLedger(t, root, "# Goals\n\n## Current goal: fix-the-thing \u2014 Repair it\n- Origin: main\n- Next step: Do the repair.\n")
+	announcement := liveProcessRecord(t)
+	announcement["mainId"] = "main-fixture"
+	writeStewardRecord(t, filepath.Join(root, "artifacts", "agents", "mains", "fixture.json"), announcement)
 	w, reason, err := LegacyOpenWork(root)
-	if err != nil || w != WorkOwned {
-		t.Fatalf("a current goal is owned work: %v %q %v", w, reason, err)
+	if err != nil || w != WorkInFlight {
+		t.Fatalf("a legacy current goal counts only with a live process: %v %q %v", w, reason, err)
 	}
 }
 
@@ -42,11 +45,11 @@ func TestUnparseableLedgerIsDegradedNeverNoWork(t *testing.T) {
 	}
 }
 
-func TestQueuedWithoutClaimIsVisibleNotRevivable(t *testing.T) {
+func TestQueuedWithoutClaimIsActionableBacklog(t *testing.T) {
 	root := t.TempDir()
 	writeLedger(t, root, "# Goals\n\n## Queued goal: later-thing \u2014 Someday\n- Origin: main\n- Next step: Start it.\n")
 	w, reason, err := LegacyOpenWork(root)
-	if err != nil || w != WorkNone {
-		t.Fatalf("unowned queued work has no worker to revive: %v %q %v", w, reason, err)
+	if err != nil || w != WorkClaimable {
+		t.Fatalf("unclaimed legacy backlog must be action-worthy: %v %q %v", w, reason, err)
 	}
 }

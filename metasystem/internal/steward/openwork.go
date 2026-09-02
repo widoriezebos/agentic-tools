@@ -9,6 +9,7 @@ package steward
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -21,43 +22,51 @@ import (
 // byte-identical. The verdict feeds the dead-man's decision, so
 // absence of a readable ledger is degraded-honest, never no-work.
 func ReadOpenWork(repoRoot string) (OpenWork, string, error) {
+	resolvedRoot, err := goal.ResolveStateRoot(repoRoot)
+	if err != nil {
+		return WorkDegraded, fmt.Sprintf("goal state root is uncertain: %v", err), nil
+	}
+	repoRoot = resolvedRoot
 	if goal.NewWorld(repoRoot) {
 		return convertedOpenWork(repoRoot)
 	}
 	return LegacyOpenWork(repoRoot)
 }
 
-// convertedOpenWork reads the synced projection: work is OWNED here
-// exactly when this machine's nickname holds a claim; the root
-// record's Goal-free declaration is the explicit no-work; queued
-// unclaimed goals stay visible, not revivable.
+// convertedOpenWork consumes the same fresh, liveness-joined predicate as the
+// turn verdict. A stale claim or job record never makes backlog look active.
 func convertedOpenWork(repoRoot string) (OpenWork, string, error) {
-	machine, err := goal.ResolveMachine(repoRoot)
+	if attention, present, err := loadLedgerAttentionState(repoRoot); err != nil {
+		return WorkDegraded, fmt.Sprintf("ledger-attention state unreadable: %v", err), nil
+	} else if present && attention.LastOutcome == "failed" {
+		return WorkDegraded, fmt.Sprintf("fresh canonical ledger read failed: %s", attention.LastFailure), nil
+	}
+	work, err := goal.ReadClaimableBudgetedWork(repoRoot, time.Now())
 	if err != nil {
-		return WorkDegraded, fmt.Sprintf("no machine identity for the open-work judgment: %v", err), nil
+		return WorkDegraded, fmt.Sprintf("fresh canonical ledger unreadable: %v", err), nil
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
-	if err != nil {
-		return WorkDegraded, fmt.Sprintf("synced ledger endpoint unavailable: %v", err), nil
+	return classifySharedBacklog(work)
+}
+
+func classifySharedBacklog(work goal.ClaimableBudgetedWork) (OpenWork, string, error) {
+	if work.HasInFlight() {
+		return WorkInFlight, fmt.Sprintf("live backlog activity: %s", strings.Join(work.InFlight, ", ")), nil
 	}
-	proj, err := goal.Project(endpoint, false, time.Now())
-	if err != nil {
-		return WorkDegraded, fmt.Sprintf("synced ledger unreadable: %v", err), nil
+	if len(work.Claimable) > 0 {
+		return WorkClaimable, fmt.Sprintf("claimable shared goals await a live claim or job: %s", strings.Join(work.Claimable, ", ")), nil
 	}
-	queued := 0
-	for id, f := range proj.Tree.Live {
-		if f.Claimed != nil && f.Claimed.Machine == machine {
-			return WorkOwned, fmt.Sprintf("claimed goal: %s", id), nil
-		}
-		if f.State == "queued" {
-			queued++
-		}
+	if len(work.Claimed) > 0 {
+		// A claim-only stale world remains owned work for the existing worker
+		// census and revival ladder. It is not in flight: only the joined
+		// branch above may make that claim. A separate ready queue takes the
+		// claimable branch first, so this stale record cannot suppress it.
+		return WorkOwned, fmt.Sprintf("claimed goals have no directly joined live process: %s", strings.Join(work.Claimed, ", ")), nil
 	}
-	if proj.Tree.Root != nil && proj.Tree.Root.Free != nil {
+	if work.GoalFree {
 		return WorkNone, "goal-free declared", nil
 	}
-	if queued > 0 {
-		return WorkNone, fmt.Sprintf("%d queued goals await a claim; none is owned here", queued), nil
+	if work.Queued > 0 {
+		return WorkNone, fmt.Sprintf("%d queued goals are visible but not claimable budgeted work", work.Queued), nil
 	}
 	return WorkNone, "no claim held here and no declaration", nil
 }
@@ -83,16 +92,10 @@ func LegacyOpenWork(repoRoot string) (OpenWork, string, error) {
 	if len(problems) > 0 {
 		return WorkDegraded, fmt.Sprintf("goal ledger has %d parse problems; refusing to guess", len(problems)), nil
 	}
-	if ledger.Current != nil {
-		return WorkOwned, fmt.Sprintf("current goal: %s", ledger.Current.Id), nil
+	_ = ledger
+	work, err := goal.ReadClaimableBudgetedWork(repoRoot, time.Now())
+	if err != nil {
+		return WorkDegraded, fmt.Sprintf("legacy backlog judgment failed: %v", err), nil
 	}
-	if ledger.Free != nil {
-		return WorkNone, "goal-free declared", nil
-	}
-	if len(ledger.Queued) > 0 {
-		// Queued-but-unclaimed work is visible, not revivable: no
-		// worker owns it, so the steward reports rather than spawns.
-		return WorkNone, fmt.Sprintf("%d queued goals await a claim; none is owned", len(ledger.Queued)), nil
-	}
-	return WorkNone, "no current goal and no declaration", nil
+	return classifySharedBacklog(work)
 }

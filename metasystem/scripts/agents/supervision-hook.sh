@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The pinned resolution contract (agnosticism B1, ric critiques r1-9,
-# r2-8, r3-7): (1) shell-owned SYNTAX refusals — the event name and the
-# runtime argument's registry-grammar SHAPE (no binary needed for a
-# shape check; the closed name list is gone, so a future runtime needs
-# no edit here); (2) executable resolution — a missing engine OR arm
-# script stays benign exit 0, as before; (3) with both present,
-# registry MEMBERSHIP — an unknown runtime exits 2; (4) the runtime's
-# OPTIONAL session environment via the registry, expanded indirectly,
-# never eval; (5) cwd resolution: payload cwd, then the declared
-# variable's nonempty value, then PWD. The optional recovery-only scheduler
+# Resolution order is part of the hook boundary: (1) reject malformed event
+# and runtime names without an engine; (2) a missing engine blocks a Stop
+# because no safe verdict can be made; (3) with the engine present, reject an
+# unregistered runtime; (4) expand the runtime's optional session environment
+# indirectly, never with eval; (5) resolve cwd from the payload, then that
+# environment variable's nonempty value, then PWD. The runtime argument's
+# shape remains open to newly registered runtimes. The recovery-only scheduler
 # entry is operator-owned and can be printed with `metasystem up
 # --print-scheduler-entry`; this hook never installs host state.
 runtime=${1:-}
@@ -18,14 +15,130 @@ event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
 case "$event" in start|stop|end) ;; *) exit 2 ;; esac
 
-# Executables resolve BEFORE any payload work (B1 critique finding 9:
-# a missing engine with an unusable TMPDIR must still exit 0 benign).
+emit_raw_stop_block() {
+  printf '%s\n' '{"decision":"block","reason":"Metasystem could not prove that stopping is safe; stopping is refused."}'
+}
+raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing, so stopping safety cannot be judged; reinstall or rebuild bin/metasystem before stopping."}'
+
+# Claude Code eventually caps repeated Stop-hook blocks. This hook accepts that
+# harness boundary and does not try to defeat it; true impossibility is owned by
+# goal idle-every-runtime-enforcement through runtime-independent steward
+# re-engagement.
+
+# Claude gives the complete Stop hook five seconds. Run the whole Stop body as
+# one supervised child so arming, health, digest, watchdog, ledger fetch, and
+# verdict time all spend the same budget. The parent retains one second to
+# emit a provider-level refusal and exit successfully when the child overruns.
+if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; then
+  deadline_started=$SECONDS
+  deadline_dir=
+  deadline_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
+    || deadline_dir=$(mktemp -d "/tmp/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
+    || true
+  if [[ -z "$deadline_dir" ]]; then
+    emit_raw_stop_block
+    exit 0
+  fi
+  deadline_stdout=$deadline_dir/stdout
+  deadline_stderr=$deadline_dir/stderr
+  deadline_script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+  deadline_harness_root=$(cd "$deadline_script_dir/../.." && pwd -P)
+  deadline_validator="${METASYSTEM_BIN:-$deadline_harness_root/bin/metasystem}"
+  METASYSTEM_STOP_DEADLINE_PARENT=$$ bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
+    <&0 >"$deadline_stdout" 2>"$deadline_stderr" &
+  deadline_worker=$!
+  deadline_expires=$((deadline_started + 4))
+  deadline_running() {
+    local state
+    state=$(ps -p "$deadline_worker" -o stat= 2>/dev/null || true)
+    [[ -n "$state" && "$state" != Z* ]]
+  }
+  while deadline_running && (( SECONDS < deadline_expires )); do
+    sleep 0.05
+  done
+  if ! deadline_running; then
+    deadline_rc=0
+    wait "$deadline_worker" || deadline_rc=$?
+    command cat "$deadline_stderr" >&2 || true
+    deadline_decision=
+    deadline_reason=
+    deadline_message=
+    deadline_decision_rc=0
+    deadline_reason_rc=0
+    deadline_message_rc=0
+    deadline_shape_rc=0
+    deadline_valid=false
+    if (( deadline_rc == 0 )) && [[ -x "$deadline_validator" ]]; then
+      deadline_decision=$("$deadline_validator" json get --file "$deadline_stdout" --field decision 2>/dev/null) \
+        || deadline_decision_rc=$?
+      deadline_reason=$("$deadline_validator" json get --file "$deadline_stdout" --field reason 2>/dev/null) \
+        || deadline_reason_rc=$?
+      deadline_message=$("$deadline_validator" json get --file "$deadline_stdout" --field systemMessage 2>/dev/null) \
+        || deadline_message_rc=$?
+      deadline_unknown=$("$deadline_validator" json strip --file "$deadline_stdout" \
+        --key decision --key reason --key systemMessage 2>/dev/null) || deadline_shape_rc=$?
+      deadline_reason_object=$("$deadline_validator" json strip --file "$deadline_stdout" \
+        --key decision --key systemMessage 2>/dev/null) || deadline_shape_rc=$?
+      deadline_message_object=$("$deadline_validator" json strip --file "$deadline_stdout" \
+        --key decision --key reason 2>/dev/null) || deadline_shape_rc=$?
+      deadline_reason_string=false
+      deadline_message_string=false
+      if (( deadline_reason_rc == 0 )) && grep -q '^  "reason": "' <<<"$deadline_reason_object"; then
+        deadline_reason_string=true
+      fi
+      if (( deadline_message_rc == 0 )) && grep -q '^  "systemMessage": "' <<<"$deadline_message_object"; then
+        deadline_message_string=true
+      fi
+      if (( deadline_shape_rc == 0 )) && [[ "$deadline_unknown" == '{}' ]] &&
+          { [[ "$deadline_decision" == block && -n "$deadline_reason" && "$deadline_reason_string" == true &&
+               ( "$deadline_message_rc" -ne 0 || ( -n "$deadline_message" && "$deadline_message_string" == true ) ) ]] ||
+            [[ "$deadline_decision_rc" -ne 0 && "$deadline_reason_rc" -ne 0 && -n "$deadline_message" &&
+               "$deadline_message_string" == true ]]; }; then
+        deadline_valid=true
+      fi
+    elif (( deadline_rc == 0 )); then
+      deadline_raw=$(command cat "$deadline_stdout" 2>/dev/null || true)
+      [[ "$deadline_raw" == "$raw_missing_engine_stop" ]] && deadline_valid=true
+    fi
+    if (( deadline_rc != 0 )) || [[ "$deadline_valid" != true ]]; then
+      emit_raw_stop_block
+    else
+      command cat "$deadline_stdout" || true
+    fi
+    rm -f "$deadline_stdout" "$deadline_stderr" || true
+    rmdir "$deadline_dir" 2>/dev/null || true
+    exit 0
+  fi
+
+  deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
+  if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
+    kill -TERM "$deadline_worker" 2>/dev/null || true
+  fi
+  for _deadline_stop_attempt in {1..10}; do
+    deadline_running || break
+    sleep 0.02
+  done
+  if deadline_running; then
+    deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
+    if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
+      kill -KILL "$deadline_worker" 2>/dev/null || true
+    fi
+  fi
+  wait "$deadline_worker" 2>/dev/null || true
+  printf '%s\n' '{"decision":"block","reason":"Metasystem Stop deadline expired before a safe turn verdict; stopping is refused."}'
+  rm -f "$deadline_stdout" "$deadline_stderr" || true
+  rmdir "$deadline_dir" 2>/dev/null || true
+  exit 0
+fi
+
+# Executables resolve before payload work so a missing engine can return the
+# provider-level Stop refusal without depending on temporary storage.
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 if [[ ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
-    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (metasystem engine missing; reinstall or rebuild bin/metasystem)"}'
+    printf '%s\n' "$raw_missing_engine_stop"
   fi
   exit 0
 fi
@@ -42,6 +155,11 @@ grep -Fxq "$runtime" <<<"$registered_runtimes" || {
 payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
 trap 'rm -f "$payload"' EXIT
 cat >"$payload"
+if [[ "$event" == stop ]]; then
+  # Missing optional payload fields retain their documented fallbacks, but an
+  # unreadable payload must not be mistaken for an empty one at turn end.
+  "$ms" json get --file "$payload" --field __metasystem_shape_probe --default "" >/dev/null
+fi
 
 read_payload() {
   "$ms" json get --file "$payload" --field "$1" 2>/dev/null || true
@@ -58,12 +176,26 @@ if [[ -z "$cwd" ]]; then
     cwd=$PWD
   else
     # An operational query failure must not run Stop decisions against
-    # a guessed cwd (finding 9): benign no-op.
+    # a guessed cwd. A Stop parent converts this silent return to a refusal.
     exit 0
   fi
 fi
 repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 repo=$(cd "$repo" && pwd -P)
+# Repository scope and mutable metasystem state coincide after adoption. In
+# the self-hosting template, the repository contains the installation and the
+# installation owns its state. Resolve that distinction once so holder
+# classification and the turn verdict cannot inspect different lease trees.
+state_root=$repo
+template_marker=$repo/development/metasystem-design.md
+template_installation=$repo/metasystem
+if [[ -f "$template_marker" ]]; then
+  if [[ "$harness_root" != "$template_installation" || ! -f "$harness_root/metasystem.conf" ]]; then
+    [[ "$event" != stop ]] || exit 1
+  else
+    state_root=$harness_root
+  fi
+fi
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
 # Session hygiene happens ONCE at this boundary (goal-system GOAL-04):
@@ -81,25 +213,32 @@ digest_message=
 digest_cursor=
 digest_prefix=
 hook_evidence_failure=
+stop_failure=
+record_stop_failure() { # fixed diagnostic
+  [[ -n "$stop_failure" ]] || stop_failure=$1
+}
 if [[ "$event" == stop ]]; then
   turn_key_rc=0
   turn_key=$({ printf '%s\n' "$session"; command cat "$payload"; } | "$ms" util sha256) || turn_key_rc=$?
   if (( turn_key_rc != 0 )) || [[ -z "$turn_key" ]]; then
-	hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (turn evidence could not be prepared)"
+    hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (turn evidence could not be prepared)"
+    record_stop_failure "turn evidence could not be prepared"
   else
-	hook_attempt_rc=0
-	hook_attempt=$(
-	  "$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null
-	) || hook_attempt_rc=$?
-	if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
-	  hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
-	else
-	  hook_generation=$("$ms" json get --value "$hook_attempt" --field generation 2>/dev/null || true)
-	  hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq 2>/dev/null || true)
-	  if ! [[ "$hook_generation" =~ ^[1-9][0-9]*$ && "$hook_attempt_seq" =~ ^[1-9][0-9]*$ ]]; then
-		hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence was unreadable)"
-	  fi
-	fi
+    hook_attempt_rc=0
+    hook_attempt=$(
+      "$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null
+    ) || hook_attempt_rc=$?
+    if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
+      hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
+      record_stop_failure "attempt evidence could not be recorded"
+    else
+      hook_generation=$("$ms" json get --value "$hook_attempt" --field generation 2>/dev/null || true)
+      hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq 2>/dev/null || true)
+      if ! [[ "$hook_generation" =~ ^[1-9][0-9]*$ && "$hook_attempt_seq" =~ ^[1-9][0-9]*$ ]]; then
+        hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence was unreadable)"
+        record_stop_failure "attempt evidence was unreadable"
+      fi
+    fi
   fi
 fi
 
@@ -113,31 +252,61 @@ main_holder=false
 identity_pid=
 identity_started=
 if [[ -n "$identity" ]]; then
-  identity_pid=$("$ms" json get --value "$identity" --field pid)
-  identity_started=$("$ms" json get --value "$identity" --field pidStartedAt)
+  identity_pid=$("$ms" json get --value "$identity" --field pid 2>/dev/null || true)
+  identity_started=$("$ms" json get --value "$identity" --field pidStartedAt 2>/dev/null || true)
+  if ! [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]]; then
+    record_stop_failure "the runtime identity was unreadable"
+    identity=
+    identity_pid=
+    identity_started=
+  fi
 else
   # Recorded fallback: a hook may run in a test harness or runtime wrapper
   # whose authenticated main was announced explicitly. Classification returns
   # that exact announcement; an unannounced process gains nothing here.
-  parent_view=$("$ms" lease classify --root "$repo" --metasystem-root "$harness_root" --caller-pid "$PPID" 2>/dev/null || true)
-  if [[ "$("$ms" json get --value "$parent_view" --field class 2>/dev/null || true)" == MAIN ]]; then
+  parent_view_rc=0
+  parent_view=$("$ms" lease classify --root "$state_root" --metasystem-root "$harness_root" --caller-pid "$PPID" 2>/dev/null) || parent_view_rc=$?
+  parent_class=$("$ms" json get --value "$parent_view" --field class 2>/dev/null || true)
+  if (( parent_view_rc != 0 )) || [[ -z "$parent_class" ]]; then
+    record_stop_failure "the fallback runtime identity could not be classified"
+  elif [[ "$parent_class" == MAIN ]]; then
     identity_pid=$("$ms" json get --value "$parent_view" --field announcement.pid 2>/dev/null || true)
     identity_started=$("$ms" json get --value "$parent_view" --field announcement.pidStartedAt 2>/dev/null || true)
     [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]] \
       && identity=recorded-main
+    [[ -n "$identity" ]] || record_stop_failure "the fallback runtime identity was unreadable"
   fi
 fi
 if [[ -n "$identity_pid" ]]; then
-  lease_view=$("$ms" lease classify --root "$repo" --metasystem-root "$harness_root" --caller-pid "$identity_pid" 2>/dev/null || true)
-  if [[ -n "$lease_view" ]]; then
+  lease_view_rc=0
+  lease_view=$("$ms" lease classify --root "$state_root" --metasystem-root "$harness_root" --caller-pid "$identity_pid" 2>/dev/null) || lease_view_rc=$?
+  if (( lease_view_rc != 0 )) || [[ -z "$lease_view" ]]; then
+    record_stop_failure "the checkout holder could not be classified"
+  else
     main_id=$("$ms" json get --value "$lease_view" --field mainId 2>/dev/null || true)
     main_class=$("$ms" json get --value "$lease_view" --field class 2>/dev/null || true)
     main_holder=$("$ms" json get --value "$lease_view" --field holder 2>/dev/null || true)
+    if [[ -z "$main_class" || ( "$main_holder" != true && "$main_holder" != false ) ]]; then
+      record_stop_failure "the checkout holder classification was unreadable"
+    fi
   fi
 fi
 
 surface_json() { # message
-  "$ms" json object "systemMessage=$1"
+  local rendered parsed
+  rendered=$("$ms" json object "systemMessage=$1")
+  parsed=$("$ms" json get --value "$rendered" --field systemMessage)
+  [[ -n "$rendered" && -n "$parsed" ]] || return 1
+  printf '%s\n' "$rendered"
+}
+
+stop_block_json() { # system message, reason
+  local rendered decision reason
+  rendered=$("$ms" report stop-block --system-message "$1" "$2")
+  decision=$("$ms" json get --value "$rendered" --field decision)
+  reason=$("$ms" json get --value "$rendered" --field reason)
+  [[ "$decision" == block && -n "$reason" ]] || return 1
+  printf '%s\n' "$rendered"
 }
 
 tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
@@ -156,20 +325,30 @@ if [[ "$event" == stop ]]; then
   fi
   if (( up_rc != 0 )); then
     up_failure="Metasystem supervision arming failed: $(printf '%s' "$up_output" | tail -1)"
+    record_stop_failure "supervision arming failed"
   fi
   health_rc=0
   health_line=$("$ms" health --hook-preview --repo "$repo" --metasystem-root "$harness_root" 2>/dev/null) || health_rc=$?
   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
+    record_stop_failure "the health engine returned no verdict"
   fi
   digest_rc=0
   digest_json=$("$ms" steward digest-pending --repo "$repo" 2>&1) || digest_rc=$?
   if (( digest_rc == 0 )); then
-    digest_message=$("$ms" json get --value "$digest_json" --field message 2>/dev/null || true)
-    digest_cursor=$("$ms" json get --value "$digest_json" --field cursor 2>/dev/null || true)
-    digest_prefix=$("$ms" json get --value "$digest_json" --field prefixSha256 2>/dev/null || true)
+    digest_message_rc=0
+    digest_cursor_rc=0
+    digest_prefix_rc=0
+    digest_message=$("$ms" json get --value "$digest_json" --field message 2>/dev/null) || digest_message_rc=$?
+    digest_cursor=$("$ms" json get --value "$digest_json" --field cursor 2>/dev/null) || digest_cursor_rc=$?
+    digest_prefix=$("$ms" json get --value "$digest_json" --field prefixSha256 2>/dev/null) || digest_prefix_rc=$?
+    if (( digest_message_rc != 0 || digest_cursor_rc != 0 || digest_prefix_rc != 0 )); then
+      digest_message="NARRATOR DIGEST unavailable: the digest state was unreadable"
+      record_stop_failure "the narrator digest state was unreadable"
+    fi
   else
     digest_message="NARRATOR DIGEST unavailable: ${digest_json//$'\n'/ }"
+    record_stop_failure "the narrator digest could not be read"
   fi
   checkin_tail=$health_line
   [[ -z "$digest_message" ]] || checkin_tail="$checkin_tail
@@ -214,15 +393,33 @@ emit_stop_payload() { # response
   rm -f "$response_file"
 }
 
+emit_failed_stop() { # diagnostic
+  failure_detail="Metasystem could not prove that stopping is safe: $1"
+  response=$(stop_block_json "$checkin_tail" "$failure_detail")
+  emit_stop_payload "$response"
+}
+
 if [[ "$event" == stop ]]; then
   protocol_message=
   protocol_counts='{}'
   if [[ -n "$main_id" ]]; then
-    protocol_growth=$("$ms" lease protocol-growth --root "$repo" --main-id "$main_id" 2>/dev/null || true)
-    if [[ -n "$protocol_growth" ]]; then
-      protocol_message=$("$ms" json get --value "$protocol_growth" --field message)
-      protocol_counts=$("$ms" json get --value "$protocol_growth" --field counts)
+    protocol_growth_rc=0
+    protocol_growth=$("$ms" lease protocol-growth --root "$state_root" --main-id "$main_id" 2>/dev/null) || protocol_growth_rc=$?
+    if (( protocol_growth_rc != 0 )); then
+      record_stop_failure "the holder protocol state could not be read"
+    elif [[ -n "$protocol_growth" ]]; then
+      protocol_message_rc=0
+      protocol_counts_rc=0
+      protocol_message=$("$ms" json get --value "$protocol_growth" --field message 2>/dev/null) || protocol_message_rc=$?
+      protocol_counts=$("$ms" json get --value "$protocol_growth" --field counts 2>/dev/null) || protocol_counts_rc=$?
+      if (( protocol_message_rc != 0 || protocol_counts_rc != 0 )); then
+        record_stop_failure "the holder protocol state was unreadable"
+      fi
     fi
+  fi
+  if [[ -n "$stop_failure" ]]; then
+    emit_failed_stop "$stop_failure"
+    exit 0
   fi
   # "Advisor" is a positive finding, not a fallback. It means an announced main
   # of THIS checkout is not the one holding it. A caller that could not be
@@ -241,43 +438,67 @@ $protocol_message"
 $checkin_tail")
     emit_stop_payload "$response"
     [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
-      "$ms" lease protocol-advance --root "$repo" --main-id "$main_id" \
+      "$ms" lease protocol-advance --root "$state_root" --main-id "$main_id" \
         --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
     exit 0
   fi
-  [[ -z "$identity_pid" ]] || \
-    "$ms" lease renew --root "$repo" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
+  if [[ -n "$identity_pid" ]]; then
+    renew_rc=0
+    "$ms" lease renew --root "$state_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || renew_rc=$?
+    (( renew_rc == 0 )) || record_stop_failure "the checkout holder lease could not be renewed"
+  fi
 
   # The WATCHDOG path calls the verdict like every other path (only the
   # advisor early-exit above bypasses it): the report's text stays
   # hook-side, its DIGEST rides to the verb, and the verb's surfaceWatchdog
   # answer decides exactly-once surfacing across concurrent Stop calls
   # (goal-system GOAL-04; the loose per-session state files are retired).
-  watchdog_text=$("$ms" supervise watchdog-report --repo "$repo" 2>/dev/null || true)
+  watchdog_rc=0
+  watchdog_text=$("$ms" supervise watchdog-report --repo "$repo" 2>/dev/null) || watchdog_rc=$?
+  (( watchdog_rc == 0 )) || record_stop_failure "the supervision watchdog state could not be read"
   watchdog_digest=
-  [[ -z "$watchdog_text" ]] || watchdog_digest=$(printf '%s' "$watchdog_text" | "$ms" util sha256)
+  if [[ -n "$watchdog_text" ]]; then
+    watchdog_digest_rc=0
+    watchdog_digest=$(printf '%s' "$watchdog_text" | "$ms" util sha256) || watchdog_digest_rc=$?
+    (( watchdog_digest_rc == 0 )) || record_stop_failure "the supervision watchdog evidence could not be prepared"
+  fi
 
   # Leave evidence that this ran. Without it there is no telling a hook that
   # fired and found nothing from one that never fired, which is the confusion
   # that let this repository run for days with its hooks uninstalled.
   supervision_dir="$repo/artifacts/agents/supervision"
   mkdir -p "$supervision_dir"
-  "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || true
+  evidence_gc_rc=0
+  "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || evidence_gc_rc=$?
+  (( evidence_gc_rc == 0 )) || record_stop_failure "the hook evidence state could not be maintained"
+
+  if [[ -n "$stop_failure" ]]; then
+    emit_failed_stop "$stop_failure"
+    exit 0
+  fi
 
   # ONE structured decision (goal-system GOAL-05): the verdict verb owns
   # open work, the goal clause, precedence, block-once state, and the
   # all-clear. Every representable state is exit 0 with JSON; a nonzero
-  # exit is I/O failure and this hook's own FIXED degraded message takes
-  # over — never silence, and never an all-clear it cannot vouch for. The
-  # old 2>/dev/null||true suppression was the named defect this removes.
+  # exit is I/O failure and this hook emits a provider-level refusal — never
+  # silence, and never an all-clear it cannot vouch for.
   verdict_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-verdict-err.XXXXXX")
-  if verdict=$("$ms" report turn-verdict --root "$repo" \
+  if verdict=$("$ms" report turn-verdict --root "$state_root" \
       --session "$session" --watchdog-surfaced "$watchdog_digest" \
       --main-id "$main_id" 2>"$verdict_stderr"); then
     rm -f "$verdict_stderr"
-    should_block=$("$ms" json get --value "$verdict" --field shouldBlock)
-    display=$("$ms" json get --value "$verdict" --field display)
-    surface_watchdog=$("$ms" json get --value "$verdict" --field surfaceWatchdog)
+    should_block_rc=0
+    display_rc=0
+    surface_watchdog_rc=0
+    should_block=$("$ms" json get --value "$verdict" --field shouldBlock 2>/dev/null) || should_block_rc=$?
+    display=$("$ms" json get --value "$verdict" --field display 2>/dev/null) || display_rc=$?
+    surface_watchdog=$("$ms" json get --value "$verdict" --field surfaceWatchdog 2>/dev/null) || surface_watchdog_rc=$?
+    if (( should_block_rc != 0 || display_rc != 0 || surface_watchdog_rc != 0 )) || [[ -z "$display" ]] ||
+        [[ ( "$should_block" != true && "$should_block" != false ) ||
+           ( "$surface_watchdog" != true && "$surface_watchdog" != false ) ]]; then
+      emit_failed_stop "the turn verdict was unreadable"
+      exit 0
+    fi
 
     printf '%s stop verdict block=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$should_block" >>"$supervision_dir/hooks.log" 2>/dev/null || true
@@ -294,7 +515,7 @@ $checkin_tail")
       blocking_message=$checkin_tail
       [[ -z "$extras" ]] || blocking_message="$extras
 $blocking_message"
-      response=$("$ms" report stop-block --system-message "$blocking_message" "$display")
+      response=$(stop_block_json "$blocking_message" "$display")
     elif [[ -n "$extras" ]]; then
       response=$(surface_json "$display
 $extras
@@ -315,12 +536,11 @@ $up_failure"
 $hook_evidence_failure"
     [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
 $protocol_message"
-    response=$(surface_json "$degraded_message
-$checkin_tail")
+    response=$(stop_block_json "$checkin_tail" "$degraded_message")
   fi
   emit_stop_payload "$response"
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
-    "$ms" lease protocol-advance --root "$repo" --main-id "$main_id" \
+    "$ms" lease protocol-advance --root "$state_root" --main-id "$main_id" \
       --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
   exit 0
 fi
@@ -332,18 +552,30 @@ fi
 pending_line=$("$ms" steward pending --repo "$repo" 2>/dev/null || true)
 [[ -n "$pending_line" ]] && surface_json "Steward incidents pending: $pending_line"
 
+if [[ "$event" == end ]]; then
+  session_end_rc=0
+  "$ms" session end --root "$state_root" --session "$session" >/dev/null 2>&1 || session_end_rc=$?
+  if (( session_end_rc != 0 )); then
+    surface_json "Metasystem could not durably retire this session's unused stop authorization; later stops must treat it as unsafe."
+  fi
+  if [[ -z "$identity" ]]; then
+    surface_json "Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
+    exit 0
+  fi
+  pid=$identity_pid
+  started=$identity_started
+  METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
+    --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \
+    --tag "$tag" --retire >/dev/null 2>&1 || true
+  exit 0
+fi
+
 if [[ -z "$identity" ]]; then
   surface_json "Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
   exit 0
 fi
 pid=$identity_pid
 started=$identity_started
-if [[ "$event" == end ]]; then
-  METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
-    --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \
-    --tag "$tag" --retire >/dev/null 2>&1 || true
-  exit 0
-fi
 
 if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
     --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \

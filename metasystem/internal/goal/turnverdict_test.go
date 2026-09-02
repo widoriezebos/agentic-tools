@@ -144,17 +144,17 @@ func TestQueuedOnlyVerdict(t *testing.T) {
 	}
 
 	v, _ := s.TurnVerdict(ScanResult{}, "s", "", "")
-	if v.LedgerStatus != "queued-only" || !v.ShouldBlock || !strings.Contains(v.Display, "goal promote a") {
+	if v.LedgerStatus != "queued-only" || !v.ShouldBlock || !strings.Contains(v.Display, "IDLE WITH BACKLOG") {
 		t.Fatalf("queued-only verdict wrong: %+v", v)
 	}
-	// Once.
+	// Legacy backlog is the same every-stop invariant as converted backlog.
 	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
-	if v.ShouldBlock {
-		t.Fatalf("queued-only re-blocked: %+v", v)
+	if !v.ShouldBlock || v.BlockSource == nil || *v.BlockSource != "idle-backlog" {
+		t.Fatalf("the second unchanged legacy stop must still block: %+v", v)
 	}
 }
 
-func TestQueuedOnlyVerdictMigratesLegacyQueueDigest(t *testing.T) {
+func TestQueuedOnlyVerdictIgnoresLegacyBlockOnceDigest(t *testing.T) {
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "legacy-queue", "legacy queued goal", "Promote it.")
 	if _, err := s.Done(mainHolder, "legacy-queue", "landed", "", true); err != nil {
@@ -177,16 +177,9 @@ func TestQueuedOnlyVerdictMigratesLegacyQueueDigest(t *testing.T) {
 	}
 
 	verdict, err := s.TurnVerdict(ScanResult{}, "legacy-queue-session", "", "")
-	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "queue holds legacy-queue") {
-		t.Fatalf("legacy queue digest re-blocked during migration: %+v %v", verdict, err)
-	}
-	migrated, err := s.loadVerdictState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	session := migrated.Sessions["legacy-queue-session"]
-	if session == nil || !contains(session.BlockedQueueDigests, digest) {
-		t.Fatalf("legacy queue digest was not migrated to its dedicated field: %+v", session)
+	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
+		!strings.Contains(verdict.Display, "legacy-queue") {
+		t.Fatalf("a spent legacy queue digest must not suppress the invariant: %+v %v", verdict, err)
 	}
 }
 
@@ -206,7 +199,7 @@ func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
 	if result, err := Open(request, "queued-pin", "Wait in the queue.", OriginMain, "Claim later."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open queued goal: %+v %v", result, err)
 	}
-	store := &Store{Root: root, Now: func() time.Time { return request.Now }}
+	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1")}
 	first, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
 	if err != nil || !first.ShouldBlock {
 		t.Fatalf("initial claimed world did not block: %+v %v", first, err)
@@ -259,7 +252,7 @@ func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T)
 	if result, err := Claim(request, "steady-claim", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim steady goal: %+v %v", result, err)
 	}
-	store := &Store{Root: root, Now: func() time.Time { return request.Now }}
+	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1")}
 	first, err := store.TurnVerdict(ScanResult{}, "fresh-steady-session", "", "")
 	if err != nil || !first.ShouldBlock || strings.Contains(first.Display, "shared goal queue changed") {
 		t.Fatalf("a fresh session falsely described its empty queue baseline as a change: %+v %v", first, err)

@@ -1,14 +1,15 @@
 package steward
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // convertedBed builds a migrated checkout: an enrolled repository whose
@@ -70,6 +71,36 @@ func convertedBed(t *testing.T, machine string, files map[string]*goal.GoalFile)
 	return root
 }
 
+func liveProcessRecord(t *testing.T) map[string]any {
+	t.Helper()
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe fixture process: %v %v", state, err)
+	}
+	record := map[string]any{"pid": exact.Pid, "pidStartedAt": exact.StartedAt.Unix()}
+	if exact.StartTicks > 0 && exact.BootID != "" {
+		record["pidStartTicks"] = exact.StartTicks
+		record["bootId"] = exact.BootID
+	} else {
+		record["pidStartedAtExactMicro"] = exact.StartedAt.UnixMicro()
+	}
+	return record
+}
+
+func writeStewardRecord(t *testing.T, path string, record map[string]any) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConvertedClaimByThisMachineIsOwnedWork(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"fix-it": {
@@ -79,9 +110,13 @@ func TestConvertedClaimByThisMachineIsOwnedWork(t *testing.T) {
 			History: bedHistory("fix-it", "claim"),
 		},
 	})
+	announcement := liveProcessRecord(t)
+	announcement["mainId"] = "main-fixture"
+	announcement["ownerLineage"] = "coordinator"
+	writeStewardRecord(t, filepath.Join(root, "artifacts", "agents", "mains", "fixture.json"), announcement)
 	w, reason, err := ReadOpenWork(root)
-	if err != nil || w != WorkOwned || !strings.Contains(reason, "fix-it") {
-		t.Fatalf("this machine's claim on a converted checkout is owned work: %v %q %v", w, reason, err)
+	if err != nil || w != WorkInFlight || !strings.Contains(reason, "claim:fix-it") {
+		t.Fatalf("a claim counts only when its matching process is live: %v %q %v", w, reason, err)
 	}
 }
 
@@ -115,5 +150,68 @@ func TestConvertedUnenrolledMachineDegradesNeverGuesses(t *testing.T) {
 	if err != nil || w != WorkDegraded {
 		t.Fatalf("no enrollment means no judgment — degraded, never no-work: %v %q %v", w, reason, err)
 	}
-	_ = time.Now
+}
+
+func stewardBudget() *goal.Budget {
+	budget := goal.Budget{
+		ElapsedLimit: "4h", AttemptLimit: 4,
+		ReservedJobMinutesLimit: 240, ActiveJobLimit: 2,
+	}
+	return &budget
+}
+
+func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+		"waiting": {
+			Id: "waiting", State: goal.StateQueued, Intent: "Awaits a claim", Origin: "main",
+			NextStep: "Claim it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
+			Budget: stewardBudget(), History: bedHistory("waiting", "open"),
+		},
+		"stale-claim": {
+			Id: "stale-claim", State: goal.StateClaimed, Intent: "A record is not liveness", Origin: "main",
+			NextStep: "Continue it.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 2,
+			Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
+			History: bedHistory("stale-claim", "claim"),
+		},
+	})
+	w, reason, err := ReadOpenWork(root)
+	if err != nil || w != WorkClaimable || !strings.Contains(reason, "waiting") {
+		t.Fatalf("claimable backlog must remain actionable: %v %q %v", w, reason, err)
+	}
+	for tick := 1; tick <= 2; tick++ {
+		decision := Decide(Snapshot{Work: w})
+		if decision.Verdict != VerdictIdleBacklogDead || decision.Action != ActNotify ||
+			!strings.Contains(decision.Reason, "every steward tick") {
+			t.Fatalf("runtime-independent tick %d must escalate idle backlog: %+v", tick, decision)
+		}
+	}
+}
+
+func TestConvertedJobsCountOnlyWithLiveProcessesAndPendingSetupAgrees(t *testing.T) {
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+		"waiting": {
+			Id: "waiting", State: goal.StateQueued, Intent: "Awaits a claim", Origin: "main",
+			NextStep: "Claim it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
+			Budget: stewardBudget(), History: bedHistory("waiting", "open"),
+		},
+	})
+	jobPath := filepath.Join(root, "artifacts", "agents", "jobs", "delegate.json")
+	writeStewardRecord(t, jobPath, map[string]any{
+		"jobId": "delegate", "status": "running", "pid": 999999, "pidStartedAt": 1,
+	})
+	if w, _, err := ReadOpenWork(root); err != nil || w != WorkClaimable {
+		t.Fatalf("a stale running record must not suppress the escalation: %v %v", w, err)
+	}
+	live := liveProcessRecord(t)
+	live["jobId"], live["status"] = "delegate", "running"
+	writeStewardRecord(t, jobPath, live)
+	if w, reason, err := ReadOpenWork(root); err != nil || w != WorkInFlight || !strings.Contains(reason, "job:delegate") {
+		t.Fatalf("a live running process must count as in flight: %v %q %v", w, reason, err)
+	}
+	writeStewardRecord(t, jobPath, map[string]any{
+		"jobId": "delegate", "status": "pending-setup", "creatorLiveness": liveProcessRecord(t),
+	})
+	if w, reason, err := ReadOpenWork(root); err != nil || w != WorkInFlight || !strings.Contains(reason, "job:delegate") {
+		t.Fatalf("pending-setup must use its live creator in the shared predicate: %v %q %v", w, reason, err)
+	}
 }

@@ -8,9 +8,10 @@ import (
 	"testing"
 )
 
-// The end-of-turn verdict on a converted checkout: this machine's
-// claimed goal has the floor — it blocks once with the next step, and
-// repeats as display, exactly the legacy Current-goal contract.
+// The end-of-turn verdict on a converted checkout: a claim-only world retains
+// the existing next-step block-once contract. Liveness governs whether a
+// claim may suppress separate claimable backlog, which is covered by the idle
+// invariant fixtures.
 func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"ship-it": {
@@ -36,9 +37,9 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	}
 }
 
-// A queue nobody here claimed prods once toward promotion, naming the
-// oldest queued goal.
-func TestTurnVerdictConvertedQueueProdsOnce(t *testing.T) {
+// A converted queue without valid structured budgets is visible but is not
+// the claimable backlog this invariant blocks on.
+func TestTurnVerdictConvertedBudgetlessQueueIsQuiet(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"older": {
 			Id: "older", State: "queued", Intent: "First in line", Origin: "main",
@@ -54,8 +55,8 @@ func TestTurnVerdictConvertedQueueProdsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !v.ShouldBlock || !strings.Contains(v.Display, "older") {
-		t.Fatalf("the oldest queued goal must be named in the prod: %+v", v)
+	if v.ShouldBlock || !strings.Contains(v.Display, "older") {
+		t.Fatalf("the oldest budgetless goal must stay visible without blocking: %+v", v)
 	}
 }
 
