@@ -5,9 +5,10 @@
 - Origin: main
 - Next step: Design first (Fable 5.1 lane): one design covering the five closures with the outcome table and the two-seat fixtures; then Sol critique; build in slices of at most 240 reserved minutes (slice 1: block-once removal + relevant INFLIGHT + fail-closed table, the three that would have caught all three specimens; slice 2: seat-scoped READY + freshness; slice 3: HUMANSTOP lifecycle); Fable code critique per slice; land with --chain. Sequenced with supervision-hook-wrong-root: either land that fix first or carry its resolution in slice 1
 - OpenedAt: 2026-09-02T07:19:48Z
-- Revision: 3
+- Revision: 4
 - Labels: priority-1
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=3 at=2026-09-02T07:57:03Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-02T07:56:13Z revision=3
 - StopCapability: generation=3 revision=3 machine=m0b claimEpoch=1 fenceEpoch=0
 
@@ -15,4 +16,5 @@ History:
 - 2026-09-02T07:19:48Z KA597TSPF61Y7YC5ZFY7DFCVQ6-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=turn-verdict-hardening
 - 2026-09-02T07:19:52Z ACEYSWFMRYQ6B8YR66EJPK077S-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=turn-verdict-hardening
 - 2026-09-02T07:56:13Z FEY1SHQPXEY6GM0FFAYN2H5JBN-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=turn-verdict-hardening
-Integrity: sha256=4beead0bfe97dfe590d8960913c25f447414523b50f279b21ec7226ded069355
+- 2026-09-02T07:57:03Z 10YYQYGMGJ58Q8SNF1T164Y5TM-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=turn-verdict-hardening
+Integrity: sha256=df5b549bbbceea71f0edece2f3763d9fe0e6d91fd4abdfb4b274956b3e7719e6
