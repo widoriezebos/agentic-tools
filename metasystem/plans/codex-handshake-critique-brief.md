@@ -23,7 +23,7 @@ metasystem/internal/dispatch/reapfacts.go, metasystem/scripts/agents/dispatch.sh
 (the launch loop, `await_handshake`, `internal_handshake_timeout`, the
 reaper's handshake backstop), metasystem/cmd/metasystem/census.go
 (`proc alive`), metasystem/internal/adapter/fake.go and
-metasystem/scripts/agents/dispatch-fixtures.sh.
+metasystem/scripts/agents/dispatch-fixtures.sh (the fixture harness).
 
 Questions the design must survive:
 
