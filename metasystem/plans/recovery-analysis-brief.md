@@ -1,5 +1,5 @@
 Working Mode: design
-Orchestrator Identity: <dispatching seat>+<its session main> (dispatch delegate under goal recovery-to-good-state)
+Orchestrator Identity: m1+main-1788333680-2840-7f79f4 (dispatch delegate under goal recovery-to-good-state)
 Date: 2026-09-02
 
 # Goal
