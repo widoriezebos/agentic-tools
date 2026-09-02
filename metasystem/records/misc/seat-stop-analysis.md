@@ -119,3 +119,51 @@ mechanism cannot actually re-prompt the harness (then the enforcement
 point moves and the design must find another deterministic gate), or if
 READY cannot be computed without re-implementing admission logic the
 engine already owns.
+
+## Fold after Sol's round-1 critique (2026-09-02, records/misc/seat-stop-analysis-critique-r1.md)
+
+The critique refutes the "new verb" framing and sharpens the target. Folded
+in, the analysis now says:
+
+1. **The decision owner already exists.** `scripts/agents/supervision-hook.sh`
+   calls `report turn-verdict` at the Stop event, and
+   `internal/report/stopblock.go` already refuses a quiet exit when planned
+   work is unblocked and idle. No second verb; the backlog item HARDENS the
+   existing owner. The three specimens were not "no gate" — they were a gate
+   with four deterministic escapes, each of which a seat took:
+   - **block-once**: the refusal fires once per unchanged open-work signature
+     and promises not to repeat; a hollow explanation on the continuation and
+     a second stop passes (SSA-R1-BLOCK-ONCE-BYPASS).
+   - **existential INFLIGHT**: any unrelated same-session flight (one long
+     job, one ceremonial watch) launders idleness on every other ready goal —
+     the local-to-global error the analysis blamed on conduct, replicated in
+     code (SSA-R1-UNRELATED-INFLIGHT-LAUNDERS-IDLENESS).
+   - **fail-open**: missing engine, unresolved root, lookup failure, timeout,
+     or an I/O error from turn-verdict all become an allowed exit
+     (SSA-R1-FAIL-OPEN-IS-A-BYPASS) — the wrong-root disease is one instance.
+   - **relay-minted HUMANSTOP**: the temporary relay path cannot verify who
+     supplied the words; a seat could mint its own bypass
+     (SSA-R1-HUMANSTOP-RELAY-LAUNDERING).
+2. **READY and INFLIGHT need real definitions, not reuse claims.** No
+   existing admission function answers "can a queued goal lawfully be claimed
+   and advanced by THIS seat" (SSA-R1-READY-HAS-NO-EXISTING-ADMISSION);
+   ownership is the machine+lineage pair, never the machine
+   (SSA-R1-READY-OWNERSHIP-SCOPE); job records carry no owner lineage and a
+   pending status is not liveness (SSA-R1-INFLIGHT-PROOF-MISSING); the
+   accepted-tree projection reads offline and can be stale at the
+   enforcement point (SSA-R1-STALE-BOARD-ALLOWS-EXIT).
+3. **The Stop hook is a valid re-prompting point but not an exclusive or
+   mandatory one** (trust, disabled hooks, other hooks overriding); the item
+   must own enrollment and version compatibility or state the residual
+   (SSA-R1-STOP-HOOK-NOT-MANDATORY-OR-EXCLUSIVE). HUMANSTOP needs an atomic
+   compare-and-consume lifecycle bound to the Stop decision it authorizes
+   (SSA-R1-HUMANSTOP-CONSUMPTION-RACE).
+
+The backlog item cut from this (goal turn-verdict-hardening) therefore
+carries five closures, in priority order: kill block-once for ready work;
+make INFLIGHT relevant (joined to the ready goal, not existential); fail
+CLOSED with a complete outcome table; seat-scoped READY with a stated,
+testable admission predicate and freshness proof; HUMANSTOP only from a
+human-classified caller. Self-grade revised: the gap statement stands, the
+mechanism moves from "build a gate" to "close four escapes in the gate that
+exists".
