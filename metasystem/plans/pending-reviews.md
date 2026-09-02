@@ -12,10 +12,10 @@ budget is 30 seconds, so every seat including m1 can run these.
 | --- | --- | --- |
 | never-idle-ironclad | REVIEWED (nine material, records/misc/never-idle-analysis-critique-r1.md); the fold waits for minutes | done on m1 |
 | recovery-to-good-state | REVIEWED (ten material, two critical: a stored-word self-repin would widen enrollment authority; age is not custody; records/misc/recovery-analysis-critique-r1.md); fold waits for minutes | done on m1 |
-| fleet-join-bootstrap | review RUNNING on m1 | plans/fleet-join-critique-brief.md |
+| fleet-join-bootstrap | REVIEWED (nine material, records/misc/fleet-join-critique-r1.md); fold waits for minutes | done on m1 |
 | failed-job-attention | REVIEWED (closing round, four material on concurrency seams, records/misc/failed-job-attention-critique-r3.md); joint round or fourth fold is Wido's call | done on m1 |
 | job-record-birth-token | REVIEWED (six material, records/misc/job-record-birth-token-critique-r1.md); fold brief landed, waits for minutes | done on m1 |
-| proof-harness-process-custody | design: load-generate custody verb, janitor orphans sweep | plans/proof-harness-custody-critique-brief.md |
+| proof-harness-process-custody | review RUNNING on m1 | plans/proof-harness-custody-critique-brief.md |
 | account-provenance | design revision 2 (closing round); owner question on two new verbs | plans/account-provenance-critique2-brief.md |
 | host-health-role | REVIEWED (seven material, records/misc/host-health-critique-r1.md); the fold waits for minutes | done on m1 |
 
