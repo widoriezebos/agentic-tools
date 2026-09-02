@@ -4,8 +4,9 @@ Date: 2026-09-02
 
 # Goal
 
-Write metasystem/plans/codex-handshake-design.md, revision 1: the design
-for goal codex-handshake-budget-load-fragile. Read the goal record's intent
+Write the file named codex-handshake-design.md in the metasystem plans
+directory, revision 1: the design for goal
+codex-handshake-budget-load-fragile. Read the goal record's intent
 and next step first (`metasystem goal show --id
 codex-handshake-budget-load-fragile`); the cause is FOUND and the design
 has two parts Wido already chose. Your job is to specify them exactly
