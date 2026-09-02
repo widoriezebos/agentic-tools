@@ -20,7 +20,7 @@ risks in its self-grade that you must settle first.
    (a) Correction B claims metasystem up can itself create the
    drifted-owner state because the owner branch compares the full process
    reference (metasystem/internal/supervise/arming.go around 152-158 and
-   716-725, metasystem/internal/supervise/identity.go around 223-241)
+   716-725, metasystem/internal/identity/identity.go around 223-241)
    while the armed inspection compares the start second only
    (metasystem/internal/supervise/verifyarmed.go around 32-41, 79, 103,
    calling census.Alive in metasystem/internal/census/verbs.go around
