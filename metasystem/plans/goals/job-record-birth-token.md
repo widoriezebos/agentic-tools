@@ -5,8 +5,9 @@
 - Origin: main
 - Next step: Small mechanical item, 4h box (R-44-m0b): design note from the spike's implied rule, Sol critique, build in internal/dispatch record writers, every incarnation-comparison caller run
 - OpenedAt: 2026-09-01T21:26:07Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-02T17:23:10Z
 - Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-02T17:20:05Z revision=3
 - StopCapability: generation=3 revision=3 machine=m1 claimEpoch=4 fenceEpoch=0
 
@@ -14,4 +15,5 @@ History:
 - 2026-09-01T21:26:07Z YGRS58CS27XPHHVC7FAVCK8B9R-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=job-record-birth-token
 - 2026-09-01T21:26:10Z 3ENA11H1YYQ6XEAJTD6C9KB5VG-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=job-record-birth-token
 - 2026-09-02T17:20:05Z RWS1F0GP1EMFEWTXN2S7GNZ19D-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=job-record-birth-token
-Integrity: sha256=912c52232343b02d2154528d79482e4bac8aa998b12f011182eda11eec27dd5f
+- 2026-09-02T17:23:10Z GQDP4CME4V36GAXS851NKJBC3N-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=job-record-birth-token
+Integrity: sha256=005c85bddb94be80a421f29eeff87c100dd5431d32eb347e78e4eef3b146e46f
