@@ -3,8 +3,11 @@
 Goal: turn-verdict-hardening (plans/goals/turn-verdict-hardening.md, revision 4,
 priority-1). Author: implementer delegate tvh-design-2 under dispatch by
 m0b+main-1788250419-3170380-8a1fb3, 2026-09-02; revision 2 by delegate
-tvh-design-r2 the same day, worktree at commit 19c61d24; revision 3 by delegate
-tvh-design-r3b the same day, worktree at commit bb3a55cd.
+tvh-design-r2 the same day, worktree at commit 19c61d24; revision 3 in two
+rounds the same day: sections 0–6 by delegate tvh-design-r3b (worktree at
+commit bb3a55cd, the round that hit its time cap) and the back matter
+(§§7–11 and this header) by delegate tvh-design-r3c (worktree at commit
+dbb9d0b1).
 Revision: 3 — folds the five material items of
 records/misc/turn-verdict-hardening-critique-r2.md: the three PARTIAL closures
 re-closed (TVH-R1-R3-NAMES-ILLEGAL-EXIT §1.2.1,
@@ -27,7 +30,11 @@ highest chance of this never happening again."
 
 Every seam cited here was read in this worktree; line numbers are at bb3a55cd
 (revision 3 re-read every seam it touches at that commit; the Go and shell files
-cited are byte-identical to 19c61d24, only plans and records moved between).
+cited are byte-identical to 19c61d24, only plans and records moved between;
+the back-matter round at dbb9d0b1 cited no new code seam — its new sources
+are the primary checkout's job records under `artifacts/agents/jobs/`, the
+four retained `rounds/1/diff.patch` files, `plans/supervision-hook-root-design.md`
+Decision 4, and the two goal files).
 
 ## 0. The object, restated against the code
 
@@ -1049,36 +1056,85 @@ either way is F10. The steward's stalled-idle escalation stays the
 detection-after-the-fact backstop behind this prevention gate
 (SSA-R1-STOP-HOOK-NOT-MANDATORY-OR-EXCLUSIVE).
 
-## 7. The new precedence ladder (converted world)
+## 7. The new precedence ladder (converted world; consistent with §§1–5 at revision 3)
+
+The ladder is the DECISION order. The EXECUTION order inside the verb is
+§3.2(d)'s phase sequence (identity → bounded fetch → projection → scan →
+READY → relevance → marker → state file → marshal); the hook's pre-verdict
+rows (§3.0) run before any of it.
 
 | Order | Condition | Class | Outcome |
 | --- | --- | --- | --- |
-| 1 | any class-B unknown (F1, F2, F4–F7, F10, P-rows) | B | BLOCK; no marker consulted; the reason names the repair |
-| 2 | any class-A unknown (F11, F12, F14, F15, F17) | A | BLOCK — unless step 3 consumes |
-| 3 | HUMANSTOP compare-and-consume succeeds against a class-A block | A | ALLOW; display the directive with its provenance |
-| 4 | READY ∧ ¬RELEVANT | A | BLOCK `ready-work`, every time (step 3 applies) |
-| 5 | plan `Open ≠ ∅` ∧ no in-flight job record | A | BLOCK `open-work`, every time (step 3 applies) |
-| 6 | unwatched work (unchanged block-once) | A | BLOCK `unwatched-work` once per digest |
-| 7 | READY ∧ RELEVANT | — | ALLOW; "STILL WORKING: <job or run> on <goal>@<binding>" |
-| 8 | no READY ∧ ¬FRESH | A | BLOCK `stale-board` (F16; step 3 applies) |
-| 9 | no READY, FRESH | — | WaitingOnHuman lines (fenced claims of this pair, §1.2.1), non-ready notices with session memory (queue change, goal-free staleness, unbudgeted queue once-notice), Busy display, then the all-clear naming what was checked |
+| 1 | any class-B unknown: F1, F2, F4, F5, F6 (until the root fix deletes it), F7, F10, the hook-side half of F17, and P1–P11 | B | BLOCK; no marker consulted; the reason names the machinery-owned repair (§3, §3.0). Emitted through `block_json` or the EXIT trap: exactly one object (§3.0 rule 4) |
+| 2 | any class-A unknown reached inside the verb: F11, F12, F14, F15, the verb-side half of F17 | A | BLOCK — unless step 3 consumes |
+| 3 | HUMANSTOP compare-and-consume succeeds against a class-A block — §5.3's set, verbatim: READY, open work, F11, F12, F14, F15, F16, F17 | A | ALLOW; display the directive with its provenance; the relayed form is named as relayed (§5.2). A marker that is absent, foreign, expired, consumed, busy (500 ms lock cap) or unproven (`proofOpid`) consumes nothing and the class-A block stands |
+| 4 | READY ∧ ¬RELEVANT | A | BLOCK `ready-work`, every Stop, no session memory; the reason carries the first `ReadyItem` and its `Move` byte-verbatim, one engine-accepted line per element (§1.2.1 rule 5, §1.3); step 3 applies |
+| 5 | plan `Open ≠ ∅` ∧ no in-flight job record | A | BLOCK `open-work`, every Stop (§1.3); step 3 applies |
+| 6 | unwatched work | A-shaped, but OUTSIDE §5.3's set | BLOCK `unwatched-work` once per digest, unchanged (§1.5); the marker is NOT consulted here: the escape is arming the printed watch, which `WaiterLive` proves |
+| 7 | READY ∧ RELEVANT | — | ALLOW; "STILL WORKING: <job or run> on <goal>@<binding>". FRESH is not required on this row: F16's condition is `Frontier.State == "none"` (§3.1), and the flight is proven live locally in the exact identity mode (§2.1, §2.2) |
+| 8 | no READY ∧ ¬FRESH | A | BLOCK `stale-board` (F16; step 3 applies); READY from a stale board is step 4, never this row (§4) |
+| 9 | no READY, FRESH | — | WaitingOnHuman lines (fenced claims of this pair and the queued goals waiting behind them, §1.2.1), the non-ready notices that keep session memory (queue change, goal-free staleness, the unbudgeted-queue once-notice, §1.5), the Busy display, then the all-clear naming what was checked |
 
-`decideRuns` warnings and green lines compose into the display as today.
+Rows that never enter the ladder: F3 (the engine proves an ungoverned
+installation) is decided in the hook before any verdict and ALLOWS with its
+visible line; F13 (ledger absent) means no converted world exists and the
+legacy contract applies; F8 (advisor) runs the ladder in full with READY
+empty by `ClaimAdmission`'s `no-claim-epoch` refusal and R1's holder rule
+(§1.2.0, §1.2.1), so it lands at step 8 or 9 with the OWNED-ELSEWHERE line in
+the display; F20 (broken marker) is "absent" at step 3; F21 (malformed state
+file) resets and can only add a notice at step 9. `decideRuns` warnings and
+green lines compose into the display as today.
 
-## 8. Residuals (honest list)
+## 8. Residuals (honest list, revision 3)
 
-Legacy single-file world keeps today's block-once ladder; plan-stream fields
-are seat-editable text; gate and mission activity never excuses READY; a
-goal-named run without a governed attempt is not flight; Darwin run records
-carry no microsecond identity until slice 2 (waiter-only relevance there);
-F18/F19 runtime-side allow on a killed or emission-failed hook; hooks disabled
-or untrusted; Codex and Devin have no live self-check and unobserved live Stop
-delivery; a foreign clone's job records; an offline remote-mode machine blocks
-until synced, local-mode, or human-stopped; the one-verdict race between fetch
-and decision; releasing or parking an exhausted claim and re-claiming it starts
-a fresh budget window by the engine's rule; a fenced claim leaves the seat with
-no ledger move until a human resumes (reported as WaitingOnHuman, by design);
-the relay-minted HUMANSTOP cannot verify its speaker (human-ratified, R-47-m0b).
+- Legacy single-file world keeps today's block-once ladder (§1.2); plan-stream
+  `Next step` and `Waiting on the human` fields are seat-editable text (§1.3).
+- Gate runs and mission runners never excuse READY; a goal-named run without
+  a governed attempt is not flight; a foreign clone's job records are
+  invisible (§2.2, §2.3, KI-34).
+- Darwin run records carry no microsecond identity until slice 2b lands the
+  field at the three write sites; until then a Darwin seat's governed run is
+  relevant through its live waiter only (§2.2).
+- F18: the runtime kills the hook before emission. Made improbable by §3.2,
+  not closed: the clock is a wall clock, so a backward step of s seconds can
+  extend the budget by at most s (§3.2(b)); the exempt steps (builtins, local
+  coreutils, the pre-engine `git rev-parse` queries) block only when the
+  local filesystem hangs, and an engine binary whose exec itself hangs cannot
+  be bounded by the engine (§3.2(c)); without `EPOCHREALTIME` the charge is
+  whole seconds rounded up, never under-counted (§3.2(b)).
+- F19: `emit_json` cannot write to stdout; recorded as `EMISSION_FAILED`, the
+  runtime's default applies (§3.0, §3.1).
+- An unrecognised EVENT argument still exits 2 — the hook cannot know it is a
+  Stop; that is hook drift, caught by `hooks check` (§3.0 rule 1).
+- `up` leaves the Stop path (§3.2(e)): supervision that dies mid-session is
+  re-armed at the next SessionStart or Ring 3 tick, not at the next Stop — a
+  revival-latency regression, disclosed; every Stop still shows supervision
+  state through `health --hook-preview`. The SessionStart `up` keeps its 15 s
+  runtime timeout and therefore keeps the pre-existing ownerless-lock-directory
+  hazard §3.2(e) traced (`arming.go:684`, `launchOwner`); this design neither
+  introduces nor repairs it.
+- Ordering window: between slice 1b and slice 2a the verdict refuses at the
+  verdict boundary, but the hook's pre-verdict shell exits and rows F1, F2,
+  F5 stay fail-open (§10); the root fix, landed first, is what makes the
+  engine reachable in that window.
+- Hooks disabled or untrusted; Codex and Devin have no live self-check and
+  unobserved live Stop delivery (§6).
+- An offline remote-mode machine with no READY blocks until the network
+  returns, the ledger is in local mode, or a human sets HUMANSTOP; the
+  one-verdict race between the fetch's instant and the decision is named, not
+  softened (§4).
+- Releasing or parking an exhausted claim and re-claiming it starts a fresh
+  claim revision whose budget window is the engine's rule (§1.2.1).
+- A fenced claim leaves the seat with no ledger move until a human resumes;
+  reported as WaitingOnHuman, by design (§1.2.1).
+- The relay-minted HUMANSTOP cannot verify its speaker: a human-ratified
+  exception (R-47-m0b), named in the marker's provenance and in every display
+  that consumes it (§5.2). A hand-forged marker needs two consistent files
+  (marker plus proof record); same-user filesystem authority is not closed,
+  and the ledger's announcements and locks already live under it (§5.2).
+- Under the enrolled-terminal form the human names the target seat
+  (ASSUMPTION A3-HUMANSTOP-SEAT, §5.2, §9 ask 9); if overruled, that form is
+  withdrawn and the relay form is the only minting path.
 
 ## 9. Open asks and gaps (not filled)
 
@@ -1086,19 +1142,57 @@ the relay-minted HUMANSTOP cannot verify its speaker (human-ratified, R-47-m0b).
 2. CLOSED by R-47-m0b word 2: stored budget only; an unbudgeted queued goal is
    a one-time notice (§1.2.1, §1.5).
 3. CLOSED by reading: run records carry the goal binding (`run.go:114-134,
-   160-187`); the run join is in slice 1 (§2.2).
+   160-187`); the run join is in slice 1a (§2.2, §10).
 4. GAP: whether `goalNormApproval` can refuse a claim with an empty approved
    ref was not traced; `ClaimAdmission` includes it verbatim by extraction, so
    READY and claim agree either way, but the R2 false-READY rate is unknown
-   until the extraction test runs.
+   until `TestClaimAdmissionAgreesWithClaim` runs (slice 1a).
 5. GAP: whether the dispatcher refuses a non-holder session outright was not
    traced (`dispatch_verbs.go:987` only reports `holder`); R1 requires
    `seat.Holder` as the safe default (§1.2.1). If dispatch admits a non-holder
    pair's own claim, R1 is loosened by removing that conjunct — one line, one
-   test.
+   test — and `TestReadyRequiresHolder` is inverted, never deleted.
 6. GAP (per-runtime, honest): Devin's honouring of the per-hook `timeout`
-   field and Codex's live Stop delivery are unobserved (§6); the design names
-   them as residuals rather than checks.
+   field, Codex's live Stop delivery, and whether either runtime closes the
+   hook's stdin after the payload (the bounded `cat` of §3.2(c) row "payload"
+   blocks a runtime that never closes it) are unobserved (§6); named as
+   residuals rather than checks.
+7. DECIDED by the dispatching seat (m0b+main-1788250419-3170380-8a1fb3,
+   2026-09-02; closes TVH-R2-SLICE1-HIDDEN-WRONG-ROOT-DEPENDENCY): slice 1 of
+   this design is SEQUENCED BEHIND goal supervision-hook-wrong-root landing
+   first. That goal's design, `plans/supervision-hook-root-design.md`, is at
+   revision 3 (register `records/misc/hook-root-critique-r3.md`, two findings
+   from closure — "two folds from closure" in the seat's words); the machine's
+   single claim slot (`activeJobLimit=1`, one claim per machine tree-wide,
+   `validate.go:250-281`) moves to that goal next, and this goal's slice 1a
+   is not dispatched until the root fix is on main. Consequences are stated
+   in §3 (sequencing paragraph) and §10 (slice 1a and 1b rows; slice 2's
+   separate dependency row is redundant and withdrawn). Not a gap: a
+   decision, recorded here so the back matter and §3 name one authority.
+8. CLOSED by decision (§3.2(e)): Sol's declared round-2 gap — whether today's
+   runtime timeout kills the hook alone or its process group, and hence
+   whether `run-bounded`'s group kill would introduce the `up` mid-transaction
+   hazard — is moot for the Stop path because `up` leaves it; the hazard
+   remains at SessionStart as a pre-existing residual (§8). The comparison
+   itself stays unproved, as Sol said it must from repository source alone.
+9. ASK (open, for the dispatching seat): ASSUMPTION A3-HUMANSTOP-SEAT (§5.2) —
+   under the enrolled-terminal form the human names the target with
+   `--seat <machine>+<lineage>`, machine-local, lineage validated. Two answers
+   are mechanical: keep it (slice 4a builds it as written) or overrule it
+   (slice 4a omits the enrolled form and the relay form is the only minting
+   path; `TestHumanstopEnrolledFormRequiresSeatOnThisMachine` is dropped).
+   ANSWERED by the dispatching seat (m0b, 2026-09-02, after revision 3
+   returned): KEEP the enrolled-terminal form as written — the human at an
+   enrolled terminal is the authority and names the seat. Slice 4a builds it;
+   the dispatch gate on this ask is lifted.
+10. GAP (declared by Sol, round 2, accepted): the slice-1 builder-minute
+    estimate is UNSUPPORTED by the job records. §10 states what the records
+    do show and re-cuts every slice so a doubled estimate fits one 120 cap
+    with the correction round intact; no replacement rate is invented.
+11. GAP (platform): `EPOCHREALTIME` was read on this seat's bash 5.2.15 only
+    (§3.2(b)); whether every fleet seat's hook bash has it is unobserved. The
+    fallback is specified (whole seconds, rounded up, charged), so a seat
+    without it is coarse, never fail-open.
 
 ## 10. Slices and tests
 
@@ -1107,56 +1201,123 @@ the relay-minted HUMANSTOP cannot verify its speaker (human-ratified, R-47-m0b).
 `capMin` over one slice's dispatches. Chain shape per slice: implementer cap
 120 + code critic 40 + one correction 40 + re-critique 40 = 240, four
 attempts; a second correction round means the slice is re-cut, not
-over-reserved. Fable code critique per slice; land with `--chain`.
+over-reserved. Fable code critique per slice; land with `--chain`. Every slice
+stays at or below 240 reserved minutes.
 
-Recorded precedent (read from the primary checkout's job records,
-`artifacts/agents/jobs/*.json`, 2026-09-01/02, this lane): 27 completed
-implementer jobs ran 1–18 minutes wall clock (median 8) against caps of 20–120;
-the largest computed diff read was 207 added lines in 2 minutes
-(`implementer-0d40e4f087fbb016d455fd35`); the two 120-cap jobs ran 8 and 9
-minutes; design critics ran 2–23 minutes against 40–60; code critics 3–6
-against 20. Builder-minute estimates below assume the SLOW end of that record
-(about 15 added lines per builder minute including tests) so the numbers are
-conservative, and each slice's implementer estimate is held under 90 minutes
-so a correction round fits the 120 cap. Revision 1's three slices did not fit
-once the run join moved into slice 1 (its estimate below is 85 minutes before
-the hook work); the build is re-cut into FOUR slices. Slice 1 alone refuses all
-three specimens.
+**The estimate is unsupported, and the slices are cut so that does not
+matter.** Sol's declared gap is accepted in full. Read for this revision from
+the primary checkout's job records (`artifacts/agents/jobs/implementer-*.json`
+and `f51-build-1.json`, 32 implementer records dated 2026-09-01/02, 26
+completed and 6 failed, wall clock 1–18 minutes against caps of 20–120):
+only four records persisted a computed diff (`<job>/rounds/1/diff.patch`),
+and none of the four is an authored code diff of any size —
+`implementer-0d40e4f087fbb016d455fd35` (207 added lines, all Markdown, 2
+minutes: recovered prewritten work, as Sol said),
+`implementer-d1947930c9b516cb64dffdb8` (32 added Go lines across two files, 2
+minutes), `implementer-0bc4adc1169d0aae26816254` (12 added Go lines, 8
+minutes; the completed 120-cap job) and `f51-build-1` (3 added lines, 4
+minutes). For the other 28 jobs the branch tip equals the recorded `baseSha`
+(delegates do not commit; their diff lands through conformance review, and
+those diffs were not retained), so their authored sizes are NOT recoverable
+from the records. Revision 2's "15 added lines per builder minute" rate and
+its 85-minute slice-1 figure are therefore withdrawn as unsupported, and no
+rate replaces them. The cutting rule instead: every slice's implementer
+estimate is held at or below 60 builder minutes, so that a DOUBLED estimate
+(120) still fits the 120 cap and the chain keeps its one correction round;
+revision 2's slice 1 (85) is re-cut into 1a and 1b, slice 2 (80) into 2a and
+2b, slice 4 (75) into 4a and 4b; slice 3 (45) stands. The line counts below
+are the design's own tally of what each slice names, not a duration claim.
+The first landed slice (1a) is the first authored-diff datum this lane will
+have: its job record, wall clock and retained `diff.patch` are read and the
+remaining estimates restated in this section before slice 1b is dispatched.
 
-| Slice | Content and work breakdown (builder minutes) | Go tests (new) | Existing tests, new expectation |
+Sequencing (§9 ask 7): goal supervision-hook-wrong-root lands first; slice 1a
+is not dispatched before it is on main. Line numbers below are today's
+(`supervision-hook.sh` at bb3a55cd); the root fix replaces lines 23-31 and
+50-66 of the hook (its Decision 4 rows) and leaves 232-247, 274 and 306-320
+in place, so the hook lines this design touches are stated against the
+post-root-fix file by today's numbers of the lines that survive. Where §2.2,
+§3.0 and §3.2(e) say "slice 2", they mean the pair 2a+2b: the static
+one-writer test, the `hook-single-response` fixture and the removal of `up`
+from the Stop path are 2a; the Darwin `pidStartedAtExactMicro` field on
+`run.Record` is 2b. Where §1.2.1 and §3 say "slice 1a", they mean the row
+below. Sections 1–6 are not re-folded by this round.
+
+| Slice | Content and work breakdown (builder minutes, ≤ 60) | Go tests and fixtures (new) | Existing tests, new expectation |
 | --- | --- | --- | --- |
-| 1 — specimen refusal (est. 85; cap 120) | `ClaimAdmission` + `ClaimRefusal` + `MachineQuotaAllows` + Mutate reorder + `OwnPair` export (~120 lines, 12); `readywork.Frontier` R1/R2/R3/WaitingOnHuman (~220 lines, 15); `readywork.Relevant` over jobs AND runs with exact identity, `dispatch.IdentityRefOf` export, `RunFact` fields, `scan.go` full-ref fix (~180 lines, 14); verdict: `--caller-pid`/`--turn-key`/`--attempt-seq` flags, seat via `ClassifyVerbAt`, ladder §7 steps 2–9 without marker, no block-once for READY/open-work, F7/F12/F14/F15 verb-side, stopblock text (~180 lines, 14); hook: pass `--caller-pid`, F10 → block (~15 lines, 3); tests (~600 lines, 27) | `TestClaimAdmissionAgreesWithClaim` (table-driven over every `Rule`, plus epoch 0 and the quota with the arc exception); `TestClaimReplayReturnsAlreadyAppliedBeforeAdmission`; `TestClaimAdmissionRefusesZeroClaimEpoch`; `TestReadyClaimedAdmissibleForThisPairOnly`; `TestReadyRequiresHolder`; `TestReadyQueuedClaimableRequiresStoredBudgetAndFreeQuota`; `TestReadyHeldReleasableNamesParkOrReleaseByOrigin`; `TestReadyExcludesFencedClaimAsWaitingOnHuman` (fence set → no READY, WaitingOnHuman named, Stop not blocked on that ground); `TestReadyExcludesOtherPairOnSameMachine`; `TestRelevantJobJoinsGoalAndBinding`; `TestRelevantJobRequiresNativeExactIdentity` (legacy seconds-only record → not relevant; reused pid same second → Dead); `TestRelevantJobRequiresLiveProbeOrLiveWaiter`; `TestRelevantRunJoinsGoalRevisionAndLineage`; `TestRelevantRunRequiresLaunchingOrRunning`; `TestRelevantUngovernedGoalNamedRunIsNotFlight`; `TestRelevantIgnoresSupersededBinding`; `TestRelevantIgnoresMainIdMismatchOnOwnClaim`; `TestReadyBlocksEveryStopWithoutMemory` (five Stops, five blocks); `TestOpenPlanWorkBlocksEveryStop`; `TestBusyMissionDoesNotExcuseReady`; `TestUnreadableBlocks`; `TestDegradedBlocks`; `TestFrontierUnknownBlocks`; `TestIdentityUnknownBlocks`; two-seat fixtures `TestTwoSeatsOneMachine_SeatAFlightDoesNotExcuseSeatB` and `TestTwoSeatsOneMachine_SeatBIsNotToldSeatAsGoalIsReady` (one bed, machine `m`, lineages `A` and `B`; A holds a claim with a live relevant job: A allows, B has no READY and is judged on notices only; then B holds nothing and a budgeted queued goal exists: B's `ClaimAdmission` fails on `machine-quota` only → B is not READY and A's claim is not B's R3); specimen replays `TestSpecimen1_M3HoldBlocks` (claimed admissible goal, no jobs, two Stops both block), `TestSpecimen2_M0bFenceStopBlocks` (the 2026-09-01 20:30Z ledger shape: the pair holds no claim, thirty-plus queued goals carry complete stored budgets → R2 block; variant: the pair holds an unfenced budget-breached claim → R3 block naming park-or-release then claim; variant: the claim is `StopFence`d → WaitingOnHuman, not blocked on that ground), `TestSpecimen3_M0bBoardStopBlocks` (the 2026-09-02 05:00Z shape: every pair claim released, `account-provenance` queued with its stored budget → R2 block; `goal next` output irrelevant); hook fixture `stop-hook-monitor` second-Stop assertion inverted; hook fixture for F10 emitting `decision:block` | `TestTurnVerdictConvertedClaimHasTheFloor` → `…ClaimBlocksEveryStop`; `TestTurnVerdictConvertedQueueProdsOnce` → `…UnbudgetedQueueProdsOnce` (unchanged behaviour, renamed for the reason) plus sibling `…BudgetedQueueBlocksEveryStop`; `TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges` → `TestClaimedReadyGoalBlocksEveryStopAndQueueChangeIsNoticedOnce`; `TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange` → asserts display text only, `ShouldBlock` true throughout; `TestPrecedenceLadder` → `TestPrecedenceLadderFailClosed` (Busy no longer suppresses a converted READY block; Unreadable blocks in both worlds); `TestInventoryFailureVetoes` → `…Blocks`; `TestVerdictDualSlotSequence` (legacy world) unchanged except Unreadable; `supervision-fixtures.sh:1553-1555` "refused the same open work twice" → must refuse twice, settled step must allow |
-| 2 — fail closed and the Stop budget (est. 80; cap 120; depends on supervision-hook-wrong-root landing first) | hook restructure per §3.0 (traps, `emitted`, P-rows, no pre-emission `exit 0`) and rows F1–F9 (~120 lines of shell, 15); `util run-bounded` on `boundedexec` (~60 lines, 6); `util now-ns` clock arithmetic and bounded ceremonies with the cap table (~60 lines shell, 8); `goalGitContext`/`gitInContext`/`ProjectContext`/`loadTreeContext`, scan moved inside the verb, phase deadline and F17 (~160 lines, 14); `StopHookBudgetSec`, `runtime stop-budget`, three JSON files to 20, `hooks budget` verb, `up` HOOK_CHECK/HOOK_DRIFT lines per §6 (~120 lines, 10); Darwin `pidStartedAtExactMicro` on `run.Record` at the three write sites and in the readers (~40 lines, 4); tests and hook fixtures (~450 lines, 23) | `TestRunBoundedKillsProcessGroupAndExits124`; `TestVerdictDeadlineExceededBlocksNamingPhase`; `TestGoalGitContextKillsHungChild` (a fixture git wrapper that sleeps); `TestScanRunsInsideVerdictDeadline`; `TestHooksBudgetMatchesDeclarationForEveryShippedConfig` (three files); `TestRuntimeStopBudgetVerb`; `TestUpPrintsHookCheckResidualForCodexAndDevin`; `TestRunRecordCarriesDarwinExactIdentity` (Darwin build tag); hook fixtures: F1, F2, F5, F7 emit `decision:block`; a fixture that fails `mktemp` (unwritable `TMPDIR`) emits the trap block with a line number; a fixture that makes `up` hang proves emission within the budget | none inverted |
-| 3 — freshness (est. 45; cap 120) | `FetchAdvanceContext` bounded fetch as verdict phase 2, `SyncLocal` proof, F16, display and ladder step 8 (~120 lines, 12); tests (~250 lines, 15); documentation of the cursor's withdrawal in the delivery contract (5) | `TestFreshnessLocalModeIsFresh`; `TestFreshnessBoundedFetchSuccessAllowsNoReady`; `TestFreshnessFetchTimeoutBlocksNoReady` (a fixture remote that never answers); `TestFreshnessFetchRefusalBlocksNoReady` (foreign ledger); `TestFreshnessStaleBoardStillBlocksOnReady`; `TestFreshnessReadyComputedOverFetchedTree` (a remote claim removes the item); `TestFreshnessNoTimeWindowExists` (a fetch that succeeded one second ago in another process does not make this verdict fresh) | `Project` staleness banner tests unchanged |
-| 4 — HUMANSTOP (est. 75; cap 120) | `goal humanstop` verb with `ProveOrTemporaryGoalAuthority`, marker with provenance (~140 lines, 12); compare-and-consume under `humanstop/.lock` at the marker phase, class-A wiring, F11 as a block instead of an exit, display and audit line, pruning (~160 lines, 14); `--hook-schema`/F10 mismatch (~30 lines, 4); tests and a hook fixture (~400 lines, 22) | `TestHumanstopRequiresValidForProofOrRelay`; `TestHumanstopRelayRecordsProvenanceVerbatim` (kind, relayedBy, recordedWord, reviewBy, ruling); `TestHumanstopRelayRefusesShortWordOrPastReviewDate`; `TestHumanstopRefusesLeaseHumanClass`; `TestHumanstopConsumedByExactlyOneOfConcurrentStops` (two goroutines under the real marker lock); `TestHumanstopConsumesOnlyAgainstClassABlock` (an allowed Stop leaves the marker unconsumed; a class-B block never reads it); `TestHumanstopRescuesStateFileFailure` (F11); `TestHumanstopBoundToWorldPairAndSession`; `TestHumanstopExpiredIsIgnoredAndNamed`; `TestHumanstopConsumedBeforeAllowSurvivesCrash`; `TestHumanstopNeverConsumedAtSessionStart`; `TestHookSchemaMismatchBlocks`; hook fixture: marker set through the relay form by the fixture seat, one Stop allowed with the relayed audit line in the display, next Stop blocks again | none |
+| 1a — the predicate, relevance, and their proofs (est. 60; cap 120; DEPENDS on supervision-hook-wrong-root landed on main, §9 ask 7; touches no hook line) | `ClaimAdmission` + `ClaimRefusal` + `MachineQuotaAllows` + Mutate reorder + `OwnPair` export (~120 lines, 12); `readywork.Frontier` R1, R2, R3 in the SET form of §1.2.1 with `X(g)`, `t′(g)`, the full re-admission over `t′(g)`, the `Move` rendered in the exact `goalsync_mutations.go` syntax, WaitingOnHuman and Reasons (~260 lines, 18); `readywork.Relevant` over jobs AND runs with exact identity, `dispatch.IdentityRefOf` export, `RunFact` fields, `scan.go` full-ref fix (~180 lines, 14); package tests (~400 lines, 16) | `TestClaimAdmissionAgreesWithClaim` (table-driven over every `Rule`, plus epoch 0 and the quota with the arc exception); `TestClaimReplayReturnsAlreadyAppliedBeforeAdmission`; `TestClaimAdmissionRefusesZeroClaimEpoch`; `TestReadyClaimedAdmissibleForThisPairOnly`; `TestReadyRequiresHolder`; `TestReadyQueuedClaimableRequiresStoredBudgetAndFreeQuota`; `TestReadyHeldReleasableNamesParkOrReleaseByOrigin`; NEW two-arc fixture `TestReadyHeldReleasableNamesEveryQuotaBlockingClaim` (§1.2.1: H1 and H2 held exhausted by `m+A` in arc `A`, queued `g` with a complete stored budget in arc `B` → the Move names BOTH parks then the claim; variant H1 in `A`, H2 in `B`, `g` in `B` → H1 alone; variant seat `m+B` holds H3 in arc `C` → `g` not READY for `m+A`, Reasons names H3 and `m+B`; variant H1 human-origin → `release`; decisive assertion: the rendered Move is executed line by line through the REAL verbs against a copy of the fixture ledger, every line `OutcomeConfirmed`, `g` claimed by `m+A` afterwards); NEW exact-syntax check `TestReadyMoveLinesParseUnderParseSyncFlags` (every rendered park, release and claim line is tokenized and fed to the real `parseSyncFlags`, `goalsync_mutations.go:104-159`: no error, `--root`, `--id`, `--lineage` present, `--because` present on park only, no positional id, no `--then`); `TestReadyExcludesFencedClaimAsWaitingOnHuman`; `TestReadyExcludesOtherPairOnSameMachine`; `TestRelevantJobJoinsGoalAndBinding`; `TestRelevantJobRequiresNativeExactIdentity` (legacy seconds-only record → not relevant; reused pid same second → Dead); `TestRelevantJobRequiresLiveProbeOrLiveWaiter`; `TestRelevantRunJoinsGoalRevisionAndLineage`; `TestRelevantRunRequiresLaunchingOrRunning`; `TestRelevantUngovernedGoalNamedRunIsNotFlight`; `TestRelevantIgnoresSupersededBinding`; `TestRelevantIgnoresMainIdMismatchOnOwnClaim` | none (no verdict behaviour changes in 1a) |
+| 1b — the verdict refuses (est. 55; cap 120; follows 1a) | verdict verb: `--caller-pid` flag, seat via `ClassifyVerbAt` (§1.1), ladder §7 steps 1–2 and 4–9 WITHOUT the marker step, no block-once for READY or open-work, `scan.Busy` display-only, F7/F12/F14/F15 verb-side, stopblock text (~180 lines, 14); hook lines on top of the root fix: line 274 gains `--caller-pid "$identity_pid"` beside `--main-id`; lines 306-320 emit `{"decision":"block",...}` for F10 instead of `systemMessage`; the advisor early exit at 232-247 is removed (F8) (~15 lines, 3); verdict tests, two-seat fixtures, specimen replays, renames, hook fixtures (~480 lines, 24). Specimen claim, honestly: 1a+1b refuse all three specimens AT THE VERDICT BOUNDARY; at the DEPLOYED Stop boundary once the root fix is in — which the sequencing guarantees, since 1a cannot start before it — the hook reaches the verdict on every fleet seat, but its pre-verdict shell exits and rows F1, F2, F5 stay fail-open until 2a (§8 ordering window) | `TestReadyBlocksEveryStopWithoutMemory` (five Stops, five blocks); `TestOpenPlanWorkBlocksEveryStop`; `TestBusyMissionDoesNotExcuseReady`; `TestUnreadableBlocks`; `TestDegradedBlocks`; `TestFrontierUnknownBlocks`; `TestIdentityUnknownBlocks`; two-seat fixtures `TestTwoSeatsOneMachine_SeatAFlightDoesNotExcuseSeatB` and `TestTwoSeatsOneMachine_SeatBIsNotToldSeatAsGoalIsReady` (one bed, machine `m`, lineages `A` and `B`; A holds a claim with a live relevant job: A allows, B has no READY and is judged on notices only; then B holds nothing and a budgeted queued goal exists: B's `ClaimAdmission` fails on `machine-quota` only → B is not READY and A's claim is not B's R3); specimen replays `TestSpecimen1_M3HoldBlocks` (claimed admissible goal, no jobs, two Stops both block), `TestSpecimen2_M0bFenceStopBlocks` (the 2026-09-01 20:30Z ledger shape: the pair holds no claim, thirty-plus queued goals carry complete stored budgets → R2 block; variant: the pair holds an unfenced budget-breached claim → R3 block naming the SET Move then the claim; variant: the claim is `StopFence`d → WaitingOnHuman, not blocked on that ground), `TestSpecimen3_M0bBoardStopBlocks` (the 2026-09-02 05:00Z shape: every pair claim released, `account-provenance` queued with its stored budget → R2 block; `goal next` output irrelevant); hook fixture `stop-hook-monitor` second-Stop assertion inverted; hook fixture for F10 emitting `decision:block` | `TestTurnVerdictConvertedClaimHasTheFloor` → `…ClaimBlocksEveryStop`; `TestTurnVerdictConvertedQueueProdsOnce` → `…UnbudgetedQueueProdsOnce` (unchanged behaviour, renamed for the reason) plus sibling `…BudgetedQueueBlocksEveryStop`; `TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges` → `TestClaimedReadyGoalBlocksEveryStopAndQueueChangeIsNoticedOnce`; `TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange` → asserts display text only, `ShouldBlock` true throughout; `TestPrecedenceLadder` → `TestPrecedenceLadderFailClosed` (Busy no longer suppresses a converted READY block; Unreadable blocks in both worlds); `TestInventoryFailureVetoes` → `…Blocks`; `TestVerdictDualSlotSequence` (legacy world) unchanged except Unreadable; `supervision-fixtures.sh:1553-1555` "refused the same open work twice" → must refuse twice, settled step must allow |
+| 2a — one emitter, the entry clock, the bounded hook (est. 55; cap 120; follows 1b. The separate "depends on supervision-hook-wrong-root" row of revision 2 is REDUNDANT and withdrawn: the dependency is carried by 1a, which 2a follows) | hook restructure per §3.0 on top of the root fix — the fixed head (lines 1-2: `hook_entry_us`, `on_err`, `emit_json`, `block_json`, `on_exit`, both traps before the checks at 18-19), F1 at 26-31 and P2/F5 at 32-40 → `block_json`, the root design's silent-exit rows → `block_json` (P6: F2, F4), payload `cat` at 42-44 bounded, line 43's trap deleted, P8–P11 left to the ERR trap, `emit_stop_payload` calling `emit_json`, no `exit` before a successful `emit_json` (~120 lines shell, 15); `util run-bounded --deadline-ms --kill-grace-ms` on `boundedexec` with the new `KillGrace` field (~60 lines, 6); `elapsed_ms` and `bounded` and the §3.2(c) cap table applied to every engine call (32, 67, 73, 86, 92, 97-98, 109, 116-117, 122-125, 131-135, 143, 161, 166, 168-170, 221, 223-224, 249, 256, 258, 265, 274, 278-280, 297-304) and to the post-emission calls (185-211, 204, 244, 323); `up` and `up_failure` removed from the Stop path (148-159, §3.2(e)); `util now-ns` no longer called by the hook (~90 lines shell, 10); `StopHookBudgetSec`, `runtime stop-budget`, three JSON files to 20, `hooks budget` verb, `up` HOOK_CHECK/HOOK_DRIFT lines per §6 (~120 lines, 10); tests and fixtures (~260 lines, 14) | `TestRunBoundedKillsProcessGroupAndExits124`; `TestRunBoundedKillGraceAbandonsDStateChild` (a child that ignores SIGKILL is simulated by a stub reaper: the verb returns within grace); `TestHooksBudgetMatchesDeclarationForEveryShippedConfig` (three files); `TestRuntimeStopBudgetVerb`; `TestUpPrintsHookCheckResidualForCodexAndDevin`; static `TestHookStopPathHasOneStdoutWriter` (§3.0 rule 7); NEW static `TestHookEntryClockPrecedesEveryCommand` (the `hook_entry_us=` assignment is the first statement after `set -euo pipefail`, before the first command substitution or external command in the file); NEW fixture `hook-single-response` (§3.0: a Stop under F1 no engine at the world, F2 staged outside any git repository, F5 a stub engine whose `runtime list` prints nothing, a trap exit from an unwritable `TMPDIR` so `mktemp` fails, and one ordinary READY block; each asserts stdout is exactly one line, that line is one JSON object whose `decision` is `block`, and the exit status is 0); NEW fixture `hook-clock-at-entry` (§3.2(b): a PATH-stubbed `git` whose `rev-parse` sleeps 7 000 ms before answering, a stub engine that records the `--deadline-ms` it receives; asserts the recorded verdict cap is at most 7 500 ms — the sleep was charged although the query is exempt from bounding — and one object was emitted; named ceiling 30 s scaled); fixture `hook-budget-verdict-hang` (a stub engine whose `report turn-verdict` sleeps past its cap; asserts one F17 block object within 16 000 ms of hook entry, replacing revision 2's `up`-hang fixture, since `up` left the Stop path); hook fixtures: F7 emits `decision:block` | none inverted |
+| 2b — the verb bounds itself (est. 45; cap 120; follows 2a) | `goalGitContext`/`gitInContext`/`FetchAdvanceContext`/`ProjectContext`/`loadTreeContext` on `exec.CommandContext` with the process-group kill and `WaitDelay` 500 ms; `report.Scan` moved inside the verb's phase sequence; `--deadline-ms`, `D − 700`, the cooperative check at each boundary, F17 verb-side naming the phase; `withLockDeadline` and F11 as a block (`state-unavailable`) instead of an exit (~200 lines, 18); Darwin `pidStartedAtExactMicro` on `run.Record` at the three write sites (`run/verbs.go:140, 223, 321`) and in the readers (~40 lines, 4); tests (~260 lines, 14) | `TestVerdictDeadlineExceededBlocksNamingPhase`; `TestGoalGitContextKillsHungChild` (a fixture git wrapper that sleeps); `TestScanRunsInsideVerdictDeadline`; `TestStateFileLockTimeoutBlocksStateUnavailable` (F11: a goroutine holds the verdict-state flock; the verb returns `ShouldBlock` with `state-unavailable`, exit 0); `TestVerdictFloorDecomposition` (with `--deadline-ms 3000` the phases get 2 300, the marker reserve is 600, marshal 100: asserted from the verb's own accounting output); `TestRunRecordCarriesDarwinExactIdentity` (Darwin build tag) | none |
+| 3 — freshness (est. 45; cap 120; follows 2b) | bounded fetch as verdict phase 2 under `min(4000 ms, 40% of remaining)`, `SyncLocal` proof, F16, display and ladder step 8 (~120 lines, 12); tests (~250 lines, 15); documentation of the cursor's withdrawal in the delivery contract (5) | `TestFreshnessLocalModeIsFresh`; `TestFreshnessBoundedFetchSuccessAllowsNoReady`; `TestFreshnessFetchTimeoutBlocksNoReady` (a fixture remote that never answers); `TestFreshnessFetchRefusalBlocksNoReady` (foreign ledger); `TestFreshnessStaleBoardStillBlocksOnReady`; `TestFreshnessReadyComputedOverFetchedTree` (a remote claim removes the item); `TestFreshnessNoTimeWindowExists` (a fetch that succeeded one second ago in another process does not make this verdict fresh); `TestFreshnessNotRequiredForReadyAndRelevant` (§7 step 7: a live relevant job on a stale board allows) | `Project` staleness banner tests unchanged |
+| 4a — minting HUMANSTOP (est. 45; cap 120; follows 3; §9 ask 9 answered KEEP) | `goal humanstop` verb; `AuthorizesHumanstop`, `TemporaryHumanstopFor`, `RecordHumanstopProof` beside the existing authorizers; the seat derived from `lease.ClassifyVerbAt(root, metasystemRoot, os.Getppid())` and never from flags or `METASYSTEM_OWNER_LINEAGE`; the relay form (MAIN only, `--seat` refused, every other class refused by name) and the enrolled form under A3 (`--seat` required, machine-local, `validLineage`); the marker with provenance and `proofOpid` (~180 lines, 16); tests (~260 lines, 14) | `TestHumanstopRequiresValidForProofOrRelay`; `TestHumanstopRelayRecordsProvenanceVerbatim` (kind, relayedBy, recordedWord, reviewBy, ruling `R-47-m0b`, and the proof's `TemporaryWordRuling` departure); `TestHumanstopRelayRefusesShortWordOrPastReviewDate`; `TestHumanstopRefusesLeaseHumanClass`; NEW forged-lineage case `TestHumanstopRelayIgnoresCallerLineage` (the invoker sets `METASYSTEM_OWNER_LINEAGE` and passes `--lineage` naming another seat: the flag is unknown to the verb and refused; with the environment alone the marker is written for the CLASSIFIED seat, `machine`, `lineage` and `relayedBy` all equal it, and no marker file for the named seat exists); NEW cross-seat case `TestHumanstopRelayRefusesSeatFlag` (`--seat` under the relay form → refusal "the relay form mints only for the invoking seat", no file written); NEW `TestHumanstopRefusesNonMainClassByName` (DELEGATE, STEWARD, SUPERVISION, ADAPTER-SUPERVISOR, empty, and a classification error: each refused with its class in the message, no file written); `TestHumanstopEnrolledFormRequiresSeatOnThisMachine` (enrolled proof, `--seat` naming another machine → refused; naming this machine → marker with `seatNamedBy = enrolled-terminal`, no `relayedBy`); `TestHumanstopProofRecordScopedToHumanstop` (`recordProof` refuses the proof under `goal resume`'s action and accepts it under `goal humanstop`) | none |
+| 4b — consuming HUMANSTOP (est. 40; cap 120; follows 4a) | compare-and-consume at the marker phase under `humanstop/.lock` with `withHumanstopLock` at 500 ms, `--turn-key`/`--attempt-seq` flags on the verb and on hook line 274, the `proofOpid` check, class-A wiring per §5.3's set, display and audit line, the `hooks.log` history line, pruning after 30 days (~160 lines, 14); `--hook-schema 2`/`schemaVersion 2` and the F10 mismatch (~30 lines, 4); tests and a hook fixture (~300 lines, 18) | `TestHumanstopConsumedByExactlyOneOfConcurrentStops` (two goroutines under the real marker lock); `TestHumanstopConsumesOnlyAgainstClassABlock` (an allowed Stop leaves the marker unconsumed; a class-B block never reads it; an unwatched-work block never reads it, §7 step 6); `TestHumanstopRescuesStateFileFailure` (F11); `TestHumanstopBoundToWorldPairAndSession`; `TestHumanstopExpiredIsIgnoredAndNamed`; `TestHumanstopUnprovenMarkerAuthorizesNothing` (`proofOpid` missing, or recorded under another action, or a proof form not matching `provenance.kind`); `TestHumanstopConsumedBeforeAllowSurvivesCrash`; `TestHumanstopNeverConsumedAtSessionStart`; NEW marker-lock-cap assertion `TestHumanstopMarkerLockCapFitsMarkerReserve` (a goroutine holds `humanstop/.lock`; the marker phase returns "marker busy; not consumed" and the marker is unconsumed; elapsed in the marker phase is below 600 ms; and `withHumanstopLock`'s deadline constant is asserted equal to 500 ms so that §3.2(d)'s `M = 600` holds by construction); `TestHookSchemaMismatchBlocks`; hook fixture: marker set through the relay form by the fixture seat, one Stop allowed with the relayed audit line in the display, next Stop blocks again | none |
 
 Every fixture wait carries a named ceiling per the suite rule; no benchmarks
 (R-31).
 
-## 11. Self-grade
+## 11. Self-grade (revision 3)
 
-Confidence: high that slice 1 refuses all three specimens as replayed against
-the ledger facts read in §0 — each is a READY clause (R1 for specimen 1, R2 for
-specimens 2 and 3 as the history shows their pair holding no claim) with no
-relevant flight, and every escape they used (block-once, Busy suppression,
-fail-open degraded paths) is removed by name at a cited line. Moderate on
-R2/R3's false-refusal rate: `ClaimAdmission` is an extraction called at the
-same point of `Mutate` as its rules and cannot drift, but gap 4 leaves the norm
-approval untraced and gap 5 leaves R1's holder conjunct a safe default rather
-than a traced fact — a dispatcher that admits a non-holder pair would make R1
-under-report, never over-block. Weakest claim: §3.2(c)'s budget arithmetic —
-the cap table sums under 20 s on paper, but `up`'s behaviour when killed by
-`run-bounded` mid-transaction is asserted from its idempotence (the hook's own
-words at `supervision-hook.sh:351-353`: "one idempotent transaction") and
-today's identical 5 s runtime kill, not from a fixture yet; slice 2's hang
-fixture is the test.
-Reject this design if: a fixture shows a second unchanged Stop allowed while a
-READY item exists and no relevant live job or run and no consumed HUMANSTOP; or
-two seats on one machine produce a refusal loop neither can lawfully exit (a
-READY item whose rendered `Move` the engine refuses — R3's park-or-release is
-now read from the verbs, so this would be a new engine rule); or
-`ClaimAdmission` and `Claim` disagree on any refusal or on the replay case in
-the table-driven test; or a Linux seat's governed run on its READY goal is
-refused by slice 1 (the run join is in the slice for exactly this reason); or
-the slice-2 hang fixture shows the runtime's 20 s timeout killing the hook
-before emission.
+Confidence: high that slices 1a and 1b refuse all three specimens as replayed
+against the ledger facts read in §0 — each is a READY clause (R1 for specimen
+1, R2 for specimens 2 and 3 as the history shows their pair holding no claim)
+with no relevant flight, and every escape they used (block-once, Busy
+suppression, fail-open degraded paths) is removed by name at a cited line;
+and that, with the root fix landed first (§9 ask 7), the same refusal is
+delivered at the deployed Stop boundary for those three shapes, because the
+hook then reaches the verdict on every fleet seat. Moderate on R2/R3's
+false-refusal rate: `ClaimAdmission` is an extraction called at the same
+point of `Mutate` as its rules and cannot drift, but gap 4 leaves the norm
+approval untraced and gap 5 leaves R1's holder conjunct a safe default — a
+dispatcher that admits a non-holder pair would make R1 under-report, never
+over-block. Moderate on the R3 SET form (§1.2.1): the rule is stated over the
+current tree and the ledger-after-Move, and the two-arc fixture proves the
+rendered Move by executing it through the real verbs, but the false-READY
+rate of the full re-admission over `t′(g)` is unmeasured until that fixture
+runs. Moderate on HUMANSTOP seat authority (§5.2): the seat comes from the
+same authenticated classification the verdict uses, over the invoker's
+parent pid, so a caller-controlled lineage cannot mint for another seat; what
+is not traced is whether every shell a seat mints from (a tool call of the
+main session, a subshell) classifies MAIN through `classify.go:324-342`'s
+ancestry walk — a seat that classifies wrongly is refused, never granted, so
+the failure mode is a human word that cannot be recorded, surfaced by the
+refusal's class name.
+
+Weakest claim: §3.2's Stop-budget construction. It no longer rests on a sum
+of caps or on `up`'s idempotence (both withdrawn); it rests on three things
+none of which has run yet: that `run-bounded` bounds every non-exempt call
+with the allowance `A` subtracted from each cap, that the extra engine exec
+per bounded call (about twenty-five calls on a full Stop path, tens of
+milliseconds each, charged to elapsed only at the next clock read) stays
+inside the 4 000 ms the allowance does not charge, and that the exempt
+steps' "cannot block unless the local filesystem hangs" argument holds on the
+fleet. The `hook-clock-at-entry`, `hook-single-response` and
+`hook-budget-verdict-hang` fixtures are the tests; until they run, F18 is a
+disclosed residual, not a closed row.
+
+Reject this design if any of these is observed:
+- `TestReadyBlocksEveryStopWithoutMemory` or a hook fixture shows a second
+  unchanged Stop allowed while a READY item exists with no relevant live job
+  or run and no consumed HUMANSTOP.
+- `TestReadyHeldReleasableNamesEveryQuotaBlockingClaim` shows a rendered
+  Move the engine refuses at any line, or a second Stop repeating a Move that
+  did not clear the quota — the R3 SET form would then be wrong, not the
+  engine.
+- `TestReadyMoveLinesParseUnderParseSyncFlags` rejects any rendered line.
+- `TestClaimAdmissionAgreesWithClaim` shows `ClaimAdmission` and `Claim`
+  disagreeing on any refusal or on the replay case.
+- The two-seat fixtures show a refusal loop neither seat can lawfully exit.
+- `TestRelevantRunJoinsGoalRevisionAndLineage` or a Linux seat's governed run
+  on its READY goal is refused by slice 1a+1b.
+- `hook-single-response` shows two objects, a non-block object, or a
+  non-zero exit on F1, F2, F5 or the trap exit.
+- `hook-clock-at-entry` shows the world-mapping delay uncharged (a recorded
+  verdict cap above 7 500 ms), or `hook-budget-verdict-hang` shows no block
+  object within 16 000 ms of hook entry, or the runtime's 20 s timeout
+  killing the hook before emission.
+- `TestHumanstopRelayIgnoresCallerLineage`, `TestHumanstopRelayRefusesSeatFlag`
+  or `TestHumanstopRefusesNonMainClassByName` shows a marker written for any
+  seat other than the classified invoking one, or a `relayedBy` that differs
+  from it.
+- `TestHumanstopMarkerLockCapFitsMarkerReserve` shows the marker phase
+  exceeding 600 ms or a busy lock consuming the marker.
