@@ -6,8 +6,13 @@ Date: 2026-09-02
 
 Fix build over the breach-clock build breach-build-2. Your worktree starts at
 main; the build lives on branch agent/breach-build-2 at commit 0d8e47ef in the
-same repository (shared object store). FIRST `git cherry-pick 0d8e47ef` and
-confirm `git diff 0d8e47ef --stat` is empty; only then edit. Then fold the
+same repository (shared object store). FIRST `git cherry-pick 0d8e47ef`: it must
+apply without conflict (main has moved since the build's base e5056c26, so
+the picked tree differs from 0d8e47ef's own tree; that is expected). Confirm
+instead that `git diff HEAD~1 --stat` lists the same twenty-nine files as
+`git diff e5056c26 0d8e47ef --stat`; only then edit. (The earlier wording of
+this check, an empty diff against 0d8e47ef, was the orchestrator's error;
+job breach-build-3 stopped on it correctly.) Then fold the
 three decisions of metasystem/records/misc/breach-code-critique-r1.md
 (landed; read it first, the decisions are binding). The design is
 metasystem/plans/breach-clock-and-budget-honesty-design.md revision 6a. The
