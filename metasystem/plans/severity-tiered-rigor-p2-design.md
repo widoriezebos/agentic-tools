@@ -115,6 +115,76 @@ RISK_UNANSWERED line, enforce refuses; an unknown gate value refused at
 load; two over-box set-budgets print the defect signal; the sweep draft
 carries scores; `gateWidth: full` on a root under accumulation 2.
 
+### Revision 4.1: the one design round folded (2026-09-03 22:20 local)
+
+The design critique (records/misc/severity-tiered-rigor-p2-critique-r1.md)
+returned nine material findings. Per Wido's stop criterion (R-60-m1)
+this is the only round; each finding is folded here and every fold is a
+named fixture obligation of the build brief. Amendments, in the order of
+the findings:
+
+- 001, the scales re-imported the shape. Novelty and exposure are
+  re-scored by the ANSWER, never by the kind or location of the change.
+  Novelty: 1 the approach has a landed precedent that an independent
+  examiner passed (the basis names it: a chain root, a landed record or
+  a fixture); 2 the parts are known but this combination has never been
+  examined; 3 nothing in the tree or the records examined anything like
+  it. Exposure: 1 one seat or one fixture can be affected; 2 every seat
+  of the fleet; 3 every dispatch, landing or human decision that runs on
+  the fleet. Path classes and the owner map are EVIDENCE the basis may
+  cite, never an input to the derivation; the fixture proves that the
+  same file set scored 1,1,1,1 derives tier 1 and scored 3,1,1,1 derives
+  tier 3. 15 and 16 read with this paragraph in place of their scales.
+- 002, the full gate has one consumer. `gateWidth: full` is read by three
+  owners: the tier-1 receipt (13, unchanged); `RefuseChainMembership` in
+  landing (the reviewed chain of a tier-2 or tier-3 goal under width
+  full must carry a receipt whose command is the full battery, same
+  receipt verb as 13); and the implementer brief composed by dispatch.sh,
+  which spells the gate. The full battery is one canonical command:
+  `scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh
+  && scripts/agents/goal-cli-fixtures.sh`; the receipt verb matches that
+  string exactly.
+- 003, the post-claim raise. A raise is one transaction on the goal file:
+  Risk and Tier are written, `Misclassified:` appended, the goal revision
+  bumps, the claim is re-bound to the new revision with its epoch kept,
+  and the approval is re-bound under the SAME human name with authority
+  `raise=<opid>`; `ValidateApprovalRecord` admits `raise=` only when the
+  history holds a Misclassified line with that opid whose `to` exceeds
+  its `from` (a stricter promise never needs a new human word; a looser
+  one always does). Roots already dispatched keep their `goalTier` and
+  `gateWidth` (a chain runs under the tier it was dispatched with); the
+  next dispatch reads the new tier; `ResolveGoalRevision` follows the
+  re-bound claim.
+- 004, the downgrade paths. Any edit that lowers ANY of the four scores,
+  the derived tier, the set tier or the gate width is a human act by
+  01's unapprove-edit-approve rule; editing an override back to the
+  derivation counts as lowering when the set tier falls. The fixture
+  tries all four paths as the pair and sees four refusals.
+- 005, the digest of a goal without a Risk record is part one's digest
+  unchanged: nil Risk contributes no bytes; a Risk record adds the
+  `risk=` segment. Existing approvals stay valid in both modes; adding a
+  Risk record to an approved goal is a raise (003) when the derived tier
+  exceeds the set one, else a plain edit before approval or a human act.
+- 006, the sweep selects every goal WITHOUT a Risk record, tiered or
+  not; a tiered goal whose draft derivation is lower than its current
+  tier is listed as a human decision in the draft, never lowered by the
+  confirm.
+- 007, evidence has a grammar: `--evidence root:<jobId>` (a job record
+  under artifacts/agents/jobs bound to this goal), `finding:<jobId>/<id>`
+  (present in that root's finding register) or `refusal:<code>` (one of
+  the admission refusal codes); checked at edit time, refused otherwise.
+  Lowering after unapprove needs `--why`, not evidence; both directions
+  are countable from the history line.
+- 008, no second register in this slice. Slice 2a writes only the
+  `Misclassified:` history line; the register writer and the strict
+  reader's second kind move to slice 2b, beside 10's accepted-risk
+  writer, so the reader contract changes once. 17 reads without its
+  last sentence.
+- 009, the exception counter counts every member of the box: minutes,
+  attempts, rounds, elapsed and active jobs.
+- 010, cites re-read at the reviewed base; the alias goal file lives in
+  records/goals.
+
 ### Build list, revision 4: part two is two slices under goal severity-tiered-rigor-p2
 
 - Slice 2a, the risk basis (15 to 19). Files: internal/goal/file.go,
