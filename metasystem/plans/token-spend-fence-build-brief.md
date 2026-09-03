@@ -63,9 +63,12 @@ package, no new CLI verb.
   the shipped conf.
 - §5: the six keys, committed-root law, `spend.mode=enforce` refused by
   name, the derived defaults exactly as stated.
-- §6: the exact health-line bytes; dead at or above any ceiling with the
-  CROSSED prefix, NoAutomaticRemedy, the named remedy; unknown on an
-  unreadable input naming the path.
+- §6 (revision 2): the exact health-line bytes; the spend role stays
+  ALIVE on a crossing (the reason carries the CROSSED prefix and the
+  named remedy; the spend-owned episodes of §7 deliver the alert, so the
+  health digest never double-alerts); unknown only when the jobs
+  directory cannot be listed, the ledger or the conf is unreadable,
+  naming the path.
 - §7: per-crossing episodes owned by the spend role inside the existing
   store, identity (scope-id, ceiling, multiple), submitted once, a new
   episode per further multiple, resolved and cleared when the crossing
