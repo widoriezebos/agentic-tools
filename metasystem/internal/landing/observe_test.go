@@ -345,7 +345,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		RepoRoot: f.root, CandidateTree: f.tree(),
 		DirectFix: "exact-revert", RevertOf: revertOf,
 	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 		t.Fatalf("expanded inverse with a floor path classified as %+v", got)
 	}
 
@@ -361,7 +361,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		RepoRoot: protected.root, CandidateTree: protected.tree(),
 		DirectFix: "exact-revert", RevertOf: protectedCommit,
 	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 		t.Fatalf("floor-changing inverse classified as %+v", got)
 	}
 
@@ -527,7 +527,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got = Observe(ObserveParams{
 			RepoRoot: mixed.root, CandidateTree: mixed.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+		if got.Bar != BarRefusal || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 			t.Fatalf("mixed carriage misses did not give the floor precedence: %+v", got)
 		}
 	})
@@ -538,7 +538,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got := Observe(ObserveParams{
 			RepoRoot: policy.root, CandidateTree: policy.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 			t.Fatalf("allowlist self-change classified as %+v", got)
 		}
 
@@ -547,7 +547,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got = Observe(ObserveParams{
 			RepoRoot: manifest.root, CandidateTree: manifest.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 			t.Fatalf("manifest self-change classified as %+v", got)
 		}
 
@@ -556,7 +556,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got = Observe(ObserveParams{
 			RepoRoot: promotion.root, CandidateTree: promotion.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 			t.Fatalf("promotion record self-change classified as %+v", got)
 		}
 	})

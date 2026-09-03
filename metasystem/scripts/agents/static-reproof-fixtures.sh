@@ -11,12 +11,12 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 
 TestRealCommitWrapperStampsParseableObservation() {
   local fixture real_engine wrapper candidate_tree observation expected_provenance expected_verdict expected_mode message
-  local refusal status unclassified orphan chain_message conflict floor_message malformed human_message
+  local refusal status unclassified orphan chain_message conflict floor_refusal record_message goal_digest malformed human_message
   local vendored_fixture vendored_install
   fixture="$tmp/real-observer"
   real_engine="$tmp/real-metasystem"
   wrapper="$root/scripts/agents/commit.sh"
-  mkdir -p "$fixture/scripts/agents" "$fixture/scripts" "$fixture/bin" "$fixture/artifacts/agents/mains" "$fixture/memory"
+  mkdir -p "$fixture/scripts/agents" "$fixture/scripts" "$fixture/bin" "$fixture/artifacts/agents/mains" "$fixture/memory" "$fixture/plans/goals"
 
   (cd "$root" && go build -o "$real_engine" ./cmd/metasystem)
   cp "$wrapper" "$fixture/scripts/agents/commit.sh"
@@ -61,6 +61,20 @@ SH
   fixture_git config user.email fixture@example.invalid
   fixture_git config metasystem.goal.machine fixture-machine
   printf 'artifacts/\n' >"$fixture/.gitignore"
+  {
+    printf '# fx\n\n'
+    printf '%s\n' '- State: claimed'
+    printf '%s\n' '- Intent: Prove that a held goal may carry its record.'
+    printf '%s\n' '- Origin: main'
+    printf '%s\n' '- Next step: Land the owned record.'
+    printf '%s\n' '- OpenedAt: 2026-09-03T08:00:00Z'
+    printf '%s\n' '- Revision: 1'
+    printf '%s\n\n' '- Claimed: machine=fixture-machine lineage=human at=2026-09-03T08:01:00Z revision=1'
+    printf '%s\n' 'History:'
+    printf '%s\n' '- 2026-09-03T08:01:00Z 01ARZ3NDEKTSV4RRFFQ69G5FAW-fx-00000001 claim actor=fixture-machine+human targets=fx'
+  } >"$fixture/plans/goals/fx.md"
+  goal_digest=$("$real_engine" util sha256 --file "$fixture/plans/goals/fx.md")
+  printf 'Integrity: sha256=%s\n' "$goal_digest" >>"$fixture/plans/goals/fx.md"
   printf 'before\n' >"$fixture/README"
   fixture_git add -A
   fixture_git commit -qm seed
@@ -177,11 +191,25 @@ SH
   mkdir -p "$fixture/internal"
   printf 'floor change\n' >"$fixture/internal/floor.txt"
   fixture_git add internal/floor.txt
+  set +e
+  floor_refusal=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+    "$fixture/scripts/agents/commit.sh" __lease-held 1 --direct-fix register-carriage \
+    -m "promoted behavior floor must refuse" 2>&1)
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$floor_refusal" == *"would-refuse code=direct-fix-floor-refused"* ]] \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: promoted behavior floor did not refuse: $floor_refusal" >&2; exit 1; }
+  fixture_git restore --staged internal/floor.txt
+  rm "$fixture/internal/floor.txt"
+
+  printf 'held record\n' >"$fixture/plans/fx-design.md"
+  fixture_git add plans/fx-design.md
   env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 --direct-fix register-carriage -q -m "floor verdict observes"
-  floor_message=$(fixture_git log -1 --format=%B)
-  grep -Fq 'Landing-Provenance-Verdict: would-refuse code=direct-fix-floor-refused' <<<"$floor_message" \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: floor verdict was refused or lost its stamp" >&2; exit 1; }
+    "$fixture/scripts/agents/commit.sh" __lease-held 1 --goal fx \
+    --direct-fix register-carriage -q -m "held goal carries record"
+  record_message=$(fixture_git log -1 --format=%B)
+  grep -Fq 'Landing-Provenance-Verdict: pass bar=b' <<<"$record_message" \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: held goal record did not pass the promoted floor" >&2; exit 1; }
 
   printf '{"schemaVersion":1,"refuseCodes":["unknown-code"]}\n' >"$fixture/scripts/agents/landing-promotion.json"
   fixture_git add scripts/agents/landing-promotion.json
