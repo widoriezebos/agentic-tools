@@ -1,7 +1,8 @@
 # Fleet conversation channel, slice 2: the provider switch and Telegram
 
-Goal: fleet-slack-channel. Author: m0b (Fable lane, design). Revision 2, 2026-09-03
-(revision 1 reviewed by fsc2-design-crit1; eight material findings folded, §9).
+Goal: fleet-slack-channel. Author: m0b (Fable lane, design). Revision 3, 2026-09-03
+(revision 1 reviewed by fsc2-design-crit1, eight findings folded; revision 2 closed by
+fsc2-design-crit2, four findings folded as build law, §9).
 Builds on `plans/fleet-slack-channel-design.md` (revision 4, "the base design"): §2 of
 the base design is the fixed contract and this slice changes no line of it. Under
 R-54-m1 tier three; R-60-m1 governs the review budget; R-31 no benchmarks; R-35 no
@@ -27,12 +28,13 @@ with `Loaded{Provider, Destination DestinationConfig, Adapter, Face, HumanUserID
 TOTPSecret string}`; the human keys are read only when `withHuman` is true (`poll` and
 `phase.Run`), exactly as today's `loadChannel(root, withHuman)`, so `status --post`,
 `ask` and `close` never refuse for a missing user id or TOTP secret (FSC2-R1-003). Its
-callers are exactly today's: `status --post`, `ask`, `poll`, `close`, `phase.Run`, plus
-`telegram peek` (§6); `show`, `wait`, `fake serve` and `fake code` read no configuration,
-as today (FSC2-R1-004). Absent adapter → `Loaded{}` with `Provider == nil` and nil
-error; every caller checks `Provider == nil` before any call and keeps today's
-behaviour (status prints locally, ask records undelivered, poll and the tick return
-quietly, close refuses "not configured"); no nil provider is ever called. `loadChannel`
+callers are exactly today's: `status --post`, `ask`, `poll`, `close`, `phase.Run`;
+`telegram peek` has its own token-only path (§6); `show`, `wait`, `fake serve` and
+`fake code` read no configuration, as today (FSC2-R1-004). Absent adapter → `Loaded{}`
+with `Provider == nil` and nil error; every caller checks `Provider == nil` before any
+call and keeps today's behaviour (status prints locally, ask records undelivered, poll
+and the tick return quietly, `close` closes the durable record locally without posting,
+exactly as `runChannelClose` does today, FSC2-R2-003); no nil provider is ever called. `loadChannel`
 in `cmd/metasystem/channel_verbs.go` and the private `load` in phase are deleted, and
 the duplicated `conf`/`secret` helpers in the command file go with them (the phase
 package's `get`/`secret` stay, unchanged in behaviour: environment, then
@@ -52,7 +54,8 @@ the unconfigured case, silent, exactly as today); an unknown name is
 `unknown channel adapter %q`. The resolver reads that adapter's own keys (§5) and
 returns the provider, destination and face. The `fake` resolver reads
 `channel.destination.fleet.fake.face` (default `slack`) and binds the adapter of that
-face to the fake's base URL (§4), returning that face. The human keys, when asked for,
+face to the fake's base URL (§4), returning that face; a value that is neither `slack`
+nor `telegram` is refused as `unknown fake face %q` (FSC2-R2-004). The human keys, when asked for,
 are read by face: `channel.human.<face>.user-id` and `channel.human.totp-secret`. So
 the existing fixture, which sets `channel.human.slack.user-id` with `adapter=fake`,
 runs unchanged. The registry type in `channel.go` is replaced by this table (it never
@@ -80,7 +83,12 @@ leaves an orphan receipt: Wido's reply to it resolves to no root and lands in
 `unmatched.jsonl`, while the question stays open with its root still answerable; a
 crash after the record and before the post leaves a rejection with no receipt. Both
 are the declared outcomes; the question's `Undelivered` count carries the failed post
-as today. The Slack adapter dedupes the list by root before paging — its bytes on the
+as today. This NARROWS base §5's "each invalid inbound ref is answered once" to "at
+most once" for every provider (FSC2-R2-001): neither Slack nor Telegram offers an
+idempotency key for a post, so exactly-once across a crash between record and post is
+not available, and a duplicate receipt (which would invite a duplicate reply) is the
+worse failure. Wido's remedy for a missing receipt is unchanged: his next reply to the
+root is disposed on its own merits. The Slack adapter dedupes the list by root before paging — its bytes on the
 wire do not change. This is a clarification of §2's comment, not a change of
 signature; base §2 stays the contract.
 
@@ -182,9 +190,14 @@ two integers. `metasystem channel telegram peek` (§6) prints them for him.
 
 ## 6. Command surface
 
-One addition: `metasystem channel telegram peek` — reads the Telegram token (from the
-environment or conf.local, the adapter key being present or not; chat id not required)
-and calls `Adapter.Peek(ctx, dest) ([]Update, error)`, a fourth method on the Telegram
+One addition: `metasystem channel telegram peek` — does not call `phase.Load`
+(FSC2-R2-002): it reads exactly two keys through the phase package's exported
+`phase.Secret(root, key)` and `phase.Get(root, key, def)`,
+`channel.destination.fleet.telegram.bot-token` (environment or conf.local; absent →
+typed `ErrUnconfigured` naming the key) and `channel.destination.fleet.telegram.api-base`
+(default), builds a `DestinationConfig{Provider: "telegram", Token, APIBase, Secrets:
+[token]}` with an empty chat id, whether or not the adapter key exists, and calls
+`Adapter.Peek(ctx, dest) ([]Update, error)`, a fourth method on the Telegram
 adapter only (not on the contract) that issues `getUpdates` WITHOUT an offset through
 the same request function and scrub as the three contract methods (FSC2-R1-007), then
 prints one line per pending update: `chat=<id> user=<id> text=<first 40 runes>`; never
@@ -211,7 +224,9 @@ URL's `/bot…/` segment). internal/channel: `TestPollPassesEveryPostedRefWithIt
 `TestRejectionRecordsItsPostRef`,
 `TestRejectionReceiptPostRecordCrashIsDispositionSafe` (crash injected after the
 record, after the post: one receipt at most, one rejection row, the replay posts
-nothing), `TestTelegramCrashAfterMatchedDoesNotRedisposeReplyAsUnmatched` (a provider
+nothing), `TestEveryInvalidInboundRefIsAnsweredAtMostOnceAcrossRecordBeforePostCrash`
+(the closing review's obligation under its decided reading: zero or one receipt per
+invalid ref over any crash point, never two, the row always present), `TestTelegramCrashAfterMatchedDoesNotRedisposeReplyAsUnmatched` (a provider
 returning Telegram-shaped refs; crash after the answer is durable; the re-poll with the
 question closed appends nothing to `unmatched.jsonl`),
 `TestCursorFromAnotherProviderIsIgnored`. internal/channel/phase:
@@ -221,10 +236,13 @@ typed refusal; a committed token is reported and ignored; unknown adapter named;
 adapter is silent), `TestOutboundVerbsDoNotRequireHumanAuthentication` (status, ask,
 close with no user id and no TOTP secret succeed against the fake),
 `TestAbsentAdapterNeverCallsNilProvider` (status --post, ask, poll, close with no
-adapter: today's messages, no panic), `TestLoadIsTheOnlyLoader` (a grep-style test
+adapter: today's messages, no panic), `TestCloseWithoutAdapterClosesLocallyWithoutCallingProvider`,
+`TestLoadRejectsUnknownFakeFace`, `TestLoadIsTheOnlyLoader` (a grep-style test
 that `cmd/metasystem/channel_verbs.go` no longer reads `channel.destination.` keys).
 cmd/metasystem: `TestConfigurationIndependentChannelVerbs` (show, wait, fake code run
-with no `metasystem.conf` at all), `TestTelegramPeekTokenNeverAppearsInErrors`
+with no `metasystem.conf` at all), `TestTelegramPeekWorksWithoutConfiguredAdapterOrChatID`
+(token in the environment only, no adapter key, no chat id: the pending lines print),
+`TestTelegramPeekTokenNeverAppearsInErrors`
 (transport, redirect, echoed 401, malformed JSON: stderr free of the token).
 internal/channel/fake: `TestTelegramFaceSharesTheCounter` (a post then a scripted reply
 sort in order across faces), `TestTelegramFaceSeparatesScriptRowsAndOtherChats` (a
@@ -261,4 +279,11 @@ called); 005 folded §2 (the resolver returns the face); 006 folded §4 (face
 discriminator, `chat`, emitted fields enumerated); 007 folded §6 (`Adapter.Peek` on the
 shared path); 008 folded §3 (hard split). Notes 001–004 confirm the offset budget, the
 Slack wire bytes, the 3500-byte report cap under the split threshold, and the
-registry's retirement. Every obligation the review named is in §7 by name.
+registry's retirement. Closing review (fsc2-design-crit2, revision 2), folded as build
+law: FSC2-R2-001 §2 (base §5 narrowed to at-most-once receipts, reason given; the
+obligation renamed for the decided reading); R2-002 §6 (peek's token-only path, no
+`phase.Load`); R2-003 §2 (close stays local with a nil provider); R2-004 §2 (unknown
+fake face refused). Notes 001–006 confirm the ref identity, the envelope-scoped TOTP
+row, at-most-once attempts, the loader boundaries, the fake's fields and the unchanged
+signature and Slack bytes. Every obligation both reviews named is in §7 by name. The
+design is closed; the build brief follows.
