@@ -16,3 +16,10 @@ obligation the reviewer supplied. One table per file for the join.
 
 The design builds as revision 2 plus these two obligations; the Fable
 code review checks both tests exist and discriminate.
+
+## Gap answers during the build (job fence-build, rounds 1-2)
+
+| Gap | Answer |
+| --- | --- |
+| Round 1: the build brief's section-6 line carried revision 1's "dead on a crossing" while revision 2 keeps the role alive. | The brief was corrected (landed 2333e5ab); revision 2 section 6 binds. |
+| Round 2: `AggregateUsage` persists a per-round derived `source` (fence.go:715) that revision 2's `JobMeasurement` (Record, Tokens, Cost, ProviderUnit, Provenance, Detail) cannot carry, so the mission aggregate's bytes could not be preserved. | AUTHORIZED, the recommended correction: `JobMeasurement` gains `Source` (the derived round's source value, empty otherwise) and `AggregateUsage` copies it unchanged into its output; its observable bytes and `TestAggregateUsageSumsTerminalJobs` stay as today. No second derivation path, no other change to the aggregate. An additive field on a new type is a gap answer, not a design change. |
