@@ -293,6 +293,9 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 	if _, err := UpdateAlertEpisodes(repoRoot, health, line, time.Now()); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
+	if err := UpdateSpendEpisodes(repoRoot, health.Spend, time.Now()); err != nil {
+		return fmt.Errorf("update spend alert episodes: %w", err)
+	}
 	return nil
 }
 

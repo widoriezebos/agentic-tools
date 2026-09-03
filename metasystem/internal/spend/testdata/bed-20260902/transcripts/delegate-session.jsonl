@@ -1,0 +1,1 @@
+{"type":"assistant","timestamp":"2026-09-02T10:00:00Z","cwd":"@REPO@","sessionId":"delegate-session","requestId":"delegate-request","message":{"model":"claude-fable-5-1","usage":{"input_tokens":999999,"output_tokens":999999}}}

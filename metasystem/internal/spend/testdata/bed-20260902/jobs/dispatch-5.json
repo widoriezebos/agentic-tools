@@ -1,0 +1,1 @@
+{"jobId":"dispatch-5","goalId":"dispatch-cap-necessity","machineId":"bed-m1","status":"completed","runtime":"claude","canonicalModelKey":"claude-fable-5-1","startedAt":"2026-09-02T09:40:00Z","usage":{"inputTokens":1500000,"cachedInputTokens":2687500,"outputTokens":43750,"reasoningTokens":9114,"cost":{"currency":"USD","amount":9.585}}}

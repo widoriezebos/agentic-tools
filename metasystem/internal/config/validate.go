@@ -128,6 +128,9 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	for _, r := range unsupported {
 		add("metasystem.runtimes names unsupported runtime %s", pyRepr(r))
 	}
+	for _, problem := range validateSpendConfiguration(confPath, localPath, values, runtimeSet, fixtureBudgetLawRoot(confPath)) {
+		add("%s", problem)
+	}
 	for _, key := range order {
 		match := maximalModelsKey.FindStringSubmatch(key)
 		if match == nil {
@@ -467,6 +470,79 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	}
 
 	return len(tierKeys) == 0, errs, nil
+}
+
+func validateSpendConfiguration(confPath, localPath string, values map[string]string, runtimeSet map[string]bool, fixtureOverrides bool) []string {
+	var problems []string
+	checkFixed := func(key, value string) {
+		candidate := make(map[string]string, len(spendFixedDefaults))
+		for fixed, fallback := range spendFixedDefaults {
+			candidate[fixed] = fallback
+		}
+		candidate[key] = value
+		if err := validateSpendFixedValues(candidate); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	checkPrice := func(key, value string) {
+		parsed, err := parseSpendPriceKey(key)
+		if err != nil {
+			problems = append(problems, err.Error())
+			return
+		}
+		if !runtimeSet[parsed.Runtime] {
+			problems = append(problems, fmt.Sprintf("%s names runtime %s outside metasystem.runtimes", key, pyRepr(parsed.Runtime)))
+		}
+		if !spendNonnegativeDecimal.MatchString(value) {
+			problems = append(problems, fmt.Sprintf("%s must be a non-negative decimal, got %s", key, pyRepr(value)))
+		}
+	}
+	for key, value := range values {
+		if _, fixed := spendFixedDefaults[key]; fixed {
+			checkFixed(key, value)
+		}
+		if strings.HasPrefix(key, "spend.price.") {
+			checkPrice(key, value)
+		}
+	}
+	if content, err := os.ReadFile(localPath); err == nil {
+		seen := map[string]bool{}
+		parseSettings(string(content), func(line int, key, value string, ok bool) {
+			if !ok || !strings.HasPrefix(key, "spend.") {
+				return
+			}
+			if seen[key] {
+				problems = append(problems, fmt.Sprintf("%s:%d: duplicate key %s", localPath, line, key))
+				return
+			}
+			seen[key] = true
+			if !fixtureOverrides {
+				problems = append(problems, fmt.Sprintf("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", key, localPath))
+				return
+			}
+			if _, fixed := spendFixedDefaults[key]; fixed {
+				checkFixed(key, value)
+			} else if strings.HasPrefix(key, "spend.price.") {
+				checkPrice(key, value)
+			}
+		})
+	}
+	for _, entry := range os.Environ() {
+		name, value, _ := strings.Cut(entry, "=")
+		if !strings.HasPrefix(name, "METASYSTEM_SPEND_") {
+			continue
+		}
+		if !fixtureOverrides {
+			problems = append(problems, fmt.Sprintf("spend settings accept only committed root configuration outside a fixture-authorized root; environment source %s is refused", name))
+			continue
+		}
+		for key := range spendFixedDefaults {
+			if name == EnvName(key) {
+				checkFixed(key, value)
+			}
+		}
+	}
+	return problems
 }
 
 var (

@@ -1,6 +1,8 @@
 package steward
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,6 +52,10 @@ type AlertEpisode struct {
 	Schema          int                  `json:"schema"`
 	EpisodeID       string               `json:"episodeId"`
 	Digest          string               `json:"digest"`
+	Owner           string               `json:"owner,omitempty"`
+	ScopeID         string               `json:"scopeId,omitempty"`
+	Ceiling         string               `json:"ceiling,omitempty"`
+	Multiple        int                  `json:"multiple,omitempty"`
 	Message         string               `json:"message"`
 	OpenedAt        time.Time            `json:"openedAt"`
 	Attempts        []AlertAttempt       `json:"attempts"`
@@ -119,6 +125,10 @@ func loadAlertEpisode(path string) (AlertEpisode, error) {
 	if episode.Schema != 1 || !validEpisodeID(episode.EpisodeID) || !validEvidenceDigest(episode.Digest) ||
 		episode.Message == "" || episode.OpenedAt.IsZero() || episode.Attempts == nil || episode.TransportResult == "" {
 		return AlertEpisode{}, fmt.Errorf("alert episode %s is incomplete", filepath.Base(path))
+	}
+	if episode.Owner == string(RoleSpendFence) &&
+		(episode.ScopeID == "" || (episode.Ceiling != "tokens" && episode.Ceiling != "money") || episode.Multiple < 1) {
+		return AlertEpisode{}, fmt.Errorf("alert episode %s has incomplete spend identity", filepath.Base(path))
 	}
 	return episode, nil
 }
@@ -202,7 +212,7 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 		}
 		found := false
 		for _, episode := range *episodes {
-			if episode.Digest == notification.Nonce && !episode.Cleared {
+			if episode.Owner == "" && episode.Digest == notification.Nonce && !episode.Cleared {
 				found = true
 				break
 			}
@@ -245,6 +255,9 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 
 	if health.Aggregate == "healthy" {
 		for index := range episodes {
+			if episodes[index].Owner != "" {
+				continue
+			}
 			changed := false
 			if !episodes[index].Resolved {
 				episodes[index].Resolved = true
@@ -268,6 +281,9 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 	}
 
 	for index := range episodes {
+		if episodes[index].Owner != "" {
+			continue
+		}
 		if !episodes[index].Cleared && episodes[index].Digest != health.FindingDigest && !episodes[index].Resolved {
 			episodes[index].Resolved = true
 			episodes[index].ResolvedAt = now.UTC()
@@ -284,7 +300,7 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 
 	var episode AlertEpisode
 	for _, candidate := range episodes {
-		if candidate.Digest == health.FindingDigest && !candidate.Cleared {
+		if candidate.Owner == "" && candidate.Digest == health.FindingDigest && !candidate.Cleared {
 			episode = candidate
 			break
 		}
@@ -320,7 +336,15 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 		unlockAlerts(lock)
 		return episode, nil
 	}
+	if err := submitEpisode(repoRoot, &episode, now); err != nil {
+		unlockAlerts(lock)
+		return AlertEpisode{}, err
+	}
+	unlockAlerts(lock)
+	return episode, nil
+}
 
+func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error {
 	var attempt AlertAttempt
 	if len(episode.Attempts) > 0 && episode.Attempts[len(episode.Attempts)-1].Result == TransportPending {
 		// A pending journal entry means a process may have stopped after the
@@ -332,17 +356,15 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 		attempt = AlertAttempt{Sequence: len(episode.Attempts) + 1, AttemptedAt: now.UTC(), Result: TransportPending}
 		episode.Attempts = append(episode.Attempts, attempt)
 		episode.TransportResult = TransportPending
-		if err := saveAlertEpisode(repoRoot, episode); err != nil {
-			unlockAlerts(lock)
-			return AlertEpisode{}, err
+		if err := saveAlertEpisode(repoRoot, *episode); err != nil {
+			return err
 		}
 	}
 
 	transportErr := Deliver(repoRoot, episode.Message)
 	completedAt := time.Now().UTC()
 	if len(episode.Attempts) < attempt.Sequence || episode.Attempts[attempt.Sequence-1].Result != TransportPending {
-		unlockAlerts(lock)
-		return AlertEpisode{}, fmt.Errorf("alert episode %s transport attempt changed before completion", episode.EpisodeID)
+		return fmt.Errorf("alert episode %s transport attempt changed before completion", episode.EpisodeID)
 	}
 	episode.Attempts[attempt.Sequence-1].CompletedAt = completedAt
 	if transportErr == nil {
@@ -353,12 +375,100 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 		episode.Attempts[attempt.Sequence-1].Problem = transportErr.Error()
 		episode.TransportResult = TransportFailed
 	}
-	if err := saveAlertEpisode(repoRoot, episode); err != nil {
-		unlockAlerts(lock)
-		return AlertEpisode{}, err
+	if err := saveAlertEpisode(repoRoot, *episode); err != nil {
+		return err
 	}
-	unlockAlerts(lock)
-	return episode, nil
+	return nil
+}
+
+// UpdateSpendEpisodes joins one valid spend observation to the durable alert
+// store. Unknown observations are no-ops because absence was not proven.
+func UpdateSpendEpisodes(repoRoot string, observation SpendObservation, now time.Time) error {
+	if !observation.Valid {
+		return nil
+	}
+	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	if err != nil {
+		return err
+	}
+	defer unlockAlerts(lock)
+	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
+	if err != nil {
+		return err
+	}
+	current := map[string]int{}
+	for _, crossing := range observation.Crossings {
+		key := crossing.ScopeID + "\x00" + crossing.Ceiling
+		if crossing.Multiple > current[key] {
+			current[key] = crossing.Multiple
+		}
+	}
+	for index := range episodes {
+		episode := &episodes[index]
+		if episode.Owner != string(RoleSpendFence) || episode.Cleared {
+			continue
+		}
+		if current[episode.ScopeID+"\x00"+episode.Ceiling] >= episode.Multiple {
+			continue
+		}
+		episode.Resolved = true
+		episode.ResolvedAt = now.UTC()
+		episode.Cleared = true
+		episode.ClearedAt = now.UTC()
+		if err := saveAlertEpisode(repoRoot, *episode); err != nil {
+			return err
+		}
+	}
+	for _, crossing := range observation.Crossings {
+		digest := spendCrossingDigest(crossing)
+		var episode *AlertEpisode
+		for index := range episodes {
+			candidate := &episodes[index]
+			if candidate.Owner == string(RoleSpendFence) && candidate.Digest == digest &&
+				candidate.ScopeID == crossing.ScopeID && candidate.Ceiling == crossing.Ceiling &&
+				candidate.Multiple == crossing.Multiple && !candidate.Cleared {
+				episode = candidate
+				break
+			}
+		}
+		if episode == nil {
+			created := AlertEpisode{
+				Schema: 1, EpisodeID: nextEpisodeID(digest, episodes), Digest: digest,
+				Owner: string(RoleSpendFence), ScopeID: crossing.ScopeID, Ceiling: crossing.Ceiling, Multiple: crossing.Multiple,
+				Message: spendCrossingMessage(crossing), OpenedAt: now.UTC(), Attempts: []AlertAttempt{}, TransportResult: TransportPending,
+			}
+			episodes = append(episodes, created)
+			episode = &episodes[len(episodes)-1]
+			if err := saveAlertEpisode(repoRoot, *episode); err != nil {
+				return err
+			}
+		}
+		if episode.TransportResult == TransportSubmitted {
+			continue
+		}
+		if err := submitEpisode(repoRoot, episode, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func spendCrossingDigest(crossing SpendCrossing) string {
+	key := fmt.Sprintf("spend-fence\n%s.%sx%d", crossing.ScopeID, crossing.Ceiling, crossing.Multiple)
+	digest := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(digest[:])
+}
+
+func spendCrossingMessage(crossing SpendCrossing) string {
+	spendValue := fmt.Sprintf("%.0f", crossing.Spend)
+	limitValue := fmt.Sprintf("%.0f", crossing.Limit)
+	if crossing.Ceiling == "money" {
+		spendValue = fmt.Sprintf("%.2f", crossing.Spend)
+		limitValue = fmt.Sprintf("%.2f", crossing.Limit)
+	}
+	ledger := filepath.ToSlash(filepath.Join("artifacts", "agents", "steward", "spend", crossing.Day+".json"))
+	return fmt.Sprintf("SPEND CROSSED %s.%sx%d machine=%s spend=%s ceiling=%s ledger=%s raise: spend.ceiling.%s.%s in metasystem.conf on Wido's recorded word (R-60-m1); alert mode refuses nothing",
+		crossing.ScopeID, crossing.Ceiling, crossing.Multiple, crossing.Machine, spendValue, limitValue, ledger, crossing.Scope, crossing.Ceiling)
 }
 
 // AcknowledgeAlert records acknowledgment without clearing an episode or

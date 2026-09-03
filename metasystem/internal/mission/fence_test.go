@@ -177,6 +177,62 @@ func TestAggregateUsageSumsTerminalJobs(t *testing.T) {
 	}
 }
 
+func TestJobUsageAtMatchesAggregateUsage(t *testing.T) {
+	repo, mission := fenceEnv(t)
+	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(jobs, "job-measured.json")
+	writeText(t, recordPath,
+		`{"jobId":"job-measured","mission":"demo","status":"completed","runtime":"codex","round":1,`+
+			`"usage":{"inputTokens":10,"cachedInputTokens":20,"outputTokens":3,"reasoningTokens":2,`+
+			`"cost":{"currency":"USD","amount":1.25},"providerUnits":{"name":"turns","value":1}}}`)
+	writeText(t, filepath.Join(jobs, "unreadable.json"), `{`)
+
+	measurement := JobUsageAt(repo, recordPath)
+	if measurement.Provenance != usageReported || measurement.Source != nil || measurement.Detail != nil {
+		t.Fatalf("reported measurement metadata changed: %#v", measurement)
+	}
+	if measurement.Tokens["inputTokens"] != 10 || measurement.Tokens["cachedInputTokens"] != 20 ||
+		measurement.Tokens["outputTokens"] != 3 || measurement.Tokens["reasoningTokens"] != 2 {
+		t.Fatalf("reported token classes were not preserved: %#v", measurement.Tokens)
+	}
+	if measurement.Cost == nil || measurement.Cost.Currency != "USD" || measurement.Cost.Amount != 1.25 {
+		t.Fatalf("reported cost was not preserved: %#v", measurement.Cost)
+	}
+	if measurement.ProviderUnit == nil || measurement.ProviderUnit.Name != "turns" || measurement.ProviderUnit.Value != 1 {
+		t.Fatalf("reported provider unit was not preserved: %#v", measurement.ProviderUnit)
+	}
+	unreadable := JobUsageAt(repo, filepath.Join(jobs, "unreadable.json"))
+	if unreadable.Record != nil || unreadable.Provenance != usageUnreadable || !strings.Contains(fmt.Sprint(unreadable.Detail), "unreadable.json") {
+		t.Fatalf("unreadable measurement was not explicit: %#v", unreadable)
+	}
+
+	if err := AggregateUsage(repo, mission); err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	aggregate, err := readJSONObjectFile(filepath.Join(missionDir(repo, mission), "usage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, _ := aggregate["units"].([]any)
+	got := map[string]float64{}
+	for _, raw := range units {
+		item, _ := raw.(map[string]any)
+		unit, _ := item["unit"].(string)
+		got[unit], _ = floatValue(item["value"])
+	}
+	for field, value := range measurement.Tokens {
+		if got["tokens."+field] != value {
+			t.Fatalf("aggregate token %s = %v, measurement = %v", field, got["tokens."+field], value)
+		}
+	}
+	if got["cost.USD"] != measurement.Cost.Amount || got["provider.turns"] != measurement.ProviderUnit.Value {
+		t.Fatalf("aggregate units do not match measurement: %v", got)
+	}
+}
+
 // deadPgid is a process-group id no live system carries, so its probe is a
 // definitive ESRCH. deadPid likewise proves kernel death for the custodian.
 const deadPgid = 987654
