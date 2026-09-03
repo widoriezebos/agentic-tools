@@ -5,9 +5,10 @@
 - Origin: main
 - Next step: TIER 3 per R-54-m1, run on m1 with Codex only. STOP CRITERION for the design loop (Wido's word this morning): a finding is material only if it changes what gets built and the reviewer names the artifact that changes; design, one review, one fold, one closing review, then build; at the cap the agreed parts build as they are and every still-disputed point becomes a named test obligation. Ladder: design brief -> Fable design (short: the manifest shape, the verb, the three consumers, the deletions, the refusal text, the fixtures) -> Sol review -> fold -> closing review -> Sol build -> Fable code review -> land with --chain. Afterwards, separately: promote direct-fix-floor-refused (one line plus a ruling).
 - OpenedAt: 2026-09-03T06:25:55Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness, separation
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1
+- Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-03T06:30:33Z
 - Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-03T06:30:09Z revision=3
 - StopCapability: generation=3 revision=3 machine=m1 claimEpoch=4 fenceEpoch=0
 
@@ -15,4 +16,5 @@ History:
 - 2026-09-03T06:25:55Z 15J8G3T7AASKGMCMTHBGQ8X7BN-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
 - 2026-09-03T06:29:58Z 028EE0KR6DNEGJR340AJ644P6E-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
 - 2026-09-03T06:30:09Z M3R5K1MRDJE54FCHBHH4X7GXST-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
-Integrity: sha256=6f7762aa4ed205642c00408c1d7b42842cbfb07f7f6dc3a2f49d2e01f733b1f1
+- 2026-09-03T06:30:33Z 1SV052JYD0Y7DFQR7RFECHC6ES-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
+Integrity: sha256=fe4bfacc5b00b2636be60de7e2efc70f600f64cfa42a3b09250d919c44f97f7d
