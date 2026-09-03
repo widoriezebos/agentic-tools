@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,10 +12,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // The conformance gate. The review stage computes the implementer
@@ -42,6 +43,11 @@ type conformanceRun struct {
 
 	out  []string
 	errs []string
+}
+
+type waiverPath struct {
+	projectPath string
+	resolution  pathclass.Resolution
 }
 
 func (r *conformanceRun) git(dir string, env []string, args ...string) (string, error) {
@@ -76,6 +82,22 @@ func (r *conformanceRun) installationPath(path string) string {
 		return normalized[len(prefix)+1:]
 	}
 	return normalized
+}
+
+func (r *conformanceRun) classifyWaiverPaths(classes *pathclass.Manifest, repositoryPaths []string) ([]waiverPath, error) {
+	paths := make([]waiverPath, 0, len(repositoryPaths))
+	for _, repositoryPath := range repositoryPaths {
+		ownership, modeText, err := stateroot.OwnerForInstallation(r.root, repositoryPath)
+		if err != nil {
+			return nil, fmt.Errorf("classify waiver path %s: %w", repositoryPath, err)
+		}
+		mode := pathclass.Mode(modeText)
+		paths = append(paths, waiverPath{
+			projectPath: r.installationPath(repositoryPath),
+			resolution:  classes.ResolveRepositoryPath(mode, ownership, r.installPrefix, repositoryPath),
+		})
+	}
+	return paths, nil
 }
 
 // controlPlaneTampered reports whether the delegate worktree's normally
@@ -516,53 +538,15 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	configuredRuntime := r.configGet("role.code-critic.runtime", "__missing__")
 	independence := r.configGet("independence", "")
 
-	instructionPathsFile := filepath.Join(r.root, "scripts", "agents", "instruction-bearing-paths.txt")
-	instructionData, err := os.ReadFile(instructionPathsFile)
+	classes, err := pathclass.Load(r.root)
 	if err != nil {
-		return r.fail(fmt.Sprintf("conformance failure: instruction-bearing path list is unreadable: %v", err))
+		return r.fail(fmt.Sprintf("conformance failure: path class manifest is unreadable: %v", err))
 	}
-	var instructionPaths []string
-	seenInstruction := map[string]bool{}
-	duplicate := false
-	for _, line := range strings.Split(string(instructionData), "\n") {
-		entry := strings.TrimSpace(line)
-		if entry == "" || strings.HasPrefix(strings.TrimLeft(line, " \t"), "#") {
-			continue
-		}
-		if seenInstruction[entry] {
-			duplicate = true
-		}
-		seenInstruction[entry] = true
-		instructionPaths = append(instructionPaths, entry)
-	}
-	if len(instructionPaths) == 0 || duplicate {
-		return r.fail("conformance failure: instruction-bearing path list is empty or contains duplicates")
-	}
-	// The registry's declared instruction filenames join the no-waiver
-	// set unconditionally: a future runtime's instruction file must be
-	// protected the moment it is declared, whether or not the checked-in
-	// path list keeps up.
 	for _, declared := range runtimes.InstructionFiles() {
-		if !seenInstruction[declared] {
-			seenInstruction[declared] = true
-			instructionPaths = append(instructionPaths, declared)
+		class := classes.Class(declared)
+		if class != pathclass.Behavior {
+			return r.fail(fmt.Sprintf("conformance failure: runtime instruction file %s has manifest class %s, not behavior", declared, class))
 		}
-	}
-	isInstructionBearing := func(path string) bool {
-		// The callers hand PROJECT-relative paths, and the instruction
-		// table is authored in the same space; a prefix strip here
-		// would alias a project path beginning with the prefix token.
-		for _, entry := range instructionPaths {
-			if strings.HasSuffix(entry, "/") {
-				directory := entry[:len(entry)-1]
-				if path == directory || strings.HasPrefix(path, entry) {
-					return true
-				}
-			} else if path == entry {
-				return true
-			}
-		}
-		return false
 	}
 
 	waiver := r.record["critiqueWaived"]
@@ -579,17 +563,17 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	}
 	if waiver != nil {
 		// These diffs run over the WHOLE worktree, so their paths are
-		// repository-relative; the boundary policy speaks project space.
-		// The conversion happens here, at the one place the two spaces
-		// meet — handing repository paths onward would let a nested
-		// project's own plans/ slip past the protected-path policy.
+		// repository-relative. Classification retains that location while
+		// the boundary policy receives project-relative paths; collapsing
+		// either space into the other would misclassify repository rows or
+		// let a nested project's own plans/ slip past protection.
 		rawPaths, _ := r.gitBytes(r.workspace, nil, "diff", "--name-only", "-z", "--no-renames", r.boundaryBase, "HEAD", "--")
 		numstat, _ := r.gitBytes(r.workspace, nil, "diff", "--numstat", "--no-renames", r.boundaryBase, "HEAD", "--")
-		projectPaths := make([]string, 0)
-		for _, repoPath := range nulSplitPaths(rawPaths) {
-			projectPaths = append(projectPaths, r.installationPath(repoPath))
+		paths, classErr := r.classifyWaiverPaths(classes, nulSplitPaths(rawPaths))
+		if classErr != nil {
+			return r.fail(fmt.Sprintf("conformance failure: cannot resolve waiver path class: %v", classErr))
 		}
-		out, errs, code = r.mergeWaiver(waiver, projectPaths, string(numstat), isInstructionBearing)
+		out, errs, code = r.mergeWaiver(waiver, paths, string(numstat))
 	} else {
 		out, errs, code = r.mergeCritique(recordPath, finalTree, configuredRuntime, independence)
 	}
@@ -607,8 +591,12 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	return out, errs, code
 }
 
-func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string, isInstructionBearing func(string) bool) ([]string, []string, int) {
-	violations := r.boundaryViolations(paths)
+func (r *conformanceRun) mergeWaiver(waiver any, paths []waiverPath, numstat string) ([]string, []string, int) {
+	projectPaths := make([]string, 0, len(paths))
+	for _, path := range paths {
+		projectPaths = append(projectPaths, path.projectPath)
+	}
+	violations := r.boundaryViolations(projectPaths)
 	var waiverClass any
 	if claim, isObject := waiver.(map[string]any); isObject && exactlyClassKey(claim) {
 		waiverClass = claim["class"]
@@ -619,21 +607,22 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 		violations = append(violations, fmt.Sprintf(
 			"unsupported critique waiver class %s; the only class is prose-under-30", quoted(waiverClass)))
 	}
-	var nonMarkdown, instructionHits []string
+	var nonMarkdown, neverWaivable []string
 	for _, path := range paths {
-		if !strings.HasSuffix(path, ".md") {
-			nonMarkdown = append(nonMarkdown, path)
+		if !strings.HasSuffix(path.projectPath, ".md") {
+			nonMarkdown = append(nonMarkdown, path.projectPath)
 		}
-		if isInstructionBearing(path) {
-			instructionHits = append(instructionHits, path)
+		switch path.resolution.Class {
+		case pathclass.Behavior, pathclass.Ledger, pathclass.Runtime, pathclass.Unclassified:
+			neverWaivable = append(neverWaivable, path.projectPath)
 		}
 	}
 	if len(nonMarkdown) > 0 {
 		violations = append(violations, fmt.Sprintf("prose-under-30 includes non-Markdown paths: %s", quotedList(nonMarkdown)))
 	}
-	if len(instructionHits) > 0 {
+	if len(neverWaivable) > 0 {
 		violations = append(violations, fmt.Sprintf(
-			"prose-under-30 touches instruction-bearing paths that are never waivable: %s", quotedList(instructionHits)))
+			"prose-under-30 touches a path that is never waivable: %s", quotedList(neverWaivable)))
 	}
 	changedLines := 0
 	binary := false

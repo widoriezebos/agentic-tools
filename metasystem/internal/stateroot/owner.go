@@ -35,6 +35,21 @@ func Owner(path string) (Ownership, string, error) {
 	if err != nil {
 		return OwnerOutside, "", err
 	}
+	return OwnerForInstallation(installation, path)
+}
+
+// OwnerForInstallation applies the ownership rule for an explicitly located
+// installation. Callers that inspect another checkout use this entry point so
+// ownership is not accidentally derived from the running binary.
+func OwnerForInstallation(installation, path string) (Ownership, string, error) {
+	absoluteInstallation, err := filepath.Abs(installation)
+	if err != nil {
+		return OwnerOutside, "", fmt.Errorf("path owner: resolve installation: %w", err)
+	}
+	installation = filepath.Clean(absoluteInstallation)
+	if resolved, resolveErr := filepath.EvalSymlinks(installation); resolveErr == nil {
+		installation = resolved
+	}
 	mode := "adopted"
 	if templateMode(installation) {
 		mode = "template"
@@ -55,9 +70,14 @@ func Owner(path string) (Ownership, string, error) {
 		}
 		appRoot = top
 	}
+	if resolved, resolveErr := filepath.EvalSymlinks(appRoot); resolveErr == nil {
+		appRoot = resolved
+	}
 	absolute := path
 	if !filepath.IsAbs(absolute) {
 		absolute = filepath.Join(appRoot, absolute)
+	} else {
+		absolute = canonicalEntryPath(absolute)
 	}
 	absolute = filepath.Clean(absolute)
 	relative, err := filepath.Rel(appRoot, absolute)
@@ -86,8 +106,9 @@ func Owner(path string) (Ownership, string, error) {
 	if vendoredSlashed == "." {
 		// The installation IS the repository root (the unvendored
 		// adopted layout): no prefix can decide, so ownership follows
-		// the shipped inventory — the same source of truth the
-		// adoption tracer proves against.
+		// the shipped inventory of instruction-bearing files and trees
+		// adoption creates. Completeness against adoption's full install
+		// set is tracked by goal adoption-inventory-from-install-set.
 		if shippedInventoryPath(slashed) {
 			return OwnerMetasystem, mode, nil
 		}
@@ -96,11 +117,31 @@ func Owner(path string) (Ownership, string, error) {
 	return OwnerApp, mode, nil
 }
 
-// shippedInventoryPath names the trees and files adoption installs —
-// generic material in an unvendored layout. Growing it is a reviewed
-// change, in lockstep with adopt.sh's install set.
+// canonicalEntryPath resolves symlinks in the nearest existing ancestor while
+// preserving the final entry itself, so ownership never follows a path entry's
+// referent.
+func canonicalEntryPath(entry string) string {
+	ancestor := filepath.Dir(entry)
+	suffix := filepath.Base(entry)
+	for {
+		if resolved, err := filepath.EvalSymlinks(ancestor); err == nil {
+			return filepath.Join(resolved, suffix)
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return filepath.Clean(entry)
+		}
+		suffix = filepath.Join(filepath.Base(ancestor), suffix)
+		ancestor = parent
+	}
+}
+
+// shippedInventoryPath names the instruction-bearing files and the trees
+// adoption creates, which are generic material in an unvendored layout.
+// Goal adoption-inventory-from-install-set tracks completeness against
+// adoption's full install set.
 func shippedInventoryPath(slashed string) bool {
-	for _, root := range []string{"cmd/", "internal/", "scripts/", "skills/", "optional-skills/", "docs/design/", "docs/examples/", ".github/"} {
+	for _, root := range []string{"cmd/", "internal/", "scripts/", "skills/", "optional-skills/", "docs/design/", "docs/examples/", "memory/", "plans/", "records/", ".github/"} {
 		if strings.HasPrefix(slashed, root) {
 			return true
 		}
@@ -108,7 +149,7 @@ func shippedInventoryPath(slashed string) bool {
 	switch slashed {
 	case "go.mod", "go.sum", "wow.md", "AGENTS.md", "CLAUDE.md",
 		"metasystem.conf", "docs/orchestration.md", "docs/collaboration.md",
-		"docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
+		"docs/project-rules.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
 		"docs/working-modes.md", "docs/working-with-agents.md":
 		return true
 	}

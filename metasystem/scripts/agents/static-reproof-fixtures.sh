@@ -21,7 +21,7 @@ TestRealCommitWrapperStampsParseableObservation() {
   cp "$wrapper" "$fixture/scripts/agents/commit.sh"
   cp "$root/scripts/agents/coverage-delta.sh" "$fixture/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$fixture/scripts/agents/landing-classes.json"
-  cp "$root/scripts/agents/register-carriage-paths.txt" "$fixture/scripts/agents/register-carriage-paths.txt"
+  cp "$root/scripts/agents/path-classes.txt" "$fixture/scripts/agents/path-classes.txt"
   cp "$root/memory/rulings.md" "$fixture/memory/rulings.md"
   cat >"$fixture/bin/metasystem" <<SH
 #!/usr/bin/env bash

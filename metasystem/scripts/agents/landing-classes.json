@@ -4,7 +4,7 @@
   "classes": [
     {
       "id": "register-carriage",
-      "pathRule": "register-carriage-allowlist",
+      "pathRule": "path-class-record",
       "requiredFields": [],
       "authorizedBy": "R-35-m0"
     },

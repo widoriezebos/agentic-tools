@@ -117,7 +117,12 @@ func TestOwnerUsesShippedInventoryInUnvendoredAdoptedShape(t *testing.T) {
 	}{
 		{path: "internal/stateroot/stateroot.go", want: OwnerMetasystem},
 		{path: "go.mod", want: OwnerMetasystem},
+		{path: "docs/project-rules.md", want: OwnerMetasystem},
+		{path: "memory/README.md", want: OwnerMetasystem},
+		{path: "plans/goals/x.md", want: OwnerMetasystem},
+		{path: "records/goals/x.md", want: OwnerMetasystem},
 		{path: "docs/application.md", want: OwnerApp},
+		{path: "README.md", want: OwnerApp},
 		{path: "artifacts/agents/state.json", want: OwnerRuntime},
 	} {
 		got, mode, err := Owner(test.path)

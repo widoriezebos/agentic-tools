@@ -1,4 +1,0 @@
-records/narrator-digest.log
-memory/rulings.md
-memory/receipts.log
-plans/handoff-*.md

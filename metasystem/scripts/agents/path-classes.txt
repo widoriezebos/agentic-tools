@@ -1,0 +1,59 @@
+# Installation-relative behavior.
+install:AGENTS.md behavior
+install:CLAUDE.md behavior
+install:wow.md behavior
+install:README.md behavior
+install:metasystem.conf behavior
+install:go.mod behavior
+install:go.sum behavior
+install:go.work behavior
+install:go.work.sum behavior
+install:.gitattributes behavior
+install:.gitignore behavior
+install:cmd/ behavior
+install:internal/ behavior
+install:docs/ behavior
+install:scripts/ behavior
+install:skills/ behavior
+install:optional-skills/ behavior
+install:.claude/ behavior
+install:.codex/ behavior
+install:.agents/ behavior
+install:.devin/ behavior
+install:.github/ behavior
+install:memory/README.md behavior
+install:plans/README.md behavior
+install:records/README.md behavior
+
+# Installation-relative records.
+install:memory/ record
+install:plans/ record
+install:records/ record
+
+# Installation-relative ledgers.
+install:plans/goals/ ledger
+install:plans/goals.md ledger
+install:plans/goals-accepted.json ledger
+install:records/goals/ ledger
+
+# Installation-relative runtime state.
+install:artifacts/ runtime
+install:bin/ runtime
+install:metasystem runtime
+install:metasystem.conf.local runtime
+
+# Repository-relative behavior, consulted only in template mode.
+repo:README.md behavior
+repo:LICENSE behavior
+repo:.gitignore behavior
+repo:.claude/ behavior
+repo:benchmark/ behavior
+repo:environment/ behavior
+repo:development/README.md behavior
+repo:development/project-rules-local.md behavior
+repo:development/devin-selftest.md behavior
+
+# Repository-relative records, consulted only in template mode.
+repo:development/ record
+
+# Ownership rows are exact files beneath install:plans/ and are initially empty.

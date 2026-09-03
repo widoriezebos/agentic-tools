@@ -31,7 +31,7 @@ new_case() { # name
   controller="$case_root/controller"
   worktree="$case_root/worktree"
   mkdir -p "$controller/scripts/agents" "$controller/docs"
-  cp "$source_root/scripts/agents/instruction-bearing-paths.txt" "$controller/scripts/agents/"
+  cp "$source_root/scripts/agents/path-classes.txt" "$controller/scripts/agents/"
   cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
   # The copied config reader resolves its engine as <controller>/bin/metasystem.
   mkdir -p "$controller/bin"
@@ -285,18 +285,19 @@ write_critic "$final_tree" '' none critic-model
   || { echo "a successful merge rewrote the stored review artifact" >&2; exit 1; }
 
 # The only waiver class rejects behavior-bearing paths, accepts and counts a
-# small non-instruction Markdown diff, and rejects the same prose above 30
+# small record Markdown diff, and rejects the same prose above 30
 # changed lines.
 new_case waiver-script
 printf 'printf "changed\\n"\n' >>"$worktree/scripts/tool.sh"
 write_implementer prose-under-30 scripts/tool.sh
 commit_worktree
-expect_failure waiver-script 'instruction-bearing paths that are never waivable' \
+expect_failure waiver-script 'prose-under-30 touches a path that is never waivable' \
   "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl
 
 new_case waiver-small
-for number in 1 2 3 4 5 6 7 8 9 10; do printf 'line %s\n' "$number" >>"$worktree/docs/note.md"; done
-write_implementer prose-under-30 docs/note.md
+mkdir -p "$worktree/records"
+for number in 1 2 3 4 5 6 7 8 9 10; do printf 'line %s\n' "$number" >>"$worktree/records/note.md"; done
+write_implementer prose-under-30 records/note.md
 commit_worktree
 "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl \
   >"$fixture_root/waiver-small.out"
@@ -304,8 +305,9 @@ grep -Fq 'count=1' "$fixture_root/waiver-small.out" \
   || { echo "genuine prose waiver was not counted" >&2; exit 1; }
 
 new_case waiver-large
-for number in $(seq 1 40); do printf 'line %s\n' "$number" >>"$worktree/docs/note.md"; done
-write_implementer prose-under-30 docs/note.md
+mkdir -p "$worktree/records"
+for number in $(seq 1 40); do printf 'line %s\n' "$number" >>"$worktree/records/note.md"; done
+write_implementer prose-under-30 records/note.md
 commit_worktree
 expect_failure waiver-large 'the maximum is 30 additions plus deletions' \
   "$controller/bin/metasystem" validate conformance --root "$controller" --stage merge --job impl

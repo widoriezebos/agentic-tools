@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // conformanceFixture builds the controller checkout and implementer
 // worktree the shell fixtures used: a controller repository with the
-// instruction-bearing path list, a conf, and an impl job record whose
+// path class manifest, a conf, and an impl job record whose
 // workspace is a branch worktree with one declared change.
 type conformanceFixture struct {
 	t          *testing.T
@@ -50,8 +52,8 @@ func newConformanceFixture(t *testing.T) *conformanceFixture {
 		worktree:   filepath.Join(root, "worktree")}
 	os.MkdirAll(filepath.Join(f.controller, "scripts", "agents"), 0o755)
 	os.MkdirAll(filepath.Join(f.controller, "docs"), 0o755)
-	source, _ := os.ReadFile("../../scripts/agents/instruction-bearing-paths.txt")
-	os.WriteFile(filepath.Join(f.controller, "scripts", "agents", "instruction-bearing-paths.txt"), source, 0o644)
+	source, _ := os.ReadFile("../../scripts/agents/path-classes.txt")
+	os.WriteFile(filepath.Join(f.controller, "scripts", "agents", "path-classes.txt"), source, 0o644)
 	os.WriteFile(filepath.Join(f.controller, ".gitignore"), []byte("artifacts/\nlocal.conf\n"), 0o644)
 	os.WriteFile(filepath.Join(f.controller, "source.txt"), []byte("base\n"), 0o644)
 	os.WriteFile(filepath.Join(f.controller, "docs", "note.md"), []byte("base\n"), 0o644)
@@ -305,22 +307,24 @@ func TestConformanceWaivers(t *testing.T) {
 			os.WriteFile(filepath.Join(f.worktree, "scripts", "tool.sh"), []byte("changed\n"), 0o644)
 		}, "scripts/tool.sh", 1, "prose-under-30 includes non-Markdown paths"},
 		{"small prose", func(f *conformanceFixture) {
+			os.MkdirAll(filepath.Join(f.worktree, "records"), 0o755)
 			for i := 0; i < 10; i++ {
-				appendFile(f.t, filepath.Join(f.worktree, "docs", "note.md"), fmt.Sprintf("line %d\n", i))
+				appendFile(f.t, filepath.Join(f.worktree, "records", "note.md"), fmt.Sprintf("line %d\n", i))
 			}
-		}, "docs/note.md", 0, "critique waiver accepted and counted: class=prose-under-30 stream='fixture-stream' count=1 changedLines=10"},
+		}, "records/note.md", 0, "critique waiver accepted and counted: class=prose-under-30 stream='fixture-stream' count=1 changedLines=10"},
 		{"large prose", func(f *conformanceFixture) {
+			os.MkdirAll(filepath.Join(f.worktree, "records"), 0o755)
 			for i := 0; i < 40; i++ {
-				appendFile(f.t, filepath.Join(f.worktree, "docs", "note.md"), fmt.Sprintf("line %d\n", i))
+				appendFile(f.t, filepath.Join(f.worktree, "records", "note.md"), fmt.Sprintf("line %d\n", i))
 			}
-		}, "docs/note.md", 1, "the maximum is 30 additions plus deletions"},
+		}, "records/note.md", 1, "the maximum is 30 additions plus deletions"},
 		{"plan path", func(f *conformanceFixture) {
 			os.MkdirAll(filepath.Join(f.worktree, "plans"), 0o755)
 			os.WriteFile(filepath.Join(f.worktree, "plans", "note.md"), []byte("delegate plan\n"), 0o644)
 		}, "plans/note.md", 1, "trusted plans/ state changed: plans/note.md"},
 		{"instruction path", func(f *conformanceFixture) {
 			os.WriteFile(filepath.Join(f.worktree, "AGENTS.md"), []byte("changed\n"), 0o644)
-		}, "AGENTS.md", 1, "instruction-bearing paths that are never waivable"},
+		}, "AGENTS.md", 1, "prose-under-30 touches a path that is never waivable"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -339,6 +343,120 @@ func TestConformanceWaivers(t *testing.T) {
 		expectConformance(t, f, "merge", 1,
 			"unsupported critique waiver class 'prose-under-100'; the only class is prose-under-30")
 	})
+}
+
+func TestMergeWaiverRefusesBehaviorPath(t *testing.T) {
+	f := newConformanceFixture(t)
+	appendFile(t, filepath.Join(f.worktree, "AGENTS.md"), "small behavior change\n")
+	f.writeImplementer("prose-under-30", "AGENTS.md")
+	f.commitWorktree()
+	expectConformance(t, f, "merge", 1, "prose-under-30 touches a path that is never waivable: ['AGENTS.md']")
+}
+
+func TestMergeWaiverRefusesUnclassifiedPath(t *testing.T) {
+	r := &conformanceRun{root: t.TempDir(), rootJob: "fixture"}
+	paths := []waiverPath{{
+		projectPath: "product-note.md",
+		resolution:  pathclass.Resolution{Class: pathclass.Unclassified, Namespace: pathclass.Install},
+	}}
+	_, errs, code := r.mergeWaiver(map[string]any{"class": "prose-under-30"}, paths, "1\t0\tproduct-note.md\n")
+	if code != 1 || !strings.Contains(strings.Join(errs, "\n"), "prose-under-30 touches a path that is never waivable: ['product-note.md']") {
+		t.Fatalf("mergeWaiver code=%d errs=%v; want unclassified-path refusal", code, errs)
+	}
+}
+
+func TestMergeWaiverResolvesPathsByLocation(t *testing.T) {
+	manifest, err := pathclass.Parse([]byte("install:AGENTS.md behavior\ninstall:records/ record\ninstall:records/goals/ ledger\ninstall:artifacts/ runtime\nrepo:development/README.md behavior\nrepo:development/ record\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	top := t.TempDir()
+	command := exec.Command("git", "-C", top, "init", "-q", "-b", "main")
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	installation := filepath.Join(top, "metasystem")
+	if err := os.MkdirAll(filepath.Join(top, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(top, "development", "metasystem-design.md"), []byte("template marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &conformanceRun{root: installation, rootJob: "fixture", installPrefix: "metasystem"}
+	waiver := map[string]any{"class": "prose-under-30"}
+	for _, test := range []struct {
+		name           string
+		repositoryPath string
+		wantClass      pathclass.Class
+		wantNamespace  pathclass.Namespace
+		wantCode       int
+	}{
+		{name: "template repository record is waivable", repositoryPath: "development/evidence-index.md", wantClass: pathclass.Record, wantNamespace: pathclass.Repo},
+		{name: "template repository behavior refuses", repositoryPath: "development/README.md", wantClass: pathclass.Behavior, wantNamespace: pathclass.Repo, wantCode: 1},
+		{name: "template repository unclassified refuses", repositoryPath: "other-note.md", wantClass: pathclass.Unclassified, wantNamespace: pathclass.Repo, wantCode: 1},
+		{name: "installation ledger refuses", repositoryPath: "metasystem/records/goals/x.md", wantClass: pathclass.Ledger, wantNamespace: pathclass.Install, wantCode: 1},
+		{name: "installation runtime refuses", repositoryPath: "metasystem/artifacts/report.md", wantClass: pathclass.Runtime, wantNamespace: pathclass.Install, wantCode: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			paths, err := r.classifyWaiverPaths(manifest, []string{test.repositoryPath})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(paths) != 1 || paths[0].resolution.Class != test.wantClass || paths[0].resolution.Namespace != test.wantNamespace {
+				t.Fatalf("classified waiver path = %+v; want class %s namespace %s", paths, test.wantClass, test.wantNamespace)
+			}
+			_, errs, code := r.mergeWaiver(waiver, paths, "1\t0\t"+test.repositoryPath+"\n")
+			if code != test.wantCode {
+				t.Fatalf("mergeWaiver code=%d errs=%v; want code=%d", code, errs, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestMergeWaiverAdoptedRootLayoutUsesShippedInventory(t *testing.T) {
+	root := t.TempDir()
+	command := exec.Command("git", "-C", root, "init", "-q", "-b", "main")
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	manifest, err := pathclass.Parse([]byte("install:AGENTS.md behavior\ninstall:docs/project-rules.md behavior\ninstall:memory/README.md behavior\ninstall:records/ record\ninstall:records/goals/ ledger\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &conformanceRun{root: root, rootJob: "fixture"}
+	waiver := map[string]any{"class": "prose-under-30"}
+	for _, test := range []struct {
+		name          string
+		path          string
+		wantClass     pathclass.Class
+		wantNamespace pathclass.Namespace
+		wantCode      int
+	}{
+		{name: "manifest behavior refuses project rules", path: "docs/project-rules.md", wantClass: pathclass.Behavior, wantNamespace: pathclass.Install, wantCode: 1},
+		{name: "manifest ledger refuses goal records", path: "records/goals/active.md", wantClass: pathclass.Ledger, wantNamespace: pathclass.Install, wantCode: 1},
+		{name: "manifest behavior refuses memory instructions", path: "memory/README.md", wantClass: pathclass.Behavior, wantNamespace: pathclass.Install, wantCode: 1},
+		{name: "application-owned prose is waivable", path: "docs/application.md", wantClass: pathclass.Outside},
+		{name: "manifest behavior refuses root instructions", path: "AGENTS.md", wantClass: pathclass.Behavior, wantNamespace: pathclass.Install, wantCode: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			paths, err := r.classifyWaiverPaths(manifest, []string{test.path})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(paths) != 1 || paths[0].resolution.Class != test.wantClass || paths[0].resolution.Namespace != test.wantNamespace || paths[0].resolution.Mode != pathclass.Adopted {
+				t.Fatalf("adopted root path %s classified as %+v; want class %s namespace %s in adopted mode", test.path, paths, test.wantClass, test.wantNamespace)
+			}
+			_, errs, code := r.mergeWaiver(waiver, paths, "1\t0\t"+test.path+"\n")
+			if code != test.wantCode {
+				t.Fatalf("mergeWaiver code=%d errs=%v; want code=%d", code, errs, test.wantCode)
+			}
+		})
+	}
 }
 
 func TestConformanceFactRefusals(t *testing.T) {
@@ -366,18 +484,18 @@ func TestConformanceFactRefusals(t *testing.T) {
 	}
 }
 
-// Runtime agnosticism: a NEWLY declared runtime
-// instruction filename is protected by the no-waiver set the moment it
-// is declared — even when the checked-in path list has not caught up.
+// Runtime agnosticism: a newly declared runtime instruction file is accepted
+// only when the manifest classifies it as behavior.
 func TestConformanceProtectsDeclaredInstructionFile(t *testing.T) {
 	restore := runtimes.OverrideForTest(append(runtimes.All(), runtimes.Declaration{
 		Name: "newrt", HasAdapter: true, TailoringPriority: 99,
-		InstructionFile: "NEWRT.md",
+		InstructionFile: "plans/NEWRT.md",
 	}))
 	defer restore()
 	f := newConformanceFixture(t)
-	os.WriteFile(filepath.Join(f.worktree, "NEWRT.md"), []byte("changed\n"), 0o644)
-	f.writeImplementer("prose-under-30", "NEWRT.md")
+	os.MkdirAll(filepath.Join(f.worktree, "plans"), 0o755)
+	os.WriteFile(filepath.Join(f.worktree, "plans", "NEWRT.md"), []byte("changed\n"), 0o644)
+	f.writeImplementer("prose-under-30", "plans/NEWRT.md")
 	f.commitWorktree()
-	expectConformance(t, f, "merge", 1, "instruction-bearing paths that are never waivable")
+	expectConformance(t, f, "merge", 1, "conformance failure: runtime instruction file plans/NEWRT.md has manifest class record, not behavior")
 }

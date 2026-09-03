@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -19,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 )
 
 const (
@@ -440,12 +440,6 @@ type landingClassManifest struct {
 	} `json:"classes"`
 }
 
-type carriagePattern struct {
-	exact  string
-	dir    string
-	prefix string
-}
-
 func registerCarriage(root, candidateTree string, changedPaths []string) error {
 	if len(changedPaths) == 0 {
 		return nil
@@ -455,23 +449,23 @@ func registerCarriage(root, candidateTree string, changedPaths []string) error {
 	if err != nil {
 		return err
 	}
-	patterns, err := loadCarriagePolicy(workspace, baseTree)
+	classes, err := loadPathClasses(workspace, baseTree)
 	if err != nil {
 		return err
 	}
-	var disallowed []string
+	resolved := make(map[string]pathclass.Class, len(changedPaths))
 	for _, changedPath := range changedPaths {
-		if !carriagePathAllowed(changedPath, patterns) {
-			disallowed = append(disallowed, changedPath)
-		}
+		resolved[changedPath] = classes.Class(changedPath)
 	}
-	for _, changedPath := range disallowed {
-		if neverDirectFix(changedPath) {
+	for _, changedPath := range changedPaths {
+		if resolved[changedPath] == pathclass.Behavior {
 			return &carriageError{code: "direct-fix-floor-refused", err: fmt.Errorf("path %s is on the never-direct-fix floor", changedPath)}
 		}
 	}
-	if len(disallowed) > 0 {
-		return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", disallowed[0])}
+	for _, changedPath := range changedPaths {
+		if resolved[changedPath] != pathclass.Record || !registerCarriageEligible(changedPath) {
+			return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", changedPath)}
+		}
 	}
 	for _, changedPath := range changedPaths {
 		switch changedPath {
@@ -488,15 +482,19 @@ func registerCarriage(root, candidateTree string, changedPaths []string) error {
 	return nil
 }
 
-func loadCarriagePolicy(workspace gittree.Workspace, baseTree string) ([]carriagePattern, error) {
+func loadPathClasses(workspace gittree.Workspace, baseTree string) (*pathclass.Manifest, error) {
 	if err := loadLandingClasses(workspace, baseTree); err != nil {
 		return nil, err
 	}
-	allowlist, present, err := workspace.FileAt(baseTree, "scripts/agents/register-carriage-paths.txt")
+	manifestBytes, present, err := workspace.FileAt(baseTree, pathclass.ManifestPath)
 	if err != nil || !present {
-		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("register carriage allowlist is unreadable")}
+		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("path class manifest is unreadable")}
 	}
-	return parseCarriageAllowlist(allowlist)
+	manifest, err := pathclass.Parse(manifestBytes)
+	if err != nil {
+		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	return manifest, nil
 }
 
 func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
@@ -521,7 +519,7 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
 		}
 		switch class.ID {
 		case "register-carriage":
-			if class.PathRule != "register-carriage-allowlist" || len(class.RequiredFields) != 0 {
+			if class.PathRule != "path-class-record" || len(class.RequiredFields) != 0 {
 				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong carriage rule")}
 			}
 		case "exact-revert":
@@ -539,48 +537,17 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
 	return nil
 }
 
-func parseCarriageAllowlist(data []byte) ([]carriagePattern, error) {
-	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
-	patterns := make([]carriagePattern, 0, len(lines))
-	wildcards := 0
-	for _, line := range lines {
-		if line == "" || line != filepath.ToSlash(filepath.Clean(line)) || strings.HasPrefix(line, "/") || strings.HasPrefix(line, "../") {
-			return nil, &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("register carriage allowlist contains an invalid path")}
-		}
-		if strings.ContainsAny(line, "*?[") {
-			base := path.Base(line)
-			if strings.Count(line, "*") != 1 || strings.ContainsAny(line, "?[") ||
-				!strings.HasSuffix(base, "-*.md") || strings.Contains(path.Dir(line), "*") {
-				return nil, &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("register carriage allowlist contains an invalid glob")}
-			}
-			wildcards++
-			patterns = append(patterns, carriagePattern{
-				dir: path.Dir(line), prefix: strings.TrimSuffix(base, "*.md"),
-			})
-			continue
-		}
-		patterns = append(patterns, carriagePattern{exact: line})
+// Handoff notes remain directly carriable so an unfinished stream can record
+// its next step. Other record paths stay outside this narrow carriage rule.
+func registerCarriageEligible(changedPath string) bool {
+	switch changedPath {
+	case "memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log":
+		return true
 	}
-	if wildcards > 1 {
-		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("register carriage allowlist contains more than one glob")}
+	if !strings.HasPrefix(changedPath, "plans/handoff-") || !strings.HasSuffix(changedPath, ".md") {
+		return false
 	}
-	return patterns, nil
-}
-
-func carriagePathAllowed(changedPath string, patterns []carriagePattern) bool {
-	clean := filepath.ToSlash(filepath.Clean(changedPath))
-	for _, pattern := range patterns {
-		if pattern.exact == clean {
-			return true
-		}
-		if pattern.dir != "" && path.Dir(clean) == pattern.dir {
-			name := path.Base(clean)
-			if strings.HasPrefix(name, pattern.prefix) && strings.HasSuffix(name, ".md") {
-				return true
-			}
-		}
-	}
-	return false
+	return !strings.Contains(strings.TrimPrefix(changedPath, "plans/"), "/")
 }
 
 func appendOnly(workspace gittree.Workspace, baseTree, candidateTree, changedPath string) error {
@@ -690,11 +657,12 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		}
 		workspace := gittree.Workspace{Dir: params.RepoRoot}
 		baseTree, err := workspace.HeadTree()
-		if err != nil || loadLandingClasses(workspace, baseTree) != nil {
+		classes, classErr := loadPathClasses(workspace, baseTree)
+		if err != nil || classErr != nil {
 			return wouldRefuse("direct-fix-policy-unreadable", provenance)
 		}
 		provenance = fmt.Sprintf("direct-fix class=exact-revert revert-of=%s change=%s", params.RevertOf, change)
-		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf); err != nil {
+		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf, classes); err != nil {
 			return wouldRefuse(exactRevertRefusalCode(err), provenance)
 		}
 		return pass(BarDirectFix, "exact-revert", provenance)
@@ -718,7 +686,7 @@ func exactRevertRefusalCode(err error) string {
 	return "not-exact-revert"
 }
 
-func exactRevert(root, candidateTree, revertOf string) error {
+func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manifest) error {
 	workspace := gittree.Workspace{Dir: root}
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
@@ -727,21 +695,21 @@ func exactRevert(root, candidateTree, revertOf string) error {
 	candidatePaths, candidateErr := workspace.ChangedPaths(baseTree, candidateTree)
 	parent, err := workspace.SingleParent(revertOf)
 	if err != nil {
-		return exactRevertFloorError(candidatePaths, nil, err)
+		return exactRevertFloorError(classes, candidatePaths, nil, err)
 	}
 	preimageTree, err := workspace.TreeOf(parent)
 	if err != nil {
-		return exactRevertFloorError(candidatePaths, nil, err)
+		return exactRevertFloorError(classes, candidatePaths, nil, err)
 	}
 	postimageTree, err := workspace.TreeOf(revertOf)
 	if err != nil {
-		return exactRevertFloorError(candidatePaths, nil, err)
+		return exactRevertFloorError(classes, candidatePaths, nil, err)
 	}
 	targetPaths, err := workspace.ChangedPaths(preimageTree, postimageTree)
 	if err != nil || len(targetPaths) == 0 {
-		return exactRevertFloorError(candidatePaths, targetPaths, fmt.Errorf("reverted commit has no decidable changed paths"))
+		return exactRevertFloorError(classes, candidatePaths, targetPaths, fmt.Errorf("reverted commit has no decidable changed paths"))
 	}
-	if err := exactRevertFloorError(candidatePaths, targetPaths, nil); err != nil {
+	if err := exactRevertFloorError(classes, candidatePaths, targetPaths, nil); err != nil {
 		return err
 	}
 	if candidateErr != nil {
@@ -777,9 +745,10 @@ func exactRevert(root, candidateTree, revertOf string) error {
 	return nil
 }
 
-func exactRevertFloorError(candidatePaths, targetPaths []string, fallback error) error {
+func exactRevertFloorError(classes *pathclass.Manifest, candidatePaths, targetPaths []string, fallback error) error {
 	for _, changedPath := range append(append([]string(nil), targetPaths...), candidatePaths...) {
-		if neverDirectFix(changedPath) {
+		switch classes.Class(changedPath) {
+		case pathclass.Behavior, pathclass.Record, pathclass.Ledger, pathclass.Runtime, pathclass.Unclassified:
 			return &exactRevertError{
 				code: "direct-fix-floor-refused",
 				err:  fmt.Errorf("path %s is on the never-direct-fix floor", changedPath),
@@ -787,32 +756,6 @@ func exactRevertFloorError(candidatePaths, targetPaths []string, fallback error)
 		}
 	}
 	return fallback
-}
-
-// The initial floor is deliberately broad. Register carriage is the exact
-// allowlisted exception; anything else that can change instructions,
-// authority, orchestration, or landing policy takes an implementation chain.
-func neverDirectFix(path string) bool {
-	clean := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(path)), "./")
-	for _, exact := range []string{
-		"AGENTS.md", "CLAUDE.md", "wow.md", "metasystem.conf",
-		"go.mod", "go.sum", "go.work", "go.work.sum", ".gitattributes", ".gitignore",
-		"bin/metasystem",
-	} {
-		if clean == exact || strings.HasSuffix(clean, "/"+exact) {
-			return true
-		}
-	}
-	for _, prefix := range []string{
-		".agents/", ".claude/", ".codex/", ".github/", "bin/", "cmd/", "docs/", "internal/",
-		"memory/", "optional-skills/", "plans/", "records/", "roles/", "schemas/",
-		"scripts/", "skills/", "templates/",
-	} {
-		if strings.HasPrefix(clean, prefix) || strings.Contains(clean, "/"+prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func pass(bar, code, provenance string) Observation {

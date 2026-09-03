@@ -26,7 +26,7 @@ func newObserveFixture(t *testing.T) *observeFixture {
 	f.git("config", "user.email", "landing@example.invalid")
 	f.write(".gitignore", "artifacts/\n")
 	f.write("product.txt", "before\n")
-	for _, policyFile := range []string{"register-carriage-paths.txt", "landing-classes.json", "landing-promotion.json"} {
+	for _, policyFile := range []string{"path-classes.txt", "landing-classes.json", "landing-promotion.json"} {
 		content, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policyFile))
 		if err != nil {
 			t.Fatalf("read repository policy %s: %v", policyFile, err)
@@ -218,8 +218,8 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 			RepoRoot: bundled.root, CandidateTree: bundled.tree(), Chain: "bundle-chain",
 			DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
-			t.Fatalf("chain with a non-allowlisted protected path classified as %+v", got)
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-path-refused" || got.Mode != "observe" {
+			t.Fatalf("chain with a non-carriage record path classified as %+v", got)
 		}
 	})
 	got = Observe(ObserveParams{
@@ -286,7 +286,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		RepoRoot: f.root, CandidateTree: f.tree(),
 		DirectFix: "exact-revert", RevertOf: revertOf,
 	})
-	if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "exact-revert" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" {
 		t.Fatalf("exact inverse classified as %+v", got)
 	}
 
@@ -295,7 +295,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		RepoRoot: f.root, CandidateTree: f.tree(),
 		DirectFix: "exact-revert", RevertOf: revertOf,
 	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "not-exact-revert" {
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" {
 		t.Fatalf("expanded inverse classified as %+v", got)
 	}
 	if err := os.Remove(filepath.Join(f.root, "extra.txt")); err != nil {
@@ -326,20 +326,24 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		t.Fatalf("floor-changing inverse classified as %+v", got)
 	}
 
-	nested := newObserveFixture(t)
-	nested.write("product/AGENTS.md", "nested instruction\n")
-	nested.git("add", "product/AGENTS.md")
-	nested.git("commit", "-qm", "nested instruction change")
-	nestedCommit := nested.git("rev-parse", "HEAD")
-	if err := os.Remove(filepath.Join(nested.root, "product", "AGENTS.md")); err != nil {
-		t.Fatal(err)
-	}
-	got = Observe(ObserveParams{
-		RepoRoot: nested.root, CandidateTree: nested.tree(),
-		DirectFix: "exact-revert", RevertOf: nestedCommit,
-	})
-	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
-		t.Fatalf("nested instruction inverse classified as %+v", got)
+	for _, nestedPath := range []string{"product/AGENTS.md", "product/scripts/x"} {
+		t.Run("unclassified nested floor "+nestedPath, func(t *testing.T) {
+			nested := newObserveFixture(t)
+			nested.write(nestedPath, "nested instruction\n")
+			nested.git("add", nestedPath)
+			nested.git("commit", "-qm", "nested instruction change")
+			nestedCommit := nested.git("rev-parse", "HEAD")
+			if err := os.Remove(filepath.Join(nested.root, filepath.FromSlash(nestedPath))); err != nil {
+				t.Fatal(err)
+			}
+			got := Observe(ObserveParams{
+				RepoRoot: nested.root, CandidateTree: nested.tree(),
+				DirectFix: "exact-revert", RevertOf: nestedCommit,
+			})
+			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+				t.Fatalf("nested instruction inverse classified as %+v", got)
+			}
+		})
 	}
 
 	t.Run("committed engine floor", func(t *testing.T) {
@@ -357,6 +361,22 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
 			t.Fatalf("committed engine inverse classified as %+v", got)
+		}
+	})
+
+	t.Run("record exact revert remains refused", func(t *testing.T) {
+		record := newObserveFixture(t)
+		record.write("memory/receipts.log", "receipt=existing\nreceipt=appended\n")
+		record.git("add", "memory/receipts.log")
+		record.git("commit", "-qm", "append receipt")
+		recordCommit := record.git("rev-parse", "HEAD")
+		record.write("memory/receipts.log", "receipt=existing\n")
+		got := Observe(ObserveParams{
+			RepoRoot: record.root, CandidateTree: record.tree(),
+			DirectFix: "exact-revert", RevertOf: recordCommit,
+		})
+		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" {
+			t.Fatalf("record exact revert widened during path-class cutover: %+v", got)
 		}
 	})
 
@@ -458,7 +478,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 		got := Observe(ObserveParams{
 			RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
 		})
-		if got.Bar != BarRefusal || got.Code != "direct-fix-floor-refused" || got.Mode != "observe" {
+		if got.Bar != BarRefusal || got.Code != "register-carriage-path-refused" || got.Mode != "observe" {
 			t.Fatalf("non-matching handoff path classified as %+v", got)
 		}
 
@@ -475,7 +495,7 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 
 	t.Run("carriage policy files are on the floor", func(t *testing.T) {
 		policy := newObserveFixture(t)
-		policy.write("scripts/agents/register-carriage-paths.txt", "memory/rulings.md\n")
+		policy.write("scripts/agents/path-classes.txt", "install:memory/ record\n")
 		got := Observe(ObserveParams{
 			RepoRoot: policy.root, CandidateTree: policy.tree(), DirectFix: "register-carriage",
 		})
@@ -501,6 +521,28 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 			t.Fatalf("promotion record self-change classified as %+v", got)
 		}
 	})
+}
+
+func TestSliceOneRetainsHandoffCarriage(t *testing.T) {
+	fixture := newObserveFixture(t)
+	fixture.write("plans/handoff-fixture-1.md", "# fixture handoff\n")
+	got := Observe(ObserveParams{
+		RepoRoot: fixture.root, CandidateTree: fixture.tree(), DirectFix: "register-carriage",
+	})
+	if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "register-carriage" {
+		t.Fatalf("new handoff lost register carriage during the manifest transition: %+v", got)
+	}
+}
+
+func TestObserveManifestIsBehavior(t *testing.T) {
+	fixture := newObserveFixture(t)
+	fixture.write("scripts/agents/path-classes.txt", "install:memory/ record\n")
+	got := Observe(ObserveParams{
+		RepoRoot: fixture.root, CandidateTree: fixture.tree(), DirectFix: "register-carriage",
+	})
+	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" {
+		t.Fatalf("path class manifest change escaped the behavior floor: %+v", got)
+	}
 }
 
 func TestObserveRegisterCarriageRefusesStagedNarratorDigestRewrite(t *testing.T) {

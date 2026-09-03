@@ -230,7 +230,7 @@ func TestNestedWaiverProtectsProjectPlans(t *testing.T) {
 	top := t.TempDir()
 	nestedGit(t, top, "init", "-q", "-b", "main")
 	nestedWrite(t, top, "metasystem/truth/a.txt", "a\n")
-	nestedWrite(t, top, "metasystem/scripts/agents/instruction-bearing-paths.txt", "AGENTS.md\n")
+	nestedWrite(t, top, "metasystem/scripts/agents/path-classes.txt", "install:AGENTS.md behavior\ninstall:CLAUDE.md behavior\ninstall:plans/ record\n")
 	nestedGit(t, top, "add", ".")
 	nestedGit(t, top, "commit", "-qm", "first")
 	headSHA := nestedGit(t, top, "rev-parse", "HEAD")

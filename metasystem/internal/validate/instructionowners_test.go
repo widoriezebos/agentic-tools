@@ -7,16 +7,16 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 )
 
 // The G-5 instruction-owner coverage lint: every document that
 // AGENTS.md, the role preambles' quote-source markers, or the host-turn
-// template names as a rule owner must appear in
-// instruction-bearing-paths.txt — a missed owner silently un-protects a
-// canonical instruction file. Adopted repositories receive the suite as
-// source and run this under their own full-suite gate, so the lint keeps
-// enforcing after delivery.
-func TestInstructionOwnersAreInstructionBearing(t *testing.T) {
+// template names as a rule owner must classify as behavior. Adopted
+// repositories receive the suite as source and run this under their own
+// full-suite gate, so the lint keeps enforcing after delivery.
+func TestInstructionOwnersAreBehavior(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -35,24 +35,12 @@ func TestInstructionOwnersAreInstructionBearing(t *testing.T) {
 		}
 		return string(data)
 	}
-	var entries []string
-	for _, line := range strings.Split(read("scripts/agents/instruction-bearing-paths.txt"), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			entries = append(entries, line)
-		}
+	classes, err := pathclass.Load(root)
+	if os.IsNotExist(err) {
+		t.Skip("repository content absent here; frozen exports carry only the engine closure")
 	}
-	covered := func(path string) bool {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry, "/") {
-				if path == strings.TrimSuffix(entry, "/") || strings.HasPrefix(path, entry) {
-					return true
-				}
-			} else if path == entry {
-				return true
-			}
-		}
-		return false
+	if err != nil {
+		t.Fatalf("load path class manifest: %v", err)
 	}
 	ownerPattern := regexp.MustCompile("`((?:docs|skills)/[^`]+\\.md|(?:AGENTS|CLAUDE|wow)\\.md)`")
 	quotePattern := regexp.MustCompile(`<!-- quote source="([^"]+)" -->`)
@@ -84,12 +72,12 @@ func TestInstructionOwnersAreInstructionBearing(t *testing.T) {
 	}
 	var missing []string
 	for owner := range owners {
-		if !covered(owner) {
+		if classes.Class(owner) != pathclass.Behavior {
 			missing = append(missing, owner)
 		}
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Fatalf("rule-owning documents missing from instruction-bearing path list: %s", strings.Join(missing, ", "))
+		t.Fatalf("rule-owning documents not classified as behavior: %s", strings.Join(missing, ", "))
 	}
 }
