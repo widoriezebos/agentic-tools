@@ -5,10 +5,13 @@
 - Origin: main
 - Next step: TWO STEPS BY WIDO'S WORD (R-60-m1): STEP 1, ALERT MODE: spend measured in tokens and money per goal, per machine and per day from the runtimes' usage records; ceilings configurable in metasystem.conf (the root config file) with sane defaults; a health role line shows spend against ceiling every tick; crossing a ceiling raises an alert (through the fleet Slack channel once it lands, the health path meanwhile) and refuses nothing. STEP 2, ENFORCE: only when Wido agrees the calibrated setting is good, by his word: the dispatcher refuses a dispatch that would cross the ceiling, naming the ceiling, the spend so far and who can raise it. TIER 3 per R-54-m1 with the risk-based review budget and the material stop criterion. Ladder for step 1: design (Fable, under 300 lines; reuse the mission fence's usage aggregation and the adapters' usage records; token counts are the truth, money derived from a configured price table), one Sol review, one fold, closing review, build (Sol), code review (Fable), land with --chain. Runs when the machines rejoin, ranked by Wido against fleet-slack-channel.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 2
+- Revision: 3
 - Labels: robustness, spend
+- Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
+- NormApproval: approvedRef=R-61-m1 minutes=3000 goalRevision=2
 
 History:
 - 2026-09-03T08:42:26Z XR3P846WY3BC85808G7NY1YZJQ-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
 - 2026-09-03T09:04:29Z JH60YGPWPRKZSCP8CAXJGN8MKH-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
-Integrity: sha256=ef73be2eb041bdec374cdcba6ed0279e8fc4ee848f5552e42153679bb93d05cb
+- 2026-09-03T09:17:43Z 4D7DNF4X76XS9TZ8AHD16J8FDV-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
+Integrity: sha256=0d2cdb92ba7e1be75ed949057e6f3215b2b2b3a2648aad27995bd1218f54604d
