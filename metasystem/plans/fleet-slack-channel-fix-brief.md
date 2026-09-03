@@ -89,9 +89,10 @@ sleep for ordering (R-35), no benchmarks (R-31).
 
 gofmt, go vet, go build; go test -count=1 over internal/channel/...,
 internal/goal, internal/humanauthority, internal/governance,
-internal/steward and cmd/metasystem green; `bash -n` and one run of
-metasystem/scripts/agents/channel-fixtures.sh and of
-metasystem/scripts/agents/goal-cli-fixtures.sh. The repository-wide run's
+internal/steward and cmd/metasystem green; `bash -n` and one run of the
+channel fixture script the build commit adds under scripts/agents (it is
+not on main yet) and of metasystem/scripts/agents/goal-cli-fixtures.sh
+there. The repository-wide run's
 known sandbox failure (TestHolderProbeUnreadableArgvIsNeverDead) is not
 yours. Paste the final lines. The diffBoundary of the fix commit is the
 files named above and nothing else.
