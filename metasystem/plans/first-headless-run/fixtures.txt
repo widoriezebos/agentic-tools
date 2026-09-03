@@ -1,0 +1,11 @@
+# Truth for mission birth-token: the six Go fixtures the design
+# (plans/job-record-birth-token-design.md section 6) names. The gate counts
+# how many of the BirthToken-named tests in internal/dispatch pass; the
+# mission's target is all six green. This file is the pinned statement of
+# what "done" measures; changing it after sealing fails preflight by design.
+TestBirthTokenMintGrammar
+TestRecordCreateMintsBirthTokenIgnoringCallerValue
+TestBirthTokenSameSecondReuseIsDistinct
+TestRecordSetupCarriesBirthTokenAndRefusesADifferentOne
+TestPreContractRecordNeverGainsBirthToken
+TestRecordCASRefusesBirthTokenPatch
