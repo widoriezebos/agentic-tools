@@ -5,8 +5,9 @@
 - Origin: main
 - Next step: TIER 2 per R-54-m1 (mechanical logic inside two existing owners): build plus one code review, no design round. Specimen: the path-class manifest's first part on 2026-09-03; four closing-review chains, none closable, merge stage refused all four while the landing evaluator accepted the certified tree. Fixture legs: a DESIGN-BEARING critic root closes without a reference; an implementer root still refuses without one; merge stage passes on the closing critic and ignores earlier critic chains of the same implementer; a stale closing critic still refuses. Waits for human approval for execution.
 - OpenedAt: 2026-09-03T11:22:04Z
-- Revision: 1
+- Revision: 2
 
 History:
 - 2026-09-03T11:22:04Z GP2DM3NA2BMTS2TZFWNQV2CTNR-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=merge-stage-critic-close
-Integrity: sha256=83896042fd26e8f38547cf4d6ea6ee8c603bb943c623ec2d377c85a98f808f57
+- 2026-09-03T12:17:20Z DEP9KXQ3568Z9V73VPKJ45MMY1-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=merge-stage-critic-close
+Integrity: sha256=15942c0bc9bbc401f139ecc81dd5962c9d73deb5cb0509bce175f976c03f7c6f
