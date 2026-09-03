@@ -5,10 +5,11 @@
 - Origin: main
 - Next step: TWO STEPS BY WIDO'S WORD (R-60-m1): STEP 1, ALERT MODE: spend measured in tokens and money per goal, per machine and per day from the runtimes' usage records; ceilings configurable in metasystem.conf (the root config file) with sane defaults; a health role line shows spend against ceiling every tick; crossing a ceiling raises an alert (through the fleet Slack channel once it lands, the health path meanwhile) and refuses nothing. STEP 2, ENFORCE: only when Wido agrees the calibrated setting is good, by his word: the dispatcher refuses a dispatch that would cross the ceiling, naming the ceiling, the spend so far and who can raise it. TIER 3 per R-54-m1 with the risk-based review budget and the material stop criterion. Ladder for step 1: design (Fable, under 300 lines; reuse the mission fence's usage aggregation and the adapters' usage records; token counts are the truth, money derived from a configured price table), one Sol review, one fold, closing review, build (Sol), code review (Fable), land with --chain. Runs when the machines rejoin, ranked by Wido against fleet-slack-channel.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness, spend
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
 - NormApproval: approvedRef=R-62-m1 minutes=3000 goalRevision=3
+- Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-03T11:28:16Z
 - Claimed: machine=m1b lineage=main-1788333346-60696-6a3256 at=2026-09-03T11:27:51Z revision=4
 - StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-03T09:04:29Z JH60YGPWPRKZSCP8CAXJGN8MKH-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
 - 2026-09-03T09:17:43Z 4D7DNF4X76XS9TZ8AHD16J8FDV-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
 - 2026-09-03T11:27:51Z X0MZG1N5X76FZ379TH4GRVTECV-m1b-fad3674e claim actor=m1b+main-1788333346-60696-6a3256 targets=token-spend-fence
-Integrity: sha256=5a8d36185942959370394d9417a8f72d925f73554e17346554f14de9471eba0f
+- 2026-09-03T11:28:16Z 2WCQ8T9SKZ3678PHT9JW7J7W7S-m1b-fad3674e slice-start actor=m1b+main-1788333346-60696-6a3256 targets=token-spend-fence
+Integrity: sha256=78880d3e3092e8aff112025499fe76690f2fc501f55b3b70ed5f0ddfb699c7b3
