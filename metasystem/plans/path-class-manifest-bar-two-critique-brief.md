@@ -1,5 +1,5 @@
 Working Mode: implement
-Orchestrator Identity: m1+main-1788333680-2840-7f79f4 (dispatch delegate under goal path-class-manifest)
+Orchestrator Identity: m2+main-1788441779-14484-82d6ed (dispatch delegate under goal path-class-manifest)
 Date: 2026-09-03
 
 # Goal
@@ -8,7 +8,7 @@ Stamp review of the second landing bar's promotion (the round evidence
 holds diff.patch and review.json with the reviewed tree). The brief is
 metasystem/plans/path-class-manifest-bar-two-brief.md; the design is
 section 6 of metasystem/plans/path-class-manifest-design.md; the ruling
-is R-65-m1 in metasystem/memory/rulings.md.
+is R-71-m2 in metasystem/memory/rulings.md.
 
 # Mandate
 

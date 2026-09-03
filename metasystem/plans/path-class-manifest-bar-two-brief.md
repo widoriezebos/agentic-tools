@@ -1,5 +1,5 @@
 Working Mode: build
-Orchestrator Identity: m1+main-1788333680-2840-7f79f4 (dispatch delegate under goal path-class-manifest)
+Orchestrator Identity: m2+main-1788441779-14484-82d6ed (dispatch delegate under goal path-class-manifest)
 Date: 2026-09-03
 
 # Goal
@@ -10,7 +10,7 @@ committed path-class manifest means exactly that a register-carriage or
 exact-revert landing changed a behavior path. The first bar (R-40-m0)
 and the manifest's own codes (R-64-m1) are enforced; this bar was
 observed until the manifest's second part landed. The authorization is
-the ruling row R-65-m1, the last row of metasystem/memory/rulings.md,
+the ruling row R-71-m2, the last row of metasystem/memory/rulings.md,
 landed by the orchestrator before this round.
 
 # The change
