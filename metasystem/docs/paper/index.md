@@ -7,7 +7,7 @@ This paper is not the result of me having some brain wave and then writing that 
 
 ## The paper in five parts
 
-One ordinary change, how long a user stays signed in, runs as an example through every chapter. Passages that narrate it are set apart as slanted, indented blocks, and so are the paper's other short vignettes. The design and its analysis stay in plain type, as do my own observations from practice.
+One ordinary change, how long a user stays signed in, runs as an example through every chapter. Passages that narrate it are set apart as slanted, indented blocks. The design and its analysis stay in plain type, as do my own observations from practice.
 
 **Part I: The shift (chapters 1-2).** Engineering attention has moved up a level before: assembly to compilers, servers to infrastructure as code, manual testing to continuous integration. Agentic engineering extends that move to engineering itself, but it begins by separating what delivery requires (intent, construction, verification, care and learning) from the ceremonies humans invented around those needs. Intent becomes the durable interface, while its ambiguity, conflict and capacity to be wrong become design problems in their own right.
 
