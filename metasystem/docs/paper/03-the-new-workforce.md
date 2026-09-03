@@ -50,7 +50,7 @@ Nothing in the final work is obviously absurd; the attempt just changed directio
 
 Even the identity of an active attempt can be unclear. A delayed message may come from the original worker, a retry or a replacement. Two apparent attempts may share the same hidden context. A resumed worker may look fresh while retaining the assumption an independent examiner was meant to challenge. Where independence or custody is at stake, the system needs evidence of which actor performed which action, what context it received and which exact candidate it judged.
 
-Every retry, copied context, tool call, test and competing candidate also consumes a measured resource. Computation is metered: some effort becomes cheap enough to repeat, but never free. And an extra candidate creates a second cost that the meter may not show directly: trustworthy comparison. A budget that counts production but not judging encourages a pile of plausible alternatives without a way to choose among them.
+Every retry, copied context, tool call, test and competing candidate also consumes a resource we have to pay for one way or another. Computation is metered: some effort becomes cheap enough to repeat, but never free. And an extra candidate creates a second cost that the meter may not show directly: trustworthy comparison. A budget that counts production but not judging encourages a pile of plausible alternatives without a way to choose among them.
 
 These failures are real: seen in practice or easy to reproduce. Not every attempt has them all. A delivery system should assume any of them can happen, make them visible when they do and keep the damage contained.
 
