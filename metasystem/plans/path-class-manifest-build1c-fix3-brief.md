@@ -8,7 +8,7 @@ Correction round on chain path-class-build1c (your reviewed tree
 f0620d30). The closing review found that your round-three change made
 the waiver rule and the path class verb disagree in the root layout
 (PCM-CC5-001): the waiver now reads the manifest before ownership,
-the shared resolver in metasystem/internal/pathclass/pathclass.go still
+the shared resolver of the pathclass package (new in this chain) still
 reads ownership first, and with the shipped manifest (docs/ is
 behavior) an adopted application's own docs/application.md is
 refused by one and answered outside by the other. The orchestrator
