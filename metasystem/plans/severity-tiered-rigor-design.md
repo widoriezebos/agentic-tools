@@ -266,3 +266,253 @@ builds as soon as part one lands.
   obligation matrix of this file.
 
 Budget of this goal: tier 3, big box, review rounds three per chain.
+
+## Revision 3 (2026-09-03): the review folded
+
+Chain str-design-cc1 returned fourteen material findings against
+revision 2. Each is answered by number; an answer that amends a point
+or build list of revision 2 supersedes it, and revision 2's prose
+stays as the record. Code facts were read at HEAD 327de0b2.
+
+### STR2-TIER-AUTHORITY-01: the tier is bound by approval, claim and root
+
+Amends point 1. `Tier` is a `uint8` field on `GoalFile` (file.go),
+rendered as its own `- Tier: <n>` line, distinct from `Ratified:
+tier=`. `ApprovalDigest(intent, tier, budget)` hashes `tier=<n>`
+between intent and tuple; `bindApproval` and `ValidateApprovalRecord` follow.
+- `EditFields` gains `Tier *uint8`; `Edit` refuses a tier change on an
+  approved, claimed or parked goal exactly as it refuses an intent
+  change today (verbs.go:1193): unapprove, edit, approve. Before
+  approval any actor may set it, so a downgrade after approval is
+  always a human act, because `Unapprove` is one.
+- The claim binds the revision, so the tier at that revision is the
+  claimed tier. The three root writers in internal/dispatch/build.go
+  write `goalTier` beside `goalRevision`, read through
+  `ResolveGoalRevision` (servinggoal.go) extended to return it. Every
+  refusal of point 3 reads the root's `goalTier`, never the live goal.
+
+### STR2-GOAL-SWEEP-02: a human confirm over normal transactions
+
+Amends point 1's last sentence. The sweep is `goal classify-sweep`,
+shaped like `ApproveSweep` (approval.go:349-440): `--preview` lists
+every open goal without a tier with the tier and reason proposed in a
+draft file the seat writes; `--confirm <listing-digest> --by <human>`
+applies one `edit` transaction per goal under the human actor, which
+verbs.go:1201 already admits on another pair's claim, and re-binds the
+approval digest of each approved goal under that act. A changed
+listing refuses with `SWEEP_LISTING_CHANGED`. The confirm also appends
+the root-record change `TierLaw: since=<opid>` (`appendRootChange`,
+approval.go:117); before that marker a tierless goal dispatches under
+tier-3 rules and box, after it `delegate` refuses as revision 2 says.
+`goal open` without `--tier` is refused from the landing. Fixtures:
+preview digest; confirm; changed listing; tierless before and after.
+
+### STR2-BUDGET-TUPLE-03: one five-member contract
+
+Amends point 2 and the raise sentence of point 3. `goalbudget.Budget`
+gains `ReviewRoundLimit int64`; `New` takes five values; `Validate`
+requires it non-negative (tier 1 is 0); `renderBudgetRecord`,
+`parseBudgetRecord`, `budgetIntentArgs` and `budgetFromIntentArgs`
+carry `reviewRoundLimit`. A stored four-field record parses with the
+member taken from the goal's tier box (the tier-3 box while it has no
+tier) and renders as five on its next write. The conf notation is
+`<elapsed>/<attempts>/<minutes>/<active>/<rounds>`, rounds 0, 2, 3.
+- The box is assigned mechanically in exactly two places: `Open` with
+  no tuple and `Approve` with no `--budget`; the digest binds tier and
+  all five values, so the approving human sees the numbers.
+- Every later change of any member is `SetBudgetApproved` with proof.
+  Above the box in minutes or rounds it also needs `--approved-ref`,
+  and the strict token in norm.go becomes `goal=<id> minutes=<m>
+  reviewRounds=<n> goalRevision=<r>`; `StrictApprovalTriple` becomes a
+  quadruple and `goalNormApproval` and `requireWithinGoalNorm` compare
+  both members against the box. An unchanged minute token cannot raise
+  rounds because the token names the rounds. goalsync_mutations.go:
+  `--review-round-limit` joins the all-or-nothing tuple flags;
+  `--budget small|big` becomes `--budget box`, the tier's.
+
+### STR2-CONFIG-TOMBSTONE-04: the retired key is refused, not ignored
+
+Amends point 2. internal/config/validate.go gains a `retiredKeys`
+table mapping `metasystem.budget.goal-norm-job-minutes` to a message
+naming the three tier keys; `Validate` adds a problem when it appears
+in the committed file, the `.local` file or the environment. The load
+boundary is the reader: the new `config.TierBox(confPath, tier)` in
+internal/config/budget.go calls `refuseRetiredKeys` over the same three
+sources before resolving, so `goalNormApproval` and `delegate` fail
+closed on a stale conf even when nobody ran validate. Fixtures: one
+leg per source in validate_test.go and budget_test.go.
+
+### STR2-ROUND-ACCOUNTING-05: a frozen boundary and a consumed counter
+
+Amends point 3. Critic roots gain `reviewRoundLimit`, copied by
+build.go from the goal's tuple at the claimed revision, and
+`criticRoundsConsumed`, starting at 0. `CritiqueRegisterAdvance`
+(finding_register.go:37) increments the counter in its completed and
+failed branches only; the cancelled branch consumes nothing.
+`readCritiqueCapState` (critique.go:133) replaces the three constants,
+`boundedCritiqueStart` and `recordFirstAllBoundedRound` with one rule:
+exhausted when `criticRoundsConsumed >= reviewRoundLimit` and an entry
+with status open or disputed exists; the severe-or-unproven scan runs
+over those entries only. A raised budget reaches a chain only through
+`job critique-budget-rebind --root-job`, which copies the approved
+`ReviewRoundLimit` onto the root with the goal revision and opid.
+
+### STR2-ARTIFACT-MEMBERSHIP-07: membership, not existence
+
+Amends point 4. `artifact` has three canonical forms, pattern-bound in
+returnschema.go and parsed by `ParseArtifactRef` in internal/critique/
+model.go: `<path>`, `NEW <path>`, `<old>=><new>`. Membership is decided
+at fold in finding_register.go against the root's subject set: for
+code chains the changed-path set of the reviewed implementer round's
+`diff.patch` (both rename sides), refusing the fold with "run
+conformance --stage review first" when absent; for design chains
+`declaredOutputs`, written on the root from a new required `--outputs
+<file>` on design-critic dispatch, filled from the design's build list.
+`<path>` must be in the set; `NEW <path>` must be in `declaredOutputs`
+and absent from the reviewed tree; a rename needs either side in the
+set. Anything else demotes (08). Fixtures: in-set accepted; unrelated
+path and undeclared NEW demoted; rename by either side accepted;
+design dispatch without outputs refused.
+
+### STR2-DEMOTION-TRANSITION-08: demotion is not withdrawal
+
+Amends point 4. `foldCritiqueFindings` (finding_register.go:342) gains
+a `demoted` outcome ahead of the `!material` branch: a material finding
+failing 07 adds no entry, touches no existing entry, and is appended
+with its reason to a per-round `demotions` list on the root. Only an
+explicit `material:false` resolves an entry (fixture: re-emitted open
+finding with an empty artifact stays open).
+
+### STR2-CLOSE-STATE-MACHINE-09: the atomic transition table
+
+Amends points 5 and 7. Status gains `deferred` and `accepted-risk`;
+every non-open entry carries `resolution`: `withdrawn`, `out-of-scope`,
+`deferred` or `accepted-risk`. `CritiqueRegisterClose` in
+finding_register.go, called from close.go, evaluates once under the
+register lock and takes one branch with one write:
+
+| unresolved set U (open or disputed) | condition | outcome |
+| --- | --- | --- |
+| any entry severe or unproven | always | refuse; no write; print each with artifact |
+| non-empty, all bounded | consumed < limit | refuse: budget not exhausted, dispatch the next round |
+| non-empty, all bounded | consumed >= limit | all of U become `deferred` in one write, after 10's ledger step |
+| empty | any | ordinary close; `CloseCheck` proceeds |
+
+`CloseCheck` counts open and disputed as unresolved, deferred and
+accepted-risk as resolved. critiqueclosed.go writes `out-of-scope` as
+the resolution and refuses it for a severe or unproven entry, as do
+CloseCheck and conformance however it got there.
+
+### STR2-CLOSE-PERSISTENCE-10: the review-obligation model and commit order
+
+Amends point 5. The governed `Obligation` field is not used. `GoalFile`
+gains `ReviewObligations []ReviewObligation`, one `- ReviewObligation:
+finding=<id> chain=<root> artifact=<ref> test=<text>
+state=open|discharged` line each, parsed and rendered in file.go and
+untouched by `clearClaimBinding`. verbs.go: `DeferFindings` (called by
+the close verb as the pair) appends them; `DischargeReviewObligation
+--finding --by` needs the human or the owning pair plus a test
+citation; `Done` refuses while any is open and prints them.
+`AcceptedRiskDecision` in verbs.go records `AcceptedRisk: finding=<id>
+chain=<root> by=<human> opid=<opid>` under `humanauthority` proof as
+`SetBudgetApproved` does, and `counselor.AppendAcceptedRisk` in new
+internal/counselor/register.go emits one strict-schema line
+(sources.go:48-77): id `ar-<root>-<findingId>`, kind `accepted-risk`,
+class = rigor class, the finding's facts as specimen facts citing the
+root record, a review link to the goal. Commit order, each step keyed
+and skipped on rerun: (1) goal ledger transaction carrying root and
+finding ids; (2) register append, skipped if the id exists; (3) root
+write marking the entries with the goal opid. A crash leaves the chain
+unclosed and the verb re-runnable; conformance refuses a root whose
+deferred or accepted entries lack a matching goal line.
+
+### STR2-CRITIC-UNION-11: the union lands in part two
+
+Amends point 7's last sentence: the same-tree union moves into part
+two; only the exact-tree certificate stays later. `mergeCritique`
+(conformance.go:919) collects every code-critic root whose reviewed
+tree equals the final tree and requires all to pass; one failing root
+fails the merge, and the union of registers must hold no open or
+disputed entry. The close verb is `job critique-register-close
+--root-job <root>`; `--goal` is dropped. Fixtures: clean plus material
+same-tree chains refuse, and differing class refuses.
+
+### STR2-TIER1-PROTECTED-PATHS-12: a floor list and a hazard rule
+
+Amends points 3 and 6. scripts/agents/path-classes.txt gains a line
+kind `floor:<path> tier-1-refused`, read by `pathclass.Manifest` into a
+`Floors` set; the four classes are unchanged. Rows: internal/goal/,
+goalbudget/, humanauthority/, dispatch/, landing/, validate/, critique/,
+returnschema/, config/; scripts/agents/dispatch.sh, commit.sh, land.sh,
+schemas/, path-classes.txt, landing-classes.json; metasystem.conf.
+`observeDirectFix` refuses `tier-1` when any changed path is under a
+floor row, code `tier1-floor-refused`. Tier 1 does not force
+MECHANICAL: `EvaluateGoalRevisionAdmission` (admission.go:124) refuses
+a DESIGN-BEARING or DESTRUCTIVE-REACH job under a tier-1 root with
+"the hazard needs review the tier does not have; goal edit --tier 2",
+since both need independent critique in hazard.go. The hazard is
+preserved and the tier moves, never the reverse.
+
+### STR2-TIER1-EVIDENCE-13: a receipt bound to the tree, a diff metric
+
+Amends point 6. `metasystem landing test-receipt --root --tree <sha>
+--command "<cmd>"` (landing_verbs.go) runs the command and writes
+`artifacts/agents/landing/receipts/<tree>.json` with tree, command,
+exit status and time. `ObserveParams` gains `TestReceipt`;
+`observeDirectFix` for `tier-1` requires the receipt's tree to equal
+the candidate tree and exit status zero. land.sh gains `--tests
+"<cmd>"`, commit.sh passes `--test-receipt` to `landing observe`, and
+the message stamp is dropped. Changed lines are added plus deleted from
+`git diff --numstat base..candidate`; a `-` count (binary), an R or C
+shape from `git diff-tree -M -C --name-status`, or a mode change with
+zero lines refuses with `tier1-diff-shape-refused`; each is a fixture,
+with a foreign-tree receipt and forty-one lines.
+
+### STR2-RULING-CONFLICT-06 and STR2-RESERVATION-RECOMMENDATION-14: Wido's
+
+**06, the fourth round.** (A) "three": R-42-m0 is the ceiling;
+`Budget.Validate` refuses `ReviewRoundLimit > 3`, the raise of point 3
+is withdrawn, and at exhaustion the close of 09 is the only exit.
+(B) "raise": no ceiling, the token raise of 03 applies, and R-42-m0 is
+amended to "three by default". Recommendation: A; R-42-m0 is the later
+word and says it composes with R-60-m1 as a material-only extension,
+never a raise, so A keeps both rows true.
+
+**14, the reserved minutes.** (A) "ceiling": a new key
+`dispatch.cap-max`, default 120, enforced by `ResolveCap` (cap.go:36)
+against every source including the explicit argument; box minutes are
+attempts times 120 (360, 720, 1200). (B) "computed": `config.TierBox`
+sets the box minimum to attempts times the largest cap admitted for the
+tier's roles and pairs by walking `cap.min.*` through `config.Keys`; an
+explicit cap above it needs an approved budget. Recommendation: A; one
+enforced ceiling is one rule, and B hides the number in the roster.
+
+### Build list, revision 3 (replaces revision 2's parts one to three)
+
+- Part one, the tier at intake: `Tier` field, digest and edit rules
+  (01); classify-sweep and marker (02); five-member tuple, token
+  quadruple, box assignment, `--review-round-limit` (03); tombstone
+  (04); `goalTier` on roots, refusals by tier and the hazard-under-
+  tier-1 refusal (12). Files: internal/goal/file.go, approval.go,
+  verbs.go, norm.go, budget.go, internal/goalbudget/budget.go,
+  internal/config/budget.go and validate.go, internal/dispatch/build.go,
+  servinggoal.go, admission.go, cmd/metasystem/goalsync_mutations.go,
+  scripts/agents/dispatch.sh, goal-cli-fixtures.sh.
+- Part two, the material stop and the close: artifact forms and
+  membership (07), demotion (08), counter, frozen limit and rebind verb
+  (05), transition table and resolutions (09), review obligations,
+  accepted-risk writer, commit order (10), union and `--root-job` close
+  (11). Files: internal/returnschema/returnschema.go, internal/critique/
+  model.go, internal/dispatch/critique.go, finding_register.go, close.go,
+  build.go, internal/goal/file.go and verbs.go, internal/counselor/
+  register.go, internal/validate/conformance.go and critiqueclosed.go,
+  cmd/metasystem/dispatch_verbs.go, scripts/agents/dispatch.sh
+  (`--outputs`), adapters/runtime-common.sh, role-packets.json,
+  return-schema-fixtures.sh, dispatch-fixtures.sh, conformance-fixtures.sh.
+- Part three, the tier-1 landing class: class row, floor rows and
+  refusal (12), receipt verb, `TestReceipt`, diff metric (13). Files:
+  scripts/agents/landing-classes.json, path-classes.txt, land.sh,
+  commit.sh, land-fixtures.sh, internal/pathclass, internal/landing/
+  observe.go and observe_test.go, cmd/metasystem/landing_verbs.go.
+- Part four is unchanged. Decisions 06 and 14 gate only the `Validate`
+  bound and the box minutes of part one; the rest builds either way.
