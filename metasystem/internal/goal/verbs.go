@@ -269,33 +269,6 @@ func claimIntentArgs(r VerbRequest, args map[string]string) map[string]string {
 	return intentArgs(r, args)
 }
 
-func suppliedBudget(values []Budget) (*Budget, error) {
-	if len(values) > 1 {
-		return nil, fmt.Errorf("a claim accepts one complete budget tuple")
-	}
-	if len(values) == 0 {
-		return nil, nil
-	}
-	if err := values[0].Validate(); err != nil {
-		return nil, fmt.Errorf("invalid budget: %v", err)
-	}
-	budget := values[0]
-	return &budget, nil
-}
-
-func budgetForClaim(f *GoalFile, supplied *Budget) (Budget, error) {
-	if supplied != nil {
-		return *supplied, nil
-	}
-	if f.Budget == nil {
-		return Budget{}, fmt.Errorf("goal %s has no structured budget; supply the complete tuple on goal claim or run goal set-budget first", f.Id)
-	}
-	if err := f.Budget.Validate(); err != nil {
-		return Budget{}, fmt.Errorf("goal %s has an invalid structured budget: %v", f.Id, err)
-	}
-	return *f.Budget, nil
-}
-
 // ownPair reports whether a claim names the actor's machine AND
 // lineage — the pair is the ownership key, never the
 // machine alone: a second lineage on the machine is a stranger.
@@ -524,18 +497,17 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, labels []st
 	}, nil
 }
 
-// Claim takes ownership of a queued goal for the actor's pair.
+// Claim takes ownership of a human-approved goal for the actor's pair.
 // Claim is AGENT-ONLY: humans direct agents; no human
 // lineage exists, so no human claim row.
 func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
-	budget, err := suppliedBudget(budgets)
-	if err != nil {
-		return PublishResult{}, err
+	if len(budgets) != 0 || r.ApprovedRef != "" {
+		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
 	}
-	return Publish(r.Endpoint, claimRequest(r, id, budget))
+	return Publish(r.Endpoint, claimRequest(r, id, nil))
 }
 
 // claimRequest builds the verb's complete transaction request — the
@@ -572,8 +544,8 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
-			if f.State != StateQueued {
-				return nil, fmt.Errorf("goal %s is %s; only a queued goal claims (park and done have their own verbs)", id, f.State)
+			if f.State != StateApproved {
+				return nil, approvalRequired(f, "claim")
 			}
 			if f.Pinned != "" && f.Pinned != r.Actor.Machine {
 				return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; only the pinned machine may claim it (a human re-pins with set-pin)", id, f.Pinned, r.Actor.Machine)
@@ -583,17 +555,15 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 					return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
 				}
 			}
-			budget, err := budgetForClaim(f, supplied)
-			if err != nil {
-				return nil, err
+			if supplied != nil || r.ApprovedRef != "" {
+				return nil, fmt.Errorf("the budget was bound by the human's approval; claim carries no tuple")
 			}
-			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
+			budget, err := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "claim")
 			if err != nil {
 				return nil, err
 			}
 			f.State = StateClaimed
 			f.Budget = &budget
-			f.NormApproval = approval
 			touch(f, r, "claim", []string{id})
 			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
 				return nil, err
@@ -604,17 +574,29 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 	}
 }
 
-// SetBudget replaces the whole tuple. On claimed work it also starts the
+// SetBudget without human proof is retired. SetBudgetApproved replaces the
+// whole tuple under the same authority boundary as approval. On claimed work it also starts the
 // claim record for the new revision, so elapsed time and job reservations
 // have one unambiguous revision boundary.
 func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
+	return PublishResult{}, fmt.Errorf("the budget was bound by the human's approval; goal set-budget requires the human authority proof")
+}
+
+func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauthority.Proof) (PublishResult, error) {
 	if err := budget.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid budget: %v", err)
 	}
-	return Publish(r.Endpoint, setBudgetRequest(r, id, budget))
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("goal set-budget is the human's approval act and requires --by")
+	}
+	authority, reviewBy, temporary, err := approvalProofClass(r.Endpoint.Root, proof)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, setBudgetRequest(r, id, budget, proof, authority, reviewBy, temporary))
 }
 
-func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
+func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanauthority.Proof, authority, reviewBy string, temporary bool) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "set-budget", Targets: []string{id}, Args: claimIntentArgs(r, budgetIntentArgs(budget))},
@@ -631,21 +613,32 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
-			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is claimed by %s+%s; changing another's budget is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+			if proof == nil || r.Actor.Human == "" || authority == "" {
+				return nil, approvalRequired(f, "set-budget recovery")
+			}
+			if err := refuseRelayedAfterFleetEnrollment(t, temporary); err != nil {
+				return nil, err
+			}
+			if f.State != StateClaimed || f.Claimed == nil {
+				return nil, fmt.Errorf("budgets on unclaimed work are the human's approval act, set through goal approve --id %s with --budget", id)
 			}
 			if f.StopFence != nil {
-				return nil, fmt.Errorf("goal %s revision %d is breach-stopped by %s; only goal resume with a fresh complete budget may reopen admission", id, f.StopFence.Revision, f.StopFence.StopID)
+				return nil, fmt.Errorf("goal %s revision %d is breach-stopped by %s; only goal resume with its standing approved budget may reopen admission", id, f.StopFence.Revision, f.StopFence.StopID)
 			}
-			if f.State == StateParked && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is parked; changing a parked goal's budget is a human act", id)
+			if temporary {
+				if err := repeatedRelayedActError(t.Root, f, "set-budget", proof.Departure); err != nil {
+					return nil, err
+				}
+			}
+			if f.Approved != nil && f.Budget != nil && *f.Budget == budget && r.ApprovedRef == "" && f.Claimed.Revision > 0 {
+				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
 			}
 			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
 			if err != nil {
 				return nil, err
 			}
-			bound := f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision > 0
-			if f.Budget != nil && *f.Budget == budget && sameGoalNormApproval(f.NormApproval, approval) && (f.State != StateClaimed || bound) {
+			bound := f.Claimed.Revision > 0
+			if f.Approved != nil && f.Budget != nil && *f.Budget == budget && sameGoalNormApproval(f.NormApproval, approval) && bound {
 				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
 			}
 			displaced := ""
@@ -655,6 +648,8 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 			f.Budget = &budget
 			f.NormApproval = approval
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
+			recordApprovalRelay(f, proof, temporary)
+			bindApproval(f, r, authority, reviewBy)
 			if f.State == StateClaimed && f.Claimed != nil {
 				claimEpoch := r.ClaimEpoch
 				if claimEpoch < 1 && r.Actor.Human != "" && f.StopCapability != nil {
@@ -664,7 +659,8 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget) PublishRequest {
 					return nil, err
 				}
 			}
-			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+			changes := armApprovalGate(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}})
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
@@ -699,6 +695,9 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 			if err != nil {
 				return nil, err
 			}
+			if err := refuseRelayedAfterFleetEnrollment(t, temporaryAuthority); err != nil {
+				return nil, err
+			}
 			f := t.Live[id]
 			if f == nil || f.State != StateClaimed || f.Claimed == nil || f.Budget == nil {
 				return nil, fmt.Errorf("goal %s must be claimed with a complete budget before it can own an obligation", id)
@@ -712,7 +711,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 				}
 			}
 			if f.StopFence != nil {
-				return nil, fmt.Errorf("goal %s is breach-stopped; resume with a fresh tuple before creating another obligation", id)
+				return nil, fmt.Errorf("goal %s is breach-stopped; resume under its standing approved tuple before creating another obligation", id)
 			}
 			o := proposed
 			o.Revision = f.Revision + 1
@@ -749,7 +748,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 	})
 }
 
-// Release returns the actor's claimed goal to the queue.
+// Release returns the actor's claimed goal to its approved or queued resting state.
 func Release(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseRequest(r, id))
 }
@@ -784,7 +783,7 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 			if !ownPair(f.Claimed, r.Actor) {
 				displaced = pairMarker(f.Claimed)
 			}
-			f.State = StateQueued
+			f.State = restingState(f)
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
@@ -963,8 +962,8 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			if f.State == StateParked {
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
-			if f.State != StateQueued && f.State != StateClaimed {
-				return nil, fmt.Errorf("goal %s is %s; only queued or claimed goals park", id, f.State)
+			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
+				return nil, fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, f.State)
 			}
 			if f.Origin == OriginHuman && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)
@@ -998,7 +997,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 	}
 }
 
-// Unpark returns a parked goal to the queue. The park's records
+// Unpark returns a parked goal to its approved or queued resting state. The park's records
 // stay in the history; Goal-free clears when it was declared.
 func Unpark(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, unparkRequest(r, id))
@@ -1032,7 +1031,7 @@ func unparkRequest(r VerbRequest, id string) PublishRequest {
 			if f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:") && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s was parked by %s; lifting a human's pause is a human act", id, f.Parked.By)
 			}
-			f.State = StateQueued
+			f.State = restingState(f)
 			f.Parked = nil
 			touch(f, r, "unpark", []string{id})
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
@@ -1104,6 +1103,9 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 			// blocker, pin, budget, and norm guards.
 			f.State = StateQueued
 			f.Conclude = ""
+			f.Approved = nil
+			f.Budget = nil
+			f.NormApproval = nil
 			if f.Arc != "" {
 				standing := classifyArcJoin(t, f.Arc, id, r.Actor)
 				switch {
@@ -1117,29 +1119,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 					f.State = StateParked
 					f.Parked = &ParkRecord{By: parked.By, At: parked.At, Because: parked.Because}
 				case standing.ownClaimed != nil:
-					for _, dep := range f.Blocked {
-						if depState(t, dep) != StateDone {
-							return nil, fmt.Errorf("goal %s rejoins a claimed arc but is blocked by %s, which is not done", id, dep)
-						}
-					}
-					if err := pinRefusal(f, r.Actor.Machine, "rejoining the claimed arc"); err != nil {
-						return nil, err
-					}
-					if f.Budget == nil {
-						return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it rejoins a claimed arc", f.Id)
-					}
-					if err := requireWithinGoalNorm(r.Endpoint.Root, *f.Budget, f.Id, "rejoins a claimed arc"); err != nil {
-						return nil, err
-					}
-					f.NormApproval = nil
-					f.State = StateClaimed
-					claimEpoch := r.ClaimEpoch
-					if claimEpoch < 1 && standing.ownClaimed.StopCapability != nil {
-						claimEpoch = standing.ownClaimed.StopCapability.ClaimEpoch
-					}
-					if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision+1, claimEpoch); err != nil {
-						return nil, err
-					}
+					return nil, fmt.Errorf("goal %s reopens queued; joining a claimed arc no longer manufactures approval or a claim", id)
 				}
 			}
 			touch(f, r, "reopen", []string{id})
@@ -1209,6 +1189,9 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 			}
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
+			}
+			if f.Approved != nil && fields.Intent != nil {
+				return nil, fmt.Errorf("the human approved this intent; unapprove the goal, edit it, then approve the new intent")
 			}
 			// The table's edit rows: queued is open to all, claimed is
 			// the claimant's or a human's (the foreign-human override
@@ -1280,7 +1263,7 @@ func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
 			}
 			for _, id := range sortedGoalIds(t.Live) {
 				switch t.Live[id].State {
-				case StateQueued, StateClaimed:
+				case StateQueued, StateApproved, StateClaimed:
 					return nil, fmt.Errorf("goal %s is %s; Goal-free declares over parked and done only", id, t.Live[id].State)
 				}
 			}
@@ -1345,7 +1328,6 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			// nor lend their fence, pin, or budget to this preflight.
 			oldPair := f.Claimed
 			members := arcMembers(t, id)
-			approvals := map[string]*GoalNormApprovalClaim{}
 			for _, member := range members {
 				if member.State != StateClaimed || !ownPair(member.Claimed, Actor{Machine: oldPair.Machine, Lineage: oldPair.Lineage}) {
 					continue
@@ -1356,14 +1338,12 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
 					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; even a steal honors the pin — clear the pin, steal, then re-pin", member.Id, member.Pinned, r.Actor.Machine)
 				}
-				if member.Budget == nil {
-					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before stealing its claim", member.Id)
+				if r.ApprovedRef != "" {
+					return nil, fmt.Errorf("steal uses the standing approval and does not take --approved-ref")
 				}
-				approval, err := goalNormApproval(r.Endpoint.Root, t, member, *member.Budget, r.ApprovedRef)
-				if err != nil {
+				if _, err := requireApprovedForClaim(r.Endpoint.Root, t, member, r.Now, "steal"); err != nil {
 					return nil, err
 				}
-				approvals[member.Id] = approval
 			}
 			targets := make([]string, 0, len(members))
 			for _, m := range members {
@@ -1375,7 +1355,6 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 					continue // independently owned or idle members stay untouched
 				}
 				displaced := pairMarker(m.Claimed)
-				m.NormApproval = approvals[m.Id]
 				touchDisplaced(m, r, "steal", targets, displaced)
 				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
 					return nil, err
@@ -1388,20 +1367,10 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 	}
 }
 
-// OpenClaim opens a goal already claimed by the actor — one commit,
-// the claim guards holding trivially on a goal with no blockers.
+// OpenClaim is the retired open-and-claim surface. Approval must be a distinct
+// human act before an execution claim, so this helper always refuses.
 func OpenClaim(r VerbRequest, id, intent, origin, nextStep string, budget Budget, labels ...string) (PublishResult, error) {
-	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("open --claim is agent-only: humans direct agents; bare open leaves the goal queued")
-	}
-	if err := budget.Validate(); err != nil {
-		return PublishResult{}, fmt.Errorf("invalid budget: %v", err)
-	}
-	req, err := openClaimRequest(r, id, intent, origin, nextStep, budget, labels)
-	if err != nil {
-		return PublishResult{}, err
-	}
-	return Publish(r.Endpoint, req)
+	return PublishResult{}, fmt.Errorf("APPROVAL_REQUIRED: open --claim is retired; open the goal queued, have the human approve its exact intent and budget, then claim it")
 }
 
 // openClaimRequest builds the verb's complete transaction request — the
@@ -1419,45 +1388,7 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 			budgetIntentArgs(budget)))},
 		Message: "goal open --claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
-			if err != nil {
-				return nil, err
-			}
-			if retired, ok := rootDecomposed(t.Root, id); ok {
-				return nil, fmt.Errorf("goal id %s is retired: it names a decomposed parent (split opid %s); pick a different id", id, retired.Opid)
-			}
-			if f, exists := t.Live[id]; exists {
-				if opidLanded(f, r) {
-					return nil, AlreadyApplied{}
-				}
-				return nil, LostToCompetitor{Winner: lastOpid(f)}
-			}
-			if _, archived := t.Done[id]; archived {
-				return nil, fmt.Errorf("goal %s is in the archive; reopen is the explicit exception", id)
-			}
-			if err := requireWithinGoalNorm(r.Endpoint.Root, budget, id, "cannot open --claim"); err != nil {
-				return nil, fmt.Errorf("%v; open it queued, run goal set-budget --approved-ref against revision 1, then goal claim", err)
-			}
-			f := &GoalFile{
-				Id: id, State: StateClaimed, Intent: intent, Origin: origin,
-				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0,
-				Labels: canonical, Budget: &budget,
-			}
-			touch(f, r, "open-claim", []string{id})
-			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
-				return nil, err
-			}
-			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
-			if t.Root != nil && t.Root.Free != nil {
-				t.Root.Free = nil
-				t.Root.Revision++
-				t.Root.History = append(t.Root.History, HistoryLine{
-					At: r.stamp(), Opid: r.opid(), Verb: "open-claim",
-					Actor: r.Actor.historyActor(), Targets: []string{id}, Keep: -1,
-				})
-				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
-			}
-			return ackDisplacements(t, r, changes), nil
+			return nil, fmt.Errorf("APPROVAL_REQUIRED: recovery cannot replay retired open --claim for goal %s; close this entry by hand", id)
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}, nil
@@ -1637,18 +1568,17 @@ func classifyArcJoin(t *TreeGoals, arc, excludeID string, actor Actor) arcJoinSt
 	return state
 }
 
-// ClaimArc is an opt-in cascade over one planning arc. It claims queued
+// ClaimArc is an opt-in cascade over one planning arc. It claims approved
 // members, skips already-owned and parked members, and loses atomically to
 // any foreign claim it encounters.
 func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
-	budget, err := suppliedBudget(budgets)
-	if err != nil {
-		return PublishResult{}, err
+	if len(budgets) != 0 || r.ApprovedRef != "" {
+		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
 	}
-	return Publish(r.Endpoint, claimArcRequest(r, id, budget))
+	return Publish(r.Endpoint, claimArcRequest(r, id, nil))
 }
 
 // claimArcRequest builds the verb's complete transaction request — the
@@ -1693,8 +1623,11 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				if m.State == StateParked {
 					continue // parked members are not movable; claim the queued remainder
 				}
-				if m.State != StateQueued {
-					return nil, fmt.Errorf("arc member %s is %s; the cascade claims queued members only", m.Id, m.State)
+				if m.State == StateQueued {
+					return nil, approvalRequired(m, "arc claim")
+				}
+				if m.State != StateApproved {
+					return nil, fmt.Errorf("arc member %s is %s; the cascade claims approved members only", m.Id, m.State)
 				}
 				for _, dep := range m.Blocked {
 					if depState(t, dep) != StateDone {
@@ -1704,17 +1637,15 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 				if err := pinRefusal(m, r.Actor.Machine, "the arc claim"); err != nil {
 					return nil, err
 				}
-				budget, err := budgetForClaim(m, supplied)
-				if err != nil {
-					return nil, err
+				if supplied != nil || r.ApprovedRef != "" {
+					return nil, fmt.Errorf("the budget was bound by the human's approval; claim carries no tuple")
 				}
-				approval, err := goalNormApproval(r.Endpoint.Root, t, m, budget, r.ApprovedRef)
+				budget, err := requireApprovedForClaim(r.Endpoint.Root, t, m, r.Now, "arc claim")
 				if err != nil {
 					return nil, err
 				}
 				m.State = StateClaimed
 				m.Budget = &budget
-				m.NormApproval = approval
 				touch(m, r, "claim", targets)
 				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
 					return nil, err
@@ -1772,7 +1703,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 				if !ownPair(m.Claimed, r.Actor) {
 					displaced = pairMarker(m.Claimed)
 				}
-				m.State = StateQueued
+				m.State = restingState(m)
 				if err := clearClaimBinding(m); err != nil {
 					return nil, err
 				}
@@ -1836,8 +1767,8 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 				if r.Actor.Human == "" && m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
 					continue // another pair's claim is not movable by this agent
 				}
-				if m.State != StateQueued && m.State != StateClaimed {
-					return nil, fmt.Errorf("arc member %s is %s; only queued or claimed goals park", m.Id, m.State)
+				if m.State != StateQueued && m.State != StateApproved && m.State != StateClaimed {
+					return nil, fmt.Errorf("arc member %s is %s; only queued, approved, or claimed goals park", m.Id, m.State)
 				}
 				memberDisplaced := ""
 				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
@@ -1906,7 +1837,7 @@ func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 				if m.Parked != nil && strings.HasPrefix(m.Parked.By, "human:") && r.Actor.Human == "" {
 					continue // a human pause is not movable by this agent
 				}
-				m.State = StateQueued
+				m.State = restingState(m)
 				m.Parked = nil
 				touch(m, r, "unpark", targets)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
@@ -1971,7 +1902,7 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 					displaced = pairMarker(f.Claimed)
 				}
 				// The departing member releases: one claim, one arc.
-				f.State = StateQueued
+				f.State = restingState(f)
 				if err := clearClaimBinding(f); err != nil {
 					return nil, err
 				}
@@ -2114,6 +2045,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 			// the detach result feeds the join.
 			switch f.State {
 			case StateQueued:
+			case StateApproved:
 			case StateClaimed:
 				sourceWasClaimed = true
 				if f.Arc == "" {
@@ -2126,7 +2058,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					displaced = pairMarker(f.Claimed)
 				}
 				// Released as it detaches — the claim never splits.
-				f.State = StateQueued
+				f.State = restingState(f)
 				if err := clearClaimBinding(f); err != nil {
 					return nil, err
 				}
@@ -2144,7 +2076,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 			switch {
 			case standing.count == 0:
 				if f.State == StateParked {
-					f.State = StateQueued
+					f.State = restingState(f)
 					f.Parked = nil
 				}
 			case standing.allParked:
@@ -2163,6 +2095,18 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					// release first, then join.
 					return nil, fmt.Errorf("goal %s moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first", id)
 				}
+				if f.State == StateQueued {
+					// Joining a claimed arc does not manufacture approval.
+					break
+				}
+				if f.State == StateParked {
+					f.State = restingState(f)
+					f.Parked = nil
+					break
+				}
+				if f.State != StateApproved {
+					return nil, approvalRequired(f, "set-arc claim")
+				}
 				for _, dep := range f.Blocked {
 					if depState(t, dep) != StateDone {
 						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done; it cannot join the claimed arc unclaimed-late", id, dep)
@@ -2171,13 +2115,9 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 				if err := pinRefusal(f, r.Actor.Machine, "joining the claimed arc"); err != nil {
 					return nil, err
 				}
-				if f.Budget == nil {
-					return nil, fmt.Errorf("goal %s has no structured budget; run goal set-budget before it joins a claimed arc", f.Id)
-				}
-				if err := requireWithinGoalNorm(r.Endpoint.Root, *f.Budget, f.Id, "joins a claimed arc"); err != nil {
+				if _, err := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "set-arc claim"); err != nil {
 					return nil, err
 				}
-				f.NormApproval = nil
 				f.State = StateClaimed
 				f.Parked = nil
 				claimEpoch := r.ClaimEpoch
@@ -2188,7 +2128,9 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					return nil, err
 				}
 			default:
-				f.State = StateQueued
+				if f.State == StateParked {
+					f.State = restingState(f)
+				}
 				f.Parked = nil
 			}
 			f.Arc = arc

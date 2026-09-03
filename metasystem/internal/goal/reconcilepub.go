@@ -254,7 +254,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			if expected := row.baseStateFor(id); expected != "" && f.State != expected {
 				return nil, conflict("state", "%s is %s on the fetched tip, the hand edit was made against %s", id, f.State, expected)
 			}
-			if f.State != StateQueued && f.State != StateClaimed {
+			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
 				return nil, conflict("state", "%s is %s on the fetched tip", id, f.State)
 			}
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
@@ -289,7 +289,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if f.State != StateParked {
 			return nil, conflict("state", "is %s on the fetched tip, not parked", f.State)
 		}
-		f.State = StateQueued
+		f.State = restingState(f)
 		f.Parked = nil
 		session.moved[row.Id] = true
 		touch(f, r, "unpark", []string{row.Id})
@@ -369,6 +369,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if row.Base.Intent != nil && f.Intent != *row.Base.Intent {
 			return nil, conflict("intent", "the fetched tip carries %q, the hand edit was made against %q", f.Intent, *row.Base.Intent)
 		}
+		if f.Approved != nil && row.Fields.Intent != nil {
+			return nil, conflict("intent", "the human approved this intent; unapprove, edit, then approve")
+		}
 		if row.Base.NextStep != nil && f.NextStep != *row.Base.NextStep {
 			return nil, conflict("next", "the fetched tip carries %q, the hand edit was made against %q", f.NextStep, *row.Base.NextStep)
 		}
@@ -424,7 +427,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				// The released foreign pair hears it.
 				detachDisplaced = pairMarker(f.Claimed)
 			}
-			f.State = StateQueued
+			f.State = restingState(f)
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
@@ -455,6 +458,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		handSourceWasClaimed := false
 		switch f.State {
 		case StateQueued:
+		case StateApproved:
 		case StateClaimed:
 			handSourceWasClaimed = true
 			if row.BaseArc == "" {
@@ -464,7 +468,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				setArcDisplaced = pairMarker(f.Claimed)
 			}
 			// Released as it detaches — the claim never splits.
-			f.State = StateQueued
+			f.State = restingState(f)
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
@@ -478,7 +482,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		switch {
 		case standing.count == 0:
 			if f.State == StateParked {
-				f.State = StateQueued
+				f.State = restingState(f)
 				f.Parked = nil
 			}
 		case standing.allParked:
@@ -491,6 +495,17 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				// as the verb refuses it: release first.
 				return nil, conflict("state", "the member moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first")
 			}
+			if f.State == StateQueued {
+				break
+			}
+			if f.State == StateParked {
+				f.State = restingState(f)
+				f.Parked = nil
+				break
+			}
+			if f.State != StateApproved {
+				return nil, conflict("approval", "APPROVAL_REQUIRED: only an approved member may join a claimed arc")
+			}
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
 					return nil, conflict("blockedBy", "blocker %s is not done; it cannot join the claimed arc unclaimed-late", dep)
@@ -499,13 +514,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			if err := pinRefusal(f, r.Actor.Machine, "the reconciled arc join"); err != nil {
 				return nil, err
 			}
-			if f.Budget == nil {
-				return nil, conflict("budget", "goal %s has no structured budget; run goal set-budget before joining a claimed arc", f.Id)
-			}
-			if err := requireWithinGoalNorm(r.Endpoint.Root, *f.Budget, f.Id, "joins a claimed arc during reconcile"); err != nil {
+			if _, err := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "reconcile set-arc claim"); err != nil {
 				return nil, conflict("budget", "%v", err)
 			}
-			f.NormApproval = nil
 			f.State = StateClaimed
 			f.Parked = nil
 			claimEpoch := r.ClaimEpoch
@@ -516,7 +527,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				return nil, conflict("claim", "%v", err)
 			}
 		default:
-			f.State = StateQueued
+			if f.State == StateParked {
+				f.State = restingState(f)
+			}
 			f.Parked = nil
 		}
 		f.Arc = row.Arc

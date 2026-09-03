@@ -294,7 +294,7 @@ func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 
 func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
 	a, tip := reconcileBed(t)
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000RP00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RP00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("foreign claim: %+v %v", res, err)
 	}
 	adv, err := FetchAdvance(endpointFor(a))
@@ -333,7 +333,7 @@ func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
 		f.Parked = &ParkRecord{By: "human:wido", At: "2026-08-21T09:00:00Z", Because: "pausing it"}
 	})
 	// ...and a claim lands meanwhile.
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000RQ00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RQ00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("competing claim: %+v %v", res, err)
 	}
 	req := verbReq(a, "01J5X00000000000000000RQ10", "mac-a")
@@ -366,14 +366,10 @@ func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 	if res, err := SetArc(verbReq(a, "01J5X00000000000000000RJ10", "mac-b"), "arc-seed", "held-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-arc seed: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000RJ20", "mac-b"), "arc-seed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RJ20", "mac-b"), "arc-seed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim seed: %+v %v", res, err)
 	}
-	budgetReq := verbReq(a, "01J5X00000000000000000RJ25", "mac-a")
-	budgetReq.Actor.Human = "wido"
-	if res, err := SetBudget(budgetReq, "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("budget queued join fixture: %+v %v", res, err)
-	}
+	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000RJ25", "mac-a"), "editable", testBudget())
 	adv, err := FetchAdvance(endpointFor(a))
 	if err != nil {
 		t.Fatal(err)
@@ -392,7 +388,7 @@ func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := tree.Live["editable"]
-	if joined.State != StateQueued || joined.Claimed != nil {
+	if joined.State != StateApproved || joined.Claimed != nil {
 		t.Fatalf("a foreign destination claim was inherited by the joiner: %+v", joined)
 	}
 	last := joined.History[len(joined.History)-1]

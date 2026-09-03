@@ -39,8 +39,8 @@ func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 	}
 	// The frontier read: both queued goals are ready.
 	v := Next(p2, "mac-a")
-	if len(v.Ready) != 2 || len(v.Claimed) != 0 {
-		t.Fatalf("the frontier names the ready set: %+v", v)
+	if len(v.Awaiting) != 2 || len(v.Ready) != 0 || len(v.Claimed) != 0 {
+		t.Fatalf("the frontier names unapproved work as awaiting: %+v", v)
 	}
 }
 
@@ -48,9 +48,9 @@ func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
 	held := vGoal("held", StateClaimed)
 	held.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: "2026-08-20T10:05:00Z"}
 	held.Labels = []string{"other"}
-	one := vGoal("one", StateQueued)
+	one := approvedGoalFixture(vGoal("one", StateQueued), testBudget())
 	one.Labels = []string{"alpha", "shared"}
-	two := vGoal("two", StateQueued)
+	two := approvedGoalFixture(vGoal("two", StateQueued), testBudget())
 	two.Labels = []string{"beta", "shared"}
 	p := Projection{Tree: &TreeGoals{Live: map[string]*GoalFile{
 		"held": held, "one": one, "two": two,
@@ -71,10 +71,10 @@ func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
 }
 
 func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
-	foreign := vGoal("foreign-pinned", StateQueued)
+	foreign := approvedGoalFixture(vGoal("foreign-pinned", StateQueued), testBudget())
 	foreign.Arc = "shared-arc"
 	foreign.Pinned = "mac-b"
-	local := vGoal("local-member", StateQueued)
+	local := approvedGoalFixture(vGoal("local-member", StateQueued), testBudget())
 	local.Arc = "shared-arc"
 	p := Projection{Tree: &TreeGoals{Live: map[string]*GoalFile{
 		foreign.Id: foreign, local.Id: local,
@@ -131,7 +131,7 @@ func soloLedgerRepo(t *testing.T) string {
 	mustGit(t, repo, "update-ref", LocalLedgerBranch, "HEAD")
 	root := vRoot()
 	root.SyncMode = SyncLocal
-	files := vTree(root, []*GoalFile{vGoal("solo-goal", StateQueued)}, nil)
+	files := vTree(root, []*GoalFile{approvedGoalFixture(vGoal("solo-goal", StateQueued), testBudget())}, nil)
 	var changes []Change
 	for p, content := range files {
 		changes = append(changes, Change{Path: p, Content: content})

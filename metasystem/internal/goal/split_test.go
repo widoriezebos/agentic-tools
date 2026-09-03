@@ -122,7 +122,7 @@ func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
-	if res, err := OpenClaim(verbReq(root, "01J5X00000000000000000SA00", "mac-a"), "sliced-parent", "Already slicing.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000SA00", "mac-a"), "sliced-parent", "Already slicing.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claim: %+v %v", res, err)
 	}
 	mark := verbReq(root, "01J5X00000000000000000SA10", "mac-a")
@@ -173,7 +173,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 	t.Run("foreign claim", func(t *testing.T) {
 		_, a, b := twoClones(t)
 		seedLedger(t, a)
-		if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000PF00", "mac-a"), "foreign-parent", "Foreign claim.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000PF00", "mac-a"), "foreign-parent", "Foreign claim.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open claim: %+v %v", res, err)
 		}
 		members := testMembers("foreign-parent")
@@ -284,7 +284,7 @@ func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
-	if res, err := OpenClaim(verbReq(root, "01J5X00000000000000000SR00", "mac-a"), "recover-slice", "Recover safely.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000SR00", "mac-a"), "recover-slice", "Recover safely.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claim: %+v %v", res, err)
 	}
 	opid := Opid("01J5X00000000000000000SR10", "mac-a", "lin-1")
@@ -324,7 +324,9 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1441, ActiveJobLimit: 1}
-	refused, err := Claim(verbReq(root, "01J5X00000000000000000GN10", "mac-a"), "large-goal", over)
+	request := verbReq(root, "01J5X00000000000000000GN10", "mac-a")
+	request.Actor.Human = "wido"
+	refused, err := Approve(request, []string{"large-goal"}, &over, testHumanAuthority(t, root, request.Now))
 	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "goal split") {
 		t.Fatalf("over-norm claim did not exercise the typed split remedy: %+v %v", refused, err)
 	}
@@ -335,8 +337,9 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	approved := verbReq(root, "01J5X00000000000000000GN20", "mac-a")
+	approved.Actor.Human = "wido"
 	approved.ApprovedRef = "R-25b"
-	result, err := SetBudget(approved, "large-goal", over)
+	result, err := Approve(approved, []string{"large-goal"}, &over, testHumanAuthority(t, root, approved.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("strict approval did not admit set-budget: %+v %v", result, err)
 	}
@@ -345,7 +348,9 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 		t.Fatalf("approved admission did not publish its proof: %+v %v", tree.Live["large-goal"], err)
 	}
 	within := testBudget()
-	result, err = SetBudget(verbReq(root, "01J5X00000000000000000GN30", "mac-a"), "large-goal", within)
+	withinReq := verbReq(root, "01J5X00000000000000000GN30", "mac-a")
+	withinReq.Actor.Human = "wido"
+	result, err = Approve(withinReq, []string{"large-goal"}, &within, testHumanAuthority(t, root, withinReq.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("within-norm replacement: %+v %v", result, err)
 	}
@@ -357,12 +362,14 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 		t.Fatalf("open at-norm: %+v %v", res, err)
 	}
 	atNorm := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1440, ActiveJobLimit: 1}
-	if res, err := SetBudget(verbReq(root, "01J5X00000000000000000GN50", "mac-a"), "at-norm", atNorm); err != nil || res.Outcome != OutcomeConfirmed {
+	atNormReq := verbReq(root, "01J5X00000000000000000GN50", "mac-a")
+	atNormReq.Actor.Human = "wido"
+	if res, err := Approve(atNormReq, []string{"at-norm"}, &atNorm, testHumanAuthority(t, root, atNormReq.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the exact norm boundary must pass without approval: %+v %v", res, err)
 	}
 }
 
-func TestOverNormStoredClaimAndStealRequireFreshApproval(t *testing.T) {
+func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000NS00", "mac-a"), "over-steal", "Approved exception.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -376,38 +383,19 @@ func TestOverNormStoredClaimAndStealRequireFreshApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	set := verbReq(a, "01J5X00000000000000000NS10", "mac-a")
+	set.Actor.Human = "wido"
 	set.ApprovedRef = "R-301"
-	if res, err := SetBudget(set, "over-steal", over); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Approve(set, []string{"over-steal"}, &over, testHumanAuthority(t, a, set.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("approved over-norm set-budget: %+v %v", res, err)
 	}
-	refused, err := Claim(verbReq(a, "01J5X00000000000000000NS20", "mac-a"), "over-steal")
-	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") {
-		t.Fatalf("stored over-norm tuple auto-claimed without fresh proof: %+v %v", refused, err)
-	}
-	if err := os.WriteFile(filepath.Join(a, "memory", "rulings.md"), []byte("| R-301 | goal=over-steal minutes=1500 goalRevision=1 |\n| R-302 | goal=over-steal minutes=1500 goalRevision=2 |\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	claim := verbReq(a, "01J5X00000000000000000NS30", "mac-a")
-	claim.ApprovedRef = "R-302"
 	if res, err := Claim(claim, "over-steal"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("approved stored claim: %+v %v", res, err)
 	}
-	if err := os.MkdirAll(filepath.Join(b, "memory"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(b, "memory", "rulings.md"), []byte("| R-303 | goal=over-steal minutes=1500 goalRevision=3 |\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	steal := verbReq(b, "01J5X00000000000000000NS40", "mac-b")
 	steal.Actor.Human = "wido"
-	refused, err = Steal(steal, "over-steal")
-	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") {
-		t.Fatalf("over-norm steal passed without approval: %+v %v", refused, err)
-	}
-	steal.Ulid = "01J5X00000000000000000NS50"
-	steal.ApprovedRef = "R-303"
 	if res, err := Steal(steal, "over-steal"); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("fresh approved steal did not pass: %+v %v", res, err)
+		t.Fatalf("the bound over-norm approval did not compose with steal: %+v %v", res, err)
 	}
 }
 
@@ -430,7 +418,7 @@ func TestGoalNormApprovalGrammarIsDistinctAndUnambiguous(t *testing.T) {
 func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
-	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "race-parent", "Race the boundary.", OriginMain, "Choose one.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "race-parent", "Race the boundary.", OriginMain, "Choose one.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claimed parent: %+v %v", res, err)
 	}
 	members := testMembers("race-parent")
@@ -468,7 +456,7 @@ func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
 	_, root := oneClone(t)
 	seedLedger(t, root)
-	if res, err := OpenClaim(verbReq(root, "01J5X00000000000000000PS00", "mac-a"), "parked-sliced", "Started work.", OriginMain, "Pause.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000PS00", "mac-a"), "parked-sliced", "Started work.", OriginMain, "Pause.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claim: %+v %v", res, err)
 	}
 	if res, err := MarkSliced(verbReq(root, "01J5X00000000000000000PS10", "mac-a"), "parked-sliced"); err != nil || res.Outcome != OutcomeConfirmed {
@@ -505,8 +493,9 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 	}
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1}
 	approved := verbReq(root, "01J5X00000000000000000NH40", "mac-a")
+	approved.Actor.Human = "wido"
 	approved.ApprovedRef = human.opid()
-	if res, err := SetBudget(approved, "history-large", over); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Approve(approved, []string{"history-large"}, &over, testHumanAuthority(t, root, approved.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("history-line approval channel did not admit the tuple: %+v %v", res, err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
@@ -520,8 +509,9 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 		t.Fatalf("advance stale goal: %+v %v", res, err)
 	}
 	stale := verbReq(root, "01J5X00000000000000000NH60", "mac-a")
+	stale.Actor.Human = "wido"
 	stale.ApprovedRef = "R-251"
-	result, err := SetBudget(stale, "stale-large", over)
+	result, err := Approve(stale, []string{"stale-large"}, &over, testHumanAuthority(t, root, stale.Now))
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not current revision 2") {
 		t.Fatalf("stale approval did not refuse by both revisions: %+v %v", result, err)
 	}

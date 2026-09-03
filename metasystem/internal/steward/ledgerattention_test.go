@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 )
@@ -35,6 +36,20 @@ type ledgerAttentionBed struct {
 	now                        time.Time
 	sequence                   int
 }
+
+type attentionAuthorityReader struct{}
+
+func (attentionAuthorityReader) Read(pid int64) (humanauthority.Snapshot, error) {
+	return humanauthority.Snapshot{
+		Exact: identity.Exact{
+			Pid: pid, StartedAt: time.Unix(pid, 0), Argv: []string{"attended-human-shell"}, ArgvKnown: true,
+		},
+		Executable: "/fixture/attended-human-shell", ExecutableKnown: true,
+		ParentPID: 1, ParentKnown: true, TerminalID: "tty-ledger-attention", TerminalKnown: true,
+	}, nil
+}
+
+func (attentionAuthorityReader) SessionLeader(pid int64) (int64, error) { return pid, nil }
 
 func newLedgerAttentionBed(t *testing.T) *ledgerAttentionBed {
 	t.Helper()
@@ -76,6 +91,17 @@ func newLedgerAttentionBed(t *testing.T) *ledgerAttentionBed {
 		attentionGit(t, clone, "config", "goal.sync-branch", "refs/heads/main")
 		attentionGit(t, clone, "update-ref", goal.AcceptedRef, "origin/main")
 	}
+	adapterDir := filepath.Join(bed.publisher, "scripts", "agents", "adapters")
+	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
+	if err := os.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(adapter), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := humanauthority.Enroll(bed.publisher, 20, attentionAuthorityReader{}, bed.now); err != nil {
+		t.Fatalf("enroll approval fixture terminal: %v", err)
+	}
 	return bed
 }
 
@@ -109,6 +135,24 @@ func (b *ledgerAttentionBed) pin(t *testing.T, id, machine string) string {
 	return result.Tip
 }
 
+func (b *ledgerAttentionBed) approve(t *testing.T, id string) string {
+	t.Helper()
+	request := b.request()
+	request.Actor.Human = "Wido"
+	proof, err := humanauthority.Prove(b.publisher, 20, attentionAuthorityReader{}, request.Now)
+	if err != nil {
+		t.Fatalf("prove approval fixture authority: %v", err)
+	}
+	budget := goal.Budget{
+		ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1,
+	}
+	result, err := goal.Approve(request, []string{id}, &budget, &proof)
+	if err != nil || result.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("approve %s: %+v %v", id, result, err)
+	}
+	return result.Tip
+}
+
 func (b *ledgerAttentionBed) claim(t *testing.T, id string) string {
 	return b.claimAs(t, id, "mac-a")
 }
@@ -117,9 +161,7 @@ func (b *ledgerAttentionBed) claimAs(t *testing.T, id, machine string) string {
 	t.Helper()
 	request := b.request()
 	request.Actor.Machine = machine
-	result, err := goal.Claim(request, id, goal.Budget{
-		ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1,
-	})
+	result, err := goal.Claim(request, id)
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("claim %s: %+v %v", id, result, err)
 	}
@@ -222,15 +264,56 @@ func bedTime() time.Time {
 	return time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 }
 
+func TestSnapshotLedgerSeparatesApprovedReadyAwaitingAndPins(t *testing.T) {
+	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1}
+	approved := func(id, opened, authority, reviewBy, pin string) *goal.GoalFile {
+		return &goal.GoalFile{
+			Id: id, State: goal.StateApproved, Intent: "Work on " + id, Origin: goal.OriginMain,
+			NextStep: "Continue.", OpenedAt: opened, Budget: &budget, Pinned: pin,
+			Approved: &goal.ApprovalRecord{Authority: authority, ReviewBy: reviewBy},
+		}
+	}
+	projection := goal.Projection{
+		Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{
+			"ready":   approved("ready", "2026-09-01T00:00:02Z", goal.ApprovalAuthorityProven, "", "mac-a"),
+			"expired": approved("expired", "2026-09-01T00:00:00Z", goal.ApprovalAuthorityRelayed, "2026-09-01", "mac-a"),
+			"queued": {
+				Id: "queued", State: goal.StateQueued, Intent: "Wait for approval", Origin: goal.OriginMain,
+				NextStep: "Wait.", OpenedAt: "2026-09-01T00:00:01Z", Pinned: "mac-a",
+			},
+			"foreign-pin": approved("foreign-pin", "2026-09-01T00:00:03Z", goal.ApprovalAuthorityProven, "", "mac-b"),
+		}},
+		Horizon: goal.ApprovalHorizon{Now: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)},
+	}
+	snapshot := snapshotLedger(projection, "mac-a")
+	if got := strings.Join(snapshot.Ready, ","); got != "ready" {
+		t.Fatalf("approved ready frontier=%q, want ready", got)
+	}
+	if got := strings.Join(snapshot.Queue, ","); got != "expired,queued" {
+		t.Fatalf("awaiting queue=%q, want expired,queued in opened-at order", got)
+	}
+	if got := strings.Join(snapshot.Pinned, ","); got != "expired,queued,ready" {
+		t.Fatalf("local queued-or-approved pins=%q, want expired,queued,ready", got)
+	}
+}
+
 func TestLedgerAttentionSurfacesMovementOnceAndAdvancesAccepted(t *testing.T) {
 	bed := newLedgerAttentionBed(t)
 	if report := RunLedgerAttention(bed.watcher, bed.now); report.Outcome != "current" || len(report.Pending) != 0 {
 		t.Fatalf("baseline pass: %+v", report)
 	}
-	remoteTip := bed.open(t, "claimable-a")
-	report := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	bed.open(t, "claimable-a")
+	queued := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	if queued.Outcome != "advanced" || len(queued.Pending) != 1 || strings.Join(queued.Pending[0].QueueNow, ",") != "claimable-a" || len(queued.Pending[0].Claimable) != 0 {
+		t.Fatalf("queued movement report: %+v", queued)
+	}
+	if err := PersistLedgerAttentionMark(bed.watcher, []string{queued.Pending[0].SourceID}); err != nil {
+		t.Fatal(err)
+	}
+	remoteTip := bed.approve(t, "claimable-a")
+	report := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
 	if report.Outcome != "advanced" || len(report.Pending) != 1 || strings.Join(report.Pending[0].Claimable, ",") != "claimable-a" {
-		t.Fatalf("movement report: %+v", report)
+		t.Fatalf("approval movement report: %+v", report)
 	}
 	if accepted := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef); accepted != remoteTip {
 		t.Fatalf("accepted ref=%s remote=%s", accepted, remoteTip)
@@ -238,7 +321,7 @@ func TestLedgerAttentionSurfacesMovementOnceAndAdvancesAccepted(t *testing.T) {
 	if err := PersistLedgerAttentionMark(bed.watcher, []string{report.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	if again := RunLedgerAttention(bed.watcher, bed.now.Add(3*time.Minute)); len(again.Pending) != 0 {
+	if again := RunLedgerAttention(bed.watcher, bed.now.Add(5*time.Minute)); len(again.Pending) != 0 {
 		t.Fatalf("surfaced change replayed after its mark: %+v", again)
 	}
 }
@@ -308,25 +391,29 @@ func TestLedgerAttentionPinsAndQueueSequenceChanges(t *testing.T) {
 	if err := PersistLedgerAttentionMark(bed.watcher, []string{pinned.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
+	bed.approve(t, "pin-target")
+	approved := RunLedgerAttention(bed.watcher, bed.now.Add(6*time.Minute))
+	if len(approved.Pending) != 1 || strings.Join(approved.Pending[0].Claimable, ",") != "pin-target" ||
+		strings.Join(approved.Pending[0].QueueWas, ",") != "pin-target" || len(approved.Pending[0].QueueNow) != 0 {
+		t.Fatalf("approval did not move the goal from awaiting to the local ready frontier: %+v", approved)
+	}
+	if err := PersistLedgerAttentionMark(bed.watcher, []string{approved.Pending[0].SourceID}); err != nil {
+		t.Fatal(err)
+	}
 	bed.pin(t, "pin-target", "mac-b")
-	foreign := RunLedgerAttention(bed.watcher, bed.now.Add(6*time.Minute))
+	foreign := RunLedgerAttention(bed.watcher, bed.now.Add(8*time.Minute))
 	for _, event := range foreign.Pending {
 		if len(event.Pins) > 0 || len(event.Claimable) > 0 {
 			t.Fatalf("foreign pin surfaced as local attention: %+v", foreign)
 		}
 	}
 	bed.pin(t, "pin-target", "-")
-	cleared := RunLedgerAttention(bed.watcher, bed.now.Add(8*time.Minute))
+	cleared := RunLedgerAttention(bed.watcher, bed.now.Add(10*time.Minute))
 	if len(cleared.Pending) != 1 || strings.Join(cleared.Pending[0].Claimable, ",") != "pin-target" {
 		t.Fatalf("clearing the foreign pin did not restore the local frontier: %+v", cleared)
 	}
 	if err := PersistLedgerAttentionMark(bed.watcher, []string{cleared.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
-	}
-	bed.claimAs(t, "pin-target", "mac-b")
-	departed := RunLedgerAttention(bed.watcher, bed.now.Add(10*time.Minute))
-	if len(departed.Pending) != 1 || strings.Join(departed.Pending[0].QueueWas, ",") != "pin-target" || len(departed.Pending[0].QueueNow) != 0 {
-		t.Fatalf("a real queue departure did not surface its before/after sequence: %+v", departed)
 	}
 	if sameStrings([]string{"a", "b", "c"}, []string{"b", "a", "c"}) {
 		t.Fatal("same-member queue reordering was treated as unchanged")
@@ -369,15 +456,23 @@ func TestLedgerAttentionKeepsOneDigestAndNudgePerChange(t *testing.T) {
 func TestLedgerAttentionRetainsTransientFactAcrossSkippedMark(t *testing.T) {
 	bed := newLedgerAttentionBed(t)
 	_ = RunLedgerAttention(bed.watcher, bed.now)
-	firstTip := bed.open(t, "transient-a")
-	first := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	bed.open(t, "transient-a")
+	queued := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	if len(queued.Pending) != 1 {
+		t.Fatalf("queued transient setup: %+v", queued)
+	}
+	if err := PersistLedgerAttentionMark(bed.watcher, []string{queued.Pending[0].SourceID}); err != nil {
+		t.Fatal(err)
+	}
+	firstTip := bed.approve(t, "transient-a")
+	first := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
 	if len(first.Pending) != 1 || first.Pending[0].Tip != firstTip {
 		t.Fatalf("first transient fact: %+v", first)
 	}
 	// Simulate a crash after classification and accepted-ref advance by
 	// deliberately skipping both surfacing and the mark.
 	bed.claim(t, "transient-a")
-	second := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
+	second := RunLedgerAttention(bed.watcher, bed.now.Add(6*time.Minute))
 	found := false
 	for _, event := range second.Pending {
 		if event.SourceID == first.Pending[0].SourceID && strings.Join(event.Claimable, ",") == "transient-a" {

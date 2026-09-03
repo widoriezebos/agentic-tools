@@ -16,7 +16,7 @@ import (
 func budgetedQueuedGoal(id, opened string) *GoalFile {
 	budget := testBudget()
 	return &GoalFile{
-		Id: id, State: StateQueued, Intent: "Claim the shared work", Origin: OriginMain,
+		Id: id, State: StateApproved, Intent: "Claim the shared work", Origin: OriginMain,
 		NextStep: "Claim and dispatch it.", OpenedAt: opened, Revision: 1,
 		Budget: &budget,
 	}

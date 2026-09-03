@@ -99,9 +99,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 				return nil, fmt.Errorf("%s: a hand-created goal carries no pin; open it, then pin with set-pin", d.Path)
 			}
 			if edited.Budget != nil {
-				return nil, fmt.Errorf("%s: a hand-created goal carries no budget; open it, then use goal set-budget", d.Path)
+				return nil, fmt.Errorf("%s: a hand-created goal carries no budget; open it, then have the human approve its tuple", d.Path)
 			}
-			if edited.NormApproval != nil || edited.Sliced != nil || edited.Ratified != nil {
+			if edited.Approved != nil || edited.NormApproval != nil || edited.Sliced != nil || edited.Ratified != nil {
 				return nil, fmt.Errorf("%s: a hand-created goal carries generated scope-boundary evidence; admission and split are the only writers", d.Path)
 			}
 			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
@@ -203,6 +203,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 // mapOneChange decomposes one changed file into its smallest verb
 // set: the state verb first, then one edit for the field remainder.
 func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
+	if base.State == StateQueued && edited.State == StateClaimed {
+		return nil, fmt.Errorf("%s: APPROVAL_REQUIRED: an unapproved queued goal cannot become claimed through reconcile; only goal approve followed by claim creates execution", p)
+	}
 	// Generated fields: a hand-supplied value that DIFFERS from the
 	// base refuses by file and field. (Unchanged copies are the
 	// ordinary shape — the file was materialized with them.)
@@ -217,6 +220,9 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	}
 	if !sameGoalNormApproval(edited.NormApproval, base.NormApproval) {
 		return nil, fmt.Errorf("%s: NormApproval is a generated field; admission publishes it", p)
+	}
+	if !sameApprovalRecord(edited.Approved, base.Approved) {
+		return nil, fmt.Errorf("%s: Approved is a generated field; goal approve and unapprove publish it", p)
 	}
 	if (edited.Sliced == nil) != (base.Sliced == nil) ||
 		(edited.Sliced != nil && *edited.Sliced != *base.Sliced) {
@@ -251,7 +257,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	// The state verb, in pinned precedence.
 	if edited.State != base.State {
 		switch {
-		case (base.State == StateQueued || base.State == StateClaimed) && edited.State == StateParked:
+		case (base.State == StateQueued || base.State == StateApproved || base.State == StateClaimed) && edited.State == StateParked:
 			// A hand park is lawful from queued AND from claimed — the
 			// pause lever's own predicate, all rows actor H;
 			// the replay records displacement for a foreign claim.
@@ -259,7 +265,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 				return nil, fmt.Errorf("%s: a hand-park needs its Parked because", p)
 			}
 			rows = append(rows, MappedVerb{Verb: "park", Id: base.Id, Because: edited.Parked.Because, BaseState: base.State})
-		case base.State == StateParked && edited.State == StateQueued:
+		case base.State == StateParked && (edited.State == StateQueued || edited.State == StateApproved):
 			rows = append(rows, MappedVerb{Verb: "unpark", Id: base.Id, BaseState: base.State})
 		case edited.State == StateDone:
 			if edited.Conclude == "" {
@@ -286,6 +292,9 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	baseFields := EditFields{}
 	editNeeded := false
 	if edited.Intent != base.Intent {
+		if base.Approved != nil {
+			return nil, fmt.Errorf("%s: the human approved this intent; unapprove, edit, then approve", p)
+		}
 		fields.Intent = &edited.Intent
 		baseFields.Intent = &base.Intent
 		editNeeded = true
@@ -336,6 +345,13 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		return nil, fmt.Errorf("%s: the bytes changed but no editable field did; the surface is closed", p)
 	}
 	return rows, nil
+}
+
+func sameApprovalRecord(left, right *ApprovalRecord) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 // handLenient makes a hand-written park expressible: a Parked line

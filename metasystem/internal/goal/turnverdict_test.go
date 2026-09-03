@@ -192,7 +192,7 @@ func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
 		t.Fatalf("open claimed goal: %+v %v", result, err)
 	}
 	request.Ulid = "01J5X00000000000000000TV11"
-	if result, err := Claim(request, "claimed-here", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, request, "claimed-here", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim goal: %+v %v", result, err)
 	}
 	request.Ulid = "01J5X00000000000000000TV12"
@@ -230,8 +230,9 @@ func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
 		t.Fatalf("pin clearing did not reblock the claimed session: %+v %v", cleared, err)
 	}
 	request.Ulid = "01J5X00000000000000000TV15"
+	approveGoalForTest(t, request, "queued-pin", testBudget())
 	request.Actor = Actor{Machine: "mac-b", Lineage: "turn-verdict-fixture"}
-	if result, err := Claim(request, "queued-pin", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Claim(request, "queued-pin"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim the last queued goal elsewhere: %+v %v", result, err)
 	}
 	emptied, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
@@ -249,7 +250,7 @@ func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T)
 		t.Fatalf("open steady claim: %+v %v", result, err)
 	}
 	request.Ulid = "01J5X00000000000000000TV21"
-	if result, err := Claim(request, "steady-claim", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, request, "steady-claim", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim steady goal: %+v %v", result, err)
 	}
 	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1")}

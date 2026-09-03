@@ -28,6 +28,7 @@ type Projection struct {
 	Tip     string
 	Tree    *TreeGoals
 	Banners []string
+	Horizon ApprovalHorizon
 }
 
 // StaleThreshold is how old an accepted tree may grow before the
@@ -61,7 +62,7 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 	if err != nil {
 		return Projection{}, err
 	}
-	p := Projection{Tip: tip, Tree: tree}
+	p := Projection{Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}
 
 	// The durable sync-mode identity: the root record's word against
 	// the clone's config. A local-mode ledger with a remote config is
@@ -312,11 +313,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 			claimLineages[id] = file.Claimed.Lineage
 		}
 	}
-	for _, file := range projection.Tree.Live {
-		if file.State == StateQueued {
-			work.Queued++
-		}
-	}
+	work.Queued = len(frontier.Awaiting)
 	for _, id := range frontier.Ready {
 		file := projection.Tree.Live[id]
 		if file != nil && file.Budget != nil && file.Budget.Validate() == nil {
@@ -481,9 +478,10 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 // NextVerdict is the frontier read the dispatcher and the steward
 // consume: claimed-first, then the queued frontier, then blocked.
 type NextVerdict struct {
-	Claimed []string // this machine's claimed goals, sorted
-	Ready   []string // queued with every blocker done
-	Blocked []string // queued behind an open blocker
+	Claimed  []string // this machine's claimed goals, sorted
+	Ready    []string // approved and unexpired with every blocker done
+	Blocked  []string // approved and unexpired behind an open blocker
+	Awaiting []string // queued or carrying an expired relayed approval
 }
 
 // Next computes the frontier for one machine from a projection.
@@ -498,7 +496,15 @@ func Next(p Projection, machine string, requiredLabels ...string) NextVerdict {
 				v.Claimed = append(v.Claimed, id)
 			}
 		case StateQueued:
+			if MatchesLabels(f.Labels, requiredLabels) {
+				v.Awaiting = append(v.Awaiting, id)
+			}
+		case StateApproved:
 			if !MatchesLabels(f.Labels, requiredLabels) {
+				continue
+			}
+			if expired, _ := f.ApprovalExpired(p.Horizon); expired {
+				v.Awaiting = append(v.Awaiting, id)
 				continue
 			}
 			// Pinning belongs to this member only. Arc siblings remain

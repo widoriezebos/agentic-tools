@@ -296,7 +296,7 @@ func TestPruneRetainsRelayedUseForAReopenedGoalIdentifier(t *testing.T) {
 	if result, err := Open(verbReq(root, "01J5X00000000000000000Q560", "mac-a"), "relay-survives-prune", "Keep relay use durable.", OriginMain, "Exercise it."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	if result, err := Claim(verbReq(root, "01J5X00000000000000000Q561", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000Q561", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
 	first := verbReq(root, "01J5X00000000000000000Q562", "mac-a")
@@ -314,7 +314,7 @@ func TestPruneRetainsRelayedUseForAReopenedGoalIdentifier(t *testing.T) {
 	if result, err := Open(verbReq(root, "01J5X00000000000000000Q565", "mac-a"), "relay-survives-prune", "Reuse the stable identifier.", OriginMain, "Try another relay."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reopen identifier: %+v %v", result, err)
 	}
-	if result, err := Claim(verbReq(root, "01J5X00000000000000000Q566", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000Q566", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reclaim identifier: %+v %v", result, err)
 	}
 	second := verbReq(root, "01J5X00000000000000000Q567", "mac-a")

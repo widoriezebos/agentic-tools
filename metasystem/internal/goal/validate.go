@@ -13,6 +13,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -234,6 +235,14 @@ func ValidateTree(t *TreeGoals) []Problem {
 		if f.Pinned != "" && f.Claimed.Machine != f.Pinned {
 			addf("%s%s.md: pinned to machine %s but claimed by %s; ownership contradicts the pin", goalsPrefix, id, f.Pinned, f.Claimed.Machine)
 		}
+		if f.Approved == nil && t.Root != nil && t.Root.ApprovalGate != nil {
+			claimedAt, claimErr := time.Parse(time.RFC3339, f.Claimed.At)
+			gateAt, gateErr := time.Parse(time.RFC3339, t.Root.ApprovalGate.Since)
+			if claimErr == nil && gateErr == nil && !claimedAt.Before(gateAt) {
+				addf("%s%s.md: claim at %s landed after the approval gate armed at %s without an Approved record",
+					goalsPrefix, id, f.Claimed.At, t.Root.ApprovalGate.Since)
+			}
+		}
 	}
 
 	// A done goal's blockers are done: concluding over an open
@@ -283,11 +292,11 @@ func ValidateTree(t *TreeGoals) []Problem {
 	}
 
 	// Goal-free exclusivity: the declaration coexists with parked
-	// and done, never with queued or claimed.
+	// and done, never with queued, approved, or claimed.
 	if t.Root != nil && t.Root.Free != nil {
 		for _, id := range sortedGoalIds(t.Live) {
 			switch t.Live[id].State {
-			case StateQueued, StateClaimed:
+			case StateQueued, StateApproved, StateClaimed:
 				addf("%sbacklog.md: Goal-free declared while %s is %s", goalsPrefix, id, t.Live[id].State)
 			}
 		}

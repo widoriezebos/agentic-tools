@@ -27,14 +27,14 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
 		t.Fatalf("humans cannot claim: %v", err)
 	}
-	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
+	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "retired") {
 		t.Fatalf("humans cannot open --claim: %v", err)
 	}
 	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent-only") {
 		t.Fatalf("humans cannot claim arcs: %v", err)
 	}
 
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 
@@ -43,7 +43,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	// lineage instead of pretending idempotence.
 	secondLineage := verbReq(a, "01J5X00000000000000000AK30", "mac-a")
 	secondLineage.Actor.Lineage = "lin-2"
-	res, err := Claim(secondLineage, "pair-keyed", testBudget())
+	res, err := Claim(secondLineage, "pair-keyed")
 	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "lineage lin-1") {
 		t.Fatalf("a second lineage refuses by name: %+v %v", res, err)
 	}
@@ -53,7 +53,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 		t.Fatalf("a second lineage cannot release the pair's claim: %+v %v", res, err)
 	}
 	// The pair itself replays idempotent-shaped.
-	res, err = Claim(verbReq(a, "01J5X00000000000000000AK40", "mac-a"), "pair-keyed", testBudget())
+	res, err = Claim(verbReq(a, "01J5X00000000000000000AK40", "mac-a"), "pair-keyed")
 	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already claimed by this pair") {
 		t.Fatalf("the pair's re-claim abandons by name: %+v %v", res, err)
 	}
@@ -108,21 +108,23 @@ func TestEditChecksAuthorityAndTheBlockerInvariant(t *testing.T) {
 			t.Fatalf("open %s: %+v %v", leg.id, res, err)
 		}
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000EA20", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000EA20", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 
 	// A foreign agent cannot edit the claim.
 	intent := "Rewritten by a stranger."
 	res, err := Edit(verbReq(b, "01J5X00000000000000000EA30", "mac-b"), "held", EditFields{Intent: &intent})
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human act") {
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "approved this intent") {
 		t.Fatalf("foreign agent edit refuses: %+v %v", res, err)
 	}
-	// The foreign HUMAN can — and the override leaves the
-	// displacement signal.
+	// The foreign HUMAN can edit a non-intent field, and the override leaves
+	// the displacement signal. An intent edit would invalidate the approval
+	// and is therefore refused while execution is live.
+	next := "Rewritten by a human."
 	humanEdit := verbReq(b, "01J5X00000000000000000EA40", "mac-b")
 	humanEdit.Actor.Human = "wido"
-	res, err = Edit(humanEdit, "held", EditFields{Intent: &intent})
+	res, err = Edit(humanEdit, "held", EditFields{NextStep: &next})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human edit: %+v %v", res, err)
 	}
@@ -162,7 +164,7 @@ func arcBed(t *testing.T, a, arc, prefix, code string) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := ClaimArc(verbReq(a, base+code+"90", "mac-a"), prefix+"-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReq(a, base+code+"90", "mac-a"), prefix+"-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 }
@@ -215,18 +217,22 @@ func TestReopenAdoptsTheArcState(t *testing.T) {
 	if res, err := Done(verbReq(b, "01J5X00000000000000000RA87", "mac-b"), "ra-two", "Queued reopen checked."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("archive the queued reopen: %+v %v", res, err)
 	}
-	// The claimant's reopen rejoins CLAIMED under the standing pair.
+	// The claimant's reopen cannot manufacture fresh approval or execution.
 	res, err = Reopen(verbReq(a, "01J5X00000000000000000RA82", "mac-a"), "ra-two")
-	if err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("claimant reopen: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "no longer manufactures approval") {
+		t.Fatalf("claimant reopen must not create execution: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	res, err = Reopen(verbReq(b, "01J5X00000000000000000RA88", "mac-b"), "ra-two")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("stranger reopens queued for the next leg: %+v %v", res, err)
+	}
+	t2, err := loadTree(b, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	back := t2.Live["ra-two"]
-	if back.State != StateClaimed || back.Claimed == nil || back.Claimed.Machine != "mac-a" || back.Claimed.Lineage != "lin-1" {
-		t.Fatalf("the member rejoins under the standing claimant: %+v", back)
+	if back.State != StateQueued || back.Claimed != nil {
+		t.Fatalf("the member returns queued without execution authority: %+v", back)
 	}
 
 	// A parked arc adopts human-only: park the arc, conclude a
@@ -265,7 +271,7 @@ func TestSetArcComposesMovesUnderTheMatrix(t *testing.T) {
 	// A claimed standalone goal cannot join an arc: release first.
 	// (This leg runs before the bed claims the arc — the quota
 	// admits one claim per machine.)
-	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000MX00", "mac-a"), "solo-held", "Solo.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000MX00", "mac-a"), "solo-held", "Solo.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim: %+v %v", res, err)
 	}
 	res, err := SetArc(verbReq(a, "01J5X00000000000000000MX10", "mac-a"), "solo-held", "move-src")
@@ -292,8 +298,8 @@ func TestSetArcComposesMovesUnderTheMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 	moved := t2.Live["mv-two"]
-	if moved.Arc != "move-dst" || moved.State != StateQueued || moved.Claimed != nil {
-		t.Fatalf("the move lands queued in the destination: %+v", moved)
+	if moved.Arc != "move-dst" || moved.State != StateApproved || moved.Claimed != nil {
+		t.Fatalf("the move lands approved in the destination: %+v", moved)
 	}
 
 	// A parked destination is human-only, and the join adopts the
@@ -423,10 +429,10 @@ func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
 			t.Fatalf("set arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000MC30", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000MC30", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim A: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(b, "01J5X00000000000000000MC40", "mac-b"), "mixed-two", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(b, "01J5X00000000000000000MC40", "mac-b"), "mixed-two", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim B: %+v %v", res, err)
 	}
 	park := verbReq(a, "01J5X00000000000000000MC50", "mac-a")
@@ -445,10 +451,10 @@ func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
 		t.Fatalf("mixed release: %+v %v", res, err)
 	}
 	tree, err := loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
-	if err != nil || tree.Live["mixed-one"].State != StateQueued || tree.Live["mixed-two"].Claimed == nil || tree.Live["mixed-two"].Claimed.Machine != "mac-b" {
+	if err != nil || tree.Live["mixed-one"].State != StateApproved || tree.Live["mixed-two"].Claimed == nil || tree.Live["mixed-two"].Claimed.Machine != "mac-b" {
 		t.Fatalf("release moved a foreign sibling: %+v %v", tree, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000MC80", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000MC80", "mac-a"), "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("reclaim A: %+v %v", res, err)
 	}
 
@@ -494,11 +500,11 @@ func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
 	if res, err := Park(verbReq(a, "01J5X00000000000000000MCC0", "mac-a"), "mixed-parked", "remain parked"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("repark pinned sibling: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000MCD0", "mac-a"), "mixed-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000MCD0", "mac-a"), "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim anchor: %+v %v", res, err)
 	}
 	// Asking through the parked member still sweeps the queued remainder.
-	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000MCE0", "mac-a"), "mixed-parked", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000MCE0", "mac-a"), "mixed-parked"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim cascade through parked member: %+v %v", res, err)
 	}
 	tree, err = loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
@@ -556,19 +562,17 @@ func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
 				t.Fatalf("open %s: %+v %v", id, res, err)
 			}
 		}
-		if res, err := SetBudget(verbReq(a, "01J5X00000000000000000MR25", "mac-a"), "join-candidate", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
-			t.Fatalf("budget candidate: %+v %v", res, err)
-		}
+		approveGoalForTest(t, verbReq(a, "01J5X00000000000000000MR25", "mac-a"), "join-candidate", testBudget())
 		for index, id := range []string{"join-own", "join-foreign"} {
 			ulid := []string{"01J5X00000000000000000MR30", "01J5X00000000000000000MR40"}[index]
 			if res, err := SetArc(verbReq(a, ulid, "mac-a"), id, "join-destination"); err != nil || res.Outcome != OutcomeConfirmed {
 				t.Fatalf("set arc %s: %+v %v", id, res, err)
 			}
 		}
-		if res, err := Claim(verbReq(a, "01J5X00000000000000000MR50", "mac-a"), "join-own", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000MR50", "mac-a"), "join-own", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim own: %+v %v", res, err)
 		}
-		if res, err := Claim(verbReq(b, "01J5X00000000000000000MR60", "mac-b"), "join-foreign", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := claimApprovedForTest(t, verbReq(b, "01J5X00000000000000000MR60", "mac-b"), "join-foreign", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim foreign: %+v %v", res, err)
 		}
 		advanced, err := FetchAdvance(endpointFor(a))
@@ -581,7 +585,7 @@ func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
 		}
 		hand := verbReq(a, "01J5X00000000000000000MR70", "mac-a")
 		hand.Actor.Human = "wido"
-		if _, err := applyRow(handTree, hand, MappedVerb{Verb: "set-arc", Id: "join-candidate", Arc: "join-destination", BaseState: StateQueued}, newReplaySession()); err != nil {
+		if _, err := applyRow(handTree, hand, MappedVerb{Verb: "set-arc", Id: "join-candidate", Arc: "join-destination", BaseState: StateApproved}, newReplaySession()); err != nil {
 			t.Fatalf("reconcile application: %v", err)
 		}
 		verbResult, err := SetArc(verbReq(a, "01J5X00000000000000000MR80", "mac-a"), "join-candidate", "join-destination")
@@ -612,7 +616,7 @@ func TestClaimedArcToForeignClaimedArcLandsQueuedOnBothSurfaces(t *testing.T) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	claimRes, err := ClaimArc(verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one", testBudget())
+	claimRes, err := claimArcApprovedForTest(t, verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one", testBudget())
 	if err != nil || claimRes.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim dest arc: %+v %v", claimRes, err)
 	}
@@ -643,7 +647,7 @@ func TestClaimedArcToForeignClaimedArcLandsQueuedOnBothSurfaces(t *testing.T) {
 		t.Fatalf("foreign claimed destination did not take the queued fallback: %+v %v", res, err)
 	}
 	verbTree, err := loadTree(a, res.Tip)
-	if err != nil || verbTree.Live["ts-two"].State != StateQueued || verbTree.Live["ts-two"].Claimed != nil {
+	if err != nil || verbTree.Live["ts-two"].State != StateApproved || verbTree.Live["ts-two"].Claimed != nil {
 		t.Fatalf("verb fallback inherited a foreign claim: %+v %v", verbTree.Live["ts-two"], err)
 	}
 	// Reconcile uses the identical queued fallback on the pre-move tip.
@@ -657,7 +661,7 @@ func TestClaimedArcToForeignClaimedArcLandsQueuedOnBothSurfaces(t *testing.T) {
 		Verb: "set-arc", Id: "ts-two", Arc: "trade-dst",
 		BaseArc: "trade-src", BaseState: StateClaimed,
 	}, newReplaySession())
-	if handErr != nil || tree.Live["ts-two"].State != StateQueued || tree.Live["ts-two"].Claimed != nil {
+	if handErr != nil || tree.Live["ts-two"].State != StateApproved || tree.Live["ts-two"].Claimed != nil {
 		t.Fatalf("hand replay diverged from queued fallback: %+v %v", tree.Live["ts-two"], handErr)
 	}
 }

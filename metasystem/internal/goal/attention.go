@@ -45,12 +45,16 @@ func AcceptedLedgerTip(root string) (tip string, exists bool, err error) {
 }
 
 // ProjectAt reads one already-identified commit without moving any ref.
-func ProjectAt(root, tip string) (Projection, error) {
+func ProjectAt(root, tip string, at ...time.Time) (Projection, error) {
 	tree, err := loadTree(root, tip)
 	if err != nil {
 		return Projection{}, err
 	}
-	return Projection{Tip: tip, Tree: tree}, nil
+	now := time.Now().UTC()
+	if len(at) > 0 {
+		now = at[0]
+	}
+	return Projection{Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}, nil
 }
 
 // LedgerChanges returns the proven consecutive first-parent states from

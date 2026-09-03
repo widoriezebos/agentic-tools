@@ -45,6 +45,18 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 	}}
 	for id, f := range files {
 		f.History = append([]HistoryLine(nil), history...)
+		if f.State == StateApproved && f.Budget != nil {
+			f.Revision = 2
+			event := HistoryLine{
+				At: "2026-08-23T00:01:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-human-00000002",
+				Verb: "approve", Actor: "human:wido", Targets: []string{id}, Keep: -1,
+			}
+			f.History = append(f.History, event)
+			f.Approved = &ApprovalRecord{
+				By: event.Actor, At: event.At, Revision: 2, Opid: event.Opid,
+				Authority: ApprovalAuthorityProven, Digest: ApprovalDigest(f.Intent, *f.Budget),
+			}
+		}
 		if f.Claimed != nil && f.Claimed.Revision == 2 {
 			f.History = append(f.History, HistoryLine{
 				At: f.Claimed.At, Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-00000001",

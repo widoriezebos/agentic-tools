@@ -16,17 +16,35 @@ import (
 
 // RootRecord is the parsed plans/goals/backlog.md.
 type RootRecord struct {
-	Identity       string // ULID, minted once, the ledger identity
-	FormatVersion  string
-	SyncMode       string // remote | local, written once
-	MigrationEpoch string // absent on fresh adoptions
-	ManifestDigest string // absent on bare migrations and adoptions
-	MigrationMode  string // bare | manifest | adoption
-	Free           *FreeRecord
-	Decomposed     []DecomposedEntry
-	Legacy         []string // root-level LegacyNotes from migration
-	Revision       uint64
-	History        []HistoryLine
+	Identity        string // ULID, minted once, the ledger identity
+	FormatVersion   string
+	SyncMode        string // remote | local, written once
+	MigrationEpoch  string // absent on fresh adoptions
+	ManifestDigest  string // absent on bare migrations and adoptions
+	MigrationMode   string // bare | manifest | adoption
+	Free            *FreeRecord
+	ApprovalGate    *ApprovalGateRecord
+	FleetEnrollment *FleetEnrollmentRecord
+	Decomposed      []DecomposedEntry
+	Legacy          []string // root-level LegacyNotes from migration
+	Revision        uint64
+	History         []HistoryLine
+}
+
+// ApprovalGateRecord permanently marks when the execution-approval invariant
+// armed for this ledger.
+type ApprovalGateRecord struct {
+	Since string
+	Opid  string
+}
+
+// FleetEnrollmentRecord is the first enrolled human terminal observed by the
+// synced fleet. It never changes once written.
+type FleetEnrollmentRecord struct {
+	At         string
+	Machine    string
+	Generation uint64
+	Opid       string
 }
 
 // DecomposedEntry permanently retires one parent identifier after split.
@@ -137,6 +155,13 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 	if r.Free != nil && !validStamp(r.Free.Declared) {
 		addProblem("Goal-free declared=%q is not an RFC3339 timestamp", r.Free.Declared)
 	}
+	if r.ApprovalGate != nil && (!validStamp(r.ApprovalGate.Since) || r.ApprovalGate.Opid == "") {
+		addProblem("ApprovalGate is incomplete")
+	}
+	if r.FleetEnrollment != nil && (!validStamp(r.FleetEnrollment.At) || r.FleetEnrollment.Machine == "" ||
+		r.FleetEnrollment.Generation == 0 || r.FleetEnrollment.Opid == "") {
+		addProblem("FleetEnrollment is incomplete")
+	}
 	seenDecomposed := map[string]bool{}
 	for _, entry := range r.Decomposed {
 		if seenDecomposed[entry.Id] {
@@ -243,6 +268,25 @@ func parseRootField(r *RootRecord, field string, seen map[string]bool, addProble
 			return
 		}
 		r.Free = &FreeRecord{Declared: rec["declared"], Origin: rec["origin"], Digest: rec["digest"]}
+	case "ApprovalGate":
+		rec, err := parseKVRecord(value, []string{"since", "opid"}, nil, "")
+		if err != nil {
+			addProblem("ApprovalGate: %v", err)
+			return
+		}
+		r.ApprovalGate = &ApprovalGateRecord{Since: rec["since"], Opid: rec["opid"]}
+	case "FleetEnrollment":
+		rec, err := parseKVRecord(value, []string{"at", "machine", "generation", "opid"}, nil, "")
+		if err != nil {
+			addProblem("FleetEnrollment: %v", err)
+			return
+		}
+		generation, generationErr := strconv.ParseUint(rec["generation"], 10, 64)
+		if generationErr != nil || generation == 0 {
+			addProblem("FleetEnrollment has invalid generation")
+			return
+		}
+		r.FleetEnrollment = &FleetEnrollmentRecord{At: rec["at"], Machine: rec["machine"], Generation: generation, Opid: rec["opid"]}
 	default:
 		addProblem("unknown field %q", key)
 	}
@@ -267,6 +311,13 @@ func RenderRoot(r *RootRecord) []byte {
 	fmt.Fprintf(&b, "- Revision: %d\n", r.Revision)
 	if r.Free != nil {
 		fmt.Fprintf(&b, "- Goal-free: declared=%s origin=%s digest=%s\n", r.Free.Declared, r.Free.Origin, r.Free.Digest)
+	}
+	if r.ApprovalGate != nil {
+		fmt.Fprintf(&b, "- ApprovalGate: since=%s opid=%s\n", r.ApprovalGate.Since, r.ApprovalGate.Opid)
+	}
+	if r.FleetEnrollment != nil {
+		fmt.Fprintf(&b, "- FleetEnrollment: at=%s machine=%s generation=%d opid=%s\n",
+			r.FleetEnrollment.At, r.FleetEnrollment.Machine, r.FleetEnrollment.Generation, r.FleetEnrollment.Opid)
 	}
 	if len(r.Legacy) > 0 {
 		b.WriteString("\nLegacyNotes:\n")

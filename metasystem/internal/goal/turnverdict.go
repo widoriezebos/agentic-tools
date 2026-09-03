@@ -598,9 +598,8 @@ func (s *Store) legacyGoalFacts() (*GoalFacts, string, string) {
 	}
 }
 
-// queuedFrontier names the first queued goal and a stable digest of the
-// queue, routed on the world: the digest keys the once-per-change block
-// the session records, so it must change exactly when the queue does.
+// queuedFrontier names the first awaiting or approved goal and a stable
+// digest of that whole backlog frontier.
 func (s *Store) queuedFrontier() (first, digest string) {
 	if NewWorld(s.Root) {
 		endpoint, err := ResolveEndpoint(s.Root)
@@ -618,7 +617,7 @@ func (s *Store) queuedFrontier() (first, digest string) {
 		}
 		var rows []row
 		for id, f := range proj.Tree.Live {
-			if f.State == "queued" {
+			if f.State == StateQueued || f.State == StateApproved {
 				rows = append(rows, row{id, f.Revision, f.OpenedAt})
 			}
 		}

@@ -48,7 +48,7 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	res, err = Claim(verbReq(a, "01J5X0000000000000000000D1", "mac-a"), "build-it", testBudget())
+	res, err = claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000D1", "mac-a"), "build-it", testBudget())
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
@@ -83,12 +83,12 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	if _, legacyWrite := committed[legacyDonePrefix+"build-it.md"]; legacyWrite {
 		t.Fatal("done must not write the legacy archive")
 	}
-	if archived.Conclude != "Built and verified." || archived.Revision != 3 || len(archived.History) != 3 {
+	if archived.Conclude != "Built and verified." || archived.Revision != 4 || len(archived.History) != 4 {
 		t.Fatalf("the archived record carries the whole lawful history: rev=%d hist=%d conclude=%q",
 			archived.Revision, len(archived.History), archived.Conclude)
 	}
-	verbs := []string{archived.History[0].Verb, archived.History[1].Verb, archived.History[2].Verb}
-	if strings.Join(verbs, ",") != "open,claim,done" {
+	verbs := []string{archived.History[0].Verb, archived.History[1].Verb, archived.History[2].Verb, archived.History[3].Verb}
+	if strings.Join(verbs, ",") != "open,approve,claim,done" {
 		t.Fatalf("history names the verbs in order: %v", verbs)
 	}
 }
@@ -164,10 +164,10 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatalf("open: %+v %v", res, err)
 		}
 		missing, err := Claim(verbReq(a, "01J5X00000000000000000H110", "mac-a"), "budgeted")
-		if err != nil || missing.Outcome != OutcomeRejected || !strings.Contains(missing.Detail, "complete tuple") {
-			t.Fatalf("claim without the tuple did not refuse by remedy: %+v %v", missing, err)
+		if err != nil || missing.Outcome != OutcomeRejected || !strings.Contains(missing.Detail, "APPROVAL_REQUIRED") {
+			t.Fatalf("claim without approval did not refuse by remedy: %+v %v", missing, err)
 		}
-		res, err := Claim(verbReq(a, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
+		res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("budgeted claim: %+v %v", res, err)
 		}
@@ -176,18 +176,18 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := tree.Live["budgeted"]
-		if f.Budget == nil || f.Claimed == nil || f.Claimed.Revision != f.Revision || f.Claimed.Revision != 2 {
+		if f.Budget == nil || f.Claimed == nil || f.Claimed.Revision != f.Revision || f.Claimed.Revision != 3 {
 			t.Fatalf("claim did not bind the complete tuple to its revision: %+v", f)
 		}
 		if rendered := string(RenderFile(f)); !strings.Contains(rendered, "- Budget: elapsedLimit=4h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=2") ||
-			!strings.Contains(rendered, " revision=2") {
+			!strings.Contains(rendered, " revision=3") {
 			t.Fatalf("the human-readable record lacks budget binding:\n%s", rendered)
 		}
 	})
 
 	t.Run("set-budget starts the new revision elapsed clock", func(t *testing.T) {
 		claimReq := verbReq(a, "01J5X00000000000000000H200", "mac-b")
-		res, err := OpenClaim(claimReq, "rebudget", "Bounded work.", "main", "Start.", testBudget())
+		res, err := openClaimForTest(t, claimReq, "rebudget", "Bounded work.", "main", "Start.", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open-claim: %+v %v", res, err)
 		}
@@ -197,7 +197,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 		}
 		setReq := verbReq(a, "01J5X00000000000000000H210", "mac-b")
 		setReq.Now = claimReq.Now.Add(30 * time.Minute)
-		res, err = SetBudget(setReq, "rebudget", next)
+		res, err = setBudgetApprovedForTest(t, setReq, "rebudget", next)
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("set-budget: %+v %v", res, err)
 		}
@@ -206,7 +206,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := tree.Live["rebudget"]
-		if f.Revision != 2 || f.Claimed.Revision != 2 || f.Claimed.At != setReq.stamp() || *f.Budget != next ||
+		if f.Revision != 4 || f.Claimed.Revision != 4 || f.Claimed.At != setReq.stamp() || *f.Budget != next ||
 			f.History[len(f.History)-1].Verb != "set-budget" {
 			t.Fatalf("set-budget did not establish a fresh bound revision: %+v", f)
 		}
@@ -289,7 +289,7 @@ func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 func TestOpenClaimCarriesLabels(t *testing.T) {
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
-	res, err := OpenClaim(verbReq(a, "01J5X00000000000000000Q540", "mac-a"), "held-label", "Claimed at creation.", "main", "Go.", testBudget(), "custody")
+	res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000Q540", "mac-a"), "held-label", "Claimed at creation.", "main", "Go.", testBudget(), "custody")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim with labels: %+v %v", res, err)
 	}
@@ -311,11 +311,11 @@ func TestSameGoalClaimRaceOneWinnerNamed(t *testing.T) {
 
 	// A claims first; B's claim rebuilds on the new tip, reads the
 	// standing claim, and classifies the loss naming the winner.
-	resA, err := Claim(verbReq(a, "01J5X0000000000000000000D4", "mac-a"), "contested", testBudget())
+	resA, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000D4", "mac-a"), "contested", testBudget())
 	if err != nil || resA.Outcome != OutcomeConfirmed {
 		t.Fatalf("A claims: %+v %v", resA, err)
 	}
-	resB, err := Claim(verbReq(b, "01J5X0000000000000000000D5", "mac-b"), "contested", testBudget())
+	resB, err := Claim(verbReq(b, "01J5X0000000000000000000D5", "mac-b"), "contested")
 	if err != nil || resB.Outcome != OutcomeLost {
 		t.Fatalf("B loses the claim race: %+v %v", resB, err)
 	}
@@ -343,7 +343,7 @@ func TestClaimRefusalsAreNamed(t *testing.T) {
 	}
 	eager := t2.Live["eager"]
 	eager.Blocked = []string{"dep"}
-	eager.Revision++
+	touch(eager, verbReq(a, "01J5X0000000000000000000D9", "mac-a"), "edit", []string{"eager"})
 	if resw, errw := Publish(endpointFor(a), PublishRequest{
 		Opid: "op-wire-edge", Machine: "mac-a", Lineage: "l1",
 		Intent: testIntentFor("edit"), Message: "wire edge",
@@ -357,11 +357,12 @@ func TestClaimRefusalsAreNamed(t *testing.T) {
 
 	// Refusals are REJECTED results, journaled by name — not Go
 	// errors: the engine's contract for a definite rejection.
-	res2, err := Claim(verbReq(a, "01J5X0000000000000000000D8", "mac-a"), "eager", testBudget())
+	approveGoalForTest(t, verbReq(a, "01J5X0000000000000000000D7", "mac-a"), "eager", testBudget())
+	res2, err := Claim(verbReq(a, "01J5X0000000000000000000D8", "mac-a"), "eager")
 	if err != nil || res2.Outcome != OutcomeRejected || !strings.Contains(res2.Detail, "blocked by dep") {
 		t.Fatalf("claiming past an open blocker rejects by name: %+v %v", res2, err)
 	}
-	res3, err := Claim(verbReq(a, "01J5X0000000000000000000DE", "mac-a"), "ghost", testBudget())
+	res3, err := Claim(verbReq(a, "01J5X0000000000000000000DE", "mac-a"), "ghost")
 	if err != nil || res3.Outcome != OutcomeRejected || !strings.Contains(res3.Detail, "ghost") {
 		t.Fatalf("claiming a goal that does not exist rejects naming it: %+v %v", res3, err)
 	}
@@ -373,7 +374,7 @@ func TestReleaseIsOwnerOrHuman(t *testing.T) {
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000D9", "mac-a"), "held", "Held by A.", "main", "Work."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X0000000000000000000DA", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000DA", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	// B's agent cannot release A's claim: a rejection by name.
@@ -393,8 +394,8 @@ func TestReleaseIsOwnerOrHuman(t *testing.T) {
 		t.Fatal(err)
 	}
 	released := t2.Live["held"]
-	if released.State != StateQueued || released.Claimed != nil {
-		t.Fatalf("the release returns the goal to the queue: %+v", released)
+	if released.State != StateApproved || released.Claimed != nil {
+		t.Fatalf("the release returns the goal to its approved resting state: %+v", released)
 	}
 	last := released.History[len(released.History)-1]
 	if last.Actor != "human:wido" {
@@ -462,7 +463,7 @@ func TestParkUnparkCycle(t *testing.T) {
 	if res, err := Unpark(verbReq(a, "01J5X0000000000000000000E3", "mac-a"), "pausable"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X0000000000000000000E4", "mac-a"), "pausable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000E4", "mac-a"), "pausable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	resB, err := Park(verbReq(b, "01J5X0000000000000000000E5", "mac-b"), "pausable", "b wants it stopped")
@@ -505,7 +506,7 @@ func TestReopenGuardsClaimedDependents(t *testing.T) {
 	if res, err := Edit(verbReq(a, "01J5X0000000000000000000EA", "mac-a"), "tower", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("edit edge: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X0000000000000000000EB", "mac-a"), "tower", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000EB", "mac-a"), "tower", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim tower: %+v %v", res, err)
 	}
 	// Reopening the base under the claimed dependent refuses.
@@ -594,7 +595,7 @@ func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
 func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
-	if res, err := OpenClaim(verbReq(a, "01J5X0000000000000000000F6", "mac-a"), "wanted", "Wanted work.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(a, "01J5X0000000000000000000F6", "mac-a"), "wanted", "Wanted work.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim: %+v %v", res, err)
 	}
 	// Steal without a human refuses before anything happens.
@@ -725,11 +726,11 @@ func TestArcClaimsAsOneUnit(t *testing.T) {
 
 	// The covenant-patience two-clone race: one winner takes BOTH
 	// members; the loser names the winner.
-	resA, err := ClaimArc(verbReq(a, "01J5X00000000000000000B200", "mac-a"), "arc-one", testBudget())
+	resA, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000B200", "mac-a"), "arc-one", testBudget())
 	if err != nil || resA.Outcome != OutcomeConfirmed {
 		t.Fatalf("A claims the arc: %+v %v", resA, err)
 	}
-	resB, err := ClaimArc(verbReq(b, "01J5X00000000000000000B210", "mac-b"), "arc-two", testBudget())
+	resB, err := ClaimArc(verbReq(b, "01J5X00000000000000000B210", "mac-b"), "arc-two")
 	if err != nil || resB.Outcome != OutcomeLost {
 		t.Fatalf("B loses the whole cascade: %+v %v", resB, err)
 	}
@@ -766,7 +767,7 @@ func TestArcClaimsAsOneUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"arc-one", "arc-two"} {
-		if t3.Live[id].State != StateQueued || t3.Live[id].Claimed != nil {
+		if t3.Live[id].State != StateApproved || t3.Live[id].Claimed != nil {
 			t.Fatalf("the release returns every member: %s %+v", id, t3.Live[id])
 		}
 	}
@@ -801,7 +802,7 @@ func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
 			t.Fatalf("wire %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000B500", "mac-a"), "pair-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000B500", "mac-a"), "pair-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 	// Concluding ONE member archives it and leaves the sibling
@@ -851,7 +852,7 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 			t.Fatalf("wire %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000C200", "mac-a"), "casc-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000C200", "mac-a"), "casc-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 	// The human parks A's whole claimed arc from machine B: the
@@ -937,7 +938,7 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"casc-one", "casc-two"} {
-		if t3.Live[id].State != StateQueued {
+		if t3.Live[id].State != StateApproved {
 			t.Fatalf("unpark restores the whole arc: %s is %s", id, t3.Live[id].State)
 		}
 	}
@@ -954,7 +955,7 @@ func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000D200", "mac-a"), "det-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000D200", "mac-a"), "det-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 	// Detaching a claimed member releases it: the quota never
@@ -968,7 +969,7 @@ func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	freed := t2.Live["det-two"]
-	if freed.Arc != "" || freed.State != StateQueued || freed.Claimed != nil {
+	if freed.Arc != "" || freed.State != StateApproved || freed.Claimed != nil {
 		t.Fatalf("the departing member releases arcless: %+v", freed)
 	}
 	kept := t2.Live["det-one"]
@@ -983,7 +984,7 @@ func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
 func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
-	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000D300", "mac-a"), "anchor", "The anchor.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000D300", "mac-a"), "anchor", "The anchor.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim anchor: %+v %v", res, err)
 	}
 	if res, err := SetArc(verbReq(a, "01J5X00000000000000000D310", "mac-a"), "anchor", "join-arc"); err == nil && res.Outcome == OutcomeConfirmed {
@@ -1002,7 +1003,7 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 	if res, err := SetArc(verbReq(a, "01J5X00000000000000000D330", "mac-a"), "anchor2", "join-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-arc anchor2: %+v %v", res, err)
 	}
-	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000D340", "mac-a"), "anchor2", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000D340", "mac-a"), "anchor2", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim join-arc: %+v %v", res, err)
 	}
 	// A stranger may join the planning arc, but cannot inherit its foreign
@@ -1010,15 +1011,13 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 	if res, err := Open(verbReq(b, "01J5X00000000000000000D350", "mac-b"), "joiner", "Wants in.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open joiner: %+v %v", res, err)
 	}
-	if res, err := SetBudget(verbReq(b, "01J5X00000000000000000D355", "mac-b"), "joiner", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("budget joiner: %+v %v", res, err)
-	}
+	approveGoalForTest(t, verbReq(b, "01J5X00000000000000000D355", "mac-b"), "joiner", testBudget())
 	res, err := SetArc(verbReq(b, "01J5X00000000000000000D360", "mac-b"), "joiner", "join-arc")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a stranger's queued join: %+v %v", res, err)
 	}
 	tForeign, err := loadTree(b, res.Tip)
-	if err != nil || tForeign.Live["joiner"].State != StateQueued || tForeign.Live["joiner"].Claimed != nil {
+	if err != nil || tForeign.Live["joiner"].State != StateApproved || tForeign.Live["joiner"].Claimed != nil {
 		t.Fatalf("foreign join inherited claim authority: %+v %v", tForeign.Live["joiner"], err)
 	}
 	if res, err := Detach(verbReq(b, "01J5X00000000000000000D365", "mac-b"), "joiner"); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1046,12 +1045,12 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
-	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000F900", "mac-a"), "held-fast", "Held.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000F900", "mac-a"), "held-fast", "Held.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim: %+v %v", res, err)
 	}
 	// A fresh claim of an already-ours goal abandons (F8): its opid
 	// is nowhere, so confirmed would be a lie.
-	res, err := Claim(verbReq(a, "01J5X00000000000000000F910", "mac-a"), "held-fast", testBudget())
+	res, err := Claim(verbReq(a, "01J5X00000000000000000F910", "mac-a"), "held-fast")
 	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not by this operation") {
 		t.Fatalf("claim-already-ours abandons: %+v %v", res, err)
 	}
@@ -1114,13 +1113,14 @@ func TestMachinePinning(t *testing.T) {
 	}
 
 	// The wrong machine's claim rejects naming both machines.
-	res, err := Claim(verbReq(a, "01J5X0000000000000000000P4", "mac-a"), "gpu-work", testBudget())
+	approveGoalForTest(t, verbReq(a, "01J5X0000000000000000000P3", "mac-a"), "gpu-work", testBudget())
+	res, err := Claim(verbReq(a, "01J5X0000000000000000000P4", "mac-a"), "gpu-work")
 	if err != nil || res.Outcome != OutcomeRejected ||
 		!strings.Contains(res.Detail, "pinned to machine mac-b") || !strings.Contains(res.Detail, "mac-a") {
 		t.Fatalf("a foreign claim rejects by name: %+v %v", res, err)
 	}
 	// The pinned machine claims normally.
-	if res, err := Claim(verbReq(b, "01J5X0000000000000000000P5", "mac-b"), "gpu-work", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(b, "01J5X0000000000000000000P5", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the pinned machine claims: %+v %v", res, err)
 	}
 
@@ -1144,7 +1144,7 @@ func TestMachinePinning(t *testing.T) {
 
 	// While pinned to mac-b, the goal is invisible to mac-a's frontier
 	// and ready on mac-b's.
-	frontierTree, err := loadTree(a, pinRes.Tip)
+	frontierTree, err := loadTree(a, acceptedTip(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1175,7 +1175,7 @@ func TestMachinePinning(t *testing.T) {
 	if res, err := SetPin(moveReq, "gpu-work", "mac-a"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the transfer lands: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X0000000000000000000PA", "mac-a"), "gpu-work", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(a, "01J5X0000000000000000000PA", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the newly pinned machine claims: %+v %v", res, err)
 	}
 
@@ -1189,7 +1189,7 @@ func TestMachinePinning(t *testing.T) {
 	if res, err := SetPin(clearReq, "gpu-work", "-"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the clear lands: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(b, "01J5X0000000000000000000PD", "mac-b"), "gpu-work", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(b, "01J5X0000000000000000000PD", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("an unpinned goal claims anywhere: %+v %v", res, err)
 	}
 }

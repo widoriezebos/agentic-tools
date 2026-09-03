@@ -375,6 +375,13 @@ func listSynced(root string, pretty bool, requiredLabels ...string) int {
 				if f.Parked != nil && f.Parked.Because != "" {
 					line += "  (parked: " + f.Parked.Because + ")"
 				}
+				if f.Approved != nil && f.Approved.Authority == goal.ApprovalAuthorityRelayed {
+					if expired, why := f.ApprovalExpired(p.Horizon); expired {
+						line += "  (relayed, EXPIRED: " + why + ")"
+					} else {
+						line += "  (relayed, review by " + f.Approved.ReviewBy + ")"
+					}
+				}
 				fmt.Println(line)
 				if f.Intent != "" {
 					fmt.Println("      " + f.Intent)
@@ -382,6 +389,7 @@ func listSynced(root string, pretty bool, requiredLabels ...string) int {
 			}
 		}
 		section("claimed", grouped[goal.StateClaimed])
+		section("approved", grouped[goal.StateApproved])
 		section("queued", grouped[goal.StateQueued])
 		section("parked", grouped[goal.StateParked])
 		fmt.Printf("done: %d archived\n", len(done))
@@ -389,7 +397,7 @@ func listSynced(root string, pretty bool, requiredLabels ...string) int {
 	}
 	printJSON(map[string]any{
 		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
-		"queued": grouped[goal.StateQueued], "claimed": grouped[goal.StateClaimed],
+		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
 		"parked": grouped[goal.StateParked], "done": done,
 	})
 	return 0
@@ -473,7 +481,9 @@ func nextSynced(root string, requiredLabels ...string) int {
 	case len(v.Ready) > 0:
 		fmt.Println("next ready goal: " + v.Ready[0])
 	case len(v.Blocked) > 0:
-		fmt.Println("all queued goals are blocked; the first is " + v.Blocked[0])
+		fmt.Println("all approved goals are blocked; the first is " + v.Blocked[0])
+	case len(v.Awaiting) > 0:
+		fmt.Printf("no claimable goal; %d await the human's approval (first: %s)\n", len(v.Awaiting), v.Awaiting[0])
 	case len(requiredLabels) > 0:
 		fmt.Println("no goal matches --label " + strings.Join(requiredLabels, " --label "))
 	default:

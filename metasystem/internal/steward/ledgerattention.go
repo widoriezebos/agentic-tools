@@ -147,17 +147,23 @@ type ledgerSnapshot struct {
 func snapshotLedger(projection goal.Projection, machine string) ledgerSnapshot {
 	verdict := goal.Next(projection, machine)
 	snapshot := ledgerSnapshot{Ready: append([]string(nil), verdict.Ready...)}
+	awaiting := make(map[string]bool, len(verdict.Awaiting))
+	for _, id := range verdict.Awaiting {
+		awaiting[id] = true
+	}
 	type queueRow struct {
 		id, opened string
 	}
 	var rows []queueRow
 	for id, file := range projection.Tree.Live {
-		if file.State != goal.StateQueued {
+		if file.State != goal.StateQueued && file.State != goal.StateApproved {
 			continue
 		}
-		rows = append(rows, queueRow{id: id, opened: file.OpenedAt})
 		if file.Pinned == machine {
 			snapshot.Pinned = append(snapshot.Pinned, id)
+		}
+		if awaiting[id] {
+			rows = append(rows, queueRow{id: id, opened: file.OpenedAt})
 		}
 	}
 	sort.Strings(snapshot.Pinned)

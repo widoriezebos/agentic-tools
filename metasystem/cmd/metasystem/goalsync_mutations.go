@@ -7,11 +7,15 @@ package main
 // legacy wrappers own that world untouched.
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
@@ -87,9 +91,10 @@ func printSyncResult(res goal.PublishResult, err error) int {
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
+	budgetBox, confirm                                                       string
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit                    int64
-	labels, unlabels                                                         repeatedStrings
-	claim, refreshOnly                                                       bool
+	labels, unlabels, ids                                                    repeatedStrings
+	claim, refreshOnly, sweep                                                bool
 	keep                                                                     int
 }
 
@@ -106,7 +111,11 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	f := &syncFlags{}
 	fs.StringVar(&f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
-	fs.StringVar(&f.id, "id", "", "goal id")
+	if name == "approve" {
+		fs.Var(&f.ids, "id", "goal id (repeatable)")
+	} else {
+		fs.StringVar(&f.id, "id", "", "goal id")
+	}
 	fs.StringVar(&f.intent, "intent", "", "one-line intent")
 	fs.StringVar(&f.next, "next", "", "the next step")
 	fs.StringVar(&f.origin, "origin", "main", "creation provenance: human|main")
@@ -122,7 +131,12 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.Int64Var(&f.attemptLimit, "attempt-limit", 0, "positive reservation-attempt limit")
 	fs.Int64Var(&f.reservedJobMinutesLimit, "reserved-job-minutes-limit", 0, "positive reserved job-minute limit")
 	fs.Int64Var(&f.activeJobLimit, "active-job-limit", 0, "positive concurrent-job limit")
-	if name == "resume" {
+	if name == "approve" {
+		fs.StringVar(&f.budgetBox, "budget", "", "standing budget box: small|big")
+		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
+		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
+	}
+	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
@@ -144,11 +158,11 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 			return nil, false
 		}
 	}
-	if name != "open" && name != "claim" && name != "set-budget" && name != "resume" && f.hasAnyBudgetFlag() {
+	if name != "open" && name != "claim" && name != "set-budget" && name != "resume" && name != "approve" && f.hasAnyBudgetFlag() {
 		fmt.Fprintf(os.Stderr, "goal %s does not take budget flags\n", name)
 		return nil, false
 	}
-	if f.approvedRef != "" && name != "claim" && name != "set-budget" && name != "resume" && name != "steal" {
+	if f.approvedRef != "" && name != "set-budget" && name != "resume" && name != "approve" {
 		fmt.Fprintf(os.Stderr, "goal %s does not take --approved-ref\n", name)
 		return nil, false
 	}
@@ -178,6 +192,25 @@ func (f *syncFlags) budgetTuple(required bool) (*goal.Budget, error) {
 		return nil, err
 	}
 	return &budget, nil
+}
+
+func (f *syncFlags) approvalBudget() (*goal.Budget, error) {
+	if f.budgetBox != "" && f.hasAnyBudgetFlag() {
+		return nil, fmt.Errorf("--budget and the four explicit budget limits are mutually exclusive")
+	}
+	if f.budgetBox != "" {
+		switch f.budgetBox {
+		case "small":
+			budget, err := goal.NewBudget("4h", 10, 240, 1)
+			return &budget, err
+		case "big":
+			budget, err := goal.NewBudget("8h", 10, 240, 1)
+			return &budget, err
+		default:
+			return nil, fmt.Errorf("--budget is small or big")
+		}
+	}
+	return f.budgetTuple(false)
 }
 
 // trySyncMutation intercepts a legacy mutation command on a
@@ -344,6 +377,228 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 
 type goalAuthorityProver func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error)
 
+func proveGoalHumanAuthority(name string, f *syncFlags, prove goalAuthorityProver) (humanauthority.Proof, error) {
+	ancestryNow, err := goalCommandNow(f.root)
+	if err != nil {
+		return humanauthority.Proof{}, err
+	}
+	proof, err := prove(f.root, int64(os.Getppid()), nil, f.temporaryWord, f.reviewBy, ancestryNow)
+	if err != nil {
+		if f.temporaryWord == "" && f.reviewBy == "" {
+			return humanauthority.Proof{}, fmt.Errorf("goal %s could not prove enrolled human ancestry: %w", name, err)
+		}
+		return humanauthority.Proof{}, fmt.Errorf("goal %s could not bind its temporary recorded relay: %w", name, err)
+	}
+	return proof, nil
+}
+
+// recordGoalApprovalProof keeps the proof file's action bound to the exact
+// human verb. The authority package's generic writer accepts proven ancestry;
+// the relayed form is validated through the same authorization predicate the
+// core consumed and then serialized with the same closed envelope.
+func recordGoalApprovalProof(root, operationID, action string, proof humanauthority.Proof) error {
+	if proof.ValidFor(root) {
+		return humanauthority.RecordProof(root, operationID, action, proof)
+	}
+	if !proof.AuthorizesResume(root) || !proof.TemporaryResumeFor(root) || operationID == "" || filepath.Base(operationID) != operationID {
+		return fmt.Errorf("cannot record an incomplete human authority proof")
+	}
+	record := struct {
+		Schema      int                  `json:"schema"`
+		OperationID string               `json:"operationId"`
+		Action      string               `json:"action"`
+		Proof       humanauthority.Proof `json:"proof"`
+	}{Schema: 1, OperationID: operationID, Action: action, Proof: proof}
+	encoded, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(root, "artifacts", "agents", "authority", "proofs", operationID+".json")
+	durable, err := atomicfile.WriteText(path, string(encoded)+"\n", root)
+	if err != nil {
+		return err
+	}
+	if !durable {
+		return fmt.Errorf("human authority proof was written but its durability is unknown")
+	}
+	return nil
+}
+
+func runGoalApprove(args []string) int {
+	return runGoalApproveWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("approve", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) {
+		fmt.Fprintln(os.Stderr, "goal approve works only with the synced backlog")
+		return 1
+	}
+	if f.sweep && len(f.ids) != 0 || !f.sweep && f.confirm != "" {
+		fmt.Fprintln(os.Stderr, "goal approve uses either repeatable --id or --sweep; --confirm belongs only to the sweep")
+		return 2
+	}
+	if f.sweep && f.hasAnyBudgetFlag() || f.sweep && f.budgetBox != "" || f.sweep && f.approvedRef != "" {
+		fmt.Fprintln(os.Stderr, "goal approve --sweep uses the tuples already listed and takes no budget or --approved-ref")
+		return 2
+	}
+	if f.sweep && f.confirm == "" {
+		e, err := goal.ResolveEndpoint(f.root)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		now, err := goalCommandNow(f.root)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		listing, err := goal.PreviewApprovalSweep(e, now)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		for _, line := range listing.Lines {
+			fmt.Println(line)
+		}
+		fmt.Println("listing-sha256=" + listing.Digest)
+		if len(listing.Skipped) > 0 {
+			fmt.Println("without-budget=" + strings.Join(listing.Skipped, ","))
+		}
+		return 0
+	}
+	if f.by == "" || (!f.sweep && len(f.ids) == 0) {
+		fmt.Fprintln(os.Stderr, "goal approve needs --by and either repeatable --id or --sweep")
+		return 2
+	}
+	budget, err := f.approvalBudget()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	proof, err := proveGoalHumanAuthority("approve", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReq(f.root, f.by, f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req.ApprovedRef = f.approvedRef
+	var res goal.PublishResult
+	if f.sweep {
+		res, err = goal.ApproveSweep(req, f.confirm, &proof)
+	} else {
+		res, err = goal.Approve(req, f.ids, budget, &proof)
+	}
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	if res.Outcome == goal.OutcomeConfirmed {
+		action := "goal approve"
+		if f.sweep {
+			action = "goal approve --sweep"
+		}
+		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), action, proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal approve confirmed but could not record its authority proof:", err)
+			return 1
+		}
+		if proof.TemporaryResumeFor(f.root) {
+			fmt.Printf("goal approve: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+		}
+	}
+	return printSyncResult(res, nil)
+}
+
+func runGoalUnapprove(args []string) int {
+	return runGoalUnapproveWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("unapprove", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) || f.id == "" || f.by == "" || f.because == "" {
+		fmt.Fprintln(os.Stderr, "goal unapprove needs a synced backlog plus --id, --by, and --because")
+		return 2
+	}
+	proof, err := proveGoalHumanAuthority("unapprove", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReq(f.root, f.by, f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res, err := goal.Unapprove(req, f.id, f.because, &proof)
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	if res.Outcome == goal.OutcomeConfirmed {
+		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal unapprove", proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal unapprove confirmed but could not record its authority proof:", err)
+			return 1
+		}
+		if proof.TemporaryResumeFor(f.root) {
+			fmt.Printf("goal unapprove: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+		}
+	}
+	return printSyncResult(res, nil)
+}
+
+func runGoalSetBudget(args []string) int {
+	return runGoalSetBudgetWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("set-budget", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) || f.id == "" || f.by == "" {
+		fmt.Fprintln(os.Stderr, "goal set-budget needs a synced backlog plus --id and --by")
+		return 2
+	}
+	budget, err := f.budgetTuple(true)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	proof, err := proveGoalHumanAuthority("set-budget", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReq(f.root, f.by, f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req.ApprovedRef = f.approvedRef
+	res, err := goal.SetBudgetApproved(req, f.id, *budget, &proof)
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	if res.Outcome == goal.OutcomeConfirmed {
+		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal set-budget", proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal set-budget confirmed but could not record its authority proof:", err)
+			return 1
+		}
+		if proof.TemporaryResumeFor(f.root) {
+			fmt.Printf("goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+		}
+	}
+	return printSyncResult(res, nil)
+}
+
 func runGoalResume(args []string) int {
 	return runGoalResumeWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
 }
@@ -415,11 +670,13 @@ func runGoalResumeWithAuthority(args []string, prove goalAuthorityProver) int {
 		return 1
 	}
 	defer held.Release()
-	if err := humanauthority.RecordResumeProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), proof); err != nil {
-		fmt.Fprintln(os.Stderr, "goal resume could not record its authority proof:", err)
-		return 1
-	}
 	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
+	if err == nil && res.Outcome == goal.OutcomeConfirmed {
+		if err := humanauthority.RecordResumeProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal resume confirmed but could not record its authority proof:", err)
+			return 1
+		}
+	}
 	if err == nil && res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
 		fmt.Printf("goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
 	}
@@ -545,15 +802,39 @@ func mainSplitRatification(id, digest string, classification lease.ClassifyResul
 	return goal.SplitRatification{Tier: goal.RatifierMain, MainID: classification.MainId, ClaimEpoch: *classification.ClaimEpoch, DraftSHA256: digest}, nil
 }
 
+type goalTerminalEnroller func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Enrollment, error)
+
 func runGoalEnrollTerminal(args []string) int {
+	return runGoalEnrollTerminalWith(args, humanauthority.Enroll)
+}
+
+func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
 	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
+	lineage := flags.String("lineage", "", "coordinator lineage used to publish the fleet enrollment")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	enrollment, err := humanauthority.Enroll(*root, int64(os.Getppid()), nil, time.Now().UTC())
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal enroll-terminal requires the synced backlog so the first enrollment ends relayed approval fleet-wide")
+		return 1
+	}
+	req, err := syncReq(*root, "terminal", *lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	enrollment, err := enroll(*root, int64(os.Getppid()), nil, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req.Now = enrollment.EnrolledAt
+	res, err := goal.RecordFleetEnrollment(req, enrollment.Generation)
+	// Another machine may already own the immutable fleet cutoff. That leaves
+	// this machine's completed local enrollment valid and needs no root rewrite.
+	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
+		fmt.Fprintln(os.Stderr, "terminal enrolled locally but its fleet cutoff did not publish:", err, res.Detail)
 		return 1
 	}
 	printJSON(enrollment)
@@ -684,13 +965,6 @@ var (
 			return goal.Claim(req, f.id, *budget)
 		}
 		return goal.Claim(req, f.id)
-	}, "id")
-	runGoalSetBudget = runSyncOnly("set-budget", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		budget, err := f.budgetTuple(true)
-		if err != nil {
-			return goal.PublishResult{}, err
-		}
-		return goal.SetBudget(req, f.id, *budget)
 	}, "id")
 	runGoalRelease = runSyncOnly("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		if f.arc != "" {

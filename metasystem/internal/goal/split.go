@@ -312,7 +312,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 
 func validateSplitParent(parent *GoalFile, r VerbRequest) error {
 	switch parent.State {
-	case StateQueued:
+	case StateQueued, StateApproved:
 		return nil
 	case StateClaimed:
 		if ownPair(parent.Claimed, r.Actor) {

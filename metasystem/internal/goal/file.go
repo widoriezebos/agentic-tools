@@ -15,12 +15,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 )
 
 // GoalFile is one parsed goal file.
 type GoalFile struct {
 	Id       string
-	State    string // queued | claimed | parked | done
+	State    string // queued | approved | claimed | parked | done
 	Intent   string
 	Origin   string
 	NextStep string
@@ -38,6 +40,9 @@ type GoalFile struct {
 	// NormApproval is the published proof for an admitted over-norm tuple.
 	// It names the pre-touch goal revision the human approved.
 	NormApproval *GoalNormApprovalClaim
+	// Approved binds the human's execution decision to one exact intent and
+	// complete budget tuple. It remains as audit evidence after execution.
+	Approved *ApprovalRecord
 	// Sliced is the irreversible pre-reservation boundary. Once present, the
 	// parent can only advance through Split.
 	Sliced   *SlicedRecord
@@ -61,6 +66,61 @@ type GoalNormApprovalClaim struct {
 	ApprovedRef  string
 	Minutes      uint64
 	GoalRevision uint64
+}
+
+// ApprovalRecord is the durable human admission of one exact goal payload.
+type ApprovalRecord struct {
+	By        string
+	At        string
+	Revision  uint64
+	Opid      string
+	Authority string // proven | relayed
+	Digest    string
+	ReviewBy  string // relayed only
+}
+
+const (
+	ApprovalAuthorityProven  = "proven"
+	ApprovalAuthorityRelayed = "relayed"
+)
+
+// ApprovalHorizon is the complete observation used to decide whether a
+// relayed approval still admits a new execution revision. EnrolledAt is the
+// fleet's first synced terminal enrollment, not a machine-local file.
+type ApprovalHorizon struct {
+	Now        time.Time
+	EnrolledAt time.Time
+}
+
+func renderBudgetRecord(b Budget) string {
+	return fmt.Sprintf("elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d",
+		b.ElapsedLimit, b.AttemptLimit, b.ReservedJobMinutesLimit, b.ActiveJobLimit)
+}
+
+// ApprovalDigest binds exactly the intent and tuple that the human reviewed.
+func ApprovalDigest(intent string, budget Budget) string {
+	sum := sha256.Sum256([]byte("intent=" + intent + "\n" + "budget=" + renderBudgetRecord(budget) + "\n"))
+	return hex.EncodeToString(sum[:])
+}
+
+// ApprovalExpired evaluates the relayed-word expiry at one caller-supplied
+// instant. A proven terminal approval does not expire.
+func (f *GoalFile) ApprovalExpired(h ApprovalHorizon) (bool, string) {
+	if f == nil || f.Approved == nil || f.Approved.Authority != ApprovalAuthorityRelayed {
+		return false, ""
+	}
+	if !h.EnrolledAt.IsZero() {
+		return true, fmt.Sprintf("the fleet's first terminal was enrolled at %s", h.EnrolledAt.UTC().Format(time.RFC3339))
+	}
+	now := h.Now.UTC()
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if review, err := time.Parse("2006-01-02", f.Approved.ReviewBy); err == nil && nowDate.After(review) {
+		return true, fmt.Sprintf("the review date %s has passed", f.Approved.ReviewBy)
+	}
+	if horizon, err := time.Parse("2006-01-02", governance.TemporaryGoalAuthorityHorizon); err == nil && nowDate.After(horizon) {
+		return true, fmt.Sprintf("the temporary authority horizon %s has passed", governance.TemporaryGoalAuthorityHorizon)
+	}
+	return false, ""
 }
 
 // SlicedRecord proves that a claimed revision crossed the slicing boundary
@@ -187,20 +247,22 @@ func repeatedRelayedActError(root *RootRecord, f *GoalFile, verb, ruling string)
 
 func recordedRelayedAct(history HistoryLine) bool {
 	return history.AuthorityOutcome == AuthorityOutcomeTemporaryHumanWord &&
-		(history.Verb == "resume" || history.Verb == "set-obligation")
+		(history.Verb == "resume" || history.Verb == "set-obligation" || history.Verb == "approve" ||
+			history.Verb == "unapprove" || history.Verb == "set-budget")
 }
 
 // States, closed.
 const (
-	StateQueued  = "queued"
-	StateClaimed = "claimed"
-	StateParked  = "parked"
-	StateDone    = "done"
+	StateQueued   = "queued"
+	StateApproved = "approved"
+	StateClaimed  = "claimed"
+	StateParked   = "parked"
+	StateDone     = "done"
 )
 
 func validState(s string) bool {
 	switch s {
-	case StateQueued, StateClaimed, StateParked, StateDone:
+	case StateQueued, StateApproved, StateClaimed, StateParked, StateDone:
 		return true
 	}
 	return false
@@ -266,7 +328,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("missing goal heading")
 	}
 	if !validState(f.State) {
-		addProblem("state %q is not one of queued|claimed|parked|done", f.State)
+		addProblem("state %q is not one of queued|approved|claimed|parked|done", f.State)
 	}
 	if f.Revision == 0 {
 		addProblem("missing or zero Revision")
@@ -317,6 +379,17 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		if f.NormApproval.ApprovedRef == "" || f.NormApproval.Minutes == 0 || f.NormApproval.GoalRevision == 0 {
 			addProblem("NormApproval is incomplete")
 		}
+	}
+	if f.Approved != nil {
+		if err := f.ValidateApprovalRecord(); err != nil {
+			addProblem("Approved: %v", err)
+		}
+	}
+	if f.State == StateApproved && f.Approved == nil {
+		addProblem("approved without an Approved record")
+	}
+	if f.State == StateQueued && f.Approved != nil {
+		addProblem("Approved record on a queued goal")
 	}
 	if f.Sliced != nil {
 		if f.Sliced.Machine == "" || f.Sliced.Lineage == "" || f.Sliced.Revision == 0 || !validStamp(f.Sliced.At) {
@@ -374,6 +447,47 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("done without Concluded")
 	}
 	return f, problems
+}
+
+// ValidateApprovalRecord proves the record names one approval-bearing event
+// and still describes the exact intent and budget in the file.
+func (f *GoalFile) ValidateApprovalRecord() error {
+	if f == nil || f.Approved == nil {
+		return nil
+	}
+	a := f.Approved
+	if !strings.HasPrefix(a.By, "human:") || strings.TrimSpace(strings.TrimPrefix(a.By, "human:")) == "" {
+		return fmt.Errorf("by=%q does not name a human", a.By)
+	}
+	if !validStamp(a.At) || a.Revision == 0 || a.Revision > f.Revision || a.Revision > uint64(len(f.History)) ||
+		a.Opid == "" || !hexDigest(a.Digest) {
+		return fmt.Errorf("record has incomplete or out-of-range event coordinates")
+	}
+	event := f.History[a.Revision-1]
+	if event.At != a.At || event.Opid != a.Opid || event.Actor != a.By ||
+		(event.Verb != "approve" && event.Verb != "resume" && event.Verb != "set-budget") {
+		return fmt.Errorf("record does not bind its approval-bearing History event")
+	}
+	switch a.Authority {
+	case ApprovalAuthorityProven:
+		if a.ReviewBy != "" || event.AuthorityOutcome != "" {
+			return fmt.Errorf("proven authority cannot carry relayed review facts")
+		}
+	case ApprovalAuthorityRelayed:
+		if _, err := time.Parse("2006-01-02", a.ReviewBy); err != nil ||
+			event.AuthorityOutcome != AuthorityOutcomeTemporaryHumanWord || event.AuthorityReviewBy != a.ReviewBy {
+			return fmt.Errorf("relayed authority does not match its History review facts")
+		}
+	default:
+		return fmt.Errorf("authority %q is not proven|relayed", a.Authority)
+	}
+	if f.Budget == nil {
+		return fmt.Errorf("record requires a complete Budget")
+	}
+	if a.Digest != ApprovalDigest(f.Intent, *f.Budget) {
+		return fmt.Errorf("digest does not match the approved intent and budget")
+	}
+	return nil
 }
 
 // ValidateClaimRevision proves that a revision-bound claim names one event in
@@ -472,6 +586,19 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.NormApproval = &GoalNormApprovalClaim{ApprovedRef: rec["approvedRef"], Minutes: minutes, GoalRevision: revision}
+	case "Approved":
+		rec, err := parseKVRecord(value, []string{"by", "at", "revision", "opid", "authority", "digest"}, []string{"reviewBy"}, "")
+		if err != nil {
+			addProblem("Approved: %v", err)
+			return
+		}
+		revision, revisionErr := strconv.ParseUint(rec["revision"], 10, 64)
+		if revisionErr != nil || revision == 0 {
+			addProblem("Approved has invalid revision")
+			return
+		}
+		f.Approved = &ApprovalRecord{By: rec["by"], At: rec["at"], Revision: revision, Opid: rec["opid"],
+			Authority: rec["authority"], Digest: rec["digest"], ReviewBy: rec["reviewBy"]}
 	case "Sliced":
 		rec, err := parseKVRecord(value, []string{"machine", "lineage", "revision", "at"}, nil, "")
 		if err != nil {
@@ -724,12 +851,20 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Pinned: %s\n", f.Pinned)
 	}
 	if f.Budget != nil {
-		fmt.Fprintf(&b, "- Budget: elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d\n",
-			f.Budget.ElapsedLimit, f.Budget.AttemptLimit, f.Budget.ReservedJobMinutesLimit, f.Budget.ActiveJobLimit)
+		fmt.Fprintf(&b, "- Budget: %s\n", renderBudgetRecord(*f.Budget))
 	}
 	if f.NormApproval != nil {
 		fmt.Fprintf(&b, "- NormApproval: approvedRef=%s minutes=%d goalRevision=%d\n",
 			f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.GoalRevision)
+	}
+	if f.Approved != nil {
+		a := f.Approved
+		fmt.Fprintf(&b, "- Approved: by=%s at=%s revision=%d opid=%s authority=%s digest=%s",
+			a.By, a.At, a.Revision, a.Opid, a.Authority, a.Digest)
+		if a.ReviewBy != "" {
+			fmt.Fprintf(&b, " reviewBy=%s", a.ReviewBy)
+		}
+		b.WriteByte('\n')
 	}
 	if f.Sliced != nil {
 		fmt.Fprintf(&b, "- Sliced: machine=%s lineage=%s revision=%d at=%s\n",

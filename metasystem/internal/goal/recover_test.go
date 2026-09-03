@@ -135,7 +135,7 @@ func TestRecoveryRebuildsAnswer(t *testing.T) {
 	}
 }
 
-func TestRecoveryCompletesOpenClaimWithLabels(t *testing.T) {
+func TestRecoveryRefusesOpenClaimWithoutHumanApproval(t *testing.T) {
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	opid := Opid("01J5X00000000000000000Q005", "mac-a", "lin-1")
@@ -153,9 +153,12 @@ func TestRecoveryCompletesOpenClaimWithLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := p.Tree.Live["recovered-claim"]
-	if f == nil || f.State != StateClaimed || f.Claimed == nil || strings.Join(f.Labels, ",") != "custody,recovery" {
-		t.Fatalf("recovery carries the atomic claim and labels: %+v", f)
+	if f := p.Tree.Live["recovered-claim"]; f != nil {
+		t.Fatalf("recovery must not manufacture approval through open-claim: %+v", f)
+	}
+	entry, err := ReadEntry(a, opid)
+	if err != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "APPROVAL_REQUIRED") {
+		t.Fatalf("recovery did not close open-claim with the approval remedy: %+v %v", entry, err)
 	}
 }
 
@@ -196,8 +199,12 @@ func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	claimed := p.Tree.Live["claimable"]
-	if claimed == nil || claimed.State != StateClaimed || claimed.Claimed.Machine != "mac-a" {
-		t.Fatalf("the recovered claim landed: %+v", claimed)
+	if claimed == nil || claimed.State != StateQueued || claimed.Claimed != nil {
+		t.Fatalf("the recovered claim crossed the approval gate: %+v", claimed)
+	}
+	entry, err := ReadEntry(a, opid)
+	if err != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "APPROVAL_REQUIRED") {
+		t.Fatalf("the refused recovery did not terminalize with its remedy: %+v %v", entry, err)
 	}
 	// The clone mutates again.
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q040", "mac-a"), "unblocked", "Flows.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -408,8 +415,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	// A dead owner's CASCADE claim: the rebuilt transaction must
-	// claim BOTH members — a hand-copy would split the arc.
+	// A dead owner's CASCADE claim cannot reconstruct human approval.
 	claimOpid := Opid("01J5X00000000000000000Q160", "mac-a", "lin-1")
 	strandEntry(t, a, claimOpid, PhaseCreated, Intent{
 		Verb: "claim", Targets: []string{"rv-one"},
@@ -424,12 +430,13 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	}
 	for _, id := range []string{"rv-one", "rv-two"} {
 		f := p.Tree.Live[id]
-		if f.State != StateClaimed || f.Claimed == nil || f.Claimed.Machine != "mac-a" {
-			t.Fatalf("the recovered claim cascades across the arc: %s %+v", id, f.Claimed)
+		if f.State != StateQueued || f.Claimed != nil {
+			t.Fatalf("recovery manufactured approval across the arc: %s %+v", id, f)
 		}
-		if f.History[len(f.History)-1].Opid != claimOpid {
-			t.Fatalf("the cascade carries the ENTRY's opid: %s", f.History[len(f.History)-1].Opid)
-		}
+	}
+	claimEntry, err := ReadEntry(a, claimOpid)
+	if err != nil || claimEntry.Outcome != OutcomeRejected || !strings.Contains(claimEntry.Evidence, "APPROVAL_REQUIRED") {
+		t.Fatalf("the recovered arc claim did not close with the approval remedy: %+v %v", claimEntry, err)
 	}
 
 	// A dead owner's STEAL from the other machine cannot replay. The
@@ -448,8 +455,8 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 		t.Fatal(err)
 	}
 	stolen := p.Tree.Live["rv-one"]
-	if stolen.Claimed == nil || stolen.Claimed.Machine != "mac-a" {
-		t.Fatalf("journal text reassigned a human-reserved claim: %+v", stolen.Claimed)
+	if stolen.State != StateQueued || stolen.Claimed != nil {
+		t.Fatalf("journal text manufactured or reassigned execution: %+v", stolen)
 	}
 	entry, err := ReadEntry(b, stealOpid)
 	if err != nil || entry.Outcome != OutcomeRejected {

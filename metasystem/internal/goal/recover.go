@@ -267,11 +267,7 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		}
 		return claimRequest(r, target, budget), nil
 	case "set-budget":
-		budget, err := budgetFromIntentArgs(in.Args)
-		if err != nil {
-			return PublishRequest{}, err
-		}
-		return setBudgetRequest(r, target, budget), nil
+		return PublishRequest{}, fmt.Errorf("APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand")
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
 		if err != nil {

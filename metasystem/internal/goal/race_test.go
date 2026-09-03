@@ -132,6 +132,11 @@ func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
 	if res, err := Split(verbReq(a, "01J5X00000000000000000CJ10", "mac-a"), "concurrent-parent", members, mainRatification("concurrent-parent", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", res, err)
 	}
+	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000CJ15", "mac-a"), "concurrent-one", testBudget())
+	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000CJ16", "mac-a"), "concurrent-two", testBudget())
+	if _, err := FetchAdvance(endpointFor(b)); err != nil {
+		t.Fatal(err)
+	}
 
 	var start, done sync.WaitGroup
 	start.Add(1)
@@ -144,7 +149,7 @@ func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
 		go func(slot int, root, id, machine, ulid string) {
 			defer done.Done()
 			start.Wait()
-			results[slot], errs[slot] = Claim(verbReq(root, ulid, machine), id, testBudget())
+			results[slot], errs[slot] = Claim(verbReq(root, ulid, machine), id)
 		}(index, leg.root, leg.id, leg.machine, leg.ulid)
 	}
 	start.Done()
@@ -168,7 +173,8 @@ func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
 	if res, err := Open(verbReq(a, "01J5X00000000000000000CJ40", "mac-a"), "quota-bystander", "Unrelated claim.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open bystander: %+v %v", res, err)
 	}
-	quota, err := Claim(verbReq(a, "01J5X00000000000000000CJ50", "mac-a"), "quota-bystander", testBudget())
+	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000CJ45", "mac-a"), "quota-bystander", testBudget())
+	quota, err := Claim(verbReq(a, "01J5X00000000000000000CJ50", "mac-a"), "quota-bystander")
 	if err != nil || quota.Outcome != OutcomeRejected || !strings.Contains(quota.Detail, "quota") {
 		t.Fatalf("mixed arc weakened the per-machine quota: %+v %v", quota, err)
 	}
@@ -184,17 +190,22 @@ func TestSplitMemberDependencyStillOwnsClaimOrdering(t *testing.T) {
 	if res, err := Split(verbReq(a, "01J5X00000000000000000CD10", "mac-a"), "dependency-parent", members, mainRatification("dependency-parent", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", res, err)
 	}
-	blocked, err := Claim(verbReq(b, "01J5X00000000000000000CD20", "mac-b"), "dependency-parent-two", testBudget())
+	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000CD15", "mac-a"), "dependency-parent-one", testBudget())
+	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000CD16", "mac-a"), "dependency-parent-two", testBudget())
+	if _, err := FetchAdvance(endpointFor(b)); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := Claim(verbReq(b, "01J5X00000000000000000CD20", "mac-b"), "dependency-parent-two")
 	if err != nil || blocked.Outcome != OutcomeRejected || !strings.Contains(blocked.Detail, "dependency-parent-one") {
 		t.Fatalf("unmet member dependency did not refuse by name: %+v %v", blocked, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000CD30", "mac-a"), "dependency-parent-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000CD30", "mac-a"), "dependency-parent-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim predecessor: %+v %v", res, err)
 	}
 	if res, err := Done(verbReq(a, "01J5X00000000000000000CD40", "mac-a"), "dependency-parent-one", "Predecessor done."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("complete predecessor: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(b, "01J5X00000000000000000CD50", "mac-b"), "dependency-parent-two", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReq(b, "01J5X00000000000000000CD50", "mac-b"), "dependency-parent-two"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim after dependency completion: %+v %v", res, err)
 	}
 }

@@ -160,13 +160,27 @@ func stewardBudget() *goal.Budget {
 	return &budget
 }
 
+func approvedStewardGoal(id, intent, next, openedAt string) *goal.GoalFile {
+	budget := stewardBudget()
+	approvedAt := "2026-08-23T00:01:00Z"
+	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAW", "bed-m1", "approval")
+	history := append(bedHistory(id, "open"), goal.HistoryLine{
+		At: approvedAt, Opid: approvalOpid, Verb: "approve", Actor: "human:Wido",
+		Targets: []string{id}, Keep: -1,
+	})
+	return &goal.GoalFile{
+		Id: id, State: goal.StateApproved, Intent: intent, Origin: goal.OriginMain,
+		NextStep: next, OpenedAt: openedAt, Revision: 2, Budget: budget, History: history,
+		Approved: &goal.ApprovalRecord{
+			By: "human:Wido", At: approvedAt, Revision: 2, Opid: approvalOpid,
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(intent, *budget),
+		},
+	}
+}
+
 func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
-		"waiting": {
-			Id: "waiting", State: goal.StateQueued, Intent: "Awaits a claim", Origin: "main",
-			NextStep: "Claim it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
-			Budget: stewardBudget(), History: bedHistory("waiting", "open"),
-		},
+		"waiting": approvedStewardGoal("waiting", "Awaits a claim", "Claim it.", "2026-08-23T00:00:00Z"),
 		"stale-claim": {
 			Id: "stale-claim", State: goal.StateClaimed, Intent: "A record is not liveness", Origin: "main",
 			NextStep: "Continue it.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 2,
@@ -189,11 +203,7 @@ func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
 
 func TestConvertedJobsCountOnlyWithLiveProcessesAndPendingSetupAgrees(t *testing.T) {
 	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
-		"waiting": {
-			Id: "waiting", State: goal.StateQueued, Intent: "Awaits a claim", Origin: "main",
-			NextStep: "Claim it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 1,
-			Budget: stewardBudget(), History: bedHistory("waiting", "open"),
-		},
+		"waiting": approvedStewardGoal("waiting", "Awaits a claim", "Claim it.", "2026-08-23T00:00:00Z"),
 	})
 	jobPath := filepath.Join(root, "artifacts", "agents", "jobs", "delegate.json")
 	writeStewardRecord(t, jobPath, map[string]any{

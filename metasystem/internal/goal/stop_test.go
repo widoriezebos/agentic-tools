@@ -56,7 +56,8 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	}
 	claim := verbReq(root, "01J5X00000000000000000S010", "mac-a")
 	claim.ClaimEpoch = 9
-	if res, err := Claim(claim, "stop-me", Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}); err != nil || res.Outcome != OutcomeConfirmed {
+	approvedBudget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
+	if res, err := claimApprovedForTest(t, claim, "stop-me", approvedBudget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	p, err := Project(endpointFor(root), true, claim.Now)
@@ -139,7 +140,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 			Ulid: "01J5X00000000000000000S030", Now: stop.Now.Add(time.Minute),
 		},
 		GoalID: "stop-me",
-		Budget: Budget{ElapsedLimit: "2h", AttemptLimit: 4, ReservedJobMinutesLimit: 80, ActiveJobLimit: 2},
+		Budget: approvedBudget,
 	}
 	resume.Authority = testHumanAuthority(t, root, resume.Now)
 	if res, err := Resume(resume); err != nil || res.Outcome != OutcomeRejected {
@@ -171,7 +172,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	}
 	fresh := p.Tree.Live["stop-me"]
 	if fresh.StopFence != nil || fresh.StopCapability == nil || fresh.StopCapability.FenceEpoch != 0 ||
-		fresh.StopCapability.Revision != fresh.Claimed.Revision || fresh.Budget.ElapsedLimit != "2h" ||
+		fresh.StopCapability.Revision != fresh.Claimed.Revision || fresh.Budget.ElapsedLimit != "1m" ||
 		fresh.History[len(fresh.History)-1].Verb != "resume" {
 		t.Fatalf("resume did not create one fresh revision and tuple: %+v", fresh)
 	}
@@ -185,7 +186,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 	}
 	claim := verbReq(root, "01J5X00000000000000000S110", "mac-a")
 	claim.ClaimEpoch = 9
-	if result, err := Claim(claim, "one-relayed-resume", Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, claim, "one-relayed-resume", Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
 
@@ -232,7 +233,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "Wido"},
 			Ulid: "01J5X00000000000000000S130", Now: firstAt, ClaimEpoch: 9,
 		},
-		GoalID: "one-relayed-resume", Budget: Budget{ElapsedLimit: "2h", AttemptLimit: 4, ReservedJobMinutesLimit: 80, ActiveJobLimit: 2},
+		GoalID: "one-relayed-resume", Budget: Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1},
 		Authority: &firstProof,
 	}
 	if result, err := Resume(first); err != nil || result.Outcome != OutcomeConfirmed {

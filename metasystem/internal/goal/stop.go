@@ -342,7 +342,7 @@ func CloseStopPublishRequest(r CloseStopRequest) PublishRequest {
 	return closeStopRequest(r)
 }
 
-// ResumeRequest is the human-only fresh-revision transition.
+// ResumeRequest is the human-only, approval-gated continuation transition.
 type ResumeRequest struct {
 	VerbRequest
 	GoalID    string
@@ -350,11 +350,14 @@ type ResumeRequest struct {
 	Authority *humanauthority.Proof
 }
 
-// Resume verifies the exact stop batch during the transaction, installs the
-// complete fresh tuple, creates a new revision, and clears the old fence.
+// Resume verifies the exact stop batch and standing approval during the
+// transaction, creates a new execution revision, and clears the old fence.
 func Resume(r ResumeRequest) (PublishResult, error) {
 	if r.Actor.Human == "" || r.Authority == nil || !r.Authority.AuthorizesResume(r.Endpoint.Root) {
 		return PublishResult{}, fmt.Errorf("goal resume requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
+	}
+	if r.ApprovedRef != "" {
+		return PublishResult{}, fmt.Errorf("goal resume uses the standing approved intent, budget, and norm proof; it does not take --approved-ref")
 	}
 	if err := r.Budget.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid fresh budget: %w", err)
@@ -381,6 +384,16 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			if opidLanded(f, r.VerbRequest) {
 				return nil, AlreadyApplied{}
 			}
+			approvedBudget, approvalErr := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "resume")
+			if approvalErr != nil {
+				return nil, approvalErr
+			}
+			if approvedBudget != r.Budget {
+				return nil, fmt.Errorf("APPROVAL_REQUIRED: resume cannot change the human-approved budget; re-approve or use the proof-bearing goal set-budget before resuming")
+			}
+			if err := refuseRelayedAfterFleetEnrollment(t, temporaryAuthority); err != nil {
+				return nil, err
+			}
 			if temporaryAuthority {
 				if err := repeatedRelayedActError(t.Root, f, "resume", r.Authority.Departure); err != nil {
 					return nil, err
@@ -391,13 +404,6 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				return nil, err
 			}
 			machine, lineage, claimEpoch := f.Claimed.Machine, f.Claimed.Lineage, f.StopCapability.ClaimEpoch
-			budget := r.Budget
-			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
-			if err != nil {
-				return nil, err
-			}
-			f.Budget = &budget
-			f.NormApproval = approval
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
 			f.History[len(f.History)-1].ApprovedRef = r.ApprovedRef
 			if temporaryAuthority {
