@@ -72,7 +72,11 @@ classifies it from the moment it appears; four rows are of this kind today (`go.
 (`workspace.FileAt(baseTree, …)` as `observe.go:495`), so a candidate cannot reclassify what
 it lands (`promotion.go:22-24`). In template mode a key with no row is `unclassified`; in
 adopted mode it is the application's and answers `outside` (R-55-m1 binds the template; an
-adopted installation's own additions keep today's rules). The verb and the waiver rule read
+adopted installation's own additions keep today's rules). Ownership decides first in every
+consumer; in the root layout (the installation is the repository root) ownership follows the
+shipped inventory in `internal/stateroot/owner.go`, which must cover everything `scripts/adopt.sh`
+installs, including `docs/project-rules.md` and the `memory/`, `plans/` and `records/` trees
+(revision 2, correction of 2026-09-03 after PCM-CC4-001 and PCM-CC5-001). The verb and the waiver rule read
 the checked-out file: outside the repository, `outside`; inside the installation, the
 `install:` key; outside the installation, the `repo:` key in template mode and `outside` in
 adopted mode.
