@@ -74,9 +74,15 @@ it lands (`promotion.go:22-24`). In template mode a key with no row is `unclassi
 adopted mode it is the application's and answers `outside` (R-55-m1 binds the template; an
 adopted installation's own additions keep today's rules). Ownership decides first in every
 consumer; in the root layout (the installation is the repository root) ownership follows the
-shipped inventory in `internal/stateroot/owner.go`, which must cover everything `scripts/adopt.sh`
-installs, including `docs/project-rules.md` and the `memory/`, `plans/` and `records/` trees
-(revision 2, correction of 2026-09-03 after PCM-CC4-001 and PCM-CC5-001). The verb and the waiver rule read
+shipped inventory in `internal/stateroot/owner.go`. In this part the inventory names the
+instruction-bearing files and the trees adoption creates: `AGENTS.md`, `CLAUDE.md`, `wow.md`,
+`metasystem.conf`, `go.mod`, `go.sum`, `docs/project-rules.md` and the six named docs files, and
+the trees `cmd/`, `internal/`, `scripts/`, `skills/`, `optional-skills/`, `docs/design/`,
+`docs/examples/`, `memory/`, `plans/`, `records/` and `.github/`. The other docs files adoption
+copies and the runtime registration directories answer application-owned in the root layout,
+as they did before this feature; making the inventory equal adoption's full install set is
+goal `adoption-inventory-from-install-set`, which reads the set adoption installs instead of a
+hand list (revision 2, corrections of 2026-09-03 after PCM-CC4-001, PCM-CC5-001 and PCM-CC6-001). The verb and the waiver rule read
 the checked-out file: outside the repository, `outside`; inside the installation, the
 `install:` key; outside the installation, the `repo:` key in template mode and `outside` in
 adopted mode.
