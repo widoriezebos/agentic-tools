@@ -3,9 +3,9 @@
 - State: approved
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
-- Next step: RUN IN PROGRESS (m0, 2026-09-03). FINDINGS: (1) state-init-born missions launch with RESUME not start; (2) an engine rebuild after the last steward arm makes the runner's 'up' refuse ENROLLMENT_DRIFT - re-arm before launch; (3) the runner's 'up' arms supervision as itself (owner pid 1206366) but returns advisor/read-only because the CHECKOUT LEASE is held by m0's live Claude session (main-1788344772-1154480) - 'stop your own session' is mechanical: the runner cannot hold writing authority until the seat's session lease is retired. Fix-forward: retire the seat session's lease (up --retire), then relaunch resume; the seat keeps read-only watching, exactly the recipe's 'watch from outside'.
+- Next step: RUN IN PROGRESS (m0, 2026-09-03 15:50Z). FINDINGS so far: (1) state-init-born missions launch with RESUME; (2) engine rebuild after the last steward arm -> ENROLLMENT_DRIFT at the runner's up, re-arm first; (3) the runner arms supervision as itself but gets advisor/read-only while the seat's session holds the checkout lease; (4) 'up --retire' retires the announcement but NOT the lease - the lease is bound to the seat's LIVE PROCESS (pid 1154480, this Claude session), so 'stop your own session' is literal and mechanical: only ending the session frees the checkout. HANDOVER ARMED: a reparented watcher waits for pid 1154480 to exit, then runs 'mission resume' from a plain shell with no session in its ancestry (log artifacts/agents/missions/runners/launch-birth-token-5.out). Wido (or m1) ends m0's Claude session; the runner starts on its own. The seat cannot post to the ledger after that (no lease) - the runner's records, mission status, and this chat are the start notice; the run record lands after the run.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 12
+- Revision: 13
 - Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Approved: by=human:Wido at=2026-09-03T14:16:24Z revision=5 opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036 authority=relayed digest=0c9d3b9a12438d4b0c36b5798c98f1e73e3bdf3312756c4b09088d8921cecf5f reviewBy=2026-09-06
@@ -23,4 +23,5 @@ History:
 - 2026-09-03T15:47:33Z 2D1CAHMMPR05R16ZJTSPJ3D5HT-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:48:19Z G3AQ46MRPXCERMN99SWBFPK3D9-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:49:13Z C8PEDYAERS0GRYJPQEGV922TRC-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
-Integrity: sha256=f405aa8e1299ca0a2435efa3c69404009b3c50560b435c18617eeb76257e9170
+- 2026-09-03T15:50:30Z P82T4H9HBFQ4N7XBPM1J1KTK8Q-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
+Integrity: sha256=51bdbc59a30a4a0883908accfe50147a7907817b72f1b6f71ba69342f3346098
