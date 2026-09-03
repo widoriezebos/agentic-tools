@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: TIER 3 per R-54-m1, run on m1 with Codex only. STOP CRITERION for the design loop (Wido's word this morning): a finding is material only if it changes what gets built and the reviewer names the artifact that changes; design, one review, one fold, one closing review, then build; at the cap the agreed parts build as they are and every still-disputed point becomes a named test obligation. Ladder: design brief -> Fable design (short: the manifest shape, the verb, the three consumers, the deletions, the refusal text, the fixtures) -> Sol review -> fold -> closing review -> Sol build -> Fable code review -> land with --chain. Afterwards, separately: promote direct-fix-floor-refused (one line plus a ruling).
 - OpenedAt: 2026-09-03T06:25:55Z
-- Revision: 1
+- Revision: 2
 - Labels: robustness, separation
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1
 
 History:
 - 2026-09-03T06:25:55Z 15J8G3T7AASKGMCMTHBGQ8X7BN-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
-Integrity: sha256=193de6b799fa8bc34c5828755408030ba4a5e103d474a64c39cad0263f7ba1a0
+- 2026-09-03T06:29:58Z 028EE0KR6DNEGJR340AJ644P6E-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
+Integrity: sha256=d42639d7e2da775ba48d0c8e15fe8ad6e18e940f2366c08abaf4d99198318e9e
