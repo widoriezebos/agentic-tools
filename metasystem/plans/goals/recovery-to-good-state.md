@@ -5,8 +5,9 @@
 - Origin: main
 - Next step: Bug ladder per the paper's chapter 12 and R-38-m2: ANALYSIS first (Fable lane, design mode, 4h; brief plans/recovery-analysis-brief.md): for each specimen, the state the system was in, the command a seat could lawfully run, why it refused or hung, with file and line; the inventory of every refusal text on the up, arm, census, and delegate paths and whether its remedy is seat-runnable; the map of partial states against the eight partial goals; the root-cause statement confirmed or corrected; a proposed arc of slices of at most 240 minutes with the rehearsal fixture per slice. Then ANALYSIS CRITIQUE (Sol), DESIGN, DESIGN CRITIQUE, BUILD, CODE CRITIQUE. Big item: 8h/10/240m/1 per R-44/R-45; split when the analysis lands. Any seat with a free claim slot may claim it; m1 holds never-idle-ironclad until its analysis lands. WIDO'S DESIGN WORD 2026-09-02 16:40 (verbatim): 'If we can harden / idempotent the metasystem commands then we should. It should be really ease to get the metasystem started, regardless the state. Same for stop: easy to stop (fully, no processes lingering) regardless the state. No terminal tricker should ever be required'. So DONE also means: metasystem up is idempotent from every partial state (a repeat is a no-op on a healthy checkout and a repair on a broken one, replacing drifted owners, stale locks, dead runners and a drifted engine pin by itself); a stop verb brings the checkout fully down with no process lingering, from any state, proven by the census; neither ever requires a human at a terminal. TENSION the analysis must settle, not paper over: the enrollment law makes some acts human-only from an agent-free terminal (engine enrollment, goal resume, set-obligation) to protect the breakers; the design keeps those acts human but reachable without a terminal through the relayed-word path Wido already approved (R-32-m1, R-37-m3), and every machinery act (supervision, steward, engine pin, reaping) becomes seat-runnable and idempotent.
 - OpenedAt: 2026-09-02T16:03:45Z
-- Revision: 10
+- Revision: 11
 - Labels: recovery, robustness
+- Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=5 at=2026-09-02T16:26:36Z
 
@@ -21,4 +22,5 @@ History:
 - 2026-09-02T19:47:20Z Y0MQDR2TKRNVS9BEW6G59Y1Z9R-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
 - 2026-09-02T20:07:01Z R430MBV8TW98AVGX554WA3VHSW-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
 - 2026-09-03T12:17:43Z HK5R08ZCWK3WGYVEFRZ0SSBCWE-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
-Integrity: sha256=8e1cb18108c6a3f384e6dc89b698144f47f6c3818581015b84e662d816bd1eca
+- 2026-09-03T12:21:13Z M6QV55C2HNNBFSV02NB1HA8SYK-m1-7bb1546e set-arc actor=m1+main-1788333680-2840-7f79f4 targets=recovery-to-good-state
+Integrity: sha256=09a57a0028cea0619ad2ad5319de77cb84c13939d2617c0d2f8b860c789aa389
