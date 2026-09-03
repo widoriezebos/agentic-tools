@@ -1,13 +1,14 @@
-# Fleet Conversation Channel — design (goal fleet-slack-channel, revision 2)
+# Fleet Conversation Channel — design (goal fleet-slack-channel, revision 3)
 
-Author m0b (Fable lane), 2026-09-03. Tier 3 under R-54-m1; revision 2 is
-the one fold of Sol review round 1 (fsc-design-crit1, FSC-R1-001..008,
-dispositions in §12). Wido's words (verbatim on the goal record): status
-"per machine", "threaded conversations about questions from machines",
-"switchable between providers (Slack, Telegram, Whatsapp)" with Slack
-first, his reply authenticated by a TOTP code or equivalent; DONE = status
-posted, question answered from his phone, answer on the ledger as his
-word, machine continues, proven against a fake endpoint.
+Author m0b (Fable lane), 2026-09-03. Tier 3 under R-54-m1; revision 2
+folded Sol round 1 (FSC-R1-001..008), revision 3 carries the closing
+review's five obligations (FSC-R2-001..005) as build law; §10. Wido's
+words (verbatim on the goal record): status "per machine", "threaded
+conversations about questions from machines", "switchable between
+providers (Slack, Telegram, Whatsapp)" with Slack first, his reply
+authenticated by a TOTP code or equivalent; DONE = status posted,
+question answered from his phone, answer on the ledger as his word,
+machine continues, proven against a fake endpoint.
 
 ## 1. What exists and is reused (traced)
 
@@ -20,15 +21,13 @@ word, machine continues, proven against a fake endpoint.
    idiom, §10 credentials (secrets only from environment or
    metasystem.conf.local; literal scrubbing from every problem string); §2b
    reserved the INBOUND half, which this design builds for one provider.
-2. No `internal/channel` package exists on main; this feature builds the
-   package the alert design named, with what it needs (alert §9 chunking
-   and §5 single-flight are deferred).
+2. No `internal/channel` package exists on main; this feature builds it
+   (alert §9 chunking and §5 single-flight are deferred).
 3. internal/humanauthority proves an enrolled agent-free terminal
    (`HUMAN_AUTHORITY_PROVEN`) or, under R-32-m1 until 2026-09-06, a relayed
    word for exactly `goal resume` and `goal set-obligation`
-   (`TEMPORARY_HUMAN_WORD`). `RecordedNormApproval` (internal/goal/norm.go)
-   already accepts a goal-history operation with a `human:` actor whose
-   reason field carries `goal=<id> minutes=<n> goalRevision=<r>`.
+   (`TEMPORARY_HUMAN_WORD`). `RecordedNormApproval` already accepts a
+   `human:` history operation whose reason carries the strict token.
 4. Report sources, all durable on main: the goal ledger (plans/goals),
    the landing history (origin/main, `Goal-Item:` trailers, subjects), job
    records (artifacts/agents/jobs; internal/report scanners), usage facts
@@ -156,12 +155,13 @@ A reply is Wido's word iff BOTH:
 2. the text ends with a valid TOTP code: 6 digits, RFC 6238 with the
    secret `channel.human.totp-secret` (secret, conf.local/env), SHA-1, 30 s
    step, window ±1 step, and the matched step not yet consumed. Consumption
-   is durable BEFORE attribution: under the lock, a row `{step, inboundRef,
-   qid}` is appended to artifacts/agents/channel/totp-consumed.json (fsync,
-   rename) and only then does the envelope proceed; a step already present
-   is a replay unless its row names this same inbound ref (a resumed
-   phase, below). Rows older than the window are pruned. The code is
-   stripped; the rest, trimmed, is the answer.
+   is durable BEFORE attribution: under the lock, a row `{step,
+   destination, provider, threadID, ref, qid}` is appended to
+   artifacts/agents/channel/totp-consumed.json (fsync, rename) and only
+   then does the envelope proceed; a step already present is a replay
+   unless its row equals this envelope on ALL of destination, provider,
+   threadID, ref and qid (a resumed phase, below; FSC-R2-001). Rows older
+   than the window are pruned. The code is stripped; the rest is the answer.
 
 Any other reply (wrong user, no code, bad code, replay) is answered ONCE
 per inbound ref, "not recorded: <reason>; reply with your answer and your
@@ -172,25 +172,31 @@ stranger cannot make the bot chatter.
 An authenticated reply is a resumable phase machine on the question
 record (FSC-R1-002), `answer.phase` ∈ matched → recorded → receipted →
 closed, each phase durable (write, fsync, rename) before the next acts:
-(a) MATCHED: the record gets `answer` {text, userID, ref, at, step, opid}
-with the operation id ALLOCATED NOW (`op-<qid>-<inbound ts>`, stable) and
-`state: answered`; (b) RECORDED: the goal's history gets one operation
-`answer` with that op id, `actor=human:wido`, the verbatim text (with the
-`wants` token verbatim when the answer contains it) in the reason field,
-where `RecordedNormApproval` already scans, and the authority outcome
-`AUTHENTICATED_CHANNEL_WORD` with proof coordinates provider, user id,
-message ref and step (never the secret or the code); the goal transaction
-engine makes a repeated op id a no-op, so a crash between (a) and (b)
-re-runs (b) exactly once; (c) RECEIPTED: the thread gets "recorded as
-your word on <goal in words>, ledger operation <opid>"; (d) CLOSED:
-`state: closed`, next step gets `ANSWERED <qid>: <answer text>`. Poll
-visits every question whose state is open OR whose answer phase is not
-closed, resuming at the first undone phase; the destination cursor is
-persisted only after every envelope of the pass reached a durable
-disposition (rejected-journaled, or phase ≥ matched). The history grammar
-change (FSC-R1-003): `ParseHistoryLine`'s authority validation accepts
-`AUTHENTICATED_CHANNEL_WORD` with its four proof keys next to
-`TEMPORARY_HUMAN_WORD`; the round-trip grammar tests gain that outcome.
+(a) MATCHED: the record gets `answer` {text, userID, ref, at, step, ulid}
+with a caller ULID ALLOCATED NOW; the op id is `goal.Opid(ulid, machine,
+lineage)`, the ledger's only valid shape (FSC-R2-002); `state: answered`;
+(b) RECORDED: ONE goal transaction with that op id writes the history
+operation `answer` (`actor=human:wido`, the verbatim text with the
+`wants` token when present in the reason field, where
+`RecordedNormApproval` scans) AND appends `ANSWERED <qid>: <text>` to the
+next step, so the two land together or not at all; a repeated op id is a
+no-op, so a crash between (a) and (b) re-runs (b) exactly once and one
+ANSWERED line exists (FSC-R2-003); (c) RECEIPTED: the thread gets
+"recorded as your word on <goal in words>, ledger operation <opid>"; (d)
+CLOSED: `state: closed` by one rename. Poll visits every question whose
+state is open OR whose answer phase is not closed, resuming at the first
+undone phase. The history grammar (FSC-R1-003, FSC-R2-004): the line
+carries `authorityOutcome=AUTHENTICATED_CHANNEL_WORD` and exactly four
+new keys `channelProvider=<registry name>`, `channelUser=<provider user
+id>`, `channelRef=<threadID>/<message id>` (both provider tokens, URL-safe
+already for Slack ts; otherwise percent-encoded), `channelStep=<decimal
+TOTP step>`; the renderer emits them in that order and the parser rejects
+any other key, as today. Dispositions: an envelope that correlates to no
+open or resuming question (a Telegram destination update, a stray Slack
+reply) is journaled by ref in
+artifacts/agents/channel/<destination>/unmatched.jsonl (FSC-R2-005);
+the destination cursor is persisted only after every envelope of the pass
+is durably rejected, unmatched, or at phase ≥ matched.
 
 What the recorded word may DRIVE, exactly: nothing runs by itself. The
 consumers, named (FSC-R1-007): (1) `goal claim --approved-ref <opid>` —
@@ -201,7 +207,7 @@ two acts (the R-32-m1 set, no wider) gain a branch that validates an
 `AUTHENTICATED_CHANNEL_WORD` operation on the same goal whose text answers
 the question, independent of the R-32-m1 horizon (2026-09-06); set-budget
 and enroll-terminal stay enrolled-terminal only; (3) a fork or reserved
-decision: the seat's judgment, quoting the op id. Decision D5 in §10.
+decision: the seat's judgment, quoting the op id. Decision D5 in §9.
 `channel wait --question <qid> [--timeout <m>]` blocks a script, not a
 turn, until the record is answered, and prints the answer.
 
@@ -218,23 +224,21 @@ channel.status.interval-minutes=240
 ```
 
 Unconfigured: `status` prints locally, `ask` records as undelivered, the
-tick touches no network. A committed secret-named key is reported and
-ignored (alert §10). The TOTP secret and the bot token are Wido's acts
-after the build, placed on each asking machine (each polls its own).
+tick touches no network; a committed secret-named key is reported and
+ignored (alert §10). Secret and token are Wido's acts after the build.
 
 ## 7. Command surface and the tick
 
 `metasystem channel status [--post]`, `channel ask ...`, `channel show
 --question <qid>`, `channel wait --question <qid>`, `channel poll` (what
 the tick runs; callable by hand, "busy" if the tick holds the lock),
-`channel close --question <qid> --because <text>` (machine-side
-withdrawal, posts the reason). The channel phase runs in both tick
-drivers (the resident runner and `steward tick`) AFTER RunTick has
-released the arbitration lock and after revival and pending delivery, as
-the last duty, under ONE 15-second context for the whole phase and a work
-budget per pass: at most one `Receive`, five question dispositions, one
-status post; remaining work carries to the next tick (FSC-R1-006). A
-channel failure is an undelivered count, not a stopped fleet.
+`channel close --question <qid> --because <text>` (withdrawal, posts the
+reason). The channel phase is the LAST duty of both tick drivers (the
+resident runner and `steward tick`), after RunTick released the
+arbitration lock and after revival and pending delivery, under ONE
+15-second context for the whole phase and a work budget per pass (one
+`Receive`, five dispositions, one status post; the rest carries to the
+next tick, FSC-R1-006). A channel failure is an undelivered count.
 
 ## 8. Proof plan (tests by name; fixture script)
 
@@ -244,15 +248,17 @@ ledger, two jobs, three trailered commits → exact text);
 `TestAskWritesRecordBeforePosting`; `TestAskDedupsOpenQuestion`;
 `TestTOTPVerifiesRFC6238Vectors` (appendix B, SHA-1); `TestTOTPWindowAndReplay`;
 `TestPollRejectsWrongUserNoCodeBadCodeReplay` (one post each, cap three);
-`TestPollRecordsAuthenticatedReply` (record, history op `actor=human:wido`
-with outcome, thread close, next-step line);
-`TestAnswerCarryingStrictTokenSatisfiesNormApproval` (`goal claim
---approved-ref <opid>` succeeds); `TestSecretsScrubbedFromErrors`; and the
-review's obligations by name: `TestPollAtomicallyConsumesTOTP` (two polls,
-one step, one attribution), `TestPollCrashRecoveryExactlyOnce` (crash
-injected after each phase, re-poll: one history op, thread closed, cursor
-advanced last), `TestAuthenticatedChannelHistoryRoundTrip`,
-`TestInboundCheckpointSurvivesCrashAndDeduplicates`,
+`TestPollRecordsAuthenticatedReply` (record, history op, thread close,
+next-step line); `TestAnswerCarryingStrictTokenSatisfiesNormApproval`
+(`goal claim --approved-ref <opid>` succeeds);
+`TestSecretsScrubbedFromErrors`; the reviews' obligations by name: `TestPollAtomicallyConsumesTOTP` (two polls,
+one step, one attribution), `TestTOTPResumeExceptionIsEnvelopeScoped`
+(equal ref from another provider in the same step is a replay),
+`TestPollCrashRecoveryExactlyOnce` (crash injected after each phase,
+re-poll: one history op, ONE ANSWERED line, the ledger parses, thread
+closed, cursor advanced last), `TestAuthenticatedChannelHistoryRoundTrip`
+(the four keys, exact spellings), `TestInboundCheckpointSurvivesCrashAndDeduplicates`
+(an unmatched update before a valid reply; cursor still acknowledges),
 `TestReportHasDurableSpendSource`, `TestTickChannelPassBound`,
 `TestAuthenticatedChannelAuthorityAfterTemporaryHorizon` (resume and
 set-obligation with `--approved-ref` on 2026-09-07),
@@ -267,15 +273,12 @@ history, the close post, and a claim with `--approved-ref` of that op
 succeeding), then `channel wait` returns the answer. Live: one `channel
 status --post` by hand when the token arrives; never in a suite. R-31.
 
-## 9. Slices
+## 9. Slices and decisions Wido may still change
 
-Slice 1 (this goal, one build): §2–§8 as written. Later goals: telegram
-and whatsapp adapters behind §2; alert-channel slice 1 (episodes,
-single-flight, chunking) on the same package; a priced spend source; a
-fleet-wide roll-up if Wido wants one message instead of one per machine.
-
-## 10. Decisions Wido may still change (recorded, not blocking)
-
+Slice 1 (this goal, one build): §2–§8. Later goals: telegram and whatsapp
+adapters behind §2; alert-channel slice 1 (episodes, single-flight,
+chunking) on the same package; a priced spend source; a fleet-wide
+roll-up if Wido wants one message instead of one per machine.
 D1 TOTP as the reply authentication (his prior word; user id alone is
 weaker: anyone at his unlocked phone). D2 one status message per machine,
 240-minute cadence plus on demand. D3 polling on the tick, not Slack
@@ -283,17 +286,14 @@ Events (no listener, no public endpoint). D4 the recorded answer drives
 nothing by itself. D5 it may drive `resume` and `set-obligation` (the
 R-32-m1 set) beyond 2026-09-06; Wido may narrow this to recording only.
 
-## 11. Self-grade
+## 10. Self-grade and review dispositions
 
 Three operations, one secret, one id, one lock, one durable consumption
 row; every report source is on main. Weakest: `Planned` readiness reads
-the ledger's budget presence, which the breach-clock work still changes.
-
-## 12. Review round 1 dispositions (job fsc-design-crit1, Sol)
-
-001 lock + consumption row: folded §5. 002 phase machine, stable op id,
-cursor after disposition: folded §5. 003 grammar validator: folded §5.
-004 acknowledge operation: AMENDED — receive is destination-wide with
-thread correlation and the persisted cursor is the acknowledgment; the
-named test stands. 005 dollars: folded §3 (units). 006 pass bound: folded
-§7. 007 named consumers: folded §5 + D5. 008 Credential: folded §2.
+the ledger's budget presence, which breach-clock work still changes. Round 1 (fsc-design-crit1): R1-001/002/003/007 folded §5 (+D5), 005 §3,
+006 §7, 008 §2; 004 AMENDED — receive destination-wide, the persisted
+cursor is the acknowledgment, the named test stands. Closing review
+(fsc-design-crit2), all folded as build law in §5/§8: R2-001 consumption
+row scoped to the whole envelope; R2-002 op id from a caller ULID via
+goal.Opid; R2-003 history op and ANSWERED line in one transaction;
+R2-004 the four key spellings; R2-005 the unmatched disposition.
