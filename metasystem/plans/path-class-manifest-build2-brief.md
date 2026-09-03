@@ -80,3 +80,20 @@ change.
 # Gap Rule
 
 stop and report a gap; never fill it silently.
+
+# Residuals from the first part's code reviews (bind this slice where named)
+
+- PCM-CC7-002: the two comments in internal/stateroot/owner.go that name
+  goal adoption-inventory-from-install-set violate the source-comment
+  rule (no provenance in code); reword them to state the constraint in
+  the system's own terms. One-line changes; do them in this slice.
+- PCM-CC7-001: the design's resolution paragraph says "the six named
+  docs files" without naming them; the orchestrator fixes the design
+  text, not you.
+- PCM-CC6-003 (directory queries answer application-owned in the root
+  layout) and PCM-CC6-001 (inventory short of adoption's install set)
+  belong to goal adoption-inventory-from-install-set; do not touch them.
+- PCM-CC2 low notes (tracked-path walk ignoring mode; unreachable
+  exact-inverse legs; misinstalled diagnostic when the manifest is
+  absent): fold each only if it is a one-line change in a file this
+  slice already touches; otherwise leave it recorded.
