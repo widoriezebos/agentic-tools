@@ -5,11 +5,12 @@
 - Origin: human
 - Next step: RE-AIMED BY WIDO'S WORDS R-54-m1 and R-60-m1 (2026-09-02/03): this goal is the machinery for the risk-based budget of review depth. The tier set at intake (R-54-m1: constant or fixture; mechanical logic in an existing owner; design-bearing) fixes the review budget as part of the goal's budget; the stop criterion ends a loop earlier: a finding is material only if it changes what gets built and names the artifact, carried as a field in the critic return schema so the stop is mechanical; at the budget the agreed parts build and disputed points become named test obligations. No separate cap machinery. Specimens: the alert channel's thirteen rounds, the Codex handshake's eight design revisions for one constant. Remaining tasks 4 to 6 of this goal fold into that shape; run after the path-class manifest, the second landing bar, the fleet conversation channel and the token fence in alert mode. ORIGINAL NEXT STEP KEPT BELOW: TASKS 1-3 LANDED (ebee506, bd36ee6, e3ab42a, 699cd90, d23c774): grammar, fixture legs, register, cap engine, cutover + driver death. UNBLOCKED (backlog triage 2026-08-31): the recorded blocker is stale - m2's steward is armed under the R-29-m2 temporary word and delegate dispatch runs lawfully (a full working day of chains on 2026-08-31 proves it). Remainder ready for dispatch: Tasks 4 (closure semantics 4h), 5a/5b (same-tree union + exact-tree certificate), 6 (docs + integrated proof) are delegate builds under Ruling O, and delegate dispatch on m2 is lawfully refused until the steward enrollment runs FROM WIDO'S AGENT-FREE TERMINAL on this machine (metasystem steward arm — ENROLLMENT_DRIFT, L8 law). Resume with a fresh claim on his enrollment.
 - OpenedAt: 2026-08-26T10:47:00Z
-- Revision: 20
+- Revision: 21
 - Arc: headless-fleet
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
 - NormApproval: approvedRef=R-72-m2 minutes=3000 goalRevision=18
 - Approved: by=human:Wido at=2026-09-03T17:13:45Z revision=19 opid=3NR60NY714CV4MD1STXNZZBARR-m2-5fcf08ab authority=relayed digest=d12cc89ce0ae2026ec9e95152a0c503810b96db89f72df12bb55d9c8d220a95f reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=20 at=2026-09-03T17:15:53Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-03T17:14:46Z revision=20
 - StopCapability: generation=20 revision=20 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -34,4 +35,5 @@ History:
 - 2026-09-03T12:20:39Z V60MSAA2GSYKX0YTD5GF28AF3X-m1-7bb1546e set-arc actor=m1+main-1788333680-2840-7f79f4 targets=severity-tiered-rigor
 - 2026-09-03T17:13:45Z 3NR60NY714CV4MD1STXNZZBARR-m2-5fcf08ab approve actor=human:Wido targets=severity-tiered-rigor authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="the four items you listed are agreed. I want all of them. I don't care about the order. You decide. everything is approved, any budget, any cap, anything is approved, I trust you to take care of this. Now get me this in the fastest possible time"
 - 2026-09-03T17:14:46Z 7BH30F432A0GPEGP47N1H22WP4-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
-Integrity: sha256=f3055fe24d12d68d688f8224b0fafed7c18676a93e1f9b62ca1bb5de570d29a8
+- 2026-09-03T17:15:53Z WZJTF4Q0GQR1827QP9FKK73X54-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
+Integrity: sha256=2d3956e475ae7ed7b7c57454a05780e0babf07556af295724d12e75ca6c8a650
