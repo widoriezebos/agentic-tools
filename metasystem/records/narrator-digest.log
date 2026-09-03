@@ -1541,3 +1541,5 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-03T15:50:45Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-32bffab62332ee7eec77b10ee1d4482d7a5533e3)
 2026-09-03T16:02:15Z HIGHLIGHT — The shared goal ledger moved to 217855264525: 1 new claimable goal(s): job-record-birth-token. (source: ledger 217855264525fc1b3bb7eaec9a71d48b051debce)
 2026-09-03T16:02:15Z HIGHLIGHT — A landing moved the repository storyline to commit 2ee32c75d864. (source: commit 2ee32c75d8641455e5510a463612ec1a0159fe97)
+2026-09-03T16:35:44Z HIGHLIGHT — A landing moved the repository storyline to commit 1226c1c4aa0f. (source: commit 1226c1c4aa0f0cb350d0f20c1552702bf2fe129b)
+2026-09-03T16:35:44Z LOWLIGHT — The steward escalated: claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime. (source: episode escalation-idle-backlog-dead-1226c1c4aa0f0cb350d0f20c1552702bf2fe129b)
