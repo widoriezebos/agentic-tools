@@ -27,7 +27,7 @@ prints `commit`). It merges cleanly onto today's main (verified with
 `git merge-tree`); if it does not, stop and report the conflict as a
 gap. Then read the tree you now hold: metasystem/internal/spend/
 (measure.go, transcript.go, their tests, testdata/bed-20260902/),
-metasystem/internal/config/spend.go and validate.go,
+metasystem/internal/config/ (spend.go, validate.go),
 metasystem/internal/mission/fence.go (JobUsageAt),
 metasystem/internal/steward/health.go, alert_episode.go, tick.go,
 spend_fence_test.go, and metasystem/metasystem.conf.
