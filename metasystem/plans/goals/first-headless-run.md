@@ -3,9 +3,9 @@
 - State: approved
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
-- Next step: RUN IN PROGRESS (m0, 2026-09-03 15:47Z). Born: contract sealed+signed (f57dae45), ledger-init 6/3, state-init with the engine's live baseline (status running, stream primary); target job-record-birth-token approved (4h/6/240m) and claimed by m0 so the runner serves it; m0's session owner shut down. FINDING 1 (fix-forward): 'mission start' refuses a state-init-born mission ('mission state already exists; use resume') - after a manual birth the first launch is RESUME, not start; the recipe and docs say start. Relaunched with resume, reparented under setsid so the runner classifies itself (no announced ancestor). Watch surface: mission status, artifacts/agents/missions/runners/birth-token.{log,json,heartbeat}, asks/, health.
+- Next step: RUN IN PROGRESS (m0, 2026-09-03). Born and approved (see prior). FINDING 1: state-init-born missions launch with RESUME, not start. FINDING 2 (fix-forward): the runner's own 'up' refused ENROLLMENT_DRIFT on accepted-engine - the engine binary had been rebuilt (aa9ca65c, for the Telegram config task) after the steward's last arm, so the enrolled digest no longer matched; the runner cannot re-enroll itself (the remedy is a human-word steward arm from the enrolled terminal). Lesson for the record: every engine rebuild on a runner host must be followed by a steward re-arm BEFORE a headless launch, or the launch dies at 'up'. Re-armed under Wido's recorded temporary word, relaunching with resume.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 10
+- Revision: 11
 - Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Approved: by=human:Wido at=2026-09-03T14:16:24Z revision=5 opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036 authority=relayed digest=0c9d3b9a12438d4b0c36b5798c98f1e73e3bdf3312756c4b09088d8921cecf5f reviewBy=2026-09-06
@@ -21,4 +21,5 @@ History:
 - 2026-09-03T15:40:15Z 5WY2SXR5RVZ3YJ2C7RF92H5RSE-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:46:37Z XVAC123RXPZ7SNXWK254YNDPFK-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:47:33Z 2D1CAHMMPR05R16ZJTSPJ3D5HT-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
-Integrity: sha256=57867bb38ec9f64b248301240d34c6bc8e0e9c9037e5da8459c9153e9ebfb61a
+- 2026-09-03T15:48:19Z G3AQ46MRPXCERMN99SWBFPK3D9-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
+Integrity: sha256=0501d75aaf12bd3f704757edd24b563ae96c0304dccbfea0dbe5a5c9eeb00e47
