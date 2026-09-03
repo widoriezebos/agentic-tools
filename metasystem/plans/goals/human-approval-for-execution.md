@@ -5,10 +5,11 @@
 - Origin: main
 - Next step: HOLD-LIFT AUTHORITY (named per the paper seat's check, m0 2026-09-03): the 23:05 HOLD is LIFTED for this feature by Wido's word relayed by m1 this morning, recorded as R-61-m1 on main - verbatim intent: 'the hold is lifted for exactly one feature per machine, all four approved with any budget, fastest possible time', with m0's feature named as human-approval-for-execution and 'Start with the design round now.' m0 proceeds on that authority the instant the claim clears; this is not a hold breach. --- BLOCKED ON APPROVAL REVISION: R-61-m1's strict-form budget approval covers revision 2, but set-budget bumped the goal to revision 3, so claim refuses pending re-approval at rev 3 (m1 to re-issue). Budget 3000m/30 is correct. --- FEATURE: a fifth ledger state only the human sets, claim refused without it, budgets attached at approval, the relayed-word form, the draft-question settled, the grandfather sweep. Tier 3 ladder (R-54-m1): design, one review, one fold, one closing review, build, one code review.
 - OpenedAt: 2026-09-03T09:07:28Z
-- Revision: 6
+- Revision: 7
 - Labels: authority, backlog
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
 - NormApproval: approvedRef=R-63-m1 minutes=3000 goalRevision=5
+- Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=6 at=2026-09-03T09:39:42Z
 - Claimed: machine=m0 lineage=main-1788178136-1684505-4ffe42 at=2026-09-03T09:37:59Z revision=6
 - StopCapability: generation=6 revision=6 machine=m0 claimEpoch=2 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-03T09:21:19Z F9ZY5R5S6YV8C8JMKZDBCK6JTF-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=human-approval-for-execution
 - 2026-09-03T09:22:31Z EN41A0GJPX17WS1SDQ7D00RZGP-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=human-approval-for-execution
 - 2026-09-03T09:37:59Z DKQDHYR74RQCFZ5BJSDS22N13C-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=human-approval-for-execution
-Integrity: sha256=870f079446eab2e1703952312c810c65f36c437f9afb1c14f1ad3814fae056e7
+- 2026-09-03T09:39:42Z TPFEXX16ZGB198JEWJ877BDJ3F-m0-c5dbf036 slice-start actor=m0+main-1788178136-1684505-4ffe42 targets=human-approval-for-execution
+Integrity: sha256=34d056f0d92a9cfd0499ea148899f2f548047d2ce1237bf75da18c91b17efc48
