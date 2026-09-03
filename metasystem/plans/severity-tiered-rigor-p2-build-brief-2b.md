@@ -68,9 +68,9 @@ reads part one, use the one seam named in item 2 below.
    untouched by `clearClaimBinding`); `DeferFindings`,
    `DischargeReviewObligation --finding --by`, `Done` refusing while any
    is open, `AcceptedRiskDecision` under `humanauthority` proof as
-   `SetBudgetApproved` does (metasystem/internal/goal/verbs.go); NEW
-   metasystem/internal/counselor/register.go with
-   `AppendAcceptedRisk` writing one strict-schema line (sources.go:48-77)
+   `SetBudgetApproved` does (metasystem/internal/goal/verbs.go); a new
+   file register.go in the counselor package (metasystem/internal/counselor/)
+   with `AppendAcceptedRisk` writing one strict-schema line (sources.go:48-77)
    and, from the p2 design's finding 008, `AppendMisclassification`
    (kind `misclassification`, id `mc-<goal>-<opid>`, facts = the two
    derivations and the evidence) writing to
