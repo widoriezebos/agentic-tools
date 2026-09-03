@@ -252,8 +252,13 @@ Go, beside `observe.go` (style of `observe_test.go:124`, `:277`, `:476`):
   goal `other` refuses `record-not-owned`; `plans/fx-load-x.md` with goals `fx` and `fx-load` at
   base is owned by `fx-load` (tie-break); `plans/legacy.md` modified refuses (frozen) and passes once
   `own:plans/legacy.md fx` is in the base manifest; `plans/handoff-m9-x.md` modified with actor `m9+L1` passes, `m1+L1` refuses.
-- `TestObserveUnclassifiedDetailFromBase`: the candidate adds `install:product.txt record` to the
-  manifest and lands `product.txt`; the verdict is `path-unclassified` and `refusal` names `product.txt`.
+- `TestObserveUnclassifiedDetailFromBase`: the candidate lands only `product.txt`, a path the base
+  manifest does not classify, while the checked-out manifest outside the candidate is altered to add
+  `install:product.txt record`; the verdict is `path-unclassified` and `refusal` names `product.txt`,
+  which proves classification reads the landing base and never the working tree. (Settled 2026-09-03
+  at the second part's build: the earlier shape edited the manifest inside the candidate, which the
+  floor refuses first, because precedence is set-wide and a behavior path anywhere in the candidate
+  refuses `direct-fix-floor-refused` before the ledger, runtime and unclassified checks run.)
 - `TestObserveManifestIsBehavior`: editing `path-classes.txt` under carriage refuses `direct-fix-floor-refused` (replaces `:476-484`).
 - `internal/pathclass`: `TestLongestPrefixWins`, `TestRowKindsAreDistinctKeySpaces`
   (`install:metasystem` runtime, `metasystem/cmd/x.go` behavior in template mode),
