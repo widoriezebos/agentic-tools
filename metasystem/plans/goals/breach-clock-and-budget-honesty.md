@@ -1,15 +1,13 @@
 # breach-clock-and-budget-honesty
 
-- State: claimed
+- State: queued
 - Intent: Wido's highest-priority order (2026-09-01, verbatim: 'This needs to be fixed immediately... Only resume work after these problems are fixed, proven with tests'): two of the three proven breach-machinery breakdowns from the night of 2026-08-31, sharing the goal-machinery seam. (1) THE RAISE-RESET CLOCK: SetBudget re-binds the claim record on every raise and the elapsed breach clock anchors on the current revision's claim timestamp - every budget raise restarts the breach clock (the night reset it five times lawfully; internal/goal/verbs.go SetBudget comment + internal/dispatch/budget.go anchor are the proof). (2) DISHONEST DURATIONS: budget elapsed limits parse through a working-hours grammar (d = 8 hours) and New() normalizes inputs into it - a human's 24h displays as 3d, and a human's 9d is enforced at 72 clock hours, one third of intent, silently, across every live budget.
 - Origin: main
 - Next step: HOLD (Wido's word via m1, 2026-09-02 23:05, verbatim: 'HOLD. Do not dispatch any new delegate round or start any new build; finish only what is already running, land what is already certified, then stop and wait.'). Nothing running, nothing certified: the fix build breach-build-3b (worktree commit e355c030 = cherry-pick of 0d8e47ef plus the F-1/F-2/F-4 folds of records/misc/breach-code-critique-r1.md) is built and host-gate green (five packages, goal-cli fixtures PASSED) but uncertified; Fable round 2 (plans/breach-clock-code-critique-r2-brief.md, landed) is NOT dispatched. Attempts 10 of 10 used. TO RESUME on Wido's word: rm the guard litter artifacts/agents/worktrees/breach-build-3b/metasystem/artifacts/agents/landing-observe.log; raise attemptLimit (asked 10 to 14); validate conformance --stage review --job breach-build-3b; dispatch round 2 (cap 20); apply the worktree diff HEAD~2 at the repo root; land --chain breach-build-3b with this Goal-Item. OPEN FOR WIDO (not built): should a later human set-obligation inherit a discharge consumed inside the same claim episode.
 - OpenedAt: 2026-09-01T06:54:30Z
-- Revision: 32
+- Revision: 33
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=840 activeJobLimit=1
 - Sliced: machine=m2 lineage=mac-coordinator revision=4 at=2026-09-01T07:31:13Z
-- Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-02T19:36:51Z revision=28
-- StopCapability: generation=28 revision=28 machine=m0b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T06:54:30Z XQ8RYAX5R7JBZ9DH0TX694ENCA-m2-bc1be9cb open actor=m2+mac-coordinator targets=breach-clock-and-budget-honesty
@@ -44,4 +42,5 @@ History:
 - 2026-09-02T21:04:56Z KHTEW1A0NYNE8SVQDZ18MQETY4-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
 - 2026-09-02T21:14:47Z 3HGCE92HDXDPHXMSNSNZ8J10HN-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
 - 2026-09-03T05:47:04Z ZPP82F2A64BZN8VQ3P33V5Q6CF-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
-Integrity: sha256=945ab4a04f38e61932d7a6a7a3b12490958a870f59e593a019fab648fc21e773
+- 2026-09-03T05:47:43Z PHCS589HEQCHB9DZSQZH452M54-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
+Integrity: sha256=fc1af3abf60fc66756d0112ed619f9635ec3c062998862fa03b13212e22819c7
