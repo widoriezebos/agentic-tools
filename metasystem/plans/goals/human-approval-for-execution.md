@@ -5,10 +5,13 @@
 - Origin: main
 - Next step: TIER 3 per R-54-m1 (goal engine state and two human-only verbs). Ladder: design (Fable, under 300 lines: the state, the two verbs with ancestry and relayed-word forms, the claim refusal, the projection and steward changes, the grandfather sweep, the fixtures), one Sol review, one fold, closing review, build (Sol), code review (Fable), land with --chain. Runs after the path-class manifest and the second landing bar; Wido ranks it against the fleet conversation channel and the token fence. DRAFT QUESTION TO SETTLE (Wido 2026-09-03: 'I'm pretty sure we have a draft status though; is that gone?'): today 'draft' is a folder convention (plans/goals-drafts/, docs/backlog-mechanism.md section Drafts and promotion), invisible to the goal engine and the steward, promoted by conduct on his word. The design decides whether draft becomes a ledger state that anyone may create (so machines see it and the steward never counts it as work), with the human's approval the only door from draft to the claimable queue, and whether today's queued state survives as 'approved' or is split; seven existing drafts migrate by the same one-act human sweep.
 - OpenedAt: 2026-09-03T09:07:28Z
-- Revision: 2
+- Revision: 3
 - Labels: authority, backlog
+- Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
+- NormApproval: approvedRef=R-61-m1 minutes=3000 goalRevision=2
 
 History:
 - 2026-09-03T09:07:28Z JHK32Y2RJ8M4K8Y6JTFG7BN97P-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=human-approval-for-execution
 - 2026-09-03T09:15:44Z 2DFZ4E1RCA96Z24NSHXZCR4P31-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=human-approval-for-execution
-Integrity: sha256=66d27ae512eea89e0ed58401d3669d2e989a02c93f237ded84d2582c9092da9b
+- 2026-09-03T09:17:54Z 33P4CKTKH9C0TS8QBE7SJ51BAM-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=human-approval-for-execution
+Integrity: sha256=2e8b06aed094c9bb8f5c5f5a60e38e89b1a5709ef0fe09734b8b7618d1515981
