@@ -1584,3 +1584,6 @@ Limitation — Goal-history evidence: The committed goal tree reported 4 structu
 2026-09-03T17:45:33Z HIGHLIGHT — A landing moved the repository storyline to commit 7e1dfe009d1b. (source: commit 7e1dfe009d1b4f703b45414db9daf93c8af50d35)
 2026-09-03T18:18:55Z HIGHLIGHT — A landing moved the repository storyline to commit 32d6914b1317. (source: commit 32d6914b13178b66e6a683e8c8626e652151d914)
 2026-09-03T19:07:48Z HIGHLIGHT — A landing moved the repository storyline to commit 2c3776b8834f. (source: commit 2c3776b8834f5e96080254f8c1fb00b753e512aa)
+2026-09-03T19:23:39Z HIGHLIGHT — The shared goal ledger moved to 9ca9ff562301: 1 new claimable goal(s): fable-model-alias. (source: ledger 9ca9ff562301219a33c5ea0d410a6d19bdb9d176)
+2026-09-03T19:23:39Z HIGHLIGHT — A landing moved the repository storyline to commit 99b44caab8d9. (source: commit 99b44caab8d9e144ba72be327027ac478aec884a)
+2026-09-03T19:23:39Z LOWLIGHT — The steward escalated: claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime. (source: episode escalation-idle-backlog-dead-99b44caab8d9e144ba72be327027ac478aec884a)
