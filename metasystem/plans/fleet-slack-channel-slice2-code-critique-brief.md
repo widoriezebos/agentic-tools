@@ -8,8 +8,8 @@ The one code review of the slice 2 build of the fleet conversation
 channel (job fsc2-build-1, Sol), tier 3 under R-54-m1: after this the
 code lands through the chain. The build sits UNCOMMITTED in the
 worktree's working tree on top of 28b9fed8 (10 modified files, 509
-insertions, 172 deletions, plus the new package
-metasystem/internal/channel/telegram and three new test files), against
+insertions, 172 deletions, plus the new Telegram adapter package under
+internal/channel and three new test files, all untracked), against
 metasystem/plans/fleet-slack-channel-slice2-design.md revision 3 (§2–§7
 are the law; §7 carries both reviews' obligations by test name) and the
 build brief metasystem/plans/fleet-slack-channel-slice2-build-brief.md.
