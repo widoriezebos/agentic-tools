@@ -1,137 +1,119 @@
-# Fleet Conversation Channel — design (goal fleet-slack-channel, revision 1)
+# Fleet Conversation Channel — design (goal fleet-slack-channel, revision 2)
 
-Author m0b (Fable lane), 2026-09-03. Tier 3 under R-54-m1: this design, one
-Sol review, one fold, one closing review, build, one code review. R-60-m1
-binds the reviews: a finding is material only if it changes what gets built
-and names the artifact. Under 300 lines by order.
-
-## 0. Wido's words this design serves
-
-Status per machine: "work done, under way and planned, per machine".
-Questions: "a way to raise questions of a machine to me ... threaded
-conversations about questions from machines". Providers: "Slack NEXT TO
-telegram; ... implement the slack adapter first. It needs to be switchable
-between providers (Slack, Telegram, Whatsapp)." Authentication of his reply:
-his seat-mutual-awareness word, a TOTP code or equivalent (binding design
-word for the external inbound channel). Done: a machine posts status and
-opens a question; he answers from his phone; the answer lands on the ledger
-as his word; the machine continues; proven against a fake endpoint.
+Author m0b (Fable lane), 2026-09-03. Tier 3 under R-54-m1; revision 2 is
+the one fold of Sol review round 1 (fsc-design-crit1, FSC-R1-001..008,
+dispositions in §12). Wido's words (verbatim on the goal record): status
+"per machine", "threaded conversations about questions from machines",
+"switchable between providers (Slack, Telegram, Whatsapp)" with Slack
+first, his reply authenticated by a TOTP code or equivalent; DONE = status
+posted, question answered from his phone, answer on the ledger as his
+word, machine continues, proven against a fake endpoint.
 
 ## 1. What exists and is reused (traced)
 
 1. plans/alert-channel-design.md (revision 13) DECIDED the outbound contract
-   and this design adopts those sections as law, not as input to redo:
-   §2 `Message`/`MessageRef`/`ChunkOutcome`, §2a the stateless adapter and
-   the Slack facts (Web API `chat.postMessage` with a bot token, never a
-   webhook, because only `ts` can thread), §3/§3a the conversation reference
-   store at artifacts/agents/channel/<destination>/conversations.json and
-   the thread-state sufficiency invariant (Slack `ThreadID` = root `ts`), §4
-   the `channel.destination.<name>.*` key idiom, §10 credentials (secrets
-   only from environment or metasystem.conf.local; literal scrubbing of
-   every resolved secret from every problem string). §2b reserved the
-   INBOUND half explicitly; this design is that reserved work for one
-   provider at a time.
-2. No `internal/channel` package exists on main today; the alert design's
-   slice 1 has not been built. This feature builds the package the alert
-   design named, with the outbound surface it needs and nothing it does
-   not (§9 chunking and §5 single-flight are deferred; status posts are
-   bounded by composition, §3 below).
-3. Human authority: internal/humanauthority proves an enrolled agent-free
-   terminal (`HUMAN_AUTHORITY_PROVEN`) or, under R-32-m1 until 2026-09-06,
-   a relayed verbatim word for exactly `goal resume` and `goal
-   set-obligation` (`TEMPORARY_HUMAN_WORD`). internal/goal/norm.go
-   `RecordedNormApproval` already accepts, as an approval, a goal-history
-   operation whose actor is `human:` and whose line carries the strict token
-   `goal=<id> minutes=<n> goalRevision=<r>`. The ledger's history lines
-   carry `actor=human:<name>` for human acts.
-4. Sources for the report, all durable: the goal ledger (plans/goals/*.md:
-   state, claim, intent, next step, history); the landing history (git log
-   of origin/main, `Goal-Item:` trailers, commit subjects in plain words);
-   job records (artifacts/agents/<job>/status and rounds; internal/report
-   scans running and open work); spend (internal/usage per job record, the
-   cost lines adapters already write into events.jsonl).
-5. The steward tick (internal/steward, `metasystem steward tick`) is the
-   fleet's one scheduled observation per machine; it already narrates
-   health and will carry the channel's poll and cadence.
+   and this design adopts those sections as law: §2 `Message`/`MessageRef`,
+   §2a the stateless adapter and the Slack facts (Web API `chat.postMessage`
+   with a bot token, never a webhook: only `ts` threads), §3/§3a the
+   conversation store artifacts/agents/channel/<destination>/conversations.json
+   and Slack `ThreadID` = root `ts`, §4 the `channel.destination.<name>.*`
+   idiom, §10 credentials (secrets only from environment or
+   metasystem.conf.local; literal scrubbing from every problem string); §2b
+   reserved the INBOUND half, which this design builds for one provider.
+2. No `internal/channel` package exists on main; this feature builds the
+   package the alert design named, with what it needs (alert §9 chunking
+   and §5 single-flight are deferred).
+3. internal/humanauthority proves an enrolled agent-free terminal
+   (`HUMAN_AUTHORITY_PROVEN`) or, under R-32-m1 until 2026-09-06, a relayed
+   word for exactly `goal resume` and `goal set-obligation`
+   (`TEMPORARY_HUMAN_WORD`). `RecordedNormApproval` (internal/goal/norm.go)
+   already accepts a goal-history operation with a `human:` actor whose
+   reason field carries `goal=<id> minutes=<n> goalRevision=<r>`.
+4. Report sources, all durable on main: the goal ledger (plans/goals),
+   the landing history (origin/main, `Goal-Item:` trailers, subjects), job
+   records (artifacts/agents/jobs; internal/report scanners), usage facts
+   (internal/usage per job; cost is null on main).
+5. The steward tick is the fleet's one scheduled observation per machine;
+   both its drivers will carry the channel phase (§7).
 
 ## 2. The provider contract, fixed once
 
 Package `internal/channel`. One interface, every provider behind it,
-selected by configuration (§6). Operations, exactly five:
+selected by configuration (§6). Operations, exactly three:
 
 ```
 type Provider interface {
     // outbound (alert design §2a shape: one submission, one ref, typed error)
     Post(ctx, dest DestinationConfig, text string, thread *MessageRef) (MessageRef, error)
-    // inbound (the §2b reserved half, polled, never a listener)
-    Replies(ctx, dest DestinationConfig, thread MessageRef, after Cursor) ([]Inbound, Cursor, error)
-    // identity of the configured human on this provider, for §5
-    Whoami(ctx, dest DestinationConfig) (ProviderIdentity, error)
+    // inbound (the §2b reserved half): destination-wide, polled, never a listener.
+    // threads = the caller's open thread roots (Slack needs them; Telegram ignores them).
+    Receive(ctx, dest DestinationConfig, threads []MessageRef, after Cursor) ([]Inbound, Cursor, error)
+    // credential readiness: the token's own identity, never the human's (FSC-R1-008)
+    Credential(ctx, dest DestinationConfig) (CredentialIdentity, error)
 }
-type Inbound struct { Ref MessageRef; UserID string; Text string; At time.Time }
-type Cursor string // provider-opaque; Slack: the last seen reply ts
+type Inbound struct { Ref MessageRef; ThreadID string; UserID string; Text string; At time.Time }
+type Cursor string // provider-opaque checkpoint; ONE per destination, persisted by the caller
 ```
 
 `Post` with `thread == nil` starts a thread and returns its root ref;
-with a thread it posts into it. Close is not a provider operation: a closed
-question is a state in the question record (§4) plus one final `Post`
-into the thread saying so; providers keep no state (alert §2a). The
-15-second per-call transport bound and the typed sanitized errors
-(`ErrUnconfigured`, `ErrSendFailed`, `ErrReceiveFailed`) are the alert
-design's. Registry for this goal: `slack`, `fake`. `telegram` and
-`whatsapp` are later goals behind this same interface; the registry
-refuses an unknown provider name with the name in the message.
+with a thread it posts into it. Close is not a provider operation: it is
+a question-record state (§4) plus one final `Post`; providers keep no
+state (alert §2a). Inbound checkpoint law (alert §2b, FSC-R1-004):
+`Receive` returns envelopes in provider order with thread correlation and
+a new cursor; the caller persists that cursor ONLY after every envelope's
+disposition is durable (§5), and that persisted cursor IS the
+acknowledgment — no separate acknowledge operation, because re-delivery
+after a crash is absorbed by §5's per-ref idempotence. Typed sanitized
+errors (`ErrUnconfigured`, `ErrSendFailed`, `ErrReceiveFailed`) are the
+alert design's. Registry for this goal: `slack`, `fake`; `telegram`
+(getUpdates, one owned offset as cursor) and `whatsapp` are later goals.
 
 **Slack adapter** (`internal/channel/slack`): `Post` = `chat.postMessage`
-(`channel`, `text`, `thread_ts` when threaded); `Replies` =
-`conversations.replies` (`channel`, `ts` = thread root, `oldest` = cursor,
-`limit` 200, paged by `response_metadata.next_cursor` until exhausted),
-returning only messages with `ts > cursor` and skipping the bot's own
-user; `Whoami` = `auth.test`. Base URL is `slack.api-base` (default
-https://slack.com/api); the fixture points it at the fake.
+(`channel`, `text`, `thread_ts` when threaded); `Receive` = for each
+given thread root, `conversations.replies` (`channel`, `ts` = root,
+`oldest` = that thread's last ts from the cursor, `limit` 200, paged by
+`response_metadata.next_cursor` until exhausted), keeping only `ts >`
+the thread's last ts and skipping the bot's own user (Slack's `oldest` is
+inclusive and returns the root first); the cursor encodes the map root →
+last ts. `Credential` = `auth.test`. Base URL is `slack.api-base`
+(default https://slack.com/api); the fixture points it at the fake.
 
-**Fake provider** (`internal/channel/fake`, plus the fixture server): an
-in-process HTTP server speaking exactly the three Slack methods above with
-Slack's JSON shapes (`ok`, `ts`, `messages[]`, `error`), a scripted reply
-queue the fixture appends to, and a request journal the tests read. The
-Slack adapter under test talks to it through `slack.api-base`, so the fake
-proves the adapter's bytes, not a mock of the adapter. `fake` as a
-configured provider name is the same server started in-process by the
-`metasystem channel` verbs for the fixture script (§8).
+**Fake provider** (`internal/channel/fake`): an in-process HTTP server
+speaking exactly the three Slack methods above with Slack's JSON shapes
+(`ok`, `ts`, `messages[]`, `error`), a scripted reply queue the fixture
+appends to, and a request journal the tests read. The Slack adapter talks
+to it through `slack.api-base`, so the fake proves the adapter's bytes;
+the `fake` adapter name starts that server in-process for the fixture (§8).
 
 ## 3. The per-machine status report
 
-Composed by `internal/channel/report.go` from §1.4 sources only; never from
-a session's memory. One report per machine, one Slack message (no thread),
-plain words, feature names not slice or job ids (R-61-m1 reporting rule).
-Shape, in this order, each section omitted when empty:
+Composed by `internal/channel/report.go` from §1.4 sources only, never
+from a session's memory; one message per machine, no thread, plain words,
+feature names not job ids (R-61-m1). Sections omitted when empty:
 
 ```
 <machine> status <YYYY-MM-DD HH:MM>Z
 Landed since <window start>: <feature> — <commit subject> (<n> landings)
 Under way: <feature> — <goal next-step first sentence>; job <role> running <m> min
 Planned: <feature> (queued, ready|needs budget|blocked by <feature>)
-Spend today: $<usd> across <n> jobs (<runtime>: $<usd>, ...)
+Spend today: <n> jobs; <runtime>: <units> ... ← usage units, never dollars
 Undelivered: <n> channel messages, oldest <m> min   ← only when non-zero
 ```
 
-`<feature>` is the goal id rendered as words (hyphens to spaces) followed by
-the intent's first sentence truncated to 120 characters. "Landed since"
-reads origin/main commits with a `Goal-Item:` trailer naming a goal this
-machine claimed or claims, since the previous status post (state file
-artifacts/agents/channel/status.json: last post time, last content
-digest, last ref). "Under way" = goals claimed by this machine, plus any
-running delegate job under them (job id, role, elapsed). "Planned" = queued
-goals pinned to or last claimed by this machine, with readiness from the
-ledger (a human budget stored or not; blocked-by). "Spend today" sums
-internal/usage cost for jobs whose records started today UTC, by runtime.
-
-Cadence: the steward tick posts when `channel.status.interval-minutes`
-(default 240) have passed since the last post AND the content digest
-changed; `metasystem channel status` prints it; `--post` posts now
-regardless of cadence (the on-demand path). Size: the composer caps each
-section at 12 lines and the whole at 3500 bytes, truncating with
-"(+n more)"; no chunking.
+`<feature>` = goal id as words (hyphens to spaces) + the intent's first
+sentence cut at 120 characters. "Landed since" = origin/main commits with
+a `Goal-Item:` trailer naming a goal this machine claims or claimed, since
+the previous post (state artifacts/agents/channel/status.json: last post
+time, content digest, ref). "Under way" = goals claimed by this machine
+plus any running delegate job under them. "Planned" = queued goals pinned
+to or last claimed by this machine, readiness from the ledger (human
+budget stored or not; blocked-by). "Spend today" = internal/usage facts
+(tokens or provider units) for jobs started today UTC, by runtime; NO
+dollars — every cost field internal/usage writes on main is null
+(FSC-R1-005); dollars come with a priced source in a later goal.
+Cadence: the tick posts when `channel.status.interval-minutes` (default
+240) have passed AND the digest changed; `--post` posts now. Size: 12
+lines per section, 3500 bytes total, "(+n more)"; no chunking.
 
 ## 4. The question thread contract
 
@@ -142,77 +124,91 @@ A question is a durable record `artifacts/agents/channel/questions/<qid>.json`
 { "id", "goal", "kind": "budget-above-norm|fork|reserved-decision|stop|other",
   "machine", "openedAt", "facts": [..], "options": [{"label","consequence"}],
   "recommendation", "wants": "<strict token the answer must carry, or empty>",
-  "thread": MessageRef|null, "cursor", "state": "open|answered|closed",
-  "answer": {"text","userID","ref","at","authority":"AUTHENTICATED_CHANNEL_WORD",
-             "opid"}|null, "undelivered": n }
+  "thread": MessageRef|null, "state": "open|answered|closed", "undelivered": n,
+  "answer": {"text","userID","ref","at","step","opid","phase"}|null, "rejected": [..] }
 ```
+(The destination cursor lives in artifacts/agents/channel/<destination>/cursor.json.)
 
 Opened by `metasystem channel ask --goal <id> --kind <k> --fact ... --option
-"label: consequence" ... --recommend <label> [--wants "<token>"]`. The verb
-writes the record, posts the thread root (question text: goal in words,
-kind, facts, options with consequences, recommendation, and the exact reply
-form: "reply in this thread with your answer followed by your code"), then
-appends to the goal's next step one line: `ASKED <qid> (<kind>): <first
-fact>`. One thread per question; a second `ask` with the same (goal, kind,
-facts digest) while one is open returns the existing qid and posts nothing.
-Undelivered (provider unconfigured or failed): the record exists with
-`thread: null`, the tick retries the root post each pass, and the count
-rides the health line (alert §10 floor). Asks never block a turn: the seat
-records the qid on the goal and carries on with unblocked work.
-
-`--wants` fixes the ledger token an answer must produce for machinery to
-consume it: for `budget-above-norm`, `goal=<id> minutes=<n> goalRevision=<r>`
-(norm.go's strict form); for `stop`, the resume tuple; otherwise empty.
+"label: consequence" ... --recommend <label> [--wants "<token>"]`: writes
+the record, posts the thread root (goal in words, kind, facts, options
+with consequences, recommendation, and the reply form "reply in this
+thread with your answer followed by your code"), then appends `ASKED <qid>
+(<kind>): <first fact>` to the goal's next step. One thread per question:
+a second `ask` with the same (goal, kind, facts digest) while one is open
+returns the existing qid and posts nothing. Undelivered: `thread: null`,
+the tick retries the root post each pass, the count rides the health line
+(alert §10 floor). Asks never block a turn. `--wants` fixes the ledger
+token the answer must carry: for `budget-above-norm` the strict
+`goal=<id> minutes=<n> goalRevision=<r>`; for `stop` the resume tuple.
 
 ## 5. The reply path: authentication and the recording as his word
 
-The tick calls `channel.Poll`: for every open question with a thread, it
-fetches `Replies` after the record's cursor, advances the cursor, and
-judges each inbound message in order. A reply is Wido's word iff BOTH:
+`channel.Poll` runs under ONE channel lock (flock on
+artifacts/agents/channel/lock; a second poll, manual or tick, returns
+"busy" without touching anything — FSC-R1-001). It calls `Receive` once
+for the destination with every open thread root and the persisted
+destination cursor, then judges each inbound envelope in provider order.
+A reply is Wido's word iff BOTH:
 
 1. `Inbound.UserID` equals `channel.human.<provider>.user-id` (configured,
    not secret; his Slack member id), and
 2. the text ends with a valid TOTP code: 6 digits, RFC 6238 with the
    secret `channel.human.totp-secret` (secret, conf.local/env), SHA-1, 30 s
-   step, window ±1 step, and the (secret, step) pair not yet consumed
-   (replay store artifacts/agents/channel/totp-consumed.json, pruned past
-   the window). The code is stripped; the rest, trimmed, is the answer.
+   step, window ±1 step, and the matched step not yet consumed. Consumption
+   is durable BEFORE attribution: under the lock, a row `{step, inboundRef,
+   qid}` is appended to artifacts/agents/channel/totp-consumed.json (fsync,
+   rename) and only then does the envelope proceed; a step already present
+   is a replay unless its row names this same inbound ref (a resumed
+   phase, below). Rows older than the window are pruned. The code is
+   stripped; the rest, trimmed, is the answer.
 
-Any other reply (wrong user, no code, bad code, replayed code) is posted
-back ONCE per inbound ref: "not recorded: <reason>; reply with your answer
-and your code" and journaled in the record's `rejected` list; nothing
-touches the ledger. Three rejections in one question stop further
-rejection posts (the record still journals) so a stranger cannot make the
-bot chatter.
+Any other reply (wrong user, no code, bad code, replay) is answered ONCE
+per inbound ref, "not recorded: <reason>; reply with your answer and your
+code", journaled in `rejected`; the ledger is untouched. After three
+rejections in one question the posts stop (journaling continues) so a
+stranger cannot make the bot chatter.
 
-An authenticated reply is recorded in this order, each step durable before
-the next: (a) the question record gets `answer` and `state: answered`; (b)
-the goal's history gets one operation `answer` with
-`actor=human:wido`, the verbatim answer text, the qid, the provider ref,
-and the authority outcome `AUTHENTICATED_CHANNEL_WORD` (new outcome in
-internal/humanauthority, alongside PROVEN and TEMPORARY; its proof carries
-provider, user id, message ref and the TOTP step, never the secret or the
-code); when the question `wants` a token and the answer contains it
-verbatim, the line carries it so `RecordedNormApproval` and the resume
-path find it; (c) the thread gets "recorded as your word on <goal in
-words>, ledger operation <opid>"; (d) `state: closed`. The goal's next
-step gets `ANSWERED <qid>: <answer text>`.
+An authenticated reply is a resumable phase machine on the question
+record (FSC-R1-002), `answer.phase` ∈ matched → recorded → receipted →
+closed, each phase durable (write, fsync, rename) before the next acts:
+(a) MATCHED: the record gets `answer` {text, userID, ref, at, step, opid}
+with the operation id ALLOCATED NOW (`op-<qid>-<inbound ts>`, stable) and
+`state: answered`; (b) RECORDED: the goal's history gets one operation
+`answer` with that op id, `actor=human:wido`, the verbatim text (with the
+`wants` token verbatim when the answer contains it) in the reason field,
+where `RecordedNormApproval` already scans, and the authority outcome
+`AUTHENTICATED_CHANNEL_WORD` with proof coordinates provider, user id,
+message ref and step (never the secret or the code); the goal transaction
+engine makes a repeated op id a no-op, so a crash between (a) and (b)
+re-runs (b) exactly once; (c) RECEIPTED: the thread gets "recorded as
+your word on <goal in words>, ledger operation <opid>"; (d) CLOSED:
+`state: closed`, next step gets `ANSWERED <qid>: <answer text>`. Poll
+visits every question whose state is open OR whose answer phase is not
+closed, resuming at the first undone phase; the destination cursor is
+persisted only after every envelope of the pass reached a durable
+disposition (rejected-journaled, or phase ≥ matched). The history grammar
+change (FSC-R1-003): `ParseHistoryLine`'s authority validation accepts
+`AUTHENTICATED_CHANNEL_WORD` with its four proof keys next to
+`TEMPORARY_HUMAN_WORD`; the round-trip grammar tests gain that outcome.
 
 What the recorded word may DRIVE, exactly: nothing runs by itself. The
-waiting machine consumes it as it consumes any human word on the ledger
-today: `--approved-ref <opid>` for a norm claim, the R-32-m1 relayed-word
-path for `resume`/`set-obligation` with the recorded text as the word (the
-op id is its provenance, stronger than a seat's relay), and the seat's
-own judgment for a fork or a reserved decision, quoting the op id. No new
-human-only act is opened; the record is the word (R-32-m1's scope stands).
-`metasystem channel wait --question <qid> [--timeout <m>]` blocks a
-script, not a turn, until the record is answered, printing the answer.
+consumers, named (FSC-R1-007): (1) `goal claim --approved-ref <opid>` —
+`RecordedNormApproval` finds the strict token in the op's reason (no
+change); (2) `goal resume --approved-ref <opid>` and `goal set-obligation
+--approved-ref <opid>` — the humanauthority consumers for exactly these
+two acts (the R-32-m1 set, no wider) gain a branch that validates an
+`AUTHENTICATED_CHANNEL_WORD` operation on the same goal whose text answers
+the question, independent of the R-32-m1 horizon (2026-09-06); set-budget
+and enroll-terminal stay enrolled-terminal only; (3) a fork or reserved
+decision: the seat's judgment, quoting the op id. Decision D5 in §10.
+`channel wait --question <qid> [--timeout <m>]` blocks a script, not a
+turn, until the record is answered, and prints the answer.
 
 ## 6. Configuration
 
 ```
-channel.provider=slack|fake                      # telegram, whatsapp: later goals
-channel.destination.fleet.adapter=<provider>     # alert §4 idiom, one destination
+channel.destination.fleet.adapter=slack|fake     # alert §4 idiom; telegram, whatsapp later
 channel.destination.fleet.slack.channel-id=<C…>
 channel.destination.fleet.slack.bot-token=<SECRET, conf.local or env only>
 channel.destination.fleet.slack.api-base=https://slack.com/api
@@ -221,71 +217,83 @@ channel.human.totp-secret=<SECRET, base32, conf.local or env only>
 channel.status.interval-minutes=240
 ```
 
-Unconfigured provider: `status` prints locally, `ask` records and reports
-"undelivered: channel unconfigured", the tick does nothing on the network.
-Secrets never in the committed file; a committed secret-named key is
-reported and ignored (alert §10). The TOTP secret is Wido's to generate and
-place on each machine that asks (each machine polls its own questions);
-the bot token likewise. Both are his acts, after the build.
+Unconfigured: `status` prints locally, `ask` records as undelivered, the
+tick touches no network. A committed secret-named key is reported and
+ignored (alert §10). The TOTP secret and the bot token are Wido's acts
+after the build, placed on each asking machine (each polls its own).
 
 ## 7. Command surface and the tick
 
 `metasystem channel status [--post]`, `channel ask ...`, `channel show
 --question <qid>`, `channel wait --question <qid>`, `channel poll` (what
-the tick runs; callable by hand), `channel close --question <qid> --because
-<text>` (machine-side withdrawal, posts the reason). The steward tick,
-after its health narration, runs `channel poll` then the cadence check for
-status, each under the 15 s per-call bound, never under the arbitration
-lock, never gating any machinery: a channel failure is an undelivered
-count, not a stopped fleet.
+the tick runs; callable by hand, "busy" if the tick holds the lock),
+`channel close --question <qid> --because <text>` (machine-side
+withdrawal, posts the reason). The channel phase runs in both tick
+drivers (the resident runner and `steward tick`) AFTER RunTick has
+released the arbitration lock and after revival and pending delivery, as
+the last duty, under ONE 15-second context for the whole phase and a work
+budget per pass: at most one `Receive`, five question dispositions, one
+status post; remaining work carries to the next tick (FSC-R1-006). A
+channel failure is an undelivered count, not a stopped fleet.
 
 ## 8. Proof plan (tests by name; fixture script)
 
 internal/channel: `TestReportComposesFromLedgerJobsAndLandings` (fixture
-ledger, two jobs, three commits with trailers → exact text);
+ledger, two jobs, three trailered commits → exact text);
 `TestReportOmitsEmptySectionsAndCaps`; `TestStatusCadenceAndDigestGate`;
 `TestAskWritesRecordBeforePosting`; `TestAskDedupsOpenQuestion`;
-`TestTOTPVerifiesRFC6238Vectors` (RFC 6238 appendix B, SHA-1);
-`TestTOTPWindowAndReplay`; `TestPollRejectsWrongUserNoCodeBadCodeReplay`
-(one rejection post each, cap at three); `TestPollRecordsAuthenticatedReply`
-(record, history op with `actor=human:wido` and outcome, thread close,
-next-step line, order durable on injected failure between steps);
-`TestAnswerCarryingStrictTokenSatisfiesNormApproval` (a claim with
-`--approved-ref <opid>` succeeds); `TestSecretsScrubbedFromErrors`.
-internal/channel/slack against the fake server: `TestPostRootAndThreaded`,
-`TestRepliesPagesAndFiltersByCursor`, `TestWhoami`, `TestUnconfiguredIsTyped`.
-Fixture `scripts/agents/channel-fixtures.sh`: start the fake, configure a
-clone with `channel.provider=fake`, post status (assert the text), ask a
-budget-above-norm question, script a reply without a code (assert
-rejection post), script a reply with the right code (assert the goal's
-history shows `answer actor=human:wido`, the thread's close post, and a
-claim with `--approved-ref` of that op succeeds), then `channel wait`
-returns the answer. Live: one `channel status --post` by hand when the
-token arrives; not in any suite. No benchmarks (R-31).
+`TestTOTPVerifiesRFC6238Vectors` (appendix B, SHA-1); `TestTOTPWindowAndReplay`;
+`TestPollRejectsWrongUserNoCodeBadCodeReplay` (one post each, cap three);
+`TestPollRecordsAuthenticatedReply` (record, history op `actor=human:wido`
+with outcome, thread close, next-step line);
+`TestAnswerCarryingStrictTokenSatisfiesNormApproval` (`goal claim
+--approved-ref <opid>` succeeds); `TestSecretsScrubbedFromErrors`; and the
+review's obligations by name: `TestPollAtomicallyConsumesTOTP` (two polls,
+one step, one attribution), `TestPollCrashRecoveryExactlyOnce` (crash
+injected after each phase, re-poll: one history op, thread closed, cursor
+advanced last), `TestAuthenticatedChannelHistoryRoundTrip`,
+`TestInboundCheckpointSurvivesCrashAndDeduplicates`,
+`TestReportHasDurableSpendSource`, `TestTickChannelPassBound`,
+`TestAuthenticatedChannelAuthorityAfterTemporaryHorizon` (resume and
+set-obligation with `--approved-ref` on 2026-09-07),
+`TestCredentialIsTokenIdentity`. internal/channel/slack against the fake:
+`TestPostRootAndThreaded`, `TestReceivePagesAndFiltersByCursor`,
+`TestCredential`, `TestUnconfiguredIsTyped`. Fixture
+`scripts/agents/channel-fixtures.sh`: start the fake, configure a clone
+with the fake adapter, post status (assert text), ask a budget-above-norm
+question, script a reply without a code (assert the rejection post), then
+one with the right code (assert `answer actor=human:wido` in the goal's
+history, the close post, and a claim with `--approved-ref` of that op
+succeeding), then `channel wait` returns the answer. Live: one `channel
+status --post` by hand when the token arrives; never in a suite. R-31.
 
 ## 9. Slices
 
-Slice 1 (this goal, one build): §2 contract + fake + Slack adapter, §3
-status, §4 ask, §5 poll/answer/record, §6 keys, §7 verbs and tick hook, §8
-proof. Later goals, not this one: telegram and whatsapp adapters behind §2;
-alert-channel slice 1 (episodes, single-flight, chunking) riding the same
-package; a fleet-wide roll-up report if Wido asks for one message instead
-of one per machine.
+Slice 1 (this goal, one build): §2–§8 as written. Later goals: telegram
+and whatsapp adapters behind §2; alert-channel slice 1 (episodes,
+single-flight, chunking) on the same package; a priced spend source; a
+fleet-wide roll-up if Wido wants one message instead of one per machine.
 
 ## 10. Decisions Wido may still change (recorded, not blocking)
 
-D1 TOTP as the reply authentication (his prior word); alternative: Slack
-user id alone (weaker: anyone at his unlocked phone). D2 one status message
-per machine, on a 240-minute cadence plus on demand. D3 polling on the tick
-rather than Slack Events (no listener, no public endpoint, fits the
-stateless adapter). D4 the recorded answer drives nothing by itself; the
-machine consumes it by the existing paths.
+D1 TOTP as the reply authentication (his prior word; user id alone is
+weaker: anyone at his unlocked phone). D2 one status message per machine,
+240-minute cadence plus on demand. D3 polling on the tick, not Slack
+Events (no listener, no public endpoint). D4 the recorded answer drives
+nothing by itself. D5 it may drive `resume` and `set-obligation` (the
+R-32-m1 set) beyond 2026-09-06; Wido may narrow this to recording only.
 
 ## 11. Self-grade
 
-The five-operation contract is the smallest that carries the three message
-kinds and the inbound half; the authentication is one secret and one
-configured id; every source of the report is durable. Risk: the tick's poll
-adds network to the fleet's heartbeat, bounded at 15 s per call and never
-under a lock. Weakest part: `Planned` readiness is derived from the ledger's
-budget presence, which the breach-clock work is still changing.
+Three operations, one secret, one id, one lock, one durable consumption
+row; every report source is on main. Weakest: `Planned` readiness reads
+the ledger's budget presence, which the breach-clock work still changes.
+
+## 12. Review round 1 dispositions (job fsc-design-crit1, Sol)
+
+001 lock + consumption row: folded §5. 002 phase machine, stable op id,
+cursor after disposition: folded §5. 003 grammar validator: folded §5.
+004 acknowledge operation: AMENDED — receive is destination-wide with
+thread correlation and the persisted cursor is the acknowledgment; the
+named test stands. 005 dollars: folded §3 (units). 006 pass bound: folded
+§7. 007 named consumers: folded §5 + D5. 008 Credential: folded §2.
