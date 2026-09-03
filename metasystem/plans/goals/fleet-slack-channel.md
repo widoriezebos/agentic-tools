@@ -5,10 +5,13 @@
 - Origin: main
 - Next step: TIER 3 per R-54-m1, three-round rule. Design (Fable, under 300 lines): the report shape per machine, the question thread contract (open, facts, options, reply, close), the reply path with authentication and the ledger recording, the adapter reuse from the alert channel design's decided sections, the fake endpoint fixture; one Sol review, one fold, closing review; build (Sol), code review (Fable), land. Needs from Wido before build: a Slack bot token in local config and his word on the authentication form for replies. Priority: Wido ranks this against token-spend-fence; both are the first items when the machines rejoin. PROVIDERS: the design fixes the provider contract once (post a status, open a question thread, post into a thread, receive an authenticated reply, close a thread) and builds the Slack adapter first; Telegram and WhatsApp are later slices behind the same contract, switchable in metasystem.conf.
 - OpenedAt: 2026-09-03T09:00:40Z
-- Revision: 2
+- Revision: 3
 - Labels: channel, fleet
+- Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
+- NormApproval: approvedRef=R-61-m1 minutes=3000 goalRevision=2
 
 History:
 - 2026-09-03T09:00:40Z 8RH8X7RD3AFCXRAZWFKFCYG7HZ-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=fleet-slack-channel
 - 2026-09-03T09:04:57Z 0RRF22JNES89MS2C37RGJEZHR4-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=fleet-slack-channel
-Integrity: sha256=4ed786abe87ec0030520a410c6b44a4a157682f77efd977a8b619b92f652238b
+- 2026-09-03T09:17:31Z 5GNH1KC6TAWV3X835TWR37XJCW-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=fleet-slack-channel
+Integrity: sha256=ef653926d2580df75def135bf310cf4fc59294cf171ba63179e9f18e43331555
