@@ -1204,3 +1204,5 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-03T07:52:01Z HIGHLIGHT — A landing moved the repository storyline to commit 599054e6c143. (source: commit 599054e6c1439b2d36e3afa1f3aac7c19698b11e)
 2026-09-03T08:22:57Z HIGHLIGHT — A landing moved the repository storyline to commit cc07539a1be3. (source: commit cc07539a1be39527b5a30f98bc9876c55605332f)
 2026-09-03T08:33:20Z HIGHLIGHT — A landing moved the repository storyline to commit a087ec3d1e4a. (source: commit a087ec3d1e4aec3f15726c9e6e71c3e8e7c85062)
+2026-09-03T08:43:55Z HIGHLIGHT — The shared goal ledger moved to ef81d81898e1: 1 new claimable goal(s): token-spend-fence; the queue reordered: now two-bars-for-changes,ki-23-acknowledged-process,runtime-install-execution,small-change-lane,stop-message-truth, +93 more (was two-bars-for-changes,ki-23-acknowledged-process,runtime-install-execution,small-change-lane,stop-message-truth, +92 more). (source: ledger ef81d81898e116593026fb0d433a0bf9d915273a)
+2026-09-03T08:43:55Z HIGHLIGHT — A landing moved the repository storyline to commit b540bc4d62bf. (source: commit b540bc4d62bf9d89da9f0d34d12ee1c156e3f658)
