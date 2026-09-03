@@ -21,7 +21,8 @@ guarantee narrowed to make a test pass, no benchmarks (R-31).
    shape), typed sanitized errors, the registry (`slack`, `fake`; unknown
    names refused by name); `report.go` composing the §3 status from the
    goal ledger projection, origin/main `Goal-Item:` trailers, the job
-   records under artifacts/agents/jobs and internal/usage facts (units per
+   records (the jobs directory under the agents control plane, as
+   internal/report scans them) and internal/usage facts (units per
    runtime, never dollars), with the cadence/digest state file and the
    size caps; `question.go` with the §4 record, ULID ids, dedup on (goal,
    kind, facts digest), the next-step `ASKED` line; `totp.go` (RFC 6238,
