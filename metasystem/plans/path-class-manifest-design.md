@@ -206,7 +206,7 @@ matching row wins. "Held" means `Goal-Item` is set and validated as in section 3
 | `plans/<goal-id>-*.md` at the root of `plans/`, `<goal-id>` being the LONGEST complete id of a file in `plans/goals/` at the base that is a prefix of the filename followed by `-` (F11 tie-break); or any file named by an `own:` row | new or modified when held and `Goal-Item` equals that id; else `record-not-owned` |
 | any other EXISTING file under `plans/` | frozen: modified or deleted refuses `record-not-owned`; changes only through a reviewed chain or an `own:` row |
 | `memory/` (other than the rows above and `README.md`), `development/` record part | shared register: new, or modified when held; else `record-not-owned` (the evaluator never meets `development/`, F1) |
-| every other record path (`records/` except `records/goals/`, new files under `plans/`) | new file only; modified or deleted refuses `record-not-owned` (`records/README.md:3-6`) |
+| every other record path (`records/` except `records/goals/`, new files under `plans/`) | new file; an existing file may be appended to when held; replacement or deletion refuses `register-carriage-not-append-only`; a missing owner refuses `record-not-owned` (`records/README.md:3-6`; the append rule is the closing design review's obligation PCM-R2-002, stated here 2026-09-03) |
 
 **Migration note (one-time, not a build task).** At 878522b5 the frozen set is the 152 root
 `plans/*.md` files that are not `README.md`, not `handoff-*`, and do not begin with an open
