@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 )
 
 // HealthStatus is the complete role vocabulary. Unknown is evidence that
@@ -53,6 +54,7 @@ const (
 	// Keep the published role name stable for existing health consumers.
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
 	RoleClaimedGoalDelivery HealthRole = "claimed-goal-delivery"
+	RoleSpendFence          HealthRole = "spend-fence"
 	RoleNonterminalJobs     HealthRole = "nonterminal-jobs"
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
 	RoleGovernedObligations HealthRole = "governed-obligations"
@@ -70,6 +72,7 @@ var healthRoleOrder = []HealthRole{
 	RoleLedgerAttention,
 	RoleClaimedGoalBudget,
 	RoleClaimedGoalDelivery,
+	RoleSpendFence,
 	RoleGovernedObligations,
 	RoleNonterminalJobs,
 	RoleCapabilitySnapshots,
@@ -120,6 +123,26 @@ type HealthVerdict struct {
 	ShouldAlert   bool                   `json:"shouldAlert"`
 	FindingDigest string                 `json:"findingDigest"`
 	State         HealthObservationState `json:"-"`
+	Spend         SpendObservation       `json:"-"`
+}
+
+// SpendCrossing is one independently alertable ceiling multiple.
+type SpendCrossing struct {
+	ScopeID  string  `json:"scopeId"`
+	Scope    string  `json:"scope"`
+	Ceiling  string  `json:"ceiling"`
+	Multiple int     `json:"multiple"`
+	Machine  string  `json:"machine"`
+	Spend    float64 `json:"spend"`
+	Limit    float64 `json:"limit"`
+	Day      string  `json:"day"`
+}
+
+// SpendObservation distinguishes a valid empty crossing set from an unknown
+// measurement, which must not clear existing spend episodes.
+type SpendObservation struct {
+	Valid     bool            `json:"valid"`
+	Crossings []SpendCrossing `json:"crossings"`
 }
 
 type healthRecord struct {
@@ -194,16 +217,17 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 	if stateUnreadable {
 		previous = healthRecord{}
 	}
-	roles := evaluateHealthRoles(repoRoot, repoRoot, now.UTC(), prober, false)
+	roles, spendObservation := evaluateHealthRoles(repoRoot, repoRoot, now.UTC(), prober, false)
 	if stateUnreadable {
 		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
 		for index := range roles {
-			if roles[index].Status == HealthAlive {
+			if roles[index].Role != RoleSpendFence && roles[index].Status == HealthAlive {
 				roles[index] = roleUnknown(roles[index].Role, "the prior health observation state was unreadable", remedy)
 			}
 		}
 	}
 	verdict := applyHealthObservation(repoRoot, previous.State, roles, now.UTC())
+	verdict.Spend = spendObservation
 	if err := saveHealthRecord(repoRoot, HealthRecordPath(repoRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
 		return HealthVerdict{}, err
 	}
@@ -223,7 +247,7 @@ func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober iden
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	roles := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, true)
+	roles, spendObservation := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, true)
 	aggregate := "healthy"
 	for _, role := range roles {
 		if role.Status == HealthDead {
@@ -236,12 +260,13 @@ func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober iden
 	}
 	return HealthVerdict{
 		Schema: 1, ObservedAt: now.UTC(), Aggregate: aggregate,
-		Roles: roles, FindingDigest: healthFindingDigest(roles),
+		Roles: roles, FindingDigest: healthFindingDigest(roles), Spend: spendObservation,
 	}
 }
 
-func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) []RoleVerdict {
+func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) ([]RoleVerdict, SpendObservation) {
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
+	spendRole, spendObservation := checkSpendFence(repoRoot, now)
 	return []RoleVerdict{
 		checkStewardRunner(repoRoot, now, prober),
 		checkSupervisionOwner(repoRoot, prober),
@@ -254,10 +279,80 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		checkLedgerAttention(repoRoot, now),
 		checkClaimedGoalBudgets(repoRoot, now),
 		checkClaimedGoalDelivery(repoRoot, now),
+		spendRole,
 		checkGovernedObligations(repoRoot),
 		checkNonterminalJobs(repoRoot, prober),
 		checkCapabilitySnapshots(repoRoot, metasystemRoot, now),
+	}, spendObservation
+}
+
+var measureSpend = spend.Measure
+
+func checkSpendFence(repoRoot string, now time.Time) (RoleVerdict, SpendObservation) {
+	machine := "this machine"
+	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
+		machine = enrolled
 	}
+	ledger, err := measureSpend(repoRoot, machine, now)
+	remedy := fmt.Sprintf("raise spend.ceiling.<scope>.<ceiling> in metasystem.conf on Wido's recorded word (R-60-m1); alert mode refuses nothing; see %s",
+		filepath.ToSlash(filepath.Join("artifacts", "agents", "steward", "spend", now.UTC().Format("2006-01-02")+".json")))
+	if err != nil {
+		return roleUnknown(RoleSpendFence, err.Error(), remedy), SpendObservation{Valid: false}
+	}
+	settings := ledger.Settings
+	crossings := make([]SpendCrossing, 0, 4+len(ledger.ClaimedGoals)*2)
+	addCrossing := func(scope spend.ScopeSummary, scopeName, ceiling string, value, limit float64) {
+		if limit <= 0 || value < limit {
+			return
+		}
+		crossings = append(crossings, SpendCrossing{
+			ScopeID: scope.ID, Scope: scopeName, Ceiling: ceiling, Multiple: int(math.Floor(value / limit)),
+			Machine: ledger.Machine, Spend: value, Limit: limit, Day: ledger.Day,
+		})
+	}
+	addCrossing(ledger.DayScope, "day", "tokens", ledger.DayScope.Tokens, float64(settings.DayTokenCeiling))
+	addCrossing(ledger.DayScope, "day", "money", ledger.DayScope.Money, settings.DayMoneyCeiling)
+	goals := append([]string(nil), ledger.ClaimedGoals...)
+	if len(goals) == 0 {
+		goals = []string{"none"}
+	}
+	for _, goalID := range goals {
+		scope := ledger.GoalScopes[goalID]
+		if scope.ID == "" {
+			scope = spend.ScopeSummary{ID: "goal-" + goalID, Goal: goalID, Machine: ledger.Machine}
+		}
+		addCrossing(scope, "goal", "tokens", scope.Tokens, float64(settings.GoalTokenCeiling))
+		addCrossing(scope, "goal", "money", scope.Money, settings.GoalMoneyCeiling)
+	}
+	sort.Slice(crossings, func(i, j int) bool {
+		left := crossings[i].ScopeID + "." + crossings[i].Ceiling
+		right := crossings[j].ScopeID + "." + crossings[j].Ceiling
+		return left < right
+	})
+	prefix := ""
+	if len(crossings) > 0 {
+		labels := make([]string, len(crossings))
+		for index, crossing := range crossings {
+			labels[index] = fmt.Sprintf("%s.%sx%d", crossing.ScopeID, crossing.Ceiling, crossing.Multiple)
+		}
+		prefix = "CROSSED " + strings.Join(labels, ",") + " "
+	}
+	reason := fmt.Sprintf("%smode=%s day=%s tokens=%.0f/%d money=%s%.2f/%.2f unpriced=%d unmeasured=%d unreadable=%d inflight=%d; seat tokens=%.0f lifetime=%.0f files=%d aged=%d unmeasured requests=%d",
+		prefix, settings.Mode, ledger.Day, ledger.DayScope.Tokens, settings.DayTokenCeiling,
+		settings.Currency, ledger.DayScope.Money, settings.DayMoneyCeiling, ledger.DayScope.Unpriced,
+		ledger.DayScope.Unmeasured, ledger.DayScope.Unreadable, ledger.DayScope.Inflight,
+		ledger.Seat.DayTokens, ledger.Seat.LifetimeTokens, ledger.Seat.Files, ledger.Seat.AgedFiles, ledger.Seat.UnmeasuredRequests)
+	for _, goalID := range goals {
+		scope := ledger.GoalScopes[goalID]
+		reason += fmt.Sprintf("; goal=%s tokens=%.0f/%d money=%s%.2f/%.2f unpriced=%d unmeasured=%d unreadable=%d",
+			goalID, scope.Tokens, settings.GoalTokenCeiling, settings.Currency, scope.Money,
+			settings.GoalMoneyCeiling, scope.Unpriced, scope.Unmeasured, scope.Unreadable)
+	}
+	role := roleAlive(RoleSpendFence, reason)
+	if len(crossings) > 0 {
+		role.Remedy = remedy
+	}
+	return role, SpendObservation{Valid: true, Crossings: crossings}
 }
 
 func checkRetroDebt(repoRoot string) RoleVerdict {

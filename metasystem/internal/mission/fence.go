@@ -591,11 +591,38 @@ const (
 	usageDerived      = "derived"
 	usagePendingProof = "pending-death-proof"
 	usageUnavailable  = "unavailable"
+	usageUnreadable   = "unreadable"
 )
 
 // usageTokenFields are the typed token counters every per-round usage writer
 // emits.
 var usageTokenFields = []string{"inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens"}
+
+// UsageCost is one runtime-reported monetary measurement.
+type UsageCost struct {
+	Currency string
+	Amount   float64
+}
+
+// ProviderUnit is one runtime-native measurement such as an Agent Compute
+// Unit. Provider-native units never become token or monetary estimates.
+type ProviderUnit struct {
+	Name  string
+	Value float64
+}
+
+// JobMeasurement is the complete per-record usage outcome shared by mission
+// aggregation and spend accounting. A missing token-map member preserves a
+// null counter; Source is populated only for derived usage.
+type JobMeasurement struct {
+	Record       map[string]any
+	Tokens       map[string]float64
+	Cost         *UsageCost
+	ProviderUnit *ProviderUnit
+	Provenance   string
+	Source       any
+	Detail       any
+}
 
 // probeGroupGone probes whether a recorded process group is provably absent.
 // Only ESRCH proves it — the shipped group-exists semantics: success or a
@@ -654,8 +681,9 @@ func AggregateUsage(repo, mission string) error {
 	paths, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	sort.Strings(paths)
 	for _, recordPath := range paths {
-		record, err := readJSONObjectFile(recordPath)
-		if err != nil {
+		measurement := JobUsageAt(repo, recordPath)
+		record := measurement.Record
+		if measurement.Provenance == usageUnreadable {
 			continue
 		}
 		if m, _ := record["mission"].(string); m != mission {
@@ -672,15 +700,21 @@ func AggregateUsage(repo, mission string) error {
 		if provider == "" {
 			provider = "unknown"
 		}
-		entry := roundEntry{jobID: jobID, provenance: usageReported}
+		entry := roundEntry{jobID: jobID, provenance: measurement.Provenance, source: measurement.Source, detail: measurement.Detail}
 		if round, ok := intValue(record["round"]); ok {
 			entry.round = round
 		}
-		if !addReportedUsage(units, provider, record["usage"]) {
-			entry.provenance, entry.source, entry.detail = deriveRoundUsage(repo, jobsDir, jobID, provider, record, units)
-			if entry.provenance != usageDerived {
-				unavailable = append(unavailable, jobID)
-			}
+		for field, value := range measurement.Tokens {
+			units[[2]string{provider, "tokens." + field}] += value
+		}
+		if measurement.Cost != nil {
+			units[[2]string{provider, "cost." + measurement.Cost.Currency}] += measurement.Cost.Amount
+		}
+		if measurement.ProviderUnit != nil {
+			units[[2]string{provider, "provider." + measurement.ProviderUnit.Name}] += measurement.ProviderUnit.Value
+		}
+		if entry.provenance != usageReported && entry.provenance != usageDerived {
+			unavailable = append(unavailable, jobID)
 		}
 		entries = append(entries, entry)
 	}
@@ -726,6 +760,70 @@ func AggregateUsage(repo, mission string) error {
 	}
 	value["updatedAt"] = fenceNowISO()
 	return atomicWriteJSON(usagePath, value)
+}
+
+// JobUsageAt reads one job record and applies the same reported-or-derived
+// usage rule as AggregateUsage. An unreadable record is an explicit outcome;
+// callers decide whether to retain it or preserve the mission aggregate's
+// historical skip behavior.
+func JobUsageAt(repo, recordPath string) JobMeasurement {
+	record, err := readJSONObjectFile(recordPath)
+	if err != nil {
+		return JobMeasurement{
+			Tokens: map[string]float64{}, Provenance: usageUnreadable,
+			Detail: fmt.Sprintf("%s: %v", recordPath, err),
+		}
+	}
+	provider, _ := record["runtime"].(string)
+	if provider == "" {
+		provider = "unknown"
+	}
+	units := map[[2]string]float64{}
+	provenance := usageReported
+	var source, detail any
+	if !addReportedUsage(units, provider, record["usage"]) {
+		jobsDir := filepath.Dir(recordPath)
+		jobID, _ := record["jobId"].(string)
+		if jobID == "" {
+			jobID = strings.TrimSuffix(filepath.Base(recordPath), ".json")
+		}
+		provenance, source, detail = deriveRoundUsage(repo, jobsDir, jobID, provider, record, units)
+	}
+	measurement := JobMeasurement{
+		Record: record, Tokens: map[string]float64{}, Provenance: provenance,
+		Source: source, Detail: detail,
+	}
+	for _, field := range usageTokenFields {
+		if value, ok := units[[2]string{provider, "tokens." + field}]; ok {
+			measurement.Tokens[field] = value
+		}
+	}
+	if usage, ok := record["usage"].(map[string]any); ok && provenance == usageReported {
+		if cost, ok := usage["cost"].(map[string]any); ok {
+			currency, currencyOK := cost["currency"].(string)
+			amount, amountOK := nonNegNumber(cost["amount"])
+			if currencyOK && amountOK {
+				measurement.Cost = &UsageCost{Currency: currency, Amount: amount}
+			}
+		}
+		if native, ok := usage["providerUnits"].(map[string]any); ok {
+			name, nameOK := native["name"].(string)
+			value, valueOK := nonNegNumber(native["value"])
+			if nameOK && valueOK {
+				measurement.ProviderUnit = &ProviderUnit{Name: name, Value: value}
+			}
+		}
+	} else {
+		for key, value := range units {
+			switch {
+			case strings.HasPrefix(key[1], "cost."):
+				measurement.Cost = &UsageCost{Currency: strings.TrimPrefix(key[1], "cost."), Amount: value}
+			case strings.HasPrefix(key[1], "provider."):
+				measurement.ProviderUnit = &ProviderUnit{Name: strings.TrimPrefix(key[1], "provider."), Value: value}
+			}
+		}
+	}
+	return measurement
 }
 
 // addReportedUsage sums a record's own usage object into the unit totals and

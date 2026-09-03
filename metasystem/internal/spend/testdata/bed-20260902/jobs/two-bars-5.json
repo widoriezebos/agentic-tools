@@ -1,0 +1,1 @@
+{"jobId":"two-bars-5","goalId":"two-bars-for-changes","machineId":"bed-m1","status":"completed","runtime":"claude","canonicalModelKey":"claude-fable-5-1","startedAt":"2026-09-02T11:40:00Z","usage":{"inputTokens":1196206,"cachedInputTokens":2300868,"outputTokens":27499,"reasoningTokens":4577,"cost":{"currency":"USD","amount":9.857185}}}
