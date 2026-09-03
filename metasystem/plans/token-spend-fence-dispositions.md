@@ -22,3 +22,19 @@ Round 1 closes on four accepted findings; the fold produces the design's
 revision 2, then the closing review. Any point still disputed after the
 closing review becomes a named test obligation in this file, never
 another round (R-60-m1).
+
+## The one fold (job fence-design-1-r2, Fable lane) — revision 2
+
+All four findings folded (design sections 2, 3, 6-8; changelog in the
+header; 299 lines). Five notes reported; the orchestrator's answers:
+
+| Gap | Answer |
+| --- | --- |
+| Price rows for the roster's models are not supplied. | STANDS: no numbers are invented; the seat proposes rows with their source and Wido's word lands them, after the build. |
+| Seat-to-goal attribution stays unmeasured (obligation O-1). | STANDS as an explicit unmeasured line; O-1 is a named obligation for the closing review to confirm or strike. |
+| A delegate whose own job record is unreadable is absent from the delegate session set, so its transcript would count as seat spend; the unreadable ledger entry is the visible warning. | ACCEPTED: honest and bounded; no second join is built. |
+| To fit under 300 lines the fold dropped the optional shell replay bed and folded TestSpendFenceNeverTurnsAggregateUnhealthy's assertion into TestSpendFenceHealthLineBytes. | ACCEPTED: the shell bed is not required (the Go bed replays the same records); the folded assertion stands. |
+| The spend role now reports `alive` on a crossing (the spend-owned episodes carry the alert; a dead role would double-alert through the digest). | ACCEPTED pending the closing review's confirmation; the alert facts still reach the human through the episode. |
+
+The closing review follows; after it the agreed parts build and any
+disputed point becomes a named test obligation here.
