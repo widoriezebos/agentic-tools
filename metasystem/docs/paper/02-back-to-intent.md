@@ -4,7 +4,7 @@
 
 The request from Thursday morning says to change how long a user stays signed in. It does not say whether the change is complete when new behavior exists on a builder's machine, when a check passes, when every user receives it or when the service has lived with it without causing harm. Those moments are not the same, and treating them as one makes a short request look complete long before a dependable outcome exists.
 
-The ladder we climbed in Chapter 1 shows that tools can absorb bounded work, not which parts of delivery remain necessary when the old division of labor changes. So we start simpler: describe what must happen on the way from a human need to dependable behavior, apart from the process humans currently use to arrange the work.
+The ladder we climbed in Chapter 1 shows that tools can absorb bounded work, not which parts of delivery remain necessary when the old division of labor changes. So we start simpler: describe what must happen on the way from a human need to dependable behavior, apart from the process humans currently use to arrange the work. Five activities turn up along the way, and the session change shows each of them.
 
 ## What delivering software actually requires
 
@@ -18,7 +18,7 @@ Release does not end the obligation. Sign-ins may begin looping, uploads may fai
 
 Finally, experience must change what happens next. A missed boundary may become a stronger check. A confusing request may lead to a better way of stating success. A rule that produces false refusals may need revision or removal. That is 'learning': improving intent, construction, verification and care from recorded experience.
 
-These five activities are how the problem divides, not how teams divide the work. They can overlap, and one actor may perform several when consequence is low. They are separated here because each answers a different question. What should happen? What candidate could make it happen? What supports the claim that it does? What keeps the result dependable? What should change after experience? A delivery design may distribute those questions in many ways, but a skipped question stays unanswered, not gone.
+Intent, construction, verification, care and learning: these five activities are how the problem divides, not how teams divide the work. They can overlap, and one actor may perform several when consequence is low. They are separated here because each answers a different question. What should happen? What candidate could make it happen? What supports the claim that it does? What keeps the result dependable? What should change after experience? A delivery design may distribute those questions in many ways, but a skipped question stays unanswered, not gone.
 
 ## Intent as the durable interface
 
@@ -56,4 +56,4 @@ Examples alone are not enough. Boundaries name where behavior changes: before ex
 
 Turning words into checks can reveal uncertainty, but it cannot manufacture agreement. If the words do not determine whether passive reading counts as activity, the system leaves that question visible. If two authorities supply incompatible constraints, it records the conflict; it does not pick one on its own. The unresolved question returns to the person or body authorized to decide it. Only the resulting ruling becomes the intent the work follows.
 
-In Chapter 1 we asked what software delivery actually requires, apart from the process inherited to organize it. The five activities are the answer. What remains is a design problem: arrange them for a workforce whose limits differ from ours, rather than copy the old workflow onto new workers.
+In Chapter 1 we asked what software delivery actually requires, apart from the process inherited to organize it. The answer is the five activities: intent, construction, verification, care and learning. What remains is a design problem: arrange them for a workforce whose limits differ from ours, rather than copy the old workflow onto new workers.
