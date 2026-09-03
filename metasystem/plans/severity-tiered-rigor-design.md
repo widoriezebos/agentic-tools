@@ -66,3 +66,203 @@ VERDICT: CONVERGED-BUILDABLE
 - Task 6 — documentation and integrated proof, 3h. Update `docs/orchestration.md`, `skills/design-critique/SKILL.md`, `skills/code-critique/SKILL.md`, the warden instructions, and the implementation-bound obligation matrix in `plans/severity-tiered-rigor-design.md`; remove current-prescriptive references to the retired driver while leaving historical records intact. Run focused Go packages first, then `scripts/agents/return-schema-fixtures.sh`, `dispatch-fixtures.sh`, `conformance-fixtures.sh`, and `static-reproof-fixtures.sh`; finish with the repository design-obligation gate and normal full landing battery. No tests were run during this read-only decision pass; HEAD remained clean at `3cf7a83f6968a379f57fca4e9d80198a02b91524`.
 
 Proposed receipt: `RECEIPT|type=design|outcome=converged-buildable|skills=design-critique+take-a-step-back|verify=read-only-code-grounding-at-3cf7a83|corrections=0|stop_loss=no|delegate=none|note=severity-tiered-rigor round 3 pinned a 31h slice-one build; prescriptions 7-9 remain later slices`
+
+## Revision 2 (2026-09-03): the tier is the budget, the material stop closes the loop
+
+Re-aimed by Wido's words in R-54-m1 and R-60-m1. Tasks 1 to 3 above
+stand as landed (the rigor grammar, the canonical finding register,
+the round engine, the dispatch cutover). This revision replaces tasks
+4 to 6 with the build list below. It removes the fixed round caps and
+puts the review depth where Wido put it: in the budget of the item,
+decided by its tier at intake. Prescription 5 above ("keep finite caps
+for all classes") is withdrawn by R-60-m1; the tier box is the only
+bound.
+
+### What is wrong today, in one paragraph
+
+A goal carries no class. The budget norm is one number, 1440 reserved
+minutes, whatever the item is (internal/goal/norm.go, key
+metasystem.budget.goal-norm-job-minutes). The round engine in
+internal/dispatch/critique.go stops a chain at rounds three and six by
+constant, whatever the item is. A finding is material by a bare
+boolean, so a critic can keep a loop alive with findings that change
+nothing. And a one-line constant inside internal/ cannot land as a
+direct fix because internal/ sits on the never-direct-fix list in
+internal/landing/observe.go, so the smallest change takes the whole
+ladder. The two specimens: the alert channel's thirteen rounds and the
+Codex handshake's seven design revisions for one constant.
+
+### The mechanism
+
+**1. The tier lives on the goal.** A new goal field, `Tier`, with the
+values 1, 2, 3, written by whoever opens the goal (`goal open --tier`)
+and changeable by `goal edit --tier <n> --why "<text>"`; every change
+is a history line. The three tiers are R-54-m1's, verbatim:
+
+- Tier 1: a constant, a message text, a config value, a fixture, a
+  dead-code removal. Build, the area's tests, land as a declared
+  direct fix. No design round, no review.
+- Tier 2: mechanical logic inside an existing owner. Build plus one
+  code review. No design round.
+- Tier 3: design-bearing (a new law, verb, schema, seam or role).
+  Design, one design review, build, one code review.
+
+Destructive reach is not a tier. It stays the job's hazard class
+(internal/dispatch/hazard.go) and adds live proof on top of any tier.
+A goal without a tier is not dispatchable: `delegate` refuses with
+"classify the goal first: goal edit --tier". The landing of build part
+one sweeps every open goal and writes its tier, each as an edit line by
+the coordinator, so the fleet is never stuck on the day the rule lands.
+
+**2. The tier box is the budget norm.** The norm stops being one
+number. metasystem.conf carries one box per tier, in the four-number
+notation of R-44-m0b (elapsed, attempts, reserved minutes, active
+jobs), with these defaults:
+
+    metasystem.budget.tier-1 = 1h/3/60m/1
+    metasystem.budget.tier-2 = 4h/6/240m/1
+    metasystem.budget.tier-3 = 8h/10/240m/1
+
+`goal set-budget` inside the box of the goal's tier needs no approval.
+Above the box it needs `--approved-ref` exactly as today (the strict
+token in internal/goal/norm.go is unchanged). A goal opened without a
+budget gets its tier's box. The old single-number norm key is deleted,
+not kept as a fallback; a conf that still names it is refused at load
+with the new keys spelled out.
+
+Open point for Wido, with my recommendation. Today every dispatch
+reserves the full 120-minute cap for the life of the goal revision
+(goal dispatch-cap-necessity, R-58-m1), so a 240-minute pool holds
+two dispatches and a tier-3 ladder has at least four. Until that goal
+lands, the boxes above stall lawful ladders. I recommend the reserved
+minutes in each box be written as attempts times the dispatch cap
+(tier 1: 360m, tier 2: 720m, tier 3: 1200m) at the landing of this
+part, and lowered to R-44's numbers when the reservation bug is gone.
+The pool is a runaway guard; the tokens are the cost.
+
+**3. The ladder depth follows the tier.** `delegate` reads the tier of
+the goal it is dispatched under and refuses what the tier does not
+have:
+
+- Tier 1 refuses every critic role and every `--reviews`; its one
+  implementer job is a MECHANICAL hazard job.
+- Tier 2 refuses `--role design-critic`.
+- Tier 3 accepts all roles.
+
+The review budget replaces the round constants. In
+internal/dispatch/critique.go the three constants
+(firstSevereExhaustionRound 3, terminalExhaustionRound 6,
+boundedFurtherRounds 2) go away. The boundary of a chain is its
+tier's review budget: tier 2, two critic rounds per chain (the review
+and the stamp after one correction); tier 3, three critic rounds per
+chain, design chains and code chains alike. That is the "three rounds
+then split" of R-60-m1, read as the default budget. A seat that needs
+more raises the budget the same way it raises minutes: with a ruling
+row and `--approved-ref`, which then also raises the round boundary
+(`goal set-budget --review-rounds <n>`, the fifth number of the box,
+default per tier as above).
+
+**4. The material stop is mechanical.** The critic return schema
+(generated version three, internal/returnschema/returnschema.go)
+gains one member on the rigor row: `artifact`, the repository path
+the finding changes, with the metasystem/ prefix, or the literal
+`NEW <path>` for a file that does not exist yet. The normalizer in
+internal/critique/model.go applies R-60-m1: a finding marked material
+whose artifact is empty, does not resolve in the reviewed tree, or is
+not a NEW path, is normalized to not material, with a protocol note in
+the register entry (`materialDemoted: no artifact`). It is not turned
+into a synthetic finding and it does not count against the review
+budget; it simply cannot keep the loop alive. The register advance
+already resolves a finding the critic drops as material:false. So a
+chain closes on the first round with zero material findings, and a
+critic who wants to keep a chain open must name what changes.
+
+**5. At the budget, the agreed parts build and the disputed points
+become named obligations.** When a chain reaches its review budget
+with open findings, the exhaustion verb stops refusing the next round
+and instead offers one exit, `job critique-register-close --goal <id>`:
+
+- every open or disputed finding of rigor class bounded becomes an
+  obligation on the goal record (the existing `Obligation` field,
+  one line per finding: id, artifact, the test that would prove it),
+  and the register entry is marked `deferred:<goal>`;
+- every open finding of class severe or unproven blocks the close; the
+  verb prints the finding and its artifact and the coordinator asks the
+  human (over the fleet conversation channel once it exists; by the
+  ledger until then). The human's word, recorded on the goal, either
+  raises the budget or accepts the risk, and only then does the close
+  run with the finding recorded as `accepted-risk` in the counselor's
+  register (records/counselor/accepted-risk-register.jsonl).
+
+A closed chain with deferred findings lands normally: conformance's
+zero-material rule reads the register, not the last critic return, and
+deferred entries are not material. The goal cannot conclude while it
+carries an obligation; `goal conclude` refuses and names the open ones.
+Recurrence: when a later critic raises a finding with the same
+artifact and facts digest as a deferred one, the normalizer classes it
+unproven (the recurrence rule already in model.go), which blocks the
+next close until the human decides. That is the near-miss promotion of
+the original intent, without a second register.
+
+**6. Tier 1 lands as a direct fix.** A new landing class in
+scripts/agents/landing-classes.json, `tier-1`, declared with the goal
+id. The landing floor in internal/landing/observe.go admits it when:
+the goal's tier is 1; the diff touches at most three files and at
+most forty changed lines; no path is of class ledger under the
+path-class manifest; the area's tests ran, recorded as a gate stamp
+in the landing message; and the never-direct-fix list is bypassed
+for behavior paths only for this class. Outside those bounds the class
+is refused with the bound named, and the item is a tier-2 item.
+
+**7. Two rules from the old task four survive, folded here.** A finding
+closed as out-of-scope stays closed only if its rigor class is bounded;
+severe and unproven findings cannot be closed by scope, only
+reclassified in a later explicit critic return (prescription 2). And
+`CloseCheck` in internal/dispatch/close.go requires a fully folded
+register: every terminal critic round advanced, no open severe or
+unproven entry. The same-tree union and the exact-tree certificate
+(old task five) stay a later slice; they guard critic-shopping, which
+no specimen has shown yet.
+
+### Build list
+
+Three build parts and a docs part, each a chain under this goal; the
+goal itself is tier 3, and its own ladder runs under the rules it
+builds as soon as part one lands.
+
+- Part one, the tier at intake: the goal field, the two verbs' flags,
+  the conf boxes, the norm gate by tier, the dispatch refusals of
+  point 3, and the sweep of the open goals. Files: internal/goal/file.go
+  and norm.go, internal/goalbudget/budget.go, internal/config/budget.go,
+  cmd/metasystem/goalsync_mutations.go, internal/dispatch/admission.go,
+  scripts/agents/goal-cli-fixtures.sh. Fixtures: open with each tier;
+  open without a tier refused; set-budget inside and above each box;
+  the deleted norm key refused at load; delegate refusals per tier;
+  the sweep is idempotent.
+- Part two, the material stop and the review budget: the artifact
+  member, the demotion rule, the tier-derived boundary, the fifth box
+  number, the close verb with its two exits, obligations on the goal,
+  conclude refusal, recurrence. Files: internal/returnschema/returnschema.go,
+  internal/critique/model.go, internal/dispatch/critique.go and
+  finding_register.go and close.go, internal/validate/conformance.go
+  and critiqueclosed.go, cmd/metasystem/dispatch_verbs.go,
+  scripts/agents/adapters/runtime-common.sh, the critic rows of
+  scripts/agents/role-packets.json, scripts/agents/return-schema-fixtures.sh and
+  dispatch-fixtures.sh. Fixtures: material without artifact demoted;
+  artifact outside the tree demoted; NEW path accepted; chain closes at
+  zero material; boundary at two and three rounds; raise by
+  approved-ref; close with bounded findings writes obligations; close
+  with a severe finding refuses; accepted risk recorded; conclude
+  refuses with obligations; recurrence classes unproven.
+- Part three, the tier-1 landing class: the class row, the floor rule
+  with its bounds, the gate stamp. Files:
+  scripts/agents/landing-classes.json, internal/landing/observe.go and
+  observe_test.go, scripts/agents/land.sh, scripts/agents/land-fixtures.sh.
+  Fixtures: a one-constant change under a tier-1 goal lands; four files
+  refused; a ledger path refused; a tier-2 goal refused; missing gate
+  stamp refused.
+- Part four, docs: docs/orchestration.md, skills/design-critique/SKILL.md,
+  skills/code-critique/SKILL.md, AGENTS.md's intake paragraph, and the
+  obligation matrix of this file.
+
+Budget of this goal: tier 3, big box, review rounds three per chain.
