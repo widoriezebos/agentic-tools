@@ -5,7 +5,7 @@
 - Origin: human
 - Next step: RE-AIMED BY WIDO'S WORDS R-54-m1 and R-60-m1 (2026-09-02/03): this goal is the machinery for the risk-based budget of review depth. The tier set at intake (R-54-m1: constant or fixture; mechanical logic in an existing owner; design-bearing) fixes the review budget as part of the goal's budget; the stop criterion ends a loop earlier: a finding is material only if it changes what gets built and names the artifact, carried as a field in the critic return schema so the stop is mechanical; at the budget the agreed parts build and disputed points become named test obligations. No separate cap machinery. Specimens: the alert channel's thirteen rounds, the Codex handshake's eight design revisions for one constant. Remaining tasks 4 to 6 of this goal fold into that shape; run after the path-class manifest, the second landing bar, the fleet conversation channel and the token fence in alert mode. ORIGINAL NEXT STEP KEPT BELOW: TASKS 1-3 LANDED (ebee506, bd36ee6, e3ab42a, 699cd90, d23c774): grammar, fixture legs, register, cap engine, cutover + driver death. UNBLOCKED (backlog triage 2026-08-31): the recorded blocker is stale - m2's steward is armed under the R-29-m2 temporary word and delegate dispatch runs lawfully (a full working day of chains on 2026-08-31 proves it). Remainder ready for dispatch: Tasks 4 (closure semantics 4h), 5a/5b (same-tree union + exact-tree certificate), 6 (docs + integrated proof) are delegate builds under Ruling O, and delegate dispatch on m2 is lawfully refused until the steward enrollment runs FROM WIDO'S AGENT-FREE TERMINAL on this machine (metasystem steward arm — ENROLLMENT_DRIFT, L8 law). Resume with a fresh claim on his enrollment.
 - OpenedAt: 2026-08-26T10:47:00Z
-- Revision: 16
+- Revision: 17
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
 - NormApproval: approvedRef=R-61-m1 minutes=3000 goalRevision=15
 
@@ -26,4 +26,5 @@ History:
 - 2026-08-31T10:24:36Z MK593HGK542T9ZRDDHZ9J6QPTG-m2-bc1be9cb edit actor=m2+mac-coordinator targets=severity-tiered-rigor
 - 2026-09-03T09:05:41Z 150ME283188CKEBSBC21PZCE95-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=severity-tiered-rigor
 - 2026-09-03T09:18:04Z WFNA1G72045VBSV50TRRKW0331-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=severity-tiered-rigor
-Integrity: sha256=2041fc9dcd51a397523db37bddac88ac1571b1cf68181a72e92e7ef2741c81d3
+- 2026-09-03T12:16:57Z Z9MP0H6H1V7RFD71VQCR21KXH6-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=severity-tiered-rigor
+Integrity: sha256=f943abb2c8d2f1d16e7516b82dbb653902996928c8b86c95c1089fb6c5a96a6c
