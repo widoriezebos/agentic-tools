@@ -5,10 +5,17 @@ Date: 2026-09-03
 # Goal
 
 Build slice 1 of the fleet conversation channel exactly as
-metasystem/plans/fleet-slack-channel-design.md revision 3 decides it (§2
+metasystem/plans/fleet-slack-channel-design.md revision 4 decides it (§2
 to §8; §5 and §8 already carry the closing review's five obligations,
 whose findings and dispositions are recorded in
-metasystem/records/misc/fleet-slack-channel-design-critique-r2.md). The alert-channel sections the design adopts
+metasystem/records/misc/fleet-slack-channel-design-critique-r2.md). The
+first build (fsc-build-1b) wrote nothing and stopped at gap FSC-B1-001:
+the fake's state had no contract across the separate command invocations
+the fixture makes. Revision 4 decides that contract (§2 fake provider, §7
+the `channel fake serve` and `channel fake code` verbs, §8 the fixture):
+a directory D holds `base-url`, `journal.jsonl` and `replies.jsonl`; the
+same code serves in-process for Go tests and as a background command for
+the fixture. Build to it; that gap is closed. The alert-channel sections the design adopts
 (metasystem/plans/alert-channel-design.md §2, §2a, §3, §3a, §4, §10) are
 law where the design cites them; do not rebuild what they defer. The
 standard is Wido's: hard deterministic machinery, no refusal weakened, no
@@ -37,9 +44,13 @@ guarantee narrowed to make a test pass, no benchmarks (R-31).
 2. `internal/channel/slack` (new): `chat.postMessage`, `conversations.replies`
    paged with `oldest` per thread root and the root→last-ts cursor map,
    `auth.test` as Credential; base URL from `slack.api-base`.
-3. `internal/channel/fake` (new): the in-process HTTP server speaking those
-   three methods with Slack's JSON shapes, a scripted reply queue and a
-   request journal; started in-process when the adapter name is `fake`.
+3. `internal/channel/fake` (new): `fake.Serve(ctx, dir)` per §2 — the HTTP
+   server speaking those three methods with Slack's JSON shapes, `base-url`
+   written by rename once listening, `journal.jsonl` appended per request,
+   `replies.jsonl` read on every `conversations.replies` call with ts from
+   one monotonic counter shared with posts, `auth.test` = `UFAKEBOT`. The
+   `fake` adapter name binds the Slack adapter to `fake.dir` (base URL from
+   `base-url`, absent → `ErrUnconfigured`).
 4. `internal/goal`: the `answer` history verb writing `actor=human:wido`
    with the answer text (and the `wants` token verbatim when present) in
    the reason field; `ParseHistoryLine` and the writer accept authority
@@ -55,7 +66,8 @@ guarantee narrowed to make a test pass, no benchmarks (R-31).
    set-budget and enroll-terminal unchanged; `goal claim --approved-ref
    <opid>` needs no change beyond the grammar (verify with the named test).
 6. `cmd/metasystem`: the `channel` verb family (§7: status [--post], ask,
-   show, wait, poll, close) reading §6 keys through internal/config, with
+   show, wait, poll, close, and the fixture-only `fake serve --dir`, `fake
+   code --secret [--at]`) reading §6 keys through internal/config, with
    secrets only from environment or metasystem.conf.local.
 7. The channel phase as the LAST duty in both tick drivers: the resident
    runner loop in metasystem/internal/steward/runner.go after
@@ -64,7 +76,8 @@ guarantee narrowed to make a test pass, no benchmarks (R-31).
    never inside `RunTick`, never under the arbitration lock; a failure is
    an undelivered count and a stderr line, never an error return.
 8. `scripts/agents/channel-fixtures.sh` (new): the §8 end-to-end fixture
-   against the fake, runnable from a clean export like the other fixture
+   against the fake (background `channel fake serve`, trap-killed; bounded
+   wait for `base-url`), runnable from a clean export like the other fixture
    scripts in metasystem/scripts/agents (read goal-cli-fixtures.sh there
    for the clone-and-run idiom).
 
