@@ -107,8 +107,8 @@ func OwnerForInstallation(installation, path string) (Ownership, string, error) 
 		// The installation IS the repository root (the unvendored
 		// adopted layout): no prefix can decide, so ownership follows
 		// the shipped inventory of instruction-bearing files and trees
-		// adoption creates. Completeness against adoption's full install
-		// set is tracked by goal adoption-inventory-from-install-set.
+		// adoption creates. The full adoption install set is the
+		// completeness boundary.
 		if shippedInventoryPath(slashed) {
 			return OwnerMetasystem, mode, nil
 		}
@@ -138,8 +138,7 @@ func canonicalEntryPath(entry string) string {
 
 // shippedInventoryPath names the instruction-bearing files and the trees
 // adoption creates, which are generic material in an unvendored layout.
-// Goal adoption-inventory-from-install-set tracks completeness against
-// adoption's full install set.
+// The full adoption install set is the completeness boundary.
 func shippedInventoryPath(slashed string) bool {
 	for _, root := range []string{"cmd/", "internal/", "scripts/", "skills/", "optional-skills/", "docs/design/", "docs/examples/", "memory/", "plans/", "records/", ".github/"} {
 		if strings.HasPrefix(slashed, root) {

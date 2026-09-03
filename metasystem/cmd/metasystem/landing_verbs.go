@@ -13,12 +13,14 @@ func runLandingObserve(args []string) int {
 	chain := flags.String("chain", "", "closed implementation chain root")
 	directFix := flags.String("direct-fix", "", "typed direct-fix class; register-carriage may accompany --chain")
 	revertOf := flags.String("revert-of", "", "commit inverted by exact-revert")
+	goal := flags.String("goal", "", "goal item carried by the landing")
+	actor := flags.String("actor", "", "wrapper actor as machine+lineage")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
 	observation := landing.Observe(landing.ObserveParams{
 		RepoRoot: *root, CandidateTree: *tree, Chain: *chain,
-		DirectFix: *directFix, RevertOf: *revertOf,
+		DirectFix: *directFix, RevertOf: *revertOf, Goal: *goal, Actor: *actor,
 	})
 	printJSON(observation)
 	return 0

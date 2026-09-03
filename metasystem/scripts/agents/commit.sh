@@ -40,6 +40,8 @@ ratchet=
 landing_chain=
 landing_direct_fix=
 landing_revert_of=
+landing_goal=
+landing_goal_set=0
 commit_args=()
 while (( $# )); do
   case "$1" in
@@ -75,6 +77,15 @@ while (( $# )); do
       landing_revert_of=$2
       shift 2
       ;;
+    --goal)
+      [[ $# -ge 2 && $landing_goal_set -eq 0 ]] || {
+        echo "commit refused: --goal requires one goal item" >&2
+        exit 2
+      }
+      landing_goal=$2
+      landing_goal_set=1
+      shift 2
+      ;;
     --)
       commit_args+=("$1")
       shift
@@ -89,6 +100,91 @@ while (( $# )); do
       ;;
   esac
 done
+
+if (( landing_goal_set )) && [[ -z "$landing_goal" || ${#landing_goal} -gt 100 || ! "$landing_goal" =~ ^[a-z0-9-]+$ ]]; then
+  echo "commit refused: --goal must be a lowercase kebab identifier of at most 100 characters" >&2
+  exit 2
+fi
+
+message_has_goal_item() { # message text
+  LC_ALL=C grep -Eiq '^Goal-Item:' <<<"$1"
+}
+
+scan_commit_message_inputs() {
+  local index=0 arg value
+  while (( index < ${#commit_args[@]} )); do
+    arg=${commit_args[index]}
+    case "$arg" in
+      -m|--message|--trailer|-F|--file|-c|-C|--reuse-message|--reedit-message|-t|--template|--squash|--fixup)
+        (( index + 1 < ${#commit_args[@]} )) || {
+          echo "commit refused: $arg requires a value" >&2
+          return 2
+        }
+        value=${commit_args[index+1]}
+        case "$arg" in
+          -m|--message|--trailer)
+            if message_has_goal_item "$value"; then
+              echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
+              return 2
+            fi
+            ;;
+          -F|--file)
+            if [[ "$value" == - ]]; then
+              echo "commit refused: $arg - is an unscannable commit message source" >&2
+              return 2
+            fi
+            if [[ ! -f "$value" || ! -r "$value" ]]; then
+              echo "commit refused: commit message file is not readable: $value" >&2
+              return 2
+            fi
+            if message_has_goal_item "$(<"$value")"; then
+              echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
+              return 2
+            fi
+            ;;
+          *)
+            echo "commit refused: $arg is an unscannable commit message source" >&2
+            return 2
+            ;;
+        esac
+        index=$((index + 2))
+        ;;
+      --message=*|--trailer=*)
+        value=${arg#*=}
+        if message_has_goal_item "$value"; then
+          echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
+          return 2
+        fi
+        index=$((index + 1))
+        ;;
+      --file=*)
+        value=${arg#*=}
+        if [[ "$value" == - ]]; then
+          echo "commit refused: --file=- is an unscannable commit message source" >&2
+          return 2
+        fi
+        if [[ ! -f "$value" || ! -r "$value" ]]; then
+          echo "commit refused: commit message file is not readable: $value" >&2
+          return 2
+        fi
+        if message_has_goal_item "$(<"$value")"; then
+          echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
+          return 2
+        fi
+        index=$((index + 1))
+        ;;
+      --reuse-message=*|--reedit-message=*|--template=*|--squash=*|--fixup=*|--amend)
+        echo "commit refused: $arg is an unscannable commit message source" >&2
+        return 2
+        ;;
+      *)
+        index=$((index + 1))
+        ;;
+    esac
+  done
+}
+
+scan_commit_message_inputs
 
 started=$("$ms" proc started-at --pid $$) || {
   echo "agent commit wrapper refused: wrapper process start time is unreadable" >&2
@@ -289,6 +385,11 @@ rm -f "$settled_unbound"
 # remains a durable observation, while the base-tree promotion record may mark
 # a named verdict as refusing for agent commits. Human commits never consume
 # that refusal bit.
+machine_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
+[[ -n "$machine_nickname" ]] \
+  || { echo "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine" >&2; exit 2; }
+landing_actor="${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}"
+
 landing_tree=$settled_tree
 if [[ -n "$prefix" ]]; then
   resolved_landing_tree=$(git -C "$root" rev-parse "$settled_tree:${prefix%/}" 2>/dev/null || true)
@@ -298,22 +399,27 @@ landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
 [[ -z "$landing_chain" ]] || landing_observe_args+=(--chain "$landing_chain")
 [[ -z "$landing_direct_fix" ]] || landing_observe_args+=(--direct-fix "$landing_direct_fix")
 [[ -z "$landing_revert_of" ]] || landing_observe_args+=(--revert-of "$landing_revert_of")
+[[ -z "$landing_goal" ]] || landing_observe_args+=(--goal "$landing_goal")
+landing_observe_args+=(--actor "$landing_actor")
 landing_provenance="none change=unknown"
 landing_verdict="would-refuse code=evaluator-unavailable"
 landing_code="evaluator-unavailable"
 landing_mode="refuse"
 landing_observation=
+landing_refusal=
 if landing_observation=$("$policy_engine" "${landing_observe_args[@]}" 2>/dev/null); then
   observed_provenance=$("$ms" json get --value "$landing_observation" --field provenance 2>/dev/null || true)
   observed_verdict=$("$ms" json get --value "$landing_observation" --field verdictTrailer 2>/dev/null || true)
   observed_code=$("$ms" json get --value "$landing_observation" --field code 2>/dev/null || true)
   observed_mode=$("$ms" json get --value "$landing_observation" --field mode 2>/dev/null || true)
+  observed_refusal=$("$ms" json get --value "$landing_observation" --field refusal --default "" 2>/dev/null || true)
   if [[ -n "$observed_provenance" && -n "$observed_verdict" && -n "$observed_code" \
     && ( "$observed_mode" == observe || "$observed_mode" == refuse ) ]]; then
     landing_provenance=$observed_provenance
     landing_verdict=$observed_verdict
     landing_code=$observed_code
     landing_mode=$observed_mode
+    landing_refusal=$observed_refusal
   fi
 fi
 if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
@@ -331,6 +437,39 @@ if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
     promotion-record-malformed)
       echo "agent commit refused: the landing promotion record is malformed ($landing_verdict)" >&2
       landing_repair="a human must repair the landing promotion record before an agent retries"
+      ;;
+    path-unclassified)
+      echo "agent commit refused: the landing contains an unclassified path ($landing_verdict)" >&2
+      [[ -z "$landing_refusal" ]] || printf '%s\n' "$landing_refusal" >&2
+      landing_repair="classify every named path in scripts/agents/path-classes.txt, then retry"
+      ;;
+    ledger-path-not-goal-verb)
+      echo "agent commit refused: ledger paths change only through goal verbs ($landing_verdict)" >&2
+      landing_repair="use the owning goal verb instead of the commit wrapper"
+      ;;
+    runtime-path-refused)
+      echo "agent commit refused: runtime paths cannot be landed ($landing_verdict)" >&2
+      landing_repair="remove runtime output from the staged tree"
+      ;;
+    exact-revert-record-refused)
+      echo "agent commit refused: exact revert cannot delete or truncate records ($landing_verdict)" >&2
+      landing_repair="restore the record and carry a forward record instead"
+      ;;
+    goal-item-not-held)
+      echo "agent commit refused: the Goal-Item is not held by this machine and lineage ($landing_verdict)" >&2
+      landing_repair="use a goal claimed by this machine and lineage"
+      ;;
+    record-not-owned)
+      echo "agent commit refused: the staged record is not owned by this landing ($landing_verdict)" >&2
+      landing_repair="carry only new records or records owned by the held goal or actor"
+      ;;
+    register-carriage-policy-unreadable|direct-fix-policy-unreadable)
+      echo "agent commit refused: the base path-class policy is unreadable ($landing_verdict)" >&2
+      landing_repair="repair the path-class manifest through a reviewed implementation chain"
+      ;;
+    register-carriage-not-append-only)
+      echo "agent commit refused: register carriage rewrote or deleted existing record bytes ($landing_verdict)" >&2
+      landing_repair="restore existing bytes and append complete lines only"
       ;;
     *)
       echo "agent commit refused: promoted landing verdict $landing_verdict" >&2
@@ -357,21 +496,31 @@ proved_head=$(git -C "$root" rev-parse --verify --quiet HEAD || true)
 # nickname, never its hostname: the trailer is pushed to shared
 # remotes, and what a machine IS stays off them. The wrapper stamps
 # it so it is uniform on every machine and never typed by an author.
-machine_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
-[[ -n "$machine_nickname" ]] \
-  || { echo "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine" >&2; exit 2; }
-git -C "$root" commit --trailer "Machine: ${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}" \
-  --trailer "Landing-Provenance: $landing_provenance" \
-  --trailer "Landing-Provenance-Verdict: $landing_verdict" \
-  "${commit_args[@]}"
+commit_trailers=(
+  --trailer "Machine: $landing_actor"
+  --trailer "Landing-Provenance: $landing_provenance"
+  --trailer "Landing-Provenance-Verdict: $landing_verdict"
+)
+[[ -z "$landing_goal" ]] || commit_trailers+=(--trailer "Goal-Item: $landing_goal")
+git -C "$root" commit "${commit_trailers[@]}" "${commit_args[@]}"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
-if [[ "$landed_tree" != "$proved_tree" ]]; then
+landed_message=$(git -C "$root" log -1 --format=%B)
+goal_item_count=$(LC_ALL=C grep -Eic '^Goal-Item:' <<<"$landed_message" || true)
+exact_goal_item_count=0
+if [[ -n "$landing_goal" ]]; then
+  exact_goal_item_count=$(grep -Fxc -- "Goal-Item: $landing_goal" <<<"$landed_message" || true)
+fi
+if [[ "$landed_tree" != "$proved_tree" || ( -n "$landing_goal" && ( $goal_item_count -ne 1 || $exact_goal_item_count -ne 1 ) ) || ( -z "$landing_goal" && $goal_item_count -ne 0 ) ]]; then
   if [[ -n "$proved_head" ]]; then
     git -C "$root" reset --soft "$proved_head"
   else
     git -C "$root" update-ref -d HEAD
   fi
-  echo "agent commit refused: the commit recorded a tree the static re-proof never judged (content selection beyond the index); the commit was rolled back — stage the exact bytes and commit them plainly" >&2
+  if [[ "$landed_tree" != "$proved_tree" ]]; then
+    echo "agent commit refused: the commit recorded a tree the static re-proof never judged (content selection beyond the index); the commit was rolled back — stage the exact bytes and commit them plainly" >&2
+  else
+    echo "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back" >&2
+  fi
   exit 1
 fi
 
