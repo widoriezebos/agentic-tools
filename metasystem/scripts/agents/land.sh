@@ -6,7 +6,7 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--chain <root-job> [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
@@ -20,6 +20,8 @@ ratchet=
 landing_chain=
 landing_direct_fix=
 landing_revert_of=
+landing_goal=
+landing_goal_set=0
 pathspecs=()
 
 while (( $# )); do
@@ -59,6 +61,12 @@ while (( $# )); do
     --revert-of)
       [[ $# -ge 2 && -z "$landing_revert_of" ]] || { usage; exit 2; }
       landing_revert_of=$2
+      shift 2
+      ;;
+    --goal)
+      [[ $# -ge 2 && $landing_goal_set -eq 0 ]] || { usage; exit 2; }
+      landing_goal=$2
+      landing_goal_set=1
       shift 2
       ;;
     --)
@@ -249,6 +257,7 @@ commit_changes() {
   [[ -z "$landing_chain" ]] || arguments=(--chain "$landing_chain" "${arguments[@]}")
   [[ -z "$landing_direct_fix" ]] || arguments=(--direct-fix "$landing_direct_fix" "${arguments[@]}")
   [[ -z "$landing_revert_of" ]] || arguments=(--revert-of "$landing_revert_of" "${arguments[@]}")
+  (( landing_goal_set )) && arguments=(--goal "$landing_goal" "${arguments[@]}")
   bash "$root/scripts/agents/commit.sh" "${arguments[@]}"
 }
 

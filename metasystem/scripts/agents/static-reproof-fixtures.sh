@@ -11,7 +11,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 
 TestRealCommitWrapperStampsParseableObservation() {
   local fixture real_engine wrapper candidate_tree observation expected_provenance expected_verdict expected_mode message
-  local refusal status orphan chain_message conflict floor_message malformed human_message
+  local refusal status unclassified orphan chain_message conflict floor_message malformed human_message
   fixture="$tmp/real-observer"
   real_engine="$tmp/real-metasystem"
   wrapper="$root/scripts/agents/commit.sh"
@@ -90,6 +90,16 @@ SH
   fixture_git commit -qm "install landing promotion policy"
   printf 'promoted missing declaration\n' >"$fixture/README"
   fixture_git add README
+  set +e
+  unclassified=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+    "$fixture/scripts/agents/commit.sh" __lease-held 1 --direct-fix register-carriage \
+    -m "unclassified path must name its base policy" 2>&1)
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$unclassified" == *"would-refuse code=path-unclassified"* \
+    && "$unclassified" == *"path README has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for README or its directory to scripts/agents/path-classes.txt"* ]] \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: unclassified refusal lost its base-manifest detail: $unclassified" >&2; exit 1; }
+
   set +e
   refusal=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
     "$fixture/scripts/agents/commit.sh" __lease-held 1 -m "promoted missing must refuse" 2>&1)
@@ -186,9 +196,11 @@ grep -Fq 'go-gate.sh" --fast' <<<"$tail_body" \
 grep -Fq -- '--fast --proof-out' "$wrapper" \
   || { echo "static re-proof fixture: the boundary's gate call lost its side-effect-free --proof-out" >&2; exit 1; }
 gate_line=$(grep -n 'go-gate.sh" --fast' "$wrapper" | head -1 | cut -d: -f1)
-commit_line=$(grep -n 'git -C "$root" commit --trailer' "$wrapper" | head -1 | cut -d: -f1)
+commit_line=$(grep -n 'git -C "$root" commit "${commit_trailers\[@\]}"' "$wrapper" | head -1 | cut -d: -f1)
 [[ -n "$gate_line" && -n "$commit_line" && "$gate_line" -lt "$commit_line" ]] \
   || { echo "static re-proof fixture: the re-proof does not precede the commit" >&2; exit 1; }
+grep -Fq 'final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal' "$wrapper" \
+  || { echo "static re-proof fixture: the wrapper lost its final Goal-Item postcondition" >&2; exit 1; }
 escape_scan() {
   grep -Eq 'METASYSTEM[A-Z_]*(SKIP|FAST|REPROOF)' "$1"
 }
@@ -513,8 +525,8 @@ engine_before=$(shasum -a 256 "$fixture_root/bin/metasystem" | cut -d' ' -f1)
 # tooling is now the tooling's.
 origin_bare=$(mktemp -d)/origin.git
 transport_bare=$(mktemp -d)/transport.git
-git init -q --bare -b main "$origin_bare"
-git init -q --bare -b main "$transport_bare"
+env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git init -q --bare -b main "$origin_bare"
+env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git init -q --bare -b main "$transport_bare"
 git -C "$fixture_root" remote add origin "$origin_bare"
 git -C "$fixture_root" remote add transport "$transport_bare"
 printf 'landed\n' >"$fixture_root/internal/red/landed.txt"

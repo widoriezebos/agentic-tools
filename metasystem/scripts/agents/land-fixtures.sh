@@ -10,6 +10,10 @@ source_engine=$root/bin/metasystem
 [[ -x "$source_engine" ]] \
   || { echo "land fixture: current source engine is absent; run the Go gate first" >&2; exit 1; }
 
+# Every leg creates standalone repositories. Their object writes stay local;
+# inherited object-store steering must not leak into fixtures.
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 source "$root/scripts/agents/fixture-budget.sh"
 source "$root/scripts/agents/fixture-bed-scenarios.sh"
 fixture_bed_child=0
@@ -23,8 +27,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (3 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan
+  run_fixture_bed_scenarios land "land fixtures passed (4 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan goal
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -54,7 +58,25 @@ nonce=$("$root/bin/metasystem" util token-hex --bytes 16)
 "$root/bin/metasystem" lease commit-token \
   --path "$token" --pid $$ --start "$started" --nonce "$nonce"
 trap 'rm -f -- "$token"' EXIT
-git commit "$@"
+goal=
+commit_args=()
+while (( $# )); do
+  case "$1" in
+    --goal)
+      [[ $# -ge 2 && -z "$goal" ]] || exit 2
+      goal=$2
+      shift 2
+      ;;
+    *)
+      commit_args+=("$1")
+      shift
+      ;;
+  esac
+done
+if [[ -n "${LAND_FIXTURE_GOAL_LOG:-}" ]]; then
+  printf '%s\n' "$goal" >"$LAND_FIXTURE_GOAL_LOG"
+fi
+git commit "${commit_args[@]}"
 git show --no-renames --numstat -z --format= HEAD \
   | "$root/bin/metasystem" gate weight-add --root "$root" \
       --commit "$(git rev-parse --short HEAD)"
@@ -265,4 +287,27 @@ new_plan_remote_head=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
 [[ "$new_plan_local_head" == "$new_plan_remote_head" ]]
 [[ $(git --git-dir="$leg_remote" show main:plans/new.md) == 'deliberate new plan' ]]
 echo "land new-plan fixture passed"
+fi
+
+# 4. The goal item is driver input, not a Git option. The land wrapper accepts
+# it once and carries the same value to the commit boundary.
+if [[ "$fixture_scenario" == goal ]]; then
+make_leg goal
+goal_log=$leg_root/goal.log
+goal_message=$leg_root/message.txt
+goal_output=$leg_root/land.out
+printf 'goal forwarding\n' >"$leg_local/payload.txt"
+printf 'fixture forwards a goal item\n' >"$goal_message"
+(
+  cd "$leg_local"
+  LAND_FIXTURE_GOAL_LOG="$goal_log" \
+    bash scripts/agents/land.sh -m "$goal_message" --goal fx --skip-transport payload.txt
+) >"$goal_output" 2>&1 || {
+  echo "land goal fixture: --goal was not accepted and forwarded" >&2
+  sed -n '1,160p' "$goal_output" >&2
+  exit 1
+}
+[[ $(<"$goal_log") == fx ]] \
+  || { echo "land goal fixture: the commit boundary did not receive goal fx" >&2; exit 1; }
+echo "land goal fixture passed"
 fi

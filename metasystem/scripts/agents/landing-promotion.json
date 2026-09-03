@@ -1,4 +1,4 @@
 {
   "schemaVersion": 1,
-  "refuseCodes": ["missing-declaration", "conflicting-declarations"]
+  "refuseCodes": ["missing-declaration", "conflicting-declarations", "path-unclassified", "ledger-path-not-goal-verb", "runtime-path-refused", "exact-revert-record-refused", "goal-item-not-held", "record-not-owned", "register-carriage-policy-unreadable", "direct-fix-policy-unreadable", "register-carriage-not-append-only"]
 }

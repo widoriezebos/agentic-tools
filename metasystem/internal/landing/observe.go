@@ -18,7 +18,9 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 const (
@@ -42,18 +44,22 @@ type ObserveParams struct {
 	Chain         string
 	DirectFix     string
 	RevertOf      string
+	Goal          string
+	Actor         string
 }
 
 // Observation is safe to put directly in a commit trailer. The values never
 // echo malformed caller text, so bad input cannot mint another trailer line.
 type Observation struct {
-	SchemaVersion  int    `json:"schemaVersion"`
-	Mode           string `json:"mode"`
-	Bar            string `json:"bar"`
-	Verdict        string `json:"verdict"`
-	Code           string `json:"code"`
-	Provenance     string `json:"provenance"`
-	VerdictTrailer string `json:"verdictTrailer"`
+	SchemaVersion  int      `json:"schemaVersion"`
+	Mode           string   `json:"mode"`
+	Bar            string   `json:"bar"`
+	Verdict        string   `json:"verdict"`
+	Code           string   `json:"code"`
+	Provenance     string   `json:"provenance"`
+	VerdictTrailer string   `json:"verdictTrailer"`
+	Unclassified   []string `json:"unclassified,omitempty"`
+	Refusal        string   `json:"refusal,omitempty"`
 }
 
 // Observe evaluates one prospective landing, then applies the promotion
@@ -137,13 +143,43 @@ func observeChain(params ObserveParams, change string) Observation {
 		return wouldRefuse("chain-output-mismatch", provenance)
 	}
 	provenance = fmt.Sprintf("chain=%s change=%s certified-change=%s", params.Chain, change, certifiedDigest)
+	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	baseTree, err := workspace.HeadTree()
+	if err != nil {
+		return wouldRefuse("register-carriage-policy-unreadable", provenance)
+	}
+	classes, err := loadPathClasses(workspace, baseTree)
+	if err != nil {
+		return wouldRefuse(carriageRefusalCode(err), provenance)
+	}
+	changedPaths, err := workspace.ChangedPaths(baseTree, params.CandidateTree)
+	if err != nil {
+		return wouldRefuse("candidate-tree-unreadable", provenance)
+	}
+	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	if err != nil {
+		return wouldRefuse("register-carriage-policy-unreadable", provenance)
+	}
+	if params.DirectFix == "register-carriage" {
+		if classErr := behaviorResolvedError(resolved, extraPaths); classErr != nil {
+			return wouldRefuseFromCarriage(classErr, provenance)
+		}
+	}
+	if params.Goal != "" {
+		if err := heldGoalError(workspace, baseTree, params.Goal, params.Actor); err != nil {
+			return wouldRefuseFromCarriage(err, provenance)
+		}
+	}
+	if classErr := chainClassError(resolved, changedPaths); classErr != nil {
+		return wouldRefuseFromCarriage(classErr, provenance)
+	}
 	if len(extraPaths) > 0 && params.DirectFix != "register-carriage" {
 		return wouldRefuse("chain-has-uncarried-paths", provenance)
 	}
 	if params.DirectFix == "register-carriage" {
 		provenance = fmt.Sprintf("chain=%s direct-fix class=register-carriage change=%s certified-change=%s", params.Chain, change, certifiedDigest)
-		if err := registerCarriage(params.RepoRoot, params.CandidateTree, extraPaths); err != nil {
-			return wouldRefuse(carriageRefusalCode(err), provenance)
+		if err := registerCarriage(params.RepoRoot, params.CandidateTree, extraPaths, params.Goal, params.Actor); err != nil {
+			return wouldRefuseFromCarriage(err, provenance)
 		}
 		observation := pass(BarChain, "closed-chain", provenance)
 		observation.VerdictTrailer = "pass bar=a carriage=register-carriage"
@@ -415,8 +451,9 @@ func writeDigestEntry(writer digestWriter, entry gittree.Entry) {
 }
 
 type carriageError struct {
-	code string
-	err  error
+	code         string
+	err          error
+	unclassified []string
 }
 
 func (e *carriageError) Error() string { return e.err.Error() }
@@ -427,6 +464,20 @@ func carriageRefusalCode(err error) string {
 		return carriage.code
 	}
 	return "register-carriage-policy-unreadable"
+}
+
+func wouldRefuseFromCarriage(err error, provenance string) Observation {
+	observation := wouldRefuse(carriageRefusalCode(err), provenance)
+	var carriage *carriageError
+	if errors.As(err, &carriage) && len(carriage.unclassified) > 0 {
+		observation.Unclassified = append([]string(nil), carriage.unclassified...)
+		lines := make([]string, 0, len(carriage.unclassified))
+		for _, changedPath := range carriage.unclassified {
+			lines = append(lines, pathclass.RefusalText(changedPath))
+		}
+		observation.Refusal = strings.Join(lines, "\n")
+	}
+	return observation
 }
 
 type landingClassManifest struct {
@@ -440,10 +491,7 @@ type landingClassManifest struct {
 	} `json:"classes"`
 }
 
-func registerCarriage(root, candidateTree string, changedPaths []string) error {
-	if len(changedPaths) == 0 {
-		return nil
-	}
+func registerCarriage(root, candidateTree string, changedPaths []string, goalID, actor string) error {
 	workspace := gittree.Workspace{Dir: root}
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
@@ -453,33 +501,227 @@ func registerCarriage(root, candidateTree string, changedPaths []string) error {
 	if err != nil {
 		return err
 	}
+	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	if err != nil {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	if err := behaviorResolvedError(resolved, changedPaths); err != nil {
+		return err
+	}
+	if goalID != "" {
+		if err := heldGoalError(workspace, baseTree, goalID, actor); err != nil {
+			return err
+		}
+	}
+	if err := nonBehaviorClassError(resolved, changedPaths, false); err != nil {
+		return err
+	}
+	for _, changedPath := range changedPaths {
+		if err := recordCarriageError(workspace, baseTree, candidateTree, classes, changedPath, goalID, actor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolvePathClasses(workspace gittree.Workspace, classes *pathclass.Manifest, changedPaths []string) (map[string]pathclass.Class, error) {
+	prefix, err := workspace.Prefix()
+	if err != nil {
+		return nil, err
+	}
 	resolved := make(map[string]pathclass.Class, len(changedPaths))
 	for _, changedPath := range changedPaths {
-		resolved[changedPath] = classes.Class(changedPath)
+		repositoryPath := filepath.ToSlash(filepath.Join(filepath.FromSlash(prefix), filepath.FromSlash(changedPath)))
+		ownership, modeText, err := stateroot.OwnerForInstallation(workspace.Dir, repositoryPath)
+		if err != nil {
+			return nil, fmt.Errorf("classify landing path %s: %w", changedPath, err)
+		}
+		resolution := classes.ResolveRepositoryPath(pathclass.Mode(modeText), ownership, prefix, repositoryPath)
+		resolved[changedPath] = resolution.Class
 	}
+	return resolved, nil
+}
+
+func chainClassError(resolved map[string]pathclass.Class, changedPaths []string) error {
+	return nonBehaviorClassError(resolved, changedPaths, true)
+}
+
+func behaviorResolvedError(resolved map[string]pathclass.Class, changedPaths []string) error {
 	for _, changedPath := range changedPaths {
 		if resolved[changedPath] == pathclass.Behavior {
 			return &carriageError{code: "direct-fix-floor-refused", err: fmt.Errorf("path %s is on the never-direct-fix floor", changedPath)}
 		}
 	}
+	return nil
+}
+
+func nonBehaviorClassError(resolved map[string]pathclass.Class, changedPaths []string, outsideAllowed bool) error {
 	for _, changedPath := range changedPaths {
-		if resolved[changedPath] != pathclass.Record || !registerCarriageEligible(changedPath) {
-			return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is not register carriage", changedPath)}
+		if resolved[changedPath] == pathclass.Ledger {
+			return &carriageError{code: "ledger-path-not-goal-verb", err: fmt.Errorf("ledger path %s changes only through a goal verb", changedPath)}
 		}
 	}
 	for _, changedPath := range changedPaths {
-		switch changedPath {
-		case "memory/rulings.md":
-			if err := addRulingRowsOnly(workspace, baseTree, candidateTree); err != nil {
-				return &carriageError{code: "register-carriage-not-append-only", err: err}
-			}
-		case "memory/receipts.log", "records/narrator-digest.log":
-			if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
-				return &carriageError{code: "register-carriage-not-append-only", err: err}
+		if resolved[changedPath] == pathclass.Runtime {
+			return &carriageError{code: "runtime-path-refused", err: fmt.Errorf("runtime path %s cannot be landed", changedPath)}
+		}
+	}
+	var unclassified []string
+	for _, changedPath := range changedPaths {
+		if resolved[changedPath] == pathclass.Unclassified {
+			unclassified = append(unclassified, changedPath)
+		}
+	}
+	if len(unclassified) > 0 {
+		sort.Strings(unclassified)
+		return &carriageError{code: "path-unclassified", err: fmt.Errorf("path has no class"), unclassified: unclassified}
+	}
+	if !outsideAllowed {
+		for _, changedPath := range changedPaths {
+			if resolved[changedPath] == pathclass.Outside {
+				return &carriageError{code: "register-carriage-path-refused", err: fmt.Errorf("path %s is outside register carriage", changedPath)}
 			}
 		}
 	}
 	return nil
+}
+
+func heldGoalError(workspace gittree.Workspace, baseTree, goalID, actor string) error {
+	data, present, err := workspace.FileAt(baseTree, "plans/goals/"+goalID+".md")
+	if err != nil || !present {
+		return &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 || file.Id != goalID || file.State != goal.StateClaimed || file.Claimed == nil ||
+		actor != file.Claimed.Machine+"+"+file.Claimed.Lineage {
+		return &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
+	}
+	return nil
+}
+
+func recordCarriageError(workspace gittree.Workspace, baseTree, candidateTree string, classes *pathclass.Manifest, changedPath, goalID, actor string) error {
+	baseEntries, err := workspace.Entries(baseTree, []string{changedPath})
+	if err != nil {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	candidateEntries, err := workspace.Entries(candidateTree, []string{changedPath})
+	if err != nil {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	_, existed := baseEntries[changedPath]
+	_, present := candidateEntries[changedPath]
+	held := goalID != ""
+
+	switch changedPath {
+	case "memory/rulings.md":
+		if err := addRulingRowsOnly(workspace, baseTree, candidateTree); err != nil {
+			return &carriageError{code: "register-carriage-not-append-only", err: err}
+		}
+		return nil
+	case "memory/receipts.log", "records/narrator-digest.log":
+		if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
+			return &carriageError{code: "register-carriage-not-append-only", err: err}
+		}
+		return nil
+	}
+
+	if seat, ok := handoffSeat(changedPath); ok {
+		if !present {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("handoff %s was deleted", changedPath)}
+		}
+		if !existed {
+			return nil
+		}
+		actorSeat, _, _ := strings.Cut(actor, "+")
+		if actorSeat != seat {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("handoff %s is owned by %s", changedPath, seat)}
+		}
+		return nil
+	}
+
+	if strings.HasPrefix(changedPath, "plans/") {
+		owner, owned := classes.GoalOwner(changedPath)
+		if !owned {
+			owner, err = longestGoalOwner(workspace, baseTree, changedPath)
+			if err != nil {
+				return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+			}
+			owned = owner != ""
+		}
+		if owned {
+			if !present || !held || goalID != owner {
+				return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is owned by goal %s", changedPath, owner)}
+			}
+			return nil
+		}
+		if existed {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("existing plan record %s is frozen", changedPath)}
+		}
+		if !present {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("plan record %s was deleted", changedPath)}
+		}
+		return nil
+	}
+
+	if strings.HasPrefix(changedPath, "memory/") || strings.HasPrefix(changedPath, "development/") {
+		if !present || (existed && !held) {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s requires a held goal", changedPath)}
+		}
+		return nil
+	}
+
+	if strings.HasPrefix(changedPath, "records/") {
+		if !existed {
+			if !present {
+				return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s was deleted", changedPath)}
+			}
+			return nil
+		}
+		if !held {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("existing record %s requires a held goal", changedPath)}
+		}
+		if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
+			return &carriageError{code: "register-carriage-not-append-only", err: err}
+		}
+		return nil
+	}
+
+	if existed || !present {
+		return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is not owned", changedPath)}
+	}
+	return nil
+}
+
+func handoffSeat(changedPath string) (string, bool) {
+	if !strings.HasPrefix(changedPath, "plans/handoff-") || !strings.HasSuffix(changedPath, ".md") ||
+		strings.Contains(strings.TrimPrefix(changedPath, "plans/"), "/") {
+		return "", false
+	}
+	remainder := strings.TrimSuffix(strings.TrimPrefix(changedPath, "plans/handoff-"), ".md")
+	seat, suffix, ok := strings.Cut(remainder, "-")
+	return seat, ok && seat != "" && suffix != ""
+}
+
+func longestGoalOwner(workspace gittree.Workspace, baseTree, changedPath string) (string, error) {
+	if filepath.Dir(changedPath) != "plans" || filepath.Ext(changedPath) != ".md" {
+		return "", nil
+	}
+	entries, err := workspace.Entries(baseTree, []string{"plans/goals/"})
+	if err != nil {
+		return "", err
+	}
+	filename := strings.TrimSuffix(filepath.Base(changedPath), ".md")
+	longest := ""
+	for goalPath := range entries {
+		if filepath.Dir(goalPath) != "plans/goals" || filepath.Ext(goalPath) != ".md" {
+			continue
+		}
+		goalID := strings.TrimSuffix(filepath.Base(goalPath), ".md")
+		if len(goalID) > len(longest) && strings.HasPrefix(filename, goalID+"-") {
+			longest = goalID
+		}
+	}
+	return longest, nil
 }
 
 func loadPathClasses(workspace gittree.Workspace, baseTree string) (*pathclass.Manifest, error) {
@@ -535,19 +777,6 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest omits a compiled class")}
 	}
 	return nil
-}
-
-// Handoff notes remain directly carriable so an unfinished stream can record
-// its next step. Other record paths stay outside this narrow carriage rule.
-func registerCarriageEligible(changedPath string) bool {
-	switch changedPath {
-	case "memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log":
-		return true
-	}
-	if !strings.HasPrefix(changedPath, "plans/handoff-") || !strings.HasSuffix(changedPath, ".md") {
-		return false
-	}
-	return !strings.Contains(strings.TrimPrefix(changedPath, "plans/"), "/")
 }
 
 func appendOnly(workspace gittree.Workspace, baseTree, candidateTree, changedPath string) error {
@@ -646,8 +875,8 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		if err != nil {
 			return wouldRefuse("register-carriage-policy-unreadable", provenance)
 		}
-		if err := registerCarriage(params.RepoRoot, params.CandidateTree, paths); err != nil {
-			return wouldRefuse(carriageRefusalCode(err), provenance)
+		if err := registerCarriage(params.RepoRoot, params.CandidateTree, paths, params.Goal, params.Actor); err != nil {
+			return wouldRefuseFromCarriage(err, provenance)
 		}
 		return pass(BarDirectFix, "register-carriage", provenance)
 	case "exact-revert":
@@ -662,8 +891,8 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 			return wouldRefuse("direct-fix-policy-unreadable", provenance)
 		}
 		provenance = fmt.Sprintf("direct-fix class=exact-revert revert-of=%s change=%s", params.RevertOf, change)
-		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf, classes); err != nil {
-			return wouldRefuse(exactRevertRefusalCode(err), provenance)
+		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf, classes, params.Goal, params.Actor); err != nil {
+			return wouldRefuseFromExactRevert(err, provenance)
 		}
 		return pass(BarDirectFix, "exact-revert", provenance)
 	default:
@@ -672,8 +901,23 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 }
 
 type exactRevertError struct {
-	code string
-	err  error
+	code         string
+	err          error
+	unclassified []string
+}
+
+func wouldRefuseFromExactRevert(err error, provenance string) Observation {
+	observation := wouldRefuse(exactRevertRefusalCode(err), provenance)
+	var revert *exactRevertError
+	if errors.As(err, &revert) && len(revert.unclassified) > 0 {
+		observation.Unclassified = append([]string(nil), revert.unclassified...)
+		lines := make([]string, 0, len(revert.unclassified))
+		for _, changedPath := range revert.unclassified {
+			lines = append(lines, pathclass.RefusalText(changedPath))
+		}
+		observation.Refusal = strings.Join(lines, "\n")
+	}
+	return observation
 }
 
 func (e *exactRevertError) Error() string { return e.err.Error() }
@@ -686,7 +930,7 @@ func exactRevertRefusalCode(err error) string {
 	return "not-exact-revert"
 }
 
-func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manifest) error {
+func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manifest, goalID, actor string) error {
 	workspace := gittree.Workspace{Dir: root}
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
@@ -695,21 +939,21 @@ func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manife
 	candidatePaths, candidateErr := workspace.ChangedPaths(baseTree, candidateTree)
 	parent, err := workspace.SingleParent(revertOf)
 	if err != nil {
-		return exactRevertFloorError(classes, candidatePaths, nil, err)
+		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, nil, goalID, actor, err)
 	}
 	preimageTree, err := workspace.TreeOf(parent)
 	if err != nil {
-		return exactRevertFloorError(classes, candidatePaths, nil, err)
+		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, nil, goalID, actor, err)
 	}
 	postimageTree, err := workspace.TreeOf(revertOf)
 	if err != nil {
-		return exactRevertFloorError(classes, candidatePaths, nil, err)
+		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, nil, goalID, actor, err)
 	}
 	targetPaths, err := workspace.ChangedPaths(preimageTree, postimageTree)
 	if err != nil || len(targetPaths) == 0 {
-		return exactRevertFloorError(classes, candidatePaths, targetPaths, fmt.Errorf("reverted commit has no decidable changed paths"))
+		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, targetPaths, goalID, actor, fmt.Errorf("reverted commit has no decidable changed paths"))
 	}
-	if err := exactRevertFloorError(classes, candidatePaths, targetPaths, nil); err != nil {
+	if err := exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, targetPaths, goalID, actor, nil); err != nil {
 		return err
 	}
 	if candidateErr != nil {
@@ -745,15 +989,77 @@ func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manife
 	return nil
 }
 
-func exactRevertFloorError(classes *pathclass.Manifest, candidatePaths, targetPaths []string, fallback error) error {
+func exactRevertPolicyError(workspace gittree.Workspace, baseTree string, classes *pathclass.Manifest, candidatePaths, targetPaths []string, goalID, actor string, fallback error) error {
+	paths := exactRevertPaths(candidatePaths, targetPaths)
+	resolved, err := resolvePathClasses(workspace, classes, paths)
+	if err != nil {
+		return &exactRevertError{code: "direct-fix-policy-unreadable", err: err}
+	}
+	if err := behaviorResolvedError(resolved, paths); err != nil {
+		var carriage *carriageError
+		if errors.As(err, &carriage) {
+			return &exactRevertError{code: carriage.code, err: carriage.err}
+		}
+		return err
+	}
+	if goalID != "" {
+		if err := heldGoalError(workspace, baseTree, goalID, actor); err != nil {
+			var carriage *carriageError
+			if errors.As(err, &carriage) {
+				return &exactRevertError{code: carriage.code, err: carriage.err}
+			}
+			return err
+		}
+	}
+	return exactRevertClassError(resolved, paths, fallback)
+}
+
+func exactRevertPaths(candidatePaths, targetPaths []string) []string {
+	set := map[string]bool{}
 	for _, changedPath := range append(append([]string(nil), targetPaths...), candidatePaths...) {
-		switch classes.Class(changedPath) {
-		case pathclass.Behavior, pathclass.Record, pathclass.Ledger, pathclass.Runtime, pathclass.Unclassified:
+		set[changedPath] = true
+	}
+	paths := make([]string, 0, len(set))
+	for changedPath := range set {
+		paths = append(paths, changedPath)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func exactRevertClassError(resolved map[string]pathclass.Class, paths []string, fallback error) error {
+	for _, changedPath := range paths {
+		if resolved[changedPath] == pathclass.Behavior {
 			return &exactRevertError{
 				code: "direct-fix-floor-refused",
 				err:  fmt.Errorf("path %s is on the never-direct-fix floor", changedPath),
 			}
 		}
+	}
+	for _, changedPath := range paths {
+		if resolved[changedPath] == pathclass.Record {
+			return &exactRevertError{code: "exact-revert-record-refused", err: fmt.Errorf("record path %s cannot be reverted", changedPath)}
+		}
+	}
+	for _, changedPath := range paths {
+		if resolved[changedPath] == pathclass.Ledger {
+			return &exactRevertError{code: "ledger-path-not-goal-verb", err: fmt.Errorf("ledger path %s changes only through a goal verb", changedPath)}
+		}
+	}
+	for _, changedPath := range paths {
+		if resolved[changedPath] == pathclass.Runtime {
+			return &exactRevertError{code: "runtime-path-refused", err: fmt.Errorf("runtime path %s cannot be landed", changedPath)}
+		}
+	}
+	var unclassified []string
+	for _, changedPath := range paths {
+		if resolved[changedPath] == pathclass.Unclassified {
+			unclassified = append(unclassified, changedPath)
+		}
+	}
+	if len(unclassified) > 0 {
+		sort.Strings(unclassified)
+		return &exactRevertError{code: "path-unclassified", err: fmt.Errorf("path has no class"), unclassified: unclassified}
 	}
 	return fallback
 }
