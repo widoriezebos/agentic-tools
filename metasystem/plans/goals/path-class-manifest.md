@@ -5,10 +5,11 @@
 - Origin: main
 - Next step: TIER 3 per R-54-m1, run on m1 with Codex only. STOP CRITERION for the design loop (Wido's word this morning): a finding is material only if it changes what gets built and the reviewer names the artifact that changes; design, one review, one fold, one closing review, then build; at the cap the agreed parts build as they are and every still-disputed point becomes a named test obligation. Ladder: design brief -> Fable design (short: the manifest shape, the verb, the three consumers, the deletions, the refusal text, the fixtures) -> Sol review -> fold -> closing review -> Sol build -> Fable code review -> land with --chain. Afterwards, separately: promote direct-fix-floor-refused (one line plus a ruling). STATUS 2026-09-03 12:50 (m1): the first part is on the re-issued chain path-class-build1c; two closing reviews each found one root-layout corner (the waiver order, then the shipped inventory), the inventory correction is running, then one closing review, then the landing with --chain. The second part follows at once under plans/path-class-manifest-build2-brief.md; then the second landing bar promotion. LANDED 2026-09-03 13:5x (m1): the first part is on main (4b1cd47e One committed manifest decides what every path is): the manifest, the path class verb, the resolver, the waiver and the landing floor reading it, the two hand lists deleted. Second part dispatched next under plans/path-class-manifest-build2-brief.md (landing rules by class), then the second landing bar promotion. Follow-ups opened from the reviews: adoption-inventory-from-install-set (root-layout inventory) and merge-stage-critic-close (the merge stage of validate conformance cannot pass on real chains).
 - OpenedAt: 2026-09-03T06:25:55Z
-- Revision: 9
+- Revision: 10
 - Labels: robustness, separation
 - Budget: elapsedLimit=1d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
 - NormApproval: approvedRef=R-59-m1 minutes=3000 goalRevision=5
+- Approved: by=human:Wido at=2026-09-03T16:12:43Z revision=10 opid=GH432072PV3415JQH9177AB1XA-m2-5fcf08ab authority=relayed digest=83afd4f170386ba7c44d23aa5249276c4cb6ea9ba8aed34a16a21f2ea10e60c9 reviewBy=2026-09-06
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-03T06:30:33Z
 - Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-03T08:42:15Z revision=6
 - StopCapability: generation=6 revision=6 machine=m1 claimEpoch=4 fenceEpoch=0
@@ -23,4 +24,5 @@ History:
 - 2026-09-03T10:46:35Z MS9DJXYB6B4VDBBVFD8Y7HX6AC-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
 - 2026-09-03T11:22:16Z T8CYP1DV4RY8TCJ9KCB7AQDP3R-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
 - 2026-09-03T12:17:08Z 313VKFCM4XTT54GEJYDTQDS9A7-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
-Integrity: sha256=be93443bdb4563a745dc8e58176fd3a482e229bb095dcbbae26eda49f0ca3f43
+- 2026-09-03T16:12:43Z GH432072PV3415JQH9177AB1XA-m2-5fcf08ab approve actor=human:Wido targets=path-class-manifest authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="yes; you are allowed to do this yourself"
+Integrity: sha256=18fe83f34185eb388f9067a9f01710900c7038a0d26214f134cdb2ef51292e2c
