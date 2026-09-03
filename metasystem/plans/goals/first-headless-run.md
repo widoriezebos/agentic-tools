@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: APPROVED FOR EXECUTION by Wido, R-66-m1 (verbatim: 'open the first headless run as a backlog item, approved for execution, on m0 tonight after its approval feature lands. Yes!'). TIER 3 per R-54-m1 (a new seam: the runner on a real host). Runs on m0 the moment human-approval-for-execution lands; m0 claims it then. Steps: (1) find the runner's real entry point and what it needs to start on a host (lease, mission id, the host adapter that replaces the fake host), and write the one-page run plan into plans/first-headless-run-plan.md; (2) pick the goal to run: an approved tier-2 goal with a landed design and a build brief, for example adoption-inventory-from-install-set or merge-stage-critic-close once Wido approves either; (3) stop the Claude session on m0, start the runner from the shell, watch only from outside (census, the channel, the ledger); (4) each stop is a finding: fix forward, restart, until the goal lands with a chain landing signed by the runner; (5) record the run (what it needed a person for, what it did alone) in records/misc/first-headless-run.md and open the follow-ups that make up starting the runner and the fleet join bootstrap.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 2
+- Revision: 3
+- Arc: headless-fleet
 
 History:
 - 2026-09-03T12:10:50Z Y3RZW9JRD4KE9WTRF7TFX4SX73-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=first-headless-run
 - 2026-09-03T12:16:09Z CM7YVX33TYA4CDEFZX8W38TEC7-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=first-headless-run
-Integrity: sha256=6d74b85da0580c29609f4f25c5ad834ef6b05359c87ca2e94fce024ff8fa0443
+- 2026-09-03T12:20:17Z 30F71GZ7RZ9BP1RJJCEBEW9D3W-m1-7bb1546e set-arc actor=m1+main-1788333680-2840-7f79f4 targets=first-headless-run
+Integrity: sha256=bd150f28888c8b1e3a4f173657fae8acbaec9c7b8261d3626726767c16efb347
