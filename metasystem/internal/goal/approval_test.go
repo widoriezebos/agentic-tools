@@ -5,6 +5,88 @@ import (
 	"testing"
 )
 
+func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	legacyBudget := Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+	for index, id := range []string{"legacy-approved", "legacy-claimed"} {
+		open := verbReq(root, []string{"01J5X00000000000000000MB00", "01J5X00000000000000000MB10"}[index], "mac-a")
+		if result, err := Open(open, id, "Migrate "+id+".", OriginMain, "Classify it."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+		approve := verbReq(root, []string{"01J5X00000000000000000MB20", "01J5X00000000000000000MB30"}[index], "mac-a")
+		approveGoalForTest(t, approve, id, legacyBudget)
+	}
+	claim := verbReq(root, "01J5X00000000000000000MB40", "mac-a")
+	if result, err := Claim(claim, "legacy-claimed"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim legacy goal: %+v %v", result, err)
+	}
+
+	// Reproduce the approved, tierless, four-member records that exist at
+	// migration intake. Their legacy approval digests must parse before the
+	// sweep has any chance to rebind them.
+	tree, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyChanges := make([]Change, 0, 2)
+	for _, id := range []string{"legacy-approved", "legacy-claimed"} {
+		file := tree.Live[id]
+		file.Tier = 0
+		file.Approved.Digest = legacyApprovalDigest(file.Intent, *file.Budget)
+		raw := string(RenderFile(file))
+		raw = strings.Replace(raw, "- Tier: 3\n", "", 1)
+		raw = strings.Replace(raw, " reviewRoundLimit=3", "", 1)
+		raw = withFreshIntegrity(raw)
+		if parsed, problems := ParseFile([]byte(raw)); parsed == nil || len(problems) != 0 || parsed.Tier != 0 || !parsed.legacyFourBudget {
+			t.Fatalf("legacy %s did not bootstrap: parsed=%+v problems=%v", id, parsed, problems)
+		}
+		legacyChanges = append(legacyChanges, Change{Path: livePath(id), Content: []byte(raw)})
+	}
+	legacyResult, err := Publish(endpointFor(root), PublishRequest{
+		Opid: "legacy-tierless-intake", Machine: "mac-fixture", Lineage: "lin-fixture",
+		Intent: testIntentFor("migrate"), Message: "legacy tierless intake",
+		Mutate: func(string) ([]Change, error) { return legacyChanges, nil },
+	})
+	if err != nil || legacyResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish legacy intake: %+v %v", legacyResult, err)
+	}
+
+	draft := []byte("legacy-claimed 2 claimed migration\nlegacy-approved 1 approved migration\n")
+	listing, err := PreviewClassificationSweep(endpointFor(root), draft, claim.Now)
+	if err != nil || len(listing.Proposals) != 2 || listing.Lines[0] != "legacy-approved 1 approved migration" {
+		t.Fatalf("preview did not normalize the legacy listing: %+v %v", listing, err)
+	}
+	human := verbReq(root, "01J5X00000000000000000MB50", "mac-a")
+	human.Actor.Human = "Wido"
+	first, err := ClassifyTier(human, listing.Proposals[0], false)
+	if err != nil || first.Outcome != OutcomeConfirmed {
+		t.Fatalf("classify first legacy goal: %+v %v", first, err)
+	}
+	human.Ulid = "01J5X00000000000000000MB60"
+	last, err := ClassifyTier(human, listing.Proposals[1], true)
+	if err != nil || last.Outcome != OutcomeConfirmed {
+		t.Fatalf("classify final legacy goal: %+v %v", last, err)
+	}
+	if err := ValidateCommit(root, last.Tip); err != nil {
+		t.Fatalf("post-marker tree validation: %v", err)
+	}
+	tree, err = loadTree(root, last.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, claimed := tree.Live["legacy-approved"], tree.Live["legacy-claimed"]
+	if approved.Tier != 1 || approved.Budget.ReviewRoundLimit != 0 || approved.State != StateApproved || approved.ValidateApprovalRecord() != nil {
+		t.Fatalf("approved legacy normalization = %+v", approved)
+	}
+	if claimed.Tier != 2 || claimed.Budget.ReviewRoundLimit != 2 || claimed.State != StateClaimed || claimed.ValidateApprovalRecord() != nil {
+		t.Fatalf("claimed legacy normalization = %+v", claimed)
+	}
+	if tree.Root.TierLaw != human.opid() {
+		t.Fatalf("TierLaw marker = %q, want final edit %q", tree.Root.TierLaw, human.opid())
+	}
+}
+
 func publishGoalFixtures(t *testing.T, root string, files ...*GoalFile) {
 	t.Helper()
 	changes := make([]Change, 0, len(files))

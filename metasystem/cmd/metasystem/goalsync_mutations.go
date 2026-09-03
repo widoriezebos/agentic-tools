@@ -92,7 +92,8 @@ type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm                                                       string
-	attemptLimit, reservedJobMinutesLimit, activeJobLimit                    int64
+	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
+	tier                                                                     uint
 	labels, unlabels, ids                                                    repeatedStrings
 	claim, refreshOnly, sweep                                                bool
 	keep                                                                     int
@@ -127,12 +128,14 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
 	fs.StringVar(&f.approvedRef, "approved-ref", "", "recorded human approval reference for an over-norm goal budget")
+	fs.UintVar(&f.tier, "tier", 0, "goal rigor tier: 1, 2, or 3")
 	fs.StringVar(&f.elapsedLimit, "elapsed-limit", "", "positive elapsed duration, for example 4h")
 	fs.Int64Var(&f.attemptLimit, "attempt-limit", 0, "positive reservation-attempt limit")
 	fs.Int64Var(&f.reservedJobMinutesLimit, "reserved-job-minutes-limit", 0, "positive reserved job-minute limit")
 	fs.Int64Var(&f.activeJobLimit, "active-job-limit", 0, "positive concurrent-job limit")
+	fs.Int64Var(&f.reviewRoundLimit, "review-round-limit", -1, "non-negative critic review-round limit")
 	if name == "approve" {
-		fs.StringVar(&f.budgetBox, "budget", "", "standing budget box: small|big")
+		fs.StringVar(&f.budgetBox, "budget", "", "standing budget box: box")
 		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
 		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
 	}
@@ -157,6 +160,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 			fmt.Fprintf(os.Stderr, "goal %s does not take --unlabel\n", name)
 			return nil, false
 		}
+		if f.tier != 0 {
+			fmt.Fprintf(os.Stderr, "goal %s does not take --tier\n", name)
+			return nil, false
+		}
 	}
 	if name != "open" && name != "claim" && name != "set-budget" && name != "resume" && name != "approve" && f.hasAnyBudgetFlag() {
 		fmt.Fprintf(os.Stderr, "goal %s does not take budget flags\n", name)
@@ -174,20 +181,20 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 }
 
 func (f *syncFlags) hasAnyBudgetFlag() bool {
-	return f.elapsedLimit != "" || f.attemptLimit != 0 || f.reservedJobMinutesLimit != 0 || f.activeJobLimit != 0
+	return f.elapsedLimit != "" || f.attemptLimit != 0 || f.reservedJobMinutesLimit != 0 || f.activeJobLimit != 0 || f.reviewRoundLimit >= 0
 }
 
 func (f *syncFlags) budgetTuple(required bool) (*goal.Budget, error) {
 	if !f.hasAnyBudgetFlag() {
 		if required {
-			return nil, fmt.Errorf("the complete budget tuple is required: --elapsed-limit, --attempt-limit, --reserved-job-minutes-limit, and --active-job-limit")
+			return nil, fmt.Errorf("the complete budget tuple is required: --elapsed-limit, --attempt-limit, --reserved-job-minutes-limit, --active-job-limit, and --review-round-limit")
 		}
 		return nil, nil
 	}
-	if f.elapsedLimit == "" || f.attemptLimit == 0 || f.reservedJobMinutesLimit == 0 || f.activeJobLimit == 0 {
-		return nil, fmt.Errorf("budget flags are all-or-nothing: supply --elapsed-limit, --attempt-limit, --reserved-job-minutes-limit, and --active-job-limit")
+	if f.elapsedLimit == "" || f.attemptLimit == 0 || f.reservedJobMinutesLimit == 0 || f.activeJobLimit == 0 || f.reviewRoundLimit < 0 {
+		return nil, fmt.Errorf("budget flags are all-or-nothing: supply --elapsed-limit, --attempt-limit, --reserved-job-minutes-limit, --active-job-limit, and --review-round-limit")
 	}
-	budget, err := goal.NewBudget(f.elapsedLimit, f.attemptLimit, f.reservedJobMinutesLimit, f.activeJobLimit)
+	budget, err := goal.NewBudget(f.elapsedLimit, f.attemptLimit, f.reservedJobMinutesLimit, f.activeJobLimit, f.reviewRoundLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -196,19 +203,10 @@ func (f *syncFlags) budgetTuple(required bool) (*goal.Budget, error) {
 
 func (f *syncFlags) approvalBudget() (*goal.Budget, error) {
 	if f.budgetBox != "" && f.hasAnyBudgetFlag() {
-		return nil, fmt.Errorf("--budget and the four explicit budget limits are mutually exclusive")
+		return nil, fmt.Errorf("--budget and the five explicit budget limits are mutually exclusive")
 	}
-	if f.budgetBox != "" {
-		switch f.budgetBox {
-		case "small":
-			budget, err := goal.NewBudget("4h", 10, 240, 1)
-			return &budget, err
-		case "big":
-			budget, err := goal.NewBudget("8h", 10, 240, 1)
-			return &budget, err
-		default:
-			return nil, fmt.Errorf("--budget is small or big")
-		}
+	if f.budgetBox != "" && f.budgetBox != "box" {
+		return nil, fmt.Errorf("--budget is box")
 	}
 	return f.budgetTuple(false)
 }
@@ -244,7 +242,10 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, "goal open does not accept --unlabel; remove labels with goal edit")
 			return 2, true
 		}
-		if !need(f.id, "id") || !need(f.intent, "intent") || !need(f.next, "next") {
+		if !need(f.id, "id") || !need(f.intent, "intent") || !need(f.next, "next") || f.tier < 1 || f.tier > 3 {
+			if f.tier < 1 || f.tier > 3 {
+				fmt.Fprintln(os.Stderr, "goal open needs --tier 1, 2, or 3")
+			}
 			return 2, true
 		}
 		if f.claim {
@@ -256,11 +257,12 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			res, err := goal.OpenClaim(req, f.id, f.intent, f.origin, f.next, *budget, f.labels...)
 			return printSyncResult(res, err), true
 		}
-		if f.hasAnyBudgetFlag() {
-			fmt.Fprintln(os.Stderr, "goal open accepts a budget only with --claim; otherwise open the goal and use goal set-budget")
+		budget, budgetErr := f.budgetTuple(false)
+		if budgetErr != nil {
+			fmt.Fprintln(os.Stderr, budgetErr)
 			return 2, true
 		}
-		res, err := goal.Open(req, f.id, f.intent, f.origin, f.next, f.labels...)
+		res, err := goal.OpenTiered(req, f.id, f.intent, f.origin, f.next, uint8(f.tier), budget, f.labels...)
 		return printSyncResult(res, err), true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {
@@ -426,6 +428,74 @@ func recordGoalApprovalProof(root, operationID, action string, proof humanauthor
 
 func runGoalApprove(args []string) int {
 	return runGoalApproveWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalClassifySweep(args []string) int {
+	fs := flag.NewFlagSet("goal classify-sweep", flag.ContinueOnError)
+	root := fs.String("root", ".", "checkout root")
+	draftPath := fs.String("draft", "", "classification draft file")
+	preview := fs.Bool("preview", false, "print the normalized listing without mutation")
+	confirm := fs.String("confirm", "", "sha256 of the normalized preview listing")
+	by := fs.String("by", "", "the directing human")
+	lineage := fs.String("lineage", "", "this coordinator's lineage")
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if !converted(*root) || *draftPath == "" || (*preview == (*confirm != "")) || (!*preview && *by == "") {
+		fmt.Fprintln(os.Stderr, "goal classify-sweep needs a synced backlog, --draft, and exactly one of --preview or --confirm; confirmation also needs --by")
+		return 2
+	}
+	draft, err := os.ReadFile(*draftPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "goal classify-sweep could not read its draft:", err)
+		return 1
+	}
+	endpoint, err := goal.ResolveEndpoint(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	listing, err := goal.PreviewClassificationSweep(endpoint, draft, now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if *preview {
+		for _, line := range listing.Lines {
+			fmt.Println(line)
+		}
+		fmt.Println("listing-digest " + listing.Digest)
+		return 0
+	}
+	if listing.Digest != *confirm {
+		fmt.Fprintf(os.Stderr, "SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s; preview again\n", *confirm, listing.Digest)
+		return 1
+	}
+	if len(listing.Proposals) == 0 {
+		printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "detail": "the tier law is already installed and no tierless goals remain"})
+		return 0
+	}
+	for index, proposal := range listing.Proposals {
+		req, reqErr := syncReq(*root, *by, *lineage)
+		if reqErr != nil {
+			fmt.Fprintln(os.Stderr, reqErr)
+			return 1
+		}
+		res, classifyErr := goal.ClassifyTier(req, proposal, index == len(listing.Proposals)-1)
+		if classifyErr != nil {
+			return printSyncResult(res, classifyErr)
+		}
+		if res.Outcome != goal.OutcomeConfirmed {
+			return printSyncResult(res, nil)
+		}
+	}
+	printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "classified": len(listing.Proposals), "listingDigest": listing.Digest})
+	return 0
 }
 
 func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
@@ -982,6 +1052,10 @@ var (
 		}
 		if f.next != "" {
 			fields.NextStep = &f.next
+		}
+		if f.tier != 0 {
+			tier := uint8(f.tier)
+			fields.Tier = &tier
 		}
 		if len(f.labels) > 0 || len(f.unlabels) > 0 {
 			p, err := goal.Project(req.Endpoint, false, time.Now())

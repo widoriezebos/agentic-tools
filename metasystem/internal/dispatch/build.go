@@ -108,16 +108,33 @@ func nullableGoalRevision(goalID string, revision uint64) (any, error) {
 	return revision, nil
 }
 
+func nullableGoalTier(goalID string, tier uint8) (any, error) {
+	if goalID == "" {
+		if tier != 0 {
+			return nil, fmt.Errorf("goalTier requires a goalId")
+		}
+		return nil, nil
+	}
+	if tier < 1 || tier > 3 {
+		return nil, fmt.Errorf("goal-bound reservation requires goalTier 1, 2, or 3")
+	}
+	return tier, nil
+}
+
 // BuildSetup writes the pending-setup reservation record that reserves a job
 // id before the full record is assembled. Cap authority is already final when
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
-func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, capResolution, machineID, approvedRef string) error {
+func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, goalTier uint8, capResolution, machineID, approvedRef string) error {
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
 	}
 	revision, err := nullableGoalRevision(goalID, goalRevision)
+	if err != nil {
+		return err
+	}
+	tier, err := nullableGoalTier(goalID, goalTier)
 	if err != nil {
 		return err
 	}
@@ -156,6 +173,7 @@ func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID 
 		"claimEpoch":         epoch,
 		"goalId":             nullableString(goalID),
 		"goalRevision":       revision,
+		"goalTier":           tier,
 		"machineId":          nullableString(machineID),
 		"approvedRef":        nullableString(approvedRef),
 		"sliceApprovalClaim": sliceApprovalClaim(approvalClaim),
@@ -236,6 +254,7 @@ type BuildRecordParams struct {
 	Reviews          string
 	GoalID           string
 	GoalRevision     uint64
+	GoalTier         uint8
 	MachineID        string
 	MainID           string
 	ClaimEpoch       string
@@ -294,6 +313,10 @@ func BuildRecord(p BuildRecordParams) error {
 		return err
 	}
 	revision, err := nullableGoalRevision(p.GoalID, p.GoalRevision)
+	if err != nil {
+		return err
+	}
+	tier, err := nullableGoalTier(p.GoalID, p.GoalTier)
 	if err != nil {
 		return err
 	}
@@ -375,6 +398,7 @@ func BuildRecord(p BuildRecordParams) error {
 		"reviews":                  nullableString(p.Reviews),
 		"goalId":                   nullableString(p.GoalID),
 		"goalRevision":             revision,
+		"goalTier":                 tier,
 		"machineId":                nullableString(p.MachineID),
 		"approvedRef":              nullableString(p.ApprovedRef),
 		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),
@@ -457,6 +481,7 @@ type BuildFollowRecordParams struct {
 	CapResolution    string
 	Root             string // dispatching checkout root, for mission provenance
 	GoalRevision     uint64
+	GoalTier         uint8
 	ApprovedRef      string
 	DestructiveReach HazardClass
 	Composition      string // closed-packet composition record
@@ -539,6 +564,9 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	}
 	goalID, _ := parent["goalId"].(string)
 	if goalID != "" {
+		if _, present := parent["goalTier"]; !present {
+			return fmt.Errorf("parent goal-bound record has no goalTier; dispatch a fresh tier-bound chain")
+		}
 		if _, ok := JobRecordOf(parent).GoalRevision(); !ok {
 			return fmt.Errorf("parent goal-bound record is revisionless; dispatch a fresh revision-bound chain")
 		}
@@ -549,6 +577,16 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	revision, err := nullableGoalRevision(goalID, p.GoalRevision)
 	if err != nil {
 		return err
+	}
+	tier, err := nullableGoalTier(goalID, p.GoalTier)
+	if err != nil {
+		return err
+	}
+	if goalID != "" {
+		parentTier, ok := numInt(parent["goalTier"])
+		if !ok || parentTier != int64(p.GoalTier) {
+			return fmt.Errorf("follow-up must inherit the parent goalTier")
+		}
 	}
 	configuration, err := MinimumHazardConfiguration(p.DestructiveReach)
 	if err != nil {
@@ -584,6 +622,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"reviews":                  parent["reviews"],
 		"goalId":                   parent["goalId"],
 		"goalRevision":             revision,
+		"goalTier":                 tier,
 		"machineId":                parent["machineId"],
 		"approvedRef":              nullableString(p.ApprovedRef),
 		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),

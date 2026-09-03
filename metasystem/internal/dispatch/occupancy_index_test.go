@@ -145,7 +145,7 @@ func TestSessionOccupancyRecordVerbsKeepOnePublicationOrder(t *testing.T) {
 	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
 		t.Fatal(err)
 	}
-	if err := BuildSetup(root, setup, "record-verbs", "implementer", "", "main-1", "5", "", 0, capResolution, "", ""); err != nil {
+	if err := BuildSetup(root, setup, "record-verbs", "implementer", "", "main-1", "5", "", 0, 0, capResolution, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Main's BuildSetup predates session indexing; the reservation
@@ -174,7 +174,7 @@ func TestSessionOccupancyRecordVerbsKeepOnePublicationOrder(t *testing.T) {
 		"parentJob": nil, "status": "pending", "phase": "handshake", "error": nil,
 		"startedAt": "2026-08-28T10:00:00Z", "endedAt": nil,
 	}
-	for _, carry := range []string{"mainId", "claimEpoch", "goalId", "goalRevision", "operationId", "capResolution", "machineId", "approvedRef", "capMin", "sessionKey", "sessionNonce", "proofLevel"} {
+	for _, carry := range []string{"mainId", "claimEpoch", "goalId", "goalRevision", "goalTier", "operationId", "capResolution", "machineId", "approvedRef", "capMin", "sessionKey", "sessionNonce", "proofLevel"} {
 		if v, ok := reservation[carry]; ok {
 			pendingDoc[carry] = v
 		}

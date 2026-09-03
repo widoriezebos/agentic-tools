@@ -63,6 +63,40 @@ func TestResolveCapChain(t *testing.T) {
 	})
 }
 
+func TestResolveCapEnforcesDispatchCapMaxForEverySource(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		lines     []string
+		role      string
+		requested string
+	}{
+		{name: "explicit argument", lines: []string{"dispatch.cap-max=120"}, role: "implementer", requested: "121"},
+		{name: "role pair", lines: []string{"dispatch.cap-max=120", "cap.min.implementer.codex.gpt-5.6=121"}, role: "implementer"},
+		{name: "runtime model pair", lines: []string{"dispatch.cap-max=120", "cap.min.codex.gpt-5.6=121"}, role: "verifier"},
+		{name: "general", lines: []string{"dispatch.cap-max=120", "dispatch.cap-min=121"}, role: "verifier"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			conf := writeConf(t, test.lines...)
+			_, _, _, err := ResolveCap(conf, test.role, "codex", "gpt-5.6", test.requested)
+			if err == nil || !strings.Contains(err.Error(), "dispatch.cap-max=120") {
+				t.Fatalf("cap above the maximum from %s was not refused naming the key: %v", test.name, err)
+			}
+		})
+	}
+	conf := writeConf(t, "dispatch.cap-max=120")
+	if capMin, _, _, err := ResolveCap(conf, "implementer", "codex", "gpt-5.6", "120"); err != nil || capMin != 120 {
+		t.Fatalf("cap equal to the maximum was refused: cap=%d err=%v", capMin, err)
+	}
+	raised := writeConf(t, "dispatch.cap-max=200")
+	if capMin, _, _, err := ResolveCap(raised, "implementer", "codex", "gpt-5.6", "150"); err != nil || capMin != 150 {
+		t.Fatalf("configured maximum did not control admission: cap=%d err=%v", capMin, err)
+	}
+}
+
+func TestSTR3MissionCapBypass07GoalBoundMissionAboveCeiling(t *testing.T) {
+	t.Skip("STR3-MISSION-CAP-BYPASS-07: a goal-bound mission cap above 120 minutes cannot be proved here because mission fence enforcement is explicitly outside part one")
+}
+
 func TestRefuseUnsignedMissionCap(t *testing.T) {
 	conf := writeConf(t, "cap.min.codex.gpt-5.6=60")
 	if err := RefuseUnsignedMissionCap(conf, "implementer", "codex", "gpt-5.6"); err != nil {

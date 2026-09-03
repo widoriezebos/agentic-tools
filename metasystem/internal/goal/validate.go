@@ -208,6 +208,10 @@ func ValidateTree(t *TreeGoals) []Problem {
 			addf("%s: NormApproval proves %d minutes but Budget reserves %d minutes", where,
 				f.NormApproval.Minutes, f.Budget.ReservedJobMinutesLimit)
 		}
+		if f.Budget != nil && f.NormApproval != nil && f.NormApproval.ReviewRounds < f.Budget.ReviewRoundLimit {
+			addf("%s: NormApproval proves %d review rounds but Budget permits %d review rounds", where,
+				f.NormApproval.ReviewRounds, f.Budget.ReviewRoundLimit)
+		}
 	})
 	// Acyclicity over the COMPOSED blocked graph (live and done
 	// edges together): a cycle anywhere wedges the frontier.

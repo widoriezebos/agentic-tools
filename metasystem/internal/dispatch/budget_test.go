@@ -102,7 +102,7 @@ func TestPublishedSetupRetainsAttemptAndReservedMinutes(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(root, setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, capFile, "", ""); err != nil {
+	if err := BuildSetup(root, setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, 3, capFile, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "reserved", setup); err != nil {

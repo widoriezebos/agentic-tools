@@ -24,6 +24,7 @@ type RootRecord struct {
 	MigrationMode   string // bare | manifest | adoption
 	Free            *FreeRecord
 	ApprovalGate    *ApprovalGateRecord
+	TierLaw         string // operation id of the final classification edit
 	FleetEnrollment *FleetEnrollmentRecord
 	Decomposed      []DecomposedEntry
 	Legacy          []string // root-level LegacyNotes from migration
@@ -158,6 +159,9 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 	if r.ApprovalGate != nil && (!validStamp(r.ApprovalGate.Since) || r.ApprovalGate.Opid == "") {
 		addProblem("ApprovalGate is incomplete")
 	}
+	if r.TierLaw != "" && !validOpidShape(r.TierLaw) {
+		addProblem("TierLaw since=%q is not an operation id", r.TierLaw)
+	}
 	if r.FleetEnrollment != nil && (!validStamp(r.FleetEnrollment.At) || r.FleetEnrollment.Machine == "" ||
 		r.FleetEnrollment.Generation == 0 || r.FleetEnrollment.Opid == "") {
 		addProblem("FleetEnrollment is incomplete")
@@ -275,6 +279,13 @@ func parseRootField(r *RootRecord, field string, seen map[string]bool, addProble
 			return
 		}
 		r.ApprovalGate = &ApprovalGateRecord{Since: rec["since"], Opid: rec["opid"]}
+	case "TierLaw":
+		rec, err := parseKVRecord(value, []string{"since"}, nil, "")
+		if err != nil {
+			addProblem("TierLaw: %v", err)
+			return
+		}
+		r.TierLaw = rec["since"]
 	case "FleetEnrollment":
 		rec, err := parseKVRecord(value, []string{"at", "machine", "generation", "opid"}, nil, "")
 		if err != nil {
@@ -314,6 +325,9 @@ func RenderRoot(r *RootRecord) []byte {
 	}
 	if r.ApprovalGate != nil {
 		fmt.Fprintf(&b, "- ApprovalGate: since=%s opid=%s\n", r.ApprovalGate.Since, r.ApprovalGate.Opid)
+	}
+	if r.TierLaw != "" {
+		fmt.Fprintf(&b, "- TierLaw: since=%s\n", r.TierLaw)
 	}
 	if r.FleetEnrollment != nil {
 		fmt.Fprintf(&b, "- FleetEnrollment: at=%s machine=%s generation=%d opid=%s\n",

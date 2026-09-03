@@ -434,10 +434,17 @@ func archivedPath(t *TreeGoals, id string) string {
 	return doneLocation(t, id)
 }
 
-// Open adds a queued goal. Goal-free clears in the same commit when
-// it was declared.
+// Open adds a tier-3 queued goal for in-package callers that predate the
+// tiered command surface. The command surface never uses this compatibility
+// entry point: goal open requires an explicit tier and calls OpenTiered.
 func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) (PublishResult, error) {
-	req, err := openRequest(r, id, intent, origin, nextStep, labels)
+	return OpenTiered(r, id, intent, origin, nextStep, 3, nil, labels...)
+}
+
+// OpenTiered adds a queued goal at the caller-selected tier. Goal-free clears
+// in the same commit when it was declared.
+func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels ...string) (PublishResult, error) {
+	req, err := openRequest(r, id, intent, origin, nextStep, tier, supplied, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -447,16 +454,35 @@ func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) 
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string, labels []string) (PublishRequest, error) {
+func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels []string) (PublishRequest, error) {
+	if tier < 1 || tier > 3 {
+		return PublishRequest{}, fmt.Errorf("goal open requires --tier 1, 2, or 3")
+	}
+	budget := supplied
+	if budget == nil {
+		box, err := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), tier)
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		budget = &box
+	} else {
+		maximum, err := config.ReviewRoundMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		if err := budget.Validate(maximum); err != nil {
+			return PublishRequest{}, fmt.Errorf("invalid budget: %v", err)
+		}
+	}
 	canonical, err := canonicalLabels(labels)
 	if err != nil {
 		return PublishRequest{}, err
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "open", Targets: []string{id}, Args: intentArgs(r, map[string]string{
-			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","),
-		})},
+		Intent: Intent{Verb: "open", Targets: []string{id}, Args: intentArgs(r, mergeIntentArgs(map[string]string{
+			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","), "tier": strconv.Itoa(int(tier)),
+		}, budgetIntentArgs(*budget)))},
 		Message: "goal open " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -476,8 +502,8 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, labels []st
 				return nil, fmt.Errorf("goal %s is in the archive; reopen is the explicit exception", id)
 			}
 			f := &GoalFile{
-				Id: id, State: StateQueued, Intent: intent, Origin: origin,
-				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0, Labels: canonical,
+				Id: id, State: StateQueued, Tier: tier, Intent: intent, Origin: origin,
+				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0, Labels: canonical, Budget: budget,
 			}
 			touch(f, r, "open", []string{id})
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
@@ -583,7 +609,11 @@ func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
 }
 
 func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauthority.Proof) (PublishResult, error) {
-	if err := budget.Validate(); err != nil {
+	maximum, maxErr := config.ReviewRoundMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
+	if maxErr != nil {
+		return PublishResult{}, maxErr
+	}
+	if err := budget.Validate(maximum); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid budget: %v", err)
 	}
 	if r.Actor.Human == "" {
@@ -1149,6 +1179,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 // surface — hand edit, verb, and recovery alike.
 type EditFields struct {
 	Intent   *string
+	Tier     *uint8
 	NextStep *string
 	Blocked  *[]string
 	Labels   *[]string
@@ -1167,6 +1198,9 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
 func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, error) {
+	if fields.Tier != nil && (*fields.Tier < 1 || *fields.Tier > 3) {
+		return PublishRequest{}, fmt.Errorf("tier must be 1, 2, or 3")
+	}
 	if fields.Labels != nil {
 		canonical, err := canonicalLabels(*fields.Labels)
 		if err != nil {
@@ -1192,6 +1226,9 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 			}
 			if f.Approved != nil && fields.Intent != nil {
 				return nil, fmt.Errorf("the human approved this intent; unapprove the goal, edit it, then approve the new intent")
+			}
+			if fields.Tier != nil && f.Tier != *fields.Tier && (f.Approved != nil || f.State == StateClaimed || f.State == StateParked) {
+				return nil, fmt.Errorf("goal %s is approved, claimed, or parked; unapprove it, edit --tier, then approve it", id)
 			}
 			// The table's edit rows: queued is open to all, claimed is
 			// the claimant's or a human's (the foreign-human override
@@ -1219,6 +1256,9 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 			}
 			if fields.Intent != nil {
 				f.Intent = *fields.Intent
+			}
+			if fields.Tier != nil {
+				f.Tier = *fields.Tier
 			}
 			if fields.NextStep != nil {
 				f.NextStep = *fields.NextStep
@@ -2148,6 +2188,9 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 	var deltas []FieldDelta
 	if fields.Intent != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "intent", New: *fields.Intent})
+	}
+	if fields.Tier != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "tier", New: strconv.Itoa(int(*fields.Tier))})
 	}
 	if fields.NextStep != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "next", New: *fields.NextStep})

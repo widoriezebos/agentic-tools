@@ -31,11 +31,22 @@ const (
 type GoalBinding struct {
 	GoalID     string
 	Revision   uint64
+	Tier       uint8
 	Machine    string
 	Lineage    string
 	Capability goal.StopCapability
 	Fence      *goal.StopFence
 	File       *goal.GoalFile
+}
+
+func effectiveGoalTier(tree *goal.TreeGoals, file *goal.GoalFile) (uint8, error) {
+	if file.Tier >= 1 && file.Tier <= 3 {
+		return file.Tier, nil
+	}
+	if tree.Root != nil && tree.Root.TierLaw == "" {
+		return 3, nil
+	}
+	return 0, fmt.Errorf("goal %s has no tier; classify the goal first: goal edit --tier", file.Id)
 }
 
 func ResolveGoalBinding(root, id string, now time.Time) (GoalBinding, error) {
@@ -57,8 +68,12 @@ func ResolveGoalBinding(root, id string, now time.Time) (GoalBinding, error) {
 	if file.StopCapability == nil {
 		return GoalBinding{}, fmt.Errorf("goal %s revision %d predates breach-stop authority; resume or re-claim it before dispatch", id, file.Claimed.Revision)
 	}
+	tier, err := effectiveGoalTier(projection.Tree, file)
+	if err != nil {
+		return GoalBinding{}, err
+	}
 	return GoalBinding{
-		GoalID: id, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine,
+		GoalID: id, Revision: file.Claimed.Revision, Tier: tier, Machine: file.Claimed.Machine,
 		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file,
 	}, nil
 }

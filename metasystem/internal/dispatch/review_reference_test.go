@@ -22,7 +22,7 @@ func TestClaimLaunchDerivesReviewReferencesOnReviewedChainRoot(t *testing.T) {
 	claim := func(job, role, reviews, session string) {
 		t.Helper()
 		params := claimParamsForTest(root, job)
-		params.GoalID, params.GoalRevision, params.MachineID = "", 0, ""
+		params.GoalID, params.GoalRevision, params.GoalTier, params.MachineID = "", 0, 0, ""
 		params.Request.Role = role
 		params.Request.SessionKey = session
 		params.Reviews = reviews

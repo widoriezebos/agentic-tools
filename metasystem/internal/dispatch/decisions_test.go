@@ -385,7 +385,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	})
 
 	setup := filepath.Join(tmp, "setup.json")
-	if err := BuildSetup(root, setup, "job-b", "implementer", "", "main-1", "7", "", 0, capResolution, "", ""); err != nil {
+	if err := BuildSetup(root, setup, "job-b", "implementer", "", "main-1", "7", "", 0, 0, capResolution, "", ""); err != nil {
 		t.Fatalf("BuildSetup: %v", err)
 	}
 	setupRecord := readJSONFile(t, setup)

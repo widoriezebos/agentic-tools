@@ -98,6 +98,25 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			add("%s is not a supported mode-scoped key", key)
 		}
 	}
+	retiredPresent := false
+	for key, message := range retiredKeys {
+		if _, present := values[key]; present {
+			add("%s %s", key, message)
+			retiredPresent = true
+		}
+		if isFile(localPath) {
+			if _, present, lookupErr := ConfLookup(localPath, key); lookupErr != nil {
+				add("%v", lookupErr)
+			} else if present {
+				add("%s in %s %s", key, localPath, message)
+				retiredPresent = true
+			}
+		}
+		if _, present := os.LookupEnv(EnvName(key)); present {
+			add("%s in environment source %s %s", key, EnvName(key), message)
+			retiredPresent = true
+		}
+	}
 
 	// The runtime roster gates almost everything else.
 	if _, ok := values["metasystem.runtimes"]; !ok {
@@ -335,7 +354,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	for _, knob := range []string{
 		"exec.local-timeout-sec", "exec.network-timeout-sec",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
-		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours",
+		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
@@ -354,6 +373,20 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		}
 	}
 	fixtureBudgetOverrides := fixtureBudgetLawRoot(confPath)
+	if maximum, maxErr := ReviewRoundMax(confPath); maxErr != nil {
+		add("%v", maxErr)
+	} else if !retiredPresent {
+		for tier := uint8(1); tier <= 3; tier++ {
+			box, boxErr := TierBox(confPath, tier)
+			if boxErr != nil {
+				add("%v", boxErr)
+				continue
+			}
+			if maximum > 0 && uint64(box.ReviewRoundLimit) > maximum {
+				add("tier %d reviewRoundLimit %d exceeds %s=%d", tier, box.ReviewRoundLimit, ReviewRoundMaxKey, maximum)
+			}
+		}
+	}
 	if isFile(localPath) {
 		if raw, present, lookupErr := ConfLookup(localPath, ElapsedGracePercentKey); lookupErr != nil {
 			add("%v", lookupErr)
@@ -416,29 +449,6 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			add("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", LedgerAttentionStaleMinutesKey, EnvName(LedgerAttentionStaleMinutesKey))
 		} else if _, parseErr := parseLedgerAttentionStaleMinutes(raw); parseErr != nil {
 			add("environment source %s: %v", EnvName(LedgerAttentionStaleMinutesKey), parseErr)
-		}
-	}
-	if raw, present := values[GoalNormJobMinutesKey]; present {
-		if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
-			add("%v", parseErr)
-		}
-	}
-	if isFile(localPath) {
-		if raw, present, lookupErr := ConfLookup(localPath, GoalNormJobMinutesKey); lookupErr != nil {
-			add("%v", lookupErr)
-		} else if present {
-			if !fixtureBudgetOverrides {
-				add("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", GoalNormJobMinutesKey, localPath)
-			} else if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
-				add("%s: %v", localPath, parseErr)
-			}
-		}
-	}
-	if raw, present := os.LookupEnv(EnvName(GoalNormJobMinutesKey)); present {
-		if !fixtureBudgetOverrides {
-			add("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", GoalNormJobMinutesKey, EnvName(GoalNormJobMinutesKey))
-		} else if _, parseErr := parseGoalNormJobMinutes(raw); parseErr != nil {
-			add("environment source %s: %v", EnvName(GoalNormJobMinutesKey), parseErr)
 		}
 	}
 	// The evidence root is required, must be absolute, and must live outside the

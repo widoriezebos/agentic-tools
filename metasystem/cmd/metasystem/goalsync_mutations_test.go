@@ -54,6 +54,7 @@ func completeResumeArgs(root string) []string {
 		"--attempt-limit", "4",
 		"--reserved-job-minutes-limit", "240",
 		"--active-job-limit", "2",
+		"--review-round-limit", "3",
 	}
 }
 
@@ -422,7 +423,7 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 
 	approvalAt := "2026-09-01T08:00:00Z"
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAX", "mac-a", "enrollment-fixture")
-	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
+	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
 	rootRecord := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote,
 		MigrationEpoch: "2026-09-01T07:00:00Z", ManifestDigest: strings.Repeat("ab", 32), MigrationMode: "manifest", Revision: 2,
@@ -433,11 +434,11 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 		}},
 	}
 	file := &goal.GoalFile{
-		Id: "relayed-waiting", State: goal.StateApproved, Intent: "Run only while relayed authority remains valid.",
+		Id: "relayed-waiting", State: goal.StateApproved, Tier: 3, Intent: "Run only while relayed authority remains valid.",
 		Origin: goal.OriginMain, NextStep: "Claim it.", OpenedAt: "2026-09-01T07:30:00Z", Revision: 2, Budget: &budget,
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvalAt, Revision: 2, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityRelayed, Digest: goal.ApprovalDigest("Run only while relayed authority remains valid.", budget), ReviewBy: "2026-09-06",
+			Authority: goal.ApprovalAuthorityRelayed, Digest: goal.ApprovalDigest("Run only while relayed authority remains valid.", 3, budget), ReviewBy: "2026-09-06",
 		},
 		History: []goal.HistoryLine{
 			{At: "2026-09-01T07:30:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAY", "mac-a", "enrollment-fixture"), Verb: "open", Actor: "mac-a+enrollment-fixture", Targets: []string{"relayed-waiting"}, Keep: -1},
@@ -599,16 +600,16 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	openedAt := "2026-08-30T08:00:00Z"
 	claimAt := "2026-08-30T08:05:00Z"
 	approvedAt := "2026-08-30T08:06:00Z"
-	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", "mac-cli", "m1")
 	file := &goal.GoalFile{
-		Id: "standing-validation", State: goal.StateClaimed, Intent: "Govern validation.", Origin: goal.OriginMain,
+		Id: "standing-validation", State: goal.StateClaimed, Tier: 3, Intent: "Govern validation.", Origin: goal.OriginMain,
 		NextStep: "Run it.", OpenedAt: openedAt, Revision: 3,
 		Budget:  budget,
 		Claimed: &goal.ClaimRecord{Machine: "mac-cli", Lineage: "m1", At: claimAt, Revision: 2},
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvedAt, Revision: 3, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", *budget),
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", 3, *budget),
 		},
 		History: []goal.HistoryLine{
 			{At: openedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAA", "mac-cli", "m1"), Verb: "open", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1},

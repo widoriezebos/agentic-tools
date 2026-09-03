@@ -26,7 +26,7 @@ func seedClaimLaunchGoal(t *testing.T, root string) {
 	stamp := "2026-08-20T00:00:00Z"
 	rootRecord := &goal.RootRecord{Identity: "01J5X00000000000000000CA00", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 	file := &goal.GoalFile{
-		Id: "goal-a", State: goal.StateClaimed, Intent: "Exercise claim launch.", Origin: goal.OriginMain,
+		Id: "goal-a", State: goal.StateClaimed, Tier: 2, Intent: "Exercise claim launch.", Origin: goal.OriginMain,
 		NextStep: "Launch it.", OpenedAt: stamp, Revision: 3,
 		Budget:         &goal.Budget{ElapsedLimit: "8h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1},
 		Claimed:        &goal.ClaimRecord{Machine: "m-test", Lineage: "lin-claim", At: stamp, Revision: 3},
@@ -96,6 +96,7 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 		"--claim-epoch", "5",
 		"--goal", "goal-a",
 		"--goal-revision", "3",
+		"--goal-tier", "2",
 		"--machine-id", "m-test",
 		"--creator-pid", strconv.Itoa(os.Getpid()),
 		"--occupancy-preparation", preparation,
@@ -130,7 +131,7 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	if record["mainId"] != "main-1" || record["claimEpoch"] != float64(5) || record["goalId"] != "goal-a" {
 		t.Fatalf("reservation provenance = mainId:%v claimEpoch:%v goalId:%v", record["mainId"], record["claimEpoch"], record["goalId"])
 	}
-	if record["operationId"] != "claim-cli" || record["goalRevision"] != float64(3) || record["machineId"] != "m-test" {
+	if record["operationId"] != "claim-cli" || record["goalRevision"] != float64(3) || record["goalTier"] != float64(2) || record["machineId"] != "m-test" {
 		t.Fatalf("setup-comparable provenance = operationId:%v goalRevision:%v machineId:%v", record["operationId"], record["goalRevision"], record["machineId"])
 	}
 	endpoint, err := goal.ResolveEndpoint(root)

@@ -245,7 +245,24 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		}
 		return answerRequest(r, target, in.Args["question"], in.Args["text"], in.Args["wants"], proof), nil
 	case "open":
-		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], commaValues(in.Args["labels"]))
+		tier := uint64(3)
+		if in.Args["tier"] != "" {
+			parsedTier, err := strconv.ParseUint(in.Args["tier"], 10, 8)
+			if err != nil || parsedTier < 1 || parsedTier > 3 {
+				return PublishRequest{}, fmt.Errorf("the stored open tier is invalid; close it by hand")
+			}
+			tier = parsedTier
+		}
+		var budget *Budget
+		if in.Args["elapsedLimit"] != "" || in.Args["attemptLimit"] != "" ||
+			in.Args["reservedJobMinutesLimit"] != "" || in.Args["activeJobLimit"] != "" || in.Args["reviewRoundLimit"] != "" {
+			parsedBudget, err := budgetFromIntentArgs(in.Args)
+			if err != nil {
+				return PublishRequest{}, err
+			}
+			budget = &parsedBudget
+		}
+		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], uint8(tier), budget, commaValues(in.Args["labels"]))
 	case "open-claim":
 		budget, err := budgetFromIntentArgs(in.Args)
 		if err != nil {
@@ -308,6 +325,13 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			switch d.Field {
 			case "intent":
 				fields.Intent = &value
+			case "tier":
+				tier, err := strconv.ParseUint(value, 10, 8)
+				if err != nil || tier < 1 || tier > 3 {
+					return PublishRequest{}, fmt.Errorf("the stored edit tier is invalid; close this entry by hand")
+				}
+				tierValue := uint8(tier)
+				fields.Tier = &tierValue
 			case "next":
 				fields.NextStep = &value
 			case "origin":

@@ -101,9 +101,13 @@ func approvedGoalFixture(f *GoalFile, budget Budget) *GoalFile {
 		Verb: "approve", Actor: "human:wido", Targets: []string{f.Id}, Keep: -1,
 	}
 	f.History = append(f.History, event)
+	digest := ApprovalDigest(f.Intent, f.Tier, budget)
+	if f.Tier == 0 {
+		digest = legacyApprovalDigest(f.Intent, budget)
+	}
 	f.Approved = &ApprovalRecord{
 		By: event.Actor, At: event.At, Revision: f.Revision, Opid: event.Opid,
-		Authority: ApprovalAuthorityProven, Digest: ApprovalDigest(f.Intent, budget),
+		Authority: ApprovalAuthorityProven, Digest: digest,
 	}
 	return f
 }

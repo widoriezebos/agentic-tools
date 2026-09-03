@@ -416,6 +416,7 @@ func families() []family {
 				{"prune", "drop done goals beyond the newest ten, reporting every drop", runGoalPrune},
 				{"claim", "claim a goal (or its whole arc with --arc) for this machine", runGoalClaim},
 				{"approve", "human-only: approve exact goal intent and budget for execution, or run the grandfather sweep", runGoalApprove},
+				{"classify-sweep", "human-confirmed classification of every open tierless goal", runGoalClassifySweep},
 				{"unapprove", "human-only: withdraw execution approval and park any standing claim", runGoalUnapprove},
 				{"set-budget", "human-only: replace a claimed goal's approved tuple and bind a new revision", runGoalSetBudget},
 				{"split", "atomize one goal into independently claimable arc members; conclude the parent as decomposed", runGoalSplit},

@@ -75,9 +75,10 @@ type Budget struct {
 	AttemptLimit            uint64 `json:"attemptLimit"`
 	ReservedJobMinutesLimit uint64 `json:"reservedJobMinutesLimit"`
 	ActiveJobLimit          uint64 `json:"activeJobLimit"`
+	ReviewRoundLimit        int64  `json:"reviewRoundLimit"`
 }
 
-func New(elapsedLimit string, attemptLimit, reservedJobMinutesLimit, activeJobLimit int64) (Budget, error) {
+func New(elapsedLimit string, attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit int64) (Budget, error) {
 	elapsed, ok := ParseWorkingDuration(elapsedLimit)
 	if !ok {
 		return Budget{}, fmt.Errorf("elapsedLimit %q is not a positive duration (for example 4h or 1d2h)", elapsedLimit)
@@ -85,16 +86,32 @@ func New(elapsedLimit string, attemptLimit, reservedJobMinutesLimit, activeJobLi
 	if attemptLimit < 1 || reservedJobMinutesLimit < 1 || activeJobLimit < 1 {
 		return Budget{}, fmt.Errorf("attemptLimit, reservedJobMinutesLimit, and activeJobLimit must be positive integers")
 	}
+	if reviewRoundLimit < 0 {
+		return Budget{}, fmt.Errorf("reviewRoundLimit must be a non-negative integer")
+	}
 	return Budget{ElapsedLimit: FormatWorkingDuration(elapsed), AttemptLimit: uint64(attemptLimit),
-		ReservedJobMinutesLimit: uint64(reservedJobMinutesLimit), ActiveJobLimit: uint64(activeJobLimit)}, nil
+		ReservedJobMinutesLimit: uint64(reservedJobMinutesLimit), ActiveJobLimit: uint64(activeJobLimit),
+		ReviewRoundLimit: reviewRoundLimit}, nil
 }
 
-func (b Budget) Validate() error {
+// Validate checks the tuple's intrinsic shape and, when supplied, the
+// configured review-round ceiling. A zero ceiling deliberately means that
+// the non-negative round member has no upper bound.
+func (b Budget) Validate(reviewRoundMax ...uint64) error {
 	if _, ok := ParseWorkingDuration(b.ElapsedLimit); !ok {
 		return fmt.Errorf("elapsedLimit %q is not a positive duration", b.ElapsedLimit)
 	}
 	if b.AttemptLimit == 0 || b.ReservedJobMinutesLimit == 0 || b.ActiveJobLimit == 0 {
 		return fmt.Errorf("attemptLimit, reservedJobMinutesLimit, and activeJobLimit must be positive integers")
+	}
+	if b.ReviewRoundLimit < 0 {
+		return fmt.Errorf("reviewRoundLimit must be a non-negative integer")
+	}
+	if len(reviewRoundMax) > 1 {
+		return fmt.Errorf("reviewRoundLimit validation accepts at most one configured ceiling")
+	}
+	if len(reviewRoundMax) == 1 && reviewRoundMax[0] > 0 && uint64(b.ReviewRoundLimit) > reviewRoundMax[0] {
+		return fmt.Errorf("reviewRoundLimit %d exceeds configured maximum %d", b.ReviewRoundLimit, reviewRoundMax[0])
 	}
 	return nil
 }

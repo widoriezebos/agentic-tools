@@ -23,6 +23,7 @@ import (
 type GoalFile struct {
 	Id       string
 	State    string // queued | approved | claimed | parked | done
+	Tier     uint8  // 1 | 2 | 3; zero is tolerated during the classification migration
 	Intent   string
 	Origin   string
 	NextStep string
@@ -37,6 +38,9 @@ type GoalFile struct {
 	// has. Empty means any machine may claim.
 	Pinned string
 	Budget *Budget
+	// legacyFourBudget preserves the pre-tier approval digest until the
+	// classification sweep rebinds it to a tier and five-member tuple.
+	legacyFourBudget bool
 	// NormApproval is the published proof for an admitted over-norm tuple.
 	// It names the pre-touch goal revision the human approved.
 	NormApproval *GoalNormApprovalClaim
@@ -65,6 +69,7 @@ type GoalFile struct {
 type GoalNormApprovalClaim struct {
 	ApprovedRef  string
 	Minutes      uint64
+	ReviewRounds int64
 	GoalRevision uint64
 }
 
@@ -93,13 +98,20 @@ type ApprovalHorizon struct {
 }
 
 func renderBudgetRecord(b Budget) string {
-	return fmt.Sprintf("elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d",
-		b.ElapsedLimit, b.AttemptLimit, b.ReservedJobMinutesLimit, b.ActiveJobLimit)
+	return fmt.Sprintf("elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d reviewRoundLimit=%d",
+		b.ElapsedLimit, b.AttemptLimit, b.ReservedJobMinutesLimit, b.ActiveJobLimit, b.ReviewRoundLimit)
 }
 
 // ApprovalDigest binds exactly the intent and tuple that the human reviewed.
-func ApprovalDigest(intent string, budget Budget) string {
-	sum := sha256.Sum256([]byte("intent=" + intent + "\n" + "budget=" + renderBudgetRecord(budget) + "\n"))
+func ApprovalDigest(intent string, tier uint8, budget Budget) string {
+	sum := sha256.Sum256([]byte("intent=" + intent + "\n" + fmt.Sprintf("tier=%d\n", tier) + "budget=" + renderBudgetRecord(budget) + "\n"))
+	return hex.EncodeToString(sum[:])
+}
+
+func legacyApprovalDigest(intent string, budget Budget) string {
+	record := fmt.Sprintf("elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d",
+		budget.ElapsedLimit, budget.AttemptLimit, budget.ReservedJobMinutesLimit, budget.ActiveJobLimit)
+	sum := sha256.Sum256([]byte("intent=" + intent + "\n" + "budget=" + record + "\n"))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -333,6 +345,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Revision == 0 {
 		addProblem("missing or zero Revision")
 	}
+	if f.Tier > 3 {
+		addProblem("Tier %d is not 1, 2, or 3", f.Tier)
+	}
 	if len(f.History) == 0 {
 		addProblem("empty History — every goal file carries its opid lines")
 	}
@@ -376,7 +391,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		}
 	}
 	if f.NormApproval != nil {
-		if f.NormApproval.ApprovedRef == "" || f.NormApproval.Minutes == 0 || f.NormApproval.GoalRevision == 0 {
+		if f.NormApproval.ApprovedRef == "" || f.NormApproval.Minutes == 0 || f.NormApproval.ReviewRounds < 0 || f.NormApproval.GoalRevision == 0 {
 			addProblem("NormApproval is incomplete")
 		}
 	}
@@ -484,7 +499,15 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 	if f.Budget == nil {
 		return fmt.Errorf("record requires a complete Budget")
 	}
-	if a.Digest != ApprovalDigest(f.Intent, *f.Budget) {
+	want := ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+	// A tierless record is necessarily from before TierLaw. Its next ordinary
+	// rewrite may expand the stored four-member tuple to five members before
+	// classify-sweep can rebind the approval. Continue accepting the legacy
+	// digest until the sweep supplies the tier and new digest together.
+	if f.Tier == 0 {
+		want = legacyApprovalDigest(f.Intent, *f.Budget)
+	}
+	if a.Digest != want {
 		return fmt.Errorf("digest does not match the approved intent and budget")
 	}
 	return nil
@@ -533,6 +556,13 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	switch key {
 	case "State":
 		f.State = value
+	case "Tier":
+		n, err := strconv.ParseUint(value, 10, 8)
+		if err != nil || n < 1 || n > 3 {
+			addProblem("Tier %q is not 1, 2, or 3", value)
+			return
+		}
+		f.Tier = uint8(n)
 	case "Intent":
 		f.Intent = value
 	case "Origin":
@@ -567,25 +597,34 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	case "Pinned":
 		f.Pinned = value
 	case "Budget":
-		budget, err := parseBudgetRecord(value)
+		budget, legacy, err := parseBudgetRecord(value)
 		if err != nil {
 			addProblem("Budget: %v", err)
 			return
 		}
+		if legacy {
+			budget.ReviewRoundLimit = 3
+		}
 		f.Budget = &budget
+		f.legacyFourBudget = legacy
 	case "NormApproval":
-		rec, err := parseKVRecord(value, []string{"approvedRef", "minutes", "goalRevision"}, nil, "")
+		rec, err := parseKVRecord(value, []string{"approvedRef", "minutes", "goalRevision"}, []string{"reviewRounds"}, "")
 		if err != nil {
 			addProblem("NormApproval: %v", err)
 			return
 		}
 		minutes, minutesErr := strconv.ParseUint(rec["minutes"], 10, 64)
 		revision, revisionErr := strconv.ParseUint(rec["goalRevision"], 10, 64)
-		if minutesErr != nil || minutes == 0 || revisionErr != nil || revision == 0 {
+		rounds := int64(0)
+		roundsErr := error(nil)
+		if rec["reviewRounds"] != "" {
+			rounds, roundsErr = strconv.ParseInt(rec["reviewRounds"], 10, 64)
+		}
+		if minutesErr != nil || minutes == 0 || roundsErr != nil || rounds < 0 || revisionErr != nil || revision == 0 {
 			addProblem("NormApproval has invalid numeric coordinates")
 			return
 		}
-		f.NormApproval = &GoalNormApprovalClaim{ApprovedRef: rec["approvedRef"], Minutes: minutes, GoalRevision: revision}
+		f.NormApproval = &GoalNormApprovalClaim{ApprovedRef: rec["approvedRef"], Minutes: minutes, ReviewRounds: rounds, GoalRevision: revision}
 	case "Approved":
 		rec, err := parseKVRecord(value, []string{"by", "at", "revision", "opid", "authority", "digest"}, []string{"reviewBy"}, "")
 		if err != nil {
@@ -826,6 +865,9 @@ func RenderFile(f *GoalFile) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", f.Id)
 	fmt.Fprintf(&b, "- State: %s\n", f.State)
+	if f.Tier != 0 {
+		fmt.Fprintf(&b, "- Tier: %d\n", f.Tier)
+	}
 	fmt.Fprintf(&b, "- Intent: %s\n", f.Intent)
 	if f.Origin != "" {
 		fmt.Fprintf(&b, "- Origin: %s\n", f.Origin)
@@ -854,8 +896,8 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Budget: %s\n", renderBudgetRecord(*f.Budget))
 	}
 	if f.NormApproval != nil {
-		fmt.Fprintf(&b, "- NormApproval: approvedRef=%s minutes=%d goalRevision=%d\n",
-			f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.GoalRevision)
+		fmt.Fprintf(&b, "- NormApproval: approvedRef=%s minutes=%d reviewRounds=%d goalRevision=%d\n",
+			f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.ReviewRounds, f.NormApproval.GoalRevision)
 	}
 	if f.Approved != nil {
 		a := f.Approved

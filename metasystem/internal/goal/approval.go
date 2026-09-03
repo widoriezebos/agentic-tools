@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -20,6 +21,149 @@ type ApprovalSweepListing struct {
 	Lines   []string
 	Digest  string
 	Skipped []string
+}
+
+type ClassificationProposal struct {
+	ID     string
+	Tier   uint8
+	Reason string
+}
+
+type ClassificationSweepListing struct {
+	Proposals []ClassificationProposal
+	Lines     []string
+	Digest    string
+}
+
+func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListing, error) {
+	if !utf8.Valid(draft) {
+		return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line 1 is not UTF-8")
+	}
+	rows := map[string]ClassificationProposal{}
+	for index, raw := range strings.Split(strings.ReplaceAll(string(draft), "\r\n", "\n"), "\n") {
+		lineNo := index + 1
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		malformed := false
+		for _, r := range raw {
+			if r == '\t' || r < 0x20 || r == 0x7f {
+				malformed = true
+				break
+			}
+		}
+		fields := strings.Fields(raw)
+		if malformed || len(fields) < 3 || !validId(fields[0]) || len(strings.Join(fields[2:], " ")) > 200 {
+			id := "unknown"
+			if len(fields) > 0 {
+				id = fields[0]
+			}
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <tier> <reason>", lineNo, id)
+		}
+		tierValue, err := strconv.ParseUint(fields[1], 10, 8)
+		if err != nil || tierValue < 1 || tierValue > 3 {
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s has tier %s, want 1, 2, or 3", lineNo, fields[0], fields[1])
+		}
+		if _, duplicate := rows[fields[0]]; duplicate {
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_DUPLICATE_GOAL: goal %s appears more than once", fields[0])
+		}
+		goalFile := t.Live[fields[0]]
+		if goalFile == nil || goalFile.Tier != 0 {
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_UNKNOWN_GOAL: goal %s is not an open tierless goal", fields[0])
+		}
+		rows[fields[0]] = ClassificationProposal{ID: fields[0], Tier: uint8(tierValue), Reason: strings.Join(fields[2:], " ")}
+	}
+	var missing []string
+	for _, id := range sortedGoalIds(t.Live) {
+		if t.Live[id].Tier == 0 {
+			if _, ok := rows[id]; !ok {
+				missing = append(missing, id)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return ClassificationSweepListing{}, fmt.Errorf("SWEEP_INCOMPLETE: goal %s is absent from the draft", missing[0])
+	}
+	listing := ClassificationSweepListing{}
+	ids := make([]string, 0, len(rows))
+	for id := range rows {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		proposal := rows[id]
+		listing.Proposals = append(listing.Proposals, proposal)
+		listing.Lines = append(listing.Lines, fmt.Sprintf("%s %d %s", proposal.ID, proposal.Tier, proposal.Reason))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(listing.Lines, "\n") + "\n"))
+	listing.Digest = hex.EncodeToString(sum[:])
+	return listing, nil
+}
+
+func PreviewClassificationSweep(e Endpoint, draft []byte, now time.Time) (ClassificationSweepListing, error) {
+	p, err := Project(e, false, now)
+	if err != nil {
+		return ClassificationSweepListing{}, err
+	}
+	return classificationListing(p.Tree, draft)
+}
+
+// ClassifyTier applies one migration edit. The final edit installs TierLaw in
+// the same transaction, so an interruption leaves either remaining tierless
+// goals with no marker or a complete classified ledger with its marker.
+func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw bool) (PublishResult, error) {
+	if r.Actor.Human == "" || proposal.Tier < 1 || proposal.Tier > 3 || strings.TrimSpace(proposal.Reason) == "" {
+		return PublishResult{}, fmt.Errorf("classify-sweep confirmation requires --by and a valid proposal")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "edit", Targets: []string{proposal.ID}, Deltas: []FieldDelta{{Target: proposal.ID, Field: "tier", New: strconv.Itoa(int(proposal.Tier))}}, Args: intentArgs(r, map[string]string{"classifyReason": proposal.Reason})},
+		Message: "goal classify-sweep " + proposal.ID,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[proposal.ID]
+			if f == nil || f.Tier != 0 {
+				return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is no longer an open tierless goal", proposal.ID)
+			}
+			box, err := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), proposal.Tier)
+			if err != nil {
+				return nil, err
+			}
+			f.Tier = proposal.Tier
+			if f.Budget == nil {
+				f.Budget = &box
+			} else {
+				// Every tierless tuple was admitted before the fifth member had
+				// tier-specific meaning. This also covers a legacy tuple that an
+				// unrelated write already expanded to five stored members.
+				f.Budget.ReviewRoundLimit = box.ReviewRoundLimit
+			}
+			f.legacyFourBudget = false
+			touch(f, r, "edit", []string{proposal.ID})
+			f.History[len(f.History)-1].Reason = proposal.Reason
+			if f.Approved != nil {
+				f.Approved.Digest = ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+			}
+			changes := []Change{{Path: livePath(proposal.ID), Content: RenderFile(f)}}
+			if installLaw {
+				for _, id := range sortedGoalIds(t.Live) {
+					if id != proposal.ID && t.Live[id].Tier == 0 {
+						return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is still an open tierless goal; preview again", id)
+					}
+				}
+				t.Root.TierLaw = r.opid()
+				t.Root.Revision++
+				t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "edit", Actor: r.Actor.historyActor(), Targets: []string{proposal.ID}, Keep: -1, Reason: "TierLaw"})
+				changes = appendRootChange(t, changes)
+			}
+			return ackDisplacements(t, r, changes), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
 }
 
 func approvalHorizon(t *TreeGoals, now time.Time) ApprovalHorizon {
@@ -39,15 +183,19 @@ func approvalRequired(f *GoalFile, verb string) error {
 	return fmt.Errorf("APPROVAL_REQUIRED: goal %s is %s and not approved for execution; only the human approves it with goal approve -- this %s is refused", id, state, verb)
 }
 
-func budgetHasNormCoverage(repoRoot string, f *GoalFile, budget Budget) (norm uint64, covered bool, err error) {
-	norm, err = config.GoalNormJobMinutes(filepath.Join(repoRoot, "metasystem.conf"))
+func budgetHasNormCoverage(repoRoot string, f *GoalFile, budget Budget) (box Budget, covered bool, err error) {
+	tier := f.Tier
+	if tier == 0 {
+		tier = 3
+	}
+	box, err = config.TierBox(filepath.Join(repoRoot, "metasystem.conf"), tier)
 	if err != nil {
-		return 0, false, err
+		return Budget{}, false, err
 	}
-	if budget.ReservedJobMinutesLimit <= norm {
-		return norm, true, nil
+	if budget.ReservedJobMinutesLimit <= box.ReservedJobMinutesLimit && budget.ReviewRoundLimit <= box.ReviewRoundLimit {
+		return box, true, nil
 	}
-	return norm, f.NormApproval != nil && f.NormApproval.Minutes >= budget.ReservedJobMinutesLimit, nil
+	return box, f.NormApproval != nil && f.NormApproval.Minutes >= budget.ReservedJobMinutesLimit && f.NormApproval.ReviewRounds >= budget.ReviewRoundLimit, nil
 }
 
 // requireApprovedForClaim is the single admission gate for every path that
@@ -59,12 +207,12 @@ func requireApprovedForClaim(repoRoot string, t *TreeGoals, f *GoalFile, now tim
 	if err := f.ValidateApprovalRecord(); err != nil {
 		return Budget{}, fmt.Errorf("APPROVAL_REQUIRED: goal %s has an invalid approval: %v", f.Id, err)
 	}
-	norm, covered, err := budgetHasNormCoverage(repoRoot, f, *f.Budget)
+	box, covered, err := budgetHasNormCoverage(repoRoot, f, *f.Budget)
 	if err != nil {
 		return Budget{}, err
 	}
 	if !covered {
-		return Budget{}, refuseGoalNorm(f.Id, f.Budget.ReservedJobMinutesLimit, norm)
+		return Budget{}, refuseGoalNorm(f.Id, *f.Budget, box)
 	}
 	if expired, why := f.ApprovalExpired(approvalHorizon(t, now)); expired {
 		return Budget{}, fmt.Errorf("APPROVAL_EXPIRED: goal %s was approved by a relayed word (review by %s, approved %s); that approval no longer admits new work because %s; a fresh approval is required at the enrolled terminal",
@@ -102,9 +250,13 @@ func refuseRelayedAfterFleetEnrollment(t *TreeGoals, temporary bool) error {
 }
 
 func bindApproval(f *GoalFile, r VerbRequest, authority, reviewBy string) {
+	digest := ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+	if f.Tier == 0 {
+		digest = legacyApprovalDigest(f.Intent, *f.Budget)
+	}
 	f.Approved = &ApprovalRecord{
 		By: r.Actor.historyActor(), At: r.stamp(), Revision: f.Revision, Opid: r.opid(),
-		Authority: authority, Digest: ApprovalDigest(f.Intent, *f.Budget), ReviewBy: reviewBy,
+		Authority: authority, Digest: digest, ReviewBy: reviewBy,
 	}
 }
 
@@ -157,7 +309,11 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 		return PublishResult{}, err
 	}
 	if budget != nil {
-		if err := budget.Validate(); err != nil {
+		maximum, maxErr := config.ReviewRoundMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
+		if maxErr != nil {
+			return PublishResult{}, maxErr
+		}
+		if err := budget.Validate(maximum); err != nil {
 			return PublishResult{}, fmt.Errorf("invalid approval budget: %v", err)
 		}
 	}
@@ -206,11 +362,14 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				}
 				nextBudget := budget
 				if nextBudget == nil {
-					if f.State == StateQueued || f.Budget == nil {
-						return nil, fmt.Errorf("goal %s is queued; approval requires one complete budget tuple", id)
+					if f.Tier == 0 {
+						return nil, fmt.Errorf("goal %s has no tier; classify it before approval", id)
 					}
-					existing := *f.Budget
-					nextBudget = &existing
+					box, boxErr := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), f.Tier)
+					if boxErr != nil {
+						return nil, boxErr
+					}
+					nextBudget = &box
 				}
 				var norm *GoalNormApprovalClaim
 				if budget == nil {
@@ -328,7 +487,7 @@ func sweepListing(t *TreeGoals) ApprovalSweepListing {
 		}
 		norm := "-"
 		if f.NormApproval != nil {
-			norm = fmt.Sprintf("%s/%d/%d", f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.GoalRevision)
+			norm = fmt.Sprintf("%s/%d/%d/%d", f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.ReviewRounds, f.NormApproval.GoalRevision)
 		}
 		authority := "-"
 		if f.Approved != nil {

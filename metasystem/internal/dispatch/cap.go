@@ -1,7 +1,9 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 
@@ -18,6 +20,7 @@ var capMinPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 // builtInCapMin is the last rung of the chain: no explicit argument, no
 // configured key anywhere.
 const builtInCapMin = "120"
+const dispatchCapMaxKey = "dispatch.cap-max"
 
 func capGet(confPath, key string) (string, error) {
 	value, _, err := config.Get(config.GetParams{
@@ -64,6 +67,24 @@ func ResolveCap(confPath, role, runtime, model, requested string) (int64, string
 	capMin, err := strconv.ParseInt(capText, 10, 64)
 	if err != nil {
 		return 0, "", "", fmt.Errorf("dispatch cap must be a positive integer")
+	}
+	maxText, _, err := config.Get(config.GetParams{Key: dispatchCapMaxKey, ConfPath: confPath, Default: builtInCapMin, DefaultSet: true})
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			maxText = builtInCapMin
+		} else {
+			return 0, "", "", err
+		}
+	}
+	if !capMinPattern.MatchString(maxText) {
+		return 0, "", "", fmt.Errorf("%s must be a positive integer", dispatchCapMaxKey)
+	}
+	maximum, err := strconv.ParseInt(maxText, 10, 64)
+	if err != nil {
+		return 0, "", "", fmt.Errorf("%s must be a positive integer", dispatchCapMaxKey)
+	}
+	if capMin > maximum {
+		return 0, "", "", fmt.Errorf("dispatch cap %d minutes exceeds %s=%d", capMin, dispatchCapMaxKey, maximum)
 	}
 	return capMin, rule, origin, nil
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
+func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 	root := sandbox(t)
 	stage := t.TempDir()
 	capFile := writeJSON(t, filepath.Join(stage, "cap.json"), map[string]any{
@@ -14,7 +14,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "root-setup.json")
-	if err := BuildSetup(root, setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
+	if err := BuildSetup(root, setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job", setup); err != nil {
@@ -23,7 +23,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 	full := writeJSON(t, filepath.Join(stage, "root-full.json"), map[string]any{
 		"jobId": "root-job", "operationId": "root-job", "role": "implementer", "runtime": "fake", "round": 1,
 		"mission": nil, "missionIncarnation": nil, "stream": nil, "reviews": nil,
-		"goalId": "goal-a", "goalRevision": 2, "machineId": "bed-m1", "parentJob": nil, "status": "pending", "phase": "handshake",
+		"goalId": "goal-a", "goalRevision": 2, "goalTier": 2, "machineId": "bed-m1", "parentJob": nil, "status": "pending", "phase": "handshake",
 		"error": nil, "mainId": "main-1", "claimEpoch": 5, "capMin": 5,
 		"workspaceRoot": root, "baseSha": "base", "branch": "main",
 		"permissions":              map[string]any{"requested": map[string]any{}},
@@ -52,14 +52,14 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		Output: followFile, Parent: filepath.Join(root, "artifacts", "agents", "jobs", "root-job.json"),
 		Job: "root-job-r2", Round: 2, ParentJob: "root-job", Fallbacks: "[]",
 		ResumeMode: "fresh-context", CapResolution: capFile, Root: root,
-		MainID: "main-1", ClaimEpoch: "5", GoalRevision: 2,
+		MainID: "main-1", ClaimEpoch: "5", GoalRevision: 2, GoalTier: 2,
 		DestructiveReach: HazardMechanical,
 		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	childSetup := filepath.Join(stage, "child-setup.json")
-	if err := BuildSetup(root, childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
+	if err := BuildSetup(root, childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job-r2", childSetup); err != nil {
@@ -75,7 +75,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := readRecord(t, root, "root-job-r2")
-	if child["goalId"] != "goal-a" || child["goalRevision"].(float64) != 2 ||
+	if child["goalId"] != "goal-a" || child["goalRevision"].(float64) != 2 || child["goalTier"].(float64) != 2 ||
 		child["operationId"] != "root-job-r2" || child["status"] != "completed" {
 		t.Fatalf("terminal follow-up lost goal provenance: %+v", child)
 	}
@@ -92,7 +92,7 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(root, setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, capFile, "bed-m1", ""); err != nil {
+	if err := BuildSetup(root, setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "goal-bound", setup); err != nil {
@@ -100,12 +100,17 @@ func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 	}
 	replacement := writeJSON(t, filepath.Join(stage, "replacement.json"), map[string]any{
 		"jobId": "goal-bound", "operationId": "goal-bound", "status": "pending", "mainId": "main-1", "claimEpoch": 5,
-		"goalId": "goal-b", "goalRevision": 2, "machineId": "bed-m1", "capMin": 5, "startedAt": "2026-08-20T00:00:00Z",
+		"goalId": "goal-b", "goalRevision": 2, "goalTier": 2, "machineId": "bed-m1", "capMin": 5, "startedAt": "2026-08-20T00:00:00Z",
 	})
 	wantCode(t, RecordSetup(root, "goal-bound", replacement), 1)
 	capReplacement := writeJSON(t, filepath.Join(stage, "cap-replacement.json"), map[string]any{
 		"jobId": "goal-bound", "operationId": "goal-bound", "status": "pending", "mainId": "main-1", "claimEpoch": 5,
-		"goalId": "goal-a", "goalRevision": 2, "machineId": "bed-m1", "capMin": 6, "startedAt": "2026-08-20T00:00:00Z",
+		"goalId": "goal-a", "goalRevision": 2, "goalTier": 2, "machineId": "bed-m1", "capMin": 6, "startedAt": "2026-08-20T00:00:00Z",
 	})
 	wantCode(t, RecordSetup(root, "goal-bound", capReplacement), 1)
+	tierReplacement := writeJSON(t, filepath.Join(stage, "tier-replacement.json"), map[string]any{
+		"jobId": "goal-bound", "operationId": "goal-bound", "status": "pending", "mainId": "main-1", "claimEpoch": 5,
+		"goalId": "goal-a", "goalRevision": 2, "goalTier": 3, "machineId": "bed-m1", "capMin": 5, "startedAt": "2026-08-20T00:00:00Z",
+	})
+	wantCode(t, RecordSetup(root, "goal-bound", tierReplacement), 1)
 }
