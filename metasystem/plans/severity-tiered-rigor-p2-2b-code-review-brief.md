@@ -20,10 +20,10 @@ Out: part one (the tier, the tuple, the sweep; another chain on m2),
 slice 2a (the risk answers; the next chain on this seat), the docs,
 taste.
 
-Scope: the computed diff of the implementer job under review
-(artifacts/agents/str-p2-build-2c/rounds/1/diff.patch, reviewed tree
-a1ce1f300cc05298196c6394fe428f8e045ca733, 42 files against main at
-719f0cf0; the diff is the authority). Contract:
+Scope: the computed diff of the implementer job under review (job
+str-p2-build-2c, round 1, its diff.patch under the chain's round
+directory; reviewed tree a1ce1f300cc05298196c6394fe428f8e045ca733, 42
+files against main at 719f0cf0; the diff is the authority). Contract:
 metasystem/plans/severity-tiered-rigor-design.md revision 3 part two
 (sections 05 to 11 as amended), metasystem/plans/severity-tiered-rigor-p2-design.md
 revisions 4.1 (fold 008: the register's second kind lands here) and
@@ -33,8 +33,7 @@ metasystem/plans/severity-tiered-rigor-p2-build-2b-gap-brief.md (gaps 03,
 04, 05), metasystem/plans/severity-tiered-rigor-p2-build-2b-gap2-brief.md
 (out-of-scope write, discharge selection, the register line) and
 metasystem/plans/severity-tiered-rigor-p2-build-2c-brief.md (the
-finishing round and its gate findings). The implementer's return
-(artifacts/agents/str-p2-build-2c/rounds/1/return.json) lists eleven
+finishing round and its gate findings). The implementer's return (return.json of that round) lists eleven
 recorded decisions under `whatWasDone`; each is reviewable, none is a
 gap.
 
@@ -84,9 +83,8 @@ If nothing material remains, say so; that closes the chain and slice
 # Constraints
 
 Wall-clock budget: 30 minutes. Return per the code-critic schema, with
-the reviewedTree above. Read the worktree at
-artifacts/agents/worktrees/str-p2-build-2c/metasystem for context; the
-diff is the subject. Do not run scripts/agents/path-class-fixtures.sh
+the reviewedTree above. Read the chain's delegate worktree (the str-p2-build-2c worktree under
+the agent worktrees directory) for context; the diff is the subject. Do not run scripts/agents/path-class-fixtures.sh
 (ripgrep is absent on this host); run a test only if a finding needs it.
 
 # Gap Rule
