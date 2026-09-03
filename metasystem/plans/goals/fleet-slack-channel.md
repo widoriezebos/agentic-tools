@@ -5,9 +5,10 @@
 - Origin: main
 - Next step: Tier 3 ladder (R-54-m1). Design revision 1 landed as plans/fleet-slack-channel-design.md; one Sol design review (plans/fleet-slack-channel-critique-r1-brief.md, cap 40) next, then one fold, one closing review, Sol build, Fable code review, land through the chain. Needs from Wido after the build, not before: the Slack bot token and his Slack member id in each asking machine's metasystem.conf.local, and the TOTP secret (design D1: TOTP is his prior word; he may change it). Note for m1: R-61-m1's strict tokens name goalRevision=2 but set-budget itself bumped this goal to revision 3, so the norm gate rejects them; claimed within norm (1440) instead.
 - OpenedAt: 2026-09-03T09:00:40Z
-- Revision: 6
+- Revision: 7
 - Labels: channel, fleet
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=1440 activeJobLimit=1
+- Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=4 at=2026-09-03T09:26:43Z
 - Claimed: machine=m0b lineage=main-1788250419-3170380-8a1fb3 at=2026-09-03T09:19:59Z revision=4
 - StopCapability: generation=4 revision=4 machine=m0b claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-03T09:19:59Z 44ZN32096RCWKK01EF10MEC5CK-m0b-6638932d claim actor=m0b+main-1788250419-3170380-8a1fb3 targets=fleet-slack-channel
 - 2026-09-03T09:20:13Z 9PPGAXJJAE0N83TT91PSK6KEVD-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=fleet-slack-channel
 - 2026-09-03T09:26:10Z DDXW45FV6GQBTA6KC084CWG7C0-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=fleet-slack-channel
-Integrity: sha256=477c3b8e3f120a9164ffe512f99fe9e312e016e0184fc940cdef534f37f4c0ab
+- 2026-09-03T09:26:43Z NEEAERGXVX9PMJSJXXK9DRS5F2-m0b-6638932d slice-start actor=m0b+main-1788250419-3170380-8a1fb3 targets=fleet-slack-channel
+Integrity: sha256=333fc70b34184f87592aa5b935ad4163ca7f35e30bf36fb917320d759cf59e5e
