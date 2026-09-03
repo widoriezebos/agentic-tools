@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: Wido's direction, 2026-09-03 (R-67-m1): the fleet's target state is headless nodes coordinated through the channel plus this one brain working with him. Queued, not approved for execution. Order after the four features and the first headless run: the session form starts the day the fleet conversation channel lands (no new build: a role packet and a standing instruction that forbids dispatch, plus the narrator's digest as its input); the runner-role form is a tier-3 design afterwards. Depends on: fleet-slack-channel (its voice), human-approval-for-execution (the act it hands Wido), severity-tiered-rigor (the tiers it assigns), token-spend-fence (the ceilings it watches), first-headless-run (the nodes it coordinates). Wido's refinement, 14:5x, verbatim: 'the nodes (metasystem headless processes) take backlog and turn that into candidates and ultimately releases. They can ask questions to unblock or raise when boundaries are broken. That's it. Then a brain to coordinate between them, which is especially handy if there are dependencies to manage. The brain can also act under power of attorney i.e. I can empower the brain to make certain decisions when I'm not around. And then: the brain (we need a better name) is the one I talk to to discover intent, turn that into well formed backlog items, split backlog items if too big etc for all backlog manipulation actions.' Design consequences: (a) the nodes' scope is exactly backlog to candidate to release plus two kinds of message, an unblocking question and a boundary-broken raise; (b) the brain owns every backlog manipulation (intent discovery, well-formed items, splits, tiers, order) and cross-node dependencies; (c) power of attorney is explicit, scoped to a named decision class, time-boxed with a review date and revocable, recorded as a ruling row like the temporary human word (--review-by), and every decision taken under it is logged with the row it rests on; approval for execution can be delegated per class this way, never wholesale.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 2
+- Revision: 3
+- Arc: headless-fleet
 
 History:
 - 2026-09-03T12:14:47Z E43RG504Z3FDHSSZBFKFC3DQMH-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=fleet-coordinator-brain
 - 2026-09-03T12:18:42Z C3VEM86YH4WEJK7PGD0KJAJ8N1-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=fleet-coordinator-brain
-Integrity: sha256=247cdcb5700c6b583e53811ae98597612110f76104c805a810407742b125a8ed
+- 2026-09-03T12:20:28Z M535KP64SQ8J85JZD1V6A29N90-m1-7bb1546e set-arc actor=m1+main-1788333680-2840-7f79f4 targets=fleet-coordinator-brain
+Integrity: sha256=24c0ee5caa85251ecab6e1dd4b93c847d1a2a7d44b89d1ec3189f080b8242f49
