@@ -3,9 +3,9 @@
 - State: approved
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
-- Next step: RUN IN PROGRESS (m0, 2026-09-03). Born and approved (see prior). FINDING 1: state-init-born missions launch with RESUME, not start. FINDING 2 (fix-forward): the runner's own 'up' refused ENROLLMENT_DRIFT on accepted-engine - the engine binary had been rebuilt (aa9ca65c, for the Telegram config task) after the steward's last arm, so the enrolled digest no longer matched; the runner cannot re-enroll itself (the remedy is a human-word steward arm from the enrolled terminal). Lesson for the record: every engine rebuild on a runner host must be followed by a steward re-arm BEFORE a headless launch, or the launch dies at 'up'. Re-armed under Wido's recorded temporary word, relaunching with resume.
+- Next step: RUN IN PROGRESS (m0, 2026-09-03). FINDINGS: (1) state-init-born missions launch with RESUME not start; (2) an engine rebuild after the last steward arm makes the runner's 'up' refuse ENROLLMENT_DRIFT - re-arm before launch; (3) the runner's 'up' arms supervision as itself (owner pid 1206366) but returns advisor/read-only because the CHECKOUT LEASE is held by m0's live Claude session (main-1788344772-1154480) - 'stop your own session' is mechanical: the runner cannot hold writing authority until the seat's session lease is retired. Fix-forward: retire the seat session's lease (up --retire), then relaunch resume; the seat keeps read-only watching, exactly the recipe's 'watch from outside'.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 11
+- Revision: 12
 - Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
 - Approved: by=human:Wido at=2026-09-03T14:16:24Z revision=5 opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036 authority=relayed digest=0c9d3b9a12438d4b0c36b5798c98f1e73e3bdf3312756c4b09088d8921cecf5f reviewBy=2026-09-06
@@ -22,4 +22,5 @@ History:
 - 2026-09-03T15:46:37Z XVAC123RXPZ7SNXWK254YNDPFK-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:47:33Z 2D1CAHMMPR05R16ZJTSPJ3D5HT-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:48:19Z G3AQ46MRPXCERMN99SWBFPK3D9-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
-Integrity: sha256=0501d75aaf12bd3f704757edd24b563ae96c0304dccbfea0dbe5a5c9eeb00e47
+- 2026-09-03T15:49:13Z C8PEDYAERS0GRYJPQEGV922TRC-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
+Integrity: sha256=f405aa8e1299ca0a2435efa3c69404009b3c50560b435c18617eeb76257e9170
