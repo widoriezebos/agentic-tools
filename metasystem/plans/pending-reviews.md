@@ -15,7 +15,7 @@ budget is 30 seconds, so every seat including m1 can run these.
 | fleet-join-bootstrap | REVIEWED (nine material, records/misc/fleet-join-critique-r1.md); fold waits for minutes | done on m1 |
 | failed-job-attention | REVIEWED (closing round, four material on concurrency seams, records/misc/failed-job-attention-critique-r3.md); joint round or fourth fold is Wido's call | done on m1 |
 | job-record-birth-token | REVIEWED (six material, records/misc/job-record-birth-token-critique-r1.md); fold brief landed, waits for minutes | done on m1 |
-| proof-harness-process-custody | review RUNNING on m1 | plans/proof-harness-custody-critique-brief.md |
+| proof-harness-process-custody | review could not dispatch (elapsed admission closed); released with recipe | plans/proof-harness-custody-critique-brief.md |
 | account-provenance | design revision 2 (closing round); owner question on two new verbs | plans/account-provenance-critique2-brief.md |
 | host-health-role | REVIEWED (seven material, records/misc/host-health-critique-r1.md); the fold waits for minutes | done on m1 |
 
@@ -23,3 +23,5 @@ m1 takes these in order from the top as its claim slot frees; a VM seat
 taking one should claim it first so the two never collide. Every goal
 whose pool is spent (240 minutes = two dispatches at cap 120) waits for
 Wido's minute word or the cap-necessity fix (m1b) before its next round.
+
+REGROUP 2026-09-03: every other machine holds; m1 works path-class-manifest first (design landed, Codex review running). Nothing above dispatches until Wido lifts the hold.
