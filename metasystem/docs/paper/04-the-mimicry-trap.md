@@ -1,6 +1,6 @@
 # 4. The Mimicry Trap
 
-**A ceremony can be performed perfectly while nothing it protected is happening.**
+**A ceremony can be performed perfectly and protect nothing.**
 
 > *Imagine that at nine each morning, six machine workers receive a prompt called "standup". Each produces three tidy sentences about yesterday, today and blockers. The reports arrive on time. One worker has already stopped without recording why, two are repeating the same failed approach and none has challenged the assumption that a background refresh proves a user is active.*
 
