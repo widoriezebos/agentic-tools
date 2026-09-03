@@ -8,6 +8,7 @@ package steward
 // first metasystem activity after a boot.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -131,6 +133,11 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		if _, deliverErr := DeliverPending(repoRoot); deliverErr != nil {
 			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
 		}
+		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
+		if undelivered, channelErr := channelphase.Run(channelContext, repoRoot); channelErr != nil {
+			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
+		}
+		cancelChannel()
 		deadline := time.Now().Add(interval)
 		for time.Now().Before(deadline) {
 			if _, err := os.Stat(runnerStopPath(repoRoot)); err == nil {

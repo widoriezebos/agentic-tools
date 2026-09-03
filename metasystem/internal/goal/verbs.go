@@ -21,9 +21,132 @@ import (
 	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
+
+type AnswerProof struct {
+	Provider, User, Ref string
+	Step                int64
+}
+
+func ResumeApprovalToken(goalID string, b Budget) string {
+	args := budgetIntentArgs(b)
+	return fmt.Sprintf("goal=%s resume elapsed=%s attempts=%s minutes=%s active=%s", goalID, args["elapsedLimit"], args["attemptLimit"], args["reservedJobMinutesLimit"], args["activeJobLimit"])
+}
+
+func SetObligationApprovalToken(goalID string, state ObligationState, owner string) string {
+	return fmt.Sprintf("goal=%s set-obligation state=%s owner=%s", goalID, state, owner)
+}
+
+func Asked(r VerbRequest, id, qid, kind, firstFact string) (PublishResult, error) {
+	marker := "ASKED " + qid + " (" + kind + "): " + firstFact
+	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "ask", Targets: []string{id}}, Message: "goal ask " + id, Mutate: func(tip string) ([]Change, error) {
+		t, err := loadTree(r.Endpoint.Root, tip)
+		if err != nil {
+			return nil, err
+		}
+		f := t.Live[id]
+		if f == nil {
+			return nil, fmt.Errorf("goal %s is not live", id)
+		}
+		if opidLanded(f, r) {
+			return nil, AlreadyApplied{}
+		}
+		if strings.TrimSpace(f.NextStep) == "" {
+			f.NextStep = marker
+		} else if !strings.Contains(f.NextStep, marker) {
+			f.NextStep += "; " + marker
+		}
+		touch(f, r, "ask", []string{id})
+		return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+	}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+}
+
+func AuthenticatedChannelApproval(repoRoot, goalID, opid, strictToken string, now time.Time) (governance.RecordedChannelAuthority, error) {
+	ep, err := ResolveEndpoint(repoRoot)
+	if err != nil {
+		return governance.RecordedChannelAuthority{}, err
+	}
+	p, err := Project(ep, false, now)
+	if err != nil {
+		return governance.RecordedChannelAuthority{}, err
+	}
+	f := p.Tree.Live[goalID]
+	if f == nil {
+		return governance.RecordedChannelAuthority{}, fmt.Errorf("goal %s is not live", goalID)
+	}
+	for _, h := range f.History {
+		if h.ApprovedRef == opid && (h.Verb == "resume" || h.Verb == "set-obligation") {
+			return governance.RecordedChannelAuthority{}, fmt.Errorf("operation %s was already consumed by %s on goal %s", opid, h.Verb, goalID)
+		}
+	}
+	for _, h := range f.History {
+		if h.Opid == opid && h.Verb == "answer" && h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
+			if !containsContiguousFields(h.Reason, strictToken) {
+				return governance.RecordedChannelAuthority{}, fmt.Errorf("operation %s does not carry the required token %q", opid, strictToken)
+			}
+			return governance.RecordedChannelAuthority{Outcome: h.AuthorityOutcome, Provider: h.ChannelProvider, UserID: h.ChannelUser, MessageRef: h.ChannelRef, Step: h.ChannelStep}, nil
+		}
+	}
+	return governance.RecordedChannelAuthority{}, fmt.Errorf("operation %s is not an authenticated channel word on goal %s", opid, goalID)
+}
+
+func containsContiguousFields(text, token string) bool {
+	fields, wanted := strings.Fields(text), strings.Fields(token)
+	if len(wanted) == 0 {
+		return false
+	}
+	matches := 0
+	for i := 0; i+len(wanted) <= len(fields); i++ {
+		if strings.Join(fields[i:i+len(wanted)], " ") == strings.Join(wanted, " ") {
+			matches++
+		}
+	}
+	return matches == 1
+}
+
+// Answer records an authenticated channel reply and its next-step marker in
+// the same goal transaction. Replaying its operation identifier is a no-op.
+func Answer(r VerbRequest, id, qid, text, wants string, proof AnswerProof) (PublishResult, error) {
+	if proof.Provider == "" || proof.User == "" || proof.Ref == "" || proof.Step < 1 || strings.TrimSpace(text) == "" {
+		return PublishResult{}, fmt.Errorf("answer requires complete authenticated channel proof and text")
+	}
+	return Publish(r.Endpoint, answerRequest(r, id, qid, text, wants, proof))
+}
+
+func answerRequest(r VerbRequest, id, qid, text, wants string, proof AnswerProof) PublishRequest {
+	reason := text
+	if wants != "" && !strings.Contains(reason, wants) {
+		reason += " " + wants
+	}
+	args := map[string]string{"question": qid, "text": text, "wants": wants, "provider": proof.Provider, "user": proof.User, "ref": proof.Ref, "step": strconv.FormatInt(proof.Step, 10)}
+	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "answer", Targets: []string{id}, Args: args}, Message: "goal answer " + id, Mutate: func(tip string) ([]Change, error) {
+		t, err := loadTree(r.Endpoint.Root, tip)
+		if err != nil {
+			return nil, err
+		}
+		f := t.Live[id]
+		if f == nil {
+			return nil, fmt.Errorf("goal %s is not live", id)
+		}
+		if opidLanded(f, r) {
+			return nil, AlreadyApplied{}
+		}
+		marker := "ANSWERED " + qid + ": " + text
+		if !strings.Contains(f.NextStep, marker) {
+			if strings.TrimSpace(f.NextStep) == "" {
+				f.NextStep = marker
+			} else {
+				f.NextStep += "; " + marker
+			}
+		}
+		f.Revision++
+		f.History = append(f.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "answer", Actor: "human:wido", Targets: []string{id}, Keep: -1, AuthorityOutcome: AuthorityOutcomeAuthenticatedChannelWord, ChannelProvider: proof.Provider, ChannelUser: proof.User, ChannelRef: proof.Ref, ChannelStep: proof.Step, Reason: reason})
+		return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+	}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+}
 
 // Actor is the executing identity: the machine+lineage pair always;
 // Human names the directing human when one did (authority vs
@@ -615,6 +738,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 				return nil, err
 			}
 			touch(f, r, "set-obligation", []string{id})
+			f.History[len(f.History)-1].ApprovedRef = r.ApprovedRef
 			if temporaryAuthority {
 				f.History[len(f.History)-1].recordTemporaryRelay(proof.ReviewBy, proof.Departure, proof.TemporaryHumanWord)
 			}

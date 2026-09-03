@@ -89,14 +89,27 @@ type GovernedObligation struct {
 }
 
 const (
-	ReviewOutcomeHumanApproved         = "human-approved"
-	ReviewOutcomeRecordedRelay         = "recorded-relay"
-	AuthorizedByRecordedRelay          = "recorded-relay"
-	AuthorityOutcomeTemporaryHumanWord = "TEMPORARY_HUMAN_WORD"
-	TemporaryGoalAuthorityRuling       = "R-32-m1"
-	TemporaryGoalAuthorityHorizon      = "2026-09-06"
-	authorityReviewByDateLayout        = "2006-01-02"
+	ReviewOutcomeHumanApproved               = "human-approved"
+	ReviewOutcomeRecordedRelay               = "recorded-relay"
+	AuthorizedByRecordedRelay                = "recorded-relay"
+	AuthorityOutcomeTemporaryHumanWord       = "TEMPORARY_HUMAN_WORD"
+	AuthorityOutcomeAuthenticatedChannelWord = "AUTHENTICATED_CHANNEL_WORD"
+	TemporaryGoalAuthorityRuling             = "R-32-m1"
+	TemporaryGoalAuthorityHorizon            = "2026-09-06"
+	authorityReviewByDateLayout              = "2006-01-02"
 )
+
+type RecordedChannelAuthority struct {
+	Outcome, Provider, UserID, MessageRef string
+	Step                                  int64
+}
+
+func (a RecordedChannelAuthority) ValidateRecorded() error {
+	if a.Outcome != AuthorityOutcomeAuthenticatedChannelWord || a.Provider == "" || a.UserID == "" || a.MessageRef == "" || a.Step < 1 {
+		return fmt.Errorf("authenticated channel authority proof is incomplete")
+	}
+	return nil
+}
 
 // RecordedTemporaryAuthority is the durable tuple copied from a successful
 // relayed grant. It records the supplied words and ruling; it does not prove

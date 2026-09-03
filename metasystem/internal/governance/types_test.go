@@ -188,6 +188,34 @@ func TestRecordedTemporaryAuthorityRequiresACompleteWireTuple(t *testing.T) {
 	}
 }
 
+func TestRecordedChannelAuthorityRequiresACompleteWireTuple(t *testing.T) {
+	complete := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeAuthenticatedChannelWord, Provider: "slack", UserID: "UWIDO", MessageRef: "1/2", Step: 42}
+	if err := complete.ValidateRecorded(); err != nil {
+		t.Fatalf("complete channel authority was refused: %v", err)
+	}
+	tests := []struct {
+		name   string
+		change func(*governance.RecordedChannelAuthority)
+	}{
+		{"wrong outcome", func(authority *governance.RecordedChannelAuthority) {
+			authority.Outcome = governance.AuthorityOutcomeTemporaryHumanWord
+		}},
+		{"empty provider", func(authority *governance.RecordedChannelAuthority) { authority.Provider = "" }},
+		{"empty user id", func(authority *governance.RecordedChannelAuthority) { authority.UserID = "" }},
+		{"empty message ref", func(authority *governance.RecordedChannelAuthority) { authority.MessageRef = "" }},
+		{"step below one", func(authority *governance.RecordedChannelAuthority) { authority.Step = 0 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authority := complete
+			test.change(&authority)
+			if err := authority.ValidateRecorded(); err == nil || err.Error() != "authenticated channel authority proof is incomplete" {
+				t.Fatalf("invalid tuple error = %v", err)
+			}
+		})
+	}
+}
+
 func TestObligationAssumptionsValidateClosedVocabulary(t *testing.T) {
 	valid := governance.ObligationAssumptions{
 		Recurrence: governance.SingleExperiment, Platform: "fixture/os", ToolchainIdentity: "fixture-go",

@@ -33,6 +33,7 @@ const (
 	OutcomeReused          = "PROCESS_REUSED"
 	OutcomeCycle           = "ANCESTRY_CYCLE"
 	OutcomeTemporary       = "TEMPORARY_HUMAN_WORD"
+	OutcomeChannel         = "AUTHENTICATED_CHANNEL_WORD"
 	TemporaryWordRuling    = governance.TemporaryGoalAuthorityRuling
 	reviewByDateLayout     = "2006-01-02"
 )
@@ -79,6 +80,10 @@ type Proof struct {
 	TemporaryHumanWord string     `json:"temporaryHumanWord,omitempty"`
 	ReviewBy           string     `json:"reviewBy,omitempty"`
 	Departure          string     `json:"departure,omitempty"`
+	ChannelProvider    string     `json:"channelProvider,omitempty"`
+	ChannelUser        string     `json:"channelUser,omitempty"`
+	ChannelRef         string     `json:"channelRef,omitempty"`
+	ChannelStep        int64      `json:"channelStep,omitempty"`
 	observedRoot       string
 	observed           bool
 }
@@ -115,7 +120,7 @@ func (p Proof) ValidFor(root string) bool {
 // consume it. The relay records the supplied words but cannot verify who
 // supplied them. Other human-only mutations continue to depend on ValidFor.
 func (p Proof) AuthorizesSetObligation(root string) bool {
-	return p.ValidFor(root) || p.temporaryValidFor(root)
+	return p.ValidFor(root) || p.temporaryValidFor(root) || p.channelValidFor(root)
 }
 
 // TemporarySetObligationFor reports whether the proof is the temporary
@@ -127,7 +132,26 @@ func (p Proof) TemporarySetObligationFor(root string) bool {
 // AuthorizesResume accepts the same two proof classes at the breach-stop
 // boundary without making temporary authority valid for any other verb.
 func (p Proof) AuthorizesResume(root string) bool {
-	return p.ValidFor(root) || p.temporaryValidFor(root)
+	return p.ValidFor(root) || p.temporaryValidFor(root) || p.channelValidFor(root)
+}
+
+func (p Proof) ChannelWordFor(root string) bool { return p.channelValidFor(root) }
+func (p Proof) channelValidFor(root string) bool {
+	abs, err := filepath.Abs(root)
+	if err != nil || !p.observed || p.observedRoot != filepath.Clean(abs) || p.Schema != 1 || p.Outcome != OutcomeChannel || p.CheckedAt.IsZero() {
+		return false
+	}
+	return (governance.RecordedChannelAuthority{Outcome: p.Outcome, Provider: p.ChannelProvider, UserID: p.ChannelUser, MessageRef: p.ChannelRef, Step: p.ChannelStep}).ValidateRecorded() == nil
+}
+func AuthenticatedChannelProof(root string, recorded governance.RecordedChannelAuthority, now time.Time) (Proof, error) {
+	if err := recorded.ValidateRecorded(); err != nil {
+		return Proof{}, err
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Proof{}, err
+	}
+	return Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeChannel, ChannelProvider: recorded.Provider, ChannelUser: recorded.UserID, ChannelRef: recorded.MessageRef, ChannelStep: recorded.Step, observedRoot: filepath.Clean(abs), observed: true}, nil
 }
 
 // TemporaryResumeFor reports whether a resume is using the temporary proof

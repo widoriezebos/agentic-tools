@@ -399,6 +399,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			f.Budget = &budget
 			f.NormApproval = approval
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
+			f.History[len(f.History)-1].ApprovedRef = r.ApprovedRef
 			if temporaryAuthority {
 				f.History[len(f.History)-1].recordTemporaryRelay(r.Authority.ReviewBy, r.Authority.Departure, r.Authority.TemporaryHumanWord)
 			}

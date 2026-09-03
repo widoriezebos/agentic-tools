@@ -234,6 +234,16 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	}
 	cascade := in.Args["cascade"] == "arc"
 	switch in.Verb {
+	case "answer":
+		step, err := strconv.ParseInt(in.Args["step"], 10, 64)
+		if err != nil || step < 1 {
+			return PublishRequest{}, fmt.Errorf("the stored answer step is invalid; close it by hand")
+		}
+		proof := AnswerProof{Provider: in.Args["provider"], User: in.Args["user"], Ref: in.Args["ref"], Step: step}
+		if proof.Provider == "" || proof.User == "" || proof.Ref == "" || strings.TrimSpace(in.Args["question"]) == "" || strings.TrimSpace(in.Args["text"]) == "" {
+			return PublishRequest{}, fmt.Errorf("the stored answer intent is incomplete; close it by hand")
+		}
+		return answerRequest(r, target, in.Args["question"], in.Args["text"], in.Args["wants"], proof), nil
 	case "open":
 		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], commaValues(in.Args["labels"]))
 	case "open-claim":

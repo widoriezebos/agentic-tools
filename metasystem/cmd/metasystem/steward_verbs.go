@@ -7,6 +7,7 @@ package main
 // itself lands with the dispatch continuation mode.
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -268,17 +270,24 @@ func runStewardTick(args []string) int {
 		}
 	}
 	delivered, deliverErr := steward.DeliverPending(*repo)
+	channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
+	channelUndelivered, channelErr := channelphase.Run(channelContext, *repo)
+	cancelChannel()
+	if channelErr != nil {
+		fmt.Fprintf(os.Stderr, "steward tick: channel pending: %d undelivered: %v\n", channelUndelivered, channelErr)
+	}
 	report := map[string]any{
-		"verdict":   result.Decision.Verdict,
-		"action":    result.Decision.Action,
-		"reason":    result.Decision.Reason,
-		"openWork":  result.OpenWork,
-		"evidence":  result.Evidence,
-		"health":    result.Health,
-		"reaped":    result.Reaped,
-		"goalStops": result.GoalStops,
-		"delivered": delivered,
-		"revived":   revived,
+		"verdict":            result.Decision.Verdict,
+		"action":             result.Decision.Action,
+		"reason":             result.Decision.Reason,
+		"openWork":           result.OpenWork,
+		"evidence":           result.Evidence,
+		"health":             result.Health,
+		"reaped":             result.Reaped,
+		"goalStops":          result.GoalStops,
+		"delivered":          delivered,
+		"channelUndelivered": channelUndelivered,
+		"revived":            revived,
 	}
 	if deliverErr != nil {
 		report["deliveryProblem"] = deliverErr.Error()

@@ -60,11 +60,12 @@ type HumanReviewTriggers = governance.HumanReviewTriggers
 type GovernedObligation = governance.GovernedObligation
 
 const (
-	ReviewOutcomeHumanApproved         = governance.ReviewOutcomeHumanApproved
-	ReviewOutcomeRecordedRelay         = governance.ReviewOutcomeRecordedRelay
-	AuthorizedByRecordedRelay          = governance.AuthorizedByRecordedRelay
-	AuthorityOutcomeTemporaryHumanWord = governance.AuthorityOutcomeTemporaryHumanWord
-	TemporaryGoalAuthorityRuling       = governance.TemporaryGoalAuthorityRuling
+	ReviewOutcomeHumanApproved               = governance.ReviewOutcomeHumanApproved
+	ReviewOutcomeRecordedRelay               = governance.ReviewOutcomeRecordedRelay
+	AuthorizedByRecordedRelay                = governance.AuthorizedByRecordedRelay
+	AuthorityOutcomeTemporaryHumanWord       = governance.AuthorityOutcomeTemporaryHumanWord
+	AuthorityOutcomeAuthenticatedChannelWord = governance.AuthorityOutcomeAuthenticatedChannelWord
+	TemporaryGoalAuthorityRuling             = governance.TemporaryGoalAuthorityRuling
 )
 
 func validateRecordedTemporaryAuthority(outcome, reviewBy, ruling, humanWord string) error {

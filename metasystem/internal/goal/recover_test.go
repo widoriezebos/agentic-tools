@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,54 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 	entry, err := ReadEntry(a, opid)
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeConfirmed {
 		t.Fatalf("the recovered entry confirms: %+v %v", entry, err)
+	}
+}
+
+func TestRecoveryRebuildsAnswer(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X0000000000000000000K0", "mac-a"), "answer-recovery", "Recover an answer.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	opid := Opid("01J5X0000000000000000000K1", "mac-a", "lin-1")
+	intent := Intent{Verb: "answer", Targets: []string{"answer-recovery"}, Args: map[string]string{
+		"question": "question-1", "text": "approved", "wants": "goal=answer-recovery resume elapsed=4h attempts=4 minutes=240 active=2",
+		"provider": "slack", "user": "UWIDO", "ref": "1/2", "step": "42",
+	}}
+	strandEntry(t, root, opid, PhaseCreated, intent)
+	entry, err := ReadEntry(root, opid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := requestForEntry(endpointFor(root), entry)
+	if err != nil || rebuilt.Opid != opid || !reflect.DeepEqual(rebuilt.Intent, intent) {
+		t.Fatalf("rebuilt answer = %+v, want opid=%s intent=%+v, err=%v", rebuilt, opid, intent, err)
+	}
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal("repeated recovery failed:", err)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := projection.Tree.Live["answer-recovery"]
+	answers := 0
+	for _, history := range file.History {
+		if history.Verb == "answer" {
+			answers++
+			if history.Opid != opid || history.Reason != "approved "+intent.Args["wants"] {
+				t.Fatalf("recovered answer changed identity or reason: %+v", history)
+			}
+		}
+	}
+	if answers != 1 || strings.Count(file.NextStep, "ANSWERED question-1: approved") != 1 {
+		t.Fatalf("recovery did not land once: answers=%d next=%q", answers, file.NextStep)
+	}
+	if err := ValidateCommit(root, projection.Tip); err != nil {
+		t.Fatalf("recovered ledger does not parse: %v", err)
 	}
 }
 

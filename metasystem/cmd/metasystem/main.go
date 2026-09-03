@@ -388,6 +388,19 @@ func families() []family {
 			},
 		},
 		{
+			name:    "channel",
+			summary: "fleet status and authenticated question threads",
+			verbs: []verb{
+				{"status", "compose or post this machine's durable status", runChannelStatus},
+				{"ask", "open one durable question thread", runChannelAsk},
+				{"show", "show one question record", runChannelShow},
+				{"wait", "wait for one recorded answer", runChannelWait},
+				{"poll", "receive and durably disposition replies", runChannelPoll},
+				{"close", "withdraw one question", runChannelClose},
+				{"fake", "fixture-only fake serve and code verbs", runChannelFake},
+			},
+		},
+		{
 			name:    "goal",
 			summary: "the goal ledger: the thread of intent that survives every turn (D67)",
 			verbs: []verb{

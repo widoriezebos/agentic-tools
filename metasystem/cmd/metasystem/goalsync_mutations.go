@@ -374,8 +374,17 @@ func runGoalResumeWithAuthority(args []string, prove goalAuthorityProver) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	proof, err := prove(
-		f.root, int64(os.Getppid()), nil, f.temporaryWord, f.reviewBy, ancestryNow)
+	var proof humanauthority.Proof
+	if f.approvedRef != "" {
+		recorded, approvalErr := goal.AuthenticatedChannelApproval(f.root, f.id, f.approvedRef, goal.ResumeApprovalToken(f.id, *budget), ancestryNow)
+		if approvalErr != nil {
+			fmt.Fprintln(os.Stderr, "goal resume could not validate --approved-ref:", approvalErr)
+			return 1
+		}
+		proof, err = humanauthority.AuthenticatedChannelProof(f.root, recorded, ancestryNow)
+	} else {
+		proof, err = prove(f.root, int64(os.Getppid()), nil, f.temporaryWord, f.reviewBy, ancestryNow)
+	}
 	if err != nil {
 		if f.temporaryWord == "" && f.reviewBy == "" {
 			fmt.Fprintln(os.Stderr, "goal resume could not prove enrolled human ancestry:", err)
@@ -583,6 +592,7 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	destructiveReach := flags.String("destructive-reach", "", "none|reversible-local|destructive|unknown")
 	temporaryWord := flags.String("temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; authorizes set-obligation TEMPORARILY")
 	reviewBy := flags.String("review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
+	approvedRef := flags.String("approved-ref", "", "authenticated channel answer operation on this goal")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -602,8 +612,17 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	proof, err := prove(
-		*root, int64(os.Getppid()), nil, *temporaryWord, *reviewBy, ancestryNow)
+	var proof humanauthority.Proof
+	if *approvedRef != "" {
+		recorded, approvalErr := goal.AuthenticatedChannelApproval(*root, *id, *approvedRef, goal.SetObligationApprovalToken(*id, goal.ObligationState(*state), *owner), ancestryNow)
+		if approvalErr != nil {
+			fmt.Fprintln(os.Stderr, "goal set-obligation could not validate --approved-ref:", approvalErr)
+			return 1
+		}
+		proof, err = humanauthority.AuthenticatedChannelProof(*root, recorded, ancestryNow)
+	} else {
+		proof, err = prove(*root, int64(os.Getppid()), nil, *temporaryWord, *reviewBy, ancestryNow)
+	}
 	if err != nil {
 		if *temporaryWord == "" && *reviewBy == "" {
 			fmt.Fprintln(os.Stderr, "goal set-obligation could not prove enrolled human ancestry:", err)

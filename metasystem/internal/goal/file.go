@@ -138,6 +138,11 @@ type HistoryLine struct {
 	AuthorityReviewBy  string
 	AuthorityRuling    string
 	TemporaryHumanWord string
+	ChannelProvider    string
+	ChannelUser        string
+	ChannelRef         string
+	ChannelStep        int64
+	ApprovedRef        string
 	Reason             string
 }
 
@@ -910,6 +915,35 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.AuthorityRuling = strings.TrimPrefix(tok, "authorityRuling=")
+		case strings.HasPrefix(tok, "channelProvider="):
+			if err := dup("channelProvider"); err != nil {
+				return h, err
+			}
+			h.ChannelProvider = strings.TrimPrefix(tok, "channelProvider=")
+		case strings.HasPrefix(tok, "channelUser="):
+			if err := dup("channelUser"); err != nil {
+				return h, err
+			}
+			h.ChannelUser = strings.TrimPrefix(tok, "channelUser=")
+		case strings.HasPrefix(tok, "channelRef="):
+			if err := dup("channelRef"); err != nil {
+				return h, err
+			}
+			h.ChannelRef = strings.TrimPrefix(tok, "channelRef=")
+		case strings.HasPrefix(tok, "channelStep="):
+			if err := dup("channelStep"); err != nil {
+				return h, err
+			}
+			step, err := strconv.ParseInt(strings.TrimPrefix(tok, "channelStep="), 10, 64)
+			if err != nil || step < 1 {
+				return h, fmt.Errorf("channelStep= wants a positive decimal")
+			}
+			h.ChannelStep = step
+		case strings.HasPrefix(tok, "approvedRef="):
+			if err := dup("approvedRef"); err != nil {
+				return h, err
+			}
+			h.ApprovedRef = strings.TrimPrefix(tok, "approvedRef=")
 		default:
 			return h, fmt.Errorf("unknown History key %q", tok)
 		}
@@ -920,8 +954,29 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	if !validStamp(h.At) {
 		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
 	}
-	if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
-		return h, fmt.Errorf("recorded temporary authority: %v", err)
+	if h.AuthorityOutcome != AuthorityOutcomeAuthenticatedChannelWord {
+		if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
+			return h, fmt.Errorf("recorded temporary authority: %v", err)
+		}
+	}
+	channelCount := 0
+	for _, v := range []string{h.ChannelProvider, h.ChannelUser, h.ChannelRef} {
+		if v != "" {
+			channelCount++
+		}
+	}
+	if h.ChannelStep > 0 {
+		channelCount++
+	}
+	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
+		if channelCount != 4 || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
+			return h, fmt.Errorf("authenticated channel authority requires exactly provider, user, reference, and step proof")
+		}
+	} else if channelCount != 0 {
+		return h, fmt.Errorf("channel proof keys require AUTHENTICATED_CHANNEL_WORD")
+	}
+	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" {
+		return h, fmt.Errorf("approvedRef= is only valid on resume and set-obligation history")
 	}
 	return h, nil
 }
@@ -942,11 +997,19 @@ func RenderHistoryLine(h HistoryLine) string {
 	if h.Keep >= 0 {
 		fmt.Fprintf(&b, " keep=%d", h.Keep)
 	}
-	if (h.AuthorityOutcome != "" || h.AuthorityReviewBy != "") && h.AuthorityRuling == "" && h.TemporaryHumanWord == "" {
+	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
+		fmt.Fprintf(&b, " authorityOutcome=%s", h.AuthorityOutcome)
+	} else if (h.AuthorityOutcome != "" || h.AuthorityReviewBy != "") && h.AuthorityRuling == "" && h.TemporaryHumanWord == "" {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", h.AuthorityOutcome, h.AuthorityReviewBy)
 	} else if h.AuthorityOutcome != "" || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s authorityRuling=%s temporaryHumanWord=%s",
 			h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, strconv.Quote(h.TemporaryHumanWord))
+	}
+	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
+		fmt.Fprintf(&b, " channelProvider=%s channelUser=%s channelRef=%s channelStep=%d", h.ChannelProvider, h.ChannelUser, h.ChannelRef, h.ChannelStep)
+	}
+	if h.ApprovedRef != "" {
+		b.WriteString(" approvedRef=" + h.ApprovedRef)
 	}
 	if h.Reason != "" {
 		b.WriteString(" reason=" + h.Reason)
