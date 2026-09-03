@@ -5,12 +5,13 @@
 - Origin: main
 - Next step: TIER 3 per R-54-m1, run on m1 with Codex only. STOP CRITERION for the design loop (Wido's word this morning): a finding is material only if it changes what gets built and the reviewer names the artifact that changes; design, one review, one fold, one closing review, then build; at the cap the agreed parts build as they are and every still-disputed point becomes a named test obligation. Ladder: design brief -> Fable design (short: the manifest shape, the verb, the three consumers, the deletions, the refusal text, the fixtures) -> Sol review -> fold -> closing review -> Sol build -> Fable code review -> land with --chain. Afterwards, separately: promote direct-fix-floor-refused (one line plus a ruling).
 - OpenedAt: 2026-09-03T06:25:55Z
-- Revision: 5
+- Revision: 6
 - Labels: robustness, separation
-- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1320 activeJobLimit=1
+- Budget: elapsedLimit=1d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
+- NormApproval: approvedRef=R-59-m1 minutes=3000 goalRevision=5
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-03T06:30:33Z
-- Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-03T08:35:08Z revision=5
-- StopCapability: generation=5 revision=5 machine=m1 claimEpoch=4 fenceEpoch=0
+- Claimed: machine=m1 lineage=main-1788333680-2840-7f79f4 at=2026-09-03T08:42:15Z revision=6
+- StopCapability: generation=6 revision=6 machine=m1 claimEpoch=4 fenceEpoch=0
 
 History:
 - 2026-09-03T06:25:55Z 15J8G3T7AASKGMCMTHBGQ8X7BN-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
@@ -18,4 +19,5 @@ History:
 - 2026-09-03T06:30:09Z M3R5K1MRDJE54FCHBHH4X7GXST-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
 - 2026-09-03T06:30:33Z 1SV052JYD0Y7DFQR7RFECHC6ES-m1-7bb1546e slice-start actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
 - 2026-09-03T08:35:08Z FR60RJS4TYC08J9TB0962P79G6-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
-Integrity: sha256=774d6a78c10f635e2e6e272e1008314ff7de4949bf7e39da83cfbbcaf0a1bcdb
+- 2026-09-03T08:42:15Z 60MTVJH2W5HTQ45Y99FPK33DC0-m1-7bb1546e set-budget actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
+Integrity: sha256=d465116f49fe96a7f7b502bd9a5b917884d9e5fa02db802e7ad1752655738021
