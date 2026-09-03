@@ -18,15 +18,15 @@ In Chapter 1 we called such an enforced rule a law. The term names authority; it
 
 The metaphor stops there. Software has no moral agency, cannot accept accountability and cannot make a political disagreement disappear by enforcing one side. A law can refuse an unauthorized action. It cannot decide whether a rule is just. A recorded precedent can make a ruling visible. It cannot make the ruling wise. Value and political disagreement remain with people who have the authority and responsibility to decide them.
 
-## Intent is controlling and revisable
+## Intent governs the work and can be revised
 
 > *A builder finds an easy way to sign every user out after thirty minutes from sign-in. The candidate is internally consistent and simple to test. It still fails the authorized outcome, which is based on inactivity and must not interrupt active work.*
 
 The system exists to serve that human intent. Neither the builder's preferred design nor the chance to finish sooner outranks it.
 
-Intent controls construction, checks, release and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. In Chapter 2 we made intent versioned, challengeable and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a binding decision.
+Intent controls construction, checks, release and care because it states the outcome those activities serve. It does not become infallible by controlling them. Responsive users may still be ejected after release, revealing that the authorized signal for activity was wrong. In Chapter 2 we made intent versioned, challengeable and revisable. When several human intentions conflict, the conflict stays visible until the authority and appeal paths described in Chapter 13 produce a decision that settles it.
 
-The principle says that machinery acts under the current authorized intent, while evidence can challenge both the candidate and the intent itself. "Obey the first requirement" would be a different and worse principle. A revision produces a new controlling record; the purpose of work already performed is never rewritten in place.
+The principle says that machinery acts under the current authorized intent, while evidence can challenge both the candidate and the intent itself. "Obey the first requirement" would be a different and worse principle. A revision produces a new record that governs from then on; the purpose of work already performed is never rewritten in place.
 
 ## Evidence over trust
 

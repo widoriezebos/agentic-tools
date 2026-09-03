@@ -16,7 +16,7 @@ Chapter 1's day begins at 8:40, when the responsible authority records an outcom
 
 Some things are discovered only by talking. A sitting with one authority discovers the authority's own unstated wishes and the conflicts hidden inside them: in the first scene, the wish for thirty minutes turned out to contain four separate clauses nobody had written down. When several people hold conflicting wishes, the sitting holds their negotiation, with machinery preparing the examples and recording the rulings; the disagreement stays between the people.
 
-The room itself has no authority. Nothing said in a sitting binds anyone until it becomes a record: a ruling, a stated outcome, a framed design. The sitting proposes; only records rule.
+The room itself has no authority. Nothing said in a sitting holds anyone to anything until it becomes a record: a ruling, a stated outcome, a framed design. The sitting proposes; only records rule.
 
 ## Who is in the room
 

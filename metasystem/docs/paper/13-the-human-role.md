@@ -38,7 +38,7 @@ Because enforced rules can stop action, their authorship and limits stay visible
 
 It cannot decide that this case deserves an exception.
 
-Resolving that named case is the judge's work. Named cases include a value conflict that machinery escalated, acceptance of a stated risk, approval of an irreversible act or an exception no enforced rule may grant automatically. The ruling binds only the stated case or class; it is not a hidden power to waive unrelated failures.
+Resolving that named case is the judge's work. Named cases include a value conflict that machinery escalated, acceptance of a stated risk, approval of an irreversible act or an exception no enforced rule may grant automatically. The ruling applies only to the stated case or class; it is not a hidden power to waive unrelated failures.
 
 The record keeps the judge's identity, authority, reasons, evidence, scope and expiry attached to the decision. If the exception causes harm, the organization can determine who had the duty to decide, what that person knew and whether the decision exceeded its authority; if later evidence changes the balance, another responsible authority can reconsider it.
 
@@ -48,11 +48,11 @@ A machine worker can turn human approval into a habit without ever lying: after 
 
 ## Intent-holder: authority over purpose
 
-The 8:40 outcome comes from the responsible authority for account security. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. It may not bind an unrelated medical-record rule or promise another organization's resources.
+The 8:40 outcome comes from the responsible authority for account security. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. It may not set an unrelated medical-record rule or promise another organization's resources.
 
-An intent-holder is the person or authorized group allowed to bind purpose and priorities within a stated domain. It does not write a task list and call it an outcome. Its authority can be delegated: an account-security lead may set the session-lifetime constraints while an accessibility group decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
+An intent-holder is the person or authorized group that sets purpose and priorities within a stated domain, and the work in that domain follows what it sets. It does not write a task list and call it an outcome. Its authority can be delegated: an account-security lead may set the session-lifetime constraints while an accessibility group decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
 
-Intent remains answerable to evidence. The authorized person can be wrong about user behavior, omit an affected group or state two conditions that cannot both hold. A builder that finds the conflict records it and returns the question to the authority instead of choosing the convenient interpretation. Binding intent settles what the purpose is; it does not make the purpose infallible.
+Intent remains answerable to evidence. The authorized person can be wrong about user behavior, omit an affected group or state two conditions that cannot both hold. A builder that finds the conflict records it and returns the question to the authority instead of choosing the convenient interpretation. Deciding the intent settles what the purpose is; it does not make the purpose infallible.
 
 ## Reviewer: authority, accountability and appeal
 
@@ -72,9 +72,9 @@ Appeal remains possible after release and after a change was classified routine.
 
 Each claim may be sincere and supported, yet the intentions conflict. If construction proceeds by selecting whichever request arrived last, the system has hidden a value decision inside record handling.
 
-The disagreement is recorded before construction continues: the affected domains, the represented interests, the points of agreement, the unresolved tradeoff and the evidence behind each claim. The record then names who holds binding authority and under what delegation. It records the authority's scope and expiry and says where an appeal goes.
+The disagreement is recorded before construction continues: the affected domains, the represented interests, the points of agreement, the unresolved tradeoff and the evidence behind each claim. The record then names who has the final say and under what delegation. It records the authority's scope and expiry and says where an appeal goes.
 
-The form can vary: one responsible executive, a standing group, several authorities protecting different domains. The condition does not: conflicting intent is visible, binding power is explicit, accountability is human and a challenge can reach a person who did not make the disputed decision.
+The form can vary: one responsible executive, a standing group, several authorities protecting different domains. The condition does not: conflicting intent is visible, the record says who has the final say, accountability is human and a challenge can reach a person who did not make the disputed decision.
 
 Delegation does not dissolve responsibility: the delegating authority answers for the limits it set, the delegate for decisions within them. When the named authority cannot be reached, the question waits and the delegation gets repaired: a deputy named or the scope revised, not the gap filled by whoever is nearby. If nobody can be identified at all, machinery must not infer authority from seniority, activity or access. The disputed work stops.
 

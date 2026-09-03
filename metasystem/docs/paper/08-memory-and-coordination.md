@@ -4,7 +4,7 @@
 
 > *Halfway through preparing existing sessions for the new expiry rule, a builder stops. No colleague remembers the last command, because there is no colleague watching over its shoulder.*
 
-The next builder must determine whether any session was changed, which candidate was in use, which decisions already bind the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
+The next builder must determine whether any session was changed, which candidate was in use, which rulings already apply to the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
 
 The system keeps memory outside its workers, because any worker can disappear. Intent, decisions, claims, actions, results and current state become durable records as the work proceeds. That memory also coordinates workers that do not share a conversation or a working day. It can show where work is, who may act next and what evidence an action must preserve. It cannot decide which human value should prevail.
 
@@ -46,7 +46,7 @@ The test also exposes what must be recorded before an action completes. A builde
 
 Two builders propose different ways to protect an upload while ending the ordinary session. The record can ensure that they do not overwrite each other's candidates. It can show which proposal arrived first, preserve both and require an authorized choice before either becomes current. None of those operations decides whether uninterrupted work is worth a wider security exception.
 
-Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation or accountability conflict, a responsible authority must weigh the choice and bind the decision. In Chapter 13 we will develop that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
+Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation or accountability conflict, a responsible authority must weigh the choice and decide it, and the decision then stands for everyone involved. In Chapter 13 we will develop that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
 
 ## Two audiences, one source
 
@@ -62,4 +62,4 @@ The system produces two views from one source. Structured fields allow machinery
 
 Retrieving that ruling can expose a useful distinction and prevent the new decision from beginning in ignorance.
 
-The stored ruling is a precedent: it informs the later decision without binding it. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Kept rulings like these form institutional memory: what the organization has decided and why, preserved beyond the people and workers who decided it. That memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends there.
+The stored ruling is a precedent: it informs the later decision but does not settle it. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Kept rulings like these form institutional memory: what the organization has decided and why, preserved beyond the people and workers who decided it. That memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends there.

@@ -32,7 +32,7 @@ That sequence is the bootstrap: a limited starting authority followed by a chain
 
 Recovery also needs to cover authority and data, not only program files. If a candidate wrongly grants itself release permission, restoring its code while leaving that grant active does not return to the prior authority. If a new record format loses earlier decisions, restarting the old worker does not restore memory. The bootstrap record identifies the full state that must survive and the authorized person who may order recovery when automatic reversal is unsafe.
 
-## Rules bind their own maintenance
+## Rules apply to their own maintenance
 
 > *The builder of the faster release rule argues that the ordinary review requirement should not apply because the work only changes delivery machinery.*
 
@@ -52,7 +52,7 @@ This sequence can expose several structural defects: an enforced rule that can j
 
 Passing shows that, under the stated cases and assumptions, the system preserves an older basis for judgment, maintains required separation and can recover from the candidate it is examining. That is useful evidence of internal consistency. It leaves open whether the clock rule protects users in every environment, whether the organization has assigned authority wisely and whether governed delivery reduces cost or harm outside this system.
 
-Self-application is a necessary but insufficient test. Failure directly contradicts a system's claim that its rules bind important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
+Self-application is a necessary but insufficient test. Failure directly contradicts a system's claim that its rules hold for all important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
 
 ## Falsifiability and independent support
 
