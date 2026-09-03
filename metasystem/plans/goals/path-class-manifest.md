@@ -1,18 +1,16 @@
 # path-class-manifest
 
-- State: claimed
+- State: approved
 - Intent: Wido's order 2026-09-03 morning, verbatim: 'I want you to build this as proposed, but get it critiqued with codex until you both agree and there are no longer any material changes... At that point, go and have Codex build it and then get it critiqued. In other words, do it in the way of the metasystem. You do this on your own with Codex. No other machine involved just yet. Start now'. THE PROBLEM: the repository has no single mechanical answer to 'what may change this path, and how'. Three hand-kept lists disagree at the edges and every gate reads a different one: the never-direct-fix floor is hard-coded directory prefixes in internal/landing/observe.go; scripts/agents/instruction-bearing-paths.txt says which files never take a review waiver; scripts/agents/register-carriage-paths.txt allowlists four files for direct landing. The ownership oracle (metasystem path owner) answers only vendored-versus-app-versus-runtime and calls every file here app-owned. Since the second landing bar went live at 02:40 on 2026-09-02, 141 of 169 landings carried a would-refuse stamp, nearly all of them the cycle's own paper trail (briefs, designs, analyses, review registers under plans/ and records/), which proves the floor conflates behavior with records. Switching the second bar on against these lists would be a brittle allowlist patched at every new record kind, which Wido refuses. THE SEPARATION (his direction, from the memory-architecture design's placement rule made mechanical): one committed manifest with four classes and one verb every gate consults. BEHAVIOR: engine code, scripts, instructions and docs, skills, roles, schemas, templates, config and harness config; changes only through a reviewed chain. RECORD: the cycle's paper trail and the registers (designs, briefs, analyses, review registers, handoffs, the rulings register, receipts, the narrator digest); landed as records by the seat that owns the stream, under register carriage. LEDGER: the goal files; mutated only by the goal verbs. RUNTIME: artifacts and the binary; never landed. A path with no class is refused, so a new kind of file forces one decision in the manifest, never a patch in three places. DONE means: the manifest exists and is the only source; metasystem path class <path> answers from it; the landing evaluator's floor, the critique-waiver rule and register carriage all read it and the three hand lists are deleted; an unclassified path refuses with a text that names the manifest; fixtures prove each class's landing semantics and the refusal; and the second bar's promotion afterwards needs nothing but the promotion line and a ruling.
 - Origin: main
 - Next step: TIER 3 per R-54-m1. DONE IN SUBSTANCE 2026-09-03 19:1x (m2): the manifest (4b1cd47e), the landing rules by class (a1014fe6) and the second landing bar's promotion (62b7f2d4, ruled R-71-m2) are on main; every DONE clause of the intent holds. What remains before goal done: the journey chapter (docs/journey.md is behavior class under the manifest, so the chapter lands through a small reviewed chain, tier 1), then conclude. The seat releases this goal now to take the tiering machinery (R-61-m1 order); any seat may write the chapter and conclude. Residuals recorded: PCM-CC9-004 (class-check order on mixed record-plus-ledger inputs) and F-2 of the promotion review (no dedicated repair hint for direct-fix-floor-refused) are small follow-ups; path-class-fixture-ripgrep (tier 1), adoption-inventory-from-install-set and merge-stage-critic-close (tier 2, await approval) are separate items.
 - OpenedAt: 2026-09-03T06:25:55Z
-- Revision: 13
+- Revision: 14
 - Labels: robustness, separation
 - Budget: elapsedLimit=1d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1
 - NormApproval: approvedRef=R-59-m1 minutes=3000 goalRevision=5
 - Approved: by=human:Wido at=2026-09-03T16:12:43Z revision=10 opid=GH432072PV3415JQH9177AB1XA-m2-5fcf08ab authority=relayed digest=83afd4f170386ba7c44d23aa5249276c4cb6ea9ba8aed34a16a21f2ea10e60c9 reviewBy=2026-09-06
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-03T06:30:33Z
-- Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-03T16:13:11Z revision=11
-- StopCapability: generation=11 revision=11 machine=m2 claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-03T06:25:55Z 15J8G3T7AASKGMCMTHBGQ8X7BN-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=path-class-manifest
@@ -28,4 +26,5 @@ History:
 - 2026-09-03T16:13:11Z MC5SBVCWJ1Y9KXE18G5DKN775Q-m2-5fcf08ab steal actor=human:Wido targets=path-class-manifest displaced=m1+main-1788333680-2840-7f79f4@2026-09-03T08:42:15Z
 - 2026-09-03T16:48:20Z T5B7Q2TQPR83FY8W2H25PJJ54V-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=path-class-manifest
 - 2026-09-03T17:12:02Z BK46Y281491YBBMG84XWM610KF-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=path-class-manifest
-Integrity: sha256=cc1acfb1817d4f72d4d65403ea340344cfc5304f193119f9eeb1c6aa4852cfe9
+- 2026-09-03T17:12:33Z 2HDBKKR5JV1TFZ4FC5N7ZNDWV8-m2-5fcf08ab release actor=m2+main-1788441779-14484-82d6ed targets=path-class-manifest
+Integrity: sha256=5337732c5bc457ad1417584c05b33c42b373eac87c53860b3c582e5c14e94a54
