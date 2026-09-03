@@ -34,7 +34,8 @@ type consumedRow struct {
 	QID                             string     `json:"qid"`
 }
 type cursorRecord struct {
-	Cursor Cursor `json:"cursor"`
+	Provider string `json:"provider"`
+	Cursor   Cursor `json:"cursor"`
 }
 
 func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
@@ -109,10 +110,15 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 			matchedRefs[q.Answer.Ref] = true
 		}
 		if q.State == "open" && q.Thread != nil {
-			threads = append(threads, *q.Thread)
 			root := q.Thread.ThreadID
 			if root == "" {
 				root = q.Thread.ID
+			}
+			threads = append(threads, MessageRef{ID: q.Thread.ID, ThreadID: root})
+			for _, rejection := range q.Rejected {
+				if rejection.PostRef != nil {
+					threads = append(threads, MessageRef{ID: rejection.PostRef.ID, ThreadID: root})
+				}
 			}
 			byThread[root] = q.ID
 		}
@@ -121,6 +127,9 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 	var old cursorRecord
 	if b, e := os.ReadFile(curPath); e == nil {
 		_ = json.Unmarshal(b, &old)
+	}
+	if old.Provider != c.ProviderName {
+		old.Cursor = ""
 	}
 	inbound, next, err := c.Provider.Receive(ctx, c.DestinationConfig, threads, old.Cursor)
 	if err != nil {
@@ -178,15 +187,30 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 		}
 		if reason != "" {
 			posted := len(q.Rejected) < 3
-			if posted {
-				_, e := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with your answer and your code", q.Thread)
-				if e != nil {
-					result.Undelivered++
-				}
-			}
 			q.Rejected = append(q.Rejected, Rejection{Ref: in.Ref, Reason: reason, At: c.Now, Posted: posted})
 			if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
 				return result, err
+			}
+			if err = fail(c, "rejection-recorded"); err != nil {
+				return result, err
+			}
+			if posted {
+				ref, e := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with your answer and your code", q.Thread)
+				if e != nil {
+					q.Undelivered++
+					result.Undelivered++
+					if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+						return result, err
+					}
+				} else {
+					if err = fail(c, "rejection-posted"); err != nil {
+						return result, err
+					}
+					q.Rejected[len(q.Rejected)-1].PostRef = &ref
+					if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+						return result, err
+					}
+				}
 			}
 			result.Dispositions++
 			continue
@@ -213,7 +237,7 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 		if err = fail(c, "before-cursor"); err != nil {
 			return result, err
 		}
-		if err = writeJSON(curPath, cursorRecord{Cursor: next}); err != nil {
+		if err = writeJSON(curPath, cursorRecord{Provider: c.ProviderName, Cursor: next}); err != nil {
 			return result, err
 		}
 		if err = fail(c, "cursor"); err != nil {

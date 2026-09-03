@@ -20,10 +20,11 @@ type Option struct {
 	Consequence string `json:"consequence"`
 }
 type Rejection struct {
-	Ref    MessageRef `json:"ref"`
-	Reason string     `json:"reason"`
-	At     time.Time  `json:"at"`
-	Posted bool       `json:"posted"`
+	Ref     MessageRef  `json:"ref"`
+	Reason  string      `json:"reason"`
+	At      time.Time   `json:"at"`
+	Posted  bool        `json:"posted"`
+	PostRef *MessageRef `json:"postRef"`
 }
 type Answer struct {
 	Text   string     `json:"text"`

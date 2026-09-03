@@ -4,7 +4,6 @@ package channel
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -76,17 +75,4 @@ func Scrub(problem string, secrets ...string) string {
 		}
 	}
 	return problem
-}
-
-type Factory func(DestinationConfig) (Provider, DestinationConfig, error)
-type Registry struct{ factories map[string]Factory }
-
-func NewRegistry() *Registry                        { return &Registry{factories: map[string]Factory{}} }
-func (r *Registry) Register(name string, f Factory) { r.factories[name] = f }
-func (r *Registry) Resolve(name string, cfg DestinationConfig) (Provider, DestinationConfig, error) {
-	f := r.factories[name]
-	if f == nil {
-		return nil, cfg, fmt.Errorf("unknown channel adapter %q", name)
-	}
-	return f(cfg)
 }

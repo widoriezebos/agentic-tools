@@ -1,0 +1,104 @@
+package fake_test
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
+)
+
+func serverBed(t *testing.T) (context.Context, string, func()) {
+	t.Helper()
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- fake.Serve(ctx, dir) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "base-url")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("fake did not start")
+		}
+		runtime.Gosched()
+	}
+	return ctx, dir, func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("fake did not stop")
+		}
+	}
+}
+
+func appendLine(t *testing.T, dir, line string) {
+	t.Helper()
+	f, err := os.OpenFile(filepath.Join(dir, "replies.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fmt.Fprintln(f, line); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTelegramFaceSharesTheCounter(t *testing.T) {
+	ctx, dir, stop := serverBed(t)
+	defer stop()
+	p, d, err := fake.TelegramProvider(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	posted, err := p.Post(ctx, d, "question", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendLine(t, dir, fmt.Sprintf(`{"face":"telegram","reply_to":%s,"user":7001,"text":"answer"}`, posted.ID))
+	got, _, err := p.Receive(ctx, d, []channel.MessageRef{posted}, "")
+	if err != nil || len(got) != 1 {
+		t.Fatal(got, err)
+	}
+	postID, _ := strconv.ParseInt(posted.ID, 10, 64)
+	replyID, _ := strconv.ParseInt(got[0].Ref.ID, 10, 64)
+	if replyID <= postID {
+		t.Fatalf("reply %d did not sort after post %d", replyID, postID)
+	}
+}
+
+func TestTelegramFaceSeparatesScriptRowsAndOtherChats(t *testing.T) {
+	ctx, dir, stop := serverBed(t)
+	defer stop()
+	slackProvider, slackDest, _ := fake.Provider(dir)
+	root, _ := slackProvider.Post(ctx, slackDest, "root", nil)
+	appendLine(t, dir, fmt.Sprintf(`{"thread_ts":%q,"user":"USLACK","text":"slack"}`, root.ID))
+	appendLine(t, dir, `{"face":"telegram","reply_to":1,"user":7001,"chat":2000,"text":"telegram"}`)
+	slackInbound, _, err := slackProvider.Receive(ctx, slackDest, []channel.MessageRef{root}, "")
+	if err != nil || len(slackInbound) != 1 || slackInbound[0].Text != "slack" {
+		t.Fatal(slackInbound, err)
+	}
+	base, _ := os.ReadFile(filepath.Join(dir, "base-url"))
+	d := channel.DestinationConfig{Token: "fake-telegram-token", APIBase: strings.TrimSpace(string(base)), Secrets: []string{"fake-telegram-token"}}
+	updates, err := telegram.New(nil).Peek(ctx, d)
+	if err != nil || len(updates) != 1 || updates[0].ChatID != 2000 || updates[0].Text != "telegram" {
+		t.Fatal(updates, err)
+	}
+}

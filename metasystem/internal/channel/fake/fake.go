@@ -13,38 +13,63 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/slack"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
 )
 
 func Provider(dir string) (channel.Provider, channel.DestinationConfig, error) {
+	return provider(dir, "slack")
+}
+
+func TelegramProvider(dir string) (channel.Provider, channel.DestinationConfig, error) {
+	return provider(dir, "telegram")
+}
+
+func provider(dir, face string) (channel.Provider, channel.DestinationConfig, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "base-url"))
-	if err != nil {
+	if err != nil || strings.TrimSpace(string(data)) == "" {
 		return nil, channel.DestinationConfig{}, channel.ErrUnconfigured("fake not serving")
 	}
 	base := strings.TrimSpace(string(data))
-	if base == "" {
-		return nil, channel.DestinationConfig{}, channel.ErrUnconfigured("fake not serving")
+	if face == "telegram" {
+		const token = "fake-telegram-token"
+		cfg := channel.DestinationConfig{Name: "fleet", Provider: "fake", APIBase: base, Token: token, ChannelID: "1000", Secrets: []string{token}}
+		return telegram.New(nil), cfg, nil
 	}
 	cfg := channel.DestinationConfig{Name: "fleet", Provider: "fake", APIBase: base, Token: "xoxb-fake", ChannelID: "CFAKE", Secrets: []string{"xoxb-fake"}}
 	return slack.New(nil), cfg, nil
 }
 
 type scripted struct {
+	Face     string `json:"face"`
 	ThreadTS string `json:"thread_ts"`
-	User     string `json:"user"`
+	User     any    `json:"user"`
 	Text     string `json:"text"`
+	ReplyTo  int64  `json:"reply_to"`
+	Chat     int64  `json:"chat"`
 }
-type assigned struct {
+
+type slackAssigned struct {
 	scripted
 	TS string
 }
+
+type telegramAssigned struct {
+	Scripted  scripted
+	UpdateID  int64
+	MessageID int64
+}
+
 type server struct {
-	dir      string
-	mu       sync.Mutex
-	counter  uint64
-	assigned []assigned
+	dir              string
+	mu               sync.Mutex
+	counter          uint64
+	loadedLines      int
+	slackAssigned    []slackAssigned
+	telegramAssigned []telegramAssigned
 }
 
 func Serve(ctx context.Context, dir string) error {
@@ -96,8 +121,14 @@ func writeRename(path string, data []byte) error {
 	return os.Rename(name, path)
 }
 
-func (s *server) nextTS() string { s.counter++; return fmt.Sprintf("%d.000000", s.counter) }
+func (s *server) nextID() int64  { s.counter++; return int64(s.counter) }
+func (s *server) nextTS() string { return fmt.Sprintf("%d.000000", s.nextID()) }
+
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/bot") {
+		s.serveTelegram(w, r)
+		return
+	}
 	_ = r.ParseForm()
 	method := strings.TrimPrefix(r.URL.Path, "/")
 	s.mu.Lock()
@@ -116,7 +147,45 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) journal(method string, form url.Values) error {
+func (s *server) serveTelegram(w http.ResponseWriter, r *http.Request) {
+	body := map[string]any{}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.journal(method, body)
+	w.Header().Set("Content-Type", "application/json")
+	switch method {
+	case "sendMessage":
+		id := s.nextID()
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"message_id": id, "chat": map[string]any{"id": intValue(body["chat_id"])}, "date": time.Now().Unix(), "text": stringValue(body["text"])}})
+	case "getUpdates":
+		s.telegramUpdates(w, body)
+	case "getMe":
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"id": 424242, "is_bot": true, "username": "fakebot"}})
+	default:
+		json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "unknown method " + method})
+	}
+}
+
+func intValue(v any) int64 {
+	switch value := v.(type) {
+	case float64:
+		return int64(value)
+	case string:
+		n, _ := strconv.ParseInt(value, 10, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func (s *server) journal(method string, form any) error {
 	f, err := os.OpenFile(filepath.Join(s.dir, "journal.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -137,15 +206,25 @@ func (s *server) loadNew() {
 	scanner := bufio.NewScanner(f)
 	index := 0
 	for scanner.Scan() {
-		var row scripted
-		if json.Unmarshal(scanner.Bytes(), &row) != nil {
+		if index < s.loadedLines {
+			index++
 			continue
 		}
-		if index >= len(s.assigned) {
-			s.assigned = append(s.assigned, assigned{scripted: row, TS: s.nextTS()})
+		var row scripted
+		if json.Unmarshal(scanner.Bytes(), &row) == nil {
+			switch row.Face {
+			case "":
+				s.slackAssigned = append(s.slackAssigned, slackAssigned{scripted: row, TS: s.nextTS()})
+			case "telegram":
+				if row.Chat == 0 {
+					row.Chat = 1000
+				}
+				s.telegramAssigned = append(s.telegramAssigned, telegramAssigned{Scripted: row, UpdateID: s.nextID(), MessageID: s.nextID()})
+			}
 		}
 		index++
 	}
+	s.loadedLines = index
 }
 
 func (s *server) replies(w http.ResponseWriter, form url.Values) {
@@ -158,9 +237,9 @@ func (s *server) replies(w http.ResponseWriter, form url.Values) {
 	}
 	offset, _ := strconv.Atoi(form.Get("cursor"))
 	messages := []map[string]string{{"ts": root, "user": "UFAKEBOT", "text": "root"}}
-	for _, row := range s.assigned {
+	for _, row := range s.slackAssigned {
 		if row.ThreadTS == root && (oldest == "" || row.TS >= oldest) {
-			messages = append(messages, map[string]string{"ts": row.TS, "user": row.User, "text": row.Text})
+			messages = append(messages, map[string]string{"ts": row.TS, "user": stringValue(row.User), "text": row.Text})
 		}
 	}
 	if offset > len(messages) {
@@ -175,4 +254,28 @@ func (s *server) replies(w http.ResponseWriter, form url.Values) {
 		next = strconv.Itoa(end)
 	}
 	json.NewEncoder(w).Encode(map[string]any{"ok": true, "messages": messages[offset:end], "response_metadata": map[string]string{"next_cursor": next}})
+}
+
+func (s *server) telegramUpdates(w http.ResponseWriter, body map[string]any) {
+	s.loadNew()
+	offset := intValue(body["offset"])
+	limit := int(intValue(body["limit"]))
+	if limit <= 0 {
+		limit = 100
+	}
+	updates := make([]map[string]any, 0, limit)
+	for _, row := range s.telegramAssigned {
+		if row.UpdateID < offset {
+			continue
+		}
+		message := map[string]any{"message_id": row.MessageID, "date": time.Now().Unix(), "text": row.Scripted.Text, "chat": map[string]any{"id": row.Scripted.Chat}, "from": map[string]any{"id": intValue(row.Scripted.User), "is_bot": false}}
+		if row.Scripted.ReplyTo != 0 {
+			message["reply_to_message"] = map[string]any{"message_id": row.Scripted.ReplyTo}
+		}
+		updates = append(updates, map[string]any{"update_id": row.UpdateID, "message": message})
+		if len(updates) == limit {
+			break
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": updates})
 }

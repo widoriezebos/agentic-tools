@@ -84,4 +84,48 @@ opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history
   --elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 >/dev/null
 [[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 
+"$ms" goal done --root "$repo" --id channel-fixture --conclude 'Slack fixture passed.' >/dev/null
+rm -f "$repo/artifacts/agents/channel/fleet/cursor.json"
+cat >>"$repo/metasystem.conf.local" <<CONF
+channel.destination.fleet.fake.face=telegram
+channel.destination.fleet.telegram.api-base=$(<"$fake_dir/base-url")
+channel.human.telegram.user-id=7001
+CONF
+export METASYSTEM_CHANNEL_DESTINATION_FLEET_TELEGRAM_BOT_TOKEN=fake-telegram-token
+"$ms" channel status --root "$repo" --post >"$bed/telegram-status.out"
+grep -q '"method":"sendMessage"' "$fake_dir/journal.jsonl"
+
+"$ms" goal open --root "$repo" --id channel-telegram-fixture \
+  --intent 'Prove the Telegram fleet channel fixture.' --next 'Ask for authority.' >/dev/null
+telegram_qid=$("$ms" channel ask --root "$repo" --goal channel-telegram-fixture --kind budget-above-norm \
+  --fact 'Approve a one-hour Telegram fixture budget.' --option 'approve: continue the fixture' \
+  --recommend approve --wants 'goal=channel-telegram-fixture minutes=60 goalRevision=3')
+telegram_root=$(python3 - "$repo/artifacts/agents/channel/questions/$telegram_qid.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))['thread']['id'])
+PY
+)
+printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"approve"}\n' "$telegram_root" >>"$fake_dir/replies.jsonl"
+"$ms" channel telegram peek --root "$repo" >"$bed/telegram-peek.out"
+grep -q '^chat=1000 user=7001 text=approve$' "$bed/telegram-peek.out"
+"$ms" channel poll --root "$repo" >/dev/null
+grep -q 'not recorded: no code' "$fake_dir/journal.jsonl"
+telegram_receipt=$(python3 - "$repo/artifacts/agents/channel/questions/$telegram_qid.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))['rejected'][-1]['postRef']['id'])
+PY
+)
+telegram_code=$("$ms" channel fake code --secret "$secret" --at "$(( $(date +%s) + 30 ))")
+printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"approve %s"}\n' "$telegram_receipt" "$telegram_code" >>"$fake_dir/replies.jsonl"
+"$ms" channel poll --root "$repo" >"$bed/telegram-poll.out"
+telegram_tip=$(git --git-dir "$bed/origin.git" rev-parse refs/heads/main)
+telegram_history=$(git --git-dir "$bed/origin.git" show "$telegram_tip:metasystem/plans/goals/channel-telegram-fixture.md")
+grep -q 'answer actor=human:wido' <<<"$telegram_history"
+grep -q 'recorded as your word on channel telegram fixture' "$fake_dir/journal.jsonl"
+telegram_opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$telegram_history")
+[[ -n "$telegram_opid" ]]
+"$ms" goal claim --root "$repo" --id channel-telegram-fixture --approved-ref "$telegram_opid" \
+  --elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 >/dev/null
+[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
+
 echo "channel fixtures: PASSED"

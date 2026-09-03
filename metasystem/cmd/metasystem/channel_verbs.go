@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -14,80 +13,11 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
-	channelSlack "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/slack"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	channelTelegram "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-func conf(root, key, def string) (string, error) {
-	v, code, err := config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(root, "metasystem.conf"), Default: def, DefaultSet: def != ""})
-	if code != 0 {
-		return "", err
-	}
-	return v, nil
-}
-func secret(root, key string) (string, error) {
-	if v, ok := os.LookupEnv(config.EnvName(key)); ok {
-		return v, nil
-	}
-	path := filepath.Join(root, "metasystem.conf")
-	if v, ok, err := config.ConfLookup(path+".local", key); err == nil && ok {
-		return v, nil
-	}
-	if v, ok, _ := config.ConfLookup(path, key); ok && v != "" {
-		return "", fmt.Errorf("committed secret setting %s is ignored", key)
-	}
-	return "", fmt.Errorf("no value configured for %s", key)
-}
-
-type loadedChannel struct {
-	provider            channel.Provider
-	dest                channel.DestinationConfig
-	adapter, user, totp string
-}
-
-func loadChannel(root string, withHuman bool) (loadedChannel, error) {
-	adapter, err := conf(root, "channel.destination.fleet.adapter", "")
-	if err != nil {
-		return loadedChannel{}, channel.ErrUnconfigured("fleet channel is not configured")
-	}
-	var p channel.Provider
-	var d channel.DestinationConfig
-	switch adapter {
-	case "fake":
-		dir, e := conf(root, "channel.destination.fleet.fake.dir", "")
-		if e != nil {
-			return loadedChannel{}, channel.ErrUnconfigured("fake not serving")
-		}
-		p, d, err = channelFake.Provider(dir)
-	case "slack":
-		cid, e := conf(root, "channel.destination.fleet.slack.channel-id", "")
-		if e != nil {
-			return loadedChannel{}, e
-		}
-		token, e := secret(root, "channel.destination.fleet.slack.bot-token")
-		if e != nil {
-			return loadedChannel{}, e
-		}
-		base, _ := conf(root, "channel.destination.fleet.slack.api-base", "https://slack.com/api")
-		d = channel.DestinationConfig{Name: "fleet", Provider: "slack", ChannelID: cid, Token: token, APIBase: base, Secrets: []string{token}}
-		p = channelSlack.New(nil)
-	default:
-		return loadedChannel{}, fmt.Errorf("unknown channel adapter %q", adapter)
-	}
-	l := loadedChannel{provider: p, dest: d, adapter: adapter}
-	if withHuman {
-		l.user, err = conf(root, "channel.human.slack.user-id", "")
-		if err != nil {
-			return l, err
-		}
-		l.totp, err = secret(root, "channel.human.totp-secret")
-		if err != nil {
-			return l, err
-		}
-	}
-	return l, err
-}
 func channelIdentity(root string) (string, string, error) {
 	m, err := goal.ResolveMachine(root)
 	if err != nil {
@@ -118,14 +48,17 @@ func runChannelStatus(args []string) int {
 	}
 	fmt.Println(text)
 	if *post {
-		l, e := loadChannel(*root, false)
+		l, e := phase.Load(*root, false)
 		if e != nil {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
 		}
+		if l.Provider == nil {
+			return 0
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		ref, e := l.provider.Post(ctx, l.dest, text, nil)
+		ref, e := l.Provider.Post(ctx, l.Destination, text, nil)
 		if e != nil {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
@@ -178,14 +111,14 @@ func runChannelAsk(args []string) int {
 		}
 		opts = append(opts, channel.Option{Label: strings.TrimSpace(label), Consequence: strings.TrimSpace(consequence)})
 	}
-	l, e := loadChannel(*root, false)
+	l, e := phase.Load(*root, false)
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
-		l = loadedChannel{}
+		l = phase.Loaded{}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Provider: l.provider, Destination: l.dest, Now: time.Now()})
+	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Provider: l.Provider, Destination: l.Destination, Now: time.Now()})
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		return 1
@@ -250,10 +183,13 @@ func runChannelPoll(args []string) int {
 	if f.Parse(args) != nil {
 		return 2
 	}
-	l, err := loadChannel(*root, true)
+	l, err := phase.Load(*root, true)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if l.Provider == nil {
+		return 0
 	}
 	machine, lineage, err := channelIdentity(*root)
 	if err != nil {
@@ -262,7 +198,7 @@ func runChannelPoll(args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	r, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: *root, Destination: "fleet", ProviderName: l.adapter, HumanUserID: l.user, TOTPSecret: l.totp, Machine: machine, Lineage: lineage, Provider: l.provider, DestinationConfig: l.dest, Now: time.Now()})
+	r, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: *root, Destination: "fleet", ProviderName: l.Adapter, HumanUserID: l.HumanUserID, TOTPSecret: l.TOTPSecret, Machine: machine, Lineage: lineage, Provider: l.Provider, DestinationConfig: l.Destination, Now: time.Now()})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -282,8 +218,8 @@ func runChannelClose(args []string) int {
 	if f.Parse(args) != nil || *id == "" || *because == "" {
 		return 2
 	}
-	l, _ := loadChannel(*root, false)
-	if err := channel.Close(*root, *id, *because, l.provider, l.dest); err != nil {
+	l, _ := phase.Load(*root, false)
+	if err := channel.Close(*root, *id, *because, l.Provider, l.Destination); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -339,4 +275,43 @@ func runChannelFake(args []string) int {
 		fmt.Fprintf(os.Stderr, "unknown channel fake verb %q\n", args[0])
 		return 2
 	}
+}
+
+func runChannelTelegram(args []string) int {
+	if len(args) == 0 || args[0] != "peek" {
+		fmt.Fprintln(os.Stderr, "channel telegram needs peek")
+		return 2
+	}
+	f := flag.NewFlagSet("channel telegram peek", flag.ContinueOnError)
+	root := f.String("root", ".", "repository root")
+	if f.Parse(args[1:]) != nil {
+		return 2
+	}
+	const tokenKey = phase.TelegramBotTokenKey
+	token, err := phase.Secret(*root, tokenKey)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, channel.ErrUnconfigured(tokenKey+": "+err.Error()))
+		return 1
+	}
+	base, err := phase.Get(*root, phase.TelegramAPIBaseKey, "https://api.telegram.org")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	dest := channel.DestinationConfig{Provider: "telegram", Token: token, APIBase: base, Secrets: []string{token}}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	updates, err := channelTelegram.New(nil).Peek(ctx, dest)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, update := range updates {
+		text := []rune(update.Text)
+		if len(text) > 40 {
+			text = text[:40]
+		}
+		fmt.Printf("chat=%d user=%d text=%s\n", update.ChatID, update.UserID, string(text))
+	}
+	return 0
 }

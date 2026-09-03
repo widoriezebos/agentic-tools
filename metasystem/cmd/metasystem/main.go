@@ -398,6 +398,7 @@ func families() []family {
 				{"poll", "receive and durably disposition replies", runChannelPoll},
 				{"close", "withdraw one question", runChannelClose},
 				{"fake", "fixture-only fake serve and code verbs", runChannelFake},
+				{"telegram", "inspect pending Telegram bot updates", runChannelTelegram},
 			},
 		},
 		{

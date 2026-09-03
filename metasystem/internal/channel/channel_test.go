@@ -17,15 +17,18 @@ import (
 )
 
 type testProvider struct {
-	inbound    []Inbound
-	cursor     Cursor
-	posts      []string
-	receives   int
-	beforePost func()
-	failPosts  int
+	inbound     []Inbound
+	cursor      Cursor
+	posts       []string
+	postThreads []*MessageRef
+	threads     []MessageRef
+	after       Cursor
+	receives    int
+	beforePost  func()
+	failPosts   int
 }
 
-func (p *testProvider) Post(_ context.Context, _ DestinationConfig, text string, _ *MessageRef) (MessageRef, error) {
+func (p *testProvider) Post(_ context.Context, _ DestinationConfig, text string, thread *MessageRef) (MessageRef, error) {
 	if p.beforePost != nil {
 		p.beforePost()
 	}
@@ -34,10 +37,21 @@ func (p *testProvider) Post(_ context.Context, _ DestinationConfig, text string,
 		return MessageRef{}, errors.New("post failed")
 	}
 	p.posts = append(p.posts, text)
-	return MessageRef{ID: fmt.Sprintf("%d", len(p.posts)), ThreadID: fmt.Sprintf("%d", len(p.posts))}, nil
+	p.postThreads = append(p.postThreads, thread)
+	id := fmt.Sprintf("%d", len(p.posts))
+	root := id
+	if thread != nil {
+		root = thread.ThreadID
+		if root == "" {
+			root = thread.ID
+		}
+	}
+	return MessageRef{ID: id, ThreadID: root}, nil
 }
-func (p *testProvider) Receive(context.Context, DestinationConfig, []MessageRef, Cursor) ([]Inbound, Cursor, error) {
+func (p *testProvider) Receive(_ context.Context, _ DestinationConfig, threads []MessageRef, after Cursor) ([]Inbound, Cursor, error) {
 	p.receives++
+	p.threads = append([]MessageRef(nil), threads...)
+	p.after = after
 	return p.inbound, p.cursor, nil
 }
 func (p *testProvider) Credential(context.Context, DestinationConfig) (CredentialIdentity, error) {
@@ -324,6 +338,127 @@ func TestTickChannelPassBound(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("partial pass advanced cursor")
+	}
+}
+
+func TestPollPassesEveryPostedRefWithItsRoot(t *testing.T) {
+	root := t.TempDir()
+	q := Question{
+		ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "10", ThreadID: "10"},
+		Rejected: []Rejection{{Ref: MessageRef{ID: "11", ThreadID: "10"}, PostRef: &MessageRef{ID: "12", ThreadID: "wrong"}}},
+	}
+	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+		t.Fatal(err)
+	}
+	p := &testProvider{}
+	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", Provider: p}); err != nil {
+		t.Fatal(err)
+	}
+	want := []MessageRef{{ID: "10", ThreadID: "10"}, {ID: "12", ThreadID: "10"}}
+	if fmt.Sprint(p.threads) != fmt.Sprint(want) {
+		t.Fatalf("threads=%+v want=%+v", p.threads, want)
+	}
+}
+
+func TestRejectionRecordsItsPostRef(t *testing.T) {
+	root := t.TempDir()
+	q := Question{ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "10", ThreadID: "10"}}
+	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+		t.Fatal(err)
+	}
+	p := &testProvider{inbound: []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "stranger"}}}
+	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "human", TOTPSecret: "JBSWY3DPEHPK3PXP", Provider: p}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := ReadQuestion(root, q.ID)
+	if len(got.Rejected) != 1 || got.Rejected[0].PostRef == nil || got.Rejected[0].PostRef.ThreadID != "10" {
+		t.Fatalf("rejection=%+v", got.Rejected)
+	}
+}
+
+func rejectionCrashCase(t *testing.T, point string, wantPosts int) {
+	t.Helper()
+	root := t.TempDir()
+	q := Question{ID: "q", Goal: "g", State: "open", Thread: &MessageRef{ID: "10", ThreadID: "10"}}
+	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+		t.Fatal(err)
+	}
+	p := &testProvider{inbound: []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "stranger"}}}
+	fired := false
+	cfg := PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "human", TOTPSecret: "JBSWY3DPEHPK3PXP", Provider: p, FailurePoint: func(got string) error {
+		if got == point && !fired {
+			fired = true
+			return errors.New("injected crash")
+		}
+		return nil
+	}}
+	if _, err := Poll(context.Background(), cfg); err == nil {
+		t.Fatal("crash did not fire")
+	}
+	cfg.FailurePoint = nil
+	if _, err := Poll(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := ReadQuestion(root, q.ID)
+	if len(got.Rejected) != 1 || len(p.posts) != wantPosts {
+		t.Fatalf("rejections=%+v posts=%v", got.Rejected, p.posts)
+	}
+}
+
+func TestRejectionReceiptPostRecordCrashIsDispositionSafe(t *testing.T) {
+	t.Run("after record", func(t *testing.T) { rejectionCrashCase(t, "rejection-recorded", 0) })
+	t.Run("after post", func(t *testing.T) { rejectionCrashCase(t, "rejection-posted", 1) })
+}
+
+func TestEveryInvalidInboundRefIsAnsweredAtMostOnceAcrossRecordBeforePostCrash(t *testing.T) {
+	for _, tc := range []struct {
+		point string
+		posts int
+	}{{"rejection-recorded", 0}, {"rejection-posted", 1}} {
+		t.Run(tc.point, func(t *testing.T) { rejectionCrashCase(t, tc.point, tc.posts) })
+	}
+}
+
+func TestTelegramCrashAfterMatchedDoesNotRedisposeReplyAsUnmatched(t *testing.T) {
+	root, p, _, now := pollLedgerBed(t)
+	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "22", ThreadID: "20"}, ThreadID: "1", UserID: "UWIDO", Text: "yes " + code}}
+	cfg := pollBedConfig(root, p, now)
+	cfg.FailurePoint = func(point string) error {
+		if point == "matched" {
+			return errors.New("injected crash")
+		}
+		return nil
+	}
+	if _, err := Poll(context.Background(), cfg); err == nil {
+		t.Fatal("matched crash did not fire")
+	}
+	cfg.FailurePoint = nil
+	if _, err := Poll(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl")
+	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) != 0 {
+		t.Fatalf("matched reply became unmatched: %s", b)
+	}
+}
+
+func TestCursorFromAnotherProviderIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")
+	if err := writeJSON(path, cursorRecord{Provider: "slack", Cursor: "slack-cursor"}); err != nil {
+		t.Fatal(err)
+	}
+	p := &testProvider{cursor: "telegram-cursor"}
+	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "telegram", Provider: p}); err != nil {
+		t.Fatal(err)
+	}
+	if p.after != "" {
+		t.Fatalf("foreign cursor passed to provider: %q", p.after)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(b), `"provider": "telegram"`) {
+		t.Fatal(string(b), err)
 	}
 }
 func TestAuthenticatedChannelHistoryRoundTrip(t *testing.T) {

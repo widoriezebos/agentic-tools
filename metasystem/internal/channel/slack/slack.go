@@ -101,11 +101,16 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, t
 		return nil, after, err
 	}
 	var inbound []channel.Inbound
+	seenRoots := map[string]bool{}
 	for _, thread := range threads {
 		root := thread.ThreadID
 		if root == "" {
 			root = thread.ID
 		}
+		if seenRoots[root] {
+			continue
+		}
+		seenRoots[root] = true
 		page := ""
 		for {
 			f := url.Values{"channel": {dest.ChannelID}, "ts": {root}, "limit": {"200"}}
