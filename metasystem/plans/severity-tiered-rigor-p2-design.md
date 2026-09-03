@@ -196,3 +196,15 @@ the findings:
 - Slice 2b, the material stop and the close: revision 3's part two,
   unchanged. Parts one and three stay under severity-tiered-rigor (m2);
   part four's docs land with 2b and name the four questions.
+
+### Revision 4.2 (2026-09-03 22:40 local): three part-two gaps answered
+
+The slice-2b build stopped on the three binding gaps part one's brief
+had recorded for part two (STR3-03 declared-outputs contract, STR3-04
+obligation wire, STR3-05 accepted-risk transition). The answers are in
+plans/severity-tiered-rigor-p2-build-2b-gap-brief.md and amend the
+parent design's 07, 10 and 09: a byte grammar and parser for the
+outputs file bound to the design blob (the equality with the build list
+stays a review check, not a proof); Go-quoted obligation values; a
+`goal accept-risk` verb under human proof whose accepted entries leave
+the unresolved set before the close table is read.
