@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -84,7 +85,7 @@ func TestContractValidationRejectsNonCanonicalCap(t *testing.T) {
 
 func TestAuthorizeCapUsesPairCap(t *testing.T) {
 	repo, mission := fenceEnv(t)
-	result, err := AuthorizeCap(repo, mission, "job-1", "codex", "gpt-5-6-sol", nil)
+	result, err := AuthorizeCap(repo, mission, "job-1", "codex", "gpt-5-6-sol", "", nil)
 	if err != nil {
 		t.Fatalf("authorize should succeed: %v", err)
 	}
@@ -105,9 +106,47 @@ func TestAuthorizeCapUsesPairCap(t *testing.T) {
 func TestAuthorizeCapRefusesAboveSigned(t *testing.T) {
 	repo, mission := fenceEnv(t)
 	requested := 300
-	if _, err := AuthorizeCap(repo, mission, "job-1", "codex", "gpt-5-6-sol", &requested); err == nil ||
+	if _, err := AuthorizeCap(repo, mission, "job-1", "codex", "gpt-5-6-sol", "", &requested); err == nil ||
 		!strings.Contains(err.Error(), "above signed") {
 		t.Fatalf("a request above the signed cap must be refused, got %v", err)
+	}
+}
+
+func TestFMA_R2_MissionCapSourceBypass(t *testing.T) {
+	repo, mission := fenceEnv(t)
+	contract := strings.Replace(fenceContract,
+		"cap.min.codex.gpt-5-6-sol=180",
+		"cap.min.claude.claude-fable-5=30", 1)
+	contractPath := filepath.Join(repo, "plans", "mission-demo.contract.md")
+	writeText(t, contractPath, contract)
+	fencesPath := filepath.Join(missionDir(repo, mission), "fences.json")
+	fences, err := readJSONObjectFile(fencesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fences["approvedContractSha256"] = sha256Hex(contract)
+	if err := atomicWriteJSON(fencesPath, fences); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := AuthorizeCap(repo, mission, "job-source", "claude", "claude-fable-5-1", "claude-fable-5", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capMin, _ := intValue(result["capMin"]); capMin != 30 {
+		t.Fatalf("source pair authorized %d minutes, want 30 rather than the general mission cap", capMin)
+	}
+	source, _ := result["source"].(map[string]any)
+	if source["rule"] != "contract-pair" {
+		t.Fatalf("source pair rule = %v, want contract-pair", source)
+	}
+
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	writeText(t, conf, "metasystem.runtimes=claude\n")
+	t.Setenv("METASYSTEM_CAP_MIN_CLAUDE_CLAUDE_FABLE_5", "30")
+	if err := dispatchcore.RefuseUnsignedMissionCap(conf, "implementer", "claude", "claude-fable-5-1", "claude-fable-5"); err == nil ||
+		!strings.Contains(err.Error(), "unsigned env key cap.min.claude.claude-fable-5") {
+		t.Fatalf("unsigned source-only mission cap was not refused: %v", err)
 	}
 }
 
@@ -496,7 +535,7 @@ func TestFenceRefusalNamesAFailedAskWrite(t *testing.T) {
 // not keep counting against fence.jobs or hold a concurrency slot.
 func TestReleaseJobFreesAHuskedReservation(t *testing.T) {
 	repo, mission := fenceEnv(t)
-	if _, err := AuthorizeCap(repo, mission, "husk-1", "codex", "gpt-5-6-sol", nil); err != nil {
+	if _, err := AuthorizeCap(repo, mission, "husk-1", "codex", "gpt-5-6-sol", "", nil); err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
 	fences, _ := readJSONObjectFile(filepath.Join(missionDir(repo, mission), "fences.json"))
@@ -527,7 +566,7 @@ func TestAuthorizeCapRefusesPinnedContractDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeText(t, contractPath, strings.Replace(string(data), "fence.cycles=", "fence.cycles=9", 1))
-	if _, err := AuthorizeCap(repo, mission, "job-drift", "codex", "gpt-5-6-sol", nil); err == nil ||
+	if _, err := AuthorizeCap(repo, mission, "job-drift", "codex", "gpt-5-6-sol", "", nil); err == nil ||
 		!strings.Contains(err.Error(), "approvedContractSha256") {
 		t.Fatalf("a drifted pinned contract must refuse naming the pin, got %v", err)
 	}
@@ -543,7 +582,7 @@ func TestAuthorizeCapRefusesWhitespaceOnlyDrift(t *testing.T) {
 	// Raw-file hashing deliberately sees what the canonical approval digest
 	// ignores: a trailing-whitespace-only edit still drifts the pin.
 	writeText(t, contractPath, string(data)+"  \n")
-	if _, err := AuthorizeCap(repo, mission, "job-ws", "codex", "gpt-5-6-sol", nil); err == nil ||
+	if _, err := AuthorizeCap(repo, mission, "job-ws", "codex", "gpt-5-6-sol", "", nil); err == nil ||
 		!strings.Contains(err.Error(), "approvedContractSha256") {
 		t.Fatalf("a whitespace-only drift must refuse naming the pin, got %v", err)
 	}

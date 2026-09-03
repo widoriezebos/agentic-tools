@@ -430,7 +430,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		ParentJob: "job-b", Snapshot: "artifacts/agents/capabilities/x.json",
 		Fallbacks: "[]", Signal: true, HandshakeBudget: 20, ResumeMode: "resumed",
 		InputBytes: 3, InputHash: "h2", MainID: "main-1", ClaimEpoch: "7",
-		CapResolution:    capResolution,
+		CapResolution: capResolution, Model: "m1",
 		DestructiveReach: HazardMechanical,
 		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 	})
@@ -551,7 +551,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	base := BuildRecordParams{
 		Output: filepath.Join(tmp, "r.json"), Job: "j1", Role: "implementer",
 		Runtime: "fake", Workspace: workspace, CapResolution: capResolution,
-		Permissions: permissions, Fallbacks: "[]", Root: root,
+		Permissions: permissions, Fallbacks: "[]", Root: root, Model: "fake-model",
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 		DestructiveReach: HazardMechanical,
 		ReasoningEffort:  "medium",
@@ -591,7 +591,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	follow := BuildFollowRecordParams{
 		Output: filepath.Join(tmp, "f.json"), Parent: parentPath, Job: "j1-r2",
 		Round: 2, ParentJob: "j1", Fallbacks: "[]", ResumeMode: "fresh-context",
-		CapResolution: capResolution, Root: root, MissionTurn: "m-one-t2",
+		CapResolution: capResolution, Model: "fake-model", Root: root, MissionTurn: "m-one-t2",
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
 		DestructiveReach: HazardMechanical,
 	}

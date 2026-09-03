@@ -51,7 +51,7 @@ func TestO13ProvenanceLifecycleGoalSurvivesTerminalAndFollowUp(t *testing.T) {
 	if err := BuildFollowRecord(BuildFollowRecordParams{
 		Output: followFile, Parent: filepath.Join(root, "artifacts", "agents", "jobs", "root-job.json"),
 		Job: "root-job-r2", Round: 2, ParentJob: "root-job", Fallbacks: "[]",
-		ResumeMode: "fresh-context", CapResolution: capFile, Root: root,
+		ResumeMode: "fresh-context", CapResolution: capFile, Model: "fake-model", Root: root,
 		MainID: "main-1", ClaimEpoch: "5", GoalRevision: 2,
 		DestructiveReach: HazardMechanical,
 		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",

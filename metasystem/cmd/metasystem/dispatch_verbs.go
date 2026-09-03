@@ -175,6 +175,7 @@ func runDispatchClaimLaunch(args []string) int {
 	resumedSession := flags.String("resumed-session", "", "runtime session id resumed by a follow-up")
 	runtimeName := flags.String("runtime", "", "runtime name")
 	model := flags.String("model", "", "requested model name")
+	aliasSource := flags.String("alias-source", "", "canonical model alias source (optional)")
 	role := flags.String("role", "", "dispatch role")
 	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
 	permissionDigest := flags.String("permission-envelope-digest", "", "requested permission envelope SHA-256")
@@ -231,7 +232,7 @@ func runDispatchClaimLaunch(args []string) int {
 		confPath = filepath.Join(*root, "metasystem.conf")
 	}
 	modelKey := config.CanonicalModel(*model)
-	resolvedCap, _, _, err := dispatchcore.ResolveCap(confPath, *role, *runtimeName, modelKey, *capMin)
+	resolvedCap, _, _, err := dispatchcore.ResolveCap(confPath, *role, *runtimeName, modelKey, *aliasSource, *capMin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -738,6 +739,31 @@ func runDispatchResolveRoster(args []string) int {
 	return 0
 }
 
+func runDispatchResolveModelAlias(args []string) int {
+	flags := flag.NewFlagSet("job resolve-model-alias", flag.ContinueOnError)
+	conf := flags.String("conf", "", "path to metasystem.conf")
+	runtimeName := flags.String("runtime", "", "resolved runtime")
+	model := flags.String("model", "", "model identifier")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *conf == "" || *runtimeName == "" || *model == "" {
+		fmt.Fprintln(os.Stderr, "job resolve-model-alias: --conf, --runtime, and --model are required")
+		return 2
+	}
+	canonical, aliased, err := config.ResolveModelAlias(*conf, *runtimeName, *model)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	var source any
+	if aliased {
+		source = *model
+	}
+	printJSON(map[string]any{"model": canonical, "aliasedFrom": source})
+	return 0
+}
+
 func runDispatchBuildRecord(args []string) int {
 	flags := flag.NewFlagSet("job build-record", flag.ContinueOnError)
 	var p dispatchcore.BuildRecordParams
@@ -752,6 +778,8 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.Workspace, "workspace", "", "job workspace root")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Model, "model", "", "requested model")
+	flags.StringVar(&p.AliasedFrom, "aliased-from", "", "effective model alias source (optional)")
+	flags.StringVar(&p.RosterAliasedFrom, "roster-aliased-from", "", "roster model alias source (optional)")
 	flags.StringVar(&p.ReasoningEffort, "reasoning-effort", "", "requested reasoning effort (optional)")
 	overridden := strictBool(flags, "overridden", "true", "false", "true when runtime or model was overridden")
 	flags.StringVar(&p.Snapshot, "snapshot", "", "capability snapshot path")
@@ -815,6 +843,8 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
+	flags.StringVar(&p.Model, "model", "", "canonical requested model")
+	flags.StringVar(&p.AliasedFrom, "aliased-from", "", "model alias source (optional)")
 	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
@@ -826,8 +856,8 @@ func runDispatchBuildFollowRecord(args []string) int {
 		return 2
 	}
 	if p.Output == "" || p.Parent == "" || p.Job == "" || p.OperationID == "" || p.Round < 2 || p.ParentJob == "" ||
-		p.Fallbacks == "" || p.ResumeMode == "" || p.CapResolution == "" || p.OutputStream == "" || p.Composition == "" || *launchMode == "" {
-		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --operation-id, --round (>=2), --parent-job, --fallbacks, --resume-mode, --cap-resolution, --composition, --launch-mode, and --output-stream are required")
+		p.Fallbacks == "" || p.ResumeMode == "" || p.CapResolution == "" || p.Model == "" || p.OutputStream == "" || p.Composition == "" || *launchMode == "" {
+		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --operation-id, --round (>=2), --parent-job, --fallbacks, --resume-mode, --cap-resolution, --model, --composition, --launch-mode, and --output-stream are required")
 		return 2
 	}
 	p.Signal = *signal
@@ -1476,6 +1506,7 @@ func runDispatchResolveCap(args []string) int {
 	role := flags.String("role", "", "dispatch role")
 	runtime := flags.String("runtime", "", "resolved runtime")
 	model := flags.String("model", "", "canonical model")
+	aliasSource := flags.String("alias-source", "", "canonical model alias source (optional)")
 	requested := flags.String("requested", "", "explicit cap-min argument (optional)")
 	mission := flags.Bool("mission", false, "only refuse unsigned mission cap overrides")
 	output := flags.String("output", "", "cap-resolution output file (non-mission)")
@@ -1487,7 +1518,7 @@ func runDispatchResolveCap(args []string) int {
 		return 2
 	}
 	if *mission {
-		if err := dispatchcore.RefuseUnsignedMissionCap(*conf, *role, *runtime, *model); err != nil {
+		if err := dispatchcore.RefuseUnsignedMissionCap(*conf, *role, *runtime, *model, *aliasSource); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -1497,7 +1528,7 @@ func runDispatchResolveCap(args []string) int {
 		fmt.Fprintln(os.Stderr, "job resolve-cap: --output is required without --mission")
 		return 2
 	}
-	capMin, rule, origin, err := dispatchcore.ResolveCap(*conf, *role, *runtime, *model, *requested)
+	capMin, rule, origin, err := dispatchcore.ResolveCap(*conf, *role, *runtime, *model, *aliasSource, *requested)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

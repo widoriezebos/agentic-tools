@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -15,4 +16,23 @@ var nonModelChar = regexp.MustCompile(`[^a-z0-9]+`)
 func CanonicalModel(name string) string {
 	lowered := strings.ToLower(strings.TrimSpace(name))
 	return strings.Trim(nonModelChar.ReplaceAllString(lowered, "-"), "-")
+}
+
+// ResolveModelAlias resolves a configured model-family pointer. Alias keys are
+// committed policy outside fixture-authorized roots, so machine-local and
+// environment values are refused by the same origin rule as budget law.
+func ResolveModelAlias(confPath, runtime, model string) (canonical string, aliased bool, err error) {
+	if model == "" || model != CanonicalModel(model) {
+		return model, false, nil
+	}
+	key := fmt.Sprintf("runtime.%s.model-alias.%s", runtime, model)
+	target, err := budgetLawValue(confPath, key, model)
+	if err != nil {
+		return "", false, err
+	}
+	origin, err := KeyOrigin(GetParams{Key: key, ConfPath: confPath})
+	if err != nil {
+		return "", false, err
+	}
+	return target, origin != "default", nil
 }

@@ -283,6 +283,69 @@ func TestHazardConfigurationUsesResolvedLocalMaximalModelMapping(t *testing.T) {
 	}
 }
 
+func TestFMA_R2_ClaudeGateFixtureOmitted(t *testing.T) {
+	sourceRoot := compositionRepoRoot(t)
+	root := t.TempDir()
+	for _, relative := range []string{
+		"scripts/agents/role-packets.json",
+		"scripts/agents/roles/verifier.md",
+		"skills/verify/SKILL.md",
+		"scripts/agents/schemas/verifier.schema.json",
+	} {
+		content, err := os.ReadFile(filepath.Join(sourceRoot, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conf := filepath.Join(root, "metasystem.conf")
+	withAlias := "metasystem.runtimes=claude\n" +
+		"runtime.claude.maximal-models=claude-fable-5-1\n" +
+		"runtime.claude.model-alias.claude-fable-5=claude-fable-5-1\n" +
+		"role.verifier.runtime=claude\nrole.verifier.model.claude=claude-fable-5\n"
+	if err := os.WriteFile(conf, []byte(withAlias), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolution, err := ResolveRoster(RosterParams{ConfPath: conf, Role: "verifier"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Model != "claude-fable-5-1" || resolution.AliasedFrom != "claude-fable-5" {
+		t.Fatalf("alias roster resolution = %+v", resolution)
+	}
+	if err := ValidateRuntimeHazardConfiguration(root, resolution.Runtime, resolution.Model, HazardDesignBearing); err != nil {
+		t.Fatalf("resolved target failed the Claude maximal gate: %v", err)
+	}
+
+	withoutAlias := strings.Replace(withAlias, "runtime.claude.model-alias.claude-fable-5=claude-fable-5-1\n", "", 1)
+	if err := os.WriteFile(conf, []byte(withoutAlias), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolution, err = ResolveRoster(RosterParams{ConfPath: conf, Role: "verifier"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief := filepath.Join(root, "brief.md")
+	if err := os.WriteFile(brief, []byte("Verify the focused behavior.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = ComposeRolePacket(ComposeRolePacketParams{
+		Root: root, Role: "verifier", Brief: brief, JobID: "alias-gate", Runtime: resolution.Runtime,
+		Model: resolution.Model, ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardDesignBearing,
+		Output: filepath.Join(root, "prompt.md"), CompositionOutput: filepath.Join(root, "composition.json"),
+	})
+	var refusal *CompositionRefusal
+	if !errors.As(err, &refusal) || refusal.Code != "REFUSED-HAZARD-CONFIGURATION" {
+		t.Fatalf("unalias roster hazard result = %T %v", err, err)
+	}
+}
+
 func closeReadyHazardChain(t *testing.T, class HazardClass) (repo, evidence, job string) {
 	t.Helper()
 	repo, evidence, job = mirrorFixture(t)

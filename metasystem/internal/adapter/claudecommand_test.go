@@ -43,6 +43,21 @@ func writeClaudeRecord(t *testing.T, body string) string {
 // TestBuildClaudeCommandArgv pins the argv byte order both shells read
 // back NUL by NUL — the wording of every flag is wire.
 func TestBuildClaudeCommandArgv(t *testing.T) {
+	t.Run("resolved Fable target is the exact model argument", func(t *testing.T) {
+		command, err := BuildClaudeCommand("", "claude-fable-5-1", "{}", "", "", "", "50", "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, argument := range command {
+			if argument == "--model" {
+				if index+1 >= len(command) || command[index+1] != "claude-fable-5-1" {
+					t.Fatalf("model argument = %v", command)
+				}
+				return
+			}
+		}
+		t.Fatalf("model argument missing: %v", command)
+	})
 	t.Run("read-only envelope narrows and adds read roots", func(t *testing.T) {
 		record := writeClaudeRecord(t, `{
 				"workspaceRoot": "/ws",

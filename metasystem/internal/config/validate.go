@@ -154,6 +154,99 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		}
 	}
 
+	// Model aliases are committed, direct family pointers. Their targets must
+	// be admitted by both the tracked maximal-model list and every configured
+	// higher-precedence maximal-model value; draining sources may remain only
+	// in those uncommitted admission overlays.
+	type modelAlias struct {
+		key, runtime, source, target string
+	}
+	var aliases []modelAlias
+	aliasSources := map[string]bool{}
+	for _, key := range order {
+		match := modelAliasKey.FindStringSubmatch(key)
+		if match == nil {
+			continue
+		}
+		alias := modelAlias{key: key, runtime: match[1], source: strings.TrimSpace(match[2]), target: strings.TrimSpace(values[key])}
+		aliases = append(aliases, alias)
+		if alias.source != "" {
+			aliasSources[alias.runtime+"\x00"+alias.source] = true
+		}
+	}
+	containsModel := func(value, wanted string) bool {
+		for _, model := range strings.Split(value, ",") {
+			if strings.TrimSpace(model) == wanted {
+				return true
+			}
+		}
+		return false
+	}
+	for _, alias := range aliases {
+		if !runtimeSet[alias.runtime] {
+			add("%s names runtime %s outside metasystem.runtimes", alias.key, pyRepr(alias.runtime))
+		}
+		if alias.source == "" || CanonicalModel(alias.source) == "" {
+			add("%s source must be non-empty", alias.key)
+		} else if alias.source != CanonicalModel(alias.source) {
+			add("%s source %s is non-canonical; use %s", alias.key, pyRepr(alias.source), pyRepr(CanonicalModel(alias.source)))
+		}
+		if alias.target == "" || CanonicalModel(alias.target) == "" {
+			add("%s target must be non-empty", alias.key)
+			continue
+		}
+		if alias.target != CanonicalModel(alias.target) {
+			add("%s target %s is non-canonical; use %s", alias.key, pyRepr(alias.target), pyRepr(CanonicalModel(alias.target)))
+		}
+		if alias.source == alias.target {
+			add("%s must not alias a model to itself", alias.key)
+		}
+		if aliasSources[alias.runtime+"\x00"+alias.target] {
+			add("%s target %s is also an alias source; model-alias chains are not allowed", alias.key, pyRepr(alias.target))
+		}
+		maximalKey := "runtime." + alias.runtime + ".maximal-models"
+		trackedMaximal := values[maximalKey]
+		if alias.source != "" && containsModel(trackedMaximal, alias.source) {
+			add("%s source %s must be absent from tracked %s", alias.key, pyRepr(alias.source), maximalKey)
+		}
+		if !containsModel(trackedMaximal, alias.target) {
+			add("%s target %s must be present in tracked %s", alias.key, pyRepr(alias.target), maximalKey)
+		}
+		if localValue, present, lookupErr := ConfLookup(localPath, maximalKey); lookupErr != nil && isFile(localPath) {
+			add("%v", lookupErr)
+		} else if present && !containsModel(localValue, alias.target) {
+			add("%s value for %s omits model-alias target %s", localPath, maximalKey, pyRepr(alias.target))
+		}
+		if envValue, present := os.LookupEnv(EnvName(maximalKey)); present && !containsModel(envValue, alias.target) {
+			add("environment source %s for %s omits model-alias target %s", EnvName(maximalKey), maximalKey, pyRepr(alias.target))
+		}
+	}
+
+	fixtureAliasOverrides := fixtureBudgetLawRoot(confPath)
+	if isFile(localPath) {
+		localContent, localErr := os.ReadFile(localPath)
+		if localErr != nil {
+			add("cannot read metasystem local configuration: %s: %v", localPath, localErr)
+		} else {
+			parseSettings(string(localContent), func(lineNo int, key, _ string, ok bool) {
+				if !ok || modelAliasKey.FindStringSubmatch(key) == nil {
+					return
+				}
+				if !fixtureAliasOverrides {
+					add("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s:%d is refused", key, localPath, lineNo)
+				}
+			})
+		}
+	}
+	if !fixtureAliasOverrides {
+		for _, entry := range os.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			if modelAliasEnvName.MatchString(name) {
+				add("model aliases accept only committed root configuration outside a fixture-authorized root; environment source %s is refused", name)
+			}
+		}
+	}
+
 	// Capability floors must name a rostered runtime and a canonical model, and
 	// carry a positive integer.
 	for _, ck := range capKeys {
@@ -553,6 +646,8 @@ var (
 	plainModelKey     = regexp.MustCompile(`^role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
 	modeModelKey      = regexp.MustCompile(`^mode\.([a-z0-9-]+)\.role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
 	maximalModelsKey  = regexp.MustCompile(`^runtime\.([a-z0-9-]+)\.maximal-models$`)
+	modelAliasKey     = regexp.MustCompile(`^runtime\.([a-z0-9-]+)\.model-alias\.(.*)$`)
+	modelAliasEnvName = regexp.MustCompile(`^METASYSTEM_RUNTIME_[A-Z0-9_]+_MODEL_ALIAS_[A-Z0-9_]+$`)
 	roleComponentKey  = regexp.MustCompile(`^role\.([a-z0-9-]+)\.(?:runtime|model\.[a-z0-9-]+)$`)
 	modeComponentKey  = regexp.MustCompile(`^mode\.([a-z0-9-]+)\.role\.([a-z0-9-]+)\.(?:runtime|model\.[a-z0-9-]+)$`)
 )

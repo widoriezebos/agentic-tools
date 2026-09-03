@@ -30,17 +30,23 @@ func capGet(confPath, key string) (string, error) {
 }
 
 // ResolveCap walks the non-mission cap chain — the explicit argument, then
-// cap.min.<role>.<runtime>.<model>, cap.min.<runtime>.<model>,
-// dispatch.cap-min, then the built-in floor — returning the cap with the
-// rule and origin the resolution record carries.
-func ResolveCap(confPath, role, runtime, model, requested string) (int64, string, string, error) {
+// cap.min.<role>.<runtime>.<model>, cap.min.<runtime>.<model>, the same two
+// alias-source rows when present, dispatch.cap-min, then the built-in floor —
+// returning the cap with the rule and origin the resolution record carries.
+func ResolveCap(confPath, role, runtime, model, source, requested string) (int64, string, string, error) {
 	capText, rule, origin := requested, "argument", "argument"
 	if requested == "" {
 		steps := []struct{ key, rule string }{
 			{"cap.min." + role + "." + runtime + "." + model, "config-role-pair"},
 			{"cap.min." + runtime + "." + model, "config-pair"},
-			{"dispatch.cap-min", "config-general"},
 		}
+		if source != "" {
+			steps = append(steps,
+				struct{ key, rule string }{"cap.min." + role + "." + runtime + "." + source, "config-role-pair-alias-source"},
+				struct{ key, rule string }{"cap.min." + runtime + "." + source, "config-pair-alias-source"},
+			)
+		}
+		steps = append(steps, struct{ key, rule string }{"dispatch.cap-min", "config-general"})
 		capText, rule, origin = builtInCapMin, "built-in", "default"
 		for _, step := range steps {
 			value, err := capGet(confPath, step.key)
@@ -72,11 +78,18 @@ func ResolveCap(confPath, role, runtime, model, requested string) (int64, string
 // mission, a cap key set through an unsigned surface (environment or the
 // uncommitted .local file) must not set a mission cap — the signed mission
 // fence is cap authority.
-func RefuseUnsignedMissionCap(confPath, role, runtime, model string) error {
-	for _, key := range []string{
+func RefuseUnsignedMissionCap(confPath, role, runtime, model, source string) error {
+	keys := []string{
 		"cap.min." + role + "." + runtime + "." + model,
 		"cap.min." + runtime + "." + model,
-	} {
+	}
+	if source != "" {
+		keys = append(keys,
+			"cap.min."+role+"."+runtime+"."+source,
+			"cap.min."+runtime+"."+source,
+		)
+	}
+	for _, key := range keys {
 		origin, err := config.KeyOrigin(config.GetParams{Key: key, ConfPath: confPath})
 		if err != nil {
 			return err

@@ -435,6 +435,9 @@ cp scripts/metasystem-config.sh scripts/assert-return-complete.sh \
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
 cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"
 cp metasystem.conf "$agent_repo/"
+# Existing temporary roots retain their literal model ids. Alias fixtures add
+# their own fake-runtime family pointer only for the scenario that exercises it.
+conf_edit "$agent_repo/metasystem.conf" delete-lines '^runtime[.]claude[.]model-alias[.].*='
 # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
 # only harness-specific overrides ride --set.
 "$root/bin/metasystem" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
@@ -1285,7 +1288,7 @@ grep -q "no job record" <<<"$never_status_err" \
 happy_record="$agent_repo/artifacts/agents/jobs/happy.json"
 for happy_key in jobId role mission runtime round parentJob status phase error \
   workspaceRoot baseSha branch permissions capMin pid pidStartedAt pgid instanceTag custodyProcesses \
-  sessionId turnId requestedModel effectiveModel overridden capabilitySnapshot \
+  sessionId turnId requestedModel aliasedFrom rosterAliasedFrom effectiveModel overridden capabilitySnapshot \
   sessionEstablishedTimeoutSec input composition startedAt endedAt usage mirror; do
   "$engine" json get --file "$happy_record" --field "$happy_key" >/dev/null \
     || { echo "happy record lacks required field: $happy_key" >&2; exit 1; }
@@ -1336,6 +1339,62 @@ happy_enforcement_rel=$("$engine" json get --file "$happy_record" --field permis
   || { echo "happy snapshot envelope enforcement changed shape" >&2; exit 1; }
 [[ "$("$engine" json get --file "$happy_record" --field input.delivery)" == stdin ]] \
   || { echo "happy input was not delivered on stdin" >&2; exit 1; }
+
+# The model-family pointer is proven through the real dispatcher twice: once
+# from the roster and once from an explicit model override. Canonical target
+# rows outrank a draining source cap, and every downstream identity is the
+# target; the source survives only in the two provenance fields.
+cp "$good_agent_conf" "$agent_repo/metasystem.conf"
+"$engine" config tailor --conf "$agent_repo/metasystem.conf" \
+  --set runtime.fake.maximal-models=fake-model \
+  --set runtime.fake.model-alias.fake-source=fake-model \
+  --set role.default.model.fake=fake-source \
+  --set cap.min.fake.fake-model=31 \
+  --set cap.min.fake.fake-source=30
+alias_brief="$agent_fixture/model-alias.md"
+make_agent_brief "$alias_brief" design
+run_agent_fixture model-alias-roster model-alias-roster "$agent_dispatch" dispatch \
+  --role design-critic --brief "$alias_brief" --job-id model-alias-roster --wait
+alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
+[[ "$("$engine" json get --file "$alias_roster_record" --field composition.model)" == fake-model \
+   && "$("$engine" json get --file "$alias_roster_record" --field canonicalModelKey)" == fake-model \
+   && "$("$engine" json get --file "$alias_roster_record" --field requestedModel)" == fake-model \
+   && "$("$engine" json get --file "$alias_roster_record" --field effectiveModel)" == fake-model \
+   && "$("$engine" json get --file "$alias_roster_record" --field aliasedFrom)" == fake-source \
+   && "$("$engine" json get --file "$alias_roster_record" --field rosterAliasedFrom)" == fake-source \
+   && "$("$engine" json get --file "$alias_roster_record" --field capMin)" == 31 \
+   && "$("$engine" json get --file "$alias_roster_record" --field capResolution.rule)" == config-pair ]] \
+  || { echo "source-valued roster did not relay only the canonical model downstream" >&2; cat "$alias_roster_record" >&2; exit 1; }
+
+"$engine" config tailor --conf "$agent_repo/metasystem.conf" --set role.default.model.fake=fake-model
+run_agent_fixture model-alias-override model-alias-override "$agent_dispatch" dispatch \
+  --role design-critic --brief "$alias_brief" --job-id model-alias-override --model fake-source --wait
+alias_override_record="$agent_repo/artifacts/agents/jobs/model-alias-override.json"
+[[ "$("$engine" json get --file "$alias_override_record" --field composition.model)" == fake-model \
+   && "$("$engine" json get --file "$alias_override_record" --field canonicalModelKey)" == fake-model \
+   && "$("$engine" json get --file "$alias_override_record" --field requestedModel)" == fake-model \
+   && "$("$engine" json get --file "$alias_override_record" --field effectiveModel)" == fake-model \
+   && "$("$engine" json get --file "$alias_override_record" --field aliasedFrom)" == fake-source \
+   && "$("$engine" json get --file "$alias_override_record" --field rosterAliasedFrom)" == null ]] \
+  || { echo "source-valued model override did not relay only the canonical model downstream" >&2; cat "$alias_override_record" >&2; exit 1; }
+
+# FMA-R2-FOLLOWUP-CANONICAL-RELAY: turn the completed structural template
+# into a canned legacy parent whose recorded request predates alias resolution.
+# The child must resolve that literal before composition and record its own
+# alias event, with no roster event on a follow-up.
+json_replace_field "$alias_override_record" requestedModel '"fake-source"'
+json_replace_field "$alias_override_record" aliasedFrom null
+json_replace_field "$alias_override_record" rosterAliasedFrom null
+alias_follow_message="$agent_fixture/model-alias-follow.md"
+cp "$agent_repo/scripts/agents/templates/follow-up.md" "$alias_follow_message"
+run_agent_fixture fma-r2-followup-canonical-relay model-alias-override-r2 "$agent_dispatch" follow-up \
+  --job model-alias-override --message "$alias_follow_message" --wait
+alias_child="$agent_repo/artifacts/agents/jobs/model-alias-override-r2.json"
+[[ "$("$engine" json get --file "$alias_child" --field requestedModel)" == fake-model \
+   && "$("$engine" json get --file "$alias_child" --field aliasedFrom)" == fake-source \
+   && "$("$engine" json get --file "$alias_child" --field rosterAliasedFrom)" == null ]] \
+  || { echo "FMA-R2-FOLLOWUP-CANONICAL-RELAY failed" >&2; cat "$alias_child" >&2; exit 1; }
+cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 
 # Every recorded custody group is attempted even when an earlier recycled
 # group is no longer owned. The aggregate still refuses a clean wind-down, and

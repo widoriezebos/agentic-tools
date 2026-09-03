@@ -645,13 +645,14 @@ canonical_model() { "$ms" config canonical-model "$1"; }
 # live in `job resolve-cap` (script-orchestration-03): the origin now comes
 # from the resolver's own precedence instead of a shadow probe, and the
 # fence-authority refusal is the engine's decision.
-resolve_nonmission_cap() { # role, runtime, canonical model, explicit override, output json
+resolve_nonmission_cap() { # role, runtime, canonical model, alias source, explicit override, output json
   "$ms" job resolve-cap --conf "$root/metasystem.conf" --role "$1" --runtime "$2" --model "$3" \
-    ${4:+--requested "$4"} --output "$5"
+    ${4:+--alias-source "$4"} ${5:+--requested "$5"} --output "$6"
 }
 
-refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
-  "$ms" job resolve-cap --conf "$root/metasystem.conf" --role "$1" --runtime "$2" --model "$3" --mission
+refuse_unsigned_mission_cap_override() { # role, runtime, canonical model, alias source
+  "$ms" job resolve-cap --conf "$root/metasystem.conf" --role "$1" --runtime "$2" --model "$3" \
+    ${4:+--alias-source "$4"} --mission
 }
 
 attested_watcher_ceiling() {
@@ -1272,6 +1273,8 @@ dispatch_job() {
   roster_pair=$(json_value "$roster_json" rosterPair)
   runtime=$(json_value "$roster_json" runtime)
   model=$(json_value "$roster_json" model)
+  aliased_from=$(json_value "$roster_json" aliasedFrom); [[ "$aliased_from" == null ]] && aliased_from=
+  roster_aliased_from=$(json_value "$roster_json" rosterAliasedFrom); [[ "$roster_aliased_from" == null ]] && roster_aliased_from=
   requested_pair=$(json_value "$roster_json" requestedPair)
   requested_model=$model
   overridden=$(json_value "$roster_json" overridden)
@@ -1462,7 +1465,7 @@ dispatch_job() {
       --origin existing-reservation --output "$cap_resolution"
   else
     exit_cleanup_authorization=$job
-    authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
+    authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$aliased_from" "$mission" "$cap_override" dispatch "$cap_resolution"
   fi
   cap=$(json_field "$cap_resolution" capMin)
   set +e
@@ -1470,6 +1473,7 @@ dispatch_job() {
     --operation-id "$job" \
     --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --alias-source "$aliased_from" \
     --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
@@ -1501,6 +1505,7 @@ dispatch_job() {
     --operation-id "$job" \
     --session "$runtime:$job" --dispatch-mode fresh --resumed-session "" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --alias-source "$aliased_from" \
     --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
@@ -1536,6 +1541,7 @@ dispatch_job() {
     --mission "$mission" --mission-turn "$mission_turn" --stream "$stream" \
     --root "$root" --runtime "$runtime" \
     --workspace "$workspace" --cap-resolution "$cap_resolution" --model "$model" \
+    --aliased-from "$aliased_from" --roster-aliased-from "$roster_aliased_from" \
     --overridden "$overridden" --snapshot "$snapshot_path" \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --permissions "$permission_json" --fallbacks "$fallbacks" --signal "$signal" \
@@ -1560,18 +1566,19 @@ dispatch_job() {
 # malformed value died as a bash arithmetic error instead of the intended
 # refusal. One copy now; the drift resolved toward the validating side.
 
-authorize_job_cap() { # job id, role, runtime, model key, mission, explicit override, refusal noun, output json
-  local job=$1 role=$2 runtime=$3 model_key=$4 mission=$5 override=$6 noun=$7 output=$8 cap watch_cap cap_result cap_args
+authorize_job_cap() { # job id, role, runtime, model key, alias source, mission, explicit override, refusal noun, output json
+  local job=$1 role=$2 runtime=$3 model_key=$4 alias_source=$5 mission=$6 override=$7 noun=$8 output=$9 cap watch_cap cap_result cap_args
   if [[ -n "$mission" ]]; then
-    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
+    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key" "$alias_source"
     cap_args=(authorize-cap --repo "$root" --mission "$mission" --job "$job" --runtime "$runtime" --model "$model_key")
+    [[ -z "$alias_source" ]] || cap_args+=(--alias-source "$alias_source")
     [[ -z "$override" ]] || cap_args+=(--requested "$override")
     if ! cap_result=$(mission_fence "${cap_args[@]}" 2>&1); then
       die 1 "mission $noun refused by the mission fence: $cap_result"
     fi
     printf '%s\n' "$cap_result" >"$output"
   else
-    resolve_nonmission_cap "$role" "$runtime" "$model_key" "$override" "$output"
+    resolve_nonmission_cap "$role" "$runtime" "$model_key" "$alias_source" "$override" "$output"
   fi
   cap=$(json_field "$output" capMin)
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap authority returned an invalid capMin"
@@ -1760,6 +1767,9 @@ follow_up() {
   # session, even though the adapter opens a new session for the child.
   resumed_for_claim=$session
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
+  alias_json=$("$ms" job resolve-model-alias --conf "$root/metasystem.conf" --runtime "$runtime" --model "$model") || exit 1
+  model=$(json_value "$alias_json" model)
+  aliased_from=$(json_value "$alias_json" aliasedFrom); [[ "$aliased_from" == null ]] && aliased_from=
   reviews=$(json_field "$latest" reviews 2>/dev/null || true); [[ "$reviews" == null ]] && reviews=
   destructive_reach=$(json_field "$latest" destructiveReach 2>/dev/null || true)
   [[ "$destructive_reach" == MECHANICAL || "$destructive_reach" == DESIGN-BEARING || "$destructive_reach" == DESTRUCTIVE-REACH ]] \
@@ -1925,7 +1935,7 @@ follow_up() {
       --origin existing-reservation --output "$cap_resolution"
   else
     exit_cleanup_authorization=$child
-    authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
+    authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$aliased_from" "$mission" "" follow-up "$cap_resolution"
   fi
   cap=$(json_field "$cap_resolution" capMin)
   set +e
@@ -1933,6 +1943,7 @@ follow_up() {
 	--operation-id "$operation_id" \
     --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --alias-source "$aliased_from" \
     --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
@@ -1964,6 +1975,7 @@ follow_up() {
 	--operation-id "$operation_id" \
     --session "$runtime:$session" --dispatch-mode follow-up --resumed-session "$resumed_for_claim" \
     --runtime "$runtime" --model "$model" --role "$role" \
+    --alias-source "$aliased_from" \
     --reviews "$reviews" \
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
@@ -2004,6 +2016,7 @@ follow_up() {
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
   "$ms" job build-follow-record --output "$record_json" --parent "$latest" \
     --job "$child" --operation-id "$operation_id" --round "$round" --parent-job "$(basename "${latest%.json}")" \
+    --model "$model" --aliased-from "$aliased_from" \
     --snapshot "$snapshot_path" --fallbacks "$fallbacks" --signal "$signal" \
     --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \

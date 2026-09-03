@@ -268,6 +268,27 @@ func TestClaudeResultField(t *testing.T) {
 	}
 }
 
+func TestFMA_R2_EffectiveModelObservationBypass(t *testing.T) {
+	dir := t.TempDir()
+	result := filepath.Join(dir, "claude-result.json")
+	writeFile(t, result, `{"modelUsage":{"claude-fable-5":{}}}`)
+	observed, present, err := ClaudeResultField(result, "model")
+	if err != nil || !present || observed != "claude-fable-5" {
+		t.Fatalf("raw Claude observation = (%q, %v, %v)", observed, present, err)
+	}
+	patch := filepath.Join(dir, "model-patch.json")
+	if err := WriteModelPatch(patch, observed); err != nil {
+		t.Fatal(err)
+	}
+	record := map[string]any{"requestedModel": "claude-fable-5-1"}
+	for field, value := range readJSONFile(t, patch) {
+		record[field] = value
+	}
+	if record["requestedModel"] != "claude-fable-5-1" || record["effectiveModel"] != "claude-fable-5" {
+		t.Fatalf("request/observation = (%v, %v), want (target, raw source)", record["requestedModel"], record["effectiveModel"])
+	}
+}
+
 func TestClaudeReadRoots(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "job.json")

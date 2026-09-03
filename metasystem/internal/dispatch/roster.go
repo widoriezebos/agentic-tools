@@ -29,11 +29,13 @@ type RosterParams struct {
 // RosterResolution is the decision dispatch consumes. Field order is the
 // wire order: `job resolve-roster` marshals this struct directly.
 type RosterResolution struct {
+	AliasedFrom        string `json:"aliasedFrom"`
 	CostDirection      string `json:"costDirection"`
 	EscalationRequired bool   `json:"escalationRequired"`
 	Model              string `json:"model"`
 	Overridden         bool   `json:"overridden"`
 	RequestedPair      string `json:"requestedPair"`
+	RosterAliasedFrom  string `json:"rosterAliasedFrom"`
 	RosterModel        string `json:"rosterModel"`
 	RosterPair         string `json:"rosterPair"`
 	RosterRuntime      string `json:"rosterRuntime"`
@@ -150,7 +152,8 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 		return RosterResolution{}, fmt.Errorf("runtime %s is outside metasystem.runtimes", runtime)
 	}
 
-	var rosterModel string
+	var rosterModel, rosterInput string
+	var rosterAliased bool
 	if rosterRuntime == "main" {
 		rosterModel = "<current-session>"
 	} else {
@@ -164,6 +167,11 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 		}
 		if rosterModel == missingSentinel {
 			return RosterResolution{}, fmt.Errorf("role %s resolves to %s but has no model.%s value", p.Role, rosterRuntime, rosterRuntime)
+		}
+		rosterInput = rosterModel
+		rosterModel, rosterAliased, err = config.ResolveModelAlias(p.ConfPath, rosterRuntime, rosterModel)
+		if err != nil {
+			return RosterResolution{}, err
 		}
 	}
 
@@ -179,19 +187,40 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 	if requestedModel == missingSentinel {
 		return RosterResolution{}, fmt.Errorf("role %s resolves to %s but has no model.%s value", p.Role, runtime, runtime)
 	}
-	model := p.ModelOverride
-	if model == "" {
-		model = requestedModel
+	requestedInput := requestedModel
+	requestedModel, requestedAliased, err := config.ResolveModelAlias(p.ConfPath, runtime, requestedModel)
+	if err != nil {
+		return RosterResolution{}, err
+	}
+	effectiveInput := requestedInput
+	model := requestedModel
+	effectiveAliased := requestedAliased
+	if p.ModelOverride != "" {
+		effectiveInput = p.ModelOverride
+		model, effectiveAliased, err = config.ResolveModelAlias(p.ConfPath, runtime, p.ModelOverride)
+		if err != nil {
+			return RosterResolution{}, err
+		}
+	}
+	rosterAliasedFrom := ""
+	if rosterAliased {
+		rosterAliasedFrom = rosterInput
+	}
+	aliasedFrom := ""
+	if effectiveAliased {
+		aliasedFrom = effectiveInput
 	}
 
 	out := RosterResolution{
-		Model:         model,
-		Overridden:    p.RuntimeOverride != "" || p.ModelOverride != "",
-		RequestedPair: runtime + ":" + model,
-		RosterModel:   rosterModel,
-		RosterPair:    rosterRuntime + ":" + rosterModel,
-		RosterRuntime: rosterRuntime,
-		Runtime:       runtime,
+		AliasedFrom:       aliasedFrom,
+		Model:             model,
+		Overridden:        p.RuntimeOverride != "" || p.ModelOverride != "",
+		RequestedPair:     runtime + ":" + model,
+		RosterAliasedFrom: rosterAliasedFrom,
+		RosterModel:       rosterModel,
+		RosterPair:        rosterRuntime + ":" + rosterModel,
+		RosterRuntime:     rosterRuntime,
+		Runtime:           runtime,
 	}
 	if !out.Overridden || out.RequestedPair == out.RosterPair {
 		return out, nil

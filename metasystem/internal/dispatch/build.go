@@ -209,43 +209,45 @@ func (a capAuthority) resolutionField() map[string]any {
 // from. File-valued fields are read here so the record shape and its inputs
 // stay in one place.
 type BuildRecordParams struct {
-	Output           string
-	Job              string
-	Role             string
-	Mission          string
-	MissionTurn      string
-	Stream           string
-	Root             string // dispatching checkout root, for mission provenance
-	Runtime          string
-	Workspace        string
-	CapResolution    string // cap-resolution file
-	Model            string
-	Overridden       bool
-	Snapshot         string
-	InputBytes       int64
-	InputHash        string
-	Permissions      string // requested-permissions envelope file
-	Fallbacks        string // JSON array of capability fallbacks
-	Signal           bool
-	HandshakeBudget  int64
-	ApprovalName     string
-	ApprovedAt       string
-	RosterPair       string
-	RequestedPair    string
-	CostDirection    string
-	Reviews          string
-	GoalID           string
-	GoalRevision     uint64
-	MachineID        string
-	MainID           string
-	ClaimEpoch       string
-	ReasoningEffort  string
-	LaunchMode       LaunchMode
-	ProductRoots     []string
-	OutputStream     string
-	ApprovedRef      string
-	DestructiveReach HazardClass
-	Composition      string // closed-packet composition record
+	Output            string
+	Job               string
+	Role              string
+	Mission           string
+	MissionTurn       string
+	Stream            string
+	Root              string // dispatching checkout root, for mission provenance
+	Runtime           string
+	Workspace         string
+	CapResolution     string // cap-resolution file
+	Model             string
+	AliasedFrom       string
+	RosterAliasedFrom string
+	Overridden        bool
+	Snapshot          string
+	InputBytes        int64
+	InputHash         string
+	Permissions       string // requested-permissions envelope file
+	Fallbacks         string // JSON array of capability fallbacks
+	Signal            bool
+	HandshakeBudget   int64
+	ApprovalName      string
+	ApprovedAt        string
+	RosterPair        string
+	RequestedPair     string
+	CostDirection     string
+	Reviews           string
+	GoalID            string
+	GoalRevision      uint64
+	MachineID         string
+	MainID            string
+	ClaimEpoch        string
+	ReasoningEffort   string
+	LaunchMode        LaunchMode
+	ProductRoots      []string
+	OutputStream      string
+	ApprovedRef       string
+	DestructiveReach  HazardClass
+	Composition       string // closed-packet composition record
 }
 
 // BuildRecord assembles the full pending record for a fresh dispatch: chain
@@ -407,6 +409,8 @@ func BuildRecord(p BuildRecordParams) error {
 		"sessionId":                    nil,
 		"turnId":                       nullableString(p.MissionTurn),
 		"requestedModel":               p.Model,
+		"aliasedFrom":                  nullableString(p.AliasedFrom),
+		"rosterAliasedFrom":            nullableString(p.RosterAliasedFrom),
 		"effectiveModel":               nil,
 		"overridden":                   p.Overridden,
 		"capabilitySnapshot":           p.Snapshot,
@@ -455,6 +459,8 @@ type BuildFollowRecordParams struct {
 	MainID           string
 	ClaimEpoch       string
 	CapResolution    string
+	Model            string
+	AliasedFrom      string
 	Root             string // dispatching checkout root, for mission provenance
 	GoalRevision     uint64
 	ApprovedRef      string
@@ -469,6 +475,9 @@ type BuildFollowRecordParams struct {
 // resume mode the launch will use. Only a resumed round carries the parent's
 // session id forward — a fresh-context round starts a new session.
 func BuildFollowRecord(p BuildFollowRecordParams) error {
+	if p.Model == "" {
+		return fmt.Errorf("follow-up dispatch requires the canonical model")
+	}
 	if p.OutputStream == "" || !filepath.IsAbs(p.OutputStream) {
 		return fmt.Errorf("follow-up dispatch requires an absolute child output stream")
 	}
@@ -521,7 +530,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	}
 	role, _ := parent["role"].(string)
 	runtimeName, _ := parent["runtime"].(string)
-	model, _ := parent["requestedModel"].(string)
+	model := p.Model
 	mission, _ := parent["mission"].(string)
 	if asString(parent["destructiveReach"]) != string(p.DestructiveReach) {
 		return fmt.Errorf("follow-up must inherit the parent destructiveReach class")
@@ -593,7 +602,9 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"workspaceRoot":            parent["workspaceRoot"],
 		"baseSha":                  parent["baseSha"],
 		"branch":                   parent["branch"],
-		"requestedModel":           parent["requestedModel"],
+		"requestedModel":           model,
+		"aliasedFrom":              nullableString(p.AliasedFrom),
+		"rosterAliasedFrom":        nil,
 		"jobId":                    p.Job,
 		"operationId":              p.OperationID,
 		"round":                    p.Round,

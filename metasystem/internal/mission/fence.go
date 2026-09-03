@@ -461,7 +461,7 @@ func ReserveCycle(repo, mission string) error {
 // AuthorizeCap authorizes a per-job cap for a runtime/model pair, computing the
 // deadline against the mission's remaining wall clock, and records the
 // reservation. It returns the authorization result.
-func AuthorizeCap(repo, mission, job, runtime, model string, requested *int) (map[string]any, error) {
+func AuthorizeCap(repo, mission, job, runtime, model, aliasSource string, requested *int) (map[string]any, error) {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -480,18 +480,27 @@ func AuthorizeCap(repo, mission, job, runtime, model string, requested *int) (ma
 		return nil, err
 	}
 	pairKey := fmt.Sprintf("cap.min.%s.%s", runtime, model)
+	selectedPairKey := pairKey
 	var authorized int64
 	signedRule := "fence-default"
 	if v, ok := values[pairKey]; ok {
 		authorized = atoiOr(v)
 		signedRule = "contract-pair"
+	} else if sourceKey := fmt.Sprintf("cap.min.%s.%s", runtime, aliasSource); aliasSource != "" {
+		if v, ok := values[sourceKey]; ok {
+			authorized = atoiOr(v)
+			signedRule = "contract-pair"
+			selectedPairKey = sourceKey
+		} else {
+			authorized = atoiOr(values["fence.job-cap-min"])
+		}
 	} else {
 		authorized = atoiOr(values["fence.job-cap-min"])
 	}
 	if requested != nil && int64(*requested) > authorized {
 		named := "fence.job-cap-min"
-		if _, ok := values[pairKey]; ok {
-			named = pairKey
+		if signedRule == "contract-pair" {
+			named = selectedPairKey
 		}
 		return nil, fmt.Errorf("mission fence refused requested cap %dm above signed %s=%dm", *requested, named, authorized)
 	}

@@ -108,6 +108,7 @@ func families() []family {
 				{"repair-claim", "atomically claim the round's one paid repair (0 won, 3 lost, 1 mechanical)", runDispatchRepairClaim},
 				{"build-setup", "assemble a pending-setup reservation record", runDispatchBuildSetup},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
+				{"resolve-model-alias", "resolve a model-family pointer", runDispatchResolveModelAlias},
 				{"serving-goal", "print the brief section projecting the current goal (exit 3 when none is usable)", runDispatchServingGoal},
 				{"goal-revision", "print a live accepted goal's revision for reservation binding", runDispatchGoalRevision},
 				{"goal-binding", "print a claimed goal's stop-capability binding", runDispatchGoalBinding},

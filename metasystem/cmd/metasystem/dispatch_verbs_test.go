@@ -57,6 +57,26 @@ func captureStdout(t *testing.T, fn func() int) (string, int) {
 	return string(out), code
 }
 
+func TestResolveModelAliasVerb(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude\nruntime.claude.model-alias.claude-fable-5=claude-fable-5-1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := captureStdout(t, func() int {
+		return runDispatchResolveModelAlias([]string{"--conf", conf, "--runtime", "claude", "--model", "claude-fable-5"})
+	})
+	if code != 0 {
+		t.Fatalf("resolve-model-alias exit = %d", code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["model"] != "claude-fable-5-1" || got["aliasedFrom"] != "claude-fable-5" || len(got) != 2 {
+		t.Fatalf("resolve-model-alias output = %v", got)
+	}
+}
+
 func TestCommandTaggedProcessScannerHonorsEmptyConfiguredUniverse(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {

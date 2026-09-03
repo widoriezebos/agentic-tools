@@ -203,6 +203,19 @@ func TestRecordCASRefusesImmutableField(t *testing.T) {
 	wantCode(t, err, 1)
 }
 
+func TestRecordCASRefusesAliasProvenanceChanges(t *testing.T) {
+	for _, field := range []string{"aliasedFrom", "rosterAliasedFrom"} {
+		t.Run(field, func(t *testing.T) {
+			root := sandbox(t)
+			createPending(t, root, "job-a")
+			setupPending(t, root, "job-a")
+			patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{field: "source"})
+			_, err := RecordCAS(root, "job-a", "pending", "running", patch)
+			wantCode(t, err, 1)
+		})
+	}
+}
+
 func TestRecordCASRefusesCritiqueOwnerWrite(t *testing.T) {
 	root := sandbox(t)
 	createPending(t, root, "job-a")

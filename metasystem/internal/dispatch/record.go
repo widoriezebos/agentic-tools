@@ -72,6 +72,7 @@ var immutableFields = map[string]bool{
 	"instanceTag": true, "outputStream": true, "reasoningEffort": true,
 	"composition": true, "sliceApprovalClaim": true, "destructiveReach": true,
 	"configurationObligations": true, "launchCapability": true,
+	"aliasedFrom": true, "rosterAliasedFrom": true,
 }
 
 // Owned metadata has a dedicated read-decide-write operation whose lock

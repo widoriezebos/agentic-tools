@@ -289,6 +289,7 @@ func runMissionFenceAuthorizeCap(args []string) int {
 	job := flags.String("job", "", "job id")
 	runtime := flags.String("runtime", "", "runtime")
 	model := flags.String("model", "", "canonical model key")
+	aliasSource := flags.String("alias-source", "", "canonical model alias source (optional)")
 	requested := flags.Int("requested", 0, "requested cap in minutes (optional)")
 	if flags.Parse(args) != nil {
 		return 2
@@ -306,11 +307,12 @@ func runMissionFenceAuthorizeCap(args []string) int {
 	}
 	if !missionIDRe.MatchString(*job) || !missionIDRe.MatchString(*runtime) ||
 		*model == "" || *model != config.CanonicalModel(*model) ||
+		(*aliasSource != "" && *aliasSource != config.CanonicalModel(*aliasSource)) ||
 		(requestedPtr != nil && *requestedPtr < 1) {
 		fmt.Fprintln(os.Stderr, "invalid mission cap authorization request")
 		return 2
 	}
-	result, err := mission.AuthorizeCap(*repo, *missionID, *job, *runtime, *model, requestedPtr)
+	result, err := mission.AuthorizeCap(*repo, *missionID, *job, *runtime, *model, *aliasSource, requestedPtr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
