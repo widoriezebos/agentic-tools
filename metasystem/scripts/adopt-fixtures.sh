@@ -482,7 +482,7 @@ PLAN
   fixture_view=$("$tgt/bin/metasystem" lease classify --root "$probe_tgt" --caller-pid $$ 2>/dev/null || true)
   fixture_class=$("$tgt/bin/metasystem" json get --value "$fixture_view" --field class 2>/dev/null || true)
   if open_out=$("$tgt/bin/metasystem" goal open --root "$probe_tgt" --id post-adopt-probe \
-      --intent "authority probe" --next "none" 2>&1); then
+      --intent "authority probe" --next "none" --tier 3 2>&1); then
     [[ "$fixture_class" == HUMAN ]] \
       || { echo "adopt: a $fixture_class caller opened a goal in the adopted target; genesis must not confer write authority" >&2; exit 1; }
   else

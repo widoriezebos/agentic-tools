@@ -79,10 +79,10 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-    "$fixture_bed_script" migration-recovery labels-and-filtering structured-budget scope-bounds archive-and-prune
+    "$fixture_bed_script" migration-recovery labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep
 fi
 case "$fixture_scenario" in
-  migration-recovery | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune) ;;
+  migration-recovery | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -247,18 +247,25 @@ if [[ "$fixture_scenario" != migration-recovery ]]; then
   export METASYSTEM_OWNER_LINEAGE=fixture-lineage
 fi
 
+approve_fixture_goal() { # goal id, optional complete tuple flags
+  local goal_id=$1
+  shift
+  "$ms" goal approve --root "$clone" --id "$goal_id" --by Wido \
+    --fixture-human-authority "$@" >/dev/null
+}
+
 if [[ "$fixture_scenario" == labels-and-filtering ]]; then
 # 6. Label writes are canonical whole fields. Open accepts repeated
 # labels, sorts and deduplicates them, while an unlabeled open keeps
 # the field absent.
 export METASYSTEM_OWNER_LINEAGE=fixture-lineage
 open_labels=$("$ms" goal open --root "$clone" --id labeled-one \
-  --intent "First labeled goal." --next "Continue." \
+	--intent "First labeled goal." --next "Continue." --tier 3 \
   --label beta --label alpha --label beta)
 grep -q '"outcome":"confirmed"' <<<"$open_labels" \
   || { echo "goal open with labels did not confirm: $open_labels" >&2; exit 1; }
 "$ms" goal open --root "$clone" --id plain-goal \
-  --intent "An unlabeled goal." --next "Continue." >/dev/null
+	--intent "An unlabeled goal." --next "Continue." --tier 3 >/dev/null
 labels_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$labels_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one.md"
 grep -q '^- Labels: alpha, beta$' "$tmp/labeled-one.md" \
@@ -291,7 +298,7 @@ fi
 grep -q 'both --label and --unlabel' <<<"$contradiction" \
   || { echo "the contradictory edit did not name its refusal: $contradiction" >&2; exit 1; }
 if bad_label=$("$ms" goal open --root "$clone" --id bad-label \
-  --intent "Must refuse." --next "Stop." --label Bad_Label 2>&1); then
+	--intent "Must refuse." --next "Stop." --tier 3 --label Bad_Label 2>&1); then
   echo "a malformed label succeeded" >&2; exit 1
 fi
 grep -Fq 'must match ^[a-z][a-z0-9-]{0,31}$' <<<"$bad_label" \
@@ -305,7 +312,7 @@ fi
 # 8. List filters use AND across repeated labels and leave zero-label
 # goals lawful but absent from a filtered result.
 "$ms" goal open --root "$clone" --id labeled-two \
-  --intent "Second labeled goal." --next "Continue." \
+	--intent "Second labeled goal." --next "Continue." --tier 3 \
   --label shared --label alpha >/dev/null
 one_filter=$("$ms" goal list --root "$clone" --pretty --label shared)
 grep -q '^  labeled-one' <<<"$one_filter" && grep -q '^  labeled-two' <<<"$one_filter" \
@@ -317,9 +324,9 @@ two_filters=$("$ms" goal list --root "$clone" --pretty --label alpha --label sha
 grep -q '^  labeled-one' <<<"$two_filters" && grep -q '^  labeled-two' <<<"$two_filters" \
   || { echo "two-label AND filtering lost a match: $two_filters" >&2; exit 1; }
 "$ms" goal open --root "$clone" --id and-a \
-  --intent "Carries only a." --next "Continue." --label a >/dev/null
+	--intent "Carries only a." --next "Continue." --tier 3 --label a >/dev/null
 "$ms" goal open --root "$clone" --id and-ab \
-  --intent "Carries a and b." --next "Continue." --label a --label b >/dev/null
+	--intent "Carries a and b." --next "Continue." --tier 3 --label a --label b >/dev/null
 and_probe=$("$ms" goal list --root "$clone" --pretty --label a --label b)
 and_ids=$(sed -n 's/^  \([a-z][a-z0-9-]*\)$/\1/p' <<<"$and_probe")
 [[ "$and_ids" == "and-ab" ]] \
@@ -361,32 +368,35 @@ fi
 if [[ "$fixture_scenario" == structured-budget ]]; then
 "$ms" goal release --root "$clone" --id ship-widget >/dev/null
 "$ms" goal open --root "$clone" --id plain-goal \
-  --intent "An unlabeled goal." --next "Continue." >/dev/null
-# 11. The atomic open-and-claim path carries labels after the quota is
-# free, completing the command-line carriage leg.
-open_claim=$("$ms" goal open --root "$clone" --id claimed-label \
-  --intent "Claimed with its group." --next "Continue." --claim --label custody \
-  --elapsed-limit 4h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1)
-grep -q '"outcome":"confirmed"' <<<"$open_claim" \
-  || { echo "open --claim with a label did not confirm: $open_claim" >&2; exit 1; }
+	--intent "An unlabeled goal." --next "Continue." --tier 3 >/dev/null
+# 11. The separated intake, approval, and claim path preserves labels.
+"$ms" goal open --root "$clone" --id claimed-label \
+	--intent "Claimed with its group." --next "Continue." --tier 3 --label custody >/dev/null
+approve_fixture_goal claimed-label --budget box
+claim_out=$("$ms" goal claim --root "$clone" --id claimed-label)
+grep -q '"outcome":"confirmed"' <<<"$claim_out" \
+	|| { echo "approved label claim did not confirm: $claim_out" >&2; exit 1; }
 claim_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$claim_tip:plans/goals/claimed-label.md" >"$tmp/claimed-label.md"
 grep -q '^- Labels: custody$' "$tmp/claimed-label.md" \
-  || { echo "open --claim dropped its label" >&2; cat "$tmp/claimed-label.md" >&2; exit 1; }
+	|| { echo "separated claim dropped its label" >&2; cat "$tmp/claimed-label.md" >&2; exit 1; }
 
 # 12. A queued goal needs no budget. At claim, the complete tuple becomes its
 # only budget; an Appetite-prefixed sentence remains inert human prose.
 "$ms" goal release --root "$clone" --id claimed-label >/dev/null
 export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
 "$ms" goal open --root "$clone" --id budget-check \
-	--intent "Exercise structured budget admission." \
-	--next "Appetite: 4h is inert human prose, not a budget." --claim \
-	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 >/dev/null
+		--intent "Exercise structured budget admission." \
+		--next "Appetite: 4h is inert human prose, not a budget." --tier 3 \
+		--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 >/dev/null
+approve_fixture_goal budget-check \
+	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
+"$ms" goal claim --root "$clone" --id budget-check >/dev/null
 claim_budget_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$claim_budget_tip:plans/goals/budget-check.md" >"$tmp/budget-claim.md"
-grep -q '^- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1$' "$tmp/budget-claim.md" \
-  || { echo "claim did not store the complete budget tuple" >&2; cat "$tmp/budget-claim.md" >&2; exit 1; }
-grep -q '^- Claimed: .* revision=1' "$tmp/budget-claim.md" \
+grep -q '^- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/budget-claim.md" \
+	|| { echo "claim did not store the complete budget tuple" >&2; cat "$tmp/budget-claim.md" >&2; exit 1; }
+grep -q '^- Claimed: .* revision=3' "$tmp/budget-claim.md" \
   || { echo "claim did not bind its goal revision" >&2; cat "$tmp/budget-claim.md" >&2; exit 1; }
 if grep -q '^- Claimed: .* appetite=' "$tmp/budget-claim.md"; then
   echo "claim froze inert prose into a budget field" >&2; cat "$tmp/budget-claim.md" >&2; exit 1
@@ -406,19 +416,21 @@ admission_spent_rc=$?
 set -e
 [[ "$admission_spent_rc" -eq 10 ]] \
   || { echo "the claim at its structured breach boundary did not request breach-stop (rc=$admission_spent_rc): $admission_spent" >&2; exit 1; }
-grep -q 'BUDGET_REFUSED: goal budget-check revision=1 admission closed: elapsedLimit' <<<"$admission_spent" \
+grep -q 'BUDGET_REFUSED: goal budget-check revision=3 admission closed: elapsedLimit' <<<"$admission_spent" \
   || { echo "the structured refusal did not name its exact limit: $admission_spent" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=2026-08-20T05:01:00Z
 "$ms" goal set-budget --root "$clone" --id budget-check \
-  --elapsed-limit 8h --attempt-limit 3 --reserved-job-minutes-limit 180 --active-job-limit 2 >/dev/null
+	--elapsed-limit 8h --attempt-limit 3 --reserved-job-minutes-limit 180 --active-job-limit 2 --review-round-limit 3 \
+	--by Wido --fixture-human-authority >/dev/null
 rebudget_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$rebudget_tip:plans/goals/budget-check.md" >"$tmp/budget-rebudget.md"
-grep -q '^- Budget: elapsedLimit=1d attemptLimit=3 reservedJobMinutesLimit=180 activeJobLimit=2$' "$tmp/budget-rebudget.md" \
+grep -q '^- Budget: elapsedLimit=1d attemptLimit=3 reservedJobMinutesLimit=180 activeJobLimit=2 reviewRoundLimit=3$' "$tmp/budget-rebudget.md" \
   || { echo "set-budget did not replace the complete tuple" >&2; cat "$tmp/budget-rebudget.md" >&2; exit 1; }
-grep -q '^- Claimed: .* at=2026-08-20T05:01:00Z revision=2' "$tmp/budget-rebudget.md" \
+grep -q '^- Claimed: .* at=2026-08-20T05:01:00Z revision=4' "$tmp/budget-rebudget.md" \
   || { echo "set-budget did not bind the new revision and elapsed origin" >&2; cat "$tmp/budget-rebudget.md" >&2; exit 1; }
 
-# A separate goal can claim only by supplying its own complete tuple.
+# A separate goal claims the budget already bound by its approval.
+approve_fixture_goal plain-goal --budget box
 other="$tmp/other"
 env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git clone -q "$origin" "$other"
 git -C "$other" config metasystem.goal.machine fixture-other
@@ -429,10 +441,9 @@ cp -R "$root/scripts/agents/adapters" "$other/scripts/agents/"
   --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
   --runtime fake --owner-lineage other-lineage >/dev/null
 other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
-  "$ms" goal claim --root "$other" --id plain-goal \
-    --elapsed-limit 2h --attempt-limit 1 --reserved-job-minutes-limit 30 --active-job-limit 1)
+	"$ms" goal claim --root "$other" --id plain-goal)
 grep -q '"outcome":"confirmed"' <<<"$other_claim" \
-  || { echo "a complete-tuple claim did not confirm: $other_claim" >&2; exit 1; }
+	|| { echo "an approved-tuple claim did not confirm: $other_claim" >&2; exit 1; }
 unset METASYSTEM_GOAL_NOW
 fi
 
@@ -443,29 +454,31 @@ if [[ "$fixture_scenario" == scope-bounds ]]; then
 # exercise the typed refusal. The remedy must name split; no refusal fixture
 # infers success from a parser-only unit.
 "$ms" goal open --root "$clone" --id norm-parent \
-  --intent "Hold a large intent before decomposition." --next "Split it first." >/dev/null
+	--intent "Hold a large intent before decomposition." --next "Split it first." --tier 3 >/dev/null
+approve_fixture_goal norm-parent --budget box
+"$ms" goal claim --root "$clone" --id norm-parent >/dev/null
 if norm_refusal=$("$ms" goal set-budget --root "$clone" --id norm-parent \
-  --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
-  --active-job-limit 1 2>&1); then
+	--elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
+	--active-job-limit 1 --review-round-limit 3 --by Wido \
+	--fixture-human-authority 2>&1); then
   echo "over-norm set-budget succeeded without strict approval" >&2; exit 1
 fi
 grep -q 'GOAL_NORM_REFUSED: goal norm-parent' <<<"$norm_refusal" \
-  && grep -q 'goal split --id norm-parent --members' <<<"$norm_refusal" \
+	&& grep -q 'split it into an arc of members within the box' <<<"$norm_refusal" \
   || { echo "the norm refusal did not name its type and split remedy: $norm_refusal" >&2; exit 1; }
 if open_claim_refusal=$("$ms" goal open --root "$clone" --id norm-open-claim \
-  --intent "Must not enter claimed over norm." --next "Stop." --claim \
-  --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
-  --active-job-limit 1 2>&1); then
+	--intent "Must not enter claimed over norm." --next "Stop." --tier 3 --claim \
+	--elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
+	--active-job-limit 1 --review-round-limit 3 2>&1); then
   echo "over-norm open --claim succeeded" >&2; exit 1
 fi
-grep -q 'GOAL_NORM_REFUSED: goal norm-open-claim' <<<"$open_claim_refusal" \
-  && grep -q 'open it queued' <<<"$open_claim_refusal" \
-  || { echo "open --claim did not exercise its three-step refusal: $open_claim_refusal" >&2; exit 1; }
+grep -q 'APPROVAL_REQUIRED: open --claim is retired' <<<"$open_claim_refusal" \
+	|| { echo "retired open --claim did not name the separated approval path: $open_claim_refusal" >&2; exit 1; }
 
 # The real split command parses a closed draft, publishes both members and the
 # parent conclusion atomically, and retires the parent identifier permanently.
 "$ms" goal open --root "$clone" --id split-parent \
-  --intent "Deliver the two-part fixture." --next "Atomize it." --label fixture >/dev/null
+	--intent "Deliver the two-part fixture." --next "Atomize it." --tier 3 --label fixture >/dev/null
 draft="$tmp/split-parent.md"
 {
   printf '%s\n' '# split split-parent'
@@ -493,25 +506,117 @@ grep -q 'a decomposed parent never returns' <<<"$reopen_refusal" \
   || { echo "reopen did not name permanent decomposition: $reopen_refusal" >&2; exit 1; }
 "$ms" goal prune --root "$clone" --keep 0 >/dev/null
 if recreate_refusal=$("$ms" goal open --root "$clone" --id split-parent \
-  --intent "Illicit resurrection." --next "Stop." 2>&1); then
+	--intent "Illicit resurrection." --next "Stop." --tier 3 2>&1); then
   echo "a pruned decomposed parent id was recreated" >&2; exit 1
 fi
 grep -q 'goal id split-parent is retired' <<<"$recreate_refusal" \
   || { echo "the decomposition registry did not survive prune: $recreate_refusal" >&2; exit 1; }
 fi
 
+if [[ "$fixture_scenario" == classification-sweep ]]; then
+# STR3-MIGRATION-BOOTSTRAP-01 and the classify-sweep command contract: the
+# migrated ledger supplies one queued, one claimed, and one parked tierless
+# goal. Preview is inert and normalized; confirmation applies one transaction
+# per goal and installs TierLaw only with the last edit.
+"$ms" goal set-budget --root "$clone" --id ship-widget \
+  --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 \
+  --active-job-limit 1 --review-round-limit 3 --by Wido \
+  --fixture-human-authority >/dev/null
+before_binding=$("$ms" job goal-binding --root "$clone" --goal ship-widget)
+grep -q '"goalTier":3' <<<"$before_binding" \
+  || { echo "tierless pre-TierLaw claim did not resolve under tier-three rules: $before_binding" >&2; exit 1; }
+pre_sweep_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$pre_sweep_tip:plans/goals/ship-widget.md" >"$tmp/pre-sweep-ship-widget.md"
+
+classification_draft="$tmp/classification-draft.txt"
+cat >"$classification_draft" <<'DRAFT'
+ship-widget 3 claimed migration
+fix-docs 1 queued migration
+perf-pass 2 parked migration
+DRAFT
+classification_preview=$("$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" --preview)
+classification_lines=$(sed '/^listing-digest /d' <<<"$classification_preview")
+expected_lines=$'fix-docs 1 queued migration\nperf-pass 2 parked migration\nship-widget 3 claimed migration'
+[[ "$classification_lines" == "$expected_lines" ]] \
+  || { echo "classification preview was not normalized and sorted: $classification_preview" >&2; exit 1; }
+classification_digest=$(sed -n 's/^listing-digest //p' <<<"$classification_preview")
+[[ "$classification_digest" =~ ^[0-9a-f]{64}$ ]] \
+  || { echo "classification preview did not print its SHA-256 digest: $classification_preview" >&2; exit 1; }
+
+assert_classification_refusal() { # code, draft bytes
+  local code=$1 body=$2 output rc
+  printf '%s\n' "$body" >"$tmp/refusal-draft.txt"
+  set +e
+  output=$("$ms" goal classify-sweep --root "$clone" --draft "$tmp/refusal-draft.txt" --preview 2>&1)
+  rc=$?
+  set -e
+  [[ $rc -ne 0 && "$output" == *"$code"* ]] \
+    || { echo "classification refusal $code did not fire: rc=$rc output=$output" >&2; exit 1; }
+}
+assert_classification_refusal SWEEP_UNKNOWN_GOAL $'fix-docs 1 queued migration\nperf-pass 2 parked migration\nship-widget 3 claimed migration\nabsent-goal 1 unknown'
+assert_classification_refusal SWEEP_DUPLICATE_GOAL $'fix-docs 1 queued migration\nfix-docs 2 duplicate\nperf-pass 2 parked migration\nship-widget 3 claimed migration'
+assert_classification_refusal SWEEP_INCOMPLETE $'fix-docs 1 queued migration\nship-widget 3 claimed migration'
+assert_classification_refusal SWEEP_MALFORMED_ROW $'fix-docs 4 invalid tier\nperf-pass 2 parked migration\nship-widget 3 claimed migration'
+
+sed 's/claimed migration/changed migration/' "$classification_draft" >"$tmp/changed-classification-draft.txt"
+set +e
+changed_output=$("$ms" goal classify-sweep --root "$clone" --draft "$tmp/changed-classification-draft.txt" \
+  --confirm "$classification_digest" --by Wido 2>&1)
+changed_rc=$?
+set -e
+[[ $changed_rc -ne 0 && "$changed_output" == *SWEEP_LISTING_CHANGED* ]] \
+  || { echo "changed classification draft did not refuse by digest: rc=$changed_rc output=$changed_output" >&2; exit 1; }
+
+classification_confirm=$("$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" \
+  --confirm "$classification_digest" --by Wido)
+grep -q '"outcome":"confirmed"' <<<"$classification_confirm" \
+  || { echo "classification confirmation did not confirm: $classification_confirm" >&2; exit 1; }
+classified_tip=$(git -C "$origin" rev-parse main)
+for tier_goal in 'fix-docs 1 0' 'perf-pass 2 2' 'ship-widget 3 3'; do
+  read -r classified_id classified_tier classified_rounds <<<"$tier_goal"
+  classified_file="$tmp/classified-$classified_id.md"
+  git -C "$clone" cat-file -p "$classified_tip:plans/goals/$classified_id.md" >"$classified_file"
+  grep -q "^- Tier: $classified_tier$" "$classified_file" \
+    && grep -q "reviewRoundLimit=$classified_rounds$" "$classified_file" \
+    || { echo "classification did not normalize $classified_id to tier $classified_tier and $classified_rounds rounds" >&2; cat "$classified_file" >&2; exit 1; }
+done
+git -C "$clone" cat-file -p "$classified_tip:plans/goals/backlog.md" >"$tmp/classified-root.md"
+grep -q '^- TierLaw: since=' "$tmp/classified-root.md" \
+  || { echo "classification confirmation did not install TierLaw" >&2; cat "$tmp/classified-root.md" >&2; exit 1; }
+
+# Retain the classified root but restore the valid pre-sweep claimed record to
+# prove the active dispatch binding refuses a tierless goal after TierLaw.
+git -C "$clone" fetch -q origin
+git -C "$clone" reset -q --hard origin/main
+cp "$tmp/pre-sweep-ship-widget.md" "$clone/plans/goals/ship-widget.md"
+git -C "$clone" add plans/goals/ship-widget.md
+git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid \
+  commit -q --no-verify -m "fixture tierless goal after TierLaw"
+git -C "$clone" push -q origin HEAD:main
+git -C "$clone" update-ref refs/metasystem/goals/accepted HEAD
+set +e
+after_binding=$("$ms" job goal-binding --root "$clone" --goal ship-widget 2>&1)
+after_binding_rc=$?
+set -e
+[[ $after_binding_rc -ne 0 && "$after_binding" == *"classify the goal first"* ]] \
+  || { echo "post-TierLaw tierless goal did not refuse dispatch binding: rc=$after_binding_rc output=$after_binding" >&2; exit 1; }
+fi
+
 if [[ "$fixture_scenario" == archive-and-prune ]]; then
 "$ms" goal release --root "$clone" --id ship-widget >/dev/null
 METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z \
   "$ms" goal open --root "$clone" --id budget-check \
-    --intent "Exercise structured budget admission." \
-    --next "Continue." --claim --elapsed-limit 8h --attempt-limit 2 \
-    --reserved-job-minutes-limit 120 --active-job-limit 1 >/dev/null
+		--intent "Exercise structured budget admission." \
+		--next "Continue." --tier 3 --elapsed-limit 8h --attempt-limit 2 \
+		--reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 >/dev/null
+approve_fixture_goal budget-check \
+	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
+METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z "$ms" goal claim --root "$clone" --id budget-check >/dev/null
 # 13. Concluding writes the records-owned archive, reopening records a
 # ledger move back to the live set, and concluding again preserves the
 # canonical record bytes including its Integrity line.
 "$ms" goal open --root "$clone" --id archive-roundtrip \
-  --intent "Exercise concluded-goal archival." --next "Conclude it." >/dev/null
+	--intent "Exercise concluded-goal archival." --next "Conclude it." --tier 3 >/dev/null
 "$ms" goal done --root "$clone" --id archive-roundtrip \
   --conclude "Archived in the records-owned location." >/dev/null
 archive_tip=$(git -C "$origin" rev-parse main)
@@ -537,11 +642,14 @@ fi
 # observing refusal, concluding it, and observing acceptance at the same clock.
 "$ms" goal release --root "$clone" --id budget-check >/dev/null
 METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z \
-  "$ms" goal open --root "$clone" --claim --id admission-concluded \
-    --intent "Prove admission consumes records-owned conclusions." \
-    --next "Conclude after its budget is exhausted." \
-    --elapsed-limit 4h --attempt-limit 1 \
-    --reserved-job-minutes-limit 30 --active-job-limit 1 >/dev/null
+	"$ms" goal open --root "$clone" --id admission-concluded \
+		--intent "Prove admission consumes records-owned conclusions." \
+		--next "Conclude after its budget is exhausted." --tier 3 \
+		--elapsed-limit 4h --attempt-limit 1 \
+		--reserved-job-minutes-limit 30 --active-job-limit 1 --review-round-limit 3 >/dev/null
+approve_fixture_goal admission-concluded \
+	--elapsed-limit 4h --attempt-limit 1 --reserved-job-minutes-limit 30 --active-job-limit 1 --review-round-limit 3
+METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z "$ms" goal claim --root "$clone" --id admission-concluded >/dev/null
 set +e
 admission_before=$(METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
   "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
@@ -549,7 +657,7 @@ admission_before_rc=$?
 set -e
 [[ "$admission_before_rc" -eq 10 ]] \
   || { echo "the exhausted live goal did not request breach-stop before conclusion (rc=$admission_before_rc): $admission_before" >&2; exit 1; }
-grep -q 'BUDGET_REFUSED: goal admission-concluded revision=1 admission closed: elapsedLimit' <<<"$admission_before" \
+grep -q 'BUDGET_REFUSED: goal admission-concluded revision=3 admission closed: elapsedLimit' <<<"$admission_before" \
   || { echo "the pre-conclusion refusal did not charge the exhausted goal: $admission_before" >&2; exit 1; }
 METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
   "$ms" goal done --root "$clone" --id admission-concluded \

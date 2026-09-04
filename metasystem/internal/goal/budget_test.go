@@ -7,12 +7,12 @@ import (
 )
 
 func TestBudgetTupleIsCompletePositiveAndCanonical(t *testing.T) {
-	budget, err := NewBudget("8h", 3, 180, 2)
+	budget, err := NewBudget("8h", 3, 180, 2, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if budget.ElapsedLimit != "1d" || budget.AttemptLimit != 3 ||
-		budget.ReservedJobMinutesLimit != 180 || budget.ActiveJobLimit != 2 {
+		budget.ReservedJobMinutesLimit != 180 || budget.ActiveJobLimit != 2 || budget.ReviewRoundLimit != 3 {
 		t.Fatalf("canonical tuple = %+v", budget)
 	}
 	for _, record := range []string{
@@ -20,7 +20,7 @@ func TestBudgetTupleIsCompletePositiveAndCanonical(t *testing.T) {
 		"elapsedLimit=4h attemptLimit=2 reservedJobMinutesLimit=60 activeJobLimit=1 extra=1",
 		"elapsedLimit=4h attemptLimit=0 reservedJobMinutesLimit=60 activeJobLimit=1",
 	} {
-		if _, err := parseBudgetRecord(record); err == nil {
+		if _, _, err := parseBudgetRecord(record); err == nil {
 			t.Fatalf("incomplete, extra, or non-positive tuple parsed: %q", record)
 		}
 	}
@@ -81,7 +81,7 @@ func TestBudgetValidationNamesEveryInvalidLimit(t *testing.T) {
 	}
 	for _, test := range newBudgetTests {
 		t.Run("new "+test.name, func(t *testing.T) {
-			_, err := NewBudget(test.elapsed, test.attempts, test.reservedMinutes, test.activeJobs)
+			_, err := NewBudget(test.elapsed, test.attempts, test.reservedMinutes, test.activeJobs, 0)
 			if err == nil || !strings.Contains(err.Error(), test.fragment) {
 				t.Fatalf("invalid command budget was not refused by field name: %v", err)
 			}
@@ -92,7 +92,7 @@ func TestBudgetValidationNamesEveryInvalidLimit(t *testing.T) {
 func TestStoredBudgetRequiresCompleteNumericLimits(t *testing.T) {
 	valid := map[string]string{
 		"elapsedLimit": "8h", "attemptLimit": "2",
-		"reservedJobMinutesLimit": "60", "activeJobLimit": "1",
+		"reservedJobMinutesLimit": "60", "activeJobLimit": "1", "reviewRoundLimit": "3",
 	}
 	if budget, err := budgetFromIntentArgs(valid); err != nil || budget.ElapsedLimit != "1d" {
 		t.Fatalf("valid stored budget did not parse canonically: %+v %v", budget, err)
@@ -103,7 +103,7 @@ func TestStoredBudgetRequiresCompleteNumericLimits(t *testing.T) {
 		change   func(map[string]string)
 		fragment string
 	}{
-		{name: "incomplete", change: func(args map[string]string) { delete(args, "activeJobLimit") }, fragment: "all four fields"},
+		{name: "incomplete", change: func(args map[string]string) { delete(args, "activeJobLimit") }, fragment: "all five fields"},
 		{name: "attempts", change: func(args map[string]string) { args["attemptLimit"] = "many" }, fragment: "attemptLimit"},
 		{name: "reserved minutes", change: func(args map[string]string) { args["reservedJobMinutesLimit"] = "many" }, fragment: "reservedJobMinutesLimit"},
 		{name: "active jobs", change: func(args map[string]string) { args["activeJobLimit"] = "many" }, fragment: "activeJobLimit"},

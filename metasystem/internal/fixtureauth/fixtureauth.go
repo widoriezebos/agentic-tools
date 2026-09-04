@@ -37,6 +37,7 @@ const goalNowEnv = "METASYSTEM_GOAL_NOW"
 // the fail-closed default for callers with no root.
 type Authorization struct {
 	tablePath string // "" = no identity fixture in play (env unset)
+	root      string // canonical checkout root this authorization was issued for
 	// fixtureMode records that the ROOT authorizes fixtures at all —
 	// independent of the identity-table env, because the
 	// mission-process and process-table sources ride their OWN
@@ -54,15 +55,20 @@ type Authorization struct {
 //     at construction so a leaked fixture never rides an unfenced
 //     entry point.
 func New(root string) (*Authorization, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	absRoot = filepath.Clean(absRoot)
 	mode := FixtureModeRoot(root)
 	path := os.Getenv(fixtureEnv)
 	if path == "" {
-		return &Authorization{fixtureMode: mode}, nil
+		return &Authorization{root: absRoot, fixtureMode: mode}, nil
 	}
 	if !mode {
 		return nil, fmt.Errorf("%s is set but metasystem.runtimes is not fake in %s", fixtureEnv, root)
 	}
-	return &Authorization{tablePath: path, fixtureMode: true}, nil
+	return &Authorization{tablePath: path, root: absRoot, fixtureMode: true}, nil
 }
 
 // entryFor is the ONE fixture-table read. pidStartedAt is the
@@ -246,6 +252,25 @@ func (p ClockProbe) GoalNow() (time.Time, bool, error) {
 		return time.Time{}, false, fmt.Errorf("%s must be an RFC3339 timestamp: %v", goalNowEnv, err)
 	}
 	return parsed.UTC(), true, nil
+}
+
+// GoalHumanAuthorityProbe is the fixture-only grant for a human-reserved goal
+// mutation. It is deliberately independent of the fixture clock: a fixture
+// approval must not acquire a wall-clock or governance-horizon dependency.
+type GoalHumanAuthorityProbe struct{ a *Authorization }
+
+func (a *Authorization) GoalHumanAuthority() GoalHumanAuthorityProbe {
+	return GoalHumanAuthorityProbe{a}
+}
+
+// Allows binds the grant to the exact root that authorized fake-runtime
+// fixtures. A grant issued for one fixture checkout cannot authorize another.
+func (p GoalHumanAuthorityProbe) Allows(root string) bool {
+	if p.a == nil || !p.a.fixtureMode {
+		return false
+	}
+	absRoot, err := filepath.Abs(root)
+	return err == nil && filepath.Clean(absRoot) == p.a.root
 }
 
 // MissionHolderProbe serves dispatch.ValidateMission: command plus

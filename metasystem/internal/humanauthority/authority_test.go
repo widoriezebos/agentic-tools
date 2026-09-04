@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -325,6 +326,36 @@ func TestProofRefusesAnEmptyInvokerPID(t *testing.T) {
 	proof, err := Prove(root, 0, reader, time.Unix(1400, 0))
 	if err == nil || proof.Outcome != OutcomeTerminalMissing || proof.Valid() {
 		t.Fatalf("empty invoker PID did not fail closed: proof=%+v err=%v", proof, err)
+	}
+}
+
+func TestFixtureGoalProofIsBoundToTheExactFakeRuntimeRoot(t *testing.T) {
+	fixtureRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixtureRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	authorization, err := fixtureauth.New(fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := FixtureGoalProof(fixtureRoot, authorization.GoalHumanAuthority(), time.Unix(1500, 0))
+	if err != nil || !proof.ValidFor(fixtureRoot) || !proof.FixtureOnly {
+		t.Fatalf("fixture proof was not valid for its root: proof=%+v err=%v", proof, err)
+	}
+	if proof.ValidFor(t.TempDir()) {
+		t.Fatal("fixture proof authorized a different root")
+	}
+
+	productionRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(productionRoot, "metasystem.conf"), []byte("metasystem.runtimes=codex\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	productionAuthorization, err := fixtureauth.New(productionRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FixtureGoalProof(productionRoot, productionAuthorization.GoalHumanAuthority(), time.Unix(1500, 0)); err == nil {
+		t.Fatal("a production root obtained fixture human authority")
 	}
 }
 

@@ -937,7 +937,7 @@ func malformedBudgetGoal(err error) (string, bool) {
 }
 
 func goalBudgetRemedy(id string) string {
-	return fmt.Sprintf("metasystem goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER", id)
+	return fmt.Sprintf("metasystem goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER --review-round-limit NON_NEGATIVE_INTEGER", id)
 }
 
 func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {

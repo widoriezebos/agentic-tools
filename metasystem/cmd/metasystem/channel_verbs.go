@@ -83,6 +83,7 @@ func runChannelAsk(args []string) int {
 	attempts := f.Int64("attempt-limit", 0, "proposed resume attempt limit for a stop question")
 	minutes := f.Int64("reserved-job-minutes-limit", 0, "proposed resume reserved job minutes for a stop question")
 	active := f.Int64("active-job-limit", 0, "proposed resume active job limit for a stop question")
+	reviewRounds := f.Int64("review-round-limit", -1, "proposed resume critic review-round limit for a stop question")
 	var facts, options repeatedStrings
 	f.Var(&facts, "fact", "question fact")
 	f.Var(&options, "option", "label: consequence")
@@ -90,7 +91,7 @@ func runChannelAsk(args []string) int {
 		return 2
 	}
 	if *kind == "stop" {
-		budget, budgetErr := goal.NewBudget(*elapsed, *attempts, *minutes, *active)
+		budget, budgetErr := goal.NewBudget(*elapsed, *attempts, *minutes, *active, *reviewRounds)
 		if budgetErr != nil {
 			fmt.Fprintln(os.Stderr, "a stop question requires a complete valid proposed resume tuple:", budgetErr)
 			return 2

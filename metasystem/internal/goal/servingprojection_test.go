@@ -52,9 +52,13 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 				Verb: "approve", Actor: "human:wido", Targets: []string{id}, Keep: -1,
 			}
 			f.History = append(f.History, event)
+			digest := ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+			if f.Tier == 0 {
+				digest = legacyApprovalDigest(f.Intent, *f.Budget)
+			}
 			f.Approved = &ApprovalRecord{
 				By: event.Actor, At: event.At, Revision: 2, Opid: event.Opid,
-				Authority: ApprovalAuthorityProven, Digest: ApprovalDigest(f.Intent, *f.Budget),
+				Authority: ApprovalAuthorityProven, Digest: digest,
 			}
 		}
 		if f.Claimed != nil && f.Claimed.Revision == 2 {

@@ -12,10 +12,55 @@ import (
 	"time"
 	"unsafe"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	draft := filepath.Join(t.TempDir(), "classification.txt")
+	if err := os.WriteFile(draft, []byte("standing-validation 2 stale draft row\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	preview, previewCode := captureStdout(t, func() int {
+		return runGoalClassifySweep([]string{"--root", root, "--draft", draft, "--preview"})
+	})
+	markerIndex := strings.LastIndex(preview, "listing-digest ")
+	if previewCode != 0 || markerIndex < 0 || strings.TrimSpace(preview[:markerIndex]) != "" {
+		t.Fatalf("already-tiered ledger did not preview as an empty listing: code=%d output=%q", previewCode, preview)
+	}
+	digest := strings.TrimSpace(strings.TrimPrefix(preview[markerIndex:], "listing-digest "))
+	confirmed, confirmCode := captureStdout(t, func() int {
+		return runGoalClassifySweep([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido"})
+	})
+	if confirmCode != 0 || !strings.Contains(confirmed, `"outcome":"confirmed"`) || !strings.Contains(confirmed, `"classified":0`) {
+		t.Fatalf("empty classification confirmation failed: code=%d output=%q", confirmCode, confirmed)
+	}
+
+	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
+	rootBytes := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/backlog.md")
+	rootRecord, problems := goal.ParseRoot([]byte(rootBytes))
+	if len(problems) != 0 || rootRecord.TierLaw == "" {
+		t.Fatalf("empty confirmation did not install TierLaw: marker=%q problems=%v", rootRecord.TierLaw, problems)
+	}
+
+	// A post-law hand edit cannot smuggle a tierless goal into a delegate.
+	goalSyncMutationGit(t, root, "reset", "-q", "--hard", goal.AcceptedRef)
+	amendSyncedGoalFixture(t, root, "hand-written tierless goal", func(file *goal.GoalFile) {
+		file.Tier = 0
+		file.Approved = nil
+		file.StopCapability = &goal.StopCapability{
+			Generation: 1, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1,
+		}
+	})
+	if _, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", time.Date(2026, 9, 1, 10, 1, 0, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "classify the goal first") {
+		t.Fatalf("delegate accepted a hand-written tierless goal after TierLaw: %v", err)
+	}
+}
 
 func completeSetObligationArgs(root string) []string {
 	return []string{
@@ -54,6 +99,7 @@ func completeResumeArgs(root string) []string {
 		"--attempt-limit", "4",
 		"--reserved-job-minutes-limit", "240",
 		"--active-job-limit", "2",
+		"--review-round-limit", "3",
 	}
 }
 
@@ -422,7 +468,7 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 
 	approvalAt := "2026-09-01T08:00:00Z"
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAX", "mac-a", "enrollment-fixture")
-	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
+	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
 	rootRecord := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote,
 		MigrationEpoch: "2026-09-01T07:00:00Z", ManifestDigest: strings.Repeat("ab", 32), MigrationMode: "manifest", Revision: 2,
@@ -433,11 +479,11 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 		}},
 	}
 	file := &goal.GoalFile{
-		Id: "relayed-waiting", State: goal.StateApproved, Intent: "Run only while relayed authority remains valid.",
+		Id: "relayed-waiting", State: goal.StateApproved, Tier: 3, Intent: "Run only while relayed authority remains valid.",
 		Origin: goal.OriginMain, NextStep: "Claim it.", OpenedAt: "2026-09-01T07:30:00Z", Revision: 2, Budget: &budget,
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvalAt, Revision: 2, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityRelayed, Digest: goal.ApprovalDigest("Run only while relayed authority remains valid.", budget), ReviewBy: "2026-09-06",
+			Authority: goal.ApprovalAuthorityRelayed, Digest: goal.ApprovalDigest("Run only while relayed authority remains valid.", 3, budget), ReviewBy: "2026-09-06",
 		},
 		History: []goal.HistoryLine{
 			{At: "2026-09-01T07:30:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAY", "mac-a", "enrollment-fixture"), Verb: "open", Actor: "mac-a+enrollment-fixture", Targets: []string{"relayed-waiting"}, Keep: -1},
@@ -599,16 +645,16 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	openedAt := "2026-08-30T08:00:00Z"
 	claimAt := "2026-08-30T08:05:00Z"
 	approvedAt := "2026-08-30T08:06:00Z"
-	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", "mac-cli", "m1")
 	file := &goal.GoalFile{
-		Id: "standing-validation", State: goal.StateClaimed, Intent: "Govern validation.", Origin: goal.OriginMain,
+		Id: "standing-validation", State: goal.StateClaimed, Tier: 3, Intent: "Govern validation.", Origin: goal.OriginMain,
 		NextStep: "Run it.", OpenedAt: openedAt, Revision: 3,
 		Budget:  budget,
 		Claimed: &goal.ClaimRecord{Machine: "mac-cli", Lineage: "m1", At: claimAt, Revision: 2},
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvedAt, Revision: 3, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", *budget),
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", 3, *budget),
 		},
 		History: []goal.HistoryLine{
 			{At: openedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAA", "mac-cli", "m1"), Verb: "open", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1},

@@ -169,7 +169,7 @@ func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 		}
 	})
 
-	t.Run("resume consumes the answer", func(t *testing.T) {
+	t.Run("resume uses standing approval without consuming an answer", func(t *testing.T) {
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
 		budget := testBudget()
@@ -177,15 +177,16 @@ func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 		if result, err := Open(verbReq(root, "01J5X0000000000000000000G0", "mac-a"), "resume-goal", "Resume once.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open: %+v %v", result, err)
 		}
+		approveGoalForTest(t, verbReq(root, "01J5X0000000000000000000G5", "mac-a"), "resume-goal", budget)
 		answerReq := verbReq(root, "01J5X0000000000000000000G1", "mac-a")
 		proof := AnswerProof{Provider: "slack", User: "UWIDO", Ref: "1/2", Step: 43}
-		answerText := token + " goal=resume-goal minutes=240 goalRevision=4"
+		answerText := token + " goal=resume-goal minutes=240 reviewRounds=3 goalRevision=4"
 		if result, err := Answer(answerReq, "resume-goal", "q", answerText, "", proof); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("answer: %+v %v", result, err)
 		}
 		claim := verbReq(root, "01J5X0000000000000000000G2", "mac-a")
 		claim.ClaimEpoch = 9
-		if result, err := Claim(claim, "resume-goal", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Claim(claim, "resume-goal"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim: %+v %v", result, err)
 		}
 		projection, _ := Project(endpointFor(root), true, claim.Now)
@@ -201,13 +202,13 @@ func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 		resumeReq := verbReq(root, "01J5X0000000000000000000G4", "mac-a")
-		resumeReq.Actor.Human, resumeReq.ApprovedRef, resumeReq.Now = "wido", answerReq.opid(), stop.Now.Add(time.Minute)
+		resumeReq.Actor.Human, resumeReq.Now = "wido", stop.Now.Add(time.Minute)
 		humanProof := testHumanAuthority(t, root, resumeReq.Now)
 		if result, err := Resume(ResumeRequest{VerbRequest: resumeReq, GoalID: "resume-goal", Budget: budget, Authority: humanProof}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("resume: %+v %v", result, err)
 		}
-		if _, err := AuthenticatedChannelApproval(root, "resume-goal", answerReq.opid(), token, resumeReq.Now); err == nil || !strings.Contains(err.Error(), "already consumed by resume") {
-			t.Fatalf("consumed resume approval was reusable: %v", err)
+		if _, err := AuthenticatedChannelApproval(root, "resume-goal", answerReq.opid(), token, resumeReq.Now); err != nil {
+			t.Fatalf("standing-approval resume unexpectedly consumed the independent answer: %v", err)
 		}
 	})
 

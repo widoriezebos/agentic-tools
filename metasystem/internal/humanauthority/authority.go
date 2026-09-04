@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -84,6 +85,7 @@ type Proof struct {
 	ChannelUser        string     `json:"channelUser,omitempty"`
 	ChannelRef         string     `json:"channelRef,omitempty"`
 	ChannelStep        int64      `json:"channelStep,omitempty"`
+	FixtureOnly        bool       `json:"fixtureOnly,omitempty"`
 	observedRoot       string
 	observed           bool
 }
@@ -92,6 +94,13 @@ type Proof struct {
 // human-reserved mutation. It does not turn a parsed JSON document into a new
 // observation; production obtains proofs only from Prove.
 func (p Proof) Valid() bool {
+	if p.FixtureOnly {
+		return p.observed && p.Schema == 1 && p.Outcome == OutcomeProven && !p.CheckedAt.IsZero() &&
+			p.InvokerRef == (ProcessRef{}) && p.TerminalRef == (ProcessRef{}) && p.TerminalGeneration == 0 &&
+			p.SignatureSetDigest == "" && len(p.Nodes) == 0 && p.TemporaryHumanWord == "" &&
+			p.ReviewBy == "" && p.Departure == "" && p.ChannelProvider == "" && p.ChannelUser == "" &&
+			p.ChannelRef == "" && p.ChannelStep == 0
+	}
 	if !p.observed || p.Schema != 1 || p.Outcome != OutcomeProven || p.CheckedAt.IsZero() ||
 		p.InvokerRef.PID < 1 || p.TerminalRef.PID < 1 || p.TerminalGeneration == 0 ||
 		len(p.SignatureSetDigest) != 64 || len(p.Nodes) == 0 || p.TemporaryHumanWord != "" ||
@@ -106,6 +115,24 @@ func (p Proof) Valid() bool {
 	}
 	last := p.Nodes[len(p.Nodes)-1]
 	return last.TerminalMatch && sameRef(last.Ref, p.TerminalRef)
+}
+
+// FixtureGoalProof constructs the explicit headless-fixture equivalent of an
+// enrolled-terminal proof. The unforgeable-at-the-CLI grant comes from the
+// fixtureauth owner and is bound to this exact fake-runtime checkout root.
+func FixtureGoalProof(root string, grant fixtureauth.GoalHumanAuthorityProbe, now time.Time) (Proof, error) {
+	if !grant.Allows(root) {
+		return Proof{}, fmt.Errorf("fixture human authority is not authorized for this root")
+	}
+	if now.IsZero() {
+		return Proof{}, fmt.Errorf("fixture human authority requires a non-zero observation time")
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return Proof{}, err
+	}
+	return Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeProven, FixtureOnly: true,
+		observedRoot: filepath.Clean(absRoot), observed: true}, nil
 }
 
 // ValidFor binds this in-process observation to the root whose ancestry and

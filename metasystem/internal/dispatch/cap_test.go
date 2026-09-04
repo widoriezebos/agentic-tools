@@ -73,17 +73,51 @@ func TestResolveCapAliasOrder(t *testing.T) {
 	}
 
 	canonicalFirst := writeConf(t,
-		"cap.min.claude.claude-fable-5-1=200",
+		"cap.min.claude.claude-fable-5-1=100",
 		"cap.min.implementer.claude.claude-fable-5=30")
 	capMin, rule, _, err = ResolveCap(canonicalFirst, "implementer", "claude", "claude-fable-5-1", "claude-fable-5", "")
-	if err != nil || capMin != 200 || rule != "config-pair" {
-		t.Fatalf("canonical pair = (%d, %s, %v), want (200, config-pair, nil)", capMin, rule, err)
+	if err != nil || capMin != 100 || rule != "config-pair" {
+		t.Fatalf("canonical pair = (%d, %s, %v), want (100, config-pair, nil)", capMin, rule, err)
 	}
 
 	capMin, rule, _, err = ResolveCap(sourceOnly, "implementer", "claude", "claude-fable-5-1", "", "")
 	if err != nil || capMin != 120 || rule != "config-general" {
 		t.Fatalf("no source = (%d, %s, %v), want (120, config-general, nil)", capMin, rule, err)
 	}
+}
+
+func TestResolveCapEnforcesDispatchCapMaxForEverySource(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		lines     []string
+		role      string
+		requested string
+	}{
+		{name: "explicit argument", lines: []string{"dispatch.cap-max=120"}, role: "implementer", requested: "121"},
+		{name: "role pair", lines: []string{"dispatch.cap-max=120", "cap.min.implementer.codex.gpt-5.6=121"}, role: "implementer"},
+		{name: "runtime model pair", lines: []string{"dispatch.cap-max=120", "cap.min.codex.gpt-5.6=121"}, role: "verifier"},
+		{name: "general", lines: []string{"dispatch.cap-max=120", "dispatch.cap-min=121"}, role: "verifier"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			conf := writeConf(t, test.lines...)
+			_, _, _, err := ResolveCap(conf, test.role, "codex", "gpt-5.6", "", test.requested)
+			if err == nil || !strings.Contains(err.Error(), "dispatch.cap-max=120") {
+				t.Fatalf("cap above the maximum from %s was not refused naming the key: %v", test.name, err)
+			}
+		})
+	}
+	conf := writeConf(t, "dispatch.cap-max=120")
+	if capMin, _, _, err := ResolveCap(conf, "implementer", "codex", "gpt-5.6", "", "120"); err != nil || capMin != 120 {
+		t.Fatalf("cap equal to the maximum was refused: cap=%d err=%v", capMin, err)
+	}
+	raised := writeConf(t, "dispatch.cap-max=200")
+	if capMin, _, _, err := ResolveCap(raised, "implementer", "codex", "gpt-5.6", "", "150"); err != nil || capMin != 150 {
+		t.Fatalf("configured maximum did not control admission: cap=%d err=%v", capMin, err)
+	}
+}
+
+func TestSTR3MissionCapBypass07GoalBoundMissionAboveCeiling(t *testing.T) {
+	t.Skip("STR3-MISSION-CAP-BYPASS-07: a goal-bound mission cap above 120 minutes cannot be proved here because mission fence enforcement is explicitly outside part one")
 }
 
 func TestRefuseUnsignedMissionCap(t *testing.T) {

@@ -40,7 +40,7 @@ func sessionStopBed(t *testing.T) string {
 		ReservedJobMinutesLimit: 240, ActiveJobLimit: 2,
 	}
 	waiting := &goal.GoalFile{
-		Id: "waiting", State: goal.StateApproved, Intent: "Claim shared work", Origin: goal.OriginMain,
+		Id: "waiting", State: goal.StateApproved, Tier: 3, Intent: "Claim shared work", Origin: goal.OriginMain,
 		NextStep: "Claim and dispatch it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 		Budget: &budget,
 		History: []goal.HistoryLine{{
@@ -53,7 +53,7 @@ func sessionStopBed(t *testing.T) string {
 	}
 	waiting.Approved = &goal.ApprovalRecord{
 		By: "human:Wido", At: waiting.History[1].At, Revision: 2, Opid: waiting.History[1].Opid,
-		Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(waiting.Intent, budget),
+		Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(waiting.Intent, waiting.Tier, budget),
 	}
 	if err := os.WriteFile(filepath.Join(goals, "waiting.md"), goal.RenderFile(waiting), 0o644); err != nil {
 		t.Fatal(err)

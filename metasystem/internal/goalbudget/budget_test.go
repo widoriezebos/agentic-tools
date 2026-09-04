@@ -51,20 +51,23 @@ func TestFormatWorkingDurationUsesEightHourDaysAndRoundTrips(t *testing.T) {
 }
 
 func TestNewNormalizesAndRefusesIncompleteTuples(t *testing.T) {
-	b, err := New("24h", 6, 960, 2)
+	b, err := New("24h", 6, 960, 2, 3)
 	if err != nil {
 		t.Fatalf("a complete tuple was refused: %v", err)
 	}
-	if b.ElapsedLimit != "3d" || b.AttemptLimit != 6 || b.ReservedJobMinutesLimit != 960 || b.ActiveJobLimit != 2 {
+	if b.ElapsedLimit != "3d" || b.AttemptLimit != 6 || b.ReservedJobMinutesLimit != 960 || b.ActiveJobLimit != 2 || b.ReviewRoundLimit != 3 {
 		t.Fatalf("the tuple did not normalize as recorded: %+v", b)
 	}
-	if _, err := New("nonsense", 1, 1, 1); err == nil || !strings.Contains(err.Error(), "elapsedLimit") {
+	if _, err := New("nonsense", 1, 1, 1, 0); err == nil || !strings.Contains(err.Error(), "elapsedLimit") {
 		t.Fatalf("a malformed elapsed limit must refuse naming the field, got %v", err)
 	}
 	for _, bad := range [][3]int64{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}, {-1, 1, 1}} {
-		if _, err := New("4h", bad[0], bad[1], bad[2]); err == nil {
+		if _, err := New("4h", bad[0], bad[1], bad[2], 0); err == nil {
 			t.Fatalf("a non-positive limit %v must refuse", bad)
 		}
+	}
+	if _, err := New("4h", 1, 1, 1, -1); err == nil || !strings.Contains(err.Error(), "reviewRoundLimit") {
+		t.Fatalf("a negative review limit must refuse, got %v", err)
 	}
 }
 
@@ -82,6 +85,29 @@ func TestValidateMirrorsConstructionRules(t *testing.T) {
 		if err := bad.Validate(); err == nil {
 			t.Fatalf("an incomplete record passed validation: %+v", bad)
 		}
+	}
+}
+
+func TestReviewRoundValidation(t *testing.T) {
+	budget := Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1, ReviewRoundLimit: 4}
+	negative := budget
+	negative.ReviewRoundLimit = -1
+	if err := negative.Validate(); err == nil || !strings.Contains(err.Error(), "non-negative") {
+		t.Fatalf("a negative review-round limit passed validation: %v", err)
+	}
+	if err := budget.Validate(3); err == nil || !strings.Contains(err.Error(), "maximum 3") {
+		t.Fatalf("a fourth round escaped the configured ceiling: %v", err)
+	}
+	tierOne := budget
+	tierOne.ReviewRoundLimit = 0
+	if err := tierOne.Validate(3); err != nil {
+		t.Fatalf("the tier-one zero-round limit was refused: %v", err)
+	}
+	if err := budget.Validate(0); err != nil {
+		t.Fatalf("the configured zero ceiling must admit every non-negative limit: %v", err)
+	}
+	if err := budget.Validate(3, 4); err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("multiple configured ceilings passed validation: %v", err)
 	}
 }
 

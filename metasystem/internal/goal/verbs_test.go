@@ -191,7 +191,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open-claim: %+v %v", res, err)
 		}
-		next, err := NewBudget("8h", 6, 360, 3)
+		next, err := NewBudget("8h", 6, 360, 3, 3)
 		if err != nil {
 			t.Fatal(err)
 		}

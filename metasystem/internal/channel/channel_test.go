@@ -568,7 +568,7 @@ func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
 }
 func TestAnswerCarryingStrictTokenSatisfiesNormApproval(t *testing.T) {
 	root, p, q, now := pollLedgerBed(t)
-	q.Wants = "goal=g minutes=60 goalRevision=2"
+	q.Wants = "goal=g minutes=60 reviewRounds=3 goalRevision=2"
 	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
 		t.Fatal(err)
 	}
@@ -584,9 +584,9 @@ func TestAnswerCarryingStrictTokenSatisfiesNormApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	minutes, revision, exists, proven, err := goal.RecordedNormApproval(root, projection.Tree, record.Answer.Opid, "g")
-	if err != nil || !exists || !proven || minutes != 60 || revision != 2 {
-		t.Fatalf("approval=%d/%d exists=%v proven=%v err=%v", minutes, revision, exists, proven, err)
+	minutes, rounds, revision, exists, proven, err := goal.RecordedNormApproval(root, projection.Tree, record.Answer.Opid, "g")
+	if err != nil || !exists || !proven || minutes != 60 || rounds != 3 || revision != 2 {
+		t.Fatalf("approval=%d/%d/%d exists=%v proven=%v err=%v", minutes, rounds, revision, exists, proven, err)
 	}
 }
 func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
@@ -596,7 +596,7 @@ func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
 	if err != nil || !proof.AuthorizesResume(root) || !proof.AuthorizesSetObligation(root) || proof.TemporaryResumeFor(root) {
 		t.Fatalf("channel authority did not survive the temporary horizon: %+v %v", proof, err)
 	}
-	budget, _ := goal.NewBudget("4h", 3, 90, 2)
+	budget, _ := goal.NewBudget("4h", 3, 90, 2, 0)
 	resumeToken := goal.ResumeApprovalToken("g", budget)
 	first.Wants = "goal=g minutes=90 goalRevision=1"
 	if err := writeJSON(questionPath(root, first.ID), first); err != nil {
