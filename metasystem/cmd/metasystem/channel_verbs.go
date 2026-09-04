@@ -30,6 +30,20 @@ func channelIdentity(root string) (string, string, error) {
 	return m, lin, nil
 }
 
+func channelPollContext(root string) (context.Context, context.CancelFunc, error) {
+	raw, err := phase.Get(root, "channel.poll-timeout-sec", "15")
+	if err != nil {
+		return nil, nil, err
+	}
+	seconds, err := strconv.ParseInt(raw, 10, 64)
+	const maxSeconds = int64(^uint64(0)>>1) / int64(time.Second)
+	if err != nil || seconds < 1 || seconds > maxSeconds {
+		return nil, nil, fmt.Errorf("channel.poll-timeout-sec must be a positive integer of seconds")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
+	return ctx, cancel, nil
+}
+
 func runChannelStatus(args []string) int {
 	f := flag.NewFlagSet("channel status", flag.ContinueOnError)
 	root := f.String("root", ".", "repository root")
@@ -56,7 +70,11 @@ func runChannelStatus(args []string) int {
 		if l.Provider == nil {
 			return 0
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel, e := channelPollContext(*root)
+		if e != nil {
+			fmt.Fprintln(os.Stderr, e)
+			return 1
+		}
 		defer cancel()
 		ref, e := l.Provider.Post(ctx, l.Destination, text, nil)
 		if e != nil {
@@ -117,7 +135,11 @@ func runChannelAsk(args []string) int {
 		fmt.Fprintln(os.Stderr, e)
 		l = phase.Loaded{}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel, e := channelPollContext(*root)
+	if e != nil {
+		fmt.Fprintln(os.Stderr, e)
+		return 1
+	}
 	defer cancel()
 	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Provider: l.Provider, Destination: l.Destination, Now: time.Now()})
 	if e != nil {
@@ -197,7 +219,11 @@ func runChannelPoll(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel, err := channelPollContext(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	defer cancel()
 	r, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: *root, Destination: "fleet", ProviderName: l.Adapter, HumanUserID: l.HumanUserID, TOTPSecret: l.TOTPSecret, Machine: machine, Lineage: lineage, Provider: l.Provider, DestinationConfig: l.Destination, Now: time.Now()})
 	if err != nil {
@@ -260,8 +286,6 @@ func runChannelFakeCode(args []string) int {
 	return 0
 }
 
-var _ = strconv.Itoa
-
 func runChannelFake(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "channel fake needs serve or code")
@@ -300,7 +324,11 @@ func runChannelTelegram(args []string) int {
 		return 1
 	}
 	dest := channel.DestinationConfig{Provider: "telegram", Token: token, APIBase: base, Secrets: []string{token}}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel, err := channelPollContext(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	defer cancel()
 	updates, err := channelTelegram.New(nil).Peek(ctx, dest)
 	if err != nil {
