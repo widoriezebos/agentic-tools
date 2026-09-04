@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: One fixture leg: build, run dispatch-fixtures.sh seat-side, land through a chain. Approved under R-76-m2.
 - OpenedAt: 2026-09-04T17:35:51Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T17:35:57Z revision=2 opid=B5NG7Y149H50BW784Q2QY09NXX-m2-5fcf08ab authority=relayed digest=df7f74a96e966bb9eb73fe549d81c45f8ff0c87e2c02ed3dd95233cb61fb2730 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T18:11:58Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T18:11:11Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-04T17:35:51Z Q8PMTG441VR7FEGM4YC2MWNKPC-m2-5fcf08ab open actor=human:Wido targets=dispatch-fixture-recollection-wallclock-cap
 - 2026-09-04T17:35:57Z B5NG7Y149H50BW784Q2QY09NXX-m2-5fcf08ab approve actor=human:Wido targets=dispatch-fixture-recollection-wallclock-cap authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T18:11:11Z 3QPS4M7J5DVR46CDCZM674QW43-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-recollection-wallclock-cap
-Integrity: sha256=0a2012312ab112a16295faf54db87d2f2b75143b03a3143e7812633dcaee7482
+- 2026-09-04T18:11:58Z YNSFFQ2D52RRB8AS485TE2RYEA-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-recollection-wallclock-cap
+Integrity: sha256=5b22762d4b8a31e33da67d1a999416f6661fea2b8ff8b7ceebca863f218cf185
