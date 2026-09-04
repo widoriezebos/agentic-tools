@@ -35,6 +35,7 @@ const (
 	OutcomeCycle           = "ANCESTRY_CYCLE"
 	OutcomeTemporary       = "TEMPORARY_HUMAN_WORD"
 	OutcomeChannel         = "AUTHENTICATED_CHANNEL_WORD"
+	OutcomeVerifiedChannel = "VERIFIED_CHANNEL_ANSWER"
 	TemporaryWordRuling    = governance.TemporaryGoalAuthorityRuling
 	reviewByDateLayout     = "2006-01-02"
 )
@@ -84,6 +85,7 @@ type Proof struct {
 	ChannelProvider    string     `json:"channelProvider,omitempty"`
 	ChannelUser        string     `json:"channelUser,omitempty"`
 	ChannelRef         string     `json:"channelRef,omitempty"`
+	ChannelContext     string     `json:"channelContext,omitempty"`
 	ChannelStep        int64      `json:"channelStep,omitempty"`
 	FixtureOnly        bool       `json:"fixtureOnly,omitempty"`
 	observedRoot       string
@@ -165,12 +167,32 @@ func (p Proof) AuthorizesResume(root string) bool {
 func (p Proof) ChannelWordFor(root string) bool { return p.channelValidFor(root) }
 func (p Proof) channelValidFor(root string) bool {
 	abs, err := filepath.Abs(root)
-	if err != nil || !p.observed || p.observedRoot != filepath.Clean(abs) || p.Schema != 1 || p.Outcome != OutcomeChannel || p.CheckedAt.IsZero() {
+	if err != nil || !p.observed || p.observedRoot != filepath.Clean(abs) || p.Schema != 1 ||
+		(p.Outcome != OutcomeChannel && p.Outcome != OutcomeVerifiedChannel) || p.CheckedAt.IsZero() {
 		return false
 	}
-	return (governance.RecordedChannelAuthority{Outcome: p.Outcome, Provider: p.ChannelProvider, UserID: p.ChannelUser, MessageRef: p.ChannelRef, Step: p.ChannelStep}).ValidateRecorded() == nil
+	return (governance.RecordedChannelAuthority{Outcome: p.Outcome, Provider: p.ChannelProvider, UserID: p.ChannelUser, MessageRef: p.ChannelRef, ContextID: p.ChannelContext, Step: p.ChannelStep}).ValidateRecorded() == nil
+}
+
+// VerifiedChannelAnswerProof binds a provider-verified reply to the question
+// or status thread whose exact token it answered.
+func VerifiedChannelAnswerProof(root string, recorded governance.RecordedChannelAuthority, now time.Time) (Proof, error) {
+	if recorded.Outcome != governance.AuthorityOutcomeVerifiedChannelAnswer {
+		return Proof{}, fmt.Errorf("verified channel answer proof has the wrong outcome")
+	}
+	if err := recorded.ValidateRecorded(); err != nil {
+		return Proof{}, err
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Proof{}, err
+	}
+	return Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeVerifiedChannel, ChannelProvider: recorded.Provider, ChannelUser: recorded.UserID, ChannelRef: recorded.MessageRef, ChannelContext: recorded.ContextID, ChannelStep: recorded.Step, observedRoot: filepath.Clean(abs), observed: true}, nil
 }
 func AuthenticatedChannelProof(root string, recorded governance.RecordedChannelAuthority, now time.Time) (Proof, error) {
+	if recorded.Outcome != governance.AuthorityOutcomeAuthenticatedChannelWord {
+		return Proof{}, fmt.Errorf("authenticated channel proof has the wrong outcome")
+	}
 	if err := recorded.ValidateRecorded(); err != nil {
 		return Proof{}, err
 	}

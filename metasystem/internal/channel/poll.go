@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"golang.org/x/sys/unix"
 )
 
@@ -107,6 +109,14 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 	threads := []MessageRef{}
 	byThread := map[string]string{}
 	matchedRefs := map[MessageRef]bool{}
+	status := LoadStatusState(c.RepoRoot)
+	statusRoot := status.Ref.ThreadID
+	if statusRoot == "" {
+		statusRoot = status.Ref.ID
+	}
+	if status.GoalID != "" && statusRoot != "" {
+		threads = append(threads, MessageRef{ID: status.Ref.ID, ThreadID: statusRoot})
+	}
 	for _, q := range questions {
 		if q.Answer != nil {
 			matchedRefs[q.Answer.Ref] = true
@@ -148,6 +158,13 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 			break
 		}
 		qid := byThread[in.ThreadID]
+		if qid == "" && status.GoalID != "" && in.ThreadID == statusRoot {
+			if err = disposeStatusReply(ctx, c, status, in); err != nil {
+				return result, scrubErr(err, c)
+			}
+			result.Dispositions++
+			continue
+		}
 		if qid == "" {
 			if unmatchedAlready(filepath.Join(channelRoot(c.RepoRoot), c.Destination, "unmatched.jsonl"), in.Ref) {
 				continue
@@ -166,26 +183,7 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 			continue
 		}
 		answer, code, hasCode := SplitTOTP(in.Text)
-		reason := ""
-		step := int64(0)
-		if strings.TrimSpace(c.HumanUserID) == "" || strings.TrimSpace(c.TOTPSecret) == "" {
-			reason = "unconfigured"
-		} else if in.UserID != c.HumanUserID {
-			reason = "wrong user"
-		} else if !hasCode {
-			reason = "no code"
-		} else if !in.SentAt.IsZero() && c.Now.Sub(in.SentAt) > channelPollInterval+time.Duration(TOTPStep)*time.Second {
-			reason = fmt.Sprintf("code too old: sent %ds before the poll", int64(c.Now.Sub(in.SentAt)/time.Second))
-		} else {
-			verificationTime := c.Now
-			if !in.SentAt.IsZero() {
-				verificationTime = in.SentAt
-			}
-			step, hasCode = VerifyTOTP(c.TOTPSecret, code, verificationTime)
-			if !hasCode {
-				reason = "bad code"
-			}
-		}
+		step, reason := verifyInbound(c, in, code, hasCode)
 		if reason == "" {
 			row := consumedRow{Step: step, Destination: c.Destination, Provider: c.ProviderName, ThreadID: in.ThreadID, Ref: in.Ref, QID: q.ID}
 			ok, e := consume(c.RepoRoot, row, c.Now)
@@ -256,6 +254,81 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func verifyInbound(c PollConfig, in Inbound, code string, hasCode bool) (int64, string) {
+	if strings.TrimSpace(c.HumanUserID) == "" || strings.TrimSpace(c.TOTPSecret) == "" {
+		return 0, "unconfigured"
+	}
+	if in.UserID != c.HumanUserID {
+		return 0, "wrong user"
+	}
+	if !hasCode {
+		return 0, "no code"
+	}
+	if !in.SentAt.IsZero() && c.Now.Sub(in.SentAt) > channelPollInterval+time.Duration(TOTPStep)*time.Second {
+		return 0, fmt.Sprintf("code too old: sent %ds before the poll", int64(c.Now.Sub(in.SentAt)/time.Second))
+	}
+	verificationTime := c.Now
+	if !in.SentAt.IsZero() {
+		verificationTime = in.SentAt
+	}
+	step, ok := VerifyTOTP(c.TOTPSecret, code, verificationTime)
+	if !ok {
+		return 0, "bad code"
+	}
+	return step, ""
+}
+
+func disposeStatusReply(ctx context.Context, c PollConfig, status StatusState, in Inbound) error {
+	answer, code, hasCode := SplitTOTP(in.Text)
+	step, reason := verifyInbound(c, in, code, hasCode)
+	token := "start " + status.GoalID
+	if reason == "" && strings.TrimSpace(answer) != token {
+		reason = "wrong token"
+	}
+	if reason == "" {
+		row := consumedRow{Step: step, Destination: c.Destination, Provider: c.ProviderName, ThreadID: in.ThreadID, Ref: in.Ref, QID: "status:" + in.ThreadID}
+		ok, err := consume(c.RepoRoot, row, c.Now)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			reason = "replayed code"
+		}
+	}
+	unmatchedPath := filepath.Join(channelRoot(c.RepoRoot), c.Destination, "unmatched.jsonl")
+	if reason == "" {
+		recorded := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: c.ProviderName, UserID: in.UserID, MessageRef: in.Ref.ThreadID + "/" + in.Ref.ID, ContextID: in.ThreadID, Step: step}
+		proof, err := humanauthority.VerifiedChannelAnswerProof(c.RepoRoot, recorded, c.Now)
+		if err != nil {
+			return err
+		}
+		ulid, err := goal.NewOperationULID()
+		if err != nil {
+			return err
+		}
+		ep, err := goal.ResolveEndpoint(c.RepoRoot)
+		if err != nil {
+			return err
+		}
+		published, err := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: "wido"}, Ulid: ulid, Now: c.Now}, []string{status.GoalID}, nil, &proof)
+		if err != nil {
+			reason = err.Error()
+		} else if published.Outcome != goal.OutcomeConfirmed {
+			reason = "goal approval was not confirmed: " + published.Detail
+		} else {
+			_, err = c.Provider.Post(ctx, c.DestinationConfig, "recorded: "+status.GoalID+" approved for execution", &status.Ref)
+			return err
+		}
+	}
+	if !unmatchedAlready(unmatchedPath, in.Ref) {
+		if err := appendJSONL(unmatchedPath, in); err != nil {
+			return err
+		}
+	}
+	_, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with the token and your code", &status.Ref)
+	return err
 }
 
 func advanceAnswer(ctx context.Context, c PollConfig, q *Question) error {

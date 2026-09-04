@@ -23,6 +23,13 @@ type ReportConfig struct {
 }
 
 func ComposeReport(c ReportConfig) (string, error) {
+	text, _, err := ComposeStatusReport(c)
+	return text, err
+}
+
+// ComposeStatusReport returns the rendered post and the goal named by its
+// execution-approval line, when that line fits in the post.
+func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	if c.Now.IsZero() {
 		c.Now = time.Now().UTC()
 	}
@@ -34,6 +41,7 @@ func ComposeReport(c ReportConfig) (string, error) {
 	}
 	needs, next := []string{}, []string{}
 	var delivered []string
+	approvalGoal := ""
 	features := map[string]string{}
 	questions, _ := listQuestions(c.RepoRoot)
 	questionGoals := map[string]bool{}
@@ -54,8 +62,9 @@ func ComposeReport(c ReportConfig) (string, error) {
 				features[id] = featureName(id)
 			}
 			frontier := goal.Next(p, c.Machine)
-			if id, approved := nextBudgetedGoal(p, c.Machine); id != "" && !approved && !questionGoals[id] {
-				needs = append(needs, "Needs you: "+featureName(id)+" — your word to start it (next in line)")
+			if id := markedNextGoal(p, c.Machine); id != "" && !questionGoals[id] {
+				needs = append(needs, approvalRequestLine(id))
+				approvalGoal = id
 			}
 			for _, id := range frontier.Ready {
 				next = append(next, "Next up: "+featureName(id))
@@ -88,32 +97,29 @@ func ComposeReport(c ReportConfig) (string, error) {
 		}
 		lines = append(lines, fmt.Sprintf("Undelivered: %d channel messages, oldest %d min", c.Undelivered, age))
 	}
-	return strings.Join(lines, "\n"), nil
+	text := strings.Join(lines, "\n")
+	if approvalGoal != "" && !strings.Contains(text, approvalRequestLine(approvalGoal)) {
+		approvalGoal = ""
+	}
+	return text, approvalGoal, nil
 }
 
-func nextBudgetedGoal(p goal.Projection, machine string) (string, bool) {
-	for _, id := range goal.SortedGoalIds(p.Tree.Live) {
-		f := p.Tree.Live[id]
-		if f.State != goal.StateQueued && f.State != goal.StateApproved {
+func markedNextGoal(p goal.Projection, machine string) string {
+	marked := ""
+	for id, f := range p.Tree.Live {
+		if f.State != goal.StateQueued || f.Pinned != machine || !goal.MatchesLabels(f.Labels, []string{"next"}) {
 			continue
 		}
-		if f.Budget == nil || f.Budget.Validate() != nil || (f.Pinned != "" && f.Pinned != machine) {
-			continue
+		if marked != "" {
+			return ""
 		}
-		blocked := false
-		for _, dependency := range f.Blocked {
-			if done := p.Tree.Done[dependency]; done == nil || done.State != goal.StateDone {
-				blocked = true
-				break
-			}
-		}
-		if blocked {
-			continue
-		}
-		expired, _ := f.ApprovalExpired(p.Horizon)
-		return id, f.State == goal.StateApproved && !expired
+		marked = id
 	}
-	return "", false
+	return marked
+}
+
+func approvalRequestLine(id string) string {
+	return "Needs you: " + featureName(id) + " — Reply in this thread with this token verbatim, followed by your code: start " + id
 }
 
 func featureName(id string) string {
@@ -214,6 +220,7 @@ type StatusState struct {
 	LastPost      time.Time  `json:"lastPost"`
 	ContentDigest string     `json:"contentDigest"`
 	Ref           MessageRef `json:"ref"`
+	GoalID        string     `json:"goalId,omitempty"`
 }
 
 func LoadStatusState(repo string) StatusState {

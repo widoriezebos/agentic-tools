@@ -55,7 +55,7 @@ func runChannelStatus(args []string) int {
 	if err != nil {
 		machine = "this machine"
 	}
-	text, err := channel.ComposeReport(channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: time.Now()})
+	text, approvalGoal, err := channel.ComposeStatusReport(channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: time.Now()})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -81,7 +81,7 @@ func runChannelStatus(args []string) int {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
 		}
-		state := channel.StatusState{LastPost: time.Now().UTC(), ContentDigest: channel.Digest(text), Ref: ref}
+		state := channel.StatusState{LastPost: time.Now().UTC(), ContentDigest: channel.Digest(text), Ref: ref, GoalID: approvalGoal}
 		if e = channel.SaveStatusState(*root, state); e != nil {
 			fmt.Fprintln(os.Stderr, e)
 			return 1

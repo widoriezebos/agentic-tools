@@ -65,6 +65,7 @@ const (
 	AuthorizedByRecordedRelay                = governance.AuthorizedByRecordedRelay
 	AuthorityOutcomeTemporaryHumanWord       = governance.AuthorityOutcomeTemporaryHumanWord
 	AuthorityOutcomeAuthenticatedChannelWord = governance.AuthorityOutcomeAuthenticatedChannelWord
+	AuthorityOutcomeVerifiedChannelAnswer    = governance.AuthorityOutcomeVerifiedChannelAnswer
 	TemporaryGoalAuthorityRuling             = governance.TemporaryGoalAuthorityRuling
 )
 
