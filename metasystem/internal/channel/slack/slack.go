@@ -14,6 +14,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 )
 
+const defaultHTTPTimeout = 30 * time.Second
+
 type Adapter struct{ client *http.Client }
 
 func New(client *http.Client) *Adapter {
@@ -38,7 +40,13 @@ func (a *Adapter) call(ctx context.Context, dest channel.DestinationConfig, meth
 	if dest.APIBase == "" || dest.ChannelID == "" || dest.Token == "" {
 		return channel.ErrUnconfigured("slack destination is incomplete")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(dest.APIBase, "/")+"/"+method, strings.NewReader(form.Encode()))
+	timeout := dest.HTTPTimeout
+	if timeout <= 0 {
+		timeout = defaultHTTPTimeout
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, strings.TrimRight(dest.APIBase, "/")+"/"+method, strings.NewReader(form.Encode()))
 	if err != nil {
 		return &channel.ProviderError{Kind: kind, Problem: channel.Scrub(err.Error(), dest.Secrets...)}
 	}
@@ -135,7 +143,7 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, t
 				if seconds, parseErr := strconv.ParseFloat(m.TS, 64); parseErr == nil {
 					sentAt = time.Unix(0, int64(seconds*float64(time.Second))).UTC()
 				}
-				inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: m.TS, ThreadID: root}, ThreadID: root, UserID: m.User, Text: m.Text, SentAt: sentAt})
+				inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: m.TS, ThreadID: root}, ThreadID: root, UserID: m.User, Text: m.Text, SentAt: sentAt, Ack: channel.Cursor(m.TS)})
 			}
 			page = out.Metadata.Next
 			if page == "" {
@@ -145,6 +153,10 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, t
 	}
 	sort.SliceStable(inbound, func(i, j int) bool { return inbound[i].Ref.ID < inbound[j].Ref.ID })
 	return inbound, encodeCursor(next), nil
+}
+
+func (a *Adapter) Confirm(context.Context, channel.DestinationConfig, channel.Cursor) error {
+	return nil
 }
 
 func (a *Adapter) Credential(ctx context.Context, dest channel.DestinationConfig) (channel.CredentialIdentity, error) {

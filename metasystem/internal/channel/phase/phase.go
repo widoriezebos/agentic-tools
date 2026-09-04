@@ -19,6 +19,8 @@ import (
 const (
 	TelegramBotTokenKey = "channel.destination.fleet.telegram.bot-token"
 	TelegramAPIBaseKey  = "channel.destination.fleet.telegram.api-base"
+	httpTimeoutKey      = "channel.http-timeout-sec"
+	fakeListenerKey     = "channel.fake.listener"
 )
 
 func Get(root, key, def string) (string, error) {
@@ -60,6 +62,19 @@ var adapters = map[string]adapterLoad{
 	"fake":     loadFake,
 }
 
+func httpTimeout(root string) (time.Duration, error) {
+	raw, err := Get(root, httpTimeoutKey, "30")
+	if err != nil {
+		return 0, err
+	}
+	seconds, err := strconv.ParseInt(raw, 10, 64)
+	const maxSeconds = int64(^uint64(0)>>1) / int64(time.Second)
+	if err != nil || seconds < 1 || seconds > maxSeconds {
+		return 0, fmt.Errorf("%s must be a positive integer of seconds", httpTimeoutKey)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
 func loadSlack(root string) (channel.Provider, channel.DestinationConfig, string, error) {
 	cid, err := Get(root, "channel.destination.fleet.slack.channel-id", "")
 	if err != nil {
@@ -73,7 +88,11 @@ func loadSlack(root string) (channel.Provider, channel.DestinationConfig, string
 	if err != nil {
 		return nil, channel.DestinationConfig{}, "slack", err
 	}
-	dest := channel.DestinationConfig{Name: "fleet", Provider: "slack", ChannelID: cid, Token: token, APIBase: base, Secrets: []string{token}}
+	timeout, err := httpTimeout(root)
+	if err != nil {
+		return nil, channel.DestinationConfig{}, "slack", err
+	}
+	dest := channel.DestinationConfig{Name: "fleet", Provider: "slack", ChannelID: cid, Token: token, APIBase: base, Secrets: []string{token}, HTTPTimeout: timeout}
 	return slack.New(nil), dest, "slack", nil
 }
 
@@ -90,7 +109,11 @@ func loadTelegram(root string) (channel.Provider, channel.DestinationConfig, str
 	if err != nil {
 		return nil, channel.DestinationConfig{}, "telegram", err
 	}
-	dest := channel.DestinationConfig{Name: "fleet", Provider: "telegram", ChannelID: chatID, Token: token, APIBase: base, Secrets: []string{token}}
+	timeout, err := httpTimeout(root)
+	if err != nil {
+		return nil, channel.DestinationConfig{}, "telegram", err
+	}
+	dest := channel.DestinationConfig{Name: "fleet", Provider: "telegram", ChannelID: chatID, Token: token, APIBase: base, Secrets: []string{token}, HTTPTimeout: timeout}
 	return telegram.New(nil), dest, "telegram", nil
 }
 
@@ -108,7 +131,15 @@ func loadFake(root string) (channel.Provider, channel.DestinationConfig, string,
 		p, d, err := fake.Provider(dir)
 		return p, d, face, err
 	case "telegram":
-		p, d, err := fake.TelegramProvider(dir)
+		listener, err := Get(root, fakeListenerKey, "")
+		if err != nil && err.Error() != "no value configured for "+fakeListenerKey {
+			return nil, channel.DestinationConfig{}, face, err
+		}
+		if listener == "" {
+			p, d, err := fake.TelegramProvider(dir)
+			return p, d, face, err
+		}
+		p, d, err := fake.TelegramProvider(dir, listener)
 		return p, d, face, err
 	default:
 		return nil, channel.DestinationConfig{}, "", fmt.Errorf("unknown fake face %q", face)

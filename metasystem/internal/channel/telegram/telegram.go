@@ -13,7 +13,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 )
 
-const chunkLimit = 4000
+const (
+	chunkLimit         = 4000
+	defaultHTTPTimeout = 30 * time.Second
+)
 
 type Adapter struct{ client *http.Client }
 
@@ -62,12 +65,18 @@ func (a *Adapter) request(ctx context.Context, dest channel.DestinationConfig, m
 	if dest.APIBase == "" || dest.Token == "" {
 		return channel.ErrUnconfigured("telegram bot token and API base are required")
 	}
+	timeout := dest.HTTPTimeout
+	if timeout <= 0 {
+		timeout = defaultHTTPTimeout
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return &channel.ProviderError{Kind: kind, Problem: channel.Scrub(err.Error(), dest.Secrets...)}
 	}
 	url := strings.TrimRight(dest.APIBase, "/") + "/bot" + dest.Token + "/" + method
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(payload)))
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, url, strings.NewReader(string(payload)))
 	if err != nil {
 		return &channel.ProviderError{Kind: kind, Problem: channel.Scrub(err.Error(), dest.Secrets...)}
 	}
@@ -82,7 +91,12 @@ func (a *Adapter) request(ctx context.Context, dest channel.DestinationConfig, m
 		return &channel.ProviderError{Kind: kind, Problem: channel.Scrub("HTTP "+resp.Status+": invalid provider response: "+err.Error(), dest.Secrets...)}
 	}
 	if resp.StatusCode == http.StatusConflict && method == "getUpdates" {
-		return channel.ErrReceiveFailed("a webhook is set on this bot; delete it")
+		switch {
+		case strings.Contains(envelope.Description, "terminated by other getUpdates request"):
+			return channel.ErrBusy("terminated by other getUpdates request")
+		case strings.Contains(envelope.Description, "webhook is active"):
+			return channel.ErrReceiveFailed("a webhook is set on this bot; delete it")
+		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !envelope.OK {
 		problem := fmt.Sprintf("HTTP %s: %s", resp.Status, envelope.Description)
@@ -171,7 +185,7 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, r
 	if err != nil {
 		return nil, after, err
 	}
-	updates, next, err := a.updates(ctx, dest, after, true)
+	updates, next, err := a.updates(ctx, dest, after, true, 0)
 	if err != nil {
 		return nil, after, err
 	}
@@ -195,12 +209,13 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, r
 			parent = strconv.FormatInt(m.ReplyTo.MessageID, 10)
 			root = roots[parent]
 		}
-		inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: strconv.FormatInt(m.MessageID, 10), ThreadID: parent}, ThreadID: root, UserID: strconv.FormatInt(m.From.ID, 10), Text: m.Text, SentAt: time.Unix(m.Date, 0).UTC()})
+		ack := channel.Cursor(strconv.FormatInt(update.UpdateID+1, 10))
+		inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: strconv.FormatInt(m.MessageID, 10), ThreadID: parent}, ThreadID: root, UserID: strconv.FormatInt(m.From.ID, 10), Text: m.Text, SentAt: time.Unix(m.Date, 0).UTC(), Ack: ack, UpdateID: update.UpdateID})
 	}
 	return inbound, next, nil
 }
 
-func (a *Adapter) updates(ctx context.Context, dest channel.DestinationConfig, after channel.Cursor, includePollingFields bool) ([]wireUpdate, channel.Cursor, error) {
+func (a *Adapter) updates(ctx context.Context, dest channel.DestinationConfig, after channel.Cursor, includePollingFields bool, longPollSeconds int) ([]wireUpdate, channel.Cursor, error) {
 	body := map[string]any{}
 	if after != "" {
 		offset, err := strconv.ParseInt(string(after), 10, 64)
@@ -211,8 +226,11 @@ func (a *Adapter) updates(ctx context.Context, dest channel.DestinationConfig, a
 	}
 	if includePollingFields {
 		body["limit"] = 100
-		body["timeout"] = 0
+		body["timeout"] = longPollSeconds
 		body["allowed_updates"] = []string{"message"}
+	}
+	if longPollSeconds > 0 {
+		dest.HTTPTimeout = time.Duration(longPollSeconds+15) * time.Second
 	}
 	var updates []wireUpdate
 	if err := a.request(ctx, dest, "getUpdates", body, &updates, channel.ReceiveFailed); err != nil {
@@ -226,6 +244,19 @@ func (a *Adapter) updates(ctx context.Context, dest channel.DestinationConfig, a
 		}
 	}
 	return updates, next, nil
+}
+
+func (a *Adapter) Confirm(ctx context.Context, dest channel.DestinationConfig, cursor channel.Cursor) error {
+	if cursor == "" {
+		return nil
+	}
+	offset, err := strconv.ParseInt(string(cursor), 10, 64)
+	if err != nil {
+		return channel.ErrReceiveFailed("invalid Telegram cursor")
+	}
+	body := map[string]any{"offset": offset, "timeout": 0, "limit": 1}
+	var updates []wireUpdate
+	return a.request(ctx, dest, "getUpdates", body, &updates, channel.ReceiveFailed)
 }
 
 func cursorNumber(cursor channel.Cursor) int64 {
@@ -245,7 +276,7 @@ func (a *Adapter) Credential(ctx context.Context, dest channel.DestinationConfig
 }
 
 func (a *Adapter) Peek(ctx context.Context, dest channel.DestinationConfig) ([]Update, error) {
-	updates, _, err := a.updates(ctx, dest, "", false)
+	updates, _, err := a.updates(ctx, dest, "", false, 0)
 	if err != nil {
 		return nil, err
 	}

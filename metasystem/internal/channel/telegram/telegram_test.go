@@ -157,6 +157,9 @@ func TestReceiveResolvesRootsFromEveryPostedRef(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].ThreadID != root.ID || got[1].ThreadID != "" || got[0].SentAt.IsZero() {
 		t.Fatal(got, err)
 	}
+	if got[0].UpdateID == 0 || got[0].Ack != channel.Cursor(strconv.FormatInt(got[0].UpdateID+1, 10)) || got[1].Ack != channel.Cursor(strconv.FormatInt(got[1].UpdateID+1, 10)) {
+		t.Fatalf("missing Telegram acknowledgement metadata: %+v", got)
+	}
 	without, _, err := p.Receive(ctx, d, nil, "")
 	if err != nil || without[0].Ref != got[0].Ref || without[0].ThreadID != "" {
 		t.Fatal(without, err)
@@ -212,20 +215,79 @@ func TestUnconfiguredIsTyped(t *testing.T) {
 	}
 }
 
-func TestWebhookConflictIsTyped(t *testing.T) {
+func TestGetUpdatesConflictClassification(t *testing.T) {
+	tests := []struct {
+		name        string
+		description string
+		kind        channel.ErrorKind
+		problem     string
+	}{
+		{name: "another poller", description: "Conflict: terminated by other getUpdates request", kind: channel.Busy, problem: "terminated by other getUpdates request"},
+		{name: "webhook", description: "Conflict: webhook is active", kind: channel.ReceiveFailed, problem: "a webhook is set on this bot; delete it"},
+		{name: "unrecognised", description: "Conflict", kind: channel.ReceiveFailed, problem: "HTTP 409 Conflict: Conflict"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/getMe") {
+					fmt.Fprint(w, `{"ok":true,"result":{"id":1}}`)
+					return
+				}
+				w.WriteHeader(http.StatusConflict)
+				fmt.Fprintf(w, `{"ok":false,"description":%q}`, test.description)
+			}))
+			defer s.Close()
+			d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: s.URL, Secrets: []string{"token"}}
+			_, _, err := telegram.New(nil).Receive(context.Background(), d, nil, "")
+			if err == nil || !channel.IsKind(err, test.kind) || !strings.Contains(err.Error(), test.problem) {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestConfirmRequestShapeAndEmptyCursor(t *testing.T) {
+	var calls int
+	var body map[string]any
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		fmt.Fprint(w, `{"ok":true,"result":[]}`)
+	}))
+	defer s.Close()
+	d := channel.DestinationConfig{Token: "token", APIBase: s.URL}
+	p := telegram.New(nil)
+	if err := p.Confirm(context.Background(), d, ""); err != nil || calls != 0 {
+		t.Fatalf("empty confirmation made %d calls: %v", calls, err)
+	}
+	if err := p.Confirm(context.Background(), d, "42"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || int64(body["offset"].(float64)) != 42 || int64(body["timeout"].(float64)) != 0 || int64(body["limit"].(float64)) != 1 || len(body) != 3 {
+		t.Fatalf("confirmation request = %+v across %d calls", body, calls)
+	}
+}
+
+func TestReceiveAppliesRequestDeadline(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/getMe") {
 			fmt.Fprint(w, `{"ok":true,"result":{"id":1}}`)
 			return
 		}
-		w.WriteHeader(http.StatusConflict)
-		fmt.Fprint(w, `{"ok":false,"description":"Conflict"}`)
+		time.Sleep(1200 * time.Millisecond)
+		fmt.Fprint(w, `{"ok":true,"result":[]}`)
 	}))
 	defer s.Close()
-	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: s.URL, Secrets: []string{"token"}}
+	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: s.URL, HTTPTimeout: time.Second}
+	started := time.Now()
 	_, _, err := telegram.New(nil).Receive(context.Background(), d, nil, "")
-	if err == nil || !channel.IsKind(err, channel.ReceiveFailed) || !strings.Contains(err.Error(), "a webhook is set on this bot; delete it") {
+	if err == nil || !channel.IsKind(err, channel.ReceiveFailed) || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed < 900*time.Millisecond || elapsed > 2*time.Second {
+		t.Fatalf("request deadline fired after %s", elapsed)
 	}
 }
 

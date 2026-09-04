@@ -82,6 +82,9 @@ func TestReceivePagesAndFiltersByCursor(t *testing.T) {
 	if err != nil || len(got) != 205 || cursor == "" || got[0].SentAt.IsZero() {
 		t.Fatalf("got=%d cursor=%q err=%v", len(got), cursor, err)
 	}
+	if got[0].Ack != channel.Cursor(got[0].Ref.ID) || got[0].UpdateID != 0 {
+		t.Fatalf("Slack acknowledgement metadata = ack %q, update id %d", got[0].Ack, got[0].UpdateID)
+	}
 	again, _, err := p.Receive(ctx, d, []channel.MessageRef{root}, cursor)
 	if err != nil || len(again) != 0 {
 		t.Fatalf("inclusive oldest redelivered %d: %v", len(again), err)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -21,21 +22,28 @@ import (
 )
 
 func Provider(dir string) (channel.Provider, channel.DestinationConfig, error) {
-	return provider(dir, "slack")
+	return provider(dir, "slack", "")
 }
 
-func TelegramProvider(dir string) (channel.Provider, channel.DestinationConfig, error) {
-	return provider(dir, "telegram")
+func TelegramProvider(dir string, listener ...string) (channel.Provider, channel.DestinationConfig, error) {
+	name := ""
+	if len(listener) > 0 {
+		name = listener[0]
+	}
+	return provider(dir, "telegram", name)
 }
 
-func provider(dir, face string) (channel.Provider, channel.DestinationConfig, error) {
+func provider(dir, face, listener string) (channel.Provider, channel.DestinationConfig, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "base-url"))
 	if err != nil || strings.TrimSpace(string(data)) == "" {
 		return nil, channel.DestinationConfig{}, channel.ErrUnconfigured("fake not serving")
 	}
 	base := strings.TrimSpace(string(data))
 	if face == "telegram" {
-		const token = "fake-telegram-token"
+		token := "fake-telegram-token"
+		if listener != "" {
+			token += "-" + listener
+		}
 		cfg := channel.DestinationConfig{Name: "fleet", Provider: "fake", APIBase: base, Token: token, ChannelID: "1000", Secrets: []string{token}}
 		return telegram.New(nil), cfg, nil
 	}
@@ -66,6 +74,24 @@ type telegramAssigned struct {
 	Date      int64
 }
 
+type conflictControl struct {
+	Listener    string `json:"listener"`
+	Remaining   int    `json:"remaining"`
+	Description string `json:"description"`
+}
+
+type pauseControl struct {
+	Listener string `json:"listener"`
+	Method   string `json:"method"`
+	Until    string `json:"until"`
+}
+
+type controls struct {
+	Conflict      []conflictControl   `json:"conflict"`
+	DeliverOnlyTo map[string][]string `json:"deliverOnlyTo"`
+	PauseBefore   []pauseControl      `json:"pauseBefore"`
+}
+
 type server struct {
 	dir              string
 	mu               sync.Mutex
@@ -74,6 +100,10 @@ type server struct {
 	loadedLines      int
 	slackAssigned    []slackAssigned
 	telegramAssigned []telegramAssigned
+	confirmedOffset  int64
+	journalSequence  uint64
+	controlBytes     string
+	controls         controls
 }
 
 func Serve(ctx context.Context, dir string) error {
@@ -136,16 +166,29 @@ func (s *server) nextTS() string {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	if strings.HasPrefix(r.URL.Path, "/bot") {
 		s.serveTelegram(w, r)
 		return
 	}
 	_ = r.ParseForm()
 	method := strings.TrimPrefix(r.URL.Path, "/")
+	pause, conflict, controlledConflict, err := s.requestControls("", method, method)
+	if err != nil {
+		s.controlError(w, err)
+		return
+	}
+	if !waitForPause(r.Context(), pause) {
+		return
+	}
+	s.record(method, method, "", r.Form)
+	if controlledConflict {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error_code": http.StatusConflict, "description": conflict})
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.journal(method, r.Form)
-	w.Header().Set("Content-Type", "application/json")
 	switch method {
 	case "chat.postMessage":
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": s.nextTS()})
@@ -159,23 +202,65 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) serveTelegram(w http.ResponseWriter, r *http.Request) {
+	listener, method, ok := telegramRoute(r.URL.Path)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "invalid fake Telegram token or method"})
+		return
+	}
 	body := map[string]any{}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_ = s.journal(method, body)
-	w.Header().Set("Content-Type", "application/json")
+	effectiveMethod := method
+	if method == "getUpdates" {
+		if _, confirming := body["offset"]; confirming {
+			effectiveMethod = "confirm"
+		}
+	}
+	pause, conflict, controlledConflict, err := s.requestControls(listener, method, effectiveMethod)
+	if err != nil {
+		s.controlError(w, err)
+		return
+	}
+	if !waitForPause(r.Context(), pause) {
+		return
+	}
+	s.record(effectiveMethod, method, listener, body)
+	if controlledConflict {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error_code": http.StatusConflict, "description": conflict})
+		return
+	}
 	switch method {
 	case "sendMessage":
+		s.mu.Lock()
 		id := s.nextID()
+		s.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"message_id": id, "chat": map[string]any{"id": intValue(body["chat_id"])}, "date": time.Now().Unix(), "text": stringValue(body["text"])}})
 	case "getUpdates":
-		s.telegramUpdates(w, body)
+		s.telegramUpdates(r.Context(), w, body, listener)
 	case "getMe":
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"id": 424242, "is_bot": true, "username": "fakebot"}})
 	default:
 		json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "unknown method " + method})
+	}
+}
+
+func telegramRoute(path string) (listener, method string, ok bool) {
+	rest := strings.TrimPrefix(path, "/bot")
+	slash := strings.IndexByte(rest, '/')
+	if slash < 1 || slash == len(rest)-1 || strings.Contains(rest[slash+1:], "/") {
+		return "", "", false
+	}
+	token := rest[:slash]
+	method = rest[slash+1:]
+	const base = "fake-telegram-token"
+	switch {
+	case token == base:
+		return "", method, true
+	case strings.HasPrefix(token, base+"-") && len(token) > len(base)+1:
+		return strings.TrimPrefix(token, base+"-"), method, true
+	default:
+		return "", method, true
 	}
 }
 
@@ -196,16 +281,99 @@ func stringValue(v any) string {
 	return s
 }
 
-func (s *server) journal(method string, form any) error {
+func (s *server) record(method, raw, listener string, form any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.journal(method, raw, listener, form)
+}
+
+func (s *server) journal(method, raw, listener string, form any) error {
 	f, err := os.OpenFile(filepath.Join(s.dir, "journal.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if err = json.NewEncoder(f).Encode(map[string]any{"method": method, "form": form}); err == nil {
+	s.journalSequence++
+	row := map[string]any{"method": method, "form": form, "listener": listener, "sequence": s.journalSequence}
+	if method == "confirm" {
+		row["raw"] = raw
+	}
+	if err = json.NewEncoder(f).Encode(row); err == nil {
 		err = f.Sync()
 	}
 	return err
+}
+
+func (s *server) requestControls(listener, rawMethod, effectiveMethod string) (pause, conflict string, controlledConflict bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err = s.reloadControls(); err != nil {
+		return "", "", false, err
+	}
+	for i, item := range s.controls.PauseBefore {
+		if item.Listener == listener && item.Method == effectiveMethod {
+			pause = item.Until
+			s.controls.PauseBefore = append(s.controls.PauseBefore[:i], s.controls.PauseBefore[i+1:]...)
+			break
+		}
+	}
+	if rawMethod == "getUpdates" {
+		for i := range s.controls.Conflict {
+			item := &s.controls.Conflict[i]
+			if item.Listener == listener && item.Remaining > 0 {
+				item.Remaining--
+				conflict = item.Description
+				controlledConflict = true
+				break
+			}
+		}
+	}
+	return pause, conflict, controlledConflict, nil
+}
+
+func (s *server) reloadControls() error {
+	data, err := os.ReadFile(filepath.Join(s.dir, "control.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		s.controlBytes = ""
+		s.controls = controls{}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if string(data) == s.controlBytes {
+		return nil
+	}
+	var next controls
+	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	s.controlBytes = string(data)
+	s.controls = next
+	return nil
+}
+
+func (s *server) controlError(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error(), "description": err.Error()})
+}
+
+func waitForPause(ctx context.Context, until string) bool {
+	if until == "" {
+		return true
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(until); err == nil {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *server) loadNew() {
@@ -275,9 +443,46 @@ func (s *server) replies(w http.ResponseWriter, form url.Values) {
 	json.NewEncoder(w).Encode(map[string]any{"ok": true, "messages": messages[offset:end], "response_metadata": map[string]string{"next_cursor": next}})
 }
 
-func (s *server) telegramUpdates(w http.ResponseWriter, body map[string]any) {
+func (s *server) telegramUpdates(ctx context.Context, w http.ResponseWriter, body map[string]any, listener string) {
+	timeout := time.Duration(intValue(body["timeout"])) * time.Second
+	deadline := time.Now().Add(timeout)
+	for {
+		s.mu.Lock()
+		if err := s.reloadControls(); err != nil {
+			s.mu.Unlock()
+			s.controlError(w, err)
+			return
+		}
+		updates := s.telegramUpdatesLocked(body, listener)
+		s.mu.Unlock()
+		if len(updates) > 0 || timeout <= 0 || !time.Now().Before(deadline) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": updates})
+			return
+		}
+		remaining := time.Until(deadline)
+		if remaining > 100*time.Millisecond {
+			remaining = 100 * time.Millisecond
+		}
+		timer := time.NewTimer(remaining)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *server) telegramUpdatesLocked(body map[string]any, listener string) []map[string]any {
 	s.loadNew()
-	offset := intValue(body["offset"])
+	offset := s.confirmedOffset
+	if rawOffset, present := body["offset"]; present {
+		requestedOffset := intValue(rawOffset)
+		if requestedOffset > s.confirmedOffset {
+			s.confirmedOffset = requestedOffset
+		}
+		offset = s.confirmedOffset
+	}
 	limit := int(intValue(body["limit"]))
 	if limit <= 0 {
 		limit = 100
@@ -285,6 +490,9 @@ func (s *server) telegramUpdates(w http.ResponseWriter, body map[string]any) {
 	updates := make([]map[string]any, 0, limit)
 	for _, row := range s.telegramAssigned {
 		if row.UpdateID < offset {
+			continue
+		}
+		if listeners, restricted := s.controls.DeliverOnlyTo[strconv.FormatInt(row.UpdateID, 10)]; restricted && !contains(listeners, listener) {
 			continue
 		}
 		message := map[string]any{"message_id": row.MessageID, "date": row.Date, "text": row.Scripted.Text, "chat": map[string]any{"id": row.Scripted.Chat}, "from": map[string]any{"id": intValue(row.Scripted.User), "is_bot": false}}
@@ -296,5 +504,14 @@ func (s *server) telegramUpdates(w http.ResponseWriter, body map[string]any) {
 			break
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": updates})
+	return updates
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

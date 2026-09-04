@@ -24,6 +24,7 @@ type testProvider struct {
 	threads     []MessageRef
 	after       Cursor
 	receives    int
+	confirms    int
 	beforePost  func()
 	failPosts   int
 }
@@ -53,6 +54,10 @@ func (p *testProvider) Receive(_ context.Context, _ DestinationConfig, threads [
 	p.threads = append([]MessageRef(nil), threads...)
 	p.after = after
 	return p.inbound, p.cursor, nil
+}
+func (p *testProvider) Confirm(context.Context, DestinationConfig, Cursor) error {
+	p.confirms++
+	return nil
 }
 func (p *testProvider) Credential(context.Context, DestinationConfig) (CredentialIdentity, error) {
 	return CredentialIdentity{UserID: "UBOT"}, nil
@@ -835,6 +840,22 @@ func TestCursorFromAnotherProviderIsIgnored(t *testing.T) {
 		t.Fatal(string(b), err)
 	}
 }
+
+func TestPollKeepsPassingSavedCursorWithoutConfirming(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json")
+	if err := writeJSON(path, cursorRecord{Provider: "telegram", Cursor: "saved-cursor"}); err != nil {
+		t.Fatal(err)
+	}
+	p := &testProvider{cursor: "next-cursor"}
+	if _, err := Poll(context.Background(), PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "telegram", Provider: p}); err != nil {
+		t.Fatal(err)
+	}
+	if p.after != "saved-cursor" || p.confirms != 0 {
+		t.Fatalf("Poll passed cursor %q and made %d confirmations", p.after, p.confirms)
+	}
+}
+
 func TestAuthenticatedChannelHistoryRoundTrip(t *testing.T) {
 	h := goal.HistoryLine{At: "2026-09-03T00:00:00Z", Opid: goal.Opid("01J5X0000000000000000000F8", "machine", "lineage"), Verb: "answer", Actor: "human:wido", Targets: []string{"g"}, Keep: -1, AuthorityOutcome: goal.AuthorityOutcomeAuthenticatedChannelWord, ChannelProvider: "slack", ChannelUser: "UWIDO", ChannelRef: "1/2", ChannelStep: 42, Reason: "yes"}
 	line := goal.RenderHistoryLine(h)

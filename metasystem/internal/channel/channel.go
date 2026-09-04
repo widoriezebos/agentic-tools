@@ -21,6 +21,8 @@ type Inbound struct {
 	UserID   string     `json:"userID"`
 	Text     string     `json:"text"`
 	SentAt   time.Time  `json:"sentAt"`
+	Ack      Cursor     `json:"ack"`
+	UpdateID int64      `json:"updateID"`
 }
 
 type CredentialIdentity struct {
@@ -28,17 +30,19 @@ type CredentialIdentity struct {
 }
 
 type DestinationConfig struct {
-	Name      string
-	Provider  string
-	ChannelID string
-	Token     string
-	APIBase   string
-	Secrets   []string
+	Name        string
+	Provider    string
+	ChannelID   string
+	Token       string
+	APIBase     string
+	Secrets     []string
+	HTTPTimeout time.Duration
 }
 
 type Provider interface {
 	Post(context.Context, DestinationConfig, string, *MessageRef) (MessageRef, error)
 	Receive(context.Context, DestinationConfig, []MessageRef, Cursor) ([]Inbound, Cursor, error)
+	Confirm(context.Context, DestinationConfig, Cursor) error
 	Credential(context.Context, DestinationConfig) (CredentialIdentity, error)
 }
 
@@ -48,6 +52,7 @@ const (
 	Unconfigured  ErrorKind = "unconfigured"
 	SendFailed    ErrorKind = "send failed"
 	ReceiveFailed ErrorKind = "receive failed"
+	Busy          ErrorKind = "busy"
 )
 
 type ProviderError struct {
@@ -67,6 +72,7 @@ func ErrSendFailed(problem string) error { return &ProviderError{Kind: SendFaile
 func ErrReceiveFailed(problem string) error {
 	return &ProviderError{Kind: ReceiveFailed, Problem: problem}
 }
+func ErrBusy(problem string) error { return &ProviderError{Kind: Busy, Problem: problem} }
 
 func Scrub(problem string, secrets ...string) string {
 	for _, secret := range secrets {
