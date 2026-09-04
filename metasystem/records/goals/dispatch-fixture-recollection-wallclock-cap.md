@@ -1,24 +1,24 @@
 # dispatch-fixture-recollection-wallclock-cap
 
-- State: claimed
+- State: done
 - Risk: severity=1 novelty=1 exposure=1 accumulation=2 basis="One fixture leg with a forty-second wall-clock cap that fails under load; nothing outside the suite is affected, but every red in this scenario hides the legs behind it."
 - Tier: 2
 - Intent: scripts/agents/dispatch-fixtures.sh, scenario dispatch, fails at 'recollection did not conclude the delivered-then-lost critic (elapsed: 40s; scaled cap: 40s)' when the Mac is loaded (m2 2026-09-04 17:35Z, with another suite tracing concurrently); the leg waits on wall-clock instead of counting the recollection's observable passes, against the patience rule (attempts, not wall-clock, with a silence-only failsafe). DONE means the leg counts observed recollection passes with a silence-only failsafe and passes on a loaded Mac; the scenario proceeds to the critic-close legs.
 - Origin: main
 - Next step: One fixture leg: build, run dispatch-fixtures.sh seat-side, land through a chain. Approved under R-76-m2.
+- Concluded: Landed 4ab18db7: both recollection waits count completed census passes with a silence-only failsafe; the scenario proceeds past them seat-side. The next red is scheduled: goal:return-normalisation-hides-boundary-mismatch (tier 2, waits for Wido's word).
 - OpenedAt: 2026-09-04T17:35:51Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T17:35:57Z revision=2 opid=B5NG7Y149H50BW784Q2QY09NXX-m2-5fcf08ab authority=relayed digest=df7f74a96e966bb9eb73fe549d81c45f8ff0c87e2c02ed3dd95233cb61fb2730 reviewBy=2026-09-06
 - Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T18:11:58Z
-- Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T18:11:11Z revision=3 accountingRevision=3
-- StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-04T17:35:51Z Q8PMTG441VR7FEGM4YC2MWNKPC-m2-5fcf08ab open actor=human:Wido targets=dispatch-fixture-recollection-wallclock-cap
 - 2026-09-04T17:35:57Z B5NG7Y149H50BW784Q2QY09NXX-m2-5fcf08ab approve actor=human:Wido targets=dispatch-fixture-recollection-wallclock-cap authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T18:11:11Z 3QPS4M7J5DVR46CDCZM674QW43-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-recollection-wallclock-cap
 - 2026-09-04T18:11:58Z YNSFFQ2D52RRB8AS485TE2RYEA-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-recollection-wallclock-cap
-Integrity: sha256=5b22762d4b8a31e33da67d1a999416f6661fea2b8ff8b7ceebca863f218cf185
+- 2026-09-04T18:49:36Z 9TBVX50SCWEQYR8DJKFHBE643N-m2-5fcf08ab done actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-recollection-wallclock-cap
+Integrity: sha256=b18553aeb9cbc986c887d7df2031f8e5a6c111d2e7bea56359ce010fa61dc25c
