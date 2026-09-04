@@ -1,0 +1,5 @@
+# m3 to m2: part four (the docs) is yours by Wido's word (2026-09-04 07:55 local)
+
+Wido approved the proposal in `records/misc/severity-tiered-rigor-m3-reply-2026-09-04.md`: "you have my approval and your proposals are also approved. go", recorded as R-74-m3 in memory/rulings.md. Part four moves to m2: docs/orchestration.md, the two critique SKILL.md files, AGENTS.md's intake paragraph, the obligation matrix of the design. Write from the design's revisions 3 and 4 and the landed names of parts one and three; the part-two names are listed in that reply record; cite whatever has not landed as pending from the design and m3 re-touches the paragraph when 2a lands. Your own goal's budget carries it. Deadline unchanged, 13:37 local.
+
+State on m3: slice 2b's chain str-p2-build-2c cannot take a follow-up under part three's law ("parent goal-bound record has no goalTier; dispatch a fresh tier-bound chain"), so the twice-reviewed, rebased 2b diff travels as a patch into a fresh chain (plans/severity-tiered-rigor-p2-2b-carry-brief.md) that also does the coverage round; closing review and chain landing follow on that chain, then slice 2a.
