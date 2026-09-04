@@ -330,6 +330,47 @@ func TestBudgetQuestionRequiresPersistsAndRendersCompleteTuple(t *testing.T) {
 	}
 }
 
+func TestLegacyBudgetQuestionLoadsWithoutTuple(t *testing.T) {
+	root := t.TempDir()
+	legacyID := "01J5X0000000000000000000L1"
+	questionsDir := filepath.Dir(questionPath(root, legacyID))
+	if err := os.MkdirAll(questionsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{
+  "id": "01J5X0000000000000000000L1",
+  "goal": "g",
+  "kind": "budget-above-norm",
+  "machine": "machine",
+  "state": "closed"
+}`
+	if err := os.WriteFile(questionPath(root, legacyID), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	open := Question{ID: "01J5X0000000000000000000L2", Goal: "g", Kind: "other", Machine: "machine", State: "open"}
+	if err := writeJSON(questionPath(root, open.ID), open); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := ReadQuestion(root, legacyID)
+	if err != nil || loaded.Budget != nil {
+		t.Fatalf("legacy budget question budget=%+v err=%v", loaded.Budget, err)
+	}
+	questions, err := listQuestions(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundOpen := false
+	for _, question := range questions {
+		if question.ID == open.ID && question.State == "open" {
+			foundOpen = true
+		}
+	}
+	if !foundOpen {
+		t.Fatalf("open question %q missing from %+v", open.ID, questions)
+	}
+}
+
 func TestReportOmitsApprovalForElevenUnmarkedQueuedGoals(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	goals := make([]*goal.GoalFile, 0, 11)
@@ -997,6 +1038,42 @@ func TestBudgetFreeTextAndOtherQuestionDoNotRaiseBox(t *testing.T) {
 				t.Fatalf("non-token answer changed approval: %+v", got)
 			}
 		})
+	}
+}
+
+func TestLegacyBudgetQuestionAnswerRaisesNothing(t *testing.T) {
+	root, p, _, now := pollLedgerBed(t)
+	q := Question{ID: "01J5X0000000000000000000L3", Goal: "g", Kind: "budget-above-norm", Machine: "machine", OpenedAt: now, Facts: []string{"raise the box"}, Wants: "yes", Thread: &MessageRef{ID: "10", ThreadID: "10"}, State: "open"}
+	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "yes " + code, SentAt: now}}
+	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+		t.Fatal(err)
+	}
+
+	record, err := ReadQuestion(root, q.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != "closed" || record.Answer == nil || record.Answer.Phase != "closed" || record.Answer.Text != "yes" {
+		t.Fatalf("legacy answer was not recorded and closed: %+v", record)
+	}
+	if !strings.Contains(record.Answer.Receipt, "nothing raised") {
+		t.Fatalf("legacy answer receipt=%q", record.Answer.Receipt)
+	}
+	got := projectGoal(t, root, "g")
+	if got.Budget != nil || got.Approved != nil {
+		t.Fatalf("legacy answer changed approval: %+v", got)
+	}
+	for _, history := range got.History {
+		if history.Verb == "approve" {
+			t.Fatalf("legacy answer wrote an approve row: %+v", history)
+		}
+	}
+	if len(p.posts) == 0 || !strings.Contains(p.posts[len(p.posts)-1], "nothing raised") {
+		t.Fatalf("legacy answer posts=%q", p.posts)
 	}
 }
 

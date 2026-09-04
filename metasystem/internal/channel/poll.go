@@ -356,18 +356,22 @@ func advanceAnswer(ctx context.Context, c PollConfig, q *Question) error {
 			return fmt.Errorf("goal answer was not confirmed: %s", published.Detail)
 		}
 		if q.Kind == "budget-above-norm" && strings.TrimSpace(a.Text) == q.Wants {
-			recorded := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: c.ProviderName, UserID: a.UserID, MessageRef: a.Ref.ThreadID + "/" + a.Ref.ID, ContextID: q.ID, Step: a.Step}
-			proof, proofErr := humanauthority.VerifiedChannelAnswerProof(c.RepoRoot, recorded, a.At)
-			if proofErr != nil {
-				return proofErr
-			}
-			approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
-			if approveErr != nil {
-				a.Receipt = approveErr.Error()
-			} else if approved.Outcome == goal.OutcomeConfirmed {
-				a.Receipt = "recorded: " + q.Goal + " box raised to " + renderProposedBox(*q.Budget)
+			if q.Budget == nil {
+				a.Receipt = "recorded: " + q.Goal + " has no proposed box on this question; nothing raised"
 			} else {
-				a.Receipt = approved.Detail
+				recorded := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: c.ProviderName, UserID: a.UserID, MessageRef: a.Ref.ThreadID + "/" + a.Ref.ID, ContextID: q.ID, Step: a.Step}
+				proof, proofErr := humanauthority.VerifiedChannelAnswerProof(c.RepoRoot, recorded, a.At)
+				if proofErr != nil {
+					return proofErr
+				}
+				approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
+				if approveErr != nil {
+					a.Receipt = approveErr.Error()
+				} else if approved.Outcome == goal.OutcomeConfirmed {
+					a.Receipt = "recorded: " + q.Goal + " box raised to " + renderProposedBox(*q.Budget)
+				} else {
+					a.Receipt = approved.Detail
+				}
 			}
 		}
 		if err = fail(c, "recorded-commit"); err != nil {

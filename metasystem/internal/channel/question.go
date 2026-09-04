@@ -108,11 +108,7 @@ func ReadQuestion(repo, id string) (Question, error) {
 	if err != nil {
 		return q, err
 	}
-	err = json.Unmarshal(b, &q)
-	if err == nil {
-		err = validateQuestionBudget(q)
-	}
-	return q, err
+	return q, json.Unmarshal(b, &q)
 }
 func listQuestions(repo string) ([]Question, error) {
 	paths, _ := filepath.Glob(filepath.Join(channelRoot(repo), "questions", "*.json"))
@@ -125,9 +121,6 @@ func listQuestions(repo string) ([]Question, error) {
 			return nil, e
 		}
 		if e = json.Unmarshal(b, &q); e != nil {
-			return nil, e
-		}
-		if e = validateQuestionBudget(q); e != nil {
 			return nil, e
 		}
 		out = append(out, q)
