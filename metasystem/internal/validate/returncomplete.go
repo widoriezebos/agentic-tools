@@ -242,37 +242,39 @@ func (c *returnChecker) checkDiffBoundary(result map[string]any, returnPath stri
 		return
 	}
 	metasystemRoot := c.root
+	normalizationPrefix := "metasystem"
 	if workspace, isString := record["workspaceRoot"].(string); isString && workspace != "" {
-		metasystemRoot = filepath.Join(workspace, "metasystem")
+		metasystemRoot = filepath.Join(workspace, normalizationPrefix)
+		if installPrefix, err := projectInstallPrefix(c.root); err == nil {
+			metasystemRoot = filepath.Join(workspace, installPrefix)
+			normalizationPrefix = installPrefix
+		}
 	}
-	var offending []int
+	before := len(c.violations)
+	var normalizable []int
 	for index, raw := range boundary {
 		entry, isString := raw.(string)
 		if isString && !returnDiffBoundary.MatchString(entry) {
-			offending = append(offending, index)
 			if !existingFileWithin(metasystemRoot, entry) {
-				for _, refused := range offending {
-					refusedEntry, _ := boundary[refused].(string)
-					c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", refusedEntry)
-				}
-				for later := index + 1; later < len(boundary); later++ {
-					laterEntry, laterIsString := boundary[later].(string)
-					if laterIsString && !returnDiffBoundary.MatchString(laterEntry) {
-						c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", laterEntry)
-					}
-				}
-				return
+				c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", entry)
+				continue
+			}
+			if normalizationPrefix != "" {
+				normalizable = append(normalizable, index)
 			}
 		}
 	}
-	if len(offending) == 0 {
+	if len(c.violations) > before {
+		return
+	}
+	if len(normalizable) == 0 {
 		return
 	}
 
-	changes := make([]string, 0, len(offending))
-	for _, index := range offending {
+	changes := make([]string, 0, len(normalizable))
+	for _, index := range normalizable {
 		entry := boundary[index].(string)
-		normalized := filepath.ToSlash(filepath.Join("metasystem", entry))
+		normalized := filepath.ToSlash(filepath.Join(normalizationPrefix, entry))
 		changes = append(changes, fmt.Sprintf("%q to %q", entry, normalized))
 	}
 	notePath := strings.TrimSuffix(returnPath, filepath.Ext(returnPath)) + ".md"
@@ -292,9 +294,9 @@ func (c *returnChecker) checkDiffBoundary(result map[string]any, returnPath stri
 		c.violation("DIFF_BOUNDARY_INVALID: could not close the round protocol note after diffBoundary normalization: %v", closeErr)
 		return
 	}
-	for _, index := range offending {
+	for _, index := range normalizable {
 		entry := boundary[index].(string)
-		boundary[index] = filepath.ToSlash(filepath.Join("metasystem", entry))
+		boundary[index] = filepath.ToSlash(filepath.Join(normalizationPrefix, entry))
 	}
 	if err := writeNormalizedReturn(returnPath, result); err != nil {
 		c.violation("DIFF_BOUNDARY_INVALID: could not persist normalized diffBoundary: %v", err)

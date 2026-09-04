@@ -160,6 +160,62 @@ func expectConformance(t *testing.T, f *conformanceFixture, stage string, wantCo
 	return out, errs
 }
 
+func TestConformanceTopLevelBoundarySurvivesReturnValidation(t *testing.T) {
+	f := newConformanceFixture(t)
+	schemaDir := filepath.Join(f.controller, "scripts", "agents", "schemas")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := os.ReadFile("../../scripts/agents/schemas/implementer.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(schemaDir, "implementer.schema.json"), schema, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f.writeJSON("artifacts/agents/jobs/impl.json", map[string]any{
+		"jobId": "impl", "role": "implementer", "round": 1, "parentJob": nil,
+		"runtime": "fake", "sessionId": "fixture-session",
+		"workspaceRoot": f.worktree, "baseSha": f.baseSha,
+		"status": "completed", "effectiveModel": "fixture-model",
+	})
+	writeReturn := func(boundary ...string) {
+		f.writeJSON("artifacts/agents/impl/rounds/1/return.json", map[string]any{
+			"schemaVersion": 2,
+			"claimed":       map[string]any{"sessionId": nil, "model": nil},
+			"jobId":         "impl", "round": 1, "runtime": "fake", "sessionId": "fixture-session",
+			"model":    map[string]any{"requested": "fixture-model", "effective": "fixture-model"},
+			"evidence": []any{}, "gaps": []any{}, "mode": "build",
+			"riskiestPart": "The boundary must use the installation's repository layout.",
+			"diffBoundary": append([]string{}, boundary...),
+			"whatWasDone":  "Declared the changed file after the first review refusal.",
+		})
+	}
+
+	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed at workspace root\n")
+	// The mismatch is the fresh round's first review, so no persisted review
+	// can replace the boundary refusal with an immutability refusal.
+	writeReturn()
+	if violations := ReturnCompleteJob(f.controller, "impl"); len(violations) != 0 {
+		t.Fatalf("an empty boundary must remain valid: %v", violations)
+	}
+	expectConformance(t, f, "review", 1, "changed paths fall outside the cumulative implementation boundary")
+
+	writeReturn("source.txt")
+	if violations := ReturnCompleteJob(f.controller, "impl"); len(violations) != 0 {
+		t.Fatalf("the top-level project declaration must remain valid: %v", violations)
+	}
+	data, err := os.ReadFile(filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1", "return.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"source.txt"`) || strings.Contains(string(data), `"metasystem/source.txt"`) {
+		t.Fatalf("top-level project declaration was rewritten into another layout: %s", data)
+	}
+	expectConformance(t, f, "review", 0, "reviewedTree=")
+}
+
 func TestConformanceResolveFactsRefusalsAndParentRoot(t *testing.T) {
 	tests := []struct {
 		name       string

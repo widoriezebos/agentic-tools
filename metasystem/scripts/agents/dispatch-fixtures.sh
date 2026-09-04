@@ -2541,27 +2541,14 @@ conformance_workspace=$("$engine" json get --file "$conformance_record" --field 
 # diff exists only once the host's conformance review runs, and the
 # workflow gap is the delegation floor's verdict, not the close's.
 run_agent_fixture close-before-diff conformance "$agent_dispatch" close --job conformance
-"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
-  --stage review --job conformance
-[[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
-  || { echo "conformance did not persist diff.patch" >&2; exit 1; }
-run_agent_fixture conformance-reap conformance "$agent_dispatch" reap --job conformance
-run_agent_fixture conformance-close conformance "$agent_dispatch" close --job conformance
-# ...but a diff the MANIFEST knows and the disk lost is evidence loss:
-# a re-close over the vanished file refuses by name (D8's kept tooth).
-mv "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" "$agent_fixture/diff.patch.save"
-agent_fails diff-vanished 'vanished after mirroring' "$agent_dispatch" close --job conformance
-mv "$agent_fixture/diff.patch.save" "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch"
-conformance_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/conformance.json" --field workspaceRoot)
-case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
+# A failed review persists no evidence, so the declaration can widen before
+# the first successful review makes the round immutable.
 printf 'untracked change\n' >"$conformance_workspace/source.txt"
 agent_fails diff-boundary-mismatch 'changed paths fall outside the cumulative implementation boundary' \
   "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
     --stage review --job conformance
 json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
   diffBoundary '["source.txt"]'
-"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
-  --stage review --job conformance
 mkdir -p "$conformance_workspace/plans"
 printf 'delegate plan\n' >"$conformance_workspace/plans/delegate.md"
 json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
@@ -2586,6 +2573,26 @@ printf 'tamper\n' >"$conformance_workspace/artifacts/agents/tamper"
 agent_fails control-plane-change 'agent control plane contains delegate-created files' \
   "$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
     --stage review --job conformance
+# Restore the candidate to the declared product file before persisting the
+# first successful review; protected fixture state must not enter its tree.
+rm -f "$conformance_workspace/plans/delegate.md" "$conformance_workspace/artifacts/agents/tamper"
+git -C "$conformance_workspace" add -u -- plans/delegate.md
+git -C "$conformance_workspace" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm delegate-checkpoint-cleanup
+json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
+  diffBoundary '["source.txt"]'
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+  --stage review --job conformance
+[[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
+  || { echo "conformance did not persist diff.patch" >&2; exit 1; }
+run_agent_fixture conformance-reap conformance "$agent_dispatch" reap --job conformance
+run_agent_fixture conformance-close conformance "$agent_dispatch" close --job conformance
+# ...but a diff the MANIFEST knows and the disk lost is evidence loss:
+# a re-close over the vanished file refuses by name (D8's kept tooth).
+mv "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" "$agent_fixture/diff.patch.save"
+agent_fails diff-vanished 'vanished after mirroring' "$agent_dispatch" close --job conformance
+mv "$agent_fixture/diff.patch.save" "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch"
+conformance_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/conformance.json" --field workspaceRoot)
+case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
 
 # Snapshot self-heal, fallbacks, permission waivers, and raw/event
 # degradations. A snapshot miss costs ONE adapter probe, not a husked
