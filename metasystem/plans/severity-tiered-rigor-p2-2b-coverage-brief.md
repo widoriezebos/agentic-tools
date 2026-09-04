@@ -5,8 +5,10 @@ Date: 2026-09-04
 # Goal
 
 Tests only, before the closing review of slice 2b (chain
-str-p2-build-2c, your round-3 tree 3cc4ff9a). The dispatching seat
-measured the landing gate's coverage ratchet on that tree
+str-p2-build-2c, your round-3 tree, which the seat has since rebased
+onto main at parts one and three; the merge kept both sides and
+builds green). The dispatching seat measured the landing gate's
+coverage ratchet on that merged tree
 (metasystem/scripts/agents/coverage-ratchet.json): internal/dispatch
 75.3% against its floor 75.9%, internal/validate 79.4% against 79.9%.
 The landing refuses below the floor, so this round raises both above
