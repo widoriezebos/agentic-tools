@@ -58,9 +58,14 @@ fixture_start=$("$ms" proc started-at --pid "$$")
 grep -q 'status ' "$bed/status.out"
 grep -q '"method":"chat.postMessage"' "$fake_dir/journal.jsonl"
 
-"$ms" goal open --root "$repo" --id channel-fixture --intent 'Prove the fleet channel fixture.' --next 'Ask for authority.' --tier 3 >/dev/null
+"$ms" goal open --root "$repo" --id channel-fixture \
+  --intent 'Prove the fleet channel fixture.' --next 'Ask for authority.' \
+  --risk severity=3,novelty=1,exposure=1,accumulation=1 \
+  --basis 'This established, isolated fixture has low novelty, exposure, and accumulation, but an incorrect channel answer could authorize a one-hour budget without the human.' >/dev/null
 qid=$("$ms" channel ask --root "$repo" --goal channel-fixture --kind budget-above-norm \
   --fact 'Approve a one-hour fixture budget.' --option 'approve: continue the fixture' \
+  --elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 \
+  --active-job-limit 1 --review-round-limit 3 \
   --recommend approve --wants 'goal=channel-fixture minutes=60 reviewRounds=3 goalRevision=3')
 root_ts=$(python3 - "$fake_dir/journal.jsonl" <<'PY'
 import json, sys
@@ -100,9 +105,13 @@ export METASYSTEM_CHANNEL_DESTINATION_FLEET_TELEGRAM_BOT_TOKEN=fake-telegram-tok
 grep -q '"method":"sendMessage"' "$fake_dir/journal.jsonl"
 
 "$ms" goal open --root "$repo" --id channel-telegram-fixture \
-  --intent 'Prove the Telegram fleet channel fixture.' --next 'Ask for authority.' --tier 3 >/dev/null
+  --intent 'Prove the Telegram fleet channel fixture.' --next 'Ask for authority.' \
+  --risk severity=3,novelty=1,exposure=1,accumulation=1 \
+  --basis 'This established, isolated fixture has low novelty, exposure, and accumulation, but an incorrect Telegram answer could authorize a one-hour budget without the human.' >/dev/null
 telegram_qid=$("$ms" channel ask --root "$repo" --goal channel-telegram-fixture --kind budget-above-norm \
   --fact 'Approve a one-hour Telegram fixture budget.' --option 'approve: continue the fixture' \
+  --elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 \
+  --active-job-limit 1 --review-round-limit 3 \
   --recommend approve --wants 'goal=channel-telegram-fixture minutes=60 reviewRounds=3 goalRevision=3')
 telegram_root=$(python3 - "$repo/artifacts/agents/channel/questions/$telegram_qid.json" <<'PY'
 import json, sys

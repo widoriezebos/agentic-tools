@@ -1680,7 +1680,9 @@ set -e
 [[ ! -f "$agent_repo/artifacts/agents/jobs/sg-refused.json" ]] \
   || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
 METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" \
-	--id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." --tier 3 >/dev/null
+	--id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." \
+	--risk severity=3,novelty=1,exposure=1,accumulation=1 \
+	--basis "This established, isolated fixture has low novelty, exposure, and accumulation, but a misbound goal could give a delegated critic the wrong authority context." >/dev/null
 "$engine" goal approve --root "$agent_repo" --id fixture-serving --by Wido --lineage agent-fixture \
 	--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
 	--review-round-limit 3 --temporary-human-word 'Wido approves this fixture budget' \
@@ -2469,6 +2471,8 @@ run_agent_fixture_captured active-turn-dispatch active-turn /dev/null "$agent_di
 agent_fails active-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job active-turn --message "$follow_message"
 run_agent_fixture active-turn-cancel active-turn "$agent_dispatch" cancel --job active-turn
 
+"$engine" job critique-register-advance --repo "$agent_repo" \
+  --root-job happy --round-job happy-r2 >/dev/null
 run_agent_fixture happy-close happy "$agent_dispatch" close --job happy
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/happy.json" --field runnerClosed)" == false ]] \
   || { echo "host-closed chain was stamped as runner-closed" >&2; exit 1; }
@@ -2485,6 +2489,13 @@ wait_for_agent_fixture_process close-race-follow close-race-r2 "$follow_pid"
 close_won=$(cat "$close_rc"); follow_won=$(cat "$follow_rc")
 [[ ( "$close_won" == 0 && "$follow_won" != 0 ) || ( "$close_won" != 0 && "$follow_won" == 0 ) ]] \
   || { echo "close/follow-up race did not serialize to one winner" >&2; exit 1; }
+if [[ "$follow_won" == 0 ]]; then
+  wait_for_agent_status close-race-r2 completed
+  "$engine" job critique-register-advance --repo "$agent_repo" \
+    --root-job close-race --round-job close-race-r2 >/dev/null
+  run_agent_fixture close-race-follow-winner-close close-race \
+    "$agent_dispatch" close --job close-race
+fi
 
 # Conformance uses the actual intent-to-add working-tree diff and protects
 # both plans/ and the ignored agent control plane.
