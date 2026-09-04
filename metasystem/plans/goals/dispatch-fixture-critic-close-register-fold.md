@@ -6,11 +6,12 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (one fixture leg): build, run dispatch-fixtures.sh seat-side, land through a chain; box 1h/3/60m/1. Approved under R-76-m2 once picked.
 - OpenedAt: 2026-09-04T14:08:57Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T16:53:26Z revision=2 opid=G1566MNAY17FFJW23DXN0C3KZ7-m2-5fcf08ab authority=relayed digest=4637dcf5c10129034a9018ae9bc6fdb2eb25f492d673c4872d9dda469a2000d8 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T16:57:05Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T16:54:07Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-04T14:08:57Z E88YC1N4G1SYZRF6VNWTVM9RVE-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-critic-close-register-fold
 - 2026-09-04T16:53:26Z G1566MNAY17FFJW23DXN0C3KZ7-m2-5fcf08ab approve actor=human:Wido targets=dispatch-fixture-critic-close-register-fold authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T16:54:07Z 6FY147XGKCT884Y9J7APYWVJX0-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-critic-close-register-fold
-Integrity: sha256=93e5bfae147b420736b5ae41964e4312f492219aa8323b0ba325f4bbe049596c
+- 2026-09-04T16:57:05Z YHEMCN0V62C0A2RDJG75YYQQPX-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=dispatch-fixture-critic-close-register-fold
+Integrity: sha256=3aae36c0f4d414367ce8a96aa1a164033aeae71474d8b54440ab75f6eb7828f0
