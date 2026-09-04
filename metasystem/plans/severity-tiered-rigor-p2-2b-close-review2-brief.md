@@ -31,8 +31,9 @@ files). Judge the delta between that certified diff and this one.
    touched only plans, records, docs, AGENTS.md, skills and the
    digest, none of which the patch touches, so the hunks should be
    identical). Any production difference is material.
-2. The 47th file is metasystem/internal/goal/severity_tiered_rigor_coverage_test.go
-   and it is the only addition. Its three tests
+2. The 47th file is the new test file severity_tiered_rigor_coverage_test.go
+   in the goal package (metasystem/internal/goal; it does not exist on
+   main yet, only in the diff) and it is the only addition. Its three tests
    (TestSeverityTieredRigorAcceptedRiskLifecycle,
    TestSeverityTieredRigorReviewObligationRefusals,
    TestSeverityTieredRigorUtilityWrappers) exercise the package-level
