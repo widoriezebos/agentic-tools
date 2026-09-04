@@ -72,12 +72,17 @@ import json, sys
 print(json.load(open(sys.argv[1]))['thread']['id'])
 PY
 )
+answer_token=$(python3 - "$repo/artifacts/agents/channel/questions/$qid.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))['wants'])
+PY
+)
 printf '{"thread_ts":"%s","user":"UWIDO","text":"approve"}\n' "$root_ts" >>"$fake_dir/replies.jsonl"
 "$ms" channel poll --root "$repo" >/dev/null
 grep -q 'not recorded: no code' "$fake_dir/journal.jsonl"
 
 code=$("$ms" channel fake code --secret "$secret")
-printf '{"thread_ts":"%s","user":"UWIDO","text":"approve %s"}\n' "$root_ts" "$code" >>"$fake_dir/replies.jsonl"
+printf '{"thread_ts":"%s","user":"UWIDO","text":"%s %s"}\n' "$root_ts" "$answer_token" "$code" >>"$fake_dir/replies.jsonl"
 "$ms" channel poll --root "$repo" >"$bed/poll.out"
 tip=$(git --git-dir "$bed/origin.git" rev-parse refs/heads/main)
 history=$(git --git-dir "$bed/origin.git" show "$tip:metasystem/plans/goals/channel-fixture.md")
@@ -87,7 +92,11 @@ if ! grep -q 'answer actor=human:wido.*authorityOutcome=AUTHENTICATED_CHANNEL_WO
 	echo "channel fixtures: Slack history did not record the authenticated answer and verified channel approval" >&2
 	exit 1
 fi
-grep -q 'recorded as your word' "$fake_dir/journal.jsonl"
+if ! grep -Fq 'recorded: channel-fixture box raised to 1h, 1 attempts, 60 reserved minutes, 1 active job, 3 review rounds' "$fake_dir/journal.jsonl"; then
+	cat "$fake_dir/journal.jsonl" >&2
+	echo "channel fixtures: Slack journal did not contain the budget box receipt" >&2
+	exit 1
+fi
 opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history")
 [[ -n "$opid" ]]
 "$ms" goal approve --root "$repo" --id channel-fixture --by Wido \
@@ -122,6 +131,11 @@ import json, sys
 print(json.load(open(sys.argv[1]))['thread']['id'])
 PY
 )
+telegram_answer_token=$(python3 - "$repo/artifacts/agents/channel/questions/$telegram_qid.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))['wants'])
+PY
+)
 printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"approve"}\n' "$telegram_root" >>"$fake_dir/replies.jsonl"
 "$ms" channel telegram peek --root "$repo" >"$bed/telegram-peek.out"
 grep -q '^chat=1000 user=7001 text=approve$' "$bed/telegram-peek.out"
@@ -133,7 +147,7 @@ print(json.load(open(sys.argv[1]))['rejected'][-1]['postRef']['id'])
 PY
 )
 telegram_code=$("$ms" channel fake code --secret "$secret" --at "$(( $(date +%s) + 30 ))")
-printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"approve %s"}\n' "$telegram_receipt" "$telegram_code" >>"$fake_dir/replies.jsonl"
+printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"%s %s"}\n' "$telegram_receipt" "$telegram_answer_token" "$telegram_code" >>"$fake_dir/replies.jsonl"
 "$ms" channel poll --root "$repo" >"$bed/telegram-poll.out"
 telegram_tip=$(git --git-dir "$bed/origin.git" rev-parse refs/heads/main)
 telegram_history=$(git --git-dir "$bed/origin.git" show "$telegram_tip:metasystem/plans/goals/channel-telegram-fixture.md")
@@ -143,7 +157,11 @@ if ! grep -q 'answer actor=human:wido.*authorityOutcome=AUTHENTICATED_CHANNEL_WO
 	echo "channel fixtures: Telegram history did not record the authenticated answer and verified channel approval" >&2
 	exit 1
 fi
-grep -q 'recorded as your word on channel telegram fixture' "$fake_dir/journal.jsonl"
+if ! grep -Fq 'recorded: channel-telegram-fixture box raised to 1h, 1 attempts, 60 reserved minutes, 1 active job, 3 review rounds' "$fake_dir/journal.jsonl"; then
+	cat "$fake_dir/journal.jsonl" >&2
+	echo "channel fixtures: Telegram journal did not contain the budget box receipt" >&2
+	exit 1
+fi
 telegram_opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$telegram_history")
 [[ -n "$telegram_opid" ]]
 "$ms" goal approve --root "$repo" --id channel-telegram-fixture --by Wido \

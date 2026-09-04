@@ -44,29 +44,33 @@ func provider(dir, face string) (channel.Provider, channel.DestinationConfig, er
 }
 
 type scripted struct {
-	Face     string `json:"face"`
-	ThreadTS string `json:"thread_ts"`
-	User     any    `json:"user"`
-	Text     string `json:"text"`
-	ReplyTo  int64  `json:"reply_to"`
-	Chat     int64  `json:"chat"`
+	Face     string  `json:"face"`
+	ThreadTS string  `json:"thread_ts"`
+	TS       *string `json:"ts"`
+	User     any     `json:"user"`
+	Text     string  `json:"text"`
+	ReplyTo  int64   `json:"reply_to"`
+	Chat     int64   `json:"chat"`
+	Date     *int64  `json:"date"`
 }
 
 type slackAssigned struct {
 	scripted
-	TS string
+	Timestamp string
 }
 
 type telegramAssigned struct {
 	Scripted  scripted
 	UpdateID  int64
 	MessageID int64
+	Date      int64
 }
 
 type server struct {
 	dir              string
 	mu               sync.Mutex
 	counter          uint64
+	lastTSMicros     int64
 	loadedLines      int
 	slackAssigned    []slackAssigned
 	telegramAssigned []telegramAssigned
@@ -121,8 +125,15 @@ func writeRename(path string, data []byte) error {
 	return os.Rename(name, path)
 }
 
-func (s *server) nextID() int64  { s.counter++; return int64(s.counter) }
-func (s *server) nextTS() string { return fmt.Sprintf("%d.000000", s.nextID()) }
+func (s *server) nextID() int64 { s.counter++; return int64(s.counter) }
+func (s *server) nextTS() string {
+	micros := time.Now().UnixMicro()
+	if micros <= s.lastTSMicros {
+		micros = s.lastTSMicros + 1
+	}
+	s.lastTSMicros = micros
+	return fmt.Sprintf("%d.%06d", micros/1_000_000, micros%1_000_000)
+}
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/bot") {
@@ -214,12 +225,20 @@ func (s *server) loadNew() {
 		if json.Unmarshal(scanner.Bytes(), &row) == nil {
 			switch row.Face {
 			case "":
-				s.slackAssigned = append(s.slackAssigned, slackAssigned{scripted: row, TS: s.nextTS()})
+				timestamp := s.nextTS()
+				if row.TS != nil {
+					timestamp = *row.TS
+				}
+				s.slackAssigned = append(s.slackAssigned, slackAssigned{scripted: row, Timestamp: timestamp})
 			case "telegram":
 				if row.Chat == 0 {
 					row.Chat = 1000
 				}
-				s.telegramAssigned = append(s.telegramAssigned, telegramAssigned{Scripted: row, UpdateID: s.nextID(), MessageID: s.nextID()})
+				date := time.Now().Unix()
+				if row.Date != nil {
+					date = *row.Date
+				}
+				s.telegramAssigned = append(s.telegramAssigned, telegramAssigned{Scripted: row, UpdateID: s.nextID(), MessageID: s.nextID(), Date: date})
 			}
 		}
 		index++
@@ -238,8 +257,8 @@ func (s *server) replies(w http.ResponseWriter, form url.Values) {
 	offset, _ := strconv.Atoi(form.Get("cursor"))
 	messages := []map[string]string{{"ts": root, "user": "UFAKEBOT", "text": "root"}}
 	for _, row := range s.slackAssigned {
-		if row.ThreadTS == root && (oldest == "" || row.TS >= oldest) {
-			messages = append(messages, map[string]string{"ts": row.TS, "user": stringValue(row.User), "text": row.Text})
+		if row.ThreadTS == root && (oldest == "" || row.Timestamp >= oldest) {
+			messages = append(messages, map[string]string{"ts": row.Timestamp, "user": stringValue(row.User), "text": row.Text})
 		}
 	}
 	if offset > len(messages) {
@@ -268,7 +287,7 @@ func (s *server) telegramUpdates(w http.ResponseWriter, body map[string]any) {
 		if row.UpdateID < offset {
 			continue
 		}
-		message := map[string]any{"message_id": row.MessageID, "date": time.Now().Unix(), "text": row.Scripted.Text, "chat": map[string]any{"id": row.Scripted.Chat}, "from": map[string]any{"id": intValue(row.Scripted.User), "is_bot": false}}
+		message := map[string]any{"message_id": row.MessageID, "date": row.Date, "text": row.Scripted.Text, "chat": map[string]any{"id": row.Scripted.Chat}, "from": map[string]any{"id": intValue(row.Scripted.User), "is_bot": false}}
 		if row.Scripted.ReplyTo != 0 {
 			message["reply_to_message"] = map[string]any{"message_id": row.Scripted.ReplyTo}
 		}
