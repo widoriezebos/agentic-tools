@@ -1,4 +1,4 @@
-# human-carried-landing — design: the machine never refuses a verified human (revision 2)
+# human-carried-landing — design: the machine never refuses a verified human (revision 2.1)
 
 Goal: plans/goals/human-carried-landing.md. Ruling: R-75-m3 (Wido,
 verbatim: "I do not ever want to be in a HAL2000 situation where the
@@ -20,6 +20,25 @@ note; dispositions at the end). The generating cause was one: revision
 between the word and the push unordered. Revision 2 puts the word where
 every other human word in this tree already lives, the goal ledger, and
 orders the writes.
+
+Revision 2.1 amends 03 alone, after the second critique round (thirteen
+material findings, HCL-C-02 to -12 re-opened and -18 to -20 new;
+dispositions at the end). The trajectory is sixteen then thirteen, all
+severe or unproven, and the round showed a shape fact about the chain
+itself: its declared outputs were frozen at revision 1 (fifteen paths;
+digest ee09a912...), and revision 2's build needs commit.sh, dispatch.sh,
+claim.go, review_reference.go, goalsync_mutations.go, recover.go,
+governance/types.go, channel/question.go and main.go, none declared. The
+register already demoted HCL-C-03 (commit.sh, twice), HCL-C-07
+(goalsync_mutations.go) and HCL-C-20 as outside the subject set, and no
+verb rebinds a root's declared outputs (only its round budget). The last
+round on this root cannot review the carry at revision 2's scope, and a
+fresh root would evade the budget. So the carry points (02, 04 to 09)
+wait for the human's ruling: split the carry verb, landing and critic
+subject into their own goal with their own chain, or rebind. The audit
+(03) is inside the declared set, has two mechanical findings, and is the
+goal's own first step by Wido's word ("First slice is an audit"); it is
+built now under slice 1.
 
 The shape in one paragraph. Urgency changes who carries the rigor, never
 the risk: the tier stays derived from the four answers, and a hot patch
@@ -77,35 +96,56 @@ accept-risk` for an exhausted review budget, `land.sh --carried` of 05
 for a landing gate).
 
 The audited set is defined by a grammar, not by discipline. Test
-HCL-03-EVERY-CODE-ROWED walks the Go source files (not tests) of
-internal/dispatch, internal/goal, internal/goalbudget,
-internal/landing, internal/steward, internal/channel,
-internal/humanauthority and cmd/metasystem, and collects every string
-literal that matches either `^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$` (the
-UPPER_SNAKE codes, wherever they appear: as constants, as literals in
-`Errorf` formats such as norm.go:95-99, or as map keys) or
-`^[a-z0-9]+(-[a-z0-9]+)*-(refused|unreadable|malformed|unavailable)$`
-plus the landing verdict codes passed as literals in observe.go:75-99
-(matched by the second pattern or listed by hand under `landing`); the
-test fails on a collected literal with no row. Outcome names that are
-not refusals (HUMAN_AUTHORITY_PROVEN, TEMPORARY_HUMAN_WORD,
-AUTHENTICATED_CHANNEL_WORD, the WON/REFUSED headline words, log kinds)
-live in the table's `Exclusions` list with a one-line reason each, and
-the test fails on an exclusion the grammar no longer collects (a dead
-exclusion). Shell refusals (land.sh:94-112 and commit.sh print prose,
-not codes) are outside the mechanical set: the table lists them by hand
-under `Shell` rows with script and line, and the design says plainly
-that no test proves that list complete.
+HCL-03-EVERY-CODE-ROWED parses (go/ast, `parser.ParseFile`) the Go
+source files that are not `_test.go` of internal/dispatch,
+internal/goal, internal/goalbudget, internal/landing, internal/steward,
+internal/channel, internal/humanauthority and cmd/metasystem, and
+collects from every string literal three kinds of token:
+
+1. every match of `[A-Z][A-Z0-9]*(_[A-Z0-9]+)+` found INSIDE the
+   literal's value (`regexp.FindAllString` bounded on both sides by a
+   non-identifier byte or the literal's edge), so the format literal of
+   norm.go:94-96 yields `GOAL_NORM_REFUSED` and a constant declaration
+   yields its own value; a literal is never required to be the token
+   alone;
+2. every literal whose whole value matches
+   `^[a-z0-9]+(-[a-z0-9]+)*-(refused|unreadable|malformed|unavailable)$`;
+3. in internal/landing only, every literal that is the first argument
+   of a call to `wouldRefuse` or the value of the `code` key of a
+   `carriageError` composite literal (observe.go:80-183, :488-811), and
+   every `case` literal of `knownRefusalCode` (promotion.go:90-122).
+   This is the landing refusal set; the suffix pattern of 2 does not
+   define it, and a landing code that is not in `knownRefusalCode` (the
+   walk finds `chain-full-gate-refused` at observe.go:149 outside that
+   switch) is a row AND a `Defects` entry, since the promotion reader
+   would not know it.
+
+The test fails on a collected token with no row. Names that are not
+refusals (HUMAN_AUTHORITY_PROVEN, TEMPORARY_HUMAN_WORD,
+AUTHENTICATED_CHANNEL_WORD, the WON/REFUSED headline words, log kinds,
+environment variable names) live in the table's `Exclusions` list with a
+one-line reason each, and the test fails on an exclusion the walk no
+longer collects (a dead exclusion). Shell refusals (land.sh:94-112 and
+commit.sh print prose, not codes) are outside the mechanical set: the
+table lists them by hand under `Shell` rows with script and line, and
+the design says plainly that no test proves that list complete.
 
 HCL-03-EVERY-ROW-REAL fails on a row naming an override verb the binary
-does not have, except a row marked `Pending: human-carried-landing`,
-which slice 1 uses for the landing gates whose override is
-`land.sh --carried` of slice 2; HCL-03-NO-PENDING-AFTER-SLICE-2 asserts
-that after slice 2 no row is pending. A code the table classifies as the
-fourth shape is listed under `Defects` and each is a backlog item opened
-by the slice, never fixed silently. The table also records, per human
-verb, the number of commands between the human's intent and the effect
-(08).
+does not have (the test runs `metasystem goal <verb>` with no flags for
+each `goal ...` override and accepts any exit whose output is not the
+family's "unknown verb" line), except a row marked
+`Pending: human-carried-landing`, which slice 1 uses for the landing
+gates whose override is `land.sh --carried` of slice 2.
+HCL-03-PENDING-ROWS-NAMED (slice 1) fails on a pending row whose
+Override does not begin `land.sh --carried` or whose Pending is not
+exactly `human-carried-landing`; the pending state is a table value, not
+a probe of the tree. HCL-03-NO-PENDING-AFTER-SLICE-2 is written by slice
+2 in the same change that flips the rows, and asserts that no row is
+pending; it does not exist in slice 1. A code the table classifies as
+the fourth shape is listed under `Defects` and each is a backlog item
+opened by the slice, never fixed silently. The table also records, per
+human verb, the number of commands between the human's intent and the
+effect (08).
 
 ### HCL-WORD-04: one word, one tree, in the ledger
 
@@ -316,8 +356,9 @@ name as material (R-60-m1).
 ### Build list
 
 - Slice 1, the audit: `internal/refusal/register.go`, its grammar walk
-  and the three tests of 03 (`Pending` rows for the landing gates); the
-  `Defects` and `Slow` lists as backlog items. Lands alone.
+  and the three slice-1 tests of 03 (EVERY-CODE-ROWED, EVERY-ROW-REAL,
+  PENDING-ROWS-NAMED; `Pending` rows for the landing gates); the
+  `Defects` and `Slow` lists as backlog items. Lands alone, now.
 - Slice 2, the word, the landing, the transaction, the obligation, the
   counter, the voice, the commit subject (02, 04 to 09): `goal carry`
   and `goal carried` in cmd/metasystem (goalsync_mutations.go) and
@@ -329,7 +370,9 @@ name as material (R-60-m1).
   advisory gates) and scripts/agents/land.sh (`--carried`, the rebase
   rule); the discharge and accept-risk changes of 07;
   internal/steward/health.go; the commit subject of 09 in dispatch.sh,
-  claim.go, finding_register.go; the 03 rows flipped from pending.
+  claim.go, finding_register.go; the 03 rows flipped from pending and
+  HCL-03-NO-PENDING-AFTER-SLICE-2. Waits on the ruling of the revision
+  2.1 note and on revision 3 answering the round-2 dispositions.
 - Slice 3, the docs: docs/orchestration.md and AGENTS.md naming the
   carried landing beside the tiers. Rides the slice-2 chain's closing
   round when the budget allows, its own round otherwise.
@@ -349,6 +392,11 @@ goal carries no Risk record of its own (it was opened before the law
 and the law refuses answering after approval); its answers on the
 seat's reading are severity 3, novelty 2, exposure 3, accumulation 1,
 tier 3 as approved.
+
+After round two (revision 2.1): three attempts and 60 reserved minutes
+spent, two of three review rounds consumed on root hcl-design-cc1. Slice
+1 takes one build attempt (15 minutes) and one closing review (20); the
+rest is held for the carry under whichever ruling comes.
 
 ### Revision 2 dispositions of the first critique (chain hcl-design-cc1, round 1)
 
@@ -371,3 +419,26 @@ tier 3 as approved.
 | HCL-C-15 | accepted | The battery and counter exist only at the landing; Risk may be nil (file.go:25-28). | 08 splits the voice into word lines and landing lines, with `risk: unanswered`. |
 | HCL-C-16 | accepted | commit.sh:127-203 scans only Goal-Item; :519-533 stamps colon trailers. | 05's four wrapper-owned trailers, caller lines refused, postcondition exact. |
 | HCL-C-17 | noted | Twenty-one fixtures were named, not seventeen. | Revision 2 counts thirty-eight and names each under its point. |
+
+### Revision 2.1 dispositions of the second critique (chain hcl-design-cc1, round 2)
+
+Every finding stands on the facts it cites; none is refuted. The carry
+findings are accepted with their amendment deferred to revision 3, the
+carry rewrite, which the revision 2.1 note explains cannot be reviewed
+on this root and waits for the ruling.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| HCL-C-02 | accepted | governance/types.go:124-136 admits an empty tuple or TEMPORARY_HUMAN_WORD; no terminal row can carry HUMAN_AUTHORITY_PROVEN, and the human name has no source. | Revision 3: the terminal row's authority wire and the name source, with a byte-level fixture. |
+| HCL-C-03 | accepted | commit.sh:265-286 builds the evaluator through the same go-gate the carried mode makes advisory; land.sh:179-242, :334 keep a judgment refusal. | Revision 3: evaluator from the base tree, and every remaining judgment refusal named advisory. |
+| HCL-C-04 | accepted | land.sh:259-265 refuses an empty staged set after the rebase; the fresh word has no landing path. | Revision 3: amend-and-rebind rule after a rebase, fixture lands the second word. |
+| HCL-C-05 | accepted | verbs.go:1096-1138 archives on `done` between the push and `goal carried`; :933-936, :972-975 refuse archived goals. | Revision 3: the obligation is written before the push, or `done` refuses an open carry row. |
+| HCL-C-06 | accepted | verbs.go:943-953 and :993-1006 key on Finding and Chain alone; seven digits collide. | Revision 3: Finding carries the full forty-digit id. |
+| HCL-C-07 | accepted | goalsync_mutations.go:232-260 needs the register finding for the counselor record and the acceptance. | Revision 3: every command-layer effect for chain `human-carried` named. |
+| HCL-C-09 | accepted | claim.go:524-540 stamps unconditionally; review_reference.go:80-138 requires an implementer job. | Revision 3: review_reference.go as the fourth seam with its fixture. |
+| HCL-C-10 | accepted | norm.go:94-96 embeds the code in a longer literal; observe.go:136-165 and promotion.go:90-122 hold codes outside the suffix pattern. | 03 now: tokens found inside literals; the landing set from `wouldRefuse`, `carriageError` and `knownRefusalCode`; `chain-full-gate-refused` recorded as a defect. |
+| HCL-C-11 | accepted | Slice 1 cannot pass a no-pending test while carrying pending rows. | 03 now: HCL-03-PENDING-ROWS-NAMED in slice 1; NO-PENDING-AFTER-SLICE-2 written by slice 2. |
+| HCL-C-12 | accepted | verbs.go:119-124 appends the wanted token to any authenticated reply; :67-93 then reads it. An authenticated "no" binds. This is a live defect of the channel, not only of the carry; recorded for the channel gateway design. | Revision 3: the carry token must occur in the human's own text; negative fixture. The channel gateway design carries the general rule. |
+| HCL-C-18 | accepted | goalsync_mutations.go:51-63 mints a fresh operation per command; verbs.go:416-425 compares only that; recover.go:270-369 has no carried case. | Revision 3: idempotence keyed by ApprovedRef; recover.go in the build list. |
+| HCL-C-19 | accepted | land.sh:232-235, :311-320, :342-363: any branch, and origin and transport as separate writes. | Revision 3: main bound, the two remote writes ordered, recovery for each interval. |
+| HCL-C-20 | accepted | jobs/hcl-design-cc1.json: digest at revision 1, demotions of C-03 (twice), C-07, C-20; no verb rebinds declared outputs. | The revision 2.1 note; the carry's chain question goes to Wido. |
