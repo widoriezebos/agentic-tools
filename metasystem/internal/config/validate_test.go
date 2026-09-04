@@ -225,6 +225,8 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"zero bound", "exec.network-timeout-sec=0\n", "exec.network-timeout-sec must be a positive integer"},
 		{"zero receipt bound", "landing.receipt-bound-min=0\n", "landing.receipt-bound-min must be a positive integer"},
 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
+		{"zero steward tick patience", "steward.tick-patience-sec=0\n", "steward.tick-patience-sec must be a positive integer"},
+		{"overflowing steward tick patience", "steward.tick-patience-sec=9223372037\n", "steward.tick-patience-sec must be no greater than"},
 		{"zero counselor cadence", "metasystem.counselor.brief-cadence-hours=0\n", "metasystem.counselor.brief-cadence-hours must be a positive integer"},
 		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
 		{"share over 100", "census.max-interval-share-percent=150\n", "census.max-interval-share-percent must be an integer between 1 and 100"},

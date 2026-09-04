@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
@@ -448,11 +449,18 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		"exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
+		"steward.tick-patience-sec",
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
 				add("%s must be a positive integer, got %s", knob, pyRepr(raw))
 			}
+		}
+	}
+	if raw, present := values["steward.tick-patience-sec"]; present {
+		const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
+		if parsed, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && parsed > maxPatienceSeconds {
+			add("steward.tick-patience-sec must be no greater than %d seconds, got %s", maxPatienceSeconds, pyRepr(raw))
 		}
 	}
 	if raw, present := values["census.max-interval-share-percent"]; present {

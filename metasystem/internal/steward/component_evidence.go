@@ -46,6 +46,7 @@ type ComponentEvidence struct {
 	TurnKeyDigest        string                    `json:"turnKeyDigest,omitempty"`
 	LastAttempt          time.Time                 `json:"lastAttempt"`
 	LastCompletion       time.Time                 `json:"lastCompletion"`
+	LastDurationMillis   int64                     `json:"lastDurationMillis,omitempty"`
 	LastSuccess          time.Time                 `json:"lastSuccess"`
 	Result               ComponentResult           `json:"result"`
 	Outcome              string                    `json:"outcome"`
@@ -251,6 +252,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 	if completion.Before(record.LastAttempt) {
 		return ComponentEvidence{}, fmt.Errorf("component %s completion clock is earlier than its attempt", component)
 	}
+	record.LastDurationMillis = completion.Sub(record.LastAttempt).Milliseconds()
 	if result == ComponentOK {
 		// Publish a durable pending completion before exposing OK. If the
 		// promotion's directory sync is uncertain, restore this state so a
@@ -365,7 +367,7 @@ func loadComponentEvidence(path string) (ComponentEvidence, error) {
 		return ComponentEvidence{}, fmt.Errorf("component evidence %s is malformed: %w", filepath.Base(path), err)
 	}
 	if record.Component == "" || record.Generation < 0 || record.Pid < 1 || record.PidStartedAt < 1 ||
-		record.AttemptSeq < 1 || record.LastAttempt.IsZero() || record.Outcome == "" || !validEvidenceDigest(record.EvidenceDigest) {
+		record.AttemptSeq < 1 || record.LastAttempt.IsZero() || record.LastDurationMillis < 0 || record.Outcome == "" || !validEvidenceDigest(record.EvidenceDigest) {
 		return ComponentEvidence{}, fmt.Errorf("component evidence %s is incomplete", filepath.Base(path))
 	}
 	if record.Result != ComponentOK && record.Result != ComponentError && record.Result != ComponentIndeterminate {

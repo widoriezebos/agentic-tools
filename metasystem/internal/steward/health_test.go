@@ -488,6 +488,9 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 	if !ok.LastSuccess.Equal(now.Add(time.Second)) || !ok.LastCompletion.Equal(now.Add(time.Second)) {
 		t.Fatalf("an OK completion advances completion and success: %+v", ok)
 	}
+	if ok.LastDurationMillis != 1000 {
+		t.Fatalf("a completion records the measured attempt duration: %+v", ok)
+	}
 	sameGeneration, err := beginComponentAttempt(root, "steward-tick", 7, process, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
@@ -518,6 +521,54 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 	}
 	if failed.LastCompletion.IsZero() || !failed.LastSuccess.IsZero() {
 		t.Fatalf("an ERROR completion advances only completion: %+v", failed)
+	}
+}
+
+func TestAliveRunnerAttemptUsesMeasuredTickPatience(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 44300, StartedAtSec: 100, StartTicks: 900, BootID: "boot-a"}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoIdentity, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
+		RepoIdentity: repoIdentity, Generation: 3, InstallPath: "/fixture/metasystem", MintedAt: now.Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
+		Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := beginComponentAttempt(root, "steward-tick", 3, process, now.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, completed.AttemptSeq, ComponentOK, "PASS_COMPLETE", "slow", now.Add(-10*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := beginComponentAttempt(root, "steward-tick", 3, process, now); err != nil {
+		t.Fatal(err)
+	}
+	probe := healthProbe{process.Pid: {
+		exact: identity.Exact{Pid: process.Pid, StartedAt: time.Unix(process.StartedAtSec, 0), StartTicks: process.StartTicks, BootID: process.BootID},
+		state: identity.Alive,
+	}}
+	within := checkStewardRunner(root, now.Add(149*time.Second), probe)
+	if within.Status != HealthAlive || !strings.Contains(within.Reason, "attempting") || !strings.Contains(within.Reason, "2m30s") {
+		t.Fatalf("three times the last 50-second tick protects the in-progress attempt: %+v", within)
+	}
+	overdue := checkStewardRunner(root, now.Add(150*time.Second), probe)
+	if overdue.Status != HealthDead || !strings.Contains(overdue.Reason, "stuck") {
+		t.Fatalf("an attempt at the measured patience boundary is stuck: %+v", overdue)
 	}
 }
 
@@ -705,8 +756,8 @@ func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	stillManual := checkStewardRunner(root, now.Add(4*time.Second), probe)
-	if stillManual.Status != HealthDead {
-		t.Fatalf("a resident attempt cannot adopt the manual tick's prior success: %+v", stillManual)
+	if stillManual.Status != HealthAlive || !strings.Contains(stillManual.Reason, "attempting") {
+		t.Fatalf("the resident runner's own in-progress attempt proves liveness without adopting the manual success: %+v", stillManual)
 	}
 	if _, err := completeComponentAttempt(root, "steward-tick", 3, residentAttempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "resident", now.Add(5*time.Second)); err != nil {
 		t.Fatal(err)

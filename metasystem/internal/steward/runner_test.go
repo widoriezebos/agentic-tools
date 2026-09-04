@@ -256,6 +256,118 @@ func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 	}
 }
 
+func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
+	root := reviveRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin, err := filepath.Abs("../../bin/metasystem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(bin); statErr != nil {
+		t.Skipf("engine binary not built at %s", bin)
+	}
+	digest, err := installDigest(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
+		RepoIdentity: mustAbs(t, root), Generation: 1, InstallPath: bin, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("read fixture process: %v %s", err, state)
+	}
+	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
+		Pid: self.Pid, PidStartedAt: self.StartedAt.Unix(), StartTicks: self.StartTicks, BootID: self.BootID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := beginComponentAttempt(root, "steward-tick", 1, self.Ref(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(11 * time.Second)
+	pinned, err := OpenEnrolledBinary(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	ensured, err := EnsureRunner(root, pinned, 1000)
+	if err != nil || ensured.Action != "verified" || ensured.Pid != self.Pid {
+		t.Fatalf("a second up must verify the slow first attempt without replacement: %+v %v", ensured, err)
+	}
+	repaired, err := RepairEnrolledRunner(root)
+	if err != nil || repaired.Status != "CURRENT" || repaired.ReplacementPid != self.Pid {
+		t.Fatalf("a watcher cycle must preserve the slow first attempt: %+v %v", repaired, err)
+	}
+}
+
+func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
+	root := reviveRepo(t)
+	bin, err := filepath.Abs("../../bin/metasystem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(bin); statErr != nil {
+		t.Skipf("engine binary not built at %s", bin)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("steward.tick-patience-sec=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := installDigest(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
+		RepoIdentity: mustAbs(t, root), Generation: 1, InstallPath: bin, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stuck := exec.Command("sleep", "60")
+	if err := stuck.Start(); err != nil {
+		t.Fatal(err)
+	}
+	stuckDone := make(chan struct{})
+	go func() {
+		_, _ = stuck.Process.Wait()
+		close(stuckDone)
+	}()
+	t.Cleanup(func() {
+		_ = stuck.Process.Kill()
+		select {
+		case <-stuckDone:
+		case <-time.After(5 * time.Second):
+			t.Errorf("stuck fixture process did not exit")
+		}
+		_, _ = Disarm(root)
+	})
+	exact, state, err := identity.KernelProber{}.Probe(int64(stuck.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("read stuck fixture process: %v %s", err, state)
+	}
+	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
+		Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), StartTicks: exact.StartTicks, BootID: exact.BootID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := beginComponentAttempt(root, "steward-tick", 1, exact.Ref(), time.Now().Add(-2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := RepairEnrolledRunner(root)
+	if err != nil || repaired.Status != "RESTORED" || repaired.PreviousPid != exact.Pid || repaired.ReplacementPid == exact.Pid {
+		t.Fatalf("the watcher must replace an alive runner past its configured patience: %+v %v", repaired, err)
+	}
+}
+
 func TestWatcherRepairStopsWhenTheStewardBreakerEndsHealing(t *testing.T) {
 	root := t.TempDir()
 	top := mustAbs(t, root)

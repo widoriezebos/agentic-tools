@@ -561,8 +561,54 @@ func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) 
 	if err != nil {
 		return roleUnknown(RoleStewardRunner, "the steward installation generation is unreadable", remedy)
 	}
+	record, _, evidenceErr := loadComponentEvidenceForHealth(repoRoot, "steward-tick")
+	if evidenceErr == nil && record.Generation == generation && record.Outcome == "ATTEMPTING" {
+		attemptProcess := identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt, StartTicks: record.PidStartTicks, BootID: record.BootID}
+		if sameComponentProcess(attemptProcess, process) {
+			if record.LastAttempt.After(now) {
+				return roleUnknown(RoleStewardRunner, "CLOCK_REGRESSED: tick attempt evidence is later than current UTC", remedy)
+			}
+			patience, patienceErr := runnerTickPatience(repoRoot, record.LastDurationMillis)
+			if patienceErr != nil {
+				return roleUnknown(RoleStewardRunner, "the steward tick patience is invalid: "+patienceErr.Error(), remedy)
+			}
+			age := now.Sub(record.LastAttempt)
+			if age < patience {
+				return roleAlive(RoleStewardRunner, fmt.Sprintf("runner pid %d is attempting generation %d (age %s, patience %s)", runner.Pid, generation, age.Round(time.Second), patience))
+			}
+			return roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), remedy)
+		}
+	}
 	return componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*TickSeconds(repoRoot))*time.Second, now, remedy, &process,
 		fmt.Sprintf("runner pid %d and generation %d success are current", runner.Pid, generation))
+}
+
+func runnerTickPatience(repoRoot string, lastDurationMillis int64) (time.Duration, error) {
+	floorSeconds := 120
+	if _, statErr := os.Stat(filepath.Join(repoRoot, "metasystem.conf")); statErr == nil || !os.IsNotExist(statErr) {
+		configured, err := boundedConfig(repoRoot, "steward.tick-patience-sec", floorSeconds, 1)
+		if err != nil {
+			return 0, err
+		}
+		floorSeconds = configured
+	}
+	const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
+	if int64(floorSeconds) > maxPatienceSeconds {
+		return 0, fmt.Errorf("steward.tick-patience-sec must be no greater than %d", maxPatienceSeconds)
+	}
+	patience := time.Duration(floorSeconds) * time.Second
+	if lastDurationMillis <= 0 {
+		return patience, nil
+	}
+	const maxDurationMillis = int64(^uint64(0)>>1) / int64(time.Millisecond)
+	if lastDurationMillis > maxDurationMillis/3 {
+		return time.Duration(1<<63 - 1), nil
+	}
+	measured := 3 * time.Duration(lastDurationMillis) * time.Millisecond
+	if measured > patience {
+		patience = measured
+	}
+	return patience, nil
 }
 
 func checkSupervisionOwner(repoRoot string, prober identity.Prober) RoleVerdict {
