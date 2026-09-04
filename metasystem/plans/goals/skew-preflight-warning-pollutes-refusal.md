@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (one shell function, a fixture leg): build, run dispatch-fixtures.sh seat-side, land through a chain; box 1h/3/60m/1. Waits for human approval for execution; Wido 2026-09-04: 'land what you can, leave the rest on the backlog'.
 - OpenedAt: 2026-09-04T13:13:56Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - Approved: by=human:Wido at=2026-09-04T13:33:54Z revision=2 opid=S39GRJJC63EWMPC8TT8AT6S2C6-m2-5fcf08ab authority=relayed digest=adc0e711e57faa92f4be1d30913febfe88d4a0dc5d53b6a95d3aec6749c4191e reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T13:34:10Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T13:34:00Z revision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-04T13:13:56Z SNFF55WETAWGYN4Z8BMRA6X7G4-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=skew-preflight-warning-pollutes-refusal
 - 2026-09-04T13:33:54Z S39GRJJC63EWMPC8TT8AT6S2C6-m2-5fcf08ab approve actor=human:Wido targets=skew-preflight-warning-pollutes-refusal authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T13:34:00Z TM936QD33K9J9WFA3DEHCTG0ME-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=skew-preflight-warning-pollutes-refusal
-Integrity: sha256=69f788ed42e5e1be1c1d5d3f908e2d1dc4981afa6bb9664804d8dfbacaafd563
+- 2026-09-04T13:34:10Z P87SXSH4FT251X9RMQ3RA9GBEM-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=skew-preflight-warning-pollutes-refusal
+Integrity: sha256=3e2a436dc4afbcd48b0de7357dff1b7114f29be3c9ad22b69b05eadd591594f3
