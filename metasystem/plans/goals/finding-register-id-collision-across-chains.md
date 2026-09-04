@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 2 per R-54-m1 (mechanical logic inside an existing owner): build plus one code review; box 4h/6/720m/1/2. Waits for human approval for execution. Related: STR2-CRITIC-UNION-11 of the tiering design (the same-tree union), which is the lawful union this defect over-applies. SPECIMEN 2026-09-04 (m2): cancelling the stuck critic round (delegate --cancel str-build3-cc1) did not unblock the implementer follow-up (it still demands the register advance), and a critic follow-up to re-issue ids is refused because the fold itself fails; the only exit was a fresh implementer chain from a preserved branch (str-build3b) with a fresh critic. Until this lands, every critic brief must ask for chain-unique finding ids (STRxx-nn), never the schema's example F-n.
 - OpenedAt: 2026-09-04T01:40:46Z
-- Revision: 6
+- Revision: 7
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - Approved: by=human:Wido at=2026-09-04T06:16:02Z revision=5 opid=98YSTYZS0BQRDC03FRX3BYW36H-m2-5fcf08ab authority=relayed digest=fa67bbc60fa97f8e94b46f789c5d8e0389560ff4e4ef51bec73076f766d41468 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=6 at=2026-09-04T09:22:18Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T09:21:53Z revision=6
 - StopCapability: generation=6 revision=6 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-04T06:15:37Z 02PQ3BH8QFVFG81ACZG1G66K4C-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
 - 2026-09-04T06:16:02Z 98YSTYZS0BQRDC03FRX3BYW36H-m2-5fcf08ab approve actor=human:Wido targets=finding-register-id-collision-across-chains authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="the bugs yu mentioned are approved to fix too"
 - 2026-09-04T09:21:53Z 79FJFHBARWJEQCKDY20BYTAW0P-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
-Integrity: sha256=0edcf4e26d8495202a8ebbc334a3a2f13a02d8b045c3aa8894d7dfbab507d440
+- 2026-09-04T09:22:18Z C0179VW19M23QSQ4MTHNX6WENQ-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
+Integrity: sha256=a8a7d6fae5bf75908a98c28eff8e543cad8a8572e30a9ac79f3114fd4767c452
