@@ -184,6 +184,24 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     exit 0
   fi
 
+  # The worker publishes its provider response before recording completion.
+  # A completed blocking response already carries the health verdict and is a
+  # safe decision even when completion bookkeeping uses the rest of the Stop
+  # budget. Preserve that response instead of replacing it with a timeout.
+  deadline_published=false
+  deadline_published_decision=
+  deadline_published_reason=
+  deadline_published_message=
+  if [[ -x "$deadline_validator" && -s "$deadline_stdout" ]]; then
+    deadline_published_decision=$("$deadline_validator" json get --file "$deadline_stdout" --field decision 2>/dev/null || true)
+    deadline_published_reason=$("$deadline_validator" json get --file "$deadline_stdout" --field reason 2>/dev/null || true)
+    deadline_published_message=$("$deadline_validator" json get --file "$deadline_stdout" --field systemMessage 2>/dev/null || true)
+    if [[ "$deadline_published_decision" == block && -n "$deadline_published_reason" &&
+          "$deadline_published_message" == *"HEALTH "* ]]; then
+      deadline_published=true
+    fi
+  fi
+
   deadline_stop_resolver
   deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
   if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
@@ -200,6 +218,13 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     fi
   fi
   wait "$deadline_worker" 2>/dev/null || true
+  if [[ "$deadline_published" == true ]]; then
+    command cat "$deadline_stdout" || true
+    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+      "$deadline_resolution" "$deadline_resolution_ready" || true
+    rmdir "$deadline_dir" 2>/dev/null || true
+    exit 0
+  fi
   deadline_cause='stop deadline expired'
   deadline_remedy='A human or steward must restore supervision outside this seat, then retry.'
   deadline_detail='Metasystem Stop deadline expired before a safe turn verdict; stopping is refused.'
@@ -391,8 +416,13 @@ surface_json() { # message
 }
 
 stop_block_json() { # system message, reason
-  local rendered decision reason
-  rendered=$("$ms" report stop-block --system-message "$1" "$2")
+  local guidance rendered decision reason
+  guidance=$("$ms" report stop-block "")
+  guidance=$("$ms" json get --value "$guidance" --field reason)
+  guidance=${guidance%$'\n\n'}
+  rendered=$("$ms" json object "decision=block" "reason=$2
+
+$guidance" "systemMessage=$1")
   decision=$("$ms" json get --value "$rendered" --field decision)
   reason=$("$ms" json get --value "$rendered" --field reason)
   [[ "$decision" == block && -n "$reason" ]] || return 1
@@ -619,9 +649,9 @@ $checkin_tail")
     [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
 
     if [[ "$should_block" == true ]]; then
-      # The display is the block reason byte-verbatim; watchdog and
-      # protocol text stay in the non-blocking channel and never enter
-      # the reason.
+      # The display starts the block reason byte-verbatim; the plan-work
+      # guidance follows it. Watchdog and protocol text stay in the
+      # non-blocking channel and never enter the reason.
       blocking_message=$checkin_tail
       [[ -z "$extras" ]] || blocking_message="$extras
 $blocking_message"
