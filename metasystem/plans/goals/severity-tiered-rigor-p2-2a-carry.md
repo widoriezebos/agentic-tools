@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 2: one implementer round that applies artifacts/agents/str-p2-build-2a/rounds/6/diff.patch and builds the r7 brief's two items; one closing code-critique round; dispatch.sh close; land --chain with the docs re-touch; rebuild, re-arm; then goal done and the parent rejoins. Box 4h/6/720m/1/2.
 - OpenedAt: 2026-09-04T13:28:00Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - Approved: by=human:Wido at=2026-09-04T13:28:10Z revision=2 opid=FSXVNAP48BKQ3YVRYRJ0XBEC40-m3-a5da21ff authority=relayed digest=6fdd7e55dce38942f35ca11182db1b2ecbb53ff5ce83c22e00d7a39a0f6f721c reviewBy=2026-09-06
+- Sliced: machine=m3 lineage=mac-m3 revision=3 at=2026-09-04T13:30:03Z
 - Claimed: machine=m3 lineage=mac-m3 at=2026-09-04T13:28:15Z revision=3
 - StopCapability: generation=3 revision=3 machine=m3 claimEpoch=1 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-04T13:28:00Z GBP6WJQ7J3V065K0P3DM5WP9YQ-m3-a5da21ff open actor=m3+mac-m3 targets=severity-tiered-rigor-p2-2a-carry
 - 2026-09-04T13:28:10Z FSXVNAP48BKQ3YVRYRJ0XBEC40-m3-a5da21ff approve actor=human:Wido targets=severity-tiered-rigor-p2-2a-carry authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="grant the raise."
 - 2026-09-04T13:28:15Z RCDF2SG7S2MA825Z02TWS8B367-m3-a5da21ff claim actor=m3+mac-m3 targets=severity-tiered-rigor-p2-2a-carry
-Integrity: sha256=49d296183ce0be39e762730a737accba58c0beffe11d845bc6cfebb9eff1205e
+- 2026-09-04T13:30:03Z 8E76HZA2HV9KJ748MWJV4ZWB5W-m3-a5da21ff slice-start actor=m3+mac-m3 targets=severity-tiered-rigor-p2-2a-carry
+Integrity: sha256=dca45ac24cfbe6b1a4acd3bf5e1844de216aed09216f23a8d8607a1c08546f0e
