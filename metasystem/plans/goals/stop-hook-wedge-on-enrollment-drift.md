@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 2 per R-54-m1 (mechanical logic inside the existing hook and its up call): build plus one code review, no design round; box 4h/6/240m/1. Waits for human approval for execution. Specimens: (1) this seat's takeover turn of 2026-09-03, six consecutive stop refusals with the same human-only cause after the handoff recorded the ask; (2) the same evening, once the steward was armed but its first tick could not complete (goal up-kills-runner-before-first-tick), the hook refused every turn end with 'Stop deadline expired before a safe turn verdict' for over an hour, re-prompting the seat every few seconds; Wido, verbatim: 'I see an insanely long ... which is not helpful' and 'If this is metasystem behaviour we need to change it'. The re-prompt loop is the hook's, not the seat's: a refusal whose remedy is not the seat's must end the turn with the ask recorded, once.
 - OpenedAt: 2026-09-03T13:30:05Z
-- Revision: 6
+- Revision: 7
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - Approved: by=human:Wido at=2026-09-04T05:56:05Z revision=5 opid=N1412AAE65WWY2JRY8BZ4MY56E-m2-5fcf08ab authority=relayed digest=e399c7379f6271c805a4437fca7fc85cd0d451626de58b1a62e103d994e0b178 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=6 at=2026-09-04T05:58:28Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T05:56:39Z revision=6
 - StopCapability: generation=6 revision=6 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-04T05:55:41Z GA1Z9KEG2A5QJRBQT2ZE2G52FH-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=stop-hook-wedge-on-enrollment-drift
 - 2026-09-04T05:56:05Z N1412AAE65WWY2JRY8BZ4MY56E-m2-5fcf08ab approve actor=human:Wido targets=stop-hook-wedge-on-enrollment-drift authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="yu are allowed to fix the hook problem now"
 - 2026-09-04T05:56:39Z 75AA1ESW7G46YT3WWKT4CCDQ4C-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=stop-hook-wedge-on-enrollment-drift
-Integrity: sha256=bd329c5bb0b00e47b7ca0604434b9004416e4db7da5e912ec353e1627a5444ae
+- 2026-09-04T05:58:28Z 8P1PBTCSV7DHFXAZXEDDHHS9GY-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=stop-hook-wedge-on-enrollment-drift
+Integrity: sha256=aa02d8049e51735522709fa5e7913824c94d0376d6af3313d23bf475134f6e73
