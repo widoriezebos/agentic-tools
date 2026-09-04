@@ -224,3 +224,38 @@ the epoch, the launch fence and the governed obligation; a goal-bound
 root reads the tuple's review-round member capped at
 `metasystem.budget.review-round-max`, a goal-free root reads that
 ceiling alone.
+
+### Revision 4.4 (2026-09-04 13:50 local): the raise keeps the spend, and its edges
+
+The closing review of slice 2a (str-p2-build-2a-cc1 on tree 279d0cad)
+found the raise of revision 4.3 opens the hole part two exists to close:
+the budget projection counts only records at the claim's revision, so a
+raise by the pair, which moves that revision, zeroed attempts, reserved
+minutes and active jobs without a human word (STR2P2A-01). Amendment to
+003 and 005: the claim carries an accounting revision. `Claimed` gains
+`accountingRevision`, the goal revision at which the current spend
+started; `goal claim` sets it to the claim revision, a human
+`set-budget` moves it to the new revision (the reset the tuple approval
+already implies), and a raise leaves it where it is. `ProjectBudget`
+counts every job record, obligation state and governed run whose
+`goalRevision` lies in `[accountingRevision, Claimed.Revision]`; a record
+above the claim revision stays BUDGET_UNKNOWN as today. A file whose
+claim has no accounting revision reads it as the claim revision. A raise
+also lifts the tuple's `reviewRoundLimit` to the new tier's box member
+when the stored member is lower (rigor follows the tier; STR2P2A-09) and
+touches no spend member, so the lift is not a budget exception.
+
+Edges (STR2P2A-03, -05, -08): `goal edit` refuses a bare `--tier`
+exactly as `goal open` does and writes the TierOverride history line
+with `--why` for an override above the derivation; a raise combined
+with an override writes both the Misclassified and the TierOverride
+lines; on a goal whose set tier is above its derivation, a raise that
+omits `--tier` keeps the set tier when it is at or above the new
+derivation instead of reading it as a lowering. The parser never
+indexes history at a zero claim revision: a claim revision of zero with
+an Obligation line stays the existing "obligation budgetRevision does
+not bind" problem. The elapsed-limit member compares as a duration,
+never as a string (STR2P2A-02). Recovery replay of an edit through the
+goal package does not re-append the counselor register line; that line
+is written by the command layer only, recorded here as known, not
+fixed in this slice.
