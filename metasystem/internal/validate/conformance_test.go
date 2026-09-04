@@ -160,6 +160,172 @@ func expectConformance(t *testing.T, f *conformanceFixture, stage string, wantCo
 	return out, errs
 }
 
+func TestConformanceResolveFactsRefusalsAndParentRoot(t *testing.T) {
+	tests := []struct {
+		name       string
+		record     any
+		parentName string
+		parent     any
+		want       string
+	}{
+		{name: "missing record", want: "malformed job record"},
+		{name: "non-object record", record: []any{"not", "an", "object"}, want: "only defined for implementer records"},
+		{name: "wrong role", record: map[string]any{"role": "verifier"}, want: "only defined for implementer records"},
+		{name: "non-string parent", record: map[string]any{"role": "implementer", "parentJob": 7}, want: "parent chain is malformed"},
+		{name: "missing parent", record: map[string]any{"role": "implementer", "parentJob": "parent"}, want: "parent job record 'parent' is unreadable"},
+		{name: "parent cycle", record: map[string]any{"role": "implementer", "parentJob": "parent"}, parentName: "parent", parent: map[string]any{"parentJob": "parent"}, want: "contains a cycle"},
+		{name: "missing workspace", record: map[string]any{"role": "implementer", "parentJob": nil}, want: "workspaceRoot is missing"},
+		{name: "missing base", record: map[string]any{"role": "implementer", "parentJob": nil, "workspaceRoot": "/tmp/workspace"}, want: "baseSha is missing"},
+		{name: "missing round", record: map[string]any{"role": "implementer", "parentJob": nil, "workspaceRoot": "/tmp/workspace", "baseSha": "base"}, want: "round is missing"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			fixture := &conformanceFixture{t: t, controller: root}
+			if test.record != nil {
+				fixture.writeJSON("artifacts/agents/jobs/impl.json", test.record)
+			}
+			if test.parentName != "" {
+				fixture.writeJSON("artifacts/agents/jobs/"+test.parentName+".json", test.parent)
+			}
+			run := &conformanceRun{root: root, job: "impl"}
+			errs := run.resolveFacts()
+			if len(errs) != 1 || !strings.Contains(errs[0], test.want) {
+				t.Fatalf("resolve facts errors = %v, want text %q", errs, test.want)
+			}
+		})
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		root := t.TempDir()
+		writeFile(t, filepath.Join(root, "artifacts", "agents", "jobs", "impl.json"), "{")
+		run := &conformanceRun{root: root, job: "impl"}
+		errs := run.resolveFacts()
+		if len(errs) != 1 || !strings.Contains(errs[0], "malformed job record") {
+			t.Fatalf("invalid JSON errors = %v", errs)
+		}
+	})
+
+	t.Run("resolved parent root", func(t *testing.T) {
+		root := t.TempDir()
+		fixture := &conformanceFixture{t: t, controller: root}
+		fixture.writeJSON("artifacts/agents/jobs/impl.json", map[string]any{
+			"role": "implementer", "parentJob": "root", "workspaceRoot": "/tmp/workspace",
+			"baseSha": "base", "round": 2,
+		})
+		fixture.writeJSON("artifacts/agents/jobs/root.json", map[string]any{"parentJob": nil})
+		run := &conformanceRun{root: root, job: "impl"}
+		if errs := run.resolveFacts(); errs != nil {
+			t.Fatalf("resolved facts = %v", errs)
+		}
+		if run.rootJob != "root" || run.workspace != "/tmp/workspace" || run.baseSha != "base" || run.roundText != "2" {
+			t.Fatalf("resolved run facts = %+v", run)
+		}
+	})
+}
+
+func TestMergeCritiqueKeepsRegisterlessChainCompatibility(t *testing.T) {
+	f := &conformanceFixture{t: t, controller: t.TempDir()}
+	implementer := map[string]any{
+		"jobId": "impl", "role": "implementer", "round": 1, "parentJob": nil,
+		"status": "completed", "effectiveModel": "implementer-model",
+	}
+	critic := map[string]any{
+		"jobId": "critic", "role": "code-critic", "round": 1, "parentJob": nil,
+		"reviews": "impl", "status": "completed", "effectiveModel": "critic-model",
+		"chainClosed": true,
+	}
+	f.writeJSON("artifacts/agents/jobs/impl.json", implementer)
+	f.writeJSON("artifacts/agents/jobs/critic.json", critic)
+	writeReturn := func(findings []any, materialCount int) {
+		f.writeJSON("artifacts/agents/critic/rounds/1/return.json", map[string]any{
+			"jobId": "critic", "round": 1, "reviewedTree": "tree",
+			"findings": findings, "verdictMaterialCount": materialCount,
+		})
+	}
+	run := func() ([]string, int) {
+		r := &conformanceRun{root: f.controller, rootJob: "impl", record: implementer}
+		_, errs, code := r.mergeCritique("", "tree", "fake", "")
+		return errs, code
+	}
+
+	writeReturn([]any{}, 0)
+	if errs, code := run(); code != 0 {
+		t.Fatalf("clean registerless chain refused: %v", errs)
+	}
+	writeReturn([]any{map[string]any{"id": "F-1", "material": true}}, 1)
+	errs, code := run()
+	if code != 1 || !strings.Contains(strings.Join(errs, "\n"), "still has material findings despite any dispositions: F-1") {
+		t.Fatalf("material registerless chain = code %d, errors %v", code, errs)
+	}
+
+	critic["findingRegister"] = "malformed"
+	f.writeJSON("artifacts/agents/jobs/critic.json", critic)
+	writeReturn([]any{}, 0)
+	errs, code = run()
+	if code != 1 || !strings.Contains(strings.Join(errs, "\n"), "canonical finding register is malformed") {
+		t.Fatalf("malformed present register = code %d, errors %v", code, errs)
+	}
+}
+
+func TestSTR2CriticUnionCleanPlusMaterialSameTreeRefuses(t *testing.T) {
+	f := &conformanceFixture{t: t, controller: t.TempDir()}
+	implementer := map[string]any{
+		"jobId": "impl", "role": "implementer", "round": 1, "parentJob": nil,
+		"status": "completed", "effectiveModel": "implementer-model",
+	}
+	f.writeJSON("artifacts/agents/jobs/impl.json", implementer)
+	writeCritic := func(id string, findings []any, count int) {
+		f.writeJSON("artifacts/agents/jobs/"+id+".json", map[string]any{
+			"jobId": id, "role": "code-critic", "round": 1, "parentJob": nil,
+			"reviews": "impl", "status": "completed", "effectiveModel": id + "-model",
+			"chainClosed": true,
+		})
+		f.writeJSON("artifacts/agents/"+id+"/rounds/1/return.json", map[string]any{
+			"jobId": id, "round": 1, "reviewedTree": "same-tree",
+			"findings": findings, "verdictMaterialCount": count,
+		})
+	}
+	writeCritic("critic-clean", []any{}, 0)
+	writeCritic("critic-material", []any{map[string]any{"id": "F-1", "material": true}}, 1)
+	run := &conformanceRun{root: f.controller, rootJob: "impl", record: implementer}
+	_, errs, code := run.mergeCritique("", "same-tree", "fake", "")
+	if code != 1 || !strings.Contains(strings.Join(errs, "\n"), "critic-material: final round still has material findings despite any dispositions: F-1") {
+		t.Fatalf("clean plus material union = code %d errors %v", code, errs)
+	}
+}
+
+func TestSTR2CriticUnionDifferingClassRefuses(t *testing.T) {
+	f := &conformanceFixture{t: t, controller: t.TempDir()}
+	implementer := map[string]any{
+		"jobId": "impl", "role": "implementer", "round": 1, "parentJob": nil,
+		"status": "completed", "effectiveModel": "implementer-model",
+	}
+	f.writeJSON("artifacts/agents/jobs/impl.json", implementer)
+	writeCritic := func(id, class string) {
+		f.writeJSON("artifacts/agents/jobs/"+id+".json", map[string]any{
+			"jobId": id, "role": "code-critic", "round": 1, "parentJob": nil,
+			"reviews": "impl", "status": "completed", "effectiveModel": id + "-model",
+			"chainClosed": true, "findingRegisterRound": 1,
+			"findingRegister": []any{map[string]any{
+				"findingId": "SHARED", "rigorClass": class, "status": "resolved", "resolution": "withdrawn",
+			}},
+		})
+		f.writeJSON("artifacts/agents/"+id+"/rounds/1/return.json", map[string]any{
+			"jobId": id, "round": 1, "reviewedTree": "same-tree",
+			"findings": []any{}, "verdictMaterialCount": 0,
+		})
+	}
+	writeCritic("critic-bounded", "bounded")
+	writeCritic("critic-severe", "severe")
+	run := &conformanceRun{root: f.controller, rootJob: "impl", record: implementer}
+	_, errs, code := run.mergeCritique("", "same-tree", "fake", "")
+	joined := strings.Join(errs, "\n")
+	if code != 1 || !strings.Contains(joined, "finding 'SHARED' has conflicting rigor classes 'bounded' and 'severe'") {
+		t.Fatalf("differing-class union = code %d errors %v", code, errs)
+	}
+}
+
 func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
 	f := newConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")

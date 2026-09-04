@@ -219,7 +219,7 @@ func commandExitCode(err error) int {
 
 func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if len(args) == 0 {
-		return nil, "", fmt.Errorf("usage: metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>]")
+		return nil, "", fmt.Errorf("usage: metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
 	}
 	if args[0] == "--cancel" {
 		if len(args) != 2 {
@@ -237,7 +237,7 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 		if (len(args) != 8 && len(args) != 9) || args[1] == "" || args[2] != "--brief" || args[3] == "" || args[4] != "--workspace" || args[5] == "" || args[6] != "--op" || args[7] == "" || (len(args) == 9 && args[8] != "--wait") {
 			return nil, "", fmt.Errorf("delegate --adapter-selftest requires <runtime> --brief <file> --workspace <dir> --op <id>")
 		}
-		out := []string{"dispatch", "--role", "design-critic", "--brief", args[3], "--runtime", args[1], "--workspace", args[5], "--permissions", "none", "--job-id", args[7], "--destructive-reach", "MECHANICAL"}
+		out := []string{"dispatch", "--role", "implementer", "--brief", args[3], "--runtime", args[1], "--workspace", args[5], "--permissions", "none", "--job-id", args[7], "--destructive-reach", "MECHANICAL"}
 		if len(args) == 9 {
 			out = append(out, "--wait")
 		}
@@ -290,6 +290,7 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	briefSeen := false
 	opSeen := false
 	reviewsSeen := false
+	outputsSeen, designSeen := false, false
 	destructiveReachSeen := false
 	out := []string{"dispatch"}
 	for index := 0; index < len(args); index++ {
@@ -335,6 +336,23 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 			reviewsSeen = true
 			out = append(out, "--reviews", args[index+1])
 			index++
+		case "--outputs", "--design":
+			if index+1 >= len(args) {
+				return nil, "", fmt.Errorf("delegate %s requires a value", args[index])
+			}
+			if args[index] == "--outputs" {
+				if outputsSeen {
+					return nil, "", fmt.Errorf("delegate accepts one --outputs")
+				}
+				outputsSeen = true
+			} else {
+				if designSeen {
+					return nil, "", fmt.Errorf("delegate accepts one --design")
+				}
+				designSeen = true
+			}
+			out = append(out, args[index], args[index+1])
+			index++
 		case "--destructive-reach":
 			if index+1 >= len(args) || destructiveReachSeen {
 				return nil, "", fmt.Errorf("delegate requires exactly one --destructive-reach")
@@ -363,6 +381,12 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	}
 	if reviewsSeen && role != "code-critic" && role != "warden" && role != "verifier" {
 		return nil, "", fmt.Errorf("--reviews is only valid for the code-critic, warden, and verifier roles")
+	}
+	if role == "design-critic" && (!outputsSeen || !designSeen) {
+		return nil, "", fmt.Errorf("design-critic dispatch requires --outputs <file> and --design <file>")
+	}
+	if role != "design-critic" && (outputsSeen || designSeen) {
+		return nil, "", fmt.Errorf("--outputs and --design are only valid for the design-critic role")
 	}
 	return out, "dispatch", nil
 }

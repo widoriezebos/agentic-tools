@@ -122,6 +122,54 @@ func TestMixedLegacyReviewRoundMemberUsesExplicitValue(t *testing.T) {
 	}
 }
 
+func TestSTR3Gap04ObligationRoundTrip(t *testing.T) {
+	f := claimedGolden()
+	f.ReviewObligations = []ReviewObligation{{
+		Finding: "F-1", Chain: "critic-root", Artifact: `NEW metasystem/a path/quoted "name".go`,
+		Test: `prove: result=ok and "quoted"`, State: "open",
+	}}
+	parsed, problems := ParseFile(RenderFile(f))
+	if len(problems) != 0 {
+		t.Fatalf("quoted obligation did not parse: %v", problems)
+	}
+	if len(parsed.ReviewObligations) != 1 || parsed.ReviewObligations[0] != f.ReviewObligations[0] {
+		t.Fatalf("obligation changed: got %+v want %+v", parsed.ReviewObligations, f.ReviewObligations)
+	}
+	rendered := string(RenderFile(f))
+	start := strings.Index(rendered, " test=")
+	end := strings.Index(rendered[start:], " state=")
+	if start < 0 || end < 0 {
+		t.Fatalf("rendered obligation has no quoted test field: %s", rendered)
+	}
+	broken := rendered[:start] + ` test="unterminated` + rendered[start+end:]
+	_, problems = ParseFile([]byte(broken))
+	if !problemsContain(problems, "line ") || !problemsContain(problems, "must be one quoted string") {
+		t.Fatalf("malformed quoted obligation did not name its line: %v", problems)
+	}
+}
+
+func TestSTR3GapDischargeSelect(t *testing.T) {
+	obligations := []ReviewObligation{
+		{Finding: "F-1", Chain: "chain-a", State: "open"},
+		{Finding: "F-1", Chain: "chain-b", State: "open"},
+	}
+	index, err := reviewObligationMatch(obligations, "F-1", "chain-b")
+	if err != nil || index != 1 {
+		t.Fatalf("chain-qualified selection = %d, %v", index, err)
+	}
+	obligations[index].State = "discharged"
+	if obligations[0].State != "open" || obligations[1].State != "discharged" {
+		t.Fatalf("selection changed the wrong obligation: %+v", obligations)
+	}
+	if _, err := reviewObligationMatch(obligations, "F-1", "missing"); err == nil || !strings.Contains(err.Error(), "no such obligation") {
+		t.Fatalf("missing selection = %v", err)
+	}
+	duplicate := append(obligations, ReviewObligation{Finding: "F-1", Chain: "chain-a"})
+	if _, err := reviewObligationMatch(duplicate, "F-1", "chain-a"); err == nil || !strings.Contains(err.Error(), "ambiguous obligation") {
+		t.Fatalf("ambiguous selection = %v", err)
+	}
+}
+
 func TestLabelsParseRawAndUnlabeledFilesStayUnchanged(t *testing.T) {
 	f := claimedGolden()
 	unlabeled := string(RenderFile(f))

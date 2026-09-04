@@ -56,6 +56,7 @@ func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 	run := func(args ...string) {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}
@@ -97,6 +98,7 @@ func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 	write("plans/goals/bounded.md", goal.RenderFile(file))
 	run("add", "plans/goals")
 	run("commit", "-q", "-m", "revision binding bed")
+	run("update-ref", goal.LocalLedgerBranch, "HEAD")
 	run("update-ref", goal.AcceptedRef, "HEAD")
 	return root
 }

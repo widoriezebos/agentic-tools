@@ -52,6 +52,25 @@ func TestNormalizeUnknownDangerousClassStaysUnproven(t *testing.T) {
 	}
 }
 
+func TestParseArtifactRefCanonicalForms(t *testing.T) {
+	tests := map[string]ArtifactRefKind{
+		"metasystem/internal/a.go":             ArtifactPath,
+		"NEW metasystem/a path/new.go":         ArtifactNew,
+		"metasystem/old.go=>metasystem/new.go": ArtifactRename,
+	}
+	for wire, kind := range tests {
+		ref, err := ParseArtifactRef(wire)
+		if err != nil || ref.Kind != kind {
+			t.Fatalf("ParseArtifactRef(%q) = %+v, %v", wire, ref, err)
+		}
+	}
+	for _, wire := range []string{"", "other/a.go", "metasystem/../a.go", "NEW other/a.go", "metasystem/a=>b=>metasystem/c"} {
+		if _, err := ParseArtifactRef(wire); err == nil {
+			t.Fatalf("invalid artifact %q passed", wire)
+		}
+	}
+}
+
 func TestNormalizeDangerousFactsToSevere(t *testing.T) {
 	tests := map[string]func(*EvidenceFacts){
 		"non-local":            func(f *EvidenceFacts) { f.Local = false },

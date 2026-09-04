@@ -57,7 +57,9 @@ type GoalFile struct {
 	Claimed  *ClaimRecord
 	// Obligation is the human-governed recurrence bound to this goal's
 	// existing budget. Its revision changes only by replacing the whole record.
-	Obligation *GovernedObligation
+	Obligation        *GovernedObligation
+	ReviewObligations []ReviewObligation
+	AcceptedRisks     []AcceptedRiskRecord
 	// StopCapability is the narrow authority minted with one claimed
 	// revision. StopFence is present only after that authority closed launch
 	// admission for the revision.
@@ -67,6 +69,9 @@ type GoalFile struct {
 	Legacy         []string // LegacyNotes: verbatim non-field prose from migration
 	History        []HistoryLine
 }
+
+type ReviewObligation struct{ Finding, Chain, Artifact, Test, State string }
+type AcceptedRiskRecord struct{ Finding, Chain, By, Opid string }
 
 // GoalNormApprovalClaim is the durable scope-norm exception beside a budget.
 type GoalNormApprovalClaim struct {
@@ -328,7 +333,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		case section == "legacy" && line != "":
 			f.Legacy = append(f.Legacy, strings.TrimPrefix(line, "  "))
 		case strings.HasPrefix(line, "- "):
-			parseFileField(f, strings.TrimPrefix(line, "- "), seen, addProblem)
+			parseFileField(f, strings.TrimPrefix(line, "- "), seen, func(format string, args ...any) { addProblem("line %d: "+format, append([]any{i + 1}, args...)...) })
 		case strings.TrimSpace(line) == "":
 			// blank lines end no section; History and LegacyNotes run to
 			// the next section heading or end of body
@@ -423,6 +428,16 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Obligation != nil {
 		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget); err != nil {
 			addProblem("%v", err)
+		}
+	}
+	for _, obligation := range f.ReviewObligations {
+		if !bareReviewID(obligation.Finding) || !bareReviewID(obligation.Chain) || obligation.Artifact == "" || obligation.Test == "" || (obligation.State != "open" && obligation.State != "discharged") {
+			addProblem("ReviewObligation is incomplete or malformed")
+		}
+	}
+	for _, risk := range f.AcceptedRisks {
+		if !bareReviewID(risk.Finding) || !bareReviewID(risk.Chain) || !bareReviewID(risk.By) || !bareReviewID(risk.Opid) {
+			addProblem("AcceptedRisk is incomplete or malformed")
 		}
 	}
 	if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision == 0 && f.Budget != nil {
@@ -551,13 +566,37 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		addProblem("field without colon: %q", field)
 		return
 	}
-	if seen[key] {
+	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" {
 		addProblem("duplicate field %q — the last write would silently win", key)
 		return
 	}
 	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
+	case "ReviewObligation":
+		without, artifact, present, err := cutQuotedRecordField(value, "artifact")
+		if err != nil || !present {
+			addProblem("ReviewObligation: artifact= %v", err)
+			return
+		}
+		without, test, present, err := cutQuotedRecordField(without, "test")
+		if err != nil || !present {
+			addProblem("ReviewObligation: test= %v", err)
+			return
+		}
+		rec, err := parseKVRecord(without, []string{"finding", "chain", "state"}, nil, "")
+		if err != nil {
+			addProblem("ReviewObligation: %v", err)
+			return
+		}
+		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, State: rec["state"]})
+	case "AcceptedRisk":
+		rec, err := parseKVRecord(value, []string{"finding", "chain", "by", "opid"}, nil, "")
+		if err != nil {
+			addProblem("AcceptedRisk: %v", err)
+			return
+		}
+		f.AcceptedRisks = append(f.AcceptedRisks, AcceptedRiskRecord{Finding: rec["finding"], Chain: rec["chain"], By: rec["by"], Opid: rec["opid"]})
 	case "State":
 		f.State = value
 	case "Tier":
@@ -798,6 +837,8 @@ func inferLegacyReviewRounds(f *GoalFile) {
 	}
 }
 
+func bareReviewID(value string) bool { return value != "" && !strings.ContainsAny(value, " \t\r\n") }
+
 // parseKVRecord reads space-separated key=value pairs against a
 // CLOSED key set: required keys must appear, optional keys may, and
 // anything else refuses — a key the grammar does not know is a tree
@@ -981,6 +1022,12 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- ObligationTriggers: valueJudgment=%s reversibility=%s severeHarm=%s unfamiliarApproach=%s testDiscrimination=%s correlatedAssumptionRisk=%s authorityScopeChange=%s destructiveReach=%s\n",
 			o.Triggers.ValueJudgment, o.Triggers.Reversibility, o.Triggers.SevereHarm, o.Triggers.UnfamiliarApproach,
 			o.Triggers.TestDiscrimination, o.Triggers.CorrelatedAssumptionRisk, o.Triggers.AuthorityScopeChange, o.Triggers.DestructiveReach)
+	}
+	for _, obligation := range f.ReviewObligations {
+		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s state=%s\n", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test), obligation.State)
+	}
+	for _, risk := range f.AcceptedRisks {
+		fmt.Fprintf(&b, "- AcceptedRisk: finding=%s chain=%s by=%s opid=%s\n", risk.Finding, risk.Chain, risk.By, risk.Opid)
 	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)

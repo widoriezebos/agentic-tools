@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -93,6 +94,7 @@ type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm                                                       string
+	finding, chain, why, test                                                string
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
 	tier                                                                     uint
 	labels, unlabels, ids                                                    repeatedStrings
@@ -126,6 +128,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
 	fs.StringVar(&f.pin, "pin", "", "the machine nickname a goal is pinned to (\"-\" clears)")
 	fs.StringVar(&f.members, "members", "", "split member draft path")
+	fs.StringVar(&f.finding, "finding", "", "finding identifier")
+	fs.StringVar(&f.chain, "chain", "", "critic chain root")
+	fs.StringVar(&f.why, "why", "", "decision reason")
+	fs.StringVar(&f.test, "test", "", "test citation")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
 	fs.StringVar(&f.approvedRef, "approved-ref", "", "recorded human approval reference for an over-norm goal budget")
@@ -140,7 +146,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
 		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
 	}
-	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" {
+	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
@@ -182,6 +188,77 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		return nil, false
 	}
 	return f, true
+}
+
+func runGoalDischargeReviewObligation(args []string) int {
+	f, ok := parseSyncFlags("discharge-review-obligation", args)
+	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.test == "" {
+		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, --by, and --test")
+		return 2
+	}
+	req, err := syncReq(f.root, "", f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if identity, classifyErr := lease.ClassifyVerb(f.root, int64(os.Getppid())); classifyErr == nil && identity.Class == lease.ClassHuman {
+		req.Actor.Human = f.by
+	}
+	res, err := goal.DischargeReviewObligation(req, f.id, f.finding, f.chain, f.by, f.test)
+	return printSyncResult(res, err)
+}
+
+func runGoalAcceptRisk(args []string) int {
+	return runGoalAcceptRiskWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("accept-risk", args)
+	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || strings.TrimSpace(f.why) == "" {
+		fmt.Fprintln(os.Stderr, "goal accept-risk needs --id, --finding, --chain, --by, and --why")
+		return 2
+	}
+	if (f.temporaryWord == "") != (f.reviewBy == "") {
+		fmt.Fprintln(os.Stderr, "--temporary-human-word and --review-by travel together")
+		return 2
+	}
+	finding, err := dispatchcore.CritiqueRegisterDecisionFinding(f.root, f.chain, f.finding, f.id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	proof, err := proveGoalHumanAuthority("accept-risk", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReq(f.root, f.by, f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res, err := goal.AcceptedRiskDecision(req, f.id, f.finding, f.chain, f.by, f.why, &proof)
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	opid, err := goal.AcceptedRiskDecisionOpID(f.root, f.id, f.finding, f.chain, req.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: opid, RecordedAt: req.Now}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := recordGoalApprovalProof(f.root, opid, "goal accept-risk", proof); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return printSyncResult(res, nil)
 }
 
 func (f *syncFlags) hasAnyBudgetFlag() bool {

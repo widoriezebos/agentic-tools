@@ -1161,7 +1161,7 @@ reap_one() { # job
 }
 
 dispatch_job() {
-  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= goal= steward_intent= steward_mode=0 steward_tuple=
+  local role= brief= mode_override= runtime_override= model_override= job= reviews= outputs= design= design_check= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= goal= steward_intent= steward_mode=0 steward_tuple=
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
@@ -1177,6 +1177,8 @@ dispatch_job() {
       --model) [[ $# -ge 2 ]] || { usage; exit 2; }; model_override=$2; shift 2 ;;
       --job-id) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --reviews) [[ $# -ge 2 ]] || { usage; exit 2; }; reviews=$2; shift 2 ;;
+      --outputs) [[ $# -ge 2 ]] || { usage; exit 2; }; outputs=$2; shift 2 ;;
+      --design) [[ $# -ge 2 ]] || { usage; exit 2; }; design=$2; shift 2 ;;
       --workspace) [[ $# -ge 2 ]] || { usage; exit 2; }; workspace=$2; workspace_selected=1; shift 2 ;;
       --worktree) use_worktree=1; shift ;;
       --permissions) [[ $# -ge 2 ]] || { usage; exit 2; }; permissions_override=$2; shift 2 ;;
@@ -1254,6 +1256,11 @@ dispatch_job() {
       || die 1 "verifier dispatch --reviews must name an implementer job: $reviews"
   elif [[ -n "$reviews" ]]; then
     die 2 "--reviews is only valid for the code-critic, warden, and verifier roles"
+  fi
+  if [[ "$role" == design-critic ]]; then
+    [[ -n "$outputs" && -n "$design" ]] || die 2 "design-critic dispatch requires --outputs <file> and --design <file>"
+  elif [[ -n "$outputs$design" ]]; then
+    die 2 "--outputs and --design are only valid for the design-critic role"
   fi
   [[ ! ( $use_worktree -eq 1 && -n "$workspace" ) ]] || die 2 "--workspace and --worktree are mutually exclusive"
   if (( approve_escalation )) && { [[ ! -t 0 ]] || [[ ! -t 2 ]]; }; then
@@ -1428,6 +1435,12 @@ dispatch_job() {
     workspace=${workspace:-$repo_scope}
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
   fi
+  if [[ "$role" == design-critic ]]; then
+    [[ -f "$outputs" ]] || die 2 "design-critic --outputs file does not exist: $outputs"
+    design_check=$design
+    [[ "$design_check" = /* ]] || design_check="$workspace/$design_check"
+    [[ -f "$design_check" ]] || die 2 "design-critic --design file does not exist in the reviewed workspace: $design"
+  fi
   if is_review_role "$role" && (( use_worktree == 0 )) && [[ "$workspace" == "$repo_scope" ]] \
       && permission_envelope_requests_writes "$permission_name"; then
     die 2 "$role live-checkout write refusal (incident class: critic-workspace-custody): a review role could modify product bytes in the coordinator's tree; pass --worktree to keep its writes quarantined"
@@ -1449,6 +1462,15 @@ dispatch_job() {
     cat "$brief" > "$brief_with_goal"
     printf '\n%s' "$goal_section" >> "$brief_with_goal"
     brief=$brief_with_goal
+  fi
+
+  if [[ "$role" == design-critic ]]; then
+    local brief_with_outputs outputs_digest
+    outputs_digest=$(sha256_file "$outputs")
+    brief_with_outputs=$(mktemp "$record_locks/brief-outputs.XXXXXX")
+    cat "$brief" > "$brief_with_outputs"
+    printf '\n## Declared Outputs\n\n- SHA-256 digest: %s\n' "$outputs_digest" >> "$brief_with_outputs"
+    brief=$brief_with_outputs
   fi
 
   payload="$agents/$job"; round_dir="$payload/rounds/1"
@@ -1567,7 +1589,7 @@ dispatch_job() {
     --handshake-budget "$handshake_budget" --approval-name "$approval_name" \
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
-    --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" --goal-tier "$goal_tier" \
+    --reviews "$reviews" --outputs "$outputs" --design "$design" --goal "$goal" --goal-revision "$goal_revision" --goal-tier "$goal_tier" \
     --machine-id "$goal_machine" --approved-ref "$approved_ref" \
     --destructive-reach "$destructive_reach" --reasoning-effort "$reasoning_effort" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
@@ -2135,6 +2157,9 @@ close_chain() {
     | while IFS='|' read -r chain_job chain_status; do
       mirror_record "$chain_job" || true
     done
+  if [[ "$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)" == design-critic || "$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)" == code-critic || "$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)" == warden ]]; then
+    "$ms" job critique-register-close --repo "$root" --root-job "$root_id"
+  fi
   "$ms" job close-check --repo "$root" --root "$root_id"
   status=$(json_field "$root_record" status)
   patch=$(mktemp "$record_locks/close.XXXXXX")

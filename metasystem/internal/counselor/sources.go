@@ -76,10 +76,24 @@ type acceptedRiskRegisterReviewLink struct {
 }
 
 func loadAcceptedRiskRegister(root string) ([]RegisterEntry, []Limitation) {
-	path := filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource))
+	var entries []RegisterEntry
+	var limitations []Limitation
+	for _, source := range []string{acceptedRiskRegisterSource, "records/counselor/misclassification-register.jsonl"} {
+		loaded, limited := loadAcceptedRiskRegisterFile(root, source)
+		entries = append(entries, loaded...)
+		limitations = append(limitations, limited...)
+	}
+	entries, duplicateLimitations := excludeDuplicateRegisterIDs(entries)
+	limitations = append(limitations, duplicateLimitations...)
+	sortRegisterEntries(entries)
+	return entries, limitations
+}
+
+func loadAcceptedRiskRegisterFile(root, source string) ([]RegisterEntry, []Limitation) {
+	path := filepath.Join(root, filepath.FromSlash(source))
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register is absent at "+acceptedRiskRegisterSource+", so accepted risks and near misses are absent.", "Create the append-only register at "+acceptedRiskRegisterSource+" with one validated JSON object per line.")}
+		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The register is absent at "+source+".", "Create the append-only register at "+source+" with one validated JSON object per line.")}
 	}
 	if err != nil {
 		return nil, []Limitation{acceptedRiskRegisterLimitation("Accepted-risk register evidence", "The accepted-risk register could not be read, so accepted risks and near misses are absent.", "Restore readable durable register bytes at "+acceptedRiskRegisterSource+".")}
@@ -120,9 +134,6 @@ func loadAcceptedRiskRegister(root string) ([]RegisterEntry, []Limitation) {
 		}
 		limitations = append(limitations, acceptedRiskRegisterLimitation("Accepted-risk register shape", strings.Join(details, " "), "Rewrite malformed lines as single JSON objects and fill every required field instead of relying on memory or chat context."))
 	}
-	entries, duplicateLimitations := excludeDuplicateRegisterIDs(entries)
-	limitations = append(limitations, duplicateLimitations...)
-	sortRegisterEntries(entries)
 	return entries, limitations
 }
 
@@ -165,7 +176,10 @@ func buildAcceptedRiskRegisterEntry(raw acceptedRiskRegisterLine) (RegisterEntry
 	if id == "" || class == "" || title == "" || status == "" || reason == "" || timeErr != nil {
 		return RegisterEntry{}, false
 	}
-	if kind != RegisterAcceptedRisk && kind != RegisterNearMiss {
+	if kind != RegisterAcceptedRisk && kind != RegisterNearMiss && kind != RegisterMisclassification {
+		return RegisterEntry{}, false
+	}
+	if kind == RegisterMisclassification && status != "recorded" || kind != RegisterMisclassification && status == "recorded" {
 		return RegisterEntry{}, false
 	}
 	facts, ok := buildRegisterSpecimenFacts(raw.SpecimenFacts)
@@ -230,7 +244,7 @@ func buildRegisterReviewLinks(rawLinks []acceptedRiskRegisterReviewLink) ([]Regi
 
 func validRegisterReferenceKind(kind string) bool {
 	switch kind {
-	case "commit", "goal", "ruling", "job", "record":
+	case "commit", "goal", "ruling", "job", "record", "job-record":
 		return true
 	default:
 		return false

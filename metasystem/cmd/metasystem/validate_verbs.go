@@ -73,6 +73,8 @@ func runValidateCritiqueClosed(args []string) int {
 	flags := flag.NewFlagSet("validate critique-closed", flag.ContinueOnError)
 	findings := flags.String("findings", "", "critic return JSON")
 	dispositions := flags.String("dispositions", "", "Markdown file holding the dispositions table")
+	repo := flags.String("repo", "", "checkout root whose register is updated")
+	rootJob := flags.String("root-job", "", "critic register root job")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -80,7 +82,16 @@ func runValidateCritiqueClosed(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem validate critique-closed --findings F --dispositions F")
 		return 2
 	}
-	violations := validate.CritiqueClosed(*findings, *dispositions)
+	if (*repo == "") != (*rootJob == "") {
+		fmt.Fprintln(os.Stderr, "validate critique-closed: --repo and --root-job must be supplied together")
+		return 2
+	}
+	var violations []string
+	if *repo != "" {
+		violations = validate.CritiqueClosedWithRegister(*findings, *dispositions, *repo, *rootJob)
+	} else {
+		violations = validate.CritiqueClosed(*findings, *dispositions)
+	}
 	for _, item := range violations {
 		fmt.Fprintf(os.Stderr, "violation: %s\n", item)
 	}

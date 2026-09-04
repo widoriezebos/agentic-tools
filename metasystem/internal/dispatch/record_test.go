@@ -224,7 +224,10 @@ func TestRecordCASRefusesCritiqueOwnerWrite(t *testing.T) {
 	for field, value := range map[string]any{
 		"findingRegister":           []any{},
 		"findingRegisterRound":      1,
-		"boundedCritiqueStart":      map[string]any{"round": 1, "openFindingIds": []any{"F-1"}},
+		"reviewRoundLimit":          3,
+		"criticRoundsConsumed":      1,
+		"demotions":                 []any{},
+		"critiqueBudgetBinding":     map[string]any{"goalRevision": 1},
 		"critiqueExhaustions":       []any{map[string]any{"round": 3}},
 		"independentCritiqueJobRef": "critic-job",
 		"liveProofEvidenceRef":      "proof-job",

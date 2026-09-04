@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -13,16 +12,12 @@ import (
 )
 
 const (
-	firstSevereExhaustionRound = int64(3)
-	terminalExhaustionRound    = int64(6)
-	boundedFurtherRounds       = int64(2)
-
 	CritiqueCapExhaustedExitCode = 10
 	CritiqueCapExhaustedReason   = "cap-exhausted-human-raise"
 )
 
-const secondExhaustionRefused = "a second critique exhaustion is refused outright; waiting on the human is the only remedy"
-const boundedExhaustionRefused = "the bounded critique cap is exhausted; further critique is refused and waiting on the human is the only remedy"
+const secondExhaustionRefused = "the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy"
+const boundedExhaustionRefused = "the review-round limit is exhausted with bounded findings; close the critique register to defer them"
 
 // critiqueState is the record table one critique decision reads: every
 // parseable job record whose file name matches its own job identifier.
@@ -100,26 +95,10 @@ func exhaustions(record map[string]any) ([]map[string]any, error) {
 	return entries, nil
 }
 
-func requireEnumeration(message string, openIDs []string) error {
-	var missing []string
-	for _, id := range openIDs {
-		pattern := `(?:^|[^A-Za-z0-9_-])` + regexp.QuoteMeta(id) + `(?:$|[^A-Za-z0-9_-])`
-		if !regexp.MustCompile(pattern).MatchString(message) {
-			missing = append(missing, id)
-		}
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("critique budget exhausted; the implementer or design successor follow-up "+
-			"must enumerate every open finding identifier: %s", strings.Join(missing, ", "))
-	}
-	return nil
-}
-
 type exhaustionBoundary int
 
 const (
 	noExhaustion exhaustionBoundary = iota
-	firstSevereExhaustion
 	boundedTerminalExhaustion
 	severeTerminalExhaustion
 )
@@ -130,7 +109,7 @@ type critiqueCapState struct {
 	boundary exhaustionBoundary
 }
 
-func readCritiqueCapState(root map[string]any) (critiqueCapState, error) {
+func readCritiqueCapState(repoRoot string, records critiqueState, rootJob string, root map[string]any) (critiqueCapState, error) {
 	registerValue, present := root[findingRegisterField]
 	if !present {
 		return critiqueCapState{}, fmt.Errorf("critic chain has no canonical finding register")
@@ -147,26 +126,23 @@ func readCritiqueCapState(root map[string]any) (critiqueCapState, error) {
 	if len(state.openIDs) == 0 {
 		return state, nil
 	}
+	accounting, err := critiqueRoundAccounting(repoRoot, records, rootJob, root)
+	if err != nil {
+		return critiqueCapState{}, malformedRoundAccounting(rootJob, err)
+	}
+	if accounting.consumed < accounting.limit {
+		return state, nil
+	}
 	for _, finding := range register {
+		if finding.Status != "open" && finding.Status != "disputed" {
+			continue
+		}
 		if finding.RigorClass == critiqueModel.Severe || finding.RigorClass == critiqueModel.Unproven {
-			if round >= terminalExhaustionRound {
-				state.boundary = severeTerminalExhaustion
-			} else if round >= firstSevereExhaustionRound {
-				state.boundary = firstSevereExhaustion
-			}
+			state.boundary = severeTerminalExhaustion
 			return state, nil
 		}
 	}
-	start, _, err := boundedCritiqueStart(root)
-	if err != nil {
-		return critiqueCapState{}, err
-	}
-	if start == 0 {
-		return critiqueCapState{}, fmt.Errorf("an all-bounded critic register has no recorded first all-bounded round")
-	}
-	if round >= start+boundedFurtherRounds {
-		state.boundary = boundedTerminalExhaustion
-	}
+	state.boundary = boundedTerminalExhaustion
 	return state, nil
 }
 
@@ -198,84 +174,43 @@ func terminalCapError(cap critiqueCapState) error {
 	}
 }
 
-type firstExhaustionWrite struct {
-	root    string
-	round   int64
-	openIDs []string
-}
-
-// CritiqueExhaustionAdvance consumes canonical critic registers and writes a
-// first severe exhaustion directly on the affected chain root. Terminal
-// bounded and second severe exhaustion always refuse; neither outcome
-// authorizes another critique round.
+// CritiqueExhaustionAdvance checks canonical critic registers before a
+// successor reservation. A terminal bounded or severe exhaustion refuses;
+// neither outcome authorizes another critique round.
 func CritiqueExhaustionAdvance(repoRoot, rootJob, role, messagePath, successor string) (outcome string, err error) {
-	messageBytes, err := os.ReadFile(messagePath)
+	_, err = os.ReadFile(messagePath)
 	if err != nil {
 		return "", fmt.Errorf("critique exhaustion successor message is unreadable: %v", err)
 	}
-	message := string(messageBytes)
 	return withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)
-		var writes []firstExhaustionWrite
 
-		inspect := func(criticRoot string) (critiqueCapState, []map[string]any, error) {
+		inspect := func(criticRoot string) (critiqueCapState, error) {
 			root, present := state.records[criticRoot]
 			if !present {
-				return critiqueCapState{}, nil, fmt.Errorf("critique root record %s is unreadable", criticRoot)
+				return critiqueCapState{}, fmt.Errorf("critique root record %s is unreadable", criticRoot)
 			}
-			capState, capErr := readCritiqueCapState(root)
+			capState, capErr := readCritiqueCapState(repoRoot, state, criticRoot, root)
 			if capErr != nil {
-				return critiqueCapState{}, nil, capErr
+				return critiqueCapState{}, capErr
 			}
 			if caughtUpErr := requireRegisterCaughtUp(state, criticRoot, capState); caughtUpErr != nil {
-				return critiqueCapState{}, nil, caughtUpErr
+				return critiqueCapState{}, caughtUpErr
 			}
-			previous, previousErr := exhaustions(root)
-			return capState, previous, previousErr
+			if _, exhaustionErr := exhaustions(root); exhaustionErr != nil {
+				return critiqueCapState{}, exhaustionErr
+			}
+			return capState, nil
 		}
 
 		switch role {
-		case "design-critic":
-			capState, previous, inspectErr := inspect(rootJob)
+		case "design-critic", "code-critic", "warden":
+			capState, inspectErr := inspect(rootJob)
 			if inspectErr != nil {
 				return "", inspectErr
 			}
 			if terminalErr := terminalCapError(capState); terminalErr != nil {
 				return "", terminalErr
-			}
-			if capState.boundary != firstSevereExhaustion {
-				return "none", nil
-			}
-			if len(previous) > 0 {
-				if roundOf(previous[0]) == capState.round && asString(previous[0]["successorJobId"]) == successor {
-					return "unchanged", nil
-				}
-				if roundOf(previous[0]) < capState.round {
-					return "none", nil
-				}
-				return "", errors.New(secondExhaustionRefused)
-			}
-			if enumerationErr := requireEnumeration(message, capState.openIDs); enumerationErr != nil {
-				return "", enumerationErr
-			}
-			writes = append(writes, firstExhaustionWrite{rootJob, capState.round, capState.openIDs})
-
-		case "code-critic", "warden":
-			capState, previous, inspectErr := inspect(rootJob)
-			if inspectErr != nil {
-				return "", inspectErr
-			}
-			if terminalErr := terminalCapError(capState); terminalErr != nil {
-				return "", terminalErr
-			}
-			if capState.boundary != firstSevereExhaustion {
-				return "none", nil
-			}
-			if len(previous) == 0 {
-				return "", fmt.Errorf("%s critique budget exhausted; dispatch an implementer follow-up that enumerates every open finding identifier before continuing the critic chain: %s", role, strings.Join(capState.openIDs, ", "))
-			}
-			if roundOf(previous[0]) > capState.round {
-				return "", errors.New(secondExhaustionRefused)
 			}
 			return "none", nil
 
@@ -295,71 +230,18 @@ func CritiqueExhaustionAdvance(repoRoot, rootJob, role, messagePath, successor s
 			}
 			sort.Strings(criticIDs)
 			for _, criticID := range criticIDs {
-				capState, previous, inspectErr := inspect(criticID)
+				capState, inspectErr := inspect(criticID)
 				if inspectErr != nil {
 					return "", inspectErr
 				}
 				if terminalErr := terminalCapError(capState); terminalErr != nil {
 					return "", terminalErr
 				}
-				if capState.boundary != firstSevereExhaustion {
-					continue
-				}
-				if len(previous) > 0 {
-					if roundOf(previous[0]) <= capState.round {
-						continue
-					}
-					return "", errors.New(secondExhaustionRefused)
-				}
-				if enumerationErr := requireEnumeration(message, capState.openIDs); enumerationErr != nil {
-					return "", enumerationErr
-				}
-				writes = append(writes, firstExhaustionWrite{criticID, capState.round, capState.openIDs})
 			}
+			return "none", nil
 
 		default:
 			return "", fmt.Errorf("critique exhaustion has no rule for role %s", role)
 		}
-
-		if len(writes) == 0 {
-			return "none", nil
-		}
-		for _, write := range writes {
-			writeErr := withRecordLock(repoRoot, write.root, func(recordPath string) error {
-				record, readErr := readObject(recordPath)
-				if readErr != nil {
-					return readErr
-				}
-				previous, previousErr := exhaustions(record)
-				if previousErr != nil {
-					return previousErr
-				}
-				if len(previous) > 0 {
-					if roundOf(previous[0]) == write.round && asString(previous[0]["successorJobId"]) == successor {
-						return nil
-					}
-					return errors.New(secondExhaustionRefused)
-				}
-				ids := make([]any, len(write.openIDs))
-				for index, id := range write.openIDs {
-					ids[index] = id
-				}
-				record["critiqueExhaustions"] = []any{map[string]any{
-					"round": write.round, "openFindingIds": ids, "successorJobId": successor,
-				}}
-				return writeRecord(recordPath, record)
-			})
-			if writeErr != nil {
-				return "", writeErr
-			}
-		}
-		return "recorded", nil
 	})
-}
-
-func roundOf(entry map[string]any) int64 {
-	if round, ok := numInt(entry["round"]); ok {
-		return round
-	}
-	return -1
 }

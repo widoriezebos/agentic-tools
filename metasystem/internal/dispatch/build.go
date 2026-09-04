@@ -1,13 +1,20 @@
 package dispatch
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
+
+	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 )
 
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var gitObjectIDRe = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // VerifyChainIncarnation proves a chain still belongs to the LIVE mission
 // incarnation: a mission identifier can be
@@ -254,6 +261,8 @@ type BuildRecordParams struct {
 	RequestedPair     string
 	CostDirection     string
 	Reviews           string
+	DeclaredOutputs   string
+	Design            string
 	GoalID            string
 	GoalRevision      uint64
 	GoalTier          uint8
@@ -267,6 +276,85 @@ type BuildRecordParams struct {
 	ApprovedRef       string
 	DestructiveReach  HazardClass
 	Composition       string // closed-packet composition record
+}
+
+func goalReviewRoundLimit(repoRoot, goalID string, revision uint64) (uint8, error) {
+	// part one's ReviewRoundLimit tuple member replaces this body
+	return 3, nil
+}
+
+func ParseDeclaredOutputs(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("declared outputs are unreadable: %v", err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("declared outputs line 1: blank files are not allowed")
+	}
+	if data[len(data)-1] != '\n' {
+		return nil, fmt.Errorf("declared outputs line %d: file must be LF terminated", strings.Count(string(data), "\n")+1)
+	}
+	lines := strings.Split(string(data[:len(data)-1]), "\n")
+	seen := map[string]bool{}
+	outputs := make([]string, 0, len(lines))
+	for index, value := range lines {
+		line := index + 1
+		if value == "" {
+			return nil, fmt.Errorf("declared outputs line %d: blank lines are not allowed", line)
+		}
+		if strings.TrimSpace(value) != value {
+			return nil, fmt.Errorf("declared outputs line %d: path is not trimmed", line)
+		}
+		if strings.HasPrefix(value, "#") {
+			return nil, fmt.Errorf("declared outputs line %d: comments are not allowed", line)
+		}
+		if strings.Contains(value, "\\") {
+			return nil, fmt.Errorf("declared outputs line %d: path must use forward slashes", line)
+		}
+		ref, parseErr := critiqueModel.ParseArtifactRef(value)
+		if parseErr != nil || ref.Kind != critiqueModel.ArtifactPath {
+			return nil, fmt.Errorf("declared outputs line %d: path must begin metasystem/", line)
+		}
+		for _, segment := range strings.Split(value, "/") {
+			if segment == "." || segment == ".." {
+				return nil, fmt.Errorf("declared outputs line %d: ./ and ../ segments are not allowed", line)
+			}
+		}
+		if seen[value] {
+			return nil, fmt.Errorf("declared outputs line %d: duplicate path", line)
+		}
+		if index > 0 && value < outputs[index-1] {
+			return nil, fmt.Errorf("declared outputs line %d: paths are not sorted ascending by bytes", line)
+		}
+		seen[value] = true
+		outputs = append(outputs, value)
+	}
+	return outputs, nil
+}
+
+func digestDeclaredOutputs(outputs []string) string {
+	sum := sha256.Sum256([]byte(strings.Join(outputs, "\n") + "\n"))
+	return hex.EncodeToString(sum[:])
+}
+
+func designBlobSource(workspace, commit, design string) (string, error) {
+	abs := design
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(workspace, design)
+	}
+	rel, err := filepath.Rel(workspace, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("design path must be inside the reviewed workspace")
+	}
+	rel = filepath.ToSlash(rel)
+	if !strings.HasPrefix(rel, "metasystem/") {
+		return "", fmt.Errorf("design path must begin metasystem/")
+	}
+	blob, err := gitOutput(workspace, "rev-parse", commit+":"+rel)
+	if err != nil || !gitObjectIDRe.MatchString(blob) {
+		return "", fmt.Errorf("design path %s is not a blob at reviewed commit %s", rel, commit)
+	}
+	return rel + "@" + blob, nil
 }
 
 // BuildRecord assembles the full pending record for a fresh dispatch: chain
@@ -457,9 +545,31 @@ func BuildRecord(p BuildRecordParams) error {
 		"critiqueExhaustions": []any{},
 	}
 	if p.Role == "design-critic" || p.Role == "code-critic" || p.Role == "warden" {
+		limit, limitErr := goalReviewRoundLimit(p.Root, p.GoalID, p.GoalRevision)
+		if limitErr != nil || limit == 0 {
+			return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", limitErr)
+		}
 		record["findingRegister"] = []any{}
 		record["findingRegisterRound"] = 0
-		record["boundedCritiqueStart"] = nil
+		record["reviewRoundLimit"] = limit
+		record["criticRoundsConsumed"] = 0
+		record["demotions"] = []any{}
+		if p.Role == "design-critic" {
+			if p.DeclaredOutputs == "" || p.Design == "" {
+				return fmt.Errorf("design-critic dispatch requires --outputs <file> and --design <file>")
+			}
+			outputs, parseErr := ParseDeclaredOutputs(p.DeclaredOutputs)
+			if parseErr != nil {
+				return parseErr
+			}
+			source, sourceErr := designBlobSource(p.Workspace, base, p.Design)
+			if sourceErr != nil {
+				return sourceErr
+			}
+			record["declaredOutputs"] = stringValues(outputs)
+			record["declaredOutputsDigest"] = digestDeclaredOutputs(outputs)
+			record["declaredOutputsSource"] = source
+		}
 	}
 	return writeRecord(p.Output, record)
 }

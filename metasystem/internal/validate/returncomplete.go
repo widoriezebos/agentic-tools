@@ -177,7 +177,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 		if version, present := resultObj["schemaVersion"]; present {
 			v, vOK := jsonInteger(version)
 			resultVersion = v
-			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3) || (v == 3 && !returnschema.VersionThreeRoles[role]) {
+			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4) || (v == 3 && !returnschema.VersionThreeRoles[role]) || (v == 4 && !returnschema.VersionFourRoles[role]) {
 				c.violation("unknown return schema version for role %q: %v", role, version)
 			} else if schema != nil && v == 2 {
 				upgraded, err := returnschema.VersionTwo(schema)
@@ -188,6 +188,13 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 				}
 			} else if schema != nil && v == 3 {
 				upgraded, err := returnschema.VersionThree(schema)
+				if err != nil {
+					c.violation("role schema cannot version: %v", err)
+				} else {
+					schema = upgraded
+				}
+			} else if schema != nil && v == 4 {
+				upgraded, err := returnschema.VersionFour(schema)
 				if err != nil {
 					c.violation("role schema cannot version: %v", err)
 				} else {
@@ -209,7 +216,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	resultObj, _ := result.(map[string]any)
 	if (role == "design-critic" || role == "code-critic" || role == "warden") && resultObj != nil {
 		c.checkMaterialCount(resultObj)
-		if resultVersion == 3 {
+		if resultVersion == 3 || resultVersion == 4 {
 			c.checkRigorRows(resultObj)
 		}
 	}
@@ -313,6 +320,7 @@ var supportedSchemaKeywords = map[string]bool{
 	"$schema": true, "$comment": true, "title": true, "description": true,
 	"type": true, "enum": true, "const": true, "properties": true,
 	"required": true, "additionalProperties": true, "items": true,
+	"pattern": true,
 }
 
 func (c *returnChecker) validateSchemaShape(schema any, path string) {
@@ -363,6 +371,14 @@ func (c *returnChecker) validateSchemaShape(schema any, path string) {
 			c.violation("%s.enum must be an array", path)
 		}
 	}
+	if pattern, present := obj["pattern"]; present {
+		text, isString := pattern.(string)
+		if !isString {
+			c.violation("%s.pattern must be a string", path)
+		} else if _, err := regexp.Compile(text); err != nil {
+			c.violation("%s.pattern is not a valid regular expression: %v", path, err)
+		}
+	}
 }
 
 func (c *returnChecker) validateValue(value any, schema map[string]any, path string) {
@@ -405,6 +421,11 @@ func (c *returnChecker) validateValue(value any, schema map[string]any, path str
 	}
 	if constant, present := schema["const"]; present && !jsonSame(value, constant) {
 		c.violation("%s must equal %s", path, jsonRepr(constant))
+	}
+	if pattern, present := schema["pattern"].(string); present {
+		if text, ok := value.(string); ok && !regexp.MustCompile(pattern).MatchString(text) {
+			c.violation("%s does not match the required pattern", path)
+		}
 	}
 
 	if obj, isObj := value.(map[string]any); isObj {

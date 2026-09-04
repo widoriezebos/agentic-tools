@@ -872,6 +872,156 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	return result, nil
 }
 
+func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (PublishResult, error) {
+	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "defer-findings", Targets: []string{id}}, Message: "goal defer-findings " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil {
+				return nil, fmt.Errorf("goal %s is not live", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) {
+				return nil, fmt.Errorf("goal %s defer-findings requires its owning pair", id)
+			}
+			for _, incoming := range obligations {
+				found := false
+				for _, existing := range f.ReviewObligations {
+					if existing.Finding == incoming.Finding && existing.Chain == incoming.Chain {
+						found = true
+						break
+					}
+				}
+				if !found {
+					incoming.State = "open"
+					f.ReviewObligations = append(f.ReviewObligations, incoming)
+				}
+			}
+			touch(f, r, "defer-findings", []string{id})
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+}
+
+func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation string) (PublishResult, error) {
+	if finding == "" || chain == "" || by == "" || strings.TrimSpace(citation) == "" {
+		return PublishResult{}, fmt.Errorf("discharge-review-obligation requires --finding, --chain, --by, and --test")
+	}
+	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "discharge-review-obligation", Targets: []string{id}}, Message: "goal discharge-review-obligation " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil {
+				return nil, fmt.Errorf("goal %s is not live", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s discharge requires the human or owning pair", id)
+			}
+			match, matchErr := reviewObligationMatch(f.ReviewObligations, finding, chain)
+			if matchErr != nil {
+				return nil, matchErr
+			}
+			f.ReviewObligations[match].State = "discharged"
+			f.ReviewObligations[match].Test = citation
+			touch(f, r, "discharge-review-obligation", []string{id})
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+}
+
+func reviewObligationMatch(obligations []ReviewObligation, finding, chain string) (int, error) {
+	var matches []int
+	for i, obligation := range obligations {
+		if obligation.Finding == finding && obligation.Chain == chain {
+			matches = append(matches, i)
+		}
+	}
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("no such obligation finding=%s chain=%s", finding, chain)
+	}
+	if len(matches) != 1 {
+		return 0, fmt.Errorf("ambiguous obligation finding=%s chain=%s matches=%v", finding, chain, matches)
+	}
+	return matches[0], nil
+}
+
+func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, proof *humanauthority.Proof) (PublishResult, error) {
+	if r.Actor.Human == "" || by == "" || finding == "" || chain == "" || strings.TrimSpace(why) == "" {
+		return PublishResult{}, fmt.Errorf("goal accept-risk is a human act and requires --id, --finding, --chain, --by, and --why")
+	}
+	if _, _, _, err := approvalProofClass(r.Endpoint.Root, proof); err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "accept-risk", Targets: []string{id}}, Message: "goal accept-risk " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil {
+				return nil, fmt.Errorf("goal %s is not live", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateClaimed {
+				return nil, fmt.Errorf("goal %s is not claimed", id)
+			}
+			for _, existing := range f.AcceptedRisks {
+				if existing.Finding == finding && existing.Chain == chain {
+					if existing.By != by {
+						return nil, fmt.Errorf("finding %s on chain %s was already accepted by %s", finding, chain, existing.By)
+					}
+					return nil, AlreadyApplied{}
+				}
+			}
+			f.AcceptedRisks = append(f.AcceptedRisks, AcceptedRiskRecord{Finding: finding, Chain: chain, By: by, Opid: r.opid()})
+			touch(f, r, "accept-risk", []string{id})
+			f.History[len(f.History)-1].Reason = why
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+}
+
+func AcceptedRiskDecisionOpID(repoRoot, id, finding, chain string, now time.Time) (string, error) {
+	endpoint, err := ResolveEndpoint(repoRoot)
+	if err != nil {
+		return "", err
+	}
+	projection, err := Project(endpoint, false, now)
+	if err != nil {
+		return "", err
+	}
+	var file *GoalFile
+	if projection.Tree != nil {
+		file = projection.Tree.Live[id]
+		if file == nil {
+			file = projection.Tree.Done[id]
+		}
+	}
+	if file == nil {
+		return "", fmt.Errorf("goal %s is absent", id)
+	}
+	for _, risk := range file.AcceptedRisks {
+		if risk.Finding == finding && risk.Chain == chain {
+			return risk.Opid, nil
+		}
+	}
+	return "", fmt.Errorf("goal %s has no accepted-risk decision for finding %s on chain %s", id, finding, chain)
+}
+
 // doneRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
@@ -896,6 +1046,11 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			f, exists := t.Live[id]
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to conclude", id)
+			}
+			for _, obligation := range f.ReviewObligations {
+				if obligation.State == "open" {
+					return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
+				}
 			}
 			// Queued concludes directly; a foreign
 			// claim concludes only under a human, and the override

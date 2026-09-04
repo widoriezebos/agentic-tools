@@ -2,6 +2,8 @@ package dispatch
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,6 +23,7 @@ func registerFacts() map[string]any {
 func registerRigor(id, class string) map[string]any {
 	return map[string]any{
 		"findingId": id, "rigorClass": class, "facts": registerFacts(),
+		"artifact":         "metasystem/test.go",
 		"reopeningTrigger": "reopen when the finding recurs",
 	}
 }
@@ -46,6 +49,9 @@ func writeCriticRound(t *testing.T, repo, root, job string, round int, findings,
 	if job == root {
 		record[findingRegisterField] = []any{}
 		record[findingRegisterRoundField] = 0
+		record[reviewRoundLimitField] = 3
+		record[criticRoundsConsumedField] = 0
+		record["demotions"] = []any{}
 	}
 	writeJSONFile(t, filepath.Join(agents, "jobs"), job+".json", record)
 	writeJSONFile(t, filepath.Join(agents, root, "rounds", fmt.Sprint(round)), "return.json", map[string]any{
@@ -54,8 +60,33 @@ func writeCriticRound(t *testing.T, repo, root, job string, round int, findings,
 	})
 }
 
+// setCriticSubject binds a critic root to a reviewed implementer round. A
+// root that names a reviewed job is no longer legacy: the subject reader
+// needs that job's record, its round diff (the artifact membership law)
+// and a git root to derive the project prefix, so the helper writes them
+// once per reviewed job with a diff that names the register fixture's
+// artifact.
 func setCriticSubject(t *testing.T, repo, root, reviews, reviewedTree string) {
 	t.Helper()
+	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
+		if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v: %s", err, output)
+		}
+	}
+	reviewedRecord := filepath.Join(repo, "artifacts", "agents", "jobs", reviews+".json")
+	if _, err := os.Stat(reviewedRecord); err != nil {
+		writeJSONFile(t, filepath.Dir(reviewedRecord), reviews+".json", map[string]any{
+			"jobId": reviews, "role": "implementer", "round": 1, "parentJob": nil, "status": "completed",
+		})
+		writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", reviews, "rounds", "1"), "return.json", map[string]any{
+			"schemaVersion": 2, "jobId": reviews, "round": 1,
+		})
+		diffDir := filepath.Join(repo, "artifacts", "agents", reviews, "rounds", "1")
+		diff := "diff --git a/metasystem/test.go b/metasystem/test.go\n"
+		if err := os.WriteFile(filepath.Join(diffDir, "diff.patch"), []byte(diff), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	recordPath := filepath.Join(repo, "artifacts", "agents", "jobs", root+".json")
 	record := readJSONFile(t, recordPath)
 	record["reviews"] = reviews
@@ -124,6 +155,70 @@ func TestCritiqueRegisterAdvanceIsIdempotent(t *testing.T) {
 	got := readRegister(t, repo, "critic")
 	if string(canonicalJSON(got)) != string(canonicalJSON(want)) {
 		t.Fatalf("idempotent retry changed register: got %v want %v", got, want)
+	}
+}
+
+func TestLegacyCritiqueRootBackfillsRoundAccountingOnAdvance(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	root := readJSONFile(t, rootPath)
+	delete(root, reviewRoundLimitField)
+	delete(root, criticRoundsConsumedField)
+	if _, present := root[findingRegisterField]; !present {
+		t.Fatal("legacy fixture lost its canonical finding register")
+	}
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, step := range []struct {
+		round int
+		job   string
+	}{{1, "critic"}, {3, "critic-r3"}, {4, "critic-r4"}} {
+		round, job := step.round, step.job
+		if round > 1 {
+			writeCriticRound(t, repo, "critic", job, round, []any{}, []any{})
+		}
+		outcome, err := CritiqueRegisterAdvance(repo, "critic", job)
+		if err != nil || outcome != "advanced" {
+			t.Fatalf("legacy round %d advance = %q, %v", round, outcome, err)
+		}
+		got := readJSONFile(t, rootPath)
+		if limit, _ := numInt(got[reviewRoundLimitField]); limit != 3 {
+			t.Fatalf("legacy round %d review limit = %v", round, got[reviewRoundLimitField])
+		}
+		wantConsumed := int64(round)
+		if round > 2 {
+			wantConsumed--
+		}
+		if consumed, _ := numInt(got[criticRoundsConsumedField]); consumed != wantConsumed {
+			t.Fatalf("legacy round %d consumed = %v", round, got[criticRoundsConsumedField])
+		}
+		if round == 1 {
+			delete(got, reviewRoundLimitField)
+			delete(got, criticRoundsConsumedField)
+			if err := writeRecord(rootPath, got); err != nil {
+				t.Fatal(err)
+			}
+			writeCriticRound(t, repo, "critic", "critic-r2", 2, []any{}, []any{})
+			cancelledPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic-r2.json")
+			cancelled := readJSONFile(t, cancelledPath)
+			cancelled["status"] = "cancelled"
+			if err := writeRecord(cancelledPath, cancelled); err != nil {
+				t.Fatal(err)
+			}
+			if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
+				t.Fatalf("legacy cancelled round advance = %q, %v", outcome, err)
+			}
+			got = readJSONFile(t, rootPath)
+			if consumed, _ := numInt(got[criticRoundsConsumedField]); consumed != 1 {
+				t.Fatalf("legacy cancelled round changed consumed count to %v", got[criticRoundsConsumedField])
+			}
+		}
+	}
+	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
+		t.Fatalf("legacy root close = %q, %v", outcome, err)
 	}
 }
 
@@ -426,6 +521,56 @@ func TestCritiqueRegisterReissuedRoundWithNewFindingIDsAdvances(t *testing.T) {
 	}
 }
 
+func TestCritiqueRegisterAdvanceBackfillsAbsentDemotions(t *testing.T) {
+	repo := t.TempDir()
+	rigor := registerRigor("F-demoted", "severe")
+	delete(rigor, "artifact")
+	writeCriticRound(t, repo, "critic", "critic", 1,
+		[]any{registerFindingValue("F-demoted", true, "evidence")}, []any{rigor})
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	root := readJSONFile(t, rootPath)
+	root["role"] = "design-critic"
+	root["declaredOutputs"] = []any{"metasystem/design.md"}
+	delete(root, "demotions")
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+		t.Fatalf("pre-demotions root advance = %q, %v", outcome, err)
+	}
+	persisted := readJSONFile(t, rootPath)
+	demotions, ok := persisted["demotions"].([]any)
+	if !ok || len(demotions) != 1 {
+		t.Fatalf("demotions = %v, want one persisted demotion", persisted["demotions"])
+	}
+	demotion := demotions[0].(map[string]any)
+	if demotion["findingId"] != "F-demoted" || demotion["reason"] != "material finding has no canonical artifact" {
+		t.Fatalf("persisted demotion = %v", demotion)
+	}
+}
+
+func TestCritiqueRegisterAdvanceRefusesMalformedDemotions(t *testing.T) {
+	repo := t.TempDir()
+	rigor := registerRigor("F-demoted", "severe")
+	delete(rigor, "artifact")
+	writeCriticRound(t, repo, "critic", "critic", 1,
+		[]any{registerFindingValue("F-demoted", true, "evidence")}, []any{rigor})
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	root := readJSONFile(t, rootPath)
+	root["role"] = "design-critic"
+	root["declaredOutputs"] = []any{"metasystem/design.md"}
+	root["demotions"] = "malformed"
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err == nil ||
+		!strings.Contains(err.Error(), "has malformed demotions") {
+		t.Fatalf("malformed demotions = %v", err)
+	}
+}
+
 func TestCancelledRoundFoldsNeutrally(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, nil, nil)
@@ -444,5 +589,103 @@ func TestCancelledRoundFoldsNeutrally(t *testing.T) {
 	}
 	if got := readRegisterRound(t, repo, "critic"); got != 1 {
 		t.Fatalf("the folded round did not advance: %d", got)
+	}
+}
+
+func TestCritiqueRegisterReadsDecisionAndAcceptsRisk(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1,
+		[]any{
+			registerFindingValue("F-2", true, "fallback evidence for F-2"),
+			registerFindingValue("F-1", true, "bounded evidence for F-1"),
+		},
+		[]any{registerRigor("F-2", "severe"), registerRigor("F-1", "bounded")})
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+		t.Fatalf("advance = %q, %v", outcome, err)
+	}
+
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	root := readJSONFile(t, rootPath)
+	root["goalId"] = "goal-a"
+	register := root[findingRegisterField].([]any)
+	for _, raw := range register {
+		entry := raw.(map[string]any)
+		entry["title"] = ""
+		entry["evidence"] = ""
+	}
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := CritiqueOpenFindingIDs(repo, "critic")
+	if err != nil || len(ids) != 2 || ids[0] != "F-1" || ids[1] != "F-2" {
+		t.Fatalf("open finding identifiers = %v, %v", ids, err)
+	}
+	finding, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-2", "goal-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.Claim != "the claimed defect" || finding.Evidence != "fallback evidence for F-2" || finding.RigorClass != "severe" {
+		t.Fatalf("decision finding did not recover the critic text: %+v", finding)
+	}
+	if _, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-1", "goal-a"); err == nil ||
+		!strings.Contains(err.Error(), "bounded findings defer at close") {
+		t.Fatalf("bounded decision finding = %v", err)
+	}
+	if _, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-2", "other-goal"); err == nil ||
+		!strings.Contains(err.Error(), "not bound to goal") {
+		t.Fatalf("foreign goal decision finding = %v", err)
+	}
+
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "decision-op"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "decision-op"); err != nil {
+		t.Fatalf("accepted-risk retry = %v", err)
+	}
+	entry := registerEntryByID(t, readRegister(t, repo, "critic"), "F-2")
+	if entry["status"] != "accepted-risk" || entry["resolution"] != "accepted-risk" || entry["decisionOpid"] != "decision-op" {
+		t.Fatalf("accepted risk was not persisted: %v", entry)
+	}
+	if _, err := CritiqueRegisterDecisionFinding(repo, "critic", "F-2", "goal-a"); err != nil {
+		t.Fatalf("accepted-risk replay cannot read its decision finding: %v", err)
+	}
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "F-2", "different-op"); err == nil ||
+		!strings.Contains(err.Error(), "not open or disputed") {
+		t.Fatalf("second acceptance operation = %v", err)
+	}
+	if err := CritiqueRegisterAcceptRisk(repo, "critic", "missing", "decision-op"); err == nil ||
+		!strings.Contains(err.Error(), "is absent") {
+		t.Fatalf("absent acceptance finding = %v", err)
+	}
+}
+
+func TestCritiqueRegisterRefusesMalformedFoldRound(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1,
+		[]any{registerFindingValue("F-1", true, "evidence")},
+		[]any{registerRigor("F-1", "severe")})
+	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	root := readJSONFile(t, rootPath)
+	delete(root, findingRegisterRoundField)
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err == nil ||
+		!strings.Contains(err.Error(), "last folded round is absent") {
+		t.Fatalf("missing folded round = %v", err)
+	}
+
+	root[findingRegisterRoundField] = -1
+	if err := writeRecord(rootPath, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err == nil ||
+		!strings.Contains(err.Error(), "not a non-negative integer") {
+		t.Fatalf("negative folded round = %v", err)
 	}
 }

@@ -201,6 +201,8 @@ resolve_existing_path() { # path
 
 tmp=$(mktemp -d)
 tmp=$(cd "$tmp" && pwd -P)
+fixture_declared_outputs=$tmp/declared-outputs.txt
+printf '%s\n' 'metasystem/internal/dispatch/build.go' >"$fixture_declared_outputs"
 # Every armed checkout in this bed shares a registry isolated to this run.
 # Standalone fixtures must not read or write the user's supervision registry.
 export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/supervision-home"
@@ -324,7 +326,7 @@ cap_fixture_round() { # repository, root job, round, completed kind or protocol
       "$job" "$role" "$round" "$parent" >"$repo/artifacts/agents/jobs/$job.json"
   fi
   if (( round == 1 )); then
-    printf ',"findingRegister":[],"findingRegisterRound":0,"boundedCritiqueStart":null,"critiqueExhaustions":[]' \
+    printf ',"findingRegister":[],"findingRegisterRound":0,"reviewRoundLimit":3,"criticRoundsConsumed":0,"demotions":[],"declaredOutputs":["metasystem/internal/dispatch/build.go"],"critiqueExhaustions":[]' \
       >>"$repo/artifacts/agents/jobs/$job.json"
   fi
   printf '}\n' >>"$repo/artifacts/agents/jobs/$job.json"
@@ -334,11 +336,11 @@ cap_fixture_round() { # repository, root job, round, completed kind or protocol
       bounded|severe)
         local prefix=B
         [[ "$kind" == severe ]] && prefix=S
-        printf '{"schemaVersion":3,"jobId":"%s","round":%d,"findings":[{"id":"%s-1","severity":"high","material":true,"claim":"cap fixture finding","evidence":"direct fixture evidence"}],"rigor":[{"findingId":"%s-1","rigorClass":"%s","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"reopeningTrigger":"reopen if it recurs"}]}\n' \
+        printf '{"schemaVersion":4,"jobId":"%s","round":%d,"findings":[{"id":"%s-1","severity":"high","material":true,"claim":"cap fixture finding","evidence":"direct fixture evidence"}],"rigor":[{"findingId":"%s-1","rigorClass":"%s","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"artifact":"metasystem/internal/dispatch/build.go","reopeningTrigger":"reopen if it recurs"}]}\n' \
           "$job" "$round" "$prefix" "$prefix" "$kind" >"$repo/artifacts/agents/$chain/rounds/$round/return.json"
         ;;
       zero)
-        printf '{"schemaVersion":3,"jobId":"%s","round":%d,"findings":[],"rigor":[]}\n' \
+        printf '{"schemaVersion":4,"jobId":"%s","round":%d,"findings":[],"rigor":[]}\n' \
           "$job" "$round" >"$repo/artifacts/agents/$chain/rounds/$round/return.json"
         ;;
     esac
@@ -380,7 +382,7 @@ set -e
 [[ "$bounded_cap_rc" -eq 10 ]] \
   || { echo "bounded cap returned $bounded_cap_rc instead of typed human-raise exit 10" >&2; exit 1; }
 grep -Fq 'reason=cap-exhausted-human-raise' "$cap_fixture/bounded.out" \
-  && grep -Fq 'bounded critique cap is exhausted' "$cap_fixture/bounded.out" \
+  && grep -Fq 'review-round limit is exhausted with bounded findings' "$cap_fixture/bounded.out" \
   || { echo "bounded cap did not raise its human-only refusal" >&2; exit 1; }
 
 protocol_cap_repo="$cap_fixture/protocol"
@@ -405,24 +407,17 @@ cap_fixture_round "$severe_cap_repo" severe-chain 1 bounded
 cap_fixture_round "$severe_cap_repo" severe-chain 2 severe
 cap_fixture_round "$severe_cap_repo" severe-chain 3 zero
 printf 'Address B-1 and S-1.\n' >"$cap_fixture/severe-message.md"
-[[ "$($engine job critique-exhaustion-advance --repo "$severe_cap_repo" \
-    --root-job severe-chain --role design-critic --message "$cap_fixture/severe-message.md" \
-    --successor severe-chain-r4)" == recorded ]] \
-  || { echo "severe finding did not override the bounded deadline" >&2; exit 1; }
-cap_fixture_round "$severe_cap_repo" severe-chain 4 protocol
-cap_fixture_round "$severe_cap_repo" severe-chain 5 protocol
-cap_fixture_round "$severe_cap_repo" severe-chain 6 protocol
 set +e
 "$engine" job critique-exhaustion-advance --repo "$severe_cap_repo" \
     --root-job severe-chain --role design-critic --message "$cap_fixture/severe-message.md" \
-    --successor severe-chain-r7 >"$cap_fixture/severe-round6.out" 2>&1
+    --successor severe-chain-r4 >"$cap_fixture/severe-round3.out" 2>&1
 severe_cap_rc=$?
 set -e
 [[ "$severe_cap_rc" -eq 10 ]] \
-  || { echo "round-six exhaustion returned $severe_cap_rc instead of typed human-raise exit 10" >&2; exit 1; }
-grep -Fq 'reason=cap-exhausted-human-raise' "$cap_fixture/severe-round6.out" \
-  && grep -Fq 'terminal round 6' "$cap_fixture/severe-round6.out" \
-  || { echo "round-six exhaustion did not raise its terminal refusal" >&2; exit 1; }
+  || { echo "round-three exhaustion returned $severe_cap_rc instead of typed human-raise exit 10" >&2; exit 1; }
+grep -Fq 'reason=cap-exhausted-human-raise' "$cap_fixture/severe-round3.out" \
+  && grep -Fq 'terminal round 3' "$cap_fixture/severe-round3.out" \
+  || { echo "round-three exhaustion did not raise its terminal refusal" >&2; exit 1; }
 
 agent_fixture="$tmp/agent-fixture"
 agent_repo="$agent_fixture/repo"
@@ -430,6 +425,12 @@ agent_evidence="$agent_fixture/evidence"
 mkdir -p "$agent_repo/scripts" "$agent_repo/docs" "$agent_repo/skills"
 agent_repo=$(cd "$agent_repo" && pwd -P)
 cp -R scripts/agents "$agent_repo/scripts/"
+# Design-critic arguments are repository-relative artifacts. The adopted
+# fixture bed installs scripts at the toplevel, but these fixtures deliberately
+# exercise this repository's nested `metasystem/` artifact spelling, so mirror
+# the reviewed design blob at that path too.
+mkdir -p "$agent_repo/metasystem/scripts/agents/roles"
+cp scripts/agents/roles/design-critic.md "$agent_repo/metasystem/scripts/agents/roles/design-critic.md"
 cp scripts/metasystem-config.sh scripts/assert-return-complete.sh \
   scripts/watch-background-jobs.sh "$agent_repo/scripts/"
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
@@ -1029,7 +1030,8 @@ make_agent_brief "$budgetless_brief" design
 set +e
 env METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
   "$budgetless_dispatch_repo/scripts/agents/dispatch.sh" dispatch \
-    --role design-critic --brief "$budgetless_brief" --job-id budgetless-refused \
+    --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+    --brief "$budgetless_brief" --job-id budgetless-refused \
     >"$agent_fixture/budgetless-refused.out" 2>&1
 budgetless_dispatch_rc=$?
 set -e
@@ -1115,7 +1117,7 @@ sed 's/^Working Mode:.*/Working Mode: design/' \
   wait_for_agent_census_fresh structured-budget-within
   run_agent_fixture_captured structured-budget-within structured-budget-within \
     "$agent_fixture/structured-budget-within.out" \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
       --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL --wait
 )
 grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-within.out" \
@@ -1139,7 +1141,7 @@ printf '\nThis changes the retry fingerprint.\n' >>"$budget_mismatch_brief"
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   agent_fails structured-budget-opid-mismatch '"outcome":"REFUSED-OPID-MISMATCH"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --brief "$budget_mismatch_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_mismatch_brief" \
       --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL
 )
 set +e
@@ -1161,7 +1163,7 @@ grep -Fq 'BUDGET_REFUSED: goal structured-budget' <<<"$budget_admission" \
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   agent_fails structured-budget-refused '"outcome":"REFUSED-BUDGET"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \
@@ -1190,7 +1192,7 @@ run_fixture_arm "dispatcher initial arm" "$agent_fixture/arming.out" \
 
 happy_brief="$agent_fixture/happy.md"
 make_agent_brief "$happy_brief" design
-if run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait; then
+if run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id happy --wait; then
   :
 else
   happy_dispatch_rc=$?
@@ -1208,12 +1210,12 @@ repeat_fresh_brief="$agent_fixture/repeat-fresh.md"
 make_agent_brief "$repeat_fresh_brief" design "FAKE:custodial-critique=$repeat_fresh_release"
 cap_lock_fixture_acquire repeat-fresh
 wait_for_agent_census_fresh repeat-fresh-first
-(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic \
+(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$repeat_fresh_brief" --job-id repeat-fresh) \
   >"$agent_fixture/repeat-fresh-first.out" 2>&1 &
 repeat_fresh_first_pid=$!
 wait_for_chain_lock repeat-fresh repeat-fresh-first
-(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic \
+(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$repeat_fresh_brief" --job-id repeat-fresh) \
   >"$agent_fixture/repeat-fresh-second.out" 2>&1 &
 repeat_fresh_second_pid=$!
@@ -1253,7 +1255,8 @@ payload_retry_preparation="$agent_fixture/payload-retry-occupancy.json"
   --creator-pid "$$" --occupancy-preparation "$payload_retry_preparation" >/dev/null
 if run_agent_fixture_captured payload-retry-refusal payload-retry \
     "$agent_fixture/payload-retry-refusal.out" "$agent_dispatch" dispatch \
-    --role design-critic --brief "$happy_brief" --job-id payload-retry; then
+    --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+    --brief "$happy_brief" --job-id payload-retry; then
   echo "the occupied payload-retry session unexpectedly launched" >&2
   exit 1
 else
@@ -1270,7 +1273,8 @@ printf '{"error":"fixture-release"}\n' >"$payload_blocker_patch"
 "$engine" job record-cas --root "$agent_repo" --job payload-blocker \
   --expect pending-setup --status failed --patch "$payload_blocker_patch" >/dev/null
 run_agent_fixture payload-retry payload-retry "$agent_dispatch" dispatch \
-  --role design-critic --brief "$happy_brief" --job-id payload-retry --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$happy_brief" --job-id payload-retry --wait
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/payload-retry.json" --field status)" == completed ]] \
   || { echo "payload-retry did not launch after its temporary refusal cleared" >&2; exit 1; }
 
@@ -1360,7 +1364,8 @@ cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 alias_brief="$agent_fixture/model-alias.md"
 make_agent_brief "$alias_brief" design
 run_agent_fixture model-alias-roster model-alias-roster "$agent_dispatch" dispatch \
-  --role design-critic --brief "$alias_brief" --job-id model-alias-roster --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$alias_brief" --job-id model-alias-roster --wait
 alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
 [[ "$("$engine" json get --file "$alias_roster_record" --field composition.model)" == fake-model \
    && "$("$engine" json get --file "$alias_roster_record" --field canonicalModelKey)" == fake-model \
@@ -1375,7 +1380,8 @@ alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
 "$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
   --set role.default.model.fake=fake-model
 run_agent_fixture model-alias-override model-alias-override "$agent_dispatch" dispatch \
-  --role design-critic --brief "$alias_brief" --job-id model-alias-override --model fake-source --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$alias_brief" --job-id model-alias-override --model fake-source --wait
 alias_override_record="$agent_repo/artifacts/agents/jobs/model-alias-override.json"
 [[ "$("$engine" json get --file "$alias_override_record" --field composition.model)" == fake-model \
    && "$("$engine" json get --file "$alias_override_record" --field canonicalModelKey)" == fake-model \
@@ -1486,7 +1492,8 @@ conf_edit "$agent_repo/metasystem.conf" replace-line-first \
 review_default_brief="$agent_fixture/review-default.md"
 make_agent_brief "$review_default_brief" design
 run_agent_fixture review-default review-default "$agent_dispatch" dispatch \
-  --role design-critic --brief "$review_default_brief" --job-id review-default --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$review_default_brief" --job-id review-default --wait
 review_default_record="$agent_repo/artifacts/agents/jobs/review-default.json"
 review_default_root=$("$engine" json get --file "$review_default_record" --field workspaceRoot)
 review_default_effective="$agent_repo/artifacts/agents/review-default/rounds/1/effective-permissions.json"
@@ -1505,7 +1512,7 @@ review_follow_effective="$agent_repo/artifacts/agents/review-default/rounds/2/ef
   || { echo "a worktree review follow-up did not inherit the writable envelope" >&2; cat "$review_follow_effective" >&2; exit 1; }
 
 agent_fails review-live-write 'design-critic live-checkout write refusal' \
-  "$agent_dispatch" dispatch --role design-critic --brief "$review_default_brief" \
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$review_default_brief" \
   --workspace "$agent_repo" --job-id review-live-write
 grep -Fq 'incident class: critic-workspace-custody' "$agent_fixture/review-live-write.out" \
   && grep -Fq 'pass --worktree' "$agent_fixture/review-live-write.out" \
@@ -1526,7 +1533,8 @@ for process_field in pid pidStartedAt pgid custodyProcesses ownershipProof; do
 done
 
 run_agent_fixture review-worktree review-worktree "$agent_dispatch" dispatch \
-  --role design-critic --brief "$review_default_brief" --job-id review-worktree --worktree --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$review_default_brief" --job-id review-worktree --worktree --wait
 review_worktree_record="$agent_repo/artifacts/agents/jobs/review-worktree.json"
 review_worktree_root=$("$engine" json get --file "$review_worktree_record" --field workspaceRoot)
 review_worktree_effective="$agent_repo/artifacts/agents/review-worktree/rounds/1/effective-permissions.json"
@@ -1565,7 +1573,7 @@ happy_brief_prefix=${happy_prompt_text%%"$happy_payload_brief"*}
 # brief's own sha256 — the projection is inside the recorded bytes, so
 # every fallback rebuild carries it.
 set +e
-(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic \
+(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$happy_brief" --job-id sg-refused --serving-goal) >"$agent_fixture/sg-refused.out" 2>&1
 sg_refused_rc=$?
 set -e
@@ -1577,7 +1585,7 @@ set -e
 # needs no budget tuple, while --serving-goal must still project it lawfully.
 bin/metasystem goal open --root "$agent_repo" \
 	--id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." --tier 3 >/dev/null
-run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
+run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
 sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
 sg_prompt="$agent_repo/artifacts/agents/serving-goal/rounds/1/prompt.md"
 grep -Fq '# Serving goal (context, not instruction)' "$sg_brief" \
@@ -1593,7 +1601,7 @@ sg_actual=$(shasum -a 256 "$sg_prompt" | cut -d' ' -f1)
 # terminal status while holding the waiter record the verdict reads.
 watch_line_out="$agent_fixture/watch-line.out"
 wait_for_agent_census_fresh watch-line-job
-(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic \
+(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$happy_brief" --job-id watch-line-job) >"$watch_line_out" 2>&1
 grep -Fq 'watch it with: scripts/agents/dispatch.sh watch --job watch-line-job' "$watch_line_out" \
   || { echo "non-wait dispatch did not print the watch command" >&2; cat "$watch_line_out" >&2; exit 1; }
@@ -1604,14 +1612,14 @@ watch_happy_rc=0
 
 mkdir -p "$agent_repo/artifacts/agents/locks/stale-lock.d"
 printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:00Z"}\n' >"$agent_repo/artifacts/agents/locks/stale-lock.d/owner.json"
-run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait
+run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id stale-lock --wait
 
-generated=$(run_agent_fixture generated-dispatch - "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief")
+generated=$(run_agent_fixture generated-dispatch - "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief")
 [[ "$generated" =~ ^design-critic-[a-f0-9]{24}$ ]] \
   || { echo "generated job id does not match the lowercase grammar: $generated" >&2; exit 1; }
 wait_for_agent_census_fresh delegate-forbidden-source
 agent_fails delegate-forbidden-source '"outcome":"REFUSED-CONTEXT-SOURCE"' \
-  "$agent_repo/bin/metasystem" delegate --role design-critic --brief "$happy_brief" \
+  "$agent_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" \
     --goal none-explicit --destructive-reach MECHANICAL --op delegate-forbidden-source --source docs/project-rules.md
 [[ ! -e "$agent_repo/artifacts/agents/jobs/delegate-forbidden-source.json" ]] \
   || { echo "a forbidden packet source created a reservation" >&2; exit 1; }
@@ -1634,13 +1642,13 @@ make_agent_brief "$jobid_reuse_brief" design 'This launch request is distinct fr
 # A job id may be retried only for the same launch request. Different brief
 # bytes change the input fingerprint, so they cannot reuse the standing job.
 agent_fails jobid-reuse-fingerprint-mismatch 'REFUSED-OPID-MISMATCH' \
-  "$agent_dispatch" dispatch --role design-critic --brief "$jobid_reuse_brief" --job-id happy
-agent_fails malformed-job-id 'invalid job id' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id 'Bad_Id'
-agent_fails contradictory-mode "contradicts the brief's Working Mode" "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --mode verify
-agent_fails unregistered-override 'outside metasystem.runtimes' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime ghost
-agent_fails main-override 'assigned to main' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime main
-agent_fails costlier-unmapped 'cost direction is unranked' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model absent-from-tier
-agent_fails ranked-costlier 'higher (tier 1 -> tier 2)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-premium
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$jobid_reuse_brief" --job-id happy
+agent_fails malformed-job-id 'invalid job id' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id 'Bad_Id'
+agent_fails contradictory-mode "contradicts the brief's Working Mode" "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --mode verify
+agent_fails unregistered-override 'outside metasystem.runtimes' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --runtime ghost
+agent_fails main-override 'assigned to main' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --runtime main
+agent_fails costlier-unmapped 'cost direction is unranked' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model absent-from-tier
+agent_fails ranked-costlier 'higher (tier 1 -> tier 2)' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model fake-premium
 
 # The recorded default is a real fallback, while its absence refuses.
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
@@ -1675,6 +1683,18 @@ review_target_root=$("$engine" json get --file "$agent_repo/artifacts/agents/job
 [[ "$("$engine" json get --file "$review_target_effective" --field writeRoots)" == *"$review_target_root"* \
    && "$("$engine" json get --file "$review_target_effective" --field tools)" == runtime-default ]] \
   || { echo "the implementer role lost its existing writable worktree envelope" >&2; cat "$review_target_effective" >&2; exit 1; }
+# The artifact namespace is nested even though this disposable adoption is at
+# its git toplevel. Give the reviewed implementer a real change under that
+# namespace, declare it, and persist conformance before any critic fold reads
+# the subject set.
+printf 'review target subject\n' >"$review_target_root/metasystem/review-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/review-target/rounds/1/return.json" \
+  diffBoundary '["metasystem/review-target.txt"]'
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+  --stage review --job review-target
+grep -Fq 'diff --git a/metasystem/review-target.txt b/metasystem/review-target.txt' \
+  "$agent_repo/artifacts/agents/review-target/rounds/1/diff.patch" \
+  || { echo "review-target conformance diff did not preserve the nested artifact path" >&2; exit 1; }
 run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --permissions none --job-id flag-runtime --wait
 flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
 review_target_record="$agent_repo/artifacts/agents/jobs/review-target.json"
@@ -1700,7 +1720,7 @@ run_agent_fixture investigator-role investigator-role "$agent_dispatch" dispatch
 
 no_signal="$agent_fixture/no-signal.md"
 make_agent_brief "$no_signal" design 'FAKE:no-session-signal'
-agent_fails no-session-signal '' "$agent_dispatch" dispatch --role design-critic --brief "$no_signal" --job-id no-signal --wait
+agent_fails no-session-signal '' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$no_signal" --job-id no-signal --wait
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/no-signal.json" --field status)" == failed ]] \
   || { echo "non-signal handshake did not end failed" >&2; exit 1; }
 grep -Fq 'handshake_timeout' "$agent_repo/artifacts/agents/jobs/no-signal.json" \
@@ -1713,19 +1733,19 @@ grep -Fq 'handshake_timeout' "$agent_repo/artifacts/agents/jobs/no-signal.json" 
        exit 1; }
 handshake_failure="$agent_fixture/handshake-failure.md"
 make_agent_brief "$handshake_failure" design 'FAKE:handshake-failure'
-agent_fails handshake-failure '' "$agent_dispatch" dispatch --role design-critic --brief "$handshake_failure" --job-id handshake-failure --wait
+agent_fails handshake-failure '' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$handshake_failure" --job-id handshake-failure --wait
 grep -Fq 'authentication_failed' "$agent_repo/artifacts/agents/jobs/handshake-failure.json" \
   || { echo "fake handshake failure lost its named error" >&2; exit 1; }
 missing_session="$agent_fixture/missing-session.md"
 make_agent_brief "$missing_session" design 'FAKE:missing-session-id'
-agent_fails missing-session '' "$agent_dispatch" dispatch --role design-critic --brief "$missing_session" --job-id missing-session --wait
+agent_fails missing-session '' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$missing_session" --job-id missing-session --wait
 grep -Fq 'handshake_missing_session_id' "$agent_repo/artifacts/agents/jobs/missing-session.json" \
   || { echo "missing session id did not fail the strong handshake" >&2; exit 1; }
 
 pending_brief="$agent_fixture/pending.md"
 make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
 wait_for_agent_census_fresh pending-chain
-(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_brief" --job-id pending-chain >/dev/null 2>&1) & pending_driver=$!
+(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$pending_brief" --job-id pending-chain >/dev/null 2>&1) & pending_driver=$!
 wait_for_agent_status pending-chain pending
 # Pending is published before launch identity. The dispatcher keeps the chain
 # lock until that identity is durable, so wait for the full launch interval
@@ -1845,7 +1865,7 @@ set -e
 pending_loss_brief="$agent_fixture/pending-loss.md"
 make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
 wait_for_agent_census_fresh pending-loss
-(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_loss_brief" --job-id pending-loss >/dev/null 2>&1) & pending_loss_driver=$!
+(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$pending_loss_brief" --job-id pending-loss >/dev/null 2>&1) & pending_loss_driver=$!
 wait_for_agent_status pending-loss pending
 # The supervisor is dying while this runs, so a single sweep can legitimately
 # land before the kill and observe a live match. The standing reaper sweeps on
@@ -1870,7 +1890,7 @@ wait_for_agent_fixture_process pending-loss-driver pending-loss "$pending_loss_d
 recollect_brief="$agent_fixture/recollect.md"
 make_agent_brief "$recollect_brief" design 'FAKE:return-then-process-loss'
 wait_for_agent_census_fresh recollect-loss
-(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$recollect_brief" --job-id recollect-loss >/dev/null 2>&1) & recollect_driver=$!
+(set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$recollect_brief" --job-id recollect-loss >/dev/null 2>&1) & recollect_driver=$!
 wait_for_agent_status recollect-loss running
 recollect_record="$agent_repo/artifacts/agents/jobs/recollect-loss.json"
 recollect_started=$SECONDS
@@ -1896,7 +1916,7 @@ wait_for_agent_fixture_process recollect-driver recollect-loss "$recollect_drive
 malformed_brief="$agent_fixture/malformed-return.md"
 make_agent_brief "$malformed_brief" design 'FAKE:malformed-return'
 set +e
-run_agent_fixture malformed-return malformed-return "$agent_dispatch" dispatch --role design-critic --brief "$malformed_brief" --job-id malformed-return --wait
+run_agent_fixture malformed-return malformed-return "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$malformed_brief" --job-id malformed-return --wait
 malformed_status=$?
 set -e
 [[ $malformed_status -eq 3 ]] || { echo "malformed return mapped to $malformed_status instead of 3" >&2; exit 1; }
@@ -1905,7 +1925,7 @@ grep -Fq 'protocol_error' "$agent_repo/artifacts/agents/jobs/malformed-return.js
 
 interrupted="$agent_fixture/interrupted.md"
 make_agent_brief "$interrupted" design 'FAKE:interrupted-atomic-write'
-run_agent_fixture interrupted interrupted "$agent_dispatch" dispatch --role design-critic --brief "$interrupted" --job-id interrupted --wait
+run_agent_fixture interrupted interrupted "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$interrupted" --job-id interrupted --wait
 [[ -f "$agent_repo/artifacts/agents/record-locks/interrupted.interrupted" ]] \
   || { echo "interrupted atomic-write fixture did not leave its staged partial" >&2; exit 1; }
 "$engine" util json-validate --file "$agent_repo/artifacts/agents/jobs/interrupted.json"
@@ -1926,14 +1946,14 @@ restrictive_permissions="$agent_fixture/restrictive-permissions.json"
 printf '{"readRoots":["."],"writeRoots":[],"network":"deny","approvals":"deny","tools":"read-only"}\n' >"$restrictive_permissions"
 effective_wider="$agent_fixture/effective-wider.md"
 make_agent_brief "$effective_wider" design 'FAKE:effective-wider'
-agent_fails effective-wider '' "$agent_dispatch" dispatch --role design-critic --brief "$effective_wider" --permissions "$restrictive_permissions" --job-id effective-wider --wait
+agent_fails effective-wider '' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$effective_wider" --permissions "$restrictive_permissions" --job-id effective-wider --wait
 grep -Fq 'permissions_mismatch:network' "$agent_repo/artifacts/agents/jobs/effective-wider.json" \
   || { echo "wider effective envelope did not record the mismatch" >&2; exit 1; }
 permissive_permissions="$agent_fixture/permissive-permissions.json"
 printf '{"readRoots":["."],"writeRoots":[],"network":"allow","approvals":"deny","tools":"read-only"}\n' >"$permissive_permissions"
 effective_narrower="$agent_fixture/effective-narrower.md"
 make_agent_brief "$effective_narrower" design 'FAKE:effective-narrower'
-run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispatch --role design-critic --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait
+run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait
 
 # The shipped presets grant network, and a repository may narrow it for every
 # role at once. Until 2026-08-05 the adapters hard-coded network off and never
@@ -1945,18 +1965,18 @@ run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispat
   || { echo "the none preset no longer grants network" >&2; exit 1; }
 net_default="$agent_fixture/net-default.md"
 make_agent_brief "$net_default" design
-run_agent_fixture net-default net-default "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id net-default --wait
+run_agent_fixture net-default net-default "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$net_default" --job-id net-default --wait
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-default.json" --field permissions.requested.network)" == allow ]] \
   || { echo "a delegate did not receive network by default" >&2; exit 1; }
 printf 'dispatch.permissions.network=deny\n' >>"$agent_repo/metasystem.conf"
 net_floor="$agent_fixture/net-floor.md"
 make_agent_brief "$net_floor" design
-run_agent_fixture net-floor net-floor "$agent_dispatch" dispatch --role design-critic --brief "$net_floor" --job-id net-floor --wait
+run_agent_fixture net-floor net-floor "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$net_floor" --job-id net-floor --wait
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-floor.json" --field permissions.requested.network)" == deny ]] \
   || { echo "the repository network floor did not narrow the preset" >&2; exit 1; }
 conf_edit "$agent_repo/metasystem.conf" delete-line-first '^dispatch[.]permissions[.]network=deny$'
 agent_fails invalid-network-floor 'must be deny or allow' \
-  env METASYSTEM_DISPATCH_PERMISSIONS_NETWORK=sometimes "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id bad-floor
+  env METASYSTEM_DISPATCH_PERMISSIONS_NETWORK=sometimes "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$net_default" --job-id bad-floor
 
 invalid_permissions="$agent_fixture/invalid-permissions.json"
 printf '{"readRoots":["."],"writeRoots":"<worktree>","network":"allow","approvals":"deny","tools":"runtime-default"}\n' >"$invalid_permissions"
@@ -1980,13 +2000,13 @@ agent_fails escaping-write-root 'escapes the job worktree' "$agent_dispatch" dis
 oversized="$agent_fixture/oversized.md"
 make_agent_brief "$oversized" design 'FAKE:oversized-input'
 head -c 70000 /dev/zero | tr '\0' x >>"$oversized"
-agent_fails oversized-input 'pass a file reference' "$agent_dispatch" dispatch --role design-critic --brief "$oversized" --job-id oversized
+agent_fails oversized-input 'pass a file reference' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$oversized" --job-id oversized
 
 # Reap owns process loss, absolute caps, group death, and terminal mirroring.
 process_loss="$agent_fixture/process-loss.md"
 make_agent_brief "$process_loss" design 'FAKE:process-loss'
 set +e
-run_agent_fixture process-loss process-loss "$agent_dispatch" dispatch --role design-critic --brief "$process_loss" --job-id process-loss --wait
+run_agent_fixture process-loss process-loss "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$process_loss" --job-id process-loss --wait
 process_loss_status=$?
 set -e
 [[ $process_loss_status -eq 3 ]] || { echo "process loss mapped to $process_loss_status instead of 3" >&2; exit 1; }
@@ -2004,7 +2024,7 @@ wait_for_agent_census_fresh timed
 (
   set +e
   cd "$agent_repo"
-  scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id timed --cap-min "$fixture_minimum_cap_min" --wait
+  scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$timeout_brief" --job-id timed --cap-min "$fixture_minimum_cap_min" --wait
   printf '%s\n' "$?" >"$timeout_result"
 ) &
 timeout_driver=$!
@@ -2040,7 +2060,7 @@ wait_for_agent_census_fresh cancelled
 (
   set +e
   cd "$agent_repo"
-  scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id cancelled --wait
+  scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$timeout_brief" --job-id cancelled --wait
   printf '%s\n' "$?" >"$cancel_result"
 ) &
 cancel_driver=$!
@@ -2058,7 +2078,7 @@ wait_for_agent_census_fresh vanished
 (
   set +e
   cd "$agent_repo"
-  scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id vanished --wait
+  scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$timeout_brief" --job-id vanished --wait
   printf '%s\n' "$?" >"$vanished_result"
 ) &
 vanished_driver=$!
@@ -2078,14 +2098,14 @@ run_agent_fixture vanished-cancel vanished "$agent_dispatch" cancel --job vanish
 
 cancel_race="$agent_fixture/cancel-race.md"
 make_agent_brief "$cancel_race" design 'FAKE:cancel-race'
-run_agent_fixture_captured cancel-race-dispatch cancel-race /dev/null "$agent_dispatch" dispatch --role design-critic --brief "$cancel_race" --job-id cancel-race
+run_agent_fixture_captured cancel-race-dispatch cancel-race /dev/null "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$cancel_race" --job-id cancel-race
 run_agent_fixture cancel-race-cancel cancel-race "$agent_dispatch" cancel --job cancel-race
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job cancel-race)" == completed ]] \
   || { echo "completion did not win the scripted cancellation race" >&2; exit 1; }
 
 mirror_failure="$agent_fixture/mirror-failure.md"
 make_agent_brief "$mirror_failure" design 'FAKE:mirror-failure'
-run_agent_fixture mirror-retry mirror-retry "$agent_dispatch" dispatch --role design-critic --brief "$mirror_failure" --job-id mirror-retry --wait
+run_agent_fixture mirror-retry mirror-retry "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$mirror_failure" --job-id mirror-retry --wait
 [[ -f "$agent_repo/artifacts/agents/mirror-retry/.mirror-failed" ]] \
   || { echo "scripted first mirror failure did not occur" >&2; exit 1; }
 mirror_retry_record="$agent_repo/artifacts/agents/jobs/mirror-retry.json"
@@ -2117,14 +2137,14 @@ follow_message="$agent_fixture/follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
 
 # Exhaustion precedes successor reservation. Build one severe code-critic
-# chain through round three, prove its first-exhaustion refusal leaves no r4
-# husk, let the implementation successor record that exhaustion, then retry
-# the exact same r4 id successfully.
+# chain through its terminal third round and prove the refusal leaves no
+# fourth-round record or payload. Terminal exhaustion has no successor-reopen
+# path; a human raises the budget or accepts the risk.
 flag_runtime_return="$agent_repo/artifacts/agents/flag-runtime/rounds/1/return.json"
 json_replace_field "$flag_runtime_return" findings \
   '[{"id":"CAP-DRIVER-1","severity":"high","material":true,"claim":"driver cap finding","evidence":"direct fixture evidence"}]'
 json_replace_field "$flag_runtime_return" rigor \
-  '[{"findingId":"CAP-DRIVER-1","rigorClass":"severe","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"reopeningTrigger":"reopen if it recurs"}]'
+  '[{"findingId":"CAP-DRIVER-1","rigorClass":"severe","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"artifact":"metasystem/review-target.txt","reopeningTrigger":"reopen if it recurs"}]'
 run_agent_fixture cap-driver-round2 flag-runtime-r2 "$agent_dispatch" follow-up \
   --job flag-runtime --message "$follow_message" --wait
 run_agent_fixture cap-driver-round3 flag-runtime-r3 "$agent_dispatch" follow-up \
@@ -2136,29 +2156,22 @@ cap_driver_refusal_rc=$?
 set -e
 [[ "$cap_driver_refusal_rc" -ne 0 ]] \
   || { echo "the round-three code critique exhaustion did not refuse" >&2; exit 1; }
-grep -Fq 'implementer follow-up' "$agent_fixture/cap-driver-refusal.out" \
-  || { echo "the round-three refusal did not route through the implementation successor" >&2; exit 1; }
+grep -Fq 'review-round limit is exhausted' "$agent_fixture/cap-driver-refusal.out" \
+  || { echo "the round-three code critique refusal did not report terminal review exhaustion" >&2; exit 1; }
 [[ ! -e "$agent_repo/artifacts/agents/jobs/flag-runtime-r4.json" ]] \
   || { echo "the pre-reservation cap refusal stranded a round-four record" >&2; exit 1; }
 [[ ! -e "$agent_repo/artifacts/agents/flag-runtime/rounds/4" ]] \
   || { echo "the pre-reservation cap refusal stranded a round-four payload" >&2; exit 1; }
-cap_driver_message="$agent_fixture/cap-driver-implementation.md"
-printf 'Address every open finding, including CAP-DRIVER-1.\n' >"$cap_driver_message"
-# This authorized internal mutation leaves the exact state a dispatcher crash
-# would leave after the atomic advance and before reservation. The ordinary
-# follow-up below retries the same successor and must build it once.
-run_agent_fixture cap-driver-advance-before-crash - "$agent_dispatch" \
-  __critique-exhaustion-advance --root-job review-target --role implementer \
-  --message "$cap_driver_message" --successor review-target-r2
-[[ ! -e "$agent_repo/artifacts/agents/jobs/review-target-r2.json" \
-   && ! -e "$agent_repo/artifacts/agents/review-target/rounds/2" ]] \
-  || { echo "the atomic critique advance created successor reservation or payload state" >&2; exit 1; }
-run_agent_fixture cap-driver-implementation review-target-r2 "$agent_dispatch" follow-up \
-  --job review-target --message "$cap_driver_message" --wait
-run_agent_fixture cap-driver-retry flag-runtime-r4 "$agent_dispatch" follow-up \
-  --job flag-runtime-r3 --message "$follow_message" --wait
-[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/flag-runtime-r4.json" --field status)" == completed ]] \
-  || { echo "retrying the refused round-four id did not succeed" >&2; exit 1; }
+set +e
+run_agent_fixture_captured cap-driver-close flag-runtime "$agent_fixture/cap-driver-close.out" \
+  "$agent_dispatch" close --job flag-runtime
+cap_driver_close_rc=$?
+set -e
+[[ "$cap_driver_close_rc" -ne 0 ]] \
+  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind' \
+    "$agent_fixture/cap-driver-close.out" \
+  || { echo "the code critique close refusal did not print its human next steps" >&2; cat "$agent_fixture/cap-driver-close.out" >&2; exit 1; }
+echo "cap-driver terminal exhaustion fixture passed"
 
 # A delegate-shaped process cannot invoke either internal critique mutation.
 # If authority were absent this already-folded retry would return unchanged.
@@ -2184,7 +2197,7 @@ warden_return="$agent_repo/artifacts/agents/cap-warden/rounds/1/return.json"
 json_replace_field "$warden_return" findings \
   '[{"id":"WARDEN-CAP-1","severity":"high","material":true,"claim":"warden cap finding","evidence":"direct fixture evidence"}]'
 json_replace_field "$warden_return" rigor \
-  '[{"findingId":"WARDEN-CAP-1","rigorClass":"severe","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"reopeningTrigger":"reopen if it recurs"}]'
+  '[{"findingId":"WARDEN-CAP-1","rigorClass":"severe","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"artifact":"metasystem/review-target.txt","reopeningTrigger":"reopen if it recurs"}]'
 run_agent_fixture cap-warden-round2 cap-warden-r2 "$agent_dispatch" follow-up \
   --job cap-warden --message "$follow_message" --wait
 run_agent_fixture cap-warden-round3 cap-warden-r3 "$agent_dispatch" follow-up \
@@ -2195,11 +2208,21 @@ run_agent_fixture_captured cap-warden-refusal cap-warden-r4 "$agent_fixture/cap-
 cap_warden_refusal_rc=$?
 set -e
 [[ "$cap_warden_refusal_rc" -ne 0 ]] \
-  && grep -Fq 'warden critique budget exhausted' "$agent_fixture/cap-warden-refusal.out" \
+  && grep -Fq 'review-round limit is exhausted' "$agent_fixture/cap-warden-refusal.out" \
   || { echo "the warden did not follow the code critic cap regime" >&2; cat "$agent_fixture/cap-warden-refusal.out" >&2; exit 1; }
 [[ ! -e "$agent_repo/artifacts/agents/jobs/cap-warden-r4.json" \
    && ! -e "$agent_repo/artifacts/agents/cap-warden/rounds/4" ]] \
   || { echo "the warden cap refusal created a child record or payload" >&2; exit 1; }
+set +e
+run_agent_fixture_captured cap-warden-close cap-warden "$agent_fixture/cap-warden-close.out" \
+  "$agent_dispatch" close --job cap-warden
+cap_warden_close_rc=$?
+set -e
+[[ "$cap_warden_close_rc" -ne 0 ]] \
+  && grep -Fq 'next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind' \
+    "$agent_fixture/cap-warden-close.out" \
+  || { echo "the warden close refusal did not print its human next steps" >&2; cat "$agent_fixture/cap-warden-close.out" >&2; exit 1; }
+echo "cap-warden terminal exhaustion fixture passed"
 # The same contention is exercised on a follow-up chain. Once the first
 # wrapper publishes round two, the second wrapper must claim that same round;
 # it must not turn a live round two into either a chain-lock refusal or round
@@ -2207,7 +2230,8 @@ set -e
 repeat_follow_brief="$agent_fixture/repeat-follow-brief.md"
 make_agent_brief "$repeat_follow_brief" design
 run_agent_fixture repeat-follow-parent repeat-follow "$agent_dispatch" dispatch \
-  --role design-critic --brief "$repeat_follow_brief" --job-id repeat-follow --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$repeat_follow_brief" --job-id repeat-follow --wait
 repeat_follow_release="$agent_fixture/repeat-follow-release"
 repeat_follow_message="$agent_fixture/repeat-follow-message.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$repeat_follow_message"
@@ -2326,7 +2350,7 @@ agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispat
 
 resume_root="$agent_fixture/resume-root.md"
 make_agent_brief "$resume_root" design
-run_agent_fixture resume-root resume-root "$agent_dispatch" dispatch --role design-critic --brief "$resume_root" --job-id resume-root --wait
+run_agent_fixture resume-root resume-root "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$resume_root" --job-id resume-root --wait
 resume_collision="$agent_fixture/resume-collision.md"
 cp "$follow_message" "$resume_collision"
 printf '\nFAKE:resume-collision\n' >>"$resume_collision"
@@ -2340,7 +2364,7 @@ grep -Fq 'resume_collision' "$agent_repo/artifacts/agents/jobs/resume-root-r2.js
 
 active_brief="$agent_fixture/active.md"
 make_agent_brief "$active_brief" design 'FAKE:concurrent-turn'
-run_agent_fixture_captured active-turn-dispatch active-turn /dev/null "$agent_dispatch" dispatch --role design-critic --brief "$active_brief" --job-id active-turn
+run_agent_fixture_captured active-turn-dispatch active-turn /dev/null "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$active_brief" --job-id active-turn
 agent_fails active-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job active-turn --message "$follow_message"
 run_agent_fixture active-turn-cancel active-turn "$agent_dispatch" cancel --job active-turn
 
@@ -2350,7 +2374,7 @@ run_agent_fixture happy-close happy "$agent_dispatch" close --job happy
 agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up --job happy --message "$follow_message"
 
 # A close racing a follow-up cannot land between its open check and child creation.
-run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id close-race --wait
+run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id close-race --wait
 close_rc="$agent_fixture/close-race.close"; follow_rc="$agent_fixture/close-race.follow"
 wait_for_agent_census_fresh close-race-follow
 (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh close --job close-race >/dev/null 2>&1; printf '%s\n' "$?" >"$close_rc") & close_pid=$!
@@ -2431,16 +2455,16 @@ snapshot_dir="$agent_repo/artifacts/agents/capabilities"
 snapshot_save="$agent_fixture/snapshots"
 mkdir -p "$snapshot_save"
 mv "$snapshot_dir"/*.json "$snapshot_save/"
-run_agent_fixture no-snapshot-selfheal no-snapshot "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id no-snapshot --wait
+run_agent_fixture no-snapshot-selfheal no-snapshot "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id no-snapshot --wait
 [[ -n "$(ls "$snapshot_dir"/*.json 2>/dev/null)" ]] \
   || { echo "snapshot self-heal did not re-probe" >&2; exit 1; }
 rm -f "$snapshot_dir"/*.json
 "$fake_adapter" probe --age-days 31 >/dev/null
-run_agent_fixture stale-snapshot-selfheal stale-snapshot "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-snapshot --wait
+run_agent_fixture stale-snapshot-selfheal stale-snapshot "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id stale-snapshot --wait
 # An unhealable miss refuses: break the adapter's probe verb via its
 # fault hook, then dispatch with no matching snapshot.
 rm -f "$snapshot_dir"/*.json
-METASYSTEM_FAKE_PROBE_FAIL=1 "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id unhealable-snapshot >"$agent_fixture/unhealable-snapshot.out" 2>&1 \
+METASYSTEM_FAKE_PROBE_FAIL=1 "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id unhealable-snapshot >"$agent_fixture/unhealable-snapshot.out" 2>&1 \
   && { echo "an unhealable snapshot miss must refuse the dispatch" >&2; exit 1; }
 grep -q 'adapter probe failed' "$agent_fixture/unhealable-snapshot.out" \
   || { echo "the unhealable refusal did not name the failed probe" >&2; cat "$agent_fixture/unhealable-snapshot.out" >&2; exit 1; }
@@ -2502,7 +2526,7 @@ mv "$snapshot_dir"/*.json "$agent_fixture/pre-unverified/" 2>/dev/null || true
 # This refusal is about a runtime that cannot verify a field the envelope
 # restricts, so the envelope has to restrict it. Since the presets now grant
 # network, the request is made restrictive explicitly rather than by default.
-agent_fails unverified-deny 'cannot enforce restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id unverified-deny
+agent_fails unverified-deny 'cannot enforce restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id unverified-deny
 # Merge the network waiver into whatever waivers the role already declares
 # (the shipped roles now waive readRoots/writeRoots for devin), rather than
 # string-injecting a second waivers key and producing invalid JSON.
@@ -2525,7 +2549,7 @@ elif requirements_waivers=$("$engine" json get --file "$requirements" --field wa
 else
   echo "design-critic requirements carry no waivers object to merge into" >&2; exit 1
 fi
-run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
+run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
 cp "$saved_requirements" "$requirements"
 mv "$agent_fixture/pre-unverified"/*.json "$snapshot_dir/" 2>/dev/null || true
 "$fake_adapter" probe >/dev/null
@@ -2571,14 +2595,14 @@ rm -f "$ew_snap"
 
 nested_brief="$agent_fixture/nested.md"
 make_agent_brief "$nested_brief" design 'FAKE:nested-agent-events'
-run_agent_fixture nested-events nested-events "$agent_dispatch" dispatch --role design-critic --brief "$nested_brief" --job-id nested-events --wait
+run_agent_fixture nested-events nested-events "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$nested_brief" --job-id nested-events --wait
 grep -Fq '"topLevel":false' "$agent_repo/artifacts/agents/nested-events/rounds/1/events.jsonl" \
   || { echo "nested-agent event was not captured" >&2; exit 1; }
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job nested-events)" == completed ]] \
   || { echo "nested completion event ended the wrong lifecycle" >&2; exit 1; }
 malicious_brief="$agent_fixture/malicious.md"
 make_agent_brief "$malicious_brief" design 'Fake-Argument: $(touch should-not-exist)'
-run_agent_fixture malicious-argument malicious-argument "$agent_dispatch" dispatch --role design-critic --brief "$malicious_brief" --job-id malicious-argument --wait
+run_agent_fixture malicious-argument malicious-argument "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$malicious_brief" --job-id malicious-argument --wait
 [[ ! -e "$agent_repo/should-not-exist" ]] || { echo "malicious provider argument was evaluated" >&2; exit 1; }
 grep -Fq '$(touch should-not-exist)' "$agent_repo/artifacts/agents/malicious-argument/rounds/1/raw.out" \
   || { echo "malicious provider argument was not transported verbatim as a value" >&2; exit 1; }
@@ -2613,17 +2637,17 @@ run_fixture_arm "dispatcher no-tier re-arm" "$agent_fixture/no-tier-arming.out" 
     --start-time "$agent_main_start" --tag metasystem-main-fake-validator
 
 agent_fails no-tier-model-override 'Configure model.tier.* to rank both pairs' \
-  "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --job-id no-tier-model
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model fake-escalated --job-id no-tier-model
 agent_fails escalation-non-tty 'requires an interactive TTY' \
-  "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-non-tty
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-non-tty
 run_tty_agent_fixture escalation-declined NO 1 \
-  "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-declined
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-declined
 grep -Fq 'escalation approval declined' "$agent_fixture/escalation-declined.out" \
   || { echo "declined escalation fixture did not name the corrective action" >&2; exit 1; }
 [[ ! -e "$agent_repo/artifacts/agents/jobs/escalation-declined.json" ]] \
   || { echo "declined escalation fixture created a job" >&2; exit 1; }
 run_tty_agent_fixture escalation-approved 'APPROVE Fixture Human' 0 \
-  "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-approved --wait
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-approved --wait
 escalation_record="$agent_repo/artifacts/agents/jobs/escalation-approved.json"
 escalation_display="$agent_fixture/escalation-approved.out"
 [[ "$("$engine" json get --file "$escalation_record" --field escalationApproval.name)" == 'Fixture Human' ]] \
@@ -2717,19 +2741,20 @@ printf '{"%s":{"pgid":%s,"command":"metasystem util hold --tag mission-lease-tag
   "$mission_pid" "$mission_pgid" >"$mission_identity"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
 run_agent_fixture envelope-model-override envelope-model-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
-  --role design-critic --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --stream main --wait
+  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --stream main --wait
 run_agent_fixture envelope-runtime-override envelope-runtime-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
   --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id envelope-runtime-override --mission mission-alpha --stream main --wait
 agent_fails envelope-runtime-implied-model 'add fake:fake-implied-model to a signed envelope.dispatch-allow' \
   env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --job-id envelope-runtime-implied --mission mission-alpha --stream main
-run_agent_fixture mission-explicit mission-explicit env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --stream main --wait
+run_agent_fixture mission-explicit mission-explicit env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --stream main --wait
 METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
   METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture \
-  run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --stream main --wait
+  run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id mission-inherited --stream main --wait
 # The caps implementation refuses over-cap mission dispatches with the
 # sharper pair-cap message (names both numbers) instead of the generic
 # lifecycle-fence wrapper; the expectation follows the sharper contract.
-agent_fails mission-cap 'above signed fence.job-cap-min' env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --stream main --cap-min "$fixture_dispatch_over_envelope_cap_min"
+agent_fails mission-cap 'above signed fence.job-cap-min' env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --stream main --cap-min "$fixture_dispatch_over_envelope_cap_min"
 # Under the caps contract an over-cap request is an AUTHORIZATION
 # refusal — a synchronous host error, deliberately without a
 # fence-bound ask (Codex's delegate-caps fixtures assert exactly
@@ -2789,14 +2814,14 @@ make_fence_mission mission-wall 10 10 2 1
 printf '{"schemaVersion":1,"missionId":"mission-wall","startedAt":"2000-01-01T00:00:00Z","cycles":0,"reservations":{}}\n' \
   >"$agent_repo/artifacts/agents/missions/mission-wall/fences.json"
 stamp_fixture_contract mission-wall
-agent_fails fence-wall 'mission fence refused job (wall-clock-hours)' env METASYSTEM_MISSION_TURN=mission-wall-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-wall --mission mission-wall --stream main --wait
+agent_fails fence-wall 'mission fence refused job (wall-clock-hours)' env METASYSTEM_MISSION_TURN=mission-wall-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-wall --mission mission-wall --stream main --wait
 assert_fence_ask mission-wall wall-clock-hours
 
 make_fence_mission mission-cycles 1 10 2 2
 printf '{"schemaVersion":1,"missionId":"mission-cycles","startedAt":"%s","cycles":1,"reservations":{}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >"$agent_repo/artifacts/agents/missions/mission-cycles/fences.json"
 stamp_fixture_contract mission-cycles
-agent_fails fence-cycles 'mission fence refused job (cycles)' env METASYSTEM_MISSION_TURN=mission-cycles-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --stream main --wait
+agent_fails fence-cycles 'mission fence refused job (cycles)' env METASYSTEM_MISSION_TURN=mission-cycles-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --stream main --wait
 assert_fence_ask mission-cycles cycles
 
 make_fence_mission mission-jobs 10 1 2 2
@@ -2804,7 +2829,7 @@ printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
   >"$agent_repo/artifacts/agents/missions/mission-jobs/fences.json"
 stamp_fixture_contract mission-jobs
-agent_fails fence-jobs 'mission fence refused job (jobs)' env METASYSTEM_MISSION_TURN=mission-jobs-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --stream main --wait
+agent_fails fence-jobs 'mission fence refused job (jobs)' env METASYSTEM_MISSION_TURN=mission-jobs-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --stream main --wait
 assert_fence_ask mission-jobs jobs
 
 make_fence_mission mission-concurrency 10 10 1 2
@@ -2812,7 +2837,7 @@ printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","c
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
   >"$agent_repo/artifacts/agents/missions/mission-concurrency/fences.json"
 stamp_fixture_contract mission-concurrency
-agent_fails fence-concurrency 'mission fence refused job (concurrency)' env METASYSTEM_MISSION_TURN=mission-concurrency-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --stream main --wait
+agent_fails fence-concurrency 'mission fence refused job (concurrency)' env METASYSTEM_MISSION_TURN=mission-concurrency-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --stream main --wait
 assert_fence_ask mission-concurrency concurrency
 
 make_fence_mission mission-timeout 10 10 2 2
@@ -2825,7 +2850,7 @@ wait_for_agent_census_fresh mission-timeout-job
   # Same self-heal transient the shared runner retries; this dispatch runs
   # detached from that runner, so it carries the same bounded retry itself.
   for _ in 1 2 3; do
-    output=$(METASYSTEM_MISSION_TURN=mission-timeout-t1-fixture scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --stream main --cap-min "$fixture_minimum_cap_min" --wait 2>&1)
+    output=$(METASYSTEM_MISSION_TURN=mission-timeout-t1-fixture scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --stream main --cap-min "$fixture_minimum_cap_min" --wait 2>&1)
     driver_status=$?
     printf '%s\n' "$output"
     [[ $driver_status -eq 0 ]] && break
@@ -2880,9 +2905,9 @@ done < <(json_elements "$("$engine" json get --file "$mission_alpha_usage" --fie
   || { echo "fake provider unit total is ${mission_usage_fake:-missing}, want 4" >&2; exit 1; }
 [[ "$mission_usage_other" == 5 ]] \
   || { echo "other-provider unit stayed out of its own typed tuple (${mission_usage_other:-missing}, want 5)" >&2; exit 1; }
-agent_fails missing-mission-lease 'does not have a live' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id missing-mission --mission missing
+agent_fails missing-mission-lease 'does not have a live' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id missing-mission --mission missing
 agent_fails ambiguous-mission 'ambiguous mission context' env METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
-  "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-ambiguous --mission another
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id mission-ambiguous --mission another
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/happy.json" --field mission)" == null ]] \
   || { echo "unstamped interactive dispatch gained mission authority" >&2; exit 1; }
 kill "$mission_pid" 2>/dev/null || true

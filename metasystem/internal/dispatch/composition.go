@@ -33,7 +33,8 @@ type rolePacketTable struct {
 }
 
 type rolePacketRecipe struct {
-	Sources []rolePacketSource `json:"sources"`
+	Sources        []rolePacketSource `json:"sources"`
+	ArtifactMember string             `json:"artifactMember,omitempty"`
 }
 
 type rolePacketSource struct {
@@ -184,6 +185,9 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 			return CompositionRecord{}, readErr
 		}
 		appendSource(source.Slot, source.Path, content)
+	}
+	if recipe.ArtifactMember != "" {
+		appendSource("artifact-member", rolePacketTablePath+"#"+p.Role+".artifactMember", []byte(recipe.ArtifactMember+"\n"))
 	}
 	toolNotice := fmt.Sprintf("Permission tool policy: %s\n", p.ToolPolicy)
 	if p.Runtime == "fake" {

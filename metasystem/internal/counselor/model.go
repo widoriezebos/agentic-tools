@@ -129,8 +129,9 @@ type ProcessVsProductTrend struct {
 type RegisterEntryKind string
 
 const (
-	RegisterAcceptedRisk RegisterEntryKind = "accepted-risk"
-	RegisterNearMiss     RegisterEntryKind = "near-miss"
+	RegisterAcceptedRisk      RegisterEntryKind = "accepted-risk"
+	RegisterNearMiss          RegisterEntryKind = "near-miss"
+	RegisterMisclassification RegisterEntryKind = "misclassification"
 )
 
 // RegisterCitation points one specimen fact at a durable record.

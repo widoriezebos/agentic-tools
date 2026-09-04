@@ -82,6 +82,28 @@ func TestVersionThreeAddsCriticRigorRows(t *testing.T) {
 	}
 }
 
+func TestVersionFourAddsArtifactMember(t *testing.T) {
+	out, err := VersionFour(v1Schema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["$comment"] != "metasystem.version=4" {
+		t.Fatalf("version-four marker = %v", out["$comment"])
+	}
+	props := out["properties"].(map[string]any)
+	row := props["rigor"].(map[string]any)["items"].(map[string]any)
+	required := fmt.Sprint(row["required"])
+	if !strings.Contains(required, "artifact") {
+		t.Fatalf("artifact is not required: %s", required)
+	}
+	pattern := row["properties"].(map[string]any)["artifact"].(map[string]any)["pattern"].(string)
+	for _, want := range []string{"NEW ", "=>", "metasystem/"} {
+		if !strings.Contains(pattern, want) {
+			t.Fatalf("artifact pattern %q does not spell %q", pattern, want)
+		}
+	}
+}
+
 func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	root := t.TempDir()
 	schemaDir := filepath.Join(root, "scripts/agents/schemas")
@@ -132,6 +154,16 @@ func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	}
 	if err := Materialize(root, "implementer", 3, filepath.Join(root, "forbidden.json")); err == nil {
 		t.Fatal("version 3 materialized for a non-critic role")
+	}
+	v4Out := filepath.Join(root, "v4.json")
+	if err := Materialize(root, "code-critic", 4, v4Out); err != nil {
+		t.Fatal(err)
+	}
+	var v4 map[string]any
+	data, _ = os.ReadFile(v4Out)
+	_ = json.Unmarshal(data, &v4)
+	if v4["$comment"] != "metasystem.version=4" {
+		t.Fatalf("v4 output missing the marker: %v", v4["$comment"])
 	}
 }
 
@@ -213,8 +245,8 @@ func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
 	for _, role := range roles {
 		output := filepath.Join(t.TempDir(), role+".json")
 		version := 2
-		if VersionThreeRoles[role] {
-			version = 3
+		if VersionFourRoles[role] {
+			version = 4
 		}
 		if err := Materialize(root, role, version, output); err != nil {
 			t.Fatalf("materialize %s: %v", role, err)

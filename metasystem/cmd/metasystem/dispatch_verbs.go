@@ -797,6 +797,8 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.RequestedPair, "requested-pair", "", "requested runtime:model pair")
 	flags.StringVar(&p.CostDirection, "cost-direction", "", "displayed escalation cost direction")
 	flags.StringVar(&p.Reviews, "reviews", "", "implementer job id under review (optional)")
+	flags.StringVar(&p.DeclaredOutputs, "outputs", "", "canonical design outputs file")
+	flags.StringVar(&p.Design, "design", "", "reviewed design file")
 	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
@@ -1480,6 +1482,38 @@ func runDispatchCritiqueOpenFindingIDs(args []string) int {
 	for _, id := range ids {
 		fmt.Println(id)
 	}
+	return 0
+}
+
+func runDispatchCritiqueRegisterClose(args []string) int {
+	flags := flag.NewFlagSet("job critique-register-close", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "checkout root")
+	rootJob := flags.String("root-job", "", "critic root")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
+		fmt.Fprintln(os.Stderr, "job critique-register-close: --root-job is required")
+		return 2
+	}
+	outcome, err := dispatchcore.CritiqueRegisterClose(*repo, *rootJob)
+	if err != nil {
+		return recordExit(err)
+	}
+	fmt.Println(outcome)
+	return 0
+}
+
+func runDispatchCritiqueBudgetRebind(args []string) int {
+	flags := flag.NewFlagSet("job critique-budget-rebind", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "checkout root")
+	rootJob := flags.String("root-job", "", "critic root")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
+		fmt.Fprintln(os.Stderr, "job critique-budget-rebind: --root-job is required")
+		return 2
+	}
+	outcome, err := dispatchcore.CritiqueBudgetRebind(*repo, *rootJob)
+	if err != nil {
+		return recordExit(err)
+	}
+	fmt.Println(outcome)
 	return 0
 }
 

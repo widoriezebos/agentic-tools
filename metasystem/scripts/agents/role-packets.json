@@ -35,6 +35,7 @@
       ]
     },
     "code-critic": {
+      "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/.",
       "sources": [
         {"slot": "role-instructions", "path": "scripts/agents/roles/code-critic.md"},
         {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},
@@ -42,6 +43,7 @@
       ]
     },
     "design-critic": {
+      "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/. The brief carries the declared-output SHA-256 digest.",
       "sources": [
         {"slot": "role-instructions", "path": "scripts/agents/roles/design-critic.md"},
         {"slot": "required-skill", "path": "skills/design-critique/SKILL.md"},
@@ -77,6 +79,7 @@
       ]
     },
     "warden": {
+      "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/.",
       "sources": [
         {"slot": "role-instructions", "path": "scripts/agents/roles/warden.md"},
         {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},

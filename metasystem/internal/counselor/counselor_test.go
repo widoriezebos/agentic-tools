@@ -489,6 +489,50 @@ func TestAcceptedRiskRegisterRejectsIncompleteReferencesAndSortsTies(t *testing.
 	}
 }
 
+func TestSTR3GapRegisterLine(t *testing.T) {
+	root := t.TempDir()
+	stamp := time.Date(2026, 9, 3, 21, 0, 0, 0, time.UTC)
+	err := AppendAcceptedRisk(root, AcceptedRiskAppend{
+		Goal: "goal-a", RootJob: "critic-a", FindingID: "F-1", Class: "severe",
+		Claim: "claim title\nsecond line", Evidence: "first fact\nsecond fact", Why: "human accepted it",
+		OpID: "01K00000000000000000000000-mac-main-12345678", RecordedAt: stamp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, limitations := loadAcceptedRiskRegister(root)
+	if len(entries) != 1 {
+		t.Fatalf("accepted-risk round trip = %+v, limitations=%+v", entries, limitations)
+	}
+	entry := entries[0]
+	if entry.ID != "ar-critic-a-F-1" || entry.Kind != RegisterAcceptedRisk || entry.Class != "severe" || entry.Title != "claim title" || entry.AcceptanceStatus != "accepted" || entry.AcceptanceReason != "human accepted it" || len(entry.SpecimenFacts) != 2 || len(entry.ReviewLinks) != 1 {
+		t.Fatalf("accepted-risk fields changed: %+v", entry)
+	}
+}
+
+func TestSTR4R1MisclassificationKind(t *testing.T) {
+	root := t.TempDir()
+	stamp := time.Date(2026, 9, 3, 21, 0, 0, 0, time.UTC)
+	if err := AppendMisclassification(root, MisclassificationAppend{Goal: "goal-a", OpID: "op-a", From: 1, To: 3, Evidence: "finding:critic/F-1", RecordedAt: stamp}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := loadAcceptedRiskRegister(root)
+	if len(entries) != 1 || entries[0].Kind != RegisterMisclassification || entries[0].AcceptanceStatus != "recorded" {
+		t.Fatalf("misclassification was not admitted: %+v", entries)
+	}
+	path := filepath.Join(root, "records", "counselor", "misclassification-register.jsonl")
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.WriteString("{malformed\n")
+	_ = file.Close()
+	entries, limitations := loadAcceptedRiskRegister(root)
+	if len(entries) != 1 || !hasLimitation(limitations, "Accepted-risk register shape") {
+		t.Fatalf("malformed new-kind line was not excluded with shape limitation: entries=%+v limitations=%+v", entries, limitations)
+	}
+}
+
 func TestGovernedRunReconciliationAndLaunchFailureBoundaries(t *testing.T) {
 	root := t.TempDir()
 	recordTerminalFixture(t, root, "match-goal", "governed-match", run.StatusGreen, "2026-08-11T10:00:00Z", "2026-08-11T10:10:00Z", 10)

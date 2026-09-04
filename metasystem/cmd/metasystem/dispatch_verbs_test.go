@@ -174,7 +174,9 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 		if round == 1 {
 			record["findingRegister"] = []any{}
 			record["findingRegisterRound"] = 0
-			record["boundedCritiqueStart"] = nil
+			record["reviewRoundLimit"] = 3
+			record["criticRoundsConsumed"] = 0
+			record["demotions"] = []any{}
 			record["critiqueExhaustions"] = []any{}
 		}
 		writeTemp(t, jobs, job+".json", record)
@@ -187,6 +189,7 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 			}}
 			rigor = []any{map[string]any{
 				"findingId": "S-1", "rigorClass": "severe", "facts": facts,
+				"artifact":         "metasystem/test.go",
 				"reopeningTrigger": "reopen if the defect recurs",
 			}}
 		}
@@ -221,17 +224,35 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 			"--message", message, "--successor", "critic-r4",
 		})
 	})
-	if code != 0 || strings.TrimSpace(out) != "recorded" {
-		t.Fatalf("exhaustion advance: exit=%d out=%q", code, out)
+	if code != 10 || strings.TrimSpace(out) != "" {
+		t.Fatalf("terminal exhaustion: exit=%d out=%q", code, out)
 	}
 	rootRecord, err := os.ReadFile(filepath.Join(jobs, "critic.json"))
-	if err != nil || !strings.Contains(string(rootRecord), `"successorJobId": "critic-r4"`) {
-		t.Fatalf("exhaustion was not written directly: %v, %s", err, rootRecord)
+	if err != nil || strings.Contains(string(rootRecord), `"successorJobId": "critic-r4"`) {
+		t.Fatalf("terminal exhaustion wrote legacy state: %v, %s", err, rootRecord)
 	}
 	if code := runDispatchCritiqueRegisterAdvance([]string{"--repo", repo}); code != 2 {
 		t.Fatalf("register usage error exit=%d, want 2", code)
 	}
 	if code := runDispatchCritiqueOpenFindingIDs([]string{"--repo", repo}); code != 2 {
 		t.Fatalf("open finding identifiers usage error exit=%d, want 2", code)
+	}
+}
+
+func TestDispatchCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.T) {
+	repo := t.TempDir()
+	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "legacy-critic.json", map[string]any{
+		"jobId": "legacy-critic", "role": "code-critic", "round": 1,
+		"parentJob": nil, "status": "completed",
+	})
+	out, code := captureStdout(t, func() int {
+		return runDispatchCritiqueRegisterClose([]string{"--repo", repo, "--root-job", "legacy-critic"})
+	})
+	if code != 0 || strings.TrimSpace(out) != "closed" {
+		t.Fatalf("register-less close verb = exit %d output %q", code, out)
 	}
 }

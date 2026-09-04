@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -28,6 +29,28 @@ func TestNormalizeDelegateFreshForwardsReviewsForCriticRoles(t *testing.T) {
 	want := []string{"dispatch", "--reviews", "implementer-a", "--role", "code-critic", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL"}
 	if err != nil || mode != "dispatch" || !reflect.DeepEqual(got, want) {
 		t.Fatalf("normalize = %v %s %v, want %v dispatch", got, mode, err, want)
+	}
+}
+
+func TestDelegateDesignCriticWithoutOutputsRefusesAtFrontDoor(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_DELEGATE_ROOT", root)
+	want := "design-critic dispatch requires --outputs <file> and --design <file>"
+	out, code := captureStdout(t, func() int {
+		return runDelegate([]string{
+			"--role", "design-critic", "--brief", "brief.md", "--goal", "goal-a",
+			"--destructive-reach", "DESIGN-BEARING", "--design", "metasystem/plans/design.md",
+		})
+	})
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	if code != 2 || result["detail"] != want {
+		t.Fatalf("missing outputs front-door refusal = exit %d output %q, want %q", code, out, want)
 	}
 }
 
@@ -105,7 +128,7 @@ func TestNormalizeDelegateRevivalUsesTypedPath(t *testing.T) {
 
 func TestNormalizeDelegateAdapterSelftestIsFixedConfiguration(t *testing.T) {
 	got, mode, err := normalizeDelegateArgs([]string{"--adapter-selftest", "fake", "--brief", "brief.md", "--workspace", "/tmp/scratch", "--op", "test-job"})
-	want := []string{"dispatch", "--role", "design-critic", "--brief", "brief.md", "--runtime", "fake", "--workspace", "/tmp/scratch", "--permissions", "none", "--job-id", "test-job", "--destructive-reach", "MECHANICAL"}
+	want := []string{"dispatch", "--role", "implementer", "--brief", "brief.md", "--runtime", "fake", "--workspace", "/tmp/scratch", "--permissions", "none", "--job-id", "test-job", "--destructive-reach", "MECHANICAL"}
 	if err != nil || mode != "dispatch" || !reflect.DeepEqual(got, want) {
 		t.Fatalf("selftest normalize = %v %s %v", got, mode, err)
 	}

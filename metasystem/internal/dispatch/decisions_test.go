@@ -444,6 +444,68 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	}
 }
 
+func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
+	root := t.TempDir()
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.MkdirAll(filepath.Join(workspace, "metasystem", "scripts", "agents", "roles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	design := "metasystem/scripts/agents/roles/design-critic.md"
+	if err := os.WriteFile(filepath.Join(workspace, filepath.FromSlash(design)), []byte("closed design\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
+		{"add", "."}, {"commit", "-qm", "base"},
+	} {
+		command := exec.Command("git", append([]string{"-C", workspace}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	outputs := filepath.Join(tmp, "outputs.txt")
+	if err := os.WriteFile(outputs, []byte("metasystem/a.go\nmetasystem/z.go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	capResolution := filepath.Join(tmp, "cap.json")
+	if err := WriteCapResolution(capResolution, 45, "built-in", "default"); err != nil {
+		t.Fatal(err)
+	}
+	permissions := writeJSONFile(t, tmp, "permissions.json", map[string]any{
+		"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+	output := filepath.Join(tmp, "record.json")
+	if err := BuildRecord(BuildRecordParams{
+		Output: output, Job: "design-critic", Role: "design-critic", Root: root, Runtime: "fake",
+		Workspace: workspace, CapResolution: capResolution, Model: "fake-model",
+		Snapshot: "artifacts/agents/capabilities/fake.json", InputBytes: 12, InputHash: "hash",
+		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		MainID: "main-1", ClaimEpoch: "7", DeclaredOutputs: outputs, Design: design,
+		DestructiveReach: HazardMechanical, ReasoningEffort: "medium",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "stream.jsonl"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record := readJSONFile(t, output)
+	declared, ok := record["declaredOutputs"].([]any)
+	if !ok || len(declared) != 2 || declared[0] != "metasystem/a.go" || declared[1] != "metasystem/z.go" {
+		t.Fatalf("declared outputs = %v", record["declaredOutputs"])
+	}
+	if record["declaredOutputsDigest"] != digestDeclaredOutputs([]string{"metasystem/a.go", "metasystem/z.go"}) {
+		t.Fatalf("declared output digest = %v", record["declaredOutputsDigest"])
+	}
+	source, _ := record["declaredOutputsSource"].(string)
+	objectID := strings.TrimPrefix(source, design+"@")
+	if !strings.HasPrefix(source, design+"@") || !gitObjectIDRe.MatchString(objectID) {
+		t.Fatalf("declared output source = %q", source)
+	}
+	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 3 {
+		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
+	}
+}
+
 func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("runtime.claude.maximal-models=claude-fable-5\n"), 0o644); err != nil {
@@ -824,25 +886,14 @@ func TestCritiqueExhaustionDesignCritic(t *testing.T) {
 
 	named := filepath.Join(dir, "named.md")
 	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
-	action, err := CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
-	if err != nil || action != "recorded" {
-		t.Fatalf("enumerated successor = %q, %v", action, err)
+	_, err = CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
+	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") {
+		t.Fatalf("severe terminal boundary = %v", err)
 	}
 	root := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", "crit.json"))
 	entries := root["critiqueExhaustions"].([]any)
-	entry := entries[0].(map[string]any)
-	if entry["successorJobId"] != "crit-r4" {
-		t.Fatalf("owned root entry = %v", entry)
-	}
-
-	// A recorded second exhaustion at a different round refuses outright.
-	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
-	rootRecord := readJSONFile(t, filepath.Join(jobs, "crit.json"))
-	rootRecord["critiqueExhaustions"] = []any{map[string]any{"round": 6, "successorJobId": "other"}}
-	writeRecord(filepath.Join(jobs, "crit.json"), rootRecord)
-	_, err = CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
-	if err == nil || !strings.Contains(err.Error(), "second critique exhaustion") {
-		t.Fatalf("second exhaustion = %v", err)
+	if len(entries) != 0 {
+		t.Fatalf("terminal boundary wrote a legacy exhaustion: %v", entries)
 	}
 }
 
@@ -981,29 +1032,20 @@ func TestCritiqueExhaustionCodeCriticChain(t *testing.T) {
 	agents := filepath.Join(repo, "artifacts", "agents")
 	writeCapRound(t, repo, "critic", "code-critic", 1, false,
 		[]any{registerFindingValue("F-10", true, "direct evidence")}, []any{registerRigor("F-10", "severe")})
+	writeCapRound(t, repo, "critic", "code-critic", 2, false, []any{}, []any{})
+	writeCapRound(t, repo, "critic", "code-critic", 3, false, []any{}, []any{})
 	rootPath := filepath.Join(agents, "jobs", "critic.json")
 	rootRecord := readJSONFile(t, rootPath)
 	rootRecord["reviews"] = "impl"
 	writeRecord(rootPath, rootRecord)
-	writeCapRound(t, repo, "critic", "code-critic", 2, false, []any{}, []any{})
-	writeCapRound(t, repo, "critic", "code-critic", 3, false, []any{}, []any{})
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "impl.json", map[string]any{"jobId": "impl", "role": "implementer", "round": 1, "status": "completed"})
 	message := filepath.Join(t.TempDir(), "m.md")
 	os.WriteFile(message, []byte("Fix F-10 in the implementation follow-up.\n"), 0o644)
 
-	// A critic-owned successor is refused toward the implementer follow-up.
+	// A severe entry at the frozen boundary is a human raise; no successor
+	// reopens the chain implicitly.
 	_, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
-	if err == nil || !strings.Contains(err.Error(), "implementer follow-up") {
-		t.Fatalf("critic-owned successor = %v", err)
-	}
-
-	// A recorded implementer successor reopens the critic budget: none.
-	rootRecord = readJSONFile(t, filepath.Join(agents, "jobs", "critic.json"))
-	rootRecord["critiqueExhaustions"] = []any{map[string]any{
-		"round": 3, "openFindingIds": []any{"F-10"}, "successorJobId": "impl-r2",
-	}}
-	writeRecord(filepath.Join(agents, "jobs", "critic.json"), rootRecord)
-	action, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
-	if err != nil || action != "none" {
-		t.Fatalf("recorded implementer successor should reopen: action=%q err=%v", action, err)
+	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") {
+		t.Fatalf("code-critic terminal boundary = %v", err)
 	}
 }

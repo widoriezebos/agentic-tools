@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -124,5 +125,59 @@ func TestCritiqueClosedOutOfScopeCitesTheBrief(t *testing.T) {
 		`{"findings":[{"id":"f-1","material":true}]}`, cited)
 	if violations := CritiqueClosed(findings2, dispositions2); len(violations) != 0 {
 		t.Fatalf("a scope-citing out-of-scope closes a material finding: %v", violations)
+	}
+}
+
+func TestCritiqueClosedWithRegisterPersistsOutOfScope(t *testing.T) {
+	findings, dispositions := critiqueFixture(t,
+		`{"findings":[{"id":"f-1","material":true}]}`,
+		`# Dispositions
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| f-1 | out-of-scope | the brief's scope excludes this platform | none |
+`)
+	repo := t.TempDir()
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	digest := strings.Repeat("a", 64)
+	record := map[string]any{
+		"jobId": "critic", "role": "code-critic",
+		"findingRegister": []any{map[string]any{
+			"findingId": "f-1", "critic": "critic", "rigorClass": "bounded",
+			"factsDigest": digest, "facts": map[string]any{"local": true},
+			"artifact": "metasystem/test.go", "title": "outside supported platform",
+			"status": "open", "resolution": "", "decisionOpid": "",
+			"evidence": "platform evidence", "evidenceDigest": digest, "multiplicity": 1,
+		}},
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, rootPath, string(data))
+
+	if violations := CritiqueClosedWithRegister(findings, dispositions, repo, "critic"); len(violations) != 0 {
+		t.Fatalf("register-backed close = %v", violations)
+	}
+	var persisted map[string]any
+	if err := json.Unmarshal([]byte(readFile(t, rootPath)), &persisted); err != nil {
+		t.Fatal(err)
+	}
+	entry := persisted["findingRegister"].([]any)[0].(map[string]any)
+	if entry["status"] != "resolved" || entry["resolution"] != "out-of-scope" {
+		t.Fatalf("out-of-scope disposition was not persisted: %v", entry)
+	}
+
+	invalidFindings, invalidDispositions := critiqueFixture(t,
+		`{"findings":[{"id":"f-2","material":true}]}`,
+		`# Dispositions
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| f-2 | noted | unresolved | none |
+`)
+	violations := CritiqueClosedWithRegister(invalidFindings, invalidDispositions, repo, "critic")
+	if len(violations) == 0 || !strings.Contains(strings.Join(violations, "\n"), "cannot use disposition 'noted'") {
+		t.Fatalf("ordinary join violation was not preserved: %v", violations)
 	}
 }

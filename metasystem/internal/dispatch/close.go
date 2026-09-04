@@ -33,6 +33,51 @@ func CloseCheck(repoRoot, root string) error {
 	if err != nil {
 		return fmt.Errorf("cannot close an unmirrored chain")
 	}
+	if register, present, decodeErr := critiqueFindingRegister(rootRecord); present {
+		if decodeErr != nil {
+			return fmt.Errorf("cannot close a malformed critique register: %v", decodeErr)
+		}
+		foldedRound, roundErr := findingRegisterRound(rootRecord, len(register))
+		if roundErr != nil {
+			return fmt.Errorf("cannot close a critique register with malformed round state: %v", roundErr)
+		}
+		var terminalRound int64
+		for _, member := range members {
+			role := asString(member.record["role"])
+			if role != "design-critic" && role != "code-critic" && role != "warden" {
+				continue
+			}
+			round, ok := numInt(member.record["round"])
+			if !ok || round < 1 {
+				return fmt.Errorf("cannot close a critic chain with an invalid round number")
+			}
+			if round > terminalRound {
+				terminalRound = round
+			}
+		}
+		if terminalRound != foldedRound {
+			return fmt.Errorf("cannot close a critic chain whose register is folded through round %d while terminal round %d exists", foldedRound, terminalRound)
+		}
+		var blockers []string
+		var severeBlocker bool
+		for _, finding := range register {
+			if finding.Status == "open" || finding.Status == "disputed" {
+				blockers = append(blockers, fmt.Sprintf("cannot close with unresolved finding %s artifact=%s", finding.FindingID, finding.Artifact))
+				severeBlocker = severeBlocker || finding.RigorClass == "severe" || finding.RigorClass == "unproven"
+			}
+			if finding.Resolution == "out-of-scope" && (finding.RigorClass == "severe" || finding.RigorClass == "unproven") {
+				blockers = append(blockers, fmt.Sprintf("cannot close severe or unproven finding %s artifact=%s as out-of-scope", finding.FindingID, finding.Artifact))
+				severeBlocker = true
+			}
+		}
+		if len(blockers) > 0 {
+			next := ""
+			if severeBlocker {
+				next = "; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind"
+			}
+			return fmt.Errorf("%s%s", strings.Join(blockers, "\n"), next)
+		}
+	}
 	mirror, ok := rootRecord["mirror"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("cannot close an unmirrored chain")

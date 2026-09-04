@@ -18,7 +18,7 @@ unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios return-schema \
-    "return schema version 1, version 2, and critic version 3 fixtures passed" \
+    "return schema version 1, version 2, and critic versions 3 and 4 fixtures passed" \
     "$fixture_bed_script" implementer-v1-v2 critic-v3
 fi
 
@@ -265,12 +265,18 @@ expect_v3_refusal duplicate-finding-id "$duplicate_ids" 2 "$bounded_row" \
   --output "$fixture/code-critic-v1.schema.json"
 "$ms" schema materialize --root "$root" --role code-critic --version 2 \
   --output "$fixture/code-critic-v2.schema.json"
+"$ms" schema materialize --root "$root" --role code-critic --version 4 \
+  --output "$fixture/code-critic-v4.schema.json"
 [[ "$("$ms" util sha256 --file "$fixture/code-critic-v1.schema.json")" == \
    fe4ec2d623507feed6a5dbbdf6e4040ced855348d111f79e43ced4129a96943c ]] \
   || { echo "version-1 critic schema bytes changed" >&2; exit 1; }
 [[ "$("$ms" util sha256 --file "$fixture/code-critic-v2.schema.json")" == \
    6161117b74d84c34941d0181030b99108869421b2044b8bf80b539ee26e33056 ]] \
   || { echo "version-2 critic schema bytes changed" >&2; exit 1; }
+grep -Fq '"artifact"' "$fixture/code-critic-v4.schema.json" \
+  && grep -Fq '"enum": [' "$fixture/code-critic-v4.schema.json" \
+  && grep -Fq '4' "$fixture/code-critic-v4.schema.json" \
+  || { echo "version-4 critic schema omitted the artifact member or version marker" >&2; exit 1; }
 
 cat >"$fixture/fake-critic-record.json" <<'JSON'
 {"jobId":"fake-critic-v3","round":1,"role":"code-critic","sessionId":"fake-session",

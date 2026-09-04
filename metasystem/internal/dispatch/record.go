@@ -73,6 +73,7 @@ var immutableFields = map[string]bool{
 	"composition": true, "sliceApprovalClaim": true, "destructiveReach": true,
 	"configurationObligations": true, "launchCapability": true,
 	"aliasedFrom": true, "rosterAliasedFrom": true,
+	"declaredOutputs": true, "declaredOutputsDigest": true, "declaredOutputsSource": true,
 }
 
 // Owned metadata has a dedicated read-decide-write operation whose lock
@@ -81,7 +82,10 @@ var immutableFields = map[string]bool{
 var dedicatedMetadataFields = map[string]bool{
 	"findingRegister":           true,
 	"findingRegisterRound":      true,
-	"boundedCritiqueStart":      true,
+	"reviewRoundLimit":          true,
+	"criticRoundsConsumed":      true,
+	"demotions":                 true,
+	"critiqueBudgetBinding":     true,
 	"critiqueExhaustions":       true,
 	"independentCritiqueJobRef": true,
 	"liveProofEvidenceRef":      true,

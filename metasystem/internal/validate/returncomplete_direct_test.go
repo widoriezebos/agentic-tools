@@ -163,6 +163,23 @@ func TestReturnCompleteRoleVersionThreeRigorJoin(t *testing.T) {
 	}
 }
 
+func TestReturnCompleteRoleVersionFourRequiresCanonicalArtifact(t *testing.T) {
+	root := returnRoot(t)
+	path := filepath.Join(root, "return.json")
+	finding := `[{"id":"F1","severity":"high","material":true,"claim":"claim","evidence":"read"}]`
+	row := `[{"findingId":"F1","rigorClass":"bounded","facts":` + v3Facts() + `,"reopeningTrigger":"reopen","artifact":"metasystem/a.go"}]`
+	value := strings.Replace(v3CriticReturn(finding, row, 1), `"schemaVersion": 3`, `"schemaVersion": 4`, 1)
+	os.WriteFile(path, []byte(value), 0o644)
+	if violations := ReturnCompleteRole(root, "design-critic", path); len(violations) != 0 {
+		t.Fatalf("lawful version-four return = %v", violations)
+	}
+	missing := strings.Replace(value, `,"artifact":"metasystem/a.go"`, "", 1)
+	os.WriteFile(path, []byte(missing), 0o644)
+	if violations := strings.Join(ReturnCompleteRole(root, "design-critic", path), "\n"); !strings.Contains(violations, "artifact is required") {
+		t.Fatalf("missing artifact refusal = %s", violations)
+	}
+}
+
 func TestReturnCompleteRoleVersionThreeRefusesUnjoinableRigor(t *testing.T) {
 	root := returnRoot(t)
 	path := filepath.Join(root, "return.json")

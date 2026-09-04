@@ -75,7 +75,7 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   role=$(field "$record" role)
   schema_version=2
   case "$role" in
-    design-critic|code-critic|warden) schema_version=3 ;;
+    design-critic|code-critic|warden) schema_version=4 ;;
   esac
   schema="$round_dir/return-schema.v${schema_version}.json"
   "$ms" schema materialize --root "$root" --role "$role" \

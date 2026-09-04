@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
 var dispositionsHeader = []string{"Finding id", "Disposition", "Reasoning and evidence", "Amendment"}
@@ -47,6 +50,34 @@ func CritiqueClosed(findingsPath, dispositionsPath string) []string {
 		}
 	}
 	return violations
+}
+
+// CritiqueClosedWithRegister performs the ordinary join, then persists the
+// bounded out-of-scope dispositions in one dispatch-owned register write.
+func CritiqueClosedWithRegister(findingsPath, dispositionsPath, repoRoot, rootJob string) []string {
+	violations := CritiqueClosed(findingsPath, dispositionsPath)
+	if len(violations) != 0 {
+		return violations
+	}
+	var parseViolations []string
+	add := func(format string, args ...any) {
+		parseViolations = append(parseViolations, fmt.Sprintf(format, args...))
+	}
+	_, dispositions, ok := readDispositions(dispositionsPath, add)
+	if !ok || len(parseViolations) != 0 {
+		return parseViolations
+	}
+	var ids []string
+	for id, disposition := range dispositions {
+		if disposition == "out-of-scope" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	if err := dispatch.CritiqueRegisterResolveOutOfScope(repoRoot, rootJob, ids); err != nil {
+		return []string{err.Error()}
+	}
+	return nil
 }
 
 // readFindings parses the return JSON down to a first-wins id-to-material

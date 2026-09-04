@@ -1,7 +1,11 @@
 // Package critique owns the rigor classification of material critic findings.
 package critique
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
 
 // RigorClass determines how a material finding constrains later critique.
 type RigorClass string
@@ -30,6 +34,54 @@ type RigorRow struct {
 	RigorClass       RigorClass    `json:"rigorClass"`
 	Facts            EvidenceFacts `json:"facts"`
 	ReopeningTrigger string        `json:"reopeningTrigger"`
+	Artifact         string        `json:"artifact"`
+}
+
+type ArtifactRefKind uint8
+
+const (
+	ArtifactPath ArtifactRefKind = iota + 1
+	ArtifactNew
+	ArtifactRename
+)
+
+type ArtifactRef struct {
+	Kind           ArtifactRefKind
+	Path, Old, New string
+}
+
+var artifactControlPattern = regexp.MustCompile(`[\x00-\x1f\x7f]`)
+
+func validArtifactPath(path string) bool {
+	if !strings.HasPrefix(path, "metasystem/") || strings.TrimSpace(path) != path || strings.Contains(path, "\\") || strings.Contains(path, "=>") || artifactControlPattern.MatchString(path) {
+		return false
+	}
+	segments := strings.Split(path, "/")
+	if len(segments) < 2 {
+		return false
+	}
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func ParseArtifactRef(value string) (ArtifactRef, error) {
+	if validArtifactPath(value) {
+		return ArtifactRef{Kind: ArtifactPath, Path: value}, nil
+	}
+	if strings.HasPrefix(value, "NEW ") {
+		path := strings.TrimPrefix(value, "NEW ")
+		if validArtifactPath(path) {
+			return ArtifactRef{Kind: ArtifactNew, Path: path}, nil
+		}
+	}
+	if oldPath, newPath, found := strings.Cut(value, "=>"); found && validArtifactPath(oldPath) && validArtifactPath(newPath) {
+		return ArtifactRef{Kind: ArtifactRename, Old: oldPath, New: newPath}, nil
+	}
+	return ArtifactRef{}, fmt.Errorf("artifact must be <path>, NEW <path>, or <old>=><new> with paths beginning metasystem/")
 }
 
 // Valid reports whether the class is one of the wire protocol's declared

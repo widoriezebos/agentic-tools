@@ -143,6 +143,98 @@ func TestGoalSetObligationTemporaryWordFlagsTravelTogether(t *testing.T) {
 	}
 }
 
+func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	finding := func(id, class string) map[string]any {
+		return map[string]any{
+			"findingId": id, "critic": "critic", "rigorClass": class,
+			"factsDigest": strings.Repeat("a", 64), "facts": map[string]any{"local": true},
+			"artifact": "metasystem/in.go", "title": class + " finding", "status": "open",
+			"resolution": "", "decisionOpid": "", "evidence": "direct proof",
+			"evidenceDigest": strings.Repeat("b", 64), "multiplicity": 1,
+		}
+	}
+	rootRecord := map[string]any{
+		"jobId": "critic", "role": "design-critic", "round": 1, "parentJob": nil,
+		"status": "completed", "goalId": "standing-validation", "findingRegisterRound": 1,
+		"reviewRoundLimit": 3, "criticRoundsConsumed": 3, "demotions": []any{},
+		"findingRegister": []any{finding("S-1", "severe")},
+	}
+	writeTemp(t, jobs, "critic.json", rootRecord)
+	base := []string{
+		"--root", root, "--id", "standing-validation", "--finding", "S-1", "--chain", "critic",
+		"--by", "Wido", "--why", "human accepts the bounded exposure", "--lineage", "m1",
+	}
+	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
+	stderr, code := captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(paired, fixedTemporaryGoalAuthority) })
+	if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
+		t.Fatalf("unpaired authority flags = exit %d stderr %q", code, stderr)
+	}
+
+	args := append(paired, "--review-by", "2026-09-06")
+	var stdout string
+	stderr, code = captureStderr(t, func() int {
+		stdout, code = captureStdout(t, func() int { return runGoalAcceptRiskWithAuthority(args, fixedTemporaryGoalAuthority) })
+		return code
+	})
+	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+		t.Fatalf("accepted-risk verb = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+
+	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
+	goalText := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	if !strings.Contains(goalText, "- AcceptedRisk: finding=S-1 chain=critic by=Wido opid=") {
+		t.Fatalf("goal transaction did not land first:\n%s", goalText)
+	}
+	counselorPath := filepath.Join(root, "records", "counselor", "accepted-risk-register.jsonl")
+	counselorText, err := os.ReadFile(counselorPath)
+	if err != nil || !strings.Contains(string(counselorText), `"id":"ar-critic-S-1"`) || !strings.Contains(string(counselorText), `"kind":"accepted-risk"`) {
+		t.Fatalf("counselor append did not land second: err=%v text=%s", err, counselorText)
+	}
+	recordData, err := os.ReadFile(filepath.Join(jobs, "critic.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(recordData, &record); err != nil {
+		t.Fatal(err)
+	}
+	register := record["findingRegister"].([]any)
+	entry := register[0].(map[string]any)
+	opid, _ := entry["decisionOpid"].(string)
+	if entry["status"] != "accepted-risk" || entry["resolution"] != "accepted-risk" || opid == "" || !strings.Contains(goalText, "opid="+opid) || !strings.Contains(string(counselorText), "opid="+opid) {
+		t.Fatalf("root register write did not land third with the shared operation id: entry=%v counselor=%s", entry, counselorText)
+	}
+	closeOut, closeCode := captureStdout(t, func() int {
+		return runDispatchCritiqueRegisterClose([]string{"--repo", root, "--root-job", "critic"})
+	})
+	if closeCode != 0 || strings.TrimSpace(closeOut) != "closed" {
+		t.Fatalf("accepted-risk chain did not close: exit %d output %q", closeCode, closeOut)
+	}
+
+	boundedRoot := map[string]any{
+		"jobId": "bounded", "role": "design-critic", "round": 1, "parentJob": nil,
+		"status": "completed", "goalId": "standing-validation", "findingRegisterRound": 1,
+		"reviewRoundLimit": 3, "criticRoundsConsumed": 3, "demotions": []any{},
+		"findingRegister": []any{finding("B-1", "bounded")},
+	}
+	writeTemp(t, jobs, "bounded.json", boundedRoot)
+	boundedArgs := []string{
+		"--root", root, "--id", "standing-validation", "--finding", "B-1", "--chain", "bounded",
+		"--by", "Wido", "--why", "not applicable", "--lineage", "m1",
+		"--temporary-human-word", "Wido accepts this bounded risk", "--review-by", "2026-09-06",
+	}
+	stderr, code = captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(boundedArgs, fixedTemporaryGoalAuthority) })
+	if code != 1 || !strings.Contains(stderr, "bounded findings defer at close, not by acceptance") {
+		t.Fatalf("bounded finding acceptance = exit %d stderr %q", code, stderr)
+	}
+}
+
 func TestGoalTemporaryAuthorityRefusesPastAndBeyondHorizon(t *testing.T) {
 	for _, test := range []struct {
 		name     string

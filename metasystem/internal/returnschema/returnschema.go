@@ -24,6 +24,8 @@ var VersionThreeRoles = map[string]bool{
 	"code-critic": true, "design-critic": true, "warden": true,
 }
 
+var VersionFourRoles = VersionThreeRoles
+
 // VersionTwo returns the v2 form of a v1 schema: a version marker, the
 // schemaVersion and claimed members added to properties and required, and the
 // model's effective field. Every property is listed in required and "nothing
@@ -91,6 +93,27 @@ func VersionThree(schema map[string]any) (map[string]any, error) {
 	return value, nil
 }
 
+// VersionFour adds the artifact membership claim to critic rigor rows.
+func VersionFour(schema map[string]any) (map[string]any, error) {
+	value, err := VersionThree(schema)
+	if err != nil {
+		return nil, err
+	}
+	value["$comment"] = "metasystem.version=4"
+	title, _ := value["title"].(string)
+	value["title"] = strings.TrimSuffix(title, " version 3") + " version 4"
+	properties := value["properties"].(map[string]any)
+	properties["schemaVersion"] = map[string]any{"type": "integer", "enum": []any{4}}
+	items := properties["rigor"].(map[string]any)["items"].(map[string]any)
+	items["required"] = append(items["required"].([]any), "artifact")
+	segment := `(?:[^./\\\r\n][^/\\\r\n]*|\.[^./\\\r\n][^/\\\r\n]*|\.\.[^/\\\r\n]+)`
+	path := `metasystem/(?:` + segment + `/)*` + segment
+	items["properties"].(map[string]any)["artifact"] = map[string]any{
+		"type": "string", "pattern": `^(?:` + path + `|NEW ` + path + `|` + path + `=>` + path + `)$`,
+	}
+	return value, nil
+}
+
 func rigorSchema() map[string]any {
 	boolean := func() map[string]any { return map[string]any{"type": "boolean"} }
 	factProperties := map[string]any{
@@ -147,6 +170,13 @@ func Materialize(root, role string, version int, outputPath string) error {
 			return fmt.Errorf("schema version 3 is only available for critic roles")
 		}
 		if schema, err = VersionThree(schema); err != nil {
+			return err
+		}
+	} else if version == 4 {
+		if !VersionFourRoles[role] {
+			return fmt.Errorf("schema version 4 is only available for critic roles")
+		}
+		if schema, err = VersionFour(schema); err != nil {
 			return err
 		}
 	}
