@@ -16,7 +16,8 @@ ledger 1dee9746), tier 3, box 1d/10/1200m/1/3 from the norm. Every cite below
 is re-read at main dbe1b41e. Companion goals: answer-archive (harvests
 the inbox; sequenced after), channel-poll-not-automatic (tier 1, the
 steward runs the poll), channel-budget-answer-binds-nothing (m2,
-building: a budget answer re-approves the goal),
+done 2026-09-04: a verified budget answer with the token re-approves
+the goal),
 channel-code-verified-at-poll-time (done: the code is checked against
 the message's own send time).
 
@@ -106,7 +107,12 @@ local write, poll.go:247-257). The new order for one received update:
 (1) build the inbound record, verify identity and code (FCG-COMMIT-05),
 (2) Publish it, (3) on confirmed OR already-applied, call getUpdates
 with offset = update_id+1, timeout 0, limit 1, which is Telegram's
-acknowledgement, (4) then write the local cursor. A machine that dies
+acknowledgement, (4) then write the local cursor. Telegram's offset
+acknowledges EVERY update with a lower id, so a batch is handled in
+update_id order and the offset sent at (3) is one past the highest id
+whose every lower id in the batch is committed; an update that fails
+to commit (ledger unreachable, validator refusal) stops the prefix and
+nothing past it is confirmed, so it comes again. A machine that dies
 after (2) and before (3) has committed the message; the next poller on
 any machine receives the same update, finds it committed at step (2)
 and performs (3). A machine that dies before (2) confirmed nothing.
@@ -209,7 +215,7 @@ says "Reply in this thread with this token verbatim".
 This point and channel-budget-answer-binds-nothing (m2) touch the same
 verb from two sides: m2 makes a verified budget answer WITH the token
 re-approve; this point makes an answer WITHOUT the token bind nothing.
-The build here lands after m2's chain and rebases on it.
+m2's chain is landed; the build here starts from it.
 
 ### FCG-READ-08: every machine reads answers from the inbox; posting is direct
 
@@ -284,7 +290,7 @@ Tier 3, Wido's box. Build order: (1) ledger records and validator with
 `channel ask` writing both (goal + channel packages); (2) receive rule
 and idempotent commit in Poll, the 409 split, the offset-after-commit;
 (3) matching and the atomic answer; (4) FCG-WORD-07, after m2's
-channel-budget-answer-binds-nothing lands; (5) the listener and the
+channel-budget-answer-binds-nothing (done) is in the base; (5) the listener and the
 runner goroutine; (6) `channel wait` on the fetched tip and the
 tokenless-machine post; (7) status block and compact; fixtures grow
 with each. One design critique round before (1); one closing code
