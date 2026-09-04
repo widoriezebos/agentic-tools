@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (a message and a preflight check in an existing script): build, run dispatch-fixtures.sh, land as a declared direct fix; box 1h/3/60m/1. Waits for human approval for execution.
 - OpenedAt: 2026-09-03T20:24:20Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - Approved: by=human:Wido at=2026-09-04T06:15:12Z revision=3 opid=2XT3B14KGQF597176KWJB51X6K-m2-5fcf08ab authority=relayed digest=fc17a2a86d8a9c0216832b93c480ecdd857ed9a8f19d037f818b9428b2334973 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=4 at=2026-09-04T09:53:11Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T09:53:01Z revision=4
 - StopCapability: generation=4 revision=4 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-04T06:14:46Z WVTVAX6E4VTM6GM0VBJMR6RJ24-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=dispatch-engine-script-skew-silent-exit
 - 2026-09-04T06:15:12Z 2XT3B14KGQF597176KWJB51X6K-m2-5fcf08ab approve actor=human:Wido targets=dispatch-engine-script-skew-silent-exit authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="the bugs yu mentioned are approved to fix too"
 - 2026-09-04T09:53:01Z DQDEBAC5VES1M4DG1SRWMT0QVG-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=dispatch-engine-script-skew-silent-exit
-Integrity: sha256=c6d4a1df54d718012fa219f5fe4f002e16756e428d23e877fadbcbbbd2a0364a
+- 2026-09-04T09:53:11Z JCPP8409XZFXNGBBKP81WEG4FD-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=dispatch-engine-script-skew-silent-exit
+Integrity: sha256=e875a7c5a0612e9171196929df130e4387fbe745fca86d1a7ec251881af04544
