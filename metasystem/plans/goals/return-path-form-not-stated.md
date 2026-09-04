@@ -6,11 +6,12 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (a prompt sentence and one normalization in the return validator with its test): build, go test ./internal/returnschema/... ./internal/dispatch/..., land through a chain; box 1h/3/60m/1. Waits for human approval for execution.
 - OpenedAt: 2026-09-04T10:09:41Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T16:28:01Z revision=2 opid=YB558NZ1FPCN00GF93FTJR6PEK-m2-5fcf08ab authority=relayed digest=62ffc627b05630720edcf332178ff866484a2c5b0a3a5ab222ccbfde413c5b29 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T16:28:48Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T16:28:06Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-04T10:09:41Z HCPAT9EXDY5D0WGNG0BF4JB31K-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=return-path-form-not-stated
 - 2026-09-04T16:28:01Z YB558NZ1FPCN00GF93FTJR6PEK-m2-5fcf08ab approve actor=human:Wido targets=return-path-form-not-stated authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T16:28:06Z SBBCYA2B31F887SN6GXJ73G62D-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=return-path-form-not-stated
-Integrity: sha256=1d527fbfafa4dd223b41bc9828e75724527a5c0886764a6733c68749bc382e88
+- 2026-09-04T16:28:48Z NFR2ARQVKWYHM67ETF43F78BCW-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=return-path-form-not-stated
+Integrity: sha256=1e97c5ca4c7d94bb2b989b186e3117a6f3fbf75730b4003da56d002830e2a47a
