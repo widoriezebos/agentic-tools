@@ -482,7 +482,7 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 					norm = f.NormApproval
 				} else {
 					var normErr error
-					norm, normErr = goalNormApproval(r.Endpoint.Root, t, f, *nextBudget, r.ApprovedRef)
+					norm, normErr = goalNormApproval(r.Endpoint.Root, t, f, *nextBudget, r.ApprovedRef, proof)
 					if normErr != nil {
 						return nil, normErr
 					}

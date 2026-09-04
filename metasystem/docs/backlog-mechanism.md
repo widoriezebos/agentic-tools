@@ -32,6 +32,7 @@ close admission, naming the exact record that needs repair. No refused
 dispatch creates a job record.
 
 A verified channel answer is human approval proof only when the configured human user supplied the exact goal-bound token with a code valid at send time; its question or status thread, message reference, user, and code step are recorded with the goal operation, without the review date required by a relayed console word.
+An exact verified answer to a `budget-above-norm` question re-approves the goal with the question's complete proposed box, including when an earlier verified answer already raised that goal's box.
 
 Health judges claimed goals only. A claimed goal without the tuple is
 dead under `claimed-goal-appetite` and names this remedy:

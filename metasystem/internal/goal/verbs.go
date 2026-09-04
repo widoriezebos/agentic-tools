@@ -710,7 +710,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			if f.Approved != nil && f.Budget != nil && *f.Budget == budget && r.ApprovedRef == "" && f.Claimed.Revision > 0 {
 				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
 			}
-			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef)
+			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef, proof)
 			if err != nil {
 				return nil, err
 			}

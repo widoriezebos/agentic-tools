@@ -229,7 +229,14 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 			return result, e
 		}
 		opid := goal.Opid(ulid, c.Machine, c.Lineage)
-		q.Answer = &Answer{Text: answer, UserID: in.UserID, Ref: in.Ref, At: c.Now, Step: step, ULID: ulid, Opid: opid, Phase: "matched"}
+		approvalULID := ""
+		if q.Kind == "budget-above-norm" && strings.TrimSpace(answer) == q.Wants {
+			approvalULID, e = goal.NewOperationULID()
+			if e != nil {
+				return result, e
+			}
+		}
+		q.Answer = &Answer{Text: answer, UserID: in.UserID, Ref: in.Ref, At: c.Now, Step: step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
 		q.State = "answered"
 		if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
 			return result, err
@@ -348,6 +355,21 @@ func advanceAnswer(ctx context.Context, c PollConfig, q *Question) error {
 		if published.Outcome != goal.OutcomeConfirmed {
 			return fmt.Errorf("goal answer was not confirmed: %s", published.Detail)
 		}
+		if q.Kind == "budget-above-norm" && strings.TrimSpace(a.Text) == q.Wants {
+			recorded := governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: c.ProviderName, UserID: a.UserID, MessageRef: a.Ref.ThreadID + "/" + a.Ref.ID, ContextID: q.ID, Step: a.Step}
+			proof, proofErr := humanauthority.VerifiedChannelAnswerProof(c.RepoRoot, recorded, a.At)
+			if proofErr != nil {
+				return proofErr
+			}
+			approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
+			if approveErr != nil {
+				a.Receipt = approveErr.Error()
+			} else if approved.Outcome == goal.OutcomeConfirmed {
+				a.Receipt = "recorded: " + q.Goal + " box raised to " + renderProposedBox(*q.Budget)
+			} else {
+				a.Receipt = approved.Detail
+			}
+		}
 		if err = fail(c, "recorded-commit"); err != nil {
 			return err
 		}
@@ -360,7 +382,11 @@ func advanceAnswer(ctx context.Context, c PollConfig, q *Question) error {
 		}
 	}
 	if a.Phase == "recorded" {
-		_, err := c.Provider.Post(ctx, c.DestinationConfig, "recorded as your word on "+strings.ReplaceAll(q.Goal, "-", " ")+", ledger operation "+a.Opid, q.Thread)
+		receipt := a.Receipt
+		if receipt == "" {
+			receipt = "recorded as your word on " + strings.ReplaceAll(q.Goal, "-", " ") + ", ledger operation " + a.Opid
+		}
+		_, err := c.Provider.Post(ctx, c.DestinationConfig, receipt, q.Thread)
 		if err != nil {
 			q.Undelivered++
 			_ = writeJSON(questionPath(c.RepoRoot, q.ID), q)

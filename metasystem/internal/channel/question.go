@@ -27,31 +27,34 @@ type Rejection struct {
 	PostRef *MessageRef `json:"postRef"`
 }
 type Answer struct {
-	Text   string     `json:"text"`
-	UserID string     `json:"userID"`
-	Ref    MessageRef `json:"ref"`
-	At     time.Time  `json:"at"`
-	Step   int64      `json:"step"`
-	ULID   string     `json:"ulid"`
-	Opid   string     `json:"opid"`
-	Phase  string     `json:"phase"`
+	Text         string     `json:"text"`
+	UserID       string     `json:"userID"`
+	Ref          MessageRef `json:"ref"`
+	At           time.Time  `json:"at"`
+	Step         int64      `json:"step"`
+	ULID         string     `json:"ulid"`
+	Opid         string     `json:"opid"`
+	ApprovalULID string     `json:"approvalULID,omitempty"`
+	Receipt      string     `json:"receipt,omitempty"`
+	Phase        string     `json:"phase"`
 }
 type Question struct {
-	ID             string      `json:"id"`
-	Goal           string      `json:"goal"`
-	Kind           string      `json:"kind"`
-	Machine        string      `json:"machine"`
-	OpenedAt       time.Time   `json:"openedAt"`
-	Facts          []string    `json:"facts"`
-	Options        []Option    `json:"options"`
-	Recommendation string      `json:"recommendation"`
-	Wants          string      `json:"wants"`
-	Thread         *MessageRef `json:"thread"`
-	State          string      `json:"state"`
-	Undelivered    int         `json:"undelivered"`
-	Answer         *Answer     `json:"answer"`
-	Rejected       []Rejection `json:"rejected"`
-	FactsDigest    string      `json:"factsDigest"`
+	ID             string       `json:"id"`
+	Goal           string       `json:"goal"`
+	Kind           string       `json:"kind"`
+	Machine        string       `json:"machine"`
+	OpenedAt       time.Time    `json:"openedAt"`
+	Facts          []string     `json:"facts"`
+	Options        []Option     `json:"options"`
+	Recommendation string       `json:"recommendation"`
+	Wants          string       `json:"wants"`
+	Budget         *goal.Budget `json:"budget,omitempty"`
+	Thread         *MessageRef  `json:"thread"`
+	State          string       `json:"state"`
+	Undelivered    int          `json:"undelivered"`
+	Answer         *Answer      `json:"answer"`
+	Rejected       []Rejection  `json:"rejected"`
+	FactsDigest    string       `json:"factsDigest"`
 }
 
 type AskRequest struct {
@@ -60,6 +63,7 @@ type AskRequest struct {
 	Facts                                  []string
 	Options                                []Option
 	Recommendation, Wants                  string
+	Budget                                 *goal.Budget
 	Provider                               Provider
 	Destination                            DestinationConfig
 	Now                                    time.Time
@@ -105,6 +109,9 @@ func ReadQuestion(repo, id string) (Question, error) {
 		return q, err
 	}
 	err = json.Unmarshal(b, &q)
+	if err == nil {
+		err = validateQuestionBudget(q)
+	}
 	return q, err
 }
 func listQuestions(repo string) ([]Question, error) {
@@ -120,9 +127,28 @@ func listQuestions(repo string) ([]Question, error) {
 		if e = json.Unmarshal(b, &q); e != nil {
 			return nil, e
 		}
+		if e = validateQuestionBudget(q); e != nil {
+			return nil, e
+		}
 		out = append(out, q)
 	}
 	return out, nil
+}
+
+func validateQuestionBudget(q Question) error {
+	if q.Kind == "budget-above-norm" {
+		if q.Budget == nil {
+			return fmt.Errorf("a budget-above-norm question requires a complete proposed budget tuple")
+		}
+		if err := q.Budget.Validate(); err != nil {
+			return fmt.Errorf("a budget-above-norm question requires a complete valid proposed budget tuple: %v", err)
+		}
+		return nil
+	}
+	if q.Budget != nil {
+		return fmt.Errorf("question kind %s cannot carry a proposed budget tuple", q.Kind)
+	}
+	return nil
 }
 func factsDigest(goalID, kind string, facts []string) string {
 	h := sha256.New()
@@ -160,7 +186,10 @@ func Ask(r AskRequest) (Question, error) {
 	if err != nil {
 		return Question{}, err
 	}
-	q := Question{ID: id, Goal: r.Goal, Kind: r.Kind, Machine: r.Machine, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, State: "open", FactsDigest: digest}
+	q := Question{ID: id, Goal: r.Goal, Kind: r.Kind, Machine: r.Machine, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest}
+	if err = validateQuestionBudget(q); err != nil {
+		return Question{}, err
+	}
 	if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
 		return Question{}, err
 	}
@@ -215,6 +244,9 @@ func renderQuestion(q Question) string {
 	for _, o := range q.Options {
 		fmt.Fprintf(&b, "%s: %s\n", o.Label, o.Consequence)
 	}
+	if q.Budget != nil {
+		fmt.Fprintf(&b, "Proposed box: %s\n", renderProposedBox(*q.Budget))
+	}
 	fmt.Fprintf(&b, "Recommendation: %s\n", q.Recommendation)
 	if q.Wants != "" {
 		fmt.Fprintf(&b, "Reply in this thread with this token verbatim, followed by your code:\n%s", q.Wants)
@@ -222,6 +254,10 @@ func renderQuestion(q Question) string {
 		b.WriteString("Reply in this thread with your answer followed by your code")
 	}
 	return b.String()
+}
+
+func renderProposedBox(b goal.Budget) string {
+	return fmt.Sprintf("%s, %d attempts, %d reserved minutes, %d active job, %d review rounds", b.ElapsedLimit, b.AttemptLimit, b.ReservedJobMinutesLimit, b.ActiveJobLimit, b.ReviewRoundLimit)
 }
 
 func Close(repo, id, because string, p Provider, d DestinationConfig) error {

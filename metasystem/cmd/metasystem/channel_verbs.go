@@ -97,24 +97,29 @@ func runChannelAsk(args []string) int {
 	kind := f.String("kind", "", "question kind")
 	recommend := f.String("recommend", "", "recommended option")
 	wants := f.String("wants", "", "strict answer token")
-	elapsed := f.String("elapsed-limit", "", "proposed resume elapsed limit for a stop question")
-	attempts := f.Int64("attempt-limit", 0, "proposed resume attempt limit for a stop question")
-	minutes := f.Int64("reserved-job-minutes-limit", 0, "proposed resume reserved job minutes for a stop question")
-	active := f.Int64("active-job-limit", 0, "proposed resume active job limit for a stop question")
-	reviewRounds := f.Int64("review-round-limit", -1, "proposed resume critic review-round limit for a stop question")
+	elapsed := f.String("elapsed-limit", "", "proposed elapsed limit for a budget or stop question")
+	attempts := f.Int64("attempt-limit", 0, "proposed attempt limit for a budget or stop question")
+	minutes := f.Int64("reserved-job-minutes-limit", 0, "proposed reserved job minutes for a budget or stop question")
+	active := f.Int64("active-job-limit", 0, "proposed active job limit for a budget or stop question")
+	reviewRounds := f.Int64("review-round-limit", -1, "proposed critic review-round limit for a budget or stop question")
 	var facts, options repeatedStrings
 	f.Var(&facts, "fact", "question fact")
 	f.Var(&options, "option", "label: consequence")
 	if f.Parse(args) != nil {
 		return 2
 	}
-	if *kind == "stop" {
+	var proposedBudget *goal.Budget
+	if *kind == "stop" || *kind == "budget-above-norm" {
 		budget, budgetErr := goal.NewBudget(*elapsed, *attempts, *minutes, *active, *reviewRounds)
 		if budgetErr != nil {
-			fmt.Fprintln(os.Stderr, "a stop question requires a complete valid proposed resume tuple:", budgetErr)
+			fmt.Fprintf(os.Stderr, "a %s question requires a complete valid proposed budget tuple: %v\n", *kind, budgetErr)
 			return 2
 		}
-		*wants = goal.ResumeApprovalToken(*id, budget)
+		if *kind == "stop" {
+			*wants = goal.ResumeApprovalToken(*id, budget)
+		} else {
+			proposedBudget = &budget
+		}
 	}
 	machine, lineage, err := channelIdentity(*root)
 	if err != nil {
@@ -141,7 +146,7 @@ func runChannelAsk(args []string) int {
 		return 1
 	}
 	defer cancel()
-	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Provider: l.Provider, Destination: l.Destination, Now: time.Now()})
+	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget, Provider: l.Provider, Destination: l.Destination, Now: time.Now()})
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		return 1

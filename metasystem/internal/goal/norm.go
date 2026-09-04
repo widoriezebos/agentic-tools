@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 var goalNormRulingRef = regexp.MustCompile(`^R-[0-9]+(?:[a-z]|-[a-z0-9][a-z0-9-]*)?$`)
@@ -96,7 +97,7 @@ func refuseGoalNorm(id string, budget, box Budget) error {
 		id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit, box.ReservedJobMinutesLimit, box.ReviewRoundLimit, id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit)
 }
 
-func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget Budget, approvedRef string) (*GoalNormApprovalClaim, error) {
+func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget Budget, approvedRef string, proof *humanauthority.Proof) (*GoalNormApprovalClaim, error) {
 	tier := file.Tier
 	if tier == 0 {
 		tier = 3
@@ -110,6 +111,9 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 	}
 	if approvedRef == "" {
 		if budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ReviewRoundLimit > box.ReviewRoundLimit {
+			if proof != nil && proof.ChannelWordFor(repoRoot) && proof.Outcome == humanauthority.OutcomeVerifiedChannel {
+				return &GoalNormApprovalClaim{ApprovedRef: proof.ChannelContext, Minutes: budget.ReservedJobMinutesLimit, ReviewRounds: budget.ReviewRoundLimit, GoalRevision: file.Revision}, nil
+			}
 			return nil, refuseGoalNorm(file.Id, budget, box)
 		}
 		return nil, nil

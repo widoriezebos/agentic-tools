@@ -290,12 +290,43 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — Reply in this thread with this token verbatim, followed by your code: start waiting-feature") {
 		t.Fatalf("approval gap was omitted:\n%s", withoutQuestion)
 	}
-	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}}); err != nil {
+	questionBudget, _ := goal.NewBudget("2h", 5, 600, 1, 0)
+	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}, Budget: &questionBudget}); err != nil {
 		t.Fatal(err)
 	}
 	withQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
 	if strings.Count(withQuestion, "Needs you: waiting feature") != 1 || !strings.Contains(withQuestion, "approve the requested budget raise.") {
 		t.Fatalf("the open budget question did not replace the generic approval gap:\n%s", withQuestion)
+	}
+}
+
+func TestBudgetQuestionRequiresPersistsAndRendersCompleteTuple(t *testing.T) {
+	root := t.TempDir()
+	request := AskRequest{RepoRoot: root, Goal: "g", Kind: "budget-above-norm", Machine: "machine", Facts: []string{"The current allowance is exhausted"}, Wants: "yes", Now: time.Unix(1, 0)}
+	if _, err := Ask(request); err == nil || !strings.Contains(err.Error(), "requires a complete proposed budget tuple") {
+		t.Fatalf("budget question without tuple was accepted: %v", err)
+	}
+	budget, err := goal.NewBudget("2h", 5, 600, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Budget = &budget
+	q, err := Ask(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := ReadQuestion(root, q.ID)
+	if err != nil || stored.Budget == nil || *stored.Budget != budget {
+		t.Fatalf("stored budget=%+v err=%v", stored.Budget, err)
+	}
+	want := "Proposed box: 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds"
+	if rendered := renderQuestion(stored); !strings.Contains(rendered, want) {
+		t.Fatalf("rendered question %q does not contain %q", rendered, want)
+	}
+	other := request
+	other.Kind = "other"
+	if _, err := Ask(other); err == nil || !strings.Contains(err.Error(), "cannot carry a proposed budget tuple") {
+		t.Fatalf("non-budget question stored a tuple: %v", err)
 	}
 }
 
@@ -891,6 +922,84 @@ func TestAnswerCarryingStrictTokenSatisfiesNormApproval(t *testing.T) {
 		t.Fatalf("approval=%d/%d/%d exists=%v proven=%v err=%v", minutes, rounds, revision, exists, proven, err)
 	}
 }
+
+func TestVerifiedBudgetTokenRaisesBoxTwiceAndReopensAdmission(t *testing.T) {
+	root, p, _, now := pollLedgerBed(t)
+	firstBudget, _ := goal.NewBudget("2h", 5, 600, 1, 0)
+	first := Question{ID: "01J5X0000000000000000000B1", Goal: "g", Kind: "budget-above-norm", Machine: "machine", OpenedAt: now, Facts: []string{"raise the box"}, Wants: "yes", Budget: &firstBudget, Thread: &MessageRef{ID: "10", ThreadID: "10"}, State: "open"}
+	if err := writeJSON(questionPath(root, first.ID), first); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "yes " + code, SentAt: now}}
+	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+		t.Fatal(err)
+	}
+	afterFirst := projectGoal(t, root, "g")
+	if afterFirst.Budget == nil || *afterFirst.Budget != firstBudget || afterFirst.Approved == nil || afterFirst.Approved.Authority != goal.ApprovalAuthorityChannel || afterFirst.NormApproval == nil || afterFirst.NormApproval.ApprovedRef != first.ID {
+		t.Fatalf("first verified answer did not bind its box and norm proof: %+v", afterFirst)
+	}
+	if got := p.posts[len(p.posts)-1]; got != "recorded: g box raised to 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds" {
+		t.Fatalf("first receipt=%q", got)
+	}
+
+	secondNow := now.Add(30 * time.Second)
+	secondBudget, _ := goal.NewBudget("3h", 6, 700, 1, 0)
+	second := Question{ID: "01J5X0000000000000000000B2", Goal: "g", Kind: "budget-above-norm", Machine: "machine", OpenedAt: secondNow, Facts: []string{"raise the box again"}, Wants: "allow two more rounds", Budget: &secondBudget, Thread: &MessageRef{ID: "20", ThreadID: "20"}, State: "open"}
+	if err := writeJSON(questionPath(root, second.ID), second); err != nil {
+		t.Fatal(err)
+	}
+	code, _ = TOTPCode("JBSWY3DPEHPK3PXP", secondNow)
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "21", ThreadID: "20"}, ThreadID: "20", UserID: "UWIDO", Text: "allow two more rounds " + code, SentAt: secondNow}}
+	if _, err := Poll(context.Background(), pollBedConfig(root, p, secondNow)); err != nil {
+		t.Fatal(err)
+	}
+	afterSecond := projectGoal(t, root, "g")
+	if afterSecond.Budget == nil || *afterSecond.Budget != secondBudget || afterSecond.Approved == nil || afterSecond.Approved.Authority != goal.ApprovalAuthorityChannel || afterSecond.NormApproval == nil || afterSecond.NormApproval.ApprovedRef != second.ID {
+		t.Fatalf("second verified answer did not replace the box: %+v", afterSecond)
+	}
+	syncAccepted(t, root)
+	ep, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := goal.Claim(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: "machine", Lineage: "lineage"}, Ulid: "01J5X0000000000000000000B3", Now: secondNow.Add(time.Minute), ClaimEpoch: 1}, "g")
+	if err != nil || claim.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("raised box did not reopen admission: %+v %v", claim, err)
+	}
+}
+
+func TestBudgetFreeTextAndOtherQuestionDoNotRaiseBox(t *testing.T) {
+	for _, test := range []struct {
+		name, kind, wants, answer string
+		withBudget                bool
+	}{
+		{name: "free text budget answer", kind: "budget-above-norm", wants: "yes", answer: "please raise it", withBudget: true},
+		{name: "other question token", kind: "other", wants: "yes", answer: "yes"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, p, _, now := pollLedgerBed(t)
+			budget, _ := goal.NewBudget("2h", 5, 600, 1, 0)
+			q := Question{ID: "01J5X0000000000000000000N1", Goal: "g", Kind: test.kind, Machine: "machine", OpenedAt: now, Facts: []string{"question"}, Wants: test.wants, Thread: &MessageRef{ID: "10", ThreadID: "10"}, State: "open"}
+			if test.withBudget {
+				q.Budget = &budget
+			}
+			if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+				t.Fatal(err)
+			}
+			code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+			p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: test.answer + " " + code, SentAt: now}}
+			if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+				t.Fatal(err)
+			}
+			got := projectGoal(t, root, "g")
+			if got.Budget != nil || got.Approved != nil || got.State != goal.StateQueued {
+				t.Fatalf("non-token answer changed approval: %+v", got)
+			}
+		})
+	}
+}
+
 func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
 	root, p, first, _ := pollLedgerBed(t)
 	now := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
