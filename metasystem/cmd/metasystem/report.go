@@ -15,6 +15,10 @@ import (
 func runReportStopBlock(args []string) int {
 	flags := flag.NewFlagSet("report stop-block", flag.ContinueOnError)
 	systemMessage := flags.String("system-message", "", "non-blocking display line carried beside the refusal")
+	refusalRecord := flags.String("refusal-record", "", "per-session external stop-refusal record")
+	session := flags.String("session", "", "session recorded for an external stop refusal")
+	cause := flags.String("cause", "", "stable external stop-refusal cause")
+	remedy := flags.String("remedy", "", "operator remedy for an external stop refusal")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -22,9 +26,23 @@ func runReportStopBlock(args []string) int {
 	if flags.NArg() > 0 {
 		detail = flags.Arg(0)
 	}
-	block := report.StopBlock(detail)
-	if *systemMessage != "" {
-		block["systemMessage"] = *systemMessage
+	var block map[string]any
+	if *refusalRecord != "" || *session != "" || *cause != "" || *remedy != "" {
+		if *refusalRecord == "" || *session == "" || *cause == "" || *remedy == "" {
+			fmt.Fprintln(os.Stderr, "report stop-block: --refusal-record, --session, --cause, and --remedy must be provided together")
+			return 2
+		}
+		var err error
+		block, err = report.StopRefusal(*refusalRecord, *session, *cause, *remedy, detail, *systemMessage, time.Now())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "report stop-block: %v\n", err)
+			return 1
+		}
+	} else {
+		block = report.StopBlock(detail)
+		if *systemMessage != "" {
+			block["systemMessage"] = *systemMessage
+		}
 	}
 	encoded, _ := json.Marshal(block)
 	fmt.Println(string(encoded))

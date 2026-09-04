@@ -30,33 +30,106 @@ raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing
 # verdict time all spend the same budget. The parent retains one second to
 # emit a provider-level refusal and exit successfully when the child overruns.
 if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; then
-  deadline_started=$SECONDS
   deadline_dir=
   deadline_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
     || deadline_dir=$(mktemp -d "/tmp/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
     || true
   if [[ -z "$deadline_dir" ]]; then
-    emit_raw_stop_block
+    printf '%s\n' '{"systemMessage":"Metasystem could not stage the Stop payload or update its refusal record; stopping is allowed so this hook failure cannot repeat forever."}'
     exit 0
   fi
   deadline_stdout=$deadline_dir/stdout
   deadline_stderr=$deadline_dir/stderr
+  deadline_payload=$deadline_dir/payload
   deadline_script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
   deadline_harness_root=$(cd "$deadline_script_dir/../.." && pwd -P)
   deadline_validator="${METASYSTEM_BIN:-$deadline_harness_root/bin/metasystem}"
+  deadline_canonical=$deadline_harness_root/bin/metasystem
+  if ! command cat >"$deadline_payload"; then
+    printf '%s\n' '{"systemMessage":"Metasystem could not stage the Stop payload or update its refusal record; stopping is allowed so this hook failure cannot repeat forever."}'
+    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" || true
+    rmdir "$deadline_dir" 2>/dev/null || true
+    exit 0
+  fi
+  deadline_started=$SECONDS
   METASYSTEM_STOP_DEADLINE_PARENT=$$ bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
-    <&0 >"$deadline_stdout" 2>"$deadline_stderr" &
+    <"$deadline_payload" >"$deadline_stdout" 2>"$deadline_stderr" &
   deadline_worker=$!
   deadline_expires=$((deadline_started + 4))
+
+  # Resolve record coordinates alongside the worker, never ahead of it. The
+  # engine parser is authoritative when it finishes inside the worker's wait;
+  # the restricted shell parser keeps the timeout path independent of a slow
+  # engine and accepts the ordinary unescaped session and cwd payload shape.
+  deadline_resolution=$deadline_dir/resolution
+  deadline_resolution_ready=$deadline_dir/resolution.ready
+  deadline_resolver=
+  if [[ -x "$deadline_canonical" ]]; then
+    (
+      resolver_session=$("$deadline_canonical" json get --file "$deadline_payload" --field session_id 2>/dev/null) || exit 1
+      resolver_cwd=$("$deadline_canonical" json get --file "$deadline_payload" --field cwd 2>/dev/null) || exit 1
+      printf '%s\n%s\n' "$resolver_session" "$resolver_cwd" >"$deadline_resolution"
+      mv "$deadline_resolution" "$deadline_resolution_ready"
+    ) &
+    deadline_resolver=$!
+  fi
+  deadline_session=$(sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$deadline_payload" | head -1)
+  deadline_cwd=$(sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"\\]*\)".*/\1/p' "$deadline_payload" | head -1)
+  [[ -n "$deadline_session" ]] || deadline_session="session-$$"
+  deadline_record=
+  deadline_record_failure="the installed canonical engine and shell fallback could not resolve the Stop session and repository"
+  deadline_coordinates_from_engine=false
+  deadline_resolve_record() {
+    local slug
+    [[ -n "$deadline_session" && -n "$deadline_cwd" ]] || return 1
+    deadline_repo=$(git -C "$deadline_cwd" rev-parse --show-toplevel 2>/dev/null || true)
+    [[ -n "$deadline_repo" ]] || return 1
+    deadline_repo=$(cd "$deadline_repo" && pwd -P)
+    slug=$(printf '%s' "$deadline_session" | tr '[:upper:]' '[:lower:]' |
+      sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')
+    [[ -n "$slug" ]] || slug=session
+    deadline_record="$deadline_repo/artifacts/agents/supervision/stop-refusals/$slug.json"
+    deadline_record_failure=
+  }
+  deadline_resolve_record || true
+  deadline_capture_engine_coordinates() {
+    local first second
+    [[ "$deadline_coordinates_from_engine" == false && -f "$deadline_resolution_ready" ]] || return 0
+    first=$(sed -n '1p' "$deadline_resolution_ready")
+    second=$(sed -n '2p' "$deadline_resolution_ready")
+    if [[ -n "$first" && -n "$second" ]]; then
+      deadline_session=$first
+      deadline_cwd=$second
+      deadline_record=
+      deadline_record_failure="the installed canonical engine could not resolve the Stop repository"
+      deadline_resolve_record || true
+    fi
+    deadline_coordinates_from_engine=true
+  }
+  deadline_stop_resolver() {
+    local resolver_command
+    [[ -n "$deadline_resolver" ]] || return 0
+    if kill -0 "$deadline_resolver" 2>/dev/null; then
+      resolver_command=$(ps -p "$deadline_resolver" -o command= 2>/dev/null || true)
+      if [[ "$resolver_command" == *"${BASH_SOURCE[0]}"* || "$resolver_command" == *supervision-hook.sh* ]]; then
+        kill -KILL "$deadline_resolver" 2>/dev/null || true
+      fi
+    fi
+    wait "$deadline_resolver" 2>/dev/null || true
+    deadline_resolver=
+  }
   deadline_running() {
     local state
     state=$(ps -p "$deadline_worker" -o stat= 2>/dev/null || true)
     [[ -n "$state" && "$state" != Z* ]]
   }
   while deadline_running && (( SECONDS < deadline_expires )); do
+    deadline_capture_engine_coordinates
     sleep 0.05
   done
+  deadline_capture_engine_coordinates
   if ! deadline_running; then
+    deadline_stop_resolver
     deadline_rc=0
     wait "$deadline_worker" || deadline_rc=$?
     command cat "$deadline_stderr" >&2 || true
@@ -105,11 +178,13 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     else
       command cat "$deadline_stdout" || true
     fi
-    rm -f "$deadline_stdout" "$deadline_stderr" || true
+    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+      "$deadline_resolution" "$deadline_resolution_ready" || true
     rmdir "$deadline_dir" 2>/dev/null || true
     exit 0
   fi
 
+  deadline_stop_resolver
   deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
   if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
     kill -TERM "$deadline_worker" 2>/dev/null || true
@@ -125,8 +200,23 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     fi
   fi
   wait "$deadline_worker" 2>/dev/null || true
-  printf '%s\n' '{"decision":"block","reason":"Metasystem Stop deadline expired before a safe turn verdict; stopping is refused."}'
-  rm -f "$deadline_stdout" "$deadline_stderr" || true
+  deadline_cause='stop deadline expired'
+  deadline_remedy='A human or steward must restore supervision outside this seat, then retry.'
+  deadline_detail='Metasystem Stop deadline expired before a safe turn verdict; stopping is refused.'
+  deadline_response=
+  if [[ -n "$deadline_record" ]]; then
+    deadline_response=$("$deadline_canonical" report stop-block \
+      --refusal-record "$deadline_record" --session "$deadline_session" \
+      --cause "$deadline_cause" --remedy "$deadline_remedy" "$deadline_detail" 2>/dev/null) || \
+      deadline_record_failure="the stop-refusal record could not be read or atomically updated"
+  fi
+  if [[ -n "$deadline_response" && -z "$deadline_record_failure" ]]; then
+    printf '%s\n' "$deadline_response"
+  else
+    printf '%s\n' '{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
+  fi
+  rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+    "$deadline_resolution" "$deadline_resolution_ready" || true
   rmdir "$deadline_dir" 2>/dev/null || true
   exit 0
 fi
@@ -309,6 +399,12 @@ stop_block_json() { # system message, reason
   printf '%s\n' "$rendered"
 }
 
+external_stop_json() { # system message, reason, cause, remedy
+  "$ms" report stop-block --system-message "$1" \
+    --refusal-record "$stop_refusal_record" --session "$session" \
+    --cause "$3" --remedy "$4" "$2"
+}
+
 tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
 up_failure=
 if [[ "$event" == stop ]]; then
@@ -394,12 +490,26 @@ emit_stop_payload() { # response
 }
 
 emit_failed_stop() { # diagnostic
+  local refusal_rc remedy
   failure_detail="Metasystem could not prove that stopping is safe: $1"
-  response=$(stop_block_json "$checkin_tail" "$failure_detail")
+  remedy='A human or steward must restore supervision outside this seat, then retry.'
+  if [[ "$1" == 'supervision arming failed' && -n "$up_failure" ]]; then
+    remedy=$up_failure
+  fi
+  refusal_rc=0
+  response=$(external_stop_json "$checkin_tail" "$failure_detail" "$1" "$remedy" 2>/dev/null) || refusal_rc=$?
+  if (( refusal_rc != 0 )) || [[ -z "$response" ]]; then
+    response=$(surface_json "Metasystem stop-refusal record failure: the record could not be read or atomically updated. Stopping is allowed so record failure cannot recreate the refusal loop.
+Cause: $1
+Remedy: $remedy" 2>/dev/null) || \
+      response='{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop."}'
+  fi
   emit_stop_payload "$response"
 }
 
 if [[ "$event" == stop ]]; then
+  stop_refusal_slug=$("$ms" util slug "$session")
+  stop_refusal_record="$repo/artifacts/agents/supervision/stop-refusals/$stop_refusal_slug.json"
   protocol_message=
   protocol_counts='{}'
   if [[ -n "$main_id" ]]; then

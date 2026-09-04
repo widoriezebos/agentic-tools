@@ -221,8 +221,15 @@ if [[ $step == runtime-list && ${1:-} == runtime && ${2:-} == list ]]; then
   echo "fixture runtime registry failure" >&2
   exit 41
 fi
+if [[ $step == arming-failure && ${1:-} == up ]]; then
+  echo "ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal" >&2
+  exit 44
+fi
 if [[ ${1:-} == up ]]; then
   exit 0
+fi
+if [[ $step == health-failure && ${1:-} == health ]]; then
+  exit 45
 fi
 if [[ $step == hook-attempt && ${1:-} == steward && ${2:-} == hook-attempt ]]; then
   echo "fixture hook-attempt failure" >&2
@@ -271,6 +278,74 @@ assert_failure_blocks hook-attempt hook-attempt 'attempt evidence could not be r
 assert_failure_blocks turn-verdict turn-verdict 'turn-verdict unavailable'
 assert_failure_blocks malformed-verdict malformed-verdict 'turn verdict was unreadable'
 assert_failure_blocks partial-output partial-output 'could not prove that stopping is safe'
+
+# Failures outside the seat block once per cause and session, then surface the
+# exact cause, remedy, and occurrence count without another decision block.
+printf '{"session_id":"external-failure","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
+  >"$tmp/external-failure-payload.json"
+for occurrence in 1 2; do
+  METASYSTEM_BIN="$failure_engine" \
+    METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
+    METASYSTEM_STOP_FAILURE_STEP=arming-failure \
+    bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+      <"$tmp/external-failure-payload.json" >"$tmp/arming-$occurrence.out" 2>"$tmp/arming-$occurrence.err" \
+    || { echo "supervision hook arming-failure occurrence $occurrence failed" >&2; exit 1; }
+done
+grep -Fq '"decision":"block"' "$tmp/arming-1.out" \
+  || { echo "first arming failure did not block" >&2; cat "$tmp/arming-1.out" >&2; exit 1; }
+if grep -Fq '"decision":"block"' "$tmp/arming-2.out"; then
+  echo "repeated arming failure blocked the same session again" >&2
+  cat "$tmp/arming-2.out" >&2
+  exit 1
+fi
+grep -Fq 'occurrence 2' "$tmp/arming-2.out" \
+  && grep -Fq 'supervision arming failed' "$tmp/arming-2.out" \
+  && grep -Fq "ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal" "$tmp/arming-2.out" \
+  || { echo "repeated arming failure omitted its cause, count, or exact remedy" >&2; cat "$tmp/arming-2.out" >&2; exit 1; }
+
+METASYSTEM_BIN="$failure_engine" \
+  METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
+  METASYSTEM_STOP_FAILURE_STEP=health-failure \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/external-failure-payload.json" >"$tmp/different-cause.out" 2>"$tmp/different-cause.err" \
+  || { echo "supervision hook different-cause fixture failed" >&2; exit 1; }
+grep -Fq '"decision":"block"' "$tmp/different-cause.out" \
+  && grep -Fq 'health engine returned no verdict' "$tmp/different-cause.out" \
+  || { echo "a different external cause did not block the same session" >&2; cat "$tmp/different-cause.out" >&2; exit 1; }
+
+printf '{"session_id":"external-failure-fresh","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
+  >"$tmp/external-failure-fresh-payload.json"
+METASYSTEM_BIN="$failure_engine" \
+  METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
+  METASYSTEM_STOP_FAILURE_STEP=arming-failure \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/external-failure-fresh-payload.json" >"$tmp/fresh-session.out" 2>"$tmp/fresh-session.err" \
+  || { echo "supervision hook fresh-session fixture failed" >&2; exit 1; }
+grep -Fq '"decision":"block"' "$tmp/fresh-session.out" \
+  || { echo "a new session did not start with a fresh refusal allowance" >&2; cat "$tmp/fresh-session.out" >&2; exit 1; }
+arming_record=$line_root/artifacts/agents/supervision/stop-refusals/external-failure.json
+[[ $($line_root/bin/metasystem json get --file "$arming_record" --field schemaVersion) == 1 ]] \
+  && [[ $($line_root/bin/metasystem json get --file "$arming_record" --field sessionId) == external-failure ]] \
+  || { echo "external refusal record omitted its schema or session" >&2; cat "$arming_record" >&2; exit 1; }
+
+printf '{"session_id":"broken-refusal-record","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
+  >"$tmp/broken-refusal-payload.json"
+broken_refusal_record=$line_root/artifacts/agents/supervision/stop-refusals/broken-refusal-record.json
+mkdir -p "$(dirname "$broken_refusal_record")"
+printf '%s\n' '{broken' >"$broken_refusal_record"
+METASYSTEM_BIN="$failure_engine" \
+  METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
+  METASYSTEM_STOP_FAILURE_STEP=arming-failure \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/broken-refusal-payload.json" >"$tmp/broken-refusal.out" 2>"$tmp/broken-refusal.err" \
+  || { echo "supervision hook broken-refusal-record fixture failed" >&2; exit 1; }
+if grep -Fq '"decision":"block"' "$tmp/broken-refusal.out"; then
+  echo "an unreadable refusal record recreated a blocking loop" >&2
+  cat "$tmp/broken-refusal.out" >&2
+  exit 1
+fi
+grep -Fq 'stop-refusal record failure' "$tmp/broken-refusal.out" \
+  || { echo "an unreadable refusal record was not surfaced" >&2; cat "$tmp/broken-refusal.out" >&2; exit 1; }
 
 # The verdict owns its state-file decoding. A present but unreadable state file
 # must return its structured uncertainty block through the real hook.
@@ -350,6 +425,21 @@ grep -Fq '"decision":"block"' "$tmp/deadline.out" \
   || { echo "supervision hook deadline fixture emitted no blocking response" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 grep -Fq 'deadline expired before a safe turn verdict' "$tmp/deadline.out" \
   || { echo "supervision hook deadline fixture did not name its fail-closed timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
+deadline_second_rc=0
+METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  bash "$hook" claude stop <"$tmp/line-payload.json" \
+    >"$tmp/deadline-second.out" 2>"$tmp/deadline-second.err" || deadline_second_rc=$?
+(( deadline_second_rc == 0 )) \
+  || { echo "second supervision hook deadline fixture returned $deadline_second_rc" >&2; exit 1; }
+if grep -Fq '"decision":"block"' "$tmp/deadline-second.out"; then
+  echo "repeated deadline overrun blocked the same session again" >&2
+  cat "$tmp/deadline-second.out" >&2
+  exit 1
+fi
+grep -Fq 'occurrence 2' "$tmp/deadline-second.out" \
+  && grep -Fq 'stop deadline expired' "$tmp/deadline-second.out" \
+  && grep -Fq 'A human or steward must restore supervision outside this seat, then retry.' "$tmp/deadline-second.out" \
+  || { echo "repeated deadline overrun omitted its cause, count, or remedy" >&2; cat "$tmp/deadline-second.out" >&2; exit 1; }
 
 missing_template_outer=$tmp/missing-template-root
 missing_template_root=$missing_template_outer/metasystem
@@ -474,6 +564,15 @@ grep -Fq '"decision":"block"' "$tmp/template-agent.out" \
   && grep -Fq 'template-backlog' "$tmp/template-agent.out" \
   || { echo "template honest agent was allowed to leave claimable backlog" >&2; cat "$tmp/template-agent.out" >&2; exit 1; }
 
+METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+  METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
+  bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
+    >"$tmp/template-agent-repeat.out" 2>"$tmp/template-agent-repeat.err" \
+  || { echo "template repeated open-work Stop returned an error" >&2; exit 1; }
+grep -Fq '"decision":"block"' "$tmp/template-agent-repeat.out" \
+  && grep -Fq 'IDLE WITH BACKLOG' "$tmp/template-agent-repeat.out" \
+  || { echo "the seat-owned open-work refusal did not keep blocking" >&2; cat "$tmp/template-agent-repeat.out" >&2; exit 1; }
+
 # SessionEnd spends an unused authorization before announcement retirement.
 # The wrapper deliberately leaves the announcement in place, reproducing the
 # failed-retirement path without allowing the marker to reach a later Stop.
@@ -505,4 +604,4 @@ grep -Fq '"decision":"block"' "$tmp/template-replay.out" \
   && grep -Fq 'cannot replay' "$tmp/template-replay.out" \
   || { echo "template SessionEnd marker authorized a later Stop" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
 
-echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, verdict, and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline, missing-engine refusal, template holder-state, and SessionEnd no-replay fixtures passed"
+echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, repeated template open-work blocking, template holder-state, and SessionEnd no-replay fixtures passed"
