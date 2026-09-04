@@ -125,11 +125,14 @@ command -v python3 >/dev/null 2>&1 \
 
 # The engine does the structural JSON work below; functions use the
 # absolute path because agent-driver functions run from varying cwds.
-# Rebuild before copying the engine into fixture repositories. The shell and
-# binary must expose the same command set or a missing verb looks like a process
-# identity timeout instead of a stale test artifact.
-bash scripts/agents/go-build.sh >/dev/null
-engine="$root/bin/metasystem"
+# Build a private engine before copying it into fixture repositories. The shell
+# and binary must expose the same command set or a missing verb looks like a
+# process identity timeout instead of a stale test artifact. Proof-output mode
+# also keeps this process-owning suite from swapping the checkout's live engine.
+tmp=$(mktemp -d)
+tmp=$(cd "$tmp" && pwd -P)
+engine="$tmp/fixture-engine"
+bash scripts/agents/go-build.sh --out "$engine" >/dev/null
 
 # Atomically replace one top-level field of a JSON object file, leaving
 # every other field exactly as the file's parser sees it. `json set`
@@ -199,8 +202,6 @@ resolve_existing_path() { # path
   printf '%s/%s\n' "$dir" "$(basename "$1")"
 }
 
-tmp=$(mktemp -d)
-tmp=$(cd "$tmp" && pwd -P)
 fixture_declared_outputs=$tmp/declared-outputs.txt
 printf '%s\n' 'metasystem/internal/dispatch/build.go' >"$fixture_declared_outputs"
 # Every armed checkout in this bed shares a registry isolated to this run.
@@ -441,7 +442,7 @@ cp metasystem.conf "$agent_repo/"
 conf_edit "$agent_repo/metasystem.conf" delete-lines '^runtime[.]claude[.]model-alias[.].*='
 # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
 # only harness-specific overrides ride --set.
-"$root/bin/metasystem" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
+"$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
   --set evidence.root="$agent_evidence" \
   --set role.default.model.fake=fake-model \
   --set watch.interval-sec=5 \
@@ -458,7 +459,7 @@ git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.in
 # after the base commit so it stays untracked exactly like production.
 # The runner and selftest repositories below inherit it via cp -R.
 mkdir -p "$agent_repo/bin"
-cp bin/metasystem "$agent_repo/bin/metasystem"
+cp "$engine" "$agent_repo/bin/metasystem"
 enroll_fixture_repo "$agent_repo"
 agent_dispatch="$agent_repo/scripts/agents/dispatch.sh"
 fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
@@ -528,23 +529,58 @@ METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC=$agent_status_cap_sec
 export METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC
 
 wait_for_agent_census_fresh() { # fixture name
-  local name=$1 started=$SECONDS deadline=$((SECONDS + agent_fixture_cap_sec)) expected elapsed
+  local name=$1 verdict="$agent_supervision_repo/artifacts/agents/supervision/last-census.json"
+  local snap="$agent_fixture/census-wait-snapshot.json" base marker sequence interval silence
+  local last_advance=$SECONDS rebaselines=0 max_rebaselines=5 attempt_budget=2
   [[ -n "${agent_supervision_repo:-}" ]] || return 0
   # The engine's OWN freshness ruling (script-validate-2/D34): the same
   # verb every dispatch gates on, so the fixture can never drift from
-  # the policy internal/dispatch enforces.
-  while (( SECONDS < deadline )); do
-    if "$agent_supervision_repo/bin/metasystem" job census-fresh \
+  # the policy internal/dispatch enforces. Census patience is counted in
+  # completed passes; wall time is only a silence failsafe for a wedged writer.
+  cp "$verdict" "$snap" 2>/dev/null || : >"$snap"
+  base=$("$engine" json get --file "$snap" --field scanSeq 2>/dev/null || true)
+  [[ "$base" =~ ^[0-9]+$ ]] || base=0
+  marker=$base
+  while :; do
+    cp "$verdict" "$snap" 2>/dev/null || : >"$snap"
+    sequence=$("$engine" json get --file "$snap" --field scanSeq 2>/dev/null || true)
+    if [[ "$sequence" =~ ^[0-9]+$ ]]; then
+      if (( sequence < marker )); then
+        rebaselines=$((rebaselines + 1))
+        if (( rebaselines > max_rebaselines )); then
+          echo "agent fixture census scanSeq regressed $rebaselines times while waiting for $name (last $marker -> $sequence)" >&2
+          return 1
+        fi
+        base=$sequence
+        marker=$sequence
+        last_advance=$SECONDS
+      elif (( sequence > marker )); then
+        marker=$sequence
+        last_advance=$SECONDS
+      fi
+    fi
+    if [[ "$sequence" =~ ^[0-9]+$ ]] && (( sequence >= base + 2 )) && \
+      "$agent_supervision_repo/bin/metasystem" job census-fresh \
         --root "$agent_supervision_repo" --repo "$agent_supervision_repo" --arm rearm \
-        --verdict "$agent_supervision_repo/artifacts/agents/supervision/last-census.json" \
+        --verdict "$snap" \
         --state "$agent_supervision_repo/artifacts/agents/supervision/state.json" >/dev/null 2>&1; then
       return 0
     fi
+    if [[ "$sequence" =~ ^[0-9]+$ ]] && (( sequence >= base + 1 + attempt_budget )); then
+      echo "agent fixture still lacked a fresh census after $attempt_budget completed passes while waiting for $name (scanSeq $base -> $sequence)" >&2
+      cat "$snap" >&2 || true
+      return 1
+    fi
+    interval=$("$engine" json get --file "$snap" --field intervalSec 2>/dev/null || true)
+    [[ "$interval" =~ ^[1-9][0-9]*$ ]] || interval=1
+    silence=$((30 * interval))
+    (( silence < 60 )) && silence=60
+    if (( SECONDS - last_advance >= silence )); then
+      echo "agent fixture saw no completed census pass for ${silence}s while waiting for $name (scanSeq stuck at $marker)" >&2
+      return 1
+    fi
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
-  elapsed=$((SECONDS - started))
-  echo "agent fixture timed out waiting for a fresh census: $name (elapsed: ${elapsed}s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
-  return 1
 }
 
 agent_fixture_job_from_args() {
@@ -896,7 +932,7 @@ grep -Fq "dispatch refused: engine commit $skew_stamp is older than checkout com
 config_order="$agent_fixture/config-order"
 mkdir -p "$config_order/scripts" "$config_order/bin"
 cp scripts/metasystem-config.sh "$config_order/scripts/"
-cp bin/metasystem "$config_order/bin/metasystem"
+cp "$engine" "$config_order/bin/metasystem"
 cat >"$config_order/metasystem.conf" <<EOF
 role.implementer.runtime=plain
 mode.refactor.role.implementer.runtime=mode
@@ -1208,6 +1244,35 @@ cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within-r2.json" ]] \
   || { echo "the structured follow-up refusal created a child reservation" >&2; exit 1; }
 
+# The two migration-specific copies above deliberately began in the legacy
+# world. The main dispatch bed does not: convert its goal-free baseline through
+# the product's local cutover before any ordinary scenario can open a goal.
+mkdir -p "$agent_repo/plans"
+agent_goal_scan_digest=$(printf '' | shasum -a 256 | cut -d' ' -f1)
+cat >"$agent_repo/plans/goals.md" <<AGENT_GOAL_LEDGER
+# Goals
+
+## Goal-free: declared 2000-01-01T00:00:00Z by human over $agent_goal_scan_digest
+AGENT_GOAL_LEDGER
+agent_goal_ledger=$(cat "$agent_repo/plans/goals.md" && printf x) && agent_goal_ledger=${agent_goal_ledger%x}
+"$engine" json object ledger="$agent_goal_ledger" \
+  sha256="$(shasum -a 256 "$agent_repo/plans/goals.md" | cut -d' ' -f1)" \
+  >"$agent_repo/plans/goals-accepted.json"
+"$engine" json set --file "$agent_repo/plans/goals-accepted.json" --int schemaVersion=1
+git -C "$agent_repo" -c core.hooksPath=/dev/null add plans
+git -C "$agent_repo" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'goal-free fixture baseline'
+git -C "$agent_repo" config metasystem.goal.machine agent-machine
+git -C "$agent_repo" config goal.sync-remote local
+agent_goal_source_digest=$("$engine" goal source-digest --root "$agent_repo")
+METASYSTEM_OWNER_LINEAGE=agent-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:00:00Z \
+  "$engine" goal migrate --root "$agent_repo" --source-digest "$agent_goal_source_digest" \
+    --sync-mode local --by wido >/dev/null
+git -C "$agent_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+[[ -f "$agent_repo/plans/goals/backlog.md" && ! -e "$agent_repo/plans/goals.md" ]] \
+  || { echo "the main dispatch fixture did not materialize its converted goal state" >&2; exit 1; }
+
 agent_supervision_repo=$agent_repo
 track_armed_supervision "$agent_repo"
 agent_main_start=$("$agent_repo/bin/metasystem" proc started-at --pid "$$")
@@ -1384,7 +1449,7 @@ cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 "$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
   --set runtime.fake.maximal-models=fake-model \
   --set runtime.fake.model-alias.fake-source=fake-model \
-  --set role.default.model.fake=fake-source \
+  --set role.design-critic.model.fake=fake-source \
   --set cap.min.fake.fake-model=31 \
   --set cap.min.fake.fake-source=30
 alias_brief="$agent_fixture/model-alias.md"
@@ -1404,7 +1469,7 @@ alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
   || { echo "source-valued roster did not relay only the canonical model downstream" >&2; cat "$alias_roster_record" >&2; exit 1; }
 
 "$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
-  --set role.default.model.fake=fake-model
+  --set role.design-critic.model.fake=fake-model
 run_agent_fixture model-alias-override model-alias-override "$agent_dispatch" dispatch \
   --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$alias_brief" --job-id model-alias-override --model fake-source --wait
@@ -1609,7 +1674,7 @@ set -e
   || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
 # This serving goal is deliberately open but unclaimed. Admission therefore
 # needs no budget tuple, while --serving-goal must still project it lawfully.
-bin/metasystem goal open --root "$agent_repo" \
+METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" \
 	--id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." --tier 3 >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
 sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
@@ -1617,7 +1682,7 @@ sg_prompt="$agent_repo/artifacts/agents/serving-goal/rounds/1/prompt.md"
 grep -Fq '# Serving goal (context, not instruction)' "$sg_brief" \
   && grep -Fq 'fixture-serving — Serve the fixture goal' "$sg_brief" \
   || { echo "the payload brief lacks the serving-goal section" >&2; exit 1; }
-sg_recorded=$(bin/metasystem json get --file "$agent_repo/artifacts/agents/jobs/serving-goal.json" --field input.hash)
+sg_recorded=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/serving-goal.json" --field input.hash)
 sg_actual=$(shasum -a 256 "$sg_prompt" | cut -d' ' -f1)
 [[ "$sg_recorded" == "$sg_actual" ]] \
   || { echo "the composed packet is not the recorded input hash ($sg_recorded != $sg_actual)" >&2; exit 1; }
@@ -2595,7 +2660,7 @@ ew_role="$agent_repo/scripts/agents/roles/design-critic.requirements.json"
 ew_role_saved="$agent_fixture/ew-role-saved.json"
 cp "$ew_role" "$ew_role_saved"
 printf '%s\n' '{"required":[],"optional":{},"waivers":{}}' >"$ew_role"
-if bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
+if "$engine" job snapshot-select --root "$agent_repo" --runtime ghostrt \
     --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
     --output "$agent_fixture/ew-unwaived.out" 2>"$agent_fixture/ew-unwaived.err"; then
   cp "$ew_role_saved" "$ew_role"
@@ -2608,7 +2673,7 @@ grep -Fq 'writeRoots' "$agent_fixture/ew-unwaived.err" \
 # waiver can apply — a future under-enforced runtime is refused until
 # its registry declaration AND a human role-policy edit both exist.
 printf '%s\n' '{"required":[],"optional":{},"waivers":{"writeRoots":["ghostrt"]}}' >"$ew_role"
-if bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
+if "$engine" job snapshot-select --root "$agent_repo" --runtime ghostrt \
     --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
     --output "$agent_fixture/ew-waived.out" 2>"$agent_fixture/ew-waived.err"; then
   cp "$ew_role_saved" "$ew_role"

@@ -254,7 +254,8 @@ if true; then  # template-gated by the orchestrator
   # the fixture gives its target one before asserting healthy-tick writes.
   git -C "$nested_tgt" add -A
   git -C "$nested_tgt" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm adopted-base
-  "$vendored_prefix/scripts/receipt.sh" add --type implement --outcome shipped \
+  METASYSTEM_BIN="$vendored_prefix/bin/metasystem" \
+    "$vendored_prefix/scripts/receipt.sh" add --type implement --outcome shipped \
     --skills none --verify clean --corrections 0 --stop-loss no --note "adopted state-root fixture" >/dev/null
   tick_out=$("$vendored_prefix/bin/metasystem" steward tick --repo "$nested_tgt") \
     || { echo "adopted steward tick failed" >&2; exit 1; }

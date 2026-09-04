@@ -46,6 +46,7 @@ channel.destination.fleet.fake.dir=$fake_dir
 channel.human.slack.user-id=UWIDO
 channel.human.totp-secret=$secret
 channel.status.interval-minutes=240
+channel.poll-timeout-sec=120
 CONF
 export METASYSTEM_OWNER_LINEAGE=fixture-lineage
 fixture_start=$("$ms" proc started-at --pid "$$")
@@ -80,9 +81,11 @@ grep -q 'answer actor=human:wido' <<<"$history"
 grep -q 'recorded as your word' "$fake_dir/journal.jsonl"
 opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history")
 [[ -n "$opid" ]]
-"$ms" goal claim --root "$repo" --id channel-fixture --approved-ref "$opid" \
+"$ms" goal approve --root "$repo" --id channel-fixture --by Wido \
 	--elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 \
-	--review-round-limit 3 >/dev/null
+	--review-round-limit 3 --temporary-human-word 'Wido approves this channel fixture budget' \
+	--review-by 2026-09-06 >/dev/null
+"$ms" goal claim --root "$repo" --id channel-fixture >/dev/null
 [[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 
 "$ms" goal done --root "$repo" --id channel-fixture --conclude 'Slack fixture passed.' >/dev/null
@@ -125,9 +128,11 @@ grep -q 'answer actor=human:wido' <<<"$telegram_history"
 grep -q 'recorded as your word on channel telegram fixture' "$fake_dir/journal.jsonl"
 telegram_opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$telegram_history")
 [[ -n "$telegram_opid" ]]
-"$ms" goal claim --root "$repo" --id channel-telegram-fixture --approved-ref "$telegram_opid" \
+"$ms" goal approve --root "$repo" --id channel-telegram-fixture --by Wido \
 	--elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 \
-	--review-round-limit 3 >/dev/null
+	--review-round-limit 3 --temporary-human-word 'Wido approves this Telegram channel fixture budget' \
+	--review-by 2026-09-06 >/dev/null
+"$ms" goal claim --root "$repo" --id channel-telegram-fixture >/dev/null
 [[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
 
 echo "channel fixtures: PASSED"

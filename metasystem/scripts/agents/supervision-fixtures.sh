@@ -1541,11 +1541,14 @@ cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - Next step: dispatch the runner
 FIXTURE
 git -C "$stop_root" init -q -b main
+enroll_fixture_engine "$stop_root" "$stop_root/bin/metasystem"
 stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
 first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
-printf '%s' "$first" | grep -Fq 'Metasystem supervision arming failed:' \
-  && printf '%s' "$first" | grep -Fq 'ENROLLMENT_DRIFT' \
-  || { echo "the Stop payload did not carry the up failure" >&2; echo "$first" >&2; exit 1; }
+if printf '%s' "$first" | grep -Fq 'Metasystem supervision arming failed:'; then
+  echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
+  echo "$first" >&2
+  exit 1
+fi
 printf '%s' "$first" | grep -q '"decision":"block"' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
 printf '%s' "$first" | grep -Fq 'HEALTH ' \
