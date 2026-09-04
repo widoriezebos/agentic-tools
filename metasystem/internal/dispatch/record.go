@@ -63,7 +63,7 @@ var immutableFields = map[string]bool{
 	"branch": true, "startedAt": true, "claimEpoch": true, "mainId": true,
 	"capMin": true, "capDeadline": true, "capResolution": true,
 	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
-	"operationId": true, "goalId": true, "goalRevision": true, "machineId": true,
+	"operationId": true, "goalId": true, "goalRevision": true, "goalTier": true, "machineId": true,
 	"approvedRef": true, "sessionKey": true, "proofLevel": true,
 	"fingerprintVersion": true, "fingerprint": true, "dispatchMode": true,
 	"resumedSessionId": true, "canonicalModelKey": true, "launchMode": true,
@@ -334,6 +334,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			!sameValue(record["operationId"], current["operationId"]) ||
 			!sameValue(record["goalId"], current["goalId"]) ||
 			!sameValue(record["goalRevision"], current["goalRevision"]) ||
+			!sameValue(record["goalTier"], current["goalTier"]) ||
 			!sameValue(record["machineId"], current["machineId"]) ||
 			!sameValue(record["reviews"], current["reviews"]) ||
 			!sameValue(record["approvedRef"], current["approvedRef"]) ||

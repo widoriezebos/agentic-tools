@@ -50,6 +50,78 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	}
 }
 
+func TestLegacyFourMemberBudgetUsesGoalTierReviewRounds(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		tier uint8
+		want int64
+	}{
+		{name: "tierless uses tier three", tier: 0, want: 3},
+		{name: "tier one", tier: 1, want: 0},
+		{name: "tier two", tier: 2, want: 2},
+		{name: "tier three", tier: 3, want: 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := vGoal("legacy-budget", StateQueued)
+			file.Tier = test.tier
+			file.Budget = &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+			raw := strings.Replace(string(RenderFile(file)), " reviewRoundLimit=3", "", 1)
+			parsed, problems := ParseFile([]byte(withFreshIntegrity(raw)))
+			if len(problems) != 0 || parsed == nil || parsed.Budget == nil || parsed.Budget.ReviewRoundLimit != test.want || !parsed.legacyFourBudget {
+				t.Fatalf("legacy tier %d budget parsed as %+v with problems %v; want review rounds %d", test.tier, parsed, problems, test.want)
+			}
+		})
+	}
+}
+
+func TestLegacyBudgetAndNormApprovalShareInferredReviewRounds(t *testing.T) {
+	file := vGoal("both-legacy-rounds", StateQueued)
+	file.Budget = &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+	file.NormApproval = &GoalNormApprovalClaim{ApprovedRef: "R-legacy", Minutes: 240, ReviewRounds: 3, GoalRevision: 1}
+	raw := string(RenderFile(file))
+	raw = strings.Replace(raw, " reviewRoundLimit=3", "", 1)
+	raw = strings.Replace(raw, " reviewRounds=3", "", 1)
+	parsed, problems := ParseFile([]byte(withFreshIntegrity(raw)))
+	if len(problems) != 0 || parsed.Budget.ReviewRoundLimit != 3 || parsed.NormApproval.ReviewRounds != 3 ||
+		!parsed.legacyFourBudget || !parsed.legacyThreeNormApproval {
+		t.Fatalf("both-legacy review rounds did not share the tier-three box: parsed=%+v problems=%v", parsed, problems)
+	}
+	reparsed, problems := ParseFile(RenderFile(parsed))
+	if len(problems) != 0 || reparsed.legacyFourBudget || reparsed.legacyThreeNormApproval {
+		t.Fatalf("the next write did not render both inferred members explicitly: parsed=%+v problems=%v", reparsed, problems)
+	}
+}
+
+func TestMixedLegacyReviewRoundMemberUsesExplicitValue(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		legacyBudget bool
+	}{
+		{name: "legacy budget uses explicit norm approval", legacyBudget: true},
+		{name: "legacy norm approval uses explicit budget", legacyBudget: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := vGoal("mixed-legacy-rounds", StateQueued)
+			file.Tier = 2
+			file.Budget = &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 7}
+			file.NormApproval = &GoalNormApprovalClaim{ApprovedRef: "R-explicit", Minutes: 240, ReviewRounds: 7, GoalRevision: 1}
+			raw := string(RenderFile(file))
+			if test.legacyBudget {
+				raw = strings.Replace(raw, " reviewRoundLimit=7", "", 1)
+			} else {
+				raw = strings.Replace(raw, " reviewRounds=7", "", 1)
+			}
+			parsed, problems := ParseFile([]byte(withFreshIntegrity(raw)))
+			if len(problems) != 0 || parsed.Budget.ReviewRoundLimit != 7 || parsed.NormApproval.ReviewRounds != 7 {
+				t.Fatalf("mixed legacy record did not preserve the explicit seven-round value: parsed=%+v problems=%v", parsed, problems)
+			}
+			if parsed.legacyFourBudget != test.legacyBudget || parsed.legacyThreeNormApproval == test.legacyBudget {
+				t.Fatalf("mixed legacy markers do not identify only the missing member: budget=%v norm=%v", parsed.legacyFourBudget, parsed.legacyThreeNormApproval)
+			}
+		})
+	}
+}
+
 func TestLabelsParseRawAndUnlabeledFilesStayUnchanged(t *testing.T) {
 	f := claimedGolden()
 	unlabeled := string(RenderFile(f))

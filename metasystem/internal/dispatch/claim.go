@@ -50,6 +50,7 @@ type ClaimLaunchParams struct {
 	ClaimEpoch           string
 	GoalID               string
 	GoalRevision         uint64
+	GoalTier             uint8
 	MachineID            string
 	Reviews              string
 	ApprovedRef          string
@@ -165,6 +166,7 @@ type claimReservationProvenance struct {
 	claimEpoch         any
 	goalID             any
 	goalRevision       any
+	goalTier           any
 	machineID          any
 	approvedRef        any
 	sliceApprovalClaim any
@@ -254,12 +256,16 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
+	goalTier, err := nullableGoalTier(params.GoalID, params.GoalTier)
+	if err != nil {
+		return ClaimResult{}, err
+	}
 	if params.ApprovedRef != "" && params.GoalID == "" {
 		return ClaimResult{}, fmt.Errorf("claim-launch approvedRef requires a goal id and positive revision")
 	}
 	provenance := claimReservationProvenance{
 		mainID: nullableString(params.MainID), claimEpoch: claimEpoch, goalID: nullableString(params.GoalID),
-		goalRevision: goalRevision, machineID: nullableString(params.MachineID), approvedRef: nullableString(params.ApprovedRef),
+		goalRevision: goalRevision, goalTier: goalTier, machineID: nullableString(params.MachineID), approvedRef: nullableString(params.ApprovedRef),
 		sliceApprovalClaim: sliceApprovalClaim(approvalClaim),
 		configuration:      configuration,
 	}
@@ -673,6 +679,7 @@ func claimReservationRecord(opid, operationID, reviews string, fingerprint Launc
 		"claimEpoch":               provenance.claimEpoch,
 		"goalId":                   provenance.goalID,
 		"goalRevision":             provenance.goalRevision,
+		"goalTier":                 provenance.goalTier,
 		"machineId":                provenance.machineID,
 		"approvedRef":              provenance.approvedRef,
 		"sliceApprovalClaim":       provenance.sliceApprovalClaim,

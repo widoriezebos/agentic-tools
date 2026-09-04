@@ -103,20 +103,82 @@ func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 
 func TestResolveGoalRevisionUsesTheClaimBinding(t *testing.T) {
 	root := revisionBindingBed(t, 2)
-	revision, err := ResolveGoalRevision(root, "bounded")
-	if err != nil || revision != 2 {
-		t.Fatalf("dispatch bound current file revision 4 instead of claim revision 2: %d %v", revision, err)
+	revision, tier, err := ResolveGoalRevision(root, "bounded")
+	if err != nil || revision != 2 || tier != 3 {
+		t.Fatalf("dispatch binding = revision %d tier %d, want claimed revision 2 under pre-marker tier 3 rules: %v", revision, tier, err)
 	}
 
 	legacy := revisionBindingBed(t, 0)
-	if _, err := ResolveGoalRevision(legacy, "bounded"); err == nil || !strings.Contains(err.Error(), "goal set-budget") {
+	if _, _, err := ResolveGoalRevision(legacy, "bounded"); err == nil || !strings.Contains(err.Error(), "goal set-budget") {
 		t.Fatalf("revisionless claim did not refuse toward set-budget: %v", err)
 	}
 
 	contradictory := revisionBindingBed(t, 5)
-	if _, err := ResolveGoalRevision(contradictory, "bounded"); err == nil ||
+	if _, _, err := ResolveGoalRevision(contradictory, "bounded"); err == nil ||
 		!strings.Contains(err.Error(), "BUDGET_UNKNOWN record=plans/goals/bounded.md") {
 		t.Fatalf("a nonexistent claimed revision did not name its exact authoritative goal file: %v", err)
+	}
+}
+
+func commitRevisionBindingTierState(t *testing.T, root string, tier uint8, tierLaw string) {
+	t.Helper()
+	goalPath := filepath.Join(root, "plans", "goals", "bounded.md")
+	data, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("parse goal fixture: %v", problems)
+	}
+	file.Tier = tier
+	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rootPath := filepath.Join(root, "plans", "goals", "backlog.md")
+	data, err = os.ReadFile(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootRecord, rootProblems := goal.ParseRoot(data)
+	if len(rootProblems) != 0 {
+		t.Fatalf("parse root fixture: %v", rootProblems)
+	}
+	rootRecord.TierLaw = tierLaw
+	if err := os.WriteFile(rootPath, goal.RenderRoot(rootRecord), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals"}, {"commit", "-q", "-m", "tier state"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+}
+
+func TestTierlessGoalUsesTierThreeBeforeTierLawAndRefusesAfter(t *testing.T) {
+	root := revisionBindingBed(t, 2)
+	if binding, err := ResolveGoalBinding(root, "bounded", time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)); err != nil || binding.Tier != 3 {
+		t.Fatalf("pre-marker tierless binding = %+v err=%v, want effective tier 3", binding, err)
+	}
+	commitRevisionBindingTierState(t, root, 0, "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000003")
+	if _, err := ResolveGoalBinding(root, "bounded", time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "classify the goal first: goal edit --tier") {
+		t.Fatalf("post-marker tierless goal was dispatchable: %v", err)
+	}
+}
+
+func TestTierOneGoalRevisionAdmissionRefusesReviewBearingHazards(t *testing.T) {
+	root := revisionBindingBed(t, 2)
+	commitRevisionBindingTierState(t, root, 1, "")
+	now := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	if verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical); err != nil || verdict.Refused() {
+		t.Fatalf("tier 1 mechanical admission refused: %+v %v", verdict, err)
+	}
+	for _, hazard := range []HazardClass{HazardDesignBearing, HazardDestructiveReach} {
+		verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, hazard)
+		if err != nil || !verdict.Refused() || verdict.PolicyRefusal != "the hazard needs review the tier does not have; goal edit --tier 2" {
+			t.Fatalf("tier 1 hazard %s verdict = %+v err=%v", hazard, verdict, err)
+		}
 	}
 }
 

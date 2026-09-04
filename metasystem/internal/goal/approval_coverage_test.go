@@ -119,25 +119,20 @@ func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 	}
 	human.Ulid = "01J5X00000000000000000RR30"
 	result, err = Approve(human, []string{"ratify-once"}, nil, proof)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "requires one complete budget tuple") {
-		t.Fatalf("first approval reused a nonexistent tuple: %+v %v", result, err)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("first approval did not reuse the intake tier box: %+v %v", result, err)
 	}
 
 	human.Ulid = "01J5X00000000000000000RR40"
-	result, err = Approve(human, []string{"ratify-once"}, ptrBudget(testBudget()), proof)
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("approve exact tuple: %+v %v", result, err)
-	}
-	human.Ulid = "01J5X00000000000000000RR50"
 	result, err = Approve(human, []string{"ratify-once"}, nil, proof)
 	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "same proven approval") {
 		t.Fatalf("identical proven approval was not an explicit no-op: %+v %v", result, err)
 	}
 
-	if result, err = Claim(verbReq(root, "01J5X00000000000000000RR60", "mac-a"), "ratify-once"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err = Claim(verbReq(root, "01J5X00000000000000000RR50", "mac-a"), "ratify-once"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim approved fixture: %+v %v", result, err)
 	}
-	human.Ulid = "01J5X00000000000000000RR70"
+	human.Ulid = "01J5X00000000000000000RR60"
 	result, err = Approve(human, []string{"ratify-once"}, ptrBudget(testBudget()), proof)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "tuple changes through goal set-budget") {
 		t.Fatalf("approve changed a claimed tuple instead of naming set-budget: %+v %v", result, err)
@@ -281,7 +276,7 @@ func TestSweepListingBindsIntentBudgetAndDisplayedApproval(t *testing.T) {
 		t.Fatalf("listing did not name exactly the invalid-budget goal as skipped: %+v", original)
 	}
 	lines := strings.Join(original.Lines, "\n")
-	if !strings.Contains(lines, `intent="Do the thing called listed-approved"`) || !strings.Contains(lines, "normApproval=R-400/1600/2") || !strings.Contains(lines, "authority=proven") {
+	if !strings.Contains(lines, `intent="Do the thing called listed-approved"`) || !strings.Contains(lines, "normApproval=R-400/1600/0/2") || !strings.Contains(lines, "authority=proven") {
 		t.Fatalf("listing hid intent, norm approval, or authority from the human: %s", lines)
 	}
 
@@ -326,21 +321,21 @@ func TestProvenSweepWithNoEligibleChangesIsExplicitNoOp(t *testing.T) {
 func TestGoalNormCheckCoversWithinAndOverNormRemedies(t *testing.T) {
 	_, root := oneClone(t)
 	seedGoalNormConfig(t, root)
-	within := Budget{ReservedJobMinutesLimit: 1440}
-	if err := requireWithinGoalNorm(root, within, "within", ""); err != nil {
+	within := Budget{ReservedJobMinutesLimit: 1200, ReviewRoundLimit: 3}
+	if err := requireWithinGoalNorm(root, 3, within, "within", ""); err != nil {
 		t.Fatalf("the exact goal norm refused: %v", err)
 	}
-	over := Budget{ReservedJobMinutesLimit: 1441}
-	if err := requireWithinGoalNorm(root, over, "over", "cannot rejoin"); err == nil || !strings.Contains(err.Error(), "over cannot rejoin with an over-norm tuple") {
+	over := Budget{ReservedJobMinutesLimit: 1201, ReviewRoundLimit: 3}
+	if err := requireWithinGoalNorm(root, 3, over, "over", "cannot rejoin"); err == nil || !strings.Contains(err.Error(), "over cannot rejoin with an over-norm tuple") {
 		t.Fatalf("the contextual norm remedy was not preserved: %v", err)
 	}
-	if err := requireWithinGoalNorm(root, over, "over", ""); err == nil || !strings.Contains(err.Error(), "GOAL_NORM_REFUSED") || !strings.Contains(err.Error(), "goal split") {
+	if err := requireWithinGoalNorm(root, 3, over, "over", ""); err == nil || !strings.Contains(err.Error(), "GOAL_NORM_REFUSED") || !strings.Contains(err.Error(), "split it") {
 		t.Fatalf("the ordinary over-norm refusal lost its split remedy: %v", err)
 	}
 	if err := os.WriteFile(root+"/metasystem.conf", []byte("metasystem.budget.goal-norm-job-minutes=many\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireWithinGoalNorm(root, within, "invalid-config", ""); err == nil || !strings.Contains(err.Error(), "must be a positive integer") {
+	if err := requireWithinGoalNorm(root, 3, within, "invalid-config", ""); err == nil || !strings.Contains(err.Error(), "is retired") {
 		t.Fatalf("a malformed goal norm was treated as a usable execution bound: %v", err)
 	}
 }
@@ -352,7 +347,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 	if result, err := Open(verbReq(root, "01J5X00000000000000000NR00", "mac-a"), "covered-over-norm", "Run one approved exception.", OriginMain, "Wait for approval."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open over-norm fixture: %+v %v", result, err)
 	}
-	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1}
+	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	human := verbReq(root, "01J5X00000000000000000NR10", "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
@@ -364,7 +359,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 	if err := os.MkdirAll(root+"/memory", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(root+"/memory/rulings.md", []byte("| R-401 | goal=covered-over-norm minutes=1500 goalRevision=1 |\n"), 0o644); err != nil {
+	if err := os.WriteFile(root+"/memory/rulings.md", []byte("| R-401 | goal=covered-over-norm minutes=1500 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	human.Ulid = "01J5X00000000000000000NR20"

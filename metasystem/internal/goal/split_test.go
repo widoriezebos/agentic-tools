@@ -22,7 +22,7 @@ func mainRatification(parent string, members []MemberDraft) SplitRatification {
 
 func seedGoalNormConfig(t *testing.T, root string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.budget.goal-norm-job-minutes=1440\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -323,17 +323,17 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	if res, err := Open(verbReq(root, "01J5X00000000000000000GN00", "mac-a"), "large-goal", "Large goal.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1441, ActiveJobLimit: 1}
+	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1201, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	request := verbReq(root, "01J5X00000000000000000GN10", "mac-a")
 	request.Actor.Human = "wido"
 	refused, err := Approve(request, []string{"large-goal"}, &over, testHumanAuthority(t, root, request.Now))
-	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "goal split") {
+	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "split it into an arc of members within the box") {
 		t.Fatalf("over-norm claim did not exercise the typed split remedy: %+v %v", refused, err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-25b | goal=large-goal minutes=1600 goalRevision=1 |\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-25b | goal=large-goal minutes=1600 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	approved := verbReq(root, "01J5X00000000000000000GN20", "mac-a")
@@ -361,7 +361,7 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	if res, err := Open(verbReq(root, "01J5X00000000000000000GN40", "mac-a"), "at-norm", "Exactly bounded.", OriginMain, "Proceed."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open at-norm: %+v %v", res, err)
 	}
-	atNorm := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1440, ActiveJobLimit: 1}
+	atNorm := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	atNormReq := verbReq(root, "01J5X00000000000000000GN50", "mac-a")
 	atNormReq.Actor.Human = "wido"
 	if res, err := Approve(atNormReq, []string{"at-norm"}, &atNorm, testHumanAuthority(t, root, atNormReq.Now)); err != nil || res.Outcome != OutcomeConfirmed {
@@ -378,8 +378,8 @@ func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(a, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1}
-	if err := os.WriteFile(filepath.Join(a, "memory", "rulings.md"), []byte("| R-301 | goal=over-steal minutes=1500 goalRevision=1 |\n"), 0o644); err != nil {
+	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+	if err := os.WriteFile(filepath.Join(a, "memory", "rulings.md"), []byte("| R-301 | goal=over-steal minutes=1500 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	set := verbReq(a, "01J5X00000000000000000NS10", "mac-a")
@@ -400,17 +400,17 @@ func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
 }
 
 func TestGoalNormApprovalGrammarIsDistinctAndUnambiguous(t *testing.T) {
-	minutes, revision, ok := StrictApprovalTriple("approve goal=large-goal minutes=1600 goalRevision=4", "large-goal", "minutes=")
-	if !ok || minutes != 1600 || revision != 4 {
-		t.Fatalf("strict goal approval did not parse: minutes=%d revision=%d ok=%v", minutes, revision, ok)
+	minutes, rounds, revision, ok := StrictApprovalQuadruple("approve goal=large-goal minutes=1600 reviewRounds=3 goalRevision=4", "large-goal")
+	if !ok || minutes != 1600 || rounds != 3 || revision != 4 {
+		t.Fatalf("strict goal approval did not parse: minutes=%d rounds=%d revision=%d ok=%v", minutes, rounds, revision, ok)
 	}
-	if _, _, ok := StrictApprovalTriple("goal=large-goal capMin=1600 goalRevision=4", "large-goal", "minutes="); ok {
+	if _, _, _, ok := StrictApprovalQuadruple("goal=large-goal capMin=1600 goalRevision=4", "large-goal"); ok {
 		t.Fatal("a slice-cap approval silently doubled as a goal-norm approval")
 	}
-	if _, _, ok := StrictApprovalTriple("goal=large-goal minutes=1600 goalRevision=4 goal=large-goal minutes=1700 goalRevision=4", "large-goal", "minutes="); ok {
+	if _, _, _, ok := StrictApprovalQuadruple("goal=large-goal minutes=1600 reviewRounds=3 goalRevision=4 goal=large-goal minutes=1700 reviewRounds=3 goalRevision=4", "large-goal"); ok {
 		t.Fatal("two distinct approval triples were accepted as one human word")
 	}
-	if _, _, ok := StrictApprovalTriple("goal=large-goal minutes=1600 goalRevision=4 goal=large-goal minutes=1600 goalRevision=4", "large-goal", "minutes="); ok {
+	if _, _, _, ok := StrictApprovalQuadruple("goal=large-goal minutes=1600 reviewRounds=3 goalRevision=4 goal=large-goal minutes=1600 reviewRounds=3 goalRevision=4", "large-goal"); ok {
 		t.Fatal("two byte-identical approval occurrences were deduplicated instead of refused")
 	}
 }
@@ -487,11 +487,11 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 	}
 	human := verbReq(root, "01J5X00000000000000000NH30", "mac-a")
 	human.Actor.Human = "wido"
-	reason := "goal=history-large minutes=1600 goalRevision=1"
+	reason := "goal=history-large minutes=1600 reviewRounds=3 goalRevision=1"
 	if res, err := Park(human, "approval-carrier", reason); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("record human history approval: %+v %v", res, err)
 	}
-	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1}
+	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	approved := verbReq(root, "01J5X00000000000000000NH40", "mac-a")
 	approved.Actor.Human = "wido"
 	approved.ApprovedRef = human.opid()
@@ -501,7 +501,7 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-251 | goal=stale-large minutes=1600 goalRevision=1 |\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-251 | goal=stale-large minutes=1600 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	next := "Advance the revision."
@@ -517,8 +517,8 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 	}
 
 	invalid := vGoal("invalid-approval", StateQueued)
-	invalid.Budget = &Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1}
-	invalid.NormApproval = &GoalNormApprovalClaim{ApprovedRef: "R-25b", Minutes: 1499, GoalRevision: invalid.Revision}
+	invalid.Budget = &Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+	invalid.NormApproval = &GoalNormApprovalClaim{ApprovedRef: "R-25b", Minutes: 1499, ReviewRounds: 3, GoalRevision: invalid.Revision}
 	problems := ValidateTree(&TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{"invalid-approval": invalid}, Done: map[string]*GoalFile{}})
 	if !problemsContain(problems, "NormApproval proves 1499 minutes but Budget reserves 1500 minutes") {
 		t.Fatalf("at-rest approval coverage was not enforced: %v", problems)

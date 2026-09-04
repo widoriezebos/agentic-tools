@@ -28,15 +28,15 @@ type Budget = goalbudget.Budget
 
 // NewBudget validates and canonicalizes the complete tuple accepted by the
 // command surface. There is no partial form and no numeric default.
-func NewBudget(elapsedLimit string, attemptLimit, reservedJobMinutesLimit, activeJobLimit int64) (Budget, error) {
-	return goalbudget.New(elapsedLimit, attemptLimit, reservedJobMinutesLimit, activeJobLimit)
+func NewBudget(elapsedLimit string, attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit int64) (Budget, error) {
+	return goalbudget.New(elapsedLimit, attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit)
 }
 
-func parseBudgetRecord(value string) (Budget, error) {
+func parseBudgetRecord(value string) (Budget, bool, error) {
 	record, err := parseKVRecord(value,
-		[]string{"elapsedLimit", "attemptLimit", "reservedJobMinutesLimit", "activeJobLimit"}, nil, "")
+		[]string{"elapsedLimit", "attemptLimit", "reservedJobMinutesLimit", "activeJobLimit"}, []string{"reviewRoundLimit"}, "")
 	if err != nil {
-		return Budget{}, err
+		return Budget{}, false, err
 	}
 	positive := func(key string) (uint64, error) {
 		number, parseErr := strconv.ParseUint(record[key], 10, 64)
@@ -47,26 +47,35 @@ func parseBudgetRecord(value string) (Budget, error) {
 	}
 	attempts, err := positive("attemptLimit")
 	if err != nil {
-		return Budget{}, err
+		return Budget{}, false, err
 	}
 	reserved, err := positive("reservedJobMinutesLimit")
 	if err != nil {
-		return Budget{}, err
+		return Budget{}, false, err
 	}
 	active, err := positive("activeJobLimit")
 	if err != nil {
-		return Budget{}, err
+		return Budget{}, false, err
+	}
+	legacyFour := record["reviewRoundLimit"] == ""
+	reviewRounds := int64(0)
+	if !legacyFour {
+		reviewRounds, err = strconv.ParseInt(record["reviewRoundLimit"], 10, 64)
+		if err != nil || reviewRounds < 0 {
+			return Budget{}, false, fmt.Errorf("reviewRoundLimit=%q is not a non-negative integer", record["reviewRoundLimit"])
+		}
 	}
 	budget := Budget{
 		ElapsedLimit:            record["elapsedLimit"],
 		AttemptLimit:            attempts,
 		ReservedJobMinutesLimit: reserved,
 		ActiveJobLimit:          active,
+		ReviewRoundLimit:        reviewRounds,
 	}
 	if err := budget.Validate(); err != nil {
-		return Budget{}, err
+		return Budget{}, false, err
 	}
-	return budget, nil
+	return budget, legacyFour, nil
 }
 
 func budgetIntentArgs(b Budget) map[string]string {
@@ -75,13 +84,14 @@ func budgetIntentArgs(b Budget) map[string]string {
 		"attemptLimit":            strconv.FormatUint(b.AttemptLimit, 10),
 		"reservedJobMinutesLimit": strconv.FormatUint(b.ReservedJobMinutesLimit, 10),
 		"activeJobLimit":          strconv.FormatUint(b.ActiveJobLimit, 10),
+		"reviewRoundLimit":        strconv.FormatInt(b.ReviewRoundLimit, 10),
 	}
 }
 
 func budgetFromIntentArgs(args map[string]string) (Budget, error) {
 	if args["elapsedLimit"] == "" || args["attemptLimit"] == "" ||
-		args["reservedJobMinutesLimit"] == "" || args["activeJobLimit"] == "" {
-		return Budget{}, fmt.Errorf("the stored budget is incomplete; all four fields are required")
+		args["reservedJobMinutesLimit"] == "" || args["activeJobLimit"] == "" || args["reviewRoundLimit"] == "" {
+		return Budget{}, fmt.Errorf("the stored budget is incomplete; all five fields are required")
 	}
 	attempts, err := strconv.ParseInt(args["attemptLimit"], 10, 64)
 	if err != nil {
@@ -95,5 +105,9 @@ func budgetFromIntentArgs(args map[string]string) (Budget, error) {
 	if err != nil {
 		return Budget{}, fmt.Errorf("the stored activeJobLimit is invalid: %v", err)
 	}
-	return NewBudget(args["elapsedLimit"], attempts, reserved, active)
+	reviewRounds, err := strconv.ParseInt(args["reviewRoundLimit"], 10, 64)
+	if err != nil {
+		return Budget{}, fmt.Errorf("the stored reviewRoundLimit is invalid: %v", err)
+	}
+	return NewBudget(args["elapsedLimit"], attempts, reserved, active, reviewRounds)
 }

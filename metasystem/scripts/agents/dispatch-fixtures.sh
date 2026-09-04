@@ -1050,9 +1050,10 @@ printf '{}\n' >"$agent_identity_fixture"
 export METASYSTEM_CENSUS_PROCESS_FILE="$agent_process_fixture"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
 
-# A structured claim enters through the public goal verb with the complete
-# tuple. Its first reservation is within every limit; that completed attempt
-# then closes the admission seam exactly at the attempt boundary.
+# A structured budget enters through the public human approval verb, then the
+# agent claims it without restating the tuple. Its first reservation is within
+# every limit; that completed attempt then closes the admission seam exactly at
+# the attempt boundary.
 budget_dispatch_repo="$agent_fixture/budget-dispatch-repo"
 budget_dispatch_evidence="$agent_fixture/budget-dispatch-evidence"
 cp -R "$agent_repo" "$budget_dispatch_repo"
@@ -1089,10 +1090,15 @@ run_fixture_arm "structured-budget initial arm" "$agent_fixture/budget-arming.ou
   env METASYSTEM_AGENT_RUNTIME=fake "$budget_dispatch_repo/scripts/agents/arm-supervision.sh" \
     --repo "$budget_dispatch_repo" --session budget-validator --pid "$$" \
     --start-time "$budget_main_start" --tag metasystem-main-fake-budget-validator
+METASYSTEM_OWNER_LINEAGE=budget-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:04:00Z \
+  "$budget_dispatch_repo/bin/metasystem" goal approve --root "$budget_dispatch_repo" \
+    --id structured-budget --by Wido \
+	--elapsed-limit 1d --attempt-limit 1 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
+	--review-round-limit 3 --fixture-human-authority >/dev/null
 budget_claim=$(METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:05:00Z \
-  "$budget_dispatch_repo/bin/metasystem" goal claim --root "$budget_dispatch_repo" --id structured-budget \
-    --elapsed-limit 1d --attempt-limit 1 --reserved-job-minutes-limit 10000 --active-job-limit 2)
+  "$budget_dispatch_repo/bin/metasystem" goal claim --root "$budget_dispatch_repo" --id structured-budget)
 grep -Fq '"outcome":"confirmed"' <<<"$budget_claim" \
   || { echo "the complete-tuple structured claim was refused: $budget_claim" >&2; exit 1; }
 budget_goal_revision=$("$budget_dispatch_repo/bin/metasystem" job goal-revision \
@@ -1345,7 +1351,7 @@ happy_enforcement_rel=$("$engine" json get --file "$happy_record" --field permis
 # rows outrank a draining source cap, and every downstream identity is the
 # target; the source survives only in the two provenance fields.
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-"$engine" config tailor --conf "$agent_repo/metasystem.conf" \
+"$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
   --set runtime.fake.maximal-models=fake-model \
   --set runtime.fake.model-alias.fake-source=fake-model \
   --set role.default.model.fake=fake-source \
@@ -1366,7 +1372,8 @@ alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
    && "$("$engine" json get --file "$alias_roster_record" --field capResolution.rule)" == config-pair ]] \
   || { echo "source-valued roster did not relay only the canonical model downstream" >&2; cat "$alias_roster_record" >&2; exit 1; }
 
-"$engine" config tailor --conf "$agent_repo/metasystem.conf" --set role.default.model.fake=fake-model
+"$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
+  --set role.default.model.fake=fake-model
 run_agent_fixture model-alias-override model-alias-override "$agent_dispatch" dispatch \
   --role design-critic --brief "$alias_brief" --job-id model-alias-override --model fake-source --wait
 alias_override_record="$agent_repo/artifacts/agents/jobs/model-alias-override.json"
@@ -1569,7 +1576,7 @@ set -e
 # This serving goal is deliberately open but unclaimed. Admission therefore
 # needs no budget tuple, while --serving-goal must still project it lawfully.
 bin/metasystem goal open --root "$agent_repo" \
-  --id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." >/dev/null
+	--id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." --tier 3 >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
 sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
 sg_prompt="$agent_repo/artifacts/agents/serving-goal/rounds/1/prompt.md"

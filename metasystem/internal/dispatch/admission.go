@@ -114,21 +114,36 @@ type GoalRevisionAdmission struct {
 	GoalID         string
 	GoalRevision   uint64
 	Refusal        *GoalAdmissionRefusal
+	PolicyRefusal  string
 	LiveStopReason string
 }
 
-func (v GoalRevisionAdmission) Refused() bool { return v.Refusal != nil }
+func (v GoalRevisionAdmission) Refused() bool { return v.Refusal != nil || v.PolicyRefusal != "" }
 
 // EvaluateGoalRevisionAdmission binds the final fence and projected cap
 // decision to the exact accepted revision about to publish a reservation.
-func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time) (GoalRevisionAdmission, error) {
+func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
+	if len(hazards) > 1 {
+		return verdict, fmt.Errorf("exactly one destructiveReach class may govern goal revision admission")
+	}
+	hazard := HazardMechanical
+	if len(hazards) == 1 {
+		hazard = hazards[0]
+	}
+	if _, err := MinimumHazardConfiguration(hazard); err != nil {
+		return verdict, err
+	}
 	binding, err := ResolveGoalBinding(repoRoot, id, now)
 	if err != nil {
 		return verdict, err
 	}
 	if binding.Revision != revision {
 		return verdict, fmt.Errorf("goal %s accepted revision moved from %d to %d", id, revision, binding.Revision)
+	}
+	if binding.Tier == 1 && hazard != HazardMechanical {
+		verdict.PolicyRefusal = "the hazard needs review the tier does not have; goal edit --tier 2"
+		return verdict, nil
 	}
 	if binding.Fence != nil {
 		verdict.LiveStopReason = binding.Fence.Reason

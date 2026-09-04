@@ -1597,7 +1597,7 @@ else
     --tag fixture-stop-hook --runtime claude >/dev/null
 fi
 "$stop_root/bin/metasystem" goal open --root "$stop_root" \
-  --id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
+	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." --tier 3 >/dev/null
 goal_block=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
 printf '%s' "$goal_block" | grep -q '"decision":"block"' \
   && printf '%s' "$goal_block" | grep -Fq 'Advance the fixture goal.' \

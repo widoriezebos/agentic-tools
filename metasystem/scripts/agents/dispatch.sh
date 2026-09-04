@@ -589,7 +589,7 @@ require_goal_revision_admission() { # proposed cap minutes
   [[ -n "${goal:-}" ]] || return 0
   set +e
   output=$("$ms" job goal-revision-admission --root "$root" --goal "$goal" \
-    --revision "$goal_revision" --proposed-cap "$proposed" 2>&1)
+    --revision "$goal_revision" --proposed-cap "$proposed" --destructive-reach "$destructive_reach" 2>&1)
   result=$?
   set -e
   [[ -z "$output" ]] || printf '%s\n' "$output" >&2
@@ -613,6 +613,23 @@ require_goal_revision_admission() { # proposed cap minutes
     *)
       record_delegate_outcome BUDGET_UNKNOWN refused "${output:-exact goal revision admission could not be evaluated}" "${job:-${child:-}}"
       die 1 "dispatch refused because exact goal revision admission could not be evaluated" ;;
+  esac
+}
+
+require_goal_tier_ladder() {
+  [[ -n "${goal:-}" ]] || return 0
+  case "$goal_tier" in
+    1)
+      if is_review_role "$role" || [[ -n "$reviews" ]]; then
+        die 1 "tier 1 goal $goal refuses critic roles and --reviews; raise it first with goal edit --tier 2"
+      fi
+      ;;
+    2)
+      [[ "$role" != design-critic ]] \
+        || die 1 "tier 2 goal $goal refuses the design-critic role; raise it first with goal edit --tier 3"
+      ;;
+    3) ;;
+    *) die 1 "goal $goal has no usable claimed-revision tier" ;;
   esac
 }
 
@@ -1148,7 +1165,7 @@ dispatch_job() {
   local use_worktree=0 workspace_selected=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
-  local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
+  local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_tier=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
   local -a product_root_args=() composition_source_args=()
   while (($#)); do
@@ -1331,10 +1348,12 @@ dispatch_job() {
     goal_binding=$("$ms" job goal-binding --root "$root" --goal "$goal") \
       || die 1 "cannot bind delegate operation to accepted goal $goal stop authority"
     goal_revision=$(json_value "$goal_binding" goalRevision)
+    goal_tier=$(json_value "$goal_binding" goalTier)
     goal_machine=$(json_value "$goal_binding" machineId)
     goal_claim_epoch=$(json_value "$goal_binding" claimEpoch)
     [[ -z "$current_claim_epoch" || "$current_claim_epoch" == "$goal_claim_epoch" ]] \
       || die 1 "goal $goal revision $goal_revision belongs to claim epoch $goal_claim_epoch, not current epoch $current_claim_epoch"
+    require_goal_tier_ladder
   fi
   if [[ -z "$job" ]]; then
     job=$("$ms" job operation-id --goal "$goal" --goal-revision "$goal_revision" \
@@ -1478,7 +1497,7 @@ dispatch_job() {
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
-    --goal "$goal" --goal-revision "$goal_revision" \
+    --goal "$goal" --goal-revision "$goal_revision" --goal-tier "$goal_tier" \
     --destructive-reach "$destructive_reach" --adapter-verb dispatch)
   preflight_rc=$?
   set -e
@@ -1511,7 +1530,7 @@ dispatch_job() {
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal" \
-    --goal-revision "$goal_revision" --machine-id "$goal_machine" --approved-ref "$approved_ref" \
+    --goal-revision "$goal_revision" --goal-tier "$goal_tier" --machine-id "$goal_machine" --approved-ref "$approved_ref" \
     --destructive-reach "$destructive_reach" --adapter-verb dispatch \
     --creator-pid "$$" --occupancy-preparation "$occupancy_preparation") || claim_rc=$?
   rm -f "$occupancy_preparation"
@@ -1548,7 +1567,7 @@ dispatch_job() {
     --handshake-budget "$handshake_budget" --approval-name "$approval_name" \
     --approved-at "$approved_at" --roster-pair "$roster_pair" \
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
-    --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" \
+    --reviews "$reviews" --goal "$goal" --goal-revision "$goal_revision" --goal-tier "$goal_tier" \
     --machine-id "$goal_machine" --approved-ref "$approved_ref" \
     --destructive-reach "$destructive_reach" --reasoning-effort "$reasoning_effort" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" \
@@ -1688,7 +1707,7 @@ append_critique_open_ids() { # source message, output message, critic root
 
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal reviews=
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_tier=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp=
   local -a product_root_args=() continuation_args=()
@@ -1784,10 +1803,12 @@ follow_up() {
     goal_binding=$("$ms" job goal-binding --root "$root" --goal "$goal") \
       || die 1 "cannot bind follow-up $child to accepted goal $goal stop authority"
     goal_revision=$(json_value "$goal_binding" goalRevision)
+    goal_tier=$(json_value "$goal_binding" goalTier)
     goal_machine=$(json_value "$goal_binding" machineId)
     goal_claim_epoch=$(json_value "$goal_binding" claimEpoch)
     [[ -z "$current_claim_epoch" || "$current_claim_epoch" == "$goal_claim_epoch" ]] \
       || die 1 "goal $goal revision $goal_revision belongs to claim epoch $goal_claim_epoch, not current epoch $current_claim_epoch"
+    require_goal_tier_ladder
     acquire_goal_revision_lock "$goal" "$goal_revision"
   fi
 	if [[ -n "$operation_override" ]]; then
@@ -1948,7 +1969,7 @@ follow_up() {
     --launch-mode "$launch_mode" --permission-envelope-digest "$permission_digest" \
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
-    --goal "$goal" --goal-revision "$goal_revision" \
+    --goal "$goal" --goal-revision "$goal_revision" --goal-tier "$goal_tier" \
     --destructive-reach "$destructive_reach" --adapter-verb "$adapter_verb")
   preflight_rc=$?
   set -e
@@ -1981,7 +2002,7 @@ follow_up() {
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --cap-min "$cap" --conf "$root/metasystem.conf" --input-hash "$input_hash" \
     --main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal" \
-    --goal-revision "$goal_revision" --machine-id "$goal_machine" --approved-ref "$approved_ref" \
+    --goal-revision "$goal_revision" --goal-tier "$goal_tier" --machine-id "$goal_machine" --approved-ref "$approved_ref" \
     --destructive-reach "$destructive_reach" --adapter-verb "$adapter_verb" \
     --creator-pid "$$" --occupancy-preparation "$occupancy_preparation") || claim_rc=$?
   rm -f "$occupancy_preparation"
@@ -2022,7 +2043,7 @@ follow_up() {
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$reservation_claim_epoch" --cap-resolution "$cap_resolution" \
-    --root "$root" --goal-revision "$goal_revision" --approved-ref "$approved_ref" \
+    --root "$root" --goal-revision "$goal_revision" --goal-tier "$goal_tier" --approved-ref "$approved_ref" \
     --destructive-reach "$destructive_reach" \
     --composition "$round_dir/composition.json" \
     --launch-mode "$launch_mode" --output-stream "$output_stream"

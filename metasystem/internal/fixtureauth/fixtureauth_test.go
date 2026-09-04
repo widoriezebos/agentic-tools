@@ -111,6 +111,15 @@ func TestCapabilityScoping(t *testing.T) {
 	if !authorization.Ancestor().Allows() || !authorization.MissionProcess().Allows() || !authorization.ProcessTable().Allows() {
 		t.Fatal("authorized probes must allow")
 	}
+	fixtureRoot := fakeCheckout(t, "fake")
+	fixtureAuthorization, err := New(fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fixtureAuthorization.GoalHumanAuthority().Allows(fixtureRoot) ||
+		fixtureAuthorization.GoalHumanAuthority().Allows(fakeCheckout(t, "fake")) {
+		t.Fatal("goal human authority was not bound to its exact fixture root")
+	}
 
 	// The zero/nil values refuse everything.
 	var nilAuth *Authorization
@@ -128,6 +137,10 @@ func TestCapabilityScoping(t *testing.T) {
 	var zeroCommand CommandProbe
 	if _, ok := zeroCommand.FixtureCommand(42); ok {
 		t.Fatal("zero command probe served a command")
+	}
+	var zeroGoalHumanAuthority GoalHumanAuthorityProbe
+	if zeroGoalHumanAuthority.Allows(fixtureRoot) {
+		t.Fatal("zero goal human authority authorized a mutation")
 	}
 }
 

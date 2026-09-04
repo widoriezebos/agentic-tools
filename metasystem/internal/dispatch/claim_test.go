@@ -26,7 +26,7 @@ func TestClaimLaunchSerializesOperationIdentityAcrossJobsAndChains(t *testing.T)
 	for index, job := range []string{"chain-a", "chain-b"} {
 		params := claimParamsForTest(root, job)
 		params.OperationID = "shared-operation"
-		params.GoalID, params.GoalRevision, params.MachineID = "", 0, ""
+		params.GoalID, params.GoalRevision, params.GoalTier, params.MachineID = "", 0, 0, ""
 		params.Request.SessionKey = fmt.Sprintf("fake:chain-%d", index)
 		go func(p ClaimLaunchParams) {
 			ready.Done()
@@ -142,6 +142,7 @@ func claimParamsForTest(root, opid string) ClaimLaunchParams {
 		ClaimEpoch:        "5",
 		GoalID:            "goal-a",
 		GoalRevision:      3,
+		GoalTier:          2,
 		MachineID:         "m-test",
 		AdapterVerb:       "dispatch",
 		DefaultCapMinutes: 120,
@@ -197,7 +198,7 @@ func TestClaimLaunchOutcomeWONCreatesExactReservation(t *testing.T) {
 	if record["instanceTag"] != "metasystem-job-job-won-0123456789abcdef" {
 		t.Fatalf("instance tag = %v", record["instanceTag"])
 	}
-	if record["mainId"] != "main-1" || !looseEqual(record["claimEpoch"], 5) || record["goalId"] != "goal-a" {
+	if record["mainId"] != "main-1" || !looseEqual(record["claimEpoch"], 5) || record["goalId"] != "goal-a" || !looseEqual(record["goalTier"], 2) {
 		t.Fatalf("reservation provenance = mainId:%v claimEpoch:%v goalId:%v", record["mainId"], record["claimEpoch"], record["goalId"])
 	}
 }
@@ -221,7 +222,7 @@ func TestClaimLaunchWONReservationCompletesRecordSetup(t *testing.T) {
 		"jobId": "job-setup", "status": "pending", "workspaceRoot": root,
 		"outputStream": filepath.Join(root, "events.jsonl"),
 	}
-	for _, carry := range []string{"mainId", "claimEpoch", "goalId", "goalRevision", "operationId", "capResolution", "machineId", "approvedRef", "capMin", "instanceTag", "fingerprint", "fingerprintVersion"} {
+	for _, carry := range []string{"mainId", "claimEpoch", "goalId", "goalRevision", "goalTier", "operationId", "capResolution", "machineId", "approvedRef", "capMin", "instanceTag", "fingerprint", "fingerprintVersion"} {
 		if v, ok := reservation[carry]; ok {
 			setupDoc[carry] = v
 		}
@@ -232,7 +233,7 @@ func TestClaimLaunchWONReservationCompletesRecordSetup(t *testing.T) {
 	}
 	record := readRecord(t, root, params.OpID)
 	if record["status"] != "pending" || record["mainId"] != "main-1" ||
-		!looseEqual(record["claimEpoch"], 5) || record["goalId"] != "goal-a" || record["fingerprint"] == "" {
+		!looseEqual(record["claimEpoch"], 5) || record["goalId"] != "goal-a" || !looseEqual(record["goalTier"], 2) || record["fingerprint"] == "" {
 		t.Fatalf("completed claim-launch reservation = %+v", record)
 	}
 }

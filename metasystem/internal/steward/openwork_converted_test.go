@@ -169,11 +169,11 @@ func approvedStewardGoal(id, intent, next, openedAt string) *goal.GoalFile {
 		Targets: []string{id}, Keep: -1,
 	})
 	return &goal.GoalFile{
-		Id: id, State: goal.StateApproved, Intent: intent, Origin: goal.OriginMain,
+		Id: id, State: goal.StateApproved, Tier: 3, Intent: intent, Origin: goal.OriginMain,
 		NextStep: next, OpenedAt: openedAt, Revision: 2, Budget: budget, History: history,
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvedAt, Revision: 2, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(intent, *budget),
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(intent, 3, *budget),
 		},
 	}
 }

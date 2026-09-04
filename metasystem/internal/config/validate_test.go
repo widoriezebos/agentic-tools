@@ -234,8 +234,10 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"nonnumeric slice norm", "metasystem.budget.slice-norm-hours=four\n", "metasystem.budget.slice-norm-hours must be a positive integer"},
 		{"zero ledger-attention threshold", LedgerAttentionStaleMinutesKey + "=0\n", LedgerAttentionStaleMinutesKey + " must be a positive integer"},
 		{"nonnumeric ledger-attention threshold", LedgerAttentionStaleMinutesKey + "=soon\n", LedgerAttentionStaleMinutesKey + " must be a positive integer"},
-		{"zero goal norm", GoalNormJobMinutesKey + "=0\n", GoalNormJobMinutesKey + " must be a positive integer"},
-		{"nonnumeric goal norm", GoalNormJobMinutesKey + "=many\n", GoalNormJobMinutesKey + " must be a positive integer"},
+		{"retired goal norm", GoalNormJobMinutesKey + "=1200\n", GoalNormJobMinutesKey + " is retired"},
+		{"negative review round ceiling", ReviewRoundMaxKey + "=-1\n", ReviewRoundMaxKey + " must be a non-negative integer"},
+		{"tier box above round ceiling", Tier2BudgetKey + "=4h/6/720m/1/4\n", ReviewRoundMaxKey},
+		{"zero dispatch cap maximum", "dispatch.cap-max=0\n", "dispatch.cap-max must be a positive integer"},
 	} {
 		problems := validateRepo(t, validConf+tc.line)
 		if !hasProblem(problems, tc.expect) {
@@ -243,7 +245,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + GoalNormJobMinutesKey + "=1440\nmetasystem.counselor.brief-cadence-hours=24\n"
+	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
 	}
@@ -262,12 +264,11 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 		{
 			name:  "production local overrides",
 			conf:  validConf,
-			local: ElapsedGracePercentKey + "=75\n" + SliceNormHoursKey + "=6\n" + LedgerAttentionStaleMinutesKey + "=45\n" + GoalNormJobMinutesKey + "=1800\n",
+			local: ElapsedGracePercentKey + "=75\n" + SliceNormHoursKey + "=6\n" + LedgerAttentionStaleMinutesKey + "=45\n",
 			expect: []string{
 				ElapsedGracePercentKey + " accepts only committed root configuration",
 				SliceNormHoursKey + " accepts only committed root configuration",
 				LedgerAttentionStaleMinutesKey + " accepts only committed root configuration",
-				GoalNormJobMinutesKey + " accepts only committed root configuration",
 			},
 		},
 		{
@@ -277,24 +278,21 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 				ElapsedGracePercentKey:         "75",
 				SliceNormHoursKey:              "6",
 				LedgerAttentionStaleMinutesKey: "45",
-				GoalNormJobMinutesKey:          "1800",
 			},
 			expect: []string{
 				"environment source " + EnvName(ElapsedGracePercentKey) + " is refused",
 				"environment source " + EnvName(SliceNormHoursKey) + " is refused",
 				"environment source " + EnvName(LedgerAttentionStaleMinutesKey) + " is refused",
-				"environment source " + EnvName(GoalNormJobMinutesKey) + " is refused",
 			},
 		},
 		{
 			name:  "malformed fixture local overrides",
 			conf:  fixtureConf,
-			local: ElapsedGracePercentKey + "=201\n" + SliceNormHoursKey + "=0\n" + LedgerAttentionStaleMinutesKey + "=0\n" + GoalNormJobMinutesKey + "=0\n",
+			local: ElapsedGracePercentKey + "=201\n" + SliceNormHoursKey + "=0\n" + LedgerAttentionStaleMinutesKey + "=0\n",
 			expect: []string{
 				ElapsedGracePercentKey + " must be an integer between 0 and 200",
 				SliceNormHoursKey + " must be a positive integer",
 				LedgerAttentionStaleMinutesKey + " must be a positive integer",
-				GoalNormJobMinutesKey + " must be a positive integer",
 			},
 		},
 		{
@@ -304,13 +302,11 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 				ElapsedGracePercentKey:         "many",
 				SliceNormHoursKey:              "none",
 				LedgerAttentionStaleMinutesKey: "none",
-				GoalNormJobMinutesKey:          "many",
 			},
 			expect: []string{
 				"environment source " + EnvName(ElapsedGracePercentKey),
 				"environment source " + EnvName(SliceNormHoursKey),
 				"environment source " + EnvName(LedgerAttentionStaleMinutesKey),
-				"environment source " + EnvName(GoalNormJobMinutesKey),
 			},
 		},
 		{
@@ -318,13 +314,11 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 			conf: fixtureConf,
 			local: ElapsedGracePercentKey + "=25\n" + ElapsedGracePercentKey + "=50\n" +
 				SliceNormHoursKey + "=4\n" + SliceNormHoursKey + "=6\n" +
-				LedgerAttentionStaleMinutesKey + "=30\n" + LedgerAttentionStaleMinutesKey + "=45\n" +
-				GoalNormJobMinutesKey + "=1440\n" + GoalNormJobMinutesKey + "=1800\n",
+				LedgerAttentionStaleMinutesKey + "=30\n" + LedgerAttentionStaleMinutesKey + "=45\n",
 			expect: []string{
 				"duplicate metasystem configuration key: " + ElapsedGracePercentKey,
 				"duplicate metasystem configuration key: " + SliceNormHoursKey,
 				"duplicate metasystem configuration key: " + LedgerAttentionStaleMinutesKey,
-				"duplicate metasystem configuration key: " + GoalNormJobMinutesKey,
 			},
 		},
 	}
@@ -354,6 +348,33 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 				if !hasProblem(problems, expected) {
 					t.Fatalf("expected %q in %v", expected, problems)
 				}
+			}
+		})
+	}
+}
+
+func TestValidateRefusesRetiredGoalNormFromEverySource(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	for _, source := range []string{"committed", "local", "environment"} {
+		t.Run(source, func(t *testing.T) {
+			repo := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(repo, "development"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
+			conf := filepath.Join(repo, "metasystem.conf")
+			putFile(t, conf, strings.ReplaceAll(validConf, "@EVIDENCE@", t.TempDir()))
+			switch source {
+			case "committed":
+				putFile(t, conf, strings.ReplaceAll(validConf, "@EVIDENCE@", t.TempDir())+GoalNormJobMinutesKey+"=1200\n")
+			case "local":
+				putFile(t, conf+".local", GoalNormJobMinutesKey+"=1200\n")
+			case "environment":
+				t.Setenv(EnvName(GoalNormJobMinutesKey), "1200")
+			}
+			_, problems, err := Validate(conf, repo)
+			if err != nil || !hasProblem(problems, GoalNormJobMinutesKey) || !hasProblem(problems, "is retired") || !hasProblem(problems, Tier1BudgetKey) {
+				t.Fatalf("retired key from %s was not refused with replacements: problems=%v err=%v", source, problems, err)
 			}
 		})
 	}

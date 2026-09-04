@@ -34,7 +34,7 @@ func cloneBed(t *testing.T, second bool) (origin, a, b string) {
 	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("seed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(seed, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.budget.goal-norm-job-minutes=1440\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(seed, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	mustGit(t, seed, "add", "README.md", "metasystem.conf")
