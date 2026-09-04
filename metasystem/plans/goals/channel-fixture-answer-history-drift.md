@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: One fixture assertion and a loud failure message: build, run channel-fixtures.sh seat-side, land through a chain. Approved under R-76-m2.
 - OpenedAt: 2026-09-04T17:31:30Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T17:35:45Z revision=2 opid=PX3Y8VYNN5B4FBJKA47W2M4M90-m2-5fcf08ab authority=relayed digest=3fb1beebc8aa47552fd6c61e2c08b3097aac5ed7631055fd6f94b19a0d0e0721 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T17:38:00Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T17:37:46Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-04T17:31:30Z VVSG8R3HEKTF8RJSE3C7PYK4B3-m2-5fcf08ab open actor=human:Wido targets=channel-fixture-answer-history-drift
 - 2026-09-04T17:35:45Z PX3Y8VYNN5B4FBJKA47W2M4M90-m2-5fcf08ab approve actor=human:Wido targets=channel-fixture-answer-history-drift authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T17:37:46Z D5K85N2C2E88EMW0V1NJK6YXK4-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=channel-fixture-answer-history-drift
-Integrity: sha256=258dbdde23694e77bdef8a3e8ed21d5b5e89307e707a87b5e150b7efe7d0c00d
+- 2026-09-04T17:38:00Z B49RAHJK6FS10MBZE3FCZS6A4N-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=channel-fixture-answer-history-drift
+Integrity: sha256=dbb0499a908971f0474a23b2a00b607986240adab0bdc3bd56d1f79de391f2db
