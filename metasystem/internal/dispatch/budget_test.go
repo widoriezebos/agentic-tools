@@ -64,6 +64,26 @@ func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
 	}
 }
 
+func TestSTR2P2A01AccountingRevisionPreservesRaisedSpendAndSetBudgetResetsIt(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	file := budgetGoal()
+	file.Claimed.Revision = 5
+	file.Claimed.AccountingRevision = 3
+	file.History[4].Reason = "Misclassified: from=1 to=3 evidence=refusal:BUDGET_REFUSED"
+	writeBudgetJob(t, root, "root-before-raise-one", "reserve-before-one", 3, 20, "completed")
+	writeBudgetJob(t, root, "root-before-raise-two", "reserve-before-two", 4, 30, "running")
+
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.ReservedJobMinutes != 50 || projection.ActiveJobs != 1 {
+		t.Fatalf("risk raise erased spend from the accounting interval: %+v", projection)
+	}
+	file.Claimed.AccountingRevision = file.Claimed.Revision
+	reset := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if reset.Status != BudgetKnown || reset.Attempts != 0 || reset.ReservedJobMinutes != 0 || reset.ActiveJobs != 0 {
+		t.Fatalf("human set-budget boundary did not reset the tally: %+v", reset)
+	}
+}
+
 func TestUnconsumedDischargeJSONCannotResetTheBudgetProjection(t *testing.T) {
 	root := budgetProjectionRoot(t)
 	file := budgetGoal()

@@ -32,6 +32,7 @@ type GoalBinding struct {
 	GoalID     string
 	Revision   uint64
 	Tier       uint8
+	GateWidth  string
 	Machine    string
 	Lineage    string
 	Capability goal.StopCapability
@@ -72,8 +73,12 @@ func ResolveGoalBinding(root, id string, now time.Time) (GoalBinding, error) {
 	if err != nil {
 		return GoalBinding{}, err
 	}
+	gateWidth := "area"
+	if file.Risk != nil {
+		gateWidth = file.Risk.GateWidth()
+	}
 	return GoalBinding{
-		GoalID: id, Revision: file.Claimed.Revision, Tier: tier, Machine: file.Claimed.Machine,
+		GoalID: id, Revision: file.Claimed.Revision, Tier: tier, GateWidth: gateWidth, Machine: file.Claimed.Machine,
 		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file,
 	}, nil
 }

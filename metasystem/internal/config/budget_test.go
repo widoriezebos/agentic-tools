@@ -9,7 +9,7 @@ import (
 
 func clearBudgetLawEnvironment(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{ElapsedGracePercentKey, SliceNormHoursKey, ReviewRoundMaxKey, Tier1BudgetKey, Tier2BudgetKey, Tier3BudgetKey, GoalNormJobMinutesKey} {
+	for _, key := range []string{ElapsedGracePercentKey, SliceNormHoursKey, ReviewRoundMaxKey, Tier1BudgetKey, Tier2BudgetKey, Tier3BudgetKey, GoalNormJobMinutesKey, RiskGateKey} {
 		name := EnvName(key)
 		previous, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
@@ -22,6 +22,23 @@ func clearBudgetLawEnvironment(t *testing.T) {
 				_ = os.Unsetenv(name)
 			}
 		})
+	}
+}
+
+func TestRiskGateMarkEnforceAndRefusal(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "")
+	if mode, err := RiskGate(conf); err != nil || mode != RiskGateMark {
+		t.Fatalf("default risk gate = %q, %v", mode, err)
+	}
+	putFile(t, conf, RiskGateKey+"=enforce\n")
+	if mode, err := RiskGate(conf); err != nil || mode != RiskGateEnforce {
+		t.Fatalf("enforced risk gate = %q, %v", mode, err)
+	}
+	putFile(t, conf, RiskGateKey+"=maybe\n")
+	if _, err := RiskGate(conf); err == nil || !strings.Contains(err.Error(), "mark or enforce") {
+		t.Fatalf("unknown risk gate accepted: %v", err)
 	}
 }
 

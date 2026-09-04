@@ -187,6 +187,7 @@ func runDispatchClaimLaunch(args []string) int {
 	goalID := flags.String("goal", "", "goal id this launch serves")
 	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this launch binds")
 	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
+	gateWidth := flags.String("gate-width", "", "claimed-revision gate width")
 	machineID := flags.String("machine-id", "", "claiming machine for the bound goal")
 	reviews := flags.String("reviews", "", "reviewed job id for critic, warden, or verifier evidence")
 	approvedRef := flags.String("approved-ref", "", "recorded approval reference")
@@ -243,7 +244,8 @@ func runDispatchClaimLaunch(args []string) int {
 		Root: *root, OpID: *opid, OperationID: *operationID,
 		MainID: *mainID, ClaimEpoch: *claimEpoch, GoalID: *goalID,
 		GoalRevision: *goalRevision, GoalTier: uint8(*goalTier), MachineID: *machineID, ApprovedRef: *approvedRef, AdapterVerb: *adapterVerb,
-		Reviews: *reviews,
+		GateWidth: *gateWidth,
+		Reviews:   *reviews,
 		Request: dispatchcore.LaunchFingerprintRequest{
 			SessionKey: *session, DispatchMode: dispatchcore.DispatchMode(*dispatchMode),
 			ResumedSessionID: &resumed, Runtime: *runtimeName, Model: *model, Role: *role,
@@ -802,6 +804,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.GoalID, "goal", "", "goal id this job serves")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
+	flags.StringVar(&p.GateWidth, "gate-width", "", "claimed-revision gate width")
 	flags.StringVar(&p.MachineID, "machine-id", "", "claim machine for a goal-bound reservation")
 	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
 	flags.Var((*hazardClassFlag)(&p.DestructiveReach), "destructive-reach", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
@@ -854,6 +857,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
+	flags.StringVar(&p.GateWidth, "gate-width", "", "inherited gate width")
 	flags.StringVar(&p.ApprovedRef, "approved-ref", "", "recorded human approval for an oversized slice")
 	flags.Var((*hazardClassFlag)(&p.DestructiveReach), "destructive-reach", "inherited hazard class")
 	flags.StringVar(&p.OutputStream, "output-stream", "", "child stdout event stream path")
@@ -915,6 +919,7 @@ func runDispatchGoalBinding(args []string) int {
 	printJSON(map[string]any{
 		"goalId": binding.GoalID, "goalRevision": binding.Revision,
 		"goalTier":  binding.Tier,
+		"gateWidth": binding.GateWidth,
 		"machineId": binding.Machine, "claimEpoch": binding.Capability.ClaimEpoch,
 		"capabilityGeneration": binding.Capability.Generation,
 		"fenceEpoch":           binding.Capability.FenceEpoch, "fenced": binding.Fence != nil,
@@ -994,6 +999,9 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 	verdict, err := dispatchcore.EvaluateGoalRevisionAdmission(*root, *goalID, *revision, *proposedCap, now, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
 		return recordExit(err)
+	}
+	if verdict.PolicyNotice != "" {
+		fmt.Println(verdict.PolicyNotice)
 	}
 	if !verdict.Refused() {
 		return 0

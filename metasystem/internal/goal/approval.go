@@ -24,15 +24,19 @@ type ApprovalSweepListing struct {
 }
 
 type ClassificationProposal struct {
-	ID     string
-	Tier   uint8
-	Reason string
+	ID            string
+	Tier          uint8
+	Derived       uint8
+	Risk          RiskRecord
+	Reason        string
+	HumanDecision bool
 }
 
 type ClassificationSweepListing struct {
 	Proposals        []ClassificationProposal
 	Lines            []string
 	Digest           string
+	Applied          int
 	TierLawInstalled bool
 }
 
@@ -41,6 +45,7 @@ func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListi
 		return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line 1 is not UTF-8")
 	}
 	rows := map[string]ClassificationProposal{}
+	applied := map[string]bool{}
 	for index, raw := range strings.Split(strings.ReplaceAll(string(draft), "\r\n", "\n"), "\n") {
 		lineNo := index + 1
 		trimmed := strings.TrimSpace(raw)
@@ -60,27 +65,40 @@ func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListi
 			if len(fields) > 0 {
 				id = fields[0]
 			}
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <tier> <reason>", lineNo, id)
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>", lineNo, id)
 		}
-		tierValue, err := strconv.ParseUint(fields[1], 10, 8)
-		if err != nil || tierValue < 1 || tierValue > 3 {
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s has tier %s, want 1, 2, or 3", lineNo, fields[0], fields[1])
+		basis := strings.Join(fields[2:], " ")
+		scores := strings.Split(fields[1], ",")
+		if len(scores) != 4 {
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>", lineNo, fields[0])
 		}
-		goalFile := t.Live[fields[0]]
-		if goalFile == nil {
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_UNKNOWN_GOAL: goal %s is not an open tierless goal", fields[0])
-		}
-		if goalFile.Tier != 0 {
-			continue
+		risk := RiskRecord{Basis: basis}
+		values := []*uint8{&risk.Severity, &risk.Novelty, &risk.Exposure, &risk.Accumulation}
+		for i, rawScore := range scores {
+			n, err := strconv.ParseUint(rawScore, 10, 8)
+			if err != nil || n < 1 || n > 3 {
+				return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>", lineNo, fields[0])
+			}
+			*values[i] = uint8(n)
 		}
 		if _, duplicate := rows[fields[0]]; duplicate {
 			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_DUPLICATE_GOAL: goal %s appears more than once", fields[0])
 		}
-		rows[fields[0]] = ClassificationProposal{ID: fields[0], Tier: uint8(tierValue), Reason: strings.Join(fields[2:], " ")}
+		goalFile := t.Live[fields[0]]
+		if goalFile == nil || goalFile.Risk != nil && *goalFile.Risk != risk {
+			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_UNKNOWN_GOAL: goal %s is not an open goal without a Risk record", fields[0])
+		}
+		derived, tier := risk.DerivedTier(), risk.DerivedTier()
+		humanDecision := goalFile.Tier != 0 && derived < goalFile.Tier
+		if humanDecision {
+			tier = goalFile.Tier
+		}
+		rows[fields[0]] = ClassificationProposal{ID: fields[0], Tier: tier, Derived: derived, Risk: risk, Reason: basis, HumanDecision: humanDecision}
+		applied[fields[0]] = goalFile.Risk != nil
 	}
 	var missing []string
 	for _, id := range sortedGoalIds(t.Live) {
-		if t.Live[id].Tier == 0 {
+		if t.Live[id].Risk == nil {
 			if _, ok := rows[id]; !ok {
 				missing = append(missing, id)
 			}
@@ -97,8 +115,16 @@ func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListi
 	sort.Strings(ids)
 	for _, id := range ids {
 		proposal := rows[id]
+		if proposal.HumanDecision {
+			listing.Lines = append(listing.Lines, fmt.Sprintf("%s %d,%d,%d,%d tier=%d HUMAN-DECISION derived=%d %s", proposal.ID, proposal.Risk.Severity, proposal.Risk.Novelty, proposal.Risk.Exposure, proposal.Risk.Accumulation, proposal.Tier, proposal.Derived, proposal.Reason))
+		} else {
+			listing.Lines = append(listing.Lines, fmt.Sprintf("%s %d,%d,%d,%d tier=%d %s", proposal.ID, proposal.Risk.Severity, proposal.Risk.Novelty, proposal.Risk.Exposure, proposal.Risk.Accumulation, proposal.Tier, proposal.Reason))
+		}
+		if applied[id] {
+			listing.Applied++
+			continue
+		}
 		listing.Proposals = append(listing.Proposals, proposal)
-		listing.Lines = append(listing.Lines, fmt.Sprintf("%s %d %s", proposal.ID, proposal.Tier, proposal.Reason))
 	}
 	sum := sha256.Sum256([]byte(strings.Join(listing.Lines, "\n") + "\n"))
 	listing.Digest = hex.EncodeToString(sum[:])
@@ -158,12 +184,16 @@ func installTierLawRequest(r VerbRequest) PublishRequest {
 // the same transaction, so an interruption leaves either remaining tierless
 // goals with no marker or a complete classified ledger with its marker.
 func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw bool) (PublishResult, error) {
-	if r.Actor.Human == "" || proposal.Tier < 1 || proposal.Tier > 3 || strings.TrimSpace(proposal.Reason) == "" {
+	if r.Actor.Human == "" || proposal.Tier < 1 || proposal.Tier > 3 || strings.TrimSpace(proposal.Reason) == "" || proposal.Risk.Validate() != nil || proposal.Derived != proposal.Risk.DerivedTier() {
 		return PublishResult{}, fmt.Errorf("classify-sweep confirmation requires --by and a valid proposal")
 	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "edit", Targets: []string{proposal.ID}, Deltas: []FieldDelta{{Target: proposal.ID, Field: "tier", New: strconv.Itoa(int(proposal.Tier))}}, Args: intentArgs(r, map[string]string{"classifyReason": proposal.Reason})},
+		Intent: Intent{Verb: "edit", Targets: []string{proposal.ID}, Deltas: []FieldDelta{
+			{Target: proposal.ID, Field: "tier", New: strconv.Itoa(int(proposal.Tier))},
+			{Target: proposal.ID, Field: "risk", New: proposal.Risk.scoreArgs()},
+			{Target: proposal.ID, Field: "basis", New: proposal.Risk.Basis},
+		}, Args: intentArgs(r, map[string]string{"classifyReason": proposal.Reason, "why": proposal.Reason})},
 		Message: "goal classify-sweep " + proposal.ID,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -171,14 +201,22 @@ func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw boo
 				return nil, err
 			}
 			f := t.Live[proposal.ID]
-			if f == nil || f.Tier != 0 {
-				return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is no longer an open tierless goal", proposal.ID)
+			if f == nil || f.Risk != nil {
+				return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is no longer an open goal without a Risk record", proposal.ID)
+			}
+			derived := proposal.Risk.DerivedTier()
+			if derived < f.Tier {
+				proposal.Tier = f.Tier
+			} else {
+				proposal.Tier = derived
 			}
 			box, err := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), proposal.Tier)
 			if err != nil {
 				return nil, err
 			}
 			f.Tier = proposal.Tier
+			copyRisk := proposal.Risk
+			f.Risk = &copyRisk
 			if f.Budget == nil {
 				f.Budget = &box
 			} else {
@@ -191,13 +229,13 @@ func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw boo
 			touch(f, r, "edit", []string{proposal.ID})
 			f.History[len(f.History)-1].Reason = proposal.Reason
 			if f.Approved != nil {
-				f.Approved.Digest = ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+				f.Approved.Digest = ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)
 			}
 			changes := []Change{{Path: livePath(proposal.ID), Content: RenderFile(f)}}
 			if installLaw {
 				for _, id := range sortedGoalIds(t.Live) {
-					if id != proposal.ID && t.Live[id].Tier == 0 {
-						return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is still an open tierless goal; preview again", id)
+					if id != proposal.ID && t.Live[id].Risk == nil {
+						return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is still an open goal without a Risk record; preview again", id)
 					}
 				}
 				t.Root.TierLaw = r.opid()
@@ -295,7 +333,7 @@ func refuseRelayedAfterFleetEnrollment(t *TreeGoals, temporary bool) error {
 }
 
 func bindApproval(f *GoalFile, r VerbRequest, authority, reviewBy string) {
-	digest := ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+	digest := ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)
 	if f.Tier == 0 {
 		digest = legacyApprovalDigest(f.Intent, *f.Budget)
 	}

@@ -2,12 +2,65 @@ package dispatch
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
+
+var AdmissionRefusalCodes = []string{"BUDGET_UNKNOWN", "BUDGET_REFUSED", "HAZARD_REFUSED", "RISK_UNANSWERED"}
+
+func ValidateMisclassificationEvidence(repoRoot, goalID, evidence string) error {
+	checkRoot := func(jobID string) (map[string]any, error) {
+		if !validJobID.MatchString(jobID) {
+			return nil, fmt.Errorf("evidence %s has an invalid job identifier", evidence)
+		}
+		record, err := readObject(filepath.Join(repoRoot, "artifacts", "agents", "jobs", jobID+".json"))
+		if err != nil || asString(record["jobId"]) != jobID || asString(record["goalId"]) != goalID {
+			return nil, fmt.Errorf("evidence %s does not name a job bound to goal %s", evidence, goalID)
+		}
+		return record, nil
+	}
+	if jobID, ok := strings.CutPrefix(evidence, "root:"); ok {
+		_, err := checkRoot(jobID)
+		return err
+	}
+	if ref, ok := strings.CutPrefix(evidence, "finding:"); ok {
+		jobID, findingID, found := strings.Cut(ref, "/")
+		record, err := checkRoot(jobID)
+		if err != nil {
+			return err
+		}
+		if !found || findingID == "" {
+			return fmt.Errorf("evidence %s does not name a finding", evidence)
+		}
+		for _, value := range anySlice(record[findingRegisterField]) {
+			if row, ok := value.(map[string]any); ok && asString(row["findingId"]) == findingID {
+				return nil
+			}
+		}
+		return fmt.Errorf("evidence %s does not name a finding in job %s", evidence, jobID)
+	}
+	if code, ok := strings.CutPrefix(evidence, "refusal:"); ok {
+		for _, admitted := range AdmissionRefusalCodes {
+			if code == admitted {
+				return nil
+			}
+		}
+		return fmt.Errorf("evidence refusal:%s is not an admission refusal code; one of: %s", code, strings.Join(AdmissionRefusalCodes, ", "))
+	}
+	return fmt.Errorf("evidence %s must be root:<jobId>, finding:<jobId>/<id>, or refusal:<code>", evidence)
+}
+
+func anySlice(value any) []any {
+	if values, ok := value.([]any); ok {
+		return values
+	}
+	return nil
+}
 
 // GoalAdmissionRefusal is one claim whose structured budget closes
 // the dispatch admission seam. Unknown evidence closes admission without
@@ -115,6 +168,7 @@ type GoalRevisionAdmission struct {
 	GoalRevision   uint64
 	Refusal        *GoalAdmissionRefusal
 	PolicyRefusal  string
+	PolicyNotice   string
 	LiveStopReason string
 }
 
@@ -141,8 +195,20 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 	if binding.Revision != revision {
 		return verdict, fmt.Errorf("goal %s accepted revision moved from %d to %d", id, revision, binding.Revision)
 	}
+	if binding.File.Risk == nil {
+		line := fmt.Sprintf("RISK_UNANSWERED goal=%s tier=%d next: goal edit --risk", id, binding.Tier)
+		mode, modeErr := config.RiskGate(filepath.Join(repoRoot, "metasystem.conf"))
+		if modeErr != nil {
+			return verdict, modeErr
+		}
+		if mode == config.RiskGateEnforce {
+			verdict.PolicyRefusal = line
+			return verdict, nil
+		}
+		verdict.PolicyNotice = line
+	}
 	if binding.Tier == 1 && hazard != HazardMechanical {
-		verdict.PolicyRefusal = "the hazard needs review the tier does not have; goal edit --tier 2"
+		verdict.PolicyRefusal = "HAZARD_REFUSED: the hazard needs review the tier does not have; goal edit --tier 2"
 		return verdict, nil
 	}
 	if binding.Fence != nil {

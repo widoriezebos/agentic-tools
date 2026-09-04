@@ -493,10 +493,11 @@ type PublishRequest struct {
 
 // PublishResult is the transaction's terminal classification.
 type PublishResult struct {
-	Outcome Outcome
-	Tip     string // the canonical tip this outcome was decided on
-	Commit  string // our transaction commit, when one was built
-	Detail  string
+	Outcome    Outcome
+	Tip        string // the canonical tip this outcome was decided on
+	Commit     string // our transaction commit, when one was built
+	Detail     string
+	RiskRaised bool // the edit transaction raised the approved goal's risk derivation
 }
 
 // Publish runs the whole transaction under the journal's rules:

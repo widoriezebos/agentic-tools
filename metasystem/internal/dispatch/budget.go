@@ -109,6 +109,10 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.
 	latestRunID := ""
 	latestProofEpoch := uint64(0)
 	seenProofs := map[string]bool{}
+	accountingRevision := file.Claimed.AccountingRevision
+	if accountingRevision == 0 {
+		accountingRevision = file.Claimed.Revision
+	}
 	for _, item := range consumed {
 		proof, typed := item.(map[string]any)
 		if !typed {
@@ -130,7 +134,7 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.
 			return time.Time{}, nil, &BudgetUnknownEvidence{Code: BudgetUnknown, Record: logicalPath, Reason: "consumed-proof ledger has an incomplete or unauthorized entry"}
 		}
 		seenProofs[proofKey] = true
-		if asString(proof["goalId"]) == file.Id && uint64(goalRevision) == file.Claimed.Revision &&
+		if asString(proof["goalId"]) == file.Id && uint64(goalRevision) >= accountingRevision && uint64(goalRevision) <= file.Claimed.Revision &&
 			uint64(obligationRevision) == file.Obligation.Revision && !consumedAt.Before(claimedAt) &&
 			(consumedAt.After(latest) || consumedAt.Equal(latest) && uint64(proofEpoch) > latestProofEpoch) {
 			latest = consumedAt.UTC()
@@ -145,7 +149,7 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.
 		}
 		matched := false
 		for _, obligation := range states {
-			if obligation.GoalRevision != file.Claimed.Revision || obligation.ObligationRevision != file.Obligation.Revision {
+			if obligation.GoalRevision < accountingRevision || obligation.GoalRevision > file.Claimed.Revision || obligation.ObligationRevision != file.Obligation.Revision {
 				continue
 			}
 			for _, attempt := range obligation.Attempts {
@@ -243,6 +247,10 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		return unknownBudget(file.Id, 0, recordPath, "the goal has no claim record")
 	}
 	revision := file.Claimed.Revision
+	accountingRevision := file.Claimed.AccountingRevision
+	if accountingRevision == 0 {
+		accountingRevision = revision
+	}
 	if file.Budget == nil {
 		return unknownBudget(file.Id, revision, recordPath, "the claimed goal has no structured budget")
 	}
@@ -347,7 +355,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if status != "pending-setup" && status != "pending" && status != "running" && !TerminalStatus(status) {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("status %q is outside the reservation lifecycle", status))
 		}
-		if recordRevision != revision {
+		if recordRevision < accountingRevision {
 			continue
 		}
 		if budgetStartedAt.After(claimedAt) {
@@ -389,7 +397,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if state.GoalRevision > revision {
 			return unknownBudget(file.Id, revision, statePath, fmt.Sprintf("goalRevision %d is later than accepted claim revision %d", state.GoalRevision, revision))
 		}
-		if state.GoalRevision != revision {
+		if state.GoalRevision < accountingRevision {
 			continue
 		}
 		for _, attempt := range state.Attempts {
@@ -419,7 +427,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if governed.GoalRevision > revision {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted claim revision %d", governed.GoalRevision, revision))
 		}
-		if governed.GoalRevision != revision {
+		if governed.GoalRevision < accountingRevision {
 			continue
 		}
 		if run.Terminal(record.Status) {

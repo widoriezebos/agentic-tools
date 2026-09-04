@@ -9,8 +9,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -133,6 +136,13 @@ func nullableGoalTier(goalID string, tier uint8) (any, error) {
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
 func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, goalTier uint8, capResolution, machineID, approvedRef string) error {
+	gateWidth := ""
+	if goalID != "" {
+		gateWidth = "area"
+		if binding, bindErr := ResolveGoalBinding(repoRoot, goalID, time.Now().UTC()); bindErr == nil && binding.Revision == goalRevision {
+			gateWidth = binding.GateWidth
+		}
+	}
 	epoch, err := nullableEpoch(claimEpoch)
 	if err != nil {
 		return err
@@ -144,6 +154,9 @@ func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID 
 	tier, err := nullableGoalTier(goalID, goalTier)
 	if err != nil {
 		return err
+	}
+	if (goalID != "" && gateWidth != "area" && gateWidth != "full") || (goalID == "" && gateWidth != "") {
+		return fmt.Errorf("goal-bound setup requires gateWidth area or full")
 	}
 	authority, err := readCapAuthority(capResolution)
 	if err != nil {
@@ -181,6 +194,7 @@ func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID 
 		"goalId":             nullableString(goalID),
 		"goalRevision":       revision,
 		"goalTier":           tier,
+		"gateWidth":          nullableString(gateWidth),
 		"machineId":          nullableString(machineID),
 		"approvedRef":        nullableString(approvedRef),
 		"sliceApprovalClaim": sliceApprovalClaim(approvalClaim),
@@ -266,6 +280,7 @@ type BuildRecordParams struct {
 	GoalID            string
 	GoalRevision      uint64
 	GoalTier          uint8
+	GateWidth         string
 	MachineID         string
 	MainID            string
 	ClaimEpoch        string
@@ -279,8 +294,36 @@ type BuildRecordParams struct {
 }
 
 func goalReviewRoundLimit(repoRoot, goalID string, revision uint64) (uint8, error) {
-	// part one's ReviewRoundLimit tuple member replaces this body
-	return 3, nil
+	maximum, err := config.ReviewRoundMax(filepath.Join(repoRoot, "metasystem.conf"))
+	if err != nil {
+		return 0, err
+	}
+	if maximum > 255 {
+		return 0, fmt.Errorf("configured review-round ceiling %d exceeds the critic record's 255-round representation", maximum)
+	}
+	if goalID == "" {
+		return uint8(maximum), nil
+	}
+	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	if err != nil {
+		return 0, err
+	}
+	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	record := projection.Tree.Live[goalID]
+	if record == nil || record.Claimed == nil || record.Claimed.Revision != revision || record.Budget == nil {
+		return 0, fmt.Errorf("goal %s revision %d has no matching claimed review-round budget", goalID, revision)
+	}
+	limit := record.Budget.ReviewRoundLimit
+	if limit < 0 {
+		return 0, fmt.Errorf("goal %s revision %d has a negative review-round limit", goalID, revision)
+	}
+	if uint64(limit) > maximum {
+		limit = int64(maximum)
+	}
+	return uint8(limit), nil
 }
 
 func ParseDeclaredOutputs(path string) ([]string, error) {
@@ -361,6 +404,9 @@ func designBlobSource(workspace, commit, design string) (string, error) {
 // identity, workspace pin (base SHA and branch read from the workspace),
 // permissions, cap authority, capability snapshot, and input digest.
 func BuildRecord(p BuildRecordParams) error {
+	if p.GoalID != "" && p.GateWidth == "" {
+		p.GateWidth = "area"
+	}
 	if p.OutputStream == "" || !filepath.IsAbs(p.OutputStream) {
 		return fmt.Errorf("fresh dispatch requires an absolute child output stream")
 	}
@@ -412,6 +458,9 @@ func BuildRecord(p BuildRecordParams) error {
 	}
 	if p.GoalID != "" && p.MachineID == "" {
 		return fmt.Errorf("goal-bound reservation requires a machineId")
+	}
+	if (p.GoalID != "" && p.GateWidth != "area" && p.GateWidth != "full") || (p.GoalID == "" && p.GateWidth != "") {
+		return fmt.Errorf("goal-bound reservation requires gateWidth area or full")
 	}
 	if p.GoalID == "" && p.MachineID != "" {
 		return fmt.Errorf("machineId requires a goalId")
@@ -489,6 +538,7 @@ func BuildRecord(p BuildRecordParams) error {
 		"goalId":                   nullableString(p.GoalID),
 		"goalRevision":             revision,
 		"goalTier":                 tier,
+		"gateWidth":                nullableString(p.GateWidth),
 		"machineId":                nullableString(p.MachineID),
 		"approvedRef":              nullableString(p.ApprovedRef),
 		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),
@@ -598,6 +648,7 @@ type BuildFollowRecordParams struct {
 	Root             string // dispatching checkout root, for mission provenance
 	GoalRevision     uint64
 	GoalTier         uint8
+	GateWidth        string
 	ApprovedRef      string
 	DestructiveReach HazardClass
 	Composition      string // closed-packet composition record
@@ -682,6 +733,12 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		return err
 	}
 	goalID, _ := parent["goalId"].(string)
+	if goalID != "" && p.GateWidth == "" {
+		p.GateWidth, _ = parent["gateWidth"].(string)
+		if p.GateWidth == "" {
+			p.GateWidth = "area"
+		}
+	}
 	if goalID != "" {
 		if _, present := parent["goalTier"]; !present {
 			return fmt.Errorf("parent goal-bound record has no goalTier; dispatch a fresh tier-bound chain")
@@ -705,6 +762,9 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		parentTier, ok := numInt(parent["goalTier"])
 		if !ok || parentTier != int64(p.GoalTier) {
 			return fmt.Errorf("follow-up must inherit the parent goalTier")
+		}
+		if parent["gateWidth"] != p.GateWidth || (p.GateWidth != "area" && p.GateWidth != "full") {
+			return fmt.Errorf("follow-up must inherit the parent gateWidth")
 		}
 	}
 	configuration, err := MinimumHazardConfiguration(p.DestructiveReach)
@@ -742,6 +802,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"goalId":                   parent["goalId"],
 		"goalRevision":             revision,
 		"goalTier":                 tier,
+		"gateWidth":                parent["gateWidth"],
 		"machineId":                parent["machineId"],
 		"approvedRef":              nullableString(p.ApprovedRef),
 		"sliceApprovalClaim":       sliceApprovalClaim(approvalClaim),

@@ -90,7 +90,7 @@ func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 		},
 	}
 	if claimRevision > 0 {
-		file.Budget = &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1}
+		file.Budget = &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 		file.StopCapability = &goal.StopCapability{
 			Generation: claimRevision, Revision: claimRevision, Machine: "bed-m1", ClaimEpoch: 7,
 		}
@@ -178,7 +178,7 @@ func TestTierOneGoalRevisionAdmissionRefusesReviewBearingHazards(t *testing.T) {
 	}
 	for _, hazard := range []HazardClass{HazardDesignBearing, HazardDestructiveReach} {
 		verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, hazard)
-		if err != nil || !verdict.Refused() || verdict.PolicyRefusal != "the hazard needs review the tier does not have; goal edit --tier 2" {
+		if err != nil || !verdict.Refused() || strings.TrimPrefix(verdict.PolicyRefusal, "HAZARD_REFUSED: ") != "the hazard needs review the tier does not have; goal edit --tier 2" {
 			t.Fatalf("tier 1 hazard %s verdict = %+v err=%v", hazard, verdict, err)
 		}
 	}

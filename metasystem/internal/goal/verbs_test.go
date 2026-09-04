@@ -156,18 +156,17 @@ func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
 }
 
 func TestBudgetedClaimRevisionLaws(t *testing.T) {
-	_, a := oneClone(t)
-	seedLedger(t, a)
+	a := riskLocalRoot(t, "budget-revision-bed")
 
 	t.Run("claim requires the complete budget and binds its revision", func(t *testing.T) {
-		if res, err := Open(verbReq(a, "01J5X00000000000000000H100", "mac-a"), "budgeted", "Bounded work.", "main", "Start."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(obligationAuthorityVerbReq(a, "01J5X00000000000000000H100", "mac-a"), "budgeted", "Bounded work.", "main", "Start."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open: %+v %v", res, err)
 		}
-		missing, err := Claim(verbReq(a, "01J5X00000000000000000H110", "mac-a"), "budgeted")
+		missing, err := Claim(obligationAuthorityVerbReq(a, "01J5X00000000000000000H110", "mac-a"), "budgeted")
 		if err != nil || missing.Outcome != OutcomeRejected || !strings.Contains(missing.Detail, "APPROVAL_REQUIRED") {
 			t.Fatalf("claim without approval did not refuse by remedy: %+v %v", missing, err)
 		}
-		res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
+		res, err := claimApprovedForTest(t, obligationAuthorityVerbReq(a, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("budgeted claim: %+v %v", res, err)
 		}
@@ -176,7 +175,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := tree.Live["budgeted"]
-		if f.Budget == nil || f.Claimed == nil || f.Claimed.Revision != f.Revision || f.Claimed.Revision != 3 {
+		if f.Budget == nil || f.Claimed == nil || f.Claimed.Revision != f.Revision || f.Claimed.Revision != 3 || f.Claimed.AccountingRevision != f.Claimed.Revision {
 			t.Fatalf("claim did not bind the complete tuple to its revision: %+v", f)
 		}
 		if rendered := string(RenderFile(f)); !strings.Contains(rendered, "- Budget: elapsedLimit=4h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=2") ||
@@ -186,7 +185,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 	})
 
 	t.Run("set-budget starts the new revision elapsed clock", func(t *testing.T) {
-		claimReq := verbReq(a, "01J5X00000000000000000H200", "mac-b")
+		claimReq := obligationAuthorityVerbReq(a, "01J5X00000000000000000H200", "mac-b")
 		res, err := openClaimForTest(t, claimReq, "rebudget", "Bounded work.", "main", "Start.", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open-claim: %+v %v", res, err)
@@ -195,7 +194,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		setReq := verbReq(a, "01J5X00000000000000000H210", "mac-b")
+		setReq := obligationAuthorityVerbReq(a, "01J5X00000000000000000H210", "mac-b")
 		setReq.Now = claimReq.Now.Add(30 * time.Minute)
 		res, err = setBudgetApprovedForTest(t, setReq, "rebudget", next)
 		if err != nil || res.Outcome != OutcomeConfirmed {
@@ -206,7 +205,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := tree.Live["rebudget"]
-		if f.Revision != 4 || f.Claimed.Revision != 4 || f.Claimed.At != setReq.stamp() || *f.Budget != next ||
+		if f.Revision != 4 || f.Claimed.Revision != 4 || f.Claimed.AccountingRevision != 4 || f.Claimed.At != setReq.stamp() || *f.Budget != next ||
 			f.History[len(f.History)-1].Verb != "set-budget" {
 			t.Fatalf("set-budget did not establish a fresh bound revision: %+v", f)
 		}

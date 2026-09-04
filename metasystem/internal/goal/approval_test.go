@@ -6,18 +6,17 @@ import (
 )
 
 func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	root := riskLocalRoot(t, "migration-bed")
 	legacyBudget := Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	for index, id := range []string{"legacy-approved", "legacy-claimed"} {
-		open := verbReq(root, []string{"01J5X00000000000000000MB00", "01J5X00000000000000000MB10"}[index], "mac-a")
+		open := obligationAuthorityVerbReq(root, []string{"01J5X00000000000000000MB00", "01J5X00000000000000000MB10"}[index], "mac-a")
 		if result, err := Open(open, id, "Migrate "+id+".", OriginMain, "Classify it."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
-		approve := verbReq(root, []string{"01J5X00000000000000000MB20", "01J5X00000000000000000MB30"}[index], "mac-a")
+		approve := obligationAuthorityVerbReq(root, []string{"01J5X00000000000000000MB20", "01J5X00000000000000000MB30"}[index], "mac-a")
 		approveGoalForTest(t, approve, id, legacyBudget)
 	}
-	claim := verbReq(root, "01J5X00000000000000000MB40", "mac-a")
+	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000MB40", "mac-a")
 	if result, err := Claim(claim, "legacy-claimed"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim legacy goal: %+v %v", result, err)
 	}
@@ -43,7 +42,7 @@ func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 		}
 		legacyChanges = append(legacyChanges, Change{Path: livePath(id), Content: []byte(raw)})
 	}
-	legacyResult, err := Publish(endpointFor(root), PublishRequest{
+	legacyResult, err := Publish(obligationAuthorityEndpoint(root), PublishRequest{
 		Opid: "legacy-tierless-intake", Machine: "mac-fixture", Lineage: "lin-fixture",
 		Intent: testIntentFor("migrate"), Message: "legacy tierless intake",
 		Mutate: func(string) ([]Change, error) { return legacyChanges, nil },
@@ -52,12 +51,12 @@ func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 		t.Fatalf("publish legacy intake: %+v %v", legacyResult, err)
 	}
 
-	draft := []byte("legacy-claimed 2 claimed migration\nlegacy-approved 1 approved migration\n")
-	listing, err := PreviewClassificationSweep(endpointFor(root), draft, claim.Now)
-	if err != nil || len(listing.Proposals) != 2 || listing.Lines[0] != "legacy-approved 1 approved migration" {
+	draft := []byte("legacy-claimed 2,1,1,1 claimed migration\nlegacy-approved 1,1,1,1 approved migration\n")
+	listing, err := PreviewClassificationSweep(obligationAuthorityEndpoint(root), draft, claim.Now)
+	if err != nil || len(listing.Proposals) != 2 || listing.Lines[0] != "legacy-approved 1,1,1,1 tier=1 approved migration" {
 		t.Fatalf("preview did not normalize the legacy listing: %+v %v", listing, err)
 	}
-	human := verbReq(root, "01J5X00000000000000000MB50", "mac-a")
+	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000MB50", "mac-a")
 	human.Actor.Human = "Wido"
 	first, err := ClassifyTier(human, listing.Proposals[0], false)
 	if err != nil || first.Outcome != OutcomeConfirmed {
@@ -76,10 +75,10 @@ func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 		t.Fatal(err)
 	}
 	approved, claimed := tree.Live["legacy-approved"], tree.Live["legacy-claimed"]
-	if approved.Tier != 1 || approved.Budget.ReviewRoundLimit != 0 || approved.State != StateApproved || approved.ValidateApprovalRecord() != nil {
+	if approved.Tier != 1 || approved.Risk == nil || approved.Risk.DerivedTier() != 1 || approved.Budget.ReviewRoundLimit != 0 || approved.State != StateApproved || approved.ValidateApprovalRecord() != nil {
 		t.Fatalf("approved legacy normalization = %+v", approved)
 	}
-	if claimed.Tier != 2 || claimed.Budget.ReviewRoundLimit != 2 || claimed.State != StateClaimed || claimed.ValidateApprovalRecord() != nil {
+	if claimed.Tier != 2 || claimed.Risk == nil || claimed.Risk.DerivedTier() != 2 || claimed.Budget.ReviewRoundLimit != 2 || claimed.State != StateClaimed || claimed.ValidateApprovalRecord() != nil {
 		t.Fatalf("claimed legacy normalization = %+v", claimed)
 	}
 	if tree.Root.TierLaw != human.opid() {
@@ -88,55 +87,91 @@ func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 }
 
 func TestClassifySweepInstallsTierLawForAnAlreadyTieredLedger(t *testing.T) {
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	root := riskLocalRoot(t, "tiered-sweep-bed")
 	for index, fixture := range []struct {
 		id   string
 		tier uint8
 	}{{"tiered-one", 1}, {"tiered-two", 2}} {
-		request := verbReq(root, []string{"01J5X00000000000000000MC00", "01J5X00000000000000000MC10"}[index], "mac-a")
+		request := obligationAuthorityVerbReq(root, []string{"01J5X00000000000000000MC00", "01J5X00000000000000000MC10"}[index], "mac-a")
 		result, err := OpenTiered(request, fixture.id, "Open "+fixture.id+" with its tier.", OriginMain, "Keep its tier.", fixture.tier, nil)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open tiered fixture %s: %+v %v", fixture.id, result, err)
 		}
 	}
 
-	draft := []byte("tiered-two 3 stale row\ntiered-one 2 stale row\n")
-	listing, err := PreviewClassificationSweep(endpointFor(root), draft, verbReq(root, "01J5X00000000000000000MC20", "mac-a").Now)
-	if err != nil || len(listing.Proposals) != 0 || len(listing.Lines) != 0 || listing.TierLawInstalled {
-		t.Fatalf("already-tiered ledger did not produce an empty uninstalled listing: %+v %v", listing, err)
+	draft := []byte("tiered-two 1,1,1,1 cautious incumbent\ntiered-one 1,1,1,1 exact incumbent\n")
+	listing, err := PreviewClassificationSweep(obligationAuthorityEndpoint(root), draft, obligationAuthorityVerbReq(root, "01J5X00000000000000000MC20", "mac-a").Now)
+	if err != nil || len(listing.Proposals) != 2 || len(listing.Lines) != 2 || listing.TierLawInstalled ||
+		listing.Lines[0] != "tiered-one 1,1,1,1 tier=1 exact incumbent" ||
+		listing.Lines[1] != "tiered-two 1,1,1,1 tier=2 HUMAN-DECISION derived=1 cautious incumbent" {
+		t.Fatalf("riskless tiered goals were not selected with the lower derivation reserved for a human decision: %+v %v", listing, err)
 	}
 
-	human := verbReq(root, "01J5X00000000000000000MC30", "mac-a")
+	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000MC30", "mac-a")
 	human.Actor.Human = "Wido"
-	result, err := InstallTierLaw(human)
+	first, err := ClassifyTier(human, listing.Proposals[0], false)
+	if err != nil || first.Outcome != OutcomeConfirmed {
+		t.Fatalf("first tiered classification confirmation: %+v %v", first, err)
+	}
+	human.Ulid = "01J5X00000000000000000MC40"
+	result, err := ClassifyTier(human, listing.Proposals[1], true)
 	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("empty classification confirmation: %+v %v", result, err)
+		t.Fatalf("final tiered classification confirmation: %+v %v", result, err)
 	}
 	tree, err := loadTree(root, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tree.Root.TierLaw != human.opid() || tree.Root.History[len(tree.Root.History)-1].Reason != "TierLaw" {
-		t.Fatalf("empty confirmation did not record its own TierLaw operation: marker=%q history=%+v", tree.Root.TierLaw, tree.Root.History)
+	if tree.Root.TierLaw != human.opid() || tree.Root.History[len(tree.Root.History)-1].Reason != "TierLaw" ||
+		tree.Live["tiered-one"].Tier != 1 || tree.Live["tiered-two"].Tier != 2 ||
+		tree.Live["tiered-one"].Risk == nil || tree.Live["tiered-two"].Risk == nil {
+		t.Fatalf("confirmation did not retain tiers, backfill Risk, and record TierLaw: marker=%q goals=%+v history=%+v", tree.Root.TierLaw, tree.Live, tree.Root.History)
 	}
-	listing, err = PreviewClassificationSweep(endpointFor(root), draft, human.Now)
+	listing, err = PreviewClassificationSweep(obligationAuthorityEndpoint(root), nil, human.Now)
 	if err != nil || !listing.TierLawInstalled || len(listing.Proposals) != 0 {
 		t.Fatalf("installed empty listing did not become idempotent: %+v %v", listing, err)
 	}
 }
 
 func TestClassifySweepRecoverySkipsRowsAlreadyApplied(t *testing.T) {
-	tree := &TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{
-		"already-tiered": {Id: "already-tiered", Tier: 2},
-		"still-tierless": {Id: "still-tierless"},
-	}}
-	listing, err := classificationListing(tree, []byte("already-tiered 1 first stale row\nalready-tiered 3 repeated stale row\nstill-tierless 2 remaining row\n"))
-	if err != nil || len(listing.Proposals) != 1 || listing.Proposals[0].ID != "still-tierless" || len(listing.Lines) != 1 {
-		t.Fatalf("interrupted confirmation did not list only remaining tierless work: %+v %v", listing, err)
+	root := riskLocalRoot(t, "classification-recovery-bed")
+	if result, err := OpenTiered(obligationAuthorityVerbReq(root, "01J5X00000000000000000MD00", "mac-a"), "already-tiered", "Keep the incumbent tier.", OriginMain, "Classify it.", 2, nil); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open already-tiered fixture: %+v %v", result, err)
 	}
-	if _, err := classificationListing(tree, []byte("still-tierless 2 remaining row\nnot-a-goal 1 unknown row\n")); err == nil || !strings.Contains(err.Error(), "SWEEP_UNKNOWN_GOAL") {
-		t.Fatalf("skipping already-tiered rows weakened unknown-goal refusal: %v", err)
+	if result, err := Open(obligationAuthorityVerbReq(root, "01J5X00000000000000000MD10", "mac-a"), "still-tierless", "Classify the remaining goal.", OriginMain, "Classify it."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open still-tierless fixture: %+v %v", result, err)
+	}
+	draft := []byte("already-tiered 1,1,1,1 cautious incumbent\nstill-tierless 2,1,1,1 remaining row\n")
+	listing, err := PreviewClassificationSweep(obligationAuthorityEndpoint(root), draft, obligationAuthorityVerbReq(root, "01J5X00000000000000000MD20", "mac-a").Now)
+	if err != nil || listing.Applied != 0 || len(listing.Proposals) != 2 || len(listing.Lines) != 2 || listing.Lines[0] != "already-tiered 1,1,1,1 tier=2 HUMAN-DECISION derived=1 cautious incumbent" {
+		t.Fatalf("riskless tiered work was skipped before recovery applied it: %+v %v", listing, err)
+	}
+	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000MD30", "mac-a")
+	human.Actor.Human = "Wido"
+	if result, err := ClassifyTier(human, listing.Proposals[0], false); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("apply first classification row: %+v %v", result, err)
+	}
+	afterFirst, err := Project(obligationAuthorityEndpoint(root), false, human.Now)
+	if err != nil || afterFirst.Tree.Live["already-tiered"].Risk == nil {
+		t.Fatalf("read first applied row: %+v %v", afterFirst.Tree.Live["already-tiered"], err)
+	}
+	alreadyRisk := *afterFirst.Tree.Live["already-tiered"].Risk
+	recovered, err := PreviewClassificationSweep(obligationAuthorityEndpoint(root), draft, human.Now)
+	if err != nil || recovered.Applied != 1 || len(recovered.Proposals) != 1 || recovered.Proposals[0].ID != "still-tierless" || len(recovered.Lines) != 2 || recovered.Digest != listing.Digest {
+		t.Fatalf("interrupted confirmation did not skip the row whose Risk was already applied: %+v %v", recovered, err)
+	}
+	changedDraft := []byte("already-tiered 1,1,1,1 changed basis\nstill-tierless 2,1,1,1 remaining row\n")
+	if _, err := PreviewClassificationSweep(obligationAuthorityEndpoint(root), changedDraft, human.Now); err == nil || !strings.Contains(err.Error(), "SWEEP_UNKNOWN_GOAL") {
+		t.Fatalf("skipping an exact applied row weakened the different-Risk refusal: %v", err)
+	}
+	human.Ulid = "01J5X00000000000000000MD40"
+	result, err := ClassifyTier(human, recovered.Proposals[0], true)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("confirm remaining classification row: %+v %v", result, err)
+	}
+	confirmed, err := loadTree(root, result.Tip)
+	if err != nil || confirmed.Live["already-tiered"].Risk == nil || *confirmed.Live["already-tiered"].Risk != alreadyRisk || confirmed.Live["still-tierless"].Risk == nil || *confirmed.Live["still-tierless"].Risk != recovered.Proposals[0].Risk {
+		t.Fatalf("recovery changed the applied Risk record or missed the remaining row: goals=%+v err=%v", confirmed.Live, err)
 	}
 }
 

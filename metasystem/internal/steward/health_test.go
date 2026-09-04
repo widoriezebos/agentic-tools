@@ -287,6 +287,18 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 }
 
+func TestSTR4R1RepeatedExceptionAppetiteSignal(t *testing.T) {
+	file := structuredHealthGoal()
+	file.BudgetExceptions = 2
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	role := checkClaimedGoalBudgets(root, time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+	if role.Status != HealthAlive || !strings.Contains(role.Reason, "riskUnanswered=1") ||
+		!strings.Contains(role.Reason, "exceptions=2") ||
+		!strings.HasSuffix(role.Reason, "repeated exception: defect signal") {
+		t.Fatalf("two budget exceptions did not become the repeated-exception defect signal: %+v", role)
+	}
+}
+
 func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	file := structuredHealthGoal()

@@ -94,7 +94,7 @@ func observe(params ObserveParams) Observation {
 	if params.DirectFix == "tier-1" && (params.RootJob == "" || params.Goal == "" || params.TestReceipt == "") {
 		return refuse("tier1-declaration-refused", "invalid change="+change)
 	}
-	if params.DirectFix != "tier-1" && (params.RootJob != "" || params.TestReceipt != "") {
+	if params.DirectFix != "tier-1" && (params.RootJob != "" || (params.TestReceipt != "" && params.Chain == "")) {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
 	if params.Chain != "" {
@@ -134,6 +134,20 @@ func observeChain(params ObserveParams, change string) Observation {
 	}
 	if record["role"] != "implementer" {
 		return wouldRefuse("chain-not-implementation", provenance)
+	}
+	width := "area"
+	if recorded, present := record["gateWidth"]; present && recorded != nil {
+		var ok bool
+		width, ok = recorded.(string)
+		if !ok || (width != "area" && width != "full") {
+			return wouldRefuse("chain-record-malformed", provenance)
+		}
+	}
+	if width == "full" {
+		receipt, receiptErr := readTestReceipt(params)
+		if receiptErr != nil || receipt.Command != fullBatteryCommand {
+			return wouldRefuse("chain-full-gate-refused", provenance)
+		}
 	}
 	hazard, _ := record["destructiveReach"].(string)
 	if hazard != "DESIGN-BEARING" && hazard != "DESTRUCTIVE-REACH" {

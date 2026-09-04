@@ -51,6 +51,7 @@ type ClaimLaunchParams struct {
 	GoalID               string
 	GoalRevision         uint64
 	GoalTier             uint8
+	GateWidth            string
 	MachineID            string
 	Reviews              string
 	ApprovedRef          string
@@ -167,6 +168,7 @@ type claimReservationProvenance struct {
 	goalID             any
 	goalRevision       any
 	goalTier           any
+	gateWidth          any
 	machineID          any
 	approvedRef        any
 	sliceApprovalClaim any
@@ -207,6 +209,9 @@ func (unavailableClaimProcessVerifier) Verify(int64, string) identity.Verificati
 // pinned ten-minute waiter. The waiter counts its first immediate read as
 // attempt one and never consults a wall-clock deadline.
 func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies) (ClaimResult, error) {
+	if params.GoalID != "" && params.GateWidth == "" {
+		params.GateWidth = "area"
+	}
 	if !validJobID.MatchString(params.OpID) {
 		return ClaimResult{}, fmt.Errorf("claim-launch opid must be a valid job id")
 	}
@@ -260,12 +265,15 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
+	if (params.GoalID != "" && params.GateWidth != "area" && params.GateWidth != "full") || (params.GoalID == "" && params.GateWidth != "") {
+		return ClaimResult{}, fmt.Errorf("claim-launch goal binding requires gateWidth area or full")
+	}
 	if params.ApprovedRef != "" && params.GoalID == "" {
 		return ClaimResult{}, fmt.Errorf("claim-launch approvedRef requires a goal id and positive revision")
 	}
 	provenance := claimReservationProvenance{
 		mainID: nullableString(params.MainID), claimEpoch: claimEpoch, goalID: nullableString(params.GoalID),
-		goalRevision: goalRevision, goalTier: goalTier, machineID: nullableString(params.MachineID), approvedRef: nullableString(params.ApprovedRef),
+		goalRevision: goalRevision, goalTier: goalTier, gateWidth: nullableString(params.GateWidth), machineID: nullableString(params.MachineID), approvedRef: nullableString(params.ApprovedRef),
 		sliceApprovalClaim: sliceApprovalClaim(approvalClaim),
 		configuration:      configuration,
 	}
@@ -680,6 +688,7 @@ func claimReservationRecord(opid, operationID, reviews string, fingerprint Launc
 		"goalId":                   provenance.goalID,
 		"goalRevision":             provenance.goalRevision,
 		"goalTier":                 provenance.goalTier,
+		"gateWidth":                provenance.gateWidth,
 		"machineId":                provenance.machineID,
 		"approvedRef":              provenance.approvedRef,
 		"sliceApprovalClaim":       provenance.sliceApprovalClaim,

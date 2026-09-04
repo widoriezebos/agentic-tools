@@ -839,6 +839,7 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 	}
 	var dead []budgetFailure
 	var known []string
+	riskUnanswered := 0
 	ids := make([]string, 0, len(projection.Tree.Live))
 	for id := range projection.Tree.Live {
 		ids = append(ids, id)
@@ -848,6 +849,13 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 		file := projection.Tree.Live[id]
 		if file.State != goal.StateClaimed {
 			continue
+		}
+		if file.Risk == nil {
+			riskUnanswered++
+		}
+		exceptionEvidence := fmt.Sprintf(" exceptions=%d", file.BudgetExceptions)
+		if file.BudgetExceptions >= 2 {
+			exceptionEvidence += " repeated exception: defect signal"
 		}
 		if file.Budget == nil {
 			dead = append(dead, budgetFailure{
@@ -910,19 +918,19 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			continue
 		}
 		if budget.ElapsedState == dispatch.AdmissionClosedElapsed {
-			known = append(known, fmt.Sprintf("%s revision=%d ADMISSION_CLOSED_ELAPSED elapsed=%s admissionLimit=%s breachLimit=%s gracePercent=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d",
+			known = append(known, fmt.Sprintf("%s revision=%d ADMISSION_CLOSED_ELAPSED elapsed=%s admissionLimit=%s breachLimit=%s gracePercent=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d%s",
 				id, budget.GoalRevision, budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit,
 				budget.ElapsedBreachLimit, budget.ElapsedGracePercent,
 				budget.Attempts, budget.Limits.AttemptLimit,
 				budget.ReservedJobMinutes, budget.Limits.ReservedJobMinutesLimit,
-				budget.ActiveJobs, budget.Limits.ActiveJobLimit))
+				budget.ActiveJobs, budget.Limits.ActiveJobLimit, exceptionEvidence))
 			continue
 		}
-		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d elapsed=%s/%s",
+		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d elapsed=%s/%s%s",
 			id, budget.GoalRevision, budget.Attempts, budget.Limits.AttemptLimit,
 			budget.ReservedJobMinutes, budget.Limits.ReservedJobMinutesLimit,
 			budget.ActiveJobs, budget.Limits.ActiveJobLimit,
-			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit))
+			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit, exceptionEvidence))
 	}
 	if len(dead) > 0 {
 		reasons := make([]string, 0, len(dead))
@@ -935,14 +943,14 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 				noAutomaticRemedy = true
 			}
 		}
-		role := roleDead(RoleClaimedGoalBudget, strings.Join(reasons, "; "), remedy)
+		role := roleDead(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(reasons, "; ")), remedy)
 		role.NoAutomaticRemedy = noAutomaticRemedy
 		return role
 	}
 	if len(known) == 0 {
-		return roleAlive(RoleClaimedGoalBudget, "there are no claimed goals")
+		return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; there are no claimed goals", riskUnanswered))
 	}
-	return roleAlive(RoleClaimedGoalBudget, strings.Join(known, "; "))
+	return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(known, "; ")))
 }
 
 func stopFiringEvidenceSummary(batch goal.StopBatch) string {

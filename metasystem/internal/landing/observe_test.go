@@ -803,6 +803,37 @@ func TestObserveTierOneFullGateRequiresExactCommand(t *testing.T) {
 	}
 }
 
+func TestSTR4R1FullWidthChainRequiresFullBatteryReceipt(t *testing.T) {
+	run := func(command string) Observation {
+		f := newObserveFixture(t)
+		for _, script := range []string{"go-gate.sh", "dispatch-fixtures.sh", "goal-cli-fixtures.sh"} {
+			f.write("scripts/agents/"+script, "#!/usr/bin/env bash\nexit 0\n")
+			if err := os.Chmod(filepath.Join(f.root, "scripts", "agents", script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		f.git("add", "scripts/agents")
+		f.git("commit", "-qm", "full battery fixture")
+		f.write("internal/x.go", "package internal\n")
+		f.git("add", "internal/x.go")
+		candidate, receipt := f.tierOneReceipt(command)
+		f.writeChainRecord("full-chain", map[string]any{
+			"jobId": "full-chain", "parentJob": nil, "role": "implementer", "round": 1,
+			"goalTier": 2, "gateWidth": "full", "destructiveReach": "DESIGN-BEARING", "chainClosed": true,
+		})
+		f.writeChainReview("full-chain", 1, "full-chain", candidate)
+		return Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "full-chain", TestReceipt: receipt})
+	}
+	got := run("true")
+	if got.Code != "chain-full-gate-refused" || got.Verdict != "would-refuse" {
+		t.Fatalf("area receipt under full-width tier-two chain classified as %+v", got)
+	}
+	got = run(fullBatteryCommand)
+	if got.Bar != BarChain || got.Verdict != "pass" {
+		t.Fatalf("full-battery receipt under full-width tier-two chain classified as %+v", got)
+	}
+}
+
 func TestTierOneClassCutoverAcceptsTheTwoClassLandingBase(t *testing.T) {
 	f := newObserveFixture(t)
 	f.write("scripts/agents/landing-classes.json", `{

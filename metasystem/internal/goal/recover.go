@@ -269,7 +269,15 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			}
 			budget = &parsedBudget
 		}
-		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], uint8(tier), budget, commaValues(in.Args["labels"]))
+		var risk *RiskRecord
+		if in.Args["risk"] != "" {
+			parsedRisk, err := ParseRiskRecord(in.Args["risk"], in.Args["basis"])
+			if err != nil {
+				return PublishRequest{}, fmt.Errorf("the stored open risk is invalid: %w", err)
+			}
+			risk = &parsedRisk
+		}
+		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], uint8(tier), budget, risk, in.Args["why"], commaValues(in.Args["labels"]))
 	case "open-claim":
 		budget, err := budgetFromIntentArgs(in.Args)
 		if err != nil {
@@ -326,7 +334,8 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	case "reopen":
 		return reopenRequest(r, target), nil
 	case "edit":
-		fields := EditFields{}
+		fields := EditFields{Why: in.Args["why"], Evidence: in.Args["evidence"]}
+		var riskScores, riskBasis string
 		for _, d := range in.Deltas {
 			value := d.New
 			switch d.Field {
@@ -339,6 +348,10 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 				}
 				tierValue := uint8(tier)
 				fields.Tier = &tierValue
+			case "risk":
+				riskScores = value
+			case "basis":
+				riskBasis = value
 			case "next":
 				fields.NextStep = &value
 			case "origin":
@@ -352,6 +365,13 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 				labels := commaValues(value)
 				fields.Labels = &labels
 			}
+		}
+		if riskScores != "" {
+			risk, err := ParseRiskRecord(riskScores, riskBasis)
+			if err != nil {
+				return PublishRequest{}, fmt.Errorf("the stored edit risk is invalid: %w", err)
+			}
+			fields.Risk = &risk
 		}
 		return editRequest(r, target, fields)
 	case "steal":

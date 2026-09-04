@@ -222,7 +222,7 @@ func TestClaimLaunchWONReservationCompletesRecordSetup(t *testing.T) {
 		"jobId": "job-setup", "status": "pending", "workspaceRoot": root,
 		"outputStream": filepath.Join(root, "events.jsonl"),
 	}
-	for _, carry := range []string{"mainId", "claimEpoch", "goalId", "goalRevision", "goalTier", "operationId", "capResolution", "machineId", "approvedRef", "capMin", "instanceTag", "fingerprint", "fingerprintVersion"} {
+	for _, carry := range []string{"mainId", "claimEpoch", "goalId", "goalRevision", "goalTier", "gateWidth", "operationId", "capResolution", "machineId", "approvedRef", "capMin", "instanceTag", "fingerprint", "fingerprintVersion"} {
 		if v, ok := reservation[carry]; ok {
 			setupDoc[carry] = v
 		}

@@ -24,6 +24,7 @@ type GoalFile struct {
 	Id       string
 	State    string // queued | approved | claimed | parked | done
 	Tier     uint8  // 1 | 2 | 3; zero is tolerated during the classification migration
+	Risk     *RiskRecord
 	Intent   string
 	Origin   string
 	NextStep string
@@ -36,8 +37,9 @@ type GoalFile struct {
 	// Pinned names the ONE machine that may claim this goal — set when
 	// the work needs a setup, network, or resource only that machine
 	// has. Empty means any machine may claim.
-	Pinned string
-	Budget *Budget
+	Pinned           string
+	Budget           *Budget
+	BudgetExceptions uint16
 	// legacyFourBudget preserves the pre-tier approval digest until the
 	// classification sweep rebinds it to a tier and five-member tuple.
 	legacyFourBudget bool
@@ -68,6 +70,70 @@ type GoalFile struct {
 	Parked         *ParkRecord
 	Legacy         []string // LegacyNotes: verbatim non-field prose from migration
 	History        []HistoryLine
+}
+
+type RiskRecord struct {
+	Severity     uint8
+	Novelty      uint8
+	Exposure     uint8
+	Accumulation uint8
+	Basis        string
+}
+
+func (r RiskRecord) Validate() error {
+	for _, score := range []struct {
+		name  string
+		value uint8
+	}{{"severity", r.Severity}, {"novelty", r.Novelty}, {"exposure", r.Exposure}, {"accumulation", r.Accumulation}} {
+		if score.value < 1 || score.value > 3 {
+			return fmt.Errorf("%s must be 1, 2, or 3", score.name)
+		}
+	}
+	if strings.TrimSpace(r.Basis) == "" || strings.ContainsAny(r.Basis, "\r\n") {
+		return fmt.Errorf("basis must be one non-empty line")
+	}
+	return nil
+}
+
+func (r RiskRecord) DerivedTier() uint8 {
+	tier := max(r.Severity, max(r.Novelty, r.Exposure))
+	if tier == 1 && r.Accumulation >= 2 {
+		return 2
+	}
+	return tier
+}
+
+func (r RiskRecord) GateWidth() string {
+	if r.Accumulation >= 2 {
+		return "full"
+	}
+	return "area"
+}
+
+func ParseRiskRecord(value, basis string) (RiskRecord, error) {
+	parts := strings.Split(value, ",")
+	want := []string{"severity", "novelty", "exposure", "accumulation"}
+	if len(parts) != len(want) {
+		return RiskRecord{}, fmt.Errorf("--risk must be severity=<n>,novelty=<n>,exposure=<n>,accumulation=<n>")
+	}
+	values := make([]uint8, len(parts))
+	for i, part := range parts {
+		name, raw, ok := strings.Cut(part, "=")
+		n, err := strconv.ParseUint(raw, 10, 8)
+		if !ok || name != want[i] || err != nil || n < 1 || n > 3 {
+			return RiskRecord{}, fmt.Errorf("--risk must be severity=<n>,novelty=<n>,exposure=<n>,accumulation=<n>, with every answer 1, 2, or 3")
+		}
+		values[i] = uint8(n)
+	}
+	risk := RiskRecord{Severity: values[0], Novelty: values[1], Exposure: values[2], Accumulation: values[3], Basis: basis}
+	if err := risk.Validate(); err != nil {
+		return RiskRecord{}, err
+	}
+	return risk, nil
+}
+
+func (r RiskRecord) scoreArgs() string {
+	return fmt.Sprintf("severity=%d,novelty=%d,exposure=%d,accumulation=%d", r.Severity, r.Novelty, r.Exposure, r.Accumulation)
 }
 
 type ReviewObligation struct{ Finding, Chain, Artifact, Test, State string }
@@ -111,8 +177,14 @@ func renderBudgetRecord(b Budget) string {
 }
 
 // ApprovalDigest binds exactly the intent and tuple that the human reviewed.
-func ApprovalDigest(intent string, tier uint8, budget Budget) string {
-	sum := sha256.Sum256([]byte("intent=" + intent + "\n" + fmt.Sprintf("tier=%d\n", tier) + "budget=" + renderBudgetRecord(budget) + "\n"))
+func ApprovalDigest(intent string, tier uint8, budget Budget, risks ...*RiskRecord) string {
+	payload := "intent=" + intent + "\n" + fmt.Sprintf("tier=%d\n", tier)
+	if len(risks) > 0 && risks[0] != nil {
+		risk := risks[0]
+		payload += fmt.Sprintf("risk=%d,%d,%d,%d\n", risk.Severity, risk.Novelty, risk.Exposure, risk.Accumulation)
+	}
+	payload += "budget=" + renderBudgetRecord(budget) + "\n"
+	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -161,6 +233,10 @@ type ClaimRecord struct {
 	// Zero is tolerated only for legacy records written before revision
 	// binding existed.
 	Revision uint64
+	// AccountingRevision is the first goal revision whose dispatch spend
+	// belongs to the current human-approved budget. Legacy records default it
+	// to Revision when parsed.
+	AccountingRevision uint64
 }
 
 // StopCapability binds breach-stop authority to one exact local claim. The
@@ -356,6 +432,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Tier > 3 {
 		addProblem("Tier %d is not 1, 2, or 3", f.Tier)
 	}
+	if f.Risk != nil {
+		if err := f.Risk.Validate(); err != nil {
+			addProblem("Risk: %v", err)
+		}
+	}
 	inferLegacyReviewRounds(f)
 	if len(f.History) == 0 {
 		addProblem("empty History — every goal file carries its opid lines")
@@ -426,7 +507,8 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		}
 	}
 	if f.Obligation != nil {
-		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget); err != nil {
+		riskRaise := f.Claimed != nil && f.Claimed.Revision > 0 && f.Claimed.Revision <= uint64(len(f.History)) && misclassificationRaises(f.History[f.Claimed.Revision-1].Reason)
+		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget, riskRaise); err != nil {
 			addProblem("%v", err)
 		}
 	}
@@ -457,8 +539,10 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("StopFence has no stop capability")
 		} else if !safeStopID(fence.StopID) || fence.Revision == 0 || fence.Epoch == 0 || fence.CapabilityGeneration == 0 || !validStamp(fence.ClosedAt) {
 			addProblem("StopFence is incomplete")
-		} else if fence.Revision != f.StopCapability.Revision || fence.Epoch != f.StopCapability.FenceEpoch ||
-			fence.CapabilityGeneration != f.StopCapability.Generation {
+		} else if (fence.Revision != f.StopCapability.Revision || fence.CapabilityGeneration != f.StopCapability.Generation) &&
+			!f.riskRaisePreservesStopFence(fence) {
+			addProblem("StopFence contradicts the stop capability")
+		} else if fence.Epoch != f.StopCapability.FenceEpoch {
 			addProblem("StopFence contradicts the stop capability")
 		}
 		if fence.Reason != StopReasonElapsedLimit && fence.Reason != StopReasonCorruptOverLimit {
@@ -498,8 +582,10 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		return fmt.Errorf("record has incomplete or out-of-range event coordinates")
 	}
 	event := f.History[a.Revision-1]
-	if event.At != a.At || event.Opid != a.Opid || event.Actor != a.By ||
-		(event.Verb != "approve" && event.Verb != "resume" && event.Verb != "set-budget") {
+	raiseOpid, isRaise := strings.CutPrefix(a.Authority, "raise=")
+	ordinary := event.Actor == a.By && (event.Verb == "approve" || event.Verb == "resume" || event.Verb == "set-budget")
+	raise := isRaise && raiseOpid == event.Opid && event.Verb == "edit" && misclassificationRaises(event.Reason)
+	if event.At != a.At || event.Opid != a.Opid || (!ordinary && !raise) {
 		return fmt.Errorf("record does not bind its approval-bearing History event")
 	}
 	switch a.Authority {
@@ -513,12 +599,15 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 			return fmt.Errorf("relayed authority does not match its History review facts")
 		}
 	default:
+		if raise && a.ReviewBy == "" {
+			break
+		}
 		return fmt.Errorf("authority %q is not proven|relayed", a.Authority)
 	}
 	if f.Budget == nil {
 		return fmt.Errorf("record requires a complete Budget")
 	}
-	want := ApprovalDigest(f.Intent, f.Tier, *f.Budget)
+	want := ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)
 	// A tierless record is necessarily from before TierLaw. Its next ordinary
 	// rewrite may expand the stored four-member tuple to five members before
 	// classify-sweep can rebind the approval. Continue accepting the legacy
@@ -530,6 +619,19 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		return fmt.Errorf("digest does not match the approved intent and budget")
 	}
 	return nil
+}
+
+func misclassificationRaises(reason string) bool {
+	if first, _, combined := strings.Cut(reason, "; TierOverride: "); combined {
+		reason = first
+	}
+	fields := strings.Fields(strings.TrimPrefix(reason, "Misclassified: "))
+	if !strings.HasPrefix(reason, "Misclassified: ") || len(fields) != 3 || !strings.HasPrefix(fields[0], "from=") || !strings.HasPrefix(fields[1], "to=") || !strings.HasPrefix(fields[2], "evidence=") {
+		return false
+	}
+	from, fromErr := strconv.ParseUint(strings.TrimPrefix(fields[0], "from="), 10, 8)
+	to, toErr := strconv.ParseUint(strings.TrimPrefix(fields[1], "to="), 10, 8)
+	return fromErr == nil && toErr == nil && to > from && strings.TrimPrefix(fields[2], "evidence=") != ""
 }
 
 // ValidateClaimRevision proves that a revision-bound claim names one event in
@@ -549,9 +651,32 @@ func (f *GoalFile) ValidateClaimRevision() error {
 	}
 	event := f.History[revision-1]
 	if event.At != f.Claimed.At {
-		return fmt.Errorf("claimed at=%s contradicts History revision=%d at=%s", f.Claimed.At, revision, event.At)
+		if !misclassificationRaises(event.Reason) {
+			return fmt.Errorf("claimed at=%s contradicts History revision=%d at=%s", f.Claimed.At, revision, event.At)
+		}
+		foundOrigin := false
+		for _, prior := range f.History[:revision-1] {
+			if prior.At == f.Claimed.At {
+				foundOrigin = true
+				break
+			}
+		}
+		if !foundOrigin {
+			return fmt.Errorf("claimed at=%s has no pre-raise History event", f.Claimed.At)
+		}
 	}
 	return nil
+}
+
+// riskRaisePreservesStopFence admits exactly the revision-only claim rebind:
+// a rigor raise never clears or rewrites a fence that already stopped launch.
+func (f *GoalFile) riskRaisePreservesStopFence(fence *StopFence) bool {
+	if f.StopCapability == nil || fence.Epoch != f.StopCapability.FenceEpoch ||
+		fence.Revision != fence.CapabilityGeneration || fence.Revision >= f.StopCapability.Revision ||
+		f.StopCapability.Revision != f.StopCapability.Generation || f.StopCapability.Revision > uint64(len(f.History)) {
+		return false
+	}
+	return misclassificationRaises(f.History[f.StopCapability.Revision-1].Reason)
 }
 
 // validStamp is the one timestamp form the grammar admits.
@@ -573,6 +698,30 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
+	case "Risk":
+		without, basis, present, err := cutQuotedRecordField(value, "basis")
+		if err != nil || !present {
+			addProblem("Risk: basis must be one quoted string")
+			return
+		}
+		rec, err := parseKVRecord(without, []string{"severity", "novelty", "exposure", "accumulation"}, nil, "")
+		if err != nil {
+			addProblem("Risk: %v", err)
+			return
+		}
+		risk, err := ParseRiskRecord(fmt.Sprintf("severity=%s,novelty=%s,exposure=%s,accumulation=%s", rec["severity"], rec["novelty"], rec["exposure"], rec["accumulation"]), basis)
+		if err != nil {
+			addProblem("Risk: %v", err)
+			return
+		}
+		f.Risk = &risk
+	case "BudgetExceptions":
+		n, err := strconv.ParseUint(value, 10, 16)
+		if err != nil {
+			addProblem("BudgetExceptions %q is not an unsigned 16-bit integer", value)
+			return
+		}
+		f.BudgetExceptions = uint16(n)
 	case "ReviewObligation":
 		without, artifact, present, err := cutQuotedRecordField(value, "artifact")
 		if err != nil || !present {
@@ -740,7 +889,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		// appetite= has no budget authority. Discarding it keeps the claim
 		// readable so admission can name the record whose structured tuple is
 		// missing; the value never enters GoalFile.
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "appetite"}, "")
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "appetite"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
@@ -753,7 +902,15 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 				return
 			}
 		}
-		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision}
+		accountingRevision := revision
+		if rec["accountingRevision"] != "" {
+			accountingRevision, err = strconv.ParseUint(rec["accountingRevision"], 10, 64)
+			if err != nil || accountingRevision == 0 {
+				addProblem("Claimed accountingRevision=%q is not a positive integer", rec["accountingRevision"])
+				return
+			}
+		}
+		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision, AccountingRevision: accountingRevision}
 	case "StopCapability":
 		rec, err := parseKVRecord(value, []string{"generation", "revision", "machine", "claimEpoch", "fenceEpoch"}, nil, "")
 		if err != nil {
@@ -942,6 +1099,9 @@ func RenderFile(f *GoalFile) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", f.Id)
 	fmt.Fprintf(&b, "- State: %s\n", f.State)
+	if f.Risk != nil {
+		fmt.Fprintf(&b, "- Risk: severity=%d novelty=%d exposure=%d accumulation=%d basis=%s\n", f.Risk.Severity, f.Risk.Novelty, f.Risk.Exposure, f.Risk.Accumulation, strconv.Quote(f.Risk.Basis))
+	}
 	if f.Tier != 0 {
 		fmt.Fprintf(&b, "- Tier: %d\n", f.Tier)
 	}
@@ -972,6 +1132,7 @@ func RenderFile(f *GoalFile) []byte {
 	if f.Budget != nil {
 		fmt.Fprintf(&b, "- Budget: %s\n", renderBudgetRecord(*f.Budget))
 	}
+	fmt.Fprintf(&b, "- BudgetExceptions: %d\n", f.BudgetExceptions)
 	if f.NormApproval != nil {
 		fmt.Fprintf(&b, "- NormApproval: approvedRef=%s minutes=%d reviewRounds=%d goalRevision=%d\n",
 			f.NormApproval.ApprovedRef, f.NormApproval.Minutes, f.NormApproval.ReviewRounds, f.NormApproval.GoalRevision)
@@ -1032,7 +1193,11 @@ func RenderFile(f *GoalFile) []byte {
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)
 		if f.Claimed.Revision > 0 {
-			fmt.Fprintf(&b, " revision=%d", f.Claimed.Revision)
+			accountingRevision := f.Claimed.AccountingRevision
+			if accountingRevision == 0 {
+				accountingRevision = f.Claimed.Revision
+			}
+			fmt.Fprintf(&b, " revision=%d accountingRevision=%d", f.Claimed.Revision, accountingRevision)
 		}
 		b.WriteByte('\n')
 	}

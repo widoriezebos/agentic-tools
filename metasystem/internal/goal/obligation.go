@@ -104,14 +104,14 @@ func oneOf(value string, allowed ...string) bool {
 	return false
 }
 
-func validateGovernedObligation(o *GovernedObligation, fileRevision uint64, claim *ClaimRecord, budget *Budget) error {
+func validateGovernedObligation(o *GovernedObligation, fileRevision uint64, claim *ClaimRecord, budget *Budget, revisionOnlyRiskRaise bool) error {
 	if o == nil {
 		return nil
 	}
 	if o.Revision == 0 || o.Revision > fileRevision {
 		return fmt.Errorf("obligation revision=%d is outside goal Revision=%d", o.Revision, fileRevision)
 	}
-	if claim == nil || budget == nil || o.BudgetRevision == 0 || o.BudgetRevision != claim.Revision {
+	if claim == nil || budget == nil || o.BudgetRevision == 0 || (o.BudgetRevision != claim.Revision && !revisionOnlyRiskRaise) {
 		return fmt.Errorf("obligation budgetRevision=%d does not bind the claimed budget revision", o.BudgetRevision)
 	}
 	if !validObligationState(o.State) || strings.TrimSpace(o.Owner) == "" {

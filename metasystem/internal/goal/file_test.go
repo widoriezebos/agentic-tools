@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -45,8 +46,30 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	if parsed.Claimed.Revision != 2 || parsed.Budget == nil || parsed.Budget.ReservedJobMinutesLimit != 240 {
 		t.Fatalf("budget tuple or claim-revision binding lost: claimed=%+v budget=%+v", parsed.Claimed, parsed.Budget)
 	}
+	if parsed.Claimed.AccountingRevision != 2 || !strings.Contains(string(bytes1), "revision=2 accountingRevision=2") {
+		t.Fatalf("accounting revision did not round-trip beside the claim revision: %+v\n%s", parsed.Claimed, bytes1)
+	}
+	legacy := strings.Replace(string(bytes1), " accountingRevision=2", "", 1)
+	legacyParsed, legacyProblems := ParseFile([]byte(withFreshIntegrity(legacy)))
+	if len(legacyProblems) != 0 || legacyParsed.Claimed.AccountingRevision != legacyParsed.Claimed.Revision {
+		t.Fatalf("legacy claim did not default accounting revision to claim revision: claim=%+v problems=%v", legacyParsed.Claimed, legacyProblems)
+	}
 	if parsed.Revision != 3 || len(parsed.History) != 3 {
 		t.Fatalf("revision/history lost: rev=%d len=%d", parsed.Revision, len(parsed.History))
+	}
+}
+
+func TestSTR2P2A05ZeroClaimRevisionObligationIsAProblemNotAPanic(t *testing.T) {
+	f := vGoal("zero-claim-obligation", StateClaimed)
+	f.Budget = &Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 5, ActiveJobLimit: 1, ReviewRoundLimit: 0}
+	f.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "m1", At: f.OpenedAt}
+	o := testGovernedObligation(ObligationDraft)
+	o.Revision = 1
+	o.BudgetRevision = 1
+	f.Obligation = &o
+	_, problems := ParseFile(RenderFile(f))
+	if joined := fmt.Sprint(problems); !strings.Contains(joined, "obligation budgetRevision=1 does not bind the claimed budget revision") {
+		t.Fatalf("zero claim revision did not produce the existing obligation problem: %v", problems)
 	}
 }
 

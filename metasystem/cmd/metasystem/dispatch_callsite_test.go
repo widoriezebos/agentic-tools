@@ -66,8 +66,9 @@ func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing
 	if !strings.Contains(fresh, `--main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal"`) {
 		t.Fatal("fresh dispatch does not bind lease and goal provenance into its claim reservation")
 	}
-	if !strings.Contains(fresh, `goal_tier=$(json_value "$goal_binding" goalTier)`) || strings.Count(fresh, `--goal-tier "$goal_tier"`) < 3 {
-		t.Fatal("fresh dispatch does not carry one claimed-revision goalTier through preflight, claim, and final record")
+	if !strings.Contains(fresh, `goal_tier=$(json_value "$goal_binding" goalTier)`) || strings.Count(fresh, `--goal-tier "$goal_tier"`) < 3 ||
+		!strings.Contains(fresh, `goal_width=$(json_value "$goal_binding" gateWidth)`) || strings.Count(fresh, `--gate-width "$goal_width"`) < 3 {
+		t.Fatal("fresh dispatch does not carry one claimed-revision goalTier and gateWidth through preflight, claim, and final record")
 	}
 
 	follow := dispatchShellSection(t, "follow_up() {", "\nstatus_job() {")
@@ -99,8 +100,9 @@ func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing
 	if !strings.Contains(follow, `--main-id "$current_main_id" --claim-epoch "$reservation_claim_epoch" --goal "$goal"`) {
 		t.Fatal("follow-up does not bind lease and goal provenance into its claim reservation")
 	}
-	if !strings.Contains(follow, `goal_tier=$(json_value "$goal_binding" goalTier)`) || strings.Count(follow, `--goal-tier "$goal_tier"`) < 3 {
-		t.Fatal("follow-up does not carry one claimed-revision goalTier through preflight, claim, and final record")
+	if !strings.Contains(follow, `goal_tier=$(json_field "$latest" goalTier)`) || strings.Count(follow, `--goal-tier "$goal_tier"`) < 3 ||
+		!strings.Contains(follow, `goal_width=$(json_field "$latest" gateWidth`) || strings.Count(follow, `--gate-width "$goal_width"`) < 3 {
+		t.Fatal("follow-up does not carry the root's frozen goalTier and gateWidth through preflight, claim, and final record")
 	}
 }
 

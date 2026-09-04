@@ -53,6 +53,13 @@ func TestValidateAccepts(t *testing.T) {
 	}
 }
 
+func TestValidateRefusesUnknownRiskGate(t *testing.T) {
+	problems := validateRepo(t, validConf+RiskGateKey+"=maybe\n")
+	if !hasProblem(problems, "mark or enforce") {
+		t.Fatalf("unknown risk gate was not refused: %v", problems)
+	}
+}
+
 func TestValidateTiersAbsentInfo(t *testing.T) {
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, "development"), 0o755)

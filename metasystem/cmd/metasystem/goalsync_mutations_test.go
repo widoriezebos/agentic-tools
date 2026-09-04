@@ -20,10 +20,15 @@ import (
 
 func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "risk-scored classification fixture", func(file *goal.GoalFile) {
+		risk := &goal.RiskRecord{Severity: 3, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "standing validation is severe"}
+		file.Risk = risk
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, risk)
+	})
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
 	draft := filepath.Join(t.TempDir(), "classification.txt")
-	if err := os.WriteFile(draft, []byte("standing-validation 2 stale draft row\n"), 0o644); err != nil {
+	if err := os.WriteFile(draft, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	preview, previewCode := captureStdout(t, func() int {
@@ -31,7 +36,7 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 	})
 	markerIndex := strings.LastIndex(preview, "listing-digest ")
 	if previewCode != 0 || markerIndex < 0 || strings.TrimSpace(preview[:markerIndex]) != "" {
-		t.Fatalf("already-tiered ledger did not preview as an empty listing: code=%d output=%q", previewCode, preview)
+		t.Fatalf("already-risk-scored ledger did not preview as an empty listing: code=%d output=%q", previewCode, preview)
 	}
 	digest := strings.TrimSpace(strings.TrimPrefix(preview[markerIndex:], "listing-digest "))
 	confirmed, confirmCode := captureStdout(t, func() int {
@@ -59,6 +64,107 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 	})
 	if _, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", time.Date(2026, 9, 1, 10, 1, 0, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "classify the goal first") {
 		t.Fatalf("delegate accepted a hand-written tierless goal after TierLaw: %v", err)
+	}
+}
+
+func TestRiskGateAdmissionCommandMarksThenEnforces(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+	})
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
+	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--destructive-reach", "MECHANICAL"}
+	marked, markCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
+	if markCode != 0 || strings.TrimSpace(marked) != want {
+		t.Fatalf("mark-mode command did not print its notice and proceed: code=%d output=%q", markCode, marked)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.risk-gate=enforce\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refusal, enforceCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if enforceCode != 9 || strings.TrimSpace(refusal) != want {
+		t.Fatalf("enforce-mode command did not refuse with the same code: code=%d output=%q", enforceCode, refusal)
+	}
+}
+
+func TestSTR2P2A03GoalEditCommandRequiresRiskAndWhyForOverride(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	low := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
+	amendSyncedGoalFixture(t, root, "queued risk edit fixture", func(file *goal.GoalFile) {
+		file.State = goal.StateQueued
+		file.Tier = 1
+		file.Risk = low
+		file.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
+		file.Approved = nil
+		file.Claimed = nil
+		file.StopCapability = nil
+	})
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	bare, bareCode := captureStderr(t, func() int {
+		return runGoalEdit([]string{"--root", root, "--id", "standing-validation", "--tier", "2"})
+	})
+	if bareCode == 0 || !strings.Contains(bare, "answer the four questions") {
+		t.Fatalf("bare tier edit was not refused with the four-question remedy: code=%d stderr=%q", bareCode, bare)
+	}
+	base := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "routine", "--tier", "2"}
+	withoutWhy, withoutWhyCode := captureStderr(t, func() int { return runGoalEdit(base) })
+	if withoutWhyCode == 0 || !strings.Contains(withoutWhy, "requires --why") {
+		t.Fatalf("override without reason was not refused: code=%d stderr=%q", withoutWhyCode, withoutWhy)
+	}
+	withWhy := append(append([]string(nil), base...), "--why", "conservative review")
+	if output, code := captureStdout(t, func() int { return runGoalEdit(withWhy) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("reasoned override did not confirm: code=%d output=%q", code, output)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
+	goalText := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	if !strings.Contains(goalText, "TierOverride: derived=1 set=2 why=conservative review") {
+		t.Fatalf("reasoned override did not write its history line:\n%s", goalText)
+	}
+}
+
+func TestSTR4R1MisclassificationKindThroughGoalEditCommand(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	low := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
+	amendSyncedGoalFixture(t, root, "claimed risk raise fixture", func(file *goal.GoalFile) {
+		file.Tier = 1
+		file.Risk = low
+		file.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+	})
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	args := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=2,novelty=1,exposure=1,accumulation=1", "--basis", "moderate consequence", "--evidence", "refusal:BUDGET_REFUSED"}
+	if output, code := captureStdout(t, func() int { return runGoalEdit(args) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("command-layer raise failed: code=%d output=%q", code, output)
+	}
+	register, err := os.ReadFile(filepath.Join(root, "records", "counselor", "misclassification-register.jsonl"))
+	if err != nil || strings.Count(string(register), `"kind":"misclassification"`) != 1 {
+		t.Fatalf("command-layer raise did not append exactly one misclassification register line: err=%v text=%s", err, register)
+	}
+}
+
+func TestSTR4R1QueuedFirstRiskAnswersDoNotRegisterMisclassification(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "queued tierless risk fixture", func(file *goal.GoalFile) {
+		file.State = goal.StateQueued
+		file.Tier = 0
+		file.Risk = nil
+		file.Claimed = nil
+		file.Approved = nil
+		file.StopCapability = nil
+	})
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	args := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=2,novelty=1,exposure=1,accumulation=1", "--basis", "moderate consequence"}
+	if output, code := captureStdout(t, func() int { return runGoalEdit(args) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("queued goal's first four risk answers failed: code=%d output=%q", code, output)
+	}
+	registerPath := filepath.Join(root, "records", "counselor", "misclassification-register.jsonl")
+	if _, err := os.Stat(registerPath); !os.IsNotExist(err) {
+		t.Fatalf("queued goal's first four risk answers wrote a misclassification register: err=%v", err)
 	}
 }
 

@@ -550,12 +550,13 @@ func CritiqueBudgetRebind(repoRoot, rootJob string) (outcome string, err error) 
 				return fmt.Errorf("job %s is not a critic chain root", rootJob)
 			}
 			goalID := asString(root["goalId"])
-			if goalID == "" {
-				return fmt.Errorf("critic chain %s is not bound to a goal", rootJob)
-			}
-			revision, _, e := ResolveGoalRevision(repoRoot, goalID)
-			if e != nil {
-				return e
+			var revision uint64
+			var tier uint8
+			if goalID != "" {
+				revision, tier, e = ResolveGoalRevision(repoRoot, goalID)
+				if e != nil {
+					return e
+				}
 			}
 			limit, e := goalReviewRoundLimit(repoRoot, goalID, revision)
 			if e != nil || limit == 0 {
@@ -578,7 +579,7 @@ func CritiqueBudgetRebind(repoRoot, rootJob string) (outcome string, err error) 
 				}
 				root[criticRoundsConsumedField] = consumed
 			}
-			root["critiqueBudgetBinding"] = map[string]any{"goalId": goalID, "goalRevision": revision, "opid": opid}
+			root["critiqueBudgetBinding"] = map[string]any{"goalId": goalID, "goalRevision": revision, "goalTier": tier, "opid": opid}
 			if e := writeRecord(path, root); e != nil {
 				return e
 			}

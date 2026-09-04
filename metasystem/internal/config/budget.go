@@ -22,7 +22,21 @@ const (
 	Tier1BudgetKey             = "metasystem.budget.tier-1"
 	Tier2BudgetKey             = "metasystem.budget.tier-2"
 	Tier3BudgetKey             = "metasystem.budget.tier-3"
+	RiskGateKey                = "metasystem.budget.risk-gate"
+	RiskGateMark               = "mark"
+	RiskGateEnforce            = "enforce"
 )
+
+func RiskGate(confPath string) (string, error) {
+	value, err := budgetLawValue(confPath, RiskGateKey, RiskGateMark)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", RiskGateKey, err)
+	}
+	if value != RiskGateMark && value != RiskGateEnforce {
+		return "", fmt.Errorf("%s must be mark or enforce", RiskGateKey)
+	}
+	return value, nil
+}
 
 var retiredKeys = map[string]string{
 	GoalNormJobMinutesKey: "is retired; use " + Tier1BudgetKey + ", " + Tier2BudgetKey + ", and " + Tier3BudgetKey,

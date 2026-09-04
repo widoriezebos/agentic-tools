@@ -36,10 +36,64 @@ func TestSTR3Gap03OutputsGrammar(t *testing.T) {
 	}
 }
 
-func TestSTR2BSeamConstant(t *testing.T) {
-	limit, err := goalReviewRoundLimit(t.TempDir(), "goal", 7)
-	if err != nil || limit != 3 {
-		t.Fatalf("seam = %d, %v", limit, err)
+func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
+	repo := revisionBindingBed(t, 2)
+	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("metasystem.budget.review-round-max=9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalPath := filepath.Join(repo, "plans", "goals", "bounded.md")
+	data, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("parse bounded goal: %v", problems)
+	}
+	file.Budget.ReviewRoundLimit = 9
+	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "-C", repo, "add", "metasystem.conf", "plans/goals/bounded.md")
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	command = exec.Command("git", "-C", repo, "commit", "-qm", "nine review rounds")
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	for _, ref := range []string{goal.LocalLedgerBranch, goal.AcceptedRef} {
+		command = exec.Command("git", "-C", repo, "update-ref", ref, "HEAD")
+		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("update %s: %v: %s", ref, err, output)
+		}
+	}
+	limit, err := goalReviewRoundLimit(repo, "bounded", 2)
+	if err != nil || limit != 9 {
+		t.Fatalf("goal tuple limit = %d, %v", limit, err)
+	}
+	writeCapRound(t, repo, "nine-round-critic", "design-critic", 1, false, []any{}, []any{})
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "nine-round-critic.json")
+	root := readJSONFile(t, rootPath)
+	root[reviewRoundLimitField] = 9
+	writeJSONFile(t, filepath.Dir(rootPath), filepath.Base(rootPath), root)
+	for round := 2; round <= 4; round++ {
+		writeCapRound(t, repo, "nine-round-critic", "design-critic", round, false, []any{}, []any{})
+	}
+	root = readJSONFile(t, rootPath)
+	if round, _ := numInt(root[findingRegisterRoundField]); round != 4 {
+		t.Fatalf("fourth critic round did not fold: %+v", root)
+	}
+
+	goalFree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goalFree, "metasystem.conf"), []byte("metasystem.budget.review-round-max=7\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if limit, err := goalReviewRoundLimit(goalFree, "", 0); err != nil || limit != 7 {
+		t.Fatalf("goal-free ceiling = %d, %v", limit, err)
 	}
 }
 
@@ -238,6 +292,9 @@ func TestRaiseByRebind(t *testing.T) {
 	binding, _ := got["critiqueBudgetBinding"].(map[string]any)
 	if revision, _ := numInt(binding["goalRevision"]); revision != 2 || !strings.Contains(asString(binding["opid"]), "r2") {
 		t.Fatalf("rebind provenance = %+v", binding)
+	}
+	if tier, _ := numInt(binding["goalTier"]); tier != 3 {
+		t.Fatalf("rebind discarded resolved tier: %+v", binding)
 	}
 }
 

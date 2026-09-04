@@ -230,7 +230,7 @@ func touch(f *GoalFile, r VerbRequest, verb string, targets []string) {
 }
 
 func newClaimRecord(machine, lineage, at string, revision uint64) *ClaimRecord {
-	return &ClaimRecord{Machine: machine, Lineage: lineage, At: at, Revision: revision}
+	return &ClaimRecord{Machine: machine, Lineage: lineage, At: at, Revision: revision, AccountingRevision: revision}
 }
 
 func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimEpoch int64) error {
@@ -444,7 +444,37 @@ func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) 
 // OpenTiered adds a queued goal at the caller-selected tier. Goal-free clears
 // in the same commit when it was declared.
 func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels ...string) (PublishResult, error) {
-	req, err := openRequest(r, id, intent, origin, nextStep, tier, supplied, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, tier, supplied, nil, "", labels)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, req)
+}
+
+func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, risk RiskRecord, requestedTier uint8, why string, supplied *Budget, proof *humanauthority.Proof, labels ...string) (PublishResult, error) {
+	if err := risk.Validate(); err != nil {
+		return PublishResult{}, fmt.Errorf("invalid risk: %v", err)
+	}
+	derived := risk.DerivedTier()
+	tier := requestedTier
+	if tier == 0 {
+		tier = derived
+	}
+	if tier < 1 || tier > 3 {
+		return PublishResult{}, fmt.Errorf("tier must be 1, 2, or 3")
+	}
+	if tier != derived && strings.TrimSpace(why) == "" {
+		return PublishResult{}, fmt.Errorf("a tier override requires --why")
+	}
+	if tier < derived {
+		if r.Actor.Human == "" {
+			return PublishResult{}, fmt.Errorf("a tier below the risk derivation is a human act and requires --by")
+		}
+		if _, _, _, err := approvalProofClass(r.Endpoint.Root, proof); err != nil {
+			return PublishResult{}, err
+		}
+	}
+	req, err := openRequest(r, id, intent, origin, nextStep, tier, supplied, &risk, why, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -454,7 +484,7 @@ func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, 
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels []string) (PublishRequest, error) {
+func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, risk *RiskRecord, why string, labels []string) (PublishRequest, error) {
 	if tier < 1 || tier > 3 {
 		return PublishRequest{}, fmt.Errorf("goal open requires --tier 1, 2, or 3")
 	}
@@ -482,7 +512,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8,
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "open", Targets: []string{id}, Args: intentArgs(r, mergeIntentArgs(map[string]string{
 			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","), "tier": strconv.Itoa(int(tier)),
-		}, budgetIntentArgs(*budget)))},
+		}, mergeIntentArgs(budgetIntentArgs(*budget), riskIntentArgs(risk, why))))},
 		Message: "goal open " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -503,9 +533,12 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8,
 			}
 			f := &GoalFile{
 				Id: id, State: StateQueued, Tier: tier, Intent: intent, Origin: origin,
-				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0, Labels: canonical, Budget: budget,
+				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0, Labels: canonical, Budget: budget, Risk: risk,
 			}
 			touch(f, r, "open", []string{id})
+			if risk != nil && tier != risk.DerivedTier() {
+				f.History[len(f.History)-1].Reason = fmt.Sprintf("TierOverride: derived=%d set=%d why=%s", risk.DerivedTier(), tier, why)
+			}
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
 			// Opening clears a declared Goal-free in the same commit.
 			if t.Root != nil && t.Root.Free != nil {
@@ -652,6 +685,20 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			if f.State != StateClaimed || f.Claimed == nil {
 				return nil, fmt.Errorf("budgets on unclaimed work are the human's approval act, set through goal approve --id %s with --budget", id)
 			}
+			boxTier := f.Tier
+			if boxTier == 0 {
+				// Before TierLaw, every tierless migration record is served under
+				// tier-three rigor; set-budget must use that same effective box so
+				// classify-sweep can backfill its Risk record afterward.
+				boxTier = 3
+			}
+			box, boxErr := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), boxTier)
+			if boxErr != nil {
+				return nil, boxErr
+			}
+			overBox := budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
+				budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
+				budget.ReviewRoundLimit > box.ReviewRoundLimit
 			if f.StopFence != nil {
 				return nil, fmt.Errorf("goal %s revision %d is breach-stopped by %s; only goal resume with its standing approved budget may reopen admission", id, f.StopFence.Revision, f.StopFence.StopID)
 			}
@@ -676,6 +723,9 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				displaced = pairMarker(f.Claimed)
 			}
 			f.Budget = &budget
+			if overBox && f.BudgetExceptions < ^uint16(0) {
+				f.BudgetExceptions++
+			}
 			f.NormApproval = approval
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
 			recordApprovalRelay(f, proof, temporary)
@@ -763,7 +813,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 					o.AuthorizedBy, o.ReviewOutcome = AuthorizedByRecordedRelay, ReviewOutcomeRecordedRelay
 				}
 			}
-			if err := validateGovernedObligation(&o, o.Revision, f.Claimed, f.Budget); err != nil {
+			if err := validateGovernedObligation(&o, o.Revision, f.Claimed, f.Budget, false); err != nil {
 				return nil, err
 			}
 			touch(f, r, "set-obligation", []string{id})
@@ -1335,24 +1385,35 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 type EditFields struct {
 	Intent   *string
 	Tier     *uint8
+	Risk     *RiskRecord
 	NextStep *string
 	Blocked  *[]string
 	Labels   *[]string
+	Why      string
+	Evidence string
+	Proof    *humanauthority.Proof
 }
 
 // Edit applies field deltas to one live goal.
 func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
-	req, err := editRequest(r, id, fields)
+	var riskRaised bool
+	req, err := editRequestReportingRiskRaise(r, id, fields, &riskRaised)
 	if err != nil {
 		return PublishResult{}, err
 	}
-	return Publish(r.Endpoint, req)
+	result, err := Publish(r.Endpoint, req)
+	result.RiskRaised = riskRaised
+	return result, err
 }
 
 // editRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
 func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, error) {
+	return editRequestReportingRiskRaise(r, id, fields, nil)
+}
+
+func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, riskRaised *bool) (PublishRequest, error) {
 	if fields.Tier != nil && (*fields.Tier < 1 || *fields.Tier > 3) {
 		return PublishRequest{}, fmt.Errorf("tier must be 1, 2, or 3")
 	}
@@ -1363,9 +1424,18 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 		}
 		fields.Labels = &canonical
 	}
+	if fields.Risk != nil {
+		if err := fields.Risk.Validate(); err != nil {
+			return PublishRequest{}, fmt.Errorf("invalid risk: %v", err)
+		}
+		derived := fields.Risk.DerivedTier()
+		if fields.Tier != nil && *fields.Tier != derived && strings.TrimSpace(fields.Why) == "" {
+			return PublishRequest{}, fmt.Errorf("a tier override requires --why")
+		}
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields), Args: intentArgs(r, nil)},
+		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields), Args: intentArgs(r, map[string]string{"why": fields.Why, "evidence": fields.Evidence})},
 		Message: "goal edit " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1382,8 +1452,41 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 			if f.Approved != nil && fields.Intent != nil {
 				return nil, fmt.Errorf("the human approved this intent; unapprove the goal, edit it, then approve the new intent")
 			}
-			if fields.Tier != nil && f.Tier != *fields.Tier && (f.Approved != nil || f.State == StateClaimed || f.State == StateParked) {
+			oldDerived, oldWidth := f.Tier, "area"
+			if f.Risk != nil {
+				oldDerived, oldWidth = f.Risk.DerivedTier(), f.Risk.GateWidth()
+			}
+			newDerived, newWidth := oldDerived, oldWidth
+			if fields.Risk != nil {
+				newDerived, newWidth = fields.Risk.DerivedTier(), fields.Risk.GateWidth()
+			}
+			raise := fields.Risk != nil && newDerived > oldDerived && f.Approved != nil
+			targetTier := f.Tier
+			if fields.Tier != nil {
+				targetTier = *fields.Tier
+			} else if fields.Risk != nil {
+				targetTier = newDerived
+				if raise && f.Tier > oldDerived && f.Tier >= newDerived {
+					targetTier = f.Tier
+				}
+			}
+			if f.Tier != targetTier && (f.Approved != nil || f.State == StateClaimed || f.State == StateParked) && !raise {
 				return nil, fmt.Errorf("goal %s is approved, claimed, or parked; unapprove it, edit --tier, then approve it", id)
+			}
+			if fields.Risk != nil && f.Approved != nil && !raise {
+				return nil, fmt.Errorf("goal %s is approved; unapprove it, edit --risk, then approve it", id)
+			}
+			lowering := riskAnswersLower(f.Risk, fields.Risk) || newDerived < oldDerived || targetTier < f.Tier || (oldWidth == "full" && newWidth == "area")
+			if lowering {
+				if r.Actor.Human == "" {
+					return nil, fmt.Errorf("lowering a risk score, derived tier, set tier, or gate width is a human act")
+				}
+				if _, _, _, proofErr := approvalProofClass(r.Endpoint.Root, fields.Proof); proofErr != nil {
+					return nil, proofErr
+				}
+			}
+			if raise && strings.TrimSpace(fields.Evidence) == "" {
+				return nil, fmt.Errorf("raising the derived tier after approval requires --evidence")
 			}
 			// The table's edit rows: queued is open to all, claimed is
 			// the claimant's or a human's (the foreign-human override
@@ -1412,8 +1515,12 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 			if fields.Intent != nil {
 				f.Intent = *fields.Intent
 			}
-			if fields.Tier != nil {
-				f.Tier = *fields.Tier
+			if fields.Tier != nil || fields.Risk != nil {
+				f.Tier = targetTier
+			}
+			if fields.Risk != nil {
+				copyRisk := *fields.Risk
+				f.Risk = &copyRisk
 			}
 			if fields.NextStep != nil {
 				f.NextStep = *fields.NextStep
@@ -1425,10 +1532,58 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 				f.Labels = append([]string(nil), (*fields.Labels)...)
 			}
 			touchDisplaced(f, r, "edit", []string{id}, displaced)
+			if raise {
+				if riskRaised != nil {
+					*riskRaised = true
+				}
+				f.History[len(f.History)-1].Reason = fmt.Sprintf("Misclassified: from=%d to=%d evidence=%s", oldDerived, newDerived, fields.Evidence)
+				if f.Tier != newDerived {
+					f.History[len(f.History)-1].Reason += fmt.Sprintf("; TierOverride: derived=%d set=%d why=%s", newDerived, f.Tier, fields.Why)
+				}
+				box, boxErr := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), f.Tier)
+				if boxErr != nil {
+					return nil, boxErr
+				}
+				if f.Budget.ReviewRoundLimit < box.ReviewRoundLimit {
+					f.Budget.ReviewRoundLimit = box.ReviewRoundLimit
+				}
+				prior := f.Approved
+				f.Approved = &ApprovalRecord{By: prior.By, At: r.stamp(), Revision: f.Revision, Opid: r.opid(), Authority: "raise=" + r.opid(), Digest: ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)}
+				if f.Claimed != nil {
+					if err := rebindClaimRevisionForRiskRaise(f, f.Revision); err != nil {
+						return nil, err
+					}
+				}
+			} else if fields.Risk != nil && f.Tier != fields.Risk.DerivedTier() {
+				f.History[len(f.History)-1].Reason = fmt.Sprintf("TierOverride: derived=%d set=%d why=%s", fields.Risk.DerivedTier(), f.Tier, fields.Why)
+			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}, nil
+}
+
+func riskAnswersLower(old, next *RiskRecord) bool {
+	return old != nil && next != nil && (next.Severity < old.Severity || next.Novelty < old.Novelty || next.Exposure < old.Exposure || next.Accumulation < old.Accumulation)
+}
+
+func riskIntentArgs(risk *RiskRecord, why string) map[string]string {
+	if risk == nil {
+		return nil
+	}
+	return map[string]string{"risk": risk.scoreArgs(), "basis": risk.Basis, "why": why}
+}
+
+// rebindClaimRevisionForRiskRaise strengthens the claimed revision without
+// resetting its elapsed origin, lease epoch, launch fence, or obligation.
+func rebindClaimRevisionForRiskRaise(f *GoalFile, revision uint64) error {
+	if f.Claimed == nil || f.StopCapability == nil {
+		return fmt.Errorf("goal %s has no complete claim authority to rebind", f.Id)
+	}
+	f.Claimed.Revision = revision
+	f.StopCapability.Generation = revision
+	f.StopCapability.Revision = revision
+	return nil
 }
 
 // DeclareFree declares the absence of intent: no queued or claimed
@@ -2346,6 +2501,10 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 	}
 	if fields.Tier != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "tier", New: strconv.Itoa(int(*fields.Tier))})
+	}
+	if fields.Risk != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "risk", New: fields.Risk.scoreArgs()})
+		deltas = append(deltas, FieldDelta{Target: id, Field: "basis", New: fields.Risk.Basis})
 	}
 	if fields.NextStep != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "next", New: *fields.NextStep})

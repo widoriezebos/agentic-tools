@@ -79,10 +79,10 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-    "$fixture_bed_script" migration-recovery labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep
+    "$fixture_bed_script" migration-recovery risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep
 fi
 case "$fixture_scenario" in
-  migration-recovery | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep) ;;
+  migration-recovery | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -254,18 +254,38 @@ approve_fixture_goal() { # goal id, optional complete tuple flags
     --fixture-human-authority "$@" >/dev/null
 }
 
+if [[ "$fixture_scenario" == risk-basis ]]; then
+set +e
+tier_alone=$("$ms" goal open --root "$clone" --id unanswered-risk \
+  --intent "Refuse a tier without the four answers." --next "Answer the risk questions." --tier 2 2>&1)
+tier_alone_rc=$?
+set -e
+[[ $tier_alone_rc -ne 0 && "$tier_alone" == *"answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis"* ]] \
+  || { echo "goal open --tier alone did not name the four unanswered questions: rc=$tier_alone_rc output=$tier_alone" >&2; exit 1; }
+"$ms" goal open --root "$clone" --id risk-basis \
+  --intent "Exercise risk-derived intake." --next "Keep the risk basis visible." \
+  --risk severity=2,novelty=1,exposure=1,accumulation=1 \
+  --basis "moderate consequence with landed precedent" >/dev/null
+risk_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$risk_tip:plans/goals/risk-basis.md" >"$tmp/risk-basis.md"
+risk_line=$(grep -n '^- Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="moderate consequence with landed precedent"$' "$tmp/risk-basis.md" | cut -d: -f1)
+tier_line=$(grep -n '^- Tier: 2$' "$tmp/risk-basis.md" | cut -d: -f1)
+[[ -n "$risk_line" && -n "$tier_line" && $tier_line -eq $((risk_line + 1)) ]] \
+  || { echo "risk-basis open did not render Risk immediately above derived Tier" >&2; cat "$tmp/risk-basis.md" >&2; exit 1; }
+fi
+
 if [[ "$fixture_scenario" == labels-and-filtering ]]; then
 # 6. Label writes are canonical whole fields. Open accepts repeated
 # labels, sorts and deduplicates them, while an unlabeled open keeps
 # the field absent.
 export METASYSTEM_OWNER_LINEAGE=fixture-lineage
 open_labels=$("$ms" goal open --root "$clone" --id labeled-one \
-	--intent "First labeled goal." --next "Continue." --tier 3 \
+	--intent "First labeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
   --label beta --label alpha --label beta)
 grep -q '"outcome":"confirmed"' <<<"$open_labels" \
   || { echo "goal open with labels did not confirm: $open_labels" >&2; exit 1; }
 "$ms" goal open --root "$clone" --id plain-goal \
-	--intent "An unlabeled goal." --next "Continue." --tier 3 >/dev/null
+	--intent "An unlabeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 labels_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$labels_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one.md"
 grep -q '^- Labels: alpha, beta$' "$tmp/labeled-one.md" \
@@ -298,7 +318,7 @@ fi
 grep -q 'both --label and --unlabel' <<<"$contradiction" \
   || { echo "the contradictory edit did not name its refusal: $contradiction" >&2; exit 1; }
 if bad_label=$("$ms" goal open --root "$clone" --id bad-label \
-	--intent "Must refuse." --next "Stop." --tier 3 --label Bad_Label 2>&1); then
+	--intent "Must refuse." --next "Stop." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label Bad_Label 2>&1); then
   echo "a malformed label succeeded" >&2; exit 1
 fi
 grep -Fq 'must match ^[a-z][a-z0-9-]{0,31}$' <<<"$bad_label" \
@@ -312,7 +332,7 @@ fi
 # 8. List filters use AND across repeated labels and leave zero-label
 # goals lawful but absent from a filtered result.
 "$ms" goal open --root "$clone" --id labeled-two \
-	--intent "Second labeled goal." --next "Continue." --tier 3 \
+	--intent "Second labeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
   --label shared --label alpha >/dev/null
 one_filter=$("$ms" goal list --root "$clone" --pretty --label shared)
 grep -q '^  labeled-one' <<<"$one_filter" && grep -q '^  labeled-two' <<<"$one_filter" \
@@ -324,9 +344,9 @@ two_filters=$("$ms" goal list --root "$clone" --pretty --label alpha --label sha
 grep -q '^  labeled-one' <<<"$two_filters" && grep -q '^  labeled-two' <<<"$two_filters" \
   || { echo "two-label AND filtering lost a match: $two_filters" >&2; exit 1; }
 "$ms" goal open --root "$clone" --id and-a \
-	--intent "Carries only a." --next "Continue." --tier 3 --label a >/dev/null
+	--intent "Carries only a." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a >/dev/null
 "$ms" goal open --root "$clone" --id and-ab \
-	--intent "Carries a and b." --next "Continue." --tier 3 --label a --label b >/dev/null
+	--intent "Carries a and b." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a --label b >/dev/null
 and_probe=$("$ms" goal list --root "$clone" --pretty --label a --label b)
 and_ids=$(sed -n 's/^  \([a-z][a-z0-9-]*\)$/\1/p' <<<"$and_probe")
 [[ "$and_ids" == "and-ab" ]] \
@@ -368,10 +388,10 @@ fi
 if [[ "$fixture_scenario" == structured-budget ]]; then
 "$ms" goal release --root "$clone" --id ship-widget >/dev/null
 "$ms" goal open --root "$clone" --id plain-goal \
-	--intent "An unlabeled goal." --next "Continue." --tier 3 >/dev/null
+	--intent "An unlabeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 # 11. The separated intake, approval, and claim path preserves labels.
 "$ms" goal open --root "$clone" --id claimed-label \
-	--intent "Claimed with its group." --next "Continue." --tier 3 --label custody >/dev/null
+	--intent "Claimed with its group." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label custody >/dev/null
 approve_fixture_goal claimed-label --budget box
 claim_out=$("$ms" goal claim --root "$clone" --id claimed-label)
 grep -q '"outcome":"confirmed"' <<<"$claim_out" \
@@ -387,7 +407,7 @@ grep -q '^- Labels: custody$' "$tmp/claimed-label.md" \
 export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
 "$ms" goal open --root "$clone" --id budget-check \
 		--intent "Exercise structured budget admission." \
-		--next "Appetite: 4h is inert human prose, not a budget." --tier 3 \
+		--next "Appetite: 4h is inert human prose, not a budget." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
 		--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 >/dev/null
 approve_fixture_goal budget-check \
 	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
@@ -454,7 +474,7 @@ if [[ "$fixture_scenario" == scope-bounds ]]; then
 # exercise the typed refusal. The remedy must name split; no refusal fixture
 # infers success from a parser-only unit.
 "$ms" goal open --root "$clone" --id norm-parent \
-	--intent "Hold a large intent before decomposition." --next "Split it first." --tier 3 >/dev/null
+	--intent "Hold a large intent before decomposition." --next "Split it first." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 approve_fixture_goal norm-parent --budget box
 "$ms" goal claim --root "$clone" --id norm-parent >/dev/null
 if norm_refusal=$("$ms" goal set-budget --root "$clone" --id norm-parent \
@@ -467,7 +487,7 @@ grep -q 'GOAL_NORM_REFUSED: goal norm-parent' <<<"$norm_refusal" \
 	&& grep -q 'split it into an arc of members within the box' <<<"$norm_refusal" \
   || { echo "the norm refusal did not name its type and split remedy: $norm_refusal" >&2; exit 1; }
 if open_claim_refusal=$("$ms" goal open --root "$clone" --id norm-open-claim \
-	--intent "Must not enter claimed over norm." --next "Stop." --tier 3 --claim \
+	--intent "Must not enter claimed over norm." --next "Stop." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --claim \
 	--elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
 	--active-job-limit 1 --review-round-limit 3 2>&1); then
   echo "over-norm open --claim succeeded" >&2; exit 1
@@ -478,7 +498,7 @@ grep -q 'APPROVAL_REQUIRED: open --claim is retired' <<<"$open_claim_refusal" \
 # The real split command parses a closed draft, publishes both members and the
 # parent conclusion atomically, and retires the parent identifier permanently.
 "$ms" goal open --root "$clone" --id split-parent \
-	--intent "Deliver the two-part fixture." --next "Atomize it." --tier 3 --label fixture >/dev/null
+	--intent "Deliver the two-part fixture." --next "Atomize it." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label fixture >/dev/null
 draft="$tmp/split-parent.md"
 {
   printf '%s\n' '# split split-parent'
@@ -506,7 +526,7 @@ grep -q 'a decomposed parent never returns' <<<"$reopen_refusal" \
   || { echo "reopen did not name permanent decomposition: $reopen_refusal" >&2; exit 1; }
 "$ms" goal prune --root "$clone" --keep 0 >/dev/null
 if recreate_refusal=$("$ms" goal open --root "$clone" --id split-parent \
-	--intent "Illicit resurrection." --next "Stop." --tier 3 2>&1); then
+	--intent "Illicit resurrection." --next "Stop." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" 2>&1); then
   echo "a pruned decomposed parent id was recreated" >&2; exit 1
 fi
 grep -q 'goal id split-parent is retired' <<<"$recreate_refusal" \
@@ -530,13 +550,13 @@ git -C "$clone" cat-file -p "$pre_sweep_tip:plans/goals/ship-widget.md" >"$tmp/p
 
 classification_draft="$tmp/classification-draft.txt"
 cat >"$classification_draft" <<'DRAFT'
-ship-widget 3 claimed migration
-fix-docs 1 queued migration
-perf-pass 2 parked migration
+ship-widget 3,1,1,1 claimed migration
+fix-docs 1,1,1,1 queued migration
+perf-pass 2,1,1,1 parked migration
 DRAFT
 classification_preview=$("$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" --preview)
 classification_lines=$(sed '/^listing-digest /d' <<<"$classification_preview")
-expected_lines=$'fix-docs 1 queued migration\nperf-pass 2 parked migration\nship-widget 3 claimed migration'
+expected_lines=$'fix-docs 1,1,1,1 tier=1 queued migration\nperf-pass 2,1,1,1 tier=2 parked migration\nship-widget 3,1,1,1 tier=3 claimed migration'
 [[ "$classification_lines" == "$expected_lines" ]] \
   || { echo "classification preview was not normalized and sorted: $classification_preview" >&2; exit 1; }
 classification_digest=$(sed -n 's/^listing-digest //p' <<<"$classification_preview")
@@ -553,10 +573,10 @@ assert_classification_refusal() { # code, draft bytes
   [[ $rc -ne 0 && "$output" == *"$code"* ]] \
     || { echo "classification refusal $code did not fire: rc=$rc output=$output" >&2; exit 1; }
 }
-assert_classification_refusal SWEEP_UNKNOWN_GOAL $'fix-docs 1 queued migration\nperf-pass 2 parked migration\nship-widget 3 claimed migration\nabsent-goal 1 unknown'
-assert_classification_refusal SWEEP_DUPLICATE_GOAL $'fix-docs 1 queued migration\nfix-docs 2 duplicate\nperf-pass 2 parked migration\nship-widget 3 claimed migration'
-assert_classification_refusal SWEEP_INCOMPLETE $'fix-docs 1 queued migration\nship-widget 3 claimed migration'
-assert_classification_refusal SWEEP_MALFORMED_ROW $'fix-docs 4 invalid tier\nperf-pass 2 parked migration\nship-widget 3 claimed migration'
+assert_classification_refusal SWEEP_UNKNOWN_GOAL $'fix-docs 1,1,1,1 queued migration\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration\nabsent-goal 1,1,1,1 unknown'
+assert_classification_refusal SWEEP_DUPLICATE_GOAL $'fix-docs 1,1,1,1 queued migration\nfix-docs 2,1,1,1 duplicate\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration'
+assert_classification_refusal SWEEP_INCOMPLETE $'fix-docs 1,1,1,1 queued migration\nship-widget 3,1,1,1 claimed migration'
+assert_classification_refusal SWEEP_MALFORMED_ROW $'fix-docs 1 invalid tier\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration'
 
 sed 's/claimed migration/changed migration/' "$classification_draft" >"$tmp/changed-classification-draft.txt"
 set +e
@@ -607,7 +627,7 @@ if [[ "$fixture_scenario" == archive-and-prune ]]; then
 METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z \
   "$ms" goal open --root "$clone" --id budget-check \
 		--intent "Exercise structured budget admission." \
-		--next "Continue." --tier 3 --elapsed-limit 8h --attempt-limit 2 \
+		--next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --elapsed-limit 8h --attempt-limit 2 \
 		--reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 >/dev/null
 approve_fixture_goal budget-check \
 	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
@@ -616,7 +636,7 @@ METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z "$ms" goal claim --root "$clone" --id b
 # ledger move back to the live set, and concluding again preserves the
 # canonical record bytes including its Integrity line.
 "$ms" goal open --root "$clone" --id archive-roundtrip \
-	--intent "Exercise concluded-goal archival." --next "Conclude it." --tier 3 >/dev/null
+	--intent "Exercise concluded-goal archival." --next "Conclude it." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 "$ms" goal done --root "$clone" --id archive-roundtrip \
   --conclude "Archived in the records-owned location." >/dev/null
 archive_tip=$(git -C "$origin" rev-parse main)
@@ -644,7 +664,7 @@ fi
 METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z \
 	"$ms" goal open --root "$clone" --id admission-concluded \
 		--intent "Prove admission consumes records-owned conclusions." \
-		--next "Conclude after its budget is exhausted." --tier 3 \
+		--next "Conclude after its budget is exhausted." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
 		--elapsed-limit 4h --attempt-limit 1 \
 		--reserved-job-minutes-limit 30 --active-job-limit 1 --review-round-limit 3 >/dev/null
 approve_fixture_goal admission-concluded \

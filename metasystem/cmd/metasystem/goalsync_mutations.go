@@ -93,7 +93,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
-	budgetBox, confirm                                                       string
+	budgetBox, confirm, risk, basis, evidence                                string
 	finding, chain, why, test                                                string
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
 	tier                                                                     uint
@@ -131,6 +131,9 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.finding, "finding", "", "finding identifier")
 	fs.StringVar(&f.chain, "chain", "", "critic chain root")
 	fs.StringVar(&f.why, "why", "", "decision reason")
+	fs.StringVar(&f.risk, "risk", "", "four risk answers: severity=,novelty=,exposure=,accumulation=")
+	fs.StringVar(&f.basis, "basis", "", "plain-English basis for the four risk answers")
+	fs.StringVar(&f.evidence, "evidence", "", "misclassification evidence reference")
 	fs.StringVar(&f.test, "test", "", "test citation")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
@@ -146,11 +149,11 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
 		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
 	}
-	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" {
+	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "approve" || name == "set-budget" {
+	if name == "approve" || name == "set-budget" || name == "open" || name == "edit" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -172,6 +175,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		}
 		if f.tier != 0 {
 			fmt.Fprintf(os.Stderr, "goal %s does not take --tier\n", name)
+			return nil, false
+		}
+		if f.risk != "" || f.basis != "" || f.evidence != "" {
+			fmt.Fprintf(os.Stderr, "goal %s does not take --risk, --basis, or --evidence\n", name)
 			return nil, false
 		}
 	}
@@ -323,11 +330,26 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, "goal open does not accept --unlabel; remove labels with goal edit")
 			return 2, true
 		}
-		if !need(f.id, "id") || !need(f.intent, "intent") || !need(f.next, "next") || f.tier < 1 || f.tier > 3 {
-			if f.tier < 1 || f.tier > 3 {
-				fmt.Fprintln(os.Stderr, "goal open needs --tier 1, 2, or 3")
-			}
+		if f.risk == "" || strings.TrimSpace(f.basis) == "" {
+			fmt.Fprintln(os.Stderr, "answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")
 			return 2, true
+		}
+		if !need(f.id, "id") || !need(f.intent, "intent") || !need(f.next, "next") || f.tier > 3 {
+			return 2, true
+		}
+		risk, riskErr := goal.ParseRiskRecord(f.risk, f.basis)
+		if riskErr != nil {
+			fmt.Fprintln(os.Stderr, riskErr)
+			return 2, true
+		}
+		var proof *humanauthority.Proof
+		if f.tier != 0 && uint8(f.tier) < risk.DerivedTier() {
+			proven, proofErr := proveGoalHumanAuthority("open", f, humanauthority.ProveOrTemporaryGoalAuthority)
+			if proofErr != nil {
+				fmt.Fprintln(os.Stderr, proofErr)
+				return 1, true
+			}
+			proof = &proven
 		}
 		if f.claim {
 			budget, budgetErr := f.budgetTuple(true)
@@ -343,7 +365,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, budgetErr)
 			return 2, true
 		}
-		res, err := goal.OpenTiered(req, f.id, f.intent, f.origin, f.next, uint8(f.tier), budget, f.labels...)
+		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
 		return printSyncResult(res, err), true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {
@@ -1154,7 +1176,45 @@ var (
 		return goal.Steal(req, f.id)
 	}, "id")
 	runGoalEdit = runSyncOnly("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		fields := goal.EditFields{}
+		fields := goal.EditFields{Why: f.why, Evidence: f.evidence}
+		var beforeDerived uint8
+		if f.tier != 0 && f.risk == "" {
+			return goal.PublishResult{}, fmt.Errorf("answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")
+		}
+		if f.risk != "" {
+			if strings.TrimSpace(f.basis) == "" {
+				return goal.PublishResult{}, fmt.Errorf("goal edit --risk requires --basis")
+			}
+			risk, err := goal.ParseRiskRecord(f.risk, f.basis)
+			if err != nil {
+				return goal.PublishResult{}, err
+			}
+			fields.Risk = &risk
+			projected, err := goal.Project(req.Endpoint, false, req.Now)
+			if err != nil {
+				return goal.PublishResult{}, err
+			}
+			current := projected.Tree.Live[f.id]
+			if current == nil {
+				return goal.PublishResult{}, fmt.Errorf("goal %s is not live", f.id)
+			}
+			beforeDerived = current.Tier
+			if current.Risk != nil {
+				beforeDerived = current.Risk.DerivedTier()
+			}
+			if current.Approved != nil && risk.DerivedTier() > beforeDerived {
+				if err := dispatchcore.ValidateMisclassificationEvidence(f.root, f.id, f.evidence); err != nil {
+					return goal.PublishResult{}, err
+				}
+			}
+			if current.Risk != nil && (risk.Severity < current.Risk.Severity || risk.Novelty < current.Risk.Novelty || risk.Exposure < current.Risk.Exposure || risk.Accumulation < current.Risk.Accumulation || risk.DerivedTier() < beforeDerived || (current.Risk.GateWidth() == "full" && risk.GateWidth() == "area")) {
+				proof, proofErr := proveGoalHumanAuthority("edit", f, humanauthority.ProveOrTemporaryGoalAuthority)
+				if proofErr != nil {
+					return goal.PublishResult{}, proofErr
+				}
+				fields.Proof = &proof
+			}
+		}
 		if f.intent != "" {
 			fields.Intent = &f.intent
 		}
@@ -1180,7 +1240,14 @@ var (
 			}
 			fields.Labels = &labels
 		}
-		return goal.Edit(req, f.id, fields)
+		res, err := goal.Edit(req, f.id, fields)
+		if err == nil && res.Outcome == goal.OutcomeConfirmed && fields.Risk != nil && res.RiskRaised {
+			opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+			if appendErr := counselor.AppendMisclassification(f.root, counselor.MisclassificationAppend{Goal: f.id, OpID: opid, From: int(beforeDerived), To: int(fields.Risk.DerivedTier()), Evidence: f.evidence, RecordedAt: req.Now}); appendErr != nil {
+				return res, appendErr
+			}
+		}
+		return res, err
 	}, "id")
 	runGoalSetPin = runSyncOnly("set-pin", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.SetPin(req, f.id, f.pin)

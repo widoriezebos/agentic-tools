@@ -24,7 +24,7 @@ func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 	full := writeJSON(t, filepath.Join(stage, "root-full.json"), map[string]any{
 		"jobId": "root-job", "operationId": "root-job", "role": "implementer", "runtime": "fake", "round": 1,
 		"mission": nil, "missionIncarnation": nil, "stream": nil, "reviews": nil,
-		"goalId": "goal-a", "goalRevision": 2, "goalTier": 2, "machineId": "bed-m1", "parentJob": nil, "status": "pending", "phase": "handshake",
+		"goalId": "goal-a", "goalRevision": 2, "goalTier": 2, "gateWidth": "area", "machineId": "bed-m1", "parentJob": nil, "status": "pending", "phase": "handshake",
 		"error": nil, "mainId": "main-1", "claimEpoch": 5, "capMin": 5,
 		"workspaceRoot": root, "baseSha": "base", "branch": "main",
 		"permissions":              map[string]any{"requested": map[string]any{}},
