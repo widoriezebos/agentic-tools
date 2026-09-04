@@ -168,12 +168,45 @@ func TestAskDedupsOpenQuestion(t *testing.T) {
 		t.Fatalf("dedup failed: %s %s %d %v", a.ID, b.ID, len(p.posts), err)
 	}
 }
-func TestReportOmitsEmptySectionsAndCaps(t *testing.T) {
-	text, err := ComposeReport(ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: time.Unix(0, 0)})
-	if err != nil || strings.Contains(text, "Undelivered:") || len(text) > 3500 {
-		t.Fatal(text, err)
+func TestReportOmitsEmptyParts(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "empty fleet", text: mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now}), want: "m status 2026-09-04 12:00Z"},
+		{name: "needs you only", text: func() string {
+			root := t.TempDir()
+			if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "choose-colour", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
+				t.Fatal(err)
+			}
+			return mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: now})
+		}(), want: "m status 2026-09-04 12:00Z\nNeeds you: choose colour — Choose the launch colour."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.text != test.want {
+				t.Fatalf("got:\n%s\nwant:\n%s", test.text, test.want)
+			}
+			for _, absent := range []string{"Delivered:", "Next up:", "Spend today:"} {
+				if strings.Contains(test.text, absent) {
+					t.Fatalf("empty part %q was rendered:\n%s", absent, test.text)
+				}
+			}
+		})
 	}
 }
+
+func mustComposeReport(t *testing.T, config ReportConfig) string {
+	t.Helper()
+	text, err := ComposeReport(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
+
 func TestStatusCadenceAndDigestGate(t *testing.T) {
 	now := time.Unix(10000, 0)
 	s := StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest("same")}
@@ -183,62 +216,144 @@ func TestStatusCadenceAndDigestGate(t *testing.T) {
 	if !ShouldPost(s, now, 4*time.Hour, "new", false) {
 		t.Fatal("changed due digest skipped")
 	}
+	old := "m status 2026-09-04 08:00Z\nNext up: first"
+	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
+	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00Z\nNext up: first", false) {
+		t.Fatal("a changed header timestamp defeated the content digest")
+	}
+	old = "m status 2026-09-04 08:00Z"
+	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
+	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00Z", false) {
+		t.Fatal("an empty fleet posted again because only its header time changed")
+	}
 }
-func TestReportHasDurableSpendSource(t *testing.T) {
+
+func TestReportShowsOneQuestionTwoLandingsAndOnlyTwoNextItems(t *testing.T) {
+	now := time.Now().UTC().Add(time.Minute)
+	root := reportLedger(t,
+		reportGoal("delivery-one", "Deliver one.", goal.StateApproved, "other-machine", now),
+		reportGoal("delivery-two", "Deliver two.", goal.StateApproved, "other-machine", now),
+		reportGoal("alpha-next", "Do alpha.", goal.StateApproved, "fleet-one", now),
+		reportGoal("beta-next", "Do beta.", goal.StateApproved, "", now),
+		reportGoal("gamma-next", "Do gamma.", goal.StateApproved, "fleet-one", now),
+	)
+	if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "launch-choice", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
+		t.Fatal(err)
+	}
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship delivery one\n\nGoal-Item: delivery-one")
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship delivery two\n\nGoal-Item: delivery-two")
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour)})
+	want := strings.Join([]string{
+		"fleet-one status " + now.Format("2006-01-02 15:04") + "Z",
+		"Needs you: launch choice — Choose the launch colour.",
+		"Delivered: delivery one — Ship delivery one",
+		"Delivered: delivery two — Ship delivery two",
+		"Next up: alpha next",
+		"Next up: beta next",
+	}, "\n")
+	if text != want || strings.Contains(text, "gamma next") {
+		t.Fatalf("report mismatch\n--- got ---\n%s\n--- want ---\n%s", text, want)
+	}
+}
+
+func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	waiting := reportGoal("waiting-feature", "Wait for approval.", goal.StateQueued, "", now)
+	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
+	root := reportLedger(t, waiting)
+	withoutQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — approve it for execution.") {
+		t.Fatalf("approval gap was omitted:\n%s", withoutQuestion)
+	}
+	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}}); err != nil {
+		t.Fatal(err)
+	}
+	withQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	if strings.Count(withQuestion, "Needs you: waiting feature") != 1 || !strings.Contains(withQuestion, "approve the requested budget raise.") {
+		t.Fatalf("the open budget question did not replace the generic approval gap:\n%s", withQuestion)
+	}
+}
+
+func TestReportCapsAllOutputAtTwelveLines(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "artifacts", "agents", "jobs")
-	_ = os.MkdirAll(dir, 0755)
-	_ = os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"startedAt":"1970-01-01T00:00:01Z","runtime":"codex","usage":{"inputTokens":3,"cost":99}}`), 0644)
-	line := spendLine(ReportConfig{RepoRoot: root, Now: time.Unix(2, 0)})
-	if !strings.Contains(line, "codex: 3 units") || strings.Contains(line, "99") {
-		t.Fatal(line)
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("question-%02d", i)
+		if err := writeJSON(questionPath(root, id), Question{ID: id, Goal: id, State: "open", Facts: []string{"Make a decision"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: time.Now(), Undelivered: 2})
+	lines := strings.Split(text, "\n")
+	if len(lines) != 12 || !strings.HasPrefix(lines[len(lines)-1], "Undelivered: 2 channel messages") {
+		t.Fatalf("line count=%d, last=%q\n%s", len(lines), lines[len(lines)-1], text)
 	}
 }
-func TestReportComposesFromLedgerJobsAndLandings(t *testing.T) {
-	root, _, _, _ := pollLedgerBed(t)
-	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
-	g := projectGoal(t, root, "g")
-	g.Intent, g.NextStep, g.State, g.Revision = "Ship the fleet conversation. Keep it authenticated.", "Finish the gate. Then land.", goal.StateClaimed, 2
-	g.Budget = &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1}
-	g.Claimed = &goal.ClaimRecord{Machine: "fleet-one", Lineage: "lineage", At: now.Add(-time.Hour).Format(time.RFC3339), Revision: 2}
-	g.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "fleet-one", ClaimEpoch: 1}
-	g.History = append(g.History, goal.HistoryLine{At: now.Add(-time.Hour).Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000C0", "fleet-one", "lineage"), Verb: "claim", Actor: "fleet-one+lineage", Targets: []string{"g"}, Keep: -1})
-	planned := &goal.GoalFile{Id: "next-item", State: goal.StateQueued, Intent: "Queue the follow-up. Preserve the contract.", Origin: "main", NextStep: "Wait.", OpenedAt: now.Add(-2 * time.Hour).Format(time.RFC3339), Revision: 1, Pinned: "fleet-one", History: []goal.HistoryLine{{At: now.Add(-2 * time.Hour).Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000C1", "fleet-one", "lineage"), Verb: "open", Actor: "fleet-one+lineage", Targets: []string{"next-item"}, Keep: -1}}}
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "g.md"), goal.RenderFile(g), 0644); err != nil {
+
+func TestLandingIsReportedInExactlyOnePostWindow(t *testing.T) {
+	landedAt := time.Now().UTC()
+	root := reportLedger(t, reportGoal("one-landing", "Land once.", goal.StateApproved, "other-machine", landedAt))
+	firstPost := landedAt.Add(time.Minute)
+	if err := SaveStatusState(root, StatusState{LastPost: landedAt.Add(-time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "next-item.md"), goal.RenderFile(planned), 0644); err != nil {
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship it once\n\nGoal-Item: one-landing")
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	first := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost})
+	if strings.Count(first, "Delivered: one landing — Ship it once") != 1 {
+		t.Fatalf("first post did not report the landing once:\n%s", first)
+	}
+	if err := SaveStatusState(root, StatusState{LastPost: firstPost, ContentDigest: Digest(first)}); err != nil {
 		t.Fatal(err)
+	}
+	second := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost.Add(time.Hour)})
+	if strings.Contains(second, "Delivered:") {
+		t.Fatalf("second post repeated the landing:\n%s", second)
+	}
+}
+
+func reportGoal(id, intent, state, pin string, now time.Time) *goal.GoalFile {
+	openedAt := now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	opened := goal.HistoryLine{At: openedAt, Opid: goal.Opid("01J5X0000000000000000000R0", "machine", id), Verb: "open", Actor: "machine+" + id, Targets: []string{id}, Keep: -1}
+	f := &goal.GoalFile{Id: id, State: state, Tier: 1, Intent: intent, Origin: "main", NextStep: "Work it.", OpenedAt: openedAt, Revision: 1, Pinned: pin, History: []goal.HistoryLine{opened}}
+	if state == goal.StateApproved {
+		budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
+		approvedAt := now.Add(-time.Hour).UTC().Format(time.RFC3339)
+		opid := goal.Opid("01J5X0000000000000000000R1", "human", id)
+		f.Budget = budget
+		f.Revision = 2
+		f.History = append(f.History, goal.HistoryLine{At: approvedAt, Opid: opid, Verb: "approve", Actor: "human:wido", Targets: []string{id}, Keep: -1})
+		f.Approved = &goal.ApprovalRecord{By: "human:wido", At: approvedAt, Revision: 2, Opid: opid, Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(intent, 1, *budget)}
+	}
+	return f
+}
+
+func reportLedger(t *testing.T, goals ...*goal.GoalFile) string {
+	t.Helper()
+	root := t.TempDir()
+	reportGit(t, root, "init", "-q", "-b", "main")
+	reportGit(t, root, "config", "user.name", "channel-test")
+	reportGit(t, root, "config", "user.email", "channel@example.invalid")
+	reportGit(t, root, "config", "goal.sync-remote", "local")
+	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backlog := goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1})
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "backlog.md"), backlog, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range goals {
+		if err := os.WriteFile(filepath.Join(root, "plans", "goals", f.Id+".md"), goal.RenderFile(f), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	reportGit(t, root, "add", "plans/goals")
-	reportGit(t, root, "commit", "-q", "-m", "prepare report ledger")
+	reportGit(t, root, "commit", "-q", "-m", "seed report ledger")
 	reportGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	reportGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	for _, subject := range []string{"Land one", "Land two", "Land three"} {
-		reportGit(t, root, "commit", "-q", "--allow-empty", "-m", subject+"\n\nGoal-Item: g")
-	}
 	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
-	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
-	if err := os.MkdirAll(jobs, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jobs, "running.json"), []byte(`{"jobId":"running","goalId":"g","role":"implementer","status":"running","runtime":"codex","startedAt":"2026-09-03T11:30:00Z","usage":{"inputTokens":3,"outputTokens":7}}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jobs, "done.json"), []byte(`{"jobId":"done","goalId":"g","role":"critic","status":"completed","runtime":"devin","startedAt":"2026-09-03T10:00:00Z","usage":{}}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	text, err := ComposeReport(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour)})
-	want := strings.Join([]string{
-		"fleet-one status 2026-09-03 12:00Z",
-		"Landed since 2026-09-03T08:00:00Z: g — Ship the fleet conversation. — Land three (3 landings)",
-		"Under way: g — Ship the fleet conversation.; Finish the gate.; job implementer running 30 min",
-		"Planned: next item — Queue the follow-up. (queued, needs budget)",
-		"Spend today: 2 jobs; codex: 10 units",
-	}, "\n")
-	if err != nil || text != want {
-		t.Fatalf("report mismatch\n--- got ---\n%s\n--- want ---\n%s\nerr=%v", text, want, err)
-	}
+	return root
 }
 
 func reportGit(t *testing.T, root string, args ...string) {
