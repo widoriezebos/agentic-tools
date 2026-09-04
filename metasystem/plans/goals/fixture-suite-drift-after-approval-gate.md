@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (fixtures and one config value): build, run the five scripts, land as a declared direct fix; box 1h/3/60m/1. Waits for human approval for execution.
 - OpenedAt: 2026-09-03T22:54:55Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - Approved: by=human:Wido at=2026-09-04T06:16:57Z revision=3 opid=Y555HD4KRQXEX0DJZ01ZP5GSGA-m2-5fcf08ab authority=relayed digest=e945251022918379940a32cf630cf623d9672bdca0c55873e8def9099b719db9 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=4 at=2026-09-04T11:11:04Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T11:10:49Z revision=4
 - StopCapability: generation=4 revision=4 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-04T06:16:32Z YKAKN002ZNPM72Q4M5A4ANKVM3-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=fixture-suite-drift-after-approval-gate
 - 2026-09-04T06:16:57Z Y555HD4KRQXEX0DJZ01ZP5GSGA-m2-5fcf08ab approve actor=human:Wido targets=fixture-suite-drift-after-approval-gate authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="the bugs yu mentioned are approved to fix too"
 - 2026-09-04T11:10:49Z J20WYKKFNRQ5GNT0E6PSNHEM9J-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=fixture-suite-drift-after-approval-gate
-Integrity: sha256=b207b2f5e87affa9ea787e5beafbb7b9404751bd4516fe190f6774452d32ce87
+- 2026-09-04T11:11:04Z GVFH5GSPRGE76RVRYHF8FM1KVS-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=fixture-suite-drift-after-approval-gate
+Integrity: sha256=f6617e55d80148c005054299ef2ec7b27e3e5584c03f7f91331b6df18ecdd32f
