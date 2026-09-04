@@ -98,30 +98,38 @@ TestDeletedListsHaveNoReader() {
   set +e
   (
     cd "$root"
-    rg -n --glob '!docs/reviews/**' --glob '!docs/journey.md' "$pattern" -- "${install_paths[@]}"
+    grep -rnE -I --exclude-dir=reviews --exclude=journey.md "$pattern" -- "${install_paths[@]}"
   ) >"$tmp/deleted-install-readers.out"
   search_status=$?
   set -e
-  [[ $search_status -eq 1 ]] || {
+  if [[ $search_status -eq 0 ]]; then
     echo "TestDeletedListsHaveNoReader: an installation behavior source still reads a deleted table" >&2
     cat "$tmp/deleted-install-readers.out" >&2
     exit 1
-  }
+  elif [[ $search_status -ne 1 ]]; then
+    echo "TestDeletedListsHaveNoReader: the installation behavior source search itself failed with status $search_status" >&2
+    cat "$tmp/deleted-install-readers.out" >&2
+    exit 1
+  fi
 
   ((${#repo_paths[@]} > 0)) || return 0
 
   set +e
   (
     cd "$root/.."
-    rg -n "$pattern" -- "${repo_paths[@]}"
+    grep -rnE -I "$pattern" -- "${repo_paths[@]}"
   ) >"$tmp/deleted-repo-readers.out"
   search_status=$?
   set -e
-  [[ $search_status -eq 1 ]] || {
+  if [[ $search_status -eq 0 ]]; then
     echo "TestDeletedListsHaveNoReader: a repository behavior source still reads a deleted table" >&2
     cat "$tmp/deleted-repo-readers.out" >&2
     exit 1
-  }
+  elif [[ $search_status -ne 1 ]]; then
+    echo "TestDeletedListsHaveNoReader: the repository behavior source search itself failed with status $search_status" >&2
+    cat "$tmp/deleted-repo-readers.out" >&2
+    exit 1
+  fi
 }
 
 write_fixture_goal() { # goal file, machine, lineage
