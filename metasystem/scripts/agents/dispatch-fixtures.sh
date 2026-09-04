@@ -909,6 +909,13 @@ git -C "$skew_repo" add .
 git -C "$skew_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'fixture engine baseline'
 skew_stamp=$(git -C "$skew_repo" rev-parse --short HEAD)
 (cd "$skew_repo" && bash scripts/agents/go-build.sh >/dev/null)
+if ! (cd "$skew_repo" && scripts/agents/dispatch.sh __engine-skew-preflight fixture-unknown-stamp) \
+    2>"$agent_fixture/skew-unknown-stamp.err" \
+    || [[ -s "$agent_fixture/skew-unknown-stamp.err" ]]; then
+  echo "engine/script skew preflight was not silent while allowing an unknown stamp" >&2
+  cat "$agent_fixture/skew-unknown-stamp.err" >&2
+  exit 1
+fi
 printf '\n# fixture: engine/script skew\n' >>"$skew_repo/scripts/agents/dispatch.sh"
 git -C "$skew_repo" add scripts/agents/dispatch.sh
 git -C "$skew_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid \

@@ -170,16 +170,13 @@ engine_script_skew_preflight() { # optional engine stamp for a focused fixture
   local stamp=${1:-} status_output git_output git_rc checkout_commit protected_prefix= line relevant_change=0
   if [[ -z "$stamp" ]]; then
     if ! status_output=$("$ms" supervise status --repo "$root" 2>/dev/null); then
-      echo "dispatch: warning: could not read the engine build stamp; allowing dispatch" >&2
       return 0
     fi
     if ! stamp=$("$ms" json get --value "$status_output" --field engineBuild 2>/dev/null); then
-      echo "dispatch: warning: the engine did not report a build stamp; allowing dispatch" >&2
       return 0
     fi
   fi
   if [[ "$stamp" == dev ]]; then
-    echo "dispatch: warning: engine build stamp is dev; allowing dispatch without a skew check" >&2
     return 0
   fi
 
@@ -188,7 +185,6 @@ engine_script_skew_preflight() { # optional engine stamp for a focused fixture
   git_rc=$?
   set -e
   if (( git_rc != 0 )); then
-    echo "dispatch: warning: could not compare engine commit $stamp with the checkout (unknown commit or shallow clone); allowing dispatch" >&2
     return 0
   fi
   checkout_commit=${git_output%%$'\n'*}
