@@ -818,3 +818,81 @@ corrected one test example that expected the old mistake, and landed
 them. Three lessons followed: a test example can preserve a repaired
 defect; records must not depend on their writing machine; and whoever
 lands last pays the full cost of the gate.
+
+## The small bugs that kept a machine awake
+
+On the fourth of September, one machine newly registered the evening
+before spent the night and morning repairing the small failures the
+previous days had exposed. The first trapped an assistant at the end of
+a turn. The harness, the shell that starts and stops an assistant, asks
+a small hook script whether it is safe to stop. When that script could
+not prove safety before its deadline — either because the registered
+program no longer matched the installed one or because only a person
+could apply the remedy — it answered no. The harness asked again,
+forever, filling the person's chat with hundreds of identical lines.
+Now the hook answers once and leaves a remedy that requires human
+authority to the human.
+
+Next, the command meant to bring the machinery up killed its runner,
+the long-lived process that keeps the machinery working. It mistook the
+runner's own process for an unrelated visitor. The command now follows
+the process family far enough to recognize whose child the runner is
+and keeps it alive.
+
+Then two unrelated reviews each called their first finding “one.” The
+shared register, the list that remembers findings and their treatment,
+mistook the matching numbers for one finding. A correction in one
+review was blocked by the other review's judgment. Findings now belong
+to the subject actually reviewed: either the same worker's line of work
+or the same tree of files. Unrelated reviews never combine,
+but two critics who disagree about one subject still stop the work and
+name both judgments.
+
+Another failure lived in a test. It asked for a search program outside
+the declared tool kit, so a machine without that program could not run
+the search. The test misread the failure as proof that a removed table
+still had a reader. It now uses the ordinary text-search tool, ignores
+non-text files, and distinguishes “nothing found” from a broken search;
+only the first is a clean result.
+
+The costliest small failure appeared after new scripts arrived. The
+engine, the built program that enforces the system's rules, was older
+than the scripts and lacked information they expected. The dispatcher,
+the command that starts a delegated worker, died with only a failure
+number. Three workers were refused without being told why,
+and a trace finally found the line. The same mismatch returned that
+morning while another machine's work was being accepted into the shared
+project. The engine now reports which saved version built it. If the
+current checkout — the working copy of the repository — contains newer
+engine or script changes, the dispatcher refuses in words. It names
+both saved versions and says how to rebuild. If required information is
+absent, it names the missing piece too.
+
+That repair also fell through a crack in its own allowance. Two
+refusals made before any worker began still consumed two attempts. The
+allowance closed after the code was finished but while it remained on
+a preserved branch, a named line of work kept for later acceptance. The
+human answered one question in the fleet channel, the shared chat among
+the machines, to grant one more attempt. The ledger, the authoritative
+record of allowances and approvals, correctly refused a second relay of
+that same approval. The finished repair was accepted through a member
+goal, a smaller item split from the original, exactly the escape the
+engine itself had suggested.
+
+The last repair changed what that shared chat says. Four times a day
+each machine had been pouring its entire backlog, the list of waiting
+work, into the channel. The human wanted only matters needing judgment,
+work just delivered, and what would happen next. Status posts now
+contain those three parts, stop at twelve lines, and say nothing when
+nothing changed. The first draft merely called every unapproved item a
+decision and repeated the same dump; it was corrected that morning.
+
+The work exposed three sharp edges in the working rules themselves. An
+implementer, the worker who makes a change, reports file names from the
+working directory where it stands, not from the project's top, and a
+correct change can lose its review attempt when those names use the
+wrong starting point. A six-digit approval code sent through the shared
+chat is checked when the machine reads it, not when the human writes it,
+so a delayed reading can expire an otherwise timely answer. And when a
+question supplies the exact reply it expects, that reply is a token to
+repeat word for word; a plain-language yes is a different answer.
