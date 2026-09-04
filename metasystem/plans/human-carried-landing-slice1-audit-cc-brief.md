@@ -20,8 +20,8 @@ material).
 
 Scope: the computed diff of implementer job hcl-audit-build-2 round 1
 (its diff.patch under that chain's round-1 directory; reviewed tree
-3e5ba537f5399773075ae788d5eb0d43f5404bf8; two new files, metasystem/internal/refusal/register.go and
-metasystem/internal/refusal/register_test.go, against main at
+3e5ba537f5399773075ae788d5eb0d43f5404bf8; two new files under
+internal/refusal, register.go and register_test.go, against main at
 bd50c0ca). The design is
 metasystem/plans/human-carried-landing-design.md revision 2.1, point
 HCL-AUDIT-03 (lines 88-149) and point 01; the build brief is
