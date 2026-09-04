@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (one composer rule, one poll disposition, a label): build, go test ./internal/channel/... ./internal/goal/..., land through a chain; box 1h/3/60m/1. Waits for human approval for execution; found when Wido replied to the post on 2026-09-04.
 - OpenedAt: 2026-09-04T11:36:29Z
-- Revision: 3
+- Revision: 4
 - Labels: communication
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - Approved: by=human:Wido at=2026-09-04T14:10:11Z revision=2 opid=PHXKRTDKMX7MVPAZE7FQ7PZNWS-m2-5fcf08ab authority=relayed digest=04127afeaa2047097457fe69aa02995a698490506afe9618602fd7df81eaf19f reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T14:10:56Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T14:10:16Z revision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-04T11:36:29Z G8P4KXXSDSJR3YPNJZVM8B2VEH-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=status-post-next-in-line-binds
 - 2026-09-04T14:10:11Z PHXKRTDKMX7MVPAZE7FQ7PZNWS-m2-5fcf08ab approve actor=human:Wido targets=status-post-next-in-line-binds authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T14:10:16Z ERTEB5MA7VXW8NDVB2Q59V69K5-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=status-post-next-in-line-binds
-Integrity: sha256=6dbe6157e10eb4c7d4cb223317ee0a56147adbc7a5d8cd2cdc8765076e337db9
+- 2026-09-04T14:10:56Z 2V932HHT6BVPBVWZYWVW97WZSB-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=status-post-next-in-line-binds
+Integrity: sha256=65d1bbc85780e1f6387bf573ed03262046e07c5f0d33e1135c97dc1fad378194
