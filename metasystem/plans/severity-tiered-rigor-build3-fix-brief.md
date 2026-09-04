@@ -17,8 +17,9 @@ root job record, a snapshot written at dispatch. The goal file at the
 landing base is already parsed for the held-goal check but its Tier is
 never compared, so a goal raised to tier 2 after its root was
 dispatched still admits tier-1 landings. Fix: in the tier-one
-evaluator (metasystem/internal/landing/tierone.go, or the held-goal
-check it calls) compare the parsed goal file's Tier against 1 and
+evaluator (the tier-one file this chain added under
+metasystem/internal/landing/, or the held-goal check in
+metasystem/internal/landing/observe.go that it calls) compare the parsed goal file's Tier against 1 and
 refuse with a code that names the goal's current tier; one fixture: a
 goal edited to tier 2 after its tier-1 root refuses the landing.
 
