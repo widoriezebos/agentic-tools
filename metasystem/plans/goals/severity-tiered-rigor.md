@@ -1,18 +1,16 @@
 # severity-tiered-rigor
 
-- State: claimed
+- State: approved
 - Intent: Critique depth and fix-path choice track real value mechanically: every finding carries a critic-declared blast class grounded in checkable facts (path frequency, blast radius); bounded-class chains get a round budget the machinery enforces (then land-with-recorded-residual or raise); refusing gates with a declared cheap unblock default to cheap+auto-debt-goal for bounded blockers; misclassification is guarded by critic-owned classification, human escalation on dispute, and auto-promotion to severe when a residual recurs in the near-miss register. Wido 2026-08-26: implement as mechanism, not prose.
 - Origin: human
 - Next step: PARTS ONE, THREE AND FOUR LANDED (m2): 6c86953a the tier at intake; efaa5cf4 the tier-1 landing class; 6c3c7a26 the docs (2026-09-04 09:3x local; chain str-build4, one Fable review, one correction, one re-review; records/misc/severity-tiered-rigor-build4-critique-cc1.md and -cc2.md; the obligation matrix at records/misc/severity-tiered-rigor-obligation-matrix.md). Remaining: part two on m3's goal severity-tiered-rigor-p2 (the four risk answers, the material stop and close); when it lands, the part-two seat re-touches the pending clauses in docs/orchestration.md, the two critique skills and AGENTS.md's intake sentence, and the matrix's pending rows; then the journey chapter (one chain) and goal done. m2 releases now. Note for every seat: the always-loaded instruction budget stands at 1,398 of 1,400 words.
 - OpenedAt: 2026-08-26T10:47:00Z
-- Revision: 26
+- Revision: 27
 - Arc: headless-fleet
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1 reviewRoundLimit=3
 - NormApproval: approvedRef=R-72-m2 minutes=3000 reviewRounds=3 goalRevision=18
 - Approved: by=human:Wido at=2026-09-03T17:13:45Z revision=19 opid=3NR60NY714CV4MD1STXNZZBARR-m2-5fcf08ab authority=relayed digest=d12cc89ce0ae2026ec9e95152a0c503810b96db89f72df12bb55d9c8d220a95f reviewBy=2026-09-06
 - Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=20 at=2026-09-03T17:15:53Z
-- Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T06:51:49Z revision=25
-- StopCapability: generation=25 revision=25 machine=m2 claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-08-26T10:47:00Z FPKYWPM5D8MG8H2883KFHKG1PG-m1-bf243850 open actor=human:wido targets=severity-tiered-rigor
@@ -41,4 +39,5 @@ History:
 - 2026-09-04T02:23:47Z CH8WPE5SWNS5JRAEDT0PDT50JV-m2-5fcf08ab release actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
 - 2026-09-04T06:51:49Z Y4FCJEBHXBREYKK8BA1ECBCG9E-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
 - 2026-09-04T07:31:10Z DJG8JNEA2VV8MYE9S2CJP5D1R8-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
-Integrity: sha256=b5c68346a807476ccac8213733ba69f651d95ce70c7921bf9f8263629c8e1140
+- 2026-09-04T07:32:13Z HDDASP638S5BAKRBTDDVE4RQFM-m2-5fcf08ab release actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
+Integrity: sha256=0c31ded99c4690014640a4378c71516ee851d3e87e8f68528879b4f35e401682
