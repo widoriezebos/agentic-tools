@@ -1,4 +1,4 @@
-# fleet-channel-gateway — design: one bot, one inbox, first commit wins (revision 3)
+# fleet-channel-gateway — design: one bot, one inbox, first commit wins (revision 4)
 
 Goal: plans/goals/fleet-channel-gateway.md. Wido's decisions, verbatim
 from the goal record (2026-09-03): "one bot, one git inbox, FIRST COME
@@ -59,6 +59,33 @@ engines stopped first and the replies of the window resurfaced by
 and a six-digit fact in the middle of a sentence is a fact; the fake
 tells listeners apart by token; the build has five steps and the
 resident listener lands with a steward restart and a bounded stop.
+
+Revision 4 answers critique round 3, the failsafe round (job
+fcg-design-cc1-r3, thirteen material findings at main 7bcee9fb; the
+dispositions are in plans/fleet-channel-gateway-dispositions-round3.md).
+Ten findings reopened prose and are answered here; three are
+fixture-expressible and became obligation rows in that file. What
+changed: the listener runs the ledger's own recovery call itself, so
+a pushed entry left by a failed confirming refetch unblocks within
+one push deadline; the approve recovery case goes (recovery cannot
+rebuild it; the standing approval intent is the re-run); the
+duplicate-approval predicate binds the goal's approve event to this
+question by its ChannelContext; a migrated `matched` answer is joined
+to the goal by the legacy record's saved Opid, never re-derived; a
+repeated or mid-sentence code is masked by the listener before the
+record is built; the old Poll keeps sending its offset so step 2
+tells Telegram nothing new, and WORD-07 folds into the cut-over,
+which makes four steps; a verified record may name `unbound` or
+`unmatched`; the stop makes no graceful-join promise — restart
+force-kills after two seconds and the listener's first act is
+recovery; closed/null with a reason of its own is legal, so `channel
+close` and a legacy question closed unanswered both fit; the matrix
+gains its orphan-post row, splits the answer row so a non-budget
+answer rests in approved, and admits a `late` rejection on a closed
+question; the token match is a contiguous field sequence, as the
+goal's own rule already is; `channel skip` is written out step by
+step and `channel ask` gets its failure points. Every cite in this
+revision was re-read at main 7bcee9fb.
 
 The shape in one paragraph. Today every channel record lives under
 artifacts/agents/channel/, which .gitignore:1 keeps out of git: the
@@ -197,9 +224,9 @@ the dot kept).
 | userId | string | yes | provider user id of the sender |
 | sentAt | RFC 3339 UTC | yes | the provider's send time |
 | text | string | yes | the human's words with the code removed (FCG-SECRET-15); "" when the message was only a code |
-| step | integer or null | yes | the verified TOTP step; null unless outcome is verified, late or replayed |
-| outcome | string | yes | verified, late, wrong-user, no-code, bad-code, stale, replayed, unverified-migrated, skipped |
-| question | string | yes | a question id, or `unmatched`, or `unbound` (FCG-MATCH-06) |
+| step | integer or null | yes | the verified TOTP step; non-null exactly when outcome is verified, late or replayed, whatever `question` says |
+| outcome | string | yes | verified, late, wrong-user, no-code, bad-code, stale, replayed, unverified-migrated, skipped — what FCG-COMMIT-05 found about the sender and the code |
+| question | string | yes | what FCG-MATCH-06 found about the question, independent of outcome (FCG-C-05): a question id when rule (a) threaded the message to one (any outcome) or rule (b) bound it (verified only); `unbound` when verified, unthreaded, without a token and exactly one question open; `unmatched` otherwise. A verified record whose question is `unbound` or `unmatched` is legal and advances nothing |
 | opid | string | yes | the opid of the commit that wrote this record |
 | receivedBy | string | yes | the committing machine |
 | receivedAt | RFC 3339 UTC | yes | |
@@ -233,16 +260,35 @@ whose earlier attempt on a message ended abandoned, rejected or
 expired holds a terminal entry under an opid nobody will ever use
 again; its next receipt of the same update is a new opid and a new
 transaction that finds the winner and confirms. Recovery
-(recover.go:56-140) gains one rule, beside the existing slice-start
-rule at recover.go:100-107: a dead owner's entry with Intent.Verb
-`inbox` is marked abandoned with the evidence "an unconfirmed message
-is re-delivered by the provider; nothing to rebuild" — the intent is
-never rebuilt, because the provider re-delivers what was never
-confirmed and the next listener commits or loses as above. A pushed
-inbox entry whose commit did land is confirmed by the existing
-PostconditionPresent rule (recover.go:64-92). The answer history row
-(FCG-MATCH-06) is written in the same commit as the inbox record and
-therefore carries the same opid as the record's `opid`.
+(recover.go:56-140) needs no new rule: a dead or expired entry whose
+commit landed is confirmed by the existing PostconditionPresent rule
+(recover.go:64-92); one whose commit did not land reaches
+completeFromIntent, where requestForEntry's default for a verb it
+does not rebuild (`inbox`, and every other verb of this design)
+terminalises the entry rejected with "re-runs from its own entry
+point" (recover.go:184-194, 403) — the provider re-delivers what was
+never confirmed, and the next listener commits or loses as above.
+The one wedge that is not a dead owner's (FCG-C-16): a confirming
+refetch that fails leaves this clone's entry PUSHED with its outcome
+unknown (txn.go:654-675), and PushedBlocking then refuses every other
+opid on this clone (txn.go:508-516, journal.go:423-437) — a live
+listener that only logged the error would never commit again. So the
+listener runs recovery itself: once before its first iteration, when
+a Publish returns the pushed-blocking refusal, and at the start of
+every iteration while its last Publish did, Listen (and `channel
+poll`) calls goal.RecoverWithPolicy(endpoint,
+dispatchcore.GoalRecoveryPolicy{Now: now}) — exactly the call `goal
+recover` makes (goalsync_verbs.go:498; the steward tick makes no goal
+recovery call of its own, runner.go:95-140) — which classifies the
+clone's own pushed entry by refetch: confirmed when the commit is on
+the tip, expired once the entry's own deadline (the push deadline,
+60 s) has passed, and left retrying until then (journal.go:475-503).
+The wedge therefore lasts at most one push deadline plus one
+iteration, is logged as `journal blocked by <opid>; recovery ran:
+<action>`, and never needs a restart. The answer
+history row (FCG-MATCH-06) is written in the same commit as the
+inbox record and therefore carries the same opid as the record's
+`opid`.
 
 The secret never enters either record: the code is removed before the
 record is built (FCG-SECRET-15), and the replay check uses the step.
@@ -283,7 +329,7 @@ publishing transaction exactly as a goal refusal does:
 | channel-kind | kind, state, outcome, phase, posting.kind outside their vocabularies |
 | channel-token-missing | kind stop or budget-above-norm with empty wants |
 | channel-budget | budget present on a non-budget kind, or absent or incomplete on budget-above-norm, unless lineage is `migrated` (a legacy record loads without a tuple, channel-poll-refuses-legacy-budget-questions) |
-| channel-answer-state | state answered or closed with answer null; state open with answer non-null; answer non-null with phase recorded and receipt non-null, or phase approved and receipt null, or phase receipted and receiptRef null; state closed with closedAt absent; an inbox record with outcome verified naming a question whose answer is null or whose answer.inboxId is another record |
+| channel-answer-state | state answered with answer null; state closed with closedBecause `answered` and answer null; state closed with closedBecause other than `answered` and answer non-null (FCG-C-19: `channel close` and a legacy question closed unanswered are closed/null with their own reason); state open with answer non-null; answer non-null with phase recorded and receipt non-null, or phase approved and receipt null, or phase receipted and receiptRef null; state closed with closedAt, closedBy or closedBecause absent; an inbox record with outcome verified whose `question` is a question id (not `unbound` or `unmatched`) and whose question's answer is null or has an inboxId other than this record's — a verified record bound to a question is that question's answer, and a second verified reply is outcome `late`, not verified (FCG-C-05) |
 | channel-rejection-cap | more than three rejected entries with postRef non-null |
 | channel-secret | the LAST whitespace-delimited field of text or answer.text, after trailing `.,;:!?` are dropped, is six ASCII digits (the field StripCode would have removed, FCG-SECRET-15); any field of six ASCII digits anywhere in facts, recommendation, rejected[].reason or receipt (machine-written text never carries a code) |
 
@@ -309,21 +355,29 @@ transition has an answered FROM row that writes `answer`.
 | ask (asker) | no file | (open, null, {question,me,now}, true, true) |
 | migrate (any) | no file | the legacy record's mapped state (FCG-MIGRATE-10), posting null |
 | post-ref question (the poster named in posting) | (open, null, {question,by=me}, true, true) | (open, null, null, false, true) |
-| answer (receiver) | (open, null, any, false, true) | (answered, recorded, unchanged posting, false, true); answer.opid = this commit |
+| answer, budget with tuple (receiver) | (open, null, any, false, true) | (answered, recorded, unchanged posting, false, true); answer.opid = this commit, approvalUlid set, receipt null — only when kind is budget-above-norm, text equals wants and budget is present (FCG-ANSWER-11) |
+| answer, every other (receiver) | (open, null, any, false, true) | (answered, approved, unchanged posting, false, true); answer.opid = this commit, approvalUlid null, receipt = the text FCG-ANSWER-11 names for the case (FCG-C-20: a non-budget answer never rests in recorded) |
 | approve-intent (any listener) | (answered, recorded, null, false, true) | (answered, recorded, {approval,me,now}, false, true) |
 | approved (the machine named in posting) | (answered, recorded, {approval,by=me}, false, true) | (answered, approved, null, false, true); receipt set |
 | receipt-intent (any listener) | (answered, approved, null, false, true) | (answered, approved, {receipt,me,now}, false, true) |
 | receipted (the poster) | (answered, approved, {receipt,by=me}, false, true) | (closed, receipted, null, false, false); closedAt, closedBy, closedBecause=answered |
-| rejection/list/silence intent (any listener) | (open or answered, any, null, false, any) | posting {kind,me,now}, nothing else |
-| rejection/list/silence ref (the poster) | posting {kind,by=me} | posting null; rejected[i].postRef set for a rejection; a list or silence post writes only its ref into `rejected` as an entry with reason `list` or `silence` and by |
+| rejection/list/silence intent (any listener) | (any state, any, null, false, any) — closed is legal only for a rejection with reason `late` (FCG-C-20) | posting {kind,me,now}, nothing else |
+| rejection/list/silence ref (the poster) | posting {kind,by=me} | posting null; rejected[i].postRef set for a rejection; a list or silence post writes only its ref into `rejected` as an entry with reason `list` or `silence` and by — a list post hangs on the newest open question at the tip (the first the list names), a silence post on the oldest (FCG-STATUS-09); neither counts toward that question's three-rejection ceiling |
 | take-over (any listener) | posting {kind,by=other,at older than posting-stale-sec} | posting {kind,me,now}; the intent's owner changes, nothing else |
-| close (asker, `channel close`) | (open, null, null, any, true) | (closed, null, null, unchanged, true); closedBecause = the reason |
+| orphan-post (a poster whose intent was taken over, FCG-POST-08) | any tuple; the file present | orphanPosts + this ref, nothing else (FCG-C-20) |
+| close (asker, `channel close`) | (open, null, null, any, true) | (closed, null, null, unchanged, true); closedAt, closedBy, closedBecause = the reason, never `answered` |
 
 `state` and `answer.phase` together are the state machine:
-open/null → answered/recorded → answered/approved → closed/receipted,
-plus open/null → closed/null by `channel close`. Nothing under
-plans/channel/ is deleted by any Mutate in this goal (answer-archive
-will own it).
+open/null → answered/recorded → answered/approved → closed/receipted
+for a budget question with a tuple, open/null → answered/approved →
+closed/receipted for every other, plus open/null → closed/null by
+`channel close` and by a legacy question migrated closed and
+unanswered (FCG-MIGRATE-10). Every row's TO is a tuple some row's FROM
+admits or a terminal one (closed/receipted, closed/null), and no two
+rows share a FROM tuple with the same posting kind: the intent rows
+are told apart by the kind they write, the ref rows by the kind they
+find (FCG-C-20). Nothing under plans/channel/ is deleted by any
+Mutate in this goal (answer-archive will own it).
 
 ### FCG-RECEIVE-03: receive, commit, then confirm, per provider
 
@@ -337,10 +391,13 @@ messages, telegram.go:181-183) are not returned; they are acknowledged
 by the Ack of the next returned item or, at the tail, by the batch
 cursor (FCG-C-03).
 
-Telegram. Receive calls getUpdates with NO offset (today the local
-cursor is sent, telegram.go:203-208), limit 100, timeout T (FCG-POLL-04)
-and returns each update as an Inbound with `Ack = update_id+1` and
-`UpdateID`; Confirm(c) calls getUpdates with offset c, timeout 0,
+Telegram. Receive keeps its cursor parameter and keeps sending it as
+the offset when it is non-empty (telegram.go:203-218, unchanged), so
+the old Poll, which passes the saved cursor, tells Telegram exactly
+what it tells it today (FCG-C-02); the new listener passes "" and so
+calls getUpdates with NO offset, limit 100, timeout T (FCG-POLL-04).
+Receive returns each update as an Inbound with `Ack = update_id+1`
+and `UpdateID`; Confirm(c) calls getUpdates with offset c, timeout 0,
 limit 1 and discards the result — Telegram forgets every update below
 c and the one it may return stays unconfirmed and comes again. The
 listener handles a batch in update_id order: for each item, (1) build
@@ -359,14 +416,28 @@ confirmed nothing. A poison update — one whose Publish is rejected by
 name on every machine — stops every listener's prefix at that update;
 the listener logs `inbox refused <updateId>: <detail>` on every pass,
 `channel status` shows that line (FCG-STATUS-09) and the operator's
-path is `channel skip --update <id>` (new, human
-verb at the terminal: it commits an inbox record with outcome
-`skipped`, text "", question unmatched, and the next pass confirms
-it). The validator cannot refuse a record the listener built by the
-rules of FCG-SECRET-15 and FCG-COMMIT-05 — the rules are written so
-every outcome has a committable record — so a poison update is a bug
-in this design, and the skip verb is the honest fallback, not the
-mechanism.
+path is `channel skip --update <id>`, a new human verb at the
+terminal (FCG-C-23), which does, in order: Receive with an empty
+cursor and timeout 0 and find the update whose UpdateID is `<id>`
+(refuse "update <id> is not pending at the provider" when absent);
+build the record exactly as the listener would (provider,
+destination, messageId, updateId, replyTo, userId, sentAt from the
+update; receivedBy me, receivedAt now; opid this commit) but with
+outcome `skipped`, text "", step null, question `unmatched`; Publish
+it under the inbox Mutate's three branches — a record already on the
+tip under another opid is the ordinary lost-to-winner and the skip
+proceeds; a record present without its trailer (the poison case of
+FCG-INBOX-02) is REPLACED, the one write in this design that
+overwrites an inbox record, because the operator has looked and the
+verb is the human's word — then Confirm(update_id+1) and print `skipped
+<id>: <outcome of the Publish>`. The validator cannot refuse a record
+the listener built by the rules of FCG-SECRET-15 and FCG-COMMIT-05 —
+the rules are written so every outcome has a committable record — so
+a poison update is a bug in this design, and the skip verb is the
+honest fallback, not the mechanism; the fixture that proves the verb
+stages the poison by committing a hand-written record without its
+trailer directly on the ledger branch (FCG-EVIDENCE-12,
+FCG-12-POISON-SKIP).
 
 Slack. Receive today pages conversations.replies per open thread with
 a per-root cursor (internal/channel/slack/slack.go:96-146). It returns
@@ -400,8 +471,11 @@ cannot live inside it. Lifecycle (FCG-C-10): RunLoop gains a
 signal.NotifyContext(SIGTERM, SIGINT) and cancels it when the stop
 file appears, so disarm and re-arm (which restart the runner process)
 end the listener with the loop. RunLoop starts
-`go channel.Listen(ctx, repoRoot)` once, before its first tick, and
-removes the channelphase.Run call at runner.go:136-140; the one-shot
+`go channel.Listen(ctx, repoRoot)` once, after its first tick has
+returned, and removes the channelphase.Run call at runner.go:136-140;
+Listen's first act is the recovery call of FCG-INBOX-02, so an entry
+a killed listener left behind is classified before the new one
+publishes anything; the one-shot
 `metasystem steward tick` keeps calling channelphase.Run
 (steward_verbs.go:272-278), which now performs one short poll (timeout
 0) under the same receive rule, so a machine without the resident
@@ -420,23 +494,28 @@ and the phase and never the text, and the loop continues after base.
 Listen returns when ctx is done and its current step has ended: a
 getUpdates in flight is cancelled through ctx (the adapter passes it
 to the request); a Publish in flight cannot be — PublishRequest
-carries no context (txn.go:466-483) — so the listener finishes it,
-bounded by DefaultPublishDeadline (60 s), and if it committed, calls
-Confirm under a fresh 30 s deadline, so that no committed update is
-left for another machine to re-do when this one could finish. RunLoop
-waits for Listen up to `channel.stop-grace-sec` (default 100, longer
-than the two bounds together); past that it logs `listener still
-publishing <opid>` and returns, and the entry it leaves is classified
-by recovery on the next start (confirmed if the commit landed,
-abandoned if not, FCG-INBOX-02). Rollout (FCG-C-10): an armed runner
-is not replaced by a landing — `steward arm` returns "already armed"
-(runner.go:409-416) — so step 5 lands with `steward restart`
-(steward_verbs.go:543-566) on every enrolled machine, under R-37's
-standing word for re-arming after an engine rebuild; until a machine
-restarts it runs the old RunLoop and its after-tick poll, which is
-the step-4 short poll and still correct, only slower. `channel
-status` shows each listener's engine digest from its heartbeat, so a
-machine that has not restarted is visible from any machine.
+carries no context (txn.go:466-483) and its git subprocesses are not
+cancellable; DefaultPublishDeadline (txn.go:44) bounds only the
+CAS-refused retries — so no graceful join is promised (FCG-C-10).
+The honest statement: `steward restart` (steward_verbs.go:543-566,
+stopRunnerForReplacement at runner.go:478-492) sends SIGTERM and
+force-kills the runner two seconds later, and the listener may die
+inside a Publish or between a commit and its Confirm. Both are the
+cases the design already handles: an update committed but not
+confirmed comes again and is lost to its own record; an entry left in
+the journal is classified by the recovery call Listen makes before
+its first iteration (FCG-INBOX-02) — confirmed when the commit
+landed, terminal rejected when it did not, and the provider
+re-delivers. There is no `channel.stop-grace-sec`; RunLoop cancels
+ctx and returns without waiting. Rollout: an armed runner is not
+replaced by a landing — `steward arm` returns "already armed"
+(runner.go:409-416) — so step 4 lands with `steward restart` on every
+enrolled machine, under R-37's standing word for re-arming after an
+engine rebuild; until a machine restarts it runs the old RunLoop and
+its after-tick poll, which is the step-3 short poll and still
+correct, only slower. `channel status` shows each listener's engine
+digest from its heartbeat, so a machine that has not restarted is
+visible from any machine.
 
 A 409 conflict sleeps the same base + jitter and loops; it is logged
 at debug level only and counted in the listener's status
@@ -473,8 +552,11 @@ file is not touched, nothing binds, and the committing machine posts
 '<the first forty characters of answer.text>'; a new question needs a
 new ask" through FCG-POST-08 as a rejection entry (reason `late`),
 under the same ceiling as every rejection. Every outcome is committed
-(the record exists whether verified or not); only `verified` records
-carry a matched question forward. A rejection post for wrong-user,
+(the record exists whether verified or not) and every record names
+what the matcher found in `question` — a question id, `unbound` or
+`unmatched` — independently of the outcome; only a `verified` record
+whose `question` is a question id advances that question (FCG-C-05).
+A rejection post for wrong-user,
 no-code, bad-code, stale, replayed and late is made by the committing
 machine through FCG-POST-08 with today's text (poll.go:200-209), only
 if the question rule (a) or (b) names has fewer than three posted
@@ -494,9 +576,16 @@ an answer to the question the human replied to), else the outcome is
 `late` (FCG-COMMIT-05). (b) An unthreaded verified message binds by
 the token alone (FCG-C-07): take the questions open on that
 destination at the tip whose `wants` is non-empty and appears in the
-text, after the code is removed, as a whole whitespace-delimited
-field (exact bytes, case-sensitive; trailing `.,;:!?` on the field
-are dropped first, as for the code). Exactly one such question: it is
+text, after the code is removed, as a contiguous run of
+whitespace-delimited fields equal to strings.Fields(wants) — a token
+is several fields (ResumeApprovalToken is five, verbs.go:34-37;
+FCG-C-22) — exact bytes, case-sensitive, once and only once
+(containsContiguousFields, verbs.go:96-108, is the rule and the
+function), with trailing `.,;:!?` dropped from the text's field that
+matches the token's last field before the comparison, as for the
+code. "goal=x resume elapsed=1d attempts=10 minutes=1200 active=1."
+matches the five-field token; "goal=x resume" alone matches nothing.
+Exactly one such question: it is
 the answer. None, with exactly one question open: the record is
 `unbound` and the committing machine posts, through FCG-POST-08 and
 under the same three-post ceiling, "not recorded: I have one open
@@ -516,9 +605,12 @@ poll.go:150-160 filed them to unmatched.jsonl unverified) all carried
 the token and would match under (b) whatever else was open.
 
 A matched, verified record advances the question in the same commit
-(transition `answer`): state answered, answer{text, userId, ref, at,
-step, inboxId, opid: this commit, phase: recorded, approvalUlid,
-receipt: null, receiptRef: null}. The goal `answer` history row
+(the two `answer` rows of the matrix): state answered, answer{text,
+userId, ref, at, step, inboxId, opid: this commit, phase: recorded
+with approvalUlid set and receipt null for a budget question with a
+tuple whose text equals wants, else approved with approvalUlid null
+and the receipt text of FCG-ANSWER-11; receiptRef: null}. The goal
+`answer` history row
 (verbs.go:112-151) is written in that same Publish, so the question
 file, the inbox record and the ledger row are one atomic change set
 under one opid and the one Intent of FCG-SECRET-15 (verb `inbox`,
@@ -572,14 +664,16 @@ timeout — today telegram.New(nil) falls back to http.DefaultClient
 (telegram.go:20-25), which has none; build step 2 gives Post, Confirm
 and the short poll a per-request context deadline of
 `channel.http-timeout-sec` (default 30) and the long poll T + 15 s —
-and its step (3) by DefaultPublishDeadline (60 s, txn.go:44); 300 s
-is longer than both in sequence, and the fixture sets 2 s only after
-the poster is dead.
+and its step (3) by DefaultPublishDeadline (60 s, txn.go:44) for
+its CAS retries — a hung git subprocess is not bounded by anything
+(FCG-C-10), which is why the orphan rule below exists and why the
+window is a heuristic, not a fence; 300 s is longer than both bounds
+in sequence, and the fixture sets 2 s only after the poster is dead.
 Should a poster nevertheless return after a take-over, its step (3)
 Mutate finds `posting.by` is another machine (or null) and, instead
-of the ref field, appends its ref to `orphanPosts` under its own
-transition (FROM: any; TO: orphanPosts + ref) and logs `post orphaned
-<ref>`; the ledger then knows every post that exists, the human sees
+of the ref field, appends its ref to `orphanPosts` under the matrix's
+`orphan-post` row (FROM: any tuple; TO: orphanPosts + ref) and logs
+`post orphaned <ref>`; the ledger then knows every post that exists, the human sees
 one duplicate, and a reply threaded to the orphan matches by rule (a)
 through orphanPosts. There is no exemption for the asker: a crash
 between post and step (3) leaves an intent that is taken over and
@@ -595,7 +689,13 @@ every interval (default 30 s, `--interval`) and reads the question at
 the fetched tip; a machine with no provider token can ask (the ask is
 a ledger commit with `thread` null) and wait; the first listener whose
 open-work pass sees an open question with `thread` null and `posting`
-null posts it under this protocol. Status posts (`channel status
+null posts it under this protocol. `channel ask` on a machine with a
+token runs the same three steps as one process — ask commit (question
+plus intent), post, ref commit — and reads
+METASYSTEM_CHANNEL_FAIL_AT like the listener does (FCG-EVIDENCE-12):
+`before-post:question` exits 3 after the ask commit, leaving an
+intent a listener takes over; `after-post:question` exits 3 after the
+post, leaving a post the ledger never learns of (FCG-C-12). Status posts (`channel status
 --post`, report.go) stay per machine and direct; a machine without a
 token cannot post status in this goal (the routing policy Wido named
 is deferred to a follow-up goal).
@@ -674,19 +774,32 @@ validator's `channel-budget` row exempts lineage `migrated`),
 thread, rejected (each entry's `by` = the migrating machine),
 factsDigest as they are; lineage `migrated`; opid the migrate
 commit's; destination the configured `channel.destination`;
-orphanPosts []; posting null; state as it is. The answer: legacy
-phase `matched` (the answer row is not yet on the goal): migrate
-first runs goal.Answer exactly as advanceAnswer does (poll.go:346-357,
-same ULID, same actor, therefore the same opid, idempotent through
-the journal replay of Publish, txn.go:517-544) and the record
-migrates as phase recorded with the receipt null; legacy `recorded`
-(the goal row and any approval already done, receipt text set) →
-phase approved; legacy `receipted` → phase receipted, state closed,
-closedBecause answered; legacy `closed` → the same. `approvalUlid`
-is the legacy ApprovalULID or null; `inboxId` is `<provider>-<ref.id>`
-(the message exists at the provider, its inbox record does not; the
-validator's answer-state row is not applied when lineage is
-`migrated`). A migrate Mutate that finds the question path present
+orphanPosts []; posting null; state as it is. A legacy question in
+state closed with a null answer (closed by hand) migrates as
+closed/null with closedAt = the migrate's now, closedBy = the
+migrating machine and closedBecause "closed before the ledger inbox"
+(FCG-C-19). The answer: legacy phase `matched` (the answer row may or
+may not be on the goal — advanceAnswer's Publish may have landed
+before the phase was written): the legacy Answer carries the `Opid`
+its goal.Answer ran under (question.go:36; the Opid is
+Opid(ULID, machine, lineage) and a legacy record has no lineage
+field, so the opid cannot be re-derived, FCG-C-14). Migrate reads it
+back: TrailerPresent(tip, legacy.Opid) (txn.go:379) → the row landed;
+the record migrates as phase recorded with receipt null and no
+Answer call. Absent → the row never landed; migrate runs goal.Answer
+under a FRESH own ULID and opid with the legacy text, ref, step and
+user (the reason the human gave, verbatim, so FCG-WORD-07 holds), in
+its own Publish before the migrate Publish, and the record's
+answer.opid is that fresh opid; a migrate that dies between the two
+finds the trailer on its re-run and does not call Answer again.
+Legacy `recorded` (the goal row and any approval already done,
+receipt text set) → phase approved; legacy `receipted` → phase
+receipted, state closed, closedBecause answered; legacy `closed` with
+an answer → the same. `approvalUlid` is the legacy ApprovalULID or
+null; `inboxId` is `<provider>-<ref.id>` (the message exists at the
+provider, its inbox record does not; the validator's answer-state
+row is not applied when lineage is `migrated`). A migrate Mutate that
+finds the question path present
 returns LostToCompetitor with the record's opid (two machines never
 hold one local question, so this is a re-run of migrate on one
 machine after a crash); the migrating machine then renames its local
@@ -713,12 +826,20 @@ bytes of SHA-256("approve:" + qid) — deterministic so that every
 machine derives the same ULID, but the opid it yields is the
 approving machine's own (Opid(approvalUlid, me, mine)), never shared.
 Open-work pass item (ii), on any listener: publish the approval
-intent (posting {approval, me, now}; the fence); read the goal at
-that tip — if Approved.At is not before answer.at and
-Approved.Authority is channel (ApprovalRecord, file.go:151-164) the
-approval already landed under a
-machine that died before writing the phase: skip to the receipt with
-"recorded: <goal> box raised to <box>"; else build
+intent (posting {approval, me, now}; the fence); if the question is
+not a budget question with a tuple whose answer.text equals wants (a
+migrated `matched` record of another kind, FCG-MIGRATE-10), publish
+`approved` at once with the receipt text of the case below and no
+Approve call; else read the goal at that tip — if its History holds
+an event with Verb `approve`, AuthorityOutcome
+VerifiedChannelAnswer and ChannelContext equal to this question's
+id (file.go:301; the approve event carries the proof's ContextID,
+validated at file.go:604 and parsed at 1368; ApprovalRecord itself
+holds no question, file.go:151-164, so Approved.At and Authority
+cannot tell this question's approval from another's, FCG-C-21) the
+approval already landed under a machine that died before writing
+the phase: skip to the receipt with "recorded: <goal> box raised to
+<box>"; else build
 governance.RecordedChannelAuthority{Outcome:
 AuthorityOutcomeVerifiedChannelAnswer, Provider: answer.ref.provider,
 UserID: answer.userId, MessageRef: answer.ref.threadId + "/" +
@@ -739,17 +860,25 @@ under a fresh ULID — the deterministic ULID is a convenience for
 reading the history, not a correctness device, so a second attempt
 after a terminal non-confirmed entry uses Opid(<fresh ULID>, me,
 mine); a duplicate approve row is prevented by the goal read above,
-not by the ULID. Recovery of a dead approve entry: requestForEntry
-(recover.go:236) gains the case `approve` for Intent.Args["source"]
-== "channel", rebuilt from the ledger question named in
-Args["question"] exactly as above; an approve entry without that
-source stays "close it by hand" as today. A budget question without
-a tuple (a legacy record) gets phase approved directly with the
-receipt channel-poll-refuses-legacy-budget-questions fixed
-("recorded: <goal> has no proposed box on this question; nothing
-raised"). Non-budget answers go from recorded to approved in the
-answer commit itself with receipt "recorded: <goal> approved for
-execution" for a stop token, or "recorded" otherwise. Phase receipted
+not by the ULID. Recovery of a dead approve entry needs no new case
+(FCG-C-11): VerbRequest has no source or question field
+(verbs.go:168-180) and Approve writes its own Intent.Args, so
+requestForEntry cannot rebuild a channel approve; its default
+terminalises the entry rejected ("re-runs from its own entry point",
+recover.go:403) when the recovery call of FCG-INBOX-02 runs, and the
+approval intent still standing on the question is the re-run: the
+next open-work pass takes it over, reads the goal (the predicate
+above answers whether the dead attempt's commit landed) and calls
+Approve again under a fresh opid or skips to the receipt. A budget
+question without a tuple (a legacy record) gets phase approved
+directly with the receipt channel-poll-refuses-legacy-budget-questions
+fixed ("recorded: <goal> has no proposed box on this question;
+nothing raised"). Every other answer goes from open to approved in
+the answer commit itself (the matrix's second `answer` row) with
+receipt "recorded: <goal> approved for execution" when the text
+carries a stop token, "recorded: <goal> box not raised; the reply did
+not carry the token" for a budget question with a tuple whose text
+does not equal wants, or "recorded" otherwise. Phase receipted
 is set by FCG-POST-08 (iii) with `receiptRef`, and the question
 closes in that commit. A crash anywhere leaves a phase and at most
 one intent that the next pass on any machine resumes or takes over.
@@ -771,9 +900,22 @@ no-code, a fact with six digits in it, committed as it is
 (FCG-C-15). The one ambiguity is a six-digit fact as the LAST field:
 it is read as a code, fails to verify, and the human gets today's
 bad-code rejection; renderQuestion's prompt already asks for the
-code last, and the limit is named in the goal's conclusion. Every
-durable surface is named: the inbox record's `text` and the
-question's `answer.text` are `clean`; the Publish Intent is
+code last, and the limit is named in the goal's conclusion. A code
+that is not last, or is repeated ("approve 123456 note 123456",
+round 3's FCG-C-15), is caught by the listener, not the validator:
+after StripCode, and whatever the outcome, the committing machine
+walks every remaining whitespace-delimited field of `clean`, trims
+the same trailing `.,;:!?`, and replaces the field with the literal
+`[code]` when the trimmed field is six ASCII digits and
+VerifyTOTP(secret, field, sentAt) (totp.go:35-50, the three steps
+around sentAt) accepts it; a six-digit field the secret does not
+produce is a fact and stays. `clean` after masking is what the
+record and the answer carry, and the code's bytes are never durable
+on any path — the masking runs before the record is built, on the
+one machine that holds the secret, so the validator's row below stays
+what it is. Every durable surface is named: the inbox record's
+`text` and the question's `answer.text` are the masked `clean`; the
+Publish Intent is
 `Intent{Verb: "inbox", Targets: [<record path>], Args: {provider,
 destination, messageId, updateId, outcome, question}}` and carries no
 text (journal.go:57-65 persists the Intent before the transaction;
@@ -818,7 +960,8 @@ that update), and `pauseBefore: [{listener, method, until: <path>}]`
 fixture asserts the ledger in the meantime, which is how a fixture
 proves "commit before Confirm" without observing git from the fake).
 Failure points: `METASYSTEM_CHANNEL_FAIL_AT=<phase>[:<kind>]`, read
-by Listen and `channel poll` into PollConfig.FailurePoint; at the
+by Listen, `channel poll` and `channel ask` (FCG-C-12) into
+PollConfig.FailurePoint; at the
 named point the process writes `failed at <phase>` to stderr and
 exits 3 — once, because it is dead, and the fixture restarts it
 without the variable. Phases: `before-publish:inbox`,
@@ -901,44 +1044,78 @@ ledger at origin/main, the fake journal, or a listener's exit status.
   two ledger questions with lineage `migrated`, the mapped phases,
   one `unverified-migrated` inbox record, the local directory
   renamed, and `channel poll` refusing before the migrate and not
-  after.
+  after; a third legacy question in phase `matched` whose saved Opid
+  is on the tip migrates without a second answer row, and one whose
+  Opid is not migrates with exactly one fresh answer row (FCG-C-14).
+- FCG-12-POISON-SKIP (FCG-C-23): the fixture commits, directly on
+  the ledger branch with a plain git commit and no trailer, a valid
+  inbox record for an update the fake is about to deliver; both
+  listeners log `inbox refused <id>: inbox record present without its
+  transaction` and neither confirms; `channel skip --update <id>` on
+  A replaces the record with outcome `skipped` under A's opid and
+  confirms. Pass: the journal shows no Confirm before the skip and one
+  after; the record's opid is A's; the next update is committed
+  normally.
+- FCG-12-ASK-CRASH (FCG-C-12): `channel ask` with FAIL_AT
+  before-post:question exits 3 leaving the intent; a listener takes
+  it over after posting-stale-sec (2 s) and posts. Pass: one `thread`
+  ref written by the listener, one sendMessage row. Then `channel
+  ask` with after-post:question exits 3; a listener takes over and
+  posts again. Pass: `thread` holds the listener's ref, two
+  sendMessage rows, `orphanPosts` empty.
+- FCG-12-BLOCKED-JOURNAL (unit, internal/channel, FCG-C-16): a
+  listener whose clone holds a PUSHED inbox entry (staged by a Publish
+  whose confirming refetch is made to fail) receives its next update;
+  its Publish is refused pushed-blocking; the iteration runs the
+  recovery call, which confirms the entry from the tip, and the next
+  Publish commits. Pass: the log line `journal blocked by <opid>;
+  recovery ran: confirmed`, two confirmed entries in the journal.
 - Unit tests in internal/goal (ValidateChannelTree's refusal table row
-  by row including the listener schema and the secret row's three
+  by row including the listener schema, the secret row's three
   cases — last-field code, mid-sentence digits accepted, digits in
-  facts refused; the transition matrix row by row through the tuple
-  predicate; the inbox Mutate's three branches; the step check on
-  the tip; the removed append; the inbox recovery rule; the approve
-  recovery case) and internal/channel (StripCode's four cases, the
-  batch-prefix Confirm rule, rule (b) with zero, one, two tokens, the
-  migrate mapping, the migrate refusal).
+  facts refused — and the answer-state row's closed/null cases; the
+  transition matrix row by row through the tuple predicate, including
+  the orphan-post row and both answer rows; the inbox Mutate's three
+  branches; the step check on the tip; the removed append; the
+  duplicate-approval predicate against a goal approved through
+  another question's channel answer, which must NOT match, FCG-C-21)
+  and internal/channel (StripCode's four cases; the masking of a
+  repeated and of a mid-sentence code and the non-masking of a
+  six-digit fact; the batch-prefix Confirm rule; rule (b) with zero,
+  one, two tokens and with the five-field resume token followed by a
+  full stop, FCG-C-22; the migrate mapping including the two `matched`
+  cases; the migrate refusal; `channel skip`'s record shape).
 
 ### FCG-BUILD-13: order and budget
 
-Tier 3, Wido's box. Five steps, each landing alone (FCG-C-02): (1)
-the three fences and ValidateChannelTree with the three schemas, the
-transition predicate as a library function, and the inbox and
-approve recovery rules — no writer, no live behaviour changes; (2)
-the provider contract (Ack, Confirm, ErrBusy, the HTTP deadlines),
-the telegram and slack adapters, the fake's controls and tokens; the
-local Poll of the old world sends no offset and calls Confirm with
-the batch cursor at the point where it writes cursor.json today
-(poll.go:252-260), so what Telegram is told is what it was told
-before, at the end of the pass instead of the start of the next —
-the existing channel fixtures stay green against the fake, which is
-the proof that nothing else moved; (3) FCG-WORD-07, the append
-removal — small, independent, landed before any ledger question can
-be answered, so no intermediate release binds a "no"; (4) the
-cut-over, one landing: `channel ask` on the ledger, `channel
-migrate`, the migrate refusal, the receive rule and the lost-to-winner
-commit, matching, the atomic answer, FCG-POST-08 for every post and
-the open-work pass (run by `channel poll` and the steward tick),
-FCG-ANSWER-11, `channel skip`; landed under the fleet sequence of
-FCG-MIGRATE-10; (5) Listen, the RunLoop context, the heartbeat and
-status, landed with `steward restart` on each machine
-(FCG-POLL-04). Fixtures grow with each step; FCG-12-MIGRATE lands
-with step 4 before the fleet cut-over is performed. One closing code
-review per two build steps. Estimated: five build attempts of 25-45
-minutes, three review rounds (two design rounds spent).
+Tier 3, Wido's box. Four steps, each landing alone (FCG-C-02, round
+3): (1) the three fences and ValidateChannelTree with the three
+schemas, the transition predicate as a library function, the opid
+helper, and the inbox Mutate's three branches as a library function
+with no caller — no writer, no live behaviour changes, no recovery
+change (revision 4 needs none); (2) the provider contract (Ack,
+Confirm, ErrBusy, the HTTP deadlines), the telegram and slack
+adapters, the fake's controls and tokens, StripCode and the masking
+as functions; the old Poll keeps passing its saved cursor and never
+calls Confirm, so what Telegram is told is byte-for-byte what it was
+told before — the existing channel fixtures stay green against the
+fake, which is the proof that nothing moved; (3) the cut-over, one
+landing: FCG-WORD-07's append removal (folded in here so that no
+release removes the append while the old Poll still calls
+goal.Answer), `channel ask` on the ledger with its failure points,
+`channel migrate`, the migrate refusal, the receive rule and the
+lost-to-winner commit, the listener's recovery call, matching, the
+atomic answer, FCG-POST-08 for every post and the open-work pass (run
+by `channel poll` and the steward tick), FCG-ANSWER-11, `channel
+skip`; landed under the fleet sequence of FCG-MIGRATE-10; (4) Listen,
+the RunLoop context, the heartbeat and status, landed with `steward
+restart` on each machine (FCG-POLL-04). Fixtures grow with each step;
+FCG-12-MIGRATE lands with step 3 before the fleet cut-over is
+performed. One closing code review per two build steps. Estimated:
+four build attempts of 25-45 minutes; the box's three review rounds
+are spent on the design, so the two closing code reviews need a
+review-round raise that only Wido can give — the build steps land
+without them only if he says so.
 
 ## Dispositions (round 1, job fcg-design-cc1)
 
