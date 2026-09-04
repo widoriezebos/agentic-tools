@@ -23,6 +23,8 @@ Date: <YYYY-MM-DD>
 
 <Name every required property from the role's return schema. Each evidence `command` is one command replayable verbatim from the declared workspace. The orchestrator may rerun commands individually and compare world-state observations; returned commands are never executed as a batch. Keep the settled `{command, observed, level}` evidence schema unchanged.>
 
+Every path in your return (diffBoundary, files) is relative to the repository root, so it starts with `metasystem/`.
+
 # Acceptance Criteria
 
 <List observable, machine-checkable acceptance criteria.>

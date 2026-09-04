@@ -224,7 +224,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 		c.checkJudgeAnchors(resultObj)
 	}
 	if role == "implementer" && resultObj != nil {
-		c.checkDiffBoundary(resultObj)
+		c.checkDiffBoundary(resultObj, returnPath, record)
 	}
 	if mode == "job" && resultObj != nil && record != nil {
 		for _, name := range []string{"jobId", "round", "runtime", "sessionId"} {
@@ -236,17 +236,115 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	}
 }
 
-func (c *returnChecker) checkDiffBoundary(result map[string]any) {
+func (c *returnChecker) checkDiffBoundary(result map[string]any, returnPath string, record map[string]any) {
 	boundary, ok := result["diffBoundary"].([]any)
 	if !ok {
 		return
 	}
-	for _, raw := range boundary {
-		entry, ok := raw.(string)
-		if ok && !returnDiffBoundary.MatchString(entry) {
-			c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", entry)
+	metasystemRoot := c.root
+	if workspace, isString := record["workspaceRoot"].(string); isString && workspace != "" {
+		metasystemRoot = filepath.Join(workspace, "metasystem")
+	}
+	var offending []int
+	for index, raw := range boundary {
+		entry, isString := raw.(string)
+		if isString && !returnDiffBoundary.MatchString(entry) {
+			offending = append(offending, index)
+			if !existingFileWithin(metasystemRoot, entry) {
+				for _, refused := range offending {
+					refusedEntry, _ := boundary[refused].(string)
+					c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", refusedEntry)
+				}
+				for later := index + 1; later < len(boundary); later++ {
+					laterEntry, laterIsString := boundary[later].(string)
+					if laterIsString && !returnDiffBoundary.MatchString(laterEntry) {
+						c.violation("DIFF_BOUNDARY_INVALID: diffBoundary entry %q must match ^metasystem/.+", laterEntry)
+					}
+				}
+				return
+			}
 		}
 	}
+	if len(offending) == 0 {
+		return
+	}
+
+	changes := make([]string, 0, len(offending))
+	for _, index := range offending {
+		entry := boundary[index].(string)
+		normalized := filepath.ToSlash(filepath.Join("metasystem", entry))
+		changes = append(changes, fmt.Sprintf("%q to %q", entry, normalized))
+	}
+	notePath := strings.TrimSuffix(returnPath, filepath.Ext(returnPath)) + ".md"
+	note := "\nProtocol note: normalized repository-relative diffBoundary entries " + strings.Join(changes, ", ") + ".\n"
+	file, err := os.OpenFile(notePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		c.violation("DIFF_BOUNDARY_INVALID: could not record diffBoundary normalization in the round protocol note: %v", err)
+		return
+	}
+	_, writeErr := file.WriteString(note)
+	closeErr := file.Close()
+	if writeErr != nil {
+		c.violation("DIFF_BOUNDARY_INVALID: could not record diffBoundary normalization in the round protocol note: %v", writeErr)
+		return
+	}
+	if closeErr != nil {
+		c.violation("DIFF_BOUNDARY_INVALID: could not close the round protocol note after diffBoundary normalization: %v", closeErr)
+		return
+	}
+	for _, index := range offending {
+		entry := boundary[index].(string)
+		boundary[index] = filepath.ToSlash(filepath.Join("metasystem", entry))
+	}
+	if err := writeNormalizedReturn(returnPath, result); err != nil {
+		c.violation("DIFF_BOUNDARY_INVALID: could not persist normalized diffBoundary: %v", err)
+	}
+}
+
+func existingFileWithin(root, entry string) bool {
+	if filepath.IsAbs(entry) {
+		return false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	resolvedEntry, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(entry)))
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(resolvedRoot, resolvedEntry)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	info, err := os.Stat(resolvedEntry)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func writeNormalizedReturn(path string, result map[string]any) error {
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".return-normalized-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Chmod(0o644); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func (c *returnChecker) checkRigorRows(result map[string]any) {

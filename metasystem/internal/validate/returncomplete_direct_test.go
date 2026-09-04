@@ -16,14 +16,108 @@ func returnRoot(t *testing.T) string {
 	root := t.TempDir()
 	// The checkers read role schemas from the checkout; give them the real
 	// ones so the shape validation runs exactly as in production.
-	source, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "design-critic.schema.json"))
-	if err != nil {
-		t.Skip("role schema not readable from the test working directory")
-	}
 	dir := filepath.Join(root, "scripts", "agents", "schemas")
 	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "design-critic.schema.json"), source, 0o644)
+	for _, role := range []string{"design-critic", "implementer"} {
+		source, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", role+".schema.json"))
+		if err != nil {
+			t.Skip("role schema not readable from the test working directory")
+		}
+		os.WriteFile(filepath.Join(dir, role+".schema.json"), source, 0o644)
+	}
 	return root
+}
+
+func implementerReturn(boundary string) string {
+	return fmt.Sprintf(`{
+  "schemaVersion": 2,
+  "claimed": {"sessionId": null, "model": null},
+  "jobId": "path-form", "round": 1, "runtime": "fake", "sessionId": "fixture-session",
+  "model": {"requested": "fixture-model", "effective": "fixture-model"},
+  "evidence": [], "gaps": [], "mode": "build",
+  "riskiestPart": "Path normalization must not hide an unknown path.",
+  "diffBoundary": %s,
+  "whatWasDone": "Exercised the return path contract."
+}`, boundary)
+}
+
+func TestReturnCompleteNormalizesResolvableDiffBoundaryPaths(t *testing.T) {
+	root := returnRoot(t)
+
+	t.Run("metasystem-relative entries are normalized and correct entries stay unchanged", func(t *testing.T) {
+		workspace := t.TempDir()
+		workspaceFile := filepath.Join(workspace, "metasystem", "internal", "validate", "returncomplete.go")
+		if err := os.MkdirAll(filepath.Dir(workspaceFile), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(workspaceFile, []byte("package validate\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+		if err := os.MkdirAll(jobs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		record := fmt.Sprintf(`{"jobId":"path-form","role":"implementer","round":1,"parentJob":null,"runtime":"fake","sessionId":"fixture-session","workspaceRoot":%q}`, workspace)
+		if err := os.WriteFile(filepath.Join(jobs, "path-form.json"), []byte(record), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(root, "artifacts", "agents", "path-form", "rounds", "1", "return.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		original := implementerReturn(`["internal/validate/returncomplete.go", "metasystem/already-correct.go"]`)
+		if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if violations := ReturnCompleteJob(root, "path-form"); len(violations) != 0 {
+			t.Fatalf("resolvable path was refused: %v", violations)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		if !strings.Contains(text, `"metasystem/internal/validate/returncomplete.go"`) {
+			t.Fatalf("metasystem-relative entry was not normalized: %s", text)
+		}
+		if !strings.Contains(text, `"metasystem/already-correct.go"`) {
+			t.Fatalf("already-correct entry changed: %s", text)
+		}
+		note, err := os.ReadFile(filepath.Join(filepath.Dir(path), "return.md"))
+		if err != nil || !strings.Contains(string(note), `"internal/validate/returncomplete.go" to "metasystem/internal/validate/returncomplete.go"`) {
+			t.Fatalf("round protocol note did not record normalization: %q (%v)", note, err)
+		}
+	})
+
+	t.Run("unknown entries retain the existing refusal", func(t *testing.T) {
+		path := filepath.Join(root, "unknown.json")
+		if err := os.WriteFile(path, []byte(implementerReturn(`["nowhere/unknown.go"]`)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		violations := strings.Join(ReturnCompleteRole(root, "implementer", path), "\n")
+		if !strings.Contains(violations, `DIFF_BOUNDARY_INVALID: diffBoundary entry "nowhere/unknown.go" must match ^metasystem/.+`) {
+			t.Fatalf("unknown path did not retain its refusal code: %s", violations)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || !strings.Contains(string(data), `"nowhere/unknown.go"`) {
+			t.Fatalf("refused return was unexpectedly normalized: %q (%v)", data, err)
+		}
+	})
+
+	t.Run("an already-correct return is untouched", func(t *testing.T) {
+		path := filepath.Join(root, "correct.json")
+		original := implementerReturn(`["metasystem/internal/validate/returncomplete.go"]`)
+		if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if violations := ReturnCompleteRole(root, "implementer", path); len(violations) != 0 {
+			t.Fatalf("already-correct path was refused: %v", violations)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != original {
+			t.Fatalf("already-correct return changed: %q (%v)", data, err)
+		}
+	})
 }
 
 func v3Facts() string {

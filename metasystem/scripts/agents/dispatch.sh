@@ -738,6 +738,15 @@ brief_authority() { # brief, delegate base tree
   "$ms" job brief-mode --authority-only --brief "$1" --base-tree "$2" --disk-root "$repo_scope"
 }
 
+append_return_path_form() { # source brief, destination brief
+  local source=$1 destination=$2 sentence
+  sentence='Every path in your return (diffBoundary, files) is relative to the repository root, so it starts with `metasystem/`.'
+  cat "$source" >"$destination"
+  if ! grep -Fqx "$sentence" "$source"; then
+    printf '\n# Return path form\n\n%s\n' "$sentence" >>"$destination"
+  fi
+}
+
 # Roster resolution, tier ranking, and escalation classification moved to
 # `job resolve-roster` (script-orchestration-02) — including the lessons the
 # retired shell helpers carried: tiers read through the MERGED resolver so
@@ -1536,6 +1545,11 @@ dispatch_job() {
     brief=$brief_with_outputs
   fi
 
+  local brief_with_return_path_form
+  brief_with_return_path_form=$(mktemp "$record_locks/brief-return-path-form.XXXXXX")
+  append_return_path_form "$brief" "$brief_with_return_path_form"
+  brief=$brief_with_return_path_form
+
   payload="$agents/$job"; round_dir="$payload/rounds/1"
   prompt_temp=$(mktemp "$record_locks/composed-packet.XXXXXX")
   composition_temp=$(mktemp "$record_locks/composition.XXXXXX")
@@ -2010,6 +2024,10 @@ follow_up() {
     printf '\n# Required full gate\n\n%s\n' 'scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh' >>"$delivery_with_gate"
     delivery_content=$delivery_with_gate
   fi
+  local delivery_with_return_path_form
+  delivery_with_return_path_form=$(mktemp "$record_locks/follow-return-path-form.XXXXXX")
+  append_return_path_form "$delivery_content" "$delivery_with_return_path_form"
+  delivery_content=$delivery_with_return_path_form
   if [[ "$resume_cap" != true ]]; then
     resume_mode=fresh-context
     adapter_verb=dispatch
