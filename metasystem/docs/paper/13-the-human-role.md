@@ -50,7 +50,7 @@ A machine worker can turn human approval into a habit without ever lying: after 
 
 The 8:40 outcome comes from the responsible authority for account security. That authority may state the purpose, decide that active work must not be interrupted, require existing sessions to adopt the limit and insist that a returning user reaches the page they had been using. It may not set an unrelated medical-record rule or promise another organization's resources.
 
-An intent-holder is the person or authorized group that sets purpose and priorities within a stated domain, and the work in that domain follows what it sets. It does not write a task list and call it an outcome. Its authority can be delegated: an account-security lead may set the session-lifetime constraints while an accessibility group decides what reauthentication accommodation is required. Each delegation names its source, scope, conditions and end.
+An intent-holder is the person or authorized group that sets purpose and priorities within a stated domain, and the work in that domain follows what it sets. It does not write a task list and call it an outcome. Its authority can be delegated: an account-security lead may set the session-lifetime constraints while an accessibility group decides what help people get when signing in again. Each delegation names its source, scope, conditions and end.
 
 Intent remains answerable to evidence. The authorized person can be wrong about user behavior, omit an affected group or state two conditions that cannot both hold. A builder that finds the conflict records it and returns the question to the authority instead of choosing the convenient interpretation. Deciding the intent settles what the purpose is; it does not make the purpose infallible.
 
