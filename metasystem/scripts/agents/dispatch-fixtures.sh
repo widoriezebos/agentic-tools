@@ -897,6 +897,53 @@ wait_for_agent_chain_unlock() { # root job
   done
 }
 
+wait_for_agent_recollection() { # description, job, terminal field, expected value, reap fixture name
+  local description=$1 job=$2 field=$3 expected=$4 reap_fixture=$5
+  local verdict="$agent_supervision_repo/artifacts/agents/supervision/last-census.json"
+  local snap="$agent_fixture/recollection-wait-snapshot.json" base marker sequence interval silence
+  local last_advance=$SECONDS rebaselines=0 max_rebaselines=5 attempt_budget=2
+  local record="$agent_repo/artifacts/agents/jobs/$job.json"
+  cp "$verdict" "$snap" 2>/dev/null || : >"$snap"
+  base=$("$engine" json get --file "$snap" --field scanSeq 2>/dev/null || true)
+  [[ "$base" =~ ^[0-9]+$ ]] || base=0
+  marker=$base
+  while [[ "$("$engine" json get --file "$record" --field "$field" 2>/dev/null)" != "$expected" ]]; do
+    cp "$verdict" "$snap" 2>/dev/null || : >"$snap"
+    sequence=$("$engine" json get --file "$snap" --field scanSeq 2>/dev/null || true)
+    if [[ "$sequence" =~ ^[0-9]+$ ]]; then
+      if (( sequence < marker )); then
+        rebaselines=$((rebaselines + 1))
+        if (( rebaselines > max_rebaselines )); then
+          echo "$description: census scanSeq regressed $rebaselines times while waiting for recollection (last $marker -> $sequence)" >&2
+          return 1
+        fi
+        base=$sequence
+        marker=$sequence
+        last_advance=$SECONDS
+      elif (( sequence > marker )); then
+        marker=$sequence
+        last_advance=$SECONDS
+      fi
+      if (( sequence >= base + 1 + attempt_budget )); then
+        echo "$description after $attempt_budget completed recollection passes (scanSeq $base -> $sequence)" >&2
+        cat "$record" >&2
+        return 1
+      fi
+    fi
+    interval=$("$engine" json get --file "$snap" --field intervalSec 2>/dev/null || true)
+    [[ "$interval" =~ ^[1-9][0-9]*$ ]] || interval=1
+    silence=$((30 * interval))
+    (( silence < 60 )) && silence=60
+    if (( SECONDS - last_advance >= silence )); then
+      echo "$description: no completed recollection pass for ${silence}s (scanSeq stuck at $marker)" >&2
+      cat "$record" >&2
+      return 1
+    fi
+    run_agent_fixture "$reap_fixture" "$job" "$agent_dispatch" reap --job "$job"
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+
 if [[ "$fixture_scenario" == dispatch ]]; then
 # Build-stamp skew refuses before any dispatch state exists. The fixture engine
 # is built at one commit, then its checkout advances through an agent-script
@@ -1972,18 +2019,10 @@ wait_for_agent_census_fresh pending-loss
 wait_for_agent_status pending-loss pending
 # The supervisor is dying while this runs, so a single sweep can legitimately
 # land before the kill and observe a live match. The standing reaper sweeps on
-# an interval, so sweeping until the transition or a scaled ceiling is the
-# faithful check; the assertion itself is unchanged.
-pending_loss_started=$SECONDS
-pending_loss_deadline=$((SECONDS + agent_status_cap_sec))
-until grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/pending-loss.json"; do
-  if (( SECONDS >= pending_loss_deadline )); then
-    echo "dead pending supervisor did not transition through reap (elapsed: $((SECONDS - pending_loss_started))s; scaled cap: ${agent_status_cap_sec}s)" >&2
-    exit 1
-  fi
-  run_agent_fixture pending-loss-reap pending-loss "$agent_dispatch" reap --job pending-loss
-  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
-done
+# an interval, so sweeping until the transition or a bounded number of completed
+# passes is the faithful check; wall clock only detects a silent steward.
+wait_for_agent_recollection \
+  "dead pending supervisor did not transition through reap" pending-loss error process-lost pending-loss-reap
 wait_for_agent_fixture_process pending-loss-driver pending-loss "$pending_loss_driver" || true
 
 # Recollection (return-recollection-on-process-lost): a critic whose
@@ -1996,17 +2035,8 @@ wait_for_agent_census_fresh recollect-loss
 (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$recollect_brief" --job-id recollect-loss >/dev/null 2>&1) & recollect_driver=$!
 wait_for_agent_status recollect-loss running
 recollect_record="$agent_repo/artifacts/agents/jobs/recollect-loss.json"
-recollect_started=$SECONDS
-recollect_deadline=$((SECONDS + agent_status_cap_sec))
-until [[ "$("$engine" json get --file "$recollect_record" --field status 2>/dev/null)" == completed ]]; do
-  if (( SECONDS >= recollect_deadline )); then
-    echo "recollection did not conclude the delivered-then-lost critic (elapsed: $((SECONDS - recollect_started))s; scaled cap: ${agent_status_cap_sec}s)" >&2
-    cat "$recollect_record" >&2
-    exit 1
-  fi
-  run_agent_fixture recollect-reap recollect-loss "$agent_dispatch" reap --job recollect-loss
-  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
-done
+wait_for_agent_recollection \
+  "recollection did not conclude the delivered-then-lost critic" recollect-loss status completed recollect-reap
 [[ -n "$("$engine" json get --file "$recollect_record" --field recollectedAt 2>/dev/null)" \
    && "$("$engine" json get --file "$recollect_record" --field recollectedFrom)" == process-lost \
    && "$("$engine" json get --file "$recollect_record" --field error)" == null ]] \
