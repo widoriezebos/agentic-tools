@@ -6,11 +6,12 @@
 - Origin: main
 - Next step: TIER 1 per R-54-m1 (one disposition branch and a test): build, go test ./internal/channel/... ./internal/goal/..., land through a chain; box 1h/3/60m/1. Waits for human approval for execution.
 - OpenedAt: 2026-09-04T12:03:19Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T15:38:30Z revision=2 opid=33HN964QRK10ABJKS7AEKS21MC-m2-5fcf08ab authority=relayed digest=35772820ff723971489c55e7b438b27da2d6d843a90ebc50b863e5438b6d712b reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T15:38:45Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T15:38:35Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-04T12:03:19Z PEG868QZM724RSFR0MG96HBJ15-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=channel-budget-answer-binds-nothing
 - 2026-09-04T15:38:30Z 33HN964QRK10ABJKS7AEKS21MC-m2-5fcf08ab approve actor=human:Wido targets=channel-budget-answer-binds-nothing authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="You may pick and execute the tier-1 items opened on 2026-09-04 in my name."
 - 2026-09-04T15:38:35Z 2X9PPM5MS6Y6BCC05V4M0PRZ9K-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=channel-budget-answer-binds-nothing
-Integrity: sha256=986fe83f851c89d1e216cc3c7c6f58c5792639df2b1e98b870cbb547b84a52fe
+- 2026-09-04T15:38:45Z AJA4AP3662MBX9MY7QK6EMNKA1-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=channel-budget-answer-binds-nothing
+Integrity: sha256=50a1ad51f883ce857276bcc67a9eb33e2545cf053c84759a720646e52020e46d
