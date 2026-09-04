@@ -54,10 +54,8 @@ func ComposeReport(c ReportConfig) (string, error) {
 				features[id] = featureName(id)
 			}
 			frontier := goal.Next(p, c.Machine)
-			for _, id := range frontier.Awaiting {
-				if !questionGoals[id] {
-					needs = append(needs, "Needs you: "+featureName(id)+" — approve it for execution.")
-				}
+			if id, approved := nextBudgetedGoal(p, c.Machine); id != "" && !approved && !questionGoals[id] {
+				needs = append(needs, "Needs you: "+featureName(id)+" — your word to start it (next in line)")
 			}
 			for _, id := range frontier.Ready {
 				next = append(next, "Next up: "+featureName(id))
@@ -91,6 +89,31 @@ func ComposeReport(c ReportConfig) (string, error) {
 		lines = append(lines, fmt.Sprintf("Undelivered: %d channel messages, oldest %d min", c.Undelivered, age))
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func nextBudgetedGoal(p goal.Projection, machine string) (string, bool) {
+	for _, id := range goal.SortedGoalIds(p.Tree.Live) {
+		f := p.Tree.Live[id]
+		if f.State != goal.StateQueued && f.State != goal.StateApproved {
+			continue
+		}
+		if f.Budget == nil || f.Budget.Validate() != nil || (f.Pinned != "" && f.Pinned != machine) {
+			continue
+		}
+		blocked := false
+		for _, dependency := range f.Blocked {
+			if done := p.Tree.Done[dependency]; done == nil || done.State != goal.StateDone {
+				blocked = true
+				break
+			}
+		}
+		if blocked {
+			continue
+		}
+		expired, _ := f.ApprovalExpired(p.Horizon)
+		return id, f.State == goal.StateApproved && !expired
+	}
+	return "", false
 }
 
 func featureName(id string) string {

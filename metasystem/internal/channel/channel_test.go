@@ -264,7 +264,7 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
 	root := reportLedger(t, waiting)
 	withoutQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
-	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — approve it for execution.") {
+	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — your word to start it (next in line)") {
 		t.Fatalf("approval gap was omitted:\n%s", withoutQuestion)
 	}
 	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}}); err != nil {
@@ -273,6 +273,37 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	withQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
 	if strings.Count(withQuestion, "Needs you: waiting feature") != 1 || !strings.Contains(withQuestion, "approve the requested budget raise.") {
 		t.Fatalf("the open budget question did not replace the generic approval gap:\n%s", withQuestion)
+	}
+}
+
+func TestReportShowsOnlyTheFirstOfElevenUnapprovedQueuedGoals(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	goals := make([]*goal.GoalFile, 0, 11)
+	for i := 1; i <= 11; i++ {
+		f := reportGoal(fmt.Sprintf("feature-%02d", i), "Build the feature.", goal.StateQueued, "", now)
+		f.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
+		goals = append(goals, f)
+	}
+	root := reportLedger(t, goals...)
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	want := strings.Join([]string{
+		"fleet-one status 2026-09-04 12:00Z",
+		"Needs you: feature 01 — your word to start it (next in line)",
+	}, "\n")
+	if text != want || strings.Count(text, "Needs you:") != 1 {
+		t.Fatalf("eleven queued goals did not produce one decision\n--- got ---\n%s\n--- want ---\n%s", text, want)
+	}
+}
+
+func TestReportDoesNotRequestApprovalWhenFirstBudgetedGoalIsApproved(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	approved := reportGoal("alpha-approved", "Start approved work.", goal.StateApproved, "", now)
+	waiting := reportGoal("beta-waiting", "Wait for approval.", goal.StateQueued, "", now)
+	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
+	root := reportLedger(t, approved, waiting)
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	if strings.Contains(text, "Needs you:") || !strings.Contains(text, "Next up: alpha approved") {
+		t.Fatalf("an approved first goal should need no approval:\n%s", text)
 	}
 }
 
@@ -288,6 +319,31 @@ func TestReportCapsAllOutputAtTwelveLines(t *testing.T) {
 	lines := strings.Split(text, "\n")
 	if len(lines) != 12 || !strings.HasPrefix(lines[len(lines)-1], "Undelivered: 2 channel messages") {
 		t.Fatalf("line count=%d, last=%q\n%s", len(lines), lines[len(lines)-1], text)
+	}
+}
+
+func TestReportCapTrimsNextUpBeforeNeedsYou(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	goals := []*goal.GoalFile{
+		reportGoal("next-alpha", "Do alpha next.", goal.StateApproved, "fleet-one", now),
+		reportGoal("next-beta", "Do beta next.", goal.StateApproved, "fleet-one", now),
+	}
+	for i := 0; i < 11; i++ {
+		goals = append(goals, reportGoal(fmt.Sprintf("delivered-%02d", i), "Deliver work.", goal.StateApproved, "other-machine", now))
+	}
+	root := reportLedger(t, goals...)
+	if err := writeJSON(questionPath(root, "decision"), Question{ID: "decision", Goal: "launch-choice", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 11; i++ {
+		reportGit(t, root, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("Ship delivered %02d\n\nGoal-Item: delivered-%02d", i, i))
+	}
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour)})
+	lines := strings.Split(text, "\n")
+	if len(lines) != 12 || !strings.Contains(text, "Needs you: launch choice — Choose the launch colour.") || strings.Contains(text, "Next up:") {
+		t.Fatalf("the cap did not preserve the decision while trimming Next up first:\n%s", text)
 	}
 }
 
