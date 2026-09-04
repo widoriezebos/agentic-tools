@@ -62,10 +62,15 @@ Use `accepted` or `refuted` for material findings; a TRUE finding outside the br
 When a design chain exited through fixtures-as-arbiter (see the design-critique skill), this code critique is MANDATORY and the named fixture obligations are part of its findings surface: an unimplemented or failing named fixture is a material finding.
 
 Part One stores the review-round member in the goal's tier box: zero rounds
-for Tier 1, two for Tier 2, and three for Tier 3. Mechanical accounting is
-PENDING in Part Two under design point STR2-ROUND-ACCOUNTING-05: dispatch will
-freeze that boundary on the critic chain, count rounds spent against it, and
-make exhaustion open no fresh budget. Start every chain from
+for Tier 1, two for Tier 2, and three for Tier 3, and the tier itself derives
+from the goal's four risk answers (severity, novelty, exposure, accumulation),
+never from the shape of the change. Part Two accounts mechanically (design
+point STR2-ROUND-ACCOUNTING-05): dispatch freezes that member on the critic
+chain root (a goal-free root reads `metasystem.budget.review-round-max`
+alone), counts each follow-up round against it, refuses the round past it,
+and exhaustion opens no fresh budget. A chain root under accumulation 2 or
+higher carries `gateWidth: full` and lands only with the full battery
+receipt. Start every chain from
 `scripts/agents/templates/review-brief.md` — round budget, threat model,
 appetite, and scope declared BEFORE round one; a true finding outside the
 declared threat model closes as out-of-scope citing the brief. Record the
@@ -77,12 +82,14 @@ goal's budget in the brief before review:
 
 As the reviewer's R-60-m1 rule, stop at the first round with zero material findings.
 
-Only a finding that changes what gets built can keep the chain open and,
-PENDING Part Two from design revision 3, it must name the artifact it would
-change; that pending machinery demotes a finding that fails the artifact test.
-If material findings remain, do not certify the change. Only an approved token
-raising the goal's five-member tuple can raise its stored review-round member,
-never above the three-round ceiling. PENDING Part Two from design revision 3, `job
-critique-close` sends exhausted bounded findings to review obligations and
-closes after accepted risk; until the accounting and close exist, stop with the
-work waiting on the human. Never dispatch a silent fourth round.
+Only a finding that changes what gets built can keep the chain open, and it
+must name the artifact it would change; a finding that fails the artifact
+test is demoted at registration. If material findings remain, do not certify
+the change. Only an approved token raising the goal's five-member tuple can
+raise its stored review-round member, never above the three-round ceiling;
+`job critique-budget-rebind` copies the raised member onto an open root. When
+the rounds are spent, `job critique-register-close` sends exhausted bounded
+findings to review obligations on the goal (discharged later by `goal
+discharge-review-obligation`) and closes after a human records `goal
+accept-risk` for the rest; while a severe or unproven finding stands, stop
+with the work waiting on the human. Never dispatch a silent fourth round.
