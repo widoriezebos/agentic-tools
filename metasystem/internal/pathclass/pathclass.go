@@ -55,6 +55,7 @@ type Manifest struct {
 	install []row
 	repo    []row
 	owners  map[string]string
+	Floors  map[string]bool
 }
 
 // Resolution carries both the answer and the manifest evidence used to reach
@@ -78,7 +79,7 @@ func Load(installationRoot string) (*Manifest, error) {
 
 // Parse validates and parses one complete manifest.
 func Parse(data []byte) (*Manifest, error) {
-	manifest := &Manifest{owners: make(map[string]string)}
+	manifest := &Manifest{owners: make(map[string]string), Floors: make(map[string]bool)}
 	seen := map[Namespace]map[string]bool{Install: {}, Repo: {}}
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for lineNumber := 1; scanner.Scan(); lineNumber++ {
@@ -125,6 +126,17 @@ func Parse(data []byte) (*Manifest, error) {
 				return nil, fmt.Errorf("path class manifest line %d duplicates own:%s", lineNumber, key)
 			}
 			manifest.owners[key] = fields[1]
+		case "floor":
+			if err := validPath(key, true); err != nil {
+				return nil, fmt.Errorf("path class manifest line %d: %w", lineNumber, err)
+			}
+			if fields[1] != "tier-1-refused" {
+				return nil, fmt.Errorf("path class manifest line %d has unknown floor rule %q", lineNumber, fields[1])
+			}
+			if manifest.Floors[key] {
+				return nil, fmt.Errorf("path class manifest line %d duplicates floor:%s", lineNumber, key)
+			}
+			manifest.Floors[key] = true
 		default:
 			return nil, fmt.Errorf("path class manifest line %d has unknown row kind %q", lineNumber, kind)
 		}
@@ -234,6 +246,18 @@ func (m *Manifest) ResolveRepositoryPath(mode Mode, ownership stateroot.Ownershi
 func (m *Manifest) GoalOwner(key string) (string, bool) {
 	goal, ok := m.owners[cleanKey(key)]
 	return goal, ok
+}
+
+// TierOneRefused reports whether an installation-relative path is protected
+// by the tier-1 floor. Directory rows protect every descendant.
+func (m *Manifest) TierOneRefused(key string) bool {
+	key = cleanKey(key)
+	for floor := range m.Floors {
+		if rowMatches(floor, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func cleanKey(key string) string {

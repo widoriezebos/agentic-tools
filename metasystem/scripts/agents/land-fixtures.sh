@@ -27,8 +27,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (4 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan goal
+  run_fixture_bed_scenarios land "land fixtures passed (5 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -59,12 +59,30 @@ nonce=$("$root/bin/metasystem" util token-hex --bytes 16)
   --path "$token" --pid $$ --start "$started" --nonce "$nonce"
 trap 'rm -f -- "$token"' EXIT
 goal=
+direct_fix=
+root_job=
+test_receipt=
 commit_args=()
 while (( $# )); do
   case "$1" in
     --goal)
       [[ $# -ge 2 && -z "$goal" ]] || exit 2
       goal=$2
+      shift 2
+      ;;
+    --direct-fix)
+      [[ $# -ge 2 && -z "$direct_fix" ]] || exit 2
+      direct_fix=$2
+      shift 2
+      ;;
+    --root-job)
+      [[ $# -ge 2 && -z "$root_job" ]] || exit 2
+      root_job=$2
+      shift 2
+      ;;
+    --test-receipt)
+      [[ $# -ge 2 && -z "$test_receipt" ]] || exit 2
+      test_receipt=$2
       shift 2
       ;;
     *)
@@ -75,6 +93,11 @@ while (( $# )); do
 done
 if [[ -n "${LAND_FIXTURE_GOAL_LOG:-}" ]]; then
   printf '%s\n' "$goal" >"$LAND_FIXTURE_GOAL_LOG"
+fi
+if [[ -n "${LAND_FIXTURE_TIER_ONE_LOG:-}" ]]; then
+  printf 'directFix=%s\nrootJob=%s\ntestReceipt=%s\n' \
+    "$direct_fix" "$root_job" "$test_receipt" >"$LAND_FIXTURE_TIER_ONE_LOG"
+  [[ -f "$test_receipt" ]] || exit 82
 fi
 git commit "${commit_args[@]}"
 git show --no-renames --numstat -z --format= HEAD \
@@ -310,4 +333,39 @@ printf 'fixture forwards a goal item\n' >"$goal_message"
 [[ $(<"$goal_log") == fx ]] \
   || { echo "land goal fixture: the commit boundary did not receive goal fx" >&2; exit 1; }
 echo "land goal fixture passed"
+fi
+
+# 5. Tier 1 runs the declared command against the staged candidate before the
+# commit boundary, then carries the root job and exact receipt path together.
+if [[ "$fixture_scenario" == tier-one ]]; then
+make_leg tier-one
+tier_one_log=$leg_root/tier-one.log
+tier_one_message=$leg_root/message.txt
+tier_one_output=$leg_root/land.out
+printf 'tier-one landing\n' >"$leg_local/payload.txt"
+printf 'fixture creates a tree-bound tier-one receipt\n' >"$tier_one_message"
+(
+  cd "$leg_local"
+  LAND_FIXTURE_TIER_ONE_LOG="$tier_one_log" \
+    bash scripts/agents/land.sh -m "$tier_one_message" --goal fx \
+      --direct-fix tier-1 --root-job tier-one-root \
+      --tests "test \"\$(cat payload.txt)\" = tier-one\\ landing" \
+      --skip-transport payload.txt
+) >"$tier_one_output" 2>&1 || {
+  echo "land tier-one fixture: receipt creation or forwarding failed" >&2
+  sed -n '1,180p' "$tier_one_output" >&2
+  exit 1
+}
+grep -Fxq 'directFix=tier-1' "$tier_one_log"
+grep -Fxq 'rootJob=tier-one-root' "$tier_one_log"
+tier_one_receipt=$(sed -n 's/^testReceipt=//p' "$tier_one_log")
+[[ -f "$tier_one_receipt" ]] \
+  || { echo "land tier-one fixture: forwarded receipt does not exist" >&2; exit 1; }
+tier_one_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
+[[ $("$source_engine" json get --file "$tier_one_receipt" --field tree) == "$tier_one_tree" ]]
+[[ $("$source_engine" json get --file "$tier_one_receipt" --field exitStatus) == 0 ]]
+for binding_field in indexTreeBefore worktreeTreeBefore indexTreeAfter worktreeTreeAfter; do
+  [[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_tree" ]]
+done
+echo "land tier-one fixture passed"
 fi

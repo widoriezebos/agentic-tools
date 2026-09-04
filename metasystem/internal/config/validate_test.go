@@ -223,6 +223,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 	}{
 		{"unit suffix", "exec.local-timeout-sec=300s\n", "exec.local-timeout-sec must be a positive integer"},
 		{"zero bound", "exec.network-timeout-sec=0\n", "exec.network-timeout-sec must be a positive integer"},
+		{"zero receipt bound", "landing.receipt-bound-min=0\n", "landing.receipt-bound-min must be a positive integer"},
 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
 		{"zero counselor cadence", "metasystem.counselor.brief-cadence-hours=0\n", "metasystem.counselor.brief-cadence-hours must be a positive integer"},
 		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
@@ -245,7 +246,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\n"
+	good := validConf + "exec.local-timeout-sec=120\nlanding.receipt-bound-min=40\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
 	}

@@ -42,6 +42,8 @@ landing_direct_fix=
 landing_revert_of=
 landing_goal=
 landing_goal_set=0
+landing_root_job=
+landing_test_receipt=
 commit_args=()
 while (( $# )); do
   case "$1" in
@@ -84,6 +86,22 @@ while (( $# )); do
       }
       landing_goal=$2
       landing_goal_set=1
+      shift 2
+      ;;
+    --root-job)
+      [[ $# -ge 2 && -z "$landing_root_job" ]] || {
+        echo "commit refused: --root-job requires one root implementer job" >&2
+        exit 2
+      }
+      landing_root_job=$2
+      shift 2
+      ;;
+    --test-receipt)
+      [[ $# -ge 2 && -z "$landing_test_receipt" ]] || {
+        echo "commit refused: --test-receipt requires one receipt path" >&2
+        exit 2
+      }
+      landing_test_receipt=$2
       shift 2
       ;;
     --)
@@ -400,6 +418,8 @@ landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
 [[ -z "$landing_direct_fix" ]] || landing_observe_args+=(--direct-fix "$landing_direct_fix")
 [[ -z "$landing_revert_of" ]] || landing_observe_args+=(--revert-of "$landing_revert_of")
 [[ -z "$landing_goal" ]] || landing_observe_args+=(--goal "$landing_goal")
+[[ -z "$landing_root_job" ]] || landing_observe_args+=(--root-job "$landing_root_job")
+[[ -z "$landing_test_receipt" ]] || landing_observe_args+=(--test-receipt "$landing_test_receipt")
 landing_observe_args+=(--actor "$landing_actor")
 landing_provenance="none change=unknown"
 landing_verdict="would-refuse code=evaluator-unavailable"

@@ -57,3 +57,21 @@ repo:development/devin-selftest.md behavior
 repo:development/ record
 
 # Ownership rows are exact files beneath install:plans/ and are initially empty.
+
+# Tier-1 protected paths. These rows do not change the four path classes.
+floor:internal/goal/ tier-1-refused
+floor:internal/goalbudget/ tier-1-refused
+floor:internal/humanauthority/ tier-1-refused
+floor:internal/dispatch/ tier-1-refused
+floor:internal/landing/ tier-1-refused
+floor:internal/validate/ tier-1-refused
+floor:internal/critique/ tier-1-refused
+floor:internal/returnschema/ tier-1-refused
+floor:internal/config/ tier-1-refused
+floor:scripts/agents/dispatch.sh tier-1-refused
+floor:scripts/agents/commit.sh tier-1-refused
+floor:scripts/agents/land.sh tier-1-refused
+floor:scripts/agents/schemas/ tier-1-refused
+floor:scripts/agents/path-classes.txt tier-1-refused
+floor:scripts/agents/landing-classes.json tier-1-refused
+floor:metasystem.conf tier-1-refused
