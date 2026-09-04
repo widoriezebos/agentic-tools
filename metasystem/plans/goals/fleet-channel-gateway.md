@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: INTENT: one bot, one git inbox, FIRST COME FIRST SERVED - no leases (Wido 2026-09-03). THE RULE, every provider: receive -> commit to the shared git inbox -> confirm. First commit wins; others find it committed (idempotent by provider message id) and skip; git's push race is the arbiter. Telegram: all machines poll getUpdates WITHOUT an offset; confirm the offset ONLY after the commit is durable (unconfirmed drops after ~24h, harmless once committed). Slack: delivers each event to one connected machine, which commits; same rule. Email (future): shared IMAP mailbox, first commit wins, mark-seen/move ONLY after commit. A receiver that dies before committing confirmed nothing, so the message is redelivered. REQUEST VOLUME (Wido's last concern): LONG-POLL - one open getUpdates per machine with a 30-50s timeout, answered instantly on arrival, idle otherwise; a bounded base interval with JITTER so machines never poll in lockstep; ~1-2 requests/min/machine, trivial for Telegram (no published getUpdates limit; long-polling is its intended pattern). Slack is push (no polling), email uses IMAP IDLE. NO adaptive leader or back-off scheme - that would reinvent the lease. Posting: any machine posts directly, N destinations in parallel under a per-message-class routing policy; first valid answer wins per ask id. Identity check (per-provider user id + shared TOTP) on the committing machine. FREEDOMS: inbox format/location. Tier 3 ladder. Companion: answer-archive. Budget Wido's word at approval. MATCHING (m3, 2026-09-04): an inbound message with no Telegram thread (Wido answered without long-press Reply) is filed unmatched and its code is never verified, even when exactly one question is open; three answers were lost this way on 2026-09-04 (11:32Z, 12:02Z, 12:07Z; internal/channel/poll.go byThread lookup). The inbox rule: while exactly one question is open on the destination, an unthreaded message from the enrolled human matches it; with several open, an unthreaded message is answered with a list of the open asks to reply to.; ASKED TVA8D443S7YMJZNYF0GFJ7P4NN (reserved-decision): Your priority R-76: a properly working channel before the central brain. This goal is the settled design (one bot, git inbox, first come first served, long-poll, unthreaded reply matching). The seat answered its four risk questions: severity 3, novelty 2, exposure 3, accumulation 2 (four channel defects found today), which derives tier 3 with the full gate.
 - OpenedAt: 2026-09-03T15:27:54Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T17:13:28Z revision=8 opid=1C00A17RH56BECD02GGGY0YE5P-m3-587cb0f1 authority=relayed digest=8d7c4e7fffb3c54f29d0f8bc01d5a4368208ebb59428f6a646cd0a03db5dcee9 reviewBy=2026-09-06
+- Sliced: machine=m3 lineage=mac-m3 revision=9 at=2026-09-04T17:22:16Z
 - Claimed: machine=m3 lineage=mac-m3 at=2026-09-04T17:14:53Z revision=9 accountingRevision=9
 - StopCapability: generation=9 revision=9 machine=m3 claimEpoch=1 fenceEpoch=0
 
@@ -24,4 +25,5 @@ History:
 - 2026-09-04T15:34:03Z 1QHTFTQQQ4DJXCWWYH9FVR2HGR-m3-a5da21ff ask actor=m3+mac-m3 targets=fleet-channel-gateway
 - 2026-09-04T17:13:28Z 1C00A17RH56BECD02GGGY0YE5P-m3-587cb0f1 approve actor=human:Wido targets=fleet-channel-gateway authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="All approved, also said this on Telegram"
 - 2026-09-04T17:14:53Z 4P6ZXDJD42W5K2V17DAC98N1VH-m3-a5da21ff claim actor=m3+mac-m3 targets=fleet-channel-gateway
-Integrity: sha256=90289f522190528d6c8b70bc69b83351a6d9fb06c360982f167cf604d62a2856
+- 2026-09-04T17:22:16Z M3CPSR9KMWWKNHRQ4GTA3J17S0-m3-a5da21ff slice-start actor=m3+mac-m3 targets=fleet-channel-gateway
+Integrity: sha256=799eeb982fccc6b4b58c003b9b6f95c1f8a3a723bd33f5abe03528a398949b37
