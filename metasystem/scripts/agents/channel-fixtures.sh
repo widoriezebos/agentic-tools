@@ -67,10 +67,9 @@ qid=$("$ms" channel ask --root "$repo" --goal channel-fixture --kind budget-abov
   --elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 \
   --active-job-limit 1 --review-round-limit 3 \
   --recommend approve --wants 'goal=channel-fixture minutes=60 reviewRounds=3 goalRevision=3')
-root_ts=$(python3 - "$fake_dir/journal.jsonl" <<'PY'
+root_ts=$(python3 - "$repo/artifacts/agents/channel/questions/$qid.json" <<'PY'
 import json, sys
-n = sum(1 for line in open(sys.argv[1]) if json.loads(line)['method'] == 'chat.postMessage')
-print(f"{1000000+n}.000000")
+print(json.load(open(sys.argv[1]))['thread']['id'])
 PY
 )
 printf '{"thread_ts":"%s","user":"UWIDO","text":"approve"}\n' "$root_ts" >>"$fake_dir/replies.jsonl"
@@ -82,7 +81,12 @@ printf '{"thread_ts":"%s","user":"UWIDO","text":"approve %s"}\n' "$root_ts" "$co
 "$ms" channel poll --root "$repo" >"$bed/poll.out"
 tip=$(git --git-dir "$bed/origin.git" rev-parse refs/heads/main)
 history=$(git --git-dir "$bed/origin.git" show "$tip:metasystem/plans/goals/channel-fixture.md")
-grep -q 'answer actor=human:wido' <<<"$history"
+if ! grep -q 'answer actor=human:wido.*authorityOutcome=AUTHENTICATED_CHANNEL_WORD' <<<"$history" ||
+   ! grep -q 'approve actor=human:UWIDO.*authorityOutcome=VERIFIED_CHANNEL_ANSWER' <<<"$history"; then
+	printf '%s\n' "$history" >&2
+	echo "channel fixtures: Slack history did not record the authenticated answer and verified channel approval" >&2
+	exit 1
+fi
 grep -q 'recorded as your word' "$fake_dir/journal.jsonl"
 opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history")
 [[ -n "$opid" ]]
@@ -133,7 +137,12 @@ printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"approve %s"}\n' "$t
 "$ms" channel poll --root "$repo" >"$bed/telegram-poll.out"
 telegram_tip=$(git --git-dir "$bed/origin.git" rev-parse refs/heads/main)
 telegram_history=$(git --git-dir "$bed/origin.git" show "$telegram_tip:metasystem/plans/goals/channel-telegram-fixture.md")
-grep -q 'answer actor=human:wido' <<<"$telegram_history"
+if ! grep -q 'answer actor=human:wido.*authorityOutcome=AUTHENTICATED_CHANNEL_WORD' <<<"$telegram_history" ||
+   ! grep -q 'approve actor=human:7001.*authorityOutcome=VERIFIED_CHANNEL_ANSWER' <<<"$telegram_history"; then
+	printf '%s\n' "$telegram_history" >&2
+	echo "channel fixtures: Telegram history did not record the authenticated answer and verified channel approval" >&2
+	exit 1
+fi
 grep -q 'recorded as your word on channel telegram fixture' "$fake_dir/journal.jsonl"
 telegram_opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$telegram_history")
 [[ -n "$telegram_opid" ]]
