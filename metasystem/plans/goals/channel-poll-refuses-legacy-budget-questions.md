@@ -5,13 +5,14 @@
 - Tier: 2
 - Intent: Since the budget-answer landing (3615da7a), internal/channel/question.go validates that every budget-above-norm question carries a complete five-limit budget, and it does so when loading the question records, so channel poll on m2 fails at once with 'a budget-above-norm question requires a complete proposed budget tuple' because two closed questions from earlier on 2026-09-04 predate the tuple. The fleet channel is unread until this is fixed. DONE means the tuple is required only when a question is opened; loading tolerates a budget question without one (closed or open; it simply cannot raise a box), and a test pins that a legacy record loads.
 - Origin: main
-- Next step: One validation moved and one test: build, go test ./internal/channel/..., land through a chain. First in line because the channel is unread.
+- Next step: One validation moved and one test: build, go test ./internal/channel/..., land through a chain. First in line because the channel is unread. NOTE m3 2026-09-04 19:35: m3 hit the same refusal after rebuilding to 09678719, so no machine reads Telegram now; m3's bridge message to m2 was held for approval. m3 offers to take this the moment its design critique on fleet-channel-gateway returns (~20:05) unless m2 claims it first; the goal still needs Wido's approval (tier 2), which m3 will relay if he types it at the m3 terminal.
 - OpenedAt: 2026-09-04T16:40:08Z
-- Revision: 1
+- Revision: 2
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-04T16:40:08Z J7JRA4V33FTVHSYMBSF4J5N6W1-m2-5fcf08ab open actor=human:Wido targets=channel-poll-refuses-legacy-budget-questions
-Integrity: sha256=bf436fb1b63e39bd7f5812aa640bb922df8e7ba1f5ee9b5f5a69d716d16880a4
+- 2026-09-04T17:23:08Z 3JWPPZ4PDD9FRTSWF7JSFZYA4F-m3-a5da21ff edit actor=m3+mac-m3 targets=channel-poll-refuses-legacy-budget-questions
+Integrity: sha256=74b32b40bcbbd65eb822f303c98cb9210448e58075ab52ef12c23ba3f76aa8f9
