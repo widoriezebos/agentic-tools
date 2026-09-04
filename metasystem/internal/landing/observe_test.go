@@ -3,6 +3,7 @@ package landing
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,7 +60,7 @@ func newObserveFixtureAt(t *testing.T, repository, root string) *observeFixture 
 		}
 		f.writeBytes(filepath.Join("scripts", "agents", policyFile), content)
 	}
-	f.write("memory/rulings.md", "| R-1 | existing ruling |\n| R-35-m0 | landing class authority |\n")
+	f.write("memory/rulings.md", "| R-1 | existing ruling |\n| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n")
 	f.write("memory/receipts.log", "receipt=existing\n")
 	f.write("records/narrator-digest.log", "digest=existing\n")
 	f.git("add", ".")
@@ -148,9 +149,13 @@ func (f *observeFixture) writeBytes(relative string, content []byte) {
 }
 
 func (f *observeFixture) writeHeldGoal(id, machine, lineage string) {
+	f.writeHeldGoalWithTier(id, machine, lineage, 0)
+}
+
+func (f *observeFixture) writeHeldGoalWithTier(id, machine, lineage string, tier uint8) {
 	f.t.Helper()
 	f.writeBytes(filepath.Join("plans", "goals", id+".md"), goal.RenderFile(&goal.GoalFile{
-		Id: id, State: goal.StateClaimed, Intent: "Fixture ownership.", Origin: goal.OriginMain,
+		Id: id, State: goal.StateClaimed, Tier: tier, Intent: "Fixture ownership.", Origin: goal.OriginMain,
 		NextStep: "Exercise record carriage.", OpenedAt: "2026-09-03T08:00:00Z", Revision: 1,
 		Claimed: &goal.ClaimRecord{Machine: machine, Lineage: lineage, At: "2026-09-03T08:01:00Z", Revision: 1},
 		History: []goal.HistoryLine{{
@@ -158,6 +163,45 @@ func (f *observeFixture) writeHeldGoal(id, machine, lineage string) {
 			Verb: "claim", Actor: machine + "+" + lineage, Targets: []string{id}, Keep: -1,
 		}},
 	}))
+}
+
+func (f *observeFixture) prepareTierOne(gateWidth string) string {
+	f.t.Helper()
+	f.writeHeldGoalWithTier("tier-one", "m9", "L1", 1)
+	f.git("add", ".")
+	f.git("commit", "-qm", "prepare tier-one goal")
+	record := map[string]any{
+		"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
+		"goalId": "tier-one", "goalTier": 1,
+	}
+	if gateWidth != "" {
+		record["gateWidth"] = gateWidth
+	}
+	f.writeChainRecord("tier-one-root", record)
+	return "tier-one-root"
+}
+
+func (f *observeFixture) tierOneReceipt(command string) (string, string) {
+	f.t.Helper()
+	candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	receipt, err := CreateTestReceipt(f.root, candidate, command, io.Discard, io.Discard)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if receipt.Tree != candidate {
+		f.t.Fatalf("receipt tree %s does not equal candidate %s", receipt.Tree, candidate)
+	}
+	return candidate, TestReceiptPath(f.root, candidate)
+}
+
+func tierOneParams(f *observeFixture, candidate, receipt string) ObserveParams {
+	return ObserveParams{
+		RepoRoot: f.root, CandidateTree: candidate, DirectFix: "tier-1",
+		Goal: "tier-one", Actor: "m9+L1", RootJob: "tier-one-root", TestReceipt: receipt,
+	}
 }
 
 func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
@@ -560,6 +604,204 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 			t.Fatalf("promotion record self-change classified as %+v", got)
 		}
 	})
+}
+
+func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
+	t.Run("lawful area landing with absent gateWidth", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("")
+		f.write("docs/constant.txt", "one changed line\n")
+		f.git("add", "docs/constant.txt")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "tier-1" {
+			t.Fatalf("lawful tier-1 landing classified as %+v", got)
+		}
+	})
+
+	t.Run("protected floor", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.write("internal/goal/constant.txt", "protected\n")
+		f.git("add", "internal/goal/constant.txt")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Bar != BarRefusal || got.Code != "tier1-floor-refused" || got.Mode != "refuse" {
+			t.Fatalf("tier-1 floor landing classified as %+v", got)
+		}
+	})
+
+	t.Run("foreign tree receipt", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.write("docs/first.txt", "first\n")
+		f.git("add", "docs/first.txt")
+		_, receipt := f.tierOneReceipt("true")
+		f.write("docs/second.txt", "second\n")
+		f.git("add", "docs/second.txt")
+		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Bar != BarRefusal || got.Code != "tier1-receipt-refused" || got.Mode != "refuse" {
+			t.Fatalf("foreign-tree receipt classified as %+v", got)
+		}
+	})
+
+	t.Run("forty-one changed lines", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.write("docs/large.txt", strings.Repeat("changed\n", 41))
+		f.git("add", "docs/large.txt")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Bar != BarRefusal || got.Code != "tier1-line-bound-refused" {
+			t.Fatalf("forty-one changed lines classified as %+v", got)
+		}
+	})
+
+	t.Run("four changed files", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		for _, name := range []string{"one", "two", "three", "four"} {
+			f.write("docs/"+name+".txt", name+"\n")
+		}
+		f.git("add", "docs")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Bar != BarRefusal || got.Code != "tier1-file-bound-refused" {
+			t.Fatalf("four changed files classified as %+v", got)
+		}
+	})
+
+	t.Run("missing receipt", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.write("docs/constant.txt", "change\n")
+		f.git("add", "docs/constant.txt")
+		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		params := tierOneParams(f, candidate, "")
+		got := Observe(params)
+		if got.Bar != BarRefusal || got.Code != "tier1-declaration-refused" || got.Mode != "refuse" {
+			t.Fatalf("missing tier-1 receipt classified as %+v", got)
+		}
+	})
+
+	for name, mutate := range map[string]func(map[string]any){
+		"wrong goal":      func(record map[string]any) { record["goalId"] = "other" },
+		"wrong tier":      func(record map[string]any) { record["goalTier"] = 2 },
+		"unknown width":   func(record map[string]any) { record["gateWidth"] = "wide" },
+		"non-root record": func(record map[string]any) { record["parentJob"] = "parent" },
+	} {
+		t.Run(name+" root", func(t *testing.T) {
+			f := newObserveFixture(t)
+			f.prepareTierOne("area")
+			record := map[string]any{
+				"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
+				"goalId": "tier-one", "goalTier": 1, "gateWidth": "area",
+			}
+			mutate(record)
+			f.writeChainRecord("tier-one-root", record)
+			f.write("docs/constant.txt", "change\n")
+			f.git("add", "docs/constant.txt")
+			candidate, receipt := f.tierOneReceipt("true")
+			got := Observe(tierOneParams(f, candidate, receipt))
+			if got.Code != "tier1-root-refused" || got.Mode != "refuse" {
+				t.Fatalf("invalid tier-1 root classified as %+v", got)
+			}
+		})
+	}
+}
+
+func TestObserveTierOneRefusesForbiddenDiffShapes(t *testing.T) {
+	t.Run("binary", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.writeBytes("docs/binary.dat", []byte{'a', 0, 'b'})
+		f.git("add", "docs/binary.dat")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
+			t.Fatalf("binary change classified as %+v", got)
+		}
+	})
+
+	t.Run("rename", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write("docs/old.txt", "unchanged content\n")
+		f.prepareTierOne("area")
+		f.git("mv", "docs/old.txt", "docs/new.txt")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
+			t.Fatalf("rename classified as %+v", got)
+		}
+	})
+
+	t.Run("mode only", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write("docs/mode.txt", "same content\n")
+		f.prepareTierOne("area")
+		if err := os.Chmod(filepath.Join(f.root, "docs", "mode.txt"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f.git("add", "docs/mode.txt")
+		candidate, receipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, receipt))
+		if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
+			t.Fatalf("mode-only change classified as %+v", got)
+		}
+	})
+}
+
+func TestObserveTierOneFullGateRequiresExactCommand(t *testing.T) {
+	f := newObserveFixture(t)
+	for _, script := range []string{"go-gate.sh", "dispatch-fixtures.sh", "goal-cli-fixtures.sh"} {
+		f.write("scripts/agents/"+script, "#!/usr/bin/env bash\nexit 0\n")
+		if err := os.Chmod(filepath.Join(f.root, "scripts", "agents", script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.prepareTierOne("full")
+	f.write("docs/constant.txt", "change\n")
+	f.git("add", "docs/constant.txt")
+	candidate, receipt := f.tierOneReceipt("true")
+	got := Observe(tierOneParams(f, candidate, receipt))
+	if got.Code != "tier1-full-gate-refused" || got.Mode != "refuse" {
+		t.Fatalf("area command under a full gate classified as %+v", got)
+	}
+
+	candidate, receipt = f.tierOneReceipt(fullBatteryCommand)
+	got = Observe(tierOneParams(f, candidate, receipt))
+	if got.Bar != BarDirectFix || got.Code != "tier-1" || got.Verdict != "pass" {
+		t.Fatalf("exact full-battery receipt classified as %+v", got)
+	}
+}
+
+func TestTierOneClassCutoverAcceptsTheTwoClassLandingBase(t *testing.T) {
+	f := newObserveFixture(t)
+	f.write("scripts/agents/landing-classes.json", `{
+  "schemaVersion": 1,
+  "enginePolicyVersion": 1,
+  "classes": [
+    {"id":"register-carriage","pathRule":"path-class-record","requiredFields":[],"authorizedBy":"R-35-m0"},
+    {"id":"exact-revert","pathRule":"tree-shaped-exact-inverse","requiredFields":["revert-of"],"authorizedBy":"R-35-m0"}
+  ]
+}
+`)
+	f.git("add", "scripts/agents/landing-classes.json")
+	f.git("commit", "-qm", "legacy two-class landing base")
+	f.write("memory/receipts.log", "receipt=existing\nreceipt=cutover\n")
+	got := Observe(ObserveParams{
+		RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage",
+	})
+	if got.Bar != BarDirectFix || got.Code != "register-carriage" {
+		t.Fatalf("new evaluator could not land from the previous two-class base: %+v", got)
+	}
 }
 
 func TestSliceOneRetainsHandoffCarriage(t *testing.T) {
@@ -998,6 +1240,8 @@ func TestObserveVerdictSurvivesLanding(t *testing.T) {
 	}
 	for _, required := range []string{
 		`landing observe --root "$root" --tree "$landing_tree"`,
+		`--root-job "$landing_root_job"`,
+		`--test-receipt "$landing_test_receipt"`,
 		`--trailer "Landing-Provenance: $landing_provenance"`,
 		`--trailer "Landing-Provenance-Verdict: $landing_verdict"`,
 	} {
@@ -1005,7 +1249,7 @@ func TestObserveVerdictSurvivesLanding(t *testing.T) {
 			t.Fatalf("commit chokepoint lost %q", required)
 		}
 	}
-	for _, required := range []string{"--chain", "--direct-fix", "--revert-of"} {
+	for _, required := range []string{"--chain", "--direct-fix", "--revert-of", "--root-job", "--tests", "landing test-receipt"} {
 		if !strings.Contains(string(landDriver), required) {
 			t.Fatalf("landing driver does not carry %s", required)
 		}

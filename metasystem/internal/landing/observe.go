@@ -46,6 +46,8 @@ type ObserveParams struct {
 	RevertOf      string
 	Goal          string
 	Actor         string
+	RootJob       string
+	TestReceipt   string
 }
 
 // Observation is safe to put directly in a commit trailer. The values never
@@ -87,6 +89,12 @@ func observe(params ObserveParams) Observation {
 		return wouldRefuse("missing-declaration", "none change="+change)
 	}
 	if params.Chain != "" && params.DirectFix != "" && params.DirectFix != "register-carriage" {
+		return wouldRefuse("conflicting-declarations", "invalid change="+change)
+	}
+	if params.DirectFix == "tier-1" && (params.RootJob == "" || params.Goal == "" || params.TestReceipt == "") {
+		return refuse("tier1-declaration-refused", "invalid change="+change)
+	}
+	if params.DirectFix != "tier-1" && (params.RootJob != "" || params.TestReceipt != "") {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
 	if params.Chain != "" {
@@ -484,10 +492,13 @@ type landingClassManifest struct {
 	SchemaVersion       int `json:"schemaVersion"`
 	EnginePolicyVersion int `json:"enginePolicyVersion"`
 	Classes             []struct {
-		ID             string   `json:"id"`
-		PathRule       string   `json:"pathRule"`
-		RequiredFields []string `json:"requiredFields"`
-		AuthorizedBy   string   `json:"authorizedBy"`
+		ID                 string   `json:"id"`
+		PathRule           string   `json:"pathRule"`
+		RequiredFields     []string `json:"requiredFields"`
+		AuthorizedBy       string   `json:"authorizedBy"`
+		MaxFiles           int      `json:"maxFiles,omitempty"`
+		MaxChangedLines    int      `json:"maxChangedLines,omitempty"`
+		FullBatteryCommand string   `json:"fullBatteryCommand,omitempty"`
 	} `json:"classes"`
 }
 
@@ -724,8 +735,9 @@ func longestGoalOwner(workspace gittree.Workspace, baseTree, changedPath string)
 	return longest, nil
 }
 
-func loadPathClasses(workspace gittree.Workspace, baseTree string) (*pathclass.Manifest, error) {
-	if err := loadLandingClasses(workspace, baseTree); err != nil {
+func loadPathClasses(workspace gittree.Workspace, baseTree string, requireTierOne ...bool) (*pathclass.Manifest, error) {
+	tierOneRequired := len(requireTierOne) > 0 && requireTierOne[0]
+	if err := loadLandingClasses(workspace, baseTree, tierOneRequired); err != nil {
 		return nil, err
 	}
 	manifestBytes, present, err := workspace.FileAt(baseTree, pathclass.ManifestPath)
@@ -739,14 +751,14 @@ func loadPathClasses(workspace gittree.Workspace, baseTree string) (*pathclass.M
 	return manifest, nil
 }
 
-func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
+func loadLandingClasses(workspace gittree.Workspace, baseTree string, requireTierOne bool) error {
 	manifestBytes, present, err := workspace.FileAt(baseTree, "scripts/agents/landing-classes.json")
 	if err != nil || !present {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is unreadable")}
 	}
 	var manifest landingClassManifest
 	if json.Unmarshal(manifestBytes, &manifest) != nil || manifest.SchemaVersion != 1 ||
-		manifest.EnginePolicyVersion != 1 || len(manifest.Classes) != 2 {
+		manifest.EnginePolicyVersion != 1 || (len(manifest.Classes) != 2 && len(manifest.Classes) != 3) {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is malformed")}
 	}
 	rulings, present, err := workspace.FileAt(baseTree, "memory/rulings.md")
@@ -761,19 +773,27 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string) error {
 		}
 		switch class.ID {
 		case "register-carriage":
-			if class.PathRule != "path-class-record" || len(class.RequiredFields) != 0 {
+			if class.PathRule != "path-class-record" || len(class.RequiredFields) != 0 ||
+				class.MaxFiles != 0 || class.MaxChangedLines != 0 || class.FullBatteryCommand != "" {
 				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong carriage rule")}
 			}
 		case "exact-revert":
-			if class.PathRule != "tree-shaped-exact-inverse" || !reflect.DeepEqual(class.RequiredFields, []string{"revert-of"}) {
+			if class.PathRule != "tree-shaped-exact-inverse" || !reflect.DeepEqual(class.RequiredFields, []string{"revert-of"}) ||
+				class.MaxFiles != 0 || class.MaxChangedLines != 0 || class.FullBatteryCommand != "" {
 				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong exact-revert rule")}
+			}
+		case "tier-1":
+			if class.PathRule != "tier-1-bounded" ||
+				!reflect.DeepEqual(class.RequiredFields, []string{"goal", "root-job", "test-receipt"}) ||
+				class.MaxFiles != 3 || class.MaxChangedLines != 40 || class.FullBatteryCommand != fullBatteryCommand {
+				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong tier-1 rule")}
 			}
 		default:
 			return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest contains an unknown class")}
 		}
 		found[class.ID] = true
 	}
-	if !found["register-carriage"] || !found["exact-revert"] {
+	if !found["register-carriage"] || !found["exact-revert"] || (requireTierOne && !found["tier-1"]) {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest omits a compiled class")}
 	}
 	return nil
@@ -895,6 +915,8 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 			return wouldRefuseFromExactRevert(err, provenance)
 		}
 		return pass(BarDirectFix, "exact-revert", provenance)
+	case "tier-1":
+		return observeTierOne(params, change)
 	default:
 		return wouldRefuse("unknown-direct-fix-class", "invalid change="+change)
 	}
@@ -1076,4 +1098,10 @@ func wouldRefuse(code, provenance string) Observation {
 		SchemaVersion: 1, Mode: "observe", Bar: BarRefusal, Verdict: "would-refuse", Code: code,
 		Provenance: provenance, VerdictTrailer: "would-refuse code=" + code,
 	}
+}
+
+func refuse(code, provenance string) Observation {
+	observation := wouldRefuse(code, provenance)
+	observation.Mode = "refuse"
+	return observation
 }

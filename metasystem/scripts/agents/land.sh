@@ -6,11 +6,12 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> --tests <command>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
 cd "$root" || exit $?
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 
 message_source=
 staged_only=0
@@ -22,6 +23,9 @@ landing_direct_fix=
 landing_revert_of=
 landing_goal=
 landing_goal_set=0
+landing_root_job=
+landing_tests=
+landing_test_receipt=
 pathspecs=()
 
 while (( $# )); do
@@ -69,6 +73,16 @@ while (( $# )); do
       landing_goal_set=1
       shift 2
       ;;
+    --root-job)
+      [[ $# -ge 2 && -z "$landing_root_job" ]] || { usage; exit 2; }
+      landing_root_job=$2
+      shift 2
+      ;;
+    --tests)
+      [[ $# -ge 2 && -z "$landing_tests" ]] || { usage; exit 2; }
+      landing_tests=$2
+      shift 2
+      ;;
     --)
       shift
       while (( $# )); do
@@ -95,6 +109,15 @@ if (( staged_only && ${#pathspecs[@]} > 0 )); then
 fi
 if (( ! staged_only && ${#pathspecs[@]} == 0 )); then
   echo "land refused: name pathspecs or choose --staged-only" >&2
+  exit 2
+fi
+if [[ "$landing_direct_fix" == tier-1 ]]; then
+  [[ $landing_goal_set -eq 1 && -n "$landing_goal" && -n "$landing_root_job" && -n "$landing_tests" ]] || {
+    echo "land refused: --direct-fix tier-1 requires --goal, --root-job, and --tests" >&2
+    exit 2
+  }
+elif [[ -n "$landing_root_job" || -n "$landing_tests" ]]; then
+  echo "land refused: --root-job and --tests belong only to --direct-fix tier-1" >&2
   exit 2
 fi
 
@@ -258,7 +281,21 @@ commit_changes() {
   [[ -z "$landing_direct_fix" ]] || arguments=(--direct-fix "$landing_direct_fix" "${arguments[@]}")
   [[ -z "$landing_revert_of" ]] || arguments=(--revert-of "$landing_revert_of" "${arguments[@]}")
   (( landing_goal_set )) && arguments=(--goal "$landing_goal" "${arguments[@]}")
+  [[ -z "$landing_root_job" ]] || arguments=(--root-job "$landing_root_job" "${arguments[@]}")
+  [[ -z "$landing_test_receipt" ]] || arguments=(--test-receipt "$landing_test_receipt" "${arguments[@]}")
   bash "$root/scripts/agents/commit.sh" "${arguments[@]}"
+}
+
+create_test_receipt() {
+  [[ -n "$landing_tests" ]] || return 0
+  local candidate_tree prefix
+  candidate_tree=$(git -C "$root" write-tree) || return $?
+  prefix=$(git -C "$root" rev-parse --show-prefix) || return $?
+  if [[ -n "$prefix" ]]; then
+    candidate_tree=$(git -C "$root" rev-parse "$candidate_tree:${prefix%/}") || return $?
+  fi
+  "$ms" landing test-receipt --root "$root" --tree "$candidate_tree" --command "$landing_tests" || return $?
+  landing_test_receipt="$root/artifacts/agents/landing/receipts/$candidate_tree.json"
 }
 
 require_clean_after_commit() {
@@ -296,6 +333,7 @@ fi
 
 run_required_step "verify checks" verify_checks
 run_required_step "stage caller paths" stage_changes
+run_required_step "tier-1 test receipt" create_test_receipt
 run_required_step "commit" commit_changes
 run_required_step "verify clean after commit" require_clean_after_commit
 run_required_step "fetch origin" fetch_origin

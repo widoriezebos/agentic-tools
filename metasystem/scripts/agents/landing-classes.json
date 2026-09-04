@@ -13,6 +13,15 @@
       "pathRule": "tree-shaped-exact-inverse",
       "requiredFields": ["revert-of"],
       "authorizedBy": "R-35-m0"
+    },
+    {
+      "id": "tier-1",
+      "pathRule": "tier-1-bounded",
+      "requiredFields": ["goal", "root-job", "test-receipt"],
+      "authorizedBy": "R-54-m1",
+      "maxFiles": 3,
+      "maxChangedLines": 40,
+      "fullBatteryCommand": "scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh"
     }
   ]
 }

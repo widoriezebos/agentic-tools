@@ -58,6 +58,25 @@ repo:metasystem record
 	}
 }
 
+func TestTierOneFloorsAreASeparateSet(t *testing.T) {
+	manifest := parseTestManifest(t, `
+install:internal/ behavior
+floor:internal/landing/ tier-1-refused
+floor:metasystem.conf tier-1-refused
+`)
+	for _, key := range []string{"internal/landing", "internal/landing/observe.go", "metasystem.conf"} {
+		if !manifest.TierOneRefused(key) {
+			t.Errorf("TierOneRefused(%q) = false; want true", key)
+		}
+	}
+	if manifest.TierOneRefused("internal/goal/file.go") {
+		t.Fatal("an unrelated behavior path was placed on the tier-1 floor")
+	}
+	if got := manifest.Class("internal/landing/observe.go"); got != Behavior {
+		t.Fatalf("floor row changed the four-class answer to %s", got)
+	}
+}
+
 func TestAdoptedModeAnswersOutside(t *testing.T) {
 	repository := t.TempDir()
 	manifest := parseTestManifest(t, "install:docs/ behavior\n")
@@ -85,6 +104,8 @@ func TestManifestRejectsMalformedLines(t *testing.T) {
 		"ownership directory":     "own:plans/x/ x\n",
 		"ownership outside plans": "own:records/x.md x\n",
 		"invalid goal id":         "own:plans/x.md Bad\n",
+		"unknown floor rule":      "floor:internal/ unsafe\n",
+		"duplicate floor":         "floor:internal/ tier-1-refused\nfloor:internal/ tier-1-refused\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Parse([]byte(content)); err == nil {

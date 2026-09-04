@@ -93,6 +93,7 @@ func families() []family {
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
 				{"observe", "emit a non-refusing provenance verdict for the prospective project tree", runLandingObserve},
+				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 			},
 		},
 		{
