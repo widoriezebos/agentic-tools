@@ -283,9 +283,11 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	waiting := reportGoal("waiting-feature", "Wait for approval.", goal.StateQueued, "", now)
 	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
+	waiting.Pinned = "fleet-one"
+	waiting.Labels = []string{"next"}
 	root := reportLedger(t, waiting)
 	withoutQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
-	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — your word to start it (next in line)") {
+	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — Reply in this thread with this token verbatim, followed by your code: start waiting-feature") {
 		t.Fatalf("approval gap was omitted:\n%s", withoutQuestion)
 	}
 	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}}); err != nil {
@@ -297,7 +299,7 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	}
 }
 
-func TestReportShowsOnlyTheFirstOfElevenUnapprovedQueuedGoals(t *testing.T) {
+func TestReportOmitsApprovalForElevenUnmarkedQueuedGoals(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	goals := make([]*goal.GoalFile, 0, 11)
 	for i := 1; i <= 11; i++ {
@@ -307,12 +309,24 @@ func TestReportShowsOnlyTheFirstOfElevenUnapprovedQueuedGoals(t *testing.T) {
 	}
 	root := reportLedger(t, goals...)
 	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
-	want := strings.Join([]string{
-		"fleet-one status 2026-09-04 12:00Z",
-		"Needs you: feature 01 — your word to start it (next in line)",
-	}, "\n")
-	if text != want || strings.Count(text, "Needs you:") != 1 {
-		t.Fatalf("eleven queued goals did not produce one decision\n--- got ---\n%s\n--- want ---\n%s", text, want)
+	want := "fleet-one status 2026-09-04 12:00Z"
+	if text != want || strings.Contains(text, "Needs you:") {
+		t.Fatalf("unmarked queued goals produced an approval decision\n--- got ---\n%s\n--- want ---\n%s", text, want)
+	}
+}
+
+func TestReportNamesTheMarkedPinnedGoalAndReturnsItsBinding(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	marked := reportGoal("real-next-pick", "Build the selected feature.", goal.StateQueued, "fleet-one", now)
+	marked.Labels = []string{"next"}
+	root := reportLedger(t, marked)
+	text, goalID, err := ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Needs you: real next pick — Reply in this thread with this token verbatim, followed by your code: start real-next-pick"
+	if goalID != marked.Id || !strings.Contains(text, want) || strings.Count(text, "Needs you:") != 1 {
+		t.Fatalf("goal=%q report=%q", goalID, text)
 	}
 }
 
@@ -563,6 +577,57 @@ func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
 		t.Fatalf("unmatched=%q answers=%d err=%v", unmatched, answers, err)
 	}
 }
+
+func TestStatusThreadTokenWithValidCodeApprovesMarkedGoal(t *testing.T) {
+	root, p, _, now := pollLedgerBed(t)
+	statusRef := MessageRef{ID: "10", ThreadID: "10"}
+	if err := SaveStatusState(root, StatusState{LastPost: now, Ref: statusRef, GoalID: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	sentAt := now.Add(-100 * time.Second)
+	code, err := TOTPCode("JBSWY3DPEHPK3PXP", sentAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "start g " + code, SentAt: sentAt}}
+	if _, err = Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+		t.Fatal(err)
+	}
+	approved := projectGoal(t, root, "g")
+	last := approved.History[len(approved.History)-1]
+	if approved.State != goal.StateApproved || approved.Approved == nil || last.Verb != "approve" ||
+		last.AuthorityOutcome != goal.AuthorityOutcomeVerifiedChannelAnswer || last.ChannelUser != "UWIDO" ||
+		last.ChannelRef != "10/11" || last.ChannelContext != "10" || last.ChannelStep != sentAt.Unix()/TOTPStep {
+		t.Fatalf("goal=%+v history=%+v posts=%v", approved, last, p.posts)
+	}
+	if len(p.posts) != 1 || p.posts[0] != "recorded: g approved for execution" || p.postThreads[0] == nil || p.postThreads[0].ThreadID != "10" {
+		t.Fatalf("posts=%v threads=%v", p.posts, p.postThreads)
+	}
+}
+
+func TestStatusThreadReplyWithoutTokenIsAnsweredAndFiled(t *testing.T) {
+	root, p, _, now := pollLedgerBed(t)
+	if err := SaveStatusState(root, StatusState{LastPost: now, Ref: MessageRef{ID: "10", ThreadID: "10"}, GoalID: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	in := Inbound{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "approved " + code, SentAt: now}
+	p.inbound = []Inbound{in}
+	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl"))
+	if err != nil || !strings.Contains(string(b), `"id":"11"`) {
+		t.Fatalf("unmatched=%s err=%v", b, err)
+	}
+	if len(p.posts) != 1 || p.posts[0] != "not recorded: wrong token; reply with the token and your code" || p.postThreads[0] == nil || p.postThreads[0].ThreadID != "10" {
+		t.Fatalf("posts=%v threads=%v", p.posts, p.postThreads)
+	}
+	if got := projectGoal(t, root, "g"); got.State != goal.StateQueued {
+		t.Fatalf("reply without token changed goal state: %s", got.State)
+	}
+}
+
 func TestTickChannelPassBound(t *testing.T) {
 	root := t.TempDir()
 	p := &testProvider{cursor: "later"}
@@ -939,8 +1004,11 @@ func pollLedgerBed(t *testing.T) (string, *testProvider, Question, time.Time) {
 		t.Fatal(err)
 	}
 	opened := goal.HistoryLine{At: "2026-09-03T00:00:00Z", Opid: goal.Opid("01J5X0000000000000000000F0", "machine", "lineage"), Verb: "open", Actor: "machine+lineage", Targets: []string{"g"}, Keep: -1}
-	f := &goal.GoalFile{Id: "g", State: goal.StateQueued, Intent: "Question target.", Origin: "main", NextStep: "Wait.", OpenedAt: "2026-09-03T00:00:00Z", Revision: 1, History: []goal.HistoryLine{opened}}
+	f := &goal.GoalFile{Id: "g", State: goal.StateQueued, Tier: 1, Intent: "Question target.", Origin: "main", NextStep: "Wait.", OpenedAt: "2026-09-03T00:00:00Z", Revision: 1, History: []goal.HistoryLine{opened}}
 	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "g.md"), goal.RenderFile(f), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.budget.tier-1=1h/3/360m/1/0\nmetasystem.budget.review-round-max=3\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	run("add", "plans/goals")

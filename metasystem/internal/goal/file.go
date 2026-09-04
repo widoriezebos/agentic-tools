@@ -153,7 +153,7 @@ type ApprovalRecord struct {
 	At        string
 	Revision  uint64
 	Opid      string
-	Authority string // proven | relayed
+	Authority string // proven | relayed | channel
 	Digest    string
 	ReviewBy  string // relayed only
 }
@@ -161,6 +161,7 @@ type ApprovalRecord struct {
 const (
 	ApprovalAuthorityProven  = "proven"
 	ApprovalAuthorityRelayed = "relayed"
+	ApprovalAuthorityChannel = "channel"
 )
 
 // ApprovalHorizon is the complete observation used to decide whether a
@@ -196,7 +197,7 @@ func legacyApprovalDigest(intent string, budget Budget) string {
 }
 
 // ApprovalExpired evaluates the relayed-word expiry at one caller-supplied
-// instant. A proven terminal approval does not expire.
+// instant. Proven terminal and verified channel approvals do not expire.
 func (f *GoalFile) ApprovalExpired(h ApprovalHorizon) (bool, string) {
 	if f == nil || f.Approved == nil || f.Approved.Authority != ApprovalAuthorityRelayed {
 		return false, ""
@@ -297,6 +298,7 @@ type HistoryLine struct {
 	ChannelProvider    string
 	ChannelUser        string
 	ChannelRef         string
+	ChannelContext     string
 	ChannelStep        int64
 	ApprovedRef        string
 	Reason             string
@@ -598,11 +600,15 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 			event.AuthorityOutcome != AuthorityOutcomeTemporaryHumanWord || event.AuthorityReviewBy != a.ReviewBy {
 			return fmt.Errorf("relayed authority does not match its History review facts")
 		}
+	case ApprovalAuthorityChannel:
+		if a.ReviewBy != "" || event.AuthorityOutcome != AuthorityOutcomeVerifiedChannelAnswer || event.ChannelContext == "" {
+			return fmt.Errorf("channel authority does not match its verified answer facts")
+		}
 	default:
 		if raise && a.ReviewBy == "" {
 			break
 		}
-		return fmt.Errorf("authority %q is not proven|relayed", a.Authority)
+		return fmt.Errorf("authority %q is not proven|relayed|channel", a.Authority)
 	}
 	if f.Budget == nil {
 		return fmt.Errorf("record requires a complete Budget")
@@ -1355,6 +1361,11 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.ChannelRef = strings.TrimPrefix(tok, "channelRef=")
+		case strings.HasPrefix(tok, "channelContext="):
+			if err := dup("channelContext"); err != nil {
+				return h, err
+			}
+			h.ChannelContext = strings.TrimPrefix(tok, "channelContext=")
 		case strings.HasPrefix(tok, "channelStep="):
 			if err := dup("channelStep"); err != nil {
 				return h, err
@@ -1379,7 +1390,8 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	if !validStamp(h.At) {
 		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
 	}
-	if h.AuthorityOutcome != AuthorityOutcomeAuthenticatedChannelWord {
+	channelAuthority := h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer
+	if !channelAuthority {
 		if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
 			return h, fmt.Errorf("recorded temporary authority: %v", err)
 		}
@@ -1393,12 +1405,19 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	if h.ChannelStep > 0 {
 		channelCount++
 	}
-	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
-		if channelCount != 4 || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
-			return h, fmt.Errorf("authenticated channel authority requires exactly provider, user, reference, and step proof")
+	if h.ChannelContext != "" {
+		channelCount++
+	}
+	if channelAuthority {
+		wantCount := 4
+		if h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer {
+			wantCount = 5
+		}
+		if channelCount != wantCount || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
+			return h, fmt.Errorf("channel authority requires provider, user, reference, step, and the context required by its proof class")
 		}
 	} else if channelCount != 0 {
-		return h, fmt.Errorf("channel proof keys require AUTHENTICATED_CHANNEL_WORD")
+		return h, fmt.Errorf("channel proof keys require a channel authority outcome")
 	}
 	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" {
 		return h, fmt.Errorf("approvedRef= is only valid on resume and set-obligation history")
@@ -1422,7 +1441,7 @@ func RenderHistoryLine(h HistoryLine) string {
 	if h.Keep >= 0 {
 		fmt.Fprintf(&b, " keep=%d", h.Keep)
 	}
-	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
+	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer {
 		fmt.Fprintf(&b, " authorityOutcome=%s", h.AuthorityOutcome)
 	} else if (h.AuthorityOutcome != "" || h.AuthorityReviewBy != "") && h.AuthorityRuling == "" && h.TemporaryHumanWord == "" {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", h.AuthorityOutcome, h.AuthorityReviewBy)
@@ -1430,8 +1449,11 @@ func RenderHistoryLine(h HistoryLine) string {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s authorityRuling=%s temporaryHumanWord=%s",
 			h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, strconv.Quote(h.TemporaryHumanWord))
 	}
-	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord {
+	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer {
 		fmt.Fprintf(&b, " channelProvider=%s channelUser=%s channelRef=%s channelStep=%d", h.ChannelProvider, h.ChannelUser, h.ChannelRef, h.ChannelStep)
+		if h.ChannelContext != "" {
+			b.WriteString(" channelContext=" + h.ChannelContext)
+		}
 	}
 	if h.ApprovedRef != "" {
 		b.WriteString(" approvedRef=" + h.ApprovedRef)

@@ -95,6 +95,7 @@ The tier boxes' reserved-minute members are the runaway guard;
 `landing.receipt-bound-min` bounds the receipt command.
 `channel.poll-timeout-sec` bounds each channel provider operation in seconds and defaults to 15.
 Channel answers end with the six-digit code, which is checked at the provider's send time when available and refused once it is more than one two-minute poll interval plus one 30-second code step old.
+The status post requests execution approval only for the queued goal marked with `goal edit --pin <machine> --label next`, and its thread reply names the exact `start <goal-id>` token before the code.
 
 ## Rostered Dispatch
 

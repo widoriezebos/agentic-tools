@@ -94,18 +94,21 @@ const (
 	AuthorizedByRecordedRelay                = "recorded-relay"
 	AuthorityOutcomeTemporaryHumanWord       = "TEMPORARY_HUMAN_WORD"
 	AuthorityOutcomeAuthenticatedChannelWord = "AUTHENTICATED_CHANNEL_WORD"
+	AuthorityOutcomeVerifiedChannelAnswer    = "VERIFIED_CHANNEL_ANSWER"
 	TemporaryGoalAuthorityRuling             = "R-32-m1"
 	TemporaryGoalAuthorityHorizon            = "2026-09-06"
 	authorityReviewByDateLayout              = "2006-01-02"
 )
 
 type RecordedChannelAuthority struct {
-	Outcome, Provider, UserID, MessageRef string
-	Step                                  int64
+	Outcome, Provider, UserID, MessageRef, ContextID string
+	Step                                             int64
 }
 
 func (a RecordedChannelAuthority) ValidateRecorded() error {
-	if a.Outcome != AuthorityOutcomeAuthenticatedChannelWord || a.Provider == "" || a.UserID == "" || a.MessageRef == "" || a.Step < 1 {
+	if (a.Outcome != AuthorityOutcomeAuthenticatedChannelWord && a.Outcome != AuthorityOutcomeVerifiedChannelAnswer) ||
+		a.Provider == "" || a.UserID == "" || a.MessageRef == "" || a.Step < 1 ||
+		(a.Outcome == AuthorityOutcomeVerifiedChannelAnswer && a.ContextID == "") {
 		return fmt.Errorf("authenticated channel authority proof is incomplete")
 	}
 	return nil

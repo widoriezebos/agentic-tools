@@ -324,6 +324,29 @@ func approvalProofClass(root string, proof *humanauthority.Proof) (authority, re
 	return "", "", false, fmt.Errorf("human approval requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
 }
 
+func approvalProofClassForApprove(root string, proof *humanauthority.Proof) (authority, reviewBy string, temporary bool, err error) {
+	if proof != nil && proof.ChannelWordFor(root) && proof.Outcome == humanauthority.OutcomeVerifiedChannel {
+		return ApprovalAuthorityChannel, "", false, nil
+	}
+	return approvalProofClass(root, proof)
+}
+
+func recordApprovalProof(f *GoalFile, proof *humanauthority.Proof, temporary bool) {
+	if temporary {
+		recordApprovalRelay(f, proof, true)
+		return
+	}
+	if proof != nil && proof.Outcome == humanauthority.OutcomeVerifiedChannel {
+		h := &f.History[len(f.History)-1]
+		h.AuthorityOutcome = AuthorityOutcomeVerifiedChannelAnswer
+		h.ChannelProvider = proof.ChannelProvider
+		h.ChannelUser = proof.ChannelUser
+		h.ChannelRef = proof.ChannelRef
+		h.ChannelContext = proof.ChannelContext
+		h.ChannelStep = proof.ChannelStep
+	}
+}
+
 func refuseRelayedAfterFleetEnrollment(t *TreeGoals, temporary bool) error {
 	if temporary && t != nil && t.Root != nil && t.Root.FleetEnrollment != nil {
 		return fmt.Errorf("RELAY_AFTER_ENROLLMENT: the fleet enrolled its first agent-free terminal at %s on %s; relayed words end at the first enrolled session",
@@ -387,7 +410,7 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 	if len(ids) == 0 {
 		return PublishResult{}, fmt.Errorf("goal approve needs at least one goal id")
 	}
-	authority, reviewBy, temporary, err := approvalProofClass(r.Endpoint.Root, proof)
+	authority, reviewBy, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -481,7 +504,7 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 					f.State = StateApproved
 				}
 				touch(f, r, "approve", targets)
-				recordApprovalRelay(f, proof, temporary)
+				recordApprovalProof(f, proof, temporary)
 				bindApproval(f, r, authority, reviewBy)
 				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(f)})
 				changed = true
