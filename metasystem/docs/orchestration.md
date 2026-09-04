@@ -74,6 +74,7 @@ The tier boxes' reserved-minute members are the runaway guard;
 `dispatch.cap-max` bounds each job's reservation, and
 `landing.receipt-bound-min` bounds the receipt command.
 `channel.poll-timeout-sec` bounds each channel provider operation in seconds and defaults to 15.
+Channel answers end with the six-digit code, which is checked at the provider's send time when available and refused once it is more than one two-minute poll interval plus one 30-second code step old.
 
 ## Rostered Dispatch
 

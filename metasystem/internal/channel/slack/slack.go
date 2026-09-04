@@ -131,9 +131,11 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, t
 				if m.TS <= last[root] || m.TS == root || m.User == cred.UserID {
 					continue
 				}
-				seconds, _ := strconv.ParseFloat(m.TS, 64)
-				at := time.Unix(0, int64(seconds*float64(time.Second))).UTC()
-				inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: m.TS, ThreadID: root}, ThreadID: root, UserID: m.User, Text: m.Text, At: at})
+				sentAt := time.Time{}
+				if seconds, parseErr := strconv.ParseFloat(m.TS, 64); parseErr == nil {
+					sentAt = time.Unix(0, int64(seconds*float64(time.Second))).UTC()
+				}
+				inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: m.TS, ThreadID: root}, ThreadID: root, UserID: m.User, Text: m.Text, SentAt: sentAt})
 			}
 			page = out.Metadata.Next
 			if page == "" {

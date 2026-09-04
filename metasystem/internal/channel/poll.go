@@ -38,6 +38,8 @@ type cursorRecord struct {
 	Cursor   Cursor `json:"cursor"`
 }
 
+const channelPollInterval = 2 * time.Minute
+
 func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 	var result PollResult
 	if c.MaxDispositions <= 0 {
@@ -172,8 +174,17 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 			reason = "wrong user"
 		} else if !hasCode {
 			reason = "no code"
-		} else if step, hasCode = VerifyTOTP(c.TOTPSecret, code, c.Now); !hasCode {
-			reason = "bad code"
+		} else if !in.SentAt.IsZero() && c.Now.Sub(in.SentAt) > channelPollInterval+time.Duration(TOTPStep)*time.Second {
+			reason = fmt.Sprintf("code too old: sent %ds before the poll", int64(c.Now.Sub(in.SentAt)/time.Second))
+		} else {
+			verificationTime := c.Now
+			if !in.SentAt.IsZero() {
+				verificationTime = in.SentAt
+			}
+			step, hasCode = VerifyTOTP(c.TOTPSecret, code, verificationTime)
+			if !hasCode {
+				reason = "bad code"
+			}
 		}
 		if reason == "" {
 			row := consumedRow{Step: step, Destination: c.Destination, Provider: c.ProviderName, ThreadID: in.ThreadID, Ref: in.Ref, QID: q.ID}
@@ -359,7 +370,7 @@ func consume(repo string, row consumedRow, now time.Time) (bool, error) {
 			return false, err
 		}
 	}
-	min := now.Unix()/TOTPStep - 1
+	min := now.Unix()/TOTPStep - int64(channelPollInterval/time.Second)/TOTPStep - 1
 	kept := rows[:0]
 	for _, x := range rows {
 		if x.Step >= min {

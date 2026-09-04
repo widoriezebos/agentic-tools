@@ -79,7 +79,7 @@ func TestReceivePagesAndFiltersByCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, cursor, err := p.Receive(ctx, d, []channel.MessageRef{root}, "")
-	if err != nil || len(got) != 205 || cursor == "" {
+	if err != nil || len(got) != 205 || cursor == "" || got[0].SentAt.IsZero() {
 		t.Fatalf("got=%d cursor=%q err=%v", len(got), cursor, err)
 	}
 	again, _, err := p.Receive(ctx, d, []channel.MessageRef{root}, cursor)

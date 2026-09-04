@@ -20,7 +20,7 @@ type Inbound struct {
 	ThreadID string     `json:"threadID"`
 	UserID   string     `json:"userID"`
 	Text     string     `json:"text"`
-	At       time.Time  `json:"at"`
+	SentAt   time.Time  `json:"sentAt"`
 }
 
 type CredentialIdentity struct {

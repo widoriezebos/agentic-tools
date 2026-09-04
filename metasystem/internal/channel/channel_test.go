@@ -83,6 +83,27 @@ func TestTOTPWindowAndReplay(t *testing.T) {
 		t.Fatal("replay accepted")
 	}
 }
+
+func TestDelayedTOTPReplayRemainsConsumed(t *testing.T) {
+	now := time.Unix(1234567890, 0)
+	delayed := consumedRow{Step: now.Add(-100*time.Second).Unix() / TOTPStep, Destination: "fleet", Provider: "slack", ThreadID: "1", Ref: MessageRef{ID: "2"}, QID: "q"}
+	root := t.TempDir()
+	if fresh, err := consume(root, delayed, now); err != nil || !fresh {
+		t.Fatal(err)
+	}
+	current := delayed
+	current.Step = now.Unix() / TOTPStep
+	current.Ref.ID = "3"
+	if fresh, err := consume(root, current, now); err != nil || !fresh {
+		t.Fatal(err)
+	}
+	replay := delayed
+	replay.Ref.ID = "4"
+	if fresh, err := consume(root, replay, now); err != nil || fresh {
+		t.Fatalf("delayed replay accepted: fresh=%t err=%v", fresh, err)
+	}
+}
+
 func TestTOTPResumeExceptionIsEnvelopeScoped(t *testing.T) {
 	root := t.TempDir()
 	now := time.Unix(1234567890, 0)
@@ -463,6 +484,51 @@ func TestPollRejectsWrongUserNoCodeBadCodeReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestPollVerifiesCodeAtProviderSendTime(t *testing.T) {
+	const secret = "JBSWY3DPEHPK3PXP"
+	tests := []struct {
+		name        string
+		sentBefore  time.Duration
+		includeTime bool
+		wantAnswer  bool
+		wantReason  string
+	}{
+		{name: "sent one hundred seconds before poll", sentBefore: 100 * time.Second, includeTime: true, wantAnswer: true},
+		{name: "sent four hundred seconds before poll", sentBefore: 400 * time.Second, includeTime: true, wantReason: "code too old: sent 400s before the poll"},
+		{name: "provider has no send time", wantAnswer: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root, p, q, now := pollLedgerBed(t)
+			sentAt := now.Add(-tc.sentBefore)
+			codeAt := sentAt
+			if !tc.includeTime {
+				sentAt = time.Time{}
+				codeAt = now
+			}
+			code, err := TOTPCode(secret, codeAt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, SentAt: sentAt}}
+			if _, err = Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+				t.Fatal(err)
+			}
+			got, err := ReadQuestion(root, q.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantAnswer != (got.Answer != nil) {
+				t.Fatalf("answer=%+v rejections=%+v", got.Answer, got.Rejected)
+			}
+			if tc.wantReason != "" && (len(got.Rejected) != 1 || got.Rejected[0].Reason != tc.wantReason) {
+				t.Fatalf("rejections=%+v", got.Rejected)
+			}
+		})
+	}
+}
+
 func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
 	root, p, _, now := pollLedgerBed(t)
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)

@@ -154,7 +154,7 @@ func TestReceiveResolvesRootsFromEveryPostedRef(t *testing.T) {
 	appendReply(t, dir, fmt.Sprintf(`{"face":"telegram","reply_to":%s,"user":7001,"text":"answer"}`, receipt.ID))
 	appendReply(t, dir, `{"face":"telegram","reply_to":0,"user":7001,"text":"stray"}`)
 	got, _, err := p.Receive(ctx, d, []channel.MessageRef{root, receipt}, "")
-	if err != nil || len(got) != 2 || got[0].ThreadID != root.ID || got[1].ThreadID != "" {
+	if err != nil || len(got) != 2 || got[0].ThreadID != root.ID || got[1].ThreadID != "" || got[0].SentAt.IsZero() {
 		t.Fatal(got, err)
 	}
 	without, _, err := p.Receive(ctx, d, nil, "")

@@ -195,7 +195,7 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, r
 			parent = strconv.FormatInt(m.ReplyTo.MessageID, 10)
 			root = roots[parent]
 		}
-		inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: strconv.FormatInt(m.MessageID, 10), ThreadID: parent}, ThreadID: root, UserID: strconv.FormatInt(m.From.ID, 10), Text: m.Text, At: time.Unix(m.Date, 0).UTC()})
+		inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: strconv.FormatInt(m.MessageID, 10), ThreadID: parent}, ThreadID: root, UserID: strconv.FormatInt(m.From.ID, 10), Text: m.Text, SentAt: time.Unix(m.Date, 0).UTC()})
 	}
 	return inbound, next, nil
 }
