@@ -1184,13 +1184,22 @@ mkdir -p "$gate_repo"
 make_repo "$gate_repo"
 brief=$gate_repo/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$gate_repo/scripts/agents/templates/brief.md" >"$brief"
+gate_declared_outputs=$tmp/gate-declared-outputs.txt
+printf '%s\n' 'metasystem/internal/dispatch/build.go' >"$gate_declared_outputs"
+gate_design=metasystem/scripts/agents/roles/design-critic.md
+mkdir -p "$gate_repo/$(dirname "$gate_design")"
+cp "$gate_repo/scripts/agents/roles/design-critic.md" "$gate_repo/$gate_design"
+git -C "$gate_repo" add "$gate_design"
+git -C "$gate_repo" -c user.name=metasystem -c user.email=metasystem.invalid \
+  commit -qm 'add fixture design artifact'
 "$gate_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
 become_main "$gate_repo" gate-session
 dispatch_fails() { # name, expected
   local name=$1 expected=$2
   set +e
   METASYSTEM_DELEGATE_ROOT="$gate_repo" \
-    "$gate_repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+    "$gate_repo/bin/metasystem" delegate --role design-critic \
+      --outputs "$gate_declared_outputs" --design "$gate_design" --brief "$brief" \
       --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
       >"$tmp/$name.out" 2>&1
   rc=$?
@@ -1201,7 +1210,8 @@ dispatch_fails() { # name, expected
 dispatch_succeeds() { # name
   local name=$1
   METASYSTEM_DELEGATE_ROOT="$gate_repo" \
-    "$gate_repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+    "$gate_repo/bin/metasystem" delegate --role design-critic \
+      --outputs "$gate_declared_outputs" --design "$gate_design" --brief "$brief" \
       --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
     >"$tmp/$name.out" 2>&1 \
     || { echo "dispatch refused $name census" >&2; cat "$tmp/$name.out" >&2; exit 1; }
@@ -1394,12 +1404,25 @@ cp "$ms" "$idle_repo/bin/metasystem"
 # The hook refuses outside a git repository, correctly: it reports on a
 # repository's work. The sandbox must be one.
 git -C "$idle_repo" init -q -b main
-printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo" \
-  | "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
-[[ -s "$tmp/idle.out" ]] \
-  || { echo "turn-end hook was silent inside a repository" >&2; exit 1; }
-grep -q 'systemMessage' "$tmp/idle.out" \
-  || { echo "turn-end hook emitted no surfaced message" >&2; cat "$tmp/idle.out" >&2; exit 1; }
+# A completed invocation, not elapsed time, spends this fixture's patience.
+# Retry only silence. The hook's provider deadline remains the failsafe when
+# an invocation itself makes no progress, and its deadline refusal is a lawful
+# surfaced response alongside the ordinary system message.
+idle_hook_invocation_budget=${METASYSTEM_IDLE_HOOK_INVOCATION_BUDGET:-2}
+idle_hook_invocations=0
+while :; do
+  idle_hook_invocations=$((idle_hook_invocations + 1))
+  printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo" \
+    | "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
+  [[ ! -s "$tmp/idle.out" ]] || break
+  (( idle_hook_invocations < idle_hook_invocation_budget )) \
+    || { echo "turn-end hook was silent for $idle_hook_invocations completed invocations" >&2; exit 1; }
+done
+idle_system_message=$("$ms" json get --file "$tmp/idle.out" --field systemMessage 2>/dev/null || true)
+idle_decision=$("$ms" json get --file "$tmp/idle.out" --field decision 2>/dev/null || true)
+idle_reason=$("$ms" json get --file "$tmp/idle.out" --field reason 2>/dev/null || true)
+[[ -n "$idle_system_message" || ( "$idle_decision" == block && -n "$idle_reason" ) ]] \
+  || { echo "turn-end hook emitted no surfaced message or refusal" >&2; cat "$tmp/idle.out" >&2; exit 1; }
 
 # And the idle wording itself: the two plain-words states now live in the
 # verdict verb (goal-system GOAL-05 — the hook transports, the verdict
