@@ -77,7 +77,7 @@ fi
 # exits acknowledge NEW PLAN FILES and INITIAL PAYLOADS, and neither
 # acknowledgment says anything about the ledger (review F15 — the
 # fence was bypassable through both).
-ledger=$(git diff --cached --name-only | grep -E '(^|/)plans/goals/' || true)
+ledger=$(git diff --cached --name-only | grep -E '(^|/)plans/(goals|channel)/' || true)
 if [[ -n "$ledger" ]]; then
   echo "pre-commit guard: goal files change only through goal verbs; hand edits go through goal reconcile:" >&2
   printf '  %s

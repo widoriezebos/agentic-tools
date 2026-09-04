@@ -1112,10 +1112,12 @@ the RunLoop context, the heartbeat and status, landed with `steward
 restart` on each machine (FCG-POLL-04). Fixtures grow with each step;
 FCG-12-MIGRATE lands with step 3 before the fleet cut-over is
 performed. One closing code review per two build steps. Estimated:
-four build attempts of 25-45 minutes; the box's three review rounds
-are spent on the design, so the two closing code reviews need a
-review-round raise that only Wido can give — the build steps land
-without them only if he says so.
+four build attempts of 25-45 minutes. The review-round limit is
+counted per critique chain (every critic root starts at zero
+consumed against the goal's limit, internal/dispatch/build.go:597-605;
+`job critique-budget-rebind` copies the goal's limit onto a root), so
+the design chain's three rounds do not touch the closing code
+reviews: each opens its own chain with the box's three rounds.
 
 ## Dispositions (round 1, job fcg-design-cc1)
 

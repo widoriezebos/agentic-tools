@@ -481,6 +481,9 @@ func ValidateCommit(root, commit string) error {
 	if len(problems) == 0 {
 		problems = ValidateTree(t)
 	}
+	if len(problems) == 0 {
+		problems = append(problems, ValidateChannelTree(root, commit)...)
+	}
 	if len(problems) > 0 {
 		lines := make([]string, len(problems))
 		for i, p := range problems {

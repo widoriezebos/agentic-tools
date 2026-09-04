@@ -82,6 +82,17 @@ if (cd "$repository" && METASYSTEM_ALLOW_NEW_PLAN=1 "$fixture_root/scripts/agent
   exit 1
 fi
 grep -Fq 'goal files change only through goal verbs' "$tmp/ledger-ack.err"
+# The channel ledger is protected by the same fence.
+git -C "$repository" reset -q
+mkdir -p "$repository/plans/channel"
+printf '{}\n' >"$repository/plans/channel/smuggled.json"
+git -C "$repository" add plans/channel/smuggled.json
+if (cd "$repository" && METASYSTEM_ALLOW_NEW_PLAN=1 "$fixture_root/scripts/agents/pre-commit-guard.sh" \
+  >"$tmp/channel-ledger.out" 2>"$tmp/channel-ledger.err"); then
+  echo "pre-commit guard fixture: ALLOW_NEW_PLAN bypassed the channel-ledger fence" >&2
+  exit 1
+fi
+grep -Fq 'goal files change only through goal verbs' "$tmp/channel-ledger.err"
 # The acknowledgment keeps its own meaning: a NEW plan outside the
 # ledger still passes under it.
 git -C "$repository" reset -q
