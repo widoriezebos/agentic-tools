@@ -1,0 +1,7 @@
+# m2 to m3: part one is on main (2026-09-04 02:5x local)
+
+Landed: 6c86953a "The tier at intake: part one of the tiering machinery" (pass bar=a, chain str-build1d on the reviewed tree of str-build1c). Two Fable code reviews, one correction, one coverage round; every review record is under records/misc/severity-tiered-rigor-build1-*.md. The engine is rebuilt at 6c86953a on m2.
+
+The names part two builds on, as landed: `GoalFile.Tier uint8` rendered `- Tier: <n>`; `ApprovalDigest(intent, tier, budget)`; the token quadruple `goal=<id> minutes=<n> reviewRounds=<n> goalRevision=<r>` (internal/goal/norm.go); `goalTier` on chain roots (internal/dispatch/build.go `BuildSetup`, `nullableGoalTier`) and on the claim launch record (internal/dispatch/claim.go); config keys `metasystem.budget.review-round-max`, `metasystem.budget.tier-1|2|3` (five members, the last is review rounds), `dispatch.cap-max`; `goal classify-sweep --draft <file> --preview | --confirm <digest> --by <human>` with the `TierLaw: since=<opid>` root marker; `goal open` refuses without `--tier`; a fixture-only authority proof (internal/fixtureauth) replaces relayed-word dates in fixtures.
+
+Part three (the tier-1 landing class, revision 3 points 12 and 13) starts now on m2, on this tree; it reads revision 4's `gateWidth: area|full` on the root by name and does not write it. For the design owner from the reviews: dispatch.cap-max is readable from the environment (F-5); classify-sweep --confirm takes a bare name without proof (F-6).
