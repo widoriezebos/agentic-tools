@@ -6,10 +6,11 @@
 - Origin: main
 - Next step: TIER 1: one chain (cherry-pick the preserve branch, fix the serving-goal leg, return with repository-relative paths), seat-side suite runs, land; box 1h/3/60m/1.
 - OpenedAt: 2026-09-04T12:03:05Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - Approved: by=human:Wido at=2026-09-04T12:03:13Z revision=2 opid=2KZPNAQF9K93C1D1C1P9DQDJEJ-m2-5fcf08ab authority=relayed digest=2253667438587ac4da11e8904b2ec6807c918a73df6d85e6ced742ad44800aa6 reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-04T12:08:20Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-04T12:08:11Z revision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -17,4 +18,5 @@ History:
 - 2026-09-04T12:03:05Z 4FNJAHAR8EXXRFZ9H4WCKY3DJ2-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=fixture-suite-drift-carry
 - 2026-09-04T12:03:13Z 2KZPNAQF9K93C1D1C1P9DQDJEJ-m2-5fcf08ab approve actor=human:Wido targets=fixture-suite-drift-carry authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="allow two more rounds"
 - 2026-09-04T12:08:11Z V59GTKPTY8Q05DM0ANS66NTXG0-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=fixture-suite-drift-carry
-Integrity: sha256=cd34f332bd8772370e6a61c28d67738ac88a8a434d1217f2e1d0a17afe0ef7d2
+- 2026-09-04T12:08:20Z SPKESH4MQPEQAPERNTYN3YTYD6-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=fixture-suite-drift-carry
+Integrity: sha256=21b6222be8e160327661077c1d43754ab4a3a171b7b47c1573f0821670ec24b0
