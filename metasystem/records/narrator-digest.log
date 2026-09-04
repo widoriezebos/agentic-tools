@@ -1673,3 +1673,5 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-04T00:40:30Z HIGHLIGHT — A landing moved the repository storyline to commit 9d5ca51f5ca2. (source: commit 9d5ca51f5ca295efbb874f80fac0c8f52ecca5cf)
 2026-09-04T01:01:46Z HIGHLIGHT — A landing moved the repository storyline to commit 6c86953a9cbf. (source: commit 6c86953a9cbfd9770d114f53d06e64e15bebd166)
 2026-09-04T01:01:46Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-6c86953a9cbfd9770d114f53d06e64e15bebd166)
+2026-09-04T01:44:15Z HIGHLIGHT — A landing moved the repository storyline to commit b57dca67a24e. (source: commit b57dca67a24e0a534a24f9bb72b6544818b8cd1a)
+2026-09-04T01:44:15Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-b57dca67a24e0a534a24f9bb72b6544818b8cd1a)
