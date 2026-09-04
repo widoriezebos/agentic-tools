@@ -259,3 +259,34 @@ never as a string (STR2P2A-02). Recovery replay of an edit through the
 goal package does not re-append the counselor register line; that line
 is written by the command layer only, recorded here as known, not
 fixed in this slice.
+
+### Revision 4.5 (2026-09-04 14:55 local): the second closing review
+
+The second closing review (job str-p2-build-2a-cc2, tree cee8c2ea)
+returned two material findings and three notes; both findings are
+accepted and neither changes the law, they restore it.
+
+STR2P2A-10, accepted: the classification sweep's recovery property
+("an interrupted confirm re-runs with the same draft; rows already
+applied are skipped") is the existing law and stays. A draft row whose
+goal already carries exactly the row's Risk record (same four scores
+and basis) is skipped by the listing and the confirm, counted in the
+listing as `applied`; a row whose goal carries a different Risk record
+is refused as SWEEP_UNKNOWN_GOAL as today. The recovery test asserts
+the skip against a draft that still carries the applied row.
+
+STR2P2A-11, accepted: the counselor register line of kind
+misclassification is written only for the raise section 17 names, a
+risk edit that lifts the derivation of a goal that was approved before
+the edit; a queued or unapproved goal's re-score, including a tierless
+goal receiving its first four answers, writes no register line and
+demands no evidence. The command layer appends only when the goal
+package reports that it performed a raise.
+
+Notes recorded, not actioned: STR2P2A-12 (an accounting revision above
+the claim revision needs a hand-edited ledger; hardening, later),
+STR2P2A-13 (a raise preserving a standing override writes
+`TierOverride ... why=` empty; the reason lives on the earlier line),
+STR2P2A-14 (the mark-mode notice's `next: goal edit --risk` hint is
+refused for a claimed goal whose answers derive at or below its tier;
+a wording change owned by the gate, later).
