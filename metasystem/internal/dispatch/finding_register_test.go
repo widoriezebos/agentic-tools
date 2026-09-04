@@ -54,6 +54,26 @@ func writeCriticRound(t *testing.T, repo, root, job string, round int, findings,
 	})
 }
 
+func setCriticSubject(t *testing.T, repo, root, reviews, reviewedTree string) {
+	t.Helper()
+	recordPath := filepath.Join(repo, "artifacts", "agents", "jobs", root+".json")
+	record := readJSONFile(t, recordPath)
+	record["reviews"] = reviews
+	if err := writeRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	round, ok := numInt(record["round"])
+	if !ok {
+		t.Fatalf("critic root %s has no round number", root)
+	}
+	returnPath := filepath.Join(repo, "artifacts", "agents", root, "rounds", fmt.Sprint(round), "return.json")
+	result := readJSONFile(t, returnPath)
+	result["reviewedTree"] = reviewedTree
+	if err := writeRecord(returnPath, result); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func readRegister(t *testing.T, repo, root string) []any {
 	t.Helper()
 	record := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", root+".json"))
@@ -327,18 +347,82 @@ func TestCritiqueRegisterCrossRootClassConflictBlocks(t *testing.T) {
 	writeCriticRound(t, repo, "critic-a", "critic-a", 1,
 		[]any{registerFindingValue("SHARED", true, "severe")},
 		[]any{registerRigor("SHARED", "severe")})
+	setCriticSubject(t, repo, "critic-a", "implementer", "tree-a")
 	if _, err := CritiqueRegisterAdvance(repo, "critic-a", "critic-a"); err != nil {
 		t.Fatal(err)
 	}
 	writeCriticRound(t, repo, "critic-b", "critic-b", 1,
 		[]any{registerFindingValue("SHARED", true, "bounded")},
 		[]any{registerRigor("SHARED", "bounded")})
+	setCriticSubject(t, repo, "critic-b", "implementer", "tree-b")
 	if _, err := CritiqueRegisterAdvance(repo, "critic-b", "critic-b"); err == nil ||
-		!strings.Contains(err.Error(), "conflicting rigor classes") {
+		!strings.Contains(err.Error(), "conflicting rigor classes") ||
+		!strings.Contains(err.Error(), `reviews="implementer" reviewedTree="tree-a"`) ||
+		!strings.Contains(err.Error(), `reviews="implementer" reviewedTree="tree-b"`) ||
+		!strings.Contains(err.Error(), "waiting on the original critic or the human is the only remedy") {
 		t.Fatalf("cross-root conflict = %v", err)
 	}
 	if items := readRegister(t, repo, "critic-b"); len(items) != 0 {
 		t.Fatalf("blocked root was mutated: %v", items)
+	}
+}
+
+func TestCritiqueRegisterSameFindingIDOnDifferentSubjectsAdvances(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic-a", "critic-a", 1,
+		[]any{registerFindingValue("F-1", true, "severe")},
+		[]any{registerRigor("F-1", "severe")})
+	setCriticSubject(t, repo, "critic-a", "implementer-a", "tree-a")
+	if _, err := CritiqueRegisterAdvance(repo, "critic-a", "critic-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	writeCriticRound(t, repo, "critic-b", "critic-b", 1,
+		[]any{registerFindingValue("F-1", true, "bounded")},
+		[]any{registerRigor("F-1", "bounded")})
+	setCriticSubject(t, repo, "critic-b", "implementer-b", "tree-b")
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic-b", "critic-b"); err != nil || outcome != "advanced" {
+		t.Fatalf("different-subject advance = %q, %v", outcome, err)
+	}
+}
+
+func TestCritiqueRegisterSameReviewedTreeConflictsAcrossReviewTargets(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic-a", "critic-a", 1,
+		[]any{registerFindingValue("F-1", true, "severe")},
+		[]any{registerRigor("F-1", "severe")})
+	setCriticSubject(t, repo, "critic-a", "implementer-a", "shared-tree")
+	if _, err := CritiqueRegisterAdvance(repo, "critic-a", "critic-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	writeCriticRound(t, repo, "critic-b", "critic-b", 1,
+		[]any{registerFindingValue("F-1", true, "bounded")},
+		[]any{registerRigor("F-1", "bounded")})
+	setCriticSubject(t, repo, "critic-b", "implementer-b", "shared-tree")
+	if _, err := CritiqueRegisterAdvance(repo, "critic-b", "critic-b"); err == nil ||
+		!strings.Contains(err.Error(), "conflicting rigor classes") {
+		t.Fatalf("same-tree conflict = %v", err)
+	}
+}
+
+func TestCritiqueRegisterReissuedRoundWithNewFindingIDsAdvances(t *testing.T) {
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1,
+		[]any{registerFindingValue("F-1", true, "first")},
+		[]any{registerRigor("F-1", "severe")})
+	setCriticSubject(t, repo, "critic", "implementer", "tree")
+	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+		t.Fatal(err)
+	}
+	writeCriticRound(t, repo, "critic", "critic-r2", 2,
+		[]any{registerFindingValue("F-2", true, "reissued")},
+		[]any{registerRigor("F-2", "bounded")})
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
+		t.Fatalf("reissued round advance = %q, %v", outcome, err)
+	}
+	if items := readRegister(t, repo, "critic"); len(items) != 2 {
+		t.Fatalf("reissued round did not retain both findings: %v", items)
 	}
 }
 

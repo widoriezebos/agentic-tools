@@ -29,6 +29,20 @@ type registerFinding struct {
 	Multiplicity   int64
 }
 
+type reviewedSubject struct {
+	ReviewsTarget string
+	ReviewedTree  string
+}
+
+func (subject reviewedSubject) matches(other reviewedSubject) bool {
+	return (subject.ReviewsTarget != "" && subject.ReviewsTarget == other.ReviewsTarget) ||
+		(subject.ReviewedTree != "" && subject.ReviewedTree == other.ReviewedTree)
+}
+
+func (subject reviewedSubject) String() string {
+	return fmt.Sprintf("reviews=%q reviewedTree=%q", subject.ReviewsTarget, subject.ReviewedTree)
+}
+
 // CritiqueRegisterAdvance folds one terminal critic attempt into the canonical
 // register on its chain root. Completed attempts consume their return;
 // failures consume a synthetic unproven finding. The operation serializes the
@@ -508,7 +522,9 @@ func normalizedFindingText(value any) string {
 }
 
 func refuseCrossRootClassConflict(state critiqueState, currentRoot string, prospective []registerFinding) error {
+	currentSubject := findingRegisterSubject(state, currentRoot)
 	otherClasses := map[string]map[critiqueModel.RigorClass]string{}
+	otherSubjects := map[string]reviewedSubject{}
 	ids := make([]string, 0, len(state.records))
 	for id := range state.records {
 		ids = append(ids, id)
@@ -517,6 +533,10 @@ func refuseCrossRootClassConflict(state critiqueState, currentRoot string, prosp
 	for _, id := range ids {
 		record := state.records[id]
 		if id == currentRoot || record["parentJob"] != nil {
+			continue
+		}
+		subject := findingRegisterSubject(state, id)
+		if !currentSubject.matches(subject) {
 			continue
 		}
 		value, present := record[findingRegisterField]
@@ -532,17 +552,42 @@ func refuseCrossRootClassConflict(state critiqueState, currentRoot string, prosp
 				otherClasses[finding.FindingID] = map[critiqueModel.RigorClass]string{}
 			}
 			otherClasses[finding.FindingID][finding.RigorClass] = id
+			otherSubjects[id] = subject
 		}
 	}
 	for _, finding := range prospective {
 		for class, root := range otherClasses[finding.FindingID] {
 			if class != finding.RigorClass {
-				return fmt.Errorf("finding %s has conflicting rigor classes %s and %s on chain roots %s and %s; waiting on the original critic or the human is the only remedy",
-					finding.FindingID, finding.RigorClass, class, currentRoot, root)
+				return fmt.Errorf("finding %s has conflicting rigor classes %s and %s on chain roots %s and %s, whose reviewed subjects are %s and %s; waiting on the original critic or the human is the only remedy",
+					finding.FindingID, finding.RigorClass, class, currentRoot, root, currentSubject, otherSubjects[root])
 			}
 		}
 	}
 	return nil
+}
+
+func findingRegisterSubject(state critiqueState, root string) reviewedSubject {
+	subject := reviewedSubject{ReviewsTarget: asString(state.records[root]["reviews"])}
+	bestRound := int64(0)
+	for job, record := range state.records {
+		if state.chainRoot(job) != root {
+			continue
+		}
+		round, ok := numInt(record["round"])
+		if !ok || round < bestRound {
+			continue
+		}
+		result, err := readObject(filepath.Join(state.agents, root, "rounds", fmt.Sprint(round), "return.json"))
+		if err != nil {
+			continue
+		}
+		tree := asString(result["reviewedTree"])
+		if tree != "" {
+			subject.ReviewedTree = tree
+			bestRound = round
+		}
+	}
+	return subject
 }
 
 func digestJSON(value any) string {

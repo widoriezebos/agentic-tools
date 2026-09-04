@@ -1765,3 +1765,5 @@ Limitation — Register citation resolution: The accepted-risk register reader v
 2026-09-04T08:52:07Z LOWLIGHT — The steward escalated: claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime. (source: episode escalation-idle-backlog-dead-ca9d95fe561be65ebf00adc82391b790b577b145)
 2026-09-04T09:20:47Z HIGHLIGHT — A landing moved the repository storyline to commit 1f1aba1398b4. (source: commit 1f1aba1398b45f0b9edfc6bff3a79462e56c0a53)
 2026-09-04T09:20:47Z LOWLIGHT — The steward escalated: claimable backlog has no live claim or delegate process; every steward tick escalates independently of the seat runtime. (source: episode escalation-idle-backlog-dead-1f1aba1398b45f0b9edfc6bff3a79462e56c0a53)
+2026-09-04T09:31:03Z HIGHLIGHT — The shared goal ledger moved to 29a2a64b9567: 1 new claimable goal(s): up-kills-runner-before-first-tick. (source: ledger 29a2a64b9567470def9d7efb733daad2fb01cb95)
+2026-09-04T09:31:03Z HIGHLIGHT — A landing moved the repository storyline to commit 60ec0aa0d959. (source: commit 60ec0aa0d959178831f8ff0ad710e39ae3aa8901)
