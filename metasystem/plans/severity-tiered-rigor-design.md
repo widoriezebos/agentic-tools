@@ -516,3 +516,5 @@ enforced ceiling is one rule, and B hides the number in the roster.
   observe.go and observe_test.go, cmd/metasystem/landing_verbs.go.
 - Part four is unchanged. Decisions 06 and 14 gate only the `Validate`
   bound and the box minutes of part one; the rest builds either way.
+
+Obligation matrix (part four, 2026-09-04): records/misc/severity-tiered-rigor-obligation-matrix.md, one row per mechanism point of revisions 2 to 4 with its proof or its pending status.
