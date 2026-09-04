@@ -67,8 +67,8 @@ must exist and pass, and a Fable code review follows this build.
    `ValidateApprovalRecord` in the design; follow the tree) admits
    `raise=` only when the history holds
    a Misclassified line with that opid whose `to` exceeds its `from`.
-   `--evidence` grammar: `root:<jobId>` (a job record under
-   artifacts/agents/jobs bound to this goal), `finding:<jobId>/<id>`
+   `--evidence` grammar: `root:<jobId>` (a job record in the jobs
+   directory of the agents artifacts, bound to this goal), `finding:<jobId>/<id>`
    (present in that root's finding register), `refusal:<code>` (one of
    the admission refusal codes of metasystem/internal/dispatch/admission.go);
    checked at edit time, refused otherwise. Roots already dispatched
