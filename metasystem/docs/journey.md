@@ -784,3 +784,37 @@ dispatch delegate and custodial mechanics, and one forty-five-minute human sessi
 turns the resident generation — steward, watcher, and a narrator
 currently reading new records with old eyes — onto the engines
 this night built.
+
+## One answer for every file (2026-09-03)
+
+On the third of September, two machines in turn made three landings —
+accepted changes — across a day and night, answering: what may change
+this file, and how? Before, three hand-kept lists disagreed; each gate,
+the check admitting a landing, read a different one. Most previous-day
+landings warned of refusal because the floor, the set of paths that may
+never change without a review, confused the cycle's paper trail with
+behaviour — the code, scripts, instructions, documents and configuration
+that make the system act.
+
+The first replaced those lists with one committed manifest, a file
+classifying every path, and one command that reads it.
+Behaviour changes only through a reviewed chain: a build examined by an
+independent critic until nothing material remains.
+Records — the paper trail and registers — are landed by their stream's
+seat. The ledger, the goal files, changes only through goal commands.
+Runtime files exist during work and are never landed. An unclassified
+path is refused with the manifest named, forcing one decision per new
+file kind.
+
+The second taught the gate to judge by class, refuse exact record
+reversals, bind each record to its landing seat's goal, and mark every
+landing with its goal. The third made the last warning law: a carriage
+landing — a seat landing its own records directly, without a review — is
+refused for behaviour, while records under a held goal pass.
+
+Halfway through, the first machine pushed its reviewed files as a named
+line of work for handover. The second launched and reviewed them again,
+corrected one test example that expected the old mistake, and landed
+them. Three lessons followed: a test example can preserve a repaired
+defect; records must not depend on their writing machine; and whoever
+lands last pays the full cost of the gate.
