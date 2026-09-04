@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
 
 var AdmissionRefusalCodes = []string{"BUDGET_UNKNOWN", "BUDGET_REFUSED", "HAZARD_REFUSED", "RISK_UNANSWERED"}
@@ -290,15 +291,24 @@ func FormatGoalAdmission(verdict GoalAdmissionVerdict) []string {
 			continue
 		}
 		fields := make([]string, 0, len(refusal.Breaches))
+		showAttemptRule := false
 		for _, breach := range refusal.Breaches {
 			state := ""
 			if breach.State != "" {
 				state = " state=" + string(breach.State)
 			}
 			fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", breach.Field, state, breach.Used, breach.Limit))
+			if breach.Field == "attemptLimit" || breach.Field == "reservedJobMinutesLimit" {
+				showAttemptRule = true
+			}
 		}
-		lines = append(lines, fmt.Sprintf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
-			refusal.GoalID, refusal.GoalRevision, strings.Join(fields, ", ")))
+		line := fmt.Sprintf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
+			refusal.GoalID, refusal.GoalRevision, strings.Join(fields, ", "))
+		if showAttemptRule {
+			line += fmt.Sprintf("; rule=%s: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes",
+				goalbudget.SetupRefusalReleaseRule)
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }

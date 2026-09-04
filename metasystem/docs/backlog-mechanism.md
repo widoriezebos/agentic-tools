@@ -17,7 +17,8 @@ The four limits are:
 1. **Elapsed time** — a positive working duration such as `4h` or
    `1d`; one working day is eight hours.
 2. **Attempts** — the maximum number of admitted job reservations for
-   the claimed goal revision.
+   the claimed goal revision; a terminal setup refusal (`phase=setup`,
+   `refusalClass=setup`) releases its reservation and does not count.
 3. **Reserved job minutes** — the maximum sum of reservation caps for
    that revision.
 4. **Active jobs** — the maximum number of concurrent non-terminal

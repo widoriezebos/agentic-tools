@@ -135,6 +135,35 @@ func TestPublishedSetupRetainsAttemptAndReservedMinutes(t *testing.T) {
 	}
 }
 
+func TestSetupRefusalsReleaseAttemptAndMinuteReservations(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	file := budgetGoal()
+	file.Budget.AttemptLimit = 3
+	file.Budget.ReservedJobMinutesLimit = 120
+	for _, name := range []string{"setup-refused-one", "setup-refused-two"} {
+		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", name+".json"), map[string]any{
+			"jobId": name, "operationId": name, "goalId": "bounded", "goalRevision": 3,
+			"capMin": 30, "status": "failed", "phase": "setup", "refusalClass": "setup",
+		})
+	}
+	writeBudgetJob(t, root, "completed", "completed", 3, 30, "completed")
+
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != 30 {
+		t.Fatalf("two setup refusals and one completion did not leave two of three attempts free: %+v", projection)
+	}
+
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "protocol-error.json"), map[string]any{
+		"jobId": "protocol-error", "operationId": "protocol-error", "goalId": "bounded", "goalRevision": 3,
+		"capMin": 30, "status": "failed", "phase": "validation",
+		"protocolError": map[string]any{"key": "invalid-return", "violation": "malformed implementer return"},
+	})
+	projection = ProjectBudget(root, file, time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.ReservedJobMinutes != 60 {
+		t.Fatalf("a protocol error after the agent started did not consume its reservation: %+v", projection)
+	}
+}
+
 func TestBudgetProjectionReportsExactUnknownRecord(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -230,5 +259,16 @@ func TestBudgetAdmissionClosesAtEveryCurrentEqualityBoundary(t *testing.T) {
 	}
 	if strings.Join(fields, ",") != "elapsedLimit,attemptLimit,reservedJobMinutesLimit,activeJobLimit" {
 		t.Fatalf("admission equality boundaries = %v", fields)
+	}
+}
+
+func TestBudgetAdmissionRefusalNamesSetupRefusalReleaseRule(t *testing.T) {
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{{
+		GoalID: "bounded", GoalRevision: 3,
+		Breaches: []BudgetBreach{budgetIntegerBreach("attemptLimit", 3, 3)},
+	}}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "rule=setup-refusal-release") ||
+		!strings.Contains(lines[0], "count as neither attempts nor reserved job minutes") {
+		t.Fatalf("attempt refusal did not explain the setup-refusal release rule: %v", lines)
 	}
 }

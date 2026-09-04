@@ -11,6 +11,15 @@ import (
 	"time"
 )
 
+const SetupRefusalReleaseRule = "setup-refusal-release"
+
+// ReservationConsumesBudget applies the setup-refusal-release rule. A job
+// that terminates before an agent starts consumes neither an attempt nor its
+// reserved minutes; every other published reservation consumes both.
+func ReservationConsumesBudget(terminal bool, phase, refusalClass string) bool {
+	return !terminal || phase != "setup" || refusalClass != "setup"
+}
+
 func ParseWorkingDuration(value string) (time.Duration, bool) {
 	if value == "" {
 		return 0, false

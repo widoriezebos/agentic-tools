@@ -88,6 +88,27 @@ func TestValidateMirrorsConstructionRules(t *testing.T) {
 	}
 }
 
+func TestReservationConsumesBudgetReleasesOnlyTerminalSetupRefusals(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		terminal     bool
+		phase        string
+		refusalClass string
+		want         bool
+	}{
+		{name: "terminal setup refusal", terminal: true, phase: "setup", refusalClass: "setup", want: false},
+		{name: "setup refusal still running", terminal: false, phase: "setup", refusalClass: "setup", want: true},
+		{name: "protocol error after setup", terminal: true, phase: "validation", want: true},
+		{name: "other refusal during setup", terminal: true, phase: "setup", refusalClass: "capability", want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ReservationConsumesBudget(test.terminal, test.phase, test.refusalClass); got != test.want {
+				t.Fatalf("ReservationConsumesBudget() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestReviewRoundValidation(t *testing.T) {
 	budget := Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1, ReviewRoundLimit: 4}
 	negative := budget

@@ -32,6 +32,12 @@ func (r JobRecord) text(key string) string {
 // Status is the record's lifecycle status ("" when absent or ill-typed).
 func (r JobRecord) Status() string { return r.text("status") }
 
+// Phase is the lifecycle stage recorded when the current status was reached.
+func (r JobRecord) Phase() string { return r.text("phase") }
+
+// RefusalClass identifies why dispatch refused a reservation during setup.
+func (r JobRecord) RefusalClass() string { return r.text("refusalClass") }
+
 // JobID is the record's job identity.
 func (r JobRecord) JobID() string { return r.text("jobId") }
 
