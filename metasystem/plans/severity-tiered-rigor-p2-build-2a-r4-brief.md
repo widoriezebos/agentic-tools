@@ -2,13 +2,18 @@ Working Mode: implement
 Orchestrator Identity: m3+mac-m3 (dispatch delegate under goal severity-tiered-rigor-p2)
 Date: 2026-09-04
 
-# Build slice 2a, the risk basis: round four, the closing review's findings
+# Build slice 2a, the risk basis: round four (second dispatch), the closing review's findings
 
 The closing review (job str-p2-build-2a-cc1, tree 279d0cad) returned
 five material findings and four notes; its return.json under that
 chain's round 1 is the authority for their text. The design answers
 them in revision 4.4 of metasystem/plans/severity-tiered-rigor-p2-design.md;
-build that revision on the tree you inherit, in this order.
+build that revision on the tree you inherit, in this order. The first
+dispatch of this round (str-p2-build-2a-r4) stopped on item 6's example
+and built nothing; the example is corrected below and no other gap was
+reported. Every other example in this brief is illustrative: where an
+example contradicts the tree's existing law, the law wins, the choice is
+recorded under `decisions`, and the item is built.
 
 1. STR2P2A-01 (critical): the claim's accounting revision. Add
    `accountingRevision` to the claim record (render, parse, round-trip;
@@ -33,7 +38,10 @@ build that revision on the tree you inherit, in this order.
    Obligation line and a zero claim revision produces the existing
    problem line, never a panic; test with that file.
 6. STR2P2A-02: the exception counter compares the elapsed limit as a
-   parsed duration; test with a one-day limit against the eight-hour box.
+   parsed duration under the repository's duration law (one day is eight
+   working hours there, so `1d` equals the tier-three box); test with a
+   `1d2h` limit against the eight-hour box (over: counts) and a `1d`
+   limit (equal: does not count). The critic's own example was `1d2h`.
 7. STR2P2A-04: STR4-R1-MISCLASSIFICATION-KIND discharged by a test that
    drives `goal edit`'s raise through the command layer and reads the
    counselor register line of kind misclassification.
