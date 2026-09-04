@@ -3907,9 +3907,14 @@ until [[ -n "$("$steward_repo/bin/metasystem" json get --file "$steward_repo/art
     || { echo "steward end-to-end: the job never ended within ${steward_wait_cap}s" >&2; exit 1; }
   sleep 0.2
 done
+# A tick reaps before deciding whether to revive. Declare the fixture
+# temporarily goal-free so this reap closes the finished continuation without
+# immediately opening a replacement; the outage leg restores the open goal.
+printf '# Goals\n\n## Goal-free: declared 2026-09-04T00:00:00Z by fixture over steward-reap\n' > "$steward_repo/plans/goals.md"
 steward_tick=$(cd "$steward_repo" && METASYSTEM_BIN="$steward_enrolled_engine" \
   "$steward_enrolled_engine" steward tick --repo "$steward_repo") \
   || { echo "steward end-to-end: tick failed" >&2; exit 1; }
+printf '# Goals\n\n## Current goal: fix-it \xe2\x80\x94 Repair the thing\n- Origin: main\n- Next step: Repair it.\n' > "$steward_repo/plans/goals.md"
 grep -q '"jobId": "'"$steward_job"'"' <<<"$steward_tick" \
   || { echo "steward end-to-end: the tick did not reap the continuation: $steward_tick" >&2; exit 1; }
 steward_closed=$("$steward_repo/bin/metasystem" json get --file "$steward_repo/artifacts/agents/jobs/$steward_job.json" --field chainClosed)
