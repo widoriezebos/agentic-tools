@@ -15,10 +15,13 @@ design is built here.
 
 # Workspace
 
-The dispatch workspace as given, on the branch given. May be touched:
-`metasystem/internal/refusal/register.go` and
-`metasystem/internal/refusal/register_test.go` (new). Nothing else:
-no other Go file, no script, no plan, no record, no docs. A defect the
+The dispatch workspace as given, on the branch given. Both files are
+new; nothing else may change: no other Go file, no script, no plan, no
+record, no docs.
+
+- May write: metasystem/internal/refusal/register.go
+- May write: metasystem/internal/refusal/register_test.go
+ A defect the
 audit finds is RECORDED in the table (the `Defects` list), never fixed.
 Do not stage or commit; the seat lands the chain.
 
