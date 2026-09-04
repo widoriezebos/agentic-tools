@@ -83,6 +83,7 @@ A brief asks the delegate only for verification it can actually perform. The val
 A brief that cites authority — a manifest key, a document section, a decided contract — is checked against that authority before dispatch, and the workspace the delegate will read is checked to actually contain it. Seven gap-stops on one chain came from briefs naming keys that were not there yet, or that existed only on the branch the delegate could not pull (IL-18, KI-9). A gap-stop is the correct delegate behavior and an avoidable orchestrator cost.
 
 The dispatcher resolves the roster, writes the job record, assembles the runtime-neutral prompt, expands the permissions preset from `scripts/agents/permissions/`, and invokes `scripts/agents/adapters/<runtime>.sh`. The adapter's `--help` and `scripts/agents/adapters/runtime-common.sh` are the executable adapter contract; exact provider flags live only in the adapter. Role behavior and capability needs live in `scripts/agents/roles/<role>.md` and `<role>.requirements.json`.
+`metasystem supervise status --repo <checkout>` reports the linked engine commit as `engineBuild`.
 
 Corrections use `metasystem delegate --follow-up <job> --brief <file>` to resume the recorded session. When a runtime cannot resume that exact session, the typed delegate path makes a fresh-context continuation whose packet embeds the prior brief, prior return, and focused correction; it records the loss of context instead of silently pretending it resumed.
 

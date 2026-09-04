@@ -862,6 +862,32 @@ wait_for_agent_chain_unlock() { # root job
 }
 
 if [[ "$fixture_scenario" == dispatch ]]; then
+# Build-stamp skew refuses before any dispatch state exists. The fixture engine
+# is built at one commit, then its checkout advances through an agent-script
+# change while the binary deliberately stays untouched.
+skew_repo="$agent_fixture/skew-repo"
+mkdir -p "$skew_repo"
+cp -R "$root/." "$skew_repo/"
+git -C "$skew_repo" init -q -b main
+git -C "$skew_repo" add .
+git -C "$skew_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'fixture engine baseline'
+skew_stamp=$(git -C "$skew_repo" rev-parse --short HEAD)
+(cd "$skew_repo" && bash scripts/agents/go-build.sh >/dev/null)
+printf '\n# fixture: engine/script skew\n' >>"$skew_repo/scripts/agents/dispatch.sh"
+git -C "$skew_repo" add scripts/agents/dispatch.sh
+git -C "$skew_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'advance agent script beyond fixture engine'
+set +e
+(cd "$skew_repo" && scripts/agents/dispatch.sh __engine-skew-preflight "$skew_stamp") \
+  >"$agent_fixture/skew-refusal.out" 2>&1
+skew_rc=$?
+set -e
+[[ $skew_rc -eq 1 ]] \
+  || { echo "engine/script skew returned $skew_rc instead of refusing" >&2; cat "$agent_fixture/skew-refusal.out" >&2; exit 1; }
+grep -Fq "dispatch refused: engine commit $skew_stamp is older than checkout commit" "$agent_fixture/skew-refusal.out" \
+  && grep -Fq 'run scripts/agents/go-build.sh, then steward arm' "$agent_fixture/skew-refusal.out" \
+  || { echo "engine/script skew refusal did not name both commits and the rebuild remedy" >&2; cat "$agent_fixture/skew-refusal.out" >&2; exit 1; }
+
 # Critique rounds have one documented driver: dispatch plus follow-up. The
 # standalone raw-runtime driver is retired and must not reappear.
 [[ ! -e "$root/scripts/agents/critique-round.sh" ]] \

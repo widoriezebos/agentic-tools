@@ -70,10 +70,10 @@ func runJSONObject(args []string) int {
 	return 0
 }
 
-// runJSONGet prints a dotted field from a JSON file, exiting 1 when
-// the file or field is absent or unparseable. Scalar values print bare
-// (no quotes) and composite values print as compact JSON, because
-// dozens of shell call sites string-compare the output.
+// runJSONGet prints a dotted field from a JSON file, exiting 3 when the
+// field is absent and 1 when the file is absent or the JSON is unparseable.
+// Scalar values print bare (no quotes) and composite values print as compact
+// JSON, because dozens of shell call sites string-compare the output.
 func runJSONGet(args []string) int {
 	flags := flag.NewFlagSet("json get", flag.ContinueOnError)
 	file := flags.String("file", "", "JSON file to read")
@@ -103,6 +103,13 @@ func runJSONGet(args []string) int {
 	}
 	out, ok := jsonedit.Get(content, *field, defValue)
 	if !ok {
+		// A default makes a structurally absent path resolvable while malformed
+		// JSON remains an error. The first lookup already accepted present null,
+		// so this probe preserves the distinction shell callers need.
+		missingMarker := "json-get-field-absent"
+		if _, absent := jsonedit.Get(content, *field, &missingMarker); absent {
+			return 3
+		}
 		return 1
 	}
 	fmt.Println(out)

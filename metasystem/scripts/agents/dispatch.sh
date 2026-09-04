@@ -148,7 +148,65 @@ json_field() { # file, dotted field
 }
 
 json_value() { # json string, dotted field
-  "$ms" json get --value "$1" --field "$2"
+  local output rc missing_marker=dispatch-json-field-absent
+  if output=$("$ms" json get --value "$1" --field "$2"); then
+    printf '%s\n' "$output"
+    return 0
+  else
+    rc=$?
+  fi
+  # Engines from before the distinct absent-field status still support a
+  # default probe. Present null already succeeded above, so the fallback does
+  # not collapse null into absence.
+  if [[ $rc -eq 3 ]] \
+      || [[ $("$ms" json get --value "$1" --field "$2" --default "$missing_marker" 2>/dev/null || true) == "$missing_marker" ]]; then
+    printf "dispatch: roster field %s is missing from the engine's output (engine older than the scripts? run scripts/agents/go-build.sh)\n" "$2" >&2
+    return 3
+  fi
+  return "$rc"
+}
+
+engine_script_skew_preflight() { # optional engine stamp for a focused fixture
+  local stamp=${1:-} status_output git_output git_rc checkout_commit protected_prefix= line relevant_change=0
+  if [[ -z "$stamp" ]]; then
+    if ! status_output=$("$ms" supervise status --repo "$root" 2>/dev/null); then
+      echo "dispatch: warning: could not read the engine build stamp; allowing dispatch" >&2
+      return 0
+    fi
+    if ! stamp=$("$ms" json get --value "$status_output" --field engineBuild 2>/dev/null); then
+      echo "dispatch: warning: the engine did not report a build stamp; allowing dispatch" >&2
+      return 0
+    fi
+  fi
+  if [[ "$stamp" == dev ]]; then
+    echo "dispatch: warning: engine build stamp is dev; allowing dispatch without a skew check" >&2
+    return 0
+  fi
+
+  set +e
+  git_output=$(git -C "$repo_scope" log --format='commit %H' --name-only --ancestry-path "$stamp..HEAD" 2>&1)
+  git_rc=$?
+  set -e
+  if (( git_rc != 0 )); then
+    echo "dispatch: warning: could not compare engine commit $stamp with the checkout (unknown commit or shallow clone); allowing dispatch" >&2
+    return 0
+  fi
+  checkout_commit=${git_output%%$'\n'*}
+  checkout_commit=${checkout_commit#commit }
+  if [[ "$root" != "$repo_scope" ]]; then
+    protected_prefix=${root#"$repo_scope"/}/
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      "$protected_prefix"internal/*|"$protected_prefix"cmd/*|"$protected_prefix"scripts/agents/*)
+        relevant_change=1
+        break
+        ;;
+    esac
+  done <<<"$git_output"
+  if [[ -n "$checkout_commit" && $relevant_change -eq 1 ]]; then
+    die 1 "dispatch refused: engine commit $stamp is older than checkout commit $checkout_commit and engine or agent scripts changed; run scripts/agents/go-build.sh, then steward arm"
+  fi
 }
 
 record_cas() { # job, expected status, target status, patch file
@@ -1168,6 +1226,7 @@ dispatch_job() {
   local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_tier=0 goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
   local -a product_root_args=() composition_source_args=()
+  engine_script_skew_preflight
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -1733,6 +1792,7 @@ follow_up() {
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp=
   local -a product_root_args=() continuation_args=()
+  engine_script_skew_preflight
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -2499,6 +2559,10 @@ fi
 command=${1:-}
 if [[ "$command" == --* ]]; then command=dispatch; else shift || true; fi
 case "$command" in
+  __engine-skew-preflight)
+    [[ $# -le 1 ]] || exit 2
+    engine_script_skew_preflight "${1:-}"
+    ;;
   dispatch) dispatch_job "$@" ;;
   watch) watch_job "$@" ;;
   follow-up) follow_up "$@" ;;

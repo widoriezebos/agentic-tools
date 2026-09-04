@@ -117,7 +117,7 @@ func runSuperviseStatus(args []string) int {
 		return 2
 	}
 	supervision := filepath.Join(*repo, "artifacts", "agents", "supervision")
-	result := map[string]any{"repo": *repo}
+	result := map[string]any{"repo": *repo, "engineBuild": supervise.BuildStamp}
 
 	owner := map[string]any{}
 	ownerPath := filepath.Join(supervision, "lock.d", "owner.json")
