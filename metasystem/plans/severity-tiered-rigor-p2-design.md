@@ -208,3 +208,19 @@ outputs file bound to the design blob (the equality with the build list
 stays a review check, not a proof); Go-quoted obligation values; a
 `goal accept-risk` verb under human proof whose accepted entries leave
 the unresolved set before the close table is read.
+
+### Revision 4.3 (2026-09-04 12:15 local): four slice-2a gaps answered
+
+The slice-2a build's first round (str-p2-build-2a) stopped on four
+contracts and left a clean tree. The answers are in
+plans/severity-tiered-rigor-p2-build-2a-gap-brief.md and amend 006, 007,
+003 and the build list's item 6: the classification draft's second field
+is the four scores `s,n,e,a` and its tail the basis, the tool derives
+the tier and marks `HUMAN-DECISION derived=<d>` on a tiered goal whose
+derivation is lower; `refusal:<code>` admits exactly the exported list
+`AdmissionRefusalCodes` (BUDGET_UNKNOWN, BUDGET_REFUSED, HAZARD_REFUSED,
+RISK_UNANSWERED); a raise re-binds the claim's revision only and keeps
+the epoch, the launch fence and the governed obligation; a goal-bound
+root reads the tuple's review-round member capped at
+`metasystem.budget.review-round-max`, a goal-free root reads that
+ceiling alone.
