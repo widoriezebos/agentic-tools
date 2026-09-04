@@ -61,12 +61,28 @@ Use `accepted` or `refuted` for material findings; a TRUE finding outside the br
 
 When a design chain exited through fixtures-as-arbiter (see the design-critique skill), this code critique is MANDATORY and the named fixture obligations are part of its findings surface: an unimplemented or failing named fixture is a material finding.
 
-The shipped round budget is three focused rounds. Start every chain from `scripts/agents/templates/review-brief.md` — round budget, threat model, appetite, and scope declared BEFORE round one; a true finding outside the declared threat model closes as out-of-scope citing the brief. Record the budget in the brief before review:
+Part One stores the review-round member in the goal's tier box: zero rounds
+for Tier 1, two for Tier 2, and three for Tier 3. Mechanical accounting is
+PENDING in Part Two under design point STR2-ROUND-ACCOUNTING-05: dispatch will
+freeze that boundary on the critic chain, count rounds spent against it, and
+make exhaustion open no fresh budget. Start every chain from
+`scripts/agents/templates/review-brief.md` — round budget, threat model,
+appetite, and scope declared BEFORE round one; a true finding outside the
+declared threat model closes as out-of-scope citing the brief. Record the
+goal's budget in the brief before review:
 
 1. Run both layers over the full implementation and adjudicate every finding.
 2. If corrections were required, send one focused follow-up to the same implementer, then recompute the whole diff and run both layers again.
-3. If material findings still required correction, use the final round to review that focused follow-up and the whole recomputed diff.
+3. While the reviewer's declared budget has a round left, review each focused follow-up and the whole recomputed diff.
 
-Stop at the first round with zero material findings.
+As the reviewer's R-60-m1 rule, stop at the first round with zero material findings.
 
-If material findings remain after round three, do not silently spend a fourth round and do not certify the change. The next focused follow-up must enumerate every open finding identifier; dispatch records that successor in the chain's `critiqueExhaustions` array and opens one fresh three-round budget on the same critic chain. If material findings exhaust that second budget, stop outright with the work waiting on the human. A human decision recorded in the stream plan is the only remedy.
+Only a finding that changes what gets built can keep the chain open and,
+PENDING Part Two from design revision 3, it must name the artifact it would
+change; that pending machinery demotes a finding that fails the artifact test.
+If material findings remain, do not certify the change. Only an approved token
+raising the goal's five-member tuple can raise its stored review-round member,
+never above the three-round ceiling. PENDING Part Two from design revision 3, `job
+critique-close` sends exhausted bounded findings to review obligations and
+closes after accepted risk; until the accounting and close exist, stop with the
+work waiting on the human. Never dispatch a silent fourth round.

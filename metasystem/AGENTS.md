@@ -28,6 +28,9 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 
 ## The Goal Thread
 
+Every backlog item's intake tier sets its budget (R-54-m1); four risk answers
+await Part Two.
+
 Programs START with `goal open`: any multi-session effort gets a ledger goal before its first commit, so the thread of intent survives every turn boundary. At turn end, read `goal next` — one line naming the current goal and its next step; this is the universal transport every runtime has, hooks or none. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through the `goal` verbs; the supported manual-edit path is edit-then-`goal reconcile`.
 
 ## Completion

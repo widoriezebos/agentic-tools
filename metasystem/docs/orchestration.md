@@ -47,9 +47,32 @@ The loop also has reverse edges. An implementer gap-stop reopens design with
 the gap as input. A critic finding that indicts the design rather than the code
 reopens design critique. A failed merge gate returns the work to
 implementation, after which the critic reviews the new tree. Design and code
-critique use their bounded skill budgets: an exhausted chain remains open, its
-successor brief enumerates every open finding identifier, and a second
-exhaustion stops with the work waiting on the human.
+critique draw on a review-round member that Part One stores on the goal: the
+`metasystem.budget.tier-1`, `metasystem.budget.tier-2`, and
+`metasystem.budget.tier-3` keys in `metasystem.conf` provide zero, two, and
+three rounds, while `metasystem.budget.review-round-max` keeps three as the
+ceiling. Mechanical accounting is PENDING in Part Two under design point
+STR2-ROUND-ACCOUNTING-05: dispatch will freeze that boundary on the chain
+root, count rounds spent against it, and make exhaustion open no fresh
+budget. The tier is classified at intake; PENDING Part Two from design
+revision 4, the four `--risk` answers and `--basis` derive it, `--why`
+records an override, and `gateWidth: area|full` is written on the chain root.
+
+Under R-60-m1, the reviewer stops critique at the first round with no material
+finding. A material finding must change what gets built and, PENDING Part Two from design
+revision 3, name that artifact; the same pending machinery demotes a finding
+that fails the artifact test and gives `job critique-close` its
+bounded-obligation and human-risk exits through `goal
+discharge-review-obligation`, `goal accept-risk`, and the goal's
+review-obligation records. Only an approved token raising the goal's
+five-member tuple can raise its stored round member, and never above the
+three-round ceiling; until the accounting and close land, the reviewer takes
+exhausted work to the human, never to a silent fourth round.
+Tier 1 has no critique and lands as a receipted direct fix bound to the
+candidate tree.
+The tier boxes' reserved-minute members are the runaway guard;
+`dispatch.cap-max` bounds each job's reservation, and
+`landing.receipt-bound-min` bounds the receipt command.
 
 ## Rostered Dispatch
 

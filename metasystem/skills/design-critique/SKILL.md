@@ -35,19 +35,31 @@ The loop's stop rule is fixed before round 1, never improvised mid-loop: the bri
 
 ## Round Budget and Exhaustion
 
-The shipped round budget is three focused rounds. Start every chain from `scripts/agents/templates/review-brief.md` — budget, threat model, appetite, and scope declared BEFORE round one; a true finding outside the declared threat model closes as out-of-scope citing the brief. Record the budget in the brief. If
-material findings remain after round three, the next focused follow-up must
-enumerate every open finding identifier; dispatch records that successor in
-the chain's `critiqueExhaustions` array and opens one fresh three-round budget
-on the same critic chain. If material findings exhaust that second budget,
-stop outright with the design waiting on the human. A human decision recorded
-in the stream plan is the only remedy.
+Part One stores the review-round member in the goal's tier box: zero rounds
+for Tier 1, two for Tier 2, and three for Tier 3. Mechanical accounting is
+PENDING in Part Two under design point STR2-ROUND-ACCOUNTING-05: dispatch will
+freeze that boundary on the critic chain, count rounds spent against it, and
+make exhaustion open no fresh budget. Start every chain from
+`scripts/agents/templates/review-brief.md` — budget, threat model, appetite,
+and scope declared BEFORE round one; a true finding outside the declared
+threat model closes as out-of-scope citing the brief. Record the goal's budget
+in the brief. As the reviewer's R-60-m1 rule, stop at the first round with no
+material finding. A finding keeps the chain open only when it changes what gets built
+and, PENDING Part Two from design revision 3, names the artifact it would
+change; that pending machinery demotes a finding that fails the artifact test.
 
-The budget lives on the critic CHAIN, so rounds must run as follow-ups on
-one chain. Dispatching a fresh critic job per round silently evades the
-budget — no exhaustion can ever fire — which is how a seven-round loop ran
-unbudgeted on this repository's own consolidation design (2026-08-12)
-before the human called it.
+Only an approved token raising the goal's five-member tuple can raise its
+stored review-round member, and the three-round ceiling still applies.
+PENDING Part Two from design revision 3, `job critique-close` defers exhausted
+bounded findings into review obligations or closes after a human records
+accepted risk; until the accounting and close exist, or whenever a severe or
+unproven finding remains, stop with the design waiting on the human. Never
+dispatch a silent fourth round.
+
+Rounds must run as follow-ups on one critic chain. Dispatching a fresh critic
+job per round silently evades the budget — no exhaustion can ever fire — which
+is how a seven-round loop ran unbudgeted on this repository's own consolidation
+design (2026-08-12) before the human called it.
 
 ## Fixtures as Arbiter: the Principled Exit
 
