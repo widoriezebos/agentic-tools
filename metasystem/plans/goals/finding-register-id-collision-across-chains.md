@@ -6,7 +6,7 @@
 - Origin: main
 - Next step: TIER 2 per R-54-m1 (mechanical logic inside an existing owner): build plus one code review; box 4h/6/720m/1/2. Waits for human approval for execution. Related: STR2-CRITIC-UNION-11 of the tiering design (the same-tree union), which is the lawful union this defect over-applies. SPECIMEN 2026-09-04 (m2): cancelling the stuck critic round (delegate --cancel str-build3-cc1) did not unblock the implementer follow-up (it still demands the register advance), and a critic follow-up to re-issue ids is refused because the fold itself fails; the only exit was a fresh implementer chain from a preserved branch (str-build3b) with a fresh critic. Until this lands, every critic brief must ask for chain-unique finding ids (STRxx-nn), never the schema's example F-n.
 - OpenedAt: 2026-09-04T01:40:46Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 
@@ -14,4 +14,5 @@ History:
 - 2026-09-04T01:40:46Z W6CNNVERCJ0WSECCHBFG386GGQ-m2-5fcf08ab open actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
 - 2026-09-04T01:43:35Z DJDSDV56G3BHTG89EPC037Y7K1-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
 - 2026-09-04T01:44:30Z ZHBHPZHE1CKNHRCQ6EEBBPRE5K-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
-Integrity: sha256=78105b8945fa421e4a9cc8f54fcbfe6b81d6a7ab42dc56ac41b7b33055312c42
+- 2026-09-04T06:15:37Z 02PQ3BH8QFVFG81ACZG1G66K4C-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=finding-register-id-collision-across-chains
+Integrity: sha256=64e220eea2160519304ee4e38f3cb91a24269f6f5a95d4dfe18fd17de32f4828
