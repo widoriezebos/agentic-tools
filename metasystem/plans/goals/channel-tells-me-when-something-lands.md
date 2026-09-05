@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: Wido 2026-09-05: 'the moment something lands, I want a message of that'. Decide where the trigger lives before building: land.sh posting directly after a successful push is immediate but couples landing to the channel, while a steward-tick sweep over commits since a cursor is decoupled but arrives a tick late; the likely answer is both, the landing posting best-effort and the cursor sweep catching whatever it missed, which is also what makes it exactly-once and what makes a failed post harmless. The message must respect the 1600-rune bound landed today in b52711d3a. m1's status.json shows the mechanism clearly: lastPost 09:44:22Z, two landings at 12:43 and 12:5x local, nothing sent until the verb was run by hand at 11:05Z
 - OpenedAt: 2026-09-05T11:06:28Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:human:Wido at=2026-09-05T11:07:20Z revision=2 opid=HRR0TKJ2B05VR66D040B7WNHRA-m1-a4f8999f authority=relayed digest=1ac70ba9942d9e20b56ed43064f41a43ec9890a00663b4e2dde4d92e2548738d reviewBy=2026-09-06
+- Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=5 at=2026-09-05T23:08:05Z
 - Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T23:07:14Z revision=5 accountingRevision=5
 - StopCapability: generation=5 revision=5 machine=m1 claimEpoch=5 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-05T11:07:23Z 5GHX4FFRCFAY1YYG22J3B3PDGV-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=channel-tells-me-when-something-lands
 - 2026-09-05T18:31:39Z 3N8V2K6XC8Y4WVV3XRP1QSAJ79-m1-a4f8999f release actor=m1+main-1788594343-3833-fb64b9 targets=channel-tells-me-when-something-lands
 - 2026-09-05T23:07:14Z GZMCKZ14H82473V2B1QKV1PG52-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=channel-tells-me-when-something-lands
-Integrity: sha256=951f7678ee3d09c73efa6f1565dfb52dec5b7c8c34eb6e21b600f3f0be8d91d6
+- 2026-09-05T23:08:05Z VW65NA89J7XSMTW56NHK1WDY4C-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=channel-tells-me-when-something-lands
+Integrity: sha256=879c37e043a6a6fd1a036d37eef8778b2c1f9526147eb8e7947a06c51d25bea3
