@@ -201,14 +201,14 @@ func TestReportOmitsEmptyParts(t *testing.T) {
 		text string
 		want string
 	}{
-		{name: "empty fleet", text: mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now}), want: "m status 2026-09-04 12:00Z"},
+		{name: "empty fleet", text: mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: time.UTC}), want: "m status 2026-09-04 12:00 +0000"},
 		{name: "needs you only", text: func() string {
 			root := t.TempDir()
 			if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "choose-colour", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
 				t.Fatal(err)
 			}
-			return mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: now})
-		}(), want: "m status 2026-09-04 12:00Z\nNeeds you: choose colour — Choose the launch colour."},
+			return mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: now, Location: time.UTC})
+		}(), want: "m status 2026-09-04 12:00 +0000\nNeeds you: choose colour — Choose the launch colour."},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -221,6 +221,35 @@ func TestReportOmitsEmptyParts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReportHeadlineUsesConfiguredLocalTimeAndOffset(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	location := time.FixedZone("machine-local", 5*60*60+30*60)
+	text := mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: location})
+	if text != "m status 2026-09-04 17:30 +0530" {
+		t.Fatalf("got %q, want configured wall-clock time and offset", text)
+	}
+	if strings.Contains(text, "12:00") {
+		t.Fatalf("report displayed UTC instead of configured local time: %q", text)
+	}
+}
+
+func TestChannelRecordTimesAndGitWindowRemainUTC(t *testing.T) {
+	location := time.FixedZone("machine-local", 5*60*60+30*60)
+	sentAt := time.Date(2026, 9, 4, 17, 30, 0, 0, location)
+	receivedAt := sentAt.Add(time.Minute)
+	record := InboundRecord(ReceiveRule{HumanUserID: "human", Now: receivedAt}, "telegram", "fleet", "machine", Inbound{
+		Ref:    MessageRef{ID: "message"},
+		UserID: "human",
+		SentAt: sentAt,
+	})
+	if record.SentAt != "2026-09-04T12:00:00Z" || record.ReceivedAt != "2026-09-04T12:01:00Z" {
+		t.Fatalf("record timestamps changed from UTC: sent=%q received=%q", record.SentAt, record.ReceivedAt)
+	}
+	if got := landingSince(sentAt); got != "--since=2026-09-04T12:00:00Z" {
+		t.Fatalf("git history window changed from UTC RFC 3339: %q", got)
 	}
 }
 
@@ -242,14 +271,19 @@ func TestStatusCadenceAndDigestGate(t *testing.T) {
 	if !ShouldPost(s, now, 4*time.Hour, "new", false) {
 		t.Fatal("changed due digest skipped")
 	}
-	old := "m status 2026-09-04 08:00Z\nNext up: first"
+	old := "m status 2026-09-04 08:00 +0200\nNext up: first"
 	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
-	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00Z\nNext up: first", false) {
+	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00 +0200\nNext up: first", false) {
 		t.Fatal("a changed header timestamp defeated the content digest")
 	}
-	old = "m status 2026-09-04 08:00Z"
+	legacy := "m status 2026-09-04 08:00Z\nNext up: first"
+	offset := "m status 2026-09-04 13:00 +0200\nNext up: first"
+	if Digest(legacy) != Digest(offset) {
+		t.Fatal("legacy Z and offset-bearing status headlines produced different content digests")
+	}
+	old = "m status 2026-09-04 08:00 +0200"
 	s = StatusState{LastPost: now.Add(-5 * time.Hour), ContentDigest: Digest(old)}
-	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00Z", false) {
+	if ShouldPost(s, now, 4*time.Hour, "m status 2026-09-04 13:00 +0200", false) {
 		t.Fatal("an empty fleet posted again because only its header time changed")
 	}
 }
@@ -270,9 +304,9 @@ func TestReportShowsOneQuestionTwoLandingsAndOnlyTwoNextItems(t *testing.T) {
 	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship delivery two\n\nGoal-Item: delivery-two")
 	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour)})
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC})
 	want := strings.Join([]string{
-		"fleet-one status " + now.Format("2006-01-02 15:04") + "Z",
+		"fleet-one status " + now.Format("2006-01-02 15:04") + " +0000",
 		"Needs you: launch choice — Choose the launch colour.",
 		"Delivered: delivery one — Ship delivery one",
 		"Delivered: delivery two — Ship delivery two",
@@ -291,7 +325,7 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	waiting.Pinned = "fleet-one"
 	waiting.Labels = []string{"next"}
 	root := reportLedger(t, waiting)
-	withoutQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	withoutQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
 	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — Reply in this thread with this token verbatim, followed by your code: start waiting-feature") {
 		t.Fatalf("approval gap was omitted:\n%s", withoutQuestion)
 	}
@@ -299,7 +333,7 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}, Budget: &questionBudget}); err != nil {
 		t.Fatal(err)
 	}
-	withQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	withQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
 	if strings.Count(withQuestion, "Needs you: waiting feature") != 1 || !strings.Contains(withQuestion, "approve the requested budget raise.") {
 		t.Fatalf("the open budget question did not replace the generic approval gap:\n%s", withQuestion)
 	}
@@ -489,8 +523,8 @@ func TestReportOmitsApprovalForElevenUnmarkedQueuedGoals(t *testing.T) {
 		goals = append(goals, f)
 	}
 	root := reportLedger(t, goals...)
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
-	want := "fleet-one status 2026-09-04 12:00Z"
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
+	want := "fleet-one status 2026-09-04 12:00 +0000"
 	if text != want || strings.Contains(text, "Needs you:") {
 		t.Fatalf("unmarked queued goals produced an approval decision\n--- got ---\n%s\n--- want ---\n%s", text, want)
 	}
@@ -501,7 +535,7 @@ func TestReportNamesTheMarkedPinnedGoalAndReturnsItsBinding(t *testing.T) {
 	marked := reportGoal("real-next-pick", "Build the selected feature.", goal.StateQueued, "fleet-one", now)
 	marked.Labels = []string{"next"}
 	root := reportLedger(t, marked)
-	text, goalID, err := ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	text, goalID, err := ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +551,7 @@ func TestReportDoesNotRequestApprovalWhenFirstBudgetedGoalIsApproved(t *testing.
 	waiting := reportGoal("beta-waiting", "Wait for approval.", goal.StateQueued, "", now)
 	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
 	root := reportLedger(t, approved, waiting)
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now})
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
 	if strings.Contains(text, "Needs you:") || !strings.Contains(text, "Next up: alpha approved") {
 		t.Fatalf("an approved first goal should need no approval:\n%s", text)
 	}
@@ -531,7 +565,7 @@ func TestReportCapsAllOutputAtTwelveLines(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: time.Now(), Undelivered: 2})
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: time.Now(), Location: time.UTC, Undelivered: 2})
 	lines := strings.Split(text, "\n")
 	if len(lines) != 12 || !strings.HasPrefix(lines[len(lines)-1], "Undelivered: 2 channel messages") {
 		t.Fatalf("line count=%d, last=%q\n%s", len(lines), lines[len(lines)-1], text)
@@ -556,7 +590,7 @@ func TestReportCapTrimsNextUpBeforeNeedsYou(t *testing.T) {
 	}
 	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour)})
+	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC})
 	lines := strings.Split(text, "\n")
 	if len(lines) != 12 || !strings.Contains(text, "Needs you: launch choice — Choose the launch colour.") || strings.Contains(text, "Next up:") {
 		t.Fatalf("the cap did not preserve the decision while trimming Next up first:\n%s", text)
@@ -572,14 +606,14 @@ func TestLandingIsReportedInExactlyOnePostWindow(t *testing.T) {
 	}
 	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship it once\n\nGoal-Item: one-landing")
 	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
-	first := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost})
+	first := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost, Location: time.UTC})
 	if strings.Count(first, "Delivered: one landing — Ship it once") != 1 {
 		t.Fatalf("first post did not report the landing once:\n%s", first)
 	}
 	if err := SaveStatusState(root, StatusState{LastPost: firstPost, ContentDigest: Digest(first)}); err != nil {
 		t.Fatal(err)
 	}
-	second := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost.Add(time.Hour)})
+	second := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost.Add(time.Hour), Location: time.UTC})
 	if strings.Contains(second, "Delivered:") {
 		t.Fatalf("second post repeated the landing:\n%s", second)
 	}

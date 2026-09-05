@@ -18,6 +18,10 @@ import (
 type ReportConfig struct {
 	RepoRoot, Machine string
 	Now, WindowStart  time.Time
+	// Location is the IANA time zone used for the human-readable status time.
+	// It defaults to the posting machine's zone. Supplying the same Location
+	// for every machine makes every status line use that one zone.
+	Location          *time.Location
 	Undelivered       int
 	OldestUndelivered time.Time
 }
@@ -31,7 +35,10 @@ func ComposeReport(c ReportConfig) (string, error) {
 // execution-approval line, when that line fits in the post.
 func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	if c.Now.IsZero() {
-		c.Now = time.Now().UTC()
+		c.Now = time.Now()
+	}
+	if c.Location == nil {
+		c.Location = time.Local
 	}
 	if c.WindowStart.IsZero() {
 		c.WindowStart = LoadStatusState(c.RepoRoot).LastPost
@@ -81,7 +88,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	if c.Undelivered > 0 {
 		lineLimit--
 	}
-	lines := []string{fmt.Sprintf("%s status %sZ", c.Machine, c.Now.UTC().Format("2006-01-02 15:04"))}
+	lines := []string{fmt.Sprintf("%s status %s", c.Machine, c.Now.In(c.Location).Format("2006-01-02 15:04 -0700"))}
 	for _, part := range [][]string{needs, delivered, next} {
 		for _, line := range part {
 			if len(lines) == lineLimit {
@@ -156,7 +163,7 @@ func oneSentence(s string) string {
 }
 
 func landingLines(c ReportConfig, features map[string]string) []string {
-	cmd := exec.Command("git", "-C", c.RepoRoot, "log", "origin/main", "--since="+c.WindowStart.UTC().Format(time.RFC3339), "--format=%s%x00%(trailers:key=Goal-Item,valueonly)")
+	cmd := exec.Command("git", "-C", c.RepoRoot, "log", "origin/main", landingSince(c.WindowStart), "--format=%s%x00%(trailers:key=Goal-Item,valueonly)")
 	cmd.Env = reportGitEnv()
 	b, err := cmd.Output()
 	if err != nil {
@@ -186,6 +193,10 @@ func landingLines(c ReportConfig, features map[string]string) []string {
 	return out
 }
 
+func landingSince(windowStart time.Time) string {
+	return "--since=" + windowStart.UTC().Format(time.RFC3339)
+}
+
 func reportGitEnv() []string {
 	drop := map[string]bool{
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true, "GIT_INDEX_FILE": true,
@@ -206,7 +217,8 @@ func reportGitEnv() []string {
 
 func Digest(text string) string {
 	first, body, hasBody := strings.Cut(text, "\n")
-	if strings.Contains(first, " status ") && strings.HasSuffix(first, "Z") {
+	_, timestamp, isStatus := strings.Cut(first, " status ")
+	if isStatus && isStatusTimestamp(timestamp) {
 		text = ""
 		if hasBody {
 			text = body
@@ -214,6 +226,15 @@ func Digest(text string) string {
 	}
 	h := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(h[:])
+}
+
+func isStatusTimestamp(value string) bool {
+	for _, layout := range []string{"2006-01-02 15:04 -0700", "2006-01-02 15:04Z"} {
+		if _, err := time.Parse(layout, value); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 type StatusState struct {
