@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: One brain seat for a fleet of headless nodes. The nodes run the mission runner on approved goals and talk over the fleet conversation channel; the brain never builds anything. It works with Wido on the backlog: drafts items from his words and from what the nodes report, classifies them into tiers, proposes budgets and order, keeps the queue honest, and hands him the one act only he does, approval for execution. It watches the cluster (which node runs what, who is stuck, what a question means), answers what the records can answer, and escalates to him only what needs his word. It is the narrator plus judgment plus a hand on the queue. Three constraints: the brain is never a bottleneck (nodes proceed on rules and records; the cluster keeps working the approved queue when the brain is down); authority stays with Wido (the brain drafts and proposes, never approves execution, never mints rulings, carries his words verbatim); the first form is a Claude session on m1 with the channel, the ledger and the census, forbidden from dispatching work, and later a runner role of its own.
 - Origin: main
-- Next step: The role packet is written at plans/fleet-coordinator-brain-role-packet.md and is UNLANDED: landing it needs this goal approved and claimed, because the landing stamps a Goal-Item that must be held by this machine. Its voice has landed (fleet-slack-channel done) and R-67-m1's order puts it after the first headless run, which is itself paused. One word from Wido approves it; the packet then lands as a records carriage with no build.
+- Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 6
+- Revision: 7
 - Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -22,4 +22,5 @@ History:
 - 2026-09-05T18:33:04Z 00Q9KJPNZV2XGNY1TQ1R3GZ600-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-05T21:14:27Z G2JAANGCE4VB9ADXEPMJXEA6K0-m1-a4f8999f approve actor=human:human:Wido targets=fleet-coordinator-brain authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="I approve fleet-coordinator-brain"
 - 2026-09-05T21:14:33Z 354510KMRJW3FJ7WTD795D6N2W-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
-Integrity: sha256=28ded5c09e6424f1c7ddfcbebcf2bb82184bc1e300ddfa5e1ae9957eac9db634
+- 2026-09-05T21:17:43Z ZXA56AZTGNJ4BHS36N311W1V12-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
+Integrity: sha256=f4cf6ace00523fa14c094b230ce44ff67910f9175a492709933a9c1f9dc1db07
