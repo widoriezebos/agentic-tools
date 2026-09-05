@@ -1,18 +1,21 @@
 # channel-ask-fits-one-message
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: nothing is authorized wrongly, but a token pushed into a later chunk is a decision the human cannot act on without scrolling a wall, and the channel is the only path for the human's word when no terminal is at hand; novelty 1: the bound and the trimming primitive both already exist in report.go and are being applied to a second renderer; exposure 2: every ask the fleet posts, read by one human; accumulation 1: first report, though it shares a cause with the four channel defects of 2026-09-04 recorded on fleet-channel-gateway"
 - Tier: 2
 - Intent: An ask posts a wall of text in Telegram. internal/channel/question.go:231 renderQuestion prints every fact, every option's full consequence, and the recommendation verbatim, and this repo's facts are goal-record prose that runs to thousands of characters; internal/channel/telegram/telegram.go:117,152 then splits the result at a 4000-rune chunkLimit, so one ask becomes several giant messages. The status report already bounds itself to twelve lines at report.go:80-96 and trims with oneSentence at report.go:144; the ask has no such bound. DONE means an ask a human reads is one bounded message with its reply token intact, long material trimmed with the trim visible rather than silently dropped, and the token instruction never separated from the token by a chunk boundary
 - Origin: main
 - Next step: Bound renderQuestion at internal/channel/question.go:231: cap the number of facts and the length of each, trim option consequences the way report.go:144 oneSentence already does, and keep the reply instruction and the verbatim token whole and last so a chunk boundary can never separate them. Wido asked for this on 2026-09-05 alongside channel-local-timestamps; both are internal/channel only and touch neither repo identity nor arming, so neither waits on m2's supervisor landing
 - OpenedAt: 2026-09-05T10:12:52Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:human:Wido at=2026-09-05T10:13:13Z revision=2 opid=DHD8HMP1GB5W63KMXDJBP20ZVW-m1-a4f8999f authority=relayed digest=c1b6f0192675237f725c3b68b26baf76973de58d405fd6ba61feeae273a54918 reviewBy=2026-09-06
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T10:13:16Z revision=3 accountingRevision=3
+- StopCapability: generation=3 revision=3 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:12:52Z EQKY33K9R2T59R93YK4D2WQS62-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
 - 2026-09-05T10:13:13Z DHD8HMP1GB5W63KMXDJBP20ZVW-m1-a4f8999f approve actor=human:human:Wido targets=channel-ask-fits-one-message authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Instead of waiting, work on the Telegram messages: the timestamp one, and the other low-risk one that prevents a wall of text in Telegram. Maybe do these now."
-Integrity: sha256=d983d5e90d2fe85d46eacfbc8c8adff0d5391303c3ca41039afd972e6346fbce
+- 2026-09-05T10:13:16Z RAPPRPKV3PN44FAYF9S7HRBEV7-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
+Integrity: sha256=4e3285791d316a68dc12d13873797233b4d8b6af7ab04835af5388838a0f9d0d
