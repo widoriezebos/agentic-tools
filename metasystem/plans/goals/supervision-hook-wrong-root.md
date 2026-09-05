@@ -3,10 +3,11 @@
 - State: queued
 - Intent: The harness supervision hook resolves the wrong repository on nested checkouts: run from metasystem/ inside the agentic-tools-m3 clone it derives the git toplevel (the outer repo) as its metasystem root, reports a bootstrap world (no ledger, no steward), and its turn evidence never lands where health's hook-freshness role reads - m3 has hook-freshness=dead since enrollment with the hook firing every turn. DONE means the hook resolves the metasystem project root deterministically on nested checkouts, its turn evidence lands, and hook-freshness goes alive, proven by a fixture running the hook from a nested layout
 - Origin: main
-- Next step: WAITS ON WIDO (attempt fence): design at revision 3, TWO findings from closure (register records/misc/hook-root-critique-r3.md; fold-4 brief landed and ready). The prior box's six attempts were spent by six ladder ROUNDS (~15 min each), not failures — the R-44 calibration finding: a full ladder is 7+ rounds, so attempt-limit 6 can never fit one. The machinery refuses both the identical re-box (no new revision) and the split (recorded work). One word resumes it: either a tuple with attempts 10 for this goal, or the standing R-44 tuple amended to attempts 10, or attempts redefined to count failures. Everything is landed; any seat resumes cold from this note
+- Next step: Fence lifted: the 2026-09-02T06:53Z set-budget already raised attemptLimit to 10, so the WAITS ON WIDO note it replaced is stale; the claim now refuses for a different reason, APPROVAL_REQUIRED, which only Wido clears with goal approve. Built and verified on m1 2026-09-05, uncommitted on the current tip: the hook passes the INSTALLATION root to proc find-ancestor (the adapters live there, so the Git toplevel resolved to nothing and every session start in this layout refused arming) and writes its evidence under the installation, pinned by a new fixture that runs the real ancestor walk under a real signature-matching parent - the template scenario beside it stubs find-ancestor, which is why the suite never saw this. Also fixed: the open-work scanner read a fenced example in goal-scope-bounds-design.md as that plan's own next step and refused turn ends over work nobody wrote. All 15 hook fixtures pass. Landing needs a reviewed implementation chain (commit.sh refuses without --chain), so on approval: claim, dispatch a code-critic, fold, close, land. Still owed after that: steward, health, lease and report turn-verdict still take the outer root, which is why hook-freshness reads dead against the installation; that is design revision 3's full consumer sweep.
 - OpenedAt: 2026-09-01T07:25:56Z
-- Revision: 11
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 12
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=6 at=2026-09-01T22:28:54Z
 
 History:
@@ -21,4 +22,5 @@ History:
 - 2026-09-01T23:35:27Z CDJQKRR80476C6GJPVDJNRH7CP-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-01T23:35:31Z GTZ8BA0T05NB9DV9KWXY7EJSZH-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
 - 2026-09-02T06:53:09Z 504Q8HYVBQSC634T92TB9CZEMJ-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=supervision-hook-wrong-root
-Integrity: sha256=6275c4d1f9972b1cd3f3d3e43db95089e58c19c12a65b680407a9844d98edd25
+- 2026-09-05T10:02:47Z 3N1CNSERR0KTC4XW0G7TNWT6X3-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=supervision-hook-wrong-root
+Integrity: sha256=059f5bec667e522ba407d9161fc65baef73ede025712a9d8b22a99b498dcdd16
