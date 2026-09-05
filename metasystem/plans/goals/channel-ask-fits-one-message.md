@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: Bound renderQuestion at internal/channel/question.go:231: cap the number of facts and the length of each, trim option consequences the way report.go:144 oneSentence already does, and keep the reply instruction and the verbatim token whole and last so a chunk boundary can never separate them. Wido asked for this on 2026-09-05 alongside channel-local-timestamps; both are internal/channel only and touch neither repo identity nor arming, so neither waits on m2's supervisor landing
 - OpenedAt: 2026-09-05T10:12:52Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:human:Wido at=2026-09-05T10:13:13Z revision=2 opid=DHD8HMP1GB5W63KMXDJBP20ZVW-m1-a4f8999f authority=relayed digest=c1b6f0192675237f725c3b68b26baf76973de58d405fd6ba61feeae273a54918 reviewBy=2026-09-06
+- Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=3 at=2026-09-05T10:19:23Z
 - Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T10:13:16Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1 claimEpoch=5 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-05T10:12:52Z EQKY33K9R2T59R93YK4D2WQS62-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
 - 2026-09-05T10:13:13Z DHD8HMP1GB5W63KMXDJBP20ZVW-m1-a4f8999f approve actor=human:human:Wido targets=channel-ask-fits-one-message authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Instead of waiting, work on the Telegram messages: the timestamp one, and the other low-risk one that prevents a wall of text in Telegram. Maybe do these now."
 - 2026-09-05T10:13:16Z RAPPRPKV3PN44FAYF9S7HRBEV7-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
-Integrity: sha256=4e3285791d316a68dc12d13873797233b4d8b6af7ab04835af5388838a0f9d0d
+- 2026-09-05T10:19:23Z 8N1FZJ2YSMCSCQ9EZK8GK3ZBGJ-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
+Integrity: sha256=18d10b5ff22e6b1d9a8961eff20e36d7a39705f7886306e3520a1c32de37b5a5
