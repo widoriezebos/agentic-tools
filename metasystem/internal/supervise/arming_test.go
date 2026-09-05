@@ -3,6 +3,7 @@ package supervise
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 type armingComponentProbe struct {
@@ -89,7 +91,7 @@ func TestArmingOwnerHelper(t *testing.T) {
 			t.Fatalf("read %s helper identity: state=%s err=%v", component, componentState, componentErr)
 		}
 		held = append(held, Held{Component: component, Tag: componentTag, Identity: componentExact.Ref(), Generation: generation})
-		_ = command.Process.Release()
+		go func() { _ = command.Wait() }()
 	}
 	if err := checkout.PublishState(held); err != nil {
 		t.Fatal(err)
@@ -509,7 +511,7 @@ func TestEnsureArmedRefusesAnUninspectableLockOwner(t *testing.T) {
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	owner := ArmingOwner{Pid: 41, PidStartedAt: 100, InstanceTag: "owner-tag"}
+	owner := ArmingOwner{Pid: 41, PidStartedAt: 100, InstanceTag: "metasystem-supervision-owner-test-owner-tag"}
 	if err := WriteArmingOwner(root, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +625,7 @@ func TestDeadOwnerTakeoverReportsCensusFailureWithoutChangingTheLock(t *testing.
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	owner := ArmingOwner{Pid: 99999999, PidStartedAt: 1, InstanceTag: "dead-owner"}
+	owner := ArmingOwner{Pid: 99999999, PidStartedAt: 1, InstanceTag: "metasystem-supervision-owner-test-dead-owner"}
 	if err := WriteArmingOwner(root, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -930,6 +932,302 @@ func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T)
 	}
 	if err := Shutdown(root, "metasystem-supervision-owner-test-", 1); err != nil {
 		t.Fatalf("repeated shutdown was not idempotent: %v", err)
+	}
+}
+
+func TestGenerationReplacementRefusesOwnerRecordedForAnotherCheckout(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		sameMainIdentity bool
+	}{
+		{name: "same main identity", sameMainIdentity: true},
+		{name: "different main identities", sameMainIdentity: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			exerciseCheckoutCustodyInvariant(t, test.sameMainIdentity)
+		})
+	}
+}
+
+func exerciseCheckoutCustodyInvariant(t *testing.T, sameMainIdentity bool) {
+	t.Helper()
+	reapArmingOwnerProcesses(t)
+	base := t.TempDir()
+	checkoutA := filepath.Join(base, "checkout-a")
+	checkoutB := filepath.Join(base, "checkout-b")
+	temporaryRoot := filepath.Join(base, "temporary-root")
+	for _, root := range []string{checkoutA, checkoutB, temporaryRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+			t.Fatalf("initialize real checkout %s: %v: %s", root, err, output)
+		}
+	}
+
+	prior := enumerateTakeoverProcesses
+	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
+	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
+
+	start := func(root, prefix, fingerprint string) EnsureResult {
+		options := armingOptions(root)
+		options.OwnerTagPrefix = prefix
+		options.Fingerprint = fingerprint
+		result, err := EnsureArmed(options)
+		if err != nil || !result.Inspection.Armed() {
+			t.Fatalf("arm %s: result=%+v err=%v", root, result, err)
+		}
+		return result
+	}
+	checkoutAResult := start(checkoutA, "owner-checkout-a-", "fingerprint-a")
+	checkoutBResult := start(checkoutB, "owner-checkout-b-", "fingerprint-b")
+	temporaryResult := start(temporaryRoot, "owner-temporary-root-", "fingerprint-temporary")
+
+	cleanupRoot := func(root string) {
+		owner, err := ReadArmingOwner(root)
+		if err != nil {
+			return
+		}
+		_ = stopOwner(root, owner, 1, "test cleanup")
+		_ = stopTakeoverComponents(root, root, owner.InstanceTag, 1)
+		_ = releaseDeadOwnerLock(root, owner)
+	}
+	t.Cleanup(func() {
+		cleanupRoot(checkoutA)
+		cleanupRoot(checkoutB)
+		cleanupRoot(temporaryRoot)
+	})
+
+	registryHome := filepath.Join(base, "registry-home")
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", registryHome)
+	registryPath := filepath.Join(registryHome, ".metasystem", "armed-checkouts.jsonl")
+	if err := os.MkdirAll(filepath.Dir(registryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	appendOwnerRows := func(root string, result EnsureResult, custodyID string) {
+		t.Helper()
+		state, err := os.ReadFile(filepath.Join(SupervisionDir(root), "state.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document stateDocument
+		if err := json.Unmarshal(state, &document); err != nil {
+			t.Fatal(err)
+		}
+		rows := []map[string]any{
+			{
+				"schemaVersion": 1, "event": registry.EventArming, "checkoutPath": root,
+				"at": time.Now().UTC().Format(time.RFC3339), "ownerTag": result.Owner.InstanceTag,
+				"custodyId": custodyID,
+			},
+			{
+				"schemaVersion": 1, "event": registry.EventArmed, "checkoutPath": root,
+				"at": time.Now().UTC().Format(time.RFC3339), "ownerTag": result.Owner.InstanceTag,
+				"ownerPid": result.Owner.Pid, "ownerPidStartedAt": result.Owner.PidStartedAt,
+				"generation": result.Generation, "custodyId": custodyID,
+			},
+		}
+		for _, row := range rows {
+			payload, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := registry.AppendFrame(registryPath, payload); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	current, liveness, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || liveness != identity.Alive {
+		t.Fatalf("read common main identity: liveness=%s err=%v", liveness, err)
+	}
+	type supervisedCheckout struct {
+		root   string
+		result EnsureResult
+	}
+	checkouts := []supervisedCheckout{
+		{root: checkoutA, result: checkoutAResult},
+		{root: checkoutB, result: checkoutBResult},
+		{root: temporaryRoot, result: temporaryResult},
+	}
+	for index, checkout := range checkouts {
+		custodianPid, custodianStarted := current.Pid, current.StartedAt.Unix()
+		if !sameMainIdentity {
+			custodianPid = checkout.result.Owner.Pid
+			custodianStarted = checkout.result.Owner.PidStartedAt
+		}
+		custodyID := fmt.Sprintf("custody-%d", index)
+		payload, err := json.Marshal(map[string]any{
+			"schemaVersion": 1, "event": registry.EventCustody, "checkoutPath": checkout.root,
+			"at": time.Now().UTC().Format(time.RFC3339), "custodyId": custodyID,
+			"custodianPid": custodianPid, "custodianPidStartedAt": custodianStarted,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := registry.AppendFrame(registryPath, payload); err != nil {
+			t.Fatal(err)
+		}
+		appendOwnerRows(checkout.root, checkout.result, custodyID)
+	}
+	registryBefore, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOtherCheckoutsUntouched := func(operation string) {
+		t.Helper()
+		for name, supervised := range map[string]struct {
+			root  string
+			owner ArmingOwner
+		}{
+			"checkout B":     {root: checkoutB, owner: checkoutBResult.Owner},
+			"temporary root": {root: temporaryRoot, owner: temporaryResult.Owner},
+		} {
+			if state := ownerLiveness(supervised.owner); state != identity.Alive {
+				t.Fatalf("%s was disturbed by checkout A %s: liveness=%s", name, operation, state)
+			}
+			stateBytes, err := os.ReadFile(filepath.Join(SupervisionDir(supervised.root), "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document stateDocument
+			if err := json.Unmarshal(stateBytes, &document); err != nil {
+				t.Fatal(err)
+			}
+			for _, componentName := range []string{string(Watcher), string(Reaper)} {
+				component := document.Components[componentName]
+				ref := identity.Ref{
+					Pid: component.Pid, StartedAtSec: component.PidStartedAt,
+					StartTicks: component.PidStartTicks, BootID: component.BootID,
+				}
+				if liveness := identity.AliveTaggedRef(identity.KernelProber{}, ref, component.InstanceTag); liveness != identity.Alive {
+					t.Fatalf("%s %s was disturbed by checkout A %s: liveness=%s", name, componentName, operation, liveness)
+				}
+			}
+		}
+		registryAfter, err := os.ReadFile(registryPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(registryAfter) != string(registryBefore) {
+			t.Fatalf("checkout A %s changed another checkout's registry rows", operation)
+		}
+	}
+	assertOtherCheckoutsUntouched("initial arming")
+
+	if err := ShutdownAt(checkoutA, checkoutA, "owner-checkout-a-", 1); err != nil {
+		t.Fatalf("shutdown checkout A: %v", err)
+	}
+	assertOtherCheckoutsUntouched("shutdown")
+	checkoutAResult = start(checkoutA, "owner-checkout-a-", "fingerprint-a")
+	assertOtherCheckoutsUntouched("fresh arm after shutdown")
+
+	if state := ownerLiveness(checkoutAResult.Owner); state != identity.Alive {
+		t.Fatalf("checkout A owner was not live before takeover setup: %s", state)
+	}
+	if err := signalGroup(checkoutAResult.Owner.Pid, syscall.SIGTERM); err != nil {
+		t.Fatalf("stop checkout A owner for takeover: %v", err)
+	}
+	ownerDeadline := time.Now().Add(2 * time.Second)
+	for ownerLiveness(checkoutAResult.Owner) != identity.Dead && time.Now().Before(ownerDeadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if state := ownerLiveness(checkoutAResult.Owner); state != identity.Dead {
+		t.Fatalf("checkout A owner did not become provably dead for takeover: %s", state)
+	}
+	takeoverOptions := armingOptions(checkoutA)
+	takeoverOptions.OwnerTagPrefix = "owner-checkout-a-"
+	takeoverOptions.Fingerprint = "fingerprint-a"
+	checkoutAResult, err = EnsureArmed(takeoverOptions)
+	if err != nil || checkoutAResult.Action != "taken-over" {
+		t.Fatalf("fresh arm did not take over checkout A: result=%+v err=%v", checkoutAResult, err)
+	}
+	assertOtherCheckoutsUntouched("dead-owner takeover")
+
+	relaunchOptions := takeoverOptions
+	relaunchOptions.Fingerprint = "fingerprint-a-relaunched"
+	checkoutAResult, err = EnsureArmed(relaunchOptions)
+	if err != nil || checkoutAResult.Action != "replaced" {
+		t.Fatalf("checkout A relaunch failed: result=%+v err=%v", checkoutAResult, err)
+	}
+	assertOtherCheckoutsUntouched("relaunch")
+
+	components, err := recordedHeld(checkoutA)
+	if err != nil || len(components) != 2 {
+		t.Fatalf("read checkout A components for dead-component reap: components=%+v err=%v", components, err)
+	}
+	control := recordedComponentControl{
+		prober: identity.KernelProber{}, groupAbsent: kernelGroupAbsent,
+		signalGroup: func(pgid int64, signal syscall.Signal) error {
+			return signalGroup(pgid, signal)
+		},
+	}
+	if err := stopRecordedComponent(control, components[0], 1000); err != nil {
+		t.Fatalf("stop checkout A component for reap: %v", err)
+	}
+	relaunchOptions.Fingerprint = "fingerprint-a-after-component-reap"
+	checkoutAResult, err = EnsureArmed(relaunchOptions)
+	if err != nil || checkoutAResult.Action != "replaced" {
+		t.Fatalf("dead checkout A component was not reaped through relaunch: result=%+v err=%v", checkoutAResult, err)
+	}
+	assertOtherCheckoutsUntouched("dead-component reap")
+
+	frames, err := registry.ReadFrames(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := registry.CompactFrames(frames, time.Now(), time.Hour)
+	if err != nil {
+		t.Fatalf("registry sweep selection: %v", err)
+	}
+	if err := registry.WriteCompacted(registryPath, kept); err != nil {
+		t.Fatalf("registry sweep rewrite: %v", err)
+	}
+	assertOtherCheckoutsUntouched("registry sweep")
+
+	checkoutAState, err := os.ReadFile(filepath.Join(SupervisionDir(checkoutA), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.WriteFile(filepath.Join(SupervisionDir(checkoutA), "state.json"), checkoutAState, 0o600)
+		_ = WriteArmingOwner(checkoutA, checkoutAResult.Owner)
+	})
+	foreignState, err := os.ReadFile(filepath.Join(SupervisionDir(checkoutB), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(SupervisionDir(checkoutA), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(SupervisionDir(checkoutA), "state.json"), foreignState, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(ownerLockDir(checkoutA), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteArmingOwner(checkoutA, checkoutBResult.Owner); err != nil {
+		t.Fatal(err)
+	}
+	shutdownErr := ShutdownAt(checkoutA, checkoutA, "owner-checkout-b-", 1)
+	if shutdownErr == nil || !strings.Contains(shutdownErr.Error(), checkoutA) || !strings.Contains(shutdownErr.Error(), checkoutB) {
+		t.Fatalf("shutdown did not refuse the cross-checkout owner and name both paths: %v", shutdownErr)
+	}
+	assertOtherCheckoutsUntouched("shutdown refusal")
+
+	// A template installation can keep supervision state beneath checkout B
+	// while an up request names checkout A as its Git scope. That was the live
+	// incident shape: the shared state root exposed B's owner to A's generation
+	// replacement path. Scope, not the state directory, is the requested
+	// checkout identity.
+	options := armingOptions(checkoutB)
+	options.Scope = checkoutA
+	options.OwnerTagPrefix = "owner-checkout-a-"
+	options.Fingerprint = "fingerprint-a"
+	_, err = EnsureArmed(options)
+	assertOtherCheckoutsUntouched("generation replacement refusal")
+	if err == nil || !strings.Contains(err.Error(), checkoutA) || !strings.Contains(err.Error(), checkoutB) {
+		t.Fatalf("generation replacement did not refuse the cross-checkout owner and name both paths: %v", err)
 	}
 }
 

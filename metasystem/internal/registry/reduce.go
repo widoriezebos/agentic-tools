@@ -147,6 +147,8 @@ func Reduce(frames []Frame) (*Reduction, error) {
 		Custodies: map[string]*Custody{},
 		SeenTags:  map[string]bool{},
 	}
+	claimPaths := map[string]string{}
+	custodyPaths := map[string]string{}
 	for _, frame := range frames {
 		if frame.Record == nil {
 			reduction.Fragments++
@@ -161,16 +163,30 @@ func Reduce(frames []Frame) (*Reduction, error) {
 		}
 		switch record.Event {
 		case EventArming, EventArmed, EventRelaunched, EventLaunched, EventExited, EventReaped, EventSwept:
-			reduction.foldClaim(record)
+			if path, seen := claimPaths[record.OwnerTag]; seen && path != record.CheckoutPath {
+				return nil, fmt.Errorf("line %d: owner tag %q belongs to checkout %q, but the %s record names checkout %q", frame.Line, record.OwnerTag, path, record.Event, record.CheckoutPath)
+			}
+			claimPaths[record.OwnerTag] = record.CheckoutPath
+			if err := reduction.foldClaim(record); err != nil {
+				return nil, fmt.Errorf("line %d: %w", frame.Line, err)
+			}
 		case EventCustody, EventCustodyReleased:
-			reduction.foldCustody(record)
+			if path, seen := custodyPaths[record.CustodyID]; seen && path != record.CheckoutPath {
+				return nil, fmt.Errorf("line %d: custody %q belongs to checkout %q, but the %s record names checkout %q", frame.Line, record.CustodyID, path, record.Event, record.CheckoutPath)
+			}
+			custodyPaths[record.CustodyID] = record.CheckoutPath
+			if err := reduction.foldCustody(record); err != nil {
+				return nil, fmt.Errorf("line %d: %w", frame.Line, err)
+			}
 		}
 	}
-	reduction.bindCustodies()
+	if err := reduction.bindCustodies(); err != nil {
+		return nil, err
+	}
 	return reduction, nil
 }
 
-func (r *Reduction) foldClaim(record *Record) {
+func (r *Reduction) foldClaim(record *Record) error {
 	r.SeenTags[record.OwnerTag] = true
 	claim := r.Claims[record.OwnerTag]
 	if claim == nil {
@@ -181,7 +197,7 @@ func (r *Reduction) foldClaim(record *Record) {
 			// claim so sweep bookkeeping is not lost; everything else
 			// is dropped.
 			if record.Event != EventExited && record.Event != EventReaped && record.Event != EventSwept {
-				return
+				return nil
 			}
 		}
 		claim = &Claim{
@@ -191,11 +207,13 @@ func (r *Reduction) foldClaim(record *Record) {
 		}
 		r.Claims[record.OwnerTag] = claim
 		r.Order = append(r.Order, record.OwnerTag)
+	} else if claim.CheckoutPath != record.CheckoutPath {
+		return fmt.Errorf("owner tag %q belongs to checkout %q, but the %s record names checkout %q", record.OwnerTag, claim.CheckoutPath, record.Event, record.CheckoutPath)
 	}
 	switch record.Event {
 	case EventArming:
 		if claim.Reserved || claim.Closed {
-			return // reopening is refused at the door (SLC-R5-004)
+			return nil // reopening is refused at the door (SLC-R5-004)
 		}
 		claim.Reserved = true
 		claim.CustodyID = record.CustodyID
@@ -204,7 +222,7 @@ func (r *Reduction) foldClaim(record *Record) {
 		// reduces open. A late armed after reap/compaction is refused
 		// at append time; one already in the file is dropped here.
 		if !claim.Reserved || claim.Closed || claim.Armed {
-			return
+			return nil
 		}
 		claim.Armed = true
 		claim.Owner = ProcessRef{Pid: record.OwnerPid, PidStartedAt: record.OwnerPidStartedAt}
@@ -213,7 +231,7 @@ func (r *Reduction) foldClaim(record *Record) {
 		}
 	case EventRelaunched:
 		if claim.Closed {
-			return
+			return nil
 		}
 		set := claim.generation(record.Generation)
 		set.WatcherTag = record.WatcherTag
@@ -226,7 +244,7 @@ func (r *Reduction) foldClaim(record *Record) {
 		}
 	case EventLaunched:
 		if claim.Closed {
-			return
+			return nil
 		}
 		// Paired BY GENERATION (SLC-R7-007): a stale gen-1 retry
 		// landing after gen-2's records updates gen 1's identities,
@@ -235,7 +253,7 @@ func (r *Reduction) foldClaim(record *Record) {
 		set.Identities[record.Component] = ProcessRef{Pid: record.Pid, PidStartedAt: record.PidStartedAt}
 	case EventExited:
 		if claim.Closed {
-			return // terminals are absorbing
+			return nil // terminals are absorbing
 		}
 		claim.Closed = true
 		claim.ClosedBy = EventExited
@@ -243,7 +261,7 @@ func (r *Reduction) foldClaim(record *Record) {
 		claim.TeardownComplete = record.TeardownComplete
 	case EventReaped:
 		if claim.Closed {
-			return
+			return nil
 		}
 		claim.Closed = true
 		claim.ClosedBy = EventReaped
@@ -256,6 +274,7 @@ func (r *Reduction) foldClaim(record *Record) {
 			claim.Swept = true
 		}
 	}
+	return nil
 }
 
 func (c *Claim) generation(number int64) *GenerationSet {
@@ -267,12 +286,15 @@ func (c *Claim) generation(number int64) *GenerationSet {
 	return set
 }
 
-func (r *Reduction) foldCustody(record *Record) {
+func (r *Reduction) foldCustody(record *Record) error {
 	custody := r.Custodies[record.CustodyID]
+	if custody != nil && custody.CheckoutPath != record.CheckoutPath {
+		return fmt.Errorf("custody %q belongs to checkout %q, but the %s record names checkout %q", record.CustodyID, custody.CheckoutPath, record.Event, record.CheckoutPath)
+	}
 	switch record.Event {
 	case EventCustody:
 		if custody != nil {
-			return
+			return nil
 		}
 		r.Custodies[record.CustodyID] = &Custody{
 			CustodyID:    record.CustodyID,
@@ -282,17 +304,18 @@ func (r *Reduction) foldCustody(record *Record) {
 		r.CustodyOrder = append(r.CustodyOrder, record.CustodyID)
 	case EventCustodyReleased:
 		if custody == nil {
-			return
+			return nil
 		}
 		custody.Released = true // absorbing; names its custodyId so a
 		// late release of one custody can never hide another (SLC-R4-007)
 	}
+	return nil
 }
 
 // bindCustodies derives each custody's binding from the claims'
 // arming/armed custodyId (D-3: custody binds at arming; there is no
 // separate binding event, SLC-R5-005).
-func (r *Reduction) bindCustodies() {
+func (r *Reduction) bindCustodies() error {
 	tags := append([]string(nil), r.Order...)
 	sort.Strings(tags) // deterministic when two claims name one custody
 	for _, tag := range tags {
@@ -301,8 +324,12 @@ func (r *Reduction) bindCustodies() {
 			continue
 		}
 		custody := r.Custodies[claim.CustodyID]
+		if custody != nil && custody.CheckoutPath != claim.CheckoutPath {
+			return fmt.Errorf("custody %q belongs to checkout %q, but owner tag %q belongs to checkout %q", custody.CustodyID, custody.CheckoutPath, claim.OwnerTag, claim.CheckoutPath)
+		}
 		if custody != nil && custody.BoundOwnerTag == "" {
 			custody.BoundOwnerTag = claim.OwnerTag
 		}
 	}
+	return nil
 }

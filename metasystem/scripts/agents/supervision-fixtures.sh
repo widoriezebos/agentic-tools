@@ -77,6 +77,8 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 }
 
 if (( ! fixture_bed_child )); then
+  export METASYSTEM_SUPERVISION_FIXTURE_SUITE_PID=$$
+  export METASYSTEM_SUPERVISION_FIXTURE_SEAT_REGISTRY_HOME=${METASYSTEM_SUPERVISION_REGISTRY_HOME:-${HOME:?}}
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
     run_fixture_bed_scenarios supervision "supervision fixtures passed (operator empty-runtime source)" \
@@ -103,10 +105,14 @@ fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 tmp=$(mktemp -d)
 owned_pids=()
 fixture_harness_roots=()
+fixture_suite_pid=${METASYSTEM_SUPERVISION_FIXTURE_SUITE_PID:-$PPID}
+fixture_seat_registry_home=${METASYSTEM_SUPERVISION_FIXTURE_SEAT_REGISTRY_HOME:-${METASYSTEM_SUPERVISION_REGISTRY_HOME:-${HOME:?}}}
 # Every detached owner inherits this run-scoped registry home. A direct fixture
 # run must never need write access to, or append evidence into, the operator's
 # real home directory.
-export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/registry-home"
+fixture_registry_home=$tmp/registry-home
+export METASYSTEM_SUPERVISION_REGISTRY_HOME=$fixture_registry_home
+export METASYSTEM_SUPERVISION_FIXTURE_AUDIT=$tmp/arm-audit.tsv
 mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
@@ -185,6 +191,31 @@ assert_scratch_scoped_announcement_calls() {
   }
 }
 assert_scratch_scoped_announcement_calls
+
+assert_fixture_supervision_isolation() {
+  local root announcement announced_pid armed_registry armed_pid
+  [[ "$METASYSTEM_SUPERVISION_REGISTRY_HOME" == "$fixture_registry_home" ]] \
+    || { echo "supervision fixture scenario $fixture_scenario changed its run-scoped registry home" >&2; return 1; }
+  [[ "$METASYSTEM_SUPERVISION_REGISTRY_HOME" != "$fixture_seat_registry_home" ]] \
+    || { echo "supervision fixture scenario $fixture_scenario selected the seat's supervision registry home" >&2; return 1; }
+  if [[ -e "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT" ]]; then
+    while IFS=$'\t' read -r armed_registry armed_pid; do
+      [[ "$armed_registry" == "$tmp"/* ]] \
+        || { echo "supervision fixture scenario $fixture_scenario attempted to arm outside its run-scoped registry home: $armed_registry" >&2; return 1; }
+      [[ "$armed_registry" != "$fixture_seat_registry_home" ]] \
+        || { echo "supervision fixture scenario $fixture_scenario attempted to arm with the seat's supervision registry home" >&2; return 1; }
+      [[ "$armed_pid" == - || "$armed_pid" != "$fixture_suite_pid" ]] \
+        || { echo "supervision fixture scenario $fixture_scenario attempted to arm with the fixture-bed suite shell pid $fixture_suite_pid" >&2; return 1; }
+    done <"$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
+  fi
+  for root in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
+    while IFS= read -r -d '' announcement; do
+      announced_pid=$("$ms" json get --file "$announcement" --field pid 2>/dev/null || true)
+      [[ "$announced_pid" != "$fixture_suite_pid" ]] \
+        || { echo "supervision fixture scenario $fixture_scenario armed with the fixture-bed suite shell pid $fixture_suite_pid" >&2; return 1; }
+    done < <(find "$root/artifacts/agents/mains" -type f -name '*.json' -print0 2>/dev/null || true)
+  done
+}
 
 process_started_at() {
   "$ms" proc started-at --pid "$1"
@@ -687,6 +718,7 @@ if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]
     "$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
   grep -Fqx 'metasystem.runtimes=fake' "$operator_harness/metasystem.conf"
   [[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
+  assert_fixture_supervision_isolation
   echo "nested ordinary operator empty-runtime source fixture passed"
   exit 0
 fi
@@ -1687,3 +1719,5 @@ printf '%s' "$mon5" | grep -Fq 'finished green' \
 # an explicit successful status rather than the probe's expected false result.
 :
 fi
+
+assert_fixture_supervision_isolation
