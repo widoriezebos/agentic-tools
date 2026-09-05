@@ -595,7 +595,7 @@ func Shutdown(options Options) Result {
 		return failure(nil, "checkout-lease", err, "run shutdown from the checkout holder")
 	}
 	prefix := "metasystem-supervision-owner-" + lease.Slug(options.Scope) + "-"
-	if err := supervise.ShutdownAt(options.Root, installationRoot(options), prefix, options.WaitScaleMilli); err != nil {
+	if err := supervise.ShutdownAt(options.Root, installationRoot(options), options.Root, prefix, options.WaitScaleMilli); err != nil {
 		return failure(nil, "supervision-owner", err, "inspect the recorded owner identity before retrying shutdown")
 	}
 	return Result{Components: []ComponentOutcome{{Component: "supervision-owner", Outcome: "stopped"}}, Outcome: "stopped"}

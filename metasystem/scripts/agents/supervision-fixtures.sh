@@ -77,6 +77,8 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 }
 
 if (( ! fixture_bed_child )); then
+  export METASYSTEM_SUPERVISION_FIXTURE_SUITE_PID=$$
+  export METASYSTEM_SUPERVISION_FIXTURE_SEAT_REGISTRY_HOME=${METASYSTEM_SUPERVISION_REGISTRY_HOME:-${HOME:?}}
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]; then
     run_fixture_bed_scenarios supervision "supervision fixtures passed (operator empty-runtime source)" \
@@ -103,14 +105,74 @@ fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 tmp=$(mktemp -d)
 owned_pids=()
 fixture_harness_roots=()
+fixture_suite_pid=${METASYSTEM_SUPERVISION_FIXTURE_SUITE_PID:-$PPID}
+fixture_seat_registry_home=${METASYSTEM_SUPERVISION_FIXTURE_SEAT_REGISTRY_HOME:-${METASYSTEM_SUPERVISION_REGISTRY_HOME:-${HOME:?}}}
+fixture_bed_pid=$$
+export METASYSTEM_SUPERVISION_FIXTURE_BED_PID=$fixture_bed_pid
 # Every detached owner inherits this run-scoped registry home. A direct fixture
 # run must never need write access to, or append evidence into, the operator's
 # real home directory.
-export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/registry-home"
+fixture_registry_home=$tmp/registry-home
+export METASYSTEM_SUPERVISION_REGISTRY_HOME=$fixture_registry_home
+export METASYSTEM_SUPERVISION_FIXTURE_AUDIT=$tmp/arm-audit.tsv
 mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
+
+# Every hook-side `metasystem up` crosses this fixture-only auditor before the
+# checkout-local engine receives it. This gives the final isolation check the
+# same registry-home and main-identity evidence for direct up calls that the
+# compatibility arm script records for its callers.
+fixture_up_auditor=$tmp/metasystem-up-auditor
+cat >"$fixture_up_auditor" <<'FIXTURE'
+#!/usr/bin/env bash
+set -euo pipefail
+
+engine=${METASYSTEM_SUPERVISION_FIXTURE_ENGINE:?}
+if [[ ${1:-} == up ]]; then
+  fixture_skip=0
+  fixture_main_pid=
+  fixture_main_in_bed=-
+  fixture_previous=
+  for fixture_argument in "$@"; do
+    if [[ "$fixture_previous" == --pid ]]; then
+      fixture_main_pid=$fixture_argument
+    fi
+    if [[ "$fixture_argument" == --shutdown || "$fixture_argument" == --retire ]]; then
+      fixture_skip=1
+    fi
+    fixture_previous=$fixture_argument
+  done
+  if (( ! fixture_skip )); then
+    if [[ "$fixture_main_pid" =~ ^[1-9][0-9]*$ && "${METASYSTEM_SUPERVISION_FIXTURE_BED_PID:-}" =~ ^[1-9][0-9]*$ ]]; then
+      fixture_main_in_bed=0
+      fixture_ancestor=$fixture_main_pid
+      for ((fixture_depth = 0; fixture_depth < 128 && fixture_ancestor > 1; fixture_depth++)); do
+        if [[ "$fixture_ancestor" == "$METASYSTEM_SUPERVISION_FIXTURE_BED_PID" ]]; then
+          fixture_main_in_bed=1
+          break
+        fi
+        fixture_parent=$(ps -p "$fixture_ancestor" -o ppid= 2>/dev/null | tr -d '[:space:]')
+        [[ "$fixture_parent" =~ ^[1-9][0-9]*$ && "$fixture_parent" != "$fixture_ancestor" ]] || break
+        fixture_ancestor=$fixture_parent
+      done
+    fi
+    printf '%s\t%s\t%s\t%s\n' "${METASYSTEM_SUPERVISION_REGISTRY_HOME:-}" \
+      "${fixture_main_pid:--}" metasystem-up "$fixture_main_in_bed" >>"${METASYSTEM_SUPERVISION_FIXTURE_AUDIT:?}"
+  fi
+fi
+exec "$engine" "$@"
+FIXTURE
+chmod +x "$fixture_up_auditor"
+
+run_fixture_hook() { # harness root, hook command and arguments...
+  local fixture_hook_root=$1
+  shift
+  METASYSTEM_BIN="$fixture_up_auditor" \
+    METASYSTEM_SUPERVISION_FIXTURE_ENGINE="$fixture_hook_root/bin/metasystem" \
+    "$@"
+}
 
 assert_scratch_scoped_announcement_calls() {
   local actual expected
@@ -173,8 +235,6 @@ assert_scratch_scoped_announcement_calls() {
     'scripts/agents/supervision-fixtures.sh:call:announced' \
     'scripts/agents/supervision-fixtures.sh:call:"$repo"' \
     'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo"' \
-    'scripts/agents/supervision-fixtures.sh:direct:"$stop_root"' \
-    'scripts/agents/supervision-fixtures.sh:direct:"$stop_root"' \
     'scripts/agents/supervision-fixtures.sh:call:' \
     'scripts/agents/supervision-fixtures.sh:direct:"$repo"' \
     'scripts/agents/supervision-fixtures.sh:call:"$gate_repo"' | LC_ALL=C sort)
@@ -185,6 +245,105 @@ assert_scratch_scoped_announcement_calls() {
   }
 }
 assert_scratch_scoped_announcement_calls
+
+assert_fixture_supervision_isolation() {
+  local root announcement announced_pid armed_registry armed_pid armed_source armed_in_bed direct_up_seen=0
+  [[ "$METASYSTEM_SUPERVISION_REGISTRY_HOME" == "$fixture_registry_home" ]] \
+    || { echo "supervision fixture scenario $fixture_scenario changed its run-scoped registry home" >&2; return 1; }
+  [[ "$METASYSTEM_SUPERVISION_REGISTRY_HOME" != "$fixture_seat_registry_home" ]] \
+    || { echo "supervision fixture scenario $fixture_scenario selected the seat's supervision registry home" >&2; return 1; }
+  if [[ -e "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT" ]]; then
+    while IFS=$'\t' read -r armed_registry armed_pid armed_source armed_in_bed; do
+      [[ "$armed_registry" == "$tmp"/* ]] \
+        || { echo "supervision fixture scenario $fixture_scenario attempted to arm outside its run-scoped registry home: $armed_registry" >&2; return 1; }
+      [[ "$armed_registry" != "$fixture_seat_registry_home" ]] \
+        || { echo "supervision fixture scenario $fixture_scenario attempted to arm with the seat's supervision registry home" >&2; return 1; }
+      [[ "$armed_pid" == - || "$armed_in_bed" == 1 ]] \
+        || { echo "supervision fixture scenario $fixture_scenario attempted to arm with main pid $armed_pid outside its scenario bed $fixture_bed_pid" >&2; return 1; }
+      case "$armed_source" in
+        arm-supervision) ;;
+        metasystem-up) direct_up_seen=1 ;;
+        *) echo "supervision fixture scenario $fixture_scenario recorded an unknown arming source: $armed_source" >&2; return 1 ;;
+      esac
+    done <"$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
+  fi
+  for root in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
+    while IFS= read -r -d '' announcement; do
+      announced_pid=$("$ms" json get --file "$announcement" --field pid 2>/dev/null || true)
+      if ! fixture_pid_is_in_bed "$announced_pid" && ! awk -F '\t' -v pid="$announced_pid" '$2 == pid && $4 == 1 { found=1 } END { exit !found }' "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"; then
+        echo "supervision fixture scenario $fixture_scenario announced main pid $announced_pid outside its scenario bed $fixture_bed_pid" >&2
+        return 1
+      fi
+    done < <(find "$root/artifacts/agents/mains" -type f -name '*.json' -print0 2>/dev/null || true)
+  done
+  case "$fixture_scenario" in
+    census-lifecycle | idle-hook | stop-hook-monitor)
+      (( direct_up_seen == 1 )) \
+        || { echo "supervision fixture scenario $fixture_scenario did not audit its direct metasystem up bring-up" >&2; return 1; }
+      ;;
+    operator-layout)
+      if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" != 1 ]]; then
+        (( direct_up_seen == 1 )) \
+          || { echo "supervision fixture scenario $fixture_scenario did not audit its direct metasystem up bring-up" >&2; return 1; }
+      fi
+      ;;
+  esac
+}
+
+fixture_pid_is_in_bed() { # pid
+  local candidate=$1 parent depth
+  [[ "$candidate" =~ ^[1-9][0-9]*$ ]] || return 1
+  for ((depth = 0; depth < 128 && candidate > 1; depth++)); do
+    [[ "$candidate" == "$fixture_bed_pid" ]] && return 0
+    parent=$(ps -p "$candidate" -o ppid= 2>/dev/null | tr -d '[:space:]')
+    [[ "$parent" =~ ^[1-9][0-9]*$ && "$parent" != "$candidate" ]] || return 1
+    candidate=$parent
+  done
+  return 1
+}
+
+fixture_seat_pid() {
+  local runtime identity pid
+  while IFS= read -r runtime; do
+    [[ "$runtime" != fake ]] || continue
+    identity=$(env -u METASYSTEM_FAKE_AGENT_ANCESTOR_PID \
+      "$ms" proc find-ancestor --repo "$source_root" --pid "$fixture_suite_pid" --runtime "$runtime" 2>/dev/null || true)
+    [[ -n "$identity" ]] || continue
+    pid=$("$ms" json get --value "$identity" --field pid 2>/dev/null || true)
+    if [[ "$pid" =~ ^[1-9][0-9]*$ ]]; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+  done < <("$ms" runtime list)
+  printf '%s\n' "$fixture_suite_pid"
+}
+
+assert_seat_main_is_rejected() {
+  local seat_pid seat_started saved=$tmp/arm-audit.before-seat-main refusal=$tmp/seat-main-refusal.out
+  local attempted=$tmp/seat-main-arm.out
+  seat_pid=$(fixture_seat_pid)
+  seat_started=$(process_started_at "$seat_pid")
+  cp "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT" "$saved"
+  # Exercise the real audited `up` command shape, but stop at a no-op engine:
+  # the identity is deliberately forbidden, so the negative probe must not
+  # acquire checkout custody before the final self-check observes and rejects it.
+  METASYSTEM_AGENT_RUNTIME=fake \
+    METASYSTEM_SUPERVISION_FIXTURE_ENGINE=true \
+    "$fixture_up_auditor" up --metasystem-root "$stop_root" --repo "$stop_root" \
+      --session rejected-seat-main --pid "$seat_pid" --start-time "$seat_started" \
+      --tag fixture-rejected-seat-main >"$attempted" 2>&1 || true
+  awk -F '\t' -v pid="$seat_pid" '$2 == pid && $3 == "metasystem-up" && $4 == 0 { found=1 } END { exit !found }' \
+    "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT" \
+    || { echo "supervision fixture scenario $fixture_scenario did not audit its seat-main arming attempt" >&2; mv "$saved" "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"; return 1; }
+  if assert_fixture_supervision_isolation >"$refusal" 2>&1; then
+    echo "supervision fixture scenario $fixture_scenario accepted the seat main pid $seat_pid" >&2
+    mv "$saved" "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
+    return 1
+  fi
+  grep -Fq "main pid $seat_pid outside its scenario bed" "$refusal" \
+    || { cat "$refusal" >&2; mv "$saved" "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"; return 1; }
+  mv "$saved" "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
+}
 
 process_started_at() {
   "$ms" proc started-at --pid "$1"
@@ -687,6 +846,7 @@ if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]
     "$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
   grep -Fqx 'metasystem.runtimes=fake' "$operator_harness/metasystem.conf"
   [[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
+  assert_fixture_supervision_isolation
   echo "nested ordinary operator empty-runtime source fixture passed"
   exit 0
 fi
@@ -721,7 +881,10 @@ fi
   "$operator_arm" fingerprint --repo "$PWD"
 ) >/dev/null
 printf '{"session_id":"operator-path","cwd":"%s","hook_event_name":"Stop"}\n' "$operator_harness" \
-  | (cd "$operator_harness" && "${operator_env[@]}" scripts/agents/supervision-hook.sh fake stop) \
+  | (cd "$operator_harness" && "${operator_env[@]}" \
+      METASYSTEM_BIN="$fixture_up_auditor" \
+      METASYSTEM_SUPERVISION_FIXTURE_ENGINE="$operator_engine" \
+      scripts/agents/supervision-hook.sh fake stop) \
   >"$tmp/operator-hook.out"
 if grep -Fq '$(git rev-parse --show-toplevel)/scripts/agents/supervision-hook.sh' \
     "$operator_harness"/scripts/enforcement/*hooks.json; then
@@ -877,6 +1040,15 @@ infer_driver=$!
 infer_driver_start=$(process_started_at "$infer_driver")
 owned_pids+=("$infer_driver:$infer_driver_start")
 wait_until "S4-8 inferred announcement" bash -c 'compgen -G "$1/artifacts/agents/mains/inferred-session-*.json" >/dev/null' _ "$repo"
+# The compatibility wrapper cannot know the main that `up` will infer before
+# it transfers control. Capture that resolved fixture child while it is still
+# live so the final bed check can authenticate its later announcement.
+infer_driver_in_bed=0
+if fixture_pid_is_in_bed "$infer_driver"; then
+  infer_driver_in_bed=1
+fi
+printf '%s\t%s\t%s\t%s\n' "$fixture_registry_home" "$infer_driver" arm-supervision "$infer_driver_in_bed" \
+  >>"$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"
 touch "$infer_release"
 wait_for_child_exit "S4-8 inferred arming" "$infer_driver"
 grep -Fq 'up outcome=armed authority=writer' "$tmp/inferred-arm.out" \
@@ -1298,7 +1470,8 @@ edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
 # that it is a read-only advisor and never reaches the drift it is asked about.
 printf '{"session_id":"stale-surface","cwd":"%s","hook_event_name":"Stop"}\n' "$gate_repo" \
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
-    "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
+    run_fixture_hook "$gate_repo" \
+      "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
 if grep -Fq 'code changed since arming' "$tmp/stale-surface.out"; then
   grep -Fq 'owner' "$tmp/stale-surface.out" && grep -Fq 'not running' "$tmp/stale-surface.out" \
     || { echo "S4-4: end-turn hook hid a dead supervision owner" >&2; exit 1; }
@@ -1385,7 +1558,8 @@ wait_for_census "UNTRACKED end-turn source" inventory_has UNTRACKED "$raw_pid"
 become_main "$repo" surface
 printf '{"session_id":"surface","cwd":"%s","hook_event_name":"Stop"}\n' "$repo" \
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
-    "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
+    run_fixture_hook "$repo" \
+      "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
 grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED" >&2; exit 1; }
 fi
 
@@ -1404,6 +1578,7 @@ cp "$ms" "$idle_repo/bin/metasystem"
 # The hook refuses outside a git repository, correctly: it reports on a
 # repository's work. The sandbox must be one.
 git -C "$idle_repo" init -q -b main
+fixture_harness_roots+=("$idle_repo")
 # A completed invocation, not elapsed time, spends this fixture's patience.
 # Retry only silence. The hook's provider deadline remains the failsafe when
 # an invocation itself makes no progress, and its deadline refusal is a lawful
@@ -1413,7 +1588,8 @@ idle_hook_invocations=0
 while :; do
   idle_hook_invocations=$((idle_hook_invocations + 1))
   printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo" \
-    | "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
+    | run_fixture_hook "$idle_repo" \
+        "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
   [[ ! -s "$tmp/idle.out" ]] || break
   (( idle_hook_invocations < idle_hook_invocation_budget )) \
     || { echo "turn-end hook was silent for $idle_hook_invocations completed invocations" >&2; exit 1; }
@@ -1564,9 +1740,16 @@ cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - Next step: dispatch the runner
 FIXTURE
 git -C "$stop_root" init -q -b main
+fixture_harness_roots+=("$stop_root")
 enroll_fixture_engine "$stop_root" "$stop_root/bin/metasystem"
+(
+stop_main_pid=$BASHPID
+export METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$stop_main_pid
 stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
-first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+stop_hook() {
+  run_fixture_hook "$stop_root" bash "$stop_root/scripts/agents/supervision-hook.sh" fake stop
+}
+first=$(printf '%s' "$stop_payload" | stop_hook)
 if printf '%s' "$first" | grep -Fq 'Metasystem supervision arming failed:'; then
   echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
   echo "$first" >&2
@@ -1576,7 +1759,7 @@ printf '%s' "$first" | grep -q '"decision":"block"' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
 printf '%s' "$first" | grep -Fq 'HEALTH ' \
   || { echo "the stop hook emitted no one-line health verdict" >&2; echo "$first" >&2; exit 1; }
-second=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+second=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$second" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }
 [[ -s "$stop_root/artifacts/agents/supervision/hooks.log" ]] \
@@ -1586,7 +1769,7 @@ cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - Waiting on the human: nothing blocking
 - Next step: none
 FIXTURE
-settled=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+settled=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$settled" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused a turn with no open work" >&2; exit 1; }
 
@@ -1598,37 +1781,16 @@ printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
 # (b) End to end, unseeded: with work settled, opening a goal makes the
 # NEXT turn end block once pointing at the goal's next step — the
 # incident's fix observed through the real hook.
-# goal open and run launch below are holder-only control-plane
-# writes, and the hook matches run ownership against the main IT
-# derives — the nearest runtime-signature ancestor. Production
-# truth: the announced main IS the runtime process. So when this
-# suite runs under an agent, announce THAT ancestor as the
-# sandbox's main (the writes authenticate through it and the run's
-# recorded owner equals the hook's derived main). Without a runtime
-# ancestor, the suite shell announces itself so detached runs carry
-# the same holder-authenticated identity through the goal and run
-# control-plane writes.
-stop_main_identity=$("$stop_root/bin/metasystem" proc find-ancestor \
-  --repo "$stop_root" --pid $$ --runtime claude 2>/dev/null || true)
-if [[ -n "$stop_main_identity" ]]; then
-  stop_main_pid=$("$ms" json get --value "$stop_main_identity" --field pid)
-  "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
-    --session stop-hook-main --pid "$stop_main_pid" \
-    --start "$(process_started_at "$stop_main_pid")" \
-    --tag fixture-stop-hook --runtime claude >/dev/null
-else
-  "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
-    --session stop-hook-main --pid $$ \
-    --start "$(process_started_at $$)" \
-    --tag fixture-stop-hook --runtime claude >/dev/null
-fi
+# The scenario subshell is the held main for this entire block. Every hook and
+# holder-only command is its descendant, so no ambient seat or suite ancestor
+# can become the sandbox's main identity.
 "$stop_root/bin/metasystem" goal open --root "$stop_root" \
 	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." --tier 3 >/dev/null
-goal_block=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+goal_block=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$goal_block" | grep -q '"decision":"block"' \
   && printf '%s' "$goal_block" | grep -Fq 'Advance the fixture goal.' \
   || { echo "a current goal did not reach the turn end through the hook" >&2; echo "$goal_block" >&2; exit 1; }
-goal_again=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+goal_again=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$goal_again" | grep -q '"decision":"block"' \
   && { echo "the same goal revision blocked twice" >&2; exit 1; }
 printf '%s' "$goal_again" | grep -Fq 'NOTHING LEFT TO WORK ON' \
@@ -1636,13 +1798,13 @@ printf '%s' "$goal_again" | grep -Fq 'NOTHING LEFT TO WORK ON' \
 # (c) Session hygiene at the hook boundary: a path-shaped session id never
 # reaches the state file.
 evil_payload=$(printf '{"session_id":"../../evil","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
-printf '%s' "$evil_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop >/dev/null
+printf '%s' "$evil_payload" | stop_hook >/dev/null
 grep -q '\.\./' "$stop_root/artifacts/agents/turn-verdict-state.json" \
   && { echo "a path-shaped session id reached the verdict state" >&2; exit 1; }
 # (d) The degraded path: a verb that cannot speak yields the hook's fixed
 # message, never silence and never an all-clear.
 chmod 0500 "$stop_root/artifacts/agents"
-degraded=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+degraded=$(printf '%s' "$stop_payload" | stop_hook)
 chmod 0755 "$stop_root/artifacts/agents"
 printf '%s' "$degraded" | grep -Fq 'turn-verdict unavailable:' \
   || { echo "verb failure did not surface the fixed degraded message" >&2; echo "$degraded" >&2; exit 1; }
@@ -1656,17 +1818,17 @@ printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
 "$stop_root/bin/metasystem" run launch --root "$stop_root" --id fixture-run \
   --kind custom --display "the fixture run" --log fix-run.log \
   --expect-green "proceed to checkpoint seven" -- /bin/sleep 2 >/dev/null
-mon1=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon1=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$mon1" | grep -q '"decision":"block"' \
   && printf '%s' "$mon1" | grep -Fq 'unwatched' \
   || { echo "an unwatched run did not block the turn end" >&2; echo "$mon1" >&2; exit 1; }
-mon2=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon2=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$mon2" | grep -q '"decision":"block"' \
   && { echo "the same unwatched set blocked twice" >&2; exit 1; }
 "$stop_root/bin/metasystem" run watch --id fixture-run --root "$stop_root" --poll-ms 200 &
 mon_watch_pid=$!
 sleep 1
-mon3=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon3=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$mon3" | grep -Fq 'STILL WORKING' \
   && printf '%s' "$mon3" | grep -Fq 'run fixture-run' \
   || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
@@ -1676,14 +1838,20 @@ mon_watch_rc=0
 wait "$mon_watch_pid" || mon_watch_rc=$?
 (( mon_watch_rc == 0 )) \
   || { echo "the run watch did not exit green (rc=$mon_watch_rc)" >&2; exit 1; }
-mon4=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon4=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$mon4" | grep -Fq 'finished green' \
   && printf '%s' "$mon4" | grep -Fq 'proceed to checkpoint seven' \
   || { echo "the green continuation did not surface" >&2; echo "$mon4" >&2; exit 1; }
-mon5=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon5=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$mon5" | grep -Fq 'finished green' \
   && { echo "the green surfaced twice" >&2; exit 1; }
 # The final probe succeeds by finding no duplicate, so end the scenario with
 # an explicit successful status rather than the probe's expected false result.
 :
+)
+fi
+
+assert_fixture_supervision_isolation
+if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
+  assert_seat_main_is_rejected
 fi

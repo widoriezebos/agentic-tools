@@ -31,7 +31,7 @@ var procfsMounts = "/proc/self/mounts"
 // logged and appended to the registry.
 func runSuperviseOwnerLoop(args []string) int {
 	flags := flag.NewFlagSet("supervise owner", flag.ContinueOnError)
-	registryDefault, registryDefaultErr := defaultRegistryPath()
+	registryDefault, registryDefaultErr := registry.DefaultPath()
 	repo := flags.String("repo", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
@@ -208,20 +208,4 @@ func kernelProbe(prober identity.Prober) lock.Probe {
 			return lock.Unknown
 		}
 	}
-}
-
-const supervisionRegistryHomeEnv = "METASYSTEM_SUPERVISION_REGISTRY_HOME"
-
-func defaultRegistryPath() (string, error) {
-	if override := os.Getenv(supervisionRegistryHomeEnv); override != "" {
-		if !filepath.IsAbs(override) {
-			return override, fmt.Errorf("%s must name an absolute run-scoped home", supervisionRegistryHomeEnv)
-		}
-		return filepath.Join(override, ".metasystem", "armed-checkouts.jsonl"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".metasystem/armed-checkouts.jsonl", nil
-	}
-	return filepath.Join(home, ".metasystem", "armed-checkouts.jsonl"), nil
 }

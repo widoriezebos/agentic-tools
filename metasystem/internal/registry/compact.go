@@ -20,6 +20,9 @@ import (
 //     `relaunched`/`launched` records (SLC-R8-002: a generation may be
 //     dropped only when a later relaunched covers it via the
 //     contiguous retiredThrough watermark, SLC-R9-003);
+//   - open production owner publications: their unretired
+//     `relaunched`/`launched` records, even when the older writer emitted no
+//     claim reservation;
 //   - sweepable closed claims until swept: the same, plus the terminal;
 //   - bound unreleased custody TOGETHER WITH its bound claim's full
 //     reduced skeleton — opening records, terminal, and `swept` if
@@ -48,6 +51,11 @@ func CompactFrames(frames []Frame, now time.Time, grace time.Duration) ([]Frame,
 			keepClaim[tag] = true
 			keepGenerations[tag] = true
 			keepTerminal[tag] = true
+		}
+	}
+	for tag, owner := range reduction.PublishedOwners {
+		if owner.Open() {
+			keepGenerations[tag] = true
 		}
 	}
 	keepCustody := map[string]bool{}
@@ -88,8 +96,14 @@ func CompactFrames(frames []Frame, now time.Time, grace time.Duration) ([]Frame,
 		case EventArming, EventArmed:
 			keep = keepClaim[record.OwnerTag]
 		case EventRelaunched, EventLaunched:
-			keep = keepGenerations[record.OwnerTag] &&
-				record.Generation > reduction.Claims[record.OwnerTag].RetiredThrough
+			retiredThrough := int64(0)
+			if claim := reduction.Claims[record.OwnerTag]; claim != nil && claim.RetiredThrough > retiredThrough {
+				retiredThrough = claim.RetiredThrough
+			}
+			if owner := reduction.PublishedOwners[record.OwnerTag]; owner != nil && owner.RetiredThrough > retiredThrough {
+				retiredThrough = owner.RetiredThrough
+			}
+			keep = keepGenerations[record.OwnerTag] && record.Generation > retiredThrough
 		case EventExited, EventReaped, EventSwept:
 			keep = keepTerminal[record.OwnerTag]
 		case EventCustody:

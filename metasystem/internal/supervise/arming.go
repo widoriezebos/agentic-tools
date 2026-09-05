@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 // ArmingOwner is the exact process identity recorded in the repository's
@@ -651,6 +652,34 @@ func newOwnerTag(prefix string) string {
 	return fmt.Sprintf("%s%d-%d", prefix, time.Now().Unix(), os.Getpid())
 }
 
+func requireOwnerCheckoutPath(requestedStateRoot string, owner ArmingOwner) error {
+	requestedCheckout := canonicalPathForTakeover(requestedStateRoot)
+	registryPath, err := registry.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("resolve supervision registry for checkout %q: %w", requestedCheckout, err)
+	}
+	recordedCheckout, found, err := registry.OwnerCheckoutPath(registryPath, owner.InstanceTag)
+	if err != nil {
+		return fmt.Errorf("read supervision registry before acting for checkout %q: %w", requestedCheckout, err)
+	}
+	if !found {
+		return fmt.Errorf("supervision request for checkout %q names owner tag %q with no registry checkout; refusing to select an owner by tag", requestedCheckout, owner.InstanceTag)
+	}
+	recordedCheckout = canonicalPathForTakeover(recordedCheckout)
+	if recordedCheckout != requestedCheckout {
+		return fmt.Errorf("supervision request for checkout %q names owner tag %q recorded for checkout %q; refusing to act on another repository", requestedCheckout, owner.InstanceTag, recordedCheckout)
+	}
+	return nil
+}
+
+func requireOwnerTagPrefix(requestedStateRoot, expectedTagPrefix string, owner ArmingOwner) error {
+	requestedCheckout := canonicalPathForTakeover(requestedStateRoot)
+	if !strings.HasPrefix(owner.InstanceTag, expectedTagPrefix) {
+		return fmt.Errorf("supervision request for checkout %q names owner tag %q outside that checkout's prefix %q; refusing to act on another repository", requestedCheckout, owner.InstanceTag, expectedTagPrefix)
+	}
+	return nil
+}
+
 // EnsureArmed establishes exactly one current supervision owner and waits
 // until its watcher, reaper, and first generation-bound census all verify.
 // A dead owner is taken over only after exact death; a live older generation
@@ -725,6 +754,14 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 			action = "taken-over"
 			continue
 		}
+		if err := requireOwnerCheckoutPath(options.Root, owner); err != nil {
+			return EnsureResult{}, err
+		}
+		// Tags never select a victim. A mismatch can only veto the
+		// checkout-path selection made above.
+		if err := requireOwnerTagPrefix(options.Root, options.OwnerTagPrefix, owner); err != nil {
+			return EnsureResult{}, err
+		}
 
 		if options.OnlyIfDown {
 			generation, err := publishedForOwner(options.Root, owner, scaledWait(5, options.WaitScaleMilli))
@@ -764,13 +801,13 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 
 // Shutdown stops the exact owner recorded for this checkout. The expected tag
 // prefix prevents a copied lock from signalling another repository's owner.
-func Shutdown(root, expectedTagPrefix string, scaleMilli int) error {
-	return ShutdownAt(root, root, expectedTagPrefix, scaleMilli)
+func Shutdown(root, requestedStateRoot, expectedTagPrefix string, scaleMilli int) error {
+	return ShutdownAt(root, root, requestedStateRoot, expectedTagPrefix, scaleMilli)
 }
 
 // ShutdownAt stops repository supervision while using the installed
 // metasystem's authorized census source for the final tag sweep.
-func ShutdownAt(root, metasystemRoot, expectedTagPrefix string, scaleMilli int) error {
+func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix string, scaleMilli int) error {
 	owner, err := ReadArmingOwner(root)
 	if os.IsNotExist(err) {
 		return nil
@@ -778,8 +815,21 @@ func ShutdownAt(root, metasystemRoot, expectedTagPrefix string, scaleMilli int) 
 	if err != nil {
 		return err
 	}
-	if !strings.HasPrefix(owner.InstanceTag, expectedTagPrefix) {
-		return fmt.Errorf("supervision lock names an owner armed for another repository (%s)", owner.InstanceTag)
+	// A copied lock never authorizes this checkout to act on another
+	// repository, regardless of whether its recorded owner is still alive.
+	if err := requireOwnerTagPrefix(requestedStateRoot, expectedTagPrefix, owner); err != nil {
+		return err
+	}
+	// A dead owner cannot be selected as a signal target. Preserve the
+	// pre-custody behavior for its cleanup path even when it died before its
+	// first registry row or its recorded path is stale after a checkout move.
+	switch armingOwnerLiveness(owner) {
+	case identity.Unknown:
+		return fmt.Errorf("owner identity is uninspectable; replacement is not authorized")
+	case identity.Alive:
+		if err := requireOwnerCheckoutPath(requestedStateRoot, owner); err != nil {
+			return err
+		}
 	}
 	if err := stopOwner(root, owner, scaleMilli, "metasystem up shutdown"); err != nil {
 		return err

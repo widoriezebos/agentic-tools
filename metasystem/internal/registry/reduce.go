@@ -104,12 +104,41 @@ type Custody struct {
 	Released      bool
 }
 
+// PublishedOwner is the owner state published by the production owner
+// ledger. That writer predates claim reservations: its relaunched row is the
+// write-ahead opener, launched rows bind component identities by generation,
+// and a terminal closes the publication.
+type PublishedOwner struct {
+	OwnerTag       string
+	CheckoutPath   string
+	Generations    map[int64]*GenerationSet
+	RetiredThrough int64
+	Closed         bool
+}
+
+// Open reports whether the production ledger still describes an owner that
+// has not published a terminal event.
+func (o *PublishedOwner) Open() bool { return !o.Closed }
+
+func (o *PublishedOwner) generation(number int64) *GenerationSet {
+	set := o.Generations[number]
+	if set == nil {
+		set = &GenerationSet{Identities: map[string]ProcessRef{}}
+		o.Generations[number] = set
+	}
+	return set
+}
+
 // Reduction is the fold's output: the machine-wide custody view.
 type Reduction struct {
 	// Claims by ownerTag; Order preserves first-appearance order for
 	// deterministic reporting and compaction output.
 	Claims map[string]*Claim
 	Order  []string
+
+	// PublishedOwners is the compatibility projection of the
+	// relaunched/launched/exited rows the production owner ledger writes.
+	PublishedOwners map[string]*PublishedOwner
 
 	Custodies    map[string]*Custody
 	CustodyOrder []string
@@ -119,12 +148,27 @@ type Reduction struct {
 	// tag was ever seen (SLC-R5-013, SLC-R7-008).
 	SeenTags map[string]bool
 
+	// Dropped is the reduction-owned diagnostic log for structurally valid
+	// records that could not join the state established by earlier records.
+	Dropped []string
+
 	// Fragments counts tolerated non-JSON lines, reported not acted on.
 	Fragments int
 }
 
 // TagSeen answers the arming gate's uniqueness check.
 func (r *Reduction) TagSeen(tag string) bool { return r.SeenTags[tag] }
+
+// OwnerCheckoutPath returns the checkout selected by the open production
+// owner publication. Claims are deliberately not selection authority: the
+// deployed owner writer publishes relaunched/launched rows without them.
+func (r *Reduction) OwnerCheckoutPath(ownerTag string) (string, bool) {
+	owner, found := r.PublishedOwners[ownerTag]
+	if !found || !owner.Open() {
+		return "", false
+	}
+	return owner.CheckoutPath, true
+}
 
 // SortedTags returns claim tags in first-appearance order.
 func (r *Reduction) SortedTags() []string {
@@ -143,10 +187,12 @@ func (r *Reduction) SortedTags() []string {
 // the caller signals by failing closed.
 func Reduce(frames []Frame) (*Reduction, error) {
 	reduction := &Reduction{
-		Claims:    map[string]*Claim{},
-		Custodies: map[string]*Custody{},
-		SeenTags:  map[string]bool{},
+		Claims:          map[string]*Claim{},
+		PublishedOwners: map[string]*PublishedOwner{},
+		Custodies:       map[string]*Custody{},
+		SeenTags:        map[string]bool{},
 	}
+	custodyPaths := map[string]string{}
 	for _, frame := range frames {
 		if frame.Record == nil {
 			reduction.Fragments++
@@ -161,13 +207,50 @@ func Reduce(frames []Frame) (*Reduction, error) {
 		}
 		switch record.Event {
 		case EventArming, EventArmed, EventRelaunched, EventLaunched, EventExited, EventReaped, EventSwept:
+			if recordedPath, found := reduction.ownerPath(record.OwnerTag); found && recordedPath != record.CheckoutPath {
+				reduction.logCheckoutConflict(frame.Line, "owner tag", record.OwnerTag, recordedPath, record.Event, record.CheckoutPath)
+				continue
+			}
+			if record.CustodyID != "" {
+				if path, seen := custodyPaths[record.CustodyID]; seen && path != record.CheckoutPath {
+					reduction.logCheckoutConflict(frame.Line, "custody", record.CustodyID, path, record.Event, record.CheckoutPath)
+					continue
+				}
+			}
 			reduction.foldClaim(record)
+			reduction.foldPublishedOwner(record)
+			if record.CustodyID != "" {
+				if claim := reduction.Claims[record.OwnerTag]; claim != nil && claim.CustodyID == record.CustodyID {
+					custodyPaths[record.CustodyID] = claim.CheckoutPath
+				}
+			}
 		case EventCustody, EventCustodyReleased:
+			if path, seen := custodyPaths[record.CustodyID]; seen && path != record.CheckoutPath {
+				reduction.logCheckoutConflict(frame.Line, "custody", record.CustodyID, path, record.Event, record.CheckoutPath)
+				continue
+			}
 			reduction.foldCustody(record)
+			if custody := reduction.Custodies[record.CustodyID]; custody != nil {
+				custodyPaths[record.CustodyID] = custody.CheckoutPath
+			}
 		}
 	}
 	reduction.bindCustodies()
 	return reduction, nil
+}
+
+func (r *Reduction) ownerPath(ownerTag string) (string, bool) {
+	if owner := r.PublishedOwners[ownerTag]; owner != nil {
+		return owner.CheckoutPath, true
+	}
+	if claim := r.Claims[ownerTag]; claim != nil {
+		return claim.CheckoutPath, true
+	}
+	return "", false
+}
+
+func (r *Reduction) logCheckoutConflict(line int, identityKind, identity, recordedPath, event, conflictingPath string) {
+	r.Dropped = append(r.Dropped, fmt.Sprintf("dropped sequence-illegal line %d: %s %q was recorded for checkout %q before a %s record named checkout %q", line, identityKind, identity, recordedPath, event, conflictingPath))
 }
 
 func (r *Reduction) foldClaim(record *Record) {
@@ -254,6 +337,42 @@ func (r *Reduction) foldClaim(record *Record) {
 		// reopens nothing.
 		if claim.Closed {
 			claim.Swept = true
+		}
+	}
+}
+
+func (r *Reduction) foldPublishedOwner(record *Record) {
+	owner := r.PublishedOwners[record.OwnerTag]
+	switch record.Event {
+	case EventRelaunched:
+		if owner == nil {
+			owner = &PublishedOwner{
+				OwnerTag: record.OwnerTag, CheckoutPath: record.CheckoutPath,
+				Generations: map[int64]*GenerationSet{},
+			}
+			r.PublishedOwners[record.OwnerTag] = owner
+		}
+		if owner.Closed {
+			return
+		}
+		set := owner.generation(record.Generation)
+		set.WatcherTag = record.WatcherTag
+		set.ReaperTag = record.ReaperTag
+		if record.RetiredThrough > owner.RetiredThrough {
+			owner.RetiredThrough = record.RetiredThrough
+		}
+	case EventLaunched:
+		if owner == nil || owner.Closed {
+			return
+		}
+		set := owner.Generations[record.Generation]
+		if set == nil {
+			return
+		}
+		set.Identities[record.Component] = ProcessRef{Pid: record.Pid, PidStartedAt: record.PidStartedAt}
+	case EventExited, EventReaped:
+		if owner != nil {
+			owner.Closed = true
 		}
 	}
 }

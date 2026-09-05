@@ -3,7 +3,9 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 )
 
 // The reduction tests replay REG-3's rules as event sequences. Each
@@ -102,6 +104,115 @@ func TestLateArmedDoesNotReopen(t *testing.T) {
 	if !reduction.TagSeen("tag-a") {
 		t.Fatal("a closed claim's tag must stay seen (SLC-R7-008)")
 	}
+}
+
+func TestReductionDropsIdentityKeysAcrossCheckoutPaths(t *testing.T) {
+	assertLoggedPaths := func(t *testing.T, reduction *Reduction) {
+		t.Helper()
+		output := strings.Join(reduction.Dropped, "\n")
+		if !strings.Contains(output, "sequence-illegal") ||
+			!strings.Contains(output, "/checkout/a") || !strings.Contains(output, "/checkout/b") {
+			t.Fatalf("the dropped record was not logged with both checkout paths: %q", output)
+		}
+	}
+
+	t.Run("owner tag", func(t *testing.T) {
+		arming := raw(EventArming, "tag-a", nil)
+		arming["checkoutPath"] = "/checkout/a"
+		armed := armedRow("tag-a", 41)
+		armed["checkoutPath"] = "/checkout/b"
+		reduction, err := Reduce(frames(arming, armed))
+		if err != nil {
+			t.Fatalf("a sequence-illegal owner row corrupted the registry: %v", err)
+		}
+		claim := reduction.Claims["tag-a"]
+		if claim == nil || claim.CheckoutPath != "/checkout/a" || claim.Armed {
+			t.Fatalf("the conflicting armed row changed the earlier claim: %+v", claim)
+		}
+		assertLoggedPaths(t, reduction)
+	})
+
+	t.Run("production owner selection survives compaction", func(t *testing.T) {
+		relaunched := raw(EventRelaunched, "tag-compacted", map[string]any{
+			"generation": 1.0, "watcherTag": "w1", "reaperTag": "r1", "retiredThrough": 0.0,
+		})
+		relaunched["checkoutPath"] = "/checkout/a"
+		launched := raw(EventLaunched, "tag-compacted", map[string]any{
+			"generation": 1.0, "component": "watcher", "pid": 42.0, "pidStartedAt": 200.0,
+		})
+		launched["checkoutPath"] = "/checkout/a"
+		conflicting := raw(EventLaunched, "tag-compacted", map[string]any{
+			"generation": 1.0, "component": "reaper", "pid": 43.0, "pidStartedAt": 200.0,
+		})
+		conflicting["checkoutPath"] = "/checkout/b"
+		input := frames(relaunched, launched, conflicting)
+		reduction, err := Reduce(input)
+		if err != nil {
+			t.Fatalf("reduce production owner rows: %v", err)
+		}
+		if checkout, found := reduction.OwnerCheckoutPath("tag-compacted"); !found || checkout != "/checkout/a" {
+			t.Fatalf("production owner checkout selection = %q, %v", checkout, found)
+		}
+		if owner := reduction.PublishedOwners["tag-compacted"]; owner == nil || owner.Generations[1].Identities["watcher"].Pid != 42 {
+			t.Fatalf("launched identity did not bind to the write-ahead generation: %+v", owner)
+		}
+		assertLoggedPaths(t, reduction)
+		kept, err := CompactFrames(input, time.Now(), time.Hour)
+		if err != nil {
+			t.Fatalf("compact production owner rows: %v", err)
+		}
+		compacted, err := Reduce(kept)
+		if err != nil {
+			t.Fatalf("reduce compacted production owner rows: %v", err)
+		}
+		if checkout, found := compacted.OwnerCheckoutPath("tag-compacted"); !found || checkout != "/checkout/a" {
+			t.Fatalf("compacted owner checkout selection = %q, %v; want the production ledger path", checkout, found)
+		}
+	})
+
+	t.Run("claim rows never select an owner checkout", func(t *testing.T) {
+		reduction := reduceOrFail(t,
+			raw(EventArming, "claim-only", nil),
+			armedRow("claim-only", 41),
+		)
+		if checkout, found := reduction.OwnerCheckoutPath("claim-only"); found {
+			t.Fatalf("claim-only rows selected checkout %q", checkout)
+		}
+	})
+
+	t.Run("custody binding", func(t *testing.T) {
+		custody := raw(EventCustody, "", map[string]any{
+			"custodyId": "custody-a", "custodianPid": 51.0, "custodianPidStartedAt": 100.0,
+		})
+		custody["checkoutPath"] = "/checkout/a"
+		arming := raw(EventArming, "tag-b", map[string]any{"custodyId": "custody-a"})
+		arming["checkoutPath"] = "/checkout/b"
+		reduction, err := Reduce(frames(custody, arming))
+		if err != nil {
+			t.Fatalf("a sequence-illegal custody binding corrupted the registry: %v", err)
+		}
+		if reduction.Claims["tag-b"] != nil || reduction.Custodies["custody-a"].BoundOwnerTag != "" {
+			t.Fatalf("the conflicting arming row bound custody across checkouts: %+v", reduction)
+		}
+		assertLoggedPaths(t, reduction)
+	})
+
+	t.Run("custody row after owner binding", func(t *testing.T) {
+		arming := raw(EventArming, "tag-c", map[string]any{"custodyId": "custody-b"})
+		arming["checkoutPath"] = "/checkout/a"
+		custody := raw(EventCustody, "", map[string]any{
+			"custodyId": "custody-b", "custodianPid": 52.0, "custodianPidStartedAt": 100.0,
+		})
+		custody["checkoutPath"] = "/checkout/b"
+		reduction, err := Reduce(frames(arming, custody))
+		if err != nil {
+			t.Fatalf("a later sequence-illegal custody row corrupted the registry: %v", err)
+		}
+		if reduction.Claims["tag-c"] == nil || reduction.Custodies["custody-b"] != nil {
+			t.Fatalf("the conflicting custody row replaced the earlier checkout binding: %+v", reduction)
+		}
+		assertLoggedPaths(t, reduction)
+	})
 }
 
 // SLC-R7-007: records pair by generation, never append order — a
