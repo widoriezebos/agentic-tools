@@ -1,18 +1,21 @@
 # engine-rebuild-rearms-itself
 
-- State: approved
+- State: claimed
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the enrollment pin is the trust boundary for which engine becomes the steward and supervision owner, so a wrong relaxation lets unintended bytes supervise the repository; novelty 2: no auto re-enrollment existed, though the same act (mint a generation, replace the runner) is the shipped human arm path reused unchanged; exposure 3: every machine in the fleet arms through this path, and the scheduler's unattended recovery uses it too; accumulation 2: the wedge cost m1 a full day of refused turn ends on 2026-09-05 and cost m2 a night of re-prompts on 2026-09-04 (goal stop-hook-wedge-on-enrollment-drift), which treated the symptom"
 - Tier: 3
 - Intent: A rebuilt engine wedges every seat: metasystem up refuses ENROLLMENT_DRIFT whenever bin/metasystem's digest differs from the steward's enrolled pin, and rebuilding the engine is ordinary work here, so no session can arm until a human re-arms at an agent-free terminal. DONE means a rebuild of the enrolled engine at its own enrolled path, invoked by that engine, re-arms itself (fresh generation, runner replaced onto the new bytes, temporary human word and review date carried forward) and reports accepted-engine outcome=re-armed, while every drift cause that names a DIFFERENT installation still refuses to the human, proven by tests and a live rebuild-then-up on m1
 - Origin: main
 - Next step: Built and verified on m1, uncommitted, waiting on human approval to execute and land: internal/steward/identity.go types the rebuild cause (ErrEngineRebuilt), internal/steward/runner.go adds ReArmRebuiltEngine, internal/up/up.go routes only that cause to a re-arm and reports accepted-engine outcome=re-armed, with tests in both packages. Proven live three times including across a rebuild of 428-commits-newer code: up outcome=armed authority=writer. Landing needs a reviewed implementation chain (commit.sh refuses without --chain), so on approval: claim, dispatch a code-critic on codex for runtime independence from the claude implementer, fold findings, close the chain, land.
 - OpenedAt: 2026-09-05T10:02:09Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:human:Wido at=2026-09-05T10:08:15Z revision=2 opid=JYMGBXJ7DH1XWFKT1BBC7RPZPR-m1-a4f8999f authority=relayed digest=3507899a34d9100c91129ea908cb09b078cb687a8f6486da717170c6c8eb9e99 reviewBy=2026-09-06
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T10:08:23Z revision=3 accountingRevision=3
+- StopCapability: generation=3 revision=3 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:02:09Z CEK1GRKK6YHJN66D1A44EV2THJ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-05T10:08:15Z JYMGBXJ7DH1XWFKT1BBC7RPZPR-m1-a4f8999f approve actor=human:human:Wido targets=engine-rebuild-rearms-itself authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Approve both: supervision-hook-wrong-root and engine-rebuild-rearms-itself. Budget 1d / 10 attempts / 240 job-minutes / 1 active. Carry the temporary word forward but stamp machine-minted."
-Integrity: sha256=ea4cea9a0cc4df93a1735929160b56a0eb4b0283dba1a2bd0a7311a6de2166fb
+- 2026-09-05T10:08:23Z EM0DBVB26DF990N367TQE0HYDW-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
+Integrity: sha256=80e64e3cee241326ecd85bcecd0f7ab0c23df60a1331138c23157c61c5296482
