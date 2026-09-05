@@ -12,6 +12,20 @@ live-fleet observations were read on the m0b checkout this design was authored
 beside, and the skew and worktree probes recorded in the self-grade were run
 here on 2026-09-02.
 
+**Revision 4, 2026-09-02**: folds both findings of
+records/misc/hook-root-critique-r3.md by id. SHR-R3-ENGINE-INSTALLATION-PAIR-01:
+the engine's world answer is now computed FOR the one installation every
+shell-owned consumer of the turn names, so a `METASYSTEM_BIN` override
+replaces the engine and never the installation (the pairing rule, Decision
+1). SHR-R3-GIT-STEERING-01: the worktree mapper runs every git call with the
+compiled authority's git-steering list scrubbed, so inherited `GIT_DIR`-style
+variables cannot classify an engine-less delegate worktree as an ordinary
+checkout (the exact sanitation, Decision 1). Each fold is tagged inline; the
+seams they cite were re-read in this worktree at commit 47e59bcd, and the
+steering probe in the self-grade was re-run here. Line numbers from
+revision 3 that are not re-cited by this revision still refer to commit
+5aad591f.
+
 ## The defect, restated against the code
 
 `scripts/agents/supervision-hook.sh:65` resolves the hook's world as
@@ -78,26 +92,56 @@ So the contract splits into two layers, and only the second is authority:
   the running script (`supervision-hook.sh:23-24`), mapped to its primary
   counterpart when it is a linked worktree (below). The candidate's only
   job is to LOCATE an engine. No governed decision rides it.
-- **Validation**: the engine found at the candidate answers for itself.
-  The verb is **`metasystem path state-root`**, registered in the existing
-  `path` family beside `owner` (`cmd/metasystem/main.go:244-248`,
-  `path_verbs.go`). It takes **no options** — revision 2's
-  `--installation` flag is withdrawn, because a caller-supplied pathname
-  was exactly the trust hole the critique named. The verb prints
-  `stateroot.SelfRoot()`, a new exported wrapper composing the two
-  existing private steps `RootForInstallation(installationRoot())`
-  (`stateroot.go:100-108,137-155`) with no semantic change to either, and
-  exits 0. On any resolution refusal (executable not at
-  `<installation>/bin/metasystem` per the shape gate, or an adopted-mode
-  installation outside any git repository) it prints the error to stderr
-  and **exits 1** — the same refusal shape as `path owner`
-  (`path_verbs.go:20-27`). It adds no state and no writes.
+- **Validation**: the engine found at the candidate answers for that
+  candidate. The verb is **`metasystem path state-root <installation>`**,
+  registered in the existing `path` family beside `owner`
+  (`cmd/metasystem/main.go:248-252`, `path_verbs.go`). It takes exactly
+  one positional argument, the installation, and no options. **Revision 4
+  (SHR-R3-ENGINE-INSTALLATION-PAIR-01)** withdraws revision 3's flag-less,
+  executable-anchored form: round 3 showed that under a `METASYSTEM_BIN`
+  override the executing engine is physically installed somewhere else, so
+  a self-anchored answer names one world while every shell-owned consumer
+  of the same turn keeps naming `$world_installation`. The split is proven
+  by the existing killed-attempt fixture
+  (`supervision-hook-fixtures.sh:356-389`), whose wrapper engine in `$tmp`
+  forwards to the harness engine and would have moved the turn's state root
+  to that engine's own checkout while `up` and the collector stayed in the
+  fixture bed. The verb prints `stateroot.RootForCandidate(<installation>)`,
+  a new exported function that (1) canonicalizes the argument the way `up`
+  canonicalizes `--metasystem-root` (`filepath.Abs` then
+  `filepath.EvalSymlinks`, `up.go:16-25`), (2) applies the shape gate
+  `installationRoot()` already applies to the executable's grandparent
+  (`metasystem.conf` present, or `scripts/agents` a directory,
+  `stateroot.go:149-153`, extracted into one private helper both callers
+  use with no semantic change), and (3) returns `RootForInstallation` of
+  the result (`stateroot.go:100-108`); exit 0. On refusal (shape gate
+  failed, or an adopted-mode installation outside any git repository) it
+  prints the error to stderr and **exits 1** — the same refusal shape as
+  `path owner` (`path_verbs.go:23-30`). A missing or extra argument is the
+  family's usage refusal, exit 2, which the hook cannot produce and which
+  lands in the visible skew branch of Decision 2 if it ever does. The verb
+  adds no state and no writes; its one git call (`repositoryTop`,
+  `stateroot.go:42-50`) runs with git steering scrubbed, the same scrub the
+  shell mapper adopts below.
 
-Because the verb answers from `os.Executable` with full symbolic-link
-evaluation, the hook's world is by construction the world every
-executable-anchored state writer in that same binary uses (`StateRoot`,
-`stateroot.go:69-95`), and pathname games cannot move it. The three cases
-the critique required the contract to distinguish are now each dispositioned:
+**The pairing rule (SHR-R3-ENGINE-INSTALLATION-PAIR-01).** One turn names
+one installation, and the engine computes the world FOR it: the shell
+derives `world_installation` once; the same bytes go to `path state-root`,
+to every `--metasystem-root` flag of the turn (`up`, `lease classify`,
+`health`), and to the collector's location
+(`$world_installation/scripts/agents/evidence-gc.sh`); `ms` is that
+installation's `bin/metasystem` unless `METASYSTEM_BIN` replaces it, and a
+replacement changes which engine computes the turn, never which
+installation it computes for. Because `up` derives its state world as
+`RootForInstallation(canonical(--metasystem-root))` (`up.go:104-108,
+139-144`), and the verb returns exactly that function of exactly those
+bytes, `$repo` and `up`'s state world cannot differ — with or without an
+override. The collector honors the same override (`evidence-gc.sh:17` reads
+`METASYSTEM_BIN` before falling back to its own `bin/metasystem`), so a
+mapped or overridden turn runs one engine throughout. The three cases the
+round-2 critique required the contract to distinguish keep their
+dispositions, because the candidate still reaches the verb only through the
+engine found at it:
 
 - *Directory symbolic link on the invocation path*: normalized away by the
   candidate's `pwd -P`; the physical installation is the candidate.
@@ -105,21 +149,47 @@ the critique required the contract to distinguish are now each dispositioned:
 - *Terminal symbolic link to the hook file*: the candidate is the physical
   directory holding the link, not the target. If no engine lives there, the
   hook stops benignly (visible missing-engine line on stop, Decision 2); if
-  an engine does live there, that engine answers for where it physically
-  is, not for where the link pointed. Either way no pathname is believed.
+  an engine does live there, that engine answers for that installation, not
+  for where the link pointed. Either way no pathname is believed.
 - *Copied or relocated hook*: identical rule. A bare copy finds no engine
   and stops benignly. A full relocated installation with its own engine IS
   an installation, and its engine answers for it. The fixture in Decision 3
   (case 6) pins the dangerous sub-case: a hook copy inside a governed
   repository does not adopt that repository's world by pathname.
 
-`METASYSTEM_BIN` remains an explicit override of the engine, and under it
-the world follows the override engine's own answer — consistent, because
-every verb of that turn executes in that same binary and its
-executable-anchored writers anchor the same way. Fixtures are unaffected:
-every fixture stages its engine by `cp`, never by symbolic link (verified:
-`supervision-fixtures.sh:475,1393,1481,1533`), so a staged engine's
-physical location is the fixture world itself.
+Why the positional argument is not revision 2's trust hole: revision 2's
+`--installation` took any pathname as the world's source with no engine
+required at it and before any identification. Revision 4's argument is
+admitted only after the mapper identified it and the `-x` test found the
+engine at it (or the operator explicitly substituted one), it is
+shape-gated inside the verb, and it is byte-identical to what `up` — a
+state-writing verb of the same turn — already receives and trusts. The verb
+extends no trust the turn does not already extend; it removes the one place
+where the turn's engine answered for something other than the turn's
+installation.
+
+`METASYSTEM_BIN` therefore overrides the engine and nothing else. Under it
+the world is the override engine's `RootForInstallation` answer for the
+same `$world_installation` every consumer names, so the override cannot
+split a turn; revision 3's sentence that the world "follows the override
+engine's own answer" is withdrawn as the split round 3 proved. Fixture
+consequence, traced: the killed-attempt fixture fires
+`$line_root/scripts/agents/supervision-hook.sh` under
+`METASYSTEM_BIN=$tmp/kill-engine` forwarding to the harness engine
+(`supervision-hook-fixtures.sh:356-381`); the candidate is `$line_root`
+(not a linked worktree), `$line_root/bin/metasystem` exists (staged by `cp`
+at line 164), the verb returns `RootForInstallation($line_root)` =
+`$line_root` (no template marker, adopted mode, its own git toplevel), and
+the attempt evidence lands at
+`$line_root/artifacts/agents/steward/components/supervision-hook.json`
+exactly as the fixture asserts (lines 176, 388-389). Every other
+wrapper-engine fixture in that file (lines 128, 260-336, 416-453, 535-598)
+resolves the same way, because each fires a hook whose own `bin/metasystem`
+was staged beside it. Fixtures stage engines by `cp`, never by symbolic link
+(verified at commit 47e59bcd: `supervision-fixtures.sh:634,1577,1680,1732`);
+under revision 4 that fact no longer carries the world, but it keeps every
+fixture engine's own executable-anchored writers — none of which the hook
+reaches — inside the fixture bed.
 
 Revision 1's `metasystem.conf` marker rule remains withdrawn for the
 reasons revision 2 recorded (stray-marker capture; silent rejection of a
@@ -130,11 +200,13 @@ entirely.
 **Uniqueness argument, recast.** (a) There is no collision set to
 tie-break: the candidate is the one physical directory the running script
 is installed in, and a stray configuration file anywhere on disk never
-enters the computation. (b) The output is not merely *the same function*
-the state writers use — it is *the same binary* answering from its own
-resolved executable location, so the hook cannot disagree with the engine
-about the world even under symbolic links, copies, or relocations
-(SHR-R2-INSTALL-01's residue closed). (c) Presence of `metasystem.conf` is
+enters the computation. (b) The output is *the same function*
+(`RootForInstallation`) applied by *the same engine* to *the same
+installation bytes* that every state-writing consumer of the turn
+receives, so the hook cannot disagree with `up` about the world under
+symbolic links, copies, relocations, or an engine override
+(SHR-R2-INSTALL-01's residue closed; SHR-R3-ENGINE-INSTALLATION-PAIR-01's
+split closed). (c) Presence of `metasystem.conf` is
 not part of the answer, so a `.local`-only template installation resolves
 identically to a committed-conf one. (d) Every unresolvable or unprovable
 input is benign exit 0, and the only non-silent degradations are the two
@@ -201,6 +273,41 @@ to form `world_installation` (for the fleet layout,
 directory. The mapping runs at most once; a counterpart that is itself a
 linked worktree is not re-mapped.
 
+**Git steering is scrubbed per call (SHR-R3-GIT-STEERING-01).** Both git
+invocations of the mapper — the identification query and the
+`--show-toplevel` query — run through one shell function, `hook_git`, that
+executes `env -u <name> ... git "$@"` over exactly the twenty variables the
+compiled authority removes before its own git call (`gitSteeringVariables`,
+`stateroot.go:32-40`, applied by `scrubGitSteering` at
+`stateroot.go:42-64`): `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`,
+`GIT_INDEX_FILE`, `GIT_CEILING_DIRECTORIES`,
+`GIT_DISCOVERY_ACROSS_FILESYSTEM`, `GIT_OBJECT_DIRECTORY`,
+`GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`,
+`GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`,
+`GIT_CONFIG_NOSYSTEM`, `GIT_GRAFT_FILE`, `GIT_SHALLOW_FILE`,
+`GIT_REPLACE_REF_BASE`, `GIT_IMPLICIT_WORK_TREE`, `GIT_NO_REPLACE_OBJECTS`,
+`GIT_PREFIX`. The list is a name-for-name copy of the Go list and changes
+only with it; the house pattern is `scripts/adopt.sh:53-61`
+(`scrubbed_env`), whose shorter list is not reused because the mapper must
+be no weaker than the authority it feeds. The scrub is per call, never
+process-wide: the hook does not `unset` these variables, so engine children
+keep the environment they receive today and the engine scrubs for its own
+git call as it already does. Why this is required and not hygiene:
+`GIT_DIR` is exported inside every git hook and by rebase and bisect
+subprocesses (`internal/gittree/gittree.go:61-67`), and round 3 reproduced
+the failure — with `GIT_DIR` set to the primary's `.git` and
+`GIT_WORK_TREE` to a real delegate worktree, the identification query
+returned two equal paths, so the mapper would have kept the engine-less
+sandbox as the world and the turn would have ended on the missing-engine
+line instead of blocking. Re-run in this worktree at commit 47e59bcd:
+steered, both lines are `<wrapper>/.git`; scrubbed, they are
+`<wrapper>/.git/worktrees/<job-id>` and `<wrapper>/.git` again. `env -u` of
+an unset name is a no-op; `env` or `git` absent from `PATH` makes the
+substitution fail and takes the existing `|| exit 0` guard; nothing in the
+scrub touches temporary storage, so the B1 guarantee and the failure map of
+Decision 2 are unchanged. The mapper's outcome no longer depends on any
+inherited process state other than the script's own physical location.
+
 **The proof burden is inverted (SHR-R2-WORKTREE-FALLBACK-01).** Revision 2
 mapped a failed identification (`git_ids=$(...) || git_ids=`) to "not a
 linked worktree" and carried on — which, for a template worktree, is
@@ -229,12 +336,28 @@ payload-cwd/session-env/toplevel block (lines 50-66):
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 
+# Git steering inherited from the parent (exported inside every git hook
+# and by rebase/bisect subprocesses) must not redirect identification to
+# another repository. The list is the compiled authority's own
+# (internal/stateroot/stateroot.go, gitSteeringVariables), scrubbed per
+# call so engine children keep their environment.
+hook_git() {
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
+    -u GIT_CEILING_DIRECTORIES -u GIT_DISCOVERY_ACROSS_FILESYSTEM \
+    -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    -u GIT_CONFIG -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT \
+    -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM \
+    -u GIT_GRAFT_FILE -u GIT_SHALLOW_FILE -u GIT_REPLACE_REF_BASE \
+    -u GIT_IMPLICIT_WORK_TREE -u GIT_NO_REPLACE_OBJECTS -u GIT_PREFIX \
+    git "$@"
+}
+
 # Candidate world: the physical installation this script sits in, mapped
 # to its primary counterpart when that installation is a linked worktree.
 # Identification must SUCCEED; every failure is benign exit 0, never a
 # guess and never the non-worktree outcome.
 world_installation=$harness_root
-git_ids=$(git -C "$harness_root" rev-parse --path-format=absolute \
+git_ids=$(hook_git -C "$harness_root" rev-parse --path-format=absolute \
   --git-dir --git-common-dir 2>/dev/null) || exit 0
 [[ "$git_ids" == *$'\n'* ]] || exit 0
 git_dir=${git_ids%%$'\n'*}
@@ -243,7 +366,7 @@ git_common=${git_ids#*$'\n'}
 if [[ "$git_dir" != "$git_common" ]]; then
   [[ "$(basename -- "$git_common")" == .git ]] || exit 0
   primary_top=$(cd -- "$(dirname -- "$git_common")" 2>/dev/null && pwd -P) || exit 0
-  wt_top=$(git -C "$harness_root" rev-parse --show-toplevel 2>/dev/null) || exit 0
+  wt_top=$(hook_git -C "$harness_root" rev-parse --show-toplevel 2>/dev/null) || exit 0
   wt_top=$(cd -- "$wt_top" 2>/dev/null && pwd -P) || exit 0
   case "$harness_root" in
     "$wt_top") rel= ;;
@@ -263,12 +386,14 @@ if [[ ! -x "$ms" ]]; then
 fi
 # ... registry membership and payload staging, byte-identical to today ...
 
-# The world is the ENGINE's answer, not the pathname's. Exit 1 is the
-# verb's own refusal (ungoverned installation): silent. Any other failure
-# is engine/hook skew and must be visible, or a fleet that rebuilds its
-# engines daily cannot tell a skewed hook from one that never fired.
+# The world is the ENGINE's answer FOR THE INSTALLATION every consumer of
+# this turn names (the same bytes every --metasystem-root below carries),
+# never the pathname's own. Exit 1 is the verb's own refusal (ungoverned
+# installation): silent. Any other failure is engine/hook skew and must be
+# visible, or a fleet that rebuilds its engines daily cannot tell a skewed
+# hook from one that never fired.
 repo_rc=0
-repo=$("$ms" path state-root 2>/dev/null) || repo_rc=$?
+repo=$("$ms" path state-root "$world_installation" 2>/dev/null) || repo_rc=$?
 if (( repo_rc == 1 )); then
   exit 0
 elif (( repo_rc != 0 )) || [[ -z "$repo" ]]; then
@@ -315,13 +440,15 @@ locates the engine. The hook's binding header comment
 shell-owned syntax refusals — unchanged; (2) world identification — the
 physical installation this script belongs to, mapped to its primary
 counterpart when it is a linked worktree, by git common-dir identity
-alone, before any engine work; every identification failure is benign exit
-0, never a guess; (3) executable resolution at the identified world — a
-missing engine stays the visible-on-stop benign exit 0; (4) registry
-membership — an unknown runtime exits 2; (5) world validation by engine
-identity — `path state-root`, the engine's executable-anchored answer: its
-exit-1 refusal is benign silence, any other failure is the visible-on-stop
-skew line.* The old items (4) session environment and (5) cwd resolution
+alone, with inherited git steering scrubbed per call, before any engine
+work; every identification failure is benign exit 0, never a guess; (3)
+executable resolution at the identified world — a missing engine stays the
+visible-on-stop benign exit 0; (4) registry membership — an unknown runtime
+exits 2; (5) world validation by the engine for the identified installation
+— `path state-root <installation>`, the shipped state-root authority
+applied to the same installation every consumer flag of the turn names:
+its exit-1 refusal is benign silence, any other failure is the
+visible-on-stop skew line.* The old items (4) session environment and (5) cwd resolution
 are deleted with their code. The B1 guarantee ("a missing engine with an
 unusable TMPDIR must still exit 0 benign") is preserved: the mapping uses
 no temporary files, and payload staging still happens only after the
@@ -364,15 +491,15 @@ The complete failure map:
 
 | Operation | Failure | Mapped outcome |
 | --- | --- | --- |
-| `git rev-parse --path-format=absolute --git-dir --git-common-dir` | not a repository, git < 2.31, git absent, vanished directory | **silent exit 0** — identification failure proves nothing and is never treated as "not linked" |
+| `hook_git rev-parse --path-format=absolute --git-dir --git-common-dir` | not a repository, git < 2.31, git or `env` absent, vanished directory | **silent exit 0** — identification failure proves nothing and is never treated as "not linked"; the call runs with git steering scrubbed, so an inherited `GIT_DIR`-class variable can neither cause nor mask any of these (SHR-R3-GIT-STEERING-01) |
 | two-line output parse | second line missing or empty | silent exit 0 |
 | common-dir basename test | not `.git` (bare or exotic layout) | silent exit 0 |
 | `primary_top` / `wt_top` physical normalization | directory vanished or unreadable | each is `$(cd -- ... 2>/dev/null && pwd -P) || exit 0` |
 | containment `case` | installation not at or below its worktree toplevel | silent exit 0 |
 | primary counterpart shape check | no `scripts/agents` directory there | silent exit 0 |
 | engine executable test at the world | no engine file | **today's visible missing-engine line on stop**, exit 0 — true absence stays benign and stays as visible as it already is |
-| `path state-root`, exit 1 | the verb's own refusal: the executable-anchored installation is not a governed world (shape gate, or adopted mode outside git) | silent exit 0 |
-| `path state-root`, any other nonzero exit, or exit 0 with empty stdout | verb absent from an older engine (verified exit 2), family absent, or a broken answer | **the one-line skew report on stop** (emitted by literal `printf`, engine-independent, mirroring the missing-engine line), exit 0 |
+| `path state-root "$world_installation"`, exit 1 | the verb's own refusal: `$world_installation` fails the shape gate, or is an adopted-mode installation outside any git repository | silent exit 0 |
+| `path state-root "$world_installation"`, any other nonzero exit, or exit 0 with empty stdout | verb absent from an older engine (verified exit 2), family absent, a usage refusal (exit 2), or a broken answer | **the one-line skew report on stop** (emitted by literal `printf`, engine-independent, mirroring the missing-engine line), exit 0 |
 | final `repo` physical normalization | directory vanished or unreadable | silent exit 0 |
 | evidence-trail `mkdir -p "$supervision_dir"` (line 264, reachable with a write-denied primary from a sandboxed worktree session) | permission denied | gains `2>/dev/null || true`; the appends that follow already carry their own guards (lines 265, 282-283, 309-310) |
 
@@ -488,6 +615,37 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   session; assert exit 0, an output containing the engine/hook-skew line
   exactly once, no `"decision":"block"`, and no `hooks.log` entry (the
   trail needs a working engine; the drift line IS the visibility).
+- **Case 8, session `nested-worktree-steered` (SHR-R3-GIT-STEERING-01
+  pin)** — case 4 repeated with the exact steering the critic used
+  exported into the hook's environment: `GIT_DIR=$scope/.git
+  GIT_WORK_TREE=$tmp/nested-wt`. Fire the worktree's own tracked hook copy
+  with a fresh session and the same payload cwd as case 4. Assert exactly
+  case 4's outcomes: `"decision":"block"` quoting `recover the primary
+  sentinel`, evidence appended to the primary's `hooks.log`, and no `bin/`
+  or `artifacts/` under `$tmp/nested-wt` — plus the negative that the
+  output contains no missing-engine line. Without the scrub the
+  identification query returns two equal paths, the mapper keeps the
+  engine-less sandbox as the world, and the turn ends on the
+  missing-engine line without blocking, so this case fails before the fold
+  and passes after. The two variables are the critic's reproduction; the
+  full list is pinned by being a copy of the Go authority's, not by
+  enumerating twenty firings.
+- **Case 9, session `nested-override` (SHR-R3-ENGINE-INSTALLATION-PAIR-01
+  pin)** — write `$tmp/pair-engine`, a wrapper in the exact shape of the
+  killed-attempt fixture's engine (`supervision-hook-fixtures.sh:356-375`)
+  that `exec`s the fixture harness's own engine `$ms`
+  (`supervision-fixtures.sh:120`), whose physical installation is never
+  `$scope/metasystem`. Fire case 1's payload through
+  `$scope/metasystem/scripts/agents/supervision-hook.sh` with
+  `METASYSTEM_BIN=$tmp/pair-engine` and a fresh session. Assert
+  `"decision":"block"` quoting `dispatch the nested runner` and evidence
+  appended to `$scope/metasystem/artifacts/agents/supervision/hooks.log`.
+  Under revision 3's self-anchored verb the override engine would have
+  answered for its own checkout, the block reason could not have quoted
+  the fixture sentinel, and the evidence would have left the fixture bed;
+  under revision 4 the override changes the engine and the installation
+  stays `$scope/metasystem`. The existing killed-attempt fixture remains
+  the standing regression pin for the flat layout under an override.
 
 Extension to the existing `stop-hook-monitor` scenario — **flat, deep
 firing, session `t-deep`**: immediately after the block-once replay
@@ -506,8 +664,8 @@ layout; "worktree" means the mapped-primary case.
 
 | Line | Consumer | Behavior under the new resolution |
 | --- | --- | --- |
-| 23-31 | engine resolution `$ms` | **New row (SHR-R2-WORKTREE-ENGINE-01).** The engine resolves at `$world_installation`, after the mapping. Non-mapped layouts: byte-identical to today (`$world_installation == $harness_root`). Worktree: the primary's engine runs the whole turn — the sandbox ships none, so revision 2's harness-anchored engine claim is withdrawn. `METASYSTEM_BIN` still overrides. |
-| 50-66 | cwd resolution and toplevel derivation | Replaced by the Decision 1 verb call; payload cwd and the session-env fallback are deleted. `$repo` is now the engine's own executable-anchored answer, physically normalized. |
+| 23-31 | engine resolution `$ms` | **New row (SHR-R2-WORKTREE-ENGINE-01).** The engine resolves at `$world_installation`, after the mapping. Non-mapped layouts: byte-identical to today (`$world_installation == $harness_root`). Worktree: the primary's engine runs the whole turn — the sandbox ships none, so revision 2's harness-anchored engine claim is withdrawn. `METASYSTEM_BIN` replaces the engine only (revision 4): `$world_installation`, every flag riding it, and the verb's argument are untouched by the override. |
+| 50-66 | cwd resolution and toplevel derivation | Replaced by the Decision 1 verb call; payload cwd and the session-env fallback are deleted. `$repo` is now the engine's `RootForInstallation` answer for `$world_installation`, physically normalized — the same derivation `up` applies to the same bytes (revision 4). |
 | 92 | `steward hook-attempt --repo` | Takes the world directly from the flag (`cmd/metasystem/steward_verbs.go:114-123`). Fleet: attempt evidence lands beside the enrolled steward state under `metasystem/artifacts/`, so `generation`/`attemptSeq` resolve and hook-freshness revives — the goal's DONE condition. Worktree: lands in the primary trail; a write-denied sandbox degrades to the disclosed `hook_evidence_failure`. |
 | 109 | `proc find-ancestor --repo` | Reads runtime adapters beneath the flag root; the wrapper root has no `scripts/agents/adapters/`, so fleet identity resolution was structurally empty. Now reads the real adapters. |
 | 122, 131 | `lease classify --root "$repo" --metasystem-root "$world_installation"` | Fleet: root and metasystem-root now both name `metasystem/`, where `up`-armed sessions actually write announcements and leases (observed live). Worktree: both name the primary. Non-worktree firings pass a byte-identical metasystem-root to today's. |
@@ -518,7 +676,7 @@ layout; "worktree" means the mapped-primary case.
 | 221, 244, 249, 322-324 | `lease protocol-growth` / `renew` / `protocol-advance --root` | Same lease world as classification; growth counts and renewals touch the lease that exists. |
 | 256 | `supervise watchdog-report --repo` | Reads job records and supervision state where dispatch writes them. |
 | 263-265, 282-283, 309-310 | `supervision_dir="$repo/artifacts/agents/supervision"`, `hooks.log` | The fired-vs-never-fired trail lands beside the armed supervision state; the stray wrapper-root `artifacts/` stops growing; line 264's `mkdir -p` gains the Decision 2 guard. |
-| 265 | `"$script_dir/evidence-gc.sh"` | **New row (SHR-R2-CONSUMER-01).** The collector derives its root and its own engine from its own script location (`evidence-gc.sh:16-18`) and roots `lease require-holder`, `lease run-held`, and `evidence gc` there — revision 2 left it invoked from `$script_dir`, splitting a mapped turn between two worlds. The invocation becomes `"$world_installation/scripts/agents/evidence-gc.sh"`. Non-mapped layouts: the same file byte-for-byte (`$script_dir` is `$world_installation/scripts/agents`), so behavior is identical, including the operator-nested layout's existing collector root at the vendored installation — pre-existing, unchanged, not a new split. Worktree: the primary's collector runs against the primary's lease and evidence state; a failure still lands in the primary `hooks.log` under the existing `|| true`. |
+| 265 | `"$script_dir/evidence-gc.sh"` | **New row (SHR-R2-CONSUMER-01).** The collector derives its root and its own engine from its own script location (`evidence-gc.sh:16-18`) and roots `lease require-holder`, `lease run-held`, and `evidence gc` there — revision 2 left it invoked from `$script_dir`, splitting a mapped turn between two worlds. The invocation becomes `"$world_installation/scripts/agents/evidence-gc.sh"`. Non-mapped layouts: the same file byte-for-byte (`$script_dir` is `$world_installation/scripts/agents`), so behavior is identical, including the operator-nested layout's existing collector root at the vendored installation — pre-existing, unchanged, not a new split. Worktree: the primary's collector runs against the primary's lease and evidence state; a failure still lands in the primary `hooks.log` under the existing `|| true`. Override: the collector reads `METASYSTEM_BIN` itself (`evidence-gc.sh:17`), so an overridden turn runs one engine through the collector too (revision 4). |
 | 274 | `report turn-verdict --root` | The consequence specimen: the verdict reads the real `plans/goals/` ledger and stream plans (`openwork.go:23-28`), and — in the worktree case — the primary's job records, so a delegate's active job is visible in-flight work instead of a phantom idle. An idle turn-end with claimable work is refused instead of waved through blind. |
 | 332 | `steward pending --repo` | Session-start incident surfacing reads the real steward's pending set. |
 
@@ -533,7 +691,9 @@ invoked evidence collector with its lease and garbage-collection roots.
 Nothing in the turn reads or writes sandbox state; the sandbox contributes
 only the hook bytes that started it. Decision 3 case 4 asserts the
 positive half (primary block reason, primary evidence) and the negative
-half (no `bin/`, no `artifacts/` materializing in the sandbox).
+half (no `bin/`, no `artifacts/` materializing in the sandbox); case 8
+asserts the same under inherited git steering, and case 9 asserts that an
+engine override keeps every part of the turn on the one installation.
 
 Existing-fixture blast, retraced against this revision:
 
@@ -564,7 +724,9 @@ resolution (`dispatch.sh`, `commit.sh`, adapters — all resolve from their
 own location or an explicit flag) is modified; the `runtime session-env`
 engine verb, the `stateroot` package's existing semantics, and
 `evidence-gc.sh`'s own internals are untouched (only the hook's invocation
-path of the collector changes).
+path of the collector changes); `up`'s census-scope query (`up.go:42-49`)
+runs git without the steering scrub — it sets the census scope from
+`--repo`, never the state world, and is not changed by this design.
 
 ## Consistency pass
 
@@ -576,12 +738,27 @@ every fixture of Decision 3 identifies by sentinel and evidence location
 (cases 4-7 each pin one round-2 finding), and what every row of Decision 4
 inherits; `world_installation` appears in the resolver, the engine
 resolution, the `--metasystem-root` switch list, the collector invocation,
-and the corresponding blast rows with one meaning; the verb is flag-less
-everywhere it is named; no surviving sentence claims cwd participates in
+and the corresponding blast rows with one meaning; the verb carried one
+shape everywhere it was named (flag-less in revision 3; revision 4 gives
+it one positional argument everywhere, see below); no surviving sentence
+claims cwd participates in
 resolution, that a pathname alone selects a world, that resolution ordering
 is unchanged, that the worktree turn runs on a sandbox engine, that an
 identification failure implies "not a worktree", or that every engine
 failure is silent.
+
+Revision 4 was re-read end to end against itself after the two folds: the
+verb is named with its one positional argument in the validation contract,
+the replacement block, the header contract, the failure map, and the
+Decision 4 rows; `world_installation` is the bytes the verb, every
+`--metasystem-root`, and the collector location receive, and the pairing
+rule says so in one place; `hook_git` wraps both git calls of the
+replacement block and the failure map's identification row names it; case
+8 pins the scrub and case 9 pins the pairing, each with the outcome that
+fails before the fold; and no surviving sentence claims the verb is
+flag-less, that the engine answers from its own executable, that the world
+follows the override engine's own answer, or that a mapper git call runs
+with the inherited environment.
 
 ## Self-grade
 
@@ -613,9 +790,33 @@ write-denied-sandbox degradation path is traced through the hook's
 existing failure channels, not executed live; (e) the
 `$CLAUDE_PROJECT_DIR` registration fact is claude-runtime-specific — other
 runtimes may register differently, but the mechanism depends only on the
-firing script's physical location, which is runtime-independent. Grade:
-pass against everything observed; the reject condition below is the
-falsifier the implementation and its critique must actively test.
+firing script's physical location, which is runtime-independent.
+
+Revision 4 grounding: the pairing rule rests on `up.go:16-25,104-108,
+139-144` (canonicalize, then `RootForInstallation` of the explicit
+`--metasystem-root`), `lease.go:68-86` (`--metasystem-root` selects
+adapters and configuration, `--root` the state), `evidence-gc.sh:16-18`
+(collector root from its own location, engine from `METASYSTEM_BIN`
+first), `stateroot.go:42-64,100-108,137-163`, `path_verbs.go:14-33`,
+`main.go:248-252`, and the killed-attempt fixture at
+`supervision-hook-fixtures.sh:164,176,356-389`; no hook-reachable steward
+verb anchors on the executable (`stateroot.StateRoot` appears in that
+file only under `steward revive`, `steward_verbs.go:414`). The scrub rests
+on `stateroot.go:32-40`, `adopt.sh:53-61`, `gittree.go:61-75`, and the
+probe re-run here at commit 47e59bcd with git 2.50.1: plain and scrubbed
+queries return the linked-worktree pair, the steered query returns the
+primary `.git` twice. Residual risks added: (f) a `bin/metasystem` that is
+itself a symbolic link to another installation's binary no longer moves
+the hook's world — the turn is flag-driven, and reject clause one keeps
+executable-anchored writers out of it — but that engine's private
+`StateRoot` writers, if ever reached, would anchor elsewhere; (g) the shell
+scrub list is a copy of the Go list and can drift when the Go list changes,
+and the fixture pins only the two variables that reproduced the defect;
+(h) under `METASYSTEM_BIN` the operator's engine is trusted to be a
+metasystem engine — an override that is not one lands in the visible skew
+branch, never in a silent wrong world. Grade: pass against everything
+observed; the reject condition below is the falsifier the implementation
+and its critique must actively test.
 
 **Reject condition — reject this design if any of the following is
 shown:** a state-writing engine verb reachable from this hook whose world
@@ -624,9 +825,17 @@ of an explicit metasystem root (an authority split the consumer table
 missed); a supported layout in which neither the firing script's own
 physical installation nor its mapped primary counterpart holds the
 governing engine (the hook would go benign inside a governed world); any
-path on which a governed decision rides a pathname-derived world that the
-engine at that world did not itself answer (the SHR-R2-INSTALL-01
-recreation); `up` writing supervision state at any root other than
+path on which a governed decision rides a world that the turn's engine did
+not compute, by `RootForInstallation`, from the same installation bytes
+every `--metasystem-root` consumer of that turn receives (the
+SHR-R2-INSTALL-01 recreation); any turn — under a `METASYSTEM_BIN`
+override included — in which the verb's answer and any shell-owned
+consumer name different installations, or in which the collector runs a
+different engine than the hook (the SHR-R3-ENGINE-INSTALLATION-PAIR-01
+split); any git invocation of the resolver whose result an inherited
+variable from the `stateroot.go:32-40` list can change, or a scrub list
+that is not name-for-name that list (the SHR-R3-GIT-STEERING-01
+exposure); `up` writing supervision state at any root other than
 `RootForInstallation(--metasystem-root)`; a linked worktree whose primary
 counterpart at the same relative installation path is not the governing
 installation (the one-step mapping would misdirect or silence it); any
