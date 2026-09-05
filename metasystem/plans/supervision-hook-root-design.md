@@ -26,6 +26,32 @@ steering probe in the self-grade was re-run here. Line numbers from
 revision 3 that are not re-cited by this revision still refer to commit
 5aad591f.
 
+**Revision 5, 2026-09-05**: folds all four findings of
+records/misc/hook-root-critique-r4.md by id. SHR-R4-DEADLINE-PARENT-01: the
+hook's Stop-deadline parent (a second root and engine owner the design did
+not govern) now resolves the same script-derived, scrubbed, mapped
+installation as its worker, selects its canonical engine there, and derives
+the refusal-record root through the state-root verb, never payload cwd
+(Decisions 1, 3, 4). SHR-R4-FAIL-CLOSED-REGRESSION-01: a missing engine and an
+old engine lacking the verb both BLOCK a Stop, as the shipped hook already
+does for a missing engine; the replacement block, the failure map, and the
+case table say so (Decision 2). SHR-R4-UP-GIT-STEERING-01: `up`'s
+census-scope query runs under the compiled authority's scrub, and the
+"never selects the state world, out of scope" claim is withdrawn (Decision
+4). SHR-R4-COPIED-HOOK-OVERRIDE-01: the candidate must carry its own engine
+at `<candidate>/bin/metasystem` for the world to be governed, with or
+without a `METASYSTEM_BIN` override; the override replaces which engine runs
+and never waives that evidence (Decision 1, fixture case 6). Each fold is
+tagged inline. Hook line numbers this revision introduces are at commit
+12ed490c3 (marked "HEAD"), where the Stop-deadline parent occupies
+`supervision-hook.sh:32-222` and the worker body starts at line 224; the
+5aad591f line numbers of earlier revisions map onto that worker body
+(engine resolution 226-234, payload cwd and toplevel 258-274).
+**Turn-verdict-hardening slice 1b is unsafe until this revision lands**: it
+edits worker verdict responses whose parent, as shipped, can discard,
+replace, or record against another world (the critic's exact claim, bound
+here).
+
 ## The defect, restated against the code
 
 `scripts/agents/supervision-hook.sh:65` resolves the hook's world as
@@ -148,14 +174,48 @@ engine found at it:
   Supported.
 - *Terminal symbolic link to the hook file*: the candidate is the physical
   directory holding the link, not the target. If no engine lives there, the
-  hook stops benignly (visible missing-engine line on stop, Decision 2); if
+  hook stops on the missing-engine block (Decision 2), whatever
+  `METASYSTEM_BIN` says; if
   an engine does live there, that engine answers for that installation, not
   for where the link pointed. Either way no pathname is believed.
 - *Copied or relocated hook*: identical rule. A bare copy finds no engine
-  and stops benignly. A full relocated installation with its own engine IS
-  an installation, and its engine answers for it. The fixture in Decision 3
-  (case 6) pins the dangerous sub-case: a hook copy inside a governed
-  repository does not adopt that repository's world by pathname.
+  and stops on the missing-engine block. A full relocated installation with
+  its own engine IS an installation, and its engine answers for it. The
+  fixture in Decision 3 (case 6) pins the dangerous sub-case: a hook copy
+  inside a governed repository does not adopt that repository's world by
+  pathname — **with or without a `METASYSTEM_BIN` override** (revision 5,
+  below).
+
+**Installation provenance under an override (SHR-R4-COPIED-HOOK-OVERRIDE-01).**
+Round 4 showed that revision 4's executable check,
+`ms="${METASYSTEM_BIN:-$world_installation/bin/metasystem}"`, never
+required an engine at the candidate once an override was set: a copied hook
+in `<repo>/development/sub/scripts/agents/` passes the shape gate (a
+`scripts/agents` directory suffices, `stateroot.go:149-153`),
+`RootForInstallation` answers the containing toplevel because template mode
+is false (`stateroot.go:100-108`), and the round-two hole reopens by
+pathname. The rule now: **the candidate must carry an engine at
+`<candidate>/bin/metasystem` for the world to be governed, override or
+not.** That file is the installation's own evidence of being an
+installation; `METASYSTEM_BIN` may replace which engine RUNS the turn but
+never waives it. Mechanically the hook computes
+`canonical="$world_installation/bin/metasystem"` and
+`ms="${METASYSTEM_BIN:-$canonical}"`, and requires BOTH `-x "$canonical"`
+and `-x "$ms"` before any governed step; either absent is the
+missing-engine outcome of Decision 2 (a block on Stop). Without an override
+the two tests coincide with today's one test. Under an override, an
+engine-less candidate — the copied hook, the terminal symbolic link, the
+engine-less delegate worktree before mapping — can no longer be governed by
+substituting an engine from elsewhere; the mapped primary (which carries
+the engine) still is, so the delegate turn of the worktree rule is
+unaffected. The killed-attempt, failure-engine, deadline, template and
+membership fixtures all stage or possess `bin/metasystem` at the
+installation they fire (`supervision-hook-fixtures.sh:7-8,164,474`), so
+every existing override fixture keeps passing; the one existing fixture
+whose installation has no engine (`missing-template`, lines 444-462) fires
+under an override and expects `"decision":"block"`, which is exactly the
+missing-engine block this rule produces. Decision 3 case 6 is re-pinned to
+fire under `METASYSTEM_BIN` as well as without it.
 
 Why the positional argument is not revision 2's trust hole: revision 2's
 `--installation` took any pathname as the world's source with no engine
@@ -210,7 +270,8 @@ split closed). (c) Presence of `metasystem.conf` is
 not part of the answer, so a `.local`-only template installation resolves
 identically to a committed-conf one. (d) Every unresolvable or unprovable
 input is benign exit 0, and the only non-silent degradations are the two
-fixed one-line reports of Decision 2 — never a guess.
+fixed blocking reports of Decision 2 (missing engine, engine/hook skew)
+— never a guess.
 
 ### The linked-worktree rule (folds SHR-R2-WORKTREE-ENGINE-01 and SHR-R2-WORKTREE-FALLBACK-01)
 
@@ -327,10 +388,22 @@ floor is declared rather than engineered around, since the fleet runs
 
 ### The replacement block
 
-Normatively, the engine-resolution block (lines 23-31) becomes the
-candidate/mapping/engine sequence below; the registry and payload staging
-(lines 32-44) stand unchanged; the verb call replaces the deleted
-payload-cwd/session-env/toplevel block (lines 50-66):
+Normatively, the engine-resolution block (5aad591f lines 23-31; HEAD
+226-234) becomes the candidate/mapping/engine sequence below; the registry
+and payload staging (HEAD 235-252) stand unchanged; the verb call replaces
+the deleted payload-cwd/session-env/toplevel block (5aad591f 50-66; HEAD
+258-274). **Revision 5**: `hook_git` and the candidate/mapping sequence are
+defined as one shell function, `hook_world_installation`, placed BEFORE the
+Stop-deadline parent block (HEAD line 32), because the parent needs the
+same answer (below); the function prints `world_installation` on success
+and returns 1 on every identification or mapping failure, and each caller
+maps that return — the worker to its benign `exit 0`, the parent to its
+"world unknown" state. The block is shown here in the worker's inline
+form for readability; the function form is byte-equivalent apart from
+`return 1` replacing each `exit 0`. The missing-engine and skew emissions
+are the shipped `$raw_missing_engine_stop` block (HEAD line 21) and a
+literal block of the same shape, not the `systemMessage` lines revision 4
+printed (SHR-R4-FAIL-CLOSED-REGRESSION-01, Decision 2):
 
 ```bash
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -377,10 +450,15 @@ if [[ "$git_dir" != "$git_common" ]]; then
   [[ -d "$world_installation/scripts/agents" ]] || exit 0
 fi
 
-ms="${METASYSTEM_BIN:-$world_installation/bin/metasystem}"
-if [[ ! -x "$ms" ]]; then
+# The installation's OWN engine is the evidence that the candidate is an
+# installation; METASYSTEM_BIN may replace which engine runs, never that
+# evidence. A missing engine blocks a Stop because no safe verdict can be
+# made (the shipped contract, HEAD lines 4-6 and 21).
+canonical="$world_installation/bin/metasystem"
+ms="${METASYSTEM_BIN:-$canonical}"
+if [[ ! -x "$canonical" || ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
-    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (metasystem engine missing; reinstall or rebuild bin/metasystem)"}'
+    printf '%s\n' "$raw_missing_engine_stop"
   fi
   exit 0
 fi
@@ -389,21 +467,106 @@ fi
 # The world is the ENGINE's answer FOR THE INSTALLATION every consumer of
 # this turn names (the same bytes every --metasystem-root below carries),
 # never the pathname's own. Exit 1 is the verb's own refusal (ungoverned
-# installation): silent. Any other failure is engine/hook skew and must be
-# visible, or a fleet that rebuilds its engines daily cannot tell a skewed
-# hook from one that never fired.
+# installation): silent here; the Stop parent converts silence to its
+# generic block. Any other failure is engine/hook skew in a governed world:
+# it blocks a Stop and names itself, or a fleet that rebuilds its engines
+# daily cannot tell a skewed hook from one that never fired.
 repo_rc=0
 repo=$("$ms" path state-root "$world_installation" 2>/dev/null) || repo_rc=$?
 if (( repo_rc == 1 )); then
   exit 0
 elif (( repo_rc != 0 )) || [[ -z "$repo" ]]; then
   if [[ "$event" == stop ]]; then
-    printf '%s\n' '{"systemMessage":"HEALTH unknown — hook-freshness=unknown (engine/hook skew: this metasystem engine does not answer path state-root; rebuild bin/metasystem)"}'
+    printf '%s\n' "$raw_engine_skew_stop"
   fi
   exit 0
 fi
 repo=$(cd -- "$repo" 2>/dev/null && pwd -P) || exit 0
 ```
+
+`raw_engine_skew_stop` is a literal defined beside `raw_missing_engine_stop`
+(HEAD line 21), engine-independent by construction:
+`{"decision":"block","reason":"Metasystem engine and hook are out of step: this engine does not answer path state-root, so stopping safety cannot be judged; rebuild bin/metasystem before stopping."}`.
+The parent's no-validator fallback (HEAD 172-175) accepts this literal
+exactly as it accepts the missing-engine literal (below).
+
+### The Stop-deadline parent (folds SHR-R4-DEADLINE-PARENT-01)
+
+The shipped hook wraps every Stop in a deadline parent (HEAD 32-222): the
+parent stages the payload, relaunches this script as a worker (55-57),
+resolves its record coordinates "alongside the worker, never ahead of it"
+(60-63), validates the worker's JSON with `deadline_validator` (144-175),
+and on timeout writes a stop-refusal record through `deadline_canonical`
+(203-217). Revision 4 governed none of this. As shipped the parent is a
+second, contradictory root and engine owner: `deadline_harness_root` is the
+unmapped script grandparent (44-45), `deadline_validator` and
+`deadline_canonical` both sit beneath it (46-47), and the refusal-record
+root is `git -C "$deadline_cwd" rev-parse --show-toplevel` over the
+PAYLOAD cwd, unscrubbed (85-87). In the engine-less delegate worktree the
+revision-4 worker reaches the primary engine, but its parent has no
+validator, so the no-validator fallback (172-175) accepts only the exact
+missing-engine literal and replaces every ordinary verdict with the generic
+block (176-177); on timeout the parent either records under the cwd-derived
+worktree or wrapper root, or, lacking a canonical engine, emits the
+record-failure allow line (216). Revision 5 governs the parent by one rule:
+**the parent and the worker name one installation, one canonical engine,
+and one world, computed by the same function from the same script
+location.**
+
+- **Ordering is preserved.** The certified worker-first ordering stands:
+  the worker is launched first (55-57), and the parent resolves its own
+  coordinates while the worker runs, exactly where the shipped resolver
+  subshell runs today (64-75). Nothing governed is computed ahead of the
+  worker's launch, so a slow resolution cannot eat the worker's budget.
+- **Installation.** While the worker runs, the parent calls
+  `hook_world_installation` (the function defined above, before line 32);
+  the answer is `deadline_installation`. On failure the parent's world is
+  unknown: `deadline_validator` and `deadline_canonical` are set empty, so
+  `-x` fails, the no-validator fallback governs completion, and the
+  timeout path takes the shipped record-failure branch. The worker in the
+  same state exited silently at identification, which that fallback
+  converts to the generic block — the same fail-closed answer the shipped
+  hook gives a cwd outside any repository (HEAD 268-270, 176-177).
+- **Engines.** `deadline_canonical=$deadline_installation/bin/metasystem`
+  and `deadline_validator="${METASYSTEM_BIN:-$deadline_canonical}"`:
+  the same two names, the same override rule, and the same provenance
+  requirement as the worker (the canonical engine must be executable for
+  the world to be governed). In the mapped worktree both now resolve at
+  the primary, where the engine is, so the parent can validate the
+  worker's ordinary JSON and can write a refusal record. The resolver
+  subshell (67-75) keeps using `deadline_canonical` for `json get`; its
+  cwd line becomes unused and is dropped with `deadline_cwd`.
+- **Refusal-record root.** `deadline_resolve_record` (82-93) no longer
+  runs git over the payload cwd. It computes
+  `deadline_repo=$("$deadline_canonical" path state-root
+  "$deadline_installation" 2>/dev/null) || return 1`, physically
+  normalizes it as today (87), and keeps the slug and record path
+  (88-92). The record therefore lands at
+  `<world>/artifacts/agents/supervision/stop-refusals/<slug>.json` for
+  the world the worker's verdict was computed in — the primary for a
+  mapped worktree, `<wrapper>/metasystem` on the fleet — never under a
+  cwd-derived toplevel. The verb's exit 1 (ungoverned installation) and
+  every other failure leave `deadline_record` empty, which is the shipped
+  record-failure branch (207-217): the parent emits the allow line so a
+  record failure cannot recreate the refusal loop. `deadline_cwd`, its
+  `sed` extraction (77), and the engine-coordinate capture of a second
+  line (98-106) are deleted; only the session line of the resolution file
+  remains, and `deadline_session` keeps its shell-then-engine precedence.
+- **Validation is unchanged in shape.** The parent's acceptance predicate
+  (165-171) and its two fallbacks (172-177) are untouched; the fold only
+  moves which engine validates and where the record lands. Because
+  Decision 2 now makes the missing-engine and skew outcomes literal
+  blocks, the no-validator fallback accepts both literals byte-for-byte
+  (174 gains `|| [[ "$deadline_raw" == "$raw_engine_skew_stop" ]]`).
+
+Consequence for the one-world claim of Decision 4: in the mapped case the
+parent's validator, canonical engine, and refusal record are the primary's,
+so "every moving part of the turn names the primary" now includes the
+parent; and on the fleet the refusal record moves from the wrapper root's
+stray `artifacts/` (where the cwd-derived toplevel put it) to the state
+world, beside the attempt evidence. The fixtures of Decision 3 (cases
+10-13) pin normal completion and timeout for the engine-less worktree,
+under git steering and under `METASYSTEM_BIN`.
 
 The payload's `cwd` field and the `runtime session-env` fallback chain
 (lines 50-64) are deleted with this change: the world is a function of the
@@ -426,9 +589,9 @@ defined degradation:
 | Fleet template nested (m0b, m2, m3) | `<wrapper>/metasystem`, template marker tracked at the wrapper | engine at `<wrapper>/metasystem/bin` answers: template mode → `<wrapper>/metasystem` — the fix |
 | Operator nested adopted (`operator-layout` fixture: no template marker at the scope) | `<scope>/metasystem` | engine answers: adopted mode → `<scope>` — identical to today's cwd-toplevel answer; see Decision 4 |
 | Linked delegate worktree of the fleet checkout (tracked files only: no engine, no artifacts in the sandbox) | `<worktree>/metasystem` | mapped to `<primary>/metasystem` **before** engine work; the primary's engine answers: template mode → the primary world |
-| Hook copy or terminal hook symlink inside some repository, no engine at the candidate | anywhere | visible missing-engine line on stop, exit 0; no world, no writes |
-| Governed installation whose engine predates this design | any supported layout | visible engine/hook-skew line on stop, exit 0 (Decision 2) |
-| Hook staged outside any git repository | anywhere | identification fails → silent benign exit 0 |
+| Hook copy or terminal hook symlink inside some repository, no engine at the candidate — with or without `METASYSTEM_BIN` | anywhere | the missing-engine BLOCK on stop, exit 0; no world, no writes (revision 5) |
+| Governed installation whose engine predates this design | any supported layout | the engine/hook-skew BLOCK on stop, exit 0 (Decision 2, revision 5) |
+| Hook staged outside any git repository | anywhere | identification fails → worker silent exit 0; on stop the parent converts silence to its generic block (HEAD 176-177) |
 
 ### Placement and the binding header contract
 
@@ -442,17 +605,23 @@ physical installation this script belongs to, mapped to its primary
 counterpart when it is a linked worktree, by git common-dir identity
 alone, with inherited git steering scrubbed per call, before any engine
 work; every identification failure is benign exit 0, never a guess; (3)
-executable resolution at the identified world — a missing engine stays the
-visible-on-stop benign exit 0; (4) registry membership — an unknown runtime
-exits 2; (5) world validation by the engine for the identified installation
-— `path state-root <installation>`, the shipped state-root authority
-applied to the same installation every consumer flag of the turn names:
-its exit-1 refusal is benign silence, any other failure is the
-visible-on-stop skew line.* The old items (4) session environment and (5) cwd resolution
-are deleted with their code. The B1 guarantee ("a missing engine with an
-unusable TMPDIR must still exit 0 benign") is preserved: the mapping uses
-no temporary files, and payload staging still happens only after the
-engine exists.
+executable resolution at the identified world — the installation's own
+`bin/metasystem` must exist whether or not `METASYSTEM_BIN` replaces the
+engine that runs, and a missing engine blocks a Stop because no safe
+verdict can be made; (4) registry membership — an unknown runtime exits 2;
+(5) world validation by the engine for the identified installation —
+`path state-root <installation>`, the shipped state-root authority applied
+to the same installation every consumer flag of the turn names: its exit-1
+refusal is benign silence, any other failure blocks a Stop as engine/hook
+skew; (6) the Stop-deadline parent resolves the same installation by the
+same function, validates with the same engine rule, and records refusals
+under the same world.* The old items (4) session environment and (5) cwd
+resolution are deleted with their code; the shipped item (2) wording ("a
+missing engine blocks a Stop", HEAD 4-6) is kept, not weakened. The B1
+guarantee ("a missing engine with an unusable TMPDIR must still exit 0
+benign") is preserved: the mapping uses no temporary files, the
+missing-engine block is a literal `printf`, and payload staging still
+happens only after the engine exists.
 
 ## Decision 2 — failure shape (folds SHR-R2-ENGINE-SKEW-01 and SHR-R2-WORKTREE-FALLBACK-01)
 
@@ -477,6 +646,28 @@ prevent, and the design's own argument against suppressing worktree
 hooks. **A mismatched engine is neither absence nor an ungoverned
 installation: it is drift in a governed world, and drift is visible.**
 
+**The shipped contract is fail-closed, and revision 4 regressed it
+(SHR-R4-FAIL-CLOSED-REGRESSION-01).** Between revision 2's tracing and
+today, the hook's Stop contract moved: a missing engine now BLOCKS a Stop
+"because no safe verdict can be made" (HEAD 4-6), the emission is the
+literal `raw_missing_engine_stop` block (HEAD 18-21, 229-233), and the
+missing-engine fixture rejects any `HEALTH unknown` line and requires
+`"decision":"block"` (`supervision-hook-fixtures.sh:137-157`). Revision 4's
+replacement block still printed the old `systemMessage` for a missing
+engine and a second `systemMessage` for skew — and the deadline parent,
+when it has a validator, accepts a lone `systemMessage` as a valid
+non-blocking answer (HEAD 168-169), so an older engine lacking the verb
+would have let the turn end before any verdict. Reconciled: **a missing
+engine and an old engine lacking the verb both BLOCK a Stop.** The
+missing-engine emission is the shipped literal, unchanged; the skew
+emission is the new literal `raw_engine_skew_stop` of the same shape
+(Decision 1); both are engine-independent `printf`s; the existing
+missing-engine fixture is kept as-is and an old-engine fixture (case 7,
+re-pinned) asserts the block. "Visible" in the sentences above now means
+"blocks and names itself", which is strictly stronger than the one-line
+report revision 2 argued for. On start and end events both outcomes stay
+silent exit 0, as today.
+
 The verb's exit codes make the three-way split mechanical, and both
 non-zero shapes were verified against real binaries: the verb itself
 refuses with exit 1 (the `path owner` refusal shape it sits beside), and
@@ -497,11 +688,22 @@ The complete failure map:
 | `primary_top` / `wt_top` physical normalization | directory vanished or unreadable | each is `$(cd -- ... 2>/dev/null && pwd -P) || exit 0` |
 | containment `case` | installation not at or below its worktree toplevel | silent exit 0 |
 | primary counterpart shape check | no `scripts/agents` directory there | silent exit 0 |
-| engine executable test at the world | no engine file | **today's visible missing-engine line on stop**, exit 0 — true absence stays benign and stays as visible as it already is |
-| `path state-root "$world_installation"`, exit 1 | the verb's own refusal: `$world_installation` fails the shape gate, or is an adopted-mode installation outside any git repository | silent exit 0 |
-| `path state-root "$world_installation"`, any other nonzero exit, or exit 0 with empty stdout | verb absent from an older engine (verified exit 2), family absent, a usage refusal (exit 2), or a broken answer | **the one-line skew report on stop** (emitted by literal `printf`, engine-independent, mirroring the missing-engine line), exit 0 |
-| final `repo` physical normalization | directory vanished or unreadable | silent exit 0 |
-| evidence-trail `mkdir -p "$supervision_dir"` (line 264, reachable with a write-denied primary from a sandboxed worktree session) | permission denied | gains `2>/dev/null || true`; the appends that follow already carry their own guards (lines 265, 282-283, 309-310) |
+| engine executable test at the world: `-x "$canonical"` AND `-x "$ms"` | no engine at `<installation>/bin/metasystem`, or an override that is not executable | **the shipped missing-engine BLOCK on stop** (`raw_missing_engine_stop`, HEAD 21), exit 0 — the fail-closed contract, kept; the candidate's own engine is required whether or not `METASYSTEM_BIN` is set (SHR-R4-COPIED-HOOK-OVERRIDE-01) |
+| `path state-root "$world_installation"`, exit 1 | the verb's own refusal: `$world_installation` fails the shape gate, or is an adopted-mode installation outside any git repository | worker silent exit 0; on stop the parent's generic block |
+| `path state-root "$world_installation"`, any other nonzero exit, or exit 0 with empty stdout | verb absent from an older engine (verified exit 2), family absent, a usage refusal (exit 2), or a broken answer | **the engine/hook-skew BLOCK on stop** (`raw_engine_skew_stop`, a literal `printf` mirroring the missing-engine block), exit 0 (SHR-R4-FAIL-CLOSED-REGRESSION-01) |
+| final `repo` physical normalization | directory vanished or unreadable | worker silent exit 0; on stop the parent's generic block |
+| evidence-trail `mkdir -p "$supervision_dir"` (HEAD 580, reachable with a write-denied primary from a sandboxed worktree session) | permission denied | gains `2>/dev/null || true`; the appends that follow already carry their own guards (HEAD 582, 613-614, 640-641) |
+| parent: `hook_world_installation` (SHR-R4-DEADLINE-PARENT-01) | any identification or mapping failure | `deadline_validator` and `deadline_canonical` empty; completion takes the no-validator fallback (HEAD 172-175), timeout takes the record-failure allow line (216) — the shipped shape for an unresolvable world |
+| parent: `-x "$deadline_canonical"` | no engine at the mapped installation | same as the row above; the worker in the same state emitted the missing-engine block, which the fallback accepts byte-for-byte |
+| parent: `"$deadline_canonical" path state-root "$deadline_installation"` | exit 1 (ungoverned), any other failure, empty answer | `deadline_record` stays empty → on timeout the record-failure allow line (HEAD 207-217), never a record under a cwd-derived root |
+
+Worker silence and the parent: every "worker silent exit 0" row above is
+the worker's own behavior; on a Stop the shipped parent converts an empty
+worker answer into its generic block (`emit_raw_stop_block`, HEAD 176-177;
+the contract stated at 268-270). Revision 5 inherits that conversion
+unchanged — it is the fail-closed floor beneath every silent row — and the
+"exactly two fixed outputs" sentence below counts the worker's own
+emissions.
 
 A cwd outside any git repository — today's benign case at line 65 —
 remains benign by construction: cwd no longer participates at all.
@@ -512,12 +714,12 @@ state) flow through the hook's existing disclosed degradation channels
 lines 306-320): the hook reports degraded, emits, and exits 0.
 
 The asymmetry rule now has three legs: a too-strict resolution degrades to
-today's silence; a guessed resolution recreates this defect somewhere
-else; and drift in a governed world is reported in one fixed line. The
-resolver introduces no new nonzero exits, and exactly **one** new output:
-the skew line, on the same channel, in the same shape, and under the same
-stop-only condition as the existing missing-engine line
-(`supervision-hook.sh:27-29`).
+today's silence (which the parent turns into a block on Stop); a guessed
+resolution recreates this defect somewhere else; and drift in a governed
+world blocks a Stop and names itself. The resolver introduces no new
+nonzero exits, and exactly **one** new output: the skew block, on the same
+channel, in the same shape, and under the same stop-only condition as the
+existing missing-engine block (HEAD 229-233).
 
 ## Decision 3 — fixtures (folds SHR-R2-WORKTREE-ENGINE-01, SHR-R2-ENGINE-SKEW-01, SHR-R2-INSTALL-01; pins the worktree and fallback rules)
 
@@ -600,21 +802,35 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   `$scope/development/sub/scripts/agents/`, and create a terminal
   symbolic link `$scope/development/sub/scripts/agents/hook-link.sh`
   pointing at the real `$scope/metasystem/scripts/agents/
-  supervision-hook.sh`. Fire each on `stop` with fresh sessions. Both
-  candidates resolve inside the governed repository, and both must emit
-  exactly the visible missing-engine line, exit 0, and write nothing: no
-  `artifacts/` under `$scope/development`, and no new bytes in the
-  world's `hooks.log` from these firings. A copied or symlinked hook
-  never adopts a world by pathname.
-- **Case 7, engine skew (SHR-R2-ENGINE-SKEW-01 pin)** — a separate flat
-  root `skew_root` built like `stop_root` (hook, adapters, fake conf,
-  sentinel plans, `git init`), except `bin/metasystem` is a stub
-  executable script that prints the fixture's runtime name for
-  `runtime list` and exits 2 for every other argument — modeling an
-  engine built before this verb existed. Fire `stop` with a fresh
-  session; assert exit 0, an output containing the engine/hook-skew line
-  exactly once, no `"decision":"block"`, and no `hooks.log` entry (the
-  trail needs a working engine; the drift line IS the visibility).
+  supervision-hook.sh`. Fire each on `stop` with fresh sessions, **twice:
+  once with `METASYSTEM_BIN` unset, once with
+  `METASYSTEM_BIN=$scope/metasystem/bin/metasystem` — the governed world's
+  own real engine, the strongest legitimate override
+  (SHR-R4-COPIED-HOOK-OVERRIDE-01 re-pin)**. All four firings resolve a
+  candidate inside the governed repository with no engine at
+  `<candidate>/bin/metasystem`, and all four must emit exactly the
+  missing-engine block (`"decision":"block"` and `engine missing`), exit
+  0, and write nothing: no `artifacts/` under `$scope/development`, and
+  no new bytes in the world's `hooks.log` or
+  `stop-refusals/` from these firings. Under revision 4 the two override
+  firings would have passed the shape gate, adopted `$scope` by pathname
+  through the substituted engine, and blocked quoting the world's
+  sentinel — so those two fail before the fold and pass after. A copied
+  or symlinked hook never adopts a world by pathname, override or not.
+- **Case 7, engine skew (SHR-R2-ENGINE-SKEW-01 pin; the old-engine
+  fixture of SHR-R4-FAIL-CLOSED-REGRESSION-01)** — a separate flat root
+  `skew_root` built like `stop_root` (hook, adapters, fake conf, sentinel
+  plans, `git init`), except `bin/metasystem` is a stub executable script
+  that prints the fixture's runtime name for `runtime list` and exits 2
+  for every other argument — modeling an engine built before this verb
+  existed. Fire `stop` with a fresh session; assert exit 0, an output
+  containing `"decision":"block"` and `does not answer path state-root`
+  exactly once, no `HEALTH unknown` line, and no `hooks.log` entry (the
+  trail needs a working engine; the block IS the visibility). The parent
+  has a validator here (the stub is executable), and validates the
+  literal as an ordinary block; the fixture's `HEALTH unknown` negative
+  is the same assertion the shipped missing-engine fixture makes at
+  `supervision-hook-fixtures.sh:152-153`, which stays as it is.
 - **Case 8, session `nested-worktree-steered` (SHR-R3-GIT-STEERING-01
   pin)** — case 4 repeated with the exact steering the critic used
   exported into the hook's environment: `GIT_DIR=$scope/.git
@@ -626,10 +842,20 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   output contains no missing-engine line. Without the scrub the
   identification query returns two equal paths, the mapper keeps the
   engine-less sandbox as the world, and the turn ends on the
-  missing-engine line without blocking, so this case fails before the fold
-  and passes after. The two variables are the critic's reproduction; the
-  full list is pinned by being a copy of the Go authority's, not by
-  enumerating twenty firings.
+  missing-engine block quoting no sentinel, so this case fails before the
+  fold and passes after. The two variables are the critic's reproduction;
+  the full list is pinned by being a copy of the Go authority's, not by
+  enumerating twenty firings. **Census-scope assertion
+  (SHR-R4-UP-GIT-STEERING-01):** in the same environment, run
+  `"$scope/metasystem/bin/metasystem" up --metasystem-root
+  "$scope/metasystem" --repo "$scope/metasystem" --print-scheduler-entry`
+  and assert the printed entry's `--repo` value is `$scope` — the primary
+  wrapper — and not `$tmp/nested-wt`. The printer runs after the scope
+  query and before any enrollment check or write (`up.go:109,135-137`;
+  `up.go:611-614` embeds `options.Scope` as the `--repo` value), so this
+  pins the census scope without enrolling the fixture world. Before the
+  fold the steered query returns the delegate worktree (the critic's
+  read-only probe, reproduced); after it, the primary wrapper.
 - **Case 9, session `nested-override` (SHR-R3-ENGINE-INSTALLATION-PAIR-01
   pin)** — write `$tmp/pair-engine`, a wrapper in the exact shape of the
   killed-attempt fixture's engine (`supervision-hook-fixtures.sh:356-375`)
@@ -646,6 +872,50 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   under revision 4 the override changes the engine and the installation
   stays `$scope/metasystem`. The existing killed-attempt fixture remains
   the standing regression pin for the flat layout under an override.
+- **Cases 10-13, the deadline parent in an engine-less worktree
+  (SHR-R4-DEADLINE-PARENT-01 pins)** — all four fire the worktree's own
+  tracked hook copy `$tmp/nested-wt/metasystem/scripts/agents/
+  supervision-hook.sh` on `stop` with fresh sessions, through the real
+  parent (no `METASYSTEM_STOP_DEADLINE_PARENT` in the environment), with
+  the primary's sentinel at `recover the primary sentinel` as in case 4:
+  - **Case 10, `nested-wt-parent`, normal completion**: assert
+    `"decision":"block"` quoting `recover the primary sentinel` in the
+    PARENT's stdout, and the negative that the output does not contain
+    `could not prove that stopping is safe` — the generic block the
+    shipped parent substitutes when it has no validator (HEAD 172-177).
+    Before the fold the parent has no validator in the sandbox and
+    replaces the worker's verdict with that generic block, so this case
+    fails before and passes after.
+  - **Case 11, `nested-wt-parent-timeout`, timeout**: fire under
+    `METASYSTEM_BIN=$tmp/wt-deadline-engine`, a wrapper in the exact shape
+    of the deadline fixture's engine (`supervision-hook-fixtures.sh:
+    405-413`: sleeps 4.5 s on `runtime list`, then `exec`s the primary's
+    `$scope/metasystem/bin/metasystem`). Assert exit 0, elapsed under
+    five seconds, `"decision":"block"` and `deadline expired before a safe
+    turn verdict` in the output, and the refusal record at
+    `$scope/metasystem/artifacts/agents/supervision/stop-refusals/
+    nested-wt-parent-timeout.json` with `sessionId` equal to the session
+    — plus `[[ ! -e "$tmp/nested-wt/metasystem/artifacts" && ! -e
+    "$tmp/nested-wt/artifacts" && ! -e "$scope/artifacts" ]]`. Before the
+    fold the parent has no canonical engine in the sandbox and emits the
+    record-failure allow line, or records under the cwd-derived root; so
+    this case fails before and passes after.
+  - **Case 12, `nested-wt-parent-steered`**: case 10 repeated with case
+    8's steering exported (`GIT_DIR=$scope/.git
+    GIT_WORK_TREE=$tmp/nested-wt`); same assertions as case 10.
+  - **Case 13, `nested-wt-parent-steered-timeout`**: case 11 repeated
+    with the same steering; same assertions as case 11, including the
+    record location. Steering would have sent the cwd-derived record root
+    to the worktree; the state-root verb, computed for the mapped
+    installation under the scrub, sends it to the primary.
+
+  The critic named four fixtures — normal completion and timeout, under
+  git steering and under `METASYSTEM_BIN` — and these are they: 10 and 12
+  are completion without and with steering, 11 and 13 are timeout under
+  `METASYSTEM_BIN` without and with steering. Case 11's override engine is
+  itself the `METASYSTEM_BIN` leg for completion's counterpart: the
+  parent's validator is the override, its canonical engine and record
+  root are the primary's.
 
 Extension to the existing `stop-hook-monitor` scenario — **flat, deep
 firing, session `t-deep`**: immediately after the block-once replay
@@ -669,7 +939,12 @@ layout; "worktree" means the mapped-primary case.
 | 92 | `steward hook-attempt --repo` | Takes the world directly from the flag (`cmd/metasystem/steward_verbs.go:114-123`). Fleet: attempt evidence lands beside the enrolled steward state under `metasystem/artifacts/`, so `generation`/`attemptSeq` resolve and hook-freshness revives — the goal's DONE condition. Worktree: lands in the primary trail; a write-denied sandbox degrades to the disclosed `hook_evidence_failure`. |
 | 109 | `proc find-ancestor --repo` | Reads runtime adapters beneath the flag root; the wrapper root has no `scripts/agents/adapters/`, so fleet identity resolution was structurally empty. Now reads the real adapters. |
 | 122, 131 | `lease classify --root "$repo" --metasystem-root "$world_installation"` | Fleet: root and metasystem-root now both name `metasystem/`, where `up`-armed sessions actually write announcements and leases (observed live). Worktree: both name the primary. Non-worktree firings pass a byte-identical metasystem-root to today's. |
-| 148-155, 342, 348 | `up --metasystem-root "$world_installation" --repo "$repo"` | `up`'s state world is `stateroot.RootForInstallation(--metasystem-root)` and is independent of `--repo` (`up.go:104-113,139-144`); `--repo` only sets the census scope as its git toplevel (`up.go:42-49,109,130`). On the fleet `up` therefore already armed the correct world (template mode: the marker is tracked at the wrapper toplevel), and this change alters neither its state world nor its census scope there — the scope stays the wrapper toplevel because that is the git toplevel of `metasystem/` too, so whole-repository process coverage is preserved. Worktree: both flags point at the primary; `up` verifies the already-armed rings, a delegate session gains at most advisor standing (the up contract: a second live session receives advisor, without displacement), and a sandboxed failure surfaces as the non-fatal `up_failure` line. |
+| 148-155, 342, 348 (HEAD 413-420, 677-679, 690-692) | `up --metasystem-root "$world_installation" --repo "$repo"` | `up`'s state world is `stateroot.RootForInstallation(--metasystem-root)` and is independent of `--repo` (`up.go:104-113,139-144`); `--repo` sets the census scope as its git toplevel (`up.go:42-49,109,130`). **Revision 5 (SHR-R4-UP-GIT-STEERING-01):** that scope query ran git with the inherited environment, so the round-three steering (`GIT_DIR` at the primary, `GIT_WORK_TREE` at a worktree) moved the scope — and with it the census fingerprint, the owner scope and the owner tag prefix (`up.go:336-344,597`) — to the worktree while the state world stayed primary: a mapped turn could write primary state while re-arming it for a sandbox census scope. The claim that the query "never selects the state world" and is out of scope is withdrawn. `upRepositoryScope` now runs under the compiled authority's scrub: `stateroot.go` exports `RepositoryTop(path string) (string, error)`, a one-line wrapper returning `repositoryTop(path)` (the existing scrubbed query at `stateroot.go:42-50`; the private variable stays, so its test substitution at `stateroot_test.go:39,114,128,147` and `owner_test.go:37,111` is untouched), and `upRepositoryScope` becomes `top, err := stateroot.RepositoryTop(supplied)`, the same `--repo is not inside a git repository` error on failure, then `canonicalPath(top)`. One scrub list, one git-query implementation in the engine. Why the census scope may still differ from the state world, and what pins it: in template mode the state world is `<wrapper>/metasystem` while the scope is the wrapper toplevel — whole-repository process coverage, by design — and the scope is now exactly `RepositoryTop($repo)` under the scrub, a function of the state-root bytes alone, so the pair (state world, scope) is determined by `$world_installation` and nothing inherited. Pinned by a Go test beside `cmd/metasystem/up_test.go:36` (create a repository with a commit and a linked worktree, `t.Setenv` the two steering variables at the primary `.git` and the worktree, call `upRepositoryScope(primary)`, assert the primary toplevel) and by case 8's scheduler-entry assertion. On the fleet nothing observable changes: the scope stays the wrapper toplevel because that is the git toplevel of `metasystem/` too. Worktree: both flags point at the primary; `up` verifies the already-armed rings, a delegate session gains at most advisor standing (the up contract: a second live session receives advisor, without displacement), and a sandboxed failure surfaces as the non-fatal `up_failure` line. |
+| HEAD 44-47 | parent: `deadline_harness_root`, `deadline_validator`, `deadline_canonical` | **New row (SHR-R4-DEADLINE-PARENT-01).** Replaced by `deadline_installation=$(hook_world_installation)` while the worker runs, `deadline_canonical=$deadline_installation/bin/metasystem`, `deadline_validator="${METASYSTEM_BIN:-$deadline_canonical}"`, both empty on identification failure. Non-mapped layouts: byte-identical values to today. Worktree: both name the primary's engine, so the parent can validate the worker's ordinary verdict and can write a record. Override: the validator is the override engine, the canonical engine is the installation's own — the pairing rule applied to the parent. |
+| HEAD 67-75 | parent: resolver subshell `"$deadline_canonical" json get ... session_id / cwd` | Keeps the session line; the cwd line and the second resolution line are dropped with `deadline_cwd`. |
+| HEAD 76-77, 82-94 | parent: `deadline_cwd` and `deadline_resolve_record` via `git -C "$deadline_cwd" rev-parse --show-toplevel` | The unscrubbed cwd-derived root the consumer table missed. Replaced: `deadline_repo=$("$deadline_canonical" path state-root "$deadline_installation" 2>/dev/null) \|\| return 1`, then the shipped normalization and slug. Fleet: the refusal record moves from the wrapper root's stray `artifacts/` to `<wrapper>/metasystem/artifacts/agents/supervision/stop-refusals/`, beside the attempt evidence. Worktree: the primary's. Payload cwd no longer participates anywhere in the hook. |
+| HEAD 144-177 | parent: validation of the worker's JSON | Unchanged predicate; the validator is now the mapped installation's (or override) engine. The no-validator fallback (172-175) accepts both the missing-engine and the skew literal. |
+| HEAD 203-217 | parent: timeout record through `"$deadline_canonical" report stop-block --refusal-record` | Writes under the state-root world; an empty `deadline_record` keeps the shipped record-failure allow line. |
 | 161 | `health --hook-preview --repo "$repo" --metasystem-root "$world_installation"` | Health reads the same world the attempt evidence lands in; hook-freshness is computable instead of structurally dead. |
 | 166, 204 | `steward digest-pending` / `digest-advance --repo` | The digest cursor advances against the real steward state rather than an empty bootstrap world. |
 | 185, 191, 197, 209 | `steward hook-complete --repo` | Completion evidence lands beside the attempt record it closes. |
@@ -717,6 +992,24 @@ Existing-fixture blast, retraced against this revision:
   new `nested-root` scenario covers the template-nested flavor the fleet
   actually runs.
 
+Existing-fixture blast of the parent fold, traced (revision 5): the
+shipped deadline fixture (`supervision-hook-fixtures.sh:414-442`) fires
+the checkout's own hook `$hook` with payload cwd `$line_root`, and its
+refusal record today lands under `$line_root` because the cwd chose it;
+under revision 5 the record root is the firing installation's state
+world, so both firings move to `$line_root/scripts/agents/
+supervision-hook.sh` (staged at line 161, whose engine at line 164 is the
+parent's canonical engine) and every assertion (block, `deadline expired
+before a safe turn verdict`, `occurrence 2` on the second firing) holds
+unchanged there. The membership firing at lines 128-130 fires `$hook`
+with cwd `/` and today ends silently at the toplevel query (HEAD 273);
+with cwd inert it would resolve the checkout's own state world and run a
+full turn against it from inside a fixture, so it moves to the same
+`$line_root` copy — that firing's only assertion is the exit status, which
+is unchanged. No fixture may fire the checkout's own hook on `stop` once
+cwd is inert; the implementer greps `bash "$hook" claude stop` in that
+file and re-roots every hit.
+
 Out of scope, stated so nobody fills it silently: cleaning up the
 misdirected `artifacts/agents/` residue at the three seats' wrapper roots
 is an operational task on the live machines; no other script's root
@@ -724,9 +1017,12 @@ resolution (`dispatch.sh`, `commit.sh`, adapters — all resolve from their
 own location or an explicit flag) is modified; the `runtime session-env`
 engine verb, the `stateroot` package's existing semantics, and
 `evidence-gc.sh`'s own internals are untouched (only the hook's invocation
-path of the collector changes); `up`'s census-scope query (`up.go:42-49`)
-runs git without the steering scrub — it sets the census scope from
-`--repo`, never the state world, and is not changed by this design.
+path of the collector changes, and `stateroot` gains the one exported
+wrapper `RepositoryTop` with no semantic change). Revision 4's clause that
+`up`'s census-scope query is out of scope is withdrawn (SHR-R4-UP-GIT-
+STEERING-01, Decision 4 row above). The `pathclass` package's private copy
+of the scrub (`pathclass.go:381-389`) is not reached by this hook and is
+not touched.
 
 ## Consistency pass
 
@@ -759,6 +1055,27 @@ fails before the fold; and no surviving sentence claims the verb is
 flag-less, that the engine answers from its own executable, that the world
 follows the override engine's own answer, or that a mapper git call runs
 with the inherited environment.
+
+Revision 5 was re-read end to end against itself after the four folds:
+the missing-engine outcome is the shipped block in the replacement block,
+the header contract, the case table, the failure map, Decision 4, case 6
+and the existing missing-engine fixture; the skew outcome is the
+`raw_engine_skew_stop` block in the same places and in case 7; the
+`canonical`-and-`ms` double test appears in the replacement block, the
+provenance rule, the header contract, the failure map, and case 6's
+override firings; `hook_world_installation` is the one function both the
+worker and the parent call, and the parent's installation, engines,
+record root, and failure rows are named in Decision 1's parent
+subsection, the failure map, Decision 4's HEAD rows, and cases 10-13;
+`upRepositoryScope` runs under the scrub in Decision 4's `up` row, the
+withdrawn out-of-scope clause, case 8's census assertion, and the Go test;
+no surviving sentence claims a missing or old engine emits a
+`systemMessage`, that the parent resolves from the unmapped harness root
+or from payload cwd, that `up`'s scope query is out of scope, or that an
+override can govern an engine-less candidate. "Silent exit 0" in the
+failure map is the worker's own behavior in every row, and the parent's
+conversion of silence into its generic block on Stop is stated once and
+inherited unchanged.
 
 ## Self-grade
 
@@ -814,9 +1131,39 @@ scrub list is a copy of the Go list and can drift when the Go list changes,
 and the fixture pins only the two variables that reproduced the defect;
 (h) under `METASYSTEM_BIN` the operator's engine is trusted to be a
 metasystem engine — an override that is not one lands in the visible skew
-branch, never in a silent wrong world. Grade: pass against everything
-observed; the reject condition below is the falsifier the implementation
-and its critique must actively test.
+branch, never in a silent wrong world.
+
+Revision 5 grounding: every HEAD citation was read in this worktree at
+commit 12ed490c3 — the parent block (`supervision-hook.sh:32-222`: engines
+at 44-47, worker launch at 55-57, resolver subshell 67-75, cwd-derived
+record root 82-94, validation 144-177, timeout record 203-217), the
+shipped fail-closed contract (4-6, 18-21, 229-233) and its fixture
+(`supervision-hook-fixtures.sh:137-157`), the unscrubbed scope query
+(`up.go:42-49`) against the scrubbed authority (`stateroot.go:42-64`), the
+scheduler-entry printer that embeds the scope before any write
+(`up.go:109,135-137,611-614`), the `up` options the scope feeds
+(`up.go:336-344,597`), the test seams on `repositoryTop`, and the
+existing fixtures that stage or lack an engine under an override
+(`supervision-hook-fixtures.sh:7-8,164,444-462,474`). The deadline-parent
+fold was traced by reading, not executed: no fixture in this worktree
+runs the parent against a linked worktree yet — cases 10-13 are that
+proof, and building them is the implementer's first obligation. Residual
+risks added: (i) the parent and the worker call the same function at
+nearly the same time, so a filesystem change between the two calls could
+give them different worlds; the window is the worker's own resolution
+time and the outcome is the parent's fail-closed generic block, never a
+record under a foreign root; (j) the parent's timeout allow line for an
+unresolvable world is the shipped shape and is inherited — a hook that
+cannot name any world cannot record a refusal, and the shipped hook
+already prefers that over a refusal loop; (k) the skew literal's exact
+bytes are now a fixed contract like the missing-engine literal, and the
+parent's fallback compares them byte-for-byte, so an edit to one without
+the other breaks the no-validator path visibly (case 7 covers the
+validator path, and the fallback path is covered by firing case 7's stub
+world with `METASYSTEM_BIN` pointing at a non-executable file, which the
+implementer adds as case 7's second firing). Grade: pass against
+everything observed; the reject condition below is the falsifier the
+implementation and its critique must actively test.
 
 **Reject condition — reject this design if any of the following is
 shown:** a state-writing engine verb reachable from this hook whose world
@@ -844,6 +1191,19 @@ identification-failure branch that proceeds as "not a worktree"
 branch other than the verb's own exit-1 refusal that stays silent on stop
 (the SHR-R2-ENGINE-SKEW-01 silence recreated); any turn in a mapped
 worktree that reads or writes sandbox state, including through the
-evidence collector (the SHR-R2-CONSUMER-01 split recreated); or any new
-resolver failure path that exits nonzero or emits anything beyond the two
-fixed one-line reports under `set -euo pipefail`.
+evidence collector (the SHR-R2-CONSUMER-01 split recreated); any Stop
+on which the deadline parent validates with, records through, or roots a
+refusal record under anything other than the engine and world the worker
+computed from the same script location — a parent resolving from the
+unmapped harness root or from payload cwd included (the
+SHR-R4-DEADLINE-PARENT-01 split); any missing-engine or old-engine Stop
+that ends without `"decision":"block"`, or any fixture weakened from that
+expectation (the SHR-R4-FAIL-CLOSED-REGRESSION-01 regression); any engine
+git query reachable from this turn — `up`'s census scope included — whose
+answer an inherited variable from the `stateroot.go:32-40` list can change
+(the SHR-R4-UP-GIT-STEERING-01 exposure); any path on which a candidate
+without its own `bin/metasystem` is governed because `METASYSTEM_BIN`
+supplied an engine (the SHR-R4-COPIED-HOOK-OVERRIDE-01 reopening); or any
+new resolver failure path that exits nonzero or emits anything beyond the
+two fixed blocking reports (the missing-engine and skew literals) under
+`set -euo pipefail`.
