@@ -1,19 +1,18 @@
 # channel-ask-fits-one-message
 
-- State: claimed
+- State: done
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: nothing is authorized wrongly, but a token pushed into a later chunk is a decision the human cannot act on without scrolling a wall, and the channel is the only path for the human's word when no terminal is at hand; novelty 1: the bound and the trimming primitive both already exist in report.go and are being applied to a second renderer; exposure 2: every ask the fleet posts, read by one human; accumulation 1: first report, though it shares a cause with the four channel defects of 2026-09-04 recorded on fleet-channel-gateway"
 - Tier: 2
 - Intent: An ask posts a wall of text in Telegram. internal/channel/question.go:231 renderQuestion prints every fact, every option's full consequence, and the recommendation verbatim, and this repo's facts are goal-record prose that runs to thousands of characters; internal/channel/telegram/telegram.go:117,152 then splits the result at a 4000-rune chunkLimit, so one ask becomes several giant messages. The status report already bounds itself to twelve lines at report.go:80-96 and trims with oneSentence at report.go:144; the ask has no such bound. DONE means an ask a human reads is one bounded message with its reply token intact, long material trimmed with the trim visible rather than silently dropped, and the token instruction never separated from the token by a chunk boundary
 - Origin: main
 - Next step: Bound renderQuestion at internal/channel/question.go:231: cap the number of facts and the length of each, trim option consequences the way report.go:144 oneSentence already does, and keep the reply instruction and the verbatim token whole and last so a chunk boundary can never separate them. Wido asked for this on 2026-09-05 alongside channel-local-timestamps; both are internal/channel only and touch neither repo identity nor arming, so neither waits on m2's supervisor landing
+- Concluded: Landed b52711d3a on origin/main. renderQuestion is bounded at a channel-owned 1600 runes - documented as deliberately independent of and smaller than any provider transport limit - with the reply instruction and its verbatim token built first and never trimmed, every option label kept because dropping one removes a choice, consequences sharing at most half of what remains, facts taking the rest, and the trim notice reserved before any fact is spent. Chain implementer-1fb40275a06e386262ce7d0b: build, code-critic round 1 raised one material finding (the bound was the Telegram chunkLimit restated, 4000, which stops the split but not the wall; its arithmetic put the right number at 1600), fold round 2 took it plus the false 'dropped 0 facts' wording and the moved proposed-box line, closing review returned zero material findings. go test ./internal/channel/... green on the landed tree. Not folded, recorded as non-material for later: F-6 unused fact slack is not returned to the recommendation, F-7 a part whose share reaches zero renders empty rather than ellipsized, F-4 option labels alone can exceed the bound by design.
 - OpenedAt: 2026-09-05T10:12:52Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 1
 - Approved: by=human:human:Wido at=2026-09-05T10:34:43Z revision=5 opid=9V595HCM1FQ3XQAQ63VMCHCN7V-m1-a4f8999f authority=relayed digest=aeac5b96c70a4a1b093acc4be503a37b3a13d71cc85175cc084953395e8df298 reviewBy=2026-09-06
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=3 at=2026-09-05T10:19:23Z
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T10:34:43Z revision=5 accountingRevision=5
-- StopCapability: generation=5 revision=5 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:12:52Z EQKY33K9R2T59R93YK4D2WQS62-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
@@ -21,4 +20,5 @@ History:
 - 2026-09-05T10:13:16Z RAPPRPKV3PN44FAYF9S7HRBEV7-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
 - 2026-09-05T10:19:23Z 8N1FZJ2YSMCSCQ9EZK8GK3ZBGJ-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
 - 2026-09-05T10:34:43Z 9V595HCM1FQ3XQAQ63VMCHCN7V-m1-a4f8999f set-budget actor=human:human:Wido targets=channel-ask-fits-one-message authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="So, land this now, make it happen"
-Integrity: sha256=472e39132855168755121bd46c0404ae1fac7273e4dd161bd14300dffdf530dd
+- 2026-09-05T10:44:19Z W3WV77VD61FGQG8HV9VZY3VMNW-m1-a4f8999f done actor=m1+main-1788594343-3833-fb64b9 targets=channel-ask-fits-one-message
+Integrity: sha256=ef5cc4e8fe154d21eb22b884c98a4d8480f6017e7c01e542be0e33c8fd616530
