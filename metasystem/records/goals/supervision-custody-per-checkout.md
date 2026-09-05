@@ -1,13 +1,14 @@
 # supervision-custody-per-checkout
 
-- State: approved
+- State: done
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="A shutdown issued for one checkout terminated another checkout's supervision on the same machine; every seat on every machine that runs more than one checkout or any fixture is exposed, and each occurrence stales a census and refuses every dispatch until a human notices."
 - Tier: 3
 - Intent: On 2026-09-05 at 01:22:18Z this checkout's supervision components were recorded in the machine-wide registry (~/.metasystem/armed-checkouts.jsonl) as exited, reason terminated, while the supervision fixture's stop-hook-monitor scenario (chain shv-build1, rounds 2 to 9) armed a temporary root with this session's main-process identity (--pid of the suite's shell) and this user's registry and then shut its root down. The registry keys custody by the canonical checkout path (docs/design/supervision-registry.md, REG-1), so per-checkout custody is the law; the defect is that a shutdown, takeover or sweep issued for one checkout under a borrowed or shared main identity reached another checkout's processes. Wido: one machine must run many checkouts with many supervisors; this is not allowed to be. DONE means (1) a test in internal/supervise or internal/registry that arms two real checkouts and one temporary root on one machine, under the same and under different main identities, and asserts that no shutdown, takeover, relaunch or sweep of one ever terminates or retires another's owner, watcher or runner; (2) the code path the test exposes fixed so every victim selection is by canonical checkout path; (3) the fixture rule written in docs/orchestration.md and enforced by the supervision suite's self-check: a scenario brings up supervision only with its own registry home and main identity.
 - Origin: main
 - Next step: NOT LANDED (2026-09-05 11:15Z). Three chains, three critic rounds (the goal's box of review rounds is spent): the invariant test and the selection fix exist on preserve/scc-build3-r1 (ten files) but the third critic (scc-build3-cc1, findings SCC-31 to SCC-36, record under records/misc) shows the landing would lock out every already-armed checkout (owners now record the git top-level while existing rows hold the state root; the guard refuses before any liveness check) and make a dead owner without a registry row permanently un-takeoverable; the self-check still accepts the seat's agent pid as a scenario's main. Rebudget needed: one implementer round on preserve/scc-build3-r1 keeping the recorded path form (state root) or reading both, guarding only live owners, keying on rows that survive compaction, and a self-check that rejects any main outside the scenario's bed; then one critic round. Until then the hazard is avoided only by not running the stop-hook scenario with the seat's identity. Wido's instruction: land this and stop; the seat stopped without landing because landing it would break his restart.
+- Concluded: Landed as e516ad5d through member goal supervision-custody-per-checkout-land under R-79-m2, R-80-m2 and R-81-m2: one machine runs many checkouts with many supervisors and no shutdown, takeover, relaunch, reap or sweep of one touches another; the invariant test covers an owner armed by the previous binary, a sibling with a suffix, a nested worktree and a dead foreign owner. Residue scheduled: goal:supervision-fixture-self-check-announcement-scan, goal:registry-design-names-selection-rows.
 - OpenedAt: 2026-09-05T05:50:57Z
-- Revision: 6
+- Revision: 7
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -21,4 +22,5 @@ History:
 - 2026-09-05T05:51:33Z 2RMXMY18F1SV8WA3604TJ4WNH5-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout
 - 2026-09-05T11:13:42Z WDEFCFS2S00VB24RSG4Q760RFY-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout
 - 2026-09-05T11:14:57Z Y9FGEQFHVYB3W1SNGRBXRVK34P-m2-5fcf08ab release actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout
-Integrity: sha256=a4ef0c051133320d552b1ec18e3b031a408490593e0cecd8955a9f456788c0cd
+- 2026-09-05T15:14:04Z 0JX4XT48MFTQVY2YT0PFGEA5P1-m2-5fcf08ab done actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout
+Integrity: sha256=7e714369c3a1d9eee38c3e4c2cccaa87d53ad881143616f258fd2f7215b49f4b
