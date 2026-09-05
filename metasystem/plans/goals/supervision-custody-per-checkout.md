@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: Find the path that terminated pid 16315 (the shutdown or takeover keyed on main identity), write the two-checkout invariant test first, fix, document, run supervision-fixtures.sh and the invariant test seat-side; a code critic reviews before landing. Approved under R-79-m2, first in line.
 - OpenedAt: 2026-09-05T05:50:57Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-05T05:51:02Z revision=2 opid=8AMGFJK6GJS7GBD6Z3HX1KJ82V-m2-5fcf08ab authority=relayed digest=0baeec9d12a4b053881115b1b50ff1505629b55d1e23c343cf2e4415cd03837a reviewBy=2026-09-06
+- Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-05T05:51:33Z
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-05T05:51:06Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-05T05:50:57Z HPW2Z8QEADG33PE0K7NYY4ZMWP-m2-5fcf08ab open actor=human:Wido targets=supervision-custody-per-checkout
 - 2026-09-05T05:51:02Z 8AMGFJK6GJS7GBD6Z3HX1KJ82V-m2-5fcf08ab approve actor=human:Wido targets=supervision-custody-per-checkout authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="This is serious and needs to be addressed immediately."
 - 2026-09-05T05:51:06Z GG3AHCHFQ40GA1VK2M05ZAEGSS-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout
-Integrity: sha256=7512aa99c8336613246eb8d9566b8d9b9031c1e3536235bf83a8599e6749b07a
+- 2026-09-05T05:51:33Z 2RMXMY18F1SV8WA3604TJ4WNH5-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout
+Integrity: sha256=878cd3f125d335236bcfc546fa2cac8ea9205f841a9b21e367e066046ef27d9e
