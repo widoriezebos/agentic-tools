@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: WAITS ON m2's supervisor repo-identity landing (Wido 2026-09-05): that work touches the same identity surface, so nothing here lands before it. Built and verified on m1, uncommitted, preserved on branch m1-2026-09-05-verified: internal/steward/identity.go types the rebuild cause, runner.go adds ReArmRebuiltEngine, up.go routes only that cause and reports accepted-engine outcome=re-armed. Proven live three times, up outcome=armed authority=writer. Codex critique returned THREE material findings to fold before landing. (1) MAJOR, stale state across the arm lock: ReArmRebuiltEngine reads prior via VerifyIdentity at runner.go:188 and passes those fields to arm(), which only locks at :434 and mints at :451-454. Two sessions can each mint a generation; worse, an automatic caller that read a PERMANENT enrollment can overwrite a concurrent legitimate ArmTemporary's word and review date with its stale empty strings, producing a permanent-looking record - the exact laundering this change claims to prevent, arriving by concurrency instead of by rebuild. Fix: revalidate eligibility and re-read the carry-forward fields INSIDE the lock. (2) MINOR, the successful hook path discards the re-arm notice: up.go:433 emits it but supervision-hook.sh:694-700 exits 0 on success and the Stop path at :417-429 reads up output only when up_rc is nonzero, so the 'never silent' claim at up.go:403-405 is false in the hook. (3) MINOR, recovery can report 'recovery-not-needed' after a re-arm already replaced the runner (up.go:537, :568-570); the aggregate must include the re-arm. Also accepted from the critique: recovery passes replace=true and can stop a live runner inside a --if-down path, exceeding 'start only missing repository rings' at cmd/metasystem/up.go:83 - accept it explicitly or narrow it. Wido's ruling on the carry-forward (2026-09-05): carry the temporary word and review date forward AND stamp which generations were machine-minted rather than human-witnessed, so a reader can tell them apart; that lands with finding 1 since both rewrite the same mint. Codex could not run go tests in its sandbox (mkdir denied); m1's own runs are the evidence: internal/steward 109s green, internal/up green, internal/report green, 15/15 hook fixtures.
 - OpenedAt: 2026-09-05T10:02:09Z
-- Revision: 9
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 10
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:human:Wido at=2026-09-05T10:08:15Z revision=2 opid=JYMGBXJ7DH1XWFKT1BBC7RPZPR-m1-a4f8999f authority=relayed digest=3507899a34d9100c91129ea908cb09b078cb687a8f6486da717170c6c8eb9e99 reviewBy=2026-09-06
+- Approved: by=human:human:Wido at=2026-09-05T22:30:31Z revision=10 opid=40YCK2JN97WNH16Y4ZE0N3JV5T-m1-a4f8999f authority=relayed digest=a9d794a1427827ef06e9704e5c2348839072bd24456e2474e5ca18b6b511f92c reviewBy=2026-09-06
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=8 at=2026-09-05T22:18:46Z
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T22:17:26Z revision=8 accountingRevision=8
-- StopCapability: generation=8 revision=8 machine=m1 claimEpoch=5 fenceEpoch=0
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-05T22:30:31Z revision=10 accountingRevision=10
+- StopCapability: generation=10 revision=10 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:02:09Z CEK1GRKK6YHJN66D1A44EV2THJ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
@@ -25,4 +25,5 @@ History:
 - 2026-09-05T21:25:04Z 4W5T652HP8DC4DQRZHSG9NF9YY-m1-a4f8999f unpark actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-05T22:17:26Z 7EGKN3YFZ4TBH0H5FGZ74XKDPM-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-05T22:18:46Z XD8TCFMF2MDRAXC80EZ8WEBWVJ-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
-Integrity: sha256=5d1932c6a044e628f7d9ba8282eaf931dbfc261a6b839fd7c30dcb1c32455722
+- 2026-09-05T22:30:31Z 40YCK2JN97WNH16Y4ZE0N3JV5T-m1-a4f8999f set-budget actor=human:human:Wido targets=engine-rebuild-rearms-itself authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Raise within norm without asking (Recommended)"
+Integrity: sha256=a43b907a902eb79e32d42be4cf1c9444f092db89d8fb079f6b2153f3e0f40d05
