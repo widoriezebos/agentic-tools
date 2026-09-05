@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +103,47 @@ func TestLateArmedDoesNotReopen(t *testing.T) {
 	if !reduction.TagSeen("tag-a") {
 		t.Fatal("a closed claim's tag must stay seen (SLC-R7-008)")
 	}
+}
+
+func TestReductionRefusesIdentityKeysAcrossCheckoutPaths(t *testing.T) {
+	t.Run("owner tag", func(t *testing.T) {
+		arming := raw(EventArming, "tag-a", nil)
+		arming["checkoutPath"] = "/checkout/a"
+		armed := armedRow("tag-a", 41)
+		armed["checkoutPath"] = "/checkout/b"
+		if _, err := Reduce(frames(arming, armed)); err == nil ||
+			!strings.Contains(err.Error(), "/checkout/a") || !strings.Contains(err.Error(), "/checkout/b") {
+			t.Fatalf("an owner tag crossed checkout paths without a refusal naming both: %v", err)
+		}
+	})
+
+	t.Run("owner tag without an arming survivor", func(t *testing.T) {
+		first := raw(EventRelaunched, "tag-compacted", map[string]any{
+			"generation": 1.0, "watcherTag": "w1", "reaperTag": "r1", "retiredThrough": 0.0,
+		})
+		first["checkoutPath"] = "/checkout/a"
+		second := raw(EventRelaunched, "tag-compacted", map[string]any{
+			"generation": 2.0, "watcherTag": "w2", "reaperTag": "r2", "retiredThrough": 1.0,
+		})
+		second["checkoutPath"] = "/checkout/b"
+		if _, err := Reduce(frames(first, second)); err == nil ||
+			!strings.Contains(err.Error(), "/checkout/a") || !strings.Contains(err.Error(), "/checkout/b") {
+			t.Fatalf("a compacted owner tag crossed checkout paths without a refusal naming both: %v", err)
+		}
+	})
+
+	t.Run("custody binding", func(t *testing.T) {
+		custody := raw(EventCustody, "", map[string]any{
+			"custodyId": "custody-a", "custodianPid": 51.0, "custodianPidStartedAt": 100.0,
+		})
+		custody["checkoutPath"] = "/checkout/a"
+		arming := raw(EventArming, "tag-b", map[string]any{"custodyId": "custody-a"})
+		arming["checkoutPath"] = "/checkout/b"
+		if _, err := Reduce(frames(custody, arming)); err == nil ||
+			!strings.Contains(err.Error(), "/checkout/a") || !strings.Contains(err.Error(), "/checkout/b") {
+			t.Fatalf("custody crossed checkout paths without a refusal naming both: %v", err)
+		}
+	})
 }
 
 // SLC-R7-007: records pair by generation, never append order — a
