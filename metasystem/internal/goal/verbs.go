@@ -134,18 +134,38 @@ func answerRequest(r VerbRequest, id, qid, text, wants string, proof AnswerProof
 		if opidLanded(f, r) {
 			return nil, AlreadyApplied{}
 		}
-		marker := "ANSWERED " + qid + ": " + text
-		if !strings.Contains(f.NextStep, marker) {
-			if strings.TrimSpace(f.NextStep) == "" {
-				f.NextStep = marker
-			} else {
-				f.NextStep += "; " + marker
-			}
+		change, err := answerGoalChange(t, id, qid, text, reason, r.opid(), r.stamp(), proof)
+		if err != nil {
+			return nil, err
 		}
-		f.Revision++
-		f.History = append(f.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "answer", Actor: "human:wido", Targets: []string{id}, Keep: -1, AuthorityOutcome: AuthorityOutcomeAuthenticatedChannelWord, ChannelProvider: proof.Provider, ChannelUser: proof.User, ChannelRef: proof.Ref, ChannelStep: proof.Step, Reason: reason})
-		return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		return []Change{change}, nil
 	}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+}
+
+func answerGoalChange(t *TreeGoals, id, qid, text, reason, opid, at string, proof AnswerProof) (Change, error) {
+	f := t.Live[id]
+	if f == nil {
+		return Change{}, fmt.Errorf("goal %s is not live", id)
+	}
+	marker := "ANSWERED " + qid + ": " + text
+	if !strings.Contains(f.NextStep, marker) {
+		if strings.TrimSpace(f.NextStep) == "" {
+			f.NextStep = marker
+		} else {
+			f.NextStep += "; " + marker
+		}
+	}
+	f.Revision++
+	f.History = append(f.History, HistoryLine{
+		At: at, Opid: opid, Verb: "answer", Actor: "human:wido", Targets: []string{id}, Keep: -1,
+		AuthorityOutcome: AuthorityOutcomeAuthenticatedChannelWord,
+		ChannelProvider:  proof.Provider,
+		ChannelUser:      proof.User,
+		ChannelRef:       proof.Ref,
+		ChannelStep:      proof.Step,
+		Reason:           reason,
+	})
+	return Change{Path: livePath(id), Content: RenderFile(f)}, nil
 }
 
 // Actor is the executing identity: the machine+lineage pair always;
