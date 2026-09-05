@@ -3,6 +3,7 @@ package supervise
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 type armingComponentProbe struct {
@@ -89,7 +91,7 @@ func TestArmingOwnerHelper(t *testing.T) {
 			t.Fatalf("read %s helper identity: state=%s err=%v", component, componentState, componentErr)
 		}
 		held = append(held, Held{Component: component, Tag: componentTag, Identity: componentExact.Ref(), Generation: generation})
-		_ = command.Process.Release()
+		go func() { _ = command.Wait() }()
 	}
 	if err := checkout.PublishState(held); err != nil {
 		t.Fatal(err)
@@ -137,6 +139,34 @@ func armingOptions(root string) EnsureOptions {
 		Root: root, MetasystemRoot: root, Scope: root, Command: armingOwnerCommand,
 		Fingerprint: "fingerprint-a", IntervalSec: 1, WatcherCap: 330,
 		WaitScaleMilli: 1, OwnerTagPrefix: "metasystem-supervision-owner-test-",
+	}
+}
+
+func isolatedArmingRegistry(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", home)
+	path := filepath.Join(home, ".metasystem", "armed-checkouts.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func appendOwnerCheckoutRow(t *testing.T, path, checkoutPath string, owner ArmingOwner) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"schemaVersion": 1,
+		"event":         registry.EventArming,
+		"checkoutPath":  checkoutPath,
+		"at":            time.Now().UTC().Format(time.RFC3339),
+		"ownerTag":      owner.InstanceTag,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AppendFrame(path, payload); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -506,13 +536,15 @@ func TestOwnerStopReauthenticatesAfterWritingTheShutdownIntent(t *testing.T) {
 func TestEnsureArmedRefusesAnUninspectableLockOwner(t *testing.T) {
 	fakeArmingOwnerLiveness(t, identity.Unknown)
 	root := t.TempDir()
+	registryPath := isolatedArmingRegistry(t)
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	owner := ArmingOwner{Pid: 41, PidStartedAt: 100, InstanceTag: "owner-tag"}
+	owner := ArmingOwner{Pid: 41, PidStartedAt: 100, InstanceTag: "metasystem-supervision-owner-test-owner-tag"}
 	if err := WriteArmingOwner(root, owner); err != nil {
 		t.Fatal(err)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, owner)
 	if _, err := EnsureArmed(armingOptions(root)); err == nil || !strings.Contains(err.Error(), "takeover is not authorized") {
 		t.Fatalf("an uninspectable lock owner allowed takeover: %v", err)
 	}
@@ -620,13 +652,15 @@ func TestEnsureArmedRefusesReservedCapacityBeforeLaunching(t *testing.T) {
 
 func TestDeadOwnerTakeoverReportsCensusFailureWithoutChangingTheLock(t *testing.T) {
 	root := t.TempDir()
+	registryPath := isolatedArmingRegistry(t)
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	owner := ArmingOwner{Pid: 99999999, PidStartedAt: 1, InstanceTag: "dead-owner"}
+	owner := ArmingOwner{Pid: 99999999, PidStartedAt: 1, InstanceTag: "metasystem-supervision-owner-test-dead-owner"}
 	if err := WriteArmingOwner(root, owner); err != nil {
 		t.Fatal(err)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, owner)
 	prior := enumerateTakeoverProcesses
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, os.ErrPermission }
 	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
@@ -814,6 +848,7 @@ func TestTakeoverMergeRefusesConflictingRecordedAndCensusIdentity(t *testing.T) 
 func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	reapArmingOwnerProcesses(t)
 	root := t.TempDir()
+	registryPath := isolatedArmingRegistry(t)
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -835,6 +870,7 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	if err := WriteArmingOwner(root, deadOwner); err != nil {
 		t.Fatal(err)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, deadOwner)
 	if err := deadCommand.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
@@ -882,13 +918,14 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	if result.Action != "taken-over" || !result.Inspection.Armed() || result.Generation != 1 {
 		t.Fatalf("dead-owner takeover did not establish a verified generation: %+v", result)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, result.Owner)
 	select {
 	case <-componentDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the pre-publication watcher survived the takeover sweep")
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
-	if err := ShutdownAt(root, root, "metasystem-supervision-owner-test-", 1); err != nil {
+	if err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -896,6 +933,7 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T) {
 	reapArmingOwnerProcesses(t)
 	root := t.TempDir()
+	registryPath := isolatedArmingRegistry(t)
 	prior := enumerateTakeoverProcesses
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
@@ -904,6 +942,7 @@ func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T)
 	if err != nil || started.Action != "started" || !started.Inspection.Armed() {
 		t.Fatalf("initial generation: result=%+v err=%v", started, err)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, started.Owner)
 	verified, err := EnsureArmed(options)
 	if err != nil || verified.Action != "verified" || verified.Owner.Pid != started.Owner.Pid {
 		t.Fatalf("matching generation did not join its owner: result=%+v err=%v", verified, err)
@@ -922,10 +961,11 @@ func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T)
 	if replaced.Action != "replaced" || replaced.Owner.Pid == started.Owner.Pid || replaced.Generation != 2 || !replaced.Inspection.Armed() {
 		t.Fatalf("older generation was not replaced: first=%+v replacement=%+v", started, replaced)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, replaced.Owner)
 	if err := Shutdown(root, "foreign-owner-prefix", 1); err == nil || !strings.Contains(err.Error(), "another repository") {
 		t.Fatalf("shutdown accepted a foreign owner prefix: %v", err)
 	}
-	if err := ShutdownAt(root, root, "metasystem-supervision-owner-test-", 1); err != nil {
+	if err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := Shutdown(root, "metasystem-supervision-owner-test-", 1); err != nil {
@@ -933,8 +973,356 @@ func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T)
 	}
 }
 
+func TestGenerationReplacementRefusesOwnerRecordedForAnotherCheckout(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		sameMainIdentity bool
+	}{
+		{name: "same main identity", sameMainIdentity: true},
+		{name: "different main identities", sameMainIdentity: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			exerciseCheckoutCustodyInvariant(t, test.sameMainIdentity)
+		})
+	}
+}
+
+func exerciseCheckoutCustodyInvariant(t *testing.T, sameMainIdentity bool) {
+	t.Helper()
+	reapArmingOwnerProcesses(t)
+	base := t.TempDir()
+	requestedScope := filepath.Join(base, "agentic-tools")
+	requestedRoot := filepath.Join(requestedScope, "metasystem")
+	siblingScope := filepath.Join(base, "agentic-tools-m2")
+	siblingRoot := filepath.Join(siblingScope, "metasystem")
+	nestedWorktreeScope := filepath.Join(requestedRoot, "artifacts", "agents", "worktrees", "nested-job")
+	nestedWorktreeRoot := filepath.Join(nestedWorktreeScope, "metasystem")
+	for _, root := range []string{requestedRoot, siblingRoot, nestedWorktreeRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, scope := range []string{requestedScope, siblingScope, nestedWorktreeScope} {
+		if output, err := exec.Command("git", "-C", scope, "init", "-q").CombinedOutput(); err != nil {
+			t.Fatalf("initialize real checkout %s: %v: %s", scope, err, output)
+		}
+	}
+	registryHome := filepath.Join(base, "registry-home")
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", registryHome)
+	registryPath := filepath.Join(registryHome, ".metasystem", "armed-checkouts.jsonl")
+	if err := os.MkdirAll(filepath.Dir(registryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prior := enumerateTakeoverProcesses
+	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
+	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
+
+	requestedPrefix := "metasystem-supervision-owner-x-agentic-tools-"
+	prefixFor := func(scope string) string {
+		switch scope {
+		case requestedScope:
+			return requestedPrefix
+		case siblingScope:
+			return requestedPrefix + "m2-"
+		case nestedWorktreeScope:
+			return requestedPrefix + "metasystem-artifacts-agents-worktrees-nested-job-"
+		default:
+			t.Fatalf("no production-shaped owner prefix for checkout %q", scope)
+			return ""
+		}
+	}
+	start := func(root, scope, fingerprint string) EnsureResult {
+		options := armingOptions(root)
+		options.Scope = scope
+		options.OwnerTagPrefix = prefixFor(scope)
+		options.Fingerprint = fingerprint
+		result, err := EnsureArmed(options)
+		if err != nil || !result.Inspection.Armed() {
+			t.Fatalf("arm %s: result=%+v err=%v", root, result, err)
+		}
+		return result
+	}
+	requestedResult := start(requestedRoot, requestedScope, "fingerprint-requested")
+	siblingResult := start(siblingRoot, siblingScope, "fingerprint-sibling")
+	nestedWorktreeResult := start(nestedWorktreeRoot, nestedWorktreeScope, "fingerprint-nested")
+
+	cleanupRoot := func(root string) {
+		owner, err := ReadArmingOwner(root)
+		if err != nil {
+			return
+		}
+		_ = stopOwner(root, owner, 1, "test cleanup")
+		_ = stopTakeoverComponents(root, root, owner.InstanceTag, 1)
+		_ = releaseDeadOwnerLock(root, owner)
+	}
+	t.Cleanup(func() {
+		cleanupRoot(requestedRoot)
+		cleanupRoot(siblingRoot)
+		cleanupRoot(nestedWorktreeRoot)
+	})
+
+	appendOwnerRows := func(root, scope string, result EnsureResult, custodyID string) {
+		t.Helper()
+		state, err := os.ReadFile(filepath.Join(SupervisionDir(root), "state.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document stateDocument
+		if err := json.Unmarshal(state, &document); err != nil {
+			t.Fatal(err)
+		}
+		rows := []map[string]any{
+			{
+				"schemaVersion": 1, "event": registry.EventArming, "checkoutPath": scope,
+				"at": time.Now().UTC().Format(time.RFC3339), "ownerTag": result.Owner.InstanceTag,
+				"custodyId": custodyID,
+			},
+			{
+				"schemaVersion": 1, "event": registry.EventArmed, "checkoutPath": scope,
+				"at": time.Now().UTC().Format(time.RFC3339), "ownerTag": result.Owner.InstanceTag,
+				"ownerPid": result.Owner.Pid, "ownerPidStartedAt": result.Owner.PidStartedAt,
+				"generation": result.Generation, "custodyId": custodyID,
+			},
+		}
+		for _, row := range rows {
+			payload, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := registry.AppendFrame(registryPath, payload); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	current, liveness, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || liveness != identity.Alive {
+		t.Fatalf("read common main identity: liveness=%s err=%v", liveness, err)
+	}
+	type supervisedCheckout struct {
+		name   string
+		root   string
+		scope  string
+		result EnsureResult
+	}
+	checkouts := []supervisedCheckout{
+		{name: "requested checkout", root: requestedRoot, scope: requestedScope, result: requestedResult},
+		{name: "sibling checkout", root: siblingRoot, scope: siblingScope, result: siblingResult},
+		{name: "nested worktree", root: nestedWorktreeRoot, scope: nestedWorktreeScope, result: nestedWorktreeResult},
+	}
+	for index, checkout := range checkouts {
+		custodianPid, custodianStarted := current.Pid, current.StartedAt.Unix()
+		if !sameMainIdentity {
+			custodianPid = checkout.result.Owner.Pid
+			custodianStarted = checkout.result.Owner.PidStartedAt
+		}
+		custodyID := fmt.Sprintf("custody-%d", index)
+		payload, err := json.Marshal(map[string]any{
+			"schemaVersion": 1, "event": registry.EventCustody, "checkoutPath": checkout.scope,
+			"at": time.Now().UTC().Format(time.RFC3339), "custodyId": custodyID,
+			"custodianPid": custodianPid, "custodianPidStartedAt": custodianStarted,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := registry.AppendFrame(registryPath, payload); err != nil {
+			t.Fatal(err)
+		}
+		appendOwnerRows(checkout.root, checkout.scope, checkout.result, custodyID)
+	}
+	for _, foreign := range checkouts[1:] {
+		if !strings.HasPrefix(foreign.result.Owner.InstanceTag, requestedPrefix) {
+			t.Fatalf("%s owner tag %q does not exercise the requested prefix collision %q", foreign.name, foreign.result.Owner.InstanceTag, requestedPrefix)
+		}
+	}
+	registryRowsFor := func(checkoutPath string) string {
+		t.Helper()
+		frames, err := registry.ReadFrames(registryPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rows strings.Builder
+		for _, frame := range frames {
+			if frame.Record == nil {
+				continue
+			}
+			record, err := registry.ParseRecord(frame.Record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.CheckoutPath == checkoutPath {
+				rows.Write(frame.Raw)
+				rows.WriteByte('\n')
+			}
+		}
+		return rows.String()
+	}
+	foreignRegistryBefore := map[string]string{
+		siblingScope:        registryRowsFor(siblingScope),
+		nestedWorktreeScope: registryRowsFor(nestedWorktreeScope),
+	}
+	assertOtherCheckoutsUntouched := func(operation string) {
+		t.Helper()
+		for _, supervised := range checkouts[1:] {
+			if state := ownerLiveness(supervised.result.Owner); state != identity.Alive {
+				t.Fatalf("%s was disturbed by requested checkout %s: liveness=%s", supervised.name, operation, state)
+			}
+			stateBytes, err := os.ReadFile(filepath.Join(SupervisionDir(supervised.root), "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document stateDocument
+			if err := json.Unmarshal(stateBytes, &document); err != nil {
+				t.Fatal(err)
+			}
+			for _, componentName := range []string{string(Watcher), string(Reaper)} {
+				component := document.Components[componentName]
+				ref := identity.Ref{
+					Pid: component.Pid, StartedAtSec: component.PidStartedAt,
+					StartTicks: component.PidStartTicks, BootID: component.BootID,
+				}
+				if liveness := identity.AliveTaggedRef(identity.KernelProber{}, ref, component.InstanceTag); liveness != identity.Alive {
+					t.Fatalf("%s %s was disturbed by requested checkout %s: liveness=%s", supervised.name, componentName, operation, liveness)
+				}
+			}
+			if got := registryRowsFor(supervised.scope); got != foreignRegistryBefore[supervised.scope] {
+				t.Fatalf("requested checkout %s changed %s registry rows", operation, supervised.name)
+			}
+		}
+	}
+	rearmOptions := armingOptions(requestedRoot)
+	rearmOptions.Scope = requestedScope
+	rearmOptions.OwnerTagPrefix = requestedPrefix
+	rearmOptions.Fingerprint = "fingerprint-requested"
+	rearmed, err := EnsureArmed(rearmOptions)
+	if err != nil || rearmed.Action != "verified" || rearmed.Owner.Pid != requestedResult.Owner.Pid {
+		t.Fatalf("ordinary re-arm did not join the owner recorded for its state root: result=%+v err=%v", rearmed, err)
+	}
+	assertOtherCheckoutsUntouched("initial arming")
+
+	if err := ShutdownAt(requestedRoot, requestedRoot, requestedScope, requestedPrefix, 1); err != nil {
+		t.Fatalf("shutdown requested checkout: %v", err)
+	}
+	assertOtherCheckoutsUntouched("shutdown")
+	requestedResult = start(requestedRoot, requestedScope, "fingerprint-requested")
+	appendOwnerCheckoutRow(t, registryPath, requestedScope, requestedResult.Owner)
+	assertOtherCheckoutsUntouched("fresh arm after shutdown")
+
+	if state := ownerLiveness(requestedResult.Owner); state != identity.Alive {
+		t.Fatalf("requested checkout owner was not live before takeover setup: %s", state)
+	}
+	if err := signalGroup(requestedResult.Owner.Pid, syscall.SIGTERM); err != nil {
+		t.Fatalf("stop requested checkout owner for takeover: %v", err)
+	}
+	ownerDeadline := time.Now().Add(2 * time.Second)
+	for ownerLiveness(requestedResult.Owner) != identity.Dead && time.Now().Before(ownerDeadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if state := ownerLiveness(requestedResult.Owner); state != identity.Dead {
+		t.Fatalf("requested checkout owner did not become provably dead for takeover: %s", state)
+	}
+	takeoverOptions := armingOptions(requestedRoot)
+	takeoverOptions.Scope = requestedScope
+	takeoverOptions.OwnerTagPrefix = requestedPrefix
+	takeoverOptions.Fingerprint = "fingerprint-requested"
+	requestedResult, err = EnsureArmed(takeoverOptions)
+	if err != nil || requestedResult.Action != "taken-over" {
+		t.Fatalf("fresh arm did not take over requested checkout: result=%+v err=%v", requestedResult, err)
+	}
+	appendOwnerCheckoutRow(t, registryPath, requestedScope, requestedResult.Owner)
+	assertOtherCheckoutsUntouched("dead-owner takeover")
+
+	relaunchOptions := takeoverOptions
+	relaunchOptions.Fingerprint = "fingerprint-requested-relaunched"
+	requestedResult, err = EnsureArmed(relaunchOptions)
+	if err != nil || requestedResult.Action != "replaced" {
+		t.Fatalf("requested checkout relaunch failed: result=%+v err=%v", requestedResult, err)
+	}
+	appendOwnerCheckoutRow(t, registryPath, requestedScope, requestedResult.Owner)
+	assertOtherCheckoutsUntouched("relaunch")
+
+	components, err := recordedHeld(requestedRoot)
+	if err != nil || len(components) != 2 {
+		t.Fatalf("read requested checkout components for dead-component reap: components=%+v err=%v", components, err)
+	}
+	control := recordedComponentControl{
+		prober: identity.KernelProber{}, groupAbsent: kernelGroupAbsent,
+		signalGroup: func(pgid int64, signal syscall.Signal) error {
+			return signalGroup(pgid, signal)
+		},
+	}
+	if err := stopRecordedComponent(control, components[0], 1000); err != nil {
+		t.Fatalf("stop checkout A component for reap: %v", err)
+	}
+	relaunchOptions.Fingerprint = "fingerprint-a-after-component-reap"
+	requestedResult, err = EnsureArmed(relaunchOptions)
+	if err != nil || requestedResult.Action != "replaced" {
+		t.Fatalf("dead requested checkout component was not reaped through relaunch: result=%+v err=%v", requestedResult, err)
+	}
+	appendOwnerCheckoutRow(t, registryPath, requestedScope, requestedResult.Owner)
+	assertOtherCheckoutsUntouched("dead-component reap")
+
+	frames, err := registry.ReadFrames(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := registry.CompactFrames(frames, time.Now(), time.Hour)
+	if err != nil {
+		t.Fatalf("registry sweep selection: %v", err)
+	}
+	if err := registry.WriteCompacted(registryPath, kept); err != nil {
+		t.Fatalf("registry sweep rewrite: %v", err)
+	}
+	assertOtherCheckoutsUntouched("registry sweep")
+
+	requestedState, err := os.ReadFile(filepath.Join(SupervisionDir(requestedRoot), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.WriteFile(filepath.Join(SupervisionDir(requestedRoot), "state.json"), requestedState, 0o600)
+		_ = WriteArmingOwner(requestedRoot, requestedResult.Owner)
+	})
+	foreignState, err := os.ReadFile(filepath.Join(SupervisionDir(siblingRoot), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(SupervisionDir(requestedRoot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(SupervisionDir(requestedRoot), "state.json"), foreignState, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(ownerLockDir(requestedRoot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteArmingOwner(requestedRoot, siblingResult.Owner); err != nil {
+		t.Fatal(err)
+	}
+	shutdownErr := ShutdownAt(requestedRoot, requestedRoot, requestedScope, prefixFor(siblingScope), 1)
+	if shutdownErr == nil || !strings.Contains(shutdownErr.Error(), requestedScope) || !strings.Contains(shutdownErr.Error(), siblingScope) {
+		t.Fatalf("shutdown did not refuse the cross-checkout owner and name both paths: %v", shutdownErr)
+	}
+	assertOtherCheckoutsUntouched("shutdown refusal")
+
+	// Both foreign tags begin with the requested checkout's prefix. Exact
+	// registry checkout equality must still veto selecting either owner.
+	for _, foreign := range checkouts[1:] {
+		options := armingOptions(foreign.root)
+		options.Scope = requestedScope
+		options.OwnerTagPrefix = requestedPrefix
+		options.Fingerprint = "fingerprint-requested"
+		_, err = EnsureArmed(options)
+		assertOtherCheckoutsUntouched(foreign.name + " generation replacement refusal")
+		if err == nil || !strings.Contains(err.Error(), requestedScope) || !strings.Contains(err.Error(), foreign.scope) {
+			t.Fatalf("generation replacement selected %s despite different checkout paths: %v", foreign.name, err)
+		}
+	}
+}
+
 func TestLiveOwnerWithoutPublishedGenerationRefusesRecoveryJoin(t *testing.T) {
 	root := t.TempDir()
+	registryPath := isolatedArmingRegistry(t)
 	ownerTag := "metasystem-supervision-owner-test-unpublished"
 	command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", ownerTag)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -956,6 +1344,7 @@ func TestLiveOwnerWithoutPublishedGenerationRefusesRecoveryJoin(t *testing.T) {
 	if err := WriteArmingOwner(root, owner); err != nil {
 		t.Fatal(err)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, owner)
 	options := armingOptions(root)
 	options.OnlyIfDown = true
 	if _, err := EnsureArmed(options); err == nil || !strings.Contains(err.Error(), "did not publish a verifiable generation") {
@@ -970,6 +1359,7 @@ func TestLiveOwnerWithoutPublishedGenerationRefusesRecoveryJoin(t *testing.T) {
 func TestGenerationReplacementStopsWhenComponentCensusFails(t *testing.T) {
 	reapArmingOwnerProcesses(t)
 	root := t.TempDir()
+	registryPath := isolatedArmingRegistry(t)
 	prior := enumerateTakeoverProcesses
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	t.Cleanup(func() { enumerateTakeoverProcesses = prior })
@@ -978,13 +1368,14 @@ func TestGenerationReplacementStopsWhenComponentCensusFails(t *testing.T) {
 	if err != nil || started.Action != "started" || !started.Inspection.Armed() {
 		t.Fatalf("initial generation: result=%+v err=%v", started, err)
 	}
+	appendOwnerCheckoutRow(t, registryPath, root, started.Owner)
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, os.ErrPermission }
 	options.Fingerprint = "replacement-fingerprint"
 	if _, err := EnsureArmed(options); !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "generation replacement refused") {
 		t.Fatalf("component census failure did not stop generation replacement: %v", err)
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
-	if err := ShutdownAt(root, root, "metasystem-supervision-owner-test-", 1); err != nil {
+	if err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1); err != nil {
 		t.Fatal(err)
 	}
 }

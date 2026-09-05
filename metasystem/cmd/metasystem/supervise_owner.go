@@ -105,7 +105,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	prober := identity.KernelProber{}
 	lockSelf := lock.Identity{Pid: self.Pid, PidStartedAt: self.StartedAtSec, Tag: ownerTag}
 	ledger := &supervise.RegistryLedger{
-		CheckoutPath: *repo, OwnerTag: ownerTag,
+		CheckoutPath: *scope, OwnerTag: ownerTag,
 		Append: func(record map[string]any) error {
 			payload, err := supervise.EncodeRecord(record)
 			if err != nil {

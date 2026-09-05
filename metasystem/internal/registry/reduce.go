@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"log"
 	"sort"
 )
 
@@ -119,12 +120,25 @@ type Reduction struct {
 	// tag was ever seen (SLC-R5-013, SLC-R7-008).
 	SeenTags map[string]bool
 
+	// ownerCheckouts records the first checkout path carried by each owner
+	// identity, including a sequence-illegal row that cannot open a claim.
+	// Later rows for the same owner may not move this selection.
+	ownerCheckouts map[string]string
+
 	// Fragments counts tolerated non-JSON lines, reported not acted on.
 	Fragments int
 }
 
 // TagSeen answers the arming gate's uniqueness check.
 func (r *Reduction) TagSeen(tag string) bool { return r.SeenTags[tag] }
+
+// OwnerCheckoutPath returns the checkout selected by the first valid record
+// for an owner identity. A later row for another checkout is sequence-illegal
+// and cannot change this selection.
+func (r *Reduction) OwnerCheckoutPath(ownerTag string) (string, bool) {
+	path, found := r.ownerCheckouts[ownerTag]
+	return path, found
+}
 
 // SortedTags returns claim tags in first-appearance order.
 func (r *Reduction) SortedTags() []string {
@@ -143,10 +157,12 @@ func (r *Reduction) SortedTags() []string {
 // the caller signals by failing closed.
 func Reduce(frames []Frame) (*Reduction, error) {
 	reduction := &Reduction{
-		Claims:    map[string]*Claim{},
-		Custodies: map[string]*Custody{},
-		SeenTags:  map[string]bool{},
+		Claims:         map[string]*Claim{},
+		Custodies:      map[string]*Custody{},
+		SeenTags:       map[string]bool{},
+		ownerCheckouts: map[string]string{},
 	}
+	custodyPaths := map[string]string{}
 	for _, frame := range frames {
 		if frame.Record == nil {
 			reduction.Fragments++
@@ -161,13 +177,36 @@ func Reduce(frames []Frame) (*Reduction, error) {
 		}
 		switch record.Event {
 		case EventArming, EventArmed, EventRelaunched, EventLaunched, EventExited, EventReaped, EventSwept:
+			if path, seen := reduction.ownerCheckouts[record.OwnerTag]; seen && path != record.CheckoutPath {
+				logCheckoutConflict(frame.Line, "owner tag", record.OwnerTag, path, record.Event, record.CheckoutPath)
+				continue
+			}
+			if record.CustodyID != "" {
+				if path, seen := custodyPaths[record.CustodyID]; seen && path != record.CheckoutPath {
+					logCheckoutConflict(frame.Line, "custody", record.CustodyID, path, record.Event, record.CheckoutPath)
+					continue
+				}
+			}
+			reduction.ownerCheckouts[record.OwnerTag] = record.CheckoutPath
+			if record.CustodyID != "" {
+				custodyPaths[record.CustodyID] = record.CheckoutPath
+			}
 			reduction.foldClaim(record)
 		case EventCustody, EventCustodyReleased:
+			if path, seen := custodyPaths[record.CustodyID]; seen && path != record.CheckoutPath {
+				logCheckoutConflict(frame.Line, "custody", record.CustodyID, path, record.Event, record.CheckoutPath)
+				continue
+			}
+			custodyPaths[record.CustodyID] = record.CheckoutPath
 			reduction.foldCustody(record)
 		}
 	}
 	reduction.bindCustodies()
 	return reduction, nil
+}
+
+func logCheckoutConflict(line int, identityKind, identity, recordedPath, event, conflictingPath string) {
+	log.Printf("supervision registry: dropped sequence-illegal line %d: %s %q was recorded for checkout %q before a %s record named checkout %q", line, identityKind, identity, recordedPath, event, conflictingPath)
 }
 
 func (r *Reduction) foldClaim(record *Record) {
