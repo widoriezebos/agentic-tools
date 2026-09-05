@@ -335,6 +335,110 @@ func TestBudgetQuestionRequiresPersistsAndRendersCompleteTuple(t *testing.T) {
 	}
 }
 
+func TestRenderQuestionBoundsGoalRecordProseAndKeepsReplyTokenReachable(t *testing.T) {
+	long := strings.Repeat("goal record detail ", 400)
+	facts := make([]string, 8)
+	for i := range facts {
+		facts[i] = fmt.Sprintf("fact-%d %s", i+1, long)
+	}
+	q := Question{
+		Goal:  "channel-ask-fits-one-message",
+		Kind:  "reserved-decision",
+		Facts: facts,
+		Options: []Option{
+			{Label: "Choose alpha", Consequence: "alpha " + long},
+			{Label: "Choose beta", Consequence: "beta " + long},
+			{Label: "Choose gamma", Consequence: "gamma " + long},
+		},
+		Recommendation: "Choose alpha because " + long,
+		Wants:          "answer:channel-ask-fits-one-message",
+	}
+
+	rendered := renderQuestion(q)
+	tail := "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
+	if got := len([]rune(rendered)); got > questionMessageRuneLimit {
+		t.Fatalf("rendered question has %d runes, limit is %d", got, questionMessageRuneLimit)
+	}
+	if !strings.HasSuffix(rendered, tail) {
+		t.Fatalf("reply instruction and token were not preserved as the exact suffix:\n%s", rendered)
+	}
+	for _, option := range q.Options {
+		if !strings.Contains(rendered, option.Label+":") {
+			t.Fatalf("option label %q was dropped:\n%s", option.Label, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "dropped 4 facts") || !strings.Contains(rendered, "goal "+q.Goal) {
+		t.Fatalf("fact trim was not attributed to the goal:\n%s", rendered)
+	}
+	for _, fact := range facts {
+		if strings.Contains(rendered, fact) {
+			t.Fatalf("an untrimmed fact survived: %q", fact)
+		}
+	}
+	if !strings.Contains(rendered, "…\n") {
+		t.Fatalf("trimmed lines did not end visibly in an ellipsis:\n%s", rendered)
+	}
+}
+
+func TestRenderQuestionTrimNoticeDoesNotClaimDroppedFactsWhenAllFactsRemain(t *testing.T) {
+	long := strings.Repeat("long option detail ", 200)
+	q := Question{
+		Goal:  "choose-deployment-path",
+		Kind:  "reserved-decision",
+		Facts: []string{"The release is ready", "Both paths are reversible"},
+		Options: []Option{
+			{Label: "Deploy gradually", Consequence: long},
+			{Label: "Deploy at once", Consequence: long},
+		},
+		Recommendation: "Deploy gradually",
+		Wants:          "gradual",
+	}
+
+	rendered := renderQuestion(q)
+	wantNotice := "Long text was trimmed for channel length; full details are in goal " + q.Goal + "."
+	if !strings.Contains(rendered, wantNotice) {
+		t.Fatalf("long option text was trimmed without a notice:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "dropped") {
+		t.Fatalf("notice claimed dropped facts when all facts remained:\n%s", rendered)
+	}
+	for _, fact := range q.Facts {
+		if !strings.Contains(rendered, fact) {
+			t.Fatalf("short fact %q was dropped:\n%s", fact, rendered)
+		}
+	}
+}
+
+func TestRenderQuestionLeavesShortAskSubstanceUnchanged(t *testing.T) {
+	q := Question{
+		Goal:           "choose-launch-colour",
+		Kind:           "other",
+		Facts:          []string{"The launch is next Tuesday", "The package uses the blue mark"},
+		Options:        []Option{{Label: "Blue", Consequence: "matches the package"}},
+		Recommendation: "Choose blue",
+		Wants:          "blue",
+	}
+	rendered := renderQuestion(q)
+	for _, want := range []string{
+		"choose launch colour — other",
+		"- The launch is next Tuesday",
+		"- The package uses the blue mark",
+		"Blue: matches the package",
+		"Recommendation: Choose blue",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("short question lost %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "Trimmed for channel length") {
+		t.Fatalf("short question falsely claimed a trim:\n%s", rendered)
+	}
+	tail := "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
+	if !strings.HasSuffix(rendered, tail) {
+		t.Fatalf("short question lost its reply instruction or token:\n%s", rendered)
+	}
+}
+
 func TestLegacyBudgetQuestionLoadsWithoutTuple(t *testing.T) {
 	root := t.TempDir()
 	legacyID := "01J5X0000000000000000000L1"

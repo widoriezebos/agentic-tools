@@ -69,6 +69,12 @@ type AskRequest struct {
 	Now                                    time.Time
 }
 
+const (
+	// This human-reading limit is intentionally independent of and smaller than provider transport limits.
+	questionMessageRuneLimit = 1600
+	questionFactLimit        = 4
+)
+
 func channelRoot(repo string) string { return filepath.Join(repo, "artifacts", "agents", "channel") }
 func questionPath(repo, id string) string {
 	return filepath.Join(channelRoot(repo), "questions", id+".json")
@@ -229,24 +235,129 @@ func (contextBackground) Done() <-chan struct{}       { return nil }
 func (contextBackground) Err() error                  { return nil }
 func (contextBackground) Value(any) any               { return nil }
 func renderQuestion(q Question) string {
+	tail := "Reply in this thread with your answer followed by your code"
+	if q.Wants != "" {
+		tail = "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
+	}
+
+	full := renderQuestionParts(q, q.Facts, optionConsequences(q.Options), q.Recommendation, "", tail)
+	if len([]rune(full)) <= questionMessageRuneLimit {
+		return full
+	}
+
+	factCount := len(q.Facts)
+	if factCount > questionFactLimit {
+		factCount = questionFactLimit
+	}
+	noticeReserve := 0
+	for dropped := 0; dropped <= len(q.Facts); dropped++ {
+		if size := len([]rune(questionTrimNotice(q.Goal, dropped))); size > noticeReserve {
+			noticeReserve = size
+		}
+	}
+	mandatory := len([]rune(questionHead(q))) + len([]rune(questionBudgetLine(q))) + len([]rune(tail)) + noticeReserve + len([]rune("Recommendation: \n"))
+	for _, o := range q.Options {
+		mandatory += len([]rune(o.Label + ": \n"))
+	}
+	for factCount > 0 && mandatory+factCount*len([]rune("- \n")) > questionMessageRuneLimit {
+		factCount--
+	}
+	mandatory += factCount * len([]rune("- \n"))
+	remaining := questionMessageRuneLimit - mandatory
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	consequenceBudget := remaining / 2
+	consequences := trimQuestionParts(optionConsequences(q.Options), consequenceBudget)
+	remaining -= questionPartsRunes(consequences)
+	recommendationBudget := remaining / 3
+	recommendation := trimQuestionPart(q.Recommendation, recommendationBudget)
+	remaining -= len([]rune(recommendation))
+	facts := trimQuestionParts(q.Facts[:factCount], remaining)
+	notice := questionTrimNotice(q.Goal, len(q.Facts)-factCount)
+	return renderQuestionParts(q, facts, consequences, recommendation, notice, tail)
+}
+
+func renderQuestionParts(q Question, facts, consequences []string, recommendation, notice, tail string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %s\n", strings.ReplaceAll(q.Goal, "-", " "), q.Kind)
-	for _, f := range q.Facts {
+	b.WriteString(questionHead(q))
+	for _, f := range facts {
 		fmt.Fprintf(&b, "- %s\n", f)
 	}
-	for _, o := range q.Options {
-		fmt.Fprintf(&b, "%s: %s\n", o.Label, o.Consequence)
+	if notice != "" {
+		b.WriteString(notice)
 	}
-	if q.Budget != nil {
-		fmt.Fprintf(&b, "Proposed box: %s\n", renderProposedBox(*q.Budget))
+	for i, o := range q.Options {
+		fmt.Fprintf(&b, "%s: %s\n", o.Label, consequences[i])
 	}
-	fmt.Fprintf(&b, "Recommendation: %s\n", q.Recommendation)
-	if q.Wants != "" {
-		fmt.Fprintf(&b, "Reply in this thread with this token verbatim, followed by your code:\n%s", q.Wants)
-	} else {
-		b.WriteString("Reply in this thread with your answer followed by your code")
-	}
+	b.WriteString(questionBudgetLine(q))
+	fmt.Fprintf(&b, "Recommendation: %s\n", recommendation)
+	b.WriteString(tail)
 	return b.String()
+}
+
+func questionHead(q Question) string {
+	return fmt.Sprintf("%s — %s\n", strings.ReplaceAll(q.Goal, "-", " "), q.Kind)
+}
+
+func questionBudgetLine(q Question) string {
+	if q.Budget != nil {
+		return fmt.Sprintf("Proposed box: %s\n", renderProposedBox(*q.Budget))
+	}
+	return ""
+}
+
+func questionTrimNotice(goalID string, dropped int) string {
+	if dropped == 0 {
+		return fmt.Sprintf("Long text was trimmed for channel length; full details are in goal %s.\n", goalID)
+	}
+	factWord := "facts"
+	if dropped == 1 {
+		factWord = "fact"
+	}
+	return fmt.Sprintf("Trimmed for channel length: dropped %d %s; full details are in goal %s.\n", dropped, factWord, goalID)
+}
+
+func optionConsequences(options []Option) []string {
+	out := make([]string, len(options))
+	for i, option := range options {
+		out[i] = option.Consequence
+	}
+	return out
+}
+
+func trimQuestionParts(parts []string, budget int) []string {
+	out := make([]string, len(parts))
+	remaining := budget
+	for i, part := range parts {
+		share := 0
+		if count := len(parts) - i; count > 0 {
+			share = remaining / count
+		}
+		out[i] = trimQuestionPart(part, share)
+		remaining -= len([]rune(out[i]))
+	}
+	return out
+}
+
+func trimQuestionPart(text string, budget int) string {
+	runes := []rune(text)
+	if len(runes) <= budget {
+		return text
+	}
+	if budget <= 0 {
+		return ""
+	}
+	return string(runes[:budget-1]) + "…"
+}
+
+func questionPartsRunes(parts []string) int {
+	total := 0
+	for _, part := range parts {
+		total += len([]rune(part))
+	}
+	return total
 }
 
 func renderProposedBox(b goal.Budget) string {
