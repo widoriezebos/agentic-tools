@@ -181,6 +181,7 @@ func runChannelWait(args []string) int {
 	root := f.String("root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	timeout := f.Int("timeout", 0, "timeout in minutes")
+	pollSeconds := f.Int("poll-seconds", 30, "channel poll interval in seconds (0 disables polling)")
 	if f.Parse(args) != nil || *id == "" {
 		return 2
 	}
@@ -188,6 +189,7 @@ func runChannelWait(args []string) int {
 	if *timeout > 0 {
 		deadline = time.Now().Add(time.Duration(*timeout) * time.Minute)
 	}
+	nextPoll := time.Time{}
 	for {
 		q, err := channel.ReadQuestion(*root, *id)
 		if err != nil {
@@ -197,6 +199,20 @@ func runChannelWait(args []string) int {
 		if q.Answer != nil {
 			fmt.Println(q.Answer.Text)
 			return 0
+		}
+		if *pollSeconds > 0 && (nextPoll.IsZero() || !time.Now().Before(nextPoll)) {
+			ctx, cancel, err := channelPollContext(*root)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			_, err = phase.Run(ctx, *root)
+			cancel()
+			nextPoll = time.Now().Add(time.Duration(*pollSeconds) * time.Second)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			continue
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			fmt.Fprintln(os.Stderr, "channel wait timed out")

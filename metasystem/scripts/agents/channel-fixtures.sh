@@ -148,7 +148,7 @@ PY
 )
 telegram_code=$("$ms" channel fake code --secret "$secret" --at "$(( $(date +%s) + 30 ))")
 printf '{"face":"telegram","reply_to":%s,"user":7001,"text":"%s %s"}\n' "$telegram_receipt" "$telegram_answer_token" "$telegram_code" >>"$fake_dir/replies.jsonl"
-"$ms" channel poll --root "$repo" >"$bed/telegram-poll.out"
+[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1 --poll-seconds 1) == approve ]]
 telegram_tip=$(git --git-dir "$bed/origin.git" rev-parse refs/heads/main)
 telegram_history=$(git --git-dir "$bed/origin.git" show "$telegram_tip:metasystem/plans/goals/channel-telegram-fixture.md")
 if ! grep -q 'answer actor=human:wido.*authorityOutcome=AUTHENTICATED_CHANNEL_WORD' <<<"$telegram_history" ||
