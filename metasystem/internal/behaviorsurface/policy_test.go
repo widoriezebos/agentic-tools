@@ -111,6 +111,8 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		{"memory/instruction-ledger.md", Tailored, false, true, false},
 		{"memory/README.md", Standard, false, true, true},
 		{"bin/metasystem", NonRepository, false, false, false},
+		{"docs/paper/rendered/paper.pdf", NonRepository, false, false, true},
+		{"docs/paper/.obsidian/workspace.json", NonRepository, false, false, true},
 		{".git/index", NonRepository, false, false, false},
 		{"metasystem.conf.local", Tailored, false, false, false},
 		{"skills/verify/SKILL.md", Standard, false, true, true},

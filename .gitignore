@@ -3,3 +3,5 @@ __pycache__/
 /evidence
 benchmark/trials-root.local
 artifacts/
+.obsidian/
+metasystem/docs/paper/rendered/

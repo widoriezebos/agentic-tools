@@ -1,0 +1,9 @@
+{
+  "_comment": "Per-diagram render overrides for the PDF, keyed by the order the diagrams appear in the appendix. The source keeps what reads best on GitHub; the page has a different shape to fill. Only diagrams that need an override appear here.",
+  "2": {
+    "_why": "A star around the record. Top-down it comes out wide and flat, so the page can only render it small; left-right makes it nearly square and it fills the text width. The wide node spacing separates the fourteen edge labels that otherwise pile up where they meet the record.",
+    "direction": "LR",
+    "nodeSpacing": 220,
+    "rankSpacing": 150
+  }
+}

@@ -96,24 +96,32 @@ stateDiagram-v2
 The fourth diagram shows the return paths that make one failure change future behavior. An observation that no rule can interpret goes to a person through the narrator's report, and the person decides where the fault sits: the implementation, a weak check, a wrong bound or the intent itself, each with its own owner. After containment, a builder assembles the incident record and investigates, keeping what was observed apart from what is suspected, and proposes a candidate lesson. The lesson is challenged before anyone acts on it. The authority then has three honest outcomes: decline with a recorded reason, keep the lesson as a ruling when no reliable check can hold it, or adopt it. An adopted lesson earns its power slowly. It enters the backlog and is built, examined and accepted like any other change. It runs first in marking mode, where it refuses nothing and the builder who proposed it reviews what it marked. An examiner then tests it with changes it must block and changes it must pass, and its owner advances it through staged activation, one step at a time, only while it behaves within its recorded bounds. Full power comes with a governance record naming the rule's owner, review date, known-bad case and appeal route, and the two ways a rule degrades part ways: a passed review date leaves a working rule enforcing until a recorded decision renews or retires it, while a known-bad case that stops failing means the check itself is broken, so an ordinary rule falls back to marking, a severe rule closes its recorded scope and either way a dated, budgeted repair record opens. One rule governs all of this when the change is to a rule itself: the current rules, the retained known-bad cases and the current authority judge the proposed replacement. A rule change never judges its own adoption. And when live evidence shows the intent itself is wrong, the return is not a rule at all: the intent-holder revises the intent, and a new version controls from then on.
 
 ```mermaid
-flowchart TD
-    OBS["Live observation, compared<br/>with the recorded bounds"] -->|"inside bounds"| GO["Release continues"]
-    OBS -->|"a bound is crossed"| CTN["Releaser contains or rolls back,<br/>evidence preserved"]
-    OBS -->|"no rule says<br/>what it means"| NR["Narrator report to a person, who<br/>decides where the fault sits and<br/>whose work it becomes"]
-    CTN --> INV["A builder assembles the incident<br/>record and investigates, then<br/>proposes a candidate lesson"]
-    INV --> CH["A fresh examiner challenges it:<br/>wrong cause, too broad, too narrow?"]
-    CH --> AUTH{"The responsible<br/>authority decides"}
-    AUTH -->|"declined, with a<br/>recorded reason"| NOCH["No change"]
-    AUTH -->|"no reliable check<br/>can hold it"| RUL["A ruling, recorded with reasons,<br/>scope and a reconsideration date"]
-    AUTH -->|"adopted"| BL["The lesson enters the backlog and is<br/>built, examined and accepted<br/>like any other change"]
-    BL --> MARK["Marking mode: the rule refuses nothing;<br/>the builder who proposed it<br/>reviews what it marked"]
-    MARK --> STAGE["An examiner tests must-block and<br/>must-pass cases; the owner advances<br/>each stage while the rule stays<br/>within its recorded bounds"]
-    STAGE --> GATE["Refusal power at the boundary, under<br/>a governance record: owner, review date,<br/>known-bad case, appeal route"]
-    GATE -->|"review date passes"| RENEW["The rule keeps enforcing while<br/>the authority renews it, assigns<br/>a new owner or retires it"]
-    GATE -->|"the known-bad case<br/>stops failing"| BROKEN["The check is broken: an ordinary<br/>rule falls back to marking, a severe<br/>rule closes its recorded scope"]
-    BROKEN --> REPAIR["A dated, budgeted repair: a builder<br/>restores a discriminating check and<br/>a fresh examiner proves it"]
-    REPAIR -->|"a proven check returns<br/>the rule to power"| GATE
-    OBS -->|"evidence against the<br/>intent itself"| REV["The intent-holder revises the intent;<br/>a new version controls from here"]
+flowchart LR
+    subgraph observe [" "]
+        direction TB
+        OBS["Live observation, compared<br/>with the recorded bounds"] -->|"inside bounds"| GO["Release continues"]
+        OBS -->|"a bound is crossed"| CTN["Releaser contains or rolls back,<br/>evidence preserved"]
+        OBS -->|"no rule says<br/>what it means"| NR["Narrator report to a person, who<br/>decides where the fault sits and<br/>whose work it becomes"]
+        OBS -->|"evidence against the<br/>intent itself"| REV["The intent-holder revises the intent;<br/>a new version controls from here"]
+        CTN --> INV["A builder assembles the incident<br/>record and investigates, then<br/>proposes a candidate lesson"]
+        INV --> CH["A fresh examiner challenges it:<br/>wrong cause, too broad, too narrow?"]
+        CH --> AUTH{"The responsible<br/>authority decides"}
+        AUTH -->|"declined, with a<br/>recorded reason"| NOCH["No change"]
+        AUTH -->|"no reliable check<br/>can hold it"| RUL["A ruling, recorded with reasons,<br/>scope and a reconsideration date"]
+    end
+    subgraph adopt [" "]
+        direction TB
+        BL["The lesson enters the backlog and is<br/>built, examined and accepted<br/>like any other change"] --> MARK["Marking mode: the rule refuses nothing;<br/>the builder who proposed it<br/>reviews what it marked"]
+        MARK --> STAGE["An examiner tests must-block and<br/>must-pass cases; the owner advances<br/>each stage while the rule stays<br/>within its recorded bounds"]
+        STAGE --> GATE["Refusal power at the boundary, under<br/>a governance record: owner, review date,<br/>known-bad case, appeal route"]
+        GATE -->|"review date passes"| RENEW["The rule keeps enforcing while<br/>the authority renews it, assigns<br/>a new owner or retires it"]
+        GATE -->|"the known-bad case<br/>stops failing"| BROKEN["The check is broken: an ordinary<br/>rule falls back to marking, a severe<br/>rule closes its recorded scope"]
+        BROKEN --> REPAIR["A dated, budgeted repair: a builder<br/>restores a discriminating check and<br/>a fresh examiner proves it"]
+        REPAIR -->|"a proven check returns<br/>the rule to power"| GATE
+    end
+    observe -->|"adopted"| adopt
+    style observe fill:none,stroke:#BBBBBB,stroke-width:1px
+    style adopt fill:none,stroke:#BBBBBB,stroke-width:1px
 ```
 
 ## Where the software stands today

@@ -1,0 +1,61 @@
+% Typography for the paper PDF. The dynamic parts (footer, watermark) come from
+% metadata.yaml through the Makefile; everything fixed lives here.
+
+% --- Scenario passages -------------------------------------------------------
+% The running example is written in the source as blockquotes of italic text.
+% Indented italics read badly over a long passage, so the PDF sets them in a
+% panel with a quotation mark instead, and scenario.lua drops the italics.
+\usepackage[most]{tcolorbox}
+
+\newtcolorbox{scenario}{
+  breakable,
+  enhanced,
+  frame hidden,
+  colback=white,
+  colframe=white,
+  boxrule=0pt,
+  arc=3pt,
+  left=16pt,
+  right=0pt,
+  top=11pt,
+  bottom=11pt,
+  boxsep=0pt,
+  parbox=false,
+  before skip=11pt,
+  after skip=11pt,
+  overlay unbroken and first={
+    \node[anchor=north west, inner sep=0pt, text=black]
+      at ([xshift=0pt, yshift=-10pt]frame.north west)
+      {\fontsize{20}{20}\selectfont\textbf{\textquotedblleft}};
+  },
+}
+
+\renewenvironment{quote}{\begin{scenario}}{\end{scenario}}
+
+% --- Chapter deck ------------------------------------------------------------
+% The one-line teaser under each chapter title. Bold alone did not carry it, so
+% it is set a size up in italic, in a softer ink, between two hairline rules
+% that lift it off the page. tagline.lua decides which paragraph this is.
+\definecolor{decktext}{HTML}{3A3A3A}
+\definecolor{deckrule}{HTML}{B4B4B4}
+
+\newenvironment{chapterdeck}
+  {\par\addvspace{8pt}\noindent{\color{deckrule}\rule{\linewidth}{0.4pt}}\par\vspace{7pt}%
+   \begingroup\color{decktext}\large\itshape\noindent\ignorespaces}
+  {\par\endgroup\vspace{7pt}\noindent{\color{deckrule}\rule{\linewidth}{0.4pt}}\par\addvspace{14pt}}
+
+% --- Tables ------------------------------------------------------------------
+% No row shading: the rows are told apart by space instead. \arraystretch pads
+% the top and bottom of every cell, so the gap falls between rows while the
+% lines inside a cell keep their normal leading.
+\renewcommand{\arraystretch}{1.45}
+
+% --- Code blocks -------------------------------------------------------------
+% Verbatim does not wrap, so an unrendered diagram would run off the page.
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+
+% --- Diagrams ----------------------------------------------------------------
+% Rendered mermaid images are placed exactly where they appear in the text.
+\usepackage{float}
+\floatplacement{figure}{H}
