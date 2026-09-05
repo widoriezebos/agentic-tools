@@ -372,7 +372,12 @@ cleanup() {
   fi
   for harness_path in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
     if [[ -x "$harness_path/scripts/agents/arm-supervision.sh" ]]; then
-      "$harness_path/scripts/agents/arm-supervision.sh" --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
+      if [[ -n "${stop_root:-}" && "$harness_path" == "$stop_root" ]] && declare -p stop_env >/dev/null 2>&1; then
+        "${stop_env[@]}" "$harness_path/scripts/agents/arm-supervision.sh" \
+          --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
+      else
+        "$harness_path/scripts/agents/arm-supervision.sh" --repo "$harness_path" --shutdown >/dev/null 2>&1 || true
+      fi
     fi
   done
   for tuple in ${owned_pids[@]+"${owned_pids[@]}"}; do
@@ -1540,33 +1545,66 @@ if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
 # evidence that it ran. A report was ignorable and was ignored four times in one
 # session; an unbounded refusal is the loop the design forbids.
 stop_root=$tmp/stop-hook
-mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
-cp "$source_root/scripts/agents/supervision-hook.sh" \
-   "$source_root/scripts/agents/arm-supervision.sh" \
-   "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
-# The hook (and the announcement step below) derive the caller's
-# main through the runtime-signature ancestor walk, and that walk
-# reads the adapters from THIS root — without them find-ancestor
-# refuses and every derived main is empty.
-cp -R "$source_root/scripts/agents/adapters" "$stop_root/scripts/agents/adapters"
-# The hook resolves its engine as <root>/bin/metasystem; the open-work,
-# stop-block, identity, and lease helpers it used to need as .py files all
-# live inside it now.
-mkdir -p "$stop_root/bin"
-cp "$ms" "$stop_root/bin/metasystem"
-# The fixture-identity env rides this run: the sandbox needs the
-# fake-mode conf or the engine's leaked-fixture fence (agnosticism B1)
-# refuses classification before the hook logic under test runs.
-printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$stop_root/metasystem.conf"
+make_repo "$stop_root"
+mkdir -p "$stop_root/plans"
+# This standard fixture repository starts in the legacy goal format. Convert a
+# goal-free baseline through the product cutover before the scenario opens its
+# ordinary goal, matching the dispatch fixture's converted serving-goal bed.
+stop_goal_scan_digest=$(printf '' | shasum -a 256 | cut -d' ' -f1)
+cat >"$stop_root/plans/goals.md" <<STOP_GOAL_LEDGER
+# Goals
+
+## Goal-free: declared 2000-01-01T00:00:00Z by human over $stop_goal_scan_digest
+STOP_GOAL_LEDGER
+stop_goal_ledger=$(cat "$stop_root/plans/goals.md" && printf x) && stop_goal_ledger=${stop_goal_ledger%x}
+"$ms" json object ledger="$stop_goal_ledger" \
+  sha256="$(shasum -a 256 "$stop_root/plans/goals.md" | cut -d' ' -f1)" \
+  >"$stop_root/plans/goals-accepted.json"
+"$ms" json set --file "$stop_root/plans/goals-accepted.json" --int schemaVersion=1
+git -C "$stop_root" -c core.hooksPath=/dev/null add plans
+git -C "$stop_root" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'goal-free fixture baseline'
+git -C "$stop_root" config metasystem.goal.machine stop-hook-machine
+git -C "$stop_root" config goal.sync-remote local
+stop_goal_source_digest=$("$stop_root/bin/metasystem" goal source-digest --root "$stop_root")
+METASYSTEM_OWNER_LINEAGE=stop-hook-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:00:00Z \
+  "$stop_root/bin/metasystem" goal migrate --root "$stop_root" \
+    --source-digest "$stop_goal_source_digest" --sync-mode local --by wido >/dev/null
+git -C "$stop_root" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking
 - Next step: dispatch the runner
 FIXTURE
-git -C "$stop_root" init -q -b main
-enroll_fixture_engine "$stop_root" "$stop_root/bin/metasystem"
+stop_registry_home=$tmp/stop-hook-registry-home
+mkdir -p "$stop_registry_home"
+"$stop_root/bin/metasystem" util hold --tag metasystem-stop-hook-fixture-main >/dev/null 2>&1 &
+stop_main_pid=$!
+stop_main_start=$(process_started_at "$stop_main_pid")
+owned_pids+=("$stop_main_pid:$stop_main_start")
+stop_env=(env METASYSTEM_SUPERVISION_REGISTRY_HOME="$stop_registry_home"
+  METASYSTEM_FAKE_AGENT_ANCESTOR_PID="$stop_main_pid")
+"${stop_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$stop_root/bin/metasystem" up \
+  --metasystem-root "$stop_root" --repo "$stop_root" \
+  --session stop-hook-main --pid "$stop_main_pid" --start-time "$stop_main_start" \
+  --tag fixture-stop-hook >"$tmp/stop-hook-arm.out" 2>&1 &
+stop_arm_driver=$!
+stop_arm_driver_start=$(process_started_at "$stop_arm_driver")
+owned_pids+=("$stop_arm_driver:$stop_arm_driver_start")
+wait_for_child_exit "stop-hook supervision arming" "$stop_arm_driver" \
+  || { stop_arm_rc=$?; cat "$tmp/stop-hook-arm.out" >&2; exit "$stop_arm_rc"; }
+grep -Fq 'up outcome=armed authority=writer' "$tmp/stop-hook-arm.out" \
+  || { echo "the stop-hook fixture did not arm supervision" >&2; cat "$tmp/stop-hook-arm.out" >&2; exit 1; }
+# A freshly armed root still pays the first health, census, digest, and evidence
+# reads. Give those inherent checks the suite's scaled hang-detection ceiling;
+# production Stop calls retain the hook's four-second default.
+run_stop_hook() {
+  "${stop_env[@]}" METASYSTEM_STOP_DEADLINE="$fixture_ceiling_sec" \
+    bash "$stop_root/scripts/agents/supervision-hook.sh" fake stop
+}
 stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
-first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+first=$(printf '%s' "$stop_payload" | run_stop_hook)
 if printf '%s' "$first" | grep -Fq 'Metasystem supervision arming failed:'; then
   echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
   echo "$first" >&2
@@ -1576,19 +1614,26 @@ printf '%s' "$first" | grep -q '"decision":"block"' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
 printf '%s' "$first" | grep -Fq 'HEALTH ' \
   || { echo "the stop hook emitted no one-line health verdict" >&2; echo "$first" >&2; exit 1; }
-second=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+second=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$second" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }
-[[ -s "$stop_root/artifacts/agents/supervision/hooks.log" ]] \
+[[ -s "$stop_root/artifacts/agents/steward/components/supervision-hook.json" ]] \
   || { echo "the stop hook left no evidence that it ran" >&2; exit 1; }
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking
 - Next step: none
 FIXTURE
-settled=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+# The converted ledger's goal-free declaration is pinned to the plans-stream
+# set. Renew it through the product verb after settling this plan so the hook
+# reads the new world as deliberately goal-free, not as stale open work.
+stop_settled_digest=$(printf 'stream.md' | shasum -a 256 | cut -d' ' -f1)
+METASYSTEM_OWNER_LINEAGE=stop-hook-fixture \
+  "${stop_env[@]}" "$stop_root/bin/metasystem" goal declare-free --root "$stop_root" \
+    --digest "$stop_settled_digest" >/dev/null
+settled=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$settled" | grep -q '"decision":"block"' \
-  && { echo "the stop hook refused a turn with no open work" >&2; exit 1; }
+  && { echo "$settled" >&2; echo "the stop hook refused a turn with no open work" >&2; exit 1; }
 
 # S4-15: the goal thread through the same hook (goal-system GOAL-04/05).
 # (a) Byte-identity: the block reason carries the verdict display
@@ -1598,37 +1643,30 @@ printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
 # (b) End to end, unseeded: with work settled, opening a goal makes the
 # NEXT turn end block once pointing at the goal's next step — the
 # incident's fix observed through the real hook.
-# goal open and run launch below are holder-only control-plane
-# writes, and the hook matches run ownership against the main IT
-# derives — the nearest runtime-signature ancestor. Production
-# truth: the announced main IS the runtime process. So when this
-# suite runs under an agent, announce THAT ancestor as the
-# sandbox's main (the writes authenticate through it and the run's
-# recorded owner equals the hook's derived main). Without a runtime
-# ancestor, the suite shell announces itself so detached runs carry
-# the same holder-authenticated identity through the goal and run
-# control-plane writes.
-stop_main_identity=$("$stop_root/bin/metasystem" proc find-ancestor \
-  --repo "$stop_root" --pid $$ --runtime claude 2>/dev/null || true)
-if [[ -n "$stop_main_identity" ]]; then
-  stop_main_pid=$("$ms" json get --value "$stop_main_identity" --field pid)
-  "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
-    --session stop-hook-main --pid "$stop_main_pid" \
-    --start "$(process_started_at "$stop_main_pid")" \
-    --tag fixture-stop-hook --runtime claude >/dev/null
-else
-  "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
-    --session stop-hook-main --pid $$ \
-    --start "$(process_started_at $$)" \
-    --tag fixture-stop-hook --runtime claude >/dev/null
-fi
-"$stop_root/bin/metasystem" goal open --root "$stop_root" \
-	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." --tier 3 >/dev/null
-goal_block=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+# Goal open and run launch below are holder-only control-plane writes, and the
+# hook matches run ownership against its derived main. The fixture therefore
+# carries its dedicated fake main through every write and hook call; no ambient
+# seat ancestor can become the stop root's holder or supervision owner.
+"${stop_env[@]}" "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
+  --session stop-hook-main --pid "$stop_main_pid" --start "$stop_main_start" \
+  --tag fixture-stop-hook --runtime fake >/dev/null
+"${stop_env[@]}" METASYSTEM_OWNER_LINEAGE=stop-hook-fixture \
+  "$stop_root/bin/metasystem" goal open --root "$stop_root" \
+	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." \
+	--risk severity=3,novelty=1,exposure=1,accumulation=1 \
+	--basis "This established, isolated fixture has low novelty, exposure, and accumulation, but a misbound goal could give the stop hook the wrong authority context." >/dev/null
+"${stop_env[@]}" "$stop_root/bin/metasystem" goal approve --root "$stop_root" --id fixture-goal \
+	--by Wido --lineage stop-hook-fixture \
+	--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
+	--review-round-limit 3 --temporary-human-word 'Wido approves this fixture budget' \
+	--review-by 2026-09-06 >/dev/null
+"${stop_env[@]}" "$stop_root/bin/metasystem" goal claim --root "$stop_root" --id fixture-goal \
+  --lineage stop-hook-fixture >/dev/null
+goal_block=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$goal_block" | grep -q '"decision":"block"' \
   && printf '%s' "$goal_block" | grep -Fq 'Advance the fixture goal.' \
   || { echo "a current goal did not reach the turn end through the hook" >&2; echo "$goal_block" >&2; exit 1; }
-goal_again=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+goal_again=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$goal_again" | grep -q '"decision":"block"' \
   && { echo "the same goal revision blocked twice" >&2; exit 1; }
 printf '%s' "$goal_again" | grep -Fq 'NOTHING LEFT TO WORK ON' \
@@ -1636,13 +1674,13 @@ printf '%s' "$goal_again" | grep -Fq 'NOTHING LEFT TO WORK ON' \
 # (c) Session hygiene at the hook boundary: a path-shaped session id never
 # reaches the state file.
 evil_payload=$(printf '{"session_id":"../../evil","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
-printf '%s' "$evil_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop >/dev/null
+printf '%s' "$evil_payload" | run_stop_hook >/dev/null
 grep -q '\.\./' "$stop_root/artifacts/agents/turn-verdict-state.json" \
   && { echo "a path-shaped session id reached the verdict state" >&2; exit 1; }
 # (d) The degraded path: a verb that cannot speak yields the hook's fixed
 # message, never silence and never an all-clear.
 chmod 0500 "$stop_root/artifacts/agents"
-degraded=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+degraded=$(printf '%s' "$stop_payload" | run_stop_hook)
 chmod 0755 "$stop_root/artifacts/agents"
 printf '%s' "$degraded" | grep -Fq 'turn-verdict unavailable:' \
   || { echo "verb failure did not surface the fixed degraded message" >&2; echo "$degraded" >&2; exit 1; }
@@ -1653,34 +1691,36 @@ printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
 # Launch a real wrapped run; the turn end refuses to walk away from it
 # unwatched, once; a live watch clears the rule; conclusion surfaces the
 # green continuation exactly once.
-"$stop_root/bin/metasystem" run launch --root "$stop_root" --id fixture-run \
+"${stop_env[@]}" "$stop_root/bin/metasystem" run launch --root "$stop_root" --id fixture-run \
   --kind custom --display "the fixture run" --log fix-run.log \
-  --expect-green "proceed to checkpoint seven" -- /bin/sleep 2 >/dev/null
-mon1=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+  --expect-green "proceed to checkpoint seven" -- /bin/sleep 30 >/dev/null
+mon1=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$mon1" | grep -q '"decision":"block"' \
   && printf '%s' "$mon1" | grep -Fq 'unwatched' \
   || { echo "an unwatched run did not block the turn end" >&2; echo "$mon1" >&2; exit 1; }
-mon2=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon2=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$mon2" | grep -q '"decision":"block"' \
   && { echo "the same unwatched set blocked twice" >&2; exit 1; }
-"$stop_root/bin/metasystem" run watch --id fixture-run --root "$stop_root" --poll-ms 200 &
+"${stop_env[@]}" "$stop_root/bin/metasystem" run watch --id fixture-run --root "$stop_root" --poll-ms 200 &
 mon_watch_pid=$!
+mon_watch_start=$(process_started_at "$mon_watch_pid")
+owned_pids+=("$mon_watch_pid:$mon_watch_start")
 sleep 1
-mon3=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon3=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$mon3" | grep -Fq 'STILL WORKING' \
   && printf '%s' "$mon3" | grep -Fq 'run fixture-run' \
   || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
 sleep 2.5
-"$stop_root/bin/metasystem" run conclude --root "$stop_root" --id fixture-run >/dev/null
+"${stop_env[@]}" "$stop_root/bin/metasystem" run conclude --root "$stop_root" --id fixture-run >/dev/null
 mon_watch_rc=0
 wait "$mon_watch_pid" || mon_watch_rc=$?
 (( mon_watch_rc == 0 )) \
   || { echo "the run watch did not exit green (rc=$mon_watch_rc)" >&2; exit 1; }
-mon4=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon4=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$mon4" | grep -Fq 'finished green' \
   && printf '%s' "$mon4" | grep -Fq 'proceed to checkpoint seven' \
   || { echo "the green continuation did not surface" >&2; echo "$mon4" >&2; exit 1; }
-mon5=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+mon5=$(printf '%s' "$stop_payload" | run_stop_hook)
 printf '%s' "$mon5" | grep -Fq 'finished green' \
   && { echo "the green surfaced twice" >&2; exit 1; }
 # The final probe succeeds by finding no duplicate, so end the scenario with

@@ -20,15 +20,33 @@ emit_raw_stop_block() {
 }
 raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing, so stopping safety cannot be judged; reinstall or rebuild bin/metasystem before stopping."}'
 
+compose_stop_block_json() { # engine, system message, verdict display
+  local engine guidance reason rendered decision
+  engine=$1
+  guidance=$("$engine" report stop-block "")
+  guidance=$("$engine" json get --value "$guidance" --field reason)
+  reason=$3
+  [[ -z "$guidance" ]] || reason="$reason
+
+$guidance"
+  rendered=$("$engine" json object "decision=block" "reason=$reason" "systemMessage=$2")
+  decision=$("$engine" json get --value "$rendered" --field decision)
+  reason=$("$engine" json get --value "$rendered" --field reason)
+  [[ "$decision" == block && -n "$reason" ]] || return 1
+  printf '%s\n' "$rendered"
+}
+
 # Claude Code eventually caps repeated Stop-hook blocks. This hook accepts that
 # harness boundary and does not try to defeat it; true impossibility is owned by
 # goal idle-every-runtime-enforcement through runtime-independent steward
 # re-engagement.
 
-# Claude gives the complete Stop hook five seconds. Run the whole Stop body as
-# one supervised child so arming, health, digest, watchdog, ledger fetch, and
-# verdict time all spend the same budget. The parent retains one second to
-# emit a provider-level refusal and exit successfully when the child overruns.
+# Claude ordinarily gives the complete Stop hook five seconds. Run the whole
+# Stop body as one supervised child with a four-second default so arming,
+# health, digest, watchdog, ledger fetch, and verdict time share that budget.
+# The parent retains one second to emit a provider-level refusal; bounded test
+# harnesses may widen the child deadline when they deliberately exercise a
+# freshly armed root's first full observation.
 if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; then
   deadline_dir=
   deadline_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
@@ -55,7 +73,9 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   METASYSTEM_STOP_DEADLINE_PARENT=$$ bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
     <"$deadline_payload" >"$deadline_stdout" 2>"$deadline_stderr" &
   deadline_worker=$!
-  deadline_expires=$((deadline_started + 4))
+  deadline_seconds=${METASYSTEM_STOP_DEADLINE:-4}
+  [[ "$deadline_seconds" =~ ^[1-9][0-9]*$ ]] || deadline_seconds=4
+  deadline_expires=$((deadline_started + deadline_seconds))
 
   # Resolve record coordinates alongside the worker, never ahead of it. The
   # engine parser is authoritative when it finishes inside the worker's wait;
@@ -184,6 +204,24 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     exit 0
   fi
 
+  # The worker publishes its provider response before recording completion.
+  # A completed blocking response already carries the health verdict and is a
+  # safe decision even when completion bookkeeping uses the rest of the Stop
+  # budget. Preserve that response instead of replacing it with a timeout.
+  deadline_published=false
+  deadline_published_decision=
+  deadline_published_reason=
+  deadline_published_message=
+  if [[ -x "$deadline_validator" && -s "$deadline_stdout" ]]; then
+    deadline_published_decision=$("$deadline_validator" json get --file "$deadline_stdout" --field decision 2>/dev/null || true)
+    deadline_published_reason=$("$deadline_validator" json get --file "$deadline_stdout" --field reason 2>/dev/null || true)
+    deadline_published_message=$("$deadline_validator" json get --file "$deadline_stdout" --field systemMessage 2>/dev/null || true)
+    if [[ "$deadline_published_decision" == block && -n "$deadline_published_reason" &&
+          "$deadline_published_message" == *"HEALTH "* ]]; then
+      deadline_published=true
+    fi
+  fi
+
   deadline_stop_resolver
   deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
   if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
@@ -200,18 +238,44 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     fi
   fi
   wait "$deadline_worker" 2>/dev/null || true
+  if [[ "$deadline_published" == true ]]; then
+    command cat "$deadline_stdout" || true
+    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+      "$deadline_resolution" "$deadline_resolution_ready" || true
+    rmdir "$deadline_dir" 2>/dev/null || true
+    exit 0
+  fi
   deadline_cause='stop deadline expired'
   deadline_remedy='A human or steward must restore supervision outside this seat, then retry.'
   deadline_detail='Metasystem Stop deadline expired before a safe turn verdict; stopping is refused.'
+  deadline_health='HEALTH unknown — hook-freshness=unknown (the Stop deadline expired before a safe turn verdict)'
+  deadline_display=
+  if [[ -x "$deadline_canonical" && -n "${deadline_repo:-}" ]]; then
+    deadline_verdict=$("$deadline_canonical" report turn-verdict --root "$deadline_repo" \
+      --session "$deadline_session" --main-id "" 2>/dev/null || true)
+    [[ -z "$deadline_verdict" ]] || \
+      deadline_display=$("$deadline_canonical" json get --value "$deadline_verdict" \
+        --field display 2>/dev/null || true)
+  fi
+  deadline_block_display=$deadline_detail
+  [[ -z "$deadline_display" ]] || deadline_block_display="$deadline_display
+
+$deadline_detail"
   deadline_response=
   if [[ -n "$deadline_record" ]]; then
     deadline_response=$("$deadline_canonical" report stop-block \
+      --system-message "$deadline_health" \
       --refusal-record "$deadline_record" --session "$deadline_session" \
       --cause "$deadline_cause" --remedy "$deadline_remedy" "$deadline_detail" 2>/dev/null) || \
       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
   fi
   if [[ -n "$deadline_response" && -z "$deadline_record_failure" ]]; then
-    printf '%s\n' "$deadline_response"
+    deadline_decision=$("$deadline_canonical" json get --value "$deadline_response" --field decision 2>/dev/null || true)
+    if [[ "$deadline_decision" == block ]]; then
+      compose_stop_block_json "$deadline_canonical" "$deadline_health" "$deadline_block_display"
+    else
+      printf '%s\n' "$deadline_response"
+    fi
   else
     printf '%s\n' '{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
   fi
@@ -391,18 +455,34 @@ surface_json() { # message
 }
 
 stop_block_json() { # system message, reason
-  local rendered decision reason
-  rendered=$("$ms" report stop-block --system-message "$1" "$2")
-  decision=$("$ms" json get --value "$rendered" --field decision)
-  reason=$("$ms" json get --value "$rendered" --field reason)
-  [[ "$decision" == block && -n "$reason" ]] || return 1
-  printf '%s\n' "$rendered"
+  compose_stop_block_json "$ms" "$1" "$2"
 }
 
 external_stop_json() { # system message, reason, cause, remedy
-  "$ms" report stop-block --system-message "$1" \
+  local rendered decision
+  rendered=$("$ms" report stop-block --system-message "$1" \
     --refusal-record "$stop_refusal_record" --session "$session" \
-    --cause "$3" --remedy "$4" "$2"
+    --cause "$3" --remedy "$4" "$2")
+  decision=$("$ms" json get --value "$rendered" --field decision 2>/dev/null || true)
+  if [[ "$decision" == block ]]; then
+    compose_stop_block_json "$ms" "$1" "$2"
+  else
+    printf '%s\n' "$rendered"
+  fi
+}
+
+degraded_stop_json() { # turn-verdict diagnostic
+  local degraded_message
+  degraded_message=$(turn_verdict_unavailable_message "$1")
+	[[ -z "$up_failure" ]] || degraded_message="$degraded_message
+$up_failure"
+	[[ -z "$hook_evidence_failure" ]] || degraded_message="$degraded_message
+$hook_evidence_failure"
+  [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
+$protocol_message"
+  external_stop_json "$checkin_tail" "$degraded_message" \
+    "turn-verdict unavailable" \
+    'A human or steward must restore supervision outside this seat, then retry.'
 }
 
 tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
@@ -489,9 +569,35 @@ emit_stop_payload() { # response
   rm -f "$response_file"
 }
 
+turn_verdict_unavailable_message() { # last diagnostic line
+  printf 'turn-verdict unavailable: %s' "${1:-no diagnostic}"
+}
+
 emit_failed_stop() { # diagnostic
-  local refusal_rc remedy
-  failure_detail="Metasystem could not prove that stopping is safe: $1"
+  local refusal_rc remedy failure_verdict failure_display failure_verdict_rc
+  local failure_verdict_stderr degraded_line supervision_detail
+  failure_display=
+  failure_verdict_rc=0
+  failure_verdict_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-verdict-err.XXXXXX")
+  failure_verdict=$("$ms" report turn-verdict --root "$state_root" \
+    --session "$session" --watchdog-surfaced "${watchdog_digest:-}" \
+    --main-id "$main_id" 2>"$failure_verdict_stderr") || failure_verdict_rc=$?
+  supervision_detail="Metasystem could not prove that stopping is safe: $1"
+  if (( failure_verdict_rc != 0 )); then
+    degraded_line=$(tail -1 "$failure_verdict_stderr" 2>/dev/null || true)
+    failure_detail=$(turn_verdict_unavailable_message "$degraded_line")
+    failure_detail="$failure_detail
+
+$supervision_detail"
+  else
+    [[ -z "$failure_verdict" ]] || \
+      failure_display=$("$ms" json get --value "$failure_verdict" --field display 2>/dev/null || true)
+    failure_detail=$supervision_detail
+    [[ -z "$failure_display" ]] || failure_detail="$failure_display
+
+$failure_detail"
+  fi
+  rm -f "$failure_verdict_stderr"
   remedy='A human or steward must restore supervision outside this seat, then retry.'
   if [[ "$1" == 'supervision arming failed' && -n "$up_failure" ]]; then
     remedy=$up_failure
@@ -618,10 +724,16 @@ $checkin_tail")
 	[[ "$surface_watchdog" != true || -z "$watchdog_text" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$watchdog_text")
     [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
 
-    if [[ "$should_block" == true ]]; then
-      # The display is the block reason byte-verbatim; watchdog and
-      # protocol text stay in the non-blocking channel and never enter
-      # the reason.
+	if [[ "$should_block" == true && "$display" == 'cannot prove that stopping is safe:'* ]]; then
+	  degraded_line=${display#'cannot prove that stopping is safe:'}
+	  degraded_line=${degraded_line# }
+	  printf '%s stop verdict unavailable\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+	    >>"$supervision_dir/hooks.log" 2>/dev/null || true
+	  response=$(degraded_stop_json "$degraded_line")
+	elif [[ "$should_block" == true ]]; then
+      # The display starts the block reason byte-verbatim; the plan-work
+      # guidance follows it. Watchdog and protocol text stay in the
+      # non-blocking channel and never enter the reason.
       blocking_message=$checkin_tail
       [[ -z "$extras" ]] || blocking_message="$extras
 $blocking_message"
@@ -639,14 +751,7 @@ $checkin_tail")
     rm -f "$verdict_stderr"
     printf '%s stop verdict unavailable\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       >>"$supervision_dir/hooks.log" 2>/dev/null || true
-    degraded_message="turn-verdict unavailable: ${degraded_line:-no diagnostic}"
-	[[ -z "$up_failure" ]] || degraded_message="$degraded_message
-$up_failure"
-	[[ -z "$hook_evidence_failure" ]] || degraded_message="$degraded_message
-$hook_evidence_failure"
-    [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
-$protocol_message"
-    response=$(stop_block_json "$checkin_tail" "$degraded_message")
+    response=$(degraded_stop_json "$degraded_line")
   fi
   emit_stop_payload "$response"
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
