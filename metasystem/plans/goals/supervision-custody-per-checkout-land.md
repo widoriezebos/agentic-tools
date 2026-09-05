@@ -7,12 +7,13 @@
 - Origin: main
 - Next step: One implementer round from preserve/scc-build3-r1, one critic round (ids from SCC-41), land.
 - OpenedAt: 2026-09-05T11:21:33Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-05T11:21:38Z revision=2 opid=SWSWXRA3CTKTN90GS7K33QSFS4-m2-5fcf08ab authority=relayed digest=9cadb757ab8f46e91e5b74da65a8db9812d08c1cd9d55139fcb78aba82a4833e reviewBy=2026-09-06
 - Sliced: machine=m2 lineage=main-1788441779-14484-82d6ed revision=3 at=2026-09-05T11:22:47Z
+- AcceptedRisk: finding=SCC-61 chain=scp-build1-cc3 by=Wido opid=SN855TFP34HK8NSW8S2QRN0VE8-m2-5fcf08ab
 - Claimed: machine=m2 lineage=main-1788441779-14484-82d6ed at=2026-09-05T11:21:44Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m2 claimEpoch=2 fenceEpoch=0
 
@@ -21,4 +22,5 @@ History:
 - 2026-09-05T11:21:38Z SWSWXRA3CTKTN90GS7K33QSFS4-m2-5fcf08ab approve actor=human:Wido targets=supervision-custody-per-checkout-land authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Yes, raise to five and land it (Recommended)"
 - 2026-09-05T11:21:44Z JR1WC02HCCMNK39WWVC1NP4G4Y-m2-5fcf08ab claim actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout-land
 - 2026-09-05T11:22:47Z D2SC3MZWSMG9A19J0XJAH3ZJ2V-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=supervision-custody-per-checkout-land
-Integrity: sha256=ec166919419a101d9fbce3712008317a9b3f734aa6bd67c5ddd1665d046cc346
+- 2026-09-05T14:36:33Z SN855TFP34HK8NSW8S2QRN0VE8-m2-5fcf08ab accept-risk actor=human:Wido targets=supervision-custody-per-checkout-land reason=R-81-m2: the finding is in the fixture self-check's announcement scan, not the custody code; scheduled as goal supervision-fixture-self-check-announcement-scan.
+Integrity: sha256=7a27f3a2d5552cad2004f233f4f191f340d5c9f1c476733ddf81c36c1aa67cbf
