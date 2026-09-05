@@ -6,11 +6,12 @@
 - Origin: main
 - Next step: NEXT PICK for m3 (seat's choice under R-76-m3, 'a properly working channel (telegram)'): the smallest channel fix, the steward tick polls whenever a question is open and channel wait polls at its own interval. TIER 1 per R-54-m1 (one call in the steward tick and one in channel wait, with their tests): build, go test ./internal/steward/ ./internal/channel/ ./cmd/..., channel-fixtures.sh, land as a declared direct fix; box 1h/3/60m/1. Waits for Wido's execution approval: the status post asks for it with the token 'start channel-poll-not-automatic'. Coordinates with fleet-channel-gateway (the resident listener replaces the tick poll later; the one-shot tick keeps a short poll under the gateway design).; ASKED X7V708S00S0ECRTSS59CYB3F9E (reserved-decision): Your priority R-76: a properly working channel. This is the smallest channel fix: the steward tick polls Telegram whenever a question is open, and channel wait polls at its own interval, so a reply is picked up without anyone running a poll by hand (your words 2026-09-04: 'This feels like it is not automatically being picked up!').
 - OpenedAt: 2026-09-04T11:09:25Z
-- Revision: 5
+- Revision: 6
 - Labels: next, robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-04T17:13:38Z revision=4 opid=A4FQ8SN3MPZNVHZSAP339FBV7C-m3-587cb0f1 authority=relayed digest=ebef9603afd916fda9486a2b71b6d68de3eab9fc2aae218107a95961eec24be8 reviewBy=2026-09-06
+- Sliced: machine=m3 lineage=mac-m3 revision=5 at=2026-09-05T03:10:21Z
 - Claimed: machine=m3 lineage=mac-m3 at=2026-09-05T03:10:06Z revision=5 accountingRevision=5
 - StopCapability: generation=5 revision=5 machine=m3 claimEpoch=1 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-04T15:56:25Z J2N3ZA93W207CXBKJMYCBADFCJ-m3-587cb0f1 ask actor=m3+main-1788172645-85501-aa86ee targets=channel-poll-not-automatic
 - 2026-09-04T17:13:38Z A4FQ8SN3MPZNVHZSAP339FBV7C-m3-587cb0f1 approve actor=human:Wido targets=channel-poll-not-automatic authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="All approved, also said this on Telegram"
 - 2026-09-05T03:10:06Z 1QWA2B7DA65J28CNFZ17WRBSB5-m3-a5da21ff claim actor=m3+mac-m3 targets=channel-poll-not-automatic
-Integrity: sha256=a101f9e3d7cb196d24b386a39b93b0eebaff1c8369e7ff82b942882cf8359807
+- 2026-09-05T03:10:21Z FEB1YK579WZF56N6JEBAAEQZM3-m3-a5da21ff slice-start actor=m3+mac-m3 targets=channel-poll-not-automatic
+Integrity: sha256=a6609601abfa96bdc3b96d412b497949bf362ce323370504077ceb16a3b9199f
