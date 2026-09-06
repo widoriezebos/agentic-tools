@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: The refusal register test (TestHCL03EveryCodeRowed in internal/refusal) runs only in the full race gate, not in the fast gate every landing runs, so a landing that adds a refusal-shaped token without a register row turns the full gate red hours later for whoever runs it next. Twice on 2026-09-06: VERIFIED_CHANNEL_ANSWER (landed 09-04, fixed by goal race-gate-red-on-main at 6c79648a) and DEADLINE_EXPIRED (landed 19b14a9b, a steward health observation, found by the governed validation on m1c at 15:07Z). The register test takes under a second. DONE means scripts/agents/go-gate.sh --fast runs the refusal package's tests (go test ./internal/refusal) as one of its static stages so a landing cannot introduce an unrowed token, DEADLINE_EXPIRED has its row or exclusion (an observation that refuses nothing, with its owner's confirmation), and the full gate is green on that count.
 - Origin: main
-- Next step: Read go-gate.sh's fast stages (gofmt, vet, staticcheck, build) and add the refusal package test after the build; add the DEADLINE_EXPIRED exclusion beside the other steward health observations after confirming with the landing's author (19b14a9b) that it admits rather than refuses; one small chain. THIRD instance the same day (m1c, 15:5xZ): after 6ab703f7 excluded DEADLINE_EXPIRED, main is red again on TestHCL03EveryCodeRowed with the token 'ledger-unreadable' (a hyphen-form refusal code) from 35c9e4df; it needs a row (it looks like a refusal) or an exclusion, and the fast gate must run this sub-second test or this repeats with every landing that names a code.
+- Next step: Chain fgr-build1 (codex, DESIGN-BEARING, started 16:3xZ) builds from plans/fast-gate-runs-the-refusal-register-brief.md (e66ba132): go-gate.sh --fast gains a refusal-register stage before the build; ledger-unreadable (a turn-verdict digest sentinel, not a refusal) gets its exclusion. Then one Fable critique, close, records, receipt (the new verb in the live root), land through land.sh --chain --test-receipt, conclude (agent-opened).
 - OpenedAt: 2026-09-06T15:20:47Z
-- Revision: 6
+- Revision: 7
 - Labels: robustness
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -24,4 +24,5 @@ History:
 - 2026-09-06T15:49:19Z T2V655JEMNH7TRJRNDCC2AGVRW-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=fast-gate-runs-the-refusal-register
 - 2026-09-06T16:25:39Z PVCHY1AEX6NWRFRD18203DZKYE-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=fast-gate-runs-the-refusal-register
 - 2026-09-06T16:27:16Z WZZYCE6W7NHQ7KERNRRFND6K91-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=fast-gate-runs-the-refusal-register
-Integrity: sha256=59a94b30e451d5f192c4ed434975bb5f3bddc934c5f252f8e9f362dd935c2232
+- 2026-09-06T16:27:32Z Y50ZNNXG6JCGKXW3WA00GZ0WW1-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=fast-gate-runs-the-refusal-register
+Integrity: sha256=370f7a6d0e966afaee1d44239d45af07e9542be2037fb9cba778efadd846b413
