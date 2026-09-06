@@ -27,8 +27,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (6 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one build-stamp
+  run_fixture_bed_scenarios land "land fixtures passed (7 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one full-width-chain build-stamp
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -59,6 +59,7 @@ nonce=$("$root/bin/metasystem" util token-hex --bytes 16)
   --path "$token" --pid $$ --start "$started" --nonce "$nonce"
 trap 'rm -f -- "$token"' EXIT
 goal=
+chain=
 direct_fix=
 root_job=
 test_receipt=
@@ -68,6 +69,11 @@ while (( $# )); do
     --goal)
       [[ $# -ge 2 && -z "$goal" ]] || exit 2
       goal=$2
+      shift 2
+      ;;
+    --chain)
+      [[ $# -ge 2 && -z "$chain" ]] || exit 2
+      chain=$2
       shift 2
       ;;
     --direct-fix)
@@ -99,11 +105,44 @@ if [[ -n "${LAND_FIXTURE_TIER_ONE_LOG:-}" ]]; then
     "$direct_fix" "$root_job" "$test_receipt" >"$LAND_FIXTURE_TIER_ONE_LOG"
   [[ -f "$test_receipt" ]] || exit 82
 fi
+if [[ -n "$chain" ]]; then
+  candidate_tree=$(git -C "$root" write-tree)
+  prefix=$(git -C "$root" rev-parse --show-prefix)
+  if [[ -n "$prefix" ]]; then
+    candidate_tree=$(git -C "$root" rev-parse "$candidate_tree:${prefix%/}")
+  fi
+  landing_args=(landing observe --root "$root" --tree "$candidate_tree" --chain "$chain")
+  [[ -z "$test_receipt" ]] || landing_args+=(--test-receipt "$test_receipt")
+  landing_observation=$("$root/bin/metasystem" "${landing_args[@]}")
+  landing_provenance=$("$root/bin/metasystem" json get --value "$landing_observation" --field provenance)
+  landing_verdict=$("$root/bin/metasystem" json get --value "$landing_observation" --field verdictTrailer)
+  [[ "$landing_verdict" == "pass bar=a" ]] || {
+    echo "land fixture commit refused: $landing_verdict" >&2
+    exit 83
+  }
+  commit_args+=(--trailer "Landing-Provenance: $landing_provenance")
+  commit_args+=(--trailer "Landing-Provenance-Verdict: $landing_verdict")
+  if [[ -n "${LAND_FIXTURE_CHAIN_LOG:-}" ]]; then
+    printf 'chain=%s\ntestReceipt=%s\nverdict=%s\n' \
+      "$chain" "$test_receipt" "$landing_verdict" >"$LAND_FIXTURE_CHAIN_LOG"
+  fi
+fi
 git commit "${commit_args[@]}"
 git show --no-renames --numstat -z --format= HEAD \
   | "$root/bin/metasystem" gate weight-add --root "$root" \
       --commit "$(git rev-parse --short HEAD)"
 SH
+  if [[ "$fixture_scenario" == full-width-chain ]]; then
+    mkdir -p "$leg_seed/memory"
+    cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
+    cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
+    cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
+    cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
+    for battery_script in go-gate.sh dispatch-fixtures.sh goal-cli-fixtures.sh; do
+      printf '#!/usr/bin/env bash\nexit 0\n' >"$leg_seed/scripts/agents/$battery_script"
+      chmod +x "$leg_seed/scripts/agents/$battery_script"
+    done
+  fi
   chmod +x "$leg_seed/scripts/agents/land.sh" \
     "$leg_seed/scripts/agents/coverage-delta.sh" \
     "$leg_seed/scripts/agents/pre-commit-guard.sh" \
@@ -118,6 +157,9 @@ SH
   git -C "$leg_seed" config user.name fixture
   git -C "$leg_seed" config user.email fixture@example.invalid
   git -C "$leg_seed" add -- scripts bin payload.txt plans/existing.md .gitignore
+  if [[ "$fixture_scenario" == full-width-chain ]]; then
+    git -C "$leg_seed" add -- memory/rulings.md
+  fi
   git -C "$leg_seed" commit -qm seed
   git init --bare -q "$leg_remote"
   git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
@@ -406,4 +448,152 @@ for binding_field in indexTreeBefore worktreeTreeBefore indexTreeAfter worktreeT
   [[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_tree" ]]
 done
 echo "land tier-one fixture passed"
+fi
+
+# 6. A full-width chain stops before verification without a receipt, rejects a
+# receipt for another tree before commit, and lands with the exact candidate's
+# full-battery receipt and bar-a provenance.
+if [[ "$fixture_scenario" == full-width-chain ]]; then
+make_leg full-width-chain
+full_chain_message=$leg_root/message.txt
+full_chain_missing_output=$leg_root/missing-receipt.out
+full_chain_usage_output=$leg_root/usage-refusal.out
+full_chain_mismatch_output=$leg_root/mismatched-receipt.out
+full_chain_landing_output=$leg_root/land.out
+full_chain_log=$leg_root/chain.log
+full_battery_command=$(sed -n 's/^const fullBatteryCommand = "\(.*\)"$/\1/p' \
+  "$root/internal/landing/tierone.go")
+[[ -n "$full_battery_command" ]] \
+  || { echo "land full-width-chain fixture: full battery command source is unreadable" >&2; exit 1; }
+printf 'fixture lands a receipted full-width chain\n' >"$full_chain_message"
+
+full_chain_base=$(git -C "$leg_local" rev-parse HEAD)
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+    --tests true --test-receipt receipt.json --staged-only --skip-transport
+) >"$full_chain_usage_output" 2>&1
+full_chain_usage_rc=$?
+set -e
+[[ $full_chain_usage_rc == 2 ]] || {
+  echo "land full-width-chain fixture: conflicting receipt inputs exited $full_chain_usage_rc, want 2" >&2
+  sed -n '1,120p' "$full_chain_usage_output" >&2
+  exit 1
+}
+grep -Fqx 'land refused: --tests and --test-receipt cannot be combined; remove --test-receipt for a tier-1 landing, or remove --tests for a receipted chain landing' \
+  "$full_chain_usage_output"
+grep -Fq 'Usage: scripts/agents/land.sh' "$full_chain_usage_output"
+if grep -Fq '== STEP:' "$full_chain_usage_output"; then
+  echo "land full-width-chain fixture: conflicting receipt inputs started landing work" >&2
+  exit 1
+fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+
+full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
+(
+  cd "$leg_local"
+  "$source_engine" landing test-receipt --root . \
+    --tree "$full_chain_other_tree" --command "$full_battery_command"
+) >/dev/null
+full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
+
+printf '# full-width candidate\n' >>"$leg_local/scripts/agents/go-gate.sh"
+git -C "$leg_local" add -- scripts/agents/go-gate.sh
+full_chain_candidate=$(git -C "$leg_local" write-tree)
+mkdir -p "$leg_local/artifacts/agents/jobs" \
+  "$leg_local/artifacts/agents/full-chain/rounds/1"
+cat >"$leg_local/artifacts/agents/jobs/full-chain.json" <<'JSON'
+{
+  "jobId": "full-chain",
+  "parentJob": null,
+  "role": "implementer",
+  "round": 1,
+  "goalTier": 2,
+  "gateWidth": "full",
+  "destructiveReach": "DESIGN-BEARING",
+  "chainClosed": true
+}
+JSON
+git -C "$leg_local" diff --cached --binary --full-index --no-ext-diff --no-textconv -- \
+  >"$leg_local/artifacts/agents/full-chain/rounds/1/diff.patch"
+cat >"$leg_local/artifacts/agents/full-chain/rounds/1/review.json" <<JSON
+{
+  "diffArtifact": "diff.patch",
+  "implementerJob": "full-chain",
+  "reviewedTree": "$full_chain_candidate"
+}
+JSON
+
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+    --staged-only --skip-transport
+) >"$full_chain_missing_output" 2>&1
+full_chain_missing_rc=$?
+set -e
+[[ $full_chain_missing_rc == 2 ]] || {
+  echo "land full-width-chain fixture: missing receipt exited $full_chain_missing_rc, want 2" >&2
+  sed -n '1,160p' "$full_chain_missing_output" >&2
+  exit 1
+}
+grep -Fqx "land refused: chain full-chain is full-width (its goal's accumulation is 2 or more); make the full battery receipt for the candidate tree first (metasystem landing test-receipt --root . --tree <subtree> --command \"<the full battery command from metasystem/internal/landing/tierone.go>\") and pass it with --test-receipt" \
+  "$full_chain_missing_output"
+if grep -Fq '== STEP: verify checks' "$full_chain_missing_output"; then
+  echo "land full-width-chain fixture: missing receipt reached verification" >&2
+  exit 1
+fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+    --test-receipt "$full_chain_other_receipt" --staged-only --skip-transport
+) >"$full_chain_mismatch_output" 2>&1
+full_chain_mismatch_rc=$?
+set -e
+[[ $full_chain_mismatch_rc == 2 ]] || {
+  echo "land full-width-chain fixture: mismatched receipt exited $full_chain_mismatch_rc, want 2" >&2
+  sed -n '1,180p' "$full_chain_mismatch_output" >&2
+  exit 1
+}
+grep -Fq "land refused: the receipt at $full_chain_other_receipt names tree $full_chain_other_tree but the staged candidate is $full_chain_candidate; make the receipt against this exact candidate" \
+  "$full_chain_mismatch_output"
+if grep -Fq '== STEP: commit' "$full_chain_mismatch_output"; then
+  echo "land full-width-chain fixture: mismatched receipt reached commit" >&2
+  exit 1
+fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+
+(
+  cd "$leg_local"
+  "$source_engine" landing test-receipt --root . \
+    --tree "$full_chain_candidate" --command "$full_battery_command"
+) >/dev/null
+full_chain_receipt=artifacts/agents/landing/receipts/$full_chain_candidate.json
+(
+  cd "$leg_local"
+  LAND_FIXTURE_CHAIN_LOG="$full_chain_log" \
+    bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+      --test-receipt "$full_chain_receipt" --staged-only --skip-transport
+) >"$full_chain_landing_output" 2>&1 || {
+  echo "land full-width-chain fixture: matching receipt did not land" >&2
+  sed -n '1,220p' "$full_chain_landing_output" >&2
+  exit 1
+}
+grep -Fxq 'chain=full-chain' "$full_chain_log"
+grep -Fxq "testReceipt=$full_chain_receipt" "$full_chain_log"
+grep -Fxq 'verdict=pass bar=a' "$full_chain_log" || {
+  echo "land full-width-chain fixture: commit boundary did not observe pass bar a" >&2
+  cat "$full_chain_log" >&2
+  exit 1
+}
+git -C "$leg_local" show -s --format=%B HEAD \
+  | grep -Fxq 'Landing-Provenance-Verdict: pass bar=a'
+git -C "$leg_local" show -s --format=%B HEAD \
+  | grep -Fq 'Landing-Provenance: chain=full-chain change='
+[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+echo "land full-width-chain fixture passed"
 fi

@@ -6,7 +6,7 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> --tests <command>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--test-receipt <path>] [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> --tests <command>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
@@ -83,6 +83,11 @@ while (( $# )); do
       landing_tests=$2
       shift 2
       ;;
+    --test-receipt)
+      [[ $# -ge 2 && -z "$landing_test_receipt" ]] || { usage; exit 2; }
+      landing_test_receipt=$2
+      shift 2
+      ;;
     --)
       shift
       while (( $# )); do
@@ -111,6 +116,21 @@ if (( ! staged_only && ${#pathspecs[@]} == 0 )); then
   echo "land refused: name pathspecs or choose --staged-only" >&2
   exit 2
 fi
+if [[ -n "$landing_tests" && -n "$landing_test_receipt" ]]; then
+  echo "land refused: --tests and --test-receipt cannot be combined; remove --test-receipt for a tier-1 landing, or remove --tests for a receipted chain landing" >&2
+  usage
+  exit 2
+fi
+if [[ "$landing_direct_fix" == tier-1 && -n "$landing_test_receipt" ]]; then
+  echo "land refused: --test-receipt cannot be combined with --direct-fix tier-1; remove --test-receipt and use --tests so land.sh creates the tier-1 receipt" >&2
+  usage
+  exit 2
+fi
+if [[ -n "$landing_test_receipt" && -z "$landing_chain" ]]; then
+  echo "land refused: --test-receipt belongs only with --chain; add --chain <root-job> or remove --test-receipt" >&2
+  usage
+  exit 2
+fi
 if [[ "$landing_direct_fix" == tier-1 ]]; then
   [[ $landing_goal_set -eq 1 && -n "$landing_goal" && -n "$landing_root_job" && -n "$landing_tests" ]] || {
     echo "land refused: --direct-fix tier-1 requires --goal, --root-job, and --tests" >&2
@@ -119,6 +139,16 @@ if [[ "$landing_direct_fix" == tier-1 ]]; then
 elif [[ -n "$landing_root_job" || -n "$landing_tests" ]]; then
   echo "land refused: --root-job and --tests belong only to --direct-fix tier-1" >&2
   exit 2
+fi
+
+if [[ -n "$landing_chain" && "$landing_chain" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+  chain_gate_width=$("$ms" json get \
+    --file "$root/artifacts/agents/jobs/$landing_chain.json" \
+    --field gateWidth --default area 2>/dev/null || true)
+  if [[ "$chain_gate_width" == full && -z "$landing_test_receipt" ]]; then
+    echo "land refused: chain $landing_chain is full-width (its goal's accumulation is 2 or more); make the full battery receipt for the candidate tree first (metasystem landing test-receipt --root . --tree <subtree> --command \"<the full battery command from metasystem/internal/landing/tierone.go>\") and pass it with --test-receipt" >&2
+    exit 2
+  fi
 fi
 
 message_file=$message_source
@@ -286,14 +316,41 @@ commit_changes() {
   bash "$root/scripts/agents/commit.sh" "${arguments[@]}"
 }
 
-create_test_receipt() {
-  [[ -n "$landing_tests" ]] || return 0
+staged_candidate_tree() {
   local candidate_tree prefix
   candidate_tree=$(git -C "$root" write-tree) || return $?
   prefix=$(git -C "$root" rev-parse --show-prefix) || return $?
   if [[ -n "$prefix" ]]; then
     candidate_tree=$(git -C "$root" rev-parse "$candidate_tree:${prefix%/}") || return $?
   fi
+  printf '%s\n' "$candidate_tree"
+}
+
+check_supplied_test_receipt() {
+  local candidate_tree receipt_tree receipt_failure=
+  # A caller-provided --test-receipt belongs to one exact staged candidate.
+  candidate_tree=$(staged_candidate_tree) || return $?
+  if [[ ! -e "$landing_test_receipt" ]]; then
+    receipt_failure=missing
+  elif [[ ! -f "$landing_test_receipt" || ! -r "$landing_test_receipt" ]]; then
+    receipt_failure=unreadable
+  elif ! receipt_tree=$("$ms" json get --file "$landing_test_receipt" --field tree 2>/dev/null); then
+    receipt_failure="no tree field"
+  fi
+  if [[ -n "$receipt_failure" ]]; then
+    echo "land refused: the receipt at $landing_test_receipt cannot be read as a landing receipt ($receipt_failure)" >&2
+    return 2
+  fi
+  if [[ "$receipt_tree" != "$candidate_tree" ]]; then
+    echo "land refused: the receipt at $landing_test_receipt names tree $receipt_tree but the staged candidate is $candidate_tree; make the receipt against this exact candidate" >&2
+    return 2
+  fi
+}
+
+create_test_receipt() {
+  local candidate_tree
+  [[ -n "$landing_tests" ]] || return 0
+  candidate_tree=$(staged_candidate_tree) || return $?
   "$ms" landing test-receipt --root "$root" --tree "$candidate_tree" --command "$landing_tests" || return $?
   landing_test_receipt="$root/artifacts/agents/landing/receipts/$candidate_tree.json"
 }
@@ -333,6 +390,9 @@ fi
 
 run_required_step "verify checks" verify_checks
 run_required_step "stage caller paths" stage_changes
+if [[ -n "$landing_test_receipt" ]]; then
+  run_required_step "test receipt for staged candidate" check_supplied_test_receipt
+fi
 run_required_step "tier-1 test receipt" create_test_receipt
 run_required_step "commit" commit_changes
 run_required_step "verify clean after commit" require_clean_after_commit
