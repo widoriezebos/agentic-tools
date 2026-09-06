@@ -1,7 +1,9 @@
 # Design: the supervision hook resolves the metasystem world, not the outer repository
 
 Goal: supervision-hook-wrong-root (plans/goals/supervision-hook-wrong-root.md,
-revision 6). Author: implementer delegate under dispatch by
+revision 6); since the 2026-09-06 split, the design's remaining scope is
+goal hook-root-resolver-design (member B), member A having landed as
+43c3d3c08. Author: implementer delegate under dispatch by
 m0b+main-1788250419-3170380-8a1fb3. **Revision 3, 2026-09-02**: folds all five
 findings of records/misc/hook-root-critique-r2.md by id (SHR-R2-INSTALL-01,
 SHR-R2-WORKTREE-ENGINE-01, SHR-R2-ENGINE-SKEW-01, SHR-R2-WORKTREE-FALLBACK-01,
@@ -51,6 +53,52 @@ tagged inline. Hook line numbers this revision introduces are at commit
 edits worker verdict responses whose parent, as shipped, can discard,
 replace, or record against another world (the critic's exact claim, bound
 here).
+
+**Revision 6, 2026-09-06**: written by implementer job hrd-fold6-20260906
+under goal hook-root-resolver-design (member B of the 2026-09-06 split of
+supervision-hook-wrong-root; member A, hook-root-installation-fix, landed
+as 43c3d3c08). It folds the three findings of
+records/misc/hook-root-critique-r5.md by id.
+SHR-R5-DEADLINE-OVERRIDE-ENGINE-SPLIT-01: the deadline parent runs ONE
+engine for everything it asks an engine — the session parse, the
+state-root derivation, the validation of the worker's JSON, and the refusal
+record — and that engine is the override when `METASYSTEM_BIN` is set; the
+installation's own engine is provenance evidence only, in the parent
+exactly as in the worker; the state-root query moves into the resolver
+subshell the deadline already kills, so a slow engine cannot eat the
+parent's reserve (Decision 1, parent subsection; Decision 2 failure map;
+cases 11 and 13 re-pinned with an old canonical engine and a compatible
+override). SHR-R5-SKEW-FIXTURE-VALIDATOR-01: the old-engine stub of case 7
+answers every verb the parent and worker use except `path state-root`,
+which it refuses the way the real pre-verb dispatcher does, so the parent
+validates the skew literal through its structured path and the fixture
+observes the literal itself; the second firing revision 5's self-grade
+proposed for the no-validator fallback is withdrawn as unreachable, and the
+fallback's skew acceptance goes with it (Decision 2, case 7).
+SHR-R5-TEMPLATE-MARKER-SECOND-AUTHORITY-01: the compiled authority is the
+only state-root authority; the worker's template-marker block and the
+marker test member A added to the parent's trail helper today are deleted,
+`state_root` disappears as a name, every consumer names `$repo` — the
+engine's answer for the installation — and the `missing-template` fixture
+is repurposed to assert the missing-engine cause and the absence of writes
+(Decision 1, new subsection; Decision 3; Decision 4). It also folds two
+carry-overs member A's code critique recorded on this goal: hook-freshness
+stays dead on nested checkouts after member A because the steward component
+record is written under the Git toplevel while health reads it under the
+steward's own root — that site is named in Decision 3's consumer sweep with
+the fixture that proves hook-freshness alive on a nested checkout, which is
+this goal's DONE (case 14); and the operator-layout scenario's "no
+artifacts beneath the vendored installation" check is repeated after its
+hook Stop. One fact changed since revision 5: the engine re-arm landed
+today (ea8c3ead7), so the hook keys a re-arm notice from the `up` aggregate
+line on the worker's Stop path and on the start path; the consumer table
+and the blast rows below read the file as it stands. Hook line numbers this
+revision introduces are at commit 3c753c5ef (marked "today"), where the
+Stop-deadline parent occupies `supervision-hook.sh:32-240` and the worker
+body starts at line 242; revision 5's "HEAD" numbers (commit 12ed490c3)
+shift by member A's and the re-arm's insertions and are re-cited here
+wherever revision 6 binds them. A "Where each round-5 finding lands" table
+closes Decision 4.
 
 ## The defect, restated against the code
 
@@ -488,7 +536,11 @@ repo=$(cd -- "$repo" 2>/dev/null && pwd -P) || exit 0
 (HEAD line 21), engine-independent by construction:
 `{"decision":"block","reason":"Metasystem engine and hook are out of step: this engine does not answer path state-root, so stopping safety cannot be judged; rebuild bin/metasystem before stopping."}`.
 The parent's no-validator fallback (HEAD 172-175) accepts this literal
-exactly as it accepts the missing-engine literal (below).
+exactly as it accepts the missing-engine literal (below). **Revision 6
+withdraws that sentence**: the parent validates the skew literal through
+its structured path, because a worker that emitted it had both
+executables and so does its parent; the fallback stays as shipped
+(Decision 1, parent subsection; Decision 2).
 
 ### The Stop-deadline parent (folds SHR-R4-DEADLINE-PARENT-01)
 
@@ -521,7 +573,8 @@ location.**
 - **Installation.** While the worker runs, the parent calls
   `hook_world_installation` (the function defined above, before line 32);
   the answer is `deadline_installation`. On failure the parent's world is
-  unknown: `deadline_validator` and `deadline_canonical` are set empty, so
+  unknown: `deadline_validator` (revision 6: `deadline_engine`) and
+  `deadline_canonical` are set empty, so
   `-x` fails, the no-validator fallback governs completion, and the
   timeout path takes the shipped record-failure branch. The worker in the
   same state exited silently at identification, which that fallback
@@ -535,7 +588,10 @@ location.**
   the primary, where the engine is, so the parent can validate the
   worker's ordinary JSON and can write a refusal record. The resolver
   subshell (67-75) keeps using `deadline_canonical` for `json get`; its
-  cwd line becomes unused and is dropped with `deadline_cwd`.
+  cwd line becomes unused and is dropped with `deadline_cwd`. **Revised
+  by revision 6** (below): `deadline_validator` is renamed
+  `deadline_engine`, it is set only when both executables exist, the
+  subshell runs on it, and its second line carries the state root.
 - **Refusal-record root.** `deadline_resolve_record` (82-93) no longer
   runs git over the payload cwd. It computes
   `deadline_repo=$("$deadline_canonical" path state-root
@@ -552,12 +608,115 @@ location.**
   `sed` extraction (77), and the engine-coordinate capture of a second
   line (98-106) are deleted; only the session line of the resolution file
   remains, and `deadline_session` keeps its shell-then-engine precedence.
+  **Revised by revision 6** (below): the query runs on `deadline_engine`,
+  inside the resolver subshell rather than synchronously, and the
+  resolution file's second line is kept to carry its answer;
+  `deadline_resolve_record` consumes `deadline_repo` and computes nothing
+  else.
 - **Validation is unchanged in shape.** The parent's acceptance predicate
   (165-171) and its two fallbacks (172-177) are untouched; the fold only
   moves which engine validates and where the record lands. Because
   Decision 2 now makes the missing-engine and skew outcomes literal
   blocks, the no-validator fallback accepts both literals byte-for-byte
   (174 gains `|| [[ "$deadline_raw" == "$raw_engine_skew_stop" ]]`).
+  **Withdrawn by revision 6** (below): the fallback stays exactly as
+  shipped and accepts only the missing-engine literal.
+
+**One engine in the parent (revision 6, folds
+SHR-R5-DEADLINE-OVERRIDE-ENGINE-SPLIT-01).** Round 5 showed that revision
+5 kept two engines in the parent: the override validated the worker's
+JSON, but the canonical engine still derived the refusal-record world and
+still wrote the record (`report stop-block`, today's line 224). On the
+fleet that split is not hypothetical: engines are rebuilt daily, so an
+installation whose `bin/metasystem` predates `path state-root` while the
+operator's `METASYSTEM_BIN` names a rebuilt one is the ordinary
+post-landing state. Under revision 5 that turn's worker governed
+correctly through the override, and its parent, on timeout, asked the old
+engine for the state root, got exit 2, and emitted the record-failure
+allow line — the exact loss SHR-R4-DEADLINE-PARENT-01 was folded to
+prevent, reopened by the engine choice. The rule, stated once for both
+halves of the hook: **the installation's own engine is evidence that the
+candidate is an installation, and nothing else; the engine that RUNS is
+`METASYSTEM_BIN` when set, and it runs everything.** In the worker that is
+already the `canonical`/`ms` pair of the provenance rule. In the parent
+the same pair is `deadline_canonical` and `deadline_engine`:
+
+- **Names.** `deadline_canonical=$deadline_installation/bin/metasystem`
+  as revision 5 has it. `deadline_engine` replaces `deadline_validator`
+  and is set to `"${METASYSTEM_BIN:-$deadline_canonical}"` only when BOTH
+  `-x "$deadline_canonical"` and `-x "$deadline_engine"` hold; otherwise
+  it is the empty string. Every engine invocation in the parent block
+  names `$deadline_engine`: the resolver subshell's `json get` (today's
+  line 69), the state-root query (below), the six validation calls
+  (today's lines 160-171), and the timeout record (today's line 224).
+  `deadline_canonical` appears in the parent in exactly one place, the
+  executable test. An empty `deadline_engine` is what the shipped code
+  already treats as "no validator" (`[[ -x "$deadline_validator" ]]` at
+  today's line 159 fails on an empty string), so the no-validator fallback
+  and the record-failure branch govern without a new branch.
+- **Placement: the state-root query is timeout-safe because it runs where
+  the deadline can kill it.** The shipped parent keeps its main flow free
+  of engine waits until the worker finishes or the deadline passes: engine
+  parsing runs in the resolver subshell (today's lines 67-75), which the
+  wait loop harvests (`deadline_capture_engine_coordinates`, 110-123) and
+  the deadline stops (`deadline_stop_resolver`, 124-135). Revision 5 put
+  `path state-root` in `deadline_resolve_record`, which the parent calls
+  synchronously right after the worker launch (today's line 94); on an
+  engine that is slow for that verb the parent would enter its wait loop
+  late and the Stop would overrun Claude's five seconds with no emission
+  at all. Revision 6 moves the query into the subshell: its second line,
+  which today carries the payload cwd (line 70), carries the engine's
+  state-root answer instead — `resolver_root=$("$deadline_engine" path
+  state-root "$deadline_installation" 2>/dev/null) || resolver_root=` —
+  and the session line keeps its `|| exit 1` shape only for itself: the
+  subshell writes both lines whatever each returned, so a failed session
+  parse cannot discard a good root and a refused root cannot discard a
+  good session. `deadline_capture_engine_coordinates` reads the first
+  non-empty line into `deadline_session` (as today) and the second
+  non-empty line into `deadline_repo`, then calls
+  `deadline_resolve_record`, which now needs only `deadline_session` and
+  `deadline_repo`: it physically normalizes the root (today's line 87,
+  guarded `|| return 1`), keeps the slug and record path (88-92), and
+  clears the failure text. The synchronous call at today's line 94 is
+  deleted with `deadline_cwd` and its `sed` (line 77): before the engine
+  answers there is nothing a shell can resolve, by design. The subshell is
+  started only when `deadline_engine` is non-empty (today's line 67, with
+  the double test in place of the single one).
+- **What the timeout path can and cannot do.** If the subshell answered
+  inside the worker's wait, the timeout writes the refusal record through
+  `$deadline_engine` under the state world and emits the block, as the
+  deadline fixture asserts today. If it did not — the engine is slow for
+  `path state-root`, the verb refused (exit 1), the engine lacks the verb
+  (exit 2), or the installation could not be identified —
+  `deadline_record` is empty and the parent emits the shipped
+  record-failure allow line (today's lines 232-234). That last outcome is
+  narrower than it was: under revision 5 an old canonical engine reached it
+  on every overridden timeout; under revision 6 only an engine that cannot
+  answer for itself does, and such an engine has already blocked the
+  worker's Stop with the skew literal on every completed turn, so the
+  drift is visible before the first timeout. The parent's wall-clock
+  contract is unchanged: no engine call sits between the worker launch and
+  the wait loop.
+- **The record write is on the one engine.** `report stop-block
+  --refusal-record ...` at today's line 224 runs `"$deadline_engine"`, so
+  an overridden timeout writes through the engine that computed the
+  world; the canonical engine never writes anything in an overridden turn.
+  Fixture consequence: the shipped deadline fixture's wrapper
+  (`supervision-hook-fixtures.sh:405-413`) sleeps on `runtime list` and
+  execs the real engine for every other verb, so its two firings keep
+  their record location and both assertions; the failure-engine and
+  kill-engine wrappers forward every parent verb unchanged.
+- **The no-validator fallback is as shipped.** Revision 5 widened it to
+  accept the skew literal for the race window between the worker's and the
+  parent's executable tests. That widening is withdrawn: the skew literal
+  is emitted only in a world where both executables exist, and in that
+  world the parent has `deadline_engine` and validates through the
+  structured path, so no consistent world reaches the fallback with the
+  skew literal (SHR-R5-SKEW-FIXTURE-VALIDATOR-01's second part). In the
+  race window the fallback rejects the literal and the parent emits its
+  generic block — still a block, without the rebuild remedy, for one Stop.
+  The fallback compares one literal, the missing-engine block, exactly as
+  today's line 189 does.
 
 Consequence for the one-world claim of Decision 4: in the mapped case the
 parent's validator, canonical engine, and refusal record are the primary's,
@@ -579,6 +738,89 @@ caller, and no fixture drives that fallback). Every
 342, 348; `lease classify` at 122, 131; `health` at 161) becomes
 `--metasystem-root "$world_installation"`, so the whole turn rides one
 world; where no mapping occurred the value is byte-identical to today's.
+Today those sites are `up` at 433, 439, 711, 724; `lease classify` at 377,
+391; `health` at 451; and member A's `proc find-ancestor --repo
+"$harness_root"` at 357 joins the list: the adapters belong to the
+installation, so it takes `$world_installation` too (Decision 3's sweep).
+
+### The compiled authority is the only one (revision 6, folds SHR-R5-TEMPLATE-MARKER-SECOND-AUTHORITY-01)
+
+Revision 5 replaced the cwd-and-toplevel block (today's lines 276-292)
+with the verb call and said nothing about the block that follows it.
+Today's lines 293-306 are a second state-root authority written in shell:
+`state_root=$repo`, then a test for `$repo/development/metasystem-design.md`,
+then either `exit 1` on a Stop (when the hook's installation is not
+`$repo/metasystem` or carries no `metasystem.conf`) or
+`state_root=$harness_root`. Member A's landing today added a third copy:
+`deadline_log_stop_outcome` (today's lines 95-109) derives
+`supervision_root` from the same marker test (99-103) so the parent's trail
+line lands beside the worker's. Both copies exist because, before this
+design, `$repo` was the Git toplevel and something had to find the
+installation's state again; after this design `$repo` IS the state world,
+computed by `templateMode` and `RootForInstallation`
+(`stateroot.go:157-163,100-108`) inside `path state-root`, so the shell
+copies can only agree with the engine or contradict it. They contradict it
+in two supported cases the critic named: an adopted installation inside a
+repository that also carries the marker (the engine answers the toplevel
+because the installation is not named `metasystem`; the shell block exits
+1 on Stop, which the parent turns into the generic block, so an
+engine-approved world is refused by a pathname test), and a template
+installation whose configuration is `.local`-only (the engine accepts it,
+`stateroot.go:149-153` and `internal/config/resolve.go:24-27,71-95`; the
+shell block refuses it for lacking `metasystem.conf`). Those are the two
+defects revision 1's marker rule was withdrawn for, alive in shipped code.
+The verdict revision 6 binds:
+
+- **The worker block at today's lines 293-306 is deleted entire**, with
+  the three names it introduces (`state_root`, `template_marker`,
+  `template_installation`). No compatibility alias is kept: an alias is a
+  second name for one value, and a second name is where the next
+  divergence starts. **Every consumer of `$state_root` names `$repo`**:
+  `lease classify --root` (today's 377, 391), the trail directory in
+  `emit_stop_payload` (485), `lease protocol-growth --root` (550),
+  `lease protocol-advance --root` (584, 687), `lease renew --root` (590),
+  the trail directory before the collector (613), `report turn-verdict
+  --root` (630), and `session end --root` (701). The implementer greps
+  `state_root` in the hook after the edit and finds no hit.
+- **The parent's marker test at today's lines 99-103 is deleted** with
+  `supervision_root`; `deadline_log_stop_outcome` writes to
+  `"$deadline_repo/artifacts/agents/supervision"`, where `deadline_repo`
+  is the state-root answer harvested from the resolver subshell (parent
+  subsection above). The helper's `[[ -n "${deadline_repo:-}" ]] ||
+  return 0` guard (today's line 97) stands: a parent that could not name
+  the world logs nothing, as today.
+- **Member A's intent is kept by construction, not by a test.** Member A
+  moved the three trail sites onto the marker-derived root so the trail
+  sits beside the supervision state in both layouts. Under revision 6 the
+  trail sites name `$repo` and `$deadline_repo`, which are
+  `RootForInstallation(world_installation)`: the installation in the
+  self-hosting layout (template mode), the repository scope in the
+  vendored-operator layout (adopted mode) — the same two answers, from the
+  authority `up` arms with. The template-layout assertions member A added
+  (`supervision-hook-fixtures.sh:680-683`: the trail exists under the
+  nested installation and not under the outer root) and the nested-root
+  scenario's case 3 pin the self-hosting half; the operator-layout
+  after-Stop check (Decision 3) pins the vendored half.
+- **The `missing-template` fixture (`supervision-hook-fixtures.sh:522-540`)
+  is repurposed, not retired.** Its bed is a hook copy at
+  `<outer>/metasystem/scripts/agents/` under a marker-carrying outer root,
+  with no `bin/metasystem` at the installation, fired on Stop under an
+  override that forwards to a real engine. Today it blocks because the
+  shell marker block exits 1; under revision 5's double executable test it
+  blocks because the canonical engine is missing; its one assertion,
+  `"decision":"block"`, passes for either authority and so proves nothing
+  about which one answered. It now asserts what only the compiled
+  authority's path produces: the output contains `engine missing` (the
+  shipped literal's remedy text) and no `HEALTH unknown` line, exactly the
+  shipped missing-engine fixture's pair of assertions
+  (`supervision-hook-fixtures.sh:152-157`), and after the firing
+  `[[ ! -e "$missing_template_outer/artifacts" && ! -e
+  "$missing_template_root/artifacts" ]]`. Before the fold the output is
+  the parent's generic block (`could not prove that stopping is safe`),
+  which carries no `engine missing`, so the fixture fails before and
+  passes after. It is the hook-fixtures-file twin of Decision 3 case 6:
+  a hook without its own engine is not an installation, override or not,
+  marker or not.
 
 Case table — every hook firing resolves to exactly one world or one
 defined degradation:
@@ -591,7 +833,10 @@ defined degradation:
 | Linked delegate worktree of the fleet checkout (tracked files only: no engine, no artifacts in the sandbox) | `<worktree>/metasystem` | mapped to `<primary>/metasystem` **before** engine work; the primary's engine answers: template mode → the primary world |
 | Hook copy or terminal hook symlink inside some repository, no engine at the candidate — with or without `METASYSTEM_BIN` | anywhere | the missing-engine BLOCK on stop, exit 0; no world, no writes (revision 5) |
 | Governed installation whose engine predates this design | any supported layout | the engine/hook-skew BLOCK on stop, exit 0 (Decision 2, revision 5) |
-| Hook staged outside any git repository | anywhere | identification fails → worker silent exit 0; on stop the parent converts silence to its generic block (HEAD 176-177) |
+| Governed installation whose own engine predates this design, under a `METASYSTEM_BIN` override that is a rebuilt engine (the fleet's daily post-landing state) | any supported layout | the override answers for the installation in the worker AND in the parent: an ordinary verdict on completion, a refusal record under the state world on timeout (revision 6) |
+| Adopted installation (not named `metasystem`) inside a repository that also carries `development/metasystem-design.md` | `<repo>/<anything-else>` | the engine answers: adopted mode → the repository toplevel; today's shell marker block refused this world with exit 1 on Stop, and is deleted (revision 6) |
+| Template installation with `.local`-only configuration (no `metasystem.conf`) | `<wrapper>/metasystem` | the engine answers: template mode → the installation; today's shell marker block refused it, and is deleted (revision 6) |
+| Hook staged outside any git repository | anywhere | identification fails → worker silent exit 0; on stop the parent converts silence to its generic block (today 191-193) |
 
 ### Placement and the binding header contract
 
@@ -614,10 +859,14 @@ verdict can be made; (4) registry membership — an unknown runtime exits 2;
 to the same installation every consumer flag of the turn names: its exit-1
 refusal is benign silence, any other failure blocks a Stop as engine/hook
 skew; (6) the Stop-deadline parent resolves the same installation by the
-same function, validates with the same engine rule, and records refusals
-under the same world.* The old items (4) session environment and (5) cwd
+same function, runs one engine — the override when set — for its session
+parse, its state-root query, its validation, and its refusal record, and
+records refusals under the same world; (7) the state world has one name,
+`$repo`, and no shell test re-derives it from a marker, a pathname, or a
+configuration file.* The old items (4) session environment and (5) cwd
 resolution are deleted with their code; the shipped item (2) wording ("a
-missing engine blocks a Stop", HEAD 4-6) is kept, not weakened. The B1
+missing engine blocks a Stop", today's lines 4-6) is kept, not weakened.
+Items (6) and (7) are revision 6's. The B1
 guarantee ("a missing engine with an unusable TMPDIR must still exit 0
 benign") is preserved: the mapping uses no temporary files, the
 missing-engine block is a literal `printf`, and payload staging still
@@ -693,17 +942,30 @@ The complete failure map:
 | `path state-root "$world_installation"`, any other nonzero exit, or exit 0 with empty stdout | verb absent from an older engine (verified exit 2), family absent, a usage refusal (exit 2), or a broken answer | **the engine/hook-skew BLOCK on stop** (`raw_engine_skew_stop`, a literal `printf` mirroring the missing-engine block), exit 0 (SHR-R4-FAIL-CLOSED-REGRESSION-01) |
 | final `repo` physical normalization | directory vanished or unreadable | worker silent exit 0; on stop the parent's generic block |
 | evidence-trail `mkdir -p "$supervision_dir"` (HEAD 580, reachable with a write-denied primary from a sandboxed worktree session) | permission denied | gains `2>/dev/null || true`; the appends that follow already carry their own guards (HEAD 582, 613-614, 640-641) |
-| parent: `hook_world_installation` (SHR-R4-DEADLINE-PARENT-01) | any identification or mapping failure | `deadline_validator` and `deadline_canonical` empty; completion takes the no-validator fallback (HEAD 172-175), timeout takes the record-failure allow line (216) — the shipped shape for an unresolvable world |
-| parent: `-x "$deadline_canonical"` | no engine at the mapped installation | same as the row above; the worker in the same state emitted the missing-engine block, which the fallback accepts byte-for-byte |
-| parent: `"$deadline_canonical" path state-root "$deadline_installation"` | exit 1 (ungoverned), any other failure, empty answer | `deadline_record` stays empty → on timeout the record-failure allow line (HEAD 207-217), never a record under a cwd-derived root |
+| parent: `hook_world_installation` (SHR-R4-DEADLINE-PARENT-01) | any identification or mapping failure | `deadline_engine` and `deadline_canonical` empty; completion takes the no-validator fallback (today 187-190), timeout takes the record-failure allow line (232-234) — the shipped shape for an unresolvable world |
+| parent: `-x "$deadline_canonical" && -x "$deadline_engine"` (revision 6) | no engine at the mapped installation, or an override that is not executable | `deadline_engine` empty; same as the row above; the worker in the same state emitted the missing-engine block, which the fallback accepts byte-for-byte |
+| parent resolver subshell: `"$deadline_engine" path state-root "$deadline_installation"` (revision 6) | exit 1 (ungoverned), any other failure, empty answer, or no answer before the deadline (a slow engine) | the subshell's root line is empty or never arrives; `deadline_repo` and `deadline_record` stay empty → on timeout the record-failure allow line (today 232-234), never a record under a cwd-derived root and never a wait in the parent's main flow; the worker in the same world already blocked its completed Stops with the skew literal, so the drift is visible before the first timeout |
+| parent: `"$deadline_engine" report stop-block` on timeout (revision 6) | the one engine cannot write the record | `deadline_record_failure` set → the record-failure allow line, as today (224-234); the canonical engine writes nothing in an overridden turn |
+| parent: structured validation of the skew literal (revision 6) | the one engine's `json get` or `json strip` fails on the literal | the generic block (today 191-193), as for any unparseable worker answer; a real pre-verb engine answers both verbs, and case 7's stub forwards them, so the literal validates as an ordinary block and passes through |
 
 Worker silence and the parent: every "worker silent exit 0" row above is
 the worker's own behavior; on a Stop the shipped parent converts an empty
-worker answer into its generic block (`emit_raw_stop_block`, HEAD 176-177;
-the contract stated at 268-270). Revision 5 inherits that conversion
-unchanged — it is the fail-closed floor beneath every silent row — and the
-"exactly two fixed outputs" sentence below counts the worker's own
-emissions.
+worker answer into its generic block (`emit_raw_stop_block`, today
+191-193; the contract stated at 286-288). Revision 5 inherits that
+conversion unchanged — it is the fail-closed floor beneath every silent
+row — and the "exactly two fixed outputs" sentence below counts the
+worker's own emissions.
+
+How the parent sees the two literals (revision 6): the missing-engine
+literal is emitted by a worker with no `deadline_engine` counterpart in
+the parent, so it reaches the no-validator fallback and is accepted
+byte-for-byte (today's line 189). The skew literal is emitted by a worker
+whose two executable tests passed, so the parent in the same world has
+`deadline_engine` and validates the literal through the structured path
+(today 159-186): decision `block`, a non-empty string reason, no
+`systemMessage`, nothing else — which the literal satisfies. The fallback
+therefore never needs to know the skew literal, and revision 5's widening
+of it is withdrawn.
 
 A cwd outside any git repository — today's benign case at line 65 —
 remains benign by construction: cwd no longer participates at all.
@@ -831,6 +1093,44 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   literal as an ordinary block; the fixture's `HEALTH unknown` negative
   is the same assertion the shipped missing-engine fixture makes at
   `supervision-hook-fixtures.sh:152-153`, which stays as it is.
+  **Re-specified by revision 6 (SHR-R5-SKEW-FIXTURE-VALIDATOR-01).** Round
+  5 showed the exit-2-for-everything stub cannot prove the block: the
+  parent's validator is that stub, its six `json get`/`json strip` calls
+  (today 160-171) all exit 2, validation fails, and the parent replaces
+  the literal with its generic block, so `does not answer path state-root`
+  never reaches the output. The stub must model what an engine built
+  before this verb actually does, which is to answer every verb it has
+  and refuse the one it lacks. **The stub `skew_root/bin/metasystem` is a
+  script that, when its first two arguments are `path` and `state-root`,
+  prints `metasystem path: unknown verb "state-root"` to stderr and exits
+  2 — the exact observed behavior of the pre-fix binary (Decision 2) —
+  and otherwise `exec`s the fixture harness's real engine `$ms`
+  (`supervision-fixtures.sh:120`).** What the fixture then observes, and
+  why it discriminates: the worker passes both executable tests (the stub
+  is executable and is the canonical engine; no override is set), stages
+  its payload through the stub's forwarded `runtime list` and `json get`,
+  calls `path state-root`, gets exit 2, and prints the skew literal; the
+  parent has `deadline_engine` (the stub), parses the literal through the
+  forwarded `json get` and `json strip`, finds decision `block`, a string
+  reason, no `systemMessage`, and passes the worker's bytes through
+  unchanged. Assertions: exit 0; `"decision":"block"` and `does not
+  answer path state-root` each exactly once in the output; no `HEALTH
+  unknown` line; no `could not prove that stopping is safe` (the generic
+  block's text, which is what the exit-2 stub produced); no
+  `hooks.log` under `skew_root`; and no `stop-refusals/` under
+  `skew_root` (the parent's resolver got exit 2 from the stub for its own
+  state-root query and so wrote nothing). Against today's hook the same
+  bed runs a full turn through the forwarded engine — the hook never calls
+  `path state-root` — and ends with an ordinary verdict quoting
+  `skew_root`'s sentinel; that output contains neither `does not answer
+  path state-root` nor a block-shaped refusal of engine drift, so the
+  case fails before the fold and passes after. Revision 5's self-grade
+  (k) proposed a second firing with `METASYSTEM_BIN` pointing at a
+  non-executable file to reach the no-validator fallback with the skew
+  literal; that firing fails the double executable test and produces the
+  missing-engine literal, as the critic showed, and is withdrawn — the
+  fallback no longer accepts the skew literal (Decision 1), so there is
+  nothing left to pin there.
 - **Case 8, session `nested-worktree-steered` (SHR-R3-GIT-STEERING-01
   pin)** — case 4 repeated with the exact steering the critic used
   exported into the hook's environment: `GIT_DIR=$scope/.git
@@ -917,6 +1217,156 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   parent's validator is the override, its canonical engine and record
   root are the primary's.
 
+  **Cases 11 and 13 re-pinned by revision 6
+  (SHR-R5-DEADLINE-OVERRIDE-ENGINE-SPLIT-01).** As written above, the
+  override merely forwards to the primary's own compatible engine, so a
+  parent that asked the canonical engine for the state root would get the
+  same answer and the split could not show. The two timeout cases now run
+  LAST in the `nested-root` scenario, after every other case, and just
+  before them the fixture replaces the primary's engine: `cp` the case-7
+  stub over `$scope/metasystem/bin/metasystem`, so the installation's own
+  engine is one that answers every verb but refuses `path state-root`
+  with exit 2 — the fleet's post-landing state, an old binary at the
+  enrolled path. `$tmp/wt-deadline-engine` keeps the deadline fixture's
+  shape (`supervision-hook-fixtures.sh:405-413`: sleep 4.5 s on `runtime
+  list`) but `exec`s the fixture harness's real engine `$ms`, a compatible
+  engine whose physical installation is never `$scope/metasystem` (the
+  case-9 pairing condition, now on the parent). What each half does: the
+  worker's two executable tests pass (the stub is executable at the
+  mapped primary; the override is executable), its `runtime list` through
+  the override sleeps past the deadline, and the parent kills it; the
+  parent's `deadline_engine` is the override, its resolver subshell parses
+  the session and asks `path state-root "$scope/metasystem"` through the
+  override, gets `$scope/metasystem` (template mode) inside the worker's
+  wait, and on timeout writes the record through the override. Assertions
+  are case 11's and 13's as stated — exit 0, elapsed under five seconds,
+  `"decision":"block"` and `deadline expired before a safe turn verdict`,
+  the record at `$scope/metasystem/artifacts/agents/supervision/
+  stop-refusals/<session>.json` with `sessionId` equal to the session, and
+  no `artifacts/` under `$tmp/nested-wt/metasystem`, `$tmp/nested-wt`, or
+  `$scope` — plus one negative: the output does not contain `could not
+  update the stop-refusal record` (the record-failure allow line, today's
+  line 234). Under revision 5 the parent asked the stub for the state
+  root, got exit 2, left `deadline_record` empty, and emitted exactly that
+  allow line with no record anywhere, so both cases fail before the fold
+  and pass after. Cases 10 and 12 (completion) are unchanged and run
+  before the engine swap; they already exercise the override as the
+  parent's validator, and their outcome does not depend on which engine
+  derives the state root, which is why they could not carry this pin.
+  After case 13 nothing in the scenario fires the primary's engine again;
+  the stub is left in place.
+
+- **Case 14, session `nested-freshness` — hook-freshness alive on a nested
+  checkout (revision 6; this goal's DONE).** Fired in the `nested-root`
+  scenario immediately after case 3, before any worktree case and long
+  before the case-11 engine swap, through
+  `$scope/metasystem/scripts/agents/supervision-hook.sh` on `stop` with
+  payload cwd `$scope/development/sub` (case 1's payload, fresh session).
+  It pins the carry-over member A's code critique recorded: after member
+  A the hook still writes the steward component record with the Git
+  toplevel (`steward hook-attempt --repo "$repo"`, today's line 337, where
+  `$repo` is today's cwd toplevel), while health reads that record under
+  the steward's own root — `checkHookFreshnessAt` calls
+  `loadComponentEvidenceForHealth(repoRoot, "supervision-hook")`
+  (`internal/steward/health.go:381-383`), which opens
+  `ComponentEvidencePath(repoRoot, ...)` =
+  `<repoRoot>/artifacts/agents/steward/components/supervision-hook.json`
+  (`internal/steward/component_evidence.go:93-95,397-403`), and the
+  runner's `repoRoot` is the `--repo` `up` armed it with, the state world
+  (`steward run --repo`, `cmd/metasystem/steward_verbs.go:470-481`;
+  `RunTick` → `ObserveHealth(repoRoot)`, `internal/steward/tick.go:271`).
+  Nothing in Go reads `hooks.log`, so member A's trail move could not
+  revive the role; only the sweep can. Assertions, in order: the firing
+  exits 0 and blocks quoting `dispatch the nested runner` (the turn ran to
+  its verdict); the record exists at
+  `$scope/metasystem/artifacts/agents/steward/components/supervision-hook.json`
+  with `result` `OK` and `outcome` `EMITTED` (read through `json get
+  --file`; `emit_stop_payload` completes every emitted response that way,
+  today's lines 517-519, block or not); `[[ ! -e
+  "$scope/artifacts/agents/steward" ]]` (no record at the wrapper
+  toplevel, the misdirected write observed live); and the health line is
+  read exactly where the steward would read it — `world=$(
+  "$scope/metasystem/bin/metasystem" path state-root "$scope/metasystem")`,
+  then `"$scope/metasystem/bin/metasystem" health --repo "$world"
+  --metasystem-root "$scope/metasystem"` — asserting the printed line
+  contains `hook-freshness=alive` and not `hook-freshness=dead`
+  (`HealthVerdict.Line`, `health.go:176-193`, renders each role as
+  `name=status`). The plain `health` verb, not `--hook-preview`, is the
+  steward's own reader (`ObserveHealth`, `health.go:198`; the preview form
+  is the hook's mid-turn view with the current attempt allowed); the
+  fixture world is unenrolled, so other roles are dead and the aggregate
+  is `unhealthy`, which the assertion ignores — only the one role is the
+  claim. Before the fold the record lands under `$scope`, the state-world
+  read finds nothing, and the role prints `hook-freshness=dead (no hook
+  turn generation is recorded ...)` (`health.go:385-386`); after it the
+  role is alive. This case fails before and passes after, and it is the
+  first fixture anywhere that reads hook-freshness on a nested layout.
+
+**The consumer sweep (revision 6).** The sweep is the list of every hook
+site whose root or engine argument changes, by today's line, so the
+implementer edits by list and the critic checks by list. Three names go
+in: `$world_installation` (the mapped installation), `$repo` (the
+engine's state-root answer for it), and `$ms` (the one engine). Three
+names go out: `$harness_root` as an argument, `$state_root`, and `$cwd`.
+
+| Today's line | Site | After the sweep |
+| --- | --- | --- |
+| 244-252 | `harness_root`, `ms`, the single `-x` test | the candidate/mapping/engine sequence of Decision 1 (`hook_world_installation`, `canonical`, `ms`, the double test) |
+| 276-292 | payload cwd, `runtime session-env`, `git rev-parse --show-toplevel` | deleted; `repo=$("$ms" path state-root "$world_installation")` with Decision 2's three-way exit map |
+| 293-306 | the shell template-marker block, `state_root` | deleted (Decision 1, compiled-authority subsection) |
+| 337 | `steward hook-attempt --repo "$repo"` | unchanged text, new value: `$repo` is the state world — **the hook-freshness site; case 14 is its proof** |
+| 357 | `proc find-ancestor --repo "$harness_root"` (member A) | `--repo "$world_installation"`: the adapters belong to the installation, and in a mapped worktree that is the primary, where the adapters and the engine are |
+| 377, 391 | `lease classify --root "$state_root" --metasystem-root "$harness_root"` | `--root "$repo" --metasystem-root "$world_installation"` |
+| 433-435, 439-440 | `up --metasystem-root "$harness_root" --repo "$repo"` | `--metasystem-root "$world_installation" --repo "$repo"`; the re-arm notice keyed at 442-445 and folded into `checkin_tail` at 474-475 reads this call's aggregate line and needs no edit |
+| 451 | `health --hook-preview --repo "$repo" --metasystem-root "$harness_root"` | `--repo "$repo" --metasystem-root "$world_installation"`: the preview reads the record case 14 asserts, at the root it was written under |
+| 457, 512 | `steward digest-pending` / `digest-advance --repo "$repo"` | unchanged text, new value |
+| 485-488 | trail directory in `emit_stop_payload`, `$state_root` | `"$repo/artifacts/agents/supervision"` |
+| 493, 499, 505, 517 | `steward hook-complete --repo "$repo"` | unchanged text, new value; the completion that makes case 14's record `OK`/`EMITTED` |
+| 545 | `stop_refusal_record="$repo/..."` | unchanged text, new value: the worker's refusal record and the parent's (`deadline_record`) now share one root |
+| 550, 584, 590, 687 | `lease protocol-growth` / `protocol-advance` / `renew --root "$state_root"` | `--root "$repo"` |
+| 600 | `supervise watchdog-report --repo "$repo"` | unchanged text, new value |
+| 613-616 | trail directory before the collector, `mkdir -p`, `"$script_dir/evidence-gc.sh"` | `"$repo/artifacts/agents/supervision"`, `mkdir -p ... 2>/dev/null \|\| true` (Decision 2), `"$world_installation/scripts/agents/evidence-gc.sh"` |
+| 630 | `report turn-verdict --root "$state_root"` | `--root "$repo"` |
+| 647-648, 674-675 | verdict lines appended to `hooks.log` under `$supervision_dir` | unchanged text; the directory is `$repo`'s |
+| 696 | `steward pending --repo "$repo"` | unchanged text, new value |
+| 701 | `session end --root "$state_root"` | `--root "$repo"` |
+| 711-713, 724-726 | `up --metasystem-root "$harness_root" --repo "$repo"` on end and start | `--metasystem-root "$world_installation" --repo "$repo"`; the start path's re-arm notice at 730-742 reads this call's aggregate line and needs no edit |
+| parent 44-47 | `deadline_harness_root`, `deadline_validator`, `deadline_canonical` | `deadline_installation=$(hook_world_installation)`, `deadline_canonical`, `deadline_engine` (Decision 1, parent subsection) |
+| parent 67-75 | resolver subshell, `json get` of `session_id` and `cwd` via `deadline_canonical` | via `deadline_engine`; the second line is `path state-root "$deadline_installation"` |
+| parent 77, 84-86, 94 | `deadline_cwd`, its `sed`, the git toplevel query, the synchronous `deadline_resolve_record` | deleted |
+| parent 95-109 | `deadline_log_stop_outcome` and its marker test (member A) | `"$deadline_repo/artifacts/agents/supervision"`, no marker test |
+| parent 110-123 | `deadline_capture_engine_coordinates`, second line into `deadline_cwd` | second line into `deadline_repo`, then `deadline_resolve_record` |
+| parent 159-171 | validation via `deadline_validator` | via `deadline_engine` |
+| parent 189 | the no-validator fallback | unchanged |
+| parent 224 | `report stop-block` via `deadline_canonical` | via `deadline_engine` |
+
+The sweep leaves `$script_dir` one use, the `dirname` at line 244 that
+seeds the candidate, and leaves `$harness_root` only as the candidate the
+mapper starts from. `grep -n 'harness_root\|state_root\|deadline_cwd\|
+deadline_validator\|deadline_harness_root' supervision-hook.sh` after the
+edit shows `harness_root` inside `hook_world_installation` and nowhere
+else.
+
+Two fixture-file facts since revision 5, so the implementer does not
+reconcile them silently: member A's landing added a SessionStart
+ancestry bed named `$tmp/nested-root` to `supervision-hook-fixtures.sh`
+(today's lines 542-588), which fires `fake start` through a nested
+installation and asserts identification and arming; it is not the
+`nested-root` Stop scenario of this Decision, which lives in
+`supervision-fixtures.sh`, and neither replaces the other. And the
+operator-layout scenario (`supervision-fixtures.sh:774-930`) asserts
+`[[ ! -e "$operator_harness/artifacts" ]]` at line 902, BEFORE its hook
+Stop at 912-917; **the same assertion is repeated immediately after the
+Stop**, before the shutdown at 923, so the vendored-operator half of
+member A's trail rule is proven where the trail is actually written. It
+holds under revision 6 because the hook's world there is `$operator_scope`
+(adopted mode) and every write of the turn names it; the collector's
+lease gate, which is the one hook-reachable step rooted at the vendored
+installation, is read-only (`lease.RequireHolderAt` →
+`ClassifyAt` and `loadLease`, `internal/lease/verbs.go:359-373`,
+`lease.go:76-101`; no directory is created on that path) and refuses
+without writing when the fixture's caller holds no lease.
+
 Extension to the existing `stop-hook-monitor` scenario — **flat, deep
 firing, session `t-deep`**: immediately after the block-once replay
 assertion (line 1555), one more payload with `session_id` `t-deep` and cwd
@@ -940,11 +1390,13 @@ layout; "worktree" means the mapped-primary case.
 | 109 | `proc find-ancestor --repo` | Reads runtime adapters beneath the flag root; the wrapper root has no `scripts/agents/adapters/`, so fleet identity resolution was structurally empty. Now reads the real adapters. |
 | 122, 131 | `lease classify --root "$repo" --metasystem-root "$world_installation"` | Fleet: root and metasystem-root now both name `metasystem/`, where `up`-armed sessions actually write announcements and leases (observed live). Worktree: both name the primary. Non-worktree firings pass a byte-identical metasystem-root to today's. |
 | 148-155, 342, 348 (HEAD 413-420, 677-679, 690-692) | `up --metasystem-root "$world_installation" --repo "$repo"` | `up`'s state world is `stateroot.RootForInstallation(--metasystem-root)` and is independent of `--repo` (`up.go:104-113,139-144`); `--repo` sets the census scope as its git toplevel (`up.go:42-49,109,130`). **Revision 5 (SHR-R4-UP-GIT-STEERING-01):** that scope query ran git with the inherited environment, so the round-three steering (`GIT_DIR` at the primary, `GIT_WORK_TREE` at a worktree) moved the scope — and with it the census fingerprint, the owner scope and the owner tag prefix (`up.go:336-344,597`) — to the worktree while the state world stayed primary: a mapped turn could write primary state while re-arming it for a sandbox census scope. The claim that the query "never selects the state world" and is out of scope is withdrawn. `upRepositoryScope` now runs under the compiled authority's scrub: `stateroot.go` exports `RepositoryTop(path string) (string, error)`, a one-line wrapper returning `repositoryTop(path)` (the existing scrubbed query at `stateroot.go:42-50`; the private variable stays, so its test substitution at `stateroot_test.go:39,114,128,147` and `owner_test.go:37,111` is untouched), and `upRepositoryScope` becomes `top, err := stateroot.RepositoryTop(supplied)`, the same `--repo is not inside a git repository` error on failure, then `canonicalPath(top)`. One scrub list, one git-query implementation in the engine. Why the census scope may still differ from the state world, and what pins it: in template mode the state world is `<wrapper>/metasystem` while the scope is the wrapper toplevel — whole-repository process coverage, by design — and the scope is now exactly `RepositoryTop($repo)` under the scrub, a function of the state-root bytes alone, so the pair (state world, scope) is determined by `$world_installation` and nothing inherited. Pinned by a Go test beside `cmd/metasystem/up_test.go:36` (create a repository with a commit and a linked worktree, `t.Setenv` the two steering variables at the primary `.git` and the worktree, call `upRepositoryScope(primary)`, assert the primary toplevel) and by case 8's scheduler-entry assertion. On the fleet nothing observable changes: the scope stays the wrapper toplevel because that is the git toplevel of `metasystem/` too. Worktree: both flags point at the primary; `up` verifies the already-armed rings, a delegate session gains at most advisor standing (the up contract: a second live session receives advisor, without displacement), and a sandboxed failure surfaces as the non-fatal `up_failure` line. |
-| HEAD 44-47 | parent: `deadline_harness_root`, `deadline_validator`, `deadline_canonical` | **New row (SHR-R4-DEADLINE-PARENT-01).** Replaced by `deadline_installation=$(hook_world_installation)` while the worker runs, `deadline_canonical=$deadline_installation/bin/metasystem`, `deadline_validator="${METASYSTEM_BIN:-$deadline_canonical}"`, both empty on identification failure. Non-mapped layouts: byte-identical values to today. Worktree: both name the primary's engine, so the parent can validate the worker's ordinary verdict and can write a record. Override: the validator is the override engine, the canonical engine is the installation's own — the pairing rule applied to the parent. |
-| HEAD 67-75 | parent: resolver subshell `"$deadline_canonical" json get ... session_id / cwd` | Keeps the session line; the cwd line and the second resolution line are dropped with `deadline_cwd`. |
-| HEAD 76-77, 82-94 | parent: `deadline_cwd` and `deadline_resolve_record` via `git -C "$deadline_cwd" rev-parse --show-toplevel` | The unscrubbed cwd-derived root the consumer table missed. Replaced: `deadline_repo=$("$deadline_canonical" path state-root "$deadline_installation" 2>/dev/null) \|\| return 1`, then the shipped normalization and slug. Fleet: the refusal record moves from the wrapper root's stray `artifacts/` to `<wrapper>/metasystem/artifacts/agents/supervision/stop-refusals/`, beside the attempt evidence. Worktree: the primary's. Payload cwd no longer participates anywhere in the hook. |
-| HEAD 144-177 | parent: validation of the worker's JSON | Unchanged predicate; the validator is now the mapped installation's (or override) engine. The no-validator fallback (172-175) accepts both the missing-engine and the skew literal. |
-| HEAD 203-217 | parent: timeout record through `"$deadline_canonical" report stop-block --refusal-record` | Writes under the state-root world; an empty `deadline_record` keeps the shipped record-failure allow line. |
+| HEAD 44-47 | parent: `deadline_harness_root`, `deadline_validator`, `deadline_canonical` | **New row (SHR-R4-DEADLINE-PARENT-01).** Replaced by `deadline_installation=$(hook_world_installation)` while the worker runs, `deadline_canonical=$deadline_installation/bin/metasystem`, `deadline_validator="${METASYSTEM_BIN:-$deadline_canonical}"`, both empty on identification failure. Non-mapped layouts: byte-identical values to today. Worktree: both name the primary's engine, so the parent can validate the worker's ordinary verdict and can write a record. Override: the validator is the override engine, the canonical engine is the installation's own — the pairing rule applied to the parent. **Revision 6 (SHR-R5-DEADLINE-OVERRIDE-ENGINE-SPLIT-01):** `deadline_validator` becomes `deadline_engine`, set only when both executables exist, and it is the ONLY engine the parent runs — session parse, state root, validation, record. `deadline_canonical` is the executable test and nothing more. |
+| HEAD 67-75 (today 67-75) | parent: resolver subshell `"$deadline_canonical" json get ... session_id / cwd` | Keeps the session line; the cwd line and the second resolution line are dropped with `deadline_cwd`. **Revision 6:** the subshell runs on `deadline_engine`, and its second line is the engine's `path state-root "$deadline_installation"` answer, written even when the session parse failed; the deadline kills the subshell as today, so a slow engine costs the record, never the parent's reserve. |
+| HEAD 76-77, 82-94 (today 76-94) | parent: `deadline_cwd` and `deadline_resolve_record` via `git -C "$deadline_cwd" rev-parse --show-toplevel` | The unscrubbed cwd-derived root the consumer table missed. Replaced: `deadline_repo=$("$deadline_canonical" path state-root "$deadline_installation" 2>/dev/null) \|\| return 1`, then the shipped normalization and slug. Fleet: the refusal record moves from the wrapper root's stray `artifacts/` to `<wrapper>/metasystem/artifacts/agents/supervision/stop-refusals/`, beside the attempt evidence. Worktree: the primary's. Payload cwd no longer participates anywhere in the hook. **Revision 6:** the synchronous query is withdrawn; `deadline_resolve_record` takes `deadline_repo` from the harvested subshell line and does only normalization, slug, and path; the call at today's line 94 is deleted. |
+| today 95-109 | parent: `deadline_log_stop_outcome` with member A's marker test | **New row (revision 6, SHR-R5-TEMPLATE-MARKER-SECOND-AUTHORITY-01).** The marker test (99-103) and `supervision_root` are deleted; the trail line lands at `"$deadline_repo/artifacts/agents/supervision/hooks.log"`, the state world by construction, in both layouts. |
+| today 110-123 | parent: `deadline_capture_engine_coordinates` | **New row (revision 6).** The second harvested line sets `deadline_repo`, not `deadline_cwd`; the rest is as shipped. |
+| HEAD 144-177 (today 146-201) | parent: validation of the worker's JSON | Unchanged predicate; the validator is now the mapped installation's (or override) engine. The no-validator fallback (172-175) accepts both the missing-engine and the skew literal. **Revision 6:** the validator is `deadline_engine`; the fallback (today 187-190) is as shipped and accepts only the missing-engine literal; the skew literal validates through the structured path (Decision 2). |
+| HEAD 203-217 (today 203-239) | parent: timeout record through `"$deadline_canonical" report stop-block --refusal-record` | Writes under the state-root world; an empty `deadline_record` keeps the shipped record-failure allow line. **Revision 6:** through `"$deadline_engine"`; the canonical engine writes nothing in an overridden turn. |
 | 161 | `health --hook-preview --repo "$repo" --metasystem-root "$world_installation"` | Health reads the same world the attempt evidence lands in; hook-freshness is computable instead of structurally dead. |
 | 166, 204 | `steward digest-pending` / `digest-advance --repo` | The digest cursor advances against the real steward state rather than an empty bootstrap world. |
 | 185, 191, 197, 209 | `steward hook-complete --repo` | Completion evidence lands beside the attempt record it closes. |
@@ -954,6 +1406,8 @@ layout; "worktree" means the mapped-primary case.
 | 265 | `"$script_dir/evidence-gc.sh"` | **New row (SHR-R2-CONSUMER-01).** The collector derives its root and its own engine from its own script location (`evidence-gc.sh:16-18`) and roots `lease require-holder`, `lease run-held`, and `evidence gc` there — revision 2 left it invoked from `$script_dir`, splitting a mapped turn between two worlds. The invocation becomes `"$world_installation/scripts/agents/evidence-gc.sh"`. Non-mapped layouts: the same file byte-for-byte (`$script_dir` is `$world_installation/scripts/agents`), so behavior is identical, including the operator-nested layout's existing collector root at the vendored installation — pre-existing, unchanged, not a new split. Worktree: the primary's collector runs against the primary's lease and evidence state; a failure still lands in the primary `hooks.log` under the existing `|| true`. Override: the collector reads `METASYSTEM_BIN` itself (`evidence-gc.sh:17`), so an overridden turn runs one engine through the collector too (revision 4). |
 | 274 | `report turn-verdict --root` | The consequence specimen: the verdict reads the real `plans/goals/` ledger and stream plans (`openwork.go:23-28`), and — in the worktree case — the primary's job records, so a delegate's active job is visible in-flight work instead of a phantom idle. An idle turn-end with claimable work is refused instead of waved through blind. |
 | 332 | `steward pending --repo` | Session-start incident surfacing reads the real steward's pending set. |
+| today 293-306 | the shell template-marker block: `state_root`, `template_marker`, `template_installation` | **New row (revision 6, SHR-R5-TEMPLATE-MARKER-SECOND-AUTHORITY-01).** Deleted. Every `--root "$state_root"` (377, 391, 550, 584, 590, 630, 687, 701) and both trail directories (485, 613) name `$repo`. Fleet: identical values, because the shell block's template answer and the engine's coincide there. The two layouts the block got wrong (an adopted installation under a marker-carrying repository; a `.local`-only template installation) go from a Stop refused by pathname to the engine's answer. |
+| today 442-445, 474-475, 730-742 | the re-arm notice keyed from `up`'s aggregate line (landed today, ea8c3ead7) | **New row (revision 6).** Not consumers of `$repo`; they read the last line of the `up` call beside them. Under the sweep those `up` calls name `$world_installation` and `$repo`, so the notice describes the arming of the one world the turn runs in; the notice rides `checkin_tail` into the Stop response's `systemMessage` on the worker path, which the parent's structured validation admits beside a block (today 181-182) or alone (183-184), and rides `surface_json` on the start path. No edit; consistency stated so the blast table matches the file. |
 
 Not consumers of `$repo`, unchanged: the session and tag plumbing.
 
@@ -1022,7 +1476,24 @@ wrapper `RepositoryTop` with no semantic change). Revision 4's clause that
 `up`'s census-scope query is out of scope is withdrawn (SHR-R4-UP-GIT-
 STEERING-01, Decision 4 row above). The `pathclass` package's private copy
 of the scrub (`pathclass.go:381-389`) is not reached by this hook and is
-not touched.
+not touched. Revision 6 adds to the out-of-scope list: the collector's own
+root (its script location, `evidence-gc.sh:16`), which in the
+vendored-operator layout is the installation while the hook's world is the
+scope — pre-existing, read-only on the hook's path, and not this design's
+to move; and the cleanup of the stray steward component records and
+refusal records at the three seats' wrapper roots, which joins the
+operational residue already listed.
+
+### Where each round-5 finding lands
+
+| Finding | Section that answers it | What changes | What proves it |
+| --- | --- | --- | --- |
+| SHR-R5-DEADLINE-OVERRIDE-ENGINE-SPLIT-01 | Decision 1, "One engine in the parent"; Decision 2 failure map (parent rows); Decision 4 parent rows | `deadline_engine` replaces `deadline_validator` and is the only engine the parent runs; the state-root query moves into the deadline-killed resolver subshell; `report stop-block` runs on it; `deadline_canonical` is the executable test only | cases 11 and 13 re-pinned: an old canonical engine at the primary (the case-7 stub) and a compatible slow override; the record lands under the primary and the allow line is absent; both fail under revision 5 |
+| SHR-R5-SKEW-FIXTURE-VALIDATOR-01 | Decision 3 case 7; Decision 2 ("How the parent sees the two literals"); Decision 1 parent subsection (fallback as shipped) | the stub refuses exactly `path state-root` with exit 2 and forwards every other verb, so the parent validates the literal structurally; the fallback's skew acceptance and self-grade (k)'s second firing are withdrawn | case 7 observes the skew literal's own text once, no generic block, no trail, no record; it fails against today's hook, which never calls the verb |
+| SHR-R5-TEMPLATE-MARKER-SECOND-AUTHORITY-01 | Decision 1, "The compiled authority is the only one"; header contract item (7); Decision 3 sweep; Decision 4 rows for today's 293-306 and 95-109 | the worker's marker block and the parent's marker test are deleted; `state_root` disappears; every consumer names `$repo` / `$deadline_repo`, the engine's answer | the repurposed `missing-template` fixture asserts `engine missing`, no `HEALTH unknown`, no writes; member A's template trail assertions and case 3 (self-hosting), the operator-layout after-Stop check (vendored); the case-table rows for the two layouts the shell block refused |
+| carry-over: hook-freshness dead on nested checkouts | Decision 3 case 14 and the consumer sweep (line 337) | `steward hook-attempt --repo "$repo"` writes under the state world because `$repo` is that world | case 14: the record at the nested installation, none at the wrapper, and `hook-freshness=alive` from `health --repo "$(path state-root ...)"` — this goal's DONE |
+| carry-over: operator-layout check before the Stop only | Decision 3, after the sweep table | the `[[ ! -e "$operator_harness/artifacts" ]]` assertion is repeated after the hook Stop | the scenario itself; traced read-only through the collector's lease gate |
+| new fact: the re-arm notice (ea8c3ead7) | Decision 4 row for today's 442-445, 474-475, 730-742 | none; consistency stated | the row |
 
 ## Consistency pass
 
@@ -1076,6 +1547,34 @@ override can govern an engine-less candidate. "Silent exit 0" in the
 failure map is the worker's own behavior in every row, and the parent's
 conversion of silence into its generic block on Stop is stated once and
 inherited unchanged.
+
+Revision 6 was re-read end to end against itself after the three folds and
+the two carry-overs: `deadline_engine` is the parent's one engine in the
+parent subsection, the header contract item (6), the failure map's five
+parent rows, Decision 4's parent rows, the sweep table's parent rows, and
+cases 11 and 13, and `deadline_validator` survives only inside quoted
+revision-5 text that the same sentence withdraws; the state-root query
+sits in the resolver subshell in every place the parent's resolution is
+described, and no surviving sentence has the parent call `path
+state-root` synchronously or through `deadline_canonical`; the
+no-validator fallback accepts one literal in Decision 1, Decision 2, the
+failure map, Decision 4, and case 7, and revision 5's widening is marked
+withdrawn at both places it was stated; the case-7 stub forwards every
+verb but one in Decision 3, Decision 2's skew row, the landing table, and
+cases 11 and 13, which reuse it; `state_root` appears only as the name
+being deleted, and every `--root` and trail site names `$repo` in the
+compiled-authority subsection, the sweep table, and Decision 4's new row;
+`deadline_repo` is the parent's world in the trail helper, the record
+resolver, the capture function, and the failure map; case 14 names the
+hook-attempt site, the Go reader, and the health token, and the sweep
+table's line-337 row points back at it; the re-arm sites are read from
+today's file and described once in Decision 4; the two fixture-file facts
+since revision 5 (the hook-fixtures `nested-root` bed, the operator-layout
+check placement) are stated where the implementer would otherwise
+reconcile them; and no surviving sentence claims a shell test derives the
+state world, that the parent's timeout record can be written by an engine
+the worker did not run, that the fallback knows the skew literal, or that
+an exit-2-for-everything stub proves the skew block.
 
 ## Self-grade
 
@@ -1161,9 +1660,60 @@ parent's fallback compares them byte-for-byte, so an edit to one without
 the other breaks the no-validator path visibly (case 7 covers the
 validator path, and the fallback path is covered by firing case 7's stub
 world with `METASYSTEM_BIN` pointing at a non-executable file, which the
-implementer adds as case 7's second firing). Grade: pass against
+implementer adds as case 7's second firing — **withdrawn by revision 6**:
+that firing fails the double executable test and yields the
+missing-engine literal, and the fallback no longer accepts the skew
+literal). Grade: pass against
 everything observed; the reject condition below is the falsifier the
 implementation and its critique must actively test.
+
+Revision 6 grounding: every "today" citation was read in this worktree at
+commit 3c753c5ef — the parent block (`supervision-hook.sh:32-240`:
+engines 44-47, worker launch 55-57, resolver subshell 67-75, cwd `sed` 77,
+record resolver 82-93 with the synchronous call at 94, member A's trail
+helper 95-109, coordinate harvest 110-123, resolver stop 124-135,
+validation 159-186, fallback 187-190, generic block 191-193, timeout
+record 224-234), the worker (engine 244-252, registry 253-261, payload
+263-274, cwd and toplevel 276-292, the marker block 293-306, hook-attempt
+337, find-ancestor 357, lease classify 377 and 391, `up` 433-441 with the
+re-arm notice 442-445 and 474-475, health 451, the trail sites 485-488 and
+613-616, the refusal record 545, the `--root` sites 550/584/590/630/687/
+701, start-path `up` and notice 724-742), member A's diff (43c3d3c08) and
+the re-arm diff (ea8c3ead7) as landed, the Go readers the hook-freshness
+carry-over names (`health.go:176-193,198,381-417`,
+`component_evidence.go:93-103,166-184,397-415`,
+`steward_verbs.go:44-77,116-178,221-235,470-481`, `tick.go:271`), the
+unchanged authorities (`stateroot.go:32-64,100-108,137-163`,
+`up.go:16-25,42-49,104-143`, `path_verbs.go:14-33`, `main.go:248-254`,
+`runtime_verbs.go:29-50` for `runtime list` answering from the compiled
+registry, which is why a forwarding stub can serve it), the collector
+(`evidence-gc.sh:16-27`) and its lease gate
+(`lease.go:76-101`, `verbs.go:359-373`), and the fixtures the folds
+touch (`supervision-hook-fixtures.sh:120-157,161-176,405-413,522-540,
+542-588,680-683`; `supervision-fixtures.sh:120,774-930,1920-1975`).
+Nothing was executed against a built engine in this round: the round is
+read-only by brief, the pre-fix skew exit was observed on a real binary in
+revision 3 and the stub reproduces its bytes, and cases 7, 11, 13, and 14
+and the repurposed `missing-template` fixture are specified with the
+before/after outcome each must show. Residual risks added: (l) the
+timeout record now depends on the engine answering `path state-root`
+inside the worker's wait; a machine so loaded that one engine start plus
+one git call takes four seconds loses the record and gets the disclosed
+allow line, where today's git-derived root would still have named a
+record path (and then handed the same slow engine the write) — the price
+of having no shell authority, bounded by the fact that the same machine's
+worker also could not finish, and visible in the trail as
+`deadline-expired-record-failure-allow`; (m) the case-11/13 engine swap
+leaves the primary's `bin/metasystem` as the stub for the rest of the
+scenario, so any case added after them must be added before them or
+restore the engine — stated in the case text; (n) the sweep renames ten
+`--root` arguments and two trail directories by list, and a missed site
+would be a `state_root` reference that `set -u` turns into an abort on
+the first firing — loud, not silent, and caught by the post-edit grep the
+sweep prescribes; (o) `health` without `--hook-preview` in case 14
+advances the alert breaker and observation state in the fixture world
+(`ObserveHealth`, `health.go:198-235`), which is disposable and never
+enrolled, so the side effect is contained in the fixture bed.
 
 **Reject condition — reject this design if any of the following is
 shown:** a state-writing engine verb reachable from this hook whose world
@@ -1203,7 +1753,23 @@ git query reachable from this turn — `up`'s census scope included — whose
 answer an inherited variable from the `stateroot.go:32-40` list can change
 (the SHR-R4-UP-GIT-STEERING-01 exposure); any path on which a candidate
 without its own `bin/metasystem` is governed because `METASYSTEM_BIN`
-supplied an engine (the SHR-R4-COPIED-HOOK-OVERRIDE-01 reopening); or any
-new resolver failure path that exits nonzero or emits anything beyond the
-two fixed blocking reports (the missing-engine and skew literals) under
-`set -euo pipefail`.
+supplied an engine (the SHR-R4-COPIED-HOOK-OVERRIDE-01 reopening); any
+Stop on which the deadline parent asks one engine for the state root or
+the refusal record and another to validate the worker, or on which any
+parent engine call runs on `deadline_canonical` rather than
+`deadline_engine`, or on which an engine call sits in the parent's main
+flow between the worker launch and the wait loop (the
+SHR-R5-DEADLINE-OVERRIDE-ENGINE-SPLIT-01 split, or its timeout exposure);
+any old-engine fixture whose stub cannot answer the parent's own
+validation verbs, so that the skew literal is never observed as itself
+(the SHR-R5-SKEW-FIXTURE-VALIDATOR-01 gap); any surviving shell test —
+marker, pathname, or configuration file — that derives, replaces, or
+refuses the state world after the engine answered, in the worker or in
+the parent, or any name other than `$repo` and `$deadline_repo` carrying
+that world (the SHR-R5-TEMPLATE-MARKER-SECOND-AUTHORITY-01 second
+authority); any nested-layout turn after which the steward component
+record sits anywhere but under `path state-root`'s answer, or after
+which `health --repo <that answer>` reports hook-freshness dead (the
+carry-over this goal's DONE binds); or any new resolver failure path that
+exits nonzero or emits anything beyond the two fixed blocking reports
+(the missing-engine and skew literals) under `set -euo pipefail`.
