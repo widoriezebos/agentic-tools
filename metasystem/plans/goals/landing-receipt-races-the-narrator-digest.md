@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: The full-battery landing receipt (landing test-receipt, run by land.sh for tier-1 and demanded by a full-width chain) refuses with 'the real index or working tree moved while the command ran' whenever the narrator appends to records/narrator-digest.log during the command. The command takes about twenty minutes (fast gate, dispatch fixtures, goal-cli fixtures) and the narrator writes on every ledger or landing movement anywhere in the fleet, so on a live seat the receipt fails by design of the two together; seen 2026-09-06 08:54Z on m1c for chain rgr-build1 after every fixture scenario had passed. DONE means the receipt's posture check ignores the narrator digest (a live log, not code under test) or the receipt runs against an isolated copy of the candidate tree, a fixture pins a digest append during the command as still-green, and the workaround of running the receipt in a detached worktree is retired from the recipe.
 - Origin: main
-- Next step: Chain lrr-build1 (codex, DESIGN-BEARING, started 14:5xZ) builds from plans/landing-receipt-races-the-narrator-digest-brief.md (c3f47f56): the receipt verb runs its command in a temporary detached worktree reproducing the exact staged candidate, checks the candidate did not change inside it, writes the receipt into the live root, and removes the worktree on every path; fixture legs pin a narrator append during the command as green and a candidate change inside the worktree as refused. Then: one Fable critique, close, records, and a landing that uses the new verb for its own receipt. The governed validation (Wido's decision 14:4xZ) runs meanwhile in a detached worktree at landed main c3f47f56.
+- Next step: Round one built (worktree lrr-build1, reviewed tree e5e7f029): the receipt verb grafts the exact staged candidate into a detached worktree under the system temp directory, runs the command there, checks the candidate did not change, writes the receipt to the live root and removes the worktree on every path; a new gittree helper (internal/gittree/detached.go) and seven Go test legs. Seat-side proof (15:24Z): the landing and gittree packages green; a live receipt with a six-second command stayed green while the narrator digest was appended to during it, the staged candidate stayed intact, the receipt landed in the live root, no temporary worktree remained. Critique lrr-critic1 is running; then close, records, and a landing whose own receipt the new verb makes in the live root.
 - OpenedAt: 2026-09-06T08:56:44Z
-- Revision: 5
+- Revision: 6
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -22,4 +22,5 @@ History:
 - 2026-09-06T14:52:51Z NWZEPTPR8NC8S3F5XM6EADQK9J-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=landing-receipt-races-the-narrator-digest
 - 2026-09-06T14:54:17Z ECZ0WY1TNX87F8P62G581JD1YN-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=landing-receipt-races-the-narrator-digest
 - 2026-09-06T14:54:40Z 2SFPWMYQ3GWVGMCNZ6569TQNAQ-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=landing-receipt-races-the-narrator-digest
-Integrity: sha256=28348ff5c9781d76693f717edfdad0954e3cc40740da9f512d63d70f1c6d33cb
+- 2026-09-06T15:25:13Z 29H2PJV4423ZERBDY5HKY95W2P-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=landing-receipt-races-the-narrator-digest
+Integrity: sha256=f9dc2f1fcda373bd0f3e2ea754badfbc923a3fd461f63fa0131f32b09f788c99
