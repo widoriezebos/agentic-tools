@@ -6,14 +6,16 @@
 - Origin: main
 - Next step: DUPLICATE of channel-code-verified-at-poll-time, which m2 landed as 4b919708 (the code is checked against the moment the reply was sent; internal/channel/poll.go now reads Inbound.SentAt). Nothing left to build here; to be closed by whoever holds the closing word.
 - OpenedAt: 2026-09-04T11:09:19Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=4 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=d615611db650ff7962bbaca90288591f45505edd486db7bb445134e379b7cb08
 - Parked: by=m3+mac-m3 at=2026-09-04T15:35:15Z because=duplicate of channel-code-verified-at-poll-time, landed 4b919708
 
 History:
 - 2026-09-04T11:09:19Z WJ0TDS0TEEGNCZEBB54G2H79ZP-m3-a5da21ff open actor=m3+mac-m3 targets=channel-totp-verified-at-poll-time
 - 2026-09-04T15:35:06Z NTQXE8BVJEH2D7CHZ605SHFKRZ-m3-a5da21ff edit actor=m3+mac-m3 targets=channel-totp-verified-at-poll-time
 - 2026-09-04T15:35:15Z 66EFJCXTY8K1K3WR0D9NMV6DC4-m3-a5da21ff park actor=m3+mac-m3 targets=channel-totp-verified-at-poll-time reason=duplicate of channel-code-verified-at-poll-time, landed 4b919708
-Integrity: sha256=7e297b807f64317278fadfdb70b7dcdf41b49f07574961a4d5419cf065c9a2b2
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=channel-totp-verified-at-poll-time reason=sweep
+Integrity: sha256=7b1254d9b351226c439ada3cfd669100f69fc3a21d9fe80a6d6f8ca7e70aa7a8

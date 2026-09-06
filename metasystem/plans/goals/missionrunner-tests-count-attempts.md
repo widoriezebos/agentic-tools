@@ -7,13 +7,14 @@
 - Origin: main
 - Next step: A design note first (three decisions), then the test conversion; tier from the risk basis; waits for Wido's word if above tier 1.
 - OpenedAt: 2026-09-04T20:40:58Z
-- Revision: 2
+- Revision: 3
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-04T22:10:57Z revision=2 opid=AET31FWF5TGZD8XD30YZDDH3QN-m2-5fcf08ab authority=relayed digest=9078c6ea3cb572c12a359db719f07f6d61fe047b47765593417c0373e0800621 reviewBy=2026-09-06
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=9078c6ea3cb572c12a359db719f07f6d61fe047b47765593417c0373e0800621
 
 History:
 - 2026-09-04T20:40:58Z CK21RB56WY46CB2A7CHW67ASMY-m2-5fcf08ab open actor=human:Wido targets=missionrunner-tests-count-attempts
 - 2026-09-04T22:10:57Z AET31FWF5TGZD8XD30YZDDH3QN-m2-5fcf08ab approve actor=human:Wido targets=missionrunner-tests-count-attempts authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Yes, all five (Recommended)"
-Integrity: sha256=e12e6ab9c044930420a3d1fbdbd1ca10c379bc45a9ebe4eebc4b2f3c36edb7b8
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=missionrunner-tests-count-attempts reason=sweep
+Integrity: sha256=e0b7540fc8c4ddc75464c75cdc61db28d9b728167ebda79e417cbfa97b58f0bd

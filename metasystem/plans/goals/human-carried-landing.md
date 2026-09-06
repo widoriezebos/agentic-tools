@@ -6,11 +6,11 @@
 - Origin: human
 - Next step: SLICE 1 LANDED ef296c39 (the refusal register, internal/refusal, 171 tokens, three tests, closing review nothing material). RULING (Wido 2026-09-04, terminal, verbatim: 'All approved, also said this on Telegram', answering question XXG9ZYJJ7KHE1K0WVB28DJPC21 whose recommendation was 'new goal'): the carry (points 02, 04-09) moves to sibling goal human-carried-landing-carry; this goal concludes with the audit. Remaining here: slice 2 = the audit's review notes: (1) internal/landing/tierone.go:38 builds tier1-goal-tier-<n>-refused with %d, which no grammar collects; it needs a row by hand and a design amendment to HCL-AUDIT-03; (2) the eleven landing codes outside knownRefusalCode are rows without Defect entries because their sites already return Mode refuse; ruling on that reading belongs to slice 2; (3) land.sh:116 and :120 (the tier-1 declaration refusals) are not in ShellRows. Then conclude. Budget after slice 1 per goal health: 5 of 10 attempts, 165 of 360 reserved minutes (two setup refusals on new-file paths in briefs), two of three design review rounds consumed. m3 releases its claim to take fleet-channel-gateway; slice 2 is small and any seat may take it.
 - OpenedAt: 2026-09-04T10:56:02Z
-- Revision: 10
+- Revision: 11
 - Labels: governance
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-04T11:10:45Z revision=4 opid=1EY407NT6NWYHYWWB7EP376V8C-m3-a5da21ff authority=relayed digest=a040b44ca36176f3e5484fbd34b9741dcbeeb6cdff82460428b7250650e0628c reviewBy=2026-09-06
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=11 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=a040b44ca36176f3e5484fbd34b9741dcbeeb6cdff82460428b7250650e0628c
 - Sliced: machine=m3 lineage=mac-m3 revision=5 at=2026-09-04T14:47:24Z
 
 History:
@@ -24,4 +24,5 @@ History:
 - 2026-09-04T15:53:20Z SZPNYSR54WKGY9ZX15GA2HDNC9-m3-a5da21ff edit actor=m3+mac-m3 targets=human-carried-landing
 - 2026-09-04T17:14:43Z 8ZSCM08YH4J2HCW1PPKZGM231D-m3-a5da21ff edit actor=m3+mac-m3 targets=human-carried-landing
 - 2026-09-04T17:14:48Z C95VA7HNQ4YCBQAX5WXPJKJ65C-m3-a5da21ff release actor=m3+mac-m3 targets=human-carried-landing
-Integrity: sha256=82b4488b40226e450bce692a5bd8b3819d54e5816da9227b36e9a6d1033f35e2
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=human-carried-landing reason=sweep
+Integrity: sha256=3464db61e70d9092a9d3e04ef6dd616470cb9f021ca0fc29833c83247426642b

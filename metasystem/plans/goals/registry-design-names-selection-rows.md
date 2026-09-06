@@ -7,13 +7,14 @@
 - Origin: main
 - Next step: One doc round and one logging line; tier from the risk basis. Residue of goal supervision-custody-per-checkout.
 - OpenedAt: 2026-09-05T15:09:55Z
-- Revision: 2
+- Revision: 3
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-05T15:11:17Z revision=2 opid=46WB6BQ63V4QB797EJRQQNN34C-m2-5fcf08ab authority=relayed digest=82c2803f394766177b8d600a9b58804eb1096eec3c4d0460e766a3b882809287 reviewBy=2026-09-06
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=82c2803f394766177b8d600a9b58804eb1096eec3c4d0460e766a3b882809287
 
 History:
 - 2026-09-05T15:09:55Z 7231WAM1A3DZTBYH58G0GKFYBS-m2-5fcf08ab open actor=human:Wido targets=registry-design-names-selection-rows
 - 2026-09-05T15:11:17Z 46WB6BQ63V4QB797EJRQQNN34C-m2-5fcf08ab approve actor=human:Wido targets=registry-design-names-selection-rows authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Yes, accept and land now (Recommended)"
-Integrity: sha256=033a6ff9b139d66c4a56d29336731823801d73451aeef4b9cbf3bdc1eb80ca70
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=registry-design-names-selection-rows reason=sweep
+Integrity: sha256=96e2595ff00cdf3fd03185f5b93c4d804876a204af16b81e10ff65843c1a7fa0

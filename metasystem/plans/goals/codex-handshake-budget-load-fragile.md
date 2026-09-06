@@ -5,9 +5,11 @@
 - Origin: main
 - Next step: CHAIN STATE 2026-09-02 20:45Z (m0b): design plans/codex-handshake-design.md CERTIFIED at revision 7 (Sol rounds 1-4, registers records/misc/codex-handshake-critique-r1.md to -r4.md). BUILD ch-build-1c (Sol, 120) DONE for PART 1 only: worktree commit 35b779ef "Disable operator plugins for Codex delegates", three adapter files (codex.go, new codexcommand_test.go, runtime_test.go); it stopped correctly at a Part 2 gap (D2.3's mandatory bound refuses the out-of-boundary BuildFollowRecord call in internal/dispatch/provenance_test.go:51 and the TestMissionProvenanceTuple calls in decisions_test.go). Conformance review of ch-build-1c is BLOCKED on one hand-removal: the pre-commit guard wrote its gitignored landing-observe.log into the delegate worktree (goal conformance-runtime-state-litter class); Wido handed the exact rm. THEN: validate conformance --stage review --job ch-build-1c; Fable code critique (brief plans/codex-handshake-code-critique-brief.md, op ch-crit-code-1, cap 20); apply the worktree diff at the repo root; land --chain ch-build-1c with this Goal-Item; conclude duplicate goal codex-handshake-budget. PART 2 PARKED for budget: needs Fable design revision 8 (brief plans/codex-handshake-revision-r8-brief.md, ~12 min, cap 20) folding the gap, a Sol build (120) and a Fable code critique (20) = 160 reserved minutes; reserved 420 of 480 spent before the critique, 40 left after it. ASKED Wido (via f7 and the session): raise reservedJobMinutesLimit 480 to 720; recommendation yes, Part 2 is the liveness-based patience half of his order. Budget arithmetic: 240 (rounds 1-6) + 40 (ch-crit-4b) + 20 (ch-design-r7) + 120 (ch-build-1c) + 20 (ch-crit-code-1) = 440.
 - OpenedAt: 2026-09-02T12:14:59Z
-- Revision: 15
+- Revision: 16
 - Labels: robustness
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=480 activeJobLimit=1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=480 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=16 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=8e3550e94bd39b1b613f6b9444a784be73282e258ac3a768acfc31a5adb4d6a0
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=6 at=2026-09-02T16:07:14Z
 - Parked: by=m0b+main-1788250419-3170380-8a1fb3 at=2026-09-02T18:29:46Z because=Wido's word, relayed by m1 2026-09-02: 'Codex slow-start fix: come on! That's an increase of 10 to 30 seconds. what the fuck are you talking about?!?' The 30-second constant (ec17b373, 17:49Z) is the fix; the design/critique ladder stops here. Preserved, not landed: design revision 7, Sol registers r1-r4, build ch-build-1c (Part 1, worktree commit 35b779ef, conformance passed, no code critique), briefs. Job ch-design-r8 cancelled. His lesson: one number is not a ladder.
 
@@ -27,4 +29,5 @@ History:
 - 2026-09-02T18:09:59Z FRJCRKYXVFP7WR3R09SJKWG72C-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=codex-handshake-budget-load-fragile
 - 2026-09-02T18:23:11Z FW00S2F22CVTXQ0V1E7FZE6VRQ-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=codex-handshake-budget-load-fragile
 - 2026-09-02T18:29:46Z 44T2B5F6G41R0DFZRMR28ST3FE-m0b-6638932d park actor=m0b+main-1788250419-3170380-8a1fb3 targets=codex-handshake-budget-load-fragile reason=Wido's word, relayed by m1 2026-09-02: 'Codex slow-start fix: come on! That's an increase of 10 to 30 seconds. what the fuck are you talking about?!?' The 30-second constant (ec17b373, 17:49Z) is the fix; the design/critique ladder stops here. Preserved, not landed: design revision 7, Sol registers r1-r4, build ch-build-1c (Part 1, worktree commit 35b779ef, conformance passed, no code critique), briefs. Job ch-design-r8 cancelled. His lesson: one number is not a ladder.
-Integrity: sha256=f4b4834c7d5057586f8fb032f484705b943e35957e5f5ef8aab74da473748cff
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=codex-handshake-budget-load-fragile reason=sweep
+Integrity: sha256=969257f458cf10177d11f4e9812adf1c75a85a282b7c7b97757702cc58be7e0f

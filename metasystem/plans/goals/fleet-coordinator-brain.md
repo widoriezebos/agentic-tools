@@ -7,11 +7,11 @@
 - Origin: main
 - Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 8
+- Revision: 9
 - Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:human:Wido at=2026-09-05T21:14:27Z revision=5 opid=G2JAANGCE4VB9ADXEPMJXEA6K0-m1-a4f8999f authority=relayed digest=cce26a4e1a354ce8451020f4d14bfcbbc17533f5d69ffcef25dd08547a68313f reviewBy=2026-09-06
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=cce26a4e1a354ce8451020f4d14bfcbbc17533f5d69ffcef25dd08547a68313f
 
 History:
 - 2026-09-03T12:14:47Z E43RG504Z3FDHSSZBFKFC3DQMH-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=fleet-coordinator-brain
@@ -22,4 +22,5 @@ History:
 - 2026-09-05T21:14:33Z 354510KMRJW3FJ7WTD795D6N2W-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-05T21:17:43Z ZXA56AZTGNJ4BHS36N311W1V12-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-05T21:17:46Z CSBSAFBRM4R9ZX8GERMDG0RDJZ-m1-a4f8999f release actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
-Integrity: sha256=60030e4153b88ee34bb50c71ac817bf15dca07d8d223bed1bf434af6b905a778
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=fleet-coordinator-brain reason=sweep
+Integrity: sha256=07019cfbca2327c09c52a39dbc21ddd6cd3f1ef177bad01aaa1a6453430f2577

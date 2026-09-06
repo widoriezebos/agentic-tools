@@ -1,14 +1,16 @@
 # fleet-join-bootstrap
 
-- State: queued
+- State: approved
 - Intent: A fresh session cannot boot itself into the fleet unaided (Wido's open question 2026-09-02; three machines hit the same wall: m1b's fresh host clone, and the m0/m0b guest clones before hand-fixing). A fresh clone has no engine (bin/ is gitignored and nothing tells the newcomer to run scripts/agents/go-build.sh), no roster (metasystem.conf.local is gitignored, so every role.*.model.* key, the machine nickname and the evidence root are absent), no accepted ledger tree until its first goal fetch, and no enrollment; the projection's staleness banner names a flag that does not exist ('goal list --fetch validates and advances it', internal/goal/project.go line 73) and the first-fetch message ('no accepted tree; the first fetch or the migration bootstraps it', line 39) names no command. CORRECTED by the design (plans/fleet-join-bootstrap-design.md, 2026-09-02): the earlier claim that a +refs/metasystem/* fetch refspec is needed was wrong; the canonical ledger is the main branch fetched per operation and the accepted pointer is created locally by the first goal fetch (internal/goal/txn.go). The refs/metasystem/machines/m0/* refs visible on origin are leftovers of the 2026-08-31 reconciliation, not part of the join path. An existing seat has its own wall: after a pull that changed the engine, metasystem up refuses with ENROLLMENT_DRIFT and its remedy names only the agent-free terminal, not the R-37-m3 re-arm path every seat actually uses. Nothing in AGENTS.md, wow.md, docs/collaboration.md or docs/working-with-agents.md documents joining. DONE means: one documented, mechanically checked join path (the design's scripts/agents/join-fleet.sh composing the existing Go owners), a committed roster template, every refusal on the path naming the real next command, and a fixture that joins a fresh clone of the template against a bare remote and reaches a green metasystem up or the honest documented stop where a human word is required.
 - Origin: main
 - Next step: Small-item ladder per R-38-m2 with R-44/R-45 budgets. Slice 1 (design, 4h): the join sequence as one owner (an engine verb or a script, decided by the design against the existing-owner-before-new-surface rule), the committed roster template, the ledger refspec (add +refs/metasystem/*:refs/metasystem/* at clone or at first goal verb), and every wrong or missing remedy text listed with file and line. Slice 2 (build + code critique, 4h): implement, fix the two refusal messages, land the fixture. Related: repair-accept-remote-verb (same advertise-a-missing-verb class), supervision-hook-wrong-root (m0's SessionStart hook cannot cd to <root>/metasystem on a checkout whose project dir already is metasystem), m1b's design-critique audit on the join question.
 - OpenedAt: 2026-09-02T11:38:06Z
-- Revision: 12
+- Revision: 13
 - Labels: bootstrap, fleet
 - Arc: headless-fleet
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=13 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=065e302010263bd899af637f1fcf84e0174e58a1adb0c270729c3e9e0abac42c
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=5 at=2026-09-02T16:41:37Z
 
 History:
@@ -24,4 +26,5 @@ History:
 - 2026-09-02T20:21:16Z ZK669PQKSNTDC6P9BZA0KZ921Y-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
 - 2026-09-03T12:17:31Z 4A5MN1AGNA6PMMY3AYYMJ5YZ6P-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
 - 2026-09-03T12:21:02Z NN0GCZ20Q35R5K1SCMFNGGEF8M-m1-7bb1546e set-arc actor=m1+main-1788333680-2840-7f79f4 targets=fleet-join-bootstrap
-Integrity: sha256=55c1821a0c94da4a35c9723fb39f08fe47fd1d065c403c50cac89aea2c5f26a1
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=fleet-join-bootstrap reason=sweep
+Integrity: sha256=71c5b862b67d7f7748f95ba3ec8a575a9c7bb462d309c96605b6c488e4fbc0a7

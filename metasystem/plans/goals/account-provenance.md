@@ -1,12 +1,14 @@
 # account-provenance
 
-- State: queued
+- State: approved
 - Intent: ACCOUNT PROVENANCE (m0, re-opened on the fleet line at reconciliation): m0's Claude runtime signs into a different account than m1/m2 — a separate capacity pool, which is why m0 exists. m0's landings are stamped m0 while another account paid for them. The run record should carry the account identity alongside runtime and model so cost and capacity attribution survive in the record. Wido's word (decision-ask 2026-08-31): the string m0 stamps in every landing message until this lands is 'Wido@M0'.
 - Origin: main
 - Next step: PARKED COLD-RESUMABLE (yields the claim slot to Wido's highest-priority seat-stop machinery): design landed (plans/account-provenance-design.md), round-1 critique returned eight material findings (records/misc/account-provenance-critique-r1.md). RESUME: fold all eight by id, closing critique, build, code critique — fits one box at the R-45 attempt count
 - OpenedAt: 2026-08-31T19:09:19Z
-- Revision: 8
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1
+- Revision: 9
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=542c802a95977d8cc8c8c3fa0b6b2f53133cc19438586e881dd943f75b503414
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=3 at=2026-09-02T05:51:12Z
 
 History:
@@ -18,4 +20,5 @@ History:
 - 2026-09-02T06:53:06Z 01B6Z8XKR00BGT4FFD529DJ264-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=account-provenance
 - 2026-09-02T17:56:01Z QVNFHBDS3J937PQW0QR9H9EDMM-m1-7bb1546e claim actor=m1+main-1788333680-2840-7f79f4 targets=account-provenance
 - 2026-09-02T18:18:02Z HJSSPBFQB7G0JC97F4ENRMKM9E-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=account-provenance
-Integrity: sha256=10297d5b8ebcd03c215aa25c7e6ae278c80c7efcb6e82d8dcc02177a822fd480
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=account-provenance reason=sweep
+Integrity: sha256=5c575e653565b47999451250d5b17aebcb5d9cc6da34359370d0a67923314bae
