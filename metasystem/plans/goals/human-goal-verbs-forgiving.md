@@ -1,18 +1,20 @@
 # human-goal-verbs-forgiving
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a wrong bind of a human budget act would misrecord authority, but every path stays human-only at the enrolled terminal and every refusal stays a refusal; novelty 1: a grammar, a routing table and a default on verbs that exist; exposure 2: the human's verbs only, on every machine; accumulation 1: nothing compounds"
 - Tier: 2
 - Intent: Wido's word 2026-09-06, after three refused attempts to raise one goal's budget at his terminal: 'this command is too complex, not intuitive and maybe not forgiving enough'. The evidence of the day: set-budget on a parked goal refuses with 'set through goal approve with --budget'; approve --budget box together with the five limits refuses 'mutually exclusive'; the working form needs five long flags, all-or-nothing, that mirror an internal tuple; --budget takes the literal word box as its value; every human verb needs --by even though the enrolled terminal already knows who enrolled it; the same morning goal edit --risk refused for a missing --evidence whose only hint was a format string. Every refusal names flags, none prints the command that would have worked. The human should not have to know whether a goal is queued, parked or claimed to give it a bigger box. DONE means, at the enrolled terminal: one verb gives a live goal (queued, parked or claimed) a box, taking the compact form everyone already writes in prose (1d/10/720m/1/3) or a preset (norm for the tier's ceiling, keep for the standing box), and does the approval or revision rebind itself; the five explicit limits stay as the long form; --by defaults to the enrolled human's recorded name; every refusal of a human verb prints one complete command that would have succeeded with the values it saw; and a fixture drives each refusal and asserts the printed command runs. Authority does not widen: every act stays human-only at the enrolled terminal and every history line stays as it is.
 - Origin: main
 - Next step: UNPARKED ON WIDO'S WORD (2026-09-06 ~23:20 CEST, 'approved' to the seat's ask: re-claim as a new slice under the norm box). Next claim by m1d once stop-deadline-parent-trusts-ps lands (one claim slot per machine). The slice: fold brief for HGV-07 and HGV-08 as delegate --follow-up hgvf-build1-20260906-r2; conformance --job <the r3 job> (delete regular files under the worktree's metasystem/artifacts/agents first); one re-review critic (Fable, --reviews <the r3 job>); register-advance; dispatch.sh close --job hgvf-build1-20260906; the two dispositions records from the seat scratchpad (hgvf-dispositions-r1.md, hgvf-dispositions-r2.md) plus an r3 record under plans/dispositions/; git apply --index --directory=metasystem of rounds/3/diff.patch from the repo root; land.sh -m <msg> --chain hgvf-build1-20260906 --direct-fix register-carriage --goal human-goal-verbs-forgiving --staged-only --allow-new-plan --skip-transport; go-build; metasystem up; goal done naming the verb goal budget, the presets, the --by default and the refusal rule.
 - OpenedAt: 2026-09-06T12:45:35Z
-- Revision: 14
+- Revision: 15
 - Arc: verbs-match-intent
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:52:20Z revision=3 opid=Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 authority=proven digest=10a4e68634e75c7789a6f26c6c7cd0feb1a6d1a9ef16d357fefbbc5afbe35498
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=4 at=2026-09-06T18:09:00Z
+- Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T21:21:45Z revision=15 accountingRevision=15
+- StopCapability: generation=15 revision=15 machine=m1d claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T12:45:35Z 80R77DYNPPC53PEPJ5AHWB9Y4N-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
@@ -29,4 +31,5 @@ History:
 - 2026-09-06T20:45:02Z M4QEAH2CMPYPXRKW81CK0NEXX1-m1d-62183579 park actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving reason=slice 2 built and reviewed twice; one low material finding (HGV-07, one refusal row still prints a failing command on parked and claimed goals) is left and the box is spent (6 of 6 attempts, 720 of 720 job-minutes); the next slice is one fold and one re-review, and whether it runs as a new slice under the norm box or under a raised box is Wido's call
 - 2026-09-06T21:11:33Z 2N8THD29J2NM299BK4KEV9PYJ2-m1d-62183579 unpark actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
 - 2026-09-06T21:11:36Z 9EYEXCSW3CR249DKA9FYQVF74E-m1d-62183579 edit actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
-Integrity: sha256=8f1f0ff99bbdf538d518136b746b4a596df9ce1a9050199f53eb98fff1481d0d
+- 2026-09-06T21:21:45Z FHDCC1VN30BNBZ53J8BT3XT06A-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
+Integrity: sha256=97c6b450748a4fed370ef72e483e4570ffb1c12aed44d3a1de54b020c1ceeab4
