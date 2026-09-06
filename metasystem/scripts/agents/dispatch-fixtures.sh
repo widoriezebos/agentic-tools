@@ -1541,8 +1541,8 @@ happy_snapshot_rel=$("$engine" json get --file "$happy_record" --field capabilit
 [[ "$("$engine" json get --file "$happy_record" --field sessionEstablishedTimeoutSec)" \
    == "$("$engine" json get --file "$agent_repo/$happy_snapshot_rel" --field capabilities.sessionEstablishedTimeoutSec)" ]] \
   || { echo "happy record does not carry the snapshot's session-established timeout" >&2; exit 1; }
-[[ "$("$engine" json get --file "$happy_record" --field permissions.requested.preset)" == none ]] \
-  || { echo "happy record did not request the none preset" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field permissions.requested.preset)" == critic ]] \
+  || { echo "happy record did not request the critic preset" >&2; exit 1; }
 happy_enforcement_rel=$("$engine" json get --file "$happy_record" --field permissions.enforcementSnapshot)
 [[ "$happy_enforcement_rel" == "$happy_snapshot_rel" ]] \
   || { echo "happy enforcement snapshot is not the capability snapshot" >&2; exit 1; }
