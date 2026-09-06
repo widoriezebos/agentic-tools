@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: Two slices. Slice 1 (design, small): read cmd/metasystem/goalsync_mutations.go (approvalBudget, budgetTuple, the set-budget routing) and internal/goal for the approve and set-budget transactions; write the one-page design: the compact box grammar and presets, the routing table by goal state, the --by default from the terminal enrollment record, the refusal-prints-a-command rule and where it lives (one function every human verb refusal passes through), the fixture list. Sol critiques once. Slice 2 (build): implement per the design; goal-cli-fixtures.sh drives each refusal and runs the printed command. Receipt: go gate plus goal-cli-fixtures.sh.
 - OpenedAt: 2026-09-06T12:45:35Z
-- Revision: 4
+- Revision: 5
 - Arc: verbs-match-intent
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:52:20Z revision=3 opid=Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 authority=proven digest=10a4e68634e75c7789a6f26c6c7cd0feb1a6d1a9ef16d357fefbbc5afbe35498
+- Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=4 at=2026-09-06T18:09:00Z
 - Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T18:05:55Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1d claimEpoch=1 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-06T12:49:45Z 82VNKJKQ2ZZZJ5Q83NZX6SMEWW-m1d-62183579 set-arc actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
 - 2026-09-06T12:52:20Z Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 approve actor=human:Wido targets=human-goal-verbs-forgiving,repo-root-paths-ride-agent-commits-unjudged,stop-deadline-parent-trusts-ps,stop-hook-open-work-refusal-repeats,verbs-match-intent
 - 2026-09-06T18:05:55Z A4R4T4WF7DCSPD1WSK3HT743PB-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
-Integrity: sha256=019acbac68ab8a2d90d637f79dbd65c8cfcdd184b0a9fc501840f6ebd12f64ae
+- 2026-09-06T18:09:00Z 1N25PE13SPVTN5DS53GKRN4B7V-m1d-62183579 slice-start actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
+Integrity: sha256=ab8aa092b90fe21c283021585e215250ee7ff1b8728b5e354e5f4794e23312a5
