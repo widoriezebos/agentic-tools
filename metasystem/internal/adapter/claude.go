@@ -60,9 +60,11 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 
 	// An empty allowlist with an empty denylist permits ordinary egress; the
 	// non-resolving sentinel makes every usable destination unavailable.
-	networkSandbox := map[string]any{"allowedDomains": []any{"metasystem.invalid"}, "deniedDomains": []any{}}
+	// Go tests and local fixtures work through loopback listeners, and binding
+	// a loopback port is not network egress.
+	networkSandbox := map[string]any{"allowedDomains": []any{"metasystem.invalid"}, "deniedDomains": []any{}, "allowLocalBinding": true}
 	if network == "allow" {
-		networkSandbox = map[string]any{"allowedDomains": []any{}, "deniedDomains": []any{}}
+		networkSandbox = map[string]any{"allowedDomains": []any{}, "deniedDomains": []any{}, "allowLocalBinding": true}
 	}
 
 	filesystemSandbox := map[string]any{"allowWrite": allowWrite}

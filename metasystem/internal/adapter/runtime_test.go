@@ -169,6 +169,9 @@ func TestBuildClaudeSettingsWriteAndNetwork(t *testing.T) {
 	if len(net["allowedDomains"].([]any)) != 0 {
 		t.Fatalf("networked turn should permit ordinary egress: %v", net)
 	}
+	if net["allowLocalBinding"] != true {
+		t.Fatalf("networked turn should permit loopback listeners: %v", net)
+	}
 	hookCommand := hookCommandOf(t, got)
 	if hookCommand != "/opt/bin/metasystem adapter claude-session-signal" {
 		t.Fatalf("unexpected hook command %q", hookCommand)
@@ -238,6 +241,10 @@ func TestBuildClaudeSettingsCodeCriticAllowsSandboxedBash(t *testing.T) {
 	denyWrite := fs["denyWrite"].([]any)
 	if len(denyWrite) != 2 || denyWrite[0] != "/ws" || denyWrite[1] != "/extra" {
 		t.Fatalf("a code critic should deny writes to its workspace and read roots: %v", denyWrite)
+	}
+	net := sandbox["network"].(map[string]any)
+	if net["allowLocalBinding"] != true {
+		t.Fatalf("a code critic should permit loopback listeners: %v", net)
 	}
 }
 
