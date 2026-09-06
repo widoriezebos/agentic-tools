@@ -225,6 +225,14 @@ if [[ $step == arming-failure && ${1:-} == up ]]; then
   echo "ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal" >&2
   exit 44
 fi
+if [[ $step == rearm-success && ${1:-} == up ]]; then
+  printf '%s\n' 'up outcome=armed authority=writer re-armed="generation=9 previous=8 engine=abc1234 landed=def5678"'
+  exit 0
+fi
+if [[ $step == rearm-failure && ${1:-} == up ]]; then
+  printf '%s\n' 'up outcome=failed re-armed="generation=9 previous=8 engine=abc1234 landed=def5678" component=steward-runner'
+  exit 44
+fi
 if [[ ${1:-} == up ]]; then
   exit 0
 fi
@@ -278,6 +286,76 @@ assert_failure_blocks hook-attempt hook-attempt 'attempt evidence could not be r
 assert_failure_blocks turn-verdict turn-verdict 'turn-verdict unavailable'
 assert_failure_blocks malformed-verdict malformed-verdict 'turn verdict was unreadable'
 assert_failure_blocks partial-output partial-output 'could not prove that stopping is safe'
+
+# A re-arm notice is keyed from the aggregate line on both hook entry paths.
+# Successful session start emits it, Stop carries it beside either verdict,
+# and a later failure cannot erase the already-persisted fact.
+rearm_root=$tmp/rearm-root
+mkdir -p "$rearm_root/bin" "$rearm_root/plans" "$rearm_root/scripts/agents/adapters"
+cp "$ms" "$rearm_root/bin/metasystem"
+cp "$hook" "$rearm_root/scripts/agents/supervision-hook.sh"
+cp "$root/scripts/agents/adapters/fake.sh" "$rearm_root/scripts/agents/adapters/fake.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$rearm_root/scripts/agents/evidence-gc.sh"
+chmod +x "$rearm_root/scripts/agents/evidence-gc.sh" "$rearm_root/scripts/agents/adapters/fake.sh"
+printf '%s\n' 'metasystem.runtimes=fake' >"$rearm_root/metasystem.conf"
+printf '# Goals\n\n## Goal-free: declared 2026-08-28T00:00:00Z by human over fixture\n' >"$rearm_root/plans/goals.md"
+git -C "$rearm_root" init -q -b main
+git -C "$rearm_root" config user.name fixture
+git -C "$rearm_root" config user.email fixture@example.invalid
+git -C "$rearm_root" add metasystem.conf plans/goals.md
+git -C "$rearm_root" commit -qm fixture
+rearm_agent=$tmp/metasystem-fake-agent
+cat >"$rearm_agent" <<'SH'
+#!/usr/bin/env bash
+cd "${METASYSTEM_REARM_GIT_ROOT:?}"
+bash "${METASYSTEM_REARM_HOOK:?}" fake "${METASYSTEM_REARM_EVENT:?}"
+SH
+chmod +x "$rearm_agent"
+run_rearm_hook() { # injected up outcome, event, payload, stdout, stderr
+  METASYSTEM_BIN="$failure_engine" \
+    METASYSTEM_STOP_FAILURE_REAL_ENGINE="$rearm_root/bin/metasystem" \
+    METASYSTEM_STOP_FAILURE_STEP="$1" \
+    METASYSTEM_REARM_GIT_ROOT="$rearm_root" \
+    METASYSTEM_REARM_HOOK="$rearm_root/scripts/agents/supervision-hook.sh" \
+    METASYSTEM_REARM_EVENT="$2" \
+    "$rearm_agent" <"$3" >"$4" 2>"$5"
+}
+
+printf '{"session_id":"rearm-start","cwd":"%s","hook_event_name":"SessionStart"}\n' "$rearm_root" \
+  >"$tmp/rearm-start-payload.json"
+run_rearm_hook rearm-success start "$tmp/rearm-start-payload.json" \
+    "$tmp/rearm-start.out" "$tmp/rearm-start.err" \
+  || { echo "successful re-arm SessionStart fixture failed" >&2; cat "$tmp/rearm-start.err" >&2; exit 1; }
+grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-start.out" \
+  || { echo "successful SessionStart hid the re-arm notice" >&2; cat "$tmp/rearm-start.out" >&2; exit 1; }
+
+run_rearm_hook rearm-failure start "$tmp/rearm-start-payload.json" \
+    "$tmp/rearm-start-failure.out" "$tmp/rearm-start-failure.err" \
+  || { echo "failed re-arm SessionStart fixture failed" >&2; cat "$tmp/rearm-start-failure.err" >&2; exit 1; }
+grep -Fq 'Metasystem supervision arming failed:' "$tmp/rearm-start-failure.out" \
+  && grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-start-failure.out" \
+  || { echo "failed SessionStart did not surface both the failure and re-arm notice" >&2; cat "$tmp/rearm-start-failure.out" >&2; exit 1; }
+
+printf '{"session_id":"rearm-stop","cwd":"%s","hook_event_name":"Stop"}\n' "$rearm_root" \
+  >"$tmp/rearm-stop-payload.json"
+run_rearm_hook rearm-success stop "$tmp/rearm-stop-payload.json" \
+    "$tmp/rearm-stop.out" "$tmp/rearm-stop.err" \
+  || { echo "successful re-arm Stop fixture failed" >&2; cat "$tmp/rearm-stop.err" >&2; exit 1; }
+grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-stop.out" \
+  || { echo "Stop hid the successful re-arm notice" >&2; cat "$tmp/rearm-stop.out" >&2; exit 1; }
+
+printf '{"session_id":"rearm-failure","cwd":"%s","hook_event_name":"Stop"}\n' "$rearm_root" \
+  >"$tmp/rearm-failure-payload.json"
+run_rearm_hook rearm-failure stop "$tmp/rearm-failure-payload.json" \
+    "$tmp/rearm-failure.out" "$tmp/rearm-failure.err" \
+  || { echo "failed re-arm Stop fixture failed" >&2; cat "$tmp/rearm-failure.err" >&2; exit 1; }
+grep -Fq 'supervision arming failed' "$tmp/rearm-failure.out" \
+  && grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-failure.out" \
+  || { echo "failed Stop did not surface both the failure and re-arm notice" >&2; cat "$tmp/rearm-failure.out" >&2; exit 1; }
+if grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/line.out"; then
+  echo "a hook run without the aggregate key invented a re-arm notice" >&2
+  exit 1
+fi
 
 # Failures outside the seat block once per cause and session, then surface the
 # exact cause, remedy, and occurrence count without another decision block.
@@ -656,4 +734,4 @@ grep -Fq '"decision":"block"' "$tmp/template-replay.out" \
   && grep -Fq 'cannot replay' "$tmp/template-replay.out" \
   || { echo "template SessionEnd marker authorized a later Stop" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
 
-echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, nested installation ancestry, repeated template open-work blocking, template holder-state, and SessionEnd no-replay fixtures passed"
+echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, re-arm visibility, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, nested installation ancestry, repeated template open-work blocking, template holder-state, and SessionEnd no-replay fixtures passed"

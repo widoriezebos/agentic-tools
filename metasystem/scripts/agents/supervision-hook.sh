@@ -426,6 +426,7 @@ external_stop_json() { # system message, reason, cause, remedy
 
 tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
 up_failure=
+up_notice=
 if [[ "$event" == stop ]]; then
   up_rc=0
   if [[ -n "$identity_pid" ]]; then
@@ -438,8 +439,12 @@ if [[ "$event" == stop ]]; then
     up_output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$harness_root" \
       --repo "$repo" --recover-only --if-down 2>&1) || up_rc=$?
   fi
+  up_aggregate=$(printf '%s' "$up_output" | tail -1)
+  if [[ "$up_aggregate" == *" re-armed="* ]]; then
+    up_notice="Metasystem re-armed the rebuilt engine: $up_aggregate"
+  fi
   if (( up_rc != 0 )); then
-    up_failure="Metasystem supervision arming failed: $(printf '%s' "$up_output" | tail -1)"
+    up_failure="Metasystem supervision arming failed: $up_aggregate"
     record_stop_failure "supervision arming failed"
   fi
   health_rc=0
@@ -466,6 +471,8 @@ if [[ "$event" == stop ]]; then
     record_stop_failure "the narrator digest could not be read"
   fi
   checkin_tail=$health_line
+  [[ -z "$up_notice" ]] || checkin_tail="$up_notice
+$checkin_tail"
   [[ -z "$digest_message" ]] || checkin_tail="$checkin_tail
 $digest_message"
 fi
@@ -720,6 +727,16 @@ if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$har
   # The watchdog revives with the first metasystem activity on this
   # machine: `up` verifies the owner, watcher, steward, announcement, and
   # lease as one idempotent transaction.
+  up_aggregate=$(printf '%s' "$output" | tail -1)
+  if [[ "$up_aggregate" == *" re-armed="* ]]; then
+    surface_json "Metasystem re-armed the rebuilt engine: $up_aggregate"
+  fi
   exit 0
 fi
-surface_json "Metasystem supervision arming failed: $(printf '%s' "$output" | tail -1)"
+up_aggregate=$(printf '%s' "$output" | tail -1)
+up_message="Metasystem supervision arming failed: $up_aggregate"
+if [[ "$up_aggregate" == *" re-armed="* ]]; then
+  up_message="$up_message
+Metasystem re-armed the rebuilt engine: $up_aggregate"
+fi
+surface_json "$up_message"

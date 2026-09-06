@@ -84,12 +84,14 @@ if (( ! fixture_bed_child )); then
     run_fixture_bed_scenarios supervision "supervision fixtures passed (operator empty-runtime source)" \
       "$fixture_bed_script" operator-layout
   else
-    run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16)" \
-      "$fixture_bed_script" operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor
+    run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
+      "$fixture_bed_script" operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
+      rearm-rebuild rearm-launch-fails rearm-provenance
   fi
 fi
 case "$fixture_scenario" in
-  operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor) ;;
+  operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
+    rearm-rebuild | rearm-launch-fails | rearm-provenance) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -637,8 +639,35 @@ make_repo() { # destination
   enroll_fixture_engine "$repo" "$repo/bin/metasystem"
 }
 
-json_field() { # file, dotted field (script-fixtures-022: the engine verb)
-  "$ms" json get --file "$1" --field "$2"
+prepare_rearm_repo() { # repository prepared by make_repo
+  local rearm_repo=$1
+  git -C "$rearm_repo" branch -m trunk
+  git -C "$rearm_repo" config --local metasystem.steward.notify-command true
+  git -C "$rearm_repo" config --local metasystem.steward.landing-ref refs/remotes/origin/trunk
+  git -C "$rearm_repo" update-ref refs/remotes/origin/trunk refs/heads/trunk
+  # The fake process source keeps the fixture deterministic; a second shipped
+  # adapter keeps this repository on the real steward-runner path.
+  conf_edit "$rearm_repo/metasystem.conf" replace-line-first \
+    '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=fake,codex'
+}
+
+build_rearm_engine() { # build stamp, output path
+  METASYSTEM_BUILD_STAMP=$1 bash "$source_root/scripts/agents/go-build.sh" --out "$2" >/dev/null
+}
+
+install_rearm_engine() { # built engine, enrolled path
+  local built=$1 enrolled=$2 staged=$enrolled.replacement
+  cp "$built" "$staged"
+  chmod 0755 "$staged"
+  mv "$staged" "$enrolled"
+}
+
+json_field() { # file, dotted field, optional absent-field default
+  if [[ $# -ge 3 ]]; then
+    "$ms" json get --file "$1" --field "$2" --default "$3"
+  else
+    "$ms" json get --file "$1" --field "$2"
+  fi
 }
 
 json_array_items() { # file, top-level array field: one element per line
@@ -933,6 +962,183 @@ process_fixture=$repo/process-fixture.json
 identity_fixture=$repo/process-identities.json
 printf '[]\n' >"$process_fixture"
 printf '{}\n' >"$identity_fixture"
+fi
+
+if [[ "$fixture_scenario" == rearm-rebuild ]]; then
+# A landed rebuild on a non-main branch re-arms before session work and leaves
+# every durable provenance surface tied to the commit the new bytes consumed.
+prepare_rearm_repo "$repo"
+trunk_tip=$(git -C "$repo" rev-parse trunk)
+trunk_stamp=$(git -C "$repo" rev-parse --short=12 trunk)
+engine_b=$tmp/engine-b
+build_rearm_engine "$trunk_stamp" "$engine_b"
+install_rearm_engine "$engine_b" "$repo/bin/metasystem"
+
+rearm_output_file=$tmp/rearm-rebuild.out
+rearm_status_file=$tmp/rearm-rebuild.status
+rearm_ready=$tmp/rearm-rebuild.ready
+rearm_release=$tmp/rearm-rebuild.release
+bash "$live_arm_driver" "$repo/bin/metasystem" "$arm" "$repo" rearm-rebuild rearm-rebuild \
+  "$rearm_output_file" "$rearm_status_file" "$rearm_ready" "$rearm_release" &
+rearm_driver=$!
+rearm_driver_start=$(process_started_at "$rearm_driver")
+owned_pids+=("$rearm_driver:$rearm_driver_start")
+wait_until "landed engine re-arm" test -e "$rearm_ready"
+[[ $(cat "$rearm_status_file") == 0 ]] \
+  || { echo "landed rebuild did not re-arm" >&2; cat "$rearm_output_file" >&2; exit 1; }
+grep -Fq 'component=accepted-engine outcome=re-armed' "$rearm_output_file" \
+  && grep -Fq "re-armed=\"generation=2 previous=1 engine=$trunk_stamp landed=${trunk_tip:0:7}\"" "$rearm_output_file" \
+  || { echo "landed rebuild output omitted its re-arm fact" >&2; cat "$rearm_output_file" >&2; exit 1; }
+identity_file=$repo/artifacts/agents/steward/identity.json
+[[ $(json_field "$identity_file" generation) == 2 ]] \
+  && [[ $(json_field "$identity_file" mintedBy) == machine-rebuild ]] \
+  && [[ $(json_field "$identity_file" humanWitnessedGeneration 0) == 0 ]] \
+  && [[ $(json_field "$identity_file" engineBuild) == "$trunk_stamp" ]] \
+  && [[ $(json_field "$identity_file" landedCommit) == "$trunk_tip" ]] \
+  && [[ $(json_field "$identity_file" landingRef) == refs/remotes/origin/trunk ]] \
+  || { echo "landed rebuild identity omitted machine provenance" >&2; cat "$identity_file" >&2; exit 1; }
+find "$repo/artifacts/agents/steward/engine-pins" -type f -name 'generation-2-*' -print -quit | grep -q . \
+  || { echo "landed rebuild prepared no generation-two execution pin" >&2; exit 1; }
+runner_file=$repo/artifacts/agents/steward/runner.json
+runner_pid=$(json_field "$runner_file" pid)
+runner_started=$(json_field "$runner_file" pidStartedAt)
+process_identity_alive "$runner_pid" "$runner_started" \
+  || { echo "landed rebuild left no live steward runner" >&2; exit 1; }
+"$repo/bin/metasystem" health --repo "$repo" >"$tmp/rearm-health.out" || true
+grep -Fq "machine-minted (rebuild, engine $trunk_stamp, landed ${trunk_tip:0:7} on refs/remotes/origin/trunk)" "$tmp/rearm-health.out" \
+  || { echo "health hid the machine-minted provenance" >&2; cat "$tmp/rearm-health.out" >&2; exit 1; }
+grep -Fq 'engine-re-armed generation=2 previous=1' "$repo/artifacts/agents/supervision/arming.log" \
+  || { echo "the arming log omitted the re-arm" >&2; exit 1; }
+touch "$rearm_release"
+wait_for_child_exit "landed re-arm driver release" "$rearm_driver"
+fi
+
+if [[ "$fixture_scenario" == rearm-launch-fails ]]; then
+# A post-mint launch failure reports the mint and converges on the next up
+# without minting another generation.
+prepare_rearm_repo "$repo"
+trunk_tip=$(git -C "$repo" rev-parse trunk)
+trunk_stamp=$(git -C "$repo" rev-parse --short=12 trunk)
+engine_b=$tmp/engine-b
+build_rearm_engine "$trunk_stamp" "$engine_b"
+install_rearm_engine "$engine_b" "$repo/bin/metasystem"
+mkdir -p "$repo/artifacts/agents/steward/runner.log"
+
+set +e
+"$arm" --repo "$repo" --session rearm-launch-fails --pid $$ \
+  --start-time "$(process_started_at $$)" --tag rearm-launch-fails \
+  >"$tmp/rearm-launch-fails.out" 2>&1
+launch_failure_rc=$?
+set -e
+(( launch_failure_rc != 0 )) \
+  || { echo "runner.log directory did not fail the post-mint launch" >&2; exit 1; }
+grep -Fq 'component=accepted-engine outcome=re-armed' "$tmp/rearm-launch-fails.out" \
+  && grep -Fq 'component=steward-runner outcome=failed' "$tmp/rearm-launch-fails.out" \
+  && grep -Fq 'up outcome=failed re-armed=' "$tmp/rearm-launch-fails.out" \
+  || { echo "post-mint launch failure hid the re-arm" >&2; cat "$tmp/rearm-launch-fails.out" >&2; exit 1; }
+identity_file=$repo/artifacts/agents/steward/identity.json
+[[ $(json_field "$identity_file" generation) == 2 ]] \
+  && [[ $(json_field "$identity_file" mintedBy) == machine-rebuild ]] \
+  || { echo "post-mint launch failure lost generation two" >&2; cat "$identity_file" >&2; exit 1; }
+rmdir "$repo/artifacts/agents/steward/runner.log"
+"$arm" --repo "$repo" --session rearm-launch-recovers --pid $$ \
+  --start-time "$(process_started_at $$)" --tag rearm-launch-recovers \
+  >"$tmp/rearm-launch-recovers.out" 2>&1 \
+  || { echo "the next up did not repair the generation-two runner" >&2; cat "$tmp/rearm-launch-recovers.out" >&2; exit 1; }
+grep -Fq 'component=steward-runner outcome=started' "$tmp/rearm-launch-recovers.out" \
+  || { echo "the next up did not report a repaired runner" >&2; cat "$tmp/rearm-launch-recovers.out" >&2; exit 1; }
+[[ $(json_field "$identity_file" generation) == 2 ]] \
+  || { echo "runner repair minted an extra generation" >&2; exit 1; }
+fi
+
+if [[ "$fixture_scenario" == rearm-provenance ]]; then
+# Development, unlanded, and anchorless builds never stop the standing runner;
+# a witness of the owned tip does re-arm and records the resolved full commit.
+prepare_rearm_repo "$repo"
+git -C "$repo" checkout -qb side
+# cmd is selected by the compiled ENGINE policy, so this commit's side build
+# has a different witness digest from trunk.
+mkdir -p "$repo/cmd"
+printf 'unlanded fixture\n' >"$repo/cmd/rearm-unlanded.txt"
+git -C "$repo" add cmd/rearm-unlanded.txt
+git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm side
+side_tip=$(git -C "$repo" rev-parse side)
+git -C "$repo" checkout -q trunk
+trunk_tip=$(git -C "$repo" rev-parse trunk)
+trunk_stamp=$(git -C "$repo" rev-parse --short=12 trunk)
+
+archive_root=$tmp/trunk-archive
+mkdir -p "$archive_root"
+git -C "$repo" archive trunk | tar -x -C "$archive_root"
+witness_report=$("$ms" behavior-surface digest --root "$archive_root" --projection ENGINE --endpoint rearm-provenance)
+witness_digest=$("$ms" json get --value "$witness_report" --field surfaceDigest)
+witness_stamp=witness-${witness_digest:0:12}
+engine_dev=$tmp/engine-dev
+engine_x=$tmp/engine-x
+engine_b=$tmp/engine-b
+engine_w=$tmp/engine-w
+build_rearm_engine dev "$engine_dev"
+build_rearm_engine "$side_tip" "$engine_x"
+build_rearm_engine "$trunk_stamp" "$engine_b"
+build_rearm_engine "$witness_stamp" "$engine_w"
+
+"$arm" --repo "$repo" --session rearm-provenance-base --pid $$ \
+  --start-time "$(process_started_at $$)" --tag rearm-provenance-base >/dev/null
+runner_file=$repo/artifacts/agents/steward/runner.json
+standing_pid=$(json_field "$runner_file" pid)
+standing_started=$(json_field "$runner_file" pidStartedAt)
+
+install_rearm_engine "$engine_dev" "$repo/bin/metasystem"
+if "$arm" --repo "$repo" --session rearm-dev --pid $$ --start-time "$(process_started_at $$)" --tag rearm-dev \
+  >"$tmp/rearm-dev.out" 2>&1; then
+  echo "development-stamped rebuild re-armed" >&2; exit 1
+fi
+grep -Fq 'build stamp dev' "$tmp/rearm-dev.out" \
+  || { echo "development refusal did not name its stamp" >&2; cat "$tmp/rearm-dev.out" >&2; exit 1; }
+process_identity_alive "$standing_pid" "$standing_started" \
+  || { echo "development refusal stopped the standing runner" >&2; exit 1; }
+
+install_rearm_engine "$engine_x" "$repo/bin/metasystem"
+if "$arm" --repo "$repo" --session rearm-unlanded --pid $$ --start-time "$(process_started_at $$)" --tag rearm-unlanded \
+  >"$tmp/rearm-unlanded.out" 2>&1; then
+  echo "unlanded rebuild re-armed" >&2; exit 1
+fi
+grep -Fq 'not landed on refs/remotes/origin/trunk' "$tmp/rearm-unlanded.out" \
+  || { echo "unlanded refusal did not name the remote-tracking ref" >&2; cat "$tmp/rearm-unlanded.out" >&2; exit 1; }
+process_identity_alive "$standing_pid" "$standing_started" \
+  || { echo "unlanded refusal stopped the standing runner" >&2; exit 1; }
+
+git -C "$repo" config --local --unset metasystem.steward.landing-ref
+install_rearm_engine "$engine_b" "$repo/bin/metasystem"
+if "$arm" --repo "$repo" --session rearm-no-anchor --pid $$ --start-time "$(process_started_at $$)" --tag rearm-no-anchor \
+  >"$tmp/rearm-no-anchor.out" 2>&1; then
+  echo "anchorless rebuild re-armed" >&2; exit 1
+fi
+grep -Fq 'owns no remote-tracking landing ref' "$tmp/rearm-no-anchor.out" \
+  && grep -Fq 'config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch>' "$tmp/rearm-no-anchor.out" \
+  || { echo "anchorless refusal omitted its repair command" >&2; cat "$tmp/rearm-no-anchor.out" >&2; exit 1; }
+git -C "$repo" config --local metasystem.steward.landing-ref main
+if "$arm" --repo "$repo" --session rearm-unqualified --pid $$ --start-time "$(process_started_at $$)" --tag rearm-unqualified \
+  >"$tmp/rearm-unqualified.out" 2>&1; then
+  echo "unqualified landing ref admitted a rebuild" >&2; exit 1
+fi
+grep -Fq 'metasystem.steward.landing-ref is main; expected refs/remotes/<remote>/<branch>' "$tmp/rearm-unqualified.out" \
+  || { echo "unqualified landing ref did not fail closed" >&2; cat "$tmp/rearm-unqualified.out" >&2; exit 1; }
+process_identity_alive "$standing_pid" "$standing_started" \
+  || { echo "landing-ref refusals stopped the standing runner" >&2; exit 1; }
+
+git -C "$repo" config --local metasystem.steward.landing-ref refs/remotes/origin/trunk
+install_rearm_engine "$engine_w" "$repo/bin/metasystem"
+"$arm" --repo "$repo" --session rearm-witness --pid $$ \
+  --start-time "$(process_started_at $$)" --tag rearm-witness >"$tmp/rearm-witness.out" 2>&1 \
+  || { echo "eligible witness rebuild did not re-arm" >&2; cat "$tmp/rearm-witness.out" >&2; exit 1; }
+grep -Fq 'component=accepted-engine outcome=re-armed' "$tmp/rearm-witness.out" \
+  || { echo "witness rebuild output omitted the re-arm" >&2; cat "$tmp/rearm-witness.out" >&2; exit 1; }
+identity_file=$repo/artifacts/agents/steward/identity.json
+[[ $(json_field "$identity_file" engineBuild) == "$witness_stamp" ]] \
+  && [[ $(json_field "$identity_file" landedCommit) == "$trunk_tip" ]] \
+  && [[ $(json_field "$identity_file" landingRef) == refs/remotes/origin/trunk ]] \
+  || { echo "witness rebuild identity omitted resolved provenance" >&2; cat "$identity_file" >&2; exit 1; }
 fi
 
 if [[ "$fixture_scenario" == census-lifecycle ]]; then

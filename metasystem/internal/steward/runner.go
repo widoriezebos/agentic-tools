@@ -152,7 +152,8 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 // repo's own binary, verify the operator is reachable, and spawn the
 // detached runner unless one already lives. Idempotent.
 func Arm(repoRoot, binaryPath string) (string, error) {
-	return arm(repoRoot, binaryPath, false, "", "")
+	outcome, err := arm(repoRoot, binaryPath, false, false, humanMintDecision("human-terminal", "", ""))
+	return outcome.Message, err
 }
 
 // ArmTemporary is Arm under a recorded remote human authorization: the
@@ -166,14 +167,110 @@ func ArmTemporary(repoRoot, binaryPath, humanWord, reviewBy string) (string, err
 	if humanWord == "" {
 		return "", fmt.Errorf("temporary steward arm requires the verbatim word and review-by date")
 	}
-	return arm(repoRoot, binaryPath, true, humanWord, reviewBy)
+	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-word", humanWord, reviewBy))
+	return outcome.Message, err
+}
+
+// ArmStage names the last enrollment transition that changed machine state.
+type ArmStage int
+
+const (
+	StageBeforeMint ArmStage = iota
+	StageStopAttempted
+	StageStopped
+	StageMinted
+)
+
+// ReArmOutcome records both the admitted provenance and the last transition,
+// including a visible identity whose crash durability remains unconfirmed.
+type ReArmOutcome struct {
+	Status             string
+	Stage              ArmStage
+	Generation         int
+	PreviousGeneration int
+	RunnerPid          int64
+	StoppedRunnerPid   int64
+	EngineBuild        string
+	LandedCommit       string
+	LandingRef         string
+	DurabilityPending  bool
+	NoticeErr          error
+}
+
+type mintPlan struct {
+	Skip         bool
+	Message      string
+	MintedBy     string
+	Word         string
+	ReviewBy     string
+	Witnessed    int
+	WitnessedAt  string
+	EngineBuild  string
+	LandedCommit string
+	LandingRef   string
+}
+
+type armOutcome struct {
+	ReArmOutcome
+	Message string
+}
+
+type mintDecision func(prior InstallIdentity, priorErr error, bytes enrolledBytes) (mintPlan, error)
+
+func humanMintDecision(mintedBy, word, reviewBy string) mintDecision {
+	return func(_ InstallIdentity, _ error, bytes enrolledBytes) (mintPlan, error) {
+		if bytes.Err != nil {
+			return mintPlan{}, bytes.Err
+		}
+		return mintPlan{MintedBy: mintedBy, Word: word, ReviewBy: reviewBy, EngineBuild: bytes.Stamp}, nil
+	}
+}
+
+// ReArmRebuiltEngine replaces an enrolled engine only when the build stamp
+// read from its changed bytes resolves to the installation's configured
+// remote-tracking history. Caller identity is deliberately irrelevant.
+func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReArmOutcome, error) {
+	decision := func(prior InstallIdentity, priorErr error, bytes enrolledBytes) (mintPlan, error) {
+		if priorErr != nil {
+			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, priorErr)
+		}
+		if canonicalPath(invokingBinary) != prior.InstallPath {
+			return mintPlan{}, fmt.Errorf("%w: engine %q is not the enrolled engine %q", ErrEnrollmentDrift, canonicalPath(invokingBinary), prior.InstallPath)
+		}
+		if bytes.Err != nil {
+			return mintPlan{}, bytes.Err
+		}
+		if bytes.Digest == prior.InstallDigest {
+			return mintPlan{Skip: true, Message: fmt.Sprintf("already current (generation %d)", prior.Generation)}, nil
+		}
+		landingRef, err := readOwnedLandingRef(installationRoot)
+		if err != nil {
+			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, err)
+		}
+		commit, err := resolveLandedBuild(repoRoot, installationRoot, landingRef, bytes.Stamp)
+		if err != nil {
+			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %v", ErrEnrollmentDrift, prior.InstallPath, err)
+		}
+		witnessed, witnessedAt := prior.HumanWitnessedGeneration, prior.HumanWitnessedAt
+		if prior.MintedBy == "" {
+			witnessed, witnessedAt = 0, ""
+		}
+		return mintPlan{
+			MintedBy: "machine-rebuild", Word: prior.TemporaryHumanWord, ReviewBy: prior.ReviewBy,
+			Witnessed: witnessed, WitnessedAt: witnessedAt, EngineBuild: bytes.Stamp,
+			LandedCommit: commit, LandingRef: landingRef,
+		}, nil
+	}
+	outcome, err := arm(repoRoot, invokingBinary, true, true, decision)
+	return outcome.ReArmOutcome, err
 }
 
 // Restart replaces a live runner before arming the repository again. It is
 // the repair path for a process that remains alive but no longer completes
 // ticks.
 func Restart(repoRoot, binaryPath string) (string, error) {
-	return arm(repoRoot, binaryPath, true, "", "")
+	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-terminal", "", ""))
+	return outcome.Message, err
 }
 
 // EnsureRunnerResult reports how session-start arming treated the steward.
@@ -379,71 +476,154 @@ func runnerExclusion(top string) (string, bool) {
 	return "", false
 }
 
-func arm(repoRoot, binaryPath string, replace bool, temporaryWord, reviewBy string) (string, error) {
+var beforeArmLock func()
+var afterArmDecision func()
+
+func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision) (armOutcome, error) {
+	outcome := armOutcome{ReArmOutcome: ReArmOutcome{Stage: StageBeforeMint}}
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
-		return "", err
+		return outcome, err
 	}
 	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
 		top = resolved
 	}
 	if reason, excluded := runnerExclusion(top); excluded {
-		return "not armed: " + reason, nil
+		outcome.Message = "not armed: " + reason
+		return outcome, nil
 	}
 	if _, ok := NotifyCommand(top); !ok {
-		return "", fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
+		return outcome, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
 	}
 	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
-		return "", err
+		return outcome, err
 	}
-	// One arm at a time, and EVERYTHING an arm changes happens inside
-	// the lock: identity generations cannot be superseded by a racing
-	// arm, and the second contender finds the first's live runner.
+	// One arm at a time. Every field and eligibility fact is read inside the
+	// lock, and neither a refusal nor a no-op touches a live runner.
 	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return "", err
+		return outcome, err
 	}
 	defer armLock.Close()
+	if beforeArmLock != nil {
+		beforeArmLock()
+	}
 	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
-		return "", err
+		return outcome, err
+	}
+	identityPath := RepoIdentityPath(top)
+	prior, priorErr := VerifyIdentity(identityPath, top)
+	if errors.Is(priorErr, os.ErrNotExist) {
+		// Only the arm path owns publication recovery. A reader may observe the
+		// marker before the first identity rename and must never clear it.
+		_ = os.Remove(identityDurabilityPendingPath(identityPath))
+	}
+	if priorErr == nil {
+		if _, markerErr := os.Stat(identityDurabilityPendingPath(identityPath)); markerErr == nil {
+			durable, publishErr := publishIdentity(identityPath, prior)
+			if publishErr != nil {
+				return outcome, fmt.Errorf("re-publish identity with durability pending: %w", publishErr)
+			}
+			outcome.DurabilityPending = !durable
+		}
+	}
+	bytesPath := canonicalPath(binaryPath)
+	if machine && priorErr == nil {
+		bytesPath = prior.InstallPath
+	}
+	bytes := readEnrolledBytes(InstallIdentity{InstallPath: bytesPath, InstallDigest: "candidate"})
+	if bytes.File != nil {
+		defer bytes.File.Close()
+	}
+	plan, err := decide(prior, priorErr, bytes)
+	if err != nil {
+		return outcome, err
+	}
+	outcome.EngineBuild, outcome.LandedCommit, outcome.LandingRef = plan.EngineBuild, plan.LandedCommit, plan.LandingRef
+	outcome.PreviousGeneration = prior.Generation
+	if afterArmDecision != nil {
+		afterArmDecision()
+	}
+	if plan.Skip {
+		outcome.Status = "already-current"
+		outcome.Generation = prior.Generation
+		outcome.Message = plan.Message
+		if rec, alive := liveRunner(top); alive {
+			outcome.RunnerPid = rec.Pid
+			outcome.Message += fmt.Sprintf(", runner pid %d", rec.Pid)
+		}
+		return outcome, nil
 	}
 	if rec, alive := liveRunner(top); alive {
 		if !replace {
-			return fmt.Sprintf("already armed (runner pid %d)", rec.Pid), nil
+			outcome.RunnerPid = rec.Pid
+			outcome.Message = fmt.Sprintf("already armed (runner pid %d); %s", rec.Pid, EnrollmentProvenance(prior))
+			if prior.MintedBy == "" || prior.MintedBy == "machine-rebuild" {
+				outcome.Message += " — run steward restart at the terminal to witness it"
+			}
+			return outcome, nil
 		}
+		outcome.StoppedRunnerPid = rec.Pid
+		outcome.Stage = StageStopAttempted
 		if err := stopRunnerForReplacement(top, rec); err != nil {
-			return "", err
+			return outcome, err
 		}
+		outcome.Stage = StageStopped
 	}
-	prior, _ := VerifyIdentity(RepoIdentityPath(top), top)
-	bin := canonicalPath(binaryPath)
-	digest, err := installDigest(bin)
+	generation := prior.Generation + 1
+	mintedAt := time.Now().UTC().Format(time.RFC3339)
+	witnessed, witnessedAt := plan.Witnessed, plan.WitnessedAt
+	if plan.MintedBy != "machine-rebuild" {
+		witnessed, witnessedAt = generation, mintedAt
+	}
+	durable, err := publishIdentity(identityPath, InstallIdentity{
+		RepoIdentity: top, Generation: generation, InstallPath: bytesPath, InstallDigest: bytes.Digest, MintedAt: mintedAt,
+		TemporaryHumanWord: plan.Word, ReviewBy: plan.ReviewBy, MintedBy: plan.MintedBy,
+		HumanWitnessedGeneration: witnessed, HumanWitnessedAt: witnessedAt, EngineBuild: plan.EngineBuild,
+		LandedCommit: plan.LandedCommit, LandingRef: plan.LandingRef,
+	})
 	if err != nil {
-		return "", fmt.Errorf("digest enrolled metasystem engine: %w", err)
+		return outcome, err
 	}
-	if err := MintIdentity(RepoIdentityPath(top), InstallIdentity{
-		RepoIdentity: top, Generation: prior.Generation + 1,
-		InstallPath: bin, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
-		TemporaryHumanWord: temporaryWord, ReviewBy: reviewBy,
-	}); err != nil {
-		return "", err
+	outcome.Stage = StageMinted
+	outcome.Generation = generation
+	outcome.DurabilityPending = !durable
+	outcome.Status = "re-armed"
+	if machine {
+		outcome.NoticeErr = QueueNotification(top, PendingNotification{
+			Nonce: fmt.Sprintf("engine-rearm-generation-%d", generation),
+			Message: fmt.Sprintf("steward: re-armed the rebuilt engine: generation %d previous %d engine %s landed %s on %s",
+				generation, prior.Generation, plan.EngineBuild, shortCommit(plan.LandedCommit), plan.LandingRef),
+		})
 	}
 	pinned, err := OpenEnrolledBinary(top)
 	if err != nil {
-		return "", err
+		return outcome, err
 	}
 	defer pinned.Close()
 	if err := pinned.PrepareForExecution(); err != nil {
-		return "", err
+		return outcome, err
 	}
 	record, err := launchRunner(top, pinned)
 	if err != nil {
-		return "", err
+		return outcome, err
 	}
-	if temporaryWord != "" {
-		return fmt.Sprintf("armed TEMPORARILY under a recorded remote human word, review by %s (runner pid %d)", reviewBy, record.Pid), nil
+	outcome.RunnerPid = record.Pid
+	pending := ""
+	if outcome.DurabilityPending {
+		pending = " (durability pending)"
 	}
-	return fmt.Sprintf("armed (runner pid %d)", record.Pid), nil
+	if machine {
+		outcome.Message = fmt.Sprintf("armed (runner pid %d) (generation=%d previous=%d engine=%s landed=%s ref=%s)%s",
+			record.Pid, generation, prior.Generation, plan.EngineBuild, shortCommit(plan.LandedCommit), plan.LandingRef, pending)
+		return outcome, nil
+	}
+	if plan.Word != "" {
+		outcome.Message = fmt.Sprintf("armed TEMPORARILY under a recorded remote human word, review by %s (runner pid %d)%s", plan.ReviewBy, record.Pid, pending)
+		return outcome, nil
+	}
+	outcome.Message = fmt.Sprintf("armed (runner pid %d)%s", record.Pid, pending)
+	return outcome, nil
 }
 
 func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error) {
@@ -476,16 +656,19 @@ func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error)
 	return RunnerRecord{}, fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(repoRoot))
 }
 
+var runnerStopWriter = os.WriteFile
+var runnerSignal = syscall.Kill
+
 func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
-	if err := os.WriteFile(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
-		return err
+	if err := runnerStopWriter(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
+		return fmt.Errorf("write restart marker before stopping runner pid %d: %w", runner.Pid, err)
 	}
-	if err := syscall.Kill(int(runner.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	if err := runnerSignal(int(runner.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
 		return fmt.Errorf("stop runner pid %d for replacement: %w", runner.Pid, err)
 	}
 	// A stalled runner may itself be stopped, so let it receive the termination
 	// signal before deciding whether a hard stop is necessary.
-	_ = syscall.Kill(int(runner.Pid), syscall.SIGCONT)
+	_ = runnerSignal(int(runner.Pid), syscall.SIGCONT)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, alive := liveRunner(repoRoot); !alive {
@@ -494,7 +677,7 @@ func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if current, alive := liveRunner(repoRoot); alive && current.Pid == runner.Pid {
-		if err := syscall.Kill(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := runnerSignal(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return fmt.Errorf("kill stalled runner pid %d for replacement: %w", runner.Pid, err)
 		}
 	}
@@ -506,6 +689,37 @@ func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("runner pid %d remained alive after replacement stop", runner.Pid)
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
+}
+
+// EnrollmentProvenance renders the one standing explanation of who minted an
+// enrollment and, for a machine rebuild, which landed bytes it consumed.
+func EnrollmentProvenance(id InstallIdentity) string {
+	var result string
+	switch id.MintedBy {
+	case "human-terminal", "human-word":
+		result = fmt.Sprintf("enrollment generation %d human-witnessed (engine %s)", id.Generation, id.EngineBuild)
+	case "machine-rebuild":
+		result = fmt.Sprintf("enrollment generation %d machine-minted (rebuild, engine %s, landed %s on %s)",
+			id.Generation, id.EngineBuild, shortCommit(id.LandedCommit), id.LandingRef)
+		if id.HumanWitnessedGeneration > 0 {
+			result += fmt.Sprintf(" above human-witnessed generation %d of %s", id.HumanWitnessedGeneration, id.HumanWitnessedAt)
+		} else {
+			result += "; no human witness is recorded"
+		}
+	default:
+		result = fmt.Sprintf("enrollment generation %d LEGACY (minted before provenance stamping; no human witness recorded)", id.Generation)
+	}
+	if id.TemporaryHumanWord != "" {
+		result += fmt.Sprintf("; TEMPORARY under a recorded remote human word, review by %s", id.ReviewBy)
+	}
+	return result
 }
 
 // canonicalGitPath resolves one git rev-parse answer to a canonical

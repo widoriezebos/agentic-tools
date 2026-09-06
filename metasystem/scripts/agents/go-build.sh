@@ -35,12 +35,35 @@ if [[ -z "$proof_out" && "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$r
   fi
 fi
 
-# The stamp is the enclosing commit by default; the witness path (D33)
-# overrides it with the engine-input digest so byte-identical source yields
-# identity-identical binaries in the template and in adopted trees. VCS
-# stamping is pinned OFF either way: the explicit stamp is the attestation,
-# and implicit repository metadata made equal source build unequal binaries.
-commit=${METASYSTEM_BUILD_STAMP:-$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)}
+# The stamp is the enclosing commit only while the compiled ENGINE surface
+# matches HEAD. A changed or untracked engine path makes the default stamp a
+# development stamp, which automatic enrollment refuses. The witness path
+# overrides the default with the judged engine-input digest. VCS stamping is
+# pinned OFF either way: the explicit stamp is the attestation, and implicit
+# repository metadata made equal source build unequal binaries.
+if [[ -n "${METASYSTEM_BUILD_STAMP:-}" ]]; then
+  commit=$METASYSTEM_BUILD_STAMP
+else
+  commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  if [[ "$commit" != unknown ]]; then
+    engine_prefix=$(git -C "$root" rev-parse --show-prefix)
+    engine_prefix=${engine_prefix%/}
+    engine_changes=$(mktemp "${TMPDIR:-/tmp}/metasystem-engine-changes.XXXXXX")
+    {
+      git -C "$root" diff --name-only --no-renames -z HEAD --
+      git -C "$root" ls-files --others --exclude-standard --full-name -z
+    } | go run ./cmd/metasystem behavior-surface select --projection ENGINE --prefix "$engine_prefix" --nul >"$engine_changes" || {
+      engine_change_rc=$?
+      rm -f "$engine_changes"
+      echo "go-build: cannot classify the working tree against the compiled ENGINE policy" >&2
+      exit "$engine_change_rc"
+    }
+    if [[ -s "$engine_changes" ]]; then
+      commit="dev-$commit-dirty"
+    fi
+    rm -f "$engine_changes"
+  fi
+fi
 mkdir -p bin
 # Build beside the target and rename over it: go build refuses to overwrite
 # a non-object file (exactly the stale/foreign case this script exists to

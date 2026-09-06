@@ -2,13 +2,14 @@ package steward
 
 // The steward's installation identity: a record minted by the
 // human-run install, authenticated by ownership, mode, and content.
-// It exists to make the scheduled tick a NAMED caller instead of an
-// unrecognized process — accident-proofing at the repository's trust
-// level: a stray cron job does not match a pinned record; a
-// same-user adversary is out of scope repo-wide.
+// It accident-proofs recovery at the repository's trust level: scheduled
+// recovery executes only enrolled bytes, while ordinary session arming may
+// replace those bytes only when their build stamp proves they were landed.
+// A same-user adversary is out of scope repo-wide.
 
 import (
 	"crypto/sha256"
+	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,11 +19,18 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // ErrEnrollmentDrift marks a recovery refusal caused by changed, incomplete,
 // or missing enrolled engine bytes.
 var ErrEnrollmentDrift = errors.New("ENROLLMENT_DRIFT")
+
+// ErrEngineRebuilt distinguishes changed bytes at the enrolled path from
+// every other enrollment failure. Verifiers refuse both; ordinary up may
+// resolve this one cause after proving the new bytes came from a landed tree.
+var ErrEngineRebuilt = errors.New("enrolled engine digest changed")
 
 // InstallIdentity is the minted record's content.
 type InstallIdentity struct {
@@ -45,20 +53,61 @@ type InstallIdentity struct {
 	// this generation. ReviewBy is the human's own re-approval date.
 	TemporaryHumanWord string `json:"temporaryHumanWord,omitempty"`
 	ReviewBy           string `json:"reviewBy,omitempty"`
+	// MintedBy names the act that published this generation. Its absence marks
+	// an enrollment created before provenance stamping existed.
+	MintedBy                 string `json:"mintedBy,omitempty"`
+	HumanWitnessedGeneration int    `json:"humanWitnessedGeneration,omitempty"`
+	HumanWitnessedAt         string `json:"humanWitnessedAt,omitempty"`
+	// EngineBuild is read from the enrolled bytes, never from the process that
+	// performs the enrollment.
+	EngineBuild string `json:"engineBuild,omitempty"`
+	// Machine rebuilds record the landed commit and remote-tracking ref that
+	// admitted the bytes. Human enrollments leave both empty.
+	LandedCommit string `json:"landedCommit,omitempty"`
+	LandingRef   string `json:"landingRef,omitempty"`
 }
 
-// MintIdentity writes the record with owner-only permissions,
-// replacing any previous generation.
-func MintIdentity(path string, id InstallIdentity) error {
+func identityDurabilityPendingPath(path string) string { return path + ".durability-pending" }
+
+var identityWriter = atomicfile.WriteText
+
+// publishIdentity replaces the record through the repository's durable
+// publication contract. A durable marker remains beside a visible record
+// whenever the rename landed but its directory sync could not be confirmed.
+func publishIdentity(path string, id InstallIdentity) (bool, error) {
 	data, err := json.MarshalIndent(id, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	marker := identityDurabilityPendingPath(path)
+	markerDurable, err := identityWriter(marker, "pending\n", id.RepoIdentity)
+	if err != nil {
+		return false, err
+	}
+	durable, err := identityWriter(path, string(append(data, '\n')), id.RepoIdentity)
+	if err != nil {
+		return false, err
+	}
+	if !markerDurable || !durable {
+		return false, nil
+	}
+	if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+		return false, nil
+	}
+	return true, nil
+}
+
+// MintIdentity writes the record with owner-only permissions and reports
+// success only after its publication is confirmed durable.
+func MintIdentity(path string, id InstallIdentity) error {
+	durable, err := publishIdentity(path, id)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
+	if !durable {
+		return fmt.Errorf("steward identity generation %d is visible but its durability is pending", id.Generation)
 	}
-	return os.Rename(tmp, path)
+	return nil
 }
 
 // VerifyIdentity authenticates the record for a repository: it must
@@ -114,6 +163,76 @@ func digestOpenFile(file *os.File) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("sha256:%x", hash.Sum(nil)), nil
+}
+
+func buildStampFromOpenFile(file *os.File) string {
+	info, err := buildinfo.Read(file)
+	if err != nil {
+		return ""
+	}
+	const assignment = "supervise.BuildStamp="
+	for _, setting := range info.Settings {
+		if setting.Key != "-ldflags" {
+			continue
+		}
+		at := strings.Index(setting.Value, assignment)
+		if at < 0 {
+			continue
+		}
+		value := setting.Value[at+len(assignment):]
+		if end := strings.IndexAny(value, " \t\r\n\"'"); end >= 0 {
+			value = value[:end]
+		}
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+// enrolledBytes is one locked observation of an installation path. The same
+// open descriptor supplies both its digest and its linked build stamp.
+type enrolledBytes struct {
+	File   *os.File
+	Digest string
+	Stamp  string
+	Err    error
+}
+
+func readEnrolledBytes(installed InstallIdentity) enrolledBytes {
+	if installed.InstallPath == "" || installed.InstallDigest == "" {
+		return enrolledBytes{Err: fmt.Errorf("%w: enrolled engine path or digest is absent", ErrEnrollmentDrift)}
+	}
+	canonicalInstallPath := canonicalPath(installed.InstallPath)
+	if installed.InstallPath != canonicalInstallPath {
+		return enrolledBytes{Err: fmt.Errorf("%w: enrolled engine path %q is not canonical (%q)",
+			ErrEnrollmentDrift, installed.InstallPath, canonicalInstallPath)}
+	}
+	file, err := os.Open(installed.InstallPath)
+	if err != nil {
+		return enrolledBytes{Err: fmt.Errorf("%w: open enrolled engine %q: %v", ErrEnrollmentDrift, installed.InstallPath, err)}
+	}
+	fail := func(err error) enrolledBytes {
+		_ = file.Close()
+		return enrolledBytes{Err: err}
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return fail(fmt.Errorf("%w: inspect opened engine %q: %v", ErrEnrollmentDrift, installed.InstallPath, err))
+	}
+	pathInfo, err := os.Stat(installed.InstallPath)
+	if err != nil {
+		return fail(fmt.Errorf("%w: inspect enrolled engine path %q: %v", ErrEnrollmentDrift, installed.InstallPath, err))
+	}
+	if !os.SameFile(openedInfo, pathInfo) {
+		return fail(fmt.Errorf("%w: enrolled engine path changed while it was being pinned", ErrEnrollmentDrift))
+	}
+	if !openedInfo.Mode().IsRegular() || openedInfo.Mode()&0o111 == 0 {
+		return fail(fmt.Errorf("%w: enrolled engine %q is not an executable regular file", ErrEnrollmentDrift, installed.InstallPath))
+	}
+	digest, err := digestOpenFile(file)
+	if err != nil {
+		return fail(fmt.Errorf("%w: read enrolled engine %q: %v", ErrEnrollmentDrift, installed.InstallPath, err))
+	}
+	return enrolledBytes{File: file, Digest: digest, Stamp: buildStampFromOpenFile(file)}
 }
 
 // EnrolledBinary pins the verified engine inode open. Commands execute that
@@ -245,48 +364,16 @@ func OpenEnrolledBinary(repoRoot string) (*EnrolledBinary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrEnrollmentDrift, err)
 	}
-	if installed.InstallPath == "" || installed.InstallDigest == "" {
-		return nil, fmt.Errorf("%w: enrolled engine path or digest is absent", ErrEnrollmentDrift)
+	bytes := readEnrolledBytes(installed)
+	if bytes.Err != nil {
+		return nil, bytes.Err
 	}
-	canonicalInstallPath := canonicalPath(installed.InstallPath)
-	if installed.InstallPath != canonicalInstallPath {
-		return nil, fmt.Errorf("%w: enrolled engine path %q is not canonical (%q)",
-			ErrEnrollmentDrift, installed.InstallPath, canonicalInstallPath)
+	if bytes.Digest != installed.InstallDigest {
+		_ = bytes.File.Close()
+		return nil, fmt.Errorf("%w: %w (recorded %s, current %s)",
+			ErrEnrollmentDrift, ErrEngineRebuilt, installed.InstallDigest, bytes.Digest)
 	}
-	file, err := os.Open(installed.InstallPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: open enrolled engine %q: %v", ErrEnrollmentDrift, installed.InstallPath, err)
-	}
-	closeOnError := true
-	defer func() {
-		if closeOnError {
-			_ = file.Close()
-		}
-	}()
-	openedInfo, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("%w: inspect opened engine %q: %v", ErrEnrollmentDrift, installed.InstallPath, err)
-	}
-	pathInfo, err := os.Stat(installed.InstallPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: inspect enrolled engine path %q: %v", ErrEnrollmentDrift, installed.InstallPath, err)
-	}
-	if !os.SameFile(openedInfo, pathInfo) {
-		return nil, fmt.Errorf("%w: enrolled engine path changed while it was being pinned", ErrEnrollmentDrift)
-	}
-	if !openedInfo.Mode().IsRegular() || openedInfo.Mode()&0o111 == 0 {
-		return nil, fmt.Errorf("%w: enrolled engine %q is not an executable regular file", ErrEnrollmentDrift, installed.InstallPath)
-	}
-	digest, err := digestOpenFile(file)
-	if err != nil {
-		return nil, fmt.Errorf("%w: read enrolled engine %q: %v", ErrEnrollmentDrift, installed.InstallPath, err)
-	}
-	if digest != installed.InstallDigest {
-		return nil, fmt.Errorf("%w: enrolled engine digest changed (recorded %s, current %s)",
-			ErrEnrollmentDrift, installed.InstallDigest, digest)
-	}
-	closeOnError = false
-	return &EnrolledBinary{Install: installed, repoRoot: top, file: file}, nil
+	return &EnrolledBinary{Install: installed, repoRoot: top, file: bytes.File}, nil
 }
 
 // VerifyEnrolledBinary authenticates the repository enrollment and proves

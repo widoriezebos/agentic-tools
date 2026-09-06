@@ -51,13 +51,15 @@ type ComponentOutcome struct {
 
 // Result carries every component line and the one aggregate outcome.
 type Result struct {
-	Components []ComponentOutcome
-	Outcome    string
-	Authority  string
-	Holder     string
-	Worktree   string
-	Failed     string
-	Remedy     string
+	Components        []ComponentOutcome
+	Outcome           string
+	Authority         string
+	ReArmed           string
+	DurabilityPending bool
+	Holder            string
+	Worktree          string
+	Failed            string
+	Remedy            string
 }
 
 // ExitCode is zero for armed, advisor, and successful recovery outcomes.
@@ -88,6 +90,9 @@ func (r Result) Lines() []string {
 	aggregate := "up outcome=" + r.Outcome
 	if r.Authority != "" {
 		aggregate += " authority=" + r.Authority
+	}
+	if r.ReArmed != "" {
+		aggregate += " re-armed=" + quoteField(r.ReArmed)
 	}
 	if r.Holder != "" {
 		aggregate += " holder=" + quoteField(r.Holder)
@@ -125,6 +130,11 @@ type sessionIdentity struct {
 }
 
 var sessionParentPid = processidentity.ParentPid
+
+var stewardEnsureRunner = steward.EnsureRunner
+var enrolledCommand = func(enrolled *steward.EnrolledBinary) func(args ...string) (*exec.Cmd, error) {
+	return enrolled.Command
+}
 
 func installationRoot(options Options) string {
 	if options.MetasystemRoot != "" {
@@ -351,9 +361,13 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 		failed := failure(components, "supervision-owner", err, "fix the named supervision configuration or fingerprint input, then rerun metasystem up")
 		return nil, supervise.EnsureResult{}, &failed
 	}
-	armingOptions.Command = enrolled.Command
+	armingOptions.Command = enrolledCommand(enrolled)
 	result, err := supervise.EnsureArmed(armingOptions)
 	if err != nil {
+		if errors.Is(err, steward.ErrEnrollmentDrift) {
+			drift := enrollmentDrift(components, fmt.Errorf("supervision-owner launch: %w", err), installationRoot(options), options.Root)
+			return nil, supervise.EnsureResult{}, &drift
+		}
 		component := "supervision-owner"
 		remedy := "inspect artifacts/agents/supervision/owner.log, repair the named blocker, then rerun metasystem up"
 		var componentFailure *supervise.ComponentFailure
@@ -388,50 +402,177 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	return components, result, nil
 }
 
-func enrollmentDrift(components []ComponentOutcome, err error) Result {
-	remedy := "from the enrolled agent-free terminal, explicitly run metasystem steward arm or steward restart for this repository"
+func ensureStewardRunner(options Options, enrolled *steward.EnrolledBinary, components []ComponentOutcome) ([]ComponentOutcome, *Result) {
+	result, err := stewardEnsureRunner(options.Root, enrolled, options.WaitScaleMilli)
+	if err != nil {
+		if errors.Is(err, steward.ErrEnrollmentDrift) {
+			drift := enrollmentDrift(components, fmt.Errorf("steward-runner launch: %w", err), installationRoot(options), options.Root)
+			return nil, &drift
+		}
+		failed := failure(components, "steward-runner", err,
+			"configure a working notification channel, inspect artifacts/agents/steward/runner.log, then rerun metasystem up")
+		return nil, &failed
+	}
+	detail := fmt.Sprintf("pid=%d generation=%d", result.Pid, result.Generation)
+	if result.Action == "excluded" {
+		detail = "standing runner is excluded by fixture or linked-worktree policy"
+	}
+	components = append(components, ComponentOutcome{
+		Component: "steward-runner", Outcome: result.Action, Detail: detail,
+	})
+	return components, nil
+}
+
+func enrollmentDrift(components []ComponentOutcome, err error, installationRoot, repoRoot string) Result {
+	remedy := fmt.Sprintf("this engine is not eligible for automatic re-arm; from an agent-free terminal run metasystem steward restart --repo %s (steward arm when no runner is live), or relay the human's recorded word with --temporary-human-word and --review-by", repoRoot)
+	if strings.Contains(err.Error(), "owns no resolving remote-tracking landing ref") {
+		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem steward restart --repo %s", repoRoot)
+	} else if strings.Contains(err.Error(), "owns no remote-tracking landing ref") {
+		remedy = fmt.Sprintf("run git -C %s config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch> once on this machine, or re-arm at the terminal", installationRoot)
+	}
 	components = append(components, ComponentOutcome{
 		Component: "accepted-engine", Outcome: "ENROLLMENT_DRIFT", Detail: err.Error(), Remedy: remedy,
 	})
 	return Result{Components: components, Outcome: "ENROLLMENT_DRIFT", Failed: "accepted-engine", Remedy: remedy}
 }
 
-func openInvokingEnrollment(options Options) (*steward.EnrolledBinary, error) {
+func openInvokingEnrollment(options Options, allowReArm bool) (*steward.EnrolledBinary, steward.ReArmOutcome, error) {
+	var rearmed steward.ReArmOutcome
 	enrolled, err := steward.OpenEnrolledBinary(options.Root)
+	if allowReArm && errors.Is(err, steward.ErrEngineRebuilt) {
+		rearmed, err = steward.ReArmRebuiltEngine(options.Root, installationRoot(options), options.Binary)
+		if err == nil {
+			enrolled, err = steward.OpenEnrolledBinary(options.Root)
+		}
+	}
 	if err != nil {
-		return nil, err
+		return nil, rearmed, err
 	}
 	if canonicalRuntimePath(enrolled.Install.InstallPath) != canonicalRuntimePath(options.Binary) {
 		_ = enrolled.Close()
-		return nil, fmt.Errorf("%w: invoking engine %q is not enrolled engine %q",
+		return nil, rearmed, fmt.Errorf("%w: invoking engine %q is not enrolled engine %q",
 			steward.ErrEnrollmentDrift, canonicalRuntimePath(options.Binary), enrolled.Install.InstallPath)
 	}
-	return enrolled, nil
+	return enrolled, rearmed, nil
+}
+
+type rearmFact struct {
+	value             string
+	durabilityPending bool
+}
+
+func factFromRearm(outcome steward.ReArmOutcome) rearmFact {
+	if outcome.Status != "re-armed" {
+		return rearmFact{}
+	}
+	value := fmt.Sprintf("generation=%d previous=%d engine=%s landed=%s",
+		outcome.Generation, outcome.PreviousGeneration, outcome.EngineBuild, shortCommit(outcome.LandedCommit))
+	if outcome.DurabilityPending {
+		value += " (durability pending)"
+	}
+	return rearmFact{value: value, durabilityPending: outcome.DurabilityPending}
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
+}
+
+func acceptedEngine(enrolled *steward.EnrolledBinary, rearmed steward.ReArmOutcome) ComponentOutcome {
+	if rearmed.Status == "re-armed" {
+		detail := fmt.Sprintf("the enrolled engine was rebuilt; armed (runner pid %d) (generation=%d previous=%d engine=%s landed=%s ref=%s path=%s)",
+			rearmed.RunnerPid, rearmed.Generation, rearmed.PreviousGeneration, rearmed.EngineBuild,
+			shortCommit(rearmed.LandedCommit), rearmed.LandingRef, enrolled.Install.InstallPath)
+		if rearmed.DurabilityPending {
+			detail += " (durability pending)"
+		}
+		if rearmed.NoticeErr != nil {
+			detail += "; pending notification not written: " + rearmed.NoticeErr.Error()
+		}
+		return ComponentOutcome{Component: "accepted-engine", Outcome: "re-armed", Detail: detail}
+	}
+	if rearmed.Status == "already-current" {
+		return ComponentOutcome{
+			Component: "accepted-engine", Outcome: "verified",
+			Detail: fmt.Sprintf("generation=%d path=%s; brought current by a concurrent arm", enrolled.Install.Generation, enrolled.Install.InstallPath),
+		}
+	}
+	return ComponentOutcome{
+		Component: "accepted-engine", Outcome: "verified",
+		Detail: fmt.Sprintf("generation=%d path=%s", enrolled.Install.Generation, enrolled.Install.InstallPath),
+	}
 }
 
 func ordinary(options Options) Result {
+	result, fact := ordinaryBody(options)
+	result.ReArmed = fact.value
+	result.DurabilityPending = fact.durabilityPending
+	return result
+}
+
+func ordinaryBody(options Options) (Result, rearmFact) {
 	components := []ComponentOutcome{}
+	fact := rearmFact{}
+	finish := func(result Result) (Result, rearmFact) { return result, fact }
 	if err := preflightCommands(); err != nil {
-		return failure(components, "host-preflight", err, "install the named commands and rerun metasystem up")
+		return finish(failure(components, "host-preflight", err, "install the named commands and rerun metasystem up"))
 	}
 	components = append(components, ComponentOutcome{Component: "host-preflight", Outcome: "verified"})
-	enrolled, err := openInvokingEnrollment(options)
+	enrolled, rearmed, err := openInvokingEnrollment(options, true)
+	if rearmed.Stage == steward.StageMinted {
+		fact = factFromRearm(rearmed)
+		logLine := fmt.Sprintf("engine-re-armed generation=%d previous=%d engine=%s landed=%s ref=%s",
+			rearmed.Generation, rearmed.PreviousGeneration, rearmed.EngineBuild, shortCommit(rearmed.LandedCommit), rearmed.LandingRef)
+		if rearmed.NoticeErr != nil {
+			logLine += fmt.Sprintf(" notice-error=%q", rearmed.NoticeErr.Error())
+		}
+		if rearmed.DurabilityPending {
+			logLine += " durability-pending=true"
+		}
+		appendArmingLog(options.Root, logLine)
+	}
 	if err != nil {
-		return enrollmentDrift(components, err)
+		switch rearmed.Stage {
+		case steward.StageStopAttempted:
+			detail := fmt.Errorf("re-arm eligible (engine %s landed %s on %s); stopping runner pid %d for replacement failed: %w; the enrollment still names generation %d",
+				rearmed.EngineBuild, shortCommit(rearmed.LandedCommit), rearmed.LandingRef,
+				rearmed.StoppedRunnerPid, err, rearmed.PreviousGeneration)
+			return finish(failure(components, "accepted-engine", detail,
+				fmt.Sprintf("prove runner pid %d is gone in artifacts/agents/steward/runner.json, then rerun metasystem up", rearmed.StoppedRunnerPid)))
+		case steward.StageStopped:
+			return finish(failure(components, "accepted-engine",
+				fmt.Errorf("runner pid %d was confirmed stopped, but the new enrollment could not be minted: %w", rearmed.StoppedRunnerPid, err),
+				"rerun metasystem up; the stopped runner will be replaced after a durable mint"))
+		case steward.StageMinted:
+			components = append(components, ComponentOutcome{
+				Component: "accepted-engine", Outcome: "re-armed",
+				Detail: fmt.Sprintf("generation=%d previous=%d engine=%s landed=%s ref=%s", rearmed.Generation,
+					rearmed.PreviousGeneration, rearmed.EngineBuild, shortCommit(rearmed.LandedCommit), rearmed.LandingRef),
+			})
+			if errors.Is(err, steward.ErrEnrollmentDrift) {
+				return finish(enrollmentDrift(components, err, installationRoot(options), options.Root))
+			}
+			return finish(failure(components, "steward-runner", fmt.Errorf("after re-arm: %w", err),
+				"inspect artifacts/agents/steward/runner.log and engine-pins, then rerun metasystem up"))
+		default:
+			if errors.Is(err, steward.ErrEnrollmentDrift) {
+				return finish(enrollmentDrift(components, err, installationRoot(options), options.Root))
+			}
+			return finish(failure(components, "accepted-engine", err, "repair the named enrollment publication failure, then rerun metasystem up"))
+		}
 	}
 	defer enrolled.Close()
-	components = append(components, ComponentOutcome{
-		Component: "accepted-engine", Outcome: "verified",
-		Detail: fmt.Sprintf("generation=%d path=%s", enrolled.Install.Generation, enrolled.Install.InstallPath),
-	})
+	components = append(components, acceptedEngine(enrolled, rearmed))
 
 	session, err := resolveSessionIdentity(options)
 	if err != nil {
-		return failure(components, "session-identity", err,
-			"pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session")
+		return finish(failure(components, "session-identity", err,
+			"pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"))
 	}
 	if err := enrolled.PrepareForExecution(); err != nil {
-		return enrollmentDrift(components, err)
+		return finish(enrollmentDrift(components, err, installationRoot(options), options.Root))
 	}
 	components = append(components, ComponentOutcome{
 		Component: "session-identity", Outcome: "verified",
@@ -440,7 +581,7 @@ func ordinary(options Options) Result {
 	announcement, err := lease.AnnounceWithProofAt(options.Root, installationRoot(options), session.Session, session.Pid, session.StartTime,
 		session.StartTicks, session.BootID, session.Tag, session.Runtime, session.OwnerLineage, &session.Provenance)
 	if err != nil {
-		return failure(components, "session-announcement", err, "repair the named announcement or lease state, then rerun metasystem up")
+		return finish(failure(components, "session-announcement", err, "repair the named announcement or lease state, then rerun metasystem up"))
 	}
 	components = append(components, ComponentOutcome{
 		Component: "session-announcement", Outcome: "verified", Detail: announcement,
@@ -448,7 +589,7 @@ func ordinary(options Options) Result {
 	appendArmingLog(options.Root, fmt.Sprintf("announcement-written registry=%s pid=%d start=%d", announcement, session.Pid, session.StartTime))
 	view, err := lease.ClassifyVerbAt(options.Root, installationRoot(options), session.Pid)
 	if err != nil {
-		return failure(components, "checkout-lease", err, "repair the checkout lease and rerun metasystem up")
+		return finish(failure(components, "checkout-lease", err, "repair the checkout lease and rerun metasystem up"))
 	}
 	authority := "writer"
 	holderName := view.MainId
@@ -456,7 +597,7 @@ func ordinary(options Options) Result {
 		authority = "read-only"
 		holder, holderErr := lease.CurrentHolder(options.Root)
 		if holderErr != nil {
-			return failure(components, "checkout-lease", holderErr, "repair the checkout lease and rerun metasystem up")
+			return finish(failure(components, "checkout-lease", holderErr, "repair the checkout lease and rerun metasystem up"))
 		}
 		holderName = holder.MainId
 		if holder.SessionId != "" {
@@ -474,29 +615,20 @@ func ordinary(options Options) Result {
 	}
 	components, supervision, failed := ensureSupervision(options, enrolled, components)
 	if failed != nil {
-		return *failed
+		return finish(*failed)
 	}
 	appendArmingLog(options.Root, fmt.Sprintf("first-census-complete repo=%s owner=%d", options.Scope, supervision.Owner.Pid))
-	stewardResult, err := steward.EnsureRunner(options.Root, enrolled, options.WaitScaleMilli)
-	if err != nil {
-		return failure(components, "steward-runner", err,
-			"configure a working notification channel, inspect artifacts/agents/steward/runner.log, then rerun metasystem up")
+	components, stewardFailed := ensureStewardRunner(options, enrolled, components)
+	if stewardFailed != nil {
+		return finish(*stewardFailed)
 	}
-	stewardDetail := fmt.Sprintf("pid=%d generation=%d", stewardResult.Pid, stewardResult.Generation)
-	if stewardResult.Action == "excluded" {
-		stewardDetail = "standing runner is excluded by fixture or linked-worktree policy"
-	}
-	components = append(components, ComponentOutcome{
-		Component: "steward-runner", Outcome: stewardResult.Action,
-		Detail: stewardDetail,
-	})
 	if authority == "read-only" {
-		return Result{
+		return finish(Result{
 			Components: components, Outcome: "advisor", Authority: authority, Holder: holderName,
 			Worktree: "scripts/agents/second-session.sh",
-		}
+		})
 	}
-	return Result{Components: components, Outcome: "armed", Authority: authority}
+	return finish(Result{Components: components, Outcome: "armed", Authority: authority})
 }
 
 func recovery(options Options) Result {
@@ -505,13 +637,18 @@ func recovery(options Options) Result {
 		return failure(components, "recovery-mode", fmt.Errorf("--recover-only requires --if-down"),
 			"invoke ordinary metasystem up from a session, or add --if-down for the scheduler recovery path")
 	}
-	enrolled, err := openInvokingEnrollment(options)
+	enrolled, _, err := openInvokingEnrollment(options, false)
 	if err != nil {
-		return enrollmentDrift(components, err)
+		result := enrollmentDrift(components, err, installationRoot(options), options.Root)
+		if errors.Is(err, steward.ErrEngineRebuilt) {
+			result.Remedy = "run metasystem up from a session, which re-arms a rebuilt engine at its enrolled path; or run metasystem steward arm at an agent-free terminal"
+			result.Components[len(result.Components)-1].Remedy = result.Remedy
+		}
+		return result
 	}
 	defer enrolled.Close()
 	if err := enrolled.PrepareForExecution(); err != nil {
-		return enrollmentDrift(components, err)
+		return enrollmentDrift(components, err, installationRoot(options), options.Root)
 	}
 	options.Binary = enrolled.Install.InstallPath
 	components = append(components, ComponentOutcome{

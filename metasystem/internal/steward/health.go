@@ -542,45 +542,61 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 
 func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) RoleVerdict {
 	remedy := fmt.Sprintf("metasystem up --repo %q", repoRoot)
+	installed, durabilityPending, installationErr := installedEnrollment(repoRoot)
+	withEnrollment := func(verdict RoleVerdict) RoleVerdict {
+		if installationErr != nil {
+			return verdict
+		}
+		provenance := EnrollmentProvenance(installed)
+		if durabilityPending {
+			provenance += " (durability pending)"
+		}
+		if verdict.Reason == "" {
+			verdict.Reason = provenance
+		} else {
+			verdict.Reason += "; " + provenance
+		}
+		return verdict
+	}
 	path := runnerRecordPath(repoRoot)
 	var runner RunnerRecord
 	if err := readJSON(path, &runner); err != nil {
 		if os.IsNotExist(err) {
-			return roleDead(RoleStewardRunner, "no steward runner is recorded", remedy)
+			return withEnrollment(roleDead(RoleStewardRunner, "no steward runner is recorded", remedy))
 		}
-		return roleUnknown(RoleStewardRunner, "the steward runner record is unreadable", remedy)
+		return withEnrollment(roleUnknown(RoleStewardRunner, "the steward runner record is unreadable", remedy))
 	}
 	process := identity.Ref{Pid: runner.Pid, StartedAtSec: runner.PidStartedAt, StartTicks: runner.StartTicks, BootID: runner.BootID}
 	switch identity.AliveRef(prober, process) {
 	case identity.Dead:
-		return roleDead(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d is dead", runner.Pid), remedy)
+		return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d is dead", runner.Pid), remedy))
 	case identity.Unknown:
-		return roleUnknown(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d cannot be inspected", runner.Pid), remedy)
+		return withEnrollment(roleUnknown(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d cannot be inspected", runner.Pid), remedy))
 	}
-	generation, err := installedGeneration(repoRoot)
-	if err != nil {
+	if installationErr != nil {
 		return roleUnknown(RoleStewardRunner, "the steward installation generation is unreadable", remedy)
 	}
+	generation := installed.Generation
 	record, _, evidenceErr := loadComponentEvidenceForHealth(repoRoot, "steward-tick")
 	if evidenceErr == nil && record.Generation == generation && record.Outcome == "ATTEMPTING" {
 		attemptProcess := identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt, StartTicks: record.PidStartTicks, BootID: record.BootID}
 		if sameComponentProcess(attemptProcess, process) {
 			if record.LastAttempt.After(now) {
-				return roleUnknown(RoleStewardRunner, "CLOCK_REGRESSED: tick attempt evidence is later than current UTC", remedy)
+				return withEnrollment(roleUnknown(RoleStewardRunner, "CLOCK_REGRESSED: tick attempt evidence is later than current UTC", remedy))
 			}
 			patience, patienceErr := runnerTickPatience(repoRoot, record.LastDurationMillis)
 			if patienceErr != nil {
-				return roleUnknown(RoleStewardRunner, "the steward tick patience is invalid: "+patienceErr.Error(), remedy)
+				return withEnrollment(roleUnknown(RoleStewardRunner, "the steward tick patience is invalid: "+patienceErr.Error(), remedy))
 			}
 			age := now.Sub(record.LastAttempt)
 			if age < patience {
-				return roleAlive(RoleStewardRunner, fmt.Sprintf("runner pid %d is attempting generation %d (age %s, patience %s)", runner.Pid, generation, age.Round(time.Second), patience))
+				return withEnrollment(roleAlive(RoleStewardRunner, fmt.Sprintf("runner pid %d is attempting generation %d (age %s, patience %s)", runner.Pid, generation, age.Round(time.Second), patience)))
 			}
-			return roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), remedy)
+			return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), remedy))
 		}
 	}
-	return componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*TickSeconds(repoRoot))*time.Second, now, remedy, &process,
-		fmt.Sprintf("runner pid %d and generation %d success are current", runner.Pid, generation))
+	return withEnrollment(componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*TickSeconds(repoRoot))*time.Second, now, remedy, &process,
+		fmt.Sprintf("runner pid %d and generation %d success are current", runner.Pid, generation)))
 }
 
 func runnerTickPatience(repoRoot string, lastDurationMillis int64) (time.Duration, error) {
@@ -1151,18 +1167,27 @@ func roleUnknown(role HealthRole, reason, remedy string) RoleVerdict {
 }
 
 func installedGeneration(repoRoot string) (int, error) {
+	installed, _, err := installedEnrollment(repoRoot)
+	return installed.Generation, err
+}
+
+func installedEnrollment(repoRoot string) (InstallIdentity, bool, error) {
 	absolute, err := filepath.Abs(repoRoot)
 	if err != nil {
-		return 0, err
+		return InstallIdentity{}, false, err
 	}
 	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
 		absolute = resolved
 	}
 	installed, err := VerifyIdentity(RepoIdentityPath(repoRoot), absolute)
 	if err != nil {
-		return 0, err
+		return InstallIdentity{}, false, err
 	}
-	return installed.Generation, nil
+	_, markerErr := os.Stat(identityDurabilityPendingPath(RepoIdentityPath(repoRoot)))
+	if markerErr != nil && !os.IsNotExist(markerErr) {
+		return InstallIdentity{}, false, markerErr
+	}
+	return installed, markerErr == nil, nil
 }
 
 func processRef(value map[string]any) (identity.Ref, bool) {

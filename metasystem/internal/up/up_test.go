@@ -2,6 +2,7 @@ package up
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -129,7 +130,8 @@ func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
-	if result.Outcome != "ENROLLMENT_DRIFT" || result.Failed != "accepted-engine" {
+	if result.Outcome != "ENROLLMENT_DRIFT" || result.Failed != "accepted-engine" ||
+		!strings.Contains(result.Remedy, "config --local metasystem.steward.landing-ref") {
 		t.Fatalf("ambient drift was not refused by name: %+v", result)
 	}
 	installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(root), canonicalRuntimePath(root))
@@ -143,6 +145,171 @@ func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("ambient drift mutated %s: %v", path, err)
 		}
+	}
+}
+
+func TestMissingConfiguredLandingRefNamesItsActualRepair(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "trunk"},
+		{"config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/trunk"},
+	} {
+		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	binary := filepath.Join(root, "metasystem")
+	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stageEnrollment(t, root, binary, 7)
+	if err := os.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
+	if result.Outcome != "ENROLLMENT_DRIFT" ||
+		!strings.Contains(result.Remedy, "fetch or pull the configured remote") ||
+		strings.Contains(result.Remedy, "config --local") {
+		t.Fatalf("missing configured ref did not name its actual repair: %+v", result)
+	}
+}
+
+func TestOrdinaryUpRefusesAStrangerBeforeSessionState(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enrolled bytes changed=%t", changed), func(t *testing.T) {
+			root := t.TempDir()
+			accepted := filepath.Join(root, "accepted-engine")
+			stranger := filepath.Join(root, "stranger-engine")
+			if err := os.WriteFile(accepted, []byte("accepted\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(stranger, []byte("stranger\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			stageEnrollment(t, root, accepted, 7)
+			if changed {
+				if err := os.WriteFile(accepted, []byte("rebuilt\n"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: stranger, WaitScaleMilli: 1})
+			if result.Outcome != "ENROLLMENT_DRIFT" || result.Failed != "accepted-engine" ||
+				!strings.Contains(result.Remedy, "steward restart --repo "+root) ||
+				!strings.Contains(result.Remedy, "--temporary-human-word") {
+				t.Fatalf("stranger refusal was not actionable: %+v", result)
+			}
+			installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(root), canonicalRuntimePath(root))
+			if err != nil || installed.Generation != 7 {
+				t.Fatalf("stranger changed enrollment: %+v %v", installed, err)
+			}
+			for _, path := range []string{
+				filepath.Join(root, "artifacts", "agents", "mains"),
+				filepath.Join(root, "artifacts", "agents", "supervision"),
+			} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("stranger refusal mutated %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestRecoveryNeverRearmsChangedEnrolledBytes(t *testing.T) {
+	root := t.TempDir()
+	binary := filepath.Join(root, "metasystem")
+	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stageEnrollment(t, root, binary, 7)
+	if err := os.WriteFile(binary, []byte("rebuilt\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := recovery(Options{
+		Root: root, MetasystemRoot: root, Scope: root, Binary: binary,
+		RecoverOnly: true, IfDown: true,
+	})
+	if result.Outcome != "ENROLLMENT_DRIFT" || result.ReArmed != "" ||
+		!strings.Contains(result.Remedy, "run metasystem up from a session") {
+		t.Fatalf("recovery did not refuse the rebuild with its session remedy: %+v", result)
+	}
+	installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(root), canonicalRuntimePath(root))
+	if err != nil || installed.Generation != 7 {
+		t.Fatalf("recovery changed the enrollment: %+v %v", installed, err)
+	}
+}
+
+func syntheticFingerprintRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, relative := range []string{
+		"scripts/agents/arm-supervision.sh", "scripts/agents/dispatch.sh", "bin/metasystem",
+		"scripts/agents/adapters/runtime-common.sh", "scripts/watch-background-jobs.sh",
+	} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=\nwatch.interval-sec=60\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestTypedDriftAtBothLaunchSitesRoutesToEnrollmentDrift(t *testing.T) {
+	t.Run("supervision owner", func(t *testing.T) {
+		root := t.TempDir()
+		binary, err := exec.LookPath("true")
+		if err != nil {
+			t.Fatal(err)
+		}
+		stageEnrollment(t, root, binary, 1)
+		enrolled, err := steward.OpenEnrolledBinary(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer enrolled.Close()
+		prior := enrolledCommand
+		enrolledCommand = func(*steward.EnrolledBinary) func(args ...string) (*exec.Cmd, error) {
+			return func(args ...string) (*exec.Cmd, error) {
+				return nil, fmt.Errorf("%w: injected owner command drift", steward.ErrEnrollmentDrift)
+			}
+		}
+		t.Cleanup(func() { enrolledCommand = prior })
+		options := Options{Root: root, MetasystemRoot: syntheticFingerprintRoot(t), Scope: root, Binary: binary, WaitScaleMilli: 1}
+		_, _, failed := ensureSupervision(options, enrolled, nil)
+		if failed == nil || failed.Outcome != "ENROLLMENT_DRIFT" ||
+			!strings.Contains(failed.Components[len(failed.Components)-1].Detail, "supervision-owner launch") {
+			t.Fatalf("supervision command drift lost its typed mapping: %+v", failed)
+		}
+	})
+
+	t.Run("steward runner", func(t *testing.T) {
+		prior := stewardEnsureRunner
+		stewardEnsureRunner = func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+			return steward.EnsureRunnerResult{}, fmt.Errorf("%w: injected steward command drift", steward.ErrEnrollmentDrift)
+		}
+		t.Cleanup(func() { stewardEnsureRunner = prior })
+		_, failed := ensureStewardRunner(Options{Root: t.TempDir()}, nil, nil)
+		if failed == nil || failed.Outcome != "ENROLLMENT_DRIFT" ||
+			!strings.Contains(failed.Components[len(failed.Components)-1].Detail, "steward-runner launch") {
+			t.Fatalf("steward command drift lost its typed mapping: %+v", failed)
+		}
+	})
+}
+
+func TestPlainLaunchErrorsKeepTheirComponentFailures(t *testing.T) {
+	prior := stewardEnsureRunner
+	stewardEnsureRunner = func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+		return steward.EnsureRunnerResult{}, errors.New("plain launch failure")
+	}
+	t.Cleanup(func() { stewardEnsureRunner = prior })
+	_, failed := ensureStewardRunner(Options{Root: t.TempDir()}, nil, nil)
+	if failed == nil || failed.Outcome != "failed" || failed.Failed != "steward-runner" {
+		t.Fatalf("a plain steward error changed classification: %+v", failed)
 	}
 }
 
@@ -327,7 +494,7 @@ func TestInvokingEnrollmentRefusesAnotherBinaryAtTheSameDigest(t *testing.T) {
 		}
 	}
 	stageEnrollment(t, root, accepted, 3)
-	enrolled, err := openInvokingEnrollment(Options{Root: root, Binary: candidate})
+	enrolled, _, err := openInvokingEnrollment(Options{Root: root, Binary: candidate}, true)
 	if enrolled != nil || err == nil || !strings.Contains(err.Error(), "invoking engine") {
 		t.Fatalf("another binary path used the enrollment: enrolled=%v err=%v", enrolled, err)
 	}

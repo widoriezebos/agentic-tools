@@ -27,8 +27,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (5 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one
+  run_fixture_bed_scenarios land "land fixtures passed (6 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one build-stamp
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -131,6 +131,42 @@ SH
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
 }
 
+# The default build stamp is a landed commit only when every path selected by
+# the compiled ENGINE policy matches HEAD. The fixture keeps the metasystem
+# below the repository toplevel, matching the layout used by adopted seats.
+if [[ "$fixture_scenario" == build-stamp ]]; then
+build_top=$tmp/build-stamp-source
+build_root=$build_top/metasystem
+source_top=$(git -C "$root" rev-parse --show-toplevel)
+source_prefix=$(git -C "$root" rev-parse --show-prefix)
+source_prefix=${source_prefix%/}
+mkdir -p "$build_root"
+if [[ -n "$source_prefix" ]]; then
+  git -C "$source_top" archive "HEAD:$source_prefix" | tar -x -C "$build_root"
+else
+  git -C "$source_top" archive HEAD | tar -x -C "$build_root"
+fi
+cp "$root/scripts/agents/go-build.sh" "$build_root/scripts/agents/go-build.sh"
+git -C "$build_top" init -q -b main
+git -C "$build_top" config user.name fixture
+git -C "$build_top" config user.email fixture@example.invalid
+git -C "$build_top" add .
+git -C "$build_top" commit -qm 'clean nested build source'
+clean_stamp=$(git -C "$build_top" rev-parse --short HEAD)
+clean_engine=$tmp/clean-engine
+dirty_engine=$tmp/dirty-engine
+bash "$build_root/scripts/agents/go-build.sh" --out "$clean_engine" >/dev/null
+observed_clean=$(go version -m "$clean_engine" | sed -n 's/.*BuildStamp=\([a-z0-9-]*\).*/\1/p' | head -1)
+[[ "$observed_clean" == "$clean_stamp" ]] \
+  || { echo "clean ENGINE tree carried stamp $observed_clean, want $clean_stamp" >&2; exit 1; }
+printf 'package supervise\n' >"$build_root/internal/supervise/rearm_dirty_fixture.go"
+bash "$build_root/scripts/agents/go-build.sh" --out "$dirty_engine" >/dev/null
+observed_dirty=$(go version -m "$dirty_engine" | sed -n 's/.*BuildStamp=\([a-z0-9-]*\).*/\1/p' | head -1)
+[[ "$observed_dirty" == "dev-$clean_stamp-dirty" ]] \
+  || { echo "dirty ENGINE tree carried stamp $observed_dirty, want dev-$clean_stamp-dirty" >&2; exit 1; }
+echo "land build-stamp fixture passed"
+fi
+
 # 1. Origin advances immediately before the first real push reads the remote.
 # That push sees the diverged branch and is rejected; the driver fetches,
 # rebases, and its second real push lands both commits.
@@ -202,6 +238,8 @@ retry_remote_head=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
 retry_transport_head=$(git --git-dir="$retry_transport" rev-parse refs/heads/main)
 [[ "$retry_local_head" == "$retry_remote_head" ]]
 [[ "$retry_remote_head" == "$retry_transport_head" ]]
+[[ $(git -C "$leg_local" rev-parse refs/remotes/origin/main) == "$retry_remote_head" ]] \
+  || { echo "land push-retry fixture: successful push did not update the remote-tracking ref" >&2; exit 1; }
 git -C "$leg_local" merge-base --is-ancestor "$retry_peer_head" "$retry_local_head"
 [[ $(git --git-dir="$leg_remote" show main:payload.txt) == 'local landing' ]]
 [[ $(git --git-dir="$leg_remote" show main:peer.txt) == 'peer advance' ]]
