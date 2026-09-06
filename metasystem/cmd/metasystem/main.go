@@ -124,6 +124,7 @@ func families() []family {
 				{"stop-cancel-authorize", "authorize cancellation of one exact stop-batch job", runDispatchStopCancelAuthorize},
 				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},
 				{"build-follow-record", "assemble a follow-up round's record from its parent", runDispatchBuildFollowRecord},
+				{"follow-up-rebase-plan", "decide whether trunk movement overlaps a follow-up chain", runDispatchFollowUpRebasePlan},
 				{"verify-chain-incarnation", "refuse a follow-up whose mission was re-provisioned", runDispatchVerifyChainIncarnation},
 				{"latest-chain-record", "print the newest record path in a job chain", runDispatchLatestChainRecord},
 				{"chain-members", "list a chain's jobs and statuses", runDispatchChainMembers},

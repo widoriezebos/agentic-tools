@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -655,6 +656,43 @@ type BuildFollowRecordParams struct {
 	Composition      string // closed-packet composition record
 	LaunchMode       LaunchMode
 	OutputStream     string
+	RebasedFrom      string
+	RebasedTo        string
+	ConflictedPaths  []string
+}
+
+func validateFollowUpRebaseFields(p *BuildFollowRecordParams) error {
+	seenConflicts := map[string]bool{}
+	if p.ConflictedPaths == nil {
+		p.ConflictedPaths = []string{}
+	}
+	for _, path := range p.ConflictedPaths {
+		if !validFollowUpRebasePath(path) {
+			return fmt.Errorf("follow-up rebase provenance contains invalid conflicted path %q", path)
+		}
+		if seenConflicts[path] {
+			return fmt.Errorf("follow-up rebase provenance repeats conflicted path %q", path)
+		}
+		seenConflicts[path] = true
+	}
+	sort.Strings(p.ConflictedPaths)
+
+	hasFrom := p.RebasedFrom != ""
+	hasTo := p.RebasedTo != ""
+	hasConflicts := len(p.ConflictedPaths) > 0
+	validShape := (!hasFrom && !hasTo && !hasConflicts) ||
+		(hasFrom && hasTo) ||
+		(!hasFrom && hasTo && hasConflicts)
+	if !validShape {
+		return fmt.Errorf("follow-up rebase fields rebasedFrom, rebasedTo, and conflictedPaths have an invalid combination")
+	}
+	if hasFrom && !gitObjectIDRe.MatchString(p.RebasedFrom) {
+		return fmt.Errorf("follow-up rebase field rebasedFrom requires a full Git object identifier")
+	}
+	if hasTo && !gitObjectIDRe.MatchString(p.RebasedTo) {
+		return fmt.Errorf("follow-up rebase field rebasedTo requires a full Git object identifier")
+	}
+	return nil
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -673,6 +711,9 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	}
 	if p.OperationID == "" {
 		p.OperationID = p.Job
+	}
+	if err := validateFollowUpRebaseFields(&p); err != nil {
+		return err
 	}
 	if !validJobID.MatchString(p.OperationID) {
 		return fmt.Errorf("follow-up dispatch requires a valid reservation operation id")
@@ -853,11 +894,14 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			"hash":     p.InputHash,
 			"delivery": "stdin",
 		},
-		"composition": composition,
-		"startedAt":   nowISO(),
-		"endedAt":     nil,
-		"usage":       nil,
-		"mirror":      nil,
+		"composition":     composition,
+		"rebasedFrom":     nullableString(p.RebasedFrom),
+		"rebasedTo":       nullableString(p.RebasedTo),
+		"conflictedPaths": p.ConflictedPaths,
+		"startedAt":       nowISO(),
+		"endedAt":         nil,
+		"usage":           nil,
+		"mirror":          nil,
 	}
 	// A follow-up serves the same product as its chain: the parent's declared
 	// roots carry, and an empty declaration falls back to the workspace.

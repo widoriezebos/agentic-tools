@@ -862,6 +862,12 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.Var((*hazardClassFlag)(&p.DestructiveReach), "destructive-reach", "inherited hazard class")
 	flags.StringVar(&p.OutputStream, "output-stream", "", "child stdout event stream path")
 	flags.StringVar(&p.Composition, "composition", "", "closed-packet composition record")
+	flags.StringVar(&p.RebasedFrom, "rebased-from", "", "worktree commit before the follow-up fast-forward")
+	flags.StringVar(&p.RebasedTo, "rebased-to", "", "trunk commit used for the follow-up fast-forward")
+	flags.Func("conflicted-path", "path left conflicted by stash reapplication (repeatable)", func(value string) error {
+		p.ConflictedPaths = append(p.ConflictedPaths, value)
+		return nil
+	})
 	launchMode := flags.String("launch-mode", "", "worktree or shared-checkout")
 	if flags.Parse(args) != nil {
 		return 2
@@ -875,6 +881,27 @@ func runDispatchBuildFollowRecord(args []string) int {
 	p.GoalTier = uint8(*goalTier)
 	p.LaunchMode = dispatchcore.LaunchMode(*launchMode)
 	return recordExit(dispatchcore.BuildFollowRecord(p))
+}
+
+func runDispatchFollowUpRebasePlan(args []string) int {
+	flags := flag.NewFlagSet("job follow-up-rebase-plan", flag.ContinueOnError)
+	repo := flags.String("repo", "", "metasystem checkout root")
+	rootJob := flags.String("root-job", "", "chain root job id")
+	worktree := flags.String("worktree", "", "chain worktree")
+	trunk := flags.String("trunk", "", "pinned trunk commit or ref")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *repo == "" || *rootJob == "" || *worktree == "" || *trunk == "" {
+		fmt.Fprintln(os.Stderr, "job follow-up-rebase-plan: --repo, --root-job, --worktree, and --trunk are required")
+		return 2
+	}
+	plan, err := dispatchcore.PlanFollowUpRebase(*repo, *rootJob, *worktree, *trunk)
+	if err != nil {
+		return recordExit(err)
+	}
+	printJSON(plan)
+	return 0
 }
 
 func runDispatchGoalRevision(args []string) int {

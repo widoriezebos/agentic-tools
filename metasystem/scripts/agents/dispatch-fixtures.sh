@@ -174,6 +174,16 @@ json_replace_field() { # file, top-level field, replacement JSON value
   mv "$staged" "$file"
 }
 
+json_remove_field() { # file, top-level field
+  local file=$1 field=$2 staged
+  staged=$(mktemp "$(dirname "$file")/.remove.XXXXXX") || return 1
+  if ! "$engine" json strip --file "$file" --key "$field" >"$staged"; then
+    rm -f -- "$staged"
+    return 1
+  fi
+  mv "$staged" "$file"
+}
+
 # Print one top-level element per line from the engine's compact rendering
 # of a JSON array (or one "key":value member per line from an object). The
 # walk is depth- and string-aware, so elements may nest objects and arrays
@@ -476,6 +486,43 @@ fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
 agent_config="$agent_repo/scripts/metasystem-config.sh"
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
+
+if [[ "$fixture_scenario" == dispatch ]]; then
+  # A restoration failure keeps its named stash available for manual recovery.
+  # An index lock makes both the reset and stash application fail deterministically
+  # without changing the stash object that the assertion identifies.
+  restore_failure_repo="$agent_fixture/restore-failure-repo"
+  git -C "$agent_fixture" init -q -b restore-failure "$restore_failure_repo"
+  printf 'base\n' >"$restore_failure_repo/tracked.txt"
+  git -C "$restore_failure_repo" add tracked.txt
+  git -C "$restore_failure_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm restore-base
+  restore_original=$(git -C "$restore_failure_repo" rev-parse HEAD)
+  printf 'delegate change\n' >"$restore_failure_repo/tracked.txt"
+  restore_tag=restore-failure-tag
+  git -C "$restore_failure_repo" stash push -u -m "$restore_tag" >/dev/null
+  restore_stash_hash=$(git -C "$restore_failure_repo" rev-parse refs/stash)
+  : >"$restore_failure_repo/.git/index.lock"
+  set +e
+  (
+    source "$agent_dispatch"
+    restore_failure=
+    if restore_follow_up_rebase_worktree "$restore_failure_repo" "$restore_original" "$restore_stash_hash" "$restore_tag"; then
+      echo 'the forced restore unexpectedly succeeded' >&2
+      exit 1
+    fi
+    printf '%s\n' "$restore_failure"
+    exit 23
+  ) >"$agent_fixture/restore-failure.out" 2>&1
+  restore_failure_rc=$?
+  set -e
+  [[ $restore_failure_rc -eq 23 \
+     && "$(git -C "$restore_failure_repo" stash list --format='%H%x09%gs')" == *"$restore_stash_hash"*"$restore_tag"* ]] \
+    && grep -Fq "git reset --hard to $restore_original" "$agent_fixture/restore-failure.out" \
+    && grep -Fq "git stash apply $restore_stash_hash" "$agent_fixture/restore-failure.out" \
+    && grep -Fq "stash hash $restore_stash_hash with tag $restore_tag remains for manual recovery" "$agent_fixture/restore-failure.out" \
+    || { echo "a failed worktree restore did not retain and identify its tagged stash" >&2; cat "$agent_fixture/restore-failure.out" >&2; exit 1; }
+  rm -f "$restore_failure_repo/.git/index.lock"
+fi
 
 # Capability snapshots belong to the fixture run that consumes them. Mint the
 # fake snapshots before cloning the other fixture repositories so none of the
@@ -2410,11 +2457,28 @@ grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/repeat-follow-second.
 touch "$repeat_follow_release"
 wait_for_agent_status repeat-follow-r2 completed
 
-# A follow-up on a worktree chain whose trunk moved warns loudly: the
-# stale-worktree lesson was violated three times as prose before this line.
+# Worktree chains pin both sides of the overlap decision and the recovery
+# paths around a fast-forward whose dirty changes do not apply cleanly.
+mkdir -p "$agent_repo/metasystem"
+printf 'base\n' >"$agent_repo/metasystem/stale-chain.txt"
+printf 'base\n' >"$agent_repo/metasystem/rebase-target.txt"
+printf 'base\n' >"$agent_repo/metasystem/collision-target.txt"
+printf 'base\n' >"$agent_repo/metasystem/repeat-rebase-target.txt"
+printf 'base\n' >"$agent_repo/metasystem/recover-target.txt"
+printf 'base\n' >"$agent_repo/metasystem/delete-target.txt"
+git -C "$agent_repo" add metasystem/stale-chain.txt metasystem/rebase-target.txt \
+  metasystem/collision-target.txt metasystem/repeat-rebase-target.txt metasystem/recover-target.txt \
+  metasystem/delete-target.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm rebase-fixture-base
+
 stale_brief="$agent_fixture/stale-wt.md"
 make_agent_brief "$stale_brief" implement
 run_agent_fixture stale-wt stale-wt "$agent_dispatch" dispatch --role implementer --brief "$stale_brief" --job-id stale-wt --worktree --wait
+stale_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/stale-wt.json" --field workspaceRoot)
+json_remove_field "$agent_repo/artifacts/agents/jobs/stale-wt.json" launchMode
+stale_head=$(git -C "$stale_workspace" rev-parse HEAD)
+printf 'delegate change\n' >"$stale_workspace/metasystem/stale-chain.txt"
+json_replace_field "$agent_repo/artifacts/agents/stale-wt/rounds/1/return.json" diffBoundary '["metasystem/stale-chain.txt"]'
 printf 'advance\n' >>"$agent_repo/trunk-advance.txt"
 git -C "$agent_repo" add trunk-advance.txt
 # core.hooksPath=/dev/null: the goal open above ENROLLED the real
@@ -2424,8 +2488,211 @@ git -C "$agent_repo" add trunk-advance.txt
 git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm trunk-advance
 "$agent_dispatch" follow-up --job stale-wt --message "$follow_message" --wait >"$tmp/stale-wt.out" 2>"$tmp/stale-wt.err" \
   || { echo "stale-worktree follow-up itself failed" >&2; cat "$tmp/stale-wt.err" >&2; exit 1; }
-grep -q 'WORKTREE-BEHIND' "$tmp/stale-wt.err" \
-  || { echo "follow-up did not warn about a worktree behind its trunk" >&2; exit 1; }
+grep -Fq "WORKTREE-BEHIND: the chain worktree is behind 1 commit, none on this chain's files" "$tmp/stale-wt.err" \
+  || { echo "non-overlapping follow-up did not name why its worktree stayed behind" >&2; cat "$tmp/stale-wt.err" >&2; exit 1; }
+[[ "$(git -C "$stale_workspace" rev-parse HEAD)" == "$stale_head" ]] \
+  || { echo "non-overlapping follow-up moved its worktree" >&2; exit 1; }
+
+rebase_brief="$agent_fixture/rebase-wt.md"
+make_agent_brief "$rebase_brief" implement
+run_agent_fixture rebase-wt rebase-wt "$agent_dispatch" dispatch --role implementer --brief "$rebase_brief" --job-id rebase-wt --worktree --wait
+rebase_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/rebase-wt.json" --field workspaceRoot)
+json_remove_field "$agent_repo/artifacts/agents/jobs/rebase-wt.json" launchMode
+rebase_from=$(git -C "$rebase_workspace" rev-parse HEAD)
+printf 'delegate behaviour\n' >"$rebase_workspace/metasystem/rebase-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/rebase-wt/rounds/1/return.json" diffBoundary '["metasystem/rebase-target.txt"]'
+printf 'trunk behaviour\n' >"$agent_repo/metasystem/rebase-target.txt"
+git -C "$agent_repo" add metasystem/rebase-target.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm rebase-fixture-conflict
+rebase_to=$(git -C "$agent_repo" rev-parse HEAD)
+"$agent_dispatch" follow-up --job rebase-wt --message "$follow_message" --wait >"$tmp/rebase-wt.out" 2>"$tmp/rebase-wt.err" \
+  || { echo "overlapping worktree follow-up failed" >&2; cat "$tmp/rebase-wt.err" >&2; exit 1; }
+rebase_child="$agent_repo/artifacts/agents/jobs/rebase-wt-r2.json"
+rebase_prompt="$agent_repo/artifacts/agents/rebase-wt/rounds/2/prompt.md"
+[[ "$(git -C "$rebase_workspace" rev-parse HEAD)" == "$rebase_to" \
+   && "$("$engine" json get --file "$rebase_child" --field rebasedFrom)" == "$rebase_from" \
+   && "$("$engine" json get --file "$rebase_child" --field rebasedTo)" == "$rebase_to" \
+   && "$("$engine" json get --file "$rebase_child" --field conflictedPaths)" == '["metasystem/rebase-target.txt"]' ]] \
+  || { echo "overlapping follow-up did not record its fast-forward and conflicted path" >&2; cat "$rebase_child" >&2; exit 1; }
+rebase_direction_first=$(awk '$0 == "# Task Direction" { direction = 1; next } direction && NF { print; exit }' "$rebase_prompt")
+printf '%s\n' "$rebase_direction_first" | grep -Fq "trunk commit $rebase_to" \
+  && printf '%s\n' "$rebase_direction_first" | grep -Fq 'metasystem/rebase-target.txt' \
+  && printf '%s\n' "$rebase_direction_first" | grep -Fq "resolve first, keeping both sides' behaviour" \
+  && printf '%s\n' "$rebase_direction_first" | grep -Fq 'stage each resolved path with `git add`' \
+  || { echo "overlapping follow-up did not prepend the conflict-resolution paragraph" >&2; sed -n '1,8p' "$rebase_prompt" >&2; exit 1; }
+grep -Fq '<<<<<<<' "$rebase_workspace/metasystem/rebase-target.txt" \
+  || { echo "overlapping follow-up did not leave the conflict for its builder" >&2; exit 1; }
+[[ -z "$(git -C "$agent_repo" stash list)" ]] \
+  || { echo "overlapping follow-up left a shared stash entry behind" >&2; git -C "$agent_repo" stash list >&2; exit 1; }
+
+# Once a builder resolves and stages every conflicted path, the index no longer
+# carries conflict provenance into the next follow-up.
+printf 'resolved delegate and trunk behaviour\n' >"$rebase_workspace/metasystem/rebase-target.txt"
+git -C "$rebase_workspace" add metasystem/rebase-target.txt
+rebase_clean_plan=$("$engine" job follow-up-rebase-plan --repo "$agent_repo" --root-job rebase-wt \
+  --worktree "$rebase_workspace" --trunk "$rebase_to")
+[[ "$("$engine" json get --value "$rebase_clean_plan" --field unmergedPaths)" == '[]' ]] \
+  || { echo "a staged resolution still planned unmerged worktree paths" >&2; printf '%s\n' "$rebase_clean_plan" >&2; exit 1; }
+run_agent_fixture rebase-staged-follow rebase-wt-r3 "$agent_dispatch" follow-up \
+  --job rebase-wt --message "$follow_message" --wait
+rebase_clean_child="$agent_repo/artifacts/agents/jobs/rebase-wt-r3.json"
+[[ "$("$engine" json get --file "$rebase_clean_child" --field rebasedFrom)" == null \
+   && "$("$engine" json get --file "$rebase_clean_child" --field rebasedTo)" == null \
+   && "$("$engine" json get --file "$rebase_clean_child" --field conflictedPaths)" == '[]' ]] \
+  || { echo "the follow-up after a staged resolution retained conflict provenance" >&2; cat "$rebase_clean_child" >&2; exit 1; }
+
+# A tracked conflict does not make a simultaneous untracked-file collision
+# safe. The dispatcher must restore the original worktree before refusing.
+collision_brief="$agent_fixture/collision-wt.md"
+make_agent_brief "$collision_brief" implement
+run_agent_fixture collision-wt collision-wt "$agent_dispatch" dispatch --role implementer --brief "$collision_brief" --job-id collision-wt --worktree --wait
+collision_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/collision-wt.json" --field workspaceRoot)
+collision_from=$(git -C "$collision_workspace" rev-parse HEAD)
+printf 'delegate tracked behaviour\n' >"$collision_workspace/metasystem/collision-target.txt"
+printf 'delegate untracked behaviour\n' >"$collision_workspace/metasystem/collision-new.txt"
+json_replace_field "$agent_repo/artifacts/agents/collision-wt/rounds/1/return.json" diffBoundary \
+  '["metasystem/collision-new.txt","metasystem/collision-target.txt"]'
+printf 'trunk tracked behaviour\n' >"$agent_repo/metasystem/collision-target.txt"
+printf 'trunk collision behaviour\n' >"$agent_repo/metasystem/collision-new.txt"
+git -C "$agent_repo" add metasystem/collision-target.txt metasystem/collision-new.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm rebase-fixture-untracked-collision
+set +e
+run_agent_fixture_captured collision-wt-follow collision-wt-r2 "$agent_fixture/collision-wt-follow.out" \
+  "$agent_dispatch" follow-up --job collision-wt --message "$follow_message" --wait
+collision_rc=$?
+set -e
+(( collision_rc != 0 )) \
+  && grep -Fq 'collided with untracked paths: metasystem/collision-new.txt' "$agent_fixture/collision-wt-follow.out" \
+  || { echo "the untracked collision follow-up did not refuse by path" >&2; cat "$agent_fixture/collision-wt-follow.out" >&2; exit 1; }
+[[ "$(git -C "$collision_workspace" rev-parse HEAD)" == "$collision_from" \
+   && "$(cat "$collision_workspace/metasystem/collision-target.txt")" == 'delegate tracked behaviour' \
+   && "$(cat "$collision_workspace/metasystem/collision-new.txt")" == 'delegate untracked behaviour' \
+   && ! -e "$agent_repo/artifacts/agents/jobs/collision-wt-r2.json" ]] \
+  || { echo "the untracked collision refusal did not restore the original worktree" >&2; exit 1; }
+if git -C "$agent_repo" stash list --format='%gs' | grep -Fq 'collision-wt-2-rebase'; then
+  echo "the untracked collision refusal left its tagged stash behind" >&2
+  exit 1
+fi
+
+# A wrapper that finds an already-running rebased follow-up reconstructs the
+# exact conflict paragraph from the standing record before fingerprinting.
+repeat_rebase_brief="$agent_fixture/repeat-rebase-wt.md"
+make_agent_brief "$repeat_rebase_brief" implement
+run_agent_fixture repeat-rebase-wt repeat-rebase-wt "$agent_dispatch" dispatch --role implementer --brief "$repeat_rebase_brief" --job-id repeat-rebase-wt --worktree --wait
+repeat_rebase_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/repeat-rebase-wt.json" --field workspaceRoot)
+repeat_rebase_from=$(git -C "$repeat_rebase_workspace" rev-parse HEAD)
+printf 'delegate repeated behaviour\n' >"$repeat_rebase_workspace/metasystem/repeat-rebase-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/repeat-rebase-wt/rounds/1/return.json" diffBoundary \
+  '["metasystem/repeat-rebase-target.txt"]'
+printf 'trunk repeated behaviour\n' >"$agent_repo/metasystem/repeat-rebase-target.txt"
+git -C "$agent_repo" add metasystem/repeat-rebase-target.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm rebase-fixture-repeated-wrapper
+repeat_rebase_to=$(git -C "$agent_repo" rev-parse HEAD)
+repeat_rebase_release="$agent_fixture/repeat-rebase-release"
+repeat_rebase_message="$agent_fixture/repeat-rebase-message.md"
+cp "$follow_message" "$repeat_rebase_message"
+printf '\nFAKE:custodial-critique=%s\n' "$repeat_rebase_release" >>"$repeat_rebase_message"
+run_agent_fixture_captured repeat-rebase-first repeat-rebase-wt-r2 "$agent_fixture/repeat-rebase-first.out" \
+  "$agent_dispatch" follow-up --job repeat-rebase-wt --message "$repeat_rebase_message"
+wait_for_agent_status repeat-rebase-wt-r2 running
+set +e
+run_agent_fixture_captured repeat-rebase-second repeat-rebase-wt-r2 "$agent_fixture/repeat-rebase-second.out" \
+  "$agent_dispatch" follow-up --job repeat-rebase-wt --message "$repeat_rebase_message"
+repeat_rebase_second_rc=$?
+set -e
+(( repeat_rebase_second_rc == 0 || repeat_rebase_second_rc == 3 )) \
+  && grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/repeat-rebase-second.out" \
+  && ! grep -Fq 'REFUSED-OPID-MISMATCH' "$agent_fixture/repeat-rebase-second.out" \
+  || { echo "the repeated rebased follow-up did not bind to its standing operation" >&2; cat "$agent_fixture/repeat-rebase-second.out" >&2; exit 1; }
+repeat_rebase_record="$agent_repo/artifacts/agents/jobs/repeat-rebase-wt-r2.json"
+[[ "$("$engine" json get --file "$repeat_rebase_record" --field rebasedFrom)" == "$repeat_rebase_from" \
+   && "$("$engine" json get --file "$repeat_rebase_record" --field rebasedTo)" == "$repeat_rebase_to" \
+   && "$("$engine" json get --file "$repeat_rebase_record" --field conflictedPaths)" == '["metasystem/repeat-rebase-target.txt"]' ]] \
+  || { echo "the standing repeated follow-up lost its rebase fields" >&2; cat "$repeat_rebase_record" >&2; exit 1; }
+touch "$repeat_rebase_release"
+wait_for_agent_status repeat-rebase-wt-r2 completed
+
+# Authority admission reads only the caller's file. A path deleted by trunk
+# may still appear in the delivered conflict paragraph without becoming a new
+# authority citation, and a repeated wrapper reconstructs that same delivery.
+delete_rebase_brief="$agent_fixture/delete-rebase-wt.md"
+make_agent_brief "$delete_rebase_brief" implement
+run_agent_fixture delete-rebase-wt delete-rebase-wt "$agent_dispatch" dispatch \
+  --role implementer --brief "$delete_rebase_brief" --job-id delete-rebase-wt --worktree --wait
+delete_rebase_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/delete-rebase-wt.json" --field workspaceRoot)
+delete_rebase_from=$(git -C "$delete_rebase_workspace" rev-parse HEAD)
+printf 'delegate preserved behaviour\n' >"$delete_rebase_workspace/metasystem/delete-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/delete-rebase-wt/rounds/1/return.json" diffBoundary \
+  '["metasystem/delete-target.txt"]'
+git -C "$agent_repo" rm -q metasystem/delete-target.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm rebase-fixture-delete-conflict
+delete_rebase_to=$(git -C "$agent_repo" rev-parse HEAD)
+delete_rebase_release="$agent_fixture/delete-rebase-release"
+delete_rebase_message="$agent_fixture/delete-rebase-message.md"
+cp "$follow_message" "$delete_rebase_message"
+printf '\nFAKE:custodial-critique=%s\n' "$delete_rebase_release" >>"$delete_rebase_message"
+run_agent_fixture_captured delete-rebase-first delete-rebase-wt-r2 "$agent_fixture/delete-rebase-first.out" \
+  "$agent_dispatch" follow-up --job delete-rebase-wt --message "$delete_rebase_message"
+wait_for_agent_status delete-rebase-wt-r2 running
+set +e
+run_agent_fixture_captured delete-rebase-second delete-rebase-wt-r2 "$agent_fixture/delete-rebase-second.out" \
+  "$agent_dispatch" follow-up --job delete-rebase-wt --message "$delete_rebase_message"
+delete_rebase_second_rc=$?
+set -e
+(( delete_rebase_second_rc == 0 || delete_rebase_second_rc == 3 )) \
+  && grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/delete-rebase-second.out" \
+  && ! grep -Fq 'follow-up brief authority admission refused' "$agent_fixture/delete-rebase-first.out" \
+  && ! grep -Fq 'follow-up brief authority admission refused' "$agent_fixture/delete-rebase-second.out" \
+  || { echo "the modify-delete follow-up or its retry was refused by authority admission" >&2; cat "$agent_fixture/delete-rebase-first.out" "$agent_fixture/delete-rebase-second.out" >&2; exit 1; }
+delete_rebase_record="$agent_repo/artifacts/agents/jobs/delete-rebase-wt-r2.json"
+delete_rebase_prompt="$agent_repo/artifacts/agents/delete-rebase-wt/rounds/2/prompt.md"
+[[ "$("$engine" json get --file "$delete_rebase_record" --field rebasedFrom)" == "$delete_rebase_from" \
+   && "$("$engine" json get --file "$delete_rebase_record" --field rebasedTo)" == "$delete_rebase_to" \
+   && "$("$engine" json get --file "$delete_rebase_record" --field conflictedPaths)" == '["metasystem/delete-target.txt"]' ]] \
+  || { echo "the modify-delete follow-up did not record its conflict provenance" >&2; cat "$delete_rebase_record" >&2; exit 1; }
+if git -C "$delete_rebase_workspace" cat-file -e 'HEAD:metasystem/delete-target.txt' 2>/dev/null; then
+  echo "the modify-delete fixture did not remove its conflicted path from worktree HEAD" >&2
+  exit 1
+fi
+delete_rebase_direction_first=$(awk '$0 == "# Task Direction" { direction = 1; next } direction && NF { print; exit }' "$delete_rebase_prompt")
+printf '%s\n' "$delete_rebase_direction_first" | grep -Fq 'metasystem/delete-target.txt' \
+  && printf '%s\n' "$delete_rebase_direction_first" | grep -Fq 'stage each resolved path with `git add`' \
+  || { echo "the modify-delete follow-up did not deliver its conflict paragraph" >&2; sed -n '1,8p' "$delete_rebase_prompt" >&2; exit 1; }
+touch "$delete_rebase_release"
+wait_for_agent_status delete-rebase-wt-r2 completed
+
+# If authority admission refuses after a conflicting fast-forward, the next
+# corrected wrapper recovers the conflict metadata from the worktree index.
+recover_brief="$agent_fixture/recover-wt.md"
+make_agent_brief "$recover_brief" implement
+run_agent_fixture recover-wt recover-wt "$agent_dispatch" dispatch --role implementer --brief "$recover_brief" --job-id recover-wt --worktree --wait
+recover_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/recover-wt.json" --field workspaceRoot)
+printf 'delegate recovered behaviour\n' >"$recover_workspace/metasystem/recover-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/recover-wt/rounds/1/return.json" diffBoundary '["metasystem/recover-target.txt"]'
+printf 'trunk recovered behaviour\n' >"$agent_repo/metasystem/recover-target.txt"
+git -C "$agent_repo" add metasystem/recover-target.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm rebase-fixture-authority-retry
+recover_to=$(git -C "$agent_repo" rev-parse HEAD)
+recover_missing_message="$agent_fixture/recover-missing-message.md"
+cp "$follow_message" "$recover_missing_message"
+printf '\nAuthority: metasystem/scripts/agents/missing-after-rebase.md\n' >>"$recover_missing_message"
+agent_fails recover-authority-refusal 'follow-up brief authority admission refused' \
+  "$agent_dispatch" follow-up --job recover-wt --message "$recover_missing_message" --wait
+grep -Fq '<<<<<<<' "$recover_workspace/metasystem/recover-target.txt" \
+  && [[ "$(git -C "$recover_workspace" rev-parse HEAD)" == "$recover_to" ]] \
+  || { echo "the authority refusal did not leave the rebased conflict in place" >&2; exit 1; }
+run_agent_fixture recover-corrected recover-wt-r2 "$agent_dispatch" follow-up --job recover-wt --message "$follow_message" --wait
+recover_record="$agent_repo/artifacts/agents/jobs/recover-wt-r2.json"
+recover_prompt="$agent_repo/artifacts/agents/recover-wt/rounds/2/prompt.md"
+[[ "$("$engine" json get --file "$recover_record" --field rebasedFrom)" == null \
+   && "$("$engine" json get --file "$recover_record" --field rebasedTo)" == "$recover_to" \
+   && "$("$engine" json get --file "$recover_record" --field conflictedPaths)" == '["metasystem/recover-target.txt"]' ]] \
+  || { echo "the corrected follow-up did not recover its conflict provenance" >&2; cat "$recover_record" >&2; exit 1; }
+recover_direction_first=$(awk '$0 == "# Task Direction" { direction = 1; next } direction && NF { print; exit }' "$recover_prompt")
+printf '%s\n' "$recover_direction_first" | grep -Fq "trunk commit $recover_to" \
+  && printf '%s\n' "$recover_direction_first" | grep -Fq 'metasystem/recover-target.txt' \
+  && printf '%s\n' "$recover_direction_first" | grep -Fq "resolve first, keeping both sides' behaviour" \
+  || { echo "the corrected follow-up did not prepend its recovered conflict paragraph" >&2; sed -n '1,8p' "$recover_prompt" >&2; exit 1; }
 
 run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
 [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \

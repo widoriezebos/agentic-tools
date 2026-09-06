@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"bytes"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -15,15 +16,22 @@ import (
 // stdout. Bounded: it runs inside the locked build-record path, where
 // a hung git would block dispatch and arming checkout-wide.
 func gitOutput(dir string, args ...string) (string, error) {
+	output, err := gitRawOutput(dir, args...)
+	return strings.TrimSpace(string(output)), err
+}
+
+// gitRawOutput preserves NUL-delimited path output for decisions that must
+// handle every Git pathname without parsing display-oriented quoting.
+func gitRawOutput(dir string, args ...string) ([]byte, error) {
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	var stdout strings.Builder
+	var stdout bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = io.Discard
 	limit := boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(command, limit, "git "+strings.Join(args, " ")); err != nil {
-		return "", err
+		return nil, err
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.Bytes(), nil
 }
 
 // projectInstallPrefix mirrors conformance's project scope derivation: an

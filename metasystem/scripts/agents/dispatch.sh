@@ -1804,12 +1804,257 @@ append_critique_open_ids() { # source message, output message, critic root
   fi
 }
 
+follow_up_rebase_stash_entry() { # worktree, tag, optional expected hash
+  local worktree=$1 tag=$2 expected=${3:-} selector hash subject
+  while IFS=$'\t' read -r selector hash subject; do
+    [[ "$subject" == *": $tag" ]] || continue
+    [[ -z "$expected" || "$hash" == "$expected" ]] || continue
+    printf '%s|%s\n' "$selector" "$hash"
+    return 0
+  done < <(git -C "$worktree" stash list --format='%gd%x09%H%x09%gs')
+  return 1
+}
+
+drop_follow_up_rebase_stash() { # worktree, tag, expected hash
+  local worktree=$1 tag=$2 expected=$3 entry selector
+  [[ -n "$expected" ]] || return 0
+  entry=$(follow_up_rebase_stash_entry "$worktree" "$tag" "$expected") || return 0
+  selector=${entry%%|*}
+  git -C "$worktree" stash drop -q "$selector" >/dev/null 2>&1 || true
+  ! follow_up_rebase_stash_entry "$worktree" "$tag" "$expected" >/dev/null
+}
+
+restore_follow_up_rebase_worktree() { # worktree, original head, stash hash, tag
+  local worktree=$1 original=$2 stash_hash=$3 tag=$4 step separator= identity
+  local -a failed_steps=()
+  restore_failure=
+  identity="tag $tag"
+  [[ -z "$stash_hash" ]] || identity="stash hash $stash_hash with tag $tag"
+  git -C "$worktree" reset --hard -q "$original" >/dev/null 2>&1 \
+    || failed_steps+=("git reset --hard to $original")
+  git -C "$worktree" clean -fdq >/dev/null 2>&1 \
+    || failed_steps+=("git clean -fd")
+  if [[ -n "$stash_hash" ]]; then
+    git -C "$worktree" stash apply -q "$stash_hash" >/dev/null 2>&1 \
+      || failed_steps+=("git stash apply $stash_hash")
+  fi
+  if (( ${#failed_steps[@]} )); then
+    restore_failure="restoring the original worktree failed during "
+    separator=
+    for step in "${failed_steps[@]}"; do
+      restore_failure+="$separator$step"
+      separator=', '
+    done
+    restore_failure+="; $identity remains for manual recovery"
+    return 1
+  fi
+  if ! drop_follow_up_rebase_stash "$worktree" "$tag" "$stash_hash"; then
+    restore_failure="restoring the original worktree succeeded, but removing $identity failed; it remains for manual recovery"
+    return 1
+  fi
+  return 0
+}
+
+inspect_follow_up_rebase_untracked() { # worktree, stash hash; fills caller arrays
+  local worktree=$1 stash_hash=$2 untracked_tree listing entry metadata path blob actual
+  untracked_paths=()
+  colliding_untracked_paths=()
+  untracked_tree=$(git -C "$worktree" rev-parse "$stash_hash^3" 2>/dev/null) || return 0
+  listing=$(mktemp "${TMPDIR:-/tmp}/metasystem-rebase-untracked.XXXXXX") || return 1
+  if ! git -C "$worktree" ls-tree -rz --full-tree "$untracked_tree" >"$listing"; then
+    rm -f -- "$listing"
+    return 1
+  fi
+  while IFS= read -r -d '' entry; do
+    metadata=${entry%%$'\t'*}
+    path=${entry#*$'\t'}
+    blob=${metadata##* }
+    untracked_paths+=("$path")
+    actual=
+    if [[ -e "$worktree/$path" || -L "$worktree/$path" ]]; then
+      actual=$(git -C "$worktree" hash-object --no-filters -- "$path" 2>/dev/null || true)
+    fi
+    [[ -n "$actual" && "$actual" == "$blob" ]] || colliding_untracked_paths+=("$path")
+  done <"$listing"
+  rm -f -- "$listing"
+}
+
+follow_up_rebase_path_names() { # paths...
+  local path separator=
+  for path in "$@"; do
+    printf '%s%s' "$separator" "$path"
+    separator=', '
+  done
+}
+
+rebase_follow_up_worktree() { # worktree, pinned trunk commit, stash tag
+  local worktree=$1 trunk_commit=$2 tag=$3 dirty= stash_output stash_rc=0 stash_entry= stash_hash=
+  local merge_output merge_rc=0 apply_output apply_rc=0 path restore_detail= restore_failure= collision_text=
+  local untracked_restore_failed=0
+  local -a untracked_paths=() colliding_untracked_paths=()
+  rebased_from=$(git -C "$worktree" rev-parse HEAD 2>/dev/null) \
+    || { rebase_failure="cannot resolve the worktree's original commit"; return 1; }
+  rebased_to=$trunk_commit
+  conflicted_paths=()
+  if follow_up_rebase_stash_entry "$worktree" "$tag" >/dev/null; then
+    rebase_failure="the shared stash already contains the reserved tag $tag"
+    return 1
+  fi
+  dirty=$(git -C "$worktree" status --porcelain --untracked-files=all 2>/dev/null) \
+    || { rebase_failure="cannot inspect the worktree before stashing its changes"; return 1; }
+  set +e
+  stash_output=$(git -C "$worktree" stash push -u -m "$tag" 2>&1)
+  stash_rc=$?
+  set -e
+  if [[ -n "$dirty" ]]; then
+    stash_entry=$(follow_up_rebase_stash_entry "$worktree" "$tag" 2>/dev/null || true)
+    stash_hash=${stash_entry#*|}
+  fi
+  if (( stash_rc != 0 )) || [[ -n "$dirty" && -z "$stash_entry" ]]; then
+    [[ -z "$stash_hash" ]] || restore_follow_up_rebase_worktree "$worktree" "$rebased_from" "$stash_hash" "$tag" || restore_detail="; $restore_failure"
+    stash_output=${stash_output//$'\n'/ }
+    rebase_failure="stashing the round's changes failed${stash_output:+: $stash_output}$restore_detail"
+    return 1
+  fi
+
+  set +e
+  merge_output=$(git -C "$worktree" merge --ff-only -q "$trunk_commit" 2>&1)
+  merge_rc=$?
+  set -e
+  if (( merge_rc != 0 )); then
+    restore_follow_up_rebase_worktree "$worktree" "$rebased_from" "$stash_hash" "$tag" \
+      || restore_detail="; $restore_failure"
+    merge_output=${merge_output//$'\n'/ }
+    rebase_failure="the worktree cannot fast-forward to trunk commit $trunk_commit${merge_output:+: $merge_output}$restore_detail"
+    return 1
+  fi
+
+  if [[ -n "$stash_hash" ]]; then
+    set +e
+    apply_output=$(git -C "$worktree" stash apply -q "$stash_hash" 2>&1)
+    apply_rc=$?
+    set -e
+    while IFS= read -r -d '' path; do
+      conflicted_paths+=("$path")
+    done < <(git -C "$worktree" diff --name-only -z --diff-filter=U)
+    if ! inspect_follow_up_rebase_untracked "$worktree" "$stash_hash"; then
+      restore_follow_up_rebase_worktree "$worktree" "$rebased_from" "$stash_hash" "$tag" \
+        || restore_detail="; $restore_failure"
+      rebase_failure="the stash's untracked tree could not be verified after reapplication$restore_detail"
+      return 1
+    fi
+    [[ "$apply_output" == *"could not restore untracked files"* ]] && untracked_restore_failed=1
+    if (( untracked_restore_failed )) && (( ${#colliding_untracked_paths[@]} == 0 )); then
+      colliding_untracked_paths=("${untracked_paths[@]+"${untracked_paths[@]}"}")
+    fi
+    if (( ${#colliding_untracked_paths[@]} > 0 || untracked_restore_failed )); then
+      collision_text=$(follow_up_rebase_path_names "${colliding_untracked_paths[@]+"${colliding_untracked_paths[@]}"}")
+      restore_follow_up_rebase_worktree "$worktree" "$rebased_from" "$stash_hash" "$tag" \
+        || restore_detail="; $restore_failure"
+      rebase_failure="reapplying the round's changes collided with untracked paths${collision_text:+: $collision_text}$restore_detail"
+      return 1
+    fi
+    if (( apply_rc != 0 )) && (( ${#conflicted_paths[@]} == 0 )); then
+      restore_follow_up_rebase_worktree "$worktree" "$rebased_from" "$stash_hash" "$tag" \
+        || restore_detail="; $restore_failure"
+      apply_output=${apply_output//$'\n'/ }
+      rebase_failure="reapplying the round's changes at trunk commit $trunk_commit failed without conflict markers${apply_output:+: $apply_output}$restore_detail"
+      return 1
+    fi
+  fi
+  if ! drop_follow_up_rebase_stash "$worktree" "$tag" "$stash_hash"; then
+    rebase_failure="the rebased changes were restored, but the tagged stash $tag could not be removed"
+    return 1
+  fi
+  return 0
+}
+
+json_top_level_elements() { # compact JSON array or object
+  printf '%s' "$1" | awk '
+    {
+      n = length($0)
+      first = substr($0, 1, 1)
+      if (n < 2 || (first != "[" && first != "{")) exit 1
+      depth = 0; instring = 0; escaped = 0; start = 2
+      for (i = 2; i < n; i++) {
+        ch = substr($0, i, 1)
+        if (instring) {
+          if (escaped) escaped = 0
+          else if (ch == "\\") escaped = 1
+          else if (ch == "\"") instring = 0
+        } else if (ch == "\"") instring = 1
+        else if (ch == "{" || ch == "[") depth++
+        else if (ch == "}" || ch == "]") depth--
+        else if (ch == "," && depth == 0) {
+          print substr($0, start, i - start)
+          start = i + 1
+        }
+      }
+      if (n > 2) print substr($0, start, n - start)
+    }'
+}
+
+read_follow_up_conflicted_paths() { # compact JSON string array; fills caller array
+  local raw=$1 elements decoded element path
+  elements=$(mktemp "${TMPDIR:-/tmp}/metasystem-rebase-elements.XXXXXX") || return 1
+  decoded=$(mktemp "${TMPDIR:-/tmp}/metasystem-rebase-decoded.XXXXXX") \
+    || { rm -f -- "$elements"; return 1; }
+  if ! json_top_level_elements "$raw" >"$elements"; then
+    rm -f -- "$elements" "$decoded"
+    return 1
+  fi
+  conflicted_paths=()
+  while IFS= read -r element; do
+    [[ -n "$element" ]] || continue
+    if ! json_value "{\"path\":$element}" path >"$decoded"; then
+      rm -f -- "$elements" "$decoded"
+      return 1
+    fi
+    IFS= read -r -d '' path < <(cat "$decoded"; printf '\0') || true
+    path=${path%$'\n'}
+    conflicted_paths+=("$path")
+  done <"$elements"
+  rm -f -- "$elements" "$decoded"
+}
+
+read_follow_up_rebase_record_fields() { # record; fills caller provenance and conflict array
+  local record=$1 conflicts
+  rebased_from=$(json_field "$record" rebasedFrom) || return 1
+  rebased_to=$(json_field "$record" rebasedTo) || return 1
+  conflicts=$(json_field "$record" conflictedPaths) || return 1
+  [[ "$rebased_from" == null ]] && rebased_from=
+  [[ "$rebased_to" == null ]] && rebased_to=
+  read_follow_up_conflicted_paths "$conflicts"
+}
+
+prepend_follow_up_rebase_paragraph() { # source, output, rebased from, rebased to, conflicted paths...
+  local source=$1 output=$2 from=$3 to=$4 path separator=
+  shift 4
+  if [[ -n "$from" ]]; then
+    printf 'The dispatcher fast-forwarded this chain worktree from commit %s to trunk commit %s.' "$from" "$to" >"$output"
+  else
+    printf 'An earlier dispatcher fast-forwarded this chain worktree to trunk commit %s.' "$to" >"$output"
+  fi
+  if (( $# )); then
+    printf ' Conflicted paths: ' >>"$output"
+    for path in "$@"; do
+      printf '%s`%s`' "$separator" "$path" >>"$output"
+      separator=', '
+    done
+    printf '; resolve first, keeping both sides'\'' behaviour, then stage each resolved path with `git add`.\n\n' >>"$output"
+  else
+    printf ' No conflicted paths remain.\n\n' >>"$output"
+  fi
+  cat "$source" >>"$output"
+}
+
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal reviews=
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
-  local repeated_follow_up=0 parent_job fresh_context_temp=
-  local -a product_root_args=() continuation_args=()
+  local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
+  local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
+  local -a product_root_args=() continuation_args=() conflicted_paths=() rebase_record_args=()
   engine_script_skew_preflight
   while (($#)); do
     case "$1" in
@@ -1822,6 +2067,7 @@ follow_up() {
     esac
   done
   valid_id "$job" && [[ -f "$message" && -f "$jobs/$job.json" ]] || { usage; exit 2; }
+  authority_message=$message
   operation_brief_hash=$(sha256_file "$message")
   lease_entry_check
   require_fresh_census
@@ -1834,19 +2080,6 @@ follow_up() {
   # anything (the Linux cap-authority leak, go-production-grade Phase 1).
   exit_cleanup_chain=$root_id
   trap 'cleanup_follow_up_message; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
-  # A worktree chain reads its own branch, not main: a follow-up citing files
-  # amended on main after the branch point describes files the delegate does
-  # not have. This lesson (KI-9's complement) was violated three times as
-  # prose before becoming this check.
-  if worktree_path=$(json_field "$jobs/$root_id.json" workspaceRoot 2>/dev/null) \
-      && [[ -n "$worktree_path" && "$worktree_path" != null && -d "$worktree_path" ]]; then
-    trunk=$(git -C "$root" branch --show-current 2>/dev/null || true)
-    behind=0
-    [[ -n "$trunk" ]] && behind=$(git -C "$worktree_path" rev-list --count "HEAD..$trunk" 2>/dev/null || echo 0)
-    if (( behind > 0 )); then
-      echo "WORKTREE-BEHIND: the chain worktree is $behind commit(s) behind main; if this follow-up cites amended files, merge main into $worktree_path first" >&2
-    fi
-  fi
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
   latest=$(latest_chain_record "$root_id") || die 1 "cannot find the newest chain record"
   status=$(json_field "$latest" status); error=$(json_field "$latest" error 2>/dev/null || true)
@@ -1877,6 +2110,66 @@ follow_up() {
     latest="$jobs/$parent_job.json"
   else
     die 1 "follow-up requires the newest record to be completed or failed with protocol_error; use a fresh dispatch after pending, running, timeout, or process-lost"
+  fi
+  worktree_path=$(json_field "$jobs/$root_id.json" workspaceRoot 2>/dev/null || true)
+  root_launch_mode=$(json_field "$jobs/$root_id.json" launchMode 2>/dev/null || true)
+  if [[ "$root_launch_mode" != worktree && "$root_launch_mode" != shared-checkout ]]; then
+    case "$worktree_path/" in
+      "$worktrees/"*) root_launch_mode=worktree ;;
+      *) root_launch_mode=shared-checkout ;;
+    esac
+  fi
+  if (( repeated_follow_up == 0 )) && [[ "$root_launch_mode" == worktree \
+      && -n "$worktree_path" && "$worktree_path" != null && -d "$worktree_path" ]]; then
+    trunk_commit=$(git -C "$root" rev-parse HEAD 2>/dev/null) \
+      || die 1 "follow-up rebase cannot resolve the trunk commit"
+    rebase_plan=$("$ms" job follow-up-rebase-plan --repo "$root" --root-job "$root_id" \
+      --worktree "$worktree_path" --trunk "$trunk_commit") \
+      || die 1 "follow-up rebase planning refused because the chain boundary or Git history is unreadable"
+    plan_rebase=$(json_value "$rebase_plan" rebase)
+    behind=$(json_value "$rebase_plan" behindCount)
+    if [[ "$plan_rebase" == true ]]; then
+      if ! rebase_follow_up_worktree "$worktree_path" "$trunk_commit" "$root_id-$round-rebase"; then
+        die 1 "follow-up rebase refused: $rebase_failure"
+      fi
+      rebase_message_temp=$(mktemp "${TMPDIR:-/tmp}/metasystem-rebase-follow.XXXXXX")
+      prepend_follow_up_rebase_paragraph "$message" "$rebase_message_temp" "$rebased_from" "$rebased_to" \
+        "${conflicted_paths[@]+"${conflicted_paths[@]}"}"
+      exit_cleanup_message=$rebase_message_temp
+      message=$rebase_message_temp
+    else
+      unmerged_json=$(json_value "$rebase_plan" unmergedPaths) \
+        || die 1 "follow-up rebase plan carries no readable unmergedPaths"
+      read_follow_up_conflicted_paths "$unmerged_json" \
+        || die 1 "follow-up rebase plan carries invalid unmergedPaths"
+      if (( ${#conflicted_paths[@]} > 0 )); then
+        rebased_from=
+        rebased_to=$(json_value "$rebase_plan" rebasedFrom) \
+          || die 1 "follow-up rebase plan carries no worktree head"
+        rebase_message_temp=$(mktemp "${TMPDIR:-/tmp}/metasystem-rebase-follow.XXXXXX")
+        prepend_follow_up_rebase_paragraph "$message" "$rebase_message_temp" "$rebased_from" "$rebased_to" \
+          "${conflicted_paths[@]+"${conflicted_paths[@]}"}"
+        exit_cleanup_message=$rebase_message_temp
+        message=$rebase_message_temp
+      fi
+    fi
+    if [[ "$plan_rebase" != true ]] && (( behind > 0 )); then
+      if (( behind == 1 )); then
+        echo "WORKTREE-BEHIND: the chain worktree is behind 1 commit, none on this chain's files" >&2
+      else
+        echo "WORKTREE-BEHIND: the chain worktree is behind $behind commits, none on this chain's files" >&2
+      fi
+    fi
+  elif (( repeated_follow_up )); then
+    read_follow_up_rebase_record_fields "$standing_child_record" \
+      || die 1 "the active follow-up carries unreadable rebase fields"
+    if [[ -n "$rebased_to" ]]; then
+      rebase_message_temp=$(mktemp "${TMPDIR:-/tmp}/metasystem-rebase-follow.XXXXXX")
+      prepend_follow_up_rebase_paragraph "$message" "$rebase_message_temp" "$rebased_from" "$rebased_to" \
+        "${conflicted_paths[@]+"${conflicted_paths[@]}"}"
+      exit_cleanup_message=$rebase_message_temp
+      message=$rebase_message_temp
+    fi
   fi
   operation_parent=$(basename "${latest%.json}")
   session=$(json_field "$latest" sessionId 2>/dev/null || true)
@@ -1975,7 +2268,7 @@ follow_up() {
         || die 1 "design-critic follow-up cannot resolve the workspace commit"
     fi
   fi
-  brief_authority "$message" "$workspace" || die 1 "follow-up brief authority admission refused"
+  brief_authority "$authority_message" "$workspace" || die 1 "follow-up brief authority admission refused"
   # The completed critic attempt is folded and the cap is checked while no
   # successor record exists. A terminal human raise therefore cannot strand a
   # pending-setup husk, and retrying the same round id remains possible.
@@ -1990,9 +2283,11 @@ follow_up() {
         --root-job "$root_id" --round-job "$(basename "${latest%.json}")") \
         || die 1 "could not fold the latest critic attempt into its canonical register"
     fi
+    previous_message_temp=$exit_cleanup_message
     exit_cleanup_message=$(mktemp "${TMPDIR:-/tmp}/metasystem-critique-follow.XXXXXX")
     append_critique_open_ids "$message" "$exit_cleanup_message" "$root_id"
     message=$exit_cleanup_message
+    [[ -z "$previous_message_temp" ]] || rm -f -- "$previous_message_temp"
   fi
   if (( repeated_follow_up == 0 )) \
       && [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
@@ -2147,6 +2442,13 @@ follow_up() {
   mv "$composition_temp" "$round_dir/composition.json"
 
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
+  if [[ -n "$rebased_to" ]]; then
+    rebase_record_args=(--rebased-to "$rebased_to")
+    [[ -z "$rebased_from" ]] || rebase_record_args+=(--rebased-from "$rebased_from")
+    for path in ${conflicted_paths[@]+"${conflicted_paths[@]}"}; do
+      rebase_record_args+=(--conflicted-path "$path")
+    done
+  fi
   "$ms" job build-follow-record --output "$record_json" --parent "$latest" \
     --job "$child" --operation-id "$operation_id" --round "$round" --parent-job "$(basename "${latest%.json}")" \
     --model "$model" --aliased-from "$aliased_from" \
@@ -2158,6 +2460,7 @@ follow_up() {
     --root "$root" --goal-revision "$goal_revision" --goal-tier "$goal_tier" --gate-width "$goal_width" --approved-ref "$approved_ref" \
     --destructive-reach "$destructive_reach" \
     --composition "$round_dir/composition.json" \
+    "${rebase_record_args[@]+"${rebase_record_args[@]}"}" \
     --launch-mode "$launch_mode" --output-stream "$output_stream"
   rm -f "$cap_resolution"
   cleanup_follow_up_message
