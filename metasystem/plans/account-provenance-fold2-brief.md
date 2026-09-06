@@ -27,7 +27,7 @@ access token that is not decodable or carries no `exp` is
 `credential-invalid`; an access token whose `exp` is before the engine's
 now is `credential-expired`. Access token material stays confined
 exactly as the identity token's does. In
-metasystem/internal/adapter/codexaccount_test.go the expired case
+internal/adapter/codexaccount_test.go (a round-1 file, cited without the tree prefix) the expired case
 becomes an access token past its `exp`; two cases are added: an identity
 token days past its own `exp` beside an access token in date gives
 `credential-claims`, and an access token without a decodable `exp` gives
