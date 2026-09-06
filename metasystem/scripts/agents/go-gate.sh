@@ -521,11 +521,15 @@ fi
 # the freshly built temporary binary below, because THIS invocation's
 # rebuild is what always-rebuild means.
 coverage_log=$(mktemp)
-# The wall's snapshot-scope rules capture real repository postures per
-# turn, which puts the missionrunner race suite past go test's default
-# 10-minute per-package ceiling; the explicit ceiling keeps the hang
-# protection while admitting the honest runtime.
-go test -race -cover -timeout 30m ./internal/... | tee "$coverage_log" || {
+# The per-package ceiling is a hang bound, not a runtime target. The goal and
+# missionrunner packages contain 353 and 296 serial tests; each drives real
+# git repositories, and mission cycles carry real waits. Individual tests
+# finish in under twenty seconds under the race detector, but the serial sum
+# stretches under contention from roughly fifty package binaries. Under the
+# gate's contention, the slowest packages take about ten minutes on a large
+# machine and have passed thirty on a small one. Sixty minutes leaves room for
+# a small machine and still ends a hung package.
+go test -race -cover -timeout 60m ./internal/... | tee "$coverage_log" || {
   # Evidence beats disk (the suite's own rule): a transient test failure
   # with its log deleted is undiagnosable — tonight's nested-gate flake
   # was exactly that. Keep the failing run's output where the suite keeps

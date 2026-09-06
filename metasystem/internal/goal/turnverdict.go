@@ -168,7 +168,9 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	if err != nil {
 		return failClosedTurnVerdict(err), nil
 	}
-	s.Root = resolvedRoot
+	store := *s
+	store.Root = resolvedRoot
+	s = &store
 
 	result, err := s.withLock(func() (Result, error) {
 		_, humanAuthorized, markerDetail, err := s.inspectSessionStop(sessionId, mainId)

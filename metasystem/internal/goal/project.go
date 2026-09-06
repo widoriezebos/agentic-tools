@@ -99,10 +99,11 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 
 func fetchProjectionWithinDeadline(e Endpoint) error {
 	done := make(chan error, 1)
-	go func() {
-		_, err := fetchForProjection(e)
+	fetch := fetchForProjection
+	go func(fetch func(Endpoint) (AdvanceResult, error)) {
+		_, err := fetch(e)
 		done <- err
-	}()
+	}(fetch)
 	timer := time.NewTimer(freshProjectionTimeout)
 	defer timer.Stop()
 	select {

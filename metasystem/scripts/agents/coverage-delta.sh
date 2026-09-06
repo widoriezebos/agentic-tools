@@ -194,9 +194,9 @@ for package in "${normalized[@]}"; do
   fi
   floor_display=$(awk -v floor="$floor" 'BEGIN { printf "%.1f", floor }')
 
-  # The same 30m ceiling the go gate carries: the missionrunner suite
-  # outgrew go test's default 10m, and a coverage probe that times out
-  # reads as a package failure with a phantom partial percentage.
+  # This is a hang bound for one package without the race detector, leaving a
+  # wide margin above the slowest package. A timed-out coverage probe reads as
+  # a package failure with a phantom partial percentage.
   test_output=$(go test -cover -timeout 30m "$test_package" 2>&1)
   test_rc=$?
   measured=$(printf '%s\n' "$test_output" \

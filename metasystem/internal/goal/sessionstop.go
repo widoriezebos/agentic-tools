@@ -234,7 +234,9 @@ func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof)
 	if err != nil {
 		return SessionStop{}, err
 	}
-	s.Root = resolvedRoot
+	store := *s
+	store.Root = resolvedRoot
+	s = &store
 	if strings.TrimSpace(marker.SessionId) == "" {
 		return SessionStop{}, fmt.Errorf("session stop requires an announced session id")
 	}
@@ -366,7 +368,9 @@ func (s *Store) EndSessionStop(sessionId string) error {
 	if err != nil {
 		return err
 	}
-	s.Root = resolvedRoot
+	store := *s
+	store.Root = resolvedRoot
+	s = &store
 	sessionId = NormalizeSession(sessionId)
 	_, err = s.withLock(func() (Result, error) {
 		path := sessionStopPath(s.Root, sessionId)
