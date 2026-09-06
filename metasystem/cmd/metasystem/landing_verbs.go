@@ -34,7 +34,7 @@ func runLandingTestReceipt(args []string) int {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := flags.String("root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
-	command := flags.String("command", "", "test command to run from the project root")
+	command := flags.String("command", "", "test command to run from the isolated candidate workspace")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}

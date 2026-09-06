@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -46,12 +48,11 @@ func TestReceiptPath(root, tree string) string {
 	return filepath.Join(root, "artifacts", "agents", "landing", "receipts", tree+".json")
 }
 
-// CreateTestReceipt runs command only when the real index and working tree
-// both represent tree, and publishes a receipt only if they still do after
-// the command exits. The stale target is removed first so a refused retry
-// cannot leave an older receipt available for observation.
-func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (TestReceipt, error) {
-	receipt := TestReceipt{}
+// CreateTestReceipt accepts tree only when the live index and working tree
+// both represent it, then runs command in a temporary detached worktree that
+// contains that exact candidate. The stale target is removed first so a
+// refused retry cannot leave an older receipt available for observation.
+func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (receipt TestReceipt, err error) {
 	if root == "" || !treeOID.MatchString(tree) || command == "" {
 		return receipt, fmt.Errorf("landing test receipt requires --root, a full tree object id, and a non-empty --command")
 	}
@@ -65,6 +66,9 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (Te
 			_ = os.Remove(target)
 		}
 	}()
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM)
+	defer signal.Stop(interrupts)
 
 	workspace := gittree.Workspace{Dir: root}
 	if _, err := workspace.Diff(tree, tree); err != nil {
@@ -77,13 +81,39 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (Te
 	if indexBefore != tree || worktreeBefore != tree {
 		return receipt, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
 	}
+	if err := receiptInterrupted(interrupts); err != nil {
+		return receipt, err
+	}
+
+	detached, err := workspace.NewDetachedWorktree(tree)
+	if err != nil {
+		return receipt, fmt.Errorf("prepare isolated candidate: %w", err)
+	}
+	defer func() {
+		if cleanupErr := detached.Close(); cleanupErr != nil {
+			published = false
+			receipt = TestReceipt{}
+			err = errors.Join(err, fmt.Errorf("cleanup isolated candidate: %w", cleanupErr))
+		}
+	}()
+	if err := receiptInterrupted(interrupts); err != nil {
+		return receipt, err
+	}
+	candidateWorkspace := detached.Workspace()
+	candidateIndexBefore, candidateWorktreeBefore, err := receiptPosture(candidateWorkspace)
+	if err != nil {
+		return receipt, fmt.Errorf("verify isolated candidate: %w", err)
+	}
+	if candidateIndexBefore != tree || candidateWorktreeBefore != tree {
+		return receipt, fmt.Errorf("test receipt refused: isolated candidate differs from supplied tree %s", tree)
+	}
 
 	cmd := exec.Command("bash", "-c", command)
-	cmd.Dir = root
+	cmd.Dir = candidateWorkspace.Dir
 	cmd.Env = gittree.ScrubbedEnviron()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	runErr := boundedexec.Run(cmd, receiptCommandBound(filepath.Join(root, "metasystem.conf")), "landing test command")
+	runErr := runReceiptCommand(cmd, receiptCommandBound(filepath.Join(root, "metasystem.conf")), interrupts)
 	exitStatus := 0
 	if runErr != nil {
 		var exit *exec.ExitError
@@ -92,13 +122,22 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (Te
 		}
 		exitStatus = exit.ExitCode()
 	}
+	if err := receiptInterrupted(interrupts); err != nil {
+		return receipt, err
+	}
 
-	indexAfter, worktreeAfter, err := receiptPosture(workspace)
+	candidateIndexAfter, candidateWorktreeAfter, err := receiptPosture(candidateWorkspace)
 	if err != nil {
 		return receipt, err
 	}
-	if indexAfter != tree || worktreeAfter != tree {
-		return receipt, fmt.Errorf("test receipt refused: the real index or working tree moved while the command ran")
+	if candidateIndexAfter != tree || candidateWorktreeAfter != tree {
+		return receipt, fmt.Errorf("test receipt refused: the candidate changed while the command ran")
+	}
+	if err := detached.Close(); err != nil {
+		return receipt, fmt.Errorf("cleanup isolated candidate: %w", err)
+	}
+	if err := receiptInterrupted(interrupts); err != nil {
+		return receipt, err
 	}
 
 	receipt = TestReceipt{
@@ -108,8 +147,8 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (Te
 		ExitStatus:    exitStatus,
 		Time:          time.Now().UTC().Format(time.RFC3339Nano),
 		Binding: TestReceiptBinding{
-			IndexTreeBefore: indexBefore, WorktreeTreeBefore: worktreeBefore,
-			IndexTreeAfter: indexAfter, WorktreeTreeAfter: worktreeAfter,
+			IndexTreeBefore: candidateIndexBefore, WorktreeTreeBefore: candidateWorktreeBefore,
+			IndexTreeAfter: candidateIndexAfter, WorktreeTreeAfter: candidateWorktreeAfter,
 		},
 	}
 	encoded, err := json.MarshalIndent(receipt, "", "  ")
@@ -119,8 +158,78 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (Te
 	if err := atomicfile.WriteVolatile(target, string(append(encoded, '\n'))); err != nil {
 		return TestReceipt{}, fmt.Errorf("write test receipt: %w", err)
 	}
+	if err := receiptInterrupted(interrupts); err != nil {
+		return TestReceipt{}, err
+	}
+	signal.Stop(interrupts)
+	if err := receiptInterrupted(interrupts); err != nil {
+		return TestReceipt{}, err
+	}
 	published = true
 	return receipt, nil
+}
+
+const receiptCommandStopWait = 5 * time.Second
+
+func receiptInterrupted(interrupts <-chan os.Signal) error {
+	select {
+	case received := <-interrupts:
+		return fmt.Errorf("landing test receipt interrupted by %s", received)
+	default:
+		return nil
+	}
+}
+
+func runReceiptCommand(cmd *exec.Cmd, bound boundedexec.Bound, interrupts <-chan os.Signal) error {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(bound.Limit)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case received := <-interrupts:
+		stopReceiptCommand(cmd, done, received)
+		return fmt.Errorf("landing test receipt interrupted by %s", received)
+	case <-timer.C:
+		stopReceiptCommand(cmd, done, syscall.SIGKILL)
+		if bound.Key == "" {
+			return fmt.Errorf("landing test command %w after %s", boundedexec.ErrTimedOut, bound.Limit)
+		}
+		return fmt.Errorf("landing test command %w after %s (raise it with %s)", boundedexec.ErrTimedOut, bound.Limit, bound.Key)
+	}
+}
+
+func stopReceiptCommand(cmd *exec.Cmd, done <-chan error, received os.Signal) {
+	if cmd.Process == nil {
+		return
+	}
+	forwarded, ok := received.(syscall.Signal)
+	if !ok {
+		forwarded = syscall.SIGTERM
+	}
+	_ = syscall.Kill(-cmd.Process.Pid, forwarded)
+	grace := time.NewTimer(receiptCommandStopWait)
+	defer grace.Stop()
+	select {
+	case <-done:
+		return
+	case <-grace.C:
+	}
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	finalWait := time.NewTimer(receiptCommandStopWait)
+	defer finalWait.Stop()
+	select {
+	case <-done:
+	case <-finalWait.C:
+	}
 }
 
 // receiptCommandBound is deliberately separate from the generic local

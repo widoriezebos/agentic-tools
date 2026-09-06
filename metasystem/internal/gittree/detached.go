@@ -1,0 +1,131 @@
+package gittree
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// DetachedWorktree is a temporary linked worktree whose workspace subtree
+// has been replaced by one exact tree. The rest of a nested repository stays
+// at the detached HEAD used to create the worktree.
+type DetachedWorktree struct {
+	control    Workspace
+	parent     string
+	top        string
+	root       string
+	registered bool
+	closed     bool
+}
+
+// NewDetachedWorktree creates a detached worktree under the system temporary
+// directory and checks out tree in the caller's workspace-relative path
+// space. Close removes both the linked worktree and its administrative entry.
+func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err error) {
+	if !treeID.MatchString(tree) {
+		return nil, fmt.Errorf("gittree detached worktree: %q is not a tree id", tree)
+	}
+	top, err := w.topLevel()
+	if err != nil {
+		return nil, err
+	}
+	prefix, err := w.treePrefix()
+	if err != nil {
+		return nil, err
+	}
+	parent, err := os.MkdirTemp("", "metasystem-landing-receipt.")
+	if err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: %w", err)
+	}
+	detached := &DetachedWorktree{
+		control: Workspace{Dir: top},
+		parent:  parent,
+		top:     filepath.Join(parent, "worktree"),
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, detached.Close())
+		}
+	}()
+
+	if _, err = detached.control.git(nil, "worktree", "add", "--detach", detached.top, "HEAD"); err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: add: %w", err)
+	}
+	detached.registered = true
+
+	candidateTop := tree
+	if prefix != "" {
+		candidateTop, err = detached.graftSubtree(prefix, tree)
+		if err != nil {
+			return nil, err
+		}
+	}
+	worktree := Workspace{Dir: detached.top}
+	if _, err = worktree.git(nil, "read-tree", "--reset", "-u", candidateTop); err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: checkout candidate: %w", err)
+	}
+	detached.root = detached.top
+	if prefix != "" {
+		detached.root = filepath.Join(detached.top, filepath.FromSlash(strings.TrimSuffix(prefix, "/")))
+		if err = os.MkdirAll(detached.root, 0o755); err != nil {
+			return nil, fmt.Errorf("gittree detached worktree: create workspace root: %w", err)
+		}
+	}
+	return detached, nil
+}
+
+func (d *DetachedWorktree) graftSubtree(prefix, tree string) (string, error) {
+	env, cleanup, err := isolatedIndex()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	worktree := Workspace{Dir: d.top}
+	if _, err := worktree.git(env, "read-tree", "HEAD"); err != nil {
+		return "", fmt.Errorf("gittree detached worktree: seed candidate: %w", err)
+	}
+	path := strings.TrimSuffix(prefix, "/")
+	if _, err := worktree.git(env, "rm", "-r", "--cached", "-f", "--ignore-unmatch", "--", path); err != nil {
+		return "", fmt.Errorf("gittree detached worktree: replace workspace subtree: %w", err)
+	}
+	if _, err := worktree.git(env, "read-tree", "--prefix="+prefix, tree); err != nil {
+		return "", fmt.Errorf("gittree detached worktree: graft candidate: %w", err)
+	}
+	candidateTop, err := worktree.gitLine(env, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("gittree detached worktree: write candidate: %w", err)
+	}
+	if !treeID.MatchString(candidateTop) {
+		return "", fmt.Errorf("gittree detached worktree: write-tree returned %q", candidateTop)
+	}
+	return candidateTop, nil
+}
+
+// Workspace returns the candidate's workspace-relative root inside the
+// detached worktree.
+func (d *DetachedWorktree) Workspace() Workspace {
+	return Workspace{Dir: d.root}
+}
+
+// Close removes the temporary worktree even when its command dirtied or
+// locked it, then removes its temporary directory. It never runs git worktree
+// prune because that repository-wide command can erase registrations for
+// unrelated worktrees whose directories are temporarily missing.
+func (d *DetachedWorktree) Close() error {
+	if d == nil || d.closed {
+		return nil
+	}
+	d.closed = true
+	var cleanupErrs []error
+	if d.registered {
+		if _, err := d.control.git(nil, "worktree", "remove", "--force", "--force", d.top); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("remove linked worktree: %w", err))
+		}
+	}
+	if err := os.RemoveAll(d.parent); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("remove temporary worktree directory: %w", err))
+	}
+	return errors.Join(cleanupErrs...)
+}
