@@ -142,7 +142,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			evidence = returnErr.Error()
 		}
 		if _, completeErr := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
-			ComponentError, "TICK_FAILED", evidence, time.Now()); completeErr != nil && returnErr == nil {
+			ComponentError, "TICK_FAILED", evidence, nil, time.Now()); completeErr != nil && returnErr == nil {
 			returnErr = fmt.Errorf("record failed tick completion: %w", completeErr)
 		}
 	}()
@@ -181,7 +181,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		ledgerResult, ledgerOutcome, ledgerEvidence = ComponentError, ledgerReport.FailureKind, ledgerReport.Failure
 	}
 	if _, err := completeComponentAttempt(repoRoot, "ledger-attention", generation, ledgerAttempt.AttemptSeq,
-		ledgerResult, ledgerOutcome, ledgerEvidence, time.Now()); err != nil {
+		ledgerResult, ledgerOutcome, ledgerEvidence, nil, time.Now()); err != nil {
 		return TickResult{}, fmt.Errorf("record ledger-attention completion: %w", err)
 	}
 
@@ -257,7 +257,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		return result, err
 	}
 	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
-		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, time.Now()); err != nil {
+		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, nil, time.Now()); err != nil {
 		return result, fmt.Errorf("record tick completion: %w", err)
 	}
 	tickCompleted = true
@@ -283,11 +283,11 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 	line := health.Line()
 	if err := NarrateHealthLine(repoRoot, line); err != nil {
 		_, _ = completeComponentAttempt(repoRoot, "narrator", generation, narratorAttempt.AttemptSeq,
-			ComponentError, "WRITE_FAILED", err.Error(), time.Now())
+			ComponentError, "WRITE_FAILED", err.Error(), nil, time.Now())
 		return fmt.Errorf("narrate health: %w", err)
 	}
 	if _, err := completeComponentAttempt(repoRoot, "narrator", generation, narratorAttempt.AttemptSeq,
-		ComponentOK, "EMITTED", line, time.Now()); err != nil {
+		ComponentOK, "EMITTED", line, nil, time.Now()); err != nil {
 		return fmt.Errorf("record narrator completion: %w", err)
 	}
 	if _, err := UpdateAlertEpisodes(repoRoot, health, line, time.Now()); err != nil {

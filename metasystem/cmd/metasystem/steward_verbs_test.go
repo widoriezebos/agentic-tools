@@ -83,3 +83,23 @@ func TestHumanStewardVerbCannotInventABranchWhileDetached(t *testing.T) {
 		t.Fatal("detached checkout invented a landing ref")
 	}
 }
+
+func TestStewardHookCompleteRejectsNegativeElapsedBeforeRepositoryAccess(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "must-not-exist")
+	_, problem, code := captureRelay(t, func() int {
+		return runStewardHookComplete([]string{
+			"--repo", repo,
+			"--generation", "1",
+			"--attempt", "1",
+			"--result", "ERROR",
+			"--outcome", "EMISSION_FAILED",
+			"--elapsed-sec", "-1",
+		})
+	})
+	if code != 2 || !strings.Contains(problem, "--elapsed-sec must be non-negative") {
+		t.Fatalf("negative Stop elapsed seconds returned code %d and stderr %q, want a usage refusal", code, problem)
+	}
+	if _, err := os.Stat(repo); !os.IsNotExist(err) {
+		t.Fatalf("negative elapsed validation touched the repository before refusing: %v", err)
+	}
+}

@@ -493,7 +493,7 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 	if !attempt.LastSuccess.IsZero() || !attempt.LastCompletion.IsZero() || attempt.AttemptSeq != 1 {
 		t.Fatalf("an attempt alone advances no success or completion: %+v", attempt)
 	}
-	ok, err := completeComponentAttempt(root, "steward-tick", 7, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "durable-results", now.Add(time.Second))
+	ok, err := completeComponentAttempt(root, "steward-tick", 7, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "durable-results", nil, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +508,7 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	failedSameGeneration, err := completeComponentAttempt(root, "steward-tick", 7, sameGeneration.AttemptSeq,
-		ComponentError, "HEALTH_FAILED", "health read failed", now.Add(3*time.Second))
+		ComponentError, "HEALTH_FAILED", "health read failed", nil, now.Add(3*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,7 +527,7 @@ func TestGenerationBoundComponentSuccess(t *testing.T) {
 	if beforeCompletion.Status != HealthDead || !strings.Contains(beforeCompletion.Reason, "no successful completion") {
 		t.Fatalf("a live process and an attempt alone cannot satisfy freshness: %+v", beforeCompletion)
 	}
-	failed, err := completeComponentAttempt(root, "steward-tick", 8, next.AttemptSeq, ComponentError, "HEALTH_FAILED", "read failed", now.Add(5*time.Second))
+	failed, err := completeComponentAttempt(root, "steward-tick", 8, next.AttemptSeq, ComponentError, "HEALTH_FAILED", "read failed", nil, now.Add(5*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,7 +564,7 @@ func TestAliveRunnerAttemptUsesMeasuredTickPatience(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := completeComponentAttempt(root, "steward-tick", 3, completed.AttemptSeq, ComponentOK, "PASS_COMPLETE", "slow", now.Add(-10*time.Second)); err != nil {
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, completed.AttemptSeq, ComponentOK, "PASS_COMPLETE", "slow", nil, now.Add(-10*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := beginComponentAttempt(root, "steward-tick", 3, process, now); err != nil {
@@ -602,7 +602,7 @@ func TestHookEmissionAdvancesOnlyTheExactTurnSuccess(t *testing.T) {
 	payload := `{"systemMessage":"HEALTH unknown — hook-freshness=unknown"}`
 	line := "HEALTH unknown — hook-freshness=unknown"
 	completed, err := CompleteHookAttempt(root, first.Generation, first.AttemptSeq,
-		ComponentOK, "EMITTED", line, payload, now.Add(time.Second))
+		ComponentOK, "EMITTED", line, payload, nil, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,7 +621,7 @@ func TestHookEmissionAdvancesOnlyTheExactTurnSuccess(t *testing.T) {
 		t.Fatalf("the current line must judge the previous completed turn: %+v", role)
 	}
 	failed, err := CompleteHookAttempt(root, second.Generation, second.AttemptSeq,
-		ComponentError, "EMIT_FAILED", line, "write failed", now.Add(4*time.Second))
+		ComponentError, "EMIT_FAILED", line, "write failed", nil, now.Add(4*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -639,11 +639,11 @@ func TestHookEmissionAdvancesOnlyTheExactTurnSuccess(t *testing.T) {
 		t.Fatalf("a retry stays in the turn generation and advances its attempt: first=%+v retry=%+v", second, retry)
 	}
 	if _, err := CompleteHookAttempt(root, retry.Generation, retry.AttemptSeq,
-		ComponentOK, "DISPLAYED", line, payload, now.Add(7*time.Second)); err == nil {
+		ComponentOK, "DISPLAYED", line, payload, nil, now.Add(7*time.Second)); err == nil {
 		t.Fatal("the hook must never claim client display")
 	}
 	if _, err := CompleteHookAttempt(root, retry.Generation, retry.AttemptSeq,
-		ComponentOK, "EMITTED", line, payload, now.Add(8*time.Second)); err != nil {
+		ComponentOK, "EMITTED", line, payload, nil, now.Add(8*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if role := checkHookFreshness(root, now.Add(9*time.Second)); role.Status != HealthAlive {
@@ -697,7 +697,7 @@ func TestFreshnessEqualityIsStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := completeComponentAttempt(root, "narrator", 7, attempt.AttemptSeq,
-		ComponentOK, "EMITTED", "line", now.Add(-window)); err != nil {
+		ComponentOK, "EMITTED", "line", nil, now.Add(-window)); err != nil {
 		t.Fatal(err)
 	}
 	component := componentFreshness(root, "narrator", RoleNarratorFreshness, 7, window, now, "repair", nil, "fresh")
@@ -752,7 +752,7 @@ func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := completeComponentAttempt(root, "steward-tick", 3, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "manual", now.Add(time.Second)); err != nil {
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, attempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "manual", nil, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	probe := healthProbe{resident.Pid: {
@@ -771,7 +771,7 @@ func TestRunnerSuccessMustBelongToTheResidentIdentity(t *testing.T) {
 	if stillManual.Status != HealthAlive || !strings.Contains(stillManual.Reason, "attempting") {
 		t.Fatalf("the resident runner's own in-progress attempt proves liveness without adopting the manual success: %+v", stillManual)
 	}
-	if _, err := completeComponentAttempt(root, "steward-tick", 3, residentAttempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "resident", now.Add(5*time.Second)); err != nil {
+	if _, err := completeComponentAttempt(root, "steward-tick", 3, residentAttempt.AttemptSeq, ComponentOK, "PASS_COMPLETE", "resident", nil, now.Add(5*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	current := checkStewardRunner(root, now.Add(6*time.Second), probe)
@@ -788,7 +788,7 @@ func TestOKCompletionRemainsPendingWhenPromotionDurabilityIsUnknown(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstOK, err := completeComponentAttempt(root, "narrator", 1, first.AttemptSeq, ComponentOK, "EMITTED", "first", now.Add(time.Second))
+	firstOK, err := completeComponentAttempt(root, "narrator", 1, first.AttemptSeq, ComponentOK, "EMITTED", "first", nil, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -807,7 +807,7 @@ func TestOKCompletionRemainsPendingWhenPromotionDurabilityIsUnknown(t *testing.T
 		}
 		return durable, writeErr
 	}
-	if _, err := completeComponentAttempt(root, "narrator", 1, second.AttemptSeq, ComponentOK, "EMITTED", "second", now.Add(3*time.Second)); err == nil {
+	if _, err := completeComponentAttempt(root, "narrator", 1, second.AttemptSeq, ComponentOK, "EMITTED", "second", nil, now.Add(3*time.Second)); err == nil {
 		t.Fatal("unknown promotion durability must fail loudly")
 	}
 	record, err := loadComponentEvidence(ComponentEvidencePath(root, "narrator"))
@@ -831,7 +831,7 @@ func TestForwardClockMovementExpiresComponentFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := completeComponentAttempt(root, "narrator", 1, attempt.AttemptSeq, ComponentOK, "EMITTED", "line", now.Add(time.Second)); err != nil {
+	if _, err := completeComponentAttempt(root, "narrator", 1, attempt.AttemptSeq, ComponentOK, "EMITTED", "line", nil, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	role := componentFreshness(root, "narrator", RoleNarratorFreshness, 1, 2*time.Minute, now.Add(10*time.Minute), "repair", nil, "fresh")

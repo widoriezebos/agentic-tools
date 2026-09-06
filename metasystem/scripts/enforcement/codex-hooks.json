@@ -19,7 +19,7 @@
           {
             "type": "command",
             "command": "bash scripts/agents/supervision-hook.sh codex stop",
-            "timeout": 5
+            "timeout": 60
           }
         ]
       }

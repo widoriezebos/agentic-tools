@@ -47,6 +47,7 @@ type ComponentEvidence struct {
 	LastAttempt          time.Time                 `json:"lastAttempt"`
 	LastCompletion       time.Time                 `json:"lastCompletion"`
 	LastDurationMillis   int64                     `json:"lastDurationMillis,omitempty"`
+	LastStopElapsedSec   *int64                    `json:"lastStopElapsedSec,omitempty"`
 	LastSuccess          time.Time                 `json:"lastSuccess"`
 	Result               ComponentResult           `json:"result"`
 	Outcome              string                    `json:"outcome"`
@@ -63,6 +64,7 @@ type ComponentAttemptHistory struct {
 	TurnKeyDigest  string          `json:"turnKeyDigest,omitempty"`
 	AttemptedAt    time.Time       `json:"attemptedAt"`
 	CompletedAt    time.Time       `json:"completedAt"`
+	StopElapsedSec *int64          `json:"stopElapsedSec,omitempty"`
 	Result         ComponentResult `json:"result"`
 	Outcome        string          `json:"outcome"`
 	EvidenceDigest string          `json:"evidenceDigest"`
@@ -70,11 +72,11 @@ type ComponentAttemptHistory struct {
 
 const componentAttemptHistoryLimit = 100
 
-func appendAttemptHistory(record *ComponentEvidence, completedAt time.Time, result ComponentResult, outcome, evidence string) {
+func appendAttemptHistory(record *ComponentEvidence, completedAt time.Time, result ComponentResult, outcome, evidence string, stopElapsedSec *int64) {
 	entry := ComponentAttemptHistory{
 		Generation: record.Generation, AttemptSeq: record.AttemptSeq, TurnKeyDigest: record.TurnKeyDigest,
 		AttemptedAt: record.LastAttempt, CompletedAt: completedAt.UTC(), Result: result, Outcome: outcome,
-		EvidenceDigest: evidenceDigest(evidence),
+		StopElapsedSec: stopElapsedSec, EvidenceDigest: evidenceDigest(evidence),
 	}
 	if size := len(record.AttemptHistory); size > 0 {
 		last := record.AttemptHistory[size-1]
@@ -188,9 +190,10 @@ func BeginHookAttempt(repoRoot string, process identity.Ref, turnKey string, now
 			return ComponentEvidence{}, fmt.Errorf("hook attempt clock is earlier than the unresolved prior attempt")
 		}
 		previous.LastCompletion = completion
+		previous.LastStopElapsedSec = nil
 		previous.Result = ComponentError
 		previous.Outcome = "INTERRUPTED_BY_NEXT_TURN"
-		appendAttemptHistory(&previous, completion, previous.Result, previous.Outcome, "the next hook turn found this attempt incomplete")
+		appendAttemptHistory(&previous, completion, previous.Result, previous.Outcome, "the next hook turn found this attempt incomplete", nil)
 		previous.EvidenceDigest = evidenceDigest("the next hook turn found this attempt incomplete")
 		// The failed closure lands before the next attempt. If publishing the
 		// successor fails, the interrupted turn still remains durable evidence.
@@ -208,6 +211,8 @@ func BeginHookAttempt(repoRoot string, process identity.Ref, turnKey string, now
 			Component: "supervision-hook", Generation: generation,
 			TurnKeyDigest: turnKeyDigest, AttemptHistory: history,
 		}
+	} else {
+		previous.LastStopElapsedSec = nil
 	}
 	previous.Pid = process.Pid
 	previous.PidStartedAt = process.StartedAtSec
@@ -227,12 +232,15 @@ func BeginHookAttempt(repoRoot string, process identity.Ref, turnKey string, now
 // completeComponentAttempt records a completion only for the exact attempt
 // still on disk. Every completion advances lastCompletion; only OK advances
 // lastSuccess.
-func completeComponentAttempt(repoRoot, component string, generation int, attemptSeq int64, result ComponentResult, outcome, evidence string, now time.Time) (ComponentEvidence, error) {
+func completeComponentAttempt(repoRoot, component string, generation int, attemptSeq int64, result ComponentResult, outcome, evidence string, stopElapsedSec *int64, now time.Time) (ComponentEvidence, error) {
 	if result != ComponentOK && result != ComponentError && result != ComponentIndeterminate {
 		return ComponentEvidence{}, fmt.Errorf("component %s completion has invalid result %q", component, result)
 	}
 	if outcome == "" {
 		return ComponentEvidence{}, fmt.Errorf("component %s completion needs an outcome", component)
+	}
+	if stopElapsedSec != nil && *stopElapsedSec < 0 {
+		return ComponentEvidence{}, fmt.Errorf("component %s completion stop elapsed seconds must be non-negative", component)
 	}
 	lock, err := lockComponentEvidence(repoRoot, component, unix.LOCK_EX)
 	if err != nil {
@@ -253,6 +261,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 		return ComponentEvidence{}, fmt.Errorf("component %s completion clock is earlier than its attempt", component)
 	}
 	record.LastDurationMillis = completion.Sub(record.LastAttempt).Milliseconds()
+	record.LastStopElapsedSec = stopElapsedSec
 	if result == ComponentOK {
 		// Publish a durable pending completion before exposing OK. If the
 		// promotion's directory sync is uncertain, restore this state so a
@@ -283,7 +292,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 		promoted.SuccessBootID = record.BootID
 		promoted.SuccessAttemptSeq = record.AttemptSeq
 		if component == "supervision-hook" {
-			appendAttemptHistory(&promoted, completion, result, outcome, evidence)
+			appendAttemptHistory(&promoted, completion, result, outcome, evidence, stopElapsedSec)
 		}
 		durable, err := writeComponentEvidence(repoRoot, path, promoted)
 		if err != nil {
@@ -309,7 +318,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 	record.Outcome = outcome
 	record.EvidenceDigest = evidenceDigest(evidence)
 	if component == "supervision-hook" {
-		appendAttemptHistory(&record, completion, result, outcome, evidence)
+		appendAttemptHistory(&record, completion, result, outcome, evidence, stopElapsedSec)
 	}
 	if err := saveComponentEvidence(repoRoot, path, record); err != nil {
 		return ComponentEvidence{}, err
@@ -320,12 +329,15 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 // CompleteComponentAttempt lets an internal component finish only the exact
 // attempt it began. It cannot advance another component's evidence.
 func CompleteComponentAttempt(repoRoot, component string, generation int, attemptSeq int64, result ComponentResult, outcome, evidence string, now time.Time) (ComponentEvidence, error) {
-	return completeComponentAttempt(repoRoot, component, generation, attemptSeq, result, outcome, evidence, now)
+	return completeComponentAttempt(repoRoot, component, generation, attemptSeq, result, outcome, evidence, nil, now)
 }
 
 // CompleteHookAttempt binds hook success to the exact payload already emitted.
 // Client rendering is outside the hook's evidence boundary.
-func CompleteHookAttempt(repoRoot string, generation int, attemptSeq int64, result ComponentResult, outcome, healthLine, payload string, now time.Time) (ComponentEvidence, error) {
+func CompleteHookAttempt(repoRoot string, generation int, attemptSeq int64, result ComponentResult, outcome, healthLine, payload string, stopElapsedSec *int64, now time.Time) (ComponentEvidence, error) {
+	if stopElapsedSec != nil && *stopElapsedSec < 0 {
+		return ComponentEvidence{}, fmt.Errorf("hook completion stop elapsed seconds must be non-negative")
+	}
 	if result == ComponentOK && outcome != "EMITTED" {
 		return ComponentEvidence{}, fmt.Errorf("a successful hook completion must use outcome EMITTED")
 	}
@@ -338,7 +350,7 @@ func CompleteHookAttempt(repoRoot string, generation int, attemptSeq int64, resu
 	if strings.Contains(payload, "DISPLAYED") || outcome == "DISPLAYED" {
 		return ComponentEvidence{}, fmt.Errorf("the hook cannot claim client display")
 	}
-	return completeComponentAttempt(repoRoot, "supervision-hook", generation, attemptSeq, result, outcome, payload, now)
+	return completeComponentAttempt(repoRoot, "supervision-hook", generation, attemptSeq, result, outcome, payload, stopElapsedSec, now)
 }
 
 func hookPayloadContainsHealthLine(payload, healthLine string) bool {
@@ -367,7 +379,8 @@ func loadComponentEvidence(path string) (ComponentEvidence, error) {
 		return ComponentEvidence{}, fmt.Errorf("component evidence %s is malformed: %w", filepath.Base(path), err)
 	}
 	if record.Component == "" || record.Generation < 0 || record.Pid < 1 || record.PidStartedAt < 1 ||
-		record.AttemptSeq < 1 || record.LastAttempt.IsZero() || record.LastDurationMillis < 0 || record.Outcome == "" || !validEvidenceDigest(record.EvidenceDigest) {
+		record.AttemptSeq < 1 || record.LastAttempt.IsZero() || record.LastDurationMillis < 0 ||
+		(record.LastStopElapsedSec != nil && *record.LastStopElapsedSec < 0) || record.Outcome == "" || !validEvidenceDigest(record.EvidenceDigest) {
 		return ComponentEvidence{}, fmt.Errorf("component evidence %s is incomplete", filepath.Base(path))
 	}
 	if record.Result != ComponentOK && record.Result != ComponentError && record.Result != ComponentIndeterminate {
@@ -375,6 +388,7 @@ func loadComponentEvidence(path string) (ComponentEvidence, error) {
 	}
 	for _, attempt := range record.AttemptHistory {
 		if attempt.Generation < 0 || attempt.AttemptSeq < 1 || attempt.AttemptedAt.IsZero() || attempt.CompletedAt.IsZero() ||
+			(attempt.StopElapsedSec != nil && *attempt.StopElapsedSec < 0) ||
 			attempt.CompletedAt.Before(attempt.AttemptedAt) || attempt.Outcome == "" || !validEvidenceDigest(attempt.EvidenceDigest) ||
 			(attempt.Result != ComponentOK && attempt.Result != ComponentError && attempt.Result != ComponentIndeterminate) {
 			return ComponentEvidence{}, fmt.Errorf("component evidence %s has invalid attempt history", filepath.Base(path))

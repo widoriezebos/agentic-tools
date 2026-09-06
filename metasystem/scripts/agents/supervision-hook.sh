@@ -25,11 +25,16 @@ raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing
 # goal idle-every-runtime-enforcement through runtime-independent steward
 # re-engagement.
 
-# Claude gives the complete Stop hook five seconds. Run the whole Stop body as
-# one supervised child so arming, health, digest, watchdog, ledger fetch, and
-# verdict time all spend the same budget. The parent retains one second to
-# emit a provider-level refusal and exit successfully when the child overruns.
+# The Stop timeout is our sixty-second budget. Registration templates under
+# metasystem/scripts/enforcement ship it, adopt.sh installs it into each
+# runtime's live settings, and it matches the runtime's own default. This
+# parent gives the worker fifty-seven seconds for arming, health, digest,
+# watchdog, ledger fetch, and verdict work, then retains three seconds to emit
+# a provider-level refusal. This block owns the budget.
 if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; then
+  deadline_budget_sec=60
+  deadline_worker_sec=$((deadline_budget_sec - 3))
+  deadline_started_epoch=$(date -u +%s)
   deadline_dir=
   deadline_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
     || deadline_dir=$(mktemp -d "/tmp/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
@@ -52,10 +57,11 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     exit 0
   fi
   deadline_started=$SECONDS
-  METASYSTEM_STOP_DEADLINE_PARENT=$$ bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
+  METASYSTEM_STOP_DEADLINE_PARENT=$$ METASYSTEM_STOP_DEADLINE_STARTED=$deadline_started_epoch \
+    bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
     <"$deadline_payload" >"$deadline_stdout" 2>"$deadline_stderr" &
   deadline_worker=$!
-  deadline_expires=$((deadline_started + 4))
+  deadline_expires=$((deadline_started + deadline_worker_sec))
 
   # Resolve record coordinates alongside the worker, never ahead of it. The
   # engine parser is authoritative when it finishes inside the worker's wait;
@@ -93,7 +99,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   }
   deadline_resolve_record || true
   deadline_log_stop_outcome() {
-    local outcome=$1 supervision_dir supervision_root
+    local outcome=$1 supervision_dir supervision_root deadline_now_epoch deadline_elapsed_sec
     [[ -n "${deadline_repo:-}" ]] || return 0
     supervision_root=$deadline_repo
     if [[ -f "$deadline_repo/development/metasystem-design.md" &&
@@ -104,8 +110,11 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     # The evidence trail sits beside the rest of the supervision state.
     supervision_dir="$supervision_root/artifacts/agents/supervision"
     mkdir -p "$supervision_dir" || true
-    printf '%s stop response outcome=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      "$outcome" >>"$supervision_dir/hooks.log" 2>/dev/null || true
+    deadline_now_epoch=$(date -u +%s)
+    deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
+    (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
+    printf '%s stop response outcome=%s elapsed=%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      "$outcome" "$deadline_elapsed_sec" >>"$supervision_dir/hooks.log" 2>/dev/null || true
   }
   deadline_capture_engine_coordinates() {
     local first second
@@ -287,6 +296,13 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     "$deadline_resolution" "$deadline_resolution_ready" || true
   rmdir "$deadline_dir" 2>/dev/null || true
   exit 0
+fi
+
+stop_started_epoch=${METASYSTEM_STOP_DEADLINE_STARTED:-}
+if [[ "$stop_started_epoch" =~ ^[0-9]+$ ]]; then
+  stop_started_epoch=$((10#$stop_started_epoch))
+else
+  stop_started_epoch=$(date -u +%s)
 fi
 
 # Executables resolve before payload work so a missing engine can return the
@@ -527,34 +543,50 @@ $checkin_tail"
 $digest_message"
 fi
 
+complete_stop_attempt() { # completion arguments
+  local completion_rc=0
+  "$ms" steward hook-complete "$@" --elapsed-sec "$stop_elapsed_sec" >/dev/null 2>&1 || completion_rc=$?
+  if (( completion_rc == 2 )); then
+    completion_rc=0
+    "$ms" steward hook-complete "$@" >/dev/null 2>&1 || completion_rc=$?
+  fi
+  return "$completion_rc"
+}
+
 emit_stop_payload() { # response
   response=$1
+  stop_now_epoch=$(date -u +%s)
+  stop_elapsed_sec=$((stop_now_epoch - stop_started_epoch))
+  (( stop_elapsed_sec >= 0 )) || stop_elapsed_sec=0
   stop_decision=$("$ms" json get --value "$response" --field decision 2>/dev/null || true)
   [[ -n "$stop_decision" ]] || stop_decision=allow
   # The evidence trail sits beside the rest of the supervision state.
   supervision_dir="$state_root/artifacts/agents/supervision"
   mkdir -p "$supervision_dir" || true
-  printf '%s stop response decision=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    "$stop_decision" >>"$supervision_dir/hooks.log" 2>/dev/null || true
+  printf '%s stop response decision=%s elapsed=%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$stop_decision" "$stop_elapsed_sec" >>"$supervision_dir/hooks.log" 2>/dev/null || true
   response_file_rc=0
   response_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-response.XXXXXX") || response_file_rc=$?
   if (( response_file_rc != 0 )) || [[ -z "$response_file" ]]; then
     command printf '%s\n' "$response" || true
-    "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
-      --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED >/dev/null 2>&1 || true
+    complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
+      --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED \
+      || true
     return 0
   fi
   if ! printf '%s\n' "$response" >"$response_file"; then
     command printf '%s\n' "$response" || true
-    "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
-      --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED >/dev/null 2>&1 || true
+    complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
+      --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED \
+      || true
     rm -f "$response_file"
     return 0
   fi
   if ! command printf '%s\n' "$response"; then
-    "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
+    complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result ERROR --outcome EMISSION_FAILED \
-      --health-line "$health_line" --payload-file "$response_file" >/dev/null 2>&1 || true
+      --health-line "$health_line" --payload-file "$response_file" \
+      || true
     rm -f "$response_file"
     return 0
   fi
@@ -564,9 +596,9 @@ emit_stop_payload() { # response
       echo "supervision hook: emitted the narrator digest but could not advance its check-in cursor" >&2
     fi
   fi
-  if ! "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" \
+  if ! complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result OK --outcome EMITTED \
-      --health-line "$health_line" --payload-file "$response_file" >/dev/null 2>&1; then
+      --health-line "$health_line" --payload-file "$response_file"; then
     echo "supervision hook: emitted the health line but could not record completion" >&2
   fi
   rm -f "$response_file"

@@ -17,7 +17,7 @@
           {
             "type": "command",
             "command": "bash scripts/agents/supervision-hook.sh devin stop",
-            "timeout": 5
+            "timeout": 60
           }
         ]
       }

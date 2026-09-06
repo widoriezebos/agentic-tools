@@ -149,7 +149,18 @@ func runStewardHookComplete(args []string) int {
 	outcome := flags.String("outcome", "", "completion outcome")
 	healthLine := flags.String("health-line", "", "health verdict carried by the payload")
 	payloadFile := flags.String("payload-file", "", "file containing the emitted payload")
+	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
 	if flags.Parse(args) != nil {
+		return 2
+	}
+	var stopElapsedSec *int64
+	flags.Visit(func(parsed *flag.Flag) {
+		if parsed.Name == "elapsed-sec" {
+			stopElapsedSec = elapsedSec
+		}
+	})
+	if stopElapsedSec != nil && *stopElapsedSec < 0 {
+		fmt.Fprintln(os.Stderr, "steward hook-complete: --elapsed-sec must be non-negative")
 		return 2
 	}
 	if *repo == "" || *generation < 1 || *attempt < 1 || *result == "" || *outcome == "" {
@@ -170,7 +181,7 @@ func runStewardHookComplete(args []string) int {
 		return 2
 	}
 	if _, err := steward.CompleteHookAttempt(*repo, *generation, *attempt, steward.ComponentResult(*result),
-		*outcome, *healthLine, string(payload), time.Now()); err != nil {
+		*outcome, *healthLine, string(payload), stopElapsedSec, time.Now()); err != nil {
 		fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
 		return 1
 	}

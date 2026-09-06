@@ -739,7 +739,7 @@ func TestLedgerAttentionDoesNotInferExaminationFromHookTiming(t *testing.T) {
 	}
 	line := "HEALTH unknown — ledger-attention=dead"
 	payload := `{"systemMessage":"HEALTH unknown — ledger-attention=dead"}`
-	if _, err := CompleteHookAttempt(root, hook.Generation, hook.AttemptSeq, ComponentOK, "EMITTED", line, payload, now.Add(time.Second)); err != nil {
+	if _, err := CompleteHookAttempt(root, hook.Generation, hook.AttemptSeq, ComponentOK, "EMITTED", line, payload, nil, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	cleared, err := clearLedgerAttentionFromJournal(root, &state)

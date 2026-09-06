@@ -35,9 +35,9 @@ type Projection struct {
 // projection banners its staleness.
 const StaleThreshold = 30 * time.Minute
 
-// The provider Stop hook allows five seconds. A fresh projection therefore
-// gives transport at most four seconds, leaving the caller time to emit the
-// fail-closed verdict that the hook can honor.
+// The Stop hook budget is sixty seconds, shipped in the registration templates
+// under metasystem/scripts/enforcement and owned by the hook's deadline parent.
+// A fresh projection keeps its existing tighter bound within that budget.
 var (
 	freshFetchProcessTimeout = 3 * time.Second
 	freshProjectionTimeout   = 4 * time.Second
@@ -116,8 +116,9 @@ func fetchProjectionWithinDeadline(e Endpoint) error {
 
 // boundedFetchAdvance is FetchAdvance's read-side acceptance sequence with a
 // process-group bound around the one network operation. Keeping the outer
-// projection deadline as well ensures both the child and its caller finish
-// before the five-second Stop-hook ceiling.
+// projection deadline as well keeps both the child and its caller within the
+// sixty-second Stop budget shipped under metasystem/scripts/enforcement and
+// owned by the hook's deadline parent.
 func boundedFetchAdvance(e Endpoint) (AdvanceResult, error) {
 	if e.LocalMode() {
 		return FetchAdvance(e)

@@ -203,6 +203,48 @@ grep -Fq '"result": "OK"' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture recorded no successful completion" >&2; exit 1; }
 grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture did not record EMITTED" >&2; exit 1; }
+grep -Eq 'stop response decision=[a-z]+ elapsed=[0-9]+s$' \
+  "$line_root/artifacts/agents/supervision/hooks.log" \
+  || { echo "supervision hook chat-line fixture did not log its elapsed Stop response" >&2; exit 1; }
+grep -Eq '"lastStopElapsedSec": [0-9]+' "$hook_evidence" \
+  || { echo "supervision hook chat-line fixture did not record its elapsed Stop seconds" >&2; exit 1; }
+
+compat_root=$tmp/compat-root
+cp -R "$line_root" "$compat_root"
+compat_evidence=$compat_root/artifacts/agents/steward/components/supervision-hook.json
+compat_engine=$tmp/compat-engine
+compat_trace=$tmp/compat-engine.trace
+cat >"$compat_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == steward && ${2:-} == hook-complete ]]; then
+  for argument in "$@"; do
+    if [[ $argument == --elapsed-sec ]]; then
+      printf '%s\n' flagged-refused >>"${METASYSTEM_HOOK_COMPAT_TRACE:?}"
+      exit 2
+    fi
+  done
+  printf '%s\n' bare-called >>"${METASYSTEM_HOOK_COMPAT_TRACE:?}"
+fi
+exec "${METASYSTEM_HOOK_COMPAT_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$compat_engine"
+printf '{"session_id":"line-fixture-compat","cwd":"%s","hook_event_name":"Stop"}\n' "$compat_root" >"$tmp/line-payload-compat.json"
+METASYSTEM_BIN="$compat_engine" METASYSTEM_HOOK_COMPAT_REAL_ENGINE="$ms" METASYSTEM_HOOK_COMPAT_TRACE="$compat_trace" \
+  bash "$compat_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload-compat.json" \
+    >"$tmp/line-compat.out" 2>"$tmp/line-compat.err" \
+  || { echo "supervision hook old-engine compatibility fixture failed" >&2; exit 1; }
+[[ $(grep -Fc flagged-refused "$compat_trace" || true) -eq 1 ]] \
+  || { echo "supervision hook old-engine compatibility fixture did not refuse exactly one elapsed flag" >&2; exit 1; }
+[[ $(grep -Fc bare-called "$compat_trace" || true) -eq 1 ]] \
+  || { echo "supervision hook old-engine compatibility fixture did not retry exactly once without the elapsed flag" >&2; exit 1; }
+compat_result=$("$ms" json get --file "$compat_evidence" --field result)
+compat_outcome=$("$ms" json get --file "$compat_evidence" --field outcome)
+[[ $compat_result == OK && $compat_outcome == EMITTED ]] \
+  || { echo "supervision hook old-engine compatibility retry did not complete the current hook attempt" >&2; exit 1; }
+if grep -Fq '"lastStopElapsedSec"' "$compat_evidence"; then
+  echo "supervision hook old-engine compatibility retry retained an unsupported Stop measurement" >&2
+  exit 1
+fi
 
 printf '{"session_id":"line-fixture-two","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload-two.json"
 bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload-two.json" \
@@ -484,7 +526,7 @@ deadline_engine=$tmp/deadline-engine
 cat >"$deadline_engine" <<'SH'
 #!/usr/bin/env bash
 if [[ ${1:-} == runtime && ${2:-} == list ]]; then
-  sleep 4.5
+  sleep 57.5
 fi
 exec "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@"
 SH
@@ -497,12 +539,15 @@ METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
 deadline_elapsed=$((SECONDS - deadline_started))
 (( deadline_rc == 0 )) \
   || { echo "supervision hook deadline fixture did not exit successfully: $deadline_rc" >&2; exit 1; }
-(( deadline_elapsed < 5 )) \
-  || { echo "supervision hook deadline fixture exceeded the provider's five-second budget: ${deadline_elapsed}s" >&2; exit 1; }
+(( deadline_elapsed < 60 )) \
+  || { echo "supervision hook deadline fixture exceeded the provider's sixty-second budget: ${deadline_elapsed}s" >&2; exit 1; }
 grep -Fq '"decision":"block"' "$tmp/deadline.out" \
   || { echo "supervision hook deadline fixture emitted no blocking response" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 grep -Fq 'deadline expired before a safe turn verdict' "$tmp/deadline.out" \
   || { echo "supervision hook deadline fixture did not name its fail-closed timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
+grep -Eq 'stop response outcome=deadline-expired-block elapsed=5[0-9]s$' \
+  "$line_root/artifacts/agents/supervision/hooks.log" \
+  || { echo "supervision hook deadline fixture did not log its elapsed deadline refusal" >&2; exit 1; }
 deadline_second_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
