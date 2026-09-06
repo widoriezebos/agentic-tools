@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: Read cmd/metasystem/goalsync_mutations.go syncReq and the enrolled-terminal proof in internal/humanauthority; decide the derived lineage shape (terminal id plus generation); brief one round with a fixture.
 - OpenedAt: 2026-09-06T10:57:41Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T11:02:38Z revision=2 opid=SB01VF9Q2A59X40GM66RJJP2JV-m1-a4f8999f authority=proven digest=294c3e20b1f457b5ae16b73899f61d641b9e7a7e7830e7f01fca008860b30298
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=3 at=2026-09-06T21:02:18Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T21:00:46Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-06T10:57:41Z YSC37S3KG47CEV62V250QDKY2B-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=human-acts-derive-their-lineage
 - 2026-09-06T11:02:38Z SB01VF9Q2A59X40GM66RJJP2JV-m1-a4f8999f approve actor=human:Wido targets=code-critic-runtime-has-no-shell,human-acts-derive-their-lineage,land-sh-omits-the-full-width-chain-receipt,landing-receipt-races-the-narrator-digest
 - 2026-09-06T21:00:46Z PJFBV6VXGEBMZ1Y8DNTWY4DV0A-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=human-acts-derive-their-lineage
-Integrity: sha256=338b81a6a815f195d51d46d09e64f49d3c87accc7d8b3f5cf861580606ee8368
+- 2026-09-06T21:02:18Z 51NNCHW65JCAFVJ6DPY1GTE7XD-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=human-acts-derive-their-lineage
+Integrity: sha256=41a534acc1a9f0538477e3057dae41aad57916b5d9042dcd53d568bc3cfa9ec2
