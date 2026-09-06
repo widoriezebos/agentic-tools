@@ -50,7 +50,19 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
     set -e
     fixture_bed_parent_child_pid=
     cat "$log"
-    if [[ $rc -eq 0 ]]; then
+    if [[ "$scenario" == bed-death-self-test ]]; then
+      if [[ $rc -ne 0 ]] && grep -Fq 'unbound variable' "$log"; then
+        echo "$bed fixture scenario passed: $scenario" >&2
+      else
+        failed_names+=("$scenario")
+        failed_rcs+=("$rc")
+        failed_logs+=("$log")
+        if [[ $rc -eq 0 ]]; then
+          echo "the bed reported a dead child as passed" >&2
+        fi
+        echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+      fi
+    elif [[ $rc -eq 0 ]]; then
       echo "$bed fixture scenario passed: $scenario" >&2
     else
       failed_names+=("$scenario")
@@ -85,12 +97,12 @@ if (( ! fixture_bed_child )); then
       "$fixture_bed_script" operator-layout
   else
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
-      "$fixture_bed_script" operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
+      "$fixture_bed_script" bed-death-self-test operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance
   fi
 fi
 case "$fixture_scenario" in
-  operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
+  bed-death-self-test | operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
@@ -100,9 +112,6 @@ esac
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$source_root/scripts/agents/fixture-budget.sh"
-harness_fixture_warn_if_engine_stale "$source_root"
-harness_fixture_budget_init "$source_root"
-fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 
 tmp=$(mktemp -d)
 owned_pids=()
@@ -120,7 +129,6 @@ export METASYSTEM_SUPERVISION_FIXTURE_AUDIT=$tmp/arm-audit.tsv
 mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
-[[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
 # Every hook-side `metasystem up` crosses this fixture-only auditor before the
 # checkout-local engine receives it. This gives the final isolation check the
@@ -524,6 +532,12 @@ cleanup() {
   local status=$? keep
   (( cleanup_started )) && return 0
   cleanup_started=1
+  if [[ -n "$fixture_signal_status" ]]; then
+    status=$fixture_signal_status
+  elif [[ "$fixture_child_completed" != 1 && $status -eq 0 ]]; then
+    echo "supervision fixture scenario $fixture_scenario: the scenario child died before completing" >&2
+    status=70
+  fi
   local harness_path tuple pid start
   if [[ -n "${operator_harness:-}" && -x "$operator_harness/scripts/agents/arm-supervision.sh" ]]; then
     if declare -p operator_env >/dev/null 2>&1; then
@@ -557,7 +571,9 @@ cleanup() {
       kill -KILL $(pgrep -f "$tmp" 2>/dev/null || true) 2>/dev/null || true
     fi
   fi
-  if [[ -n "${METASYSTEM_KEEP_SUPERVISION_FIXTURE:-}" ]]; then
+  if [[ "$fixture_scenario" == bed-death-self-test ]]; then
+    rm -rf "$tmp"
+  elif [[ -n "${METASYSTEM_KEEP_SUPERVISION_FIXTURE:-}" ]]; then
     echo "kept supervision fixture: $tmp" >&2
   elif [[ $status -ne 0 && -d "$tmp" ]]; then
     keep="$source_root/artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-supervision-$$"
@@ -567,17 +583,28 @@ cleanup() {
   else
     rm -rf "$tmp"
   fi
+  exit "$status"
 }
 on_signal() {
   local signal=$1
   (( cleanup_started )) && return 0
+  fixture_signal_status=$((128 + signal))
   cleanup
-  trap - EXIT
-  exit $((128 + signal))
 }
+fixture_child_completed=0
+fixture_signal_status=
 trap cleanup EXIT
 trap 'on_signal 2' INT
 trap 'on_signal 15' TERM
+
+if [[ "$fixture_scenario" == bed-death-self-test ]]; then
+  : "$fixture_bed_death_self_test_unset"
+fi
+
+harness_fixture_warn_if_engine_stale "$source_root"
+harness_fixture_budget_init "$source_root"
+fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
+[[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
 enroll_fixture_engine() { # repository state root, engine path
   local state_root=$1 engine=$2 digest identity_dir
@@ -610,7 +637,8 @@ done
 SH
 
 make_repo() { # destination
-  local repo=$1 evidence=$tmp/evidence-$(basename "$repo")
+  local repo=$1
+  local evidence=$tmp/evidence-$(basename "$repo")
   fixture_harness_roots+=("$repo")
   mkdir -p "$repo/scripts"
   cp -R "$source_root/scripts/agents" "$repo/scripts/"
@@ -659,7 +687,8 @@ build_rearm_engine() { # build stamp, output path
 }
 
 install_rearm_engine() { # built engine, enrolled path
-  local built=$1 enrolled=$2 staged=$enrolled.replacement
+  local built=$1 enrolled=$2
+  local staged=$enrolled.replacement
   cp "$built" "$staged"
   chmod 0755 "$staged"
   mv "$staged" "$enrolled"
@@ -880,6 +909,7 @@ if [[ "${METASYSTEM_SUPERVISION_OPERATOR_EMPTY_RUNTIME_FIXTURE_ONLY:-0}" == 1 ]]
   [[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
   assert_fixture_supervision_isolation
   echo "nested ordinary operator empty-runtime source fixture passed"
+  fixture_child_completed=1
   exit 0
 fi
 operator_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "$$")
@@ -2064,3 +2094,4 @@ assert_fixture_supervision_isolation
 if [[ "$fixture_scenario" == stop-hook-monitor ]]; then
   assert_seat_main_is_rejected
 fi
+fixture_child_completed=1
