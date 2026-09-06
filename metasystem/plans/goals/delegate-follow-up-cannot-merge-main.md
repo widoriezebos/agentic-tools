@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: Decide between the two mechanisms (dispatcher pre-round rebase versus a guard-admitted checkpoint on agent branches) with the facts from chain idle-escalate-build1; tier 2; build behind a dispatch fixture with a follow-up whose base is behind main on a conflicting file
 - OpenedAt: 2026-09-06T13:23:13Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T14:49:24Z revision=2 opid=WCPJTSBBGBRS6M6F7GFEWRBWEM-m1-c6925449 authority=proven digest=ea272c834ce4af50b5950d76d474fdd3266a2f60183bc412001a2bf05c18f5f9
+- Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=3 at=2026-09-06T16:06:37Z
 - Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-06T16:04:56Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1b claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-06T13:23:13Z AGAHF86TZVX4XSR5AJQSN9NYSD-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=delegate-follow-up-cannot-merge-main
 - 2026-09-06T14:49:24Z WCPJTSBBGBRS6M6F7GFEWRBWEM-m1-c6925449 approve actor=human:Wido targets=delegate-follow-up-cannot-merge-main,tracked-orig-files-litter
 - 2026-09-06T16:04:56Z HTCJY4X475SZYARVZCGFYR81FK-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=delegate-follow-up-cannot-merge-main
-Integrity: sha256=abcbfb9cea0d55dd9e6035a5d996bfbb5b56103e53595e5f00073d91f24bbc3f
+- 2026-09-06T16:06:37Z Z2ZR9E75X5WSDVR93KPADFRG7Y-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=delegate-follow-up-cannot-merge-main
+Integrity: sha256=1fe1827b1b85b20a78254c438877cf5fa2b27e77906c8e0843e46e065014d937
