@@ -7,8 +7,9 @@
 - Origin: main
 - Next step: Read the four failures, split into a budget change and two test fixes; tier from the risk basis; waits for Wido's word if above tier 1.
 - OpenedAt: 2026-09-04T21:14:28Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
+- Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=0e61f641bca538c7f64dc22b09fa17c6da5e8650f292db27090b5c9be242ae8f
@@ -17,4 +18,5 @@ History:
 - 2026-09-04T21:14:28Z WPG34JGC5TNCHRKWTV7W41BGT4-m2-5fcf08ab open actor=human:Wido targets=race-gate-red-on-main
 - 2026-09-04T22:11:09Z ZH0H4W45RP14R7MMS4P85XFNNY-m2-5fcf08ab approve actor=human:Wido targets=race-gate-red-on-main authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Yes, all five (Recommended)"
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=race-gate-red-on-main reason=sweep
-Integrity: sha256=745835d37948df62ca95e5a5ab252a7ce6e6cf92d440d5d4821c62550c6fcbc6
+- 2026-09-06T07:28:59Z 3ZZ8AFSPB0S2BDG1T28CFSVY38-m1-a4f8999f set-pin actor=human:Wido targets=race-gate-red-on-main
+Integrity: sha256=5be7576176d5a53ea7738e5c1cd9b9e09ed849e90aeb73720ee26a3b277d216e
