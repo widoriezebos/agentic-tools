@@ -3,9 +3,9 @@
 - State: approved
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
-- Next step: HANDOVER PREPARED on m1, 2026-09-06 20:3xZ (Wido: 'go headless'). Target job-record-birth-token is CLAIMED by m1; mission birth-token ledger initialised (cycle budget 6, no-gain 3) and state initialised against the live baseline; metasystem-stop-verb parked; engine 703b8c619 armed generation 26. Wido's part from a plain shell in the m1 checkout after ending the m1 Claude session: scripts/agents/arm-supervision.sh --repo . --shutdown; ./bin/metasystem mission start --root $PWD --mission birth-token. Watch: mission status --mission birth-token; artifacts/agents/missions/runners/birth-token.log; asks/; metasystem health --repo . Each stop is a finding: fix forward as its own goal, then mission resume. Known: contract-preflight refuses on the seat's stale supervisor fingerprint (the runner arms itself at start); turn-verdict-state.json litter may trip conformance (goal conformance-runtime-state-litter). After the run: re-claim this goal to record the result.
+- Next step: HANDOVER PREPARED on m1, 2026-09-06 20:3xZ (Wido: 'go headless'). Target job-record-birth-token is CLAIMED by m1; mission birth-token born on m1 (ledger cycle budget 6 / no-gain 3; state.json initialised against live baseline fb2ebfae83); metasystem-stop-verb parked; engine 703b8c619 armed generation 26. Wido's part from a plain shell in the m1 checkout after ending the m1 Claude session: scripts/agents/arm-supervision.sh --repo . --shutdown; ./bin/metasystem mission resume --root $PWD --mission birth-token (start refuses once state.json exists: 'mission state already exists; use resume'). Watch: mission status --mission birth-token; artifacts/agents/missions/runners/birth-token.log; asks/; metasystem health --repo . Each stop is a finding: fix forward as its own goal, then mission resume. Known: contract-preflight refuses on the seat's stale supervisor fingerprint (the runner arms itself); turn-verdict-state.json litter may trip conformance (goal conformance-runtime-state-litter). After the run: re-claim this goal to record the result.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 18
+- Revision: 19
 - Arc: headless-fleet
 - Pinned: m1
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
@@ -31,4 +31,5 @@ History:
 - 2026-09-06T15:43:04Z BG43FSRNGHE2E5BTRJNC90G06X-m1-7cd0bd60 set-pin actor=human:Wido targets=first-headless-run
 - 2026-09-06T15:46:29Z WFVEHJPWDM290E8WVX9EDB8B1S-m1-7cd0bd60 approve actor=human:Wido targets=first-headless-run
 - 2026-09-06T20:30:04Z A80N0DGAEMXRYKFFZ1CKTV433V-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=first-headless-run
-Integrity: sha256=a2b2c5ab603ae49698322ff03466793b7d2fef44b080776ff21552ebf3133968
+- 2026-09-06T20:30:52Z P4TDTQG5PPVHYXT4M1KQ15RZNX-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=first-headless-run
+Integrity: sha256=6b3d06a2bd8e28964e8d9579f2705f279c691bbdc8424d10fae8218e93ed5877
