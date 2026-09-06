@@ -86,3 +86,40 @@ design-chain-has-no-lawful-close); the build cites this record by id.
   closed, as revision 3 already specifies). Fleet bootstrap gets its
   --landing-ref when that design lands; until then the arm-time seed
   covers every installation.
+
+## Coordinator decisions on the builder's gaps (m1, 2026-09-06, build round 1)
+
+The first build round (err-build1-20260906) stopped under the gap rule
+before writing a byte: three of the dispositions above left a contract
+undefined. Decided here, on the code as it stands.
+
+- Wall-time bound for witness resolution (ERAR-R3-04): the key is
+  metasystem.steward.rearm-resolve-seconds, an integer number of seconds,
+  read exactly as TickSeconds reads metasystem.steward.tick-seconds
+  (internal/steward/runner.go: git config --get on the installation,
+  positive integer, anything else falls back to the default). Default 20.
+  The arm's output names the effective budget. Expiry is the loud refusal
+  the disposition already names; an unparsable value is not a refusal, it
+  is the default, the same as the tick cadence.
+- Persisted durability doubt on the identity (ERAR-R3-02): reuse the
+  mechanism the steward's component evidence already has
+  (internal/steward/component_evidence.go: the durability-pending marker
+  beside the record, written before the publication, cleared after a
+  durable one; health.go reports DURABILITY_PENDING while it stands).
+  MintIdentity publishes through atomicfile.WriteText and applies the same
+  pattern to the identity file: a marker beside identity.json (same
+  suffix, .durability-pending) is written before the publish and removed
+  only after WriteText reports durable=true. If the publish reports
+  durable=false the marker stays; health shows the steward identity as
+  DURABILITY_PENDING with the generation it names; the next arm, human or
+  machine, re-publishes the identity content through the same call under
+  the arm lock before its eligibility decision and clears the marker when
+  that publish is durable. A marker with no identity file beside it (the
+  crash the doubt warned of) is removed and reported as unenrolled through
+  the existing no-identity path. No new record, no new file format.
+- Mapping into the result contract (ERAR-R3-01/02): the stage stays
+  Minted - the identity is visible. ReArmOutcome gains one typed boolean,
+  DurabilityPending, carried by every Result that carries the re-arm fact;
+  Status stays the success status so launches gated on it proceed; the
+  hook and health lines read "re-armed generation N (durability pending)"
+  while the marker stands. No new stage, no new error type.
