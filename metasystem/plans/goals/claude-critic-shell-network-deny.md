@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: Once a claude critic has a shell (goal code-critic-runtime-has-no-shell), the record's network rule of allow gives it outbound side effects the read-only tool list never offered: a git push with the user's stored credentials, a curl upload, a package install. The round-one critique of that goal (ccs-critic1, F-3) named it; the brief kept the network rule unchanged because the sandbox's network shape was unproven. DONE means a critic-set delegate (code-critic, design-critic, warden) with no write roots requests and gets network deny in its sandbox settings (the shape the claude sandbox honours, proven by a live probe: an outbound curl from the critic's shell is refused), the record's requested network field says so, the dispatch fixtures pin it, and an implementer's network rule is unchanged.
 - Origin: main
-- Next step: STATE 2026-09-06 23:05Z (m1c): chain ccn-build1 LANDED d471864f (critic.json preset, dispatch default, fixture, packets; dispatch fixture bed green on the candidate). The first proof critic (ccn-proof1) showed the tracked metasystem.conf pins code-critic and design-critic to none, so the default never applied here, and that a curl refusal cannot certify the change (the allow shape denies egress too: goal claude-network-allow-does-not-allow). Chain ccn-fix1 (MECHANICAL) building: the two conf keys become critic, and the bed pins design-critic and warden effective network too. Then land, a second proof critic whose own record must say preset critic and network deny, goal done.
+- Next step: STATE 2026-09-06 23:40Z (m1c): three chains landed (ccn-build1 d471864f preset+default+fixtures+packets; ccn-fix1 7c93ce31 the conf keys; ccn-fix2 f00d3e3b the happy-leg assertion), the dispatch fixture bed green on the last candidate, engine re-armed. The second proof critic ccn-proof2, dispatched by the landed engine, is recorded with preset critic, requested and effective network deny, sandbox allowedDomains the non-resolving sentinel: that record is the goal's proof. Waiting for its return, then goal done.
 - OpenedAt: 2026-09-06T19:24:48Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=2 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=b08f019671386f8a8883cb4dbcff15adab87926c80432f2961d00d9902b425f9
@@ -22,4 +22,5 @@ History:
 - 2026-09-06T22:30:06Z M72WCXCJDWGDFZMYYM1T9ARTBE-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
 - 2026-09-06T22:30:33Z FAT5M09HDAVTBHT2PF19ECC4PE-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
 - 2026-09-06T23:02:05Z X1WBRV3956B9569XJ9P71PG2B4-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
-Integrity: sha256=36a5bfe8cc144c9d4dd5587d12630cab1ee33d0cd4281a122d4fbe2403d68f2c
+- 2026-09-06T23:35:29Z 5B454B1QDDSQE2HFBSX99QHN2M-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
+Integrity: sha256=0990fd34596007f51f035819eb9ee04de74b0b715d9a2686229adbd9d40ca8bc
