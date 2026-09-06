@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: Read land.sh create_test_receipt and commit_changes and observe.go's width==full branch; decide whether land.sh runs the full battery itself for width full or takes --test-receipt <path>; brief one round with a fixture in the landing fixtures.
 - OpenedAt: 2026-09-06T08:58:27Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T11:02:38Z revision=2 opid=SB01VF9Q2A59X40GM66RJJP2JV-m1-a4f8999f authority=proven digest=848f98dd9a904f8df0dd52580828f105f1d13235fee3b981d1a3fec0db84b31b
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=3 at=2026-09-06T13:36:57Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T13:36:17Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-06T08:58:27Z 4BGGDASRBEYZ8M01PSZ3GK2137-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=land-sh-omits-the-full-width-chain-receipt
 - 2026-09-06T11:02:38Z SB01VF9Q2A59X40GM66RJJP2JV-m1-a4f8999f approve actor=human:Wido targets=code-critic-runtime-has-no-shell,human-acts-derive-their-lineage,land-sh-omits-the-full-width-chain-receipt,landing-receipt-races-the-narrator-digest
 - 2026-09-06T13:36:17Z 1MWTRTMRG2X6H1FTJ70YX1ESX6-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=land-sh-omits-the-full-width-chain-receipt
-Integrity: sha256=f81662454283d447e566ad3a703184d8e827b7b2bfed1490945ffe58ad0865a6
+- 2026-09-06T13:36:57Z 9QBCC5KQKK8RK71TK5TFWA6AFY-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=land-sh-omits-the-full-width-chain-receipt
+Integrity: sha256=b461b98cac71e00724c35c0fa3d5845cf1112ac4e16df56070b9a641fddafc3f
