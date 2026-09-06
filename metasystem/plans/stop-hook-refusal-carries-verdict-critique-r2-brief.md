@@ -17,14 +17,19 @@ assertion beyond the two order tests the brief names. Out of scope:
 hostile inputs, the turn verdict verb's decision logic, and the
 steward.
 
-Scope: the computed diff of chain shr-build1 after follow-up round three
-(job shr-build1-r3) against its base commit 2f8fbc51. Round three folded
+Scope: the computed diff of chain shr-build1 after follow-up round four
+(job shr-build1-r4) against its base commit 2f8fbc51. Round three folded
 your round-one findings per
 metasystem/plans/stop-hook-refusal-carries-verdict-fold-r3-brief.md
 (landed 857d3648): F-1 (the first-occurrence failed-stop block now
 carries the extras before the check-in tail in its system message), F-2
 (the verb comment), F-3 (the fourth holder-state name); F-4 and F-5 were
-noted and changed nothing. The orchestrator's dispositions are in
+noted and changed nothing. Round four (per
+metasystem/plans/stop-hook-refusal-carries-verdict-fold-r4-brief.md,
+landed b4b1a58f) narrowed one fixture guard: the scenario's first check
+matched the generic "Metasystem supervision arming failed:" prefix that
+the F-1 fold now rightly shows in the system message; it now matches
+"component=accepted-engine", the enrollment failure it was written for. The orchestrator's dispositions are in
 metasystem/records/misc/stop-hook-refusal-carries-verdict-critique-r1-dispositions.md. Round one
 implemented metasystem/plans/stop-hook-refusal-carries-verdict-brief.md
 (landed 2f8fbc51); round two folded four findings the orchestrator made
@@ -32,8 +37,8 @@ by running the scenario to its end seat-side, per
 metasystem/plans/stop-hook-refusal-carries-verdict-fold-r2-brief.md
 (landed a7c1c6ac). Both bind. The computed diff for the whole
 chain after round two is
-metasystem/artifacts/agents/shr-build1/rounds/3/diff.patch and its
-reviewed tree is 485474af31a3eff1c4244ec1375950569bf4bedb; carry that
+metasystem/artifacts/agents/shr-build1/rounds/4/diff.patch and its
+reviewed tree is 79e04bf5d5b2e704421bdc6744119e81f621857e; carry that
 hash into your return exactly.
 
 # Goal
@@ -45,10 +50,11 @@ what certifies it. Apply the materiality criterion verbatim:
 
 # What to attack
 
-0. The fold: F-1's first-occurrence branch passes the extras, a newline
-   only when extras exist, then the check-in tail as the system
-   message, and nothing else in compose_failed_stop moved; F-2's
-   comment; F-3's fourth name. Confirm rounds one and two are otherwise
+0. The folds: F-1's first-occurrence branch passes the extras, a
+   newline only when extras exist, then the check-in tail as the
+   system message, and nothing else in compose_failed_stop moved; F-2's
+   comment; F-3's fourth name; the round-four guard matches only the
+   accepted-engine component and keeps its message and exit. Confirm rounds one and two are otherwise
    byte-identical to what you reviewed.
 
 1. The reason order in metasystem/internal/report/stopblock.go: detail
