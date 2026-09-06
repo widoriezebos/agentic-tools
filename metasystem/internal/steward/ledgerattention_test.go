@@ -45,6 +45,7 @@ func (attentionAuthorityReader) Read(pid int64) (humanauthority.Snapshot, error)
 			Pid: pid, StartedAt: time.Unix(pid, 0), Argv: []string{"attended-human-shell"}, ArgvKnown: true,
 		},
 		Executable: "/fixture/attended-human-shell", ExecutableKnown: true,
+		OwnerUID: 501, OwnerKnown: true,
 		ParentPID: 1, ParentKnown: true, TerminalID: "tty-ledger-attention", TerminalKnown: true,
 	}, nil
 }

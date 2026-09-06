@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // AllPids returns every process id on the machine by reading /proc and
@@ -59,4 +60,24 @@ func ParentPid(pid int64) (int64, bool) {
 		return 0, false
 	}
 	return ppid, true
+}
+
+// ProcessOwner returns the effective user id from the process status Uid row.
+func ProcessOwner(pid int64) (uint32, bool) {
+	status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(status), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "Uid:" {
+			continue
+		}
+		uid, err := strconv.ParseUint(fields[2], 10, 32)
+		if err != nil {
+			return 0, false
+		}
+		return uint32(uid), true
+	}
+	return 0, false
 }

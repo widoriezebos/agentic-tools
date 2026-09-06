@@ -134,12 +134,14 @@ func (r sessionStopCommandAuthorityReader) Read(pid int64) (humanauthority.Snaps
 		exact.ArgvKnown = true
 		return humanauthority.Snapshot{
 			Exact: exact, Executable: "/fixture/attended-human-shell", ExecutableKnown: true,
+			OwnerUID: 501, OwnerKnown: true,
 			ParentPID: 1, ParentKnown: true, TerminalID: "tty-session-stop", TerminalKnown: true,
 		}, nil
 	}
 	return humanauthority.Snapshot{
 		Exact:      identity.Exact{Pid: 1, StartedAt: time.Unix(1, 0), Argv: []string{"fixture-init"}, ArgvKnown: true},
 		Executable: "/fixture/init", ExecutableKnown: true,
+		OwnerUID: 0, OwnerKnown: true,
 		ParentPID: 1, ParentKnown: true, TerminalID: "tty-session-stop", TerminalKnown: true,
 	}, nil
 }

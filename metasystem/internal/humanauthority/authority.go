@@ -65,6 +65,7 @@ type Node struct {
 	ParentRef        ProcessRef `json:"parentRef"`
 	ExecutableDigest string     `json:"executableDigest"`
 	ArgumentDigest   string     `json:"argumentDigest"`
+	ArgvWithheld     bool       `json:"argvWithheld,omitempty"`
 	AgentRuntime     *string    `json:"agentRuntime,omitempty"`
 	TerminalMatch    bool       `json:"terminalMatch"`
 }
@@ -314,6 +315,8 @@ type Snapshot struct {
 	Exact           identity.Exact
 	Executable      string
 	ExecutableKnown bool
+	OwnerUID        uint32
+	OwnerKnown      bool
 	ParentPID       int64
 	ParentKnown     bool
 	TerminalID      string
@@ -337,7 +340,9 @@ func (KernelReader) Read(pid int64) (Snapshot, error) {
 	parent, parentOK := identity.ParentPid(pid)
 	terminal, terminalOK := identity.ControllingTerminalIdentity(pid)
 	executable, executableOK := identity.ExecutablePath(pid)
+	owner, ownerOK := identity.ProcessOwner(pid)
 	return Snapshot{Exact: exact, Executable: executable, ExecutableKnown: executableOK,
+		OwnerUID: owner, OwnerKnown: ownerOK,
 		ParentPID: parent, ParentKnown: parentOK,
 		TerminalID: terminal, TerminalKnown: terminalOK}, nil
 }
@@ -361,43 +366,98 @@ func sameRef(left, right ProcessRef) bool {
 	return left.PIDStartedAt == right.PIDStartedAt
 }
 
-func stableRead(reader Reader, pid int64) (Snapshot, string) {
+const enrollmentAncestryWorkaround = "run goal enroll-terminal from a shell whose ancestry up to its session leader is owned by you, for example a shell inside a tmux session you started from Terminal"
+
+type processReadRefusal struct {
+	outcome         string
+	pid             int64
+	executable      string
+	executableKnown bool
+	ownerUID        uint32
+	ownerKnown      bool
+	reason          string
+}
+
+func newProcessReadRefusal(pid int64, outcome string, snapshot Snapshot, reason string) *processReadRefusal {
+	return &processReadRefusal{
+		outcome: outcome, pid: pid,
+		executable: snapshot.Executable, executableKnown: snapshot.ExecutableKnown,
+		ownerUID: snapshot.OwnerUID, ownerKnown: snapshot.OwnerKnown,
+		reason: reason,
+	}
+}
+
+func (refusal *processReadRefusal) Error() string {
+	var details strings.Builder
+	fmt.Fprintf(&details, "%s: process pid %d", refusal.outcome, refusal.pid)
+	if refusal.executableKnown {
+		fmt.Fprintf(&details, ", executable %q", refusal.executable)
+	}
+	if refusal.ownerKnown {
+		fmt.Fprintf(&details, ", owner uid %d", refusal.ownerUID)
+	}
+	fmt.Fprintf(&details, " was not admitted because %s", refusal.reason)
+	if refusal.outcome == OutcomeArgvUnreadable || refusal.outcome == OutcomeUnreadable {
+		fmt.Fprintf(&details, "; %s", enrollmentAncestryWorkaround)
+	}
+	return details.String()
+}
+
+func stableRead(reader Reader, pid int64) (Snapshot, *processReadRefusal) {
 	first, err := reader.Read(pid)
 	if err != nil {
-		return Snapshot{}, OutcomeUnreadable
-	}
-	if !first.Exact.ArgvKnown {
-		return Snapshot{}, OutcomeArgvUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, Snapshot{}, "the process could not be read")
 	}
 	if !first.ExecutableKnown {
-		return Snapshot{}, OutcomeUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's executable path is unreadable")
+	}
+	if !first.OwnerKnown {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's owner uid is unreadable")
+	}
+	if !first.Exact.ArgvKnown && !(isSystemLoginProgram(first.Executable) && first.OwnerUID == 0) {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeArgvUnreadable, first, "the operating system withholds this process's arguments and it is not a known system login program")
 	}
 	second, err := reader.Read(pid)
 	if err != nil {
-		return Snapshot{}, OutcomeUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process could not be read a second time")
 	}
 	if !sameRef(refOf(first.Exact), refOf(second.Exact)) {
-		return Snapshot{}, OutcomeReused
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeReused, first, "the process identity changed between observations")
 	}
 	if !first.ParentKnown || !second.ParentKnown {
-		return Snapshot{}, OutcomeUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's parent is unreadable")
 	}
 	if first.ParentPID != second.ParentPID {
-		return Snapshot{}, OutcomeChanged
-	}
-	if !second.Exact.ArgvKnown {
-		return Snapshot{}, OutcomeArgvUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeChanged, first, "the process's parent changed between observations")
 	}
 	if !second.ExecutableKnown {
-		return Snapshot{}, OutcomeUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's executable path is unreadable on the second observation")
 	}
-	if first.Executable != second.Executable || !sameArguments(first.Exact.Argv, second.Exact.Argv) {
-		return Snapshot{}, OutcomeChanged
+	if !second.OwnerKnown {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's owner uid is unreadable on the second observation")
+	}
+	if first.OwnerUID != second.OwnerUID {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeChanged, first, "the process's owner uid changed between observations")
+	}
+	if first.Executable != second.Executable {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeChanged, first, "the process's executable path changed between observations")
+	}
+	if !first.Exact.ArgvKnown {
+		if second.Exact.ArgvKnown {
+			return Snapshot{}, newProcessReadRefusal(pid, OutcomeChanged, first, "the process's arguments changed from withheld to readable between observations")
+		}
+		if !isSystemLoginProgram(second.Executable) || second.OwnerUID != 0 {
+			return Snapshot{}, newProcessReadRefusal(pid, OutcomeArgvUnreadable, second, "the operating system withholds this process's arguments and it is not a known system login program")
+		}
+	} else if !second.Exact.ArgvKnown {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeArgvUnreadable, second, "the process's arguments changed from readable to withheld between observations")
+	} else if !sameArguments(first.Exact.Argv, second.Exact.Argv) {
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeChanged, first, "the process's arguments changed between observations")
 	}
 	if !first.TerminalKnown || !second.TerminalKnown || first.TerminalID != second.TerminalID {
-		return Snapshot{}, OutcomeUnreadable
+		return Snapshot{}, newProcessReadRefusal(pid, OutcomeUnreadable, first, "the process's controlling terminal is unreadable or changed")
 	}
-	return second, ""
+	return second, nil
 }
 
 func sameArguments(first, second []string) bool {
@@ -484,9 +544,9 @@ func walkToPID(root string, start, terminalPID int64, terminalID string, reader 
 			return ProcessRef{}, fmt.Errorf("%s", OutcomeCycle)
 		}
 		seen[current] = true
-		snapshot, outcome := stableRead(reader, current)
-		if outcome != "" {
-			return ProcessRef{}, fmt.Errorf("%s", outcome)
+		snapshot, refusal := stableRead(reader, current)
+		if refusal != nil {
+			return ProcessRef{}, refusal
 		}
 		if runtime := census.Runtime(strings.Join(snapshot.Exact.Argv, " "), signatures); runtime != "" {
 			return ProcessRef{}, fmt.Errorf("%s: %s", OutcomeAgent, runtime)
@@ -508,9 +568,9 @@ func Enroll(root string, invokerPID int64, reader Reader, now time.Time) (Enroll
 	if reader == nil {
 		reader = KernelReader{}
 	}
-	invoker, outcome := stableRead(reader, invokerPID)
-	if outcome != "" {
-		return Enrollment{}, fmt.Errorf("terminal enrollment refused: %s", outcome)
+	invoker, refusal := stableRead(reader, invokerPID)
+	if refusal != nil {
+		return Enrollment{}, fmt.Errorf("terminal enrollment refused: %w", refusal)
 	}
 	if invoker.TerminalID == "" {
 		return Enrollment{}, fmt.Errorf("terminal enrollment refused: %s", OutcomeTerminalMissing)
@@ -577,10 +637,10 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 			return proof, fmt.Errorf("%s", proof.Outcome)
 		}
 		seen[current] = true
-		snapshot, outcome := stableRead(reader, current)
-		if outcome != "" {
-			proof.Outcome = outcome
-			return proof, fmt.Errorf("%s", proof.Outcome)
+		snapshot, refusal := stableRead(reader, current)
+		if refusal != nil {
+			proof.Outcome = refusal.outcome
+			return proof, refusal
 		}
 		if snapshot.TerminalID != enrollment.TerminalID {
 			proof.Outcome = OutcomeTerminalMissing
@@ -602,7 +662,8 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 		arguments := sha256.Sum256([]byte(strings.Join(snapshot.Exact.Argv, "\x00")))
 		parentRef := refOf(parentSnapshot.Exact)
 		node := Node{Ref: refOf(snapshot.Exact), ParentRef: parentRef,
-			ExecutableDigest: hex.EncodeToString(executable[:]), ArgumentDigest: hex.EncodeToString(arguments[:])}
+			ExecutableDigest: hex.EncodeToString(executable[:]), ArgumentDigest: hex.EncodeToString(arguments[:]),
+			ArgvWithheld: !snapshot.Exact.ArgvKnown && isSystemLoginProgram(snapshot.Executable) && snapshot.OwnerUID == 0}
 		if runtime := census.Runtime(strings.Join(snapshot.Exact.Argv, " "), signatures); runtime != "" {
 			node.AgentRuntime = &runtime
 			proof.Nodes = append(proof.Nodes, node)
@@ -617,8 +678,8 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 				proof.Outcome = OutcomeTerminalMissing
 				return proof, fmt.Errorf("%s", proof.Outcome)
 			}
-			sessionSnapshot, sessionOutcome := stableRead(reader, sessionPID)
-			if sessionOutcome != "" || !sameRef(refOf(sessionSnapshot.Exact), enrollment.SessionLeader) {
+			sessionSnapshot, sessionRefusal := stableRead(reader, sessionPID)
+			if sessionRefusal != nil || !sameRef(refOf(sessionSnapshot.Exact), enrollment.SessionLeader) {
 				proof.Outcome = OutcomeReused
 				return proof, fmt.Errorf("%s", proof.Outcome)
 			}

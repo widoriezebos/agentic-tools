@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,8 +52,18 @@ func authoritySnapshot(pid, parent int64, argv []string, terminal string) Snapsh
 		Exact:           identity.Exact{Pid: pid, StartedAt: time.Unix(pid*10, 0), Argv: argv, ArgvKnown: true},
 		Executable:      executable,
 		ExecutableKnown: true,
+		OwnerUID:        501,
+		OwnerKnown:      true,
 		ParentPID:       parent, ParentKnown: true, TerminalID: terminal, TerminalKnown: true,
 	}
+}
+
+func systemLoginSnapshot(pid, parent int64, terminal string) Snapshot {
+	snapshot := authoritySnapshot(pid, parent, nil, terminal)
+	snapshot.Exact.ArgvKnown = false
+	snapshot.Executable = "/usr/bin/login"
+	snapshot.OwnerUID = 0
+	return snapshot
 }
 
 func authorityRoot(t *testing.T) string {
@@ -128,6 +140,233 @@ func TestProofRequiresExactAgentFreeEnrolledAncestry(t *testing.T) {
 	}
 }
 
+func TestTerminalAppLoginAndTmuxSessionShapesEnroll(t *testing.T) {
+	t.Run("Terminal app login is the session leader", func(t *testing.T) {
+		if runtime.GOOS != "darwin" {
+			t.Skip("the admitted system login program list is intentionally empty outside Darwin")
+		}
+		root := authorityRoot(t)
+		terminal := authoritySnapshot(1280, 1, []string{"/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"}, "")
+		terminal.Executable = "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+		login := systemLoginSnapshot(61287, 1280, "tty-1")
+		shell := authoritySnapshot(61288, 61287, []string{"-zsh"}, "tty-1")
+		shell.Executable = "/bin/zsh"
+		command := authoritySnapshot(70, 61288, []string{"metasystem", "goal", "set-obligation"}, "tty-1")
+		reader := &treeReader{
+			reads: map[int64]int{}, session: 61287,
+			snapshots: map[int64][]Snapshot{
+				1280:  {terminal},
+				61287: {login},
+				61288: {shell},
+				70:    {command},
+			},
+		}
+		enrollment, err := Enroll(root, 61288, reader, time.Unix(1700, 0))
+		if err != nil {
+			t.Fatalf("Terminal.app shell enrollment failed: %v", err)
+		}
+		if enrollment.TerminalRef.PID != 61288 || enrollment.SessionLeader.PID != 61287 {
+			t.Fatalf("Terminal.app enrollment recorded the wrong roots: %+v", enrollment)
+		}
+		reader.reads = map[int64]int{}
+		proof, err := Prove(root, 70, reader, time.Unix(1800, 0))
+		if err != nil || proof.Outcome != OutcomeProven || !proof.Valid() {
+			t.Fatalf("command under the Terminal.app shell was not proven: proof=%+v err=%v", proof, err)
+		}
+	})
+
+	t.Run("tmux shell is its own session leader", func(t *testing.T) {
+		root := authorityRoot(t)
+		shell := authoritySnapshot(8458, 8457, []string{"-zsh"}, "tty-2")
+		shell.Executable = "/bin/zsh"
+		server := authoritySnapshot(8457, 1, []string{"tmux", "new-session"}, "")
+		reader := &treeReader{
+			reads: map[int64]int{}, session: 8458,
+			snapshots: map[int64][]Snapshot{
+				8458: {shell},
+				8457: {server},
+			},
+		}
+		enrollment, err := Enroll(root, 8458, reader, time.Unix(1900, 0))
+		if err != nil {
+			t.Fatalf("tmux shell enrollment failed: %v", err)
+		}
+		if enrollment.TerminalRef.PID != 8458 || enrollment.SessionLeader.PID != 8458 {
+			t.Fatalf("tmux enrollment recorded the wrong roots: %+v", enrollment)
+		}
+	})
+}
+
+func TestSystemLoginAdmissionRequiresStableWithheldArgumentsAndRootOwner(t *testing.T) {
+	tests := []struct {
+		name           string
+		first          Snapshot
+		second         Snapshot
+		darwinOnly     bool
+		wantOutcome    string
+		wantPath       bool
+		wantOwner      bool
+		wantWorkaround bool
+		wantReason     string
+	}{
+		{
+			name: "root sudo with withheld arguments",
+			first: func() Snapshot {
+				value := systemLoginSnapshot(90, 1, "tty-1")
+				value.Executable = "/usr/bin/sudo"
+				return value
+			}(),
+			wantOutcome: OutcomeArgvUnreadable, wantPath: true, wantOwner: true, wantWorkaround: true,
+			wantReason: "the operating system withholds this process's arguments and it is not a known system login program",
+		},
+		{
+			name: "user-owned login with withheld arguments",
+			first: func() Snapshot {
+				value := systemLoginSnapshot(91, 1, "tty-1")
+				value.OwnerUID = 501
+				return value
+			}(),
+			wantOutcome: OutcomeArgvUnreadable, wantPath: true, wantOwner: true, wantWorkaround: true,
+		},
+		{
+			name:       "login arguments become readable",
+			darwinOnly: true,
+			first:      systemLoginSnapshot(92, 1, "tty-1"),
+			second: func() Snapshot {
+				value := systemLoginSnapshot(92, 1, "tty-1")
+				value.Exact.Argv = []string{"login", "-pf", "wido"}
+				value.Exact.ArgvKnown = true
+				return value
+			}(),
+			wantOutcome: OutcomeChanged, wantPath: true, wantOwner: true,
+		},
+		{
+			name: "login arguments become withheld",
+			first: func() Snapshot {
+				value := systemLoginSnapshot(96, 1, "tty-1")
+				value.Exact.Argv = []string{"login", "-pf", "wido"}
+				value.Exact.ArgvKnown = true
+				return value
+			}(),
+			second:         systemLoginSnapshot(96, 1, "tty-1"),
+			wantOutcome:    OutcomeArgvUnreadable,
+			wantPath:       true,
+			wantOwner:      true,
+			wantWorkaround: true,
+			wantReason:     "the process's arguments changed from readable to withheld between observations",
+		},
+		{
+			name: "login executable unreadable",
+			first: func() Snapshot {
+				value := systemLoginSnapshot(93, 1, "tty-1")
+				value.ExecutableKnown = false
+				return value
+			}(),
+			wantOutcome: OutcomeUnreadable, wantOwner: true, wantWorkaround: true,
+		},
+		{
+			name: "login owner unknown",
+			first: func() Snapshot {
+				value := systemLoginSnapshot(94, 1, "tty-1")
+				value.OwnerKnown = false
+				return value
+			}(),
+			wantOutcome: OutcomeUnreadable, wantPath: true, wantWorkaround: true,
+		},
+		{
+			name:       "login owner changes",
+			darwinOnly: true,
+			first:      systemLoginSnapshot(95, 1, "tty-1"),
+			second: func() Snapshot {
+				value := systemLoginSnapshot(95, 1, "tty-1")
+				value.OwnerUID = 501
+				return value
+			}(),
+			wantOutcome: OutcomeChanged, wantPath: true, wantOwner: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.darwinOnly && runtime.GOOS != "darwin" {
+				t.Skip("the admitted system login program list is intentionally empty outside Darwin")
+			}
+			root := authorityRoot(t)
+			values := []Snapshot{test.first}
+			if test.second.Exact.Pid != 0 {
+				values = append(values, test.second)
+			}
+			reader := &treeReader{reads: map[int64]int{}, session: test.first.Exact.Pid,
+				snapshots: map[int64][]Snapshot{test.first.Exact.Pid: values}}
+			_, err := Enroll(root, test.first.Exact.Pid, reader, time.Unix(2000, 0))
+			if err == nil || !strings.Contains(err.Error(), test.wantOutcome) {
+				t.Fatalf("refusal outcome mismatch: err=%v want=%s", err, test.wantOutcome)
+			}
+			message := err.Error()
+			if !strings.Contains(message, "process pid "+strconv.FormatInt(test.first.Exact.Pid, 10)) {
+				t.Fatalf("refusal did not name its pid: %s", message)
+			}
+			if test.wantPath && !strings.Contains(message, test.first.Executable) {
+				t.Fatalf("refusal did not name its executable: %s", message)
+			}
+			if test.wantOwner && !strings.Contains(message, "owner uid "+strconv.FormatUint(uint64(test.first.OwnerUID), 10)) {
+				t.Fatalf("refusal did not name its owner: %s", message)
+			}
+			if test.wantWorkaround && !strings.HasSuffix(message, enrollmentAncestryWorkaround) {
+				t.Fatalf("refusal did not end with the enrollment workaround: %s", message)
+			}
+			if test.wantReason != "" && !strings.Contains(message, test.wantReason) {
+				t.Fatalf("refusal did not explain why the process was not admitted: %s", message)
+			}
+		})
+	}
+}
+
+func TestProofRecordsWithheldArgumentsForASystemLoginNode(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the admitted system login program list is intentionally empty outside Darwin")
+	}
+	root := authorityRoot(t)
+	login := systemLoginSnapshot(100, 1, "tty-3")
+	shell := authoritySnapshot(101, 100, []string{"-zsh"}, "tty-3")
+	launchd := authoritySnapshot(1, 0, []string{"/sbin/launchd"}, "")
+	launchd.OwnerUID = 0
+	reader := &treeReader{reads: map[int64]int{}, session: 100,
+		snapshots: map[int64][]Snapshot{1: {launchd}, 100: {login}, 101: {shell}}}
+	if _, err := Enroll(root, 100, reader, time.Unix(2100, 0)); err != nil {
+		t.Fatalf("enroll system login fixture: %v", err)
+	}
+	reader.reads = map[int64]int{}
+	proof, err := Prove(root, 101, reader, time.Unix(2200, 0))
+	if err != nil || !proof.Valid() || len(proof.Nodes) != 2 {
+		t.Fatalf("system login proof failed: proof=%+v err=%v", proof, err)
+	}
+	loginNode := proof.Nodes[1]
+	if !loginNode.ArgvWithheld || loginNode.ArgumentDigest != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" || loginNode.AgentRuntime != nil {
+		t.Fatalf("system login audit node lost its withheld-argument facts: %+v", loginNode)
+	}
+	encoded, err := json.Marshal(loginNode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"argvWithheld":true`) {
+		t.Fatalf("system login audit node omitted argvWithheld: %s", encoded)
+	}
+}
+
+func TestLinuxDoesNotAdmitLoginWithWithheldArguments(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("this pins the intentionally empty Linux system login program list")
+	}
+	root := authorityRoot(t)
+	login := systemLoginSnapshot(102, 1, "tty-4")
+	reader := &treeReader{reads: map[int64]int{}, session: 102,
+		snapshots: map[int64][]Snapshot{102: {login}}}
+	_, err := Enroll(root, 102, reader, time.Unix(2300, 0))
+	if err == nil || !strings.Contains(err.Error(), OutcomeArgvUnreadable) {
+		t.Fatalf("Linux admitted /usr/bin/login with withheld arguments: %v", err)
+	}
+}
+
 func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -189,6 +428,25 @@ func TestProofFailsClosedOnTerminalAndAncestryUncertainty(t *testing.T) {
 				first := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
 				second := first
 				second.ExecutableKnown = false
+				reader.snapshots[30] = []Snapshot{first, second}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "first owner unreadable",
+			prepare: func(reader *treeReader) {
+				value := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				value.OwnerKnown = false
+				reader.snapshots[30] = []Snapshot{value}
+			},
+			want: OutcomeUnreadable,
+		},
+		{
+			name: "second owner unreadable",
+			prepare: func(reader *treeReader) {
+				first := authoritySnapshot(30, 20, []string{"wrapper"}, "tty-1")
+				second := first
+				second.OwnerKnown = false
 				reader.snapshots[30] = []Snapshot{first, second}
 			},
 			want: OutcomeUnreadable,

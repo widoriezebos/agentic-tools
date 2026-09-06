@@ -36,6 +36,48 @@ func TestParentPidMatchesGetppid(t *testing.T) {
 	}
 }
 
+func TestProcessOwnerAnswersForLiveAndDeadProcesses(t *testing.T) {
+	owner, ok := ProcessOwner(int64(os.Getpid()))
+	if !ok || owner != uint32(os.Geteuid()) {
+		t.Fatalf("ProcessOwner(self) = (%d, %v), want (%d, true)", owner, ok, os.Geteuid())
+	}
+	owner, ok = ProcessOwner(1)
+	if !ok || owner != 0 {
+		t.Fatalf("ProcessOwner(pid 1) = (%d, %v), want (0, true)", owner, ok)
+	}
+	if _, ok := ProcessOwner(1 << 30); ok {
+		t.Fatal("ProcessOwner claimed an owner for a nonexistent pid")
+	}
+}
+
+func TestRootAncestorWithWithheldArgumentsHasReadableIdentityFacts(t *testing.T) {
+	current := int64(os.Getpid())
+	seen := map[int64]bool{}
+	for current > 0 && !seen[current] {
+		seen[current] = true
+		exact, state, err := (KernelProber{}).Probe(current)
+		owner, ownerKnown := ProcessOwner(current)
+		if current != 1 && err == nil && state == Alive && ownerKnown && owner == 0 && !exact.ArgvKnown {
+			if parent, ok := ParentPid(current); !ok || parent < 1 || parent == current {
+				t.Fatalf("ParentPid(%d) did not answer for a live root-owned process with withheld arguments", current)
+			}
+			if executable, ok := ExecutablePath(current); !ok || executable == "" {
+				t.Fatalf("ExecutablePath(%d) did not answer for a live root-owned process with withheld arguments", current)
+			}
+			if confirmedOwner, ok := ProcessOwner(current); !ok || confirmedOwner != 0 {
+				t.Fatalf("ProcessOwner(%d) = (%d, %v), want (0, true)", current, confirmedOwner, ok)
+			}
+			return
+		}
+		parent, ok := ParentPid(current)
+		if !ok {
+			break
+		}
+		current = parent
+	}
+	t.Skip("this process ancestry has no non-init root-owned process with arguments withheld by the operating system")
+}
+
 func TestProcessCwdMatchesWorkingDirectory(t *testing.T) {
 	cwd, ok := ProcessCwd(int64(os.Getpid()))
 	if !ok {

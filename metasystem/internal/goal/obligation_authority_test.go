@@ -28,7 +28,8 @@ func (*obligationAuthorityReader) SessionLeader(int64) (int64, error) { return 1
 
 func obligationAuthoritySnapshot(pid, parent int64, argv []string) humanauthority.Snapshot {
 	return humanauthority.Snapshot{Exact: identity.Exact{Pid: pid, StartedAt: time.Unix(pid*10, 0), Argv: argv, ArgvKnown: true},
-		Executable: "/fixture/" + argv[0], ExecutableKnown: true, ParentPID: parent, ParentKnown: true,
+		Executable: "/fixture/" + argv[0], ExecutableKnown: true, OwnerUID: 501, OwnerKnown: true,
+		ParentPID: parent, ParentKnown: true,
 		TerminalID: "tty-obligation", TerminalKnown: true}
 }
 

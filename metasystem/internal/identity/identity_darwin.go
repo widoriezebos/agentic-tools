@@ -116,6 +116,33 @@ func procArgsAndExecutable(pid int64) ([]string, string, error) {
 }
 
 func kernelExecutablePath(pid int64) (string, bool) {
-	_, executable, err := procArgsAndExecutable(pid)
-	return executable, err == nil
+	const (
+		sysProcInfo         = 336 // SYS_proc_info
+		procInfoCallPidInfo = 2   // PROC_INFO_CALL_PIDINFO
+		procPidPathInfo     = 11  // PROC_PIDPATHINFO
+		pathBufferSize      = 4096
+	)
+	if pid < 1 {
+		return "", false
+	}
+	buffer := make([]byte, pathBufferSize)
+	_, _, errno := unix.Syscall6(
+		sysProcInfo,
+		uintptr(procInfoCallPidInfo),
+		uintptr(pid),
+		uintptr(procPidPathInfo),
+		0,
+		uintptr(bytesPointer(buffer)),
+		uintptr(len(buffer)),
+	)
+	if errno != 0 {
+		return "", false
+	}
+	// PROC_PIDPATHINFO writes the path into the caller's buffer; the raw
+	// syscall's return register is zero even when that buffer contains a path.
+	end := bytes.IndexByte(buffer, 0)
+	if end <= 0 {
+		return "", false
+	}
+	return string(buffer[:end]), true
 }

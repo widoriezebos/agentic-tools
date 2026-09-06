@@ -21,6 +21,7 @@ func (goalAuthorityReader) Read(pid int64) (humanauthority.Snapshot, error) {
 	return humanauthority.Snapshot{
 		Exact:      identity.Exact{Pid: pid, StartedAt: time.Unix(pid*10, 0), Argv: []string{"human-shell"}, ArgvKnown: true},
 		Executable: "/fixture/human-shell", ExecutableKnown: true,
+		OwnerUID: 501, OwnerKnown: true,
 		ParentPID: parent, ParentKnown: true, TerminalID: "tty-test", TerminalKnown: true,
 	}, nil
 }

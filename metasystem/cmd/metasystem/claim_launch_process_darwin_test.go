@@ -16,19 +16,12 @@ func TestClaimLaunchCapabilitySurvivesRelativeExecutableProcessShape(t *testing.
 	const helperEnv = "METASYSTEM_RELATIVE_EXECUTABLE_HELPER"
 	if os.Getenv(helperEnv) == "1" {
 		kernelPath, ok := identity.ExecutablePath(int64(os.Getpid()))
-		if !ok || filepath.IsAbs(kernelPath) {
-			t.Fatalf("kernel executable path = %q, want the relative Darwin shape from the live defect", kernelPath)
-		}
 		self, err := os.Executable()
 		if err != nil {
 			t.Fatal(err)
 		}
-		legacyKernelPath := kernelPath
-		if resolved, resolveErr := filepath.EvalSymlinks(legacyKernelPath); resolveErr == nil {
-			legacyKernelPath = resolved
-		}
-		if legacyKernelPath == resolvedDelegatePath(self) {
-			t.Fatalf("legacy comparison unexpectedly joined relative %q to absolute %q", legacyKernelPath, resolvedDelegatePath(self))
+		if !ok || !filepath.IsAbs(kernelPath) || resolvedDelegatePath(kernelPath) != resolvedDelegatePath(self) {
+			t.Fatalf("the executable reader must report the executed image's absolute path for a relative launch: kernel path %q, process executable %q", kernelPath, self)
 		}
 		binding := dispatchcore.DelegateClaimCapabilityBinding{
 			JobID: "relative-executable-job", OperationID: "relative-executable-operation",
