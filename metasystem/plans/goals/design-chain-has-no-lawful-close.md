@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Add design-critic to reviewReferenceBinding's accepted roles in internal/dispatch/review_reference.go with the finding-register-closed precondition that code-critic already has (requireFoldedCritique), then close the three open hook-root chains named in the intent as the live proof. Tier 1 or 2; do not fold into the hook-root goal
 - OpenedAt: 2026-09-05T22:17:23Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:49:41Z revision=2 opid=QCXYXBWVYRX15C9ATSXE5DMY2S-m1-a4f8999f authority=proven digest=6544c695905dbd801a777ee092ebf47c0630988a475aabc17004c103d4e06053
@@ -15,4 +16,5 @@
 History:
 - 2026-09-05T22:17:23Z M4SBD8PR5VFVE0TVBKGTSXEJJD-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=design-chain-has-no-lawful-close
 - 2026-09-06T06:49:41Z QCXYXBWVYRX15C9ATSXE5DMY2S-m1-a4f8999f approve actor=human:Wido targets=design-chain-has-no-lawful-close
-Integrity: sha256=5601e3c369d37dd5426621721d408ccf5a1d6e7f920ca432203c898bc1105c44
+- 2026-09-06T07:28:56Z 6XJF69SN05T9CF626KS9XDTXDZ-m1-a4f8999f set-pin actor=human:Wido targets=design-chain-has-no-lawful-close
+Integrity: sha256=45baae47e5ab5bfd25d467e56833f783756c1cea5c601f8270778e6c477574c8
