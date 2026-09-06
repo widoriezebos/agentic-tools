@@ -23,13 +23,17 @@ import (
 // seen — so this text tells the agent to act or record why it cannot.
 const stopBlockReason = "Work named in a plan is unblocked and nothing is in flight. Do it now, " +
 	"or record in the plan why it is blocked or waiting on the human. " +
-	"This refusal does not repeat for the same work.\n\n"
+	"This refusal does not repeat for the same work."
 
-// StopBlock builds the stop-hook block decision, appending any caller detail.
+// StopBlock builds the stop-hook block decision with any caller detail first.
 func StopBlock(detail string) map[string]any {
+	reason := stopBlockReason
+	if detail != "" {
+		reason = detail + "\n\n" + stopBlockReason
+	}
 	return map[string]any{
 		"decision": "block",
-		"reason":   stopBlockReason + detail,
+		"reason":   reason,
 	}
 }
 

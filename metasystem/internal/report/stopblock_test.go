@@ -22,8 +22,8 @@ func TestStopBlock(t *testing.T) {
 	if !strings.Contains(reason, "unblocked and nothing is in flight") {
 		t.Fatalf("reason missing the standing guidance: %q", reason)
 	}
-	if !strings.HasSuffix(reason, "PLAN says do X") {
-		t.Fatalf("reason must append the caller detail: %q", reason)
+	if reason != "PLAN says do X\n\n"+stopBlockReason {
+		t.Fatalf("reason must put the caller detail before the standing guidance: %q", reason)
 	}
 }
 
@@ -125,7 +125,7 @@ func TestStopRefusalWaitsBrieflyForOverlappingWriter(t *testing.T) {
 
 func TestStopBlockEmptyDetail(t *testing.T) {
 	b := StopBlock("")
-	if !strings.HasSuffix(b["reason"].(string), "\n\n") {
-		t.Fatalf("with no detail the reason still ends with the separator: %q", b["reason"])
+	if b["reason"] != stopBlockReason {
+		t.Fatalf("with no detail the reason is the guidance without a leading separator: %q", b["reason"])
 	}
 }

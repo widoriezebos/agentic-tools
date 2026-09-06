@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
-// runReportStopBlock prints the stop-hook block decision, appending any caller
+// runReportStopBlock prints the stop-hook block decision, leading with any caller
 // detail given as the sole positional argument.
 func runReportStopBlock(args []string) int {
 	flags := flag.NewFlagSet("report stop-block", flag.ContinueOnError)

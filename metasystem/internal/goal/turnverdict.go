@@ -107,6 +107,9 @@ type Verdict struct {
 	LedgerStatus      string     `json:"ledgerStatus"`
 	Diagnostics       []string   `json:"diagnostics"`
 	Display           string     `json:"display"`
+	// FailClosed is true only when the verb could not compute a verdict and
+	// answers fail-closed; the hook renders that as its fixed degraded message.
+	FailClosed bool `json:"failClosed,omitempty"`
 	// SurfaceWatchdog answers the hook's --watchdog-surfaced digest: true
 	// exactly once per new digest per session, decided under the flock.
 	SurfaceWatchdog bool `json:"surfaceWatchdog"`
@@ -238,7 +241,7 @@ func failClosedTurnVerdict(err error) Verdict {
 	detail := "cannot prove that stopping is safe: " + err.Error()
 	return Verdict{
 		SchemaVersion: 1, ShouldBlock: true, BlockSource: &source,
-		LedgerStatus: "degraded", Diagnostics: []string{detail}, Display: detail,
+		LedgerStatus: "degraded", Diagnostics: []string{detail}, Display: detail, FailClosed: true,
 	}
 }
 

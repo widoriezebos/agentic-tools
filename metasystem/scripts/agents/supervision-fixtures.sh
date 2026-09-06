@@ -271,6 +271,9 @@ assert_fixture_supervision_isolation() {
   fi
   for root in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
     while IFS= read -r -d '' announcement; do
+      case "${announcement##*/}" in
+        *.protocol-cursor.json|reaped-after-claim.json|worktree-commit-token.json|worktree-lease.json) continue ;;
+      esac
       announced_pid=$("$ms" json get --file "$announcement" --field pid 2>/dev/null || true)
       if ! fixture_pid_is_in_bed "$announced_pid" && ! awk -F '\t' -v pid="$announced_pid" '$2 == pid && $4 == 1 { found=1 } END { exit !found }' "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"; then
         echo "supervision fixture scenario $fixture_scenario announced main pid $announced_pid outside its scenario bed $fixture_bed_pid" >&2
@@ -1949,14 +1952,14 @@ git -C "$stop_root" init -q -b main
 fixture_harness_roots+=("$stop_root")
 enroll_fixture_engine "$stop_root" "$stop_root/bin/metasystem"
 (
-stop_main_pid=$BASHPID
+stop_main_pid=$(exec sh -c 'echo $PPID')
 export METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$stop_main_pid
 stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
 stop_hook() {
   run_fixture_hook "$stop_root" bash "$stop_root/scripts/agents/supervision-hook.sh" fake stop
 }
 first=$(printf '%s' "$stop_payload" | stop_hook)
-if printf '%s' "$first" | grep -Fq 'Metasystem supervision arming failed:'; then
+if printf '%s' "$first" | grep -Fq 'component=accepted-engine'; then
   echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
   echo "$first" >&2
   exit 1
@@ -1991,7 +1994,7 @@ printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
 # holder-only command is its descendant, so no ambient seat or suite ancestor
 # can become the sandbox's main identity.
 "$stop_root/bin/metasystem" goal open --root "$stop_root" \
-	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." --tier 3 >/dev/null
+	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
 goal_block=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$goal_block" | grep -q '"decision":"block"' \
   && printf '%s' "$goal_block" | grep -Fq 'Advance the fixture goal.' \

@@ -100,6 +100,21 @@ func TestPrecedenceLadder(t *testing.T) {
 	}
 }
 
+func TestFailClosedVerdictCarriesItsMarker(t *testing.T) {
+	failClosed := failClosedTurnVerdict(fmt.Errorf("fixture state unavailable"))
+	if !failClosed.FailClosed {
+		t.Fatalf("the fail-closed verdict did not carry its marker: %+v", failClosed)
+	}
+
+	ordinary, err := testStore(t).TurnVerdict(ScanResult{}, "ordinary", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinary.FailClosed {
+		t.Fatalf("an ordinary verdict carried the fail-closed marker: %+v", ordinary)
+	}
+}
+
 // Pre-adoption absence is advisory; post-adoption deletion is
 // degraded with the all-clear vetoed and reconcile named.
 func TestAbsenceAdvisoryVsDeletionDegraded(t *testing.T) {
