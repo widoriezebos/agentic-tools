@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: (1) the steward identity record (internal/steward/identity.go) carries how it was enrolled - human-terminal, temporary-word, or fixture - written at arm/restart from the authority proof that already distinguishes them (internal/humanauthority, FixtureOnly / FixtureGoalProof); (2) NotifyCommand and Deliver in internal/steward/notify.go consult it: an explicit metasystem.steward.notify-command still wins for any enrollment (a fixture may point it at a recording command); without one, the darwin platform notifier is returned only for a human enrollment, and a fixture enrollment delivers by appending the message to artifacts/agents/steward/notifications.log under its own root and returns nil (delivered, so launches gated on delivery still proceed); an identity without the field (minted before this lands) counts as human until its next restart, so no live steward goes silent; (3) the platform message carries the installation root after the title, e.g. 'metasystem steward - /Users/wido/.../agentic-tools-m1b/metasystem'. Tests: Go unit tests for NotifyCommand/Deliver per enrollment kind (fake platform via an injected runner, not osascript); health-fixtures.sh asserts its steward's alert landed in the notifications log and that no osascript ran (wrap PATH with a recording osascript that fails the suite if called). Receipt: go gate plus health-fixtures.sh and supervision-hook-fixtures.sh. Until it lands, any seat running suites on a Mac can set git config metasystem.steward.notify-command in the fixture repositories to a no-op - but that is the leaky discipline this goal replaces, so do the engine gate.
 - OpenedAt: 2026-09-06T07:46:47Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1d
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T08:37:53Z revision=2 opid=Y88BHYQXARNE0C3CSRZXRX5FMZ-m1-a4f8999f authority=proven digest=17f239dfcd727e1fc185e0bac94bb1e67c2174ad79a126af2745c15ffaa04ea9
@@ -15,4 +16,5 @@
 History:
 - 2026-09-06T07:46:47Z H137WSFBYKWVX4CVENVAJGCWK4-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=fixture-stewards-reach-the-desktop
 - 2026-09-06T08:37:53Z Y88BHYQXARNE0C3CSRZXRX5FMZ-m1-a4f8999f approve actor=human:Wido targets=fixture-stewards-reach-the-desktop
-Integrity: sha256=24b3761578648a665d99a76c591faf30800daea68c75f27e21b0534471df6168
+- 2026-09-06T08:37:55Z 2F806GC9BTA0E13RV32EZWVH6F-m1-a4f8999f set-pin actor=human:Wido targets=fixture-stewards-reach-the-desktop
+Integrity: sha256=c5908fcbfc0c3792f299a2b1a8a06a2477aa5f0b44f82f6d4b21731b9163fc10
