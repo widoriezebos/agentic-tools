@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: scripts/agents/supervision-hook.sh: since the stop-hook fix (6e0221e0) the 'Work named in a plan is unblocked' refusal returns a block whose reason carries neither the goal-thread verdict display (OPEN WORK (1) naming the open step; design points GOAL-04/05, byte-identity) nor the one-line HEALTH verdict, and the deadline parent appends 'Metasystem Stop deadline expired before a safe turn verdict' even when the worker answered in time; Wido saw exactly this refusal on the m2 console on 2026-09-04. The supervision fixture's stop-hook-monitor scenario pins the lawful shape and is red; three rounds of chain sse-build1 (preserved on preserve/sse-build1-r3: the evidence path moved to the steward component record, a deadline-preservation change, and a reworked block composition that regressed the health line) did not get it green. DONE means every block the hook emits carries the verdict display first, then any rule sentence, with the HEALTH verdict in the system message; the deadline sentence appears only when the deadline actually expired; and the stop-hook-monitor scenario passes on a Mac.
 - Origin: main
-- Next step: LANDED at c1525b90 (chain shr-build1: five implementer rounds, critiques shr-critic1, shr-critic3 and shr-critic4, the last with zero material findings; dispositions at 19118c9f). The landing's provenance verdict is would-refuse chain-output-mismatch, recorded and admitted: between the chain's base (2f8fbc51) and the landing, main's engine-rearm landing ea8c3ead changed the same hook and fixture files, so the reviewed tree's file entries differ from the landed ones although every hunk applied cleanly; the merged candidate was proven seat-side (hook fixtures, all supervision scenarios under stock bash 3.2, the report and goal packages under the race detector) and by the full-battery receipt, but not re-critiqued. Proof on landed main running now (hook fixtures and the suite). Done is Wido's act on this human-opened goal once that proof is green.
+- Next step: PROVEN on landed main c1525b90 (m1, 2026-09-06 12:22Z, stock bash 3.2): the hook fixtures pass and the supervision suite passes every scenario, S4-1 through S4-16 and the engine re-arm scenarios; the seat's own Stop hook now emits the display-first block (OPEN WORK first, the rule sentence after, HEALTH in the system message) and its deadline block only when the four-second budget actually expired under load. Landed at c1525b90 with dispositions at 19118c9f; the landing's would-refuse chain-output-mismatch provenance (main moved the same files under the chain; the merge was proven, not re-critiqued) is recorded here and carried by goal chain-landing-after-base-move-recertifies. Released by m1c 12:23Z; done is Wido's act.
 - OpenedAt: 2026-09-04T19:55:53Z
-- Revision: 13
+- Revision: 14
 - Labels: robustness
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -31,4 +31,5 @@ History:
 - 2026-09-06T10:27:25Z E4985JC4R9HYJQVNSEGMFFCJXT-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=stop-hook-refusal-carries-verdict
 - 2026-09-06T10:40:16Z SB9DNXXKW0V7BT4KBPAX7NRHSX-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=stop-hook-refusal-carries-verdict
 - 2026-09-06T12:20:23Z MT96VEK31B4WYDVRK388386P35-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=stop-hook-refusal-carries-verdict
-Integrity: sha256=221818e6431a35e4761f3afb089b4d270549ddddc4f6da041620a7f981cf74a8
+- 2026-09-06T12:22:25Z 10RKAVTN4GRYE3RMCC986KY2S7-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=stop-hook-refusal-carries-verdict
+Integrity: sha256=b853ccec13d72650af53dafe613fcf2fc9331d125ddc60564f36dd7630c405cc
