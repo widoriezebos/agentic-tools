@@ -7,12 +7,13 @@
 - Origin: main
 - Next step: Read the four failures, split into a budget change and two test fixes; tier from the risk basis; waits for Wido's word if above tier 1.
 - OpenedAt: 2026-09-04T21:14:28Z
-- Revision: 5
+- Revision: 6
 - Labels: robustness
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=0e61f641bca538c7f64dc22b09fa17c6da5e8650f292db27090b5c9be242ae8f
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=5 at=2026-09-06T07:52:34Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T07:37:52Z revision=5 accountingRevision=5
 - StopCapability: generation=5 revision=5 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -22,4 +23,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=race-gate-red-on-main reason=sweep
 - 2026-09-06T07:28:59Z 3ZZ8AFSPB0S2BDG1T28CFSVY38-m1-a4f8999f set-pin actor=human:Wido targets=race-gate-red-on-main
 - 2026-09-06T07:37:52Z 66JHSCQTG4E5GFX3BH13ZKB93F-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=race-gate-red-on-main
-Integrity: sha256=67f873413f953e742263336c138611cd3bd374490684d426c858d889fb133016
+- 2026-09-06T07:52:34Z 1X4GBRTEW68KMZ0CWF5HBQRG98-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=race-gate-red-on-main
+Integrity: sha256=76106550a124f0fecbc59f3d04901c6c8641c1043b641f8b92234125eb68692e
