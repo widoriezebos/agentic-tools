@@ -18,6 +18,130 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
+type goalSyncEnrollmentReader struct {
+	exact      identity.Exact
+	terminalID string
+}
+
+func (r goalSyncEnrollmentReader) Read(pid int64) (humanauthority.Snapshot, error) {
+	if pid == 1 {
+		return humanauthority.Snapshot{
+			Exact:      identity.Exact{Pid: 1, StartedAt: time.Unix(1, 0), Argv: []string{"fixture-init"}, ArgvKnown: true},
+			Executable: "/fixture/init", ExecutableKnown: true,
+			OwnerUID: 0, OwnerKnown: true,
+			ParentPID: 1, ParentKnown: true, TerminalID: r.terminalID, TerminalKnown: true,
+		}, nil
+	}
+	if pid != r.exact.Pid {
+		return humanauthority.Snapshot{}, fmt.Errorf("unexpected enrollment fixture pid %d", pid)
+	}
+	exact := r.exact
+	exact.Argv = []string{"attended-human-shell"}
+	exact.ArgvKnown = true
+	return humanauthority.Snapshot{
+		Exact: exact, Executable: "/fixture/attended-human-shell", ExecutableKnown: true,
+		OwnerUID: 501, OwnerKnown: true,
+		ParentPID: 1, ParentKnown: true, TerminalID: r.terminalID, TerminalKnown: true,
+	}, nil
+}
+
+func (r goalSyncEnrollmentReader) SessionLeader(int64) (int64, error) {
+	return r.exact.Pid, nil
+}
+
+func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthority.Enrollment, goalSyncEnrollmentReader) {
+	t.Helper()
+	adapters := filepath.Join(root, "scripts", "agents", "adapters")
+	if err := os.MkdirAll(adapters, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
+	if err := os.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe enrollment fixture process: state=%s err=%v", state, err)
+	}
+	reader := goalSyncEnrollmentReader{exact: exact, terminalID: terminalID}
+	enrollment, err := humanauthority.Enroll(root, exact.Pid, reader, time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return enrollment, reader
+}
+
+func proveSyncReqWithReader(t *testing.T, reader goalSyncEnrollmentReader) {
+	t.Helper()
+	original := proveSyncReqHumanAuthority
+	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Prove(root, reader.exact.Pid, reader, now)
+	}
+	t.Cleanup(func() { proveSyncReqHumanAuthority = original })
+}
+
+func TestSyncReqLineage(t *testing.T) {
+	const (
+		agentRefusal        = "mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage"
+		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage"
+		wrongShellRefusal   = "a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (TERMINAL_NOT_REACHED); run the act at the terminal, or pass --lineage"
+	)
+
+	t.Run("human act derives enrolled terminal lineage", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		enrollment, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_01")
+		proveSyncReqWithReader(t, reader)
+		if enrollment.Generation != 1 {
+			t.Fatalf("first enrollment generation = %d, want 1", enrollment.Generation)
+		}
+
+		req, err := syncReq(root, "Wido", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := goal.Actor{Machine: "mac-cli", Lineage: "terminal-ttys-fixture-01-1", Human: "Wido"}
+		if req.Actor != want {
+			t.Fatalf("derived actor = %+v, want %+v", req.Actor, want)
+		}
+	})
+
+	t.Run("human act without enrollment names repair", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		_, enrollmentErr := humanauthority.ReadEnrollment(root)
+		if enrollmentErr == nil {
+			t.Fatal("unenrolled fixture unexpectedly has an enrollment")
+		}
+		_, err := syncReq(root, "Wido", "")
+		want := noEnrollmentRefusal + ": " + enrollmentErr.Error()
+		if err == nil || err.Error() != want {
+			t.Fatalf("human refusal = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("human act from another shell refuses", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		_, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_01")
+		reader.terminalID = "ttys:another-shell"
+		proveSyncReqWithReader(t, reader)
+		_, err := syncReq(root, "Wido", "")
+		if err == nil || err.Error() != wrongShellRefusal {
+			t.Fatalf("wrong-shell refusal = %v, want %q", err, wrongShellRefusal)
+		}
+	})
+
+	t.Run("agent keeps coordinator identity refusal", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		_, err := syncReq(root, "", "")
+		if err == nil || err.Error() != agentRefusal {
+			t.Fatalf("agent refusal = %v, want %q", err, agentRefusal)
+		}
+	})
+}
+
 func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "risk-scored classification fixture", func(file *goal.GoalFile) {
@@ -738,19 +862,25 @@ func captureEnrollTerminalOutput(t *testing.T, args []string, enroll goalTermina
 
 func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T) {
 	machineA, machineB := twoMachineEnrollmentFixture(t)
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
 	firstAt := time.Date(2026, 9, 2, 8, 0, 0, 0, time.UTC)
 	secondAt := firstAt.Add(time.Hour)
 	times := map[string]time.Time{machineA: firstAt, machineB: secondAt}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe fixture process: %s: %v", state, err)
+	}
+	reader := sessionStopCommandAuthorityReader{pid: exact.Pid, exact: exact}
+	originalProver := proveSyncReqHumanAuthority
+	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Prove(root, exact.Pid, reader, now)
+	}
+	t.Cleanup(func() { proveSyncReqHumanAuthority = originalProver })
 	enroll := func(root string, _ int64, _ humanauthority.Reader, _ time.Time) (humanauthority.Enrollment, error) {
-		exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-		if err != nil || state != identity.Alive {
-			return humanauthority.Enrollment{}, fmt.Errorf("probe fixture process: %s: %w", state, err)
-		}
-		reader := sessionStopCommandAuthorityReader{pid: exact.Pid, exact: exact}
 		return humanauthority.Enroll(root, exact.Pid, reader, times[root])
 	}
 
-	stdoutA, stderrA, codeA := captureEnrollTerminalOutput(t, []string{"--root", machineA, "--lineage", "enrollment-fixture"}, enroll)
+	stdoutA, stderrA, codeA := captureEnrollTerminalOutput(t, []string{"--root", machineA}, enroll)
 	if codeA != 0 || stderrA != "" {
 		t.Fatalf("first machine enrollment failed: code=%d stdout=%q stderr=%q", codeA, stdoutA, stderrA)
 	}
@@ -774,7 +904,7 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		t.Fatalf("the first machine's enrollment did not end relayed approval fleet-wide: result=%+v err=%v", claim, err)
 	}
 
-	stdoutB, stderrB, codeB := captureEnrollTerminalOutput(t, []string{"--root", machineB, "--lineage", "enrollment-fixture"}, enroll)
+	stdoutB, stderrB, codeB := captureEnrollTerminalOutput(t, []string{"--root", machineB}, enroll)
 	if codeB != 0 || stderrB != "" {
 		t.Fatalf("second machine enrollment failed: code=%d stdout=%q stderr=%q", codeB, stdoutB, stderrB)
 	}
@@ -786,6 +916,23 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		local, err := humanauthority.ReadEnrollment(root)
 		if err != nil || local.EnrolledAt != want || local.Generation != 1 {
 			t.Fatalf("machine %s local enrollment=%+v, want at=%s generation=1: %v", root, local, want, err)
+		}
+		entries, entriesErr := goal.Entries(root)
+		if entriesErr != nil {
+			t.Fatal(entriesErr)
+		}
+		foundDerivedLineage := false
+		for _, entry := range entries {
+			if entry.Intent.Verb != "enroll-terminal" {
+				continue
+			}
+			foundDerivedLineage = true
+			if entry.Lineage != "terminal-tty-session-stop-1" {
+				t.Fatalf("machine %s enrollment journal lineage = %q, want terminal-tty-session-stop-1", root, entry.Lineage)
+			}
+		}
+		if !foundDerivedLineage {
+			t.Fatalf("machine %s recorded no enroll-terminal transaction", root)
 		}
 	}
 	projection, err := goal.Project(endpointB, false, secondAt)

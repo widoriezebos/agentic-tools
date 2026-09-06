@@ -30,6 +30,23 @@ import (
 // default minted claims under a generic lineage, and steal and
 // succession then judged the wrong owner.
 func syncReq(root, by, lineageFlag string) (goal.VerbRequest, error) {
+	return syncReqWithProof(root, by, lineageFlag, nil)
+}
+
+var proveSyncReqHumanAuthority = humanauthority.Prove
+
+func terminalEnrollmentLineage(enrollment humanauthority.Enrollment) string {
+	terminalID := []byte(enrollment.TerminalID)
+	for index, character := range terminalID {
+		if !('A' <= character && character <= 'Z') && !('a' <= character && character <= 'z') &&
+			!('0' <= character && character <= '9') && character != '-' {
+			terminalID[index] = '-'
+		}
+	}
+	return fmt.Sprintf("terminal-%s-%d", terminalID, enrollment.Generation)
+}
+
+func syncReqWithProof(root, by, lineageFlag string, observedProof *humanauthority.Proof) (goal.VerbRequest, error) {
 	if err := ensureGuardEnrolled(root); err != nil {
 		return goal.VerbRequest{}, err
 	}
@@ -46,7 +63,39 @@ func syncReq(root, by, lineageFlag string) (goal.VerbRequest, error) {
 		lineage = os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	}
 	if lineage == "" {
-		return goal.VerbRequest{}, fmt.Errorf("mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage")
+		if by == "" {
+			return goal.VerbRequest{}, fmt.Errorf("mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage")
+		}
+		enrollment, err := humanauthority.ReadEnrollment(root)
+		if err != nil {
+			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage: %w", err)
+		}
+		now, nowErr := goalCommandNow(root)
+		if nowErr != nil {
+			return goal.VerbRequest{}, nowErr
+		}
+		proof := humanauthority.Proof{}
+		var proofErr error
+		if observedProof != nil {
+			proof = *observedProof
+		} else {
+			proof, proofErr = proveSyncReqHumanAuthority(root, int64(os.Getppid()), nil, now)
+		}
+		if proofErr != nil || proof.Outcome != humanauthority.OutcomeProven || !proof.ValidFor(root) {
+			outcome := proof.Outcome
+			if outcome == "" {
+				outcome = humanauthority.OutcomeUnreadable
+			} else if outcome == humanauthority.OutcomeProven {
+				outcome = humanauthority.OutcomeChanged
+			}
+			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (%s); run the act at the terminal, or pass --lineage", outcome)
+		}
+		// A fixture proof is bound to its exact fake-runtime root but carries no
+		// terminal process fields; its strict local enrollment supplies the id.
+		if !proof.FixtureOnly && (proof.TerminalGeneration != enrollment.Generation || proof.TerminalRef != enrollment.TerminalRef) {
+			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (%s); run the act at the terminal, or pass --lineage", humanauthority.OutcomeChanged)
+		}
+		lineage = terminalEnrollmentLineage(enrollment)
 	}
 	ulid, err := goalUlid()
 	if err != nil {
@@ -203,7 +252,7 @@ func runGoalDischargeReviewObligation(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, --by, and --test")
 		return 2
 	}
-	req, err := syncReq(f.root, "", f.lineage)
+	req, err := syncReq(f.root, f.by, f.lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -239,7 +288,7 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	req, err := syncReq(f.root, f.by, f.lineage)
+	req, err := syncReqWithProof(f.root, f.by, f.lineage, &proof)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -684,7 +733,7 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	req, err := syncReq(f.root, f.by, f.lineage)
+	req, err := syncReqWithProof(f.root, f.by, f.lineage, &proof)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -733,7 +782,7 @@ func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	req, err := syncReq(f.root, f.by, f.lineage)
+	req, err := syncReqWithProof(f.root, f.by, f.lineage, &proof)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -777,7 +826,7 @@ func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	req, err := syncReq(f.root, f.by, f.lineage)
+	req, err := syncReqWithProof(f.root, f.by, f.lineage, &proof)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -849,7 +898,7 @@ func runGoalResumeWithAuthority(args []string, prove goalAuthorityProver) int {
 		return 2
 	}
 	temporaryAuthority := proof.TemporaryResumeFor(f.root)
-	req, err := syncReq(f.root, f.by, f.lineage)
+	req, err := syncReqWithProof(f.root, f.by, f.lineage, &proof)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -1019,12 +1068,12 @@ func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
 		fmt.Fprintln(os.Stderr, "goal enroll-terminal requires the synced backlog so the first enrollment ends relayed approval fleet-wide")
 		return 1
 	}
-	req, err := syncReq(*root, "terminal", *lineage)
+	enrollment, err := enroll(*root, int64(os.Getppid()), nil, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	enrollment, err := enroll(*root, int64(os.Getppid()), nil, time.Now().UTC())
+	req, err := syncReq(*root, "terminal", *lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -1113,7 +1162,7 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 		return 2
 	}
 	temporaryAuthority := proof.TemporarySetObligationFor(*root)
-	req, err := syncReq(*root, *by, *lineage)
+	req, err := syncReqWithProof(*root, *by, *lineage, &proof)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

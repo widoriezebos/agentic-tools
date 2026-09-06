@@ -79,10 +79,10 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-    "$fixture_bed_script" migration-recovery risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep
+    "$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep
 fi
 case "$fixture_scenario" in
-  migration-recovery | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep) ;;
+  migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -253,6 +253,59 @@ approve_fixture_goal() { # goal id, optional complete tuple flags
   "$ms" goal approve --root "$clone" --id "$goal_id" --by Wido \
     --fixture-human-authority "$@" >/dev/null
 }
+
+if [[ "$fixture_scenario" == human-lineage ]]; then
+# A fixture-authorized human act still gets its coordinator identity from the
+# checkout's local terminal enrollment. The fixture writes the exact strict
+# JSON shape consumed by humanauthority.ReadEnrollment because its headless
+# shell cannot lawfully enroll itself as an attended terminal.
+"$ms" goal open --root "$clone" --id explicit-lineage-approval \
+  --intent "Record an approval under the fixture coordinator." --next "Compare its operation identity." \
+  --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture identity comparison" >/dev/null
+"$ms" goal open --root "$clone" --id derived-lineage-approval \
+  --intent "Record an approval under the enrolled terminal." --next "Inspect its transaction journal." \
+  --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture identity comparison" >/dev/null
+
+explicit_approval=$("$ms" goal approve --root "$clone" --id explicit-lineage-approval \
+  --by Wido --budget box --fixture-human-authority)
+grep -q '"outcome":"confirmed"' <<<"$explicit_approval" \
+  || { echo "the fixture-lineage approval did not confirm: $explicit_approval" >&2; exit 1; }
+explicit_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$explicit_tip:plans/goals/explicit-lineage-approval.md" >"$tmp/explicit-lineage-approval.md"
+explicit_opid=$(sed -n 's/^- Approved: .* opid=\([^ ]*\) authority=.*/\1/p' "$tmp/explicit-lineage-approval.md")
+[[ -n "$explicit_opid" ]] \
+  || { echo "the fixture-lineage approval recorded no operation identifier" >&2; exit 1; }
+grep -q '"lineage": "fixture-lineage"' "$clone/artifacts/agents/goal-transactions/$explicit_opid.json" \
+  || { echo "the explicit approval journal lost fixture-lineage" >&2; exit 1; }
+
+mkdir -p "$clone/artifacts/agents/authority"
+cat >"$clone/artifacts/agents/authority/human-terminal.json" <<'ENROLLMENT'
+{
+  "schema": 1,
+  "enrolledAt": "2026-09-06T08:00:00Z",
+  "generation": 7,
+  "terminalId": "ttys:fixture",
+  "terminalRef": {"pid": 1, "pidStartedAt": 1},
+  "sessionLeaderRef": {"pid": 1, "pidStartedAt": 1}
+}
+ENROLLMENT
+unset METASYSTEM_OWNER_LINEAGE
+
+derived_approval=$("$ms" goal approve --root "$clone" --id derived-lineage-approval \
+  --by Wido --budget box --fixture-human-authority)
+grep -q '"outcome":"confirmed"' <<<"$derived_approval" \
+  || { echo "the enrollment-derived approval did not confirm: $derived_approval" >&2; exit 1; }
+derived_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$derived_tip:plans/goals/derived-lineage-approval.md" >"$tmp/derived-lineage-approval.md"
+derived_opid=$(sed -n 's/^- Approved: .* opid=\([^ ]*\) authority=.*/\1/p' "$tmp/derived-lineage-approval.md")
+derived_lineage=terminal-ttys-fixture-7
+derived_lineage_hash=$(printf '%s' "$derived_lineage" | shasum -a 256 | cut -c1-8)
+derived_opid_suffix=${derived_opid##*-}
+[[ -n "$derived_opid" && "$derived_opid_suffix" == "$derived_lineage_hash" ]] \
+  || { echo "the derived approval operation identifier suffix $derived_opid_suffix does not match lineage hash $derived_lineage_hash" >&2; exit 1; }
+grep -q "\"lineage\": \"$derived_lineage\"" "$clone/artifacts/agents/goal-transactions/$derived_opid.json" \
+  || { echo "the derived approval journal did not record $derived_lineage" >&2; exit 1; }
+fi
 
 if [[ "$fixture_scenario" == risk-basis ]]; then
 set +e
