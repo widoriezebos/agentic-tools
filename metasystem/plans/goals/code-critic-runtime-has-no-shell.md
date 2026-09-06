@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: Both Fable code-critic rounds on chain rgr-build1 and both on chain shr-build1 (2026-09-06) reported the same gap: the claude runtime exposed only file reading and searching tools, no shell, so none of the evidence commands the review brief allowed (focused go tests, vet, gofmt, bash -n, git diff) could run, and every evidence entry was read or inferred. The code-critique skill expects the critic to run focused checks that distinguish a suspected defect from a hypothetical one, and the orchestrator had to run them in the critic's place each time. DONE means a code-critic dispatched on the claude runtime can run the brief's evidence commands in the reviewed worktree (read-only on the tree, shell allowed), the permissions preset or role requirements say so, and one critic return shows evidence marked ran.
 - Origin: main
-- Next step: STATE 2026-09-06 19:32Z (m1c): round one built the brief (tree 5c9ae989); critique r1 (ccs-critic1) and the seat's live probe agree on two material defects (the claude sandbox writes cwd and --add-dir roots with allowWrite empty; the temp dir is not writable), remedy proven by a second probe (sandbox.filesystem.denyWrite on the tree + allowWrite on a private scratch dir: go test runs, touch refused). Fold round two (ccs-build1-r2, brief 4470ceaa) building: denyWrite = workspace root + read roots for the critic set, one scratch dir per claude delegate round with TMPDIR/GOCACHE/GOTMPDIR, tests. Dispositions r1 landed (records/misc/code-critic-runtime-has-no-shell-critique-r1-dispositions.md). Two follow-on goals opened: claude-implementer-read-roots-writable (an implementer's Bash can write the live root through --add-dir) and claude-critic-shell-network-deny (F-3). Then: live probe of round two, critique r2, close, land, rebuild, up, and a real dispatched critic as the final proof.
+- Next step: STATE 2026-09-06 19:40Z (m1c): round two (ccs-build1-r2) built the fold: denyWrite = workspace root plus read roots for the critic set, --scratch on adapter claude-settings, one scratch dir per delegate round under the system temp dir with TMPDIR/GOCACHE/GOTMPDIR, tests; conformance r2 tree b7d5a0f81ae32cb3a2e39e3e370133e13a4222d4; static proofs and the live probe with the round-two engine running seat-side. Next: critique r2 (ccs-critic2 on ccs-build1-r2, review round 2 of 3), dispositions, register advance, close, land.sh --chain, rebuild, up, and the final proof is a real dispatched claude critic whose evidence says ran. Follow-on goals opened today: claude-implementer-read-roots-writable, claude-critic-shell-network-deny.
 - OpenedAt: 2026-09-06T11:01:39Z
-- Revision: 7
+- Revision: 8
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -24,4 +24,5 @@ History:
 - 2026-09-06T19:01:09Z CTBHAGHYFJDB2083YP2GCXK9JF-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
 - 2026-09-06T19:16:03Z CRCNR8KY4KYV3BRQ4FY13MBAGA-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
 - 2026-09-06T19:24:51Z QSV63AC5RNVWZ7BBQV0PAFTTN9-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
-Integrity: sha256=d8ab730275b386f0a4ec1f7a04fbef32c0d52f356929347ceea0e3d4c3c1408d
+- 2026-09-06T19:47:37Z 0PVSJ8F0CPTD3N8GPNGNGABN93-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
+Integrity: sha256=f34977442748862d407e507cfb8841d1757500d462f75782da4b6969219f76d7
