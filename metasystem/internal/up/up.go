@@ -429,11 +429,49 @@ func enrollmentDrift(components []ComponentOutcome, err error, installationRoot,
 		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem steward restart --repo %s", repoRoot)
 	} else if strings.Contains(err.Error(), "owns no remote-tracking landing ref") {
 		remedy = fmt.Sprintf("run git -C %s config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch> once on this machine, or re-arm at the terminal", installationRoot)
+	} else if remote, ok := notLandedRemote(err.Error()); ok {
+		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem up, or from an agent-free terminal run metasystem steward restart --repo %s", installationRoot, remote, repoRoot)
 	}
 	components = append(components, ComponentOutcome{
 		Component: "accepted-engine", Outcome: "ENROLLMENT_DRIFT", Detail: err.Error(), Remedy: remedy,
 	})
 	return Result{Components: components, Outcome: "ENROLLMENT_DRIFT", Failed: "accepted-engine", Remedy: remedy}
+}
+
+func notLandedRemote(message string) (string, bool) {
+	for _, marker := range []string{"not proven landed on ", "not landed on "} {
+		at := strings.Index(message, marker)
+		if at < 0 {
+			continue
+		}
+		fields := strings.Fields(message[at+len(marker):])
+		if len(fields) == 0 {
+			continue
+		}
+		ref := strings.TrimSuffix(fields[0], ":")
+		tail := strings.TrimPrefix(ref, "refs/remotes/")
+		remote, branch, qualified := strings.Cut(tail, "/")
+		if tail != ref && qualified && remote != "" && branch != "" {
+			return remote, true
+		}
+	}
+	return "", false
+}
+
+func beforeMintRemedy(err error, repoRoot string) string {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "no notification channel is configured"):
+		return fmt.Sprintf("set the notification command with git -C %s config --local metasystem.steward.notify-command <command>, then rerun metasystem up", repoRoot)
+	case strings.Contains(message, "create runner directory"):
+		return fmt.Sprintf("make the steward runner directory %s writable, then rerun metasystem up", filepath.Join(repoRoot, "artifacts", "agents", "steward"))
+	case strings.Contains(message, "open arm lock"), strings.Contains(message, "take arm lock"):
+		return fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem up", filepath.Join(repoRoot, "artifacts", "agents", "steward", "arm.flock"))
+	case strings.Contains(message, "re-publish identity with durability pending"):
+		return "repair the enrollment identity publication, then rerun metasystem up"
+	default:
+		return "repair the named enrollment publication failure, then rerun metasystem up"
+	}
 }
 
 func openInvokingEnrollment(options Options, allowReArm bool) (*steward.EnrolledBinary, steward.ReArmOutcome, error) {
@@ -560,7 +598,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 			if errors.Is(err, steward.ErrEnrollmentDrift) {
 				return finish(enrollmentDrift(components, err, installationRoot(options), options.Root))
 			}
-			return finish(failure(components, "accepted-engine", err, "repair the named enrollment publication failure, then rerun metasystem up"))
+			return finish(failure(components, "accepted-engine", err, beforeMintRemedy(err, options.Root)))
 		}
 	}
 	defer enrolled.Close()

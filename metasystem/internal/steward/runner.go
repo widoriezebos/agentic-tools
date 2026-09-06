@@ -509,21 +509,23 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 	if _, ok := NotifyCommand(top); !ok {
 		return outcome, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
 	}
-	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
-		return outcome, err
+	runnerPath := runnerDir(top)
+	if err := os.MkdirAll(runnerPath, 0o755); err != nil {
+		return outcome, fmt.Errorf("create runner directory %s: %w", runnerPath, err)
 	}
 	// One arm at a time. Every field and eligibility fact is read inside the
 	// lock, and neither a refusal nor a no-op touches a live runner.
-	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
+	armLockPath := filepath.Join(runnerPath, "arm.flock")
+	armLock, err := os.OpenFile(armLockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return outcome, err
+		return outcome, fmt.Errorf("open arm lock %s: %w", armLockPath, err)
 	}
 	defer armLock.Close()
 	if beforeArmLock != nil {
 		beforeArmLock()
 	}
 	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
-		return outcome, err
+		return outcome, fmt.Errorf("take arm lock %s: %w", armLockPath, err)
 	}
 	identityPath := RepoIdentityPath(top)
 	prior, priorErr := VerifyIdentity(identityPath, top)
@@ -571,14 +573,20 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 		}
 		return outcome, nil
 	}
+	replaceForHumanTerminalWitness := false
 	if rec, alive := liveRunner(top); alive {
 		if !replace {
-			outcome.RunnerPid = rec.Pid
-			outcome.Message = fmt.Sprintf("already armed (runner pid %d); %s", rec.Pid, EnrollmentProvenance(prior))
-			if prior.MintedBy == "" || prior.MintedBy == "machine-rebuild" {
-				outcome.Message += " — run steward restart at the terminal to witness it"
+			humanTerminalBytesChanged := priorErr == nil && plan.MintedBy == "human-terminal" &&
+				bytesPath == prior.InstallPath && bytes.Digest != prior.InstallDigest
+			if !humanTerminalBytesChanged {
+				outcome.RunnerPid = rec.Pid
+				outcome.Message = fmt.Sprintf("already armed (runner pid %d); %s", rec.Pid, EnrollmentProvenance(prior))
+				if prior.MintedBy == "" || prior.MintedBy == "machine-rebuild" {
+					outcome.Message += " — run steward restart at the terminal to witness it"
+				}
+				return outcome, nil
 			}
-			return outcome, nil
+			replaceForHumanTerminalWitness = true
 		}
 		outcome.StoppedRunnerPid = rec.Pid
 		outcome.Stage = StageStopAttempted
@@ -634,6 +642,11 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 	if machine {
 		outcome.Message = fmt.Sprintf("armed (runner pid %d) (generation=%d previous=%d engine=%s landed=%s ref=%s)%s",
 			record.Pid, generation, prior.Generation, plan.EngineBuild, shortCommit(plan.LandedCommit), plan.LandingRef, pending)
+		return outcome, nil
+	}
+	if replaceForHumanTerminalWitness {
+		outcome.Message = fmt.Sprintf("replaced live runner pid %d after the enrolled engine bytes changed; armed human-terminal generation %d with human witness %d (runner pid %d)%s",
+			outcome.StoppedRunnerPid, generation, witnessed, record.Pid, pending)
 		return outcome, nil
 	}
 	if plan.Word != "" {

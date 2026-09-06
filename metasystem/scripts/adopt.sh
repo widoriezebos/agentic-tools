@@ -386,19 +386,24 @@ adopter_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
   || die 1 "adoption refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine"
 if git -C "$target" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$target" config metasystem.goal.machine "$adopter_nickname"
-  target_branch=$(git -C "$target" symbolic-ref --quiet --short HEAD) \
-    || die 1 "adoption refused: the target checkout is detached, so its landing branch cannot be enrolled"
-  if target_upstream=$(git -C "$target" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null); then
-    case "$target_upstream" in
-      refs/remotes/*/*)
-        git -C "$target" config --local metasystem.steward.landing-ref "$target_upstream"
-        ;;
-      *)
-        echo "adoption: landing ref was not seeded: target branch $target_branch has upstream $target_upstream, not refs/remotes/<remote>/<branch>" >&2
-        ;;
-    esac
+  if existing_landing_ref=$(git -C "$target" config --local --no-includes --get metasystem.steward.landing-ref 2>/dev/null) \
+    && [[ -n "$existing_landing_ref" ]]; then
+    echo "adoption: landing ref was kept: metasystem.steward.landing-ref=$existing_landing_ref" >&2
+  elif target_branch=$(git -C "$target" symbolic-ref --quiet --short HEAD); then
+    if target_upstream=$(git -C "$target" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null); then
+      case "$target_upstream" in
+        refs/remotes/*/*)
+          git -C "$target" config --local metasystem.steward.landing-ref "$target_upstream"
+          ;;
+        *)
+          echo "adoption: landing ref was not seeded: target branch $target_branch has upstream $target_upstream, not refs/remotes/<remote>/<branch>" >&2
+          ;;
+      esac
+    else
+      echo "adoption: landing ref was not seeded: target branch $target_branch has no upstream; automatic machine re-arm remains disabled until the key is configured" >&2
+    fi
   else
-    echo "adoption: landing ref was not seeded: target branch $target_branch has no upstream; automatic machine re-arm remains disabled until the key is configured" >&2
+    echo "adoption: landing ref was not seeded: the target checkout is detached; automatic machine re-arm remains disabled until the key is configured" >&2
   fi
 fi
 

@@ -174,6 +174,70 @@ func TestMissingConfiguredLandingRefNamesItsActualRepair(t *testing.T) {
 	}
 }
 
+func TestNotLandedRebuildNamesFetchAndTerminalRepairs(t *testing.T) {
+	root := t.TempDir()
+	want := fmt.Sprintf("run git -C %s fetch origin once, then rerun metasystem up, or from an agent-free terminal run metasystem steward restart --repo %s", root, root)
+	for name, message := range map[string]string{
+		"commit is not landed":         "rebuilt engine was built from abcdef0, which is not landed on refs/remotes/origin/trunk",
+		"witness is not proven landed": "rebuilt engine was built from witness-0123456789ab, which is not proven landed on refs/remotes/origin/trunk: no matching commit",
+	} {
+		t.Run(name, func(t *testing.T) {
+			result := enrollmentDrift(nil, fmt.Errorf("%w: rebuilt engine at %s: %s", steward.ErrEnrollmentDrift, root, message), root, root)
+			if result.Remedy != want {
+				t.Fatalf("not-landed rebuild named the wrong repair:\n got: %s\nwant: %s", result.Remedy, want)
+			}
+		})
+	}
+}
+
+func TestBeforeMintFailuresNameTheirActualRepair(t *testing.T) {
+	root := t.TempDir()
+	armLock := filepath.Join(root, "artifacts", "agents", "steward", "arm.flock")
+	tests := []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{
+			name:    "notification command",
+			message: "no notification channel is configured; an unreachable watchdog guards nothing",
+			want:    fmt.Sprintf("set the notification command with git -C %s config --local metasystem.steward.notify-command <command>, then rerun metasystem up", root),
+		},
+		{
+			name:    "runner directory",
+			message: "create runner directory: permission denied",
+			want:    fmt.Sprintf("make the steward runner directory %s writable, then rerun metasystem up", filepath.Dir(armLock)),
+		},
+		{
+			name:    "arm lock open",
+			message: "open arm lock: permission denied",
+			want:    fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem up", armLock),
+		},
+		{
+			name:    "arm lock acquisition",
+			message: "take arm lock: resource temporarily unavailable",
+			want:    fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem up", armLock),
+		},
+		{
+			name:    "identity publication",
+			message: "re-publish identity with durability pending: input/output error",
+			want:    "repair the enrollment identity publication, then rerun metasystem up",
+		},
+		{
+			name:    "unrecognized failure",
+			message: "unexpected before-mint failure",
+			want:    "repair the named enrollment publication failure, then rerun metasystem up",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := beforeMintRemedy(fmt.Errorf("%s", test.message), root); got != test.want {
+				t.Fatalf("wrong before-mint repair:\n got: %s\nwant: %s", got, test.want)
+			}
+		})
+	}
+}
+
 func TestOrdinaryUpRefusesAStrangerBeforeSessionState(t *testing.T) {
 	for _, changed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enrolled bytes changed=%t", changed), func(t *testing.T) {

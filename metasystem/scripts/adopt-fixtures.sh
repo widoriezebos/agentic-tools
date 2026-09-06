@@ -410,6 +410,71 @@ PLAN
   src_sha=$(git -C "$srcrepo" rev-parse HEAD)
 
 
+  echo "adopt fixture leg started: a detached target must finish adoption without seeding a landing ref" >&2
+  detached_tgt="$tmp/adopt-detached"
+  git init -q -b trunk "$detached_tgt"
+  printf 'detached target\n' >"$detached_tgt/README.md"
+  git -C "$detached_tgt" add README.md
+  git -C "$detached_tgt" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
+  git -C "$detached_tgt" checkout -q --detach
+  if ! bash "$adopt" "$detached_tgt" --runtimes none >"$tmp/adopt-detached.out" 2>&1; then
+    echo "adopt fixture leg failed: detached target did not finish adoption" >&2
+    tail -80 "$tmp/adopt-detached.out" >&2
+    exit 1
+  fi
+  grep -Fq 'landing ref was not seeded: the target checkout is detached; automatic machine re-arm remains disabled until the key is configured' "$tmp/adopt-detached.out" \
+    || { echo "adopt fixture leg failed: detached target omitted the landing-ref note" >&2; tail -80 "$tmp/adopt-detached.out" >&2; exit 1; }
+  if git -C "$detached_tgt" config --local --no-includes --get metasystem.steward.landing-ref >/dev/null 2>&1; then
+    echo "adopt fixture leg failed: detached target received a landing ref" >&2
+    exit 1
+  fi
+  echo "adopt fixture leg passed: detached target finished with automatic machine re-arm disabled" >&2
+
+  echo "adopt fixture leg started: a preset landing ref must be kept" >&2
+  preset_tgt="$tmp/adopt-preset-landing-ref"
+  git init -q -b trunk "$preset_tgt"
+  printf 'preset landing ref target\n' >"$preset_tgt/README.md"
+  git -C "$preset_tgt" add README.md
+  git -C "$preset_tgt" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
+  git -C "$preset_tgt" update-ref refs/remotes/origin/trunk HEAD
+  git -C "$preset_tgt" branch --set-upstream-to=origin/trunk trunk >/dev/null
+  git -C "$preset_tgt" config --local metasystem.steward.landing-ref refs/remotes/kept/stable
+  if ! bash "$adopt" "$preset_tgt" --runtimes none >"$tmp/adopt-preset-landing-ref.out" 2>&1; then
+    echo "adopt fixture leg failed: target with a preset landing ref did not finish adoption" >&2
+    tail -80 "$tmp/adopt-preset-landing-ref.out" >&2
+    exit 1
+  fi
+  grep -Fq 'landing ref was kept: metasystem.steward.landing-ref=refs/remotes/kept/stable' "$tmp/adopt-preset-landing-ref.out" \
+    || { echo "adopt fixture leg failed: preset landing ref was kept without a note" >&2; tail -80 "$tmp/adopt-preset-landing-ref.out" >&2; exit 1; }
+  [[ "$(git -C "$preset_tgt" config --local --no-includes --get metasystem.steward.landing-ref)" == refs/remotes/kept/stable ]] \
+    || { echo "adopt fixture leg failed: preset landing ref was overwritten" >&2; exit 1; }
+  echo "adopt fixture leg passed: preset landing ref was kept" >&2
+
+  echo "adopt fixture leg started: a detached target with a preset landing ref must keep it" >&2
+  detached_preset_tgt="$tmp/adopt-detached-preset-landing-ref"
+  git init -q -b trunk "$detached_preset_tgt"
+  printf 'detached preset landing ref target\n' >"$detached_preset_tgt/README.md"
+  git -C "$detached_preset_tgt" add README.md
+  git -C "$detached_preset_tgt" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
+  git -C "$detached_preset_tgt" config --local metasystem.steward.landing-ref refs/remotes/kept/detached
+  git -C "$detached_preset_tgt" checkout -q --detach
+  if ! bash "$adopt" "$detached_preset_tgt" --runtimes none >"$tmp/adopt-detached-preset-landing-ref.out" 2>&1; then
+    echo "adopt fixture leg failed: detached target with a preset landing ref did not finish adoption" >&2
+    tail -80 "$tmp/adopt-detached-preset-landing-ref.out" >&2
+    exit 1
+  fi
+  grep -Fq 'landing ref was kept: metasystem.steward.landing-ref=refs/remotes/kept/detached' "$tmp/adopt-detached-preset-landing-ref.out" \
+    || { echo "adopt fixture leg failed: detached target omitted the kept landing-ref note" >&2; tail -80 "$tmp/adopt-detached-preset-landing-ref.out" >&2; exit 1; }
+  if grep -Fq 'landing ref was not seeded' "$tmp/adopt-detached-preset-landing-ref.out"; then
+    echo "adopt fixture leg failed: detached target with a preset landing ref printed a not-seeded note" >&2
+    tail -80 "$tmp/adopt-detached-preset-landing-ref.out" >&2
+    exit 1
+  fi
+  [[ "$(git -C "$detached_preset_tgt" config --local --no-includes --get metasystem.steward.landing-ref)" == refs/remotes/kept/detached ]] \
+    || { echo "adopt fixture leg failed: detached target's preset landing ref was overwritten" >&2; exit 1; }
+  echo "adopt fixture leg passed: detached target kept its preset landing ref" >&2
+
+
   tgt="$tmp/adopt-default"
   mkdir -p "$tgt"
   printf 'project readme\n' >"$tgt/README.md"

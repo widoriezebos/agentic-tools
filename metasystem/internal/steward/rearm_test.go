@@ -615,6 +615,29 @@ func TestHumanArmBesideALiveLegacyRunnerNamesRestart(t *testing.T) {
 	}
 }
 
+func TestHumanArmWithChangedEnrolledBytesReplacesLiveRunnerAndWitnessesGeneration(t *testing.T) {
+	bed := newRearmBed(t, true)
+	before, alive := liveRunner(bed.root)
+	if !alive {
+		t.Fatal("fixture runner was not alive before the human arm")
+	}
+
+	message, err := Arm(bed.root, bed.engine)
+	if err != nil || !strings.Contains(message, fmt.Sprintf("replaced live runner pid %d", before.Pid)) ||
+		!strings.Contains(message, "human-terminal generation 2") {
+		t.Fatalf("human arm did not report the witnessed replacement: %q %v", message, err)
+	}
+	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil || installed.Generation != 2 || installed.MintedBy != "human-terminal" ||
+		installed.HumanWitnessedGeneration != 2 || installed.EngineBuild != bed.second {
+		t.Fatalf("human arm did not mint its own witnessed generation: %+v %v", installed, err)
+	}
+	after, alive := liveRunner(bed.root)
+	if !alive || after.Pid == before.Pid {
+		t.Fatalf("human arm did not replace the live runner: before=%+v after=%+v alive=%t", before, after, alive)
+	}
+}
+
 func TestCommandTimeDriftSurvivesTheStewardLaunchChain(t *testing.T) {
 	bed := newRearmBed(t, false)
 	// Restore the first engine so the staged enrollment is current.
