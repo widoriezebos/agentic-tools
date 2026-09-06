@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: One chain, DESIGN-BEARING at the ledger grammar (a design revision first, small): the record fields and their event grammar, the human verb with its re-sequencing rule, the ordered listing, the next verb and its tie to the claim rule (one claim per machine, pins respected), the status report line; fixtures: set-priority reorders and re-sequences; next returns the expected goal for a pinned and an unpinned machine; a goal without priority sorts last; the sweep-approved backlog stays valid. Wido sets the first priorities himself once the verb exists. Any free seat.
 - OpenedAt: 2026-09-06T12:34:05Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:34:28Z revision=2 opid=YRABK927PRM5N2ASNMKZVEYKWH-m1-7cd0bd60 authority=proven digest=57ae2782caf8a6b6be34f6216d0244fa1b0923b0cd41b028e58e3eaf293f436b
@@ -15,4 +16,5 @@
 History:
 - 2026-09-06T12:34:05Z TDE1XRY1CH2KR2VBCXFHJHW82P-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=backlog-ordered-by-priority
 - 2026-09-06T12:34:28Z YRABK927PRM5N2ASNMKZVEYKWH-m1-7cd0bd60 approve actor=human:Wido targets=backlog-ordered-by-priority
-Integrity: sha256=2399fe44478c397601d4217851e29b067f56859c600458ed1d291db872eac508
+- 2026-09-06T15:43:18Z DC782RYCANRSNPZP6ZSEBP01VZ-m1-7cd0bd60 set-pin actor=human:Wido targets=backlog-ordered-by-priority
+Integrity: sha256=808246f674ad90e799af44f6a8b810aac7bea8c9b6810d2d38d37ba0430bb374
