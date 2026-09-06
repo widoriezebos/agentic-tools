@@ -1,20 +1,23 @@
 # fixture-stewards-reach-the-desktop
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: nothing unsafe is permitted, but fake alerts on the operator's desktop teach the operator to ignore the real ones, and a real alert lost in that noise is the alert channel failing at its one job; novelty 1: one gate in a function that exists and one field on a record that exists; exposure 3: every macOS host that runs any suite arming a steward, and every builder sandbox on it - three seats on one host today; accumulation 2: every suite run on every seat adds pop-ups, so it grows with the fleet"
 - Tier: 3
 - Intent: The operator's desktop receives alerts from stewards that fixtures arm in temporary repositories. internal/steward/notify.go resolves the delivery command from the repository's git config and, when none is set, falls back on macOS to the platform notifier (osascript display notification) for ANY repository root; health-fixtures.sh, dispatch-fixtures.sh and supervision-hook-fixtures.sh arm stewards in temporary repositories, and every builder round runs those suites in its sandbox on this host, so Wido gets 'HEALTH unhealthy' pop-ups naming a repository under a temp folder (2026-09-06). Wido's word: the host receives real messages only, never test messages. The platform notifier is the operator's channel and only an installation the operator enrolled may use it: a steward enrolled by a human act (permanent generation at a terminal, or a temporary human word) reaches the desktop; a steward enrolled under fixture authority (the fixtureauth owner bound to a fake-runtime root) never does - its deliveries go to a notifications log under its own artifacts so a fixture can still assert that an alert was delivered. A real desktop message names its installation root, so an operator with several seats on one host can tell them apart.
 - Origin: main
 - Next step: MECHANICAL, one chain: (1) the steward identity record (internal/steward/identity.go) carries how it was enrolled - human-terminal, temporary-word, or fixture - written at arm/restart from the authority proof that already distinguishes them (internal/humanauthority, FixtureOnly / FixtureGoalProof); (2) NotifyCommand and Deliver in internal/steward/notify.go consult it: an explicit metasystem.steward.notify-command still wins for any enrollment (a fixture may point it at a recording command); without one, the darwin platform notifier is returned only for a human enrollment, and a fixture enrollment delivers by appending the message to artifacts/agents/steward/notifications.log under its own root and returns nil (delivered, so launches gated on delivery still proceed); an identity without the field (minted before this lands) counts as human until its next restart, so no live steward goes silent; (3) the platform message carries the installation root after the title, e.g. 'metasystem steward - /Users/wido/.../agentic-tools-m1b/metasystem'. Tests: Go unit tests for NotifyCommand/Deliver per enrollment kind (fake platform via an injected runner, not osascript); health-fixtures.sh asserts its steward's alert landed in the notifications log and that no osascript ran (wrap PATH with a recording osascript that fails the suite if called). Receipt: go gate plus health-fixtures.sh and supervision-hook-fixtures.sh. Until it lands, any seat running suites on a Mac can set git config metasystem.steward.notify-command in the fixture repositories to a no-op - but that is the leaky discipline this goal replaces, so do the engine gate.
 - OpenedAt: 2026-09-06T07:46:47Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1d
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T08:37:53Z revision=2 opid=Y88BHYQXARNE0C3CSRZXRX5FMZ-m1-a4f8999f authority=proven digest=17f239dfcd727e1fc185e0bac94bb1e67c2174ad79a126af2745c15ffaa04ea9
+- Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T16:17:46Z revision=4 accountingRevision=4
+- StopCapability: generation=4 revision=4 machine=m1d claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T07:46:47Z H137WSFBYKWVX4CVENVAJGCWK4-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=fixture-stewards-reach-the-desktop
 - 2026-09-06T08:37:53Z Y88BHYQXARNE0C3CSRZXRX5FMZ-m1-a4f8999f approve actor=human:Wido targets=fixture-stewards-reach-the-desktop
 - 2026-09-06T08:37:55Z 2F806GC9BTA0E13RV32EZWVH6F-m1-a4f8999f set-pin actor=human:Wido targets=fixture-stewards-reach-the-desktop
-Integrity: sha256=c5908fcbfc0c3792f299a2b1a8a06a2477aa5f0b44f82f6d4b21731b9163fc10
+- 2026-09-06T16:17:46Z WV3THRE719RN8P34TVG4E4WJ4Y-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=fixture-stewards-reach-the-desktop
+Integrity: sha256=e572644fcfab4ac471105d471e232e80bed99c868329b948af262d655037de05
