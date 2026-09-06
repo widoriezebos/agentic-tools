@@ -117,6 +117,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "AUTHENTICATED_CHANNEL_WORD", Reason: "an authority outcome that admits rather than refuses"},
 	{Pattern: "VERIFIED_CHANNEL_ANSWER", Reason: "an authority outcome that admits rather than refuses"},
 	{Pattern: "AUTO_HEAL_ELIGIBLE", Reason: "a steward health observation that refuses nothing"},
+	{Pattern: "DEADLINE_EXPIRED", Reason: "a steward health observation that refuses nothing"},
 	{Pattern: "AUTO_HEAL_ENDED", Reason: "a steward health observation that refuses nothing"},
 	{Pattern: "HEALING_FLAPPING", Reason: "a steward health observation that refuses nothing"},
 	{Pattern: "NO_LAWFUL_REMEDY", Reason: "a steward health observation that refuses nothing"},
