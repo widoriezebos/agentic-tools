@@ -234,6 +234,9 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
 		{"zero steward tick patience", "steward.tick-patience-sec=0\n", "steward.tick-patience-sec must be a positive integer"},
 		{"overflowing steward tick patience", "steward.tick-patience-sec=9223372037\n", "steward.tick-patience-sec must be no greater than"},
+		{"zero Stop slow threshold", "steward.stop-slow-sec=0\n", "steward.stop-slow-sec must be a positive integer"},
+		{"Stop slow threshold reaches budget", "steward.stop-slow-sec=60\n", "steward.stop-slow-sec must be below the sixty-second Stop budget"},
+		{"Stop slow threshold exceeds budget", "steward.stop-slow-sec=61\n", "steward.stop-slow-sec must be below the sixty-second Stop budget"},
 		{"zero counselor cadence", "metasystem.counselor.brief-cadence-hours=0\n", "metasystem.counselor.brief-cadence-hours must be a positive integer"},
 		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
 		{"share over 100", "census.max-interval-share-percent=150\n", "census.max-interval-share-percent must be an integer between 1 and 100"},
@@ -255,7 +258,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nlanding.receipt-bound-min=40\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\n"
+	good := validConf + "exec.local-timeout-sec=120\nlanding.receipt-bound-min=40\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\nsteward.stop-slow-sec=59\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
 	}

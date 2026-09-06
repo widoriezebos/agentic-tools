@@ -99,7 +99,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   }
   deadline_resolve_record || true
   deadline_log_stop_outcome() {
-    local outcome=$1 supervision_dir supervision_root deadline_now_epoch deadline_elapsed_sec
+    local outcome=$1 measured_elapsed=${2:-} supervision_dir supervision_root deadline_now_epoch deadline_elapsed_sec
     [[ -n "${deadline_repo:-}" ]] || return 0
     supervision_root=$deadline_repo
     if [[ -f "$deadline_repo/development/metasystem-design.md" &&
@@ -110,9 +110,13 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     # The evidence trail sits beside the rest of the supervision state.
     supervision_dir="$supervision_root/artifacts/agents/supervision"
     mkdir -p "$supervision_dir" || true
-    deadline_now_epoch=$(date -u +%s)
-    deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
-    (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
+    if [[ "$measured_elapsed" =~ ^[0-9]+$ ]]; then
+      deadline_elapsed_sec=$((10#$measured_elapsed))
+    else
+      deadline_now_epoch=$(date -u +%s)
+      deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
+      (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
+    fi
     printf '%s stop response outcome=%s elapsed=%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$outcome" "$deadline_elapsed_sec" >>"$supervision_dir/hooks.log" 2>/dev/null || true
   }
@@ -268,6 +272,13 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     fi
   fi
   wait "$deadline_worker" 2>/dev/null || true
+  deadline_now_epoch=$(date -u +%s)
+  deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
+  (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
+  if [[ -n "${deadline_repo:-}" && -x "$deadline_canonical" ]]; then
+    "$deadline_canonical" steward hook-expire --repo "$deadline_repo" \
+      --elapsed-sec "$deadline_elapsed_sec" >/dev/null 2>&1 || true
+  fi
   if [[ "$deadline_published" == true ]]; then
     command cat "$deadline_stdout" || true
     rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
@@ -286,10 +297,10 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
   fi
   if [[ -n "$deadline_response" && -z "$deadline_record_failure" ]]; then
-    deadline_log_stop_outcome deadline-expired-block
+    deadline_log_stop_outcome deadline-expired-block "$deadline_elapsed_sec"
     printf '%s\n' "$deadline_response"
   else
-    deadline_log_stop_outcome deadline-expired-record-failure-allow
+    deadline_log_stop_outcome deadline-expired-record-failure-allow "$deadline_elapsed_sec"
     printf '%s\n' '{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
   fi
   rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \

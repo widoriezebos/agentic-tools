@@ -79,7 +79,7 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios health \
-    "health fixtures: direct rc 0/1/2, ten roles, silent first-failure history, escalated episode dedup, acknowledgment, and healthy clear PASSED" \
+    "health fixtures: direct rc 0/1/2, eleven asserted healthy roles, silent first-failure history, escalated episode dedup, acknowledgment, and healthy clear PASSED" \
     "$fixture_bed_script" direct-verdicts narrator-recovery alert-episode
 fi
 case "$fixture_scenario" in
@@ -334,11 +334,29 @@ wait_for_pid_exit() { # name, pid
 runner_pid=$(read_runner_pid)
 [[ -n "$runner_pid" ]] || fail "initial arm recorded no runner pid"
 wait_for_healthy healthy || fail "armed repository did not become healthy"
-for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness claimed-goal-appetite nonterminal-jobs capability-snapshots; do
+for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness stop-hook-duration claimed-goal-appetite nonterminal-jobs capability-snapshots; do
   grep -Fq "$role=alive" "$tmp/healthy.out" || fail "healthy line omitted $role"
 done
+grep -Fq 'stop-hook-duration=alive (the last Stop carried no measurement)' "$tmp/healthy.out" \
+  || fail "healthy line did not explain its unmeasured Stop duration"
 
 if [[ "$fixture_scenario" == direct-verdicts ]]; then
+# A measured slow Stop is a direct unhealthy verdict. Preserve and restore the
+# real hook record so the remaining verdict legs keep their own starting fact.
+hook_evidence=$repo/artifacts/agents/steward/components/supervision-hook.json
+hook_evidence_backup=$tmp/supervision-hook.before-slow.json
+cp "$hook_evidence" "$hook_evidence_backup"
+"$ms" json set --file "$hook_evidence" --int lastStopElapsedSec=20 \
+  || fail "slow Stop record could not be written"
+run_health slow-stop
+slow_stop_rc=$health_rc
+[[ "$slow_stop_rc" -eq 1 ]] || { cat "$tmp/slow-stop.err" >&2; fail "slow Stop bed returned $slow_stop_rc"; }
+grep -Fq 'stop-hook-duration=dead' "$tmp/slow-stop.out" \
+  && grep -Fq 'the last Stop took 20s of the 60s budget' "$tmp/slow-stop.out" \
+  || fail "slow Stop verdict did not name its twenty seconds and sixty-second budget"
+cp "$hook_evidence_backup" "$hook_evidence"
+wait_for_healthy slow-stop-recovered || fail "restored Stop record did not become healthy"
+
 # Exit 2 uses a malformed job record; runner and narrator failures below use
 # their actual processes rather than edited completion evidence.
 printf '{"jobId":"unknown-job"}\n' >"$repo/artifacts/agents/jobs/unknown-job.json"

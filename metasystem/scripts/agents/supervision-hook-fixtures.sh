@@ -519,14 +519,25 @@ grep -Fq 'hook-freshness=dead' "$tmp/after-kill.out" \
 grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "the post-kill hook turn did not complete its own emission" >&2; exit 1; }
 
-# Delaying the first engine operation proves that pre-verdict work and the
-# verdict share one end-to-end Stop budget. The wrapper finishes on its own
-# shortly after the deadline, so the fixture leaves no long-running process.
+# Delaying the return from the recorded hook attempt proves that pre-verdict
+# work and the verdict share one end-to-end Stop budget. The wrapper finishes
+# on its own shortly after the deadline, so the fixture leaves no long-running
+# process and the parent can close the exact attempt it stopped.
 deadline_engine=$tmp/deadline-engine
 cat >"$deadline_engine" <<'SH'
 #!/usr/bin/env bash
-if [[ ${1:-} == runtime && ${2:-} == list ]]; then
-  sleep 57.5
+if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
+  "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@" || exit $?
+  hook_parent=$PPID
+  delay_started=$SECONDS
+  while kill -0 "$hook_parent" 2>/dev/null && (( SECONDS - delay_started < 61 )); do
+    sleep 0.05
+  done
+  if kill -0 "$hook_parent" 2>/dev/null; then
+    echo "supervision hook deadline fixture delay ceiling reached (elapsed: $((SECONDS - delay_started))s; cap: 61s)" >&2
+    exit 70
+  fi
+  exit 0
 fi
 exec "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@"
 SH
@@ -548,6 +559,11 @@ grep -Fq 'deadline expired before a safe turn verdict' "$tmp/deadline.out" \
 grep -Eq 'stop response outcome=deadline-expired-block elapsed=5[0-9]s$' \
   "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "supervision hook deadline fixture did not log its elapsed deadline refusal" >&2; exit 1; }
+[[ $($ms json get --file "$hook_evidence" --field outcome) == DEADLINE_EXPIRED ]] \
+  || { echo "supervision hook deadline fixture did not complete the expired attempt" >&2; exit 1; }
+grep -Eq '"lastStopElapsedSec": 5[0-9]' "$hook_evidence" \
+  && grep -Eq '"stopElapsedSec": 5[0-9]' "$hook_evidence" \
+  || { echo "supervision hook deadline fixture did not retain the elapsed expiry measurement" >&2; exit 1; }
 deadline_second_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \

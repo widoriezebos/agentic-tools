@@ -72,6 +72,17 @@ type ComponentAttemptHistory struct {
 
 const componentAttemptHistoryLimit = 100
 
+// HookExpireConflictError reports that the deadline parent lost its race with
+// a completion that already made the current hook attempt terminal.
+type HookExpireConflictError struct {
+	Result  ComponentResult
+	Outcome string
+}
+
+func (err *HookExpireConflictError) Error() string {
+	return fmt.Sprintf("hook expiry refused because the current attempt already completed as %s/%s", err.Result, err.Outcome)
+}
+
 func appendAttemptHistory(record *ComponentEvidence, completedAt time.Time, result ComponentResult, outcome, evidence string, stopElapsedSec *int64) {
 	entry := ComponentAttemptHistory{
 		Generation: record.Generation, AttemptSeq: record.AttemptSeq, TurnKeyDigest: record.TurnKeyDigest,
@@ -227,6 +238,48 @@ func BeginHookAttempt(repoRoot string, process identity.Ref, turnKey string, now
 		return ComponentEvidence{}, err
 	}
 	return previous, nil
+}
+
+// ExpireHookAttempt records the terminal fact observed by the Stop deadline
+// parent only while the current hook attempt is still unresolved.
+func ExpireHookAttempt(repoRoot string, stopElapsedSec int64, now time.Time) (ComponentEvidence, error) {
+	if stopElapsedSec < 0 {
+		return ComponentEvidence{}, fmt.Errorf("hook expiry stop elapsed seconds must be non-negative")
+	}
+	lock, err := lockComponentEvidence(repoRoot, "supervision-hook", unix.LOCK_EX)
+	if err != nil {
+		return ComponentEvidence{}, err
+	}
+	defer unlockComponentEvidence(lock)
+
+	path := ComponentEvidencePath(repoRoot, "supervision-hook")
+	record, err := loadComponentEvidence(path)
+	if err != nil {
+		return ComponentEvidence{}, err
+	}
+	if record.Component != "supervision-hook" {
+		return ComponentEvidence{}, fmt.Errorf("component evidence %s belongs to %s", filepath.Base(path), record.Component)
+	}
+	if record.Outcome != "ATTEMPTING" {
+		return ComponentEvidence{}, &HookExpireConflictError{Result: record.Result, Outcome: record.Outcome}
+	}
+	completion := now.UTC()
+	if completion.Before(record.LastAttempt) {
+		return ComponentEvidence{}, fmt.Errorf("hook expiry clock is earlier than the current attempt")
+	}
+	elapsed := stopElapsedSec
+	evidence := "the Stop deadline parent expired this hook attempt"
+	record.LastCompletion = completion
+	record.LastDurationMillis = completion.Sub(record.LastAttempt).Milliseconds()
+	record.LastStopElapsedSec = &elapsed
+	record.Result = ComponentError
+	record.Outcome = "DEADLINE_EXPIRED"
+	appendAttemptHistory(&record, completion, record.Result, record.Outcome, evidence, &elapsed)
+	record.EvidenceDigest = evidenceDigest(evidence)
+	if err := saveComponentEvidence(repoRoot, path, record); err != nil {
+		return ComponentEvidence{}, err
+	}
+	return record, nil
 }
 
 // completeComponentAttempt records a completion only for the exact attempt

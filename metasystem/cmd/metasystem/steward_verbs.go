@@ -188,6 +188,34 @@ func runStewardHookComplete(args []string) int {
 	return 0
 }
 
+func runStewardHookExpire(args []string) int {
+	flags := flag.NewFlagSet("steward hook-expire", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	elapsedSet := false
+	flags.Visit(func(parsed *flag.Flag) {
+		if parsed.Name == "elapsed-sec" {
+			elapsedSet = true
+		}
+	})
+	if *repo == "" || !elapsedSet {
+		fmt.Fprintln(os.Stderr, "steward hook-expire: --repo and --elapsed-sec are required")
+		return 2
+	}
+	if *elapsedSec < 0 {
+		fmt.Fprintln(os.Stderr, "steward hook-expire: --elapsed-sec must be non-negative")
+		return 2
+	}
+	if _, err := steward.ExpireHookAttempt(*repo, *elapsedSec, time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "steward hook-expire: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func runStewardDigestPending(args []string) int {
 	flags := flag.NewFlagSet("steward digest-pending", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")

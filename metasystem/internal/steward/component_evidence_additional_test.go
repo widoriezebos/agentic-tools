@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -8,6 +9,74 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+func TestExpireHookAttemptCompletesAttemptWithElapsedHistory(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 51, StartedAtSec: 100, StartTicks: 901, BootID: "boot-expire"}
+	attempt, err := BeginHookAttempt(root, process, "deadline-turn", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := ExpireHookAttempt(root, 57, now.Add(57*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Generation != attempt.Generation || record.AttemptSeq != attempt.AttemptSeq ||
+		record.Result != ComponentError || record.Outcome != "DEADLINE_EXPIRED" ||
+		record.LastStopElapsedSec == nil || *record.LastStopElapsedSec != 57 {
+		t.Fatalf("deadline expiry did not complete the exact attempt with its measurement: %+v", record)
+	}
+	if len(record.AttemptHistory) != 1 {
+		t.Fatalf("deadline expiry did not append one terminal history entry: %+v", record.AttemptHistory)
+	}
+	history := record.AttemptHistory[0]
+	if history.Generation != attempt.Generation || history.AttemptSeq != attempt.AttemptSeq ||
+		history.Result != ComponentError || history.Outcome != "DEADLINE_EXPIRED" ||
+		history.StopElapsedSec == nil || *history.StopElapsedSec != 57 {
+		t.Fatalf("deadline expiry history did not retain the exact terminal fact: %+v", history)
+	}
+	next, err := BeginHookAttempt(root, process, "turn-after-deadline", now.Add(58*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Generation == attempt.Generation || len(next.AttemptHistory) != 1 ||
+		next.AttemptHistory[0].Outcome != "DEADLINE_EXPIRED" {
+		t.Fatalf("the next turn did not start a new generation over the recorded expiry: %+v", next)
+	}
+}
+
+func TestExpireHookAttemptRefusesCompletedRecordWithoutChangingIt(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 6, 10, 5, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 52, StartedAtSec: 101, StartTicks: 902, BootID: "boot-complete"}
+	attempt, err := BeginHookAttempt(root, process, "completed-turn", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"systemMessage":"HEALTH healthy"}`
+	if _, err := CompleteHookAttempt(root, attempt.Generation, attempt.AttemptSeq,
+		ComponentOK, "EMITTED", "HEALTH healthy", payload, nil, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	path := ComponentEvidencePath(root, "supervision-hook")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ExpireHookAttempt(root, 57, now.Add(57*time.Second))
+	var conflict *HookExpireConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("completed hook expiry did not return its typed conflict: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("refused hook expiry changed the completed record\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
 
 func TestPublicComponentAttemptBoundaryRejectsStaleAndInvalidCompletions(t *testing.T) {
 	root := t.TempDir()

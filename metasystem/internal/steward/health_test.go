@@ -651,6 +651,115 @@ func TestHookEmissionAdvancesOnlyTheExactTurnSuccess(t *testing.T) {
 	}
 }
 
+func recordStopCompletion(t *testing.T, root string, elapsed *int64, outcome string) ComponentEvidence {
+	t.Helper()
+	now := time.Date(2026, 9, 6, 11, 0, 0, 0, time.UTC)
+	process := identity.Ref{Pid: 46001, StartedAtSec: 100, StartTicks: 903, BootID: "boot-duration"}
+	attempt, err := BeginHookAttempt(root, process, "duration-turn", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := ComponentOK
+	healthLine := "HEALTH healthy"
+	payload := `{"systemMessage":"HEALTH healthy"}`
+	if outcome == "DEADLINE_EXPIRED" {
+		result = ComponentError
+		healthLine = ""
+		payload = ""
+	}
+	record, err := CompleteHookAttempt(root, attempt.Generation, attempt.AttemptSeq,
+		result, outcome, healthLine, payload, elapsed, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+func writeStopDurationConfig(t *testing.T, root, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStopHookDurationFastCompletionIsAlive(t *testing.T) {
+	root := t.TempDir()
+	writeStopDurationConfig(t, root, "")
+	elapsed := int64(3)
+	recordStopCompletion(t, root, &elapsed, "EMITTED")
+	role := checkStopHookDuration(root)
+	if role.Status != HealthAlive || role.Reason != "the last Stop took 3s of the 60s budget" {
+		t.Fatalf("a three-second Stop was not healthy: %+v", role)
+	}
+}
+
+func TestStopHookDurationThresholdCompletionIsDead(t *testing.T) {
+	root := t.TempDir()
+	writeStopDurationConfig(t, root, "")
+	elapsed := int64(15)
+	recordStopCompletion(t, root, &elapsed, "EMITTED")
+	role := checkStopHookDuration(root)
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "the last Stop took 15s of the 60s budget") ||
+		!strings.Contains(role.Reason, "the threshold is 15s") || !strings.Contains(role.Remedy, "goal stop-hook-health-cost") {
+		t.Fatalf("a Stop at the slow threshold was not unhealthy with its remedy: %+v", role)
+	}
+}
+
+func TestStopHookDurationExpiredCompletionIsDead(t *testing.T) {
+	root := t.TempDir()
+	elapsed := int64(57)
+	recordStopCompletion(t, root, &elapsed, "DEADLINE_EXPIRED")
+	role := checkStopHookDuration(root)
+	if role.Status != HealthDead ||
+		!strings.Contains(role.Reason, "the last Stop expired its deadline after 57s of the 60s budget on this machine") ||
+		!strings.Contains(role.Remedy, "goal stop-hook-health-cost") {
+		t.Fatalf("an expired Stop was not unhealthy with its expiry reason: %+v", role)
+	}
+}
+
+func TestStopHookDurationUnmeasuredCompletionIsAlive(t *testing.T) {
+	root := t.TempDir()
+	recordStopCompletion(t, root, nil, "EMITTED")
+	role := checkStopHookDuration(root)
+	if role.Status != HealthAlive || role.Reason != "the last Stop carried no measurement" {
+		t.Fatalf("an unmeasured Stop did not retain compatibility health: %+v", role)
+	}
+}
+
+func TestStopHookDurationMissingRecordIsAlive(t *testing.T) {
+	role := checkStopHookDuration(t.TempDir())
+	if role.Status != HealthAlive || role.Reason != "no Stop has been measured yet" {
+		t.Fatalf("a fresh checkout was not healthy before its first Stop measurement: %+v", role)
+	}
+}
+
+func TestStopHookDurationConfiguredThresholdFlagsCompletion(t *testing.T) {
+	root := t.TempDir()
+	writeStopDurationConfig(t, root, "steward.stop-slow-sec=5\n")
+	elapsed := int64(6)
+	recordStopCompletion(t, root, &elapsed, "EMITTED")
+	role := checkStopHookDuration(root)
+	if role.Status != HealthDead || !strings.Contains(role.Reason, "the last Stop took 6s of the 60s budget") ||
+		!strings.Contains(role.Reason, "the threshold is 5s") {
+		t.Fatalf("the configured Stop threshold did not flag a six-second completion: %+v", role)
+	}
+}
+
+func TestStopHookDurationUsesLastHistoryWhileCurrentAttemptRuns(t *testing.T) {
+	root := t.TempDir()
+	writeStopDurationConfig(t, root, "")
+	elapsed := int64(3)
+	record := recordStopCompletion(t, root, &elapsed, "EMITTED")
+	process := identity.Ref{Pid: 46002, StartedAtSec: 101, StartTicks: 904, BootID: "boot-duration-next"}
+	if _, err := BeginHookAttempt(root, process, "duration-turn-next", record.LastCompletion.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	role := checkStopHookDuration(root)
+	if role.Status != HealthAlive || role.Reason != "the last Stop took 3s of the 60s budget" {
+		t.Fatalf("the in-progress Stop hid the newest completed measurement: %+v", role)
+	}
+}
+
 func TestNextHookTurnRetainsInterruptedAttemptAsFailedHistory(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 28, 11, 30, 0, 0, time.UTC)

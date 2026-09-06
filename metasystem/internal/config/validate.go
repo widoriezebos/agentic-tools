@@ -449,7 +449,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
-		"steward.tick-patience-sec",
+		"steward.tick-patience-sec", "steward.stop-slow-sec",
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
@@ -461,6 +461,11 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
 		if parsed, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && parsed > maxPatienceSeconds {
 			add("steward.tick-patience-sec must be no greater than %d seconds, got %s", maxPatienceSeconds, pyRepr(raw))
+		}
+	}
+	if raw, present := values["steward.stop-slow-sec"]; present {
+		if parsed, parseErr := strconv.Atoi(raw); parseErr == nil && parsed >= 60 {
+			add("steward.stop-slow-sec must be below the sixty-second Stop budget, got %s", pyRepr(raw))
 		}
 	}
 	if raw, present := values["census.max-interval-share-percent"]; present {

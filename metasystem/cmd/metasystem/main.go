@@ -470,6 +470,7 @@ func families() []family {
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
 				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
+				{"hook-expire", "record a supervision-hook deadline expiry (internal)", runStewardHookExpire},
 				{"digest-pending", "print narrator highlights and lowlights since the last check-in (internal)", runStewardDigestPending},
 				{"digest-advance", "advance the narrator digest after payload emission (internal)", runStewardDigestAdvance},
 			},

@@ -50,6 +50,7 @@ const (
 	RoleRetroDebt         HealthRole = "retro-debt"
 	RoleSessionMain       HealthRole = "session-main"
 	RoleHookFreshness     HealthRole = "hook-freshness"
+	RoleStopHookDuration  HealthRole = "stop-hook-duration"
 	RoleLedgerAttention   HealthRole = "ledger-attention"
 	// Keep the published role name stable for existing health consumers.
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
@@ -69,6 +70,7 @@ var healthRoleOrder = []HealthRole{
 	RoleRetroDebt,
 	RoleSessionMain,
 	RoleHookFreshness,
+	RoleStopHookDuration,
 	RoleLedgerAttention,
 	RoleClaimedGoalBudget,
 	RoleClaimedGoalDelivery,
@@ -276,6 +278,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		checkRetroDebt(repoRoot),
 		checkSessionMain(repoRoot, prober),
 		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
+		checkStopHookDuration(repoRoot),
 		checkLedgerAttention(repoRoot, now),
 		checkClaimedGoalBudgets(repoRoot, now),
 		checkClaimedGoalDelivery(repoRoot, now),
@@ -414,6 +417,59 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d did not complete as OK/EMITTED", record.Generation), remedy)
 	}
 	return roleAlive(RoleHookFreshness, fmt.Sprintf("turn generation %d completed as OK/EMITTED", record.Generation))
+}
+
+// stopHookBudgetSeconds matches the Stop budget shipped by the registration
+// templates under metasystem/scripts/enforcement.
+const stopHookBudgetSeconds = 60
+
+const defaultStopHookSlowSeconds = 15
+
+func checkStopHookDuration(repoRoot string) RoleVerdict {
+	reread := fmt.Sprintf("metasystem health --repo %q", repoRoot)
+	record, _, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return roleAlive(RoleStopHookDuration, "no Stop has been measured yet")
+		}
+		return roleUnknown(RoleStopHookDuration, "the Stop duration evidence is unreadable", reread)
+	}
+
+	outcome := record.Outcome
+	elapsed := record.LastStopElapsedSec
+	if record.Outcome == "ATTEMPTING" {
+		outcome = ""
+		elapsed = nil
+		if size := len(record.AttemptHistory); size > 0 {
+			latest := record.AttemptHistory[size-1]
+			outcome = latest.Outcome
+			elapsed = latest.StopElapsedSec
+		}
+	}
+	if elapsed == nil {
+		return roleAlive(RoleStopHookDuration, "the last Stop carried no measurement")
+	}
+
+	machine := "this machine"
+	if enrolled, machineErr := goal.ResolveMachine(repoRoot); machineErr == nil {
+		machine = enrolled
+	}
+	remedy := fmt.Sprintf("fix the expensive hook under goal stop-hook-health-cost, then run %s to re-read", reread)
+	if outcome == "DEADLINE_EXPIRED" {
+		return roleDead(RoleStopHookDuration,
+			fmt.Sprintf("the last Stop expired its deadline after %ds of the %ds budget on %s", *elapsed, stopHookBudgetSeconds, machine), remedy)
+	}
+
+	threshold, err := boundedConfig(repoRoot, "steward.stop-slow-sec", defaultStopHookSlowSeconds, 1)
+	if err != nil {
+		return roleUnknown(RoleStopHookDuration, "the Stop slow threshold is invalid: "+err.Error(), reread)
+	}
+	if *elapsed >= int64(threshold) {
+		return roleDead(RoleStopHookDuration,
+			fmt.Sprintf("the last Stop took %ds of the %ds budget on %s; the threshold is %ds", *elapsed, stopHookBudgetSeconds, machine, threshold), remedy)
+	}
+	return roleAlive(RoleStopHookDuration,
+		fmt.Sprintf("the last Stop took %ds of the %ds budget", *elapsed, stopHookBudgetSeconds))
 }
 
 func applyHealthObservation(repoRoot string, previous HealthObservationState, roles []RoleVerdict, now time.Time) HealthVerdict {
