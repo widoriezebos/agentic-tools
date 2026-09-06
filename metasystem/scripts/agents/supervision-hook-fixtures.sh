@@ -414,7 +414,7 @@ chmod +x "$deadline_engine"
 deadline_started=$SECONDS
 deadline_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
-  bash "$hook" claude stop <"$tmp/line-payload.json" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline.out" 2>"$tmp/deadline.err" || deadline_rc=$?
 deadline_elapsed=$((SECONDS - deadline_started))
 (( deadline_rc == 0 )) \
@@ -427,7 +427,7 @@ grep -Fq 'deadline expired before a safe turn verdict' "$tmp/deadline.out" \
   || { echo "supervision hook deadline fixture did not name its fail-closed timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 deadline_second_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
-  bash "$hook" claude stop <"$tmp/line-payload.json" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline-second.out" 2>"$tmp/deadline-second.err" || deadline_second_rc=$?
 (( deadline_second_rc == 0 )) \
   || { echo "second supervision hook deadline fixture returned $deadline_second_rc" >&2; exit 1; }
@@ -460,6 +460,54 @@ METASYSTEM_BIN="$failure_engine" \
   || { echo "missing template state fixture returned $missing_template_rc" >&2; exit 1; }
 grep -Fq '"decision":"block"' "$tmp/missing-template.out" \
   || { echo "missing template state fixture emitted no blocking decision" >&2; cat "$tmp/missing-template.out" >&2; exit 1; }
+
+nested_outer=$tmp/nested-root
+nested_root=$nested_outer/metasystem
+mkdir -p "$nested_outer/development" "$nested_root/bin" "$nested_root/scripts/agents/adapters"
+printf '%s\n' 'template marker' >"$nested_outer/development/metasystem-design.md"
+printf '%s\n' 'metasystem.runtimes=fake' >"$nested_root/metasystem.conf"
+cp "$ms" "$nested_root/bin/metasystem"
+cp "$hook" "$nested_root/scripts/agents/supervision-hook.sh"
+cp "$root/scripts/agents/adapters/fake.sh" "$nested_root/scripts/agents/adapters/fake.sh"
+git -C "$nested_outer" init -q -b main
+printf '{"session_id":"nested-installation","cwd":"%s","hook_event_name":"SessionStart"}\n' \
+  "$nested_outer" >"$tmp/nested-payload.json"
+
+nested_engine=$tmp/nested-engine
+cat >"$nested_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == up ]]; then
+  printf '%s\n' "$*" >>"${METASYSTEM_NESTED_UP_LOG:?}"
+  exit 0
+fi
+exec "${METASYSTEM_NESTED_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$nested_engine"
+
+nested_agent=$tmp/metasystem-fake-agent
+cat >"$nested_agent" <<'SH'
+#!/usr/bin/env bash
+cd "${METASYSTEM_NESTED_GIT_ROOT:?}"
+bash "${METASYSTEM_NESTED_HOOK:?}" fake start
+SH
+chmod +x "$nested_agent"
+nested_rc=0
+METASYSTEM_BIN="$nested_engine" \
+  METASYSTEM_NESTED_REAL_ENGINE="$nested_root/bin/metasystem" \
+  METASYSTEM_NESTED_UP_LOG="$tmp/nested-up.log" \
+  METASYSTEM_NESTED_GIT_ROOT="$nested_outer" \
+  METASYSTEM_NESTED_HOOK="$nested_root/scripts/agents/supervision-hook.sh" \
+  "$nested_agent" <"$tmp/nested-payload.json" \
+    >"$tmp/nested.out" 2>"$tmp/nested.err" || nested_rc=$?
+(( nested_rc == 0 )) \
+  || { echo "nested installation ancestor fixture returned $nested_rc" >&2; cat "$tmp/nested.err" >&2; exit 1; }
+if grep -Fq 'could not identify the immediate' "$tmp/nested.out"; then
+  echo "nested installation ancestor fixture could not identify its fake agent" >&2
+  cat "$tmp/nested.out" >&2
+  exit 1
+fi
+[[ -s "$tmp/nested-up.log" ]] \
+  || { echo "nested installation ancestor fixture did not reach arming" >&2; exit 1; }
 
 template_outer=$tmp/template-root
 template_root=$template_outer/metasystem
@@ -551,6 +599,10 @@ grep -Fq 'SESSION STOP authorized once by Wido' "$tmp/template-human.out" \
   || { echo "template turn verdict did not write its nested state root" >&2; exit 1; }
 [[ ! -e "$template_outer/artifacts/agents/turn-verdict-state.json" ]] \
   || { echo "template turn verdict split state into the containing Git root" >&2; exit 1; }
+[[ -f "$template_root/artifacts/agents/supervision/hooks.log" ]] \
+  || { echo "template hook trail did not write its nested state root" >&2; exit 1; }
+[[ ! -e "$template_outer/artifacts/agents/supervision/hooks.log" ]] \
+  || { echo "template hook trail split state into the containing Git root" >&2; exit 1; }
 
 template_agent_rc=0
 METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
@@ -604,4 +656,4 @@ grep -Fq '"decision":"block"' "$tmp/template-replay.out" \
   && grep -Fq 'cannot replay' "$tmp/template-replay.out" \
   || { echo "template SessionEnd marker authorized a later Stop" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
 
-echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, repeated template open-work blocking, template holder-state, and SessionEnd no-replay fixtures passed"
+echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, nested installation ancestry, repeated template open-work blocking, template holder-state, and SessionEnd no-replay fixtures passed"

@@ -93,9 +93,16 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   }
   deadline_resolve_record || true
   deadline_log_stop_outcome() {
-    local outcome=$1 supervision_dir
+    local outcome=$1 supervision_dir supervision_root
     [[ -n "${deadline_repo:-}" ]] || return 0
-    supervision_dir="$deadline_repo/artifacts/agents/supervision"
+    supervision_root=$deadline_repo
+    if [[ -f "$deadline_repo/development/metasystem-design.md" &&
+          "$deadline_harness_root" == "$deadline_repo/metasystem" &&
+          -f "$deadline_harness_root/metasystem.conf" ]]; then
+      supervision_root=$deadline_harness_root
+    fi
+    # The evidence trail sits beside the rest of the supervision state.
+    supervision_dir="$supervision_root/artifacts/agents/supervision"
     mkdir -p "$supervision_dir" || true
     printf '%s stop response outcome=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$outcome" >>"$supervision_dir/hooks.log" 2>/dev/null || true
@@ -346,7 +353,8 @@ fi
 # Runtime signatures are anchored on the executable, so an intermediate
 # `/bin/sh -c` does not impersonate the runtime merely because its arguments
 # name this hook. Start at the immediate parent and let the process owner walk.
-identity=$("$ms" proc find-ancestor --repo "$repo" --pid "$PPID" --runtime "$runtime" 2>/dev/null || true)
+# The adapter declarations belong to the installation, not the checkout.
+identity=$("$ms" proc find-ancestor --repo "$harness_root" --pid "$PPID" --runtime "$runtime" 2>/dev/null || true)
 main_id=
 main_class=
 main_holder=false
@@ -466,7 +474,8 @@ emit_stop_payload() { # response
   response=$1
   stop_decision=$("$ms" json get --value "$response" --field decision 2>/dev/null || true)
   [[ -n "$stop_decision" ]] || stop_decision=allow
-  supervision_dir="$repo/artifacts/agents/supervision"
+  # The evidence trail sits beside the rest of the supervision state.
+  supervision_dir="$state_root/artifacts/agents/supervision"
   mkdir -p "$supervision_dir" || true
   printf '%s stop response decision=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$stop_decision" >>"$supervision_dir/hooks.log" 2>/dev/null || true
@@ -593,7 +602,8 @@ $checkin_tail")
   # Leave evidence that this ran. Without it there is no telling a hook that
   # fired and found nothing from one that never fired, which is the confusion
   # that let this repository run for days with its hooks uninstalled.
-  supervision_dir="$repo/artifacts/agents/supervision"
+  # The evidence trail sits beside the rest of the supervision state.
+  supervision_dir="$state_root/artifacts/agents/supervision"
   mkdir -p "$supervision_dir"
   evidence_gc_rc=0
   "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || evidence_gc_rc=$?
