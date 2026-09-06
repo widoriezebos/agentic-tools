@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: TWO SLICES. Slice 1, MECHANICAL, tier-1 lane candidate: the Stop hook timeout in the repository's Claude settings (5 -> 60), the worker deadline in the deadline parent in supervision-hook.sh (started + 4 -> started + 57, the parent keeps three) and its comment (the number is ours and this is where it lives), the deadline scenario in supervision-hook-fixtures.sh follows (the wrapper's sleep just under the worker deadline, the assertion under the provider timeout, the message names sixty); and the measurement: the worker's 'stop response decision=' evidence line in hooks.log and the steward component record the hook already writes (the hook-attempt site health reads for hook-freshness) both carry the elapsed seconds since the parent started, and the deadline parent's own 'stop response outcome=' line carries the elapsed seconds too. Receipt: the whole supervision-hook fixture suite, plus one assertion that the evidence line carries a number. Slice 2, steward (Go, internal/steward health): a health role reads the recorded Stop durations from the component record and flags drift - a Stop above a threshold (proposal: a quarter of the ceiling, 15s, on the last turn; or any expiry) is an unhealthy line naming the seat, the duration and the ceiling, delivered like every other health line through the alert channel, so the steward notices a slowing hook before it costs turns. Fixture: a synthetic component record with a slow duration flags; a fast one stays alive; an expiry flags. Threshold as a config key with the default above. This does not replace stop-hook-health-cost (the hook is still too expensive on an idle machine; that goal makes it cheap); it removes the lost turns now and makes the cost visible to the steward for good.
 - OpenedAt: 2026-09-06T07:39:12Z
-- Revision: 4
+- Revision: 5
+- Pinned: m1d
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T07:43:29Z revision=4 opid=AV2WVNQN81XXQFN38QFQKTYM52-m1-a4f8999f authority=proven digest=b64e68e88eac3a2821471c2c091bef7efc44e67b9e70fe255172781d93651037
@@ -17,4 +18,5 @@ History:
 - 2026-09-06T07:41:12Z 89ZCA0EZC8ATKD63ZDA82Z0SCC-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-budget-is-ours
 - 2026-09-06T07:43:03Z F7VDZQPHGM4RXWBHJPDKJT3T08-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-budget-is-ours
 - 2026-09-06T07:43:29Z AV2WVNQN81XXQFN38QFQKTYM52-m1-a4f8999f approve actor=human:Wido targets=stop-hook-budget-is-ours
-Integrity: sha256=1cf8665ad0e6deedd0423d5aa692576ff4a37e8848c34824ace48bdaf1cfcf0d
+- 2026-09-06T08:37:46Z 11MJJCX1DX5HYDT43P1XH6307Q-m1-a4f8999f set-pin actor=human:Wido targets=stop-hook-budget-is-ours
+Integrity: sha256=03676672b4396d07738becd591a9b79e95e3a34ce89a0b10b0d0f0cad6c059f6
