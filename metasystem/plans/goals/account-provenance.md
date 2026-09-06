@@ -7,10 +7,10 @@
 - Origin: main
 - Next step: Design CLOSED at revision 3 (2c4e2c13): critic account-provenance-crit2 resolved everything in round 2, zero material. BLOCKED on a human act 2026-09-06 21:55Z: reclaim is refused by the tier-2 norm because the standing tuple has reviewRounds=3 (box allows 2). Wido: from the metasystem directory run  ./bin/metasystem goal approve --id account-provenance --by Wido --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 720 --active-job-limit 1 --review-round-limit 2  (two review rounds suffice; the limit counts per critic chain). Then m1b claims, lands the build brief (draft in m1b's scratchpad; boundary = the design's reject-if list plus the paths its capture mechanics name), dispatches account-provenance-build1 (implementer, DESIGN-BEARING), conformance, gate, fresh code critic, close, land --chain, receipt, done.
 - OpenedAt: 2026-08-31T19:09:19Z
-- Revision: 14
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 15
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T19:58:10Z revision=11 opid=XN7ZQ13TV2FCF2P6AW98S8KWA5-m1b-c6925449 authority=raise=XN7ZQ13TV2FCF2P6AW98S8KWA5-m1b-c6925449 digest=4ff25617d07572e01b7887f2123d56cc1127a18b63d7d238b386b30adb8ac9dc
+- Approved: by=human:Wido at=2026-09-06T22:02:12Z revision=15 opid=2AWSYN7QHE42JXPDJ3XPWD8Z05-m1-7cd0bd60 authority=proven digest=60826e1242fd70ece79b9c6c13567b97a067ed50b2ef6db5c1bca9bb9a3d97ba
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=3 at=2026-09-02T05:51:12Z
 
 History:
@@ -28,4 +28,5 @@ History:
 - 2026-09-06T20:16:08Z P1ZP6FAP79R4J3478MQM7YV7YY-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
 - 2026-09-06T20:16:11Z VNDK6SV240HRH7F722QY6EQM8F-m1b-c6925449 release actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
 - 2026-09-06T21:49:49Z 2A4CJFKCY0RPKJ9M2W96AT0A12-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
-Integrity: sha256=80ed4813b62a41631ed172cb0c7173ab2d779d719ad79980a385257c895085ee
+- 2026-09-06T22:02:12Z 2AWSYN7QHE42JXPDJ3XPWD8Z05-m1-7cd0bd60 approve actor=human:Wido targets=account-provenance
+Integrity: sha256=7ca3e529f16bc1dad25b1eb27b2b20182274591f3e78bafca8b4d4122e1b9fac
