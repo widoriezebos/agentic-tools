@@ -2166,8 +2166,8 @@ run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispat
 net_default="$agent_fixture/net-default.md"
 make_agent_brief "$net_default" design
 run_agent_fixture net-default net-default "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$net_default" --job-id net-default --wait
-[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-default.json" --field permissions.requested.network)" == allow ]] \
-  || { echo "a delegate did not receive network by default" >&2; exit 1; }
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-default.json" --field permissions.effective.network)" == deny ]] \
+  || { echo "a design critic did not deny network" >&2; exit 1; }
 printf 'dispatch.permissions.network=deny\n' >>"$agent_repo/metasystem.conf"
 net_floor="$agent_fixture/net-floor.md"
 make_agent_brief "$net_floor" design
@@ -2393,6 +2393,8 @@ warden_brief="$agent_fixture/cap-warden.md"
 make_agent_brief "$warden_brief" implement
 run_agent_fixture cap-warden cap-warden "$agent_dispatch" dispatch \
   --role warden --brief "$warden_brief" --reviews review-target --job-id cap-warden --wait
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/cap-warden.json" --field permissions.effective.network)" == deny ]] \
+  || { echo "a warden did not deny network" >&2; exit 1; }
 warden_return="$agent_repo/artifacts/agents/cap-warden/rounds/1/return.json"
 json_replace_field "$warden_return" findings \
   '[{"id":"WARDEN-CAP-1","severity":"high","material":true,"claim":"warden cap finding","evidence":"direct fixture evidence"}]'

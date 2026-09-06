@@ -1,10 +1,10 @@
 Working Mode: implement
-Orchestrator Identity: m1c (lineage main-1788680061-17829-64951c, dispatch delegate under goal claude-critic-shell-network-deny, tier 2, hazard MECHANICAL, fold round two of chain ccn-fix1)
+Orchestrator Identity: m1c (lineage main-1788680061-17829-64951c, dispatch delegate under goal claude-critic-shell-network-deny, tier 2, hazard MECHANICAL, chain ccn-fix2 after ccn-fix1 landed)
 Date: 2026-09-06
 
 # Goal
 
-Round one of chain ccn-fix1 set dispatch.permissions.code-critic and
+Chain ccn-fix1 (landed) set dispatch.permissions.code-critic and
 design-critic to critic in metasystem/metasystem.conf and added two
 effective-network assertions. The orchestrator ran the whole dispatch
 fixture bed on it: the "happy" leg, which dispatches a design-critic
@@ -19,7 +19,7 @@ happy dispatch, any other preset assertion tied to a critic role in
 the bed follows suit, and the assertions tied to implementer or
 investigator dispatches are untouched.
 
-# The fold
+# The change
 
 In metasystem/scripts/agents/dispatch-fixtures.sh: change the happy
 leg's preset assertion (the line that reads permissions.requested.preset
@@ -31,7 +31,7 @@ the rest as they are. Change nothing else.
 
 # Workspace
 
-The same job worktree, on top of round one.
+The job worktree the dispatcher creates for you, branched from main (which carries ccn-fix1).
 May touch: metasystem/scripts/agents/dispatch-fixtures.sh (preset assertions only)
 Must not touch: anything else.
 
@@ -47,7 +47,7 @@ from the worktree root (the metasystem directory):
 
 - `bash -n ./scripts/agents/dispatch-fixtures.sh` (expected: clean)
 - `grep -n 'requested.preset' ./scripts/agents/dispatch-fixtures.sh` (expected: the critic-role lines say critic)
-- `git diff --stat` (expected: metasystem.conf and dispatch-fixtures.sh only, across both rounds)
+- `git diff --stat` (expected: dispatch-fixtures.sh only)
 
 # Acceptance Criteria
 
