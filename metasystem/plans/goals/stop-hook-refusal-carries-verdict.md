@@ -7,8 +7,9 @@
 - Origin: main
 - Next step: One hook composition fix with the scenario as its test: build from preserve/sse-build1-r3, run supervision-fixtures.sh seat-side, land through a chain. Tier from the risk basis; waits for Wido's word if above tier 1.
 - OpenedAt: 2026-09-04T19:55:53Z
-- Revision: 6
+- Revision: 7
 - Labels: robustness
+- Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=6 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=3c16b5a2e834a475d11490786b174228a3b5ac6387ac65b7a45229440c2a6271
@@ -21,4 +22,5 @@ History:
 - 2026-09-04T23:53:59Z H467GM83KPGWYT82APC2WJ5T5C-m2-5fcf08ab slice-start actor=m2+main-1788441779-14484-82d6ed targets=stop-hook-refusal-carries-verdict
 - 2026-09-05T01:36:55Z 6T2VHXBBXCYF3C80R36HMF6N0N-m2-5fcf08ab release actor=m2+main-1788441779-14484-82d6ed targets=stop-hook-refusal-carries-verdict
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=stop-hook-refusal-carries-verdict reason=sweep
-Integrity: sha256=26bdf0ddb824aae39597a4103c7144e9a2bf560f712f6113909bb0e9fd24cbad
+- 2026-09-06T07:29:02Z R0085BMQE86RNDBA2MRB7H3JEG-m1-a4f8999f set-pin actor=human:Wido targets=stop-hook-refusal-carries-verdict
+Integrity: sha256=2425860ecc6c50c8af997ffe79cea289b3c2401707a2f421fa63001e18a4c3b6
