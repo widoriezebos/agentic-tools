@@ -7,8 +7,9 @@
 - Origin: main
 - Next step: Read go-gate.sh's fast stages (gofmt, vet, staticcheck, build) and add the refusal package test after the build; add the DEADLINE_EXPIRED exclusion beside the other steward health observations after confirming with the landing's author (19b14a9b) that it admits rather than refuses; one small chain.
 - OpenedAt: 2026-09-06T15:20:47Z
-- Revision: 2
+- Revision: 3
 - Labels: robustness
+- Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T15:32:11Z revision=2 opid=EPXR6VP5RR0M6NF9BARZHBZF2W-m1-7cd0bd60 authority=proven digest=d153ccbc2fed33f60f7aa6bff2e74f9e55abe2d12d27abe1c448f91641c635ab
@@ -16,4 +17,5 @@
 History:
 - 2026-09-06T15:20:47Z SNQ1VT6Q378Q6GC522VSQFQR9Z-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=fast-gate-runs-the-refusal-register
 - 2026-09-06T15:32:11Z EPXR6VP5RR0M6NF9BARZHBZF2W-m1-7cd0bd60 approve actor=human:Wido targets=fast-gate-runs-the-refusal-register
-Integrity: sha256=cca4b18f451e9ec2022e25585c6e7a2b4e045e8dbdc90232d1c06e8e1ae38702
+- 2026-09-06T15:43:35Z 0ZMF520EZ6S29EEXPZ0PFAX17P-m1-7cd0bd60 set-pin actor=human:Wido targets=fast-gate-runs-the-refusal-register
+Integrity: sha256=8cfff8d7f4601a019749e7cada299eb939b3fe955215cbff4c619f413209cd74
