@@ -380,24 +380,24 @@ func digestDeclaredOutputs(outputs []string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func designBlobSource(workspace, commit, design string) (string, error) {
+func designBlobBinding(workspace, commit, design string) (path, source string, err error) {
 	abs := design
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(workspace, design)
 	}
 	rel, err := filepath.Rel(workspace, abs)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("design path must be inside the reviewed workspace")
+		return "", "", fmt.Errorf("design path must be inside the reviewed workspace")
 	}
 	rel = filepath.ToSlash(rel)
 	if !strings.HasPrefix(rel, "metasystem/") {
-		return "", fmt.Errorf("design path must begin metasystem/")
+		return "", "", fmt.Errorf("design path must begin metasystem/")
 	}
 	blob, err := gitOutput(workspace, "rev-parse", commit+":"+rel)
 	if err != nil || !gitObjectIDRe.MatchString(blob) {
-		return "", fmt.Errorf("design path %s is not a blob at reviewed commit %s", rel, commit)
+		return "", "", fmt.Errorf("design path %s is not a blob at reviewed commit %s", rel, commit)
 	}
-	return rel + "@" + blob, nil
+	return rel, rel + "@" + blob, nil
 }
 
 // BuildRecord assembles the full pending record for a fresh dispatch: chain
@@ -612,13 +612,14 @@ func BuildRecord(p BuildRecordParams) error {
 			if parseErr != nil {
 				return parseErr
 			}
-			source, sourceErr := designBlobSource(p.Workspace, base, p.Design)
+			design, source, sourceErr := designBlobBinding(p.Workspace, base, p.Design)
 			if sourceErr != nil {
 				return sourceErr
 			}
 			record["declaredOutputs"] = stringValues(outputs)
 			record["declaredOutputsDigest"] = digestDeclaredOutputs(outputs)
 			record["declaredOutputsSource"] = source
+			record["design"] = design
 		}
 	}
 	return writeRecord(p.Output, record)

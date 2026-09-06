@@ -501,6 +501,9 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	if !strings.HasPrefix(source, design+"@") || !gitObjectIDRe.MatchString(objectID) {
 		t.Fatalf("declared output source = %q", source)
 	}
+	if record["design"] != design {
+		t.Fatalf("reviewed design = %v", record["design"])
+	}
 	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 3 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
 	}

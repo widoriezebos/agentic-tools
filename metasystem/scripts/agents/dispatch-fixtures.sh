@@ -1346,6 +1346,8 @@ else
 fi
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job happy)" == completed ]] \
   || { echo "valid fake dispatch did not complete" >&2; exit 1; }
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/happy.json" --field design)" == metasystem/scripts/agents/roles/design-critic.md ]] \
+  || { echo "design-critic dispatch did not record its reviewed design path" >&2; exit 1; }
 
 # Two wrappers for the same fresh operation queue at the short chain section.
 # The second wrapper must reach claim-launch and report the first wrapper's
