@@ -651,9 +651,14 @@ fi
 template_outer=$tmp/template-root
 template_root=$template_outer/metasystem
 mkdir -p "$template_outer/development" "$template_root/bin" "$template_root/plans" \
-  "$template_root/scripts/agents/adapters" "$template_root/artifacts/agents/session-stops"
+  "$template_root/scripts/agents/adapters" "$template_root/scripts/agents/roles" \
+  "$template_root/scripts/agents/schemas" "$template_root/scripts/agents/permissions" \
+  "$template_root/artifacts/agents/session-stops" "$template_root/artifacts/agents/steward"
 printf '%s\n' 'template marker' >"$template_outer/development/metasystem-design.md"
-printf '%s\n' 'metasystem.runtimes=none' >"$template_root/metasystem.conf"
+printf '%s\n' \
+  'metasystem.runtimes=claude' \
+  'role.steward-continuation.runtime=claude' \
+  'role.steward-continuation.model.claude=fixture' >"$template_root/metasystem.conf"
 printf '%s\n' '# Goals' '' \
   '## Queued goal: template-backlog — Keep the template seat moving' \
   '- Origin: main' \
@@ -663,10 +668,24 @@ cp "$hook" "$template_root/scripts/agents/supervision-hook.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$template_root/scripts/agents/evidence-gc.sh"
 chmod +x "$template_root/scripts/agents/evidence-gc.sh"
 cp "$root/scripts/agents/adapters/claude.sh" "$template_root/scripts/agents/adapters/claude.sh"
+cp "$root/scripts/agents/roles/steward-continuation.md" "$template_root/scripts/agents/roles/steward-continuation.md"
+cp "$root/scripts/agents/roles/steward-continuation.requirements.json" \
+  "$template_root/scripts/agents/roles/steward-continuation.requirements.json"
+cp "$root/scripts/agents/schemas/steward-continuation.schema.json" \
+  "$template_root/scripts/agents/schemas/steward-continuation.schema.json"
+cp "$root/scripts/agents/permissions/workspace.json" "$template_root/scripts/agents/permissions/workspace.json"
+template_engine_digest=$("$template_root/bin/metasystem" util sha256 --file "$template_root/bin/metasystem")
+template_identity_root=$(cd "$template_root" && pwd -P)
+template_identity_engine=$(cd "$template_root/bin" && pwd -P)/metasystem
+printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+  "$template_identity_root" "$template_identity_engine" "$template_engine_digest" \
+  >"$template_root/artifacts/agents/steward/identity.json"
+chmod 0600 "$template_root/artifacts/agents/steward/identity.json"
 git -C "$template_outer" init -q -b main
 git -C "$template_outer" config user.name fixture
 git -C "$template_outer" config user.email fixture@example.invalid
-git -C "$template_outer" add development metasystem/metasystem.conf metasystem/plans/goals.md
+git -C "$template_outer" config metasystem.goal.machine template-machine
+git -C "$template_outer" add development metasystem/metasystem.conf metasystem/plans/goals.md metasystem/scripts/agents
 git -C "$template_outer" commit -qm fixture
 
 template_session=template-human
@@ -708,6 +727,9 @@ cat >"$template_engine" <<'SH'
 if [[ ${1:-} == up ]]; then
   exit 0
 fi
+if [[ ${1:-} == report && ${2:-} == turn-verdict && -n ${METASYSTEM_TEMPLATE_REPORT_LOG:-} ]]; then
+  printf '%s\n' "$*" >>"$METASYSTEM_TEMPLATE_REPORT_LOG"
+fi
 if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
   printf '{"pid":%s,"pidStartedAt":%s}\n' \
     "${METASYSTEM_TEMPLATE_MAIN_PID:?}" "${METASYSTEM_TEMPLATE_MAIN_STARTED:?}"
@@ -718,8 +740,11 @@ SH
 chmod +x "$template_engine"
 printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$template_session" "$template_outer" >"$tmp/template-payload.json"
+printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop","stop_hook_active":true}\n' \
+  "$template_session" "$template_outer" >"$tmp/template-repeat-payload.json"
 template_human_rc=0
 METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+  METASYSTEM_TEMPLATE_REPORT_LOG="$tmp/template-report.log" \
   METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
   bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
     >"$tmp/template-human.out" 2>"$tmp/template-human.err" || template_human_rc=$?
@@ -745,6 +770,7 @@ grep -Fq 'SESSION STOP authorized once by Wido' "$tmp/template-human.out" \
 
 template_agent_rc=0
 METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+  METASYSTEM_TEMPLATE_REPORT_LOG="$tmp/template-report.log" \
   METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
   bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
     >"$tmp/template-agent.out" 2>"$tmp/template-agent.err" || template_agent_rc=$?
@@ -754,15 +780,49 @@ grep -Fq '"decision":"block"' "$tmp/template-agent.out" \
   && grep -Fq 'IDLE WITH BACKLOG' "$tmp/template-agent.out" \
   && grep -Fq 'template-backlog' "$tmp/template-agent.out" \
   || { echo "template honest agent was allowed to leave claimable backlog" >&2; cat "$tmp/template-agent.out" >&2; exit 1; }
+if grep -Fq 'This refusal does not repeat for the same work' "$tmp/template-agent.out"; then
+  echo "the counted idle refusal retained the false open-work promise" >&2
+  cat "$tmp/template-agent.out" >&2
+  exit 1
+fi
 
 METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+  METASYSTEM_TEMPLATE_REPORT_LOG="$tmp/template-report.log" \
   METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
-  bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
+  bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-repeat-payload.json" \
     >"$tmp/template-agent-repeat.out" 2>"$tmp/template-agent-repeat.err" \
   || { echo "template repeated open-work Stop returned an error" >&2; exit 1; }
 grep -Fq '"decision":"block"' "$tmp/template-agent-repeat.out" \
-  && grep -Fq 'IDLE WITH BACKLOG' "$tmp/template-agent-repeat.out" \
-  || { echo "the seat-owned open-work refusal did not keep blocking" >&2; cat "$tmp/template-agent-repeat.out" >&2; exit 1; }
+  && grep -Fq 'refusal 2 of 3' "$tmp/template-agent-repeat.out" \
+  && grep -Fq 'stop_hook_active=true' "$tmp/template-agent-repeat.out" \
+  || { echo "the second seat-owned refusal was not counted" >&2; cat "$tmp/template-agent-repeat.out" >&2; exit 1; }
+grep -Fq -- '--stop-hook-active=true' "$tmp/template-report.log" \
+  || { echo "the Stop hook did not pass stop_hook_active to turn-verdict" >&2; cat "$tmp/template-report.log" >&2; exit 1; }
+
+METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+  METASYSTEM_TEMPLATE_REPORT_LOG="$tmp/template-report.log" \
+  METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
+  bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-repeat-payload.json" \
+    >"$tmp/template-agent-third.out" 2>"$tmp/template-agent-third.err" \
+  || { echo "template third open-work Stop returned an error" >&2; exit 1; }
+if grep -Fq '"decision":"block"' "$tmp/template-agent-third.out"; then
+  echo "the third unchanged backlog refusal did not end the turn" >&2
+  cat "$tmp/template-agent-third.out" >&2
+  exit 1
+fi
+grep -Fq 'reached the bound of 3' "$tmp/template-agent-third.out" \
+  && grep -Fq 'selected goal template-backlog and deferred its claim' "$tmp/template-agent-third.out" \
+  && grep -Fq 'prepared steward continuation intent' "$tmp/template-agent-third.out" \
+  && grep -Fq 'the turn will end' "$tmp/template-agent-third.out" \
+  && grep -Fq 'stop_hook_active=true' "$tmp/template-agent-third.out" \
+  || { echo "the third refusal did not explain its bounded escalation" >&2; cat "$tmp/template-agent-third.out" >&2; exit 1; }
+template_intent=$(find "$template_root/artifacts/agents/steward/intents" -type f -name '*.json' -print -quit)
+[[ -n "$template_intent" ]] \
+  && grep -Fq '"goal": "template-backlog"' "$template_intent" \
+  && grep -Fq '"reason": "seatIdle"' "$template_intent" \
+  && grep -Fq '"claimNeeded": true' "$template_intent" \
+  && grep -Fq '"seatClaimEpoch":' "$template_intent" \
+  || { echo "the third Stop did not leave the seat-idle continuation intent on disk" >&2; exit 1; }
 
 # SessionEnd spends an unused authorization before announcement retirement.
 # The wrapper deliberately leaves the announcement in place, reproducing the
@@ -791,8 +851,13 @@ METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_roo
   bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
     >"$tmp/template-replay.out" 2>"$tmp/template-replay.err" \
   || { echo "template replay check failed to return a Stop decision" >&2; cat "$tmp/template-replay.err" >&2; exit 1; }
-grep -Fq '"decision":"block"' "$tmp/template-replay.out" \
-  && grep -Fq 'cannot replay' "$tmp/template-replay.out" \
-  || { echo "template SessionEnd marker authorized a later Stop" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
+if grep -Fq 'SESSION STOP authorized once' "$tmp/template-replay.out"; then
+  echo "template SessionEnd marker authorized a later Stop" >&2
+  cat "$tmp/template-replay.out" >&2
+  exit 1
+fi
+grep -Fq 'cannot replay' "$tmp/template-replay.out" \
+  && grep -Fq 'reached the bound of 3' "$tmp/template-replay.out" \
+  || { echo "template SessionEnd no-replay evidence was lost beside the bounded idle escalation" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
 
-echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, re-arm visibility, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, nested installation ancestry, repeated template open-work blocking, template holder-state, and SessionEnd no-replay fixtures passed"
+echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, re-arm visibility, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, nested installation ancestry, bounded template backlog escalation, template holder-state, and SessionEnd no-replay fixtures passed"

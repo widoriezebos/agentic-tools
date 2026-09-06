@@ -37,6 +37,13 @@ func StopBlock(detail string) map[string]any {
 	}
 }
 
+// BoundedIdleStopBlock renders the idle backlog verdict without the open-work
+// block-once preface. Its detail already carries the current refusal count,
+// bound, and steward escalation.
+func BoundedIdleStopBlock(detail string) map[string]any {
+	return map[string]any{"decision": "block", "reason": detail}
+}
+
 // StopRefusal records one external stop failure and returns the provider
 // response for that occurrence. The first occurrence blocks; later
 // occurrences remain visible without keeping the turn open.

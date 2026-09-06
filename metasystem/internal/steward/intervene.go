@@ -15,29 +15,47 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
+// SeatActor is the exact seat identity authorized to claim work handed off by
+// an idle main. The steward must not reconstruct or substitute this actor.
+type SeatActor struct {
+	Machine string `json:"machine"`
+	Lineage string `json:"lineage"`
+}
+
 // Intent is one intervention's durable record.
 type Intent struct {
-	Nonce         string `json:"nonce"` // also the record's filename
-	RepoIdentity  string `json:"repoIdentity"`
-	InstallGen    int    `json:"installGeneration"`
-	Goal          string `json:"goal"`        // the claim being continued
-	Role          string `json:"role"`        // always steward-continuation; recorded, never chosen
-	Permissions   string `json:"permissions"` // the preset name whose expansion PermsDigest pins
-	RoleDigest    string `json:"roleDigest"`
-	ReqDigest     string `json:"reqDigest"`
-	SchemaDigest  string `json:"schemaDigest"`
-	BriefDigest   string `json:"briefDigest"`
-	PermsDigest   string `json:"permsDigest"`
-	Runtime       string `json:"runtime"` // roster-resolved, recorded not chosen
-	Model         string `json:"model"`
-	JobId         string `json:"jobId"`
-	MintedAtTick  int    `json:"mintedAtTick"`
-	FenceAtMint   int64  `json:"fenceAtMint"`
-	Notified      bool   `json:"notified"`      // retained for pre-heal-first records; never gates launch
-	DispatchedAt  int    `json:"dispatchedAt"`  // tick; zero = never
-	LaunchStamped bool   `json:"launchStamped"` // dispatch returned
-	ReapedAt      string `json:"reapedAt,omitempty"`
-	Outcome       string `json:"outcome,omitempty"`
+	Nonce        string `json:"nonce"` // also the record's filename
+	RepoIdentity string `json:"repoIdentity"`
+	InstallGen   int    `json:"installGeneration"`
+	Goal         string `json:"goal"`        // the exact held claim or claimable target revalidated before continuation
+	Role         string `json:"role"`        // always steward-continuation; recorded, never chosen
+	Permissions  string `json:"permissions"` // the preset name whose expansion PermsDigest pins
+	RoleDigest   string `json:"roleDigest"`
+	ReqDigest    string `json:"reqDigest"`
+	SchemaDigest string `json:"schemaDigest"`
+	BriefDigest  string `json:"briefDigest"`
+	PermsDigest  string `json:"permsDigest"`
+	Runtime      string `json:"runtime"` // roster-resolved, recorded not chosen
+	Model        string `json:"model"`
+	JobId        string `json:"jobId"`
+	Reason       string `json:"reason,omitempty"`
+	// ClaimNeeded distinguishes an unclaimed target from the seat's existing
+	// claim, preventing the steward from violating the one-claim-per-machine
+	// quota by claiming again.
+	ClaimNeeded bool `json:"claimNeeded,omitempty"`
+	// SeatActor binds a deferred claim to the machine and announced lineage
+	// that reached the bounded idle refusal.
+	SeatActor *SeatActor `json:"seatActor,omitempty"`
+	// SeatClaimEpoch binds a deferred claim to the checkout lease epoch that
+	// authorized the seat actor at the Stop hook boundary.
+	SeatClaimEpoch int64  `json:"seatClaimEpoch,omitempty"`
+	MintedAtTick   int    `json:"mintedAtTick"`
+	FenceAtMint    int64  `json:"fenceAtMint"`
+	Notified       bool   `json:"notified"`      // retained for pre-heal-first records; never gates launch
+	DispatchedAt   int    `json:"dispatchedAt"`  // tick; zero = never
+	LaunchStamped  bool   `json:"launchStamped"` // dispatch returned
+	ReapedAt       string `json:"reapedAt,omitempty"`
+	Outcome        string `json:"outcome,omitempty"`
 }
 
 // Paths under the steward's own artifact directory.

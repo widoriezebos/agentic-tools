@@ -3,6 +3,7 @@ package goal
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,25 +55,348 @@ func installIdleLiveClaim(t *testing.T, root, lineage string) identity.Prober {
 	return idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 }
 
-func TestIdleBacklogBlocksEveryUnchangedStopWithoutHumanMarker(t *testing.T) {
+func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
-		"stale-claim": {
-			Id: "stale-claim", State: StateClaimed, Intent: "A ledger claim is not liveness", Origin: OriginMain,
-			NextStep: "Continue it.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 2,
-			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
-		},
 	})
 	if !NewWorld(root) {
 		t.Fatal("serving bed did not create a converted world")
 	}
-	store := &Store{Root: root}
+	var prepared, recorded IdleEscalationEvent
+	alarmRaised := false
+	store := &Store{
+		Root: root,
+		ClaimIdleGoal: func(IdleEscalationEvent) error {
+			t.Fatal("TurnVerdict crossed the external goal Claim boundary")
+			return nil
+		},
+		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
+			prepared = event
+			return "intent-seat-idle", nil
+		},
+		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
+			recorded = event
+			return "alert-seat-idle", nil
+		},
+		RaiseIdleAlarm: func(IdleEscalationEvent) error {
+			alarmRaised = true
+			return nil
+		},
+	}
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
 	for stop := 1; stop <= 2; stop++ {
-		verdict, err := store.TurnVerdict(ScanResult{}, "same-session", "", "main-1")
-		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
-			!strings.Contains(verdict.Display, "waiting") {
+		verdict, err := store.TurnVerdict(ScanResult{}, "same-session", "", "main-1", options)
+		if err != nil || !verdict.ShouldBlock || !verdict.IdleRefusal || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
+			!strings.Contains(verdict.Display, "waiting") ||
+			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 for this unchanged backlog", stop)) ||
+			!strings.Contains(verdict.Display, "at 3 the steward claims if needed and continues the seat's goal") {
 			t.Fatalf("unchanged stop %d must block on claimable backlog: %+v %v", stop, verdict, err)
 		}
+	}
+	options.StopHookActive = true
+	verdict, err := store.TurnVerdict(ScanResult{}, "same-session", "", "main-1", options)
+	if err != nil || verdict.ShouldBlock || verdict.BlockSource != nil {
+		t.Fatalf("the third unchanged stop must end after steward handoff: %+v %v", verdict, err)
+	}
+	for _, text := range []string{
+		"selected goal waiting and deferred its claim as bed-m1+seat-lineage to the steward tick",
+		"prepared steward continuation intent intent-seat-idle",
+		"recorded steward alert episode alert-seat-idle",
+		"stop_hook_active=true",
+	} {
+		if !strings.Contains(verdict.Display, text) {
+			t.Fatalf("third-stop display did not name %q: %s", text, verdict.Display)
+		}
+	}
+	if !prepared.ClaimNeeded || prepared.ClaimMade || prepared.GoalID != "waiting" ||
+		prepared.ClaimActor != options.SeatActor || prepared.SeatClaimEpoch != 7 {
+		t.Fatalf("continuation preparation did not receive the deferred seat claim: %+v", prepared)
+	}
+	if !recorded.IntentPrepared || recorded.IntentID != "intent-seat-idle" || !recorded.StopHookActive {
+		t.Fatalf("incident did not receive the completed handoff and harness flag: %+v", recorded)
+	}
+	if alarmRaised {
+		t.Fatal("a successful steward handoff raised the human idle alarm")
+	}
+	endpoint, err := ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim := projection.Tree.Live["waiting"].Claimed; claim != nil {
+		t.Fatalf("TurnVerdict performed the steward's deferred claim: %+v", claim)
+	}
+}
+
+func TestIdleBacklogContinuesThisMachinesHeldClaimWithoutAnotherClaim(t *testing.T) {
+	held := budgetedQueuedGoal("held", "2026-08-22T00:00:00Z")
+	held.State = StateClaimed
+	held.Revision = 2
+	held.Claimed = &ClaimRecord{
+		Machine: "bed-m1", Lineage: "seat-lineage", At: "2026-08-23T01:00:00Z", Revision: 2,
+	}
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"held":    held,
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	var prepared IdleEscalationEvent
+	store := &Store{
+		Root: root,
+		ClaimIdleGoal: func(IdleEscalationEvent) error {
+			t.Fatal("TurnVerdict tried to claim while this machine already held a goal")
+			return nil
+		},
+		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
+			prepared = event
+			return "intent-held", nil
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-held", nil },
+	}
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
+	for stop := 1; stop <= 3; stop++ {
+		verdict, err := store.TurnVerdict(ScanResult{}, "held-session", "", "main-1", options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stop < 3 && !verdict.ShouldBlock {
+			t.Fatalf("pre-bound held-claim stop %d did not block: %+v", stop, verdict)
+		}
+		if stop == 3 && (verdict.ShouldBlock ||
+			!strings.Contains(verdict.Display, "selected this machine's held goal held") ||
+			!strings.Contains(verdict.Display, "without another claim attempt")) {
+			t.Fatalf("the held goal was not handed to the steward at the bound: %+v", verdict)
+		}
+	}
+	if prepared.GoalID != "held" || prepared.ClaimNeeded || prepared.SeatClaimEpoch != 7 {
+		t.Fatalf("the intent did not preserve the held-claim invariant: %+v", prepared)
+	}
+}
+
+func TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation(t *testing.T) {
+	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	prepared := 0
+	store := &Store{
+		Root: root, Now: func() time.Time { return now },
+		Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}},
+		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
+			prepared++
+			return "intent-mismatch", nil
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-mismatch", nil },
+	}
+	sessionStopFixture(t, store, "marker-mismatch", "other-main", 7)
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
+	var third Verdict
+	for stop := 1; stop <= 3; stop++ {
+		var err error
+		third, err = store.TurnVerdict(ScanResult{}, "marker-mismatch", "", "main-1", options)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if third.ShouldBlock || prepared != 1 ||
+		!strings.Contains(third.Display, "SESSION STOP authorization") ||
+		!strings.Contains(third.Display, "prepared steward continuation intent intent-mismatch") {
+		t.Fatalf("a mismatched display-only marker gated the bounded escalation: %+v prepared=%d", third, prepared)
+	}
+}
+
+func TestIdleEscalationPreservesAnIndependentOpenWorkBlock(t *testing.T) {
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	var prepared, incident IdleEscalationEvent
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
+			prepared = event
+			return "intent-open-work", nil
+		},
+		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
+			incident = event
+			return "alert-open-work", nil
+		},
+	}
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
+	for stop := 1; stop <= 2; stop++ {
+		if verdict, err := store.TurnVerdict(ScanResult{}, "open-work-bound", "", "main-1", options); err != nil || !verdict.ShouldBlock {
+			t.Fatalf("pre-bound stop %d did not block: %+v %v", stop, verdict, err)
+		}
+	}
+	scan := ScanResult{Open: []Item{{Kind: "plan", Id: "unfinished", Detail: "an unfinished implementation remains"}}}
+	third, err := store.TurnVerdict(scan, "open-work-bound", "", "main-1", options)
+	if err != nil || !third.ShouldBlock || third.BlockSource == nil || *third.BlockSource != "open-work" || third.IdleRefusal ||
+		!strings.Contains(third.Display, "OPEN WORK") ||
+		!strings.Contains(third.Display, "another turn-verdict branch remains blocking") {
+		t.Fatalf("the local escalation swallowed an independent open-work block: %+v %v", third, err)
+	}
+	if prepared.GoalID != "waiting" || !prepared.ClaimNeeded {
+		t.Fatalf("the open-work block suppressed the local intent write: %+v", prepared)
+	}
+	if incident.IntentID != "intent-open-work" || !incident.IntentPrepared {
+		t.Fatalf("the open-work block suppressed the incident write: %+v", incident)
+	}
+}
+
+func TestIdleBacklogDigestChangeResetsTheRefusalCount(t *testing.T) {
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	store := &Store{Root: root}
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	first, err := store.TurnVerdict(ScanResult{}, "digest-reset", "", "main-1", options)
+	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
+		t.Fatalf("first backlog refusal was not counted: %+v %v", first, err)
+	}
+	writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "new-reservation.json"), map[string]any{
+		"jobId": "new-reservation", "status": "pending", "pid": 99999999, "pidStartedAt": 1,
+	})
+	second, err := store.TurnVerdict(ScanResult{}, "digest-reset", "", "main-1", options)
+	if err != nil || !second.ShouldBlock || !strings.Contains(second.Display, "refusal 1 of 3") {
+		t.Fatalf("a changed non-terminal job set did not reset the count: %+v %v", second, err)
+	}
+}
+
+func TestIdleBacklogFailedIntentStillEndsAndNamesTheFailure(t *testing.T) {
+	waiting := budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")
+	waiting.Pinned = "bed-m1"
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{"waiting": waiting})
+	prepared := false
+	alarmRaised := false
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
+			prepared = true
+			return "", errors.New("intent store unavailable")
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-refused", nil },
+		RaiseIdleAlarm: func(IdleEscalationEvent) error {
+			alarmRaised = true
+			return nil
+		},
+	}
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m2", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	for stop := 1; stop <= 2; stop++ {
+		if verdict, err := store.TurnVerdict(ScanResult{}, "claim-refused", "", "main-1", options); err != nil || !verdict.ShouldBlock {
+			t.Fatalf("pre-bound stop %d did not block: %+v %v", stop, verdict, err)
+		}
+	}
+	verdict, err := store.TurnVerdict(ScanResult{}, "claim-refused", "", "main-1", options)
+	if err != nil || verdict.ShouldBlock || verdict.BlockSource != nil {
+		t.Fatalf("a refused claim must still end the turn: %+v %v", verdict, err)
+	}
+	if !strings.Contains(verdict.Display, "could not prepare a steward continuation") ||
+		!strings.Contains(verdict.Display, "intent store unavailable") ||
+		!strings.Contains(verdict.Display, "queued the steward's existing human idle alarm") {
+		t.Fatalf("the refused intent was not explained: %s", verdict.Display)
+	}
+	if !prepared {
+		t.Fatal("the bounded refusal did not attempt a local continuation intent")
+	}
+	if !alarmRaised {
+		t.Fatal("a refused intent did not raise the steward's human idle alarm")
+	}
+}
+
+func TestStopHookActivePreservesTheIdleCountWhenDigestReadIsUnavailable(t *testing.T) {
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	originalFetch := fetchForProjection
+	t.Cleanup(func() { fetchForProjection = originalFetch })
+	var incident IdleEscalationEvent
+	store := &Store{
+		Root: root,
+		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
+			incident = event
+			return "alert-unavailable", nil
+		},
+	}
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	first, err := store.TurnVerdict(ScanResult{}, "unavailable-repeat", "", "main-1", options)
+	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
+		t.Fatalf("the initial readable refusal was not stored: %+v %v", first, err)
+	}
+	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+		return AdvanceResult{}, errors.New("canonical ledger unavailable")
+	}
+	options.StopHookActive = true
+	second, err := store.TurnVerdict(ScanResult{}, "unavailable-repeat", "", "main-1", options)
+	if err != nil || !second.ShouldBlock || !strings.Contains(second.Display, "refusal 2 of 3") ||
+		!strings.Contains(second.Display, "stop_hook_active=true") {
+		t.Fatalf("the repeated hook did not preserve and increment uncertainty: %+v %v", second, err)
+	}
+	third, err := store.TurnVerdict(ScanResult{}, "unavailable-repeat", "", "main-1", options)
+	if err != nil || third.ShouldBlock || third.BlockSource != nil ||
+		!strings.Contains(third.Display, "could not identify a continuation goal") ||
+		!strings.Contains(third.Display, "the turn will end") {
+		t.Fatalf("the third uncertain repeat recreated the refusal loop: %+v %v", third, err)
+	}
+	if incident.Refusal != 3 || !incident.StopHookActive || incident.BacklogDigest != unreadableIdleBacklogDigest {
+		t.Fatalf("the uncertainty incident lost the stored repeat evidence: %+v", incident)
+	}
+}
+
+func TestThreeUnreadableLedgerStopsRecordIncidentRaiseAlarmAndEnd(t *testing.T) {
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	originalFetch := fetchForProjection
+	t.Cleanup(func() { fetchForProjection = originalFetch })
+	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+		return AdvanceResult{}, errors.New("canonical ledger unreadable")
+	}
+	var incident IdleEscalationEvent
+	prepared := false
+	alarmRaised := false
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
+			prepared = true
+			return "unexpected", nil
+		},
+		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
+			incident = event
+			return "alert-unreadable", nil
+		},
+		RaiseIdleAlarm: func(IdleEscalationEvent) error {
+			alarmRaised = true
+			return nil
+		},
+	}
+	options := TurnVerdictOptions{}
+	for stop := 1; stop <= 3; stop++ {
+		options.StopHookActive = stop > 1
+		verdict, err := store.TurnVerdict(ScanResult{}, "three-unreadable", "", "main-1", options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stop < 3 && (!verdict.ShouldBlock ||
+			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 for the unreadable ledger", stop))) {
+			t.Fatalf("unreadable stop %d was not counted: %+v", stop, verdict)
+		}
+		if stop == 3 && (verdict.ShouldBlock ||
+			!strings.Contains(verdict.Display, "could not identify a continuation goal") ||
+			!strings.Contains(verdict.Display, "the turn will end")) {
+			t.Fatalf("the third unreadable stop did not end after its human escalation: %+v", verdict)
+		}
+	}
+	if prepared || !alarmRaised || incident.BacklogDigest != unreadableIdleBacklogDigest || incident.GoalID != "" {
+		t.Fatalf("the unreadable-ledger escalation was not local and goal-free: prepared=%t alarm=%t incident=%+v", prepared, alarmRaised, incident)
 	}
 }
 

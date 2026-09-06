@@ -19,6 +19,7 @@ func runReportStopBlock(args []string) int {
 	session := flags.String("session", "", "session recorded for an external stop refusal")
 	cause := flags.String("cause", "", "stable external stop-refusal cause")
 	remedy := flags.String("remedy", "", "operator remedy for an external stop refusal")
+	boundedIdle := flags.Bool("bounded-idle", false, "render a counted idle-backlog refusal without the open-work block-once preface")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -39,7 +40,11 @@ func runReportStopBlock(args []string) int {
 			return 1
 		}
 	} else {
-		block = report.StopBlock(detail)
+		if *boundedIdle {
+			block = report.BoundedIdleStopBlock(detail)
+		} else {
+			block = report.StopBlock(detail)
+		}
 		if *systemMessage != "" {
 			block["systemMessage"] = *systemMessage
 		}

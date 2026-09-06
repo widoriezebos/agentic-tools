@@ -20,10 +20,10 @@ emit_raw_stop_block() {
 }
 raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing, so stopping safety cannot be judged; reinstall or rebuild bin/metasystem before stopping."}'
 
-# Claude Code eventually caps repeated Stop-hook blocks. This hook accepts that
-# harness boundary and does not try to defeat it; true impossibility is owned by
-# goal idle-every-runtime-enforcement through runtime-independent steward
-# re-engagement.
+# Claude Code marks a repeated Stop hook with stop_hook_active. The verdict
+# uses that evidence in its bounded three-refusal counter and attempts the
+# local steward handoff at the bound. The provider may enforce its own retry
+# cap independently of this hook-owned bound.
 
 # The Stop timeout is our sixty-second budget. Registration templates under
 # metasystem/scripts/enforcement ship it, adopt.sh installs it into each
@@ -383,6 +383,10 @@ if [[ -f "$template_marker" ]]; then
 fi
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
+stop_hook_active=false
+if [[ "$event" == stop && "$(read_payload stop_hook_active)" == true ]]; then
+  stop_hook_active=true
+fi
 # Session hygiene happens ONCE at this boundary (goal-system GOAL-04):
 # the runtime's string is untrusted input; anything not matching the safe
 # shape becomes its sha256 hex, and every downstream use rides the result.
@@ -486,9 +490,13 @@ surface_json() { # message
   printf '%s\n' "$rendered"
 }
 
-stop_block_json() { # system message, reason
+stop_block_json() { # system message, reason, bounded idle
   local rendered decision reason
-  rendered=$("$ms" report stop-block --system-message "$1" "$2")
+  if [[ "${3:-false}" == true ]]; then
+    rendered=$("$ms" report stop-block --bounded-idle --system-message "$1" "$2")
+  else
+    rendered=$("$ms" report stop-block --system-message "$1" "$2")
+  fi
   decision=$("$ms" json get --value "$rendered" --field decision)
   reason=$("$ms" json get --value "$rendered" --field reason)
   [[ "$decision" == block && -n "$reason" ]] || return 1
@@ -796,21 +804,24 @@ $checkin_tail")
   degraded_line=
   if verdict=$("$ms" report turn-verdict --root "$state_root" \
       --session "$session" --watchdog-surfaced "$watchdog_digest" \
-      --main-id "$main_id" 2>"$verdict_stderr"); then
+      --main-id "$main_id" --stop-hook-active="$stop_hook_active" 2>"$verdict_stderr"); then
     rm -f "$verdict_stderr"
     should_block_rc=0
     display_rc=0
     surface_watchdog_rc=0
+    idle_refusal_rc=0
     should_block=$("$ms" json get --value "$verdict" --field shouldBlock 2>/dev/null) || should_block_rc=$?
     display=$("$ms" json get --value "$verdict" --field display 2>/dev/null) || display_rc=$?
     surface_watchdog=$("$ms" json get --value "$verdict" --field surfaceWatchdog 2>/dev/null) || surface_watchdog_rc=$?
+    idle_refusal=$("$ms" json get --value "$verdict" --field idleRefusal 2>/dev/null) || idle_refusal_rc=$?
     fail_closed=false
     if fail_closed_value=$("$ms" json get --value "$verdict" --field failClosed 2>/dev/null); then
       fail_closed=$fail_closed_value
     fi
-    if (( should_block_rc != 0 || display_rc != 0 || surface_watchdog_rc != 0 )) || [[ -z "$display" ]] ||
+    if (( should_block_rc != 0 || display_rc != 0 || surface_watchdog_rc != 0 || idle_refusal_rc != 0 )) || [[ -z "$display" ]] ||
         [[ ( "$should_block" != true && "$should_block" != false ) ||
            ( "$surface_watchdog" != true && "$surface_watchdog" != false ) ||
+           ( "$idle_refusal" != true && "$idle_refusal" != false ) ||
            ( "$fail_closed" != true && "$fail_closed" != false ) ]]; then
       degraded_line='the turn verdict was unreadable'
     elif [[ "$fail_closed" == true ]]; then
@@ -840,7 +851,7 @@ $checkin_tail")
       blocking_message=$checkin_tail
       [[ -z "$extras" ]] || blocking_message="$extras
 $blocking_message"
-      response=$(stop_block_json "$blocking_message" "$display")
+      response=$(stop_block_json "$blocking_message" "$display" "$idle_refusal")
     elif [[ -n "$extras" ]]; then
       response=$(surface_json "$display
 $extras

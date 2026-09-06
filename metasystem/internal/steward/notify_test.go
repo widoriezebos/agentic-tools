@@ -321,3 +321,38 @@ func TestAlertEpisodeLoaderRejectsMalformedAndIncompleteRecords(t *testing.T) {
 		t.Fatalf("incomplete episode was accepted: %v", err)
 	}
 }
+
+func TestSeatIdleIncidentIsAStatusEpisodeNotAHumanAlarm(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	incident := SeatIdleIncident{
+		SessionID: "seat-session", MainID: "main-1", GoalID: "next-goal",
+		BacklogDigest: evidenceDigest("unchanged backlog"), Refusal: 3,
+		StopHookActive: true, ClaimActor: "machine+lineage", ClaimMade: true,
+		ClaimDetail: "claimed by machine+lineage", IntentID: "intent-1",
+		IntentPrepared: true, IntentDetail: "prepared steward continuation intent intent-1",
+	}
+	episode, err := RecordSeatIdleIncident(root, incident, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if episode.Owner != seatIdleAlertOwner || episode.SeatIdle == nil ||
+		!episode.SeatIdle.StopHookActive || !episode.SeatIdle.IntentPrepared {
+		t.Fatalf("the alert episode did not retain the refusal handoff: %+v", episode)
+	}
+	replayed, err := RecordSeatIdleIncident(root, incident, now.Add(time.Minute))
+	if err != nil || replayed.EpisodeID != episode.EpisodeID {
+		t.Fatalf("the unchanged backlog opened more than one incident: %+v %v", replayed, err)
+	}
+	incident.Refusal = 4
+	incident.ClaimDetail = "updated refusal detail"
+	updated, err := RecordSeatIdleIncident(root, incident, now.Add(2*time.Minute))
+	if err != nil || updated.EpisodeID != episode.EpisodeID || updated.SeatIdle == nil ||
+		updated.SeatIdle.Refusal != 4 || updated.SeatIdle.ClaimDetail != "updated refusal detail" ||
+		!strings.Contains(updated.Message, "refusal 4") {
+		t.Fatalf("the active seat-idle episode did not absorb the repeated refusal details: %+v %v", updated, err)
+	}
+	if pending, pendingErr := PendingNotifications(root); pendingErr != nil || len(pending) != 0 {
+		t.Fatalf("the status incident also raised a human alarm: %+v %v", pending, pendingErr)
+	}
+}

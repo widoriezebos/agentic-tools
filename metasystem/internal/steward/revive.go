@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
@@ -18,6 +19,10 @@ import (
 // LaunchSeam performs the dispatch. The shell glue supplies the real
 // dispatcher; fixtures supply an observable fake.
 type LaunchSeam func(Intent) error
+
+// SeatIdleClaimSeam performs the claim deferred by a bounded Stop verdict.
+// It runs in the steward critical section, never in the Stop hook child.
+type SeatIdleClaimSeam func(Intent) error
 
 // ReviveOutcome says what happened, for the report and the receipt.
 type ReviveOutcome struct {
@@ -65,7 +70,7 @@ func PrepareIntent(repoRoot, receiptFile string, it Intent) error {
 // CompleteRevival runs the critical section for a live intent. The intent
 // survives a crash until it launches or cancels, without waking the operator
 // merely to announce work that the machinery can do itself.
-func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam) (ReviveOutcome, error) {
+func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	// The critical section: fence, verdict, consume, launch, stamp.
 	arb, err := AcquireArbitration(repoRoot)
 	if err != nil {
@@ -107,7 +112,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{}, err
 	}
 	// The one-active-continuation guard must not count OUR OWN intent.
-	d, _, err := decideForRevival(repoRoot, cfg, census, ev, it.Nonce)
+	d, _, err := decideForRevival(repoRoot, cfg, census, ev, *it)
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
@@ -130,6 +135,25 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		}
 		return ReviveOutcome{Reason: reason}, nil
 	}
+	if it.Reason == "seatIdle" && it.ClaimNeeded {
+		claim := func(intent Intent) error { return claimSeatIdleGoal(repoRoot, intent) }
+		if len(claimOption) > 0 && claimOption[0] != nil {
+			claim = claimOption[0]
+		}
+		if claimErr := claim(*it); claimErr != nil {
+			reason := "the deferred seat-idle claim was refused: " + claimErr.Error()
+			if err := CancelIntent(repoRoot, it.Nonce, reason); err != nil {
+				return ReviveOutcome{}, err
+			}
+			if err := QueueNotification(repoRoot, PendingNotification{
+				Nonce:   "verdict-" + string(VerdictIdleBacklogDead),
+				Message: fmt.Sprintf("steward: %s — seat-idle claim for goal %s was refused: %s", VerdictIdleBacklogDead, it.Goal, claimErr),
+			}); err != nil {
+				return ReviveOutcome{}, err
+			}
+			return ReviveOutcome{Reason: reason + "; the human idle alarm was queued"}, nil
+		}
+	}
 	consumed, err := ConsumeIntent(repoRoot, it.Nonce)
 	if err != nil {
 		return ReviveOutcome{}, err
@@ -150,9 +174,38 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	return ReviveOutcome{Launched: true, Reason: "continuation dispatched for " + consumed.Goal}, nil
 }
 
+func claimSeatIdleGoal(repoRoot string, intent Intent) error {
+	if intent.SeatActor == nil || intent.SeatActor.Machine == "" || intent.SeatActor.Lineage == "" || intent.SeatClaimEpoch < 1 {
+		return fmt.Errorf("the recorded seat actor or its positive checkout lease epoch is unavailable")
+	}
+	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	if err != nil {
+		return err
+	}
+	operationID, err := goal.NewOperationULID()
+	if err != nil {
+		return err
+	}
+	result, err := goal.Claim(goal.VerbRequest{
+		Endpoint: endpoint,
+		Actor: goal.Actor{
+			Machine: intent.SeatActor.Machine,
+			Lineage: intent.SeatActor.Lineage,
+		},
+		Ulid: operationID, Now: time.Now(), ClaimEpoch: intent.SeatClaimEpoch,
+	}, intent.Goal)
+	if err != nil {
+		return err
+	}
+	if result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeConfirmedLate {
+		return fmt.Errorf("goal claim returned %s: %s", result.Outcome, result.Detail)
+	}
+	return nil
+}
+
 // decideForRevival is decideNow with one intent excluded from the
 // active-continuation guard — an intent must not suppress itself.
-func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, excludeNonce string) (Decision, string, error) {
+func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent) (Decision, string, error) {
 	cfg = cfg.withDefaults()
 	work, workReason, err := ReadOpenWork(repoRoot)
 	if err != nil {
@@ -182,12 +235,12 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 	}
 	others := len(activeConsumed)
 	for _, l := range live {
-		if l.Nonce != excludeNonce {
+		if l.Nonce != intent.Nonce {
 			others++
 		}
 	}
 	_, providerOutage := outage.StandingAt(repoRoot, time.Now())
-	return Decide(Snapshot{
+	decision := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
 		TicksSinceProgress: ev.TicksSinceAdvance,
@@ -196,7 +249,44 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: others > 0,
 		ProviderOutage:     providerOutage,
-	}), workReason, nil
+	})
+	if intent.Reason != "seatIdle" {
+		return decision, workReason, nil
+	}
+	// A seatIdle intent is the seat's explicit handoff: the main is expected
+	// to remain alive. Re-check the exact held claim or claimable target and
+	// every safety guard, then bypass only the ordinary live-main suppression.
+	shared, err := goal.ReadClaimableBudgetedWork(repoRoot, time.Now())
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, "seatIdle claim could not be re-read: " + err.Error()}, workReason, nil
+	}
+	targetPresent := false
+	targets := shared.Claimed
+	missingReason := "seatIdle intent no longer names a claim held by this machine"
+	if intent.ClaimNeeded {
+		targets = shared.Claimable
+		missingReason = "seatIdle intent no longer names a claimable goal"
+	}
+	for _, id := range targets {
+		if id == intent.Goal {
+			targetPresent = true
+			break
+		}
+	}
+	switch {
+	case !targetPresent:
+		return Decision{VerdictStalledIdle, ActNotify, missingReason}, workReason, nil
+	case shared.HasDelegateJobInFlight():
+		return Decision{VerdictHealthy, ActNone, "seatIdle claim now has a delegate job in flight"}, workReason, nil
+	case others > 0:
+		return Decision{VerdictStalledIdle, ActNotify, "seatIdle handoff is blocked because a continuation is already open and unreaped"}, workReason, nil
+	case ev.DryRevivals >= cfg.MaxRevivals:
+		return Decision{VerdictStalledIdle, ActNotify, fmt.Sprintf("seatIdle handoff is blocked because %d revivals produced no progress", ev.DryRevivals)}, workReason, nil
+	case providerOutage:
+		return Decision{VerdictStalledIdle, ActNotify, "seatIdle handoff is blocked while the model provider is overloaded"}, workReason, nil
+	default:
+		return Decision{VerdictStalledIdle, ActRevive, "the live seat handed its claimed goal to a steward continuation through seatIdle"}, workReason, nil
+	}
 }
 
 // ResumableIntent names a live intent whose repair did not reach its critical

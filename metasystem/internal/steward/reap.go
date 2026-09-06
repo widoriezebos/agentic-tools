@@ -56,7 +56,13 @@ func ReapContinuations(repoRoot string) ([]ReapReport, error) {
 		if err := closeContinuationChain(repoRoot, it.JobId); err != nil {
 			return reports, err
 		}
-		it.ReapedAt = time.Now().UTC().Format(time.RFC3339)
+		reapedAt := time.Now().UTC()
+		if it.Reason == "seatIdle" {
+			if err := ClearSeatIdleIncidentForIntent(repoRoot, it.Nonce, reapedAt); err != nil {
+				return reports, err
+			}
+		}
+		it.ReapedAt = reapedAt.Format(time.RFC3339)
 		it.Outcome = outcome
 		data, err := json.MarshalIndent(it, "", "  ")
 		if err != nil {

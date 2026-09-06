@@ -27,6 +27,17 @@ func TestStopBlock(t *testing.T) {
 	}
 }
 
+func TestBoundedIdleStopBlockDoesNotClaimItIsNonRepeating(t *testing.T) {
+	detail := "IDLE WITH BACKLOG: refusal 2 of 3; at 3 the steward claims and continues the next goal"
+	block := BoundedIdleStopBlock(detail)
+	if block["decision"] != "block" || block["reason"] != detail {
+		t.Fatalf("bounded idle detail changed: %+v", block)
+	}
+	if strings.Contains(block["reason"].(string), "does not repeat") {
+		t.Fatalf("bounded idle block carried the open-work promise: %+v", block)
+	}
+}
+
 func TestStopRefusalBlocksOnceThenSurfacesAndRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
 	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)

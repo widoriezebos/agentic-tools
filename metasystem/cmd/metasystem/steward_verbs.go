@@ -730,9 +730,10 @@ func runStewardStatus(args []string) int {
 	evidence, evErr := steward.LoadEvidence(steward.EvidencePath(*repo))
 	intents, intErr := steward.LiveIntents(*repo)
 	pending, pendErr := steward.PendingNotifications(*repo)
-	report := map[string]any{"evidence": evidence, "liveIntents": intents, "pendingNotifications": pending}
+	alerts, alertErr := steward.AlertEpisodes(*repo)
+	report := map[string]any{"evidence": evidence, "liveIntents": intents, "pendingNotifications": pending, "alertEpisodes": alerts}
 	var problems []string
-	for _, err := range []error{evErr, intErr, pendErr} {
+	for _, err := range []error{evErr, intErr, pendErr, alertErr} {
 		if err != nil {
 			problems = append(problems, err.Error())
 		}

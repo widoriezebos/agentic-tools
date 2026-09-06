@@ -102,7 +102,8 @@ func TestAnnounceMakesUsMainAndHolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("current holder: %v", err)
 	}
-	if current.MainId != mainID || current.SessionId != "my sess" || current.Pid != self {
+	if current.MainId != mainID || current.SessionId != "my sess" || current.OwnerLineage != mainID ||
+		current.ClaimEpoch != 1 || current.Pid != self {
 		t.Fatalf("current holder did not name the holder session: %+v", current)
 	}
 }

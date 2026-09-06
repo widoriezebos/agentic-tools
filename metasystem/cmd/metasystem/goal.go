@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,10 +12,12 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // goalCommandNow keeps the wall clock authoritative unless the target root
@@ -547,6 +551,7 @@ func runReportTurnVerdict(args []string) int {
 	session := flags.String("session", "", "normalized session id")
 	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
 	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
+	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -556,7 +561,18 @@ func runReportTurnVerdict(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	verdict, err := (&goal.Store{Root: *root, Now: func() time.Time { return now }}).TurnVerdict(scan, *session, *watchdog, *mainId)
+	store := &goal.Store{Root: *root, Now: func() time.Time { return now }}
+	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive}
+	stateRoot, rootErr := goal.ResolveStateRoot(*root)
+	if rootErr != nil {
+		options.SeatActorProblem = "the seat state root could not be resolved: " + rootErr.Error()
+	} else {
+		store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
+		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
+		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
+		store.ResolveIdleSeat = resolveSeatIdleActor(stateRoot, *mainId)
+	}
+	verdict, err := store.TurnVerdict(scan, *session, *watchdog, *mainId, options)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -568,4 +584,87 @@ func runReportTurnVerdict(args []string) int {
 	}
 	fmt.Println(string(data))
 	return 0
+}
+
+func resolveSeatIdleActor(root, mainID string) func() (goal.Actor, int64, error) {
+	return func() (goal.Actor, int64, error) {
+		machine, err := goal.ResolveMachine(root)
+		if err != nil {
+			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
+		}
+		holder, err := lease.CurrentHolder(root)
+		if err != nil {
+			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
+		}
+		if mainID == "" || holder.MainId != mainID {
+			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
+		}
+		if holder.SessionId == "" || holder.OwnerLineage == "" {
+			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
+		}
+		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
+	}
+}
+
+func prepareSeatIdleContinuation(root string) func(goal.IdleEscalationEvent) (string, error) {
+	return func(event goal.IdleEscalationEvent) (string, error) {
+		roster, err := dispatchpkg.ResolveRoster(dispatchpkg.RosterParams{
+			ConfPath: filepath.Join(root, "metasystem.conf"),
+			Role:     "steward-continuation", Mode: "build",
+		})
+		if err != nil {
+			return "", fmt.Errorf("steward continuation roster could not be resolved: %w", err)
+		}
+		raw := make([]byte, 8)
+		if _, err := rand.Read(raw); err != nil {
+			return "", fmt.Errorf("steward continuation nonce could not be minted: %w", err)
+		}
+		nonce := hex.EncodeToString(raw)
+		intent, err := steward.StageIntent(root, nonce, event.GoalID, "steward-"+nonce,
+			roster.Runtime, roster.Model, "seatIdle")
+		if err != nil {
+			return "", err
+		}
+		intent.ClaimNeeded = event.ClaimNeeded
+		intent.SeatActor = &steward.SeatActor{
+			Machine: event.ClaimActor.Machine,
+			Lineage: event.ClaimActor.Lineage,
+		}
+		intent.SeatClaimEpoch = event.SeatClaimEpoch
+		if err := steward.PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+			return "", err
+		}
+		return nonce, nil
+	}
+}
+
+func recordSeatIdleIncident(root string, now time.Time) func(goal.IdleEscalationEvent) (string, error) {
+	return func(event goal.IdleEscalationEvent) (string, error) {
+		actor := ""
+		if event.ClaimActor.Machine != "" || event.ClaimActor.Lineage != "" {
+			actor = event.ClaimActor.Machine + "+" + event.ClaimActor.Lineage
+		}
+		episode, err := steward.RecordSeatIdleIncident(root, steward.SeatIdleIncident{
+			SessionID: event.SessionID, MainID: event.MainID, GoalID: event.GoalID,
+			BacklogDigest: event.BacklogDigest, Refusal: event.Refusal,
+			StopHookActive: event.StopHookActive, ClaimActor: actor,
+			ClaimNeeded: event.ClaimNeeded, SeatClaimEpoch: event.SeatClaimEpoch,
+			ClaimMade: event.ClaimMade, ClaimDetail: event.ClaimDetail,
+			IntentID: event.IntentID, IntentPrepared: event.IntentPrepared, IntentDetail: event.IntentDetail,
+		}, now)
+		if err != nil {
+			return "", err
+		}
+		return episode.EpisodeID, nil
+	}
+}
+
+func raiseSeatIdleAlarm(root string) func(goal.IdleEscalationEvent) error {
+	return func(event goal.IdleEscalationEvent) error {
+		verdict := steward.VerdictIdleBacklogDead
+		return steward.QueueNotification(root, steward.PendingNotification{
+			Nonce:   "verdict-" + string(verdict),
+			Message: fmt.Sprintf("steward: %s — seat %s reached idle refusal %d, but no steward continuation intent could be prepared: %s; %s", verdict, event.SessionID, event.Refusal, event.ClaimDetail, event.IntentDetail),
+		})
+	}
 }

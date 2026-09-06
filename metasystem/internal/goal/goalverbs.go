@@ -50,9 +50,17 @@ func (c Caller) origin() string {
 // Store binds one checkout for verb execution. Prober and Now are seams
 // for tests; nil means kernel and wall clock.
 type Store struct {
-	Root   string
-	Prober identity.Prober
-	Now    func() time.Time
+	Root            string
+	Prober          identity.Prober
+	Now             func() time.Time
+	ResolveIdleSeat func() (Actor, int64, error)
+	// ClaimIdleGoal exposes the external claim boundary for tests and callers
+	// that audit it. TurnVerdict must never cross this boundary: the steward
+	// tick owns any claim required by a seat-idle continuation.
+	ClaimIdleGoal           func(IdleEscalationEvent) error
+	PrepareIdleContinuation func(IdleEscalationEvent) (string, error)
+	RecordIdleIncident      func(IdleEscalationEvent) (string, error)
+	RaiseIdleAlarm          func(IdleEscalationEvent) error
 }
 
 func (s *Store) prober() identity.Prober {

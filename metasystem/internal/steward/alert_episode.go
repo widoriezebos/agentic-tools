@@ -46,6 +46,27 @@ type AlertInvoker struct {
 	ArgvDigest    string `json:"argvDigest,omitempty"`
 }
 
+const seatIdleAlertOwner = "seat-idle"
+
+// SeatIdleIncident is the durable refusal fact written when a seat reaches
+// the bounded Stop refusal and hands work to the steward.
+type SeatIdleIncident struct {
+	SessionID      string `json:"sessionId"`
+	MainID         string `json:"mainId,omitempty"`
+	GoalID         string `json:"goalId,omitempty"`
+	BacklogDigest  string `json:"backlogDigest"`
+	Refusal        int    `json:"refusal"`
+	StopHookActive bool   `json:"stopHookActive"`
+	ClaimActor     string `json:"claimActor,omitempty"`
+	ClaimNeeded    bool   `json:"claimNeeded"`
+	SeatClaimEpoch int64  `json:"seatClaimEpoch,omitempty"`
+	ClaimMade      bool   `json:"claimMade"`
+	ClaimDetail    string `json:"claimDetail"`
+	IntentID       string `json:"intentId,omitempty"`
+	IntentPrepared bool   `json:"intentPrepared"`
+	IntentDetail   string `json:"intentDetail"`
+}
+
 // AlertEpisode is one finding's durable notification and acknowledgment
 // lifecycle. Cleared episodes remain evidence and a recurrence opens a new id.
 type AlertEpisode struct {
@@ -67,6 +88,7 @@ type AlertEpisode struct {
 	ResolvedAt      time.Time            `json:"resolvedAt,omitempty"`
 	Cleared         bool                 `json:"cleared"`
 	ClearedAt       time.Time            `json:"clearedAt,omitempty"`
+	SeatIdle        *SeatIdleIncident    `json:"seatIdle,omitempty"`
 }
 
 func alertDir(repoRoot string) string {
@@ -129,6 +151,11 @@ func loadAlertEpisode(path string) (AlertEpisode, error) {
 	if episode.Owner == string(RoleSpendFence) &&
 		(episode.ScopeID == "" || (episode.Ceiling != "tokens" && episode.Ceiling != "money") || episode.Multiple < 1) {
 		return AlertEpisode{}, fmt.Errorf("alert episode %s has incomplete spend identity", filepath.Base(path))
+	}
+	if episode.Owner == seatIdleAlertOwner &&
+		(episode.SeatIdle == nil || episode.SeatIdle.SessionID == "" ||
+			(!validEvidenceDigest(episode.SeatIdle.BacklogDigest) && episode.SeatIdle.BacklogDigest != "ledger-unreadable") || episode.SeatIdle.Refusal < 3) {
+		return AlertEpisode{}, fmt.Errorf("alert episode %s has incomplete seat-idle identity", filepath.Base(path))
 	}
 	return episode, nil
 }
@@ -199,6 +226,87 @@ func nextEpisodeID(digest string, episodes []AlertEpisode) string {
 			return candidate
 		}
 	}
+}
+
+// RecordSeatIdleIncident writes one silent alert episode for an unchanged
+// backlog. The episode is surfaced by steward status but never submitted to
+// the human notifier; the existing idle alarm remains the only human alarm.
+func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time.Time) (AlertEpisode, error) {
+	if incident.SessionID == "" || (!validEvidenceDigest(incident.BacklogDigest) && incident.BacklogDigest != "ledger-unreadable") || incident.Refusal < 3 {
+		return AlertEpisode{}, fmt.Errorf("a seat-idle incident needs a session, backlog digest, and refusal count of at least three")
+	}
+	key := strings.Join([]string{seatIdleAlertOwner, incident.SessionID, incident.BacklogDigest}, "\n")
+	sum := sha256.Sum256([]byte(key))
+	digest := hex.EncodeToString(sum[:])
+	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	if err != nil {
+		return AlertEpisode{}, err
+	}
+	defer unlockAlerts(lock)
+	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
+	if err != nil {
+		return AlertEpisode{}, err
+	}
+	for index := range episodes {
+		if episodes[index].Owner == seatIdleAlertOwner && episodes[index].Digest == digest && !episodes[index].Cleared {
+			episodes[index].SeatIdle = &incident
+			episodes[index].Message = seatIdleIncidentMessage(incident)
+			if err := saveAlertEpisode(repoRoot, episodes[index]); err != nil {
+				return AlertEpisode{}, err
+			}
+			return episodes[index], nil
+		}
+	}
+	message := seatIdleIncidentMessage(incident)
+	episode := AlertEpisode{
+		Schema: 1, EpisodeID: nextEpisodeID(digest, episodes), Digest: digest,
+		Owner: seatIdleAlertOwner, ScopeID: incident.SessionID, Message: message,
+		OpenedAt: now.UTC(), Attempts: []AlertAttempt{}, TransportResult: TransportPending,
+		SeatIdle: &incident,
+	}
+	if err := saveAlertEpisode(repoRoot, episode); err != nil {
+		return AlertEpisode{}, err
+	}
+	return episode, nil
+}
+
+func seatIdleIncidentMessage(incident SeatIdleIncident) string {
+	message := fmt.Sprintf("seat %s reached idle refusal %d for unchanged backlog %s", incident.SessionID, incident.Refusal, incident.BacklogDigest)
+	if incident.GoalID != "" {
+		message += "; next goal " + incident.GoalID
+	}
+	message += fmt.Sprintf("; claim needed=%t; steward intent prepared=%t; stop_hook_active=%t", incident.ClaimNeeded, incident.IntentPrepared, incident.StopHookActive)
+	return message
+}
+
+// ClearSeatIdleIncidentForIntent closes the one active seat-idle episode whose
+// prepared continuation has now been reaped. Incidents without an intent are
+// left for the existing human-alarm lifecycle.
+func ClearSeatIdleIncidentForIntent(repoRoot, intentID string, now time.Time) error {
+	if intentID == "" {
+		return nil
+	}
+	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
+	if err != nil {
+		return err
+	}
+	defer unlockAlerts(lock)
+	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
+	if err != nil {
+		return err
+	}
+	for index := range episodes {
+		episode := &episodes[index]
+		if episode.Owner != seatIdleAlertOwner || episode.Cleared || episode.SeatIdle == nil || episode.SeatIdle.IntentID != intentID {
+			continue
+		}
+		episode.Resolved = true
+		episode.ResolvedAt = now.UTC()
+		episode.Cleared = true
+		episode.ClearedAt = now.UTC()
+		return saveAlertEpisode(repoRoot, *episode)
+	}
+	return nil
 }
 
 func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, now time.Time) error {

@@ -261,6 +261,120 @@ func TestAWorldThatTurnedLiveCancelsBeforeLaunch(t *testing.T) {
 	}
 }
 
+func TestSeatIdleIntentLaunchesAlthoughTheSeatMainIsAlive(t *testing.T) {
+	root := reviveRepo(t)
+	intent := testIntent("seat-idle-live")
+	intent.Reason = "seatIdle"
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+		t.Fatal(err)
+	}
+	liveMain := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
+	launched := 0
+	out, err := CompleteRevival(root, TickConfig{}, liveMain, intent.Nonce, func(got Intent) error {
+		launched++
+		if got.Reason != "seatIdle" || got.Goal != "fix-it" {
+			t.Fatalf("the launch did not consume the seat-idle intent: %+v", got)
+		}
+		return nil
+	}, func(Intent) error {
+		t.Fatal("the steward tried to claim this machine's already-held goal")
+		return nil
+	})
+	if err != nil || !out.Launched || launched != 1 {
+		t.Fatalf("the explicit seat-idle handoff must bypass only live-main suppression: %+v %v launched=%d", out, err, launched)
+	}
+	if pending, pendingErr := PendingNotifications(root); pendingErr != nil || len(pending) != 0 {
+		t.Fatalf("a successful steward handoff raised the human idle alarm: %+v %v", pending, pendingErr)
+	}
+}
+
+func TestSeatIdleIntentClaimsAsRecordedActorThenLaunches(t *testing.T) {
+	root := reviveRepo(t)
+	writeLedger(t, root, "# Goals\n\n## Queued goal: next-work — Repair the next thing\n- Origin: main\n- Next step: Claim it.\n")
+	intent := testIntent("seat-idle-claim")
+	intent.Reason = "seatIdle"
+	intent.Goal = "next-work"
+	intent.ClaimNeeded = true
+	intent.SeatActor = &SeatActor{Machine: "machine-a", Lineage: "main-lineage"}
+	intent.SeatClaimEpoch = 19
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+		t.Fatal(err)
+	}
+	claimed := 0
+	launched := 0
+	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(got Intent) error {
+		launched++
+		if got.Goal != "next-work" || !got.ClaimNeeded {
+			t.Fatalf("the launch lost the deferred claim record: %+v", got)
+		}
+		return nil
+	}, func(got Intent) error {
+		claimed++
+		if got.SeatActor == nil || got.SeatActor.Machine != "machine-a" ||
+			got.SeatActor.Lineage != "main-lineage" || got.SeatClaimEpoch != 19 {
+			t.Fatalf("the claim did not use the actor and lease epoch recorded at Stop: %+v", got)
+		}
+		return nil
+	})
+	if err != nil || !out.Launched || claimed != 1 || launched != 1 {
+		t.Fatalf("the steward did not claim then launch exactly once: out=%+v err=%v claimed=%d launched=%d", out, err, claimed, launched)
+	}
+}
+
+func TestSeatIdleRefusedClaimRaisesHumanAlarmAndDoesNotLaunch(t *testing.T) {
+	root := reviveRepo(t)
+	writeLedger(t, root, "# Goals\n\n## Queued goal: next-work — Repair the next thing\n- Origin: main\n- Next step: Claim it.\n")
+	intent := testIntent("seat-idle-refused")
+	intent.Reason = "seatIdle"
+	intent.Goal = "next-work"
+	intent.ClaimNeeded = true
+	intent.SeatActor = &SeatActor{Machine: "machine-a", Lineage: "main-lineage"}
+	intent.SeatClaimEpoch = 19
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+		t.Fatal(err)
+	}
+	launched := 0
+	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		launched++
+		return nil
+	}, func(Intent) error {
+		return errors.New("machine already holds another claim")
+	})
+	if err != nil || out.Launched || out.Escalate || launched != 0 ||
+		!strings.Contains(out.Reason, "machine already holds another claim") {
+		t.Fatalf("a refused claim did not stop before launch: out=%+v err=%v launched=%d", out, err, launched)
+	}
+	pending, pendingErr := PendingNotifications(root)
+	if pendingErr != nil || len(pending) != 1 ||
+		!strings.Contains(pending[0].Message, "machine already holds another claim") {
+		t.Fatalf("the claim refusal was not carried by the human idle alarm: %+v %v", pending, pendingErr)
+	}
+	if live, liveErr := LiveIntents(root); liveErr != nil || len(live) != 0 {
+		t.Fatalf("the refused claim left a resumable launch authorization: %+v %v", live, liveErr)
+	}
+}
+
+func TestSeatIdleIntentStillHonorsOneActiveContinuationGuard(t *testing.T) {
+	root := reviveRepo(t)
+	intent := testIntent("seat-idle-guarded")
+	intent.Reason = "seatIdle"
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+		t.Fatal(err)
+	}
+	other := testIntent("other-live-intent")
+	other.JobId = "other-job"
+	if err := MintIntent(root, other); err != nil {
+		t.Fatal(err)
+	}
+	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		t.Fatal("the seat-idle intent launched through another live continuation")
+		return nil
+	})
+	if err != nil || out.Launched || !strings.Contains(out.Reason, "continuation is already open and unreaped") {
+		t.Fatalf("the one-active-continuation guard did not hold: %+v %v", out, err)
+	}
+}
+
 func TestProviderOutageArrivingBeforeLaunchCancelsTheRevival(t *testing.T) {
 	root := reviveRepo(t)
 	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-outage")); err != nil {

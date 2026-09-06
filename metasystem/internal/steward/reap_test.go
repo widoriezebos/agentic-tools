@@ -57,6 +57,32 @@ func TestEndedContinuationReapsAndFreesTheGuard(t *testing.T) {
 	}
 }
 
+func TestReapingSeatIdleContinuationClearsItsIncidentEpisode(t *testing.T) {
+	root := t.TempDir()
+	it := testIntent("seat-idle-reap")
+	it.Reason = "seatIdle"
+	it.Notified, it.LaunchStamped = true, true
+	consumedIntentOnDisk(t, root, it)
+	jobRecordOnDisk(t, root, it.JobId, "completed", "2026-09-06T13:00:00Z")
+	incident := SeatIdleIncident{
+		SessionID: "seat-session", GoalID: it.Goal,
+		BacklogDigest: evidenceDigest("seat idle reap"), Refusal: 3,
+		IntentID: it.Nonce, IntentPrepared: true,
+	}
+	episode, err := RecordSeatIdleIncident(root, incident, time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReapContinuations(root); err != nil {
+		t.Fatal(err)
+	}
+	episodes, err := AlertEpisodes(root)
+	if err != nil || len(episodes) != 1 || episodes[0].EpisodeID != episode.EpisodeID ||
+		!episodes[0].Resolved || !episodes[0].Cleared || episodes[0].ClearedAt.IsZero() {
+		t.Fatalf("reaping did not clear the matching seat-idle episode: %+v %v", episodes, err)
+	}
+}
+
 func TestRunningContinuationIsLeftAlone(t *testing.T) {
 	root := t.TempDir()
 	it := testIntent("rp-2")

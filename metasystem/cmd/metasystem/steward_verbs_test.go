@@ -1,11 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 func stewardVerbGit(t *testing.T, root string, args ...string) string {
@@ -101,5 +105,30 @@ func TestStewardHookCompleteRejectsNegativeElapsedBeforeRepositoryAccess(t *test
 	}
 	if _, err := os.Stat(repo); !os.IsNotExist(err) {
 		t.Fatalf("negative elapsed validation touched the repository before refusing: %v", err)
+	}
+}
+
+func TestStewardStatusSurfacesSeatIdleAlertEpisode(t *testing.T) {
+	root := t.TempDir()
+	incident := steward.SeatIdleIncident{
+		SessionID: "seat-session", BacklogDigest: strings.Repeat("a", 64), Refusal: 3,
+		StopHookActive: true, ClaimDetail: "claimed", IntentDetail: "prepared",
+	}
+	if _, err := steward.RecordSeatIdleIncident(root, incident, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	out, code := captureStdout(t, func() int { return runStewardStatus([]string{"--repo", root}) })
+	if code != 0 {
+		t.Fatalf("steward status returned %d: %s", code, out)
+	}
+	var report struct {
+		AlertEpisodes []steward.AlertEpisode `json:"alertEpisodes"`
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.AlertEpisodes) != 1 || report.AlertEpisodes[0].SeatIdle == nil ||
+		!report.AlertEpisodes[0].SeatIdle.StopHookActive {
+		t.Fatalf("steward status omitted the seat-idle incident: %s", out)
 	}
 }

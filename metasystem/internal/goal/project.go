@@ -186,13 +186,16 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string) (string, error) {
 // by both TurnVerdict and the steward. Claimable is goal.Next's ready frontier
 // with a valid structured budget in the converted world, and every queued
 // legacy goal before migration. InFlight contains only claims and jobs joined
-// to a process that is alive at its recorded birth identity.
+// to a process that is alive at its recorded birth identity. NonTerminalJobs
+// contains every job id whose record has not reached a terminal status,
+// independent of whether its process is live.
 type ClaimableBudgetedWork struct {
-	Claimed   []string
-	Claimable []string
-	InFlight  []string
-	Queued    int
-	GoalFree  bool
+	Claimed         []string
+	Claimable       []string
+	InFlight        []string
+	NonTerminalJobs []string
+	Queued          int
+	GoalFree        bool
 }
 
 func (w ClaimableBudgetedWork) HasInFlight() bool { return len(w.InFlight) > 0 }
@@ -322,7 +325,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 			work.Claimable = append(work.Claimable, id)
 		}
 	}
-	work.InFlight, err = readLiveBacklogActivity(root, claimLineages, false, prober)
+	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, claimLineages, false, prober)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}
@@ -349,7 +352,7 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
 	if legacyClaim {
 		work.Claimed = append(work.Claimed, ledger.Current.Id)
 	}
-	work.InFlight, err = readLiveBacklogActivity(root, nil, legacyClaim, prober)
+	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, nil, legacyClaim, prober)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}
@@ -407,40 +410,51 @@ func liveJobRecord(prober identity.Prober, record backlogJobRecord) bool {
 	return false
 }
 
-func readLiveBacklogActivity(root string, claimLineages map[string]string, legacyClaim bool, prober identity.Prober) ([]string, error) {
+func readLiveBacklogActivity(root string, claimLineages map[string]string, legacyClaim bool, prober identity.Prober) ([]string, []string, error) {
 	var activity []string
+	nonTerminalJobs := map[string]bool{}
 	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+			return nil, nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 		}
 		var record backlogJobRecord
 		if err := json.Unmarshal(data, &record); err != nil {
-			return nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
+			return nil, nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
+		}
+		id := record.JobId
+		if id == "" {
+			id = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		}
+		switch record.Status {
+		case "completed", "failed", "cancelled", "timeout":
+		default:
+			nonTerminalJobs[id] = true
 		}
 		switch record.Status {
 		case "pending-setup", "pending", "running":
 			if liveJobRecord(prober, record) {
-				id := record.JobId
-				if id == "" {
-					id = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-				}
 				activity = append(activity, "job:"+id)
 			}
 		}
 	}
+	nonTerminal := make([]string, 0, len(nonTerminalJobs))
+	for id := range nonTerminalJobs {
+		nonTerminal = append(nonTerminal, id)
+	}
+	sort.Strings(nonTerminal)
 
 	if len(claimLineages) == 0 && !legacyClaim {
 		sort.Strings(activity)
-		return activity, nil
+		return activity, nonTerminal, nil
 	}
 	announcements, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "mains", "*.json"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	liveLineages := map[string]bool{}
 	for _, path := range announcements {
@@ -451,10 +465,10 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+			return nil, nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 		}
 		if err := json.Unmarshal(data, &record); err != nil {
-			return nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
+			return nil, nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
 		}
 		if record.MainId == "" || !recordedProcessAlive(prober, record.activityProcessRef) {
 			continue
@@ -474,7 +488,7 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 		}
 	}
 	sort.Strings(activity)
-	return activity, nil
+	return activity, nonTerminal, nil
 }
 
 // NextVerdict is the frontier read the dispatcher and the steward

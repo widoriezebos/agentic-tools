@@ -256,9 +256,11 @@ type ClassifyResult struct {
 // authority. SessionId is empty only for a legacy lease whose announcement is
 // no longer present.
 type CurrentHolderView struct {
-	MainId    string
-	SessionId string
-	Pid       int64
+	MainId       string
+	SessionId    string
+	OwnerLineage string
+	ClaimEpoch   int64
+	Pid          int64
 }
 
 // CurrentHolder returns the checkout's recorded holder without classifying a
@@ -269,7 +271,10 @@ func CurrentHolder(root string) (CurrentHolderView, error) {
 	if err != nil {
 		return CurrentHolderView{}, err
 	}
-	view := CurrentHolderView{MainId: current.HolderMainId, Pid: current.Pid}
+	view := CurrentHolderView{
+		MainId: current.HolderMainId, OwnerLineage: current.OwnerLineage,
+		ClaimEpoch: current.ClaimEpoch, Pid: current.Pid,
+	}
 	records, err := readAnnouncements(root, false)
 	if err != nil {
 		return CurrentHolderView{}, err
@@ -277,6 +282,7 @@ func CurrentHolder(root string) (CurrentHolderView, error) {
 	for _, record := range records {
 		if record.Ann.MainId == current.HolderMainId {
 			view.SessionId = record.Ann.SessionId
+			view.OwnerLineage = announcementLineage(&record.Ann)
 			break
 		}
 	}

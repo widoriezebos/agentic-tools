@@ -86,7 +86,7 @@ anything; yield if a live worker shows fresh progress.
 		return Intent{}, fmt.Errorf("staging requires the armed installation identity: %w", err)
 	}
 	return Intent{
-		Nonce: nonce, Goal: goal, JobId: jobId,
+		Nonce: nonce, Goal: goal, JobId: jobId, Reason: reason,
 		RepoIdentity: id.RepoIdentity, InstallGen: id.Generation,
 		Role: continuationRole, Permissions: continuationPermissions,
 		Runtime: runtime, Model: model,

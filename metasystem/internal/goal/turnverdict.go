@@ -113,6 +113,10 @@ type Verdict struct {
 	// SurfaceWatchdog answers the hook's --watchdog-surfaced digest: true
 	// exactly once per new digest per session, decided under the flock.
 	SurfaceWatchdog bool `json:"surfaceWatchdog"`
+	// IdleRefusal tells the hook that a blocking response belongs to the
+	// counted idle-backlog branch, whose text must not use the open-work
+	// block-once preface.
+	IdleRefusal bool `json:"idleRefusal"`
 }
 
 // The Stop-state file: capped, pruned, flocked — the caps bound Stop
@@ -137,6 +141,38 @@ type sessionState struct {
 	// terminal sequence's total order.
 	BlockedUnwatchedDigests []string `json:"blockedUnwatchedDigests,omitempty"`
 	GreenCursor             int64    `json:"greenCursor,omitempty"`
+	IdleBlockDigest         string   `json:"idleBlockDigest,omitempty"`
+	IdleBlocks              int      `json:"idleBlocks,omitempty"`
+}
+
+// TurnVerdictOptions carries facts established at the Stop hook boundary.
+// The actor is the checkout holder's enrolled machine plus the lineage from
+// the holder's announced main process.
+type TurnVerdictOptions struct {
+	StopHookActive   bool
+	SeatActor        Actor
+	SeatClaimEpoch   int64
+	SeatActorProblem string
+}
+
+// IdleEscalationEvent is the package-neutral handoff from the goal verdict to
+// the steward. The command layer supplies the steward-backed callbacks so the
+// goal package does not acquire a reverse dependency on the steward package.
+type IdleEscalationEvent struct {
+	SessionID      string
+	MainID         string
+	GoalID         string
+	BacklogDigest  string
+	Refusal        int
+	StopHookActive bool
+	ClaimActor     Actor
+	ClaimNeeded    bool
+	SeatClaimEpoch int64
+	ClaimMade      bool
+	ClaimDetail    string
+	IntentID       string
+	IntentPrepared bool
+	IntentDetail   string
 }
 
 type verdictState struct {
@@ -164,8 +200,12 @@ func NormalizeSession(id string) string {
 // --watchdog-surfaced value ("" = no watchdog findings this turn, which
 // clears the stored digest); mainId is the CALLER's main identity for
 // the unwatched-work rule (empty for humans and unidentified callers).
-func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId string) (Verdict, error) {
+func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId string, option ...TurnVerdictOptions) (Verdict, error) {
 	sessionId = NormalizeSession(sessionId)
+	options := TurnVerdictOptions{}
+	if len(option) > 0 {
+		options = option[0]
+	}
 	verdict := Verdict{SchemaVersion: 1, LedgerStatus: "ok"}
 	resolvedRoot, err := ResolveStateRoot(s.Root)
 	if err != nil {
@@ -198,7 +238,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
 		}
 		if !humanAuthorized {
-			s.enforceIdleBacklog(&verdict, &work, workErr)
+			s.enforceIdleBacklog(&verdict, &work, workErr, session, sessionId, mainId, options)
 		}
 		greens := s.decideGreens(scan, session)
 		verdict.Display = composeDisplay(prefix, verdict.Display, greens)
@@ -248,25 +288,177 @@ func failClosedTurnVerdict(err error) Verdict {
 // enforceIdleBacklog owns the agent-path causal invariant. Without a valid
 // attended-human authorization, a failed fresh read and claimable unattended
 // backlog both block the stop.
-func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork, workErr error) {
+const unreadableIdleBacklogDigest = "ledger-unreadable"
+
+func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions) {
+	blockedBeforeIdle := verdict.ShouldBlock
 	if workErr != nil {
+		verdict.IdleRefusal = true
+		if session.IdleBlockDigest != unreadableIdleBacklogDigest {
+			session.IdleBlockDigest = unreadableIdleBacklogDigest
+			if options.StopHookActive && session.IdleBlocks > 0 {
+				session.IdleBlocks++
+			} else {
+				session.IdleBlocks = 1
+			}
+		} else if options.StopHookActive {
+			session.IdleBlocks++
+		}
+		if session.IdleBlocks >= 3 {
+			s.escalateIdleBacklog(verdict, session, sessionID, mainID, "", false, blockedBeforeIdle, options,
+				"the fresh canonical ledger read failed, so no continuation goal could be identified: "+workErr.Error())
+			return
+		}
 		verdict.ShouldBlock = true
 		source := "uncertainty"
 		verdict.BlockSource = &source
 		detail := "IDLE WITH BACKLOG cannot be ruled out: the fresh canonical ledger read failed: " + workErr.Error()
+		detail += fmt.Sprintf("; refusal %d of 3 for the unreadable ledger; stop_hook_active=%t; at 3 the refusal is recorded, the human idle alarm is raised, and the turn ends", session.IdleBlocks, options.StopHookActive)
 		verdict.Diagnostics = append(verdict.Diagnostics, detail)
 		verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
 		return
 	}
-	if work == nil || len(work.Claimable) == 0 || work.HasDelegateJobInFlight() {
+	if work == nil {
+		return
+	}
+	digest := idleBacklogDigest(*work)
+	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() {
+		session.IdleBlockDigest = digest
+		session.IdleBlocks = 0
+		return
+	}
+	verdict.IdleRefusal = true
+	if digest == session.IdleBlockDigest {
+		session.IdleBlocks++
+	} else {
+		session.IdleBlockDigest = digest
+		session.IdleBlocks = 1
+	}
+	if session.IdleBlocks >= 3 {
+		goalID := work.Claimable[0]
+		claimNeeded := true
+		if len(work.Claimed) > 0 {
+			goalID = work.Claimed[0]
+			claimNeeded = false
+		}
+		s.escalateIdleBacklog(verdict, session, sessionID, mainID, goalID, claimNeeded, blockedBeforeIdle, options, "")
 		return
 	}
 	verdict.ShouldBlock = true
 	source := "idle-backlog"
 	verdict.BlockSource = &source
+	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 the steward claims if needed and continues the seat's goal", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
-		"IDLE WITH BACKLOG: claimable goals await a live claim or job: %s; claim or dispatch one, or an attended human may run `metasystem session stop --by <name>`",
-		strings.Join(work.Claimable, ", ")))
+		"IDLE WITH BACKLOG: claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
+		strings.Join(work.Claimable, ", "), countText, options.StopHookActive))
+}
+
+func idleBacklogDigest(work ClaimableBudgetedWork) string {
+	claimable := append([]string(nil), work.Claimable...)
+	claimed := append([]string(nil), work.Claimed...)
+	jobs := append([]string(nil), work.NonTerminalJobs...)
+	sort.Strings(claimable)
+	sort.Strings(claimed)
+	sort.Strings(jobs)
+	parts := []string{
+		"claimable\n" + strings.Join(claimable, "\n"),
+		"claimed\n" + strings.Join(claimed, "\n"),
+		"non-terminal-jobs\n" + strings.Join(jobs, "\n"),
+	}
+	return sha256Hex([]byte(strings.Join(parts, "\n--\n")))
+}
+
+func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, sessionID, mainID, goalID string, claimNeeded, blockedBeforeIdle bool, options TurnVerdictOptions, unavailable string) {
+	if unavailable == "" && s.ResolveIdleSeat != nil {
+		actor, epoch, err := s.ResolveIdleSeat()
+		if err != nil {
+			options.SeatActorProblem = err.Error()
+		} else {
+			options.SeatActor = actor
+			options.SeatClaimEpoch = epoch
+		}
+	}
+	event := IdleEscalationEvent{
+		SessionID: sessionID, MainID: mainID, GoalID: goalID,
+		BacklogDigest: session.IdleBlockDigest, Refusal: session.IdleBlocks,
+		StopHookActive: options.StopHookActive, ClaimActor: options.SeatActor,
+		ClaimNeeded: claimNeeded, SeatClaimEpoch: options.SeatClaimEpoch,
+	}
+	if unavailable != "" {
+		event.ClaimDetail = unavailable
+	} else if options.SeatActorProblem != "" {
+		event.ClaimDetail = options.SeatActorProblem
+	} else if options.SeatActor.Machine == "" || options.SeatActor.Lineage == "" || options.SeatClaimEpoch < 1 {
+		event.ClaimDetail = "the announced seat actor or its positive checkout lease epoch was unavailable"
+	} else if claimNeeded {
+		event.ClaimDetail = "claim deferred to the steward tick"
+	} else {
+		event.ClaimDetail = "goal is already claimed by this machine; no steward claim is needed"
+	}
+
+	if unavailable == "" && options.SeatActorProblem == "" &&
+		options.SeatActor.Machine != "" && options.SeatActor.Lineage != "" && options.SeatClaimEpoch > 0 {
+		if s.PrepareIdleContinuation == nil {
+			event.IntentDetail = "the steward continuation preparation seam is unavailable"
+		} else if nonce, err := s.PrepareIdleContinuation(event); err != nil {
+			event.IntentDetail = err.Error()
+		} else {
+			event.IntentID = nonce
+			event.IntentPrepared = true
+			event.IntentDetail = "prepared steward continuation intent " + nonce
+		}
+	} else {
+		event.IntentDetail = "no steward continuation intent was prepared because its goal and seat actor could not be established"
+	}
+
+	incidentDetail := ""
+	if s.RecordIdleIncident == nil {
+		incidentDetail = "the steward incident recorder is unavailable"
+	} else if id, err := s.RecordIdleIncident(event); err != nil {
+		incidentDetail = "the steward incident could not be recorded: " + err.Error()
+	} else {
+		incidentDetail = "recorded steward alert episode " + id
+	}
+	alarmDetail := "the human idle alarm was not raised because the steward intent was prepared"
+	if !event.IntentPrepared {
+		if s.RaiseIdleAlarm == nil {
+			alarmDetail = "the human idle alarm could not be queued because its steward seam is unavailable"
+		} else if err := s.RaiseIdleAlarm(event); err != nil {
+			alarmDetail = "the human idle alarm could not be queued: " + err.Error()
+		} else {
+			alarmDetail = "queued the steward's existing human idle alarm because a steward intent could not be prepared"
+		}
+	}
+
+	if !blockedBeforeIdle {
+		verdict.ShouldBlock = false
+		verdict.BlockSource = nil
+	} else {
+		verdict.IdleRefusal = false
+	}
+	detail := fmt.Sprintf("IDLE WITH BACKLOG: refusal %d reached the bound of 3 for this unchanged backlog; ", session.IdleBlocks)
+	if event.IntentPrepared && claimNeeded {
+		detail += fmt.Sprintf("selected goal %s and deferred its claim as %s to the steward tick; ", goalID, options.SeatActor.historyActor())
+	} else if event.IntentPrepared {
+		detail += fmt.Sprintf("selected this machine's held goal %s as %s without another claim attempt; ", goalID, options.SeatActor.historyActor())
+	} else if goalID == "" {
+		detail += "could not identify a continuation goal: " + event.ClaimDetail + "; "
+	} else {
+		detail += fmt.Sprintf("could not hand goal %s to the steward: %s; ", goalID, event.ClaimDetail)
+	}
+	if event.IntentPrepared {
+		detail += "prepared steward continuation intent " + event.IntentID + "; "
+	} else {
+		detail += "could not prepare a steward continuation: " + event.IntentDetail + "; "
+	}
+	detail += incidentDetail + "; " + alarmDetail
+	if blockedBeforeIdle {
+		detail += "; another turn-verdict branch remains blocking this stop"
+	} else {
+		detail += "; the turn will end"
+	}
+	detail += fmt.Sprintf("; stop_hook_active=%t", options.StopHookActive)
+	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
 }
 
 // decideRuns applies the monitor facility's rules OUTSIDE the ladder:

@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 func sessionStopBed(t *testing.T) string {
@@ -256,5 +257,120 @@ func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(filepath.Join(root, "artifacts", "agents", "session-stops")); err == nil && len(entries) > 0 {
 		t.Fatalf("the refused command wrote authorization bytes: %v", entries)
+	}
+}
+
+func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
+	root := sessionStopBed(t)
+	budget := goal.Budget{
+		ElapsedLimit: "4h", AttemptLimit: 4,
+		ReservedJobMinutesLimit: 240, ActiveJobLimit: 2,
+	}
+	held := &goal.GoalFile{
+		Id: "held", State: goal.StateApproved, Tier: 3, Intent: "Continue the held work", Origin: goal.OriginMain,
+		NextStep: "Continue it.", OpenedAt: "2026-08-22T00:00:00Z", Revision: 2,
+		Budget: &budget,
+		History: []goal.HistoryLine{{
+			At: "2026-08-22T00:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAZ-bed-m1-00000002",
+			Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"held"}, Keep: -1,
+		}, {
+			At: "2026-08-22T00:01:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FB0-bed-m1-00000003",
+			Verb: "approve", Actor: "human:Wido", Targets: []string{"held"}, Keep: -1,
+		}},
+	}
+	held.Approved = &goal.ApprovalRecord{
+		By: "human:Wido", At: held.History[1].At, Revision: 2, Opid: held.History[1].Opid,
+		Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(held.Intent, held.Tier, budget),
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "held.md"), goal.RenderFile(held), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write := func(relative, content string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("metasystem.conf", "metasystem.runtimes=claude\nrole.steward-continuation.runtime=claude\nrole.steward-continuation.model.claude=fixture\n")
+	write("scripts/agents/roles/steward-continuation.md", "# Role: steward-continuation\nContinue the named claim.\n")
+	write("scripts/agents/roles/steward-continuation.requirements.json", "{\"required\":[]}")
+	write("scripts/agents/schemas/steward-continuation.schema.json", "{\"type\":\"object\"}")
+	write("scripts/agents/permissions/workspace.json", "{\"write\":[\"workspace\"]}")
+	goalSyncMutationGit(t, root, "add", "plans/goals/held.md", "metasystem.conf", "scripts/agents")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "held claim command fixture")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationID, err := goal.NewOperationULID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimResult, err := goal.Claim(goal.VerbRequest{
+		Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "main-1"},
+		Ulid: operationID, Now: time.Now(), ClaimEpoch: 7,
+	}, "held")
+	if err != nil || (claimResult.Outcome != goal.OutcomeConfirmed && claimResult.Outcome != goal.OutcomeConfirmedLate) {
+		t.Fatalf("fixture claim failed: %+v %v", claimResult, err)
+	}
+
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{
+		RepoIdentity: absoluteRoot, Generation: 1, InstallPath: "/bin/true", MintedAt: "2026-09-06T12:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	human, _ := sessionStopLiveRef(t)
+	if _, err := lease.Announce(root, "held-command-session", human.PID, human.PIDStartedAt,
+		"held-command-fixture", "claude", "main-1"); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := lease.CurrentHolder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var last goal.Verdict
+	for stop := 1; stop <= 3; stop++ {
+		args := []string{"--root", root, "--session", "held-command-session", "--main-id", holder.MainId}
+		if stop == 3 {
+			args = append(args, "--stop-hook-active")
+		}
+		stdout, code := captureStdout(t, func() int { return runReportTurnVerdict(args) })
+		if code != 0 {
+			t.Fatalf("turn-verdict stop %d exited %d: %s", stop, code, stdout)
+		}
+		var verdict goal.Verdict
+		if err := json.Unmarshal([]byte(stdout), &verdict); err != nil {
+			t.Fatal(err)
+		}
+		last = verdict
+		if stop < 3 && !verdict.ShouldBlock {
+			t.Fatalf("turn-verdict stop %d did not block: %+v", stop, verdict)
+		}
+		if stop == 3 && verdict.ShouldBlock {
+			t.Fatalf("third turn-verdict did not finish its local handoff: %+v", verdict)
+		}
+	}
+	intents, err := steward.LiveIntents(root)
+	if err != nil || len(intents) != 1 {
+		t.Fatalf("the command did not persist exactly one real intent: %+v %v; verdict=%+v", intents, err, last)
+	}
+	intent := intents[0]
+	if intent.Reason != "seatIdle" || intent.Goal != "held" || intent.ClaimNeeded ||
+		intent.SeatActor == nil || intent.SeatActor.Machine != "bed-m1" ||
+		intent.SeatActor.Lineage != "main-1" || intent.SeatClaimEpoch != holder.ClaimEpoch {
+		t.Fatalf("the command-layer intent lost the held goal or seat authority: %+v", intent)
 	}
 }
