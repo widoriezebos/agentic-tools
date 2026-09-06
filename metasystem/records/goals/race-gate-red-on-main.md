@@ -1,13 +1,14 @@
 # race-gate-red-on-main
 
-- State: approved
+- State: done
 - Risk: severity=2 novelty=1 exposure=3 accumulation=3 basis="The full Go gate the adopt fixture runs (go test -race -cover -timeout 30m ./internal/...) is red on plain main on a quiet Mac in four packages; every landing that relies on that gate is exposed; the debt grows with each landing that does not run it."
 - Tier: 3
 - Intent: scripts/adopt-fixtures.sh runs go test -race -cover -timeout 30m ./internal/... (scripts/agents/go-gate.sh line 528). On m2 2026-09-04 21:13Z, on a quiet Mac at f40fcf50, that gate was red in four packages: internal/goal and internal/missionrunner timed out at 30 minutes under the race detector (18 and 24 minutes without it), internal/refusal failed TestHCL03EveryCodeRowed, and internal/steward failed TestArmConfirmsTheGuardAndDisarmEndsIt after 1042 seconds. The fast gate (go-gate.sh --fast) that landings run does not include this, so the debt is invisible at landing. DONE means the two timeouts are addressed (a per-package budget that fits the goal and mission-runner packages under -race, or those packages' slow tests marked and run in a separate long lane the adopt fixture invokes), the refusal and steward failures are fixed at their cause, and the adopt fixture is green on a quiet Mac; the evidence log of this run is at the seat's scratchpad and the failing test names are in this intent.
 - Origin: main
 - Next step: RELEASED by m1c 09:41Z with the work landed (6c79648a, 7a6f93b5). PROOF on landed main 7a6f93b5 (m1): the race step verbatim, 10 minutes, green everywhere but the missionrunner terminate-group flake; the full go-gate under GOTOOLCHAIN=go1.26.6 (govulncheck passes there; this Mac's brew go1.26.5 fails it on five stdlib findings), 11.5 minutes, same single red: TestTerminateGroupLeaksNoGroupsUnderCompression, owned by goal missionrunner-terminate-flake (it fired in both full runs here and as TestTerminateGroup on m2). The goal, refusal and steward packages are green on m1 and, at m2's last run, the same two goal races were the only goal-package red there. Unmeetable as written: the steward clause (the 2026-09-04 failure text is lost, the test took 8.86s not 1042s, four runs since without recurrence) and the adopt-fixture clause (red at a pre-existing --tier step owned by goal battery-adoption-red). Wido's act at the enrolled terminal: narrow the intent to what is proven and conclude (recommended), or park.
+- Concluded: Landed 6c79648a (chain rgr-build1, two Fable critique rounds, dispositions at 7a6f93b5): the refusal exclusion, the two goal-package races fixed at cause, the 60-minute ceiling. Proven on m1: the race step and the full gate under go1.26.6 green except the missionrunner terminate-group flake owned by goal missionrunner-terminate-flake; m2's record 7eb1ab9b shows the same packages green there apart from the same flake family.
 - OpenedAt: 2026-09-04T21:14:28Z
-- Revision: 14
+- Revision: 15
 - Labels: robustness
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -30,4 +31,5 @@ History:
 - 2026-09-06T09:40:58Z FHGMFCXWXBPSS08S1WVQH226KB-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=race-gate-red-on-main
 - 2026-09-06T09:41:48Z QHHBEVHVYX7FCHPAJ2VFRQMMX7-m1c-7cd0bd60 release actor=m1c+main-1788680061-17829-64951c targets=race-gate-red-on-main
 - 2026-09-06T09:53:02Z QTSG9RRRH304V3JBCVA1DCQTBG-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=race-gate-red-on-main
-Integrity: sha256=e4d699f6e3825b3251bba65a4bfa159151d24c88ba75b9371650862638a8bfd0
+- 2026-09-06T10:58:53Z XBHTMT9EFQMZ56HVBMW05B1Z9W-m1c-7cd0bd60 done actor=human:Wido targets=race-gate-red-on-main
+Integrity: sha256=d03a286cfcb4a90917f54ee08ecbb8dec2bb9681e248971cb8ec583aee385493
