@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: Every goal mutation demands a coordinator lineage (--lineage or METASYSTEM_OWNER_LINEAGE) or refuses with 'mutations carry their coordinator's identity', including human-only acts run at the enrolled terminal with --by. Wido hit it on 2026-09-06 concluding race-gate-red-on-main from his terminal: the refusal names nothing he can derive, and the value he must paste is a seat's session-main id he has no reason to know. A human act at an enrolled terminal already proves who acts (the terminal enrollment and --by); its lineage should follow from that, not from a seat's environment. DONE means a human-only verb (approve, unapprove, set-budget, done, edit --by, park, resume, accept-risk, set-obligation) run at the enrolled terminal without --lineage derives a lineage from the enrolled terminal identity and records it, the refusal text for agent callers stays, and a goal-cli fixture pins the terminal path without --lineage.
 - Origin: main
-- Next step: Read cmd/metasystem/goalsync_mutations.go syncReq and the enrolled-terminal proof in internal/humanauthority; decide the derived lineage shape (terminal id plus generation); brief one round with a fixture.
+- Next step: STATE 2026-09-06 21:05Z (m1c): claimed; brief plans/human-acts-derive-their-lineage-brief.md landed 82a175f8; chain hal-build1 (Sol, DESIGN-BEARING) building: syncReq derives terminal-<id>-<generation> from humanauthority.ReadEnrollment for a --by act with no lineage, refuses naming enroll-terminal when no enrollment exists, keeps the agent refusal text; a Go test for the three cases and a goal-cli fixture leg. Then conformance, one Fable critique (with a shell now), fold if needed, close, land.sh --chain (area width), rebuild, up, done.
 - OpenedAt: 2026-09-06T10:57:41Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -21,4 +21,5 @@ History:
 - 2026-09-06T11:02:38Z SB01VF9Q2A59X40GM66RJJP2JV-m1-a4f8999f approve actor=human:Wido targets=code-critic-runtime-has-no-shell,human-acts-derive-their-lineage,land-sh-omits-the-full-width-chain-receipt,landing-receipt-races-the-narrator-digest
 - 2026-09-06T21:00:46Z PJFBV6VXGEBMZ1Y8DNTWY4DV0A-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=human-acts-derive-their-lineage
 - 2026-09-06T21:02:18Z 51NNCHW65JCAFVJ6DPY1GTE7XD-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=human-acts-derive-their-lineage
-Integrity: sha256=41a534acc1a9f0538477e3057dae41aad57916b5d9042dcd53d568bc3cfa9ec2
+- 2026-09-06T21:02:59Z DZ8BYQ6F13D9ZT2QDJ3ND7FKGN-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=human-acts-derive-their-lineage
+Integrity: sha256=202a8d9fda1e3e9cf5fe12ba552f58fda5371cf668574db72febb8a90f75ddd0
