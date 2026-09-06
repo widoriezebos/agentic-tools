@@ -1,19 +1,18 @@
 # claude-implementer-read-roots-writable
 
-- State: claimed
+- State: done
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: a builder's shell can change the live checkout that lands the fleet's work, which the envelope claims to forbid; novelty 1: the denyWrite key is proven and the settings builder already knows the roots; exposure 3: every claude implementer round on every seat; accumulation 1: nothing compounds, the hole is per round"
 - Tier: 3
 - Intent: A claude implementer delegate gets its extra read roots (the live repository root, everything in the record's requested readRoots beyond its worktree) as --add-dir arguments (BuildClaudeCommand, ClaudeReadRoots in metasystem/internal/adapter/claude.go), and the claude sandbox treats every added directory as a writable working directory: a live probe on 2026-09-06 (goal code-critic-runtime-has-no-shell) showed Bash touching a file inside an --add-dir root with sandbox.filesystem.allowWrite empty, and inside the cwd. An implementer's settings allow Bash, so its shell can write the live checkout, not only its worktree; the Edit and Write tools respect allowWrite, Bash does not. The same probe showed sandbox.filesystem.denyWrite is honoured. DONE means every claude delegate's settings deny writes (denyWrite) to every read root and to the workspace root when the workspace is not a write root, a settings test pins it, and a live probe shows an implementer's Bash refused a touch in the live root while its worktree stays writable.
 - Origin: main
 - Next step: STATE 2026-09-06 22:08Z (m1c): round one (tree d1969a3e) denied the read roots outright; the seat's live implementer probe with that engine showed the sandbox lets a denyWrite ancestor win over a nested allowWrite, so the implementer's own worktree (under the repository root) was refused a write. Round two (cir-build1-r2, brief plans/claude-implementer-read-roots-writable-fold-r2-brief.md) building: deny the entries around the write root's ancestor chain (every sibling at each level), never the ancestors or the worktree; new files directly inside an ancestor stay possible and the comment says so. Then the live probe again (worktree touch must succeed, live-root and metasystem/ entries refused), critique r1 on the whole diff, close, land, rebuild, up, done.
+- Concluded: Landed at 39123c99 (chain cir-build1: round one refused by the seat's live probe before any critique, round two with one Fable critique, zero material). BuildClaudeSettings now denies writes for every role: a read root with no write root under it is denied outright (the critic shape, unchanged); a read root containing a write root, which is every job worktree under the repository, keeps its ancestor chain open and denies every existing entry beside it, because the claude sandbox lets a denied ancestor override a nested allow (the first probe refused the implementer its own worktree). Live probe with the landed engine: the implementer wrote its worktree and ran a go test, and was refused a new file in metasystem/, a touch of go.mod, a new file under internal/ and a write into a sibling worktree. HONEST CORRECTION of this goal's intent: a discriminating probe with the pre-chain engine showed dispatched implementers were already refused the live root, because they get no --add-dir (added only when write roots are empty) and run with the worktree as cwd; the severity-3 hole existed only for critics (fixed by code-critic-runtime-has-no-shell). The landed denial is defence in depth: it holds if a read root is ever added as a directory or the cwd moves. Residue scheduled as goal:claude-denywrite-list-is-a-snapshot (the deny list is a snapshot at settings time). Dispositions in records/misc/claude-implementer-read-roots-writable-critique-r2-dispositions.md.
 - OpenedAt: 2026-09-06T19:18:35Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=2 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=521d4eaf35764fb9c8585adc6144c60388fddcf0d4caf99dd53deffe70078483
 - Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=3 at=2026-09-06T21:52:40Z
-- Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T21:52:27Z revision=3 accountingRevision=3
-- StopCapability: generation=3 revision=3 machine=m1c claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T19:18:35Z C25MKZCYCMWBBM8HVQADXX3RA2-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
@@ -22,4 +21,5 @@ History:
 - 2026-09-06T21:52:40Z S207GRXFCW48725DG6D1BFXCYN-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
 - 2026-09-06T21:53:05Z 3YCDK112JHEGPEQ471C7XWHS8J-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
 - 2026-09-06T22:00:26Z JZC6WXM3EVENW5VED2B9JGB595-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
-Integrity: sha256=3e5c696d076eeea09b26becb950bfc09d53790ba69cfd9fbd66b517453455fcf
+- 2026-09-06T22:19:07Z KHPFBDVSADSAE9SJ9SNFS6RTH6-m1c-7cd0bd60 done actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
+Integrity: sha256=d8dfd4d7dbc634c1e2c969357061f4343c50e0fe53e41e30de614dea0f544595
