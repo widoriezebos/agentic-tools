@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: MECHANICAL: probe allowLocalBinding with the live-probe recipe (scratchpad ccs-probe2.sh pattern), then brief, build, land, prove through a dispatched critic.
 - OpenedAt: 2026-09-06T20:34:21Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=2 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=db94a931ce0a0ad26242c03b8f25dcfce3553b24e1d124ef1df8c804bb443c86
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=3 at=2026-09-06T22:19:34Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T22:19:21Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-06T20:34:21Z SXJG2H40EBPBN5WB3J14VK5ETA-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=claude-critic-sandbox-allows-loopback
 - 2026-09-06T21:18:46Z 10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 approve actor=human:Wido targets=adopt-bed-authority-probe-passes-tier,adopt-bed-gate-unreachable-under-load,claude-critic-sandbox-allows-loopback,claude-critic-shell-network-deny,claude-delegate-scratch-cleanup,claude-implementer-read-roots-writable
 - 2026-09-06T22:19:21Z AX8KY91Z55FPA2YY795SCE7ZJ0-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=claude-critic-sandbox-allows-loopback
-Integrity: sha256=b81f110de7f8c2b29443a3533da48705d685e364164d57869af07efdddebb9c3
+- 2026-09-06T22:19:34Z 6XJ9QKP7XF7ZP6D05HYPAGPHMD-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-critic-sandbox-allows-loopback
+Integrity: sha256=5891bc9c877d53d8e97fceb4d90e28517586ccf32efb85062b18da297b04c772
