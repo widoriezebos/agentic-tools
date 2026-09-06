@@ -1,17 +1,19 @@
 # metasystem-stop-verb
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: without an orderly stop a human reaches for kill and leaves locks, leases and half-written records behind, which the custody family then has to clean up; novelty 1: the shutdown path exists in arm-supervision.sh, the verb wraps it; exposure 3: every operator on every machine; accumulation 1: nothing compounds, the gap is the same every day"
 - Tier: 3
 - Intent: Wido's word 2026-09-06: 'For a human it should be a simple command to stop the meta system. And not only simple but also intuitive.' Today there is none: metasystem delegate --cancel stops one job, steward restart restarts and never stops, and the only shutdown path is scripts/agents/arm-supervision.sh --shutdown, an internal script the fixtures call. DONE means: 'metasystem stop --repo .' (accepted from an agent-free terminal, a human act like arm and restart) stops everything the metasystem runs for that checkout in order - running delegate jobs cancelled through the cancel path, then the steward runner, repo watcher, narrator and supervision components through the existing shutdown path - and prints one line per thing it stopped and one line saying how to start again (steward arm). Idempotent: a second stop says nothing is running. 'metasystem status --repo .' prints the same list without stopping anything. A fleet form (--all for every enrolled checkout on this host) is welcome if cheap; per checkout is the requirement. No kill -9 unless the orderly path fails, and then it says so.
 - Origin: main
 - Next step: Closing critique stopverb-crit3 returned 2026-09-06 22:3xZ with SIX material findings (STOP-R3-001..006: the handshake is not a completion barrier, the owner deadline still reconstructs the bound, the registry keeps no owner identity for the directory-gone branch, a dead runner's live turn is missed, a dead watchdog loses the suite identity, and the scope must be sliced: per-checkout vertical first, --all later). All accepted. The design ladder is closed (D81): m1b writes the folds as a short build-decisions addendum on plans/metasystem-stop-verb-design.md plus the r3 record, then the slice-1 build brief (stop/status/arm, fence, creation claims, all local families, fixtures; the fleet form is slice 2). Released 2026-09-06 22:40Z by m1b at this clean point to run account-provenance's build under the one-claim-per-machine quota; m1b reclaims for the build dispatch.
 - OpenedAt: 2026-09-06T12:24:49Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:25:28Z revision=2 opid=ESANH6C2BR6VYW74A9Q5NQEWW2-m1-7cd0bd60 authority=proven digest=1c0acb89a08769fa2813f7e1b5f6d986a61a106fa9aa15c8cf9f56cb9ab4cc0a
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T18:59:41Z
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-06T23:58:57Z revision=13 accountingRevision=13
+- StopCapability: generation=13 revision=13 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T12:24:49Z ZKBER0FQHEW28XV1PJ2X0K49PP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=metasystem-stop-verb
@@ -26,4 +28,5 @@ History:
 - 2026-09-06T21:59:14Z 5F4EYB9BNYGD3PBFKCAJYAC3JN-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
 - 2026-09-06T22:12:35Z H2FJBN30HBHVR5NW8F4DYCMCPM-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
 - 2026-09-06T22:12:38Z 63MGMTQ35VP5QWBVYZ1GN7AB0H-m1b-c6925449 release actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
-Integrity: sha256=f90d0c62b590e2a6248d625e1d10952cca1825160a77e0becfd4394be8de92c3
+- 2026-09-06T23:58:57Z 1FRJG6G9W96P94Q4W54SE4E7SY-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
+Integrity: sha256=68b6752ab00dd16c4b46cfceb094b196cd1287b0d3970f5f6d2b91037f36eb5b
