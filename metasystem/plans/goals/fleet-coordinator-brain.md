@@ -7,14 +7,14 @@
 - Origin: main
 - Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 11
+- Revision: 12
 - Arc: headless-fleet
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=cce26a4e1a354ce8451020f4d14bfcbbc17533f5d69ffcef25dd08547a68313f
+- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-06T21:08:19Z revision=12 opid=XPCKGKNRPNWDATAD69EZH960D9-m1-7cd0bd60 authority=proven digest=d0b21724af8e5439542bca7f64c81458b1fa33741ef2b7cbf4b25511c87f6b87
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=10 at=2026-09-06T21:07:20Z
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T21:04:27Z revision=10 accountingRevision=10
-- StopCapability: generation=10 revision=10 machine=m1 claimEpoch=5 fenceEpoch=0
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T21:08:19Z revision=12 accountingRevision=12
+- StopCapability: generation=12 revision=12 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-03T12:14:47Z E43RG504Z3FDHSSZBFKFC3DQMH-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=fleet-coordinator-brain
@@ -28,4 +28,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=fleet-coordinator-brain reason=sweep
 - 2026-09-06T21:04:27Z VZ97FTP6ATEK80H0TYSVRHFXFC-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-06T21:07:20Z PQKVZ9NW286J6D3NG15XDHB92A-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
-Integrity: sha256=750d572a5bd3a37dc8ff64ea636c7e845018978454db369cd6b7029a3519645b
+- 2026-09-06T21:08:19Z XPCKGKNRPNWDATAD69EZH960D9-m1-7cd0bd60 set-budget actor=human:Wido targets=fleet-coordinator-brain displaced=m1+main-1788594343-3833-fb64b9@2026-09-06T21:04:27Z
+Integrity: sha256=dab827342f787ae98edee55a9b5f1792fa713e6f6cf4c1172b4382005e559170
