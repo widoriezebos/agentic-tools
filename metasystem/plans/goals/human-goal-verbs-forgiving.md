@@ -7,10 +7,12 @@
 - Origin: main
 - Next step: Two slices. Slice 1 (design, small): read cmd/metasystem/goalsync_mutations.go (approvalBudget, budgetTuple, the set-budget routing) and internal/goal for the approve and set-budget transactions; write the one-page design: the compact box grammar and presets, the routing table by goal state, the --by default from the terminal enrollment record, the refusal-prints-a-command rule and where it lives (one function every human verb refusal passes through), the fixture list. Sol critiques once. Slice 2 (build): implement per the design; goal-cli-fixtures.sh drives each refusal and runs the printed command. Receipt: go gate plus goal-cli-fixtures.sh.
 - OpenedAt: 2026-09-06T12:45:35Z
-- Revision: 1
+- Revision: 2
+- Arc: verbs-match-intent
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-06T12:45:35Z 80R77DYNPPC53PEPJ5AHWB9Y4N-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
-Integrity: sha256=00ad899ac399ede8304c00a19fb3dad3e6f1782a6245034452fe35fd35c1dd96
+- 2026-09-06T12:49:45Z 82VNKJKQ2ZZZJ5Q83NZX6SMEWW-m1d-62183579 set-arc actor=m1d+main-1788683763-71870-f7f607 targets=human-goal-verbs-forgiving
+Integrity: sha256=2e9f9e9ea80b8adbbcca480a6cd5dff2e3456cbdf4f92a281361eab9abedb7b7
