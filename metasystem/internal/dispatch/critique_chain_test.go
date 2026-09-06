@@ -48,6 +48,21 @@ func TestLatestMemberSelection(t *testing.T) {
 	}
 }
 
+func TestRegisterCatchUpRefusalNamesAdvanceVerb(t *testing.T) {
+	repo := t.TempDir()
+	state := critiqueState{
+		agents: filepath.Join(repo, "artifacts", "agents"),
+		records: map[string]map[string]any{
+			"critic":    {"jobId": "critic", "round": 1},
+			"critic-r2": {"jobId": "critic-r2", "round": 2, "parentJob": "critic"},
+		},
+	}
+	want := fmt.Sprintf("critic chain critic has folded through round 1 but its latest record is round 2; run job critique-register-advance --repo %s --root-job critic --round-job critic-r2 first", repo)
+	if err := requireRegisterCaughtUp(state, "critic", critiqueCapState{round: 1}); err == nil || err.Error() != want {
+		t.Fatalf("register catch-up refusal = %v, want %q", err, want)
+	}
+}
+
 func writeCapRound(t *testing.T, repo, root, role string, round int, protocolError bool, findings, rigor []any) string {
 	t.Helper()
 	job := root

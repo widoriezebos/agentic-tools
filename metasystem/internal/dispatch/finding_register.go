@@ -756,9 +756,14 @@ func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[stri
 		return s, fmt.Errorf("reviewed implementer round is malformed")
 	}
 	diffPath := filepath.Join(state.agents, state.chainRoot(reviewedJob), "rounds", fmt.Sprint(round), "diff.patch")
+	relativeDiffPath, relativeErr := filepath.Rel(repoRoot, diffPath)
+	if relativeErr != nil {
+		relativeDiffPath = diffPath
+	}
+	relativeDiffPath = filepath.ToSlash(relativeDiffPath)
 	data, err := os.ReadFile(diffPath)
 	if err != nil {
-		return s, fmt.Errorf("reviewed implementer round has no diff.patch; run conformance --stage review first")
+		return s, fmt.Errorf("reviewed implementer round %s (round %d) has no diff.patch at %s; run validate conformance --stage review --job %s first", reviewedJob, round, relativeDiffPath, reviewedJob)
 	}
 	installPrefix, err := projectInstallPrefix(repoRoot)
 	if err != nil {
@@ -797,7 +802,7 @@ func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[stri
 		}
 	}
 	if len(s.paths) == 0 {
-		return s, fmt.Errorf("reviewed implementer round has no changed paths in diff.patch; run conformance --stage review first")
+		return s, fmt.Errorf("reviewed implementer round %s (round %d) has no changed paths in diff.patch at %s; run validate conformance --stage review --job %s first", reviewedJob, round, relativeDiffPath, reviewedJob)
 	}
 	s.tree = asString(result["reviewedTree"])
 	return s, nil

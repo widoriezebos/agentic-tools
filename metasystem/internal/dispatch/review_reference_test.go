@@ -33,7 +33,7 @@ func TestClaimLaunchDerivesReviewReferencesOnReviewedChainRoot(t *testing.T) {
 		}
 	}
 
-	claim("critic-one", "code-critic", "work", "fake:critic-one")
+	claim("critic-one", "code-critic", "work-r2", "fake:critic-one")
 	if got := readRecord(t, root, "work")[independentCritiqueReferenceField]; got != "critic-one" {
 		t.Fatalf("first critique reference = %v", got)
 	}

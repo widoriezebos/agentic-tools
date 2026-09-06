@@ -149,6 +149,54 @@ func claimParamsForTest(root, opid string) ClaimLaunchParams {
 	}
 }
 
+func TestClaimLaunchRequiresLatestImplementerRoundForFreshCritics(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	writeJSONFile(t, jobs, "work.json", map[string]any{
+		"jobId": "work", "role": "implementer", "round": 1, "parentJob": nil, "status": "completed",
+	})
+	writeJSONFile(t, jobs, "work-r2.json", map[string]any{
+		"jobId": "work-r2", "role": "implementer", "round": 2, "parentJob": "work", "status": "completed",
+	})
+	now := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	claim := func(job, role, reviews, verb string) (ClaimResult, error) {
+		t.Helper()
+		params := claimParamsForTest(root, job)
+		params.GoalID, params.GoalRevision, params.GoalTier, params.MachineID = "", 0, 0, ""
+		params.Request.Role = role
+		params.Request.SessionKey = "fake:" + job
+		params.Reviews = reviews
+		params.AdapterVerb = verb
+		if verb == "follow-up" {
+			resumed := "session-" + job
+			params.Request.DispatchMode = DispatchModeFollowUp
+			params.Request.ResumedSessionID = &resumed
+		}
+		return ClaimLaunch(params, claimDependenciesForTest(&now, identity.Verification{}))
+	}
+
+	wantStale := "code-critic dispatch --reviews names work (round 1), but that chain's latest implementer round is work-r2 (round 2); name the round job"
+	if _, err := claim("critic-stale", "code-critic", "work", "dispatch"); err == nil || err.Error() != wantStale {
+		t.Fatalf("stale fresh critic = %v, want %q", err, wantStale)
+	}
+	if result, err := claim("critic-latest", "code-critic", "work-r2", "dispatch"); err != nil || result.Outcome != ClaimWON {
+		t.Fatalf("latest fresh critic = %s, %v", result.Outcome, err)
+	}
+	if result, err := claim("critic-follow", "code-critic", "work", "follow-up"); err != nil || result.Outcome != ClaimWON {
+		t.Fatalf("inherited follow-up binding = %s, %v", result.Outcome, err)
+	}
+	wantWarden := "warden dispatch --reviews names work (round 1), but that chain's latest implementer round is work-r2 (round 2); name the round job"
+	if _, err := claim("warden-stale", "warden", "work", "dispatch"); err == nil || err.Error() != wantWarden {
+		t.Fatalf("stale fresh warden = %v, want %q", err, wantWarden)
+	}
+	if result, err := claim("warden-latest", "warden", "work-r2", "dispatch"); err != nil || result.Outcome != ClaimWON {
+		t.Fatalf("latest fresh warden = %s, %v", result.Outcome, err)
+	}
+	if result, err := claim("verifier-root", "verifier", "work", "dispatch"); err != nil || result.Outcome != ClaimWON {
+		t.Fatalf("verifier root binding = %s, %v", result.Outcome, err)
+	}
+}
+
 func writeClaimRecord(t *testing.T, root, opid string, request LaunchFingerprintRequest, fields map[string]any) map[string]any {
 	t.Helper()
 	request.GoalID = "goal-a"

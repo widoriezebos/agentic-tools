@@ -156,7 +156,8 @@ func requireRegisterCaughtUp(state critiqueState, root string, capState critique
 		return fmt.Errorf("critic chain %s has an invalid latest round", root)
 	}
 	if latestRound != capState.round {
-		return fmt.Errorf("critic chain %s has folded through round %d but its latest record is round %d; advance the canonical register before reading exhaustion", root, capState.round, latestRound)
+		repoRoot := filepath.Dir(filepath.Dir(state.agents))
+		return fmt.Errorf("critic chain %s has folded through round %d but its latest record is round %d; run job critique-register-advance --repo %s --root-job %s --round-job %s first", root, capState.round, latestRound, repoRoot, root, asString(latest["jobId"]))
 	}
 	return nil
 }

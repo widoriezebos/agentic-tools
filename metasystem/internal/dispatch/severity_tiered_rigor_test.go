@@ -195,6 +195,33 @@ func TestCritiqueSubjectPrefixesProjectRelativeDiffPaths(t *testing.T) {
 	}
 }
 
+func TestCritiqueSubjectDiffRefusalsNameReviewedRoundAndPath(t *testing.T) {
+	repo := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "impl.json", map[string]any{
+		"jobId": "impl", "role": "implementer", "round": 1, "parentJob": nil,
+	})
+	state := loadCritiqueState(repo)
+	root := map[string]any{"reviews": "impl"}
+	wantMissing := "reviewed implementer round impl (round 1) has no diff.patch at artifacts/agents/impl/rounds/1/diff.patch; run validate conformance --stage review --job impl first"
+	if _, err := critiqueSubjectForRound(repo, state, root, "code-critic", map[string]any{}); err == nil || err.Error() != wantMissing {
+		t.Fatalf("missing diff refusal = %v, want %q", err, wantMissing)
+	}
+	diffDir := filepath.Join(repo, "artifacts", "agents", "impl", "rounds", "1")
+	if err := os.MkdirAll(diffDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(diffDir, "diff.patch"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantEmpty := "reviewed implementer round impl (round 1) has no changed paths in diff.patch at artifacts/agents/impl/rounds/1/diff.patch; run validate conformance --stage review --job impl first"
+	if _, err := critiqueSubjectForRound(repo, state, root, "code-critic", map[string]any{}); err == nil || err.Error() != wantEmpty {
+		t.Fatalf("empty diff refusal = %v, want %q", err, wantEmpty)
+	}
+}
+
 func TestNEWPathAccepted(t *testing.T) {
 	repo := t.TempDir()
 	if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {

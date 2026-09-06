@@ -232,6 +232,9 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if params.AdapterVerb != "dispatch" && params.AdapterVerb != "follow-up" {
 		return ClaimResult{}, fmt.Errorf("claim-launch adapter verb must be dispatch or follow-up")
 	}
+	if err := validateFreshCriticReviewsLatest(params.Root, params.Request.Role, params.Reviews, params.AdapterVerb); err != nil {
+		return ClaimResult{}, err
+	}
 	configuration, err := MinimumHazardConfiguration(params.Request.DestructiveReach)
 	if err != nil {
 		return ClaimResult{}, err
@@ -749,6 +752,47 @@ func validateClaimReviews(role, reviews string) error {
 		if reviews != "" {
 			return fmt.Errorf("claim-launch reviews is only valid for code-critic, warden, and verifier roles")
 		}
+	}
+	return nil
+}
+
+func validateFreshCriticReviewsLatest(repoRoot, role, reviews, adapterVerb string) error {
+	if adapterVerb != "dispatch" || (role != "code-critic" && role != "warden") {
+		// A follow-up resolves the register of the round it continues; certification
+		// of a later work round is a fresh critic's job.
+		return nil
+	}
+	state := loadCritiqueState(repoRoot)
+	reviewed, present := state.records[reviews]
+	if !present {
+		return nil
+	}
+	reviewedRound, ok := numInt(reviewed["round"])
+	if !ok {
+		return nil
+	}
+	chainRoot := state.chainRoot(reviews)
+	if chainRoot == "" {
+		return nil
+	}
+	members, err := chainMembers(filepath.Join(repoRoot, "artifacts", "agents", "jobs"), chainRoot)
+	if err != nil {
+		return fmt.Errorf("claim-launch cannot read reviewed chain %s: %w", chainRoot, err)
+	}
+	latestJob := reviews
+	latestRound := reviewedRound
+	for _, member := range members {
+		if asString(member.record["role"]) != "implementer" {
+			continue
+		}
+		round, roundOK := numInt(member.record["round"])
+		if roundOK && round > latestRound {
+			latestJob = asString(member.record["jobId"])
+			latestRound = round
+		}
+	}
+	if latestRound > reviewedRound {
+		return fmt.Errorf("%s dispatch --reviews names %s (round %d), but that chain's latest implementer round is %s (round %d); name the round job", role, reviews, reviewedRound, latestJob, latestRound)
 	}
 	return nil
 }
