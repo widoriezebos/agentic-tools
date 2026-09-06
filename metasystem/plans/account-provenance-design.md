@@ -7,8 +7,11 @@ this lands is "Wido@M0". Design brief:
 `plans/account-provenance-design-brief.md`. Revision 2, 2026-09-02: folds
 the eight material findings of
 `records/misc/account-provenance-critique-r1.md` by id (fold record at the
-end). Every tree reference below was read in this worktree today; every
-CLI observation was run on this machine today.
+end). Revision 3, 2026-09-06: folds the two material findings of the
+closing critique, `records/misc/account-provenance-critique-r2.md`, by id
+in the same fold record. Every tree reference below was read in this
+worktree on the day of its revision; every CLI observation was run on this
+machine that day.
 
 ## Verdict up front
 
@@ -167,7 +170,7 @@ surfaces, run on this machine on 2026-09-02:
 | --- | --- | --- |
 | claude 2.1.258 | `claude auth status --json`: exit 0, JSON on stdout with `loggedIn`, `authMethod`, `apiProvider`, `analyticsDisabled`, `projectsDirectory`, `email`, `orgId`, `orgName`, `subscriptionType`. `--json` and `--text` are the documented flags; JSON is the default, the adapter passes `--json` explicitly. | `cli-surface`, `surface` = `claude-auth-status`, `accountId` = `orgId`, `accountLabel` = `email`. Exit nonzero or `loggedIn` false: `not-logged-in`. Output not JSON: `malformed-output`. `loggedIn` true but `orgId` or `email` empty (API-key or third-party provider mode names no account): `identity-incomplete`. |
 | codex 0.148.0 | `codex login status` prints "Logged in using ChatGPT" and nothing else; `--help` shows no output-format flag. The identity lives in `${CODEX_HOME:-~/.codex}/auth.json`: top-level keys `OPENAI_API_KEY`, `auth_mode` (observed `chatgpt`), `last_refresh`, `tokens`; `tokens` keys `access_token`, `account_id`, `id_token`, `refresh_token`. The `id_token` payload decodes to claims including `iss` (`https://auth.openai.com`), `aud`, `exp`, `iat`, `email`, `email_verified`, `sub`, and the object `https://api.openai.com/auth` with `chatgpt_account_id`, `chatgpt_plan_type`, `chatgpt_user_id`, `organizations`, `user_id`. | `credential-claims` as defined below, `surface` = `codex-login-status+auth-file`, `accountId` = `chatgpt_account_id`, `accountLabel` = `email`. Login status nonzero: `not-logged-in`. File unreadable: `credential-unreadable`. `auth_mode` other than `chatgpt`: `api-key-mode`. Payload not decodable, or `iss` not `https://auth.openai.com`, or `exp` missing: `credential-invalid`. `exp` before the engine's now: `credential-expired`. Claims present but either identity claim empty: `identity-incomplete`. |
-| devin 3000.4.25 | `devin auth status` takes no options (`--help` verified; `--format json` is rejected). Run from this sandbox it opens a connection to `server.codeium.com:443` (denied by the sandbox) and panics before printing anything because it cannot create its rolling log file. Its success output is UNOBSERVED. | Floor: `unattested`, `surface` = `devin-auth-status`, `error` = `not-logged-in` on nonzero exit and `surface-unmapped` on exit 0. Conditional mapping above the floor is specified below and is NOT built until the named observation exists. |
+| devin 3000.4.25 | `devin auth status` takes no options (`--help` verified; `--format json` is rejected). Run from this sandbox it opens a connection to `server.codeium.com:443` (denied by the sandbox) and panics before printing anything because it cannot create its rolling log file. Its success output is UNOBSERVED. | Floor: `unattested`, `surface` = `devin-auth-status`, `error` = `adapter-failed` on nonzero exit and `surface-unmapped` on exit 0. Exit status alone names no cause: the one observed nonzero exit came from denied network access and a log-file panic, not from a missing login, so `not-logged-in` is never recorded for devin until the observation below shows what a logged-out CLI prints. Conditional mapping above the floor is specified below and is NOT built until the named observation exists. |
 | fake | none (fixture protocol simulator) | `cli-surface`, `surface` = `fake-fixed`, `accountId` = `fake-account`, `accountLabel` = `fake@example.invalid`; the environment knob `METASYSTEM_FAKE_ACCOUNT` selects `unattested` (prints `not-logged-in`), `hang` (spawns a sleeping child and never returns), `malformed` (prints an attested object with an extra `token` key), or `timestamp` (prints an object carrying `capturedAt`), for the fixtures in Q5. |
 
 **The codex grade, stated honestly.** `credential-claims` means exactly:
@@ -188,16 +191,23 @@ closed key set makes a leak into a record a refused object.
 
 **The devin mapping, resolved conditionally with a floor.** Version 1
 ships the floor above: the devin `account` verb runs `devin auth status`
-under the engine ceiling and records `unattested` whatever it prints, with
-the cause by exit code. The mapping above the floor is decided now and
-enabled only after one live observation:
+under the engine ceiling and records `unattested` whatever it prints. The
+cause is the one the mechanism can establish and no more: a nonzero exit is
+`adapter-failed` (the command did not complete; whether the network, the
+log file, or the login failed is unknown), and exit 0 is `surface-unmapped`
+(the command completed and the output is not yet mapped). The mapping
+above the floor is decided now and enabled only after one live
+observation:
 
 - Required observation, which the build reports as a gap in its return
   rather than performing: on a network-capable terminal where the CLI is
   logged in, run `devin auth status`, and record exit code, stdout, and
   stderr with the email redacted, in
   `records/misc/devin-auth-status-observation.md` (an ordinary record,
-  no new class), together with the CLI version.
+  no new class), together with the CLI version. The same record captures
+  the logged-out run (after `devin auth logout` or on a terminal that
+  never logged in): only a recognized logged-out output, matched on the
+  text and not on the exit status, ever earns `not-logged-in` for devin.
 - Mapping once observed: if the output names an organization id and an
   email, `cli-surface`, `accountId` = organization id, `accountLabel` =
   email. If it names only an email, `cli-surface` with the email in both
@@ -347,6 +357,23 @@ this session has composed since it announced, meaning every record under
 declared, carries `account` satisfying the same test. A seat with an
 attested announcement and zero jobs satisfies (b) vacuously.
 
+**Records that never ran a runtime are outside (b).** `BuildSetup`
+(`internal/dispatch/build.go` line 134) publishes the reservation record
+with `status` `pending-setup` and `phase` `setup`, carrying `mainId` but no
+runtime, and a refused dispatch leaves it behind as a husk: `dispatch.sh`
+`fail_setup_husk` (line 246) patches it to `status` `failed` with
+`refusalClass`, and the record is preserved. No runtime was composed for
+such a record, so there is no identity to attest, and `BuildSetup` does not
+become an account writer (capture there would probe an account before the
+composition that names the runtime exists). The evaluator skips every job
+record whose `phase` is `setup`, whatever its status: a pending
+reservation still in setup, or a preserved refusal husk. `phase` is the
+field the goal budget already reads to set setup refusals aside
+(`internal/goalbudget/budget.go` line 20), and skipping it here keeps one refused
+dispatch from pinning "Wido@M0" for the lifetime of that main. Every
+record that reached `BuildRecord` or `BuildFollowRecord` (phase
+`handshake` onward) carries `account` and is judged.
+
 **Who checks it, where.** The landing evaluator.
 `internal/landing/observe.go` `Observation` (line 49) gains an additive
 field `accountStamp` with `{"required": bool, "code": <token>, "record":
@@ -458,7 +485,17 @@ changes for this design.
   jobs directory: announcement unattested gives `required`
   `announcement-unattested`; one job with the announcement's `mainId`
   unattested gives `required` `job-unattested` naming it; all attested
-  gives `retired`.
+  gives `retired`; and a preserved failed setup husk (`phase` `setup`,
+  `status` `failed`, `refusalClass` `setup`, the announcement's `mainId`,
+  no `account`) beside attested records still gives `retired`, as does a
+  `pending-setup` record in the same shape.
+- **Devin floor fixture, Go, `internal/adapter/devinaccount_test.go`:**
+  drives `scripts/agents/adapters/devin.sh account` with a stub `devin` on
+  `PATH`: the stub exits 1 printing the observed network-denied and
+  log-file text gives `unattested` `adapter-failed`; the stub exits 0
+  printing "logged in" gives `unattested` `surface-unmapped`; neither
+  result contains a byte of the stub's output, and `not-logged-in` never
+  appears.
 - **Protocol fixture, shell, `scripts/agents/dispatch-fixtures.sh` (run by
   `scripts/validate-metasystem.sh` line 2376):** a fake dispatch's job
   record carries `account` with `cli-surface` and `fake-account`; with
@@ -527,6 +564,8 @@ changes for this design.
 | account-provenance-r1-runtime-registry-coverage | Capture for a registered runtime is adapter-only; a new runtime is a `runtimes.go` Declaration plus seam files with `config/validate.go` refusing others; the registry declares no account capability; the reject condition is restated accordingly. |
 | account-provenance-r1-semantic-validation-fixtures | The object is a closed six-key contract with attested-requires-identity, unattested-carries-none, cause-token errors, fixed surface tokens, and engine-stamped timestamps; nine Go fixtures in `internal/account`, six in `internal/adapter`, one in `internal/landing`, one lease case, and one shell case are named with their gates. |
 | account-provenance-r1-devin-unresolved-mapping | Devin ships at the `unattested` floor with fixed causes; the conditional mapping (org id and email, email only, logged-in only) is decided here; the one live observation and its record path are named as a gap the build reports; `devin.org_id` is rejected as a source. |
+| account-provenance-r2-setup-husks-block-retirement | Condition (b) skips every job record whose `phase` is `setup` (pending reservations and preserved refusal husks), the predicate the goal budget already uses; `BuildSetup` is stated not to be an account writer, with the reason; the retirement fixture gains the failed husk and pending-setup cases. |
+| account-provenance-r2-devin-nonzero-cause | A nonzero `devin auth status` exit is `adapter-failed`, exit 0 is `surface-unmapped`; `not-logged-in` is earned only by a recognized logged-out output recorded in the same observation record; a devin floor fixture pins both causes and the absence of output bytes. |
 
 ## Self-grade
 
@@ -549,7 +588,10 @@ changes for this design.
   attested record; (d) `claude auth status --json` and the codex
   credential file are CLI-version-observed shapes with no stability
   contract; drift lands on the adapter, whose capture degrades to
-  `unattested` rather than guessing.
+  `unattested` rather than guessing; (e) the setup-phase exclusion trusts
+  `phase` on the job record, which the dispatcher and the engine both
+  write; a record that reached handshake but lost its `phase` would be
+  judged and, lacking `account`, would keep the stamp, the safe direction.
 - **Reject this design if:** implementing it requires touching anything
   beyond the announcement key contract, struct, and writer
   (`internal/census/announcement.go`, `internal/lease/classify.go`,
