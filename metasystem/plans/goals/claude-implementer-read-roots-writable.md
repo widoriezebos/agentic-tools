@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: MECHANICAL after code-critic-runtime-has-no-shell lands (that chain adds denyWrite for the critic set and the scratch allowWrite): extend denyWrite to every role's read roots minus write roots; settings test; live probe with an implementer record from the candidate engine.
 - OpenedAt: 2026-09-06T19:18:35Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=2 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=521d4eaf35764fb9c8585adc6144c60388fddcf0d4caf99dd53deffe70078483
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=3 at=2026-09-06T21:52:40Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T21:52:27Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-06T19:18:35Z C25MKZCYCMWBBM8HVQADXX3RA2-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
 - 2026-09-06T21:18:46Z 10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 approve actor=human:Wido targets=adopt-bed-authority-probe-passes-tier,adopt-bed-gate-unreachable-under-load,claude-critic-sandbox-allows-loopback,claude-critic-shell-network-deny,claude-delegate-scratch-cleanup,claude-implementer-read-roots-writable
 - 2026-09-06T21:52:27Z RW1VPZ1JAXD40N3JSWK9J0V9DP-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
-Integrity: sha256=696e249c06d8e2a35faba178ece84f10e22c447892f8762997cb6a9aae18b317
+- 2026-09-06T21:52:40Z S207GRXFCW48725DG6D1BFXCYN-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-implementer-read-roots-writable
+Integrity: sha256=711ae58c1166795e37e611dadf7a729a56db1d489a134a675ba4c28176159272
