@@ -12,8 +12,9 @@ metasystem/plans/seat-mutual-awareness-design.md, revision 4, SHA-256
 49e2a8c7cae11fc0ed6af0e5d59325e8313a0d0e9d9723a736c70e6817ba2164, the
 commit named 7f8c13a6 on main. (The "Declared Outputs" digest the
 dispatcher stamps into your prompt is the digest of the outputs
-manifest, not of the design; do not stop on it.) Write your register
-to metasystem/records/misc/seat-mutual-awareness-critique-r4.md.
+manifest, not of the design; do not stop on it.) Your register is a
+new file, records/misc/seat-mutual-awareness-critique-r4.md under the
+metasystem directory (the outputs manifest names it).
 
 The rounds before: metasystem/records/misc/seat-mutual-awareness-critique-r3.md
 left five material findings. C-21, C-22 and C-23 concerned the rollout
