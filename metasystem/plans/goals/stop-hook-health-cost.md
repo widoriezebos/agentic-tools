@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: The Stop hook gets four seconds and one health call spends two of them: metasystem health --hook-preview costs a steady 2.0s on m1 (measured three times, 2.04/2.01/2.07), and the hook also pays turn-verdict at 0.83s plus arming, digest, watchdog, evidence and sha256 work inside the same budget. On 2026-09-05 that budget expired and the turn end was refused with 'Stop deadline expired before a safe turn verdict'. DONE means the hook's health input costs a small fraction of its budget, proven by a measurement in a fixture rather than by hand, with the refusal path unchanged when the budget really is exceeded
 - Origin: main
-- Next step: Measured on m1 2026-09-05 but not diagnosed: health --hook-preview is a steady 2.0s while goal fetch is 0.5s and proc probe is 0.006s, so the cost is inside health's own component set rather than the ledger read. Next: profile which health components dominate (the spend fence prices 647 usage records and the job scan reads 112 records are the first suspects), then decide between caching a tick-owned observation and narrowing what --hook-preview computes. WAITS ON m2's supervisor repo-identity landing before any diagnosis, per Wido 2026-09-05
+- Next step: Measured on m1 2026-09-05 but not diagnosed: health --hook-preview is a steady 2.0s while goal fetch is 0.5s and proc probe is 0.006s, so the cost is inside health's own component set rather than the ledger read. Next: profile which health components dominate (the spend fence prices 647 usage records and the job scan reads 112 records are the first suspects), then cache or bound the expensive one inside the hook-preview path so the whole Stop hook fits its budget with headroom; fixture: a hook-preview under the fixture's record volume completes under one second. SIGHTING 2026-09-06 (m1, during a builder round plus a host suite run): the seat's own Stop hook expired its deadline twice, 07:19:14Z and 07:22:58Z, each a single 'stop response outcome=deadline-expired-block' line followed by an orphaned evidence-gc block - the worker was killed mid evidence-gc on a loaded machine. Load on the host is a normal condition when nodes build; the budget must hold under it.
 - OpenedAt: 2026-09-05T10:09:49Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=2 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=27d89680efeefcda7f405f47ec025d549e7d1d2656474c2a74773d1c6fe39018
@@ -15,4 +15,5 @@
 History:
 - 2026-09-05T10:09:49Z YM1KHGTB9X8C64HM9WQJ3KJNZ5-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-health-cost
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=stop-hook-health-cost reason=sweep
-Integrity: sha256=1f116785b7a51b33a7be2d0406101646fee0e0563ee54348b6672414ae4b2c87
+- 2026-09-06T07:32:50Z 32TJK7X84HNNCD6KDECQSYW1DC-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-health-cost
+Integrity: sha256=9b51fc2ec4b2f7aad836438f6302eedea2e1c47a7425dbfcfff4ac084adcde38
