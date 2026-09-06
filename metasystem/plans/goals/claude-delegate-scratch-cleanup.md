@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: MECHANICAL: brief the cleanup in scripts/agents/adapters/claude.sh (remove the scratch dir after the round's result is derived, on success and failure), the switch assertions in internal/adapter/runtime_test.go, and RESOLVE the scratch path (realpath: /var/folders is a symlink to /private/var/folders, and five adapter collect-port tests fail in a delegate shell on the mismatch, proof job lpb-proof1) and trim its trailing slash before composing (double slash, proof job ccs-proof1 F-4); build, land as its own chain.
 - OpenedAt: 2026-09-06T19:57:39Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=3 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=2d459cfa518d08b171abccb4a29abd3be2d003f7c9165f98559db1f200728f07
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=5 at=2026-09-06T23:39:16Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T23:39:02Z revision=5 accountingRevision=5
 - StopCapability: generation=5 revision=5 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-06T21:18:46Z 10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 approve actor=human:Wido targets=adopt-bed-authority-probe-passes-tier,adopt-bed-gate-unreachable-under-load,claude-critic-sandbox-allows-loopback,claude-critic-shell-network-deny,claude-delegate-scratch-cleanup,claude-implementer-read-roots-writable
 - 2026-09-06T22:29:50Z KJ32NQTPC4D2P3WCW5ZVHASSD5-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
 - 2026-09-06T23:39:02Z P0GKAN2PEQ164BV67RTS7S66KN-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
-Integrity: sha256=15401400f03cd719258629e6e043d78e73b7a30e573c45184b70e4ca5df11e81
+- 2026-09-06T23:39:16Z 9J1D1EQXBZ9QW7HZKFMDP92CGH-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
+Integrity: sha256=9e48c79aa6aebe95c9d1b587fbb6464c8b82023cba32791aef0a676e4089b875
