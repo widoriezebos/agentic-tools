@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: Both Fable code-critic rounds on chain rgr-build1 and both on chain shr-build1 (2026-09-06) reported the same gap: the claude runtime exposed only file reading and searching tools, no shell, so none of the evidence commands the review brief allowed (focused go tests, vet, gofmt, bash -n, git diff) could run, and every evidence entry was read or inferred. The code-critique skill expects the critic to run focused checks that distinguish a suspected defect from a hypothetical one, and the orchestrator had to run them in the critic's place each time. DONE means a code-critic dispatched on the claude runtime can run the brief's evidence commands in the reviewed worktree (read-only on the tree, shell allowed), the permissions preset or role requirements say so, and one critic return shows evidence marked ran.
 - Origin: main
-- Next step: Read scripts/agents/roles/code-critic.requirements.json and the claude adapter's tool policy for the code-critic role; decide whether the shell is withheld by the permissions preset or by the adapter's allowed-tools list; brief a one-round fix with a fake-runtime fixture.
+- Next step: STATE 2026-09-06 19:08Z (m1c): claimed; brief plans/code-critic-runtime-has-no-shell-brief.md landed e8cf21d1; chain ccs-build1 (Sol, DESIGN-BEARING, up to 90 min) building: claudeCriticTools Bash,Read,Glob,Grep for code-critic, design-critic and warden with empty write roots in BuildClaudeCommand and BuildClaudeSettings (Edit, Write, NotebookEdit stay denied, sandbox unchanged), one shared role set, a private GOCACHE under the system temp dir exported by scripts/agents/adapters/claude.sh for every claude delegate, a table test and a settings test, one sentence in the three role packets. Then conformance, one Fable critique (this goal's critic will be the first to run with a shell if the candidate engine is used), fold if needed, close, seat-side live-envelope proof (a claude delegate from the candidate engine runs go test and is refused a touch in the reviewed tree), land.sh --chain, go-build, up, done.
 - OpenedAt: 2026-09-06T11:01:39Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -21,4 +21,5 @@ History:
 - 2026-09-06T11:02:38Z SB01VF9Q2A59X40GM66RJJP2JV-m1-a4f8999f approve actor=human:Wido targets=code-critic-runtime-has-no-shell,human-acts-derive-their-lineage,land-sh-omits-the-full-width-chain-receipt,landing-receipt-races-the-narrator-digest
 - 2026-09-06T19:00:35Z 9T8B5S5FQBVJJ6RG4QM1247WAK-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
 - 2026-09-06T19:00:47Z T4A6W0T5WVD2S30P3S3W2G1KEA-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
-Integrity: sha256=ff8d954e56590a8ee56b48e9443d2daa4ccb370900bfbc9a2051fbc4783fb24a
+- 2026-09-06T19:01:09Z CTBHAGHYFJDB2083YP2GCXK9JF-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=code-critic-runtime-has-no-shell
+Integrity: sha256=b26b9a8dda8c16c5be44bf875cae89e224c90cdd9af58596c93cc8beb77e1d15
