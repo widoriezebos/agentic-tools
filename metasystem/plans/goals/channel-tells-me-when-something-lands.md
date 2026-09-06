@@ -7,10 +7,10 @@
 - Origin: main
 - Next step: WIDO'S CORRECTION 2026-09-06: 'landing' meant finishing a slice and finishing a goal - two different messages, both ledger verbs (goal release after Goal-Item landings; goal done with its conclusion), each with a machine-minted operation id. Decided: an empty released slice is NOT a notice; at-least-once with a visibly marked repeat is accepted. The intent still says 'a landing produces a message' in m1's words and must be re-approved: unapprove, edit the intent to the two-events wording, approve - human acts at the enrolled terminal. Then RE-AIM to revision 3 (not a fold): Decisions 1-3 rewritten on the two verbs and the opid; the trigger moves from land.sh to goal done / goal release in cmd/metasystem/goalsync_mutations.go plus the tick sweep in internal/channel/phase/phase.go; of the seven round-2 findings four dissolve (COMMIT-ERREXIT, REFLOG-REPLAY, NEW-BRANCH-STALE-REF, LANDING-SCOPE) and the rest carry (TIMEOUT-CAP as a constant, RETRY-OWNER, RETRY-FALLBACK-STALE, UNDELIVERED-AGE, RUNE-BOUND). Then critique on a fresh root, build, review.
 - OpenedAt: 2026-09-05T11:06:28Z
-- Revision: 12
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 13
+- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:49:11Z revision=12 opid=2H23YNNWZMZCWA42VH8H0X1YJY-m1-a4f8999f authority=proven digest=c6e3d2e3da58c381daa5adfee2e6661fd80cce198b1e38520840b0c6a51dcfcc
+- Approved: by=human:Wido at=2026-09-06T21:08:22Z revision=13 opid=1N940MFRAVVB6MPPAYQ2PA0JGC-m1-7cd0bd60 authority=proven digest=68b75bc46d1af58c95bbc146fd3f42d72cf0f31180b172df624338b707f02bd0
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=5 at=2026-09-05T23:08:05Z
 
 History:
@@ -26,4 +26,5 @@ History:
 - 2026-09-06T06:46:52Z VDZRHMFXS5WYGMX26TTW8JDY40-m1-a4f8999f unapprove actor=human:human:Wido targets=channel-tells-me-when-something-lands reason=intent must say finished slice and finished goal, not a git push
 - 2026-09-06T06:47:47Z 48KJJQYW1YG7E63S5XXM1SR7Q7-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=channel-tells-me-when-something-lands
 - 2026-09-06T06:49:11Z 2H23YNNWZMZCWA42VH8H0X1YJY-m1-a4f8999f approve actor=human:Wido targets=channel-tells-me-when-something-lands
-Integrity: sha256=54575f37ac8fb02de4ca176832f0394df5868e2a7973731c05cdb352b8674c50
+- 2026-09-06T21:08:22Z 1N940MFRAVVB6MPPAYQ2PA0JGC-m1-7cd0bd60 approve actor=human:Wido targets=channel-tells-me-when-something-lands
+Integrity: sha256=b77a36130b07f8ab08e93dba94af3deec85c2be4fff05d7fefffed1e1d6138ab
