@@ -1,17 +1,19 @@
 # account-provenance
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a wrong or missing account field misattributes cost, never work; novelty 2: a new leaf package, an adapter verb on four runtimes and a landing observation field; exposure 2: every metasystem up and every dispatch runs the capture, bounded and non-gating; accumulation 1: the hand-written stamp is one string per landing and retires per machine"
 - Tier: 2
 - Intent: ACCOUNT PROVENANCE (m0, re-opened on the fleet line at reconciliation): m0's Claude runtime signs into a different account than m1/m2 — a separate capacity pool, which is why m0 exists. m0's landings are stamped m0 while another account paid for them. The run record should carry the account identity alongside runtime and model so cost and capacity attribution survive in the record. Wido's word (decision-ask 2026-08-31): the string m0 stamps in every landing message until this lands is 'Wido@M0'.
 - Origin: main
 - Next step: Design CLOSED at revision 3 (2c4e2c13): critic account-provenance-crit2 resolved everything in round 2, zero material. BLOCKED on a human act 2026-09-06 21:55Z: reclaim is refused by the tier-2 norm because the standing tuple has reviewRounds=3 (box allows 2). Wido: from the metasystem directory run  ./bin/metasystem goal approve --id account-provenance --by Wido --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 720 --active-job-limit 1 --review-round-limit 2  (two review rounds suffice; the limit counts per critic chain). Then m1b claims, lands the build brief (draft in m1b's scratchpad; boundary = the design's reject-if list plus the paths its capture mechanics name), dispatches account-provenance-build1 (implementer, DESIGN-BEARING), conformance, gate, fresh code critic, close, land --chain, receipt, done.
 - OpenedAt: 2026-08-31T19:09:19Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T22:02:12Z revision=15 opid=2AWSYN7QHE42JXPDJ3XPWD8Z05-m1-7cd0bd60 authority=proven digest=60826e1242fd70ece79b9c6c13567b97a067ed50b2ef6db5c1bca9bb9a3d97ba
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=3 at=2026-09-02T05:51:12Z
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-06T22:12:41Z revision=16 accountingRevision=16
+- StopCapability: generation=16 revision=16 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-31T19:09:19Z NHE37NCWZ1MATB7WFYK0PA87KP-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=account-provenance
@@ -29,4 +31,5 @@ History:
 - 2026-09-06T20:16:11Z VNDK6SV240HRH7F722QY6EQM8F-m1b-c6925449 release actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
 - 2026-09-06T21:49:49Z 2A4CJFKCY0RPKJ9M2W96AT0A12-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
 - 2026-09-06T22:02:12Z 2AWSYN7QHE42JXPDJ3XPWD8Z05-m1-7cd0bd60 approve actor=human:Wido targets=account-provenance
-Integrity: sha256=7ca3e529f16bc1dad25b1eb27b2b20182274591f3e78bafca8b4d4122e1b9fac
+- 2026-09-06T22:12:41Z 04YBW0A0SP3D5DMBKB7GSXRYVD-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
+Integrity: sha256=918e56bd36382ec1335de58d192e9625bbb458871fb5a4f499a7069bd13eef13
