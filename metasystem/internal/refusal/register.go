@@ -142,6 +142,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "TRANSPORT_FAILED", Reason: "a steward component observation that refuses nothing"},
 	{Pattern: "TRANSPORT_SUBMITTED", Reason: "a steward component observation that refuses nothing"},
 	{Pattern: "ledger-unavailable", Reason: "a steward component observation that refuses nothing"},
+	{Pattern: "ledger-unreadable", Reason: "a turn-verdict digest sentinel the steward compares, not a refusal code"},
 	{Pattern: "LOCAL_PENDING", Reason: "a stop-verdict state after a stop was ordered"},
 	{Pattern: "LOCAL_TERMINAL", Reason: "a stop-verdict state after a stop was ordered"},
 	{Pattern: "FOREIGN_REPORT_ONLY", Reason: "a stop-verdict state after a stop was ordered"},

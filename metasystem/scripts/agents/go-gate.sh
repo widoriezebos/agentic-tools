@@ -8,13 +8,13 @@
 # Sourced by validate-metasystem.sh; also runnable standalone.
 #
 # Fast mode (go-gate.sh --fast) runs only the static stages — gofmt, vet,
-# staticcheck — plus the engine build: seconds end to end, for tight edit
-# loops. It is not a landing gate: no tests, no cross-builds, no
-# govulncheck, no coverage ratchet, and it refuses the witness protocol
-# outright. The full gate remains the landing requirement. The switch is
-# the explicit flag only, never an environment variable: an exported
-# variable outlives the edit loop it served and would silently weaken the
-# very suites that make this gate a landing requirement.
+# staticcheck, refusal register — plus the engine build: seconds end to end,
+# for tight edit loops. It is not a landing gate: no race tests, no
+# cross-builds, no govulncheck, no coverage ratchet, and it refuses the
+# witness protocol outright. The full gate remains the landing requirement.
+# The switch is the explicit flag only, never an environment variable: an
+# exported variable outlives the edit loop it served and would silently
+# weaken the very suites that make this gate a landing requirement.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -437,6 +437,12 @@ gate_sc_out=$(go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./... 2>&1) \
   || gate_static_reds+=("staticcheck 2026.2 (module v0.8.0) refused (or could not run):
 $gate_sc_out")
 
+if [[ "$gate_fast" == 1 ]]; then
+  gate_refusal_out=$(go test -count=1 ./internal/refusal 2>&1) \
+    || gate_static_reds+=("refusal register failed:
+$gate_refusal_out")
+fi
+
 gate_build_scratch=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-collect.XXXXXX")
 if ! bash scripts/agents/go-build.sh --out "$gate_build_scratch" >/dev/null 2>&1; then
   gate_static_reds+=("build failed (go-build.sh)")
@@ -464,7 +470,7 @@ if [[ "$gate_fast" == 1 ]]; then
     bash scripts/agents/go-build.sh \
       || { echo "go gate: build failed" >&2; exit 1; }
   fi
-  echo "go gate: fast mode passed (gofmt, vet, staticcheck, build); the full gate remains the landing requirement"
+  echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
   exit 0
 fi
 

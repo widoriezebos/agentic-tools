@@ -235,7 +235,7 @@ bash "$root/scripts/agents/coverage-delta.sh" "${coverage_arguments[@]}" || {
   exit 1
 }
 # IL-28 static re-proof: no landing goes red on a static check. The
-# boundary re-proves gofmt, vet, staticcheck, and the engine build via
+# boundary re-proves gofmt, vet, staticcheck, the refusal register, and the engine build via
 # the fast gate — plus the always-loaded word audit — before any commit
 # concludes. This is the last-line static re-proof; weight-triggered full
 # validation is a separately governed direct run. No environment escape: the
