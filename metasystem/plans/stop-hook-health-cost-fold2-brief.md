@@ -20,6 +20,23 @@ everything it says; where this brief differs, this brief wins.
 Your existing worktree, uncommitted as you left it. Do not stage or
 commit; the seat lands the chain.
 
+# Step 0, before the seven fixes: main moved under your worktree
+
+The seat merged main into your worktree, and the merge of
+metasystem/internal/steward/health.go conflicted, so that file in your
+worktree is your round-1 version and lacks what main landed since: goal
+stop-hook-budget-is-ours added a health role, stop-hook-duration (the
+RoleStopHookDuration constant, its place in the role order right after
+hook freshness, the function checkStopHookDuration and its helpers, and
+tests in health_test.go that reference them). Re-apply main's version of
+those additions into your file (`git diff main -- metasystem/internal/steward/health.go`
+shows exactly what your file lacks) and wire the role into
+`evaluateHealthRoles` as
+`timed(func() RoleVerdict { return checkStopHookDuration(repoRoot) })`
+immediately after the hook-freshness entry, so the landed role order and
+your per-role timing both hold. The tree must compile and main's tests
+for that role must pass before you start the seven fixes.
+
 # The seven fixes
 
 ## SHC-01 — a cache write failure never shrinks the number
@@ -43,7 +60,7 @@ read again and counted once it settles.
 
 ## SHC-03 — the warm measurement is a real Stop
 
-In metasystem/internal/steward/health_cost_test.go: between the cold
+In the health cost test file you added to the steward package (health_cost_test.go): between the cold
 and warm calls append one assistant line to at least one member
 transcript, so the warm path is cursor read, merge and cache write; the
 synthetic job records are about ten kilobytes each, the size of a real
@@ -51,7 +68,7 @@ one. The warm bound stays under one second.
 
 ## SHC-04 — cache writes are cheap
 
-In metasystem/internal/spend/cache.go use the volatile writer (no
+In the cache file you added to the spend package (cache.go) use the volatile writer (no
 directory-chain sync) for cursor and job cache files, since a torn or
 missing cache degrades to a full parse by SHC-01; and on the
 foreign-grown branch write nothing at all.
