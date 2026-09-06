@@ -1,4 +1,4 @@
-# seat-mutual-awareness — design: seats see each other and ask each other (revision 3)
+# seat-mutual-awareness — design: seats see each other and ask each other (revision 4)
 
 Goal: plans/goals/seat-mutual-awareness.md. Wido's order (2026-08-31,
 verbatim on the goal record): seats must be aware of each other and
@@ -37,6 +37,28 @@ into the detached runner with a named no-lease value; the presence
 timestamp rule is equality; the proof matrix gains the seven named
 cases; and the box is counted in reservations.
 
+Revision 4 answers critique round 3 (job sma-crit3-20260906, five
+findings SMA-C-21..25 at commit 278d8b9d, register at
+records/misc/seat-mutual-awareness-critique-r3.md) under Wido's ruling
+of 2026-09-06, option A: the rollout is operational, not fenced. In one
+breath: the enable marker and the human-only `seat repair` verb are
+gone, with their fixtures, tests and reservations; a machine is a
+member when its own record exists at the tip and validates, and
+nothing enables the directory; section 8 states the rollout rule in
+one paragraph (the re-arm law, the validator's refusal of a spoiled
+tip, the existing human acts that repair one, and the residual Wido
+accepted); the deadline second has one strict boundary stated once in
+section 5 and referenced from the live predicate, the validator and
+the fixture (SMA-C-24); and the slices are reordered so the reader and
+notification path lands before the ask writer, with the box recounted
+at fifteen reservations (SMA-C-25). Revision 3's paragraph above is
+kept as history; where it names the marker or the repair verb, this
+revision overrides it. Every cite this revision touched
+(accepted.go, pre-commit-guard.sh, goalsync_verbs.go, up.go, txn.go,
+ledgerattention.go, path-classes.txt, observe.go, lease/classify.go)
+was re-read at branch agent/sma-design4-20260907 on main 968af5e4;
+the rest stand from revision 3.
+
 The shape in one paragraph. Every machine already shares one git
 branch that the goal verbs commit to and push, with a transaction
 engine that fetches the tip, rebuilds, pushes by compare-and-swap and
@@ -44,12 +66,13 @@ lets the push race decide (internal/goal/txn.go:466-516). Every
 steward tick already fetches that branch, validates the new tip and
 advances a local "accepted" ref (internal/steward/ledgerattention.go:518-544).
 This design adds one directory on that branch, `plans/seats/`, holding
-four record kinds: an enable marker the human writes once at the
-terminal; a membership record per machine, written at session start;
-a presence record per machine, written by the steward tick, saying
-what that machine has in flight; and an ask record per seat-to-seat
-question, written by the asking seat and answered by the addressed
-seat, each under its own machine's operation id. Nothing here posts to
+three record kinds: a membership record per machine, written at
+session start; a presence record per machine, written by the steward
+tick, saying what that machine has in flight; and an ask record per
+seat-to-seat question, written by the asking seat and answered by the
+addressed seat, each under its own machine's operation id. Nothing
+enables the directory: a machine is a member because its record is
+there and validates. Nothing here posts to
 a provider, nothing here reads the TOTP secret, nothing here writes a
 goal file, and nothing here puts a seat's words on a surface the human
 reads. The seat learns of a question it owes, and of an answer it
@@ -119,13 +142,29 @@ prints at every turn end, and reads the words with one verb.
    `authority=proven` is validated at rest by binding the approval
    record to the goal's own History event with the same opid, actor
    and time (file.go:586-596); the tree itself is not authenticated
-   (accepted.go:9). `goal repair --accept-remote` is the shape of a
-   human-reserved repair: clone-local, journaled under `repair-<nonce>`
-   with a named intent and the human's name, validated whole before it
-   moves anything (accepted.go:22-80). Every goal transaction refuses
-   an invalid captured tip before it mutates (txn.go:595-613), which is
-   why a repair that must build ON a spoiled tip needs its own path
-   (section 8, `seat repair`).
+   (accepted.go:9). `goal repair --accept-remote --by <human> --root
+   <checkout>` (goalsync_verbs.go:416-449) is the one human-reserved
+   ledger repair that exists: clone-local, no push, journaled under
+   `repair-<nonce>` with a named intent and the human's name; it
+   accepts the CURRENT remote tip as the clone's accepted tree past a
+   rewind refusal, and only after that tip validates whole
+   (accepted.go:16-21, 57-59). So it can never accept a spoiled tip;
+   it accepts a repaired one. Every goal transaction refuses an
+   invalid captured tip before it mutates, with the message "the
+   captured tip does not validate; repair the canonical branch
+   deliberately" (txn.go:605-613), so no transaction of any kind can
+   build on a spoiled tip; section 8 names the hand act that repairs
+   one. The pre-commit guard classifies its caller through `lease
+   classify` and treats the class `HUMAN` as sovereign for the
+   wrapper-token rule (pre-commit-guard.sh:44-68; lease/classify.go:70);
+   its ledger fence on `plans/(goals|channel)/` refuses every caller
+   with no acknowledgement path (pre-commit-guard.sh:80-86), because
+   goal hand edits go through `goal reconcile`; the only
+   acknowledgement the guard has, `METASYSTEM_ALLOW_NEW_PLAN=1`, is
+   for new `plans/*.md` files and runs after that fence
+   (pre-commit-guard.sh:97-113). Revision 3 claimed an acknowledgement
+   path for the ledger fence; there is none, and section 8 is written
+   against what the guard actually does.
 6. Health: the tick evaluates a fixed role list and prints every role
    with its reason (internal/steward/health.go:44-80, 176-193, 272-300);
    two consecutive unknowns alert (health.go:544-549); a dead role with
@@ -166,51 +205,29 @@ prints at every turn end, and reads the words with one verb.
    (docs/backlog-mechanism.md:17-30); the dispatcher reserves 120
    job-minutes per job. The goal record at revision 19 reads
    `elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720
-   activeJobLimit=1 reviewRoundLimit=2` (plans/goals/seat-mutual-awareness.md:11),
-   of which one attempt and 120 minutes are used by this design chain.
+   activeJobLimit=1 reviewRoundLimit=2` (plans/goals/seat-mutual-awareness.md:11);
+   its next-step line at revision 24 counts three reservations and 360
+   of the 720 job-minutes used since re-approval, before this revision
+   and its one review, which make five and 600.
    Coverage floors: internal/goal 80.0 and internal/steward 74.0
    (scripts/agents/coverage-ratchet.json).
 
-## 2. The directory, the enable marker, membership
+## 2. The directory and membership
 
 Location: `plans/seats/` on the ledger branch (goal.sync-branch,
-txn.go:49-61), four sub-paths, canonical serialisation MarshalChannel
-(channel.go:111-117), keys in table order, no unknown keys, every time
-RFC 3339 UTC at second precision (parseChannelTime, channel.go:650-656,
-reused).
+default `refs/heads/main`, txn.go:45-61), three sub-paths, canonical
+serialisation MarshalChannel (channel.go:111-117), keys in table
+order, no unknown keys, every time RFC 3339 UTC at second precision
+(parseChannelTime, channel.go:650-656, reused).
 
-Enable marker: `plans/seats/enabled.json`, written once by the human,
-and bound to its own transaction so that it cannot be minted by a
-landing (SMA-C-11).
-
-| key | type | required | meaning |
-|---|---|---|---|
-| enabledAt | time | yes | |
-| by | string | yes | `human:<name>` from `--by` |
-| authority | string | yes | exactly `proven` |
-| machine | string | yes | the enrolled machine the terminal act ran on |
-| opid | string | yes | the opid of the transaction that wrote this record; its machine segment equals `machine` |
-
-`metasystem seat enable --by <name> --repo <root>` runs only from the
-agent-free terminal (requireHumanStewardEnrollment's classifier,
-steward_verbs.go:656-672, supplies the class; `--by` supplies the name,
-the way `goal repair --accept-remote --by` does) and refuses every
-other caller with the same text enrollment uses. It is one ledger
-transaction under `Opid(<fresh ULID>, <machine>, "human-terminal")`,
-Intent verb `seat-enable`, Targets the path, Args {by, machine,
-enabledAt}, message `seat enable by <by>`. What the validator checks
-at rest that a landing cannot fake without forging a transaction:
-`authority` is `proven`; `by` starts with `human:`; the opid's machine
-segment equals `machine`; and `TrailerPresent(commit, opid)` holds,
-that is, the opid appears as the `Goal-Transaction` trailer of a
-commit in the validated tip's history (txn.go:379-390). A landing from
-an old checkout is a plain commit with `Goal-Item` trailers and no
-`Goal-Transaction` trailer for a ULID it never minted, so a marker it
-writes fails `seat-authority` and every upgraded writer stays refused.
-The same trailer binding is applied to every seat record's `opid`
-(section 8's `seat-writer` row), so no seat record an old landing
-creates is ever a legal record. There is no relayed-word form of
-enable: it is a terminal-only act like enrollment.
+There is no enable marker and no enable act (ruling A, Wido
+2026-09-06). Membership is the record itself: a machine is a member
+the moment its membership record exists at the tip and validates, and
+it stays one until a human retires it. Every seat record's `opid` must
+be the `Goal-Transaction` trailer of a commit in the validated tip's
+history (`TrailerPresent`, txn.go:375-390; section 8's `seat-writer`
+row), so a record that no transaction wrote is never a legal record,
+whatever wrote it.
 
 Membership record: `plans/seats/members/<machine>.json`.
 
@@ -228,9 +245,9 @@ Membership record: `plans/seats/members/<machine>.json`.
 Writer: `metasystem up` (internal/up/up.go), at every session start,
 after enrollment and lease steps succeed, under the session's opid,
 Intent verb `seat-member`, Targets the path, Args {machine, engine,
-seatSchema, joinedAt}. Its Mutate: refuses `seat-not-enabled` when the
-marker is absent; refuses `seat-retired` when the tip's record has
-retiredAt non-null, writing nothing (SMA-C-16: a retired record is
+seatSchema, joinedAt}. Its Mutate: refuses `seat-retired` when the
+tip's record has retiredAt non-null, writing nothing (SMA-C-16: a
+retired record is
 immutable to every writer but `seat unretire`); writes when the path
 is absent, or the tip's engine differs, or the tip's updatedAt is
 older than 24 hours, carrying joinedAt from the tip; else NothingToDo
@@ -239,12 +256,18 @@ younger than the one it read. A publish failure is one `up` component
 outcome (`component=seat-member outcome=<detail>`) and never changes
 `up`'s aggregate. `metasystem seat retire --machine <m> --by <name>
 --repo <root>` and `metasystem seat unretire --machine <m> --by <name>
---repo <root>` are terminal-only like enable, each one transaction
-under the terminal's opid, Intent verbs `seat-retire` and
+--repo <root>` are the two human verbs of this design. They run only
+from the agent-free terminal (requireHumanStewardEnrollment's
+classifier, steward_verbs.go:656-672, supplies the class; `--by`
+supplies the name and the engine prefixes `human:`, the way `goal
+repair --accept-remote --by` does, goalsync_verbs.go:416-449) and
+refuse every other caller with the same text enrollment uses; there is
+no relayed-word form. Each is one transaction under `Opid(<fresh
+ULID>, <machine>, "human-terminal")`, Intent verbs `seat-retire` and
 `seat-unretire`, Args {machine, by, at}; retire's Mutate refuses
 `seat-already-retired`, unretire's refuses `seat-not-retired`; both
 preserve joinedAt and engine. Nothing under `plans/seats/` is deleted
-by any Mutate except `seat repair` (section 8).
+by any Mutate; the only removal is the human hand act of section 8.
 
 Standings a reader derives, by name: `unknown` (no membership
 record); `unreachable` (a member, not retired, no presence younger
@@ -284,7 +307,7 @@ the path is absent, when the body digest (every key but tickAt,
 updatedAt, opid) differs from the tip's, or when the tip's updatedAt is
 older than `seat.presence-min` (default 60 minutes); else NothingToDo.
 It refuses `seat-transition` when the tip's updatedAt is younger than
-the one it read, and `seat-not-enabled` when the marker is absent.
+the one it read.
 
 Where a presence failure goes: a tick component attempt named
 `seat-presence` (beginComponentAttempt, tick.go:126), the local line
@@ -381,7 +404,7 @@ defaults to `seat.ask-deadline-min` (default 240). Identity is
 channelIdentity (channel_verbs.go:21-31). One transaction under the
 asker's opid, Intent verb `seat-ask`, Args {id, to, goal, facts (JSON
 array as one string), question, ifSilent, askedAt, deadlineAt}. Mutate
-refuses by name before any write: `seat-not-enabled`, `seat-self`,
+refuses by name before any write: `seat-self`,
 `seat-unknown-machine`, `seat-retired`, `seat-goal-missing`,
 `seat-duplicate` (an open ask from me to that machine on that goal
 with the same facts digest; prints the existing qid). An `unreachable`
@@ -403,7 +426,21 @@ expired by the asker's tick; an asker that never ticks is expired by
 the target's; both silent means nobody writes and readers still treat
 (open, now past deadlineAt) as expired for display and health, so the
 one durable boundary is deadlineAt whether or not a tick has written
-it yet. Every post-deadline transition has exactly one outcome:
+it yet.
+
+THE DEADLINE BOUNDARY, stated once (SMA-C-24). A time T is ON TIME
+when T is not later than deadlineAt, so equality is on time; T is PAST
+when T is strictly later than deadlineAt. Three places use this one
+rule and none states its own: the live predicate below (every FROM row
+compares the transaction's `now` this way, so `answer.at` is on time
+and `expiredAt` and `late.at` are past); the validator's `seat-state`
+row in section 8, which refuses `answer.at` past, `late.at` not past,
+and `expiredAt` not past, so an expired record stamped at the exact
+deadline second is malformed, because at that second an answer is
+still lawful; and the fixture SMA-F-DEADLINE-SECOND in section 9,
+which proves the answer at equality, the late answer one second after,
+and the refusal of an expired record stamped at equality. Every
+post-deadline transition has exactly one outcome:
 
 | transition (owner) | FROM | TO |
 |---|---|---|
@@ -417,14 +454,14 @@ So not-mine and withdraw after the deadline are late acts recorded in
 `late` with their kind, never a close; a close and an expiration can
 never both win because their FROM rows are disjoint on `now` against
 deadlineAt, and the transaction's own clock against the record's
-deadline is the arbiter on every rebuild. An answer whose `at` equals
-deadlineAt is on time; one second later is late. Verbs: `metasystem
+deadline is the arbiter on every rebuild, under the one boundary
+above. Verbs: `metasystem
 seat answer --question <qid> --text <text>` or `--not-mine --because
 <text>` (Intent verb `seat-answer`, Args {qid, outcome, text, at});
 `metasystem seat close --question <qid> --because <text>` (Intent
 verb `seat-close`, Args {qid, reason, at}).
 
-Refusals by name: `seat-not-enabled`; `seat-not-addressee`;
+Refusals by name: `seat-not-addressee`;
 `seat-not-asker`; `seat-already-answered` (exit 3, the standing
 answer's time printed); `seat-already-late` (state expired with late
 non-null, exit 3); `seat-closed` (exit 3 printing closedBecause and
@@ -539,13 +576,11 @@ What this design adds, total over the writers (SMA-C-14):
 
 | verb | Intent.Args (complete) | rebuild case in requestForEntry (recover.go:236) | outcome when the owner died with the commit absent |
 |---|---|---|---|
-| seat-enable | by, machine, enabledAt | none: a human act | rejected with `human authority cannot be recovered from journal text; rerun metasystem seat enable --by <by> from the enrolled terminal` (the resume/steal pattern, recover.go:146-161); nothing is minted |
-| seat-retire, seat-unretire | machine, by, at | none: human acts | rejected with the same shape naming `seat retire` / `seat unretire` |
-| seat-repair | by, path, action (remove or replace), body (when replace), reason | none: a human act | rejected naming `seat repair` at the terminal |
+| seat-retire, seat-unretire | machine, by, at | none: human acts | rejected with `human authority cannot be recovered from journal text; rerun metasystem seat retire --machine <machine> --by <by> from the enrolled terminal` (or `seat unretire`; the resume/steal pattern, recover.go:146-161); nothing is written |
 | seat-member | machine, engine, seatSchema, joinedAt | none needed | abandoned with detail `the next up republishes membership` (the slice-start pattern, recover.go:102-108) |
 | seat-presence | machine, engine, body | none needed | abandoned with detail `the next tick republishes presence` |
 | seat-ask | id, to, goal, facts (JSON array), question, ifSilent, askedAt, deadlineAt | `seatAskRequest(r, args)` | completed under the SAME opid (recover.go:213-229): confirmed, lost (the path carries another opid), or rejected by name |
-| seat-answer | qid, outcome (answer or not-mine), text, at | `seatAnswerRequest(r, args)` | completed under the same opid: confirmed; lost; or rejected `seat-closed`, `seat-already-answered`, `seat-already-late`; when the rebuild's now is past the deadline the act lands in `late` with its kind, never as answered or closed |
+| seat-answer | qid, outcome (answer or not-mine), text, at | `seatAnswerRequest(r, args)` | completed under the same opid: confirmed; lost; or rejected `seat-closed`, `seat-already-answered`, `seat-already-late`; when the rebuild's now is past the deadline (section 5's boundary) the act lands in `late` with its kind, never as answered or closed |
 | seat-close | qid, reason, at | `seatCloseRequest(r, args)` | as seat-answer, kind withdrawn when late |
 | seat-expire (the tick's and the wait's expiration) | qid, at | none needed | abandoned with detail `the next tick re-expires` |
 
@@ -556,7 +591,7 @@ rebuild share one constructor, so the rebuilt opid equals the entry's
 (recover.go:227). Nothing in seat text is a secret, so the journal may
 hold it, unlike the channel's inbox Intent (FCG-SECRET-15).
 
-## 8. The human channel stays what it is; the validator; the fleet order; repair
+## 8. The human channel stays what it is; the validator; the rollout rule
 
 Stated, then enforced:
 
@@ -578,92 +613,103 @@ Stated, then enforced:
 
 ValidateSeatTree (new, internal/goal/seats.go), called from
 ValidateCommit next to the channel validator (validate.go:485), is
-total: every record is one of the four kinds, every kind's key set is
+total: every record is one of the three kinds, every kind's key set is
 exactly its table, and every state admits exactly one field
 combination. Because ValidateCommit receives the commit, the validator
 can bind a record to its transaction:
 
 | code | condition |
 |---|---|
-| seat-unknown-path | a file under plans/seats/ that is not `enabled.json`, `members/<machine>.json`, `presence/<machine>.json` or `asks/<ulid>.json` (validChannelULID, channel.go:270-280) |
+| seat-unknown-path | a file under plans/seats/ that is not `members/<machine>.json`, `presence/<machine>.json` or `asks/<ulid>.json` (validChannelULID, channel.go:270-280) |
 | seat-json | not a JSON object; an unknown key; a missing required key; a wrong type; null where non-null is required; a time not RFC 3339 UTC at second precision; `seatSchema` not the integer 1; `chain.round` below 1 |
 | seat-id-mismatch | basename does not equal `machine` or `id` |
-| seat-authority | `enabled.json` whose `authority` is not `proven`, whose `by` does not start with `human:`, or whose `opid` is not a `Goal-Transaction` trailer in the validated commit's history (TrailerPresent, txn.go:379-390); a member whose `retiredBy` is non-null without `human:`, or whose retiredAt and retiredBy nullness differ |
-| seat-writer | any record's `opid` that is not a `Goal-Transaction` trailer in the commit's history; `opid`'s machine segment not equal to `machine` (presence; member on refresh) or `from` (ask); `answer.opid`'s or `late.opid`'s machine segment not equal to its `by`; `answer.by` not equal to `to`; `late.by` not equal to `to` for kinds answer and not-mine or `from` for kind withdrawn; closedBy not `to` for not-mine or `from` for withdrawn; `expiredBy` not `from` or `to` |
+| seat-authority | a member whose `retiredBy` is non-null without the `human:` prefix, or whose retiredAt and retiredBy nullness differ |
+| seat-writer | any record's `opid` that is not a `Goal-Transaction` trailer in the validated commit's history (TrailerPresent, txn.go:375-390); `opid`'s machine segment not equal to `machine` (presence; member on refresh) or `from` (ask); `answer.opid`'s or `late.opid`'s machine segment not equal to its `by`; `answer.by` not equal to `to`; `late.by` not equal to `to` for kinds answer and not-mine or `from` for kind withdrawn; closedBy not `to` for not-mine or `from` for withdrawn; `expiredBy` not `from` or `to` |
 | seat-self | `from` equals `to` |
 | seat-unknown-machine | `from` or `to` has no membership record at the tip |
 | seat-goal-missing | `goal` has no goal file on the tip |
-| seat-state | state outside {open, answered, expired, closed}; open with answer, late, expiredAt, expiredBy or any closed key present; answered with answer null or late, expiredAt, expiredBy or any closed key present; expired with expiredAt or expiredBy absent, answer non-null, or any closed key present; closed with answer or late non-null, expiredAt or expiredBy present, or any of the four closed keys absent or empty; closedBecause outside {not-mine, withdrawn}; late.kind outside {answer, not-mine, withdrawn}; deadlineAt not later than askedAt; answer.at later than deadlineAt; late.at not later than deadlineAt; expiredAt earlier than deadlineAt; facts empty or more than four or any entry empty; question, ifSilent, fromLineage, answer.text or late.text empty; chain or lastLanding present with an empty required string; presence updatedAt not EQUAL to tickAt |
+| seat-state | state outside {open, answered, expired, closed}; open with answer, late, expiredAt, expiredBy or any closed key present; answered with answer null or late, expiredAt, expiredBy or any closed key present; expired with expiredAt or expiredBy absent, answer non-null, or any closed key present; closed with answer or late non-null, expiredAt or expiredBy present, or any of the four closed keys absent or empty; closedBecause outside {not-mine, withdrawn}; late.kind outside {answer, not-mine, withdrawn}; deadlineAt not later than askedAt; under section 5's one boundary: answer.at past (later than deadlineAt), late.at not past (not later than deadlineAt), expiredAt not past (not later than deadlineAt, so equality is refused); facts empty or more than four or any entry empty; question, ifSilent, fromLineage, answer.text or late.text empty; chain or lastLanding present with an empty required string; presence updatedAt not EQUAL to tickAt |
 | seat-secret | a six-digit field anywhere in facts, question, ifSilent, answer.text, late.text or closedReason |
 
 Fences on upgraded engines: `install:plans/seats/ ledger` beside
-path-classes.txt:35, so a landing that touches it refuses
-`ledger-path-not-goal-verb` (observe.go:583-587); the pre-commit
-guard's regexp widens to `plans/(goals|channel|seats)/`; a staged
-change under it is a deliberate acknowledged act under the guard's
-existing acknowledgement path, never a silent one.
+path-classes.txt:33-35, so a landing that touches it refuses
+`ledger-path-not-goal-verb` (observe.go:583-587); and the pre-commit
+guard gains one line after its ledger fence (pre-commit-guard.sh:80-86)
+that refuses a staged change under `plans/seats/` when the caller's
+class is not `HUMAN`, with the message "seat records change only
+through seat verbs; a human repairs one by hand from the enrolled
+terminal". The existing ledger regexp is not widened: it refuses
+every caller because goal hand edits have `goal reconcile` to go
+through, and seat records have no reconcile, so the human hand commit
+IS the repair and the guard must let it through. The class comes from
+the guard's existing `lease classify` call (pre-commit-guard.sh:47-49;
+`ClassHuman`, lease/classify.go:70), the same classification that
+already makes a human commit sovereign for the wrapper-token rule.
 
-What keeps old checkouts out (SMA-C-11), stated as truth and not as a
-fence: (a) the FLEET ORDER: slice 1 lands with no writer; every
-machine pulls, and under the re-arm law landed today a pull followed
-by a rebuild and `up` replaces the running engine
-(up.go:427-456), so "every machine pulled" and "every machine runs the
-new engine" are one step; the seat of record confirms each machine
-through `metasystem supervise status --repo` (engineBuild) or the
-machine's own word; only then does Wido run `seat enable`; (b) NO OLD
-VERB WRITES UNDER `plans/seats/`: the only old path that can create a
-file there is an agent landing a new plan record by hand, which the
-guard already makes a deliberate acknowledged act and which no
-workflow performs; (c) the UPGRADED VALIDATOR REFUSES a spoiled tip:
-a record without a bound transaction fails `seat-writer` or
-`seat-authority`, and Wido's first-commit-wins law implies refusal
-rather than tolerance, because the push race decides which commit is
-the ledger and two engines must read one tip the same way. What
-remains a residual: a process that hand-crafts a commit with a forged
-`Goal-Transaction` trailer under a ULID and machine of its choosing
-can mint any seat record, including the marker, exactly as it could
-forge a goal approval today (the tree is not authenticated,
-accepted.go:9). Wido accepts that residual at approval of the build,
-and this design names it so that he does so with eyes open.
+THE ROLLOUT RULE (ruling A, Wido 2026-09-06, "Ok, option a"; it
+replaces the enable marker and the repair verb of revisions 2 and 3
+and closes SMA-C-21, C-22 and C-23 by removing what they found). The
+rollout is operational, not fenced: (a) every machine pulls, rebuilds
+and re-arms before any seat writer runs, and before each later slice
+lands every machine already runs the one before it; under the re-arm
+law a pull followed by a rebuild and `up` replaces the running engine
+when the build commit is reachable from the configured landing ref
+(up.go:427-456, ReArmRebuiltEngine at runner.go:240), so "every
+machine pulled" and "every machine runs the new engine" are one step,
+and the seat of record confirms each machine through `metasystem
+supervise status --repo <checkout>` (engineBuild), through the
+`engine` field of its presence record once slice 2 is in, or through
+the machine's own word; (b) the upgraded validator refuses a spoiled
+tip, that is a tip carrying a record an upgraded engine cannot read:
+ledger-attention refuses to advance (ledgerattention.go:540-542) and
+every transaction refuses the captured tip before it mutates,
+printing "the captured tip does not validate; repair the canonical
+branch deliberately" (txn.go:605-613), so a spoil stops every seat
+writer and every goal verb on every upgraded machine until a human
+repairs it, exactly as revision 3 said; (c) a spoiled tip is repaired
+by an existing human act at the enrolled terminal and by nothing new:
+the operator fetches the ledger branch, REMOVES the offending file
+with a plain hand commit and pushes it on top of the spoiled tip, as
+below; the guard passes the commit because the caller classifies
+`HUMAN`; the commit is a descendant, so every machine's next
+ledger-attention pass validates it and advances, and the record's
+owner republishes it by itself (membership at the next `up`, presence
+at the next tick; an ask is gone and the asker asks again). Remove,
+never rewrite: a rewritten record would need an `opid` that is a
+transaction trailer, which a hand commit cannot mint, and the owner's
+writer already knows the right bytes. If the operator instead
+rewinds the branch to the commit before the spoil (a force-push),
+each machine's pass refuses the rewind by the descent rule and the
+human runs `metasystem goal repair --accept-remote --by <name> --root
+<checkout>` on each machine (goalsync_verbs.go:416-449; accepted.go:16-83),
+which validates the rewound tip whole and moves that clone's accepted
+ref; that verb never accepts a spoiled tip itself, because it validates
+before it moves. (d) The residual Wido accepted with the ruling: an
+old checkout can only spoil the directory by a deliberate hand landing
+of a new plan record, which no workflow performs and nobody does by
+accident; and, as before, a process that hand-crafts a commit with a
+forged `Goal-Transaction` trailer can mint any seat record exactly as
+it could forge a goal approval today, because the tree is not
+authenticated (accepted.go:9). SMA-F-SPOILED-TIP proves (b) and both
+forms of (c) end to end.
 
-The executable escape (SMA-C-12): `metasystem seat repair --path
-<plans/seats/...> (--remove | --replace <file>) --by <name> --reason
-<text> --repo <root>`, terminal-only like enable. It is one ledger
-transaction under the terminal's opid, Intent verb `seat-repair`, Args
-{by, path, action, body, reason}, message `seat repair <path> by
-<by>`. It is exempt from the three refusals that would otherwise stop
-it, by that intent: (1) its Publish passes a `Validate` that runs
-ValidateCommit with a `repairing=<path>` exemption so the validator
-skips that one path's rows on the CAPTURED tip and validates the
-BUILT commit whole, the way the captured-tip check at txn.go:601-613
-would otherwise abandon the transaction before Mutate; the exemption
-is a parameter of ValidateSeatTree, never a global switch, and the
-built tree must validate with no exemption or the transaction is
-refused; (2) the pre-commit guard does not run, because Publish
-builds with commit-tree (txn.go:236-290), not `git commit`; (3) the
-landing fence does not run, because this is a goal-verb transaction
-and not a landing. Its Mutate removes the path or writes the given
-body; a replaced record's `opid` is this transaction's, so it binds.
-`goal repair --accept-remote` (accepted.go:22-80) is the shape it
-follows: human-attributed, journaled with a named intent, whole-tree
-validation before anything moves; unlike that verb it pushes,
-because the spoil is on the shared branch. Recovery: a human act,
-rejected toward the terminal (section 7). The fleet after a repair:
-every machine's next ledger-attention pass validates the repaired
-tip and advances; nothing else is needed. The poison case of a plain
-hand commit without a trailer is therefore no longer "a hand commit
-at the terminal removes it" but `seat repair --remove`, and
-SMA-F-SPOILED-REPAIR proves the path end to end.
+```
+git -C <checkout> fetch origin
+git -C <checkout> checkout -B main origin/main      # goal.sync-branch, default refs/heads/main
+git -C <checkout> rm plans/seats/<offending path>
+git -C <checkout> commit -m "seat: remove <offending path>, spoiled tip (<why>)"
+git -C <checkout> push origin main
+```
 
 Paths I can see and close: a seat answer reaching an authority
 consumer (no goal history row); a seat ask posted or matched as a
 human question (items 1 to 3); a code in seat text (item 4); seat
-words on a human surface (section 6); a seat record or marker minted
-by an old landing (`seat-writer`, `seat-authority`); a spoiled tip
-with no way out (`seat repair`). Paths I cannot close: a seat pasting
-`seat show`'s output into a chat turn, a conduct matter; a seat acting
-on a peer's answer by running a goal verb it was already entitled to
-run; and the forged-trailer residual above, which is the ledger's own.
+words on a human surface (section 6); a seat record minted by an old
+landing (`seat-writer` refuses it, the hand act removes it). Paths I
+cannot close: a seat pasting `seat show`'s output into a chat turn, a
+conduct matter; a seat acting on a peer's answer by running a goal
+verb it was already entitled to run; and the residual of (d), which is
+the ledger's own and Wido's by ruling.
 
 ## 9. Load, growth, transport; fixtures and tests
 
@@ -679,7 +725,7 @@ overwritten in place except asks, which grow by one file each; the
 accepted growth is under one megabyte per week. Rotation of
 `plans/seats/asks/` belongs to goal answer-archive; the seat of record
 adds it to that goal's scope by name; until it lands nothing is
-removed except by `seat repair`.
+removed except by the human hand act of section 8.
 
 Legacy transport. No seat verb calls sync-transport.sh; the transport
 relay receives seat commits with the next landing's sync
@@ -696,23 +742,23 @@ classification. Every assertion reads origin/main, a verb's stdout
 and exit code, a component record, the health line, the hook's
 rendered message, or `steward digest-pending`.
 
-- SMA-F-ENABLE: before `seat enable`, A's tick records component
-  `seat-presence` as `seat-not-enabled` and `seat ask` is refused;
-  after `seat enable --by fixture-human`, origin/main holds the marker
-  with `authority: proven`, `by: human:fixture-human` and an opid that
-  is a Goal-Transaction trailer; both proceed.
-- SMA-F-FORGED-MARKER (SMA-C-19): a plain git commit (no trailer)
-  writing a well-formed `enabled.json` with `by: human:forged` and
-  `authority: proven` is refused by A's and B's next ledger-attention
-  pass with `seat-authority`; the writers stay refused
-  `seat-not-enabled` because ValidateCommit fails before any Mutate.
-- SMA-F-SPOILED-REPAIR (SMA-C-12, SMA-C-19): with `plans/seats/junk.json`
-  committed plainly from `export-old`, both upgraded machines refuse
-  the tip with `seat-unknown-path`; `seat repair --path
-  plans/seats/junk.json --remove --by fixture-human --reason ...` on A
-  publishes; origin/main no longer holds the file; A's and B's next
-  pass advance; `goal recover` on A after a FAIL_AT during the repair
-  reports the human-act rejection naming `seat repair`.
+- SMA-F-SPOILED-TIP (section 8's rollout rule, replacing revision 3's
+  SPOILED-REPAIR): with `plans/seats/junk.json` committed plainly from
+  `export-old`, both upgraded machines refuse the tip with
+  `seat-unknown-path` in their ledger-attention pass, and a goal verb
+  and a seat writer on A both refuse with "the captured tip does not
+  validate; repair the canonical branch deliberately". Form one: the
+  hand act of section 8 on A under the fixture's terminal
+  classification (the guard's `lease classify` returns `HUMAN`)
+  removes the file and pushes on top; origin/main no longer holds it;
+  A's and B's next pass advance; A's next tick republishes presence.
+  The same staged removal from an agent-classified caller is refused
+  by the guard with the seat message. Form two: the branch is
+  force-pushed to the commit before the spoil; A's and B's pass refuse
+  the rewind; `goal repair --accept-remote --by fixture-human --root`
+  on each advances it; a run of the same verb against the still
+  spoiled tip is refused by its whole-tree validation and moves
+  nothing.
 - SMA-F-MIXED: `export-old` fetches a tip carrying every record kind
   and lands a goal verb on it; a landing from `export-old` that
   creates a seat record is accepted by the old engine and refused by
@@ -726,11 +772,11 @@ rendered message, or `steward digest-pending`.
   record keeps retiredAt and retiredBy; `seat ask --to fixture-machine`
   is refused `seat-retired`; `seat unretire` clears both and the next
   `up` refreshes normally.
-- SMA-F-RECOVER-ENABLE and -RETIRE (SMA-C-14): FAIL_AT after the push
-  with the outcome unknown; `goal recover` reports the human-act
-  rejection naming the verb when the commit is absent, and `confirmed
-  on the canonical tip` when it landed; the record is never minted
-  twice.
+- SMA-F-RECOVER-RETIRE (SMA-C-14): FAIL_AT after the push with the
+  outcome unknown, for retire and for unretire; `goal recover` reports
+  the human-act rejection naming the verb when the commit is absent,
+  and `confirmed on the canonical tip` when it landed; the record is
+  never written twice.
 - SMA-F-PRESENCE: A ticks; presence lands with updatedAt equal to
   tickAt; a hand-committed presence with updatedAt one second later is
   refused `seat-state` (SMA-C-18); a second tick within
@@ -750,9 +796,13 @@ rendered message, or `steward digest-pending`.
 - SMA-F-DIGEST-NO-WORDS: every text field a sentinel; no sentinel in
   either machine's health line, digest, narration line, status post or
   the Stop hook's rendered message; `seat show` prints it.
-- SMA-F-DEADLINE-SECOND (SMA-C-19): with the fake clock the answer
-  transaction's now equal to deadlineAt lands as answered; one second
-  later it lands as late with kind answer and state expired.
+- SMA-F-DEADLINE-SECOND (SMA-C-19, SMA-C-24; section 5's one
+  boundary): with the fake clock the answer transaction's now equal to
+  deadlineAt lands as answered; one second later it lands as late with
+  kind answer and state expired; and a plainly committed expired
+  record whose expiredAt equals deadlineAt is refused `seat-state` by
+  A's and B's next pass, while the same record stamped one second
+  later is accepted.
 - SMA-F-WAITER-ABSENT-EXPIRY (SMA-C-15, SMA-C-19): A asks with
   `--deadline 1` and runs no wait; B's tick expires it with expiredBy
   fixture-b; a second run where B never ticks and A ticks expires it
@@ -791,18 +841,21 @@ rendered message, or `steward digest-pending`.
 Go unit tests, under the floors of section 1 item 9:
 internal/goal/seats_test.go: TestValidateSeatTreeIsTotal (the
 state-by-field grid, including the presence equality row and the
-marker's authority row), TestSeatMarkerBindsToTransactionTrailer,
+three deadline rows of section 5's boundary: answer.at at and past the
+second, late.at at and past, expiredAt at and past),
 TestSeatWriterRefusesUnboundOpid, TestSeatPresenceMutateWritesOnChangeOrAge,
-TestSeatPresenceRefusesYoungerTip, TestSeatWritersRefuseWhenNotEnabled,
+TestSeatPresenceRefusesYoungerTip,
 TestSeatMemberRefreshPreservesRetirement, TestSeatAskMutateRefusals,
 TestSeatTransitionsAroundTheDeadline (answer at, before and after the
 exact second; expire; late acts of every kind; not-mine and withdraw
 on time; disjoint FROM rows), TestSeatExpireFirstCommitWins (two
 clones expiring one ask), TestSeatRequestsRebuildFromIntent (ask,
 answer, close rebuild to the entry's opid; member, presence, expire
-abandoned; enable, retire, unretire, repair rejected toward the
-terminal), TestSeatRepairValidatesBuiltTreeWithoutExemption,
+abandoned; retire and unretire rejected toward the terminal),
 TestSeatOpidMachineSegment, TestSeatSecretRefusesSixDigitsAnywhere.
+scripts/agents (guard fixture): a staged removal under `plans/seats/`
+passes for a `HUMAN` caller and is refused with the seat message for
+an agent caller, while the `plans/(goals|channel)/` fence is unchanged.
 internal/steward/seats_test.go: TestSeatQuestionsRoleThreeAges,
 TestSeatQuestionsRoleNeverUnknownOnPresenceFailure,
 TestSeatAttentionExpiresOverdueAsksBothSides, TestSeatDigestEntriesFireOnce,
@@ -810,86 +863,122 @@ TestNoSeatTextReachesHumanSurfaces, TestPresenceComposesChainFromJobRecords,
 TestPresencePublishFailureNeverDegradesTick, TestStageBuilderSkipsSeatOnlyCommits,
 TestRunLoopWritesArmedLineageFromFlag, TestLaunchRunnerPassesArmedLineage.
 internal/lease: TestOwnerLineageReadSeamAbsentLease. internal/up:
-TestUpPublishesMembershipAfterEnable, TestUpRefusesRetiredMember.
+TestUpPublishesMembership, TestUpRefusesRetiredMember.
 internal/channel/report_test.go: TestStatusReportOwedClauseOnlyWhenOwed.
 cmd/metasystem: TestChannelWaitDelegatesToSeatWait,
 TestSeatHumanVerbsRefuseAgentCallerAndRequireBy.
 
 ## 10. Build order and the box, counted in reservations
 
-Four slices, each landing alone with its own gate.
+Four slices, each landing alone with its own gate, in an order that
+makes every member able to hear before any machine can ask (SMA-C-25):
+the reader and notification path (slice 3) lands before the ask writer
+(slice 4), and under section 8's rollout rule slice 4 is not landed
+until every machine runs slice 3. A machine can therefore never ask a
+member that cannot hear: every member of the ledger at the moment the
+first `seat ask` exists runs RunSeatAttention, the `seat-questions`
+role, the digest lines and the status clause.
 
-1. Records, validator with the trailer binding, fences, reader,
-   request constructors and recovery cases, AND the three human verbs
-   `seat enable`, `seat retire`/`seat unretire` and `seat repair`
-   (the fences land with their human escape, SMA-C-13). Gate: `go test
-   ./internal/goal` under the coverage delta, path-class and
-   pre-commit-guard fixtures, SMA-F-ENABLE, FORGED-MARKER,
-   SPOILED-REPAIR, RECOVER-ENABLE, RECOVER-RETIRE. Two attempts, 60 to
-   90 minutes. The fleet order's rebuild and enable steps follow.
+1. Records (three kinds), the validator with the trailer binding and
+   the one deadline boundary, the two fences (path class and the
+   guard's seat line), the request constructors and recovery cases,
+   and the two human verbs `seat retire`/`seat unretire`. Gate: `go
+   test ./internal/goal` under the coverage delta, path-class and
+   pre-commit-guard fixtures, SMA-F-SPOILED-TIP, SMA-F-MIXED,
+   SMA-F-RECOVER-RETIRE. Two attempts, 45 to 75 minutes. The rollout
+   rule's fleet rebuild follows, as after every slice.
 2. Membership in `up`, the lineage handoff, presence in the tick with
    its component record, the stage builder's skip, `seat fleet`. Gate:
    MEMBER, RETIRE-THEN-UP, PRESENCE, LINEAGE, CHURN, TRANSPORT,
    RECOVER-PRESENCE, RECOVER-MEMBER and the steward unit tests. Two
    attempts, 75 to 100 minutes.
-3. `seat ask`, `seat answer`, `seat close`, `seat wait`, `seat show`,
-   the expiration owners, the `channel wait` delegation, and the
-   deadline, race, recovery and refusal fixtures. Gate: those fixtures
-   and the goal unit tests. Three attempts, 100 to 130 minutes.
-4. The health role, the digest lines, the status clause,
-   DIGEST-NO-WORDS, UNKNOWN-ALERT, STATUS-CLAUSE. Gate: health
-   fixtures and the seat fixtures. Two attempts, 45 to 60 minutes.
+3. The reader and notification path: RunSeatAttention with the two
+   expiration owners' tick side, the `seat-questions` health role, the
+   digest lines, the status clause and `seat show`. No ask verb yet;
+   the unit tests publish asks through slice 1's request constructors
+   in their fixture beds. Gate: the steward and report unit tests
+   (TestSeatQuestionsRoleThreeAges, TestSeatAttentionExpiresOverdueAsksBothSides,
+   TestSeatDigestEntriesFireOnce, TestNoSeatTextReachesHumanSurfaces,
+   TestStatusReportOwedClauseOnlyWhenOwed), SMA-F-UNKNOWN-ALERT and
+   the zero-owed half of SMA-F-STATUS-CLAUSE. Two attempts, 45 to 75
+   minutes.
+4. `seat ask`, `seat answer`, `seat close`, `seat wait`, the wait's
+   expiration, the `channel wait` delegation, and every end-to-end ask
+   fixture: ASK-ANSWER, DIGEST-NO-WORDS, DEADLINE-SECOND,
+   WAITER-ABSENT-EXPIRY, POST-DEADLINE-NOT-MINE, TIMEOUT-THEN-LATE,
+   NOT-MINE, WITHDRAW, ALREADY, WRONG-MACHINE, HUMAN-QUESTION-REFUSED,
+   UNKNOWN-VS-UNREACHABLE, NO-STEWARD, OLD-STEWARD, RECOVER-ASK,
+   -ANSWER, -CLOSE, -EXPIRE, and the owed half of STATUS-CLAUSE. Gate:
+   those fixtures and the goal unit tests. Three attempts, 100 to 130
+   minutes.
 
 Reservations (SMA-C-20), every one counted at the dispatcher's 120
 job-minutes: build attempts, nine at the maximum above; two closing
-code-review chains (after slice 2 and after slice 4), each up to
-three rounds at one reservation per round, six; a conformance or
-verification job per review chain, two. Maximum seventeen
-reservations and 2040 reserved job-minutes, plus the one attempt and
-120 minutes this design chain has used, against a goal record that
-today reads one day, ten attempts, 720 job-minutes, one active job
-and two review rounds (item 9). Elapsed: the slices are sequential
-and each waits for its review, so three working days at the fleet's
-cadence. The complete five-part tuple the seat asks Wido for, before
-slice 1 is dispatched: `elapsedLimit=3d attemptLimit=20
-reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3`.
-The review-round member is a raise from the record's 2 to the
-configured ceiling of 3 (`metasystem.budget.review-round-max`), so
-that each code-review chain has the rounds section 9's fixture list
-may need; it is stated as part of the tuple, not assumed.
+code-review chains (after slice 2 and after slice 4), each at the
+record's two rounds at one reservation per round, four; a conformance
+or verification job per review chain, two. Maximum fifteen
+reservations and 1800 reserved job-minutes, down from revision 3's
+seventeen because the enable and repair verbs, their three fixtures
+and their recovery cases are gone and slice 1 shrank; the raise of the
+review-round member to three is no longer asked, and a chain that
+needs a third round is a recorded budget exception, not a plan.
+Against the goal record (item 9): five reservations and 600 of the
+720 job-minutes are used since re-approval once this revision's review
+is counted, so the build needs twenty attempts and 2400 job-minutes in
+total. Elapsed: the slices are sequential, each waits for its fleet
+rebuild and two for their review, so three working days at the
+fleet's cadence. The complete five-part tuple the seat asks Wido for,
+before slice 1 is dispatched: `elapsedLimit=3d attemptLimit=20
+reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=2`.
 
 ## 11. Non-goals
 
 No new provider and no second bot. No change to the TOTP rule, to
 FCG-COMMIT-05 or to any channel record. No authority for seats. No
 archive or rotation here (goal answer-archive gains
-`plans/seats/asks/` by name). No central brain. No skip verb; `seat
-repair` is the one human escape. No mark on the goal file for a seat
-ask. No retirement of the transport relay (goal transport-sync-law).
-No code fence against old engines: none is possible, and the design
-says so.
+`plans/seats/asks/` by name). No central brain. No skip verb and no
+repair verb: the human hand act of section 8 is the one escape. No
+enable marker and no enable act: nothing enables the directory. No
+mark on the goal file for a seat ask. No retirement of the transport
+relay (goal transport-sync-law). No code fence against old engines:
+none is possible, and the design says so; the rollout is operational
+by Wido's ruling.
 
 ## 12. Self-grade
 
-Confidence: medium-high that the shape is right and buildable in the
-existing engine. Weakest claim: the `seat repair` exemption inside
-ValidateCommit on the captured tip (section 8): the transaction
-engine validates the captured tip before Mutate (txn.go:601-613) and
-the design threads a one-path exemption through ValidateSeatTree for
-that call only; if the implementer finds that ValidateCommit's
-signature cannot carry it without touching goal validation, the
-fallback is a dedicated `seat repair` transaction path that captures,
-validates with the exemption, builds and pushes through BuildCommit
-and the CAS push directly (txn.go:236-290, the push at 343-372), which
-is more code but the same contract. Second weakest: the fake clock
-SMA-F-DEADLINE-SECOND needs; the channel fixtures already stamp
-synthetic times on the fake provider, and the seat verbs take
-`--now` for fixtures the way goalCommandNow (cmd/metasystem/goal.go:25,
-called at goalsync_verbs.go:493) supplies a command clock, but I did not verify that every seat verb
-can reach that seam. Reject condition: Wido wants no human act in the
-rollout, which removes enable and reopens SMA-C-02 and SMA-C-11; or
-he refuses the raise, in which case this design is not built inside
-the current box in pieces.
+Confidence: high that the shape is right and buildable in the existing
+engine, higher than revision 3 because the two pieces it graded
+weakest, the validation exemption and the repair transaction, no
+longer exist. Weakest claim now: the pre-commit guard's seat line
+(section 8). Revision 3 said the human's hand commit passes "under the
+guard's existing acknowledgement path"; there is none for the ledger
+fence (pre-commit-guard.sh:80-86 exits without one), so this revision
+adds one guard line that lets the `HUMAN` class through and refuses
+agents. That is the one mechanism this revision chose that ruling A
+did not name; it is neither a verb nor a marker, it reuses the guard's
+existing classification, and without it the hand act the ruling names
+would need `git commit --no-verify`, which this design will not write
+down as the procedure. If Wido prefers the hook bypass to a guard
+change, the line is dropped and the procedure block says so. Second
+weakest: whether the seat fixture bed can run a hand commit under the
+terminal classification the human verbs already use (SMA-F-SPOILED-TIP
+form one); `lease classify` grants `HUMAN` to fixtures
+(lease/classify.go:372-383, FixtureGranted), which is what the bed
+relies on. Third: the fake clock SMA-F-DEADLINE-SECOND needs; the seat
+verbs take `--now` for fixtures the way goalCommandNow
+(cmd/metasystem/goal.go:25, called at goalsync_verbs.go:493) supplies
+a command clock, but I did not verify that every seat verb can reach
+that seam. One reading this revision made and names: the brief's
+words "membership is the presence record itself" are read as "the
+record a machine writes for itself is its membership, nothing enables
+it", keeping the membership record of section 2 (written by `up`,
+retired by a human) distinct from the presence record of section 3
+(written by the tick), because collapsing them would reopen SMA-C-05
+and SMA-C-16, which the brief says are closed. Reject condition: Wido
+wants a mechanical fence after all, which reverses ruling A and
+returns the design to revision 3's open ladder; or he refuses the
+tuple, in which case this design is not built inside the current box
+in pieces.
 
 ## Dispositions (round 1, job sma-crit1-20260906)
 
@@ -919,4 +1008,14 @@ the current box in pieces.
 | SMA-C-17 | accepted | launchRunner passes only `--repo` (runner.go:629-645) and RunLoop writes the record (runner.go:88-95); the lease may be absent at arm time on a fresh machine (fleet-join design step 5 before step 6; lease.go:76-84) | Section 3: the handoff is an argument, `--armed-lineage`, from Arm through launchRunner to `steward run` to RunLoop; the literals `no-lease` and `unknown` are named values; presence reports the arming lineage with the reason; SMA-F-LINEAGE, TestLaunchRunnerPassesArmedLineage, TestRunLoopWritesArmedLineageFromFlag, TestOwnerLineageReadSeamAbsentLease |
 | SMA-C-18 | accepted | The schema said equality and the table refused only earlier-than | Section 8: `presence updatedAt not EQUAL to tickAt` is refused; section 3 says why (a future value cannot extend reachability); SMA-F-PRESENCE's refused case |
 | SMA-C-19 | accepted | The matrix lacked the forged marker, guarded repair, enable and retire recovery, retire then up, waiter-absent expiry, post-deadline not-mine, and the deadline second | Section 9: SMA-F-FORGED-MARKER, SPOILED-REPAIR, RECOVER-ENABLE/-RETIRE, RETIRE-THEN-UP, WAITER-ABSENT-EXPIRY, POST-DEADLINE-NOT-MINE, DEADLINE-SECOND, each with the guard or transaction path it exercises |
-| SMA-C-20 | accepted | An attempt is one admitted reservation and the tuple is complete or nothing (backlog-mechanism.md:17-30); the goal record reads ten attempts, 720 minutes, one active job, two review rounds (seat-mutual-awareness.md:11); revision 2 counted builds only | Section 10: seventeen reservations at the maximum (nine builds, six review rounds, two conformance jobs), 2040 job-minutes plus the 120 used, three working days; the complete tuple `elapsedLimit=3d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3`, with the review-round raise named rather than assumed |
+| SMA-C-20 | accepted | An attempt is one admitted reservation and the tuple is complete or nothing (backlog-mechanism.md:17-30); the goal record reads ten attempts, 720 minutes, one active job, two review rounds (seat-mutual-awareness.md:11); revision 2 counted builds only | Section 10: seventeen reservations at the maximum (nine builds, six review rounds, two conformance jobs), 2040 job-minutes plus the 120 used, three working days; the complete tuple `elapsedLimit=3d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3`, with the review-round raise named rather than assumed (recounted to fifteen in revision 4) |
+
+## Dispositions (round 3, job sma-crit3-20260906; Wido's ruling A of 2026-09-06)
+
+| Finding id | Disposition | Reasoning and evidence | What changed in the design |
+|---|---|---|---|
+| SMA-C-21 | resolved by ruling A (removed) | The marker's trailer check was a content-shape check: TrailerPresent finds an opid anywhere in history (txn.go:375-390), so a reused or typed trailer could mint or alter a marker upgraded writers accept. Wido ruled the rollout operational; there is no marker to forge | Section 2: the enable marker, `seat enable` and `seat-not-enabled` are gone from every section; membership is the record itself. Section 8: `seat-authority` keeps only its member row; the rollout rule paragraph replaces the fence. Section 9: SMA-F-ENABLE, SMA-F-FORGED-MARKER, TestSeatMarkerBindsToTransactionTrailer, TestSeatWritersRefuseWhenNotEnabled removed; TestUpPublishesMembershipAfterEnable renamed |
+| SMA-C-22 | resolved by ruling A (removed) | The captured-tip validation is hard-coded before Mutate (txn.go:605-613) and PublishRequest.Validate sees only the built commit, so the exemption could not travel and the fallback bypassed the engine's gates. There is no repair transaction to route | Section 8: `seat repair` is gone; a spoiled tip is repaired by an existing human act named in the rollout rule paragraph (a hand removal commit at the enrolled terminal, or `goal repair --accept-remote --by` after a rewind, goalsync_verbs.go:416-449, accepted.go:16-83). Section 7: the seat-repair row removed. Section 9: SMA-F-SPOILED-REPAIR replaced by SMA-F-SPOILED-TIP; TestSeatRepairValidatesBuiltTreeWithoutExemption removed. Section 1 item 5 corrects revision 3's claim of a guard acknowledgement path and section 8 adds the guard's `HUMAN`-class seat line |
+| SMA-C-23 | resolved by ruling A (removed) | The replace form's opid named the terminal's machine while the validator requires the record owner's; no repair verb exists now, and the hand act removes and never rewrites | Section 8: "remove, never rewrite"; every record kind's owner republishes it (membership at the next `up`, presence at the next tick, an ask is asked again). Section 2: nothing under `plans/seats/` is deleted by any Mutate |
+| SMA-C-24 | accepted | The transition table made equality on time while the validator refused only expiredAt earlier than deadlineAt, so an expired record stamped at the deadline second was accepted and blocked a lawful answer | Section 5: the deadline boundary stated once (on time is not later than deadlineAt; past is strictly later) and referenced from the live predicate, the validator's `seat-state` row (answer.at past, late.at not past, expiredAt not past are refused) and SMA-F-DEADLINE-SECOND, which now also rejects an expired record stamped at equality; TestValidateSeatTreeIsTotal gains the three deadline rows |
+| SMA-C-25 | accepted | Revision 3 exposed `seat ask` in slice 3 and landed RunSeatAttention, the health role, the digest and the status clause in slice 4, so a slice-3 machine could ask a slice-2 member that could not hear | Section 10: the reader and notification path is slice 3 and the ask writer is slice 4, and the rollout rule (section 8) lands no slice until every machine runs the one before it, so every member can hear before the first ask exists; slice 3's unit tests publish asks through slice 1's request constructors; the box recounted at fifteen reservations and the tuple restated with the record's two review rounds |
