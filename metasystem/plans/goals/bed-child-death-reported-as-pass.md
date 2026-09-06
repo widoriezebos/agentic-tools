@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: MECHANICAL, tier-1 lane or one small chain, ANY FREE SEAT, AHEAD OF OTHER WORK (m1c offers to take it once its chain shr-build1 lands, within the hour): (a) split the helper's declaration (assign staged on its own line after enrolled) and audit supervision-fixtures.sh and the other fixture scripts for the same 'local a=$1 b=$a' shape; BASHPID is NOT in scope - m1c's chain shr-build1 already replaces the stop-hook-monitor line with stop_main_pid=$(exec sh -c 'echo $PPID') (a plain substitution reports a transient pid on 3.2); (b) the child's cleanup trap captures $? first and ends with exit "$status" so a death keeps its status - and a bed self-test proves it: a scenario that dies on an unbound variable under the trap is reported failed. The vacuous class is exactly that shape: m1c observed that a scenario's own assertion failures (exit 1) propagate as rc=1, so ordinary failures are not hidden; (c) receipt: the bed on this host with rearm-rebuild, rearm-launch-fails and rearm-provenance genuinely green (the log shows no unbound line and the identity assertions ran), cited on rearm-remedies-and-adoption-notes as the real-runner proof the re-arm landing lacked. Until it lands, no bed pass is evidence unless the scenario's log is read.
 - OpenedAt: 2026-09-06T11:28:08Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:16:37Z revision=3 opid=0F5B2YJ9DP5VE6V56AKCCV44TM-m1-7cd0bd60 authority=proven digest=b248439b971de9038fcd85937521762667019bf8d5297ed6f15f463c50c6a20f
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=4 at=2026-09-06T12:26:49Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T12:22:31Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-06T11:28:40Z 33QFFMG3C7PGED62XAWT1EH8XE-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=bed-child-death-reported-as-pass
 - 2026-09-06T12:16:37Z 0F5B2YJ9DP5VE6V56AKCCV44TM-m1-7cd0bd60 approve actor=human:Wido targets=bed-child-death-reported-as-pass
 - 2026-09-06T12:22:31Z 6TNT5HN2RHBWWM75H7X1MJB1XY-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=bed-child-death-reported-as-pass
-Integrity: sha256=a40035ab3347221206d6fab98287a2137d91ba5eb9547c786c3f1caf388eebdf
+- 2026-09-06T12:26:49Z PAGS32SDVATPKJZJKYFBERBHY6-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=bed-child-death-reported-as-pass
+Integrity: sha256=9cfe2dc3aebf1595d927e146c11b56d58aae2abecbc5c538b1c8eb253315246d
