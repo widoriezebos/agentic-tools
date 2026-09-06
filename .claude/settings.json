@@ -22,7 +22,7 @@
           {
             "type": "command",
             "command": "cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude stop",
-            "timeout": 5
+            "timeout": 60
           }
         ]
       }
