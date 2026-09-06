@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: Since goal code-critic-runtime-has-no-shell, every claude delegate round creates a private scratch directory under the system temporary directory (metasystem-claude/<job>-<round>, holding GOCACHE and GOTMPDIR) and nothing removes it; a full-module test run fills hundreds of megabytes per round, so a suite day accumulates gigabytes until the operating system sweeps (critique ccs-critic2, F-4). The same critique noted that no test pins the four sandbox switches (enabled, failIfUnavailable, autoAllowBashIfSandboxed, allowUnsandboxedCommands), so a flip of allowUnsandboxedCommands to true would pass the suite (F-7). DONE means the adapter removes the round's scratch directory when the round ends on every exit path, a fixture proves it, and a settings test pins the four switches.
 - Origin: main
-- Next step: MECHANICAL: brief the cleanup in scripts/agents/adapters/claude.sh (remove the scratch dir after the round's result is derived, on success and failure), the switch assertions in internal/adapter/runtime_test.go, and RESOLVE the scratch path (realpath: /var/folders is a symlink to /private/var/folders, and five adapter collect-port tests fail in a delegate shell on the mismatch, proof job lpb-proof1) and trim its trailing slash before composing (double slash, proof job ccs-proof1 F-4); build, land as its own chain.
+- Next step: STATE 2026-09-06 23:45Z (m1c): claimed; brief plans/claude-delegate-scratch-cleanup-brief.md landed; chain csc-build1 (Sol, MECHANICAL) building: resolved slash-clean scratch path, removal on every exit path, a fixture for the removal and the clean path, the four sandbox switches pinned. Then seat proofs (adapter tests, bash -n, the fixture bed the builder names), conformance, close, land (area), rebuild, up, and a live proof: a dispatched claude delegate whose settings scratch entry is resolved and whose scratch directory is gone after the round; goal done.
 - OpenedAt: 2026-09-06T19:57:39Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=3 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=2d459cfa518d08b171abccb4a29abd3be2d003f7c9165f98559db1f200728f07
@@ -22,4 +22,5 @@ History:
 - 2026-09-06T22:29:50Z KJ32NQTPC4D2P3WCW5ZVHASSD5-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
 - 2026-09-06T23:39:02Z P0GKAN2PEQ164BV67RTS7S66KN-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
 - 2026-09-06T23:39:16Z 9J1D1EQXBZ9QW7HZKFMDP92CGH-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
-Integrity: sha256=9e48c79aa6aebe95c9d1b587fbb6464c8b82023cba32791aef0a676e4089b875
+- 2026-09-06T23:39:41Z PH2SP1V1Q1F4KFQD084TERESYK-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=claude-delegate-scratch-cleanup
+Integrity: sha256=e2c33e6de68f2696fe3c2d4c3058a94192d535b9d9ca0e9786d6777d54306bb1
