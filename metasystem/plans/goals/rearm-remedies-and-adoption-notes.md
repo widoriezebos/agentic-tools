@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: MECHANICAL, tier-1 lane or one small chain: scripts/adopt.sh (detached target continues and reports; existing key preserved), internal/steward/rearm_resolver.go and internal/up/up.go (remedy texts), with a test per remedy. FIFTH ITEM, from the field: on m1b and m1d the human steward verb that seeded metasystem.steward.landing-ref (run by Wido in an agent-free terminal at 11:20Z and 11:23Z, with the new engine at the enrolled path) was followed at once by a generation minted as mintedBy=machine-rebuild with humanWitnessedGeneration absent (arming.log: 'engine-re-armed generation=2 previous=1 engine=999e2c07 landed=999e2c0 ref=refs/remotes/origin/main'). The bytes were landed, so nothing unsafe re-armed, but a human's own arm or restart must leave a human-witnessed generation, not a machine-labelled one: decide whether the human verbs mint before the machine rule runs, or record the human  RECEIPT from the honest bed on landed main fba7d0b0 (m1c, 2026-09-06 13:35Z, stock bash 3.2): rearm-rebuild and rearm-provenance genuinely green (engine really replaced, identity assertions ran, no unbound line); rearm-launch-fails genuinely red, 'the next up did not report a repaired runner' (evidence preserved under artifacts/agents/suite-failures on m1c, 20260906T133xZ). The all-three-green receipt this goal wants comes after that scenario or the engine is fixed; goal bed-child-death-reported-as-pass is concluded with this transfer.
 - OpenedAt: 2026-09-06T11:17:34Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:16:40Z revision=3 opid=STXTKSF0EBWQFXA3AEE2ARS7XJ-m1-7cd0bd60 authority=proven digest=faed688e447a25e760743da415acf6b80b523cde838b44ce8af37d9d52eb228e
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=8 at=2026-09-06T17:13:54Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T17:13:06Z revision=8 accountingRevision=8
 - StopCapability: generation=8 revision=8 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -24,4 +25,5 @@ History:
 - 2026-09-06T13:35:55Z PZRYP0257S6QQJZWMBMKC9FSNQ-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T15:43:32Z AY3C6SMZYWRV6EQMP40T5XVDBQ-m1-7cd0bd60 set-pin actor=human:Wido targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T17:13:06Z Q0Y7Q24ARA42P25T0AN6CSSDJG-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
-Integrity: sha256=b66aeaa439efc35d4ffe3f4ac23fdb72acab43d043fa654f4cf83f175d5c6b4c
+- 2026-09-06T17:13:54Z Q0C37QD404SGMFFAN15XKAT0Q3-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
+Integrity: sha256=07d1aea6fa7a365e62923b0e64bb2834f36ca11459367cc5807e7dfebddb0023
