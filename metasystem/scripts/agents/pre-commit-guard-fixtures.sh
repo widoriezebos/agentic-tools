@@ -57,8 +57,30 @@ grep -Fq 'classifier unavailable and its observation could not be written' "$tmp
 rm -rf "$fixture_root/artifacts"
 mkdir -p "$fixture_root/artifacts/agents"
 
+# Patch backups are never tracked, regardless of whether they are newly added
+# or modify an existing staged path.
+git -C "$repository" reset -q
+printf 'backup\n' >"$repository/scratch.orig"
+git -C "$repository" add scratch.orig
+if (cd "$repository" && "$fixture_root/scripts/agents/pre-commit-guard.sh" \
+  >"$tmp/orig.out" 2>"$tmp/orig.err"); then
+  echo "pre-commit guard fixture: staged patch backup was admitted" >&2
+  exit 1
+fi
+grep -Fq 'pre-commit guard: refusing scratch.orig: patch backups are never tracked' "$tmp/orig.err"
+
+# An ordinary staged file remains admissible.
+git -C "$repository" reset -q
+printf 'ordinary\n' >"$repository/ordinary.txt"
+git -C "$repository" add ordinary.txt
+(cd "$repository" && "$fixture_root/scripts/agents/pre-commit-guard.sh") || {
+  echo "pre-commit guard fixture: ordinary staged file was refused" >&2
+  exit 1
+}
+
 # The unrelated existing new-plan safeguard remains active after the human
 # authority path fails open.
+git -C "$repository" reset -q
 printf 'new plan\n' >"$repository/plans/new.md"
 git -C "$repository" add plans/new.md
 if (cd "$repository" && "$fixture_root/scripts/agents/pre-commit-guard.sh" \

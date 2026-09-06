@@ -85,6 +85,15 @@ if [[ -n "$ledger" ]]; then
   exit 1
 fi
 
+patch_backups=$(git diff --cached --name-only --diff-filter=AM \
+  | grep -E '\.orig$' || true)
+if [[ -n "$patch_backups" ]]; then
+  while IFS= read -r path; do
+    echo "pre-commit guard: refusing $path: patch backups are never tracked" >&2
+  done <<<"$patch_backups"
+  exit 1
+fi
+
 [[ "${METASYSTEM_ALLOW_NEW_PLAN:-}" == "1" ]] && exit 0
 
 # An unborn branch has no peer work to capture: the initial commit stages the
