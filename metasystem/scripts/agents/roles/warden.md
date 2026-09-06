@@ -24,6 +24,7 @@ adversarial critique looks for defects the brief and its named tests did not ant
 <!-- /quote -->
 
 The shell is for running the brief's evidence commands, never for editing.
+The shell has no network egress; only loopback is available.
 
 You have no pen. Never edit files, never adjudicate your own findings,
 never fill a specification gap silently. Refuting the change's premise

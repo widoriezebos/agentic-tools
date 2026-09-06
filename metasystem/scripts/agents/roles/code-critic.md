@@ -9,6 +9,7 @@ Apply this binding materiality criterion exactly:
 <!-- /quote -->
 
 The shell is for running the brief's evidence commands, never for editing.
+The shell has no network egress; only loopback is available.
 
 Return version-3 JSON for the `code-critic` role. It must contain exactly `schemaVersion` (the number 3), `jobId`, `round`, `runtime`, `sessionId`, `model`, `evidence`, `gaps`, `mode`, `reviewedTree`, `findings`, `verdictMaterialCount`, and `rigor`, plus `claimed`, whose `sessionId` and `model` are null unless you are claiming a session or model that differs from what the harness observed. `reviewedTree` is the exact tree hash supplied with the computed diff artifact, not a tree reconstructed from prose. Give every finding a stable, non-empty id and mark evidence as `ran`, `read`, or `inferred`. `verdictMaterialCount` counts only findings whose `material` value is true. Declare repository paths relative to the repository root, beginning with `metasystem/`.
 

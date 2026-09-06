@@ -1904,12 +1904,18 @@ json_replace_field "$agent_repo/artifacts/agents/review-target/rounds/1/return.j
 grep -Fq 'diff --git a/metasystem/review-target.txt b/metasystem/review-target.txt' \
   "$agent_repo/artifacts/agents/review-target/rounds/1/diff.patch" \
   || { echo "review-target conformance diff did not preserve the nested artifact path" >&2; exit 1; }
-run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --permissions none --job-id flag-runtime --wait
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^dispatch[.]permissions[.]code-critic=.*$'
+run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id flag-runtime --wait
+printf 'dispatch.permissions.code-critic=none\n' >>"$agent_repo/metasystem.conf"
 flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
 review_target_record="$agent_repo/artifacts/agents/jobs/review-target.json"
 [[ "$("$engine" json get --file "$flag_runtime_record" --field runtime)" == fake \
    && "$("$engine" json get --file "$flag_runtime_record" --field overridden)" == true ]] \
   || { echo "flag runtime override was not recorded as overridden fake" >&2; exit 1; }
+[[ "$("$engine" json get --file "$flag_runtime_record" --field permissions.effective.network)" == deny ]] \
+  || { echo "a code critic without an explicit permissions key did not deny network" >&2; exit 1; }
+[[ "$("$engine" json get --file "$review_target_record" --field permissions.effective.network)" == allow ]] \
+  || { echo "an implementer fixture did not retain network access" >&2; exit 1; }
 [[ "$("$engine" json get --file "$flag_runtime_record" --field reviews)" == review-target ]] \
   || { echo "flag-runtime record lost its reviews binding" >&2; cat "$flag_runtime_record" >&2; exit 1; }
 [[ "$("$engine" json get --file "$review_target_record" --field independentCritiqueJobRef)" == flag-runtime ]] \
@@ -2147,14 +2153,16 @@ effective_narrower="$agent_fixture/effective-narrower.md"
 make_agent_brief "$effective_narrower" design 'FAKE:effective-narrower'
 run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait
 
-# The shipped presets grant network, and a repository may narrow it for every
-# role at once. Until 2026-08-05 the adapters hard-coded network off and never
-# read the field, so a job could be recorded as networked and still be cut off
-# (KI-12); these fixtures exist so that cannot recur silently.
+# The writable and none presets grant network, the critic preset denies it,
+# and a repository may narrow every role at once. Until 2026-08-05 the adapters
+# hard-coded network off and never read the field, so a job could be recorded
+# as networked and still be cut off (KI-12); these fixtures prevent recurrence.
 [[ "$("$engine" json get --file scripts/agents/permissions/workspace.json --field network)" == allow ]] \
   || { echo "the workspace preset no longer grants network" >&2; exit 1; }
 [[ "$("$engine" json get --file scripts/agents/permissions/none.json --field network)" == allow ]] \
   || { echo "the none preset no longer grants network" >&2; exit 1; }
+[[ "$("$engine" json get --file scripts/agents/permissions/critic.json --field network)" == deny ]] \
+  || { echo "the critic preset no longer denies network" >&2; exit 1; }
 net_default="$agent_fixture/net-default.md"
 make_agent_brief "$net_default" design
 run_agent_fixture net-default net-default "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$net_default" --job-id net-default --wait

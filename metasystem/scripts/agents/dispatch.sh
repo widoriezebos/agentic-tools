@@ -1400,14 +1400,18 @@ dispatch_job() {
     die 1 "--approve-escalation is unnecessary because the requested pair does not require escalation approval; remove the flag"
   fi
 
-  permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default none)}
+  case "$role" in
+    code-critic|design-critic) permission_name=critic ;;
+    *) permission_name=none ;;
+  esac
+  permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default "$permission_name")}
   if [[ "$role" == warden ]]; then
     # The warden holds the no-pen seat: its write authority is bound by
     # the role, never by a caller flag, a config key, or a file that
     # shadows a preset name — the shipped zero-write preset is forced
     # by its absolute repository path.
     [[ -z "$permissions_override" ]] || die 2 "the warden role dispatches with the zero-write preset; --permissions cannot change it"
-    permission_name="$root/scripts/agents/permissions/none.json"
+    permission_name="$root/scripts/agents/permissions/critic.json"
   fi
   if (( use_worktree == 0 && workspace_selected == 0 )) \
       && permission_envelope_requests_writes "$permission_name"; then
