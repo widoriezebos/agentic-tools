@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: WIDO'S ORDER (2026-09-06, to m1): m1 takes this goal next, after hook-root-resolver-design lands; 'make sure it is omnipotent and very easy to use'. Omnipotent: one word stops everything the metasystem runs - for this checkout with no flags (metasystem stop), for every enrolled checkout on the host with --all - running delegate jobs cancelled through the cancel path, then steward runner, repo watcher, narrator, supervision components through the existing shutdown path, and it says what it could not stop and what it did about that. Very easy: no --repo needed from inside a checkout, no --by (the enrolled terminal already knows who), one printed line per thing stopped, one line saying how to start again, a second stop says nothing is running, and metasystem status shows the same list without stopping. It belongs to the verbs-match-intent family (records/misc/verb-surface-audit-2026-09-06.md; its refusal-prints-a-command rule and its human page apply): stop, status and arm are the three human process verbs on that page, named by intent, and this goal's design section is one page that verbs-match-intent's slice 0 can absorb or cite. One chain: a short design (the human page entry for stop/status, the order of stopping, the --all form, the fixture list), Sol critique once, build, code review, land; fixture: a scratch repository with an armed steward and a fake job, stop, assert every process gone and every record terminal, second stop is a no-op, status matches.
 - OpenedAt: 2026-09-06T12:24:49Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:25:28Z revision=2 opid=ESANH6C2BR6VYW74A9Q5NQEWW2-m1-7cd0bd60 authority=proven digest=1c0acb89a08769fa2813f7e1b5f6d986a61a106fa9aa15c8cf9f56cb9ab4cc0a
+- Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T18:59:41Z
 - Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T18:57:50Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1 claimEpoch=5 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-06T12:25:28Z ESANH6C2BR6VYW74A9Q5NQEWW2-m1-7cd0bd60 approve actor=human:Wido targets=metasystem-stop-verb
 - 2026-09-06T12:52:02Z AS7KGSCDCHR0A955HGEQ3AYGA8-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=metasystem-stop-verb
 - 2026-09-06T18:57:50Z 2HP4EVXE54QNATDSQ06XEWMQT9-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=metasystem-stop-verb
-Integrity: sha256=a31d15603514862b4f948e7bd0d44dea921013d2289d498f3b1618e6717a6a39
+- 2026-09-06T18:59:41Z NRRVQGJN9SAGYKNX9BQCZ7PWZV-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=metasystem-stop-verb
+Integrity: sha256=d86ef12acb5eca52239bc1743a35a3bd7b6a367a22361af54f7dc6b9e6a1a7d7
