@@ -1,17 +1,19 @@
 # seat-mutual-awareness
 
 - State: claimed
+- Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the seat-to-seat path sits beside the human's channel, and a seat message that reached the human's authority surface would be an unauthorized word, though the design forbids it and nothing else unsafe is permitted; novelty 2: new record kinds, verbs and a health role on a ledger and validator that already exist; exposure 3: every machine in the fleet and the shared ledger; accumulation 2: in-flight records and questions grow on the ledger with the fleet and unanswered questions pile up silently unless surfaced"
+- Tier: 3
 - Intent: Wido's order 2026-08-31: seats must be aware of each other and ask each other questions directly, without the human as relay - the m3-to-m2 seam check of this day routed through Wido when it should have been seat-to-seat by default; DONE means a seat can discover what other seats have in flight and put a question to them as the normal, mechanized path
 - Origin: main
 - Next step: WIDO'S BINDING DESIGN WORD for the inbound/receive loop (2026-09-01, verbatim: 'I am thinking that anything inbound needs to be accompanied with an authentication token from a Google Authenticator or similar'): every inbound message on the external channel carries a TOTP code verified against a shared secret provisioned ONCE at Wido's agent-free terminal (the enrollment-law anchor). Design rules recorded with the word: codes are single-use (last accepted time-step remembered, reuse refused); a code authorizes only the message it accompanies, recorded together verbatim; tiering survives — code-verified inbound may carry authority words (budgets, resumes) but terminal-reserved acts (enrollment, provisioning this secret) stay at the terminal. Residuals accepted with eyes open: same-device collapse if the authenticator lives on the phone that runs Telegram (separate devices recommended); the machine-side secret is readable by whatever owns the VM (the token protects the channel, not the machine). The alert channel's slice-1 send path is unaffected
 - OpenedAt: 2026-08-31T14:24:17Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=8 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=f21656a77e331b9b03b8b835ea5aef78107650af01674b982919b0a8b8f2653c
+- Approved: by=human:Wido at=2026-09-06T10:15:15Z revision=11 opid=ANZ69ZJPSJZBFFCHRC1HA913Y7-m1d-62183579 authority=raise=ANZ69ZJPSJZBFFCHRC1HA913Y7-m1d-62183579 digest=76d34210c631e5266b47b24a1110aeb8d9c06a181436f212e1c67df91ce1a7bb
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=9 at=2026-09-06T10:14:44Z
-- Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T10:14:23Z revision=9 accountingRevision=9
-- StopCapability: generation=9 revision=9 machine=m1d claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T10:14:23Z revision=11 accountingRevision=9
+- StopCapability: generation=11 revision=11 machine=m1d claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-31T14:24:17Z PQVSVQQVASG56RB6DNG57JA3W9-m3-a5da21ff open actor=m3+mac-m3 targets=seat-mutual-awareness
@@ -24,4 +26,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=seat-mutual-awareness reason=sweep
 - 2026-09-06T10:14:23Z 2BEFGAAS7HAM93R30EKH7WHSXP-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness
 - 2026-09-06T10:14:44Z AYJVTN1SD35837B2572QEE0V0Y-m1d-62183579 slice-start actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness
-Integrity: sha256=e3f549a3b14247acd5fb73b8d676811074730701f4d6c1e7d7704cd4c500fa0b
+- 2026-09-06T10:15:15Z ANZ69ZJPSJZBFFCHRC1HA913Y7-m1d-62183579 edit actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness reason=Misclassified: from=0 to=3 evidence=root:sma-design1-20260906
+Integrity: sha256=e621c35ecff10a0f49f703383342f3796e776832c37a78f7c8d01b8162beaf03
