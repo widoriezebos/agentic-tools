@@ -2,7 +2,7 @@ Working Mode: implement
 Orchestrator Identity: m1b (lineage main-1788680071-18713-e76d5d, dispatch delegate under goal account-provenance)
 Date: 2026-09-06
 
-# Review brief: fresh independent critique of the final tree (chain account-provenance-build1, work round account-provenance-build1-r3)
+# Review brief: fresh independent critique of the final tree (chain account-provenance-build1, work round account-provenance-build1-r4)
 
 FINDING IDS: chain-unique, APC-01, APC-02, ... never F-n.
 
@@ -12,7 +12,11 @@ work round. Round 1 built the contract; round 2 closed one boundary gap (the exa
 announcement signature); the first closing critic (chain
 account-provenance-crit3) found APC-01, a defect in the design's premise
 (the codex identity token's one-hour lifetime), and APC-02 (a cosmetic
-trailing space), both folded in round 3 with the design amended. This
+trailing space), both folded in round 3 with the design amended; the second closing
+critic (chain account-provenance-crit4) found APC-03, a one-second speed
+assertion in two success-path capture fixtures that flakes under load,
+folded in round 4 (test file only), and noted APC-04 (the fake hang knob
+is exercised by no fixture; it stays because the design names it). This
 chain examines the FINAL tree in a fresh session and closes the build
 chain.
 
@@ -24,10 +28,11 @@ Specification: metasystem/plans/account-provenance-design.md, revision 3
 and metasystem/records/misc/account-provenance-critique-r2.md). Build
 contract: metasystem/plans/account-provenance-build-brief.md and
 metasystem/plans/account-provenance-fold1-brief.md (D15, D16) and
-metasystem/plans/account-provenance-fold2-brief.md (D17 to D19). Goal record:
+metasystem/plans/account-provenance-fold2-brief.md (D17 to D19) and
+metasystem/plans/account-provenance-fold3-brief.md (D20, D21). Goal record:
 metasystem/plans/goals/account-provenance.md. The orchestrator persisted
 the diff and the reviewed tree hash at
-metasystem/artifacts/agents/account-provenance-build1/rounds/3/review.json
+metasystem/artifacts/agents/account-provenance-build1/rounds/4/review.json
 (the diff sits beside it); take reviewedTree from that record. The
 orchestrator's runs on the reviewed tree are listed at the end.
 
@@ -54,9 +59,11 @@ orchestrator's runs on the reviewed tree are listed at the end.
    job records, resolves the calling main by ancestry, judges every
    composed record with that `mainId` plus the declared chain, and
    `commit.sh` prints one line and never refuses on it.
-5. The commit.sh stamp line has no trailing space when no record is
+5. The success-path capture fixtures run under the production bound and
+   only the group-kill fixture keeps the one-second bound (APC-03).
+6. The commit.sh stamp line has no trailing space when no record is
    named (APC-02).
-6. Fixtures: every fixture Q5 names exists and would fail against the
+7. Fixtures: every fixture Q5 names exists and would fail against the
    old code; no test weakened; nothing outside the declared boundary
    (the round-1 boundary plus `internal/lease/verbs_test.go`).
 
@@ -66,23 +73,22 @@ lands.
 # Constraints
 
 Wall-clock budget: 40 minutes. Return per the code-critic schema with
-the reviewedTree from the persisted round-3 review record. Gap rule:
+the reviewedTree from the persisted round-4 review record. Gap rule:
 stop and report a gap; never fill it silently.
 
 # Orchestrator runs
 
-On the reviewed tree (2dbfbc2eee3ffd827df114ba828328bb5eb61e6b, the
-worktree rebased by the dispatcher onto main 60d8f8a2), from this Mac,
+On the reviewed tree (2a4460f74d90181c392be1eb024dd54a78a3df26, the
+worktree rebased by the dispatcher onto main 5f4a96fe), from this Mac,
 evidence level ran: `gofmt -l` on internal and cmd printed nothing; `go
-vet` passed for adapter and account; `bash -n scripts/agents/commit.sh`
-passed; `go test -count=1` passed for adapter, account, lease, landing
-and up; `git apply --check --directory=metasystem` of the round-3 diff
-against main succeeded. On the round-2 tree (ac5efedf), which differs
-from this one only in `internal/adapter/codex.go`, its claims test and
-the `commit.sh` stamp line, `scripts/agents/go-gate.sh --fast`, the
-whole `scripts/agents/dispatch-fixtures.sh` bed and
+vet` passed for account; `go test -count=1` passed for account while
+adapter, lease, landing, up and census ran in parallel beside it; `git
+apply --check --directory=metasystem` of the round-4 diff against main
+succeeded. On the round-2 tree (ac5efedf), from which this one differs
+only in `internal/adapter/codex.go`, its claims test, the `commit.sh`
+stamp line and the account test file, `scripts/agents/go-gate.sh
+--fast`, the whole `scripts/agents/dispatch-fixtures.sh` bed and
 `scripts/agents/goal-cli-fixtures.sh` passed; the landing's full battery
 receipt reruns them on the final tree. The implementer ran the rebuilt
-engine's codex `account` verb live against this Mac's credential file
-and reported `credential-claims` with an empty error, printing no
-identifier.
+engine's codex `account` verb live in round 3 and reported
+`credential-claims` with an empty error, printing no identifier.
