@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 10
+- Revision: 11
 - Arc: headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=cce26a4e1a354ce8451020f4d14bfcbbc17533f5d69ffcef25dd08547a68313f
+- Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=10 at=2026-09-06T21:07:20Z
 - Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T21:04:27Z revision=10 accountingRevision=10
 - StopCapability: generation=10 revision=10 machine=m1 claimEpoch=5 fenceEpoch=0
 
@@ -26,4 +27,5 @@ History:
 - 2026-09-05T21:17:46Z CSBSAFBRM4R9ZX8GERMDG0RDJZ-m1-a4f8999f release actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=fleet-coordinator-brain reason=sweep
 - 2026-09-06T21:04:27Z VZ97FTP6ATEK80H0TYSVRHFXFC-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
-Integrity: sha256=0d6757011484106881affec19655851fcd9e63a31a56d311923690657345eec9
+- 2026-09-06T21:07:20Z PQKVZ9NW286J6D3NG15XDHB92A-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
+Integrity: sha256=750d572a5bd3a37dc8ff64ea636c7e845018978454db369cd6b7029a3519645b
