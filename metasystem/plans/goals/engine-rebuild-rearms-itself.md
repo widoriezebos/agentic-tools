@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: STATE 2026-09-06 (m1): revision 3 landed (ad84c90cd) on Wido's provenance decision; design critique round 3 (err-crit3-20260906) returned five material findings, carried with the coordinator's dispositions in records/misc/engine-rebuild-rearm-critique-r3.md (094664d7d): stage holes -> four stages with one fixture per transition; identity durability -> the existing durable-publication contract, success only on confirmed durability; landing ref ownership -> local-scope config, a metasystem-owned ref namespace moved fast-forward only by the engine's own push paths, the boundary stated honestly as ordinary operation; the 64-commit cap -> no cap, tree-hash digest cache, wall-time bound with a loud refusal; the main seed -> human arm/restart seed from the checked-out branch, the machine path never seeds. Third prose revision, three critiques: per the implementation-first ruling the findings are built behind fixtures, not folded into a fourth revision. BUILD DISPATCHED: err-build1-20260906 (Sol implementer, DESIGN-BEARING) from the build brief in m1's scratch; then conformance, one code critique, fold if needed, close, land with --chain, rebuild the engine, steward restart at Wido's terminal (this landing changes the enrollment rule itself), done. The design chain does not close (design-chain-has-no-lawful-close, on m1b).
 - OpenedAt: 2026-09-05T10:02:09Z
-- Revision: 16
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 17
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=960 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:human:Wido at=2026-09-06T06:46:47Z revision=14 opid=X660MCYWHJSMWRFGY73NKC9S15-m1-a4f8999f authority=proven digest=a9d794a1427827ef06e9704e5c2348839072bd24456e2474e5ca18b6b511f92c
+- Approved: by=human:Wido at=2026-09-06T10:07:30Z revision=17 opid=AC00JA2T77DP9QJMNZWZ11ZSKH-m1-a4f8999f authority=proven digest=ca5fc20373ff96e331b9f592738da135cbea7f1673a7b8a9ffd85e9bc1624c11
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=8 at=2026-09-05T22:18:46Z
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T07:33:09Z revision=15 accountingRevision=15
-- StopCapability: generation=15 revision=15 machine=m1 claimEpoch=5 fenceEpoch=0
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T10:07:30Z revision=17 accountingRevision=17
+- StopCapability: generation=17 revision=17 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:02:09Z CEK1GRKK6YHJN66D1A44EV2THJ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
@@ -32,4 +32,5 @@ History:
 - 2026-09-06T06:46:47Z X660MCYWHJSMWRFGY73NKC9S15-m1-a4f8999f approve actor=human:human:Wido targets=engine-rebuild-rearms-itself
 - 2026-09-06T07:33:09Z 1Y9Z4Q04P80HGNHWRQPRKFYH8H-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-06T08:03:13Z 0PKRTVG64P6C2X51JC1H5P6JAK-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
-Integrity: sha256=167da795b82bd79e5ddad9c8ac7bcc7983751f498bb11aaf4d1c3cc7bbc5cdec
+- 2026-09-06T10:07:30Z AC00JA2T77DP9QJMNZWZ11ZSKH-m1-a4f8999f set-budget actor=human:Wido targets=engine-rebuild-rearms-itself
+Integrity: sha256=984e487e9044cacb24c9cc6dcd89f652733065db59ec7da4fa4aedb5f29fc421
