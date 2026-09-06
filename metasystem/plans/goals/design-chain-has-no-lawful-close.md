@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: A design-round chain cannot be closed. An implementer job in design mode (hazard DESIGN-BEARING, diffBoundary one plans/ file) is critiqued by a design-critic, and dispatch.sh close then refuses under REFUSED-R22-M1-RULING-O-INDEPENDENT-CRITIQUE because chain completion requires a distinct independent-critique reference, while --reconcile-evidence rejects the design-critic with 'not a critic, warden, or verifier review': internal/dispatch/review_reference.go:80-101 binds only code-critic, warden and verifier. So every design fold this fleet lands leaves its implementer chain open forever: on 2026-09-06 m1 left implementer-ea7bd720076c2ba8ab502ecc, hook-root-fold5-20260905 and the critic root hook-root-critique4b-20260905 open after landing revisions 4 and 5 of the hook-root design, with no verb that closes them. DONE means a design chain whose design-critic register is closed can be closed by the same close verb, with the design-critic root as its independent-critique reference, and the fixture proves it
 - Origin: main
-- Next step: Add design-critic to reviewReferenceBinding's accepted roles in internal/dispatch/review_reference.go with the finding-register-closed precondition that code-critic already has (requireFoldedCritique), then close the three open hook-root chains named in the intent as the live proof. Tier 1 or 2; do not fold into the hook-root goal
+- Next step: Add design-critic to reviewReferenceBinding's accepted roles with the register-closed precondition; the reconcile derives the reviewed job as the chain's final work round, stamps reviews onto the design-critic root, and pairs by a design path the dispatcher now records. Live proof narrowed by the closure law as it stands: implementer-ea7bd720076c2ba8ab502ecc closes with hook-root-critique4b-20260905 (the critic ended after it); hook-root-fold5-20260905 cannot close through that critic because the fold ended after the critic's last look (unexamined work, by design); the critic chain's own close is goal merge-stage-critic-close's. The three records live in m1's checkout; the close runs there.
 - OpenedAt: 2026-09-05T22:17:23Z
-- Revision: 4
+- Revision: 5
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -20,4 +20,5 @@ History:
 - 2026-09-06T06:49:41Z QCXYXBWVYRX15C9ATSXE5DMY2S-m1-a4f8999f approve actor=human:Wido targets=design-chain-has-no-lawful-close
 - 2026-09-06T07:28:56Z 6XJF69SN05T9CF626KS9XDTXDZ-m1-a4f8999f set-pin actor=human:Wido targets=design-chain-has-no-lawful-close
 - 2026-09-06T09:09:07Z ZY4Z5K7THCFKE16WRS783ENMHM-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=design-chain-has-no-lawful-close
-Integrity: sha256=975d754c350cc2bfa132be677f4031d3b05d57b6cdba61cbbc8a703a064b4f82
+- 2026-09-06T09:09:28Z HBHACR8FGSJZAM2JVWZ2YE0SKQ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=design-chain-has-no-lawful-close
+Integrity: sha256=6d1076c36cb2b438b35809a37247c7f694c27cdf4fbee68fc146287505ec3550
