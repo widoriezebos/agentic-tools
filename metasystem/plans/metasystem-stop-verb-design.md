@@ -1,7 +1,7 @@
 # One word stops the metasystem: `metasystem stop`, `status` and `arm` (goal metasystem-stop-verb)
 
-- Status: design, revision 3, the last design round; one closing critique,
-  then the build. This file supersedes `plans/metasystem-stop-design.md`
+- Status: design, revision 3 with the build addendum of section 13; the
+  design ladder is closed and slice 1 is being built. This file supersedes `plans/metasystem-stop-design.md`
   (revisions 1 and 2, frozen where they landed); every later reference to
   the stop design means this file.
 - Goal: metasystem-stop-verb (member of the arc verbs-match-intent; its
@@ -983,3 +983,104 @@ the cancel path's ladder and locks; the registry's events and reduction;
 the job status graph; every announcement, lease and goal-ledger byte;
 `steward arm`, `steward restart` and `steward disarm` as long forms;
 `session stop`; the mission state machine and its ledger.
+
+## 13. Build decisions after the closing critique (revision 3 addendum)
+
+The closing critique (`records/misc/metasystem-stop-critique-r3.md`, six
+material findings, all accepted) found that two round-2 folds moved their
+problem, two inventories miss a live process, the fleet branch names an
+identity the registry does not keep, and the scope needs slicing. The
+design ladder is closed; these are the build's decisions, and where they
+contradict an earlier section, they win.
+
+**13.1 Creation claims, the completion barrier (STOP-R3-001).** The
+generation handshake of section 2 stays, and gains a barrier. Before a
+creator publishes or spawns anything it opens a claim:
+`stopfence.Creating(stateRoot, verb, generation, identity)` writes
+`artifacts/agents/supervision/creating/<verb>-<pid>-<nonce>.json` with
+`verb`, `generation`, the creator's kernel identity and `openedAt`. The
+creator closes the claim (`Claim.Close`, the file removed) only after its
+second fence read and whatever that read demanded. Where the spawn
+happens in a shell seam, the claim crosses the seam by path: `ClaimLaunch`
+opens it and returns its path in the claim result, `dispatch.sh` closes it
+through `metasystem stopfence creating-close --claim <path>` after
+`launch_adapter` returned and the record was patched running; `run
+launch` opens it before `store.Launch` and closes after the wrapper
+started; `proof-run launch` opens before starting the suite and closes
+after the watchdog started; the mission launcher opens before spawning
+the loop and closes after the spawn, and the loop opens its own before
+publishing its runner record and closes after the lease is held; `steward
+run` opens before writing `runner.json` and closes after its first fence
+re-read; `up` and `arm` open before launching the owner and close when
+`lock.d/owner.json` names it. `stop`, after closing the fence and before
+the inventory, reads every claim whose `generation` is at or below the
+generation it closed: a claim whose creator identity is dead is stale and
+is removed (what it left behind is the inventory's to find); a claim with
+a live creator is waited on, re-read every scaled half second, up to the
+scaled ten seconds; a claim still open after that is `NOT STOPPED creator
+<verb> pid <pid> started <epoch>: still creating after <wait>; did:
+nothing` and exit 1. Only then does the inventory run, and the
+late-arrivals pass stays as the second net. `Register` and `Adopt` after
+the race fail their record with the note `stopped by metasystem stop`
+and leave the foreign process untouched, the adopted-custody rule.
+Proof: package tests inject the fence and claim store around each Go
+seam; the shell seam in `dispatch.sh` is proven in the dispatch fixture
+bed by a fixture-only pause, `METASYSTEM_FIXTURE_PAUSE_BEFORE_LAUNCH=<s>`,
+honoured only in a fixture-mode root, between the Go claim and
+`launch_adapter`, during which the bed runs `stop` and asserts that it
+waited (no `still creating` line; the job ends `cancelled` or refused
+stopped) and that no adapter process survives.
+
+**13.2 The owner publishes its own teardown ceiling (STOP-R3-002).** The
+caller reconstructs nothing. Whenever the owner publishes `state.json`
+(`PublishState`), it writes `teardownCeilingSeconds`: the number of
+identities it currently holds, older generations included, times the
+component stop ceiling plus the post-kill proof interval, plus the
+registry append lock wait. `ShutdownAt` reads that number (falling back
+to forty-one seconds when the file is unreadable: two identities at five
+and a half seconds plus thirty), scales it by the fixture scale, and
+waits for the owner's death by kernel identity or its `exited` registry
+event up to that ceiling; only then does it re-prove the owner and KILL.
+The `slow-owner` fixture stays as the live case, and a package test with
+an injected clock proves an owner alive until just under its published
+ceiling is never KILLed.
+
+**13.3 The fleet form is slice 2, and the directory-gone branch is
+honest about what it has (STOP-R3-003).** Slice 1 refuses `--all` with
+the sentence "the fleet form is not built yet" and the per-checkout
+command. In slice 2 a registry checkout whose directory is gone prints
+`checkout <path>: directory gone; no identity recorded; not signalled`,
+is not a survivor and does not change the exit code, because
+`registry.Reduce` keeps no owner process identity and probing a shape is
+forbidden; the promise to probe in section 8 is withdrawn. The fleet
+fixture then uses production-shaped registry history (arm a checkout,
+remove its directory) and a real announced session that must survive.
+
+**13.4 Open turns are inventoried on their own (STOP-R3-004).** Section
+3 step 2 becomes two reads: every running runner record whose identity is
+alive, and, independently, every non-terminal turn record under every
+mission's `turns/` whose group is alive and owned by the recorded tag,
+whether or not a runner is alive. Section 4 step 1 ends an orphaned turn
+through the same tag-proven group path `cleanupStaleLease` uses and
+patches it `failed / turn-lost` with the stop detail. The `mission-stop`
+fixture gains the case: a dead runner record beside a live owned turn
+group; `stop` ends the group and prints its line.
+
+**13.5 The proof-run launcher publishes a record (STOP-R3-005).**
+Section 3 step 6 reads `artifacts/agents/proof-runs/<suite>.json`, which
+`LaunchSuite` writes after starting the suite and the watchdog: the
+suite name, root, `fenceGeneration`, and the launcher, suite and watchdog
+kernel identities, status `running`; the launcher patches it `done` when
+it touches the done file. The watchdog's argv still carries the suite
+identity for the watchdog's own use, but the inventory and the stop act
+on the record's identities, so a dead watchdog beside a live suite is
+stopped by identity. The `proof-run-stop` fixture gains that case.
+
+**13.6 Slices (STOP-R3-006).** Slice 1, this build: `stop`, `status` and
+`arm` for one checkout; the fence, its lock, the claims and the
+handshake; every local family (jobs, mission runner and turns, runs,
+proof-run suites, the steward runner, supervision); the report and the
+refusals; the seat's own session; every section 10 scenario except
+`fleet`. Slice 2: the fleet form of section 8 as amended by 13.3, with
+the `fleet` fixture. Nothing in slice 1 may make slice 2 harder: the
+inventory and the transaction are per checkout from the start.
