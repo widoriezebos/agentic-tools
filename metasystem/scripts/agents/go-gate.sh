@@ -406,6 +406,9 @@ if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem"
   fi
 fi
 
+printf 'go gate: effective Go: %s\n' "$(go version)"
+printf 'go gate: GOTOOLCHAIN: %s\n' "$(go env GOTOOLCHAIN)"
+
 # gofmt is a hard gate: unformatted code is a review-noise source and the
 # engineering standard requires it. Its exit status is captured — a missing
 # or crashing gofmt refuses the gate instead of passing silently
@@ -425,13 +428,13 @@ fi
 gate_vet_out=$(go vet ./... 2>&1) || gate_static_reds+=("go vet failed:
 $gate_vet_out")
 
-# staticcheck, pinned (go-production-grade Phase 0d): the frozen version
-# keeps every checkout judging by the same rules, and a tool run that
-# cannot start fails the gate loudly rather than skipping silently. It
-# rides the compile cache vet just filled, so its verdict lands seconds
-# after vet's.
-gate_sc_out=$(go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... 2>&1) \
-  || gate_static_reds+=("staticcheck 2025.1 refused (or could not run):
+# staticcheck, pinned to release 2026.2 (module v0.8.0; go-production-grade
+# Phase 0d): the frozen version keeps every checkout judging by the same
+# rules, and a tool run that cannot start fails the gate loudly rather than
+# skipping silently. It rides the compile cache vet just filled, so its
+# verdict lands seconds after vet's.
+gate_sc_out=$(go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./... 2>&1) \
+  || gate_static_reds+=("staticcheck 2026.2 (module v0.8.0) refused (or could not run):
 $gate_sc_out")
 
 gate_build_scratch=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-collect.XXXXXX")
@@ -475,7 +478,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./... \
 
 # govulncheck, pinned like staticcheck (Phase 0d) and last of the static
 # stages: its cost belongs to the vulnerability-database fetch, which the
-# network owns, so every deterministic check gets to fail first.
+# network owns, so every deterministic check gets to fail first. Version
+# v1.1.4 was proven under Go 1.27.1 on 2026-09-06.
 go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
   || { echo "go gate: govulncheck v1.1.4 refused (or could not run)" >&2; exit 1; }
 

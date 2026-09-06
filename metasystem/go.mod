@@ -1,6 +1,6 @@
 module github.com/widoriezebos/agentic-tools/metasystem
 
-go 1.26.5
+go 1.27
 
 require (
 	github.com/pelletier/go-toml/v2 v2.4.3
