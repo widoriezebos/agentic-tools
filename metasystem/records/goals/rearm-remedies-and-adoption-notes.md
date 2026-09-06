@@ -1,20 +1,19 @@
 # rearm-remedies-and-adoption-notes
 
-- State: claimed
+- State: done
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: wording and two adoption edge cases, nothing unsafe; novelty 1: small edits in files that just landed; exposure 2: operators reading a refusal, and any re-adoption; accumulation 1: nothing compounds"
 - Tier: 2
 - Intent: Four notes the third code critique (err-review3-20260906) left on the engine re-arm landing ea8c3ead7, none material: adoption refuses a detached target outright where it should continue and report that automatic re-arm stays off; adoption overwrites an existing metasystem.steward.landing-ref where the human verbs preserve one; the not-landed refusal remedy names only the terminal though a merely stale remote-tracking ref is repaired by one fetch of the configured remote, so the remedy names both; and a machine re-arm that fails before any stage transition with a non-drift error (missing notification channel, missing runner directory, lock error) gets the remedy 'repair the named enrollment publication failure' regardless of cause - the remedy names the actual error class.
 - Origin: main
 - Next step: STATE 2026-09-06 18:45Z (m1c): chain rra-build1 LANDED at 6325757a (two rounds, two Fable critiques, r2 zero material; dispositions r1 0c475f54, r2 feeddbf8); engine rebuilt and machine re-armed (generation 11). Seat-side proof: up and steward packages, vet, gofmt, bash -n green on the landed tree; the three new adopt legs executed against a committed snapshot of the candidate (detached: note and no key; detached+preset: kept note only, key kept; control branch still seeds its upstream). The adopt bed itself never reached its legs here: its frozen gate (full race+coverage suite) flaked twice under load 4-7 on missionrunner TestTerminateGroupLeaksNoGroupsUnderCompression (third sighting in thirty days, goal missionrunner-terminate-flake already open; sightings in memory/flake-registry.md 59b34696). The probe found one fixture defect in the preset leg: git 2.50 refuses 'branch --set-upstream-to=origin/trunk' on a bare remote-tracking ref, so the leg aborts under set -e; MECHANICAL job rra-fix1 (brief 5f795b27) replaces it with a self-remote; then the tier-1 lane lands it, one more bed attempt when the machine is quiet, goal done. The all-three-green rearm receipt stays owed to the rearm-launch-fails scenario.
+- Concluded: All five items landed: chain rra-build1 (6325757a; two rounds, two Fable critiques, the second with zero material findings; dispositions records/misc/rearm-remedies-and-adoption-notes-critique-r1-dispositions.md and -r2-) and the mechanical fixture fix rra-fix1 (e1fe8cfe). adopt.sh finishes a detached target with a note and automatic machine re-arm off, and keeps a preset landing ref read with --local --no-includes before the detached test; up.go names one fetch of the configured remote in the not-landed remedy and the actual class in the before-mint remedy (notify command, runner directory, the arm lock file with its permission, space and descriptor repairs since the lock is blocking and no holder can be the cause, identity publication), the old sentence pinned as the fallback; a human arm beside a live runner with changed enrolled bytes at the enrolled path takes the replace path and mints a human-terminal generation witnessed by itself, unchanged bytes still report already armed and name restart. A test per item in up_test.go and rearm_test.go and three adopt-fixtures legs (detached, preset, detached with preset). Proof: up and steward packages, vet, gofmt, bash -n green; the three adoption legs passed inside the adopt bed on landed main (run 20260906T185830Z) and earlier against a committed snapshot of the candidate. The bed as a whole is red on m1 for two reasons that are not this goal's, both backlogged: its gate flakes at load 4-7 on five- and ten-second bounds (memory/flake-registry.md, goals missionrunner-terminate-flake and adopt-bed-gate-unreachable-under-load) and its pre-existing authority-probe leg passes --tier to goal open (goal adopt-bed-authority-probe-passes-tier). The all-three-green rearm receipt stays owed to the rearm-launch-fails scenario, still red on the honest bed.
 - OpenedAt: 2026-09-06T11:17:34Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:16:40Z revision=3 opid=STXTKSF0EBWQFXA3AEE2ARS7XJ-m1-7cd0bd60 authority=proven digest=faed688e447a25e760743da415acf6b80b523cde838b44ce8af37d9d52eb228e
 - Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=8 at=2026-09-06T17:13:54Z
-- Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T17:13:06Z revision=8 accountingRevision=8
-- StopCapability: generation=8 revision=8 machine=m1c claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T11:17:34Z QPGB1R343FQPHD5FHKC2G58XTB-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=rearm-remedies-and-adoption-notes
@@ -29,4 +28,5 @@ History:
 - 2026-09-06T17:14:17Z QNQ3R3VKQRPT3410BDDNVC2S4T-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T18:21:05Z M063C7JZCJQMPGRDXPEAYAXVQ3-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T18:41:25Z ASFR56Q64D78MX3EQY50DBXZN8-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
-Integrity: sha256=b2046aa3a469986072893db976f59ed98f46aa5e827cbee1b6781e2e665154c1
+- 2026-09-06T19:00:14Z JZZ659NXX3RN7H8V3JM8TND29Y-m1c-7cd0bd60 done actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
+Integrity: sha256=488704ea1c0341ef35182e1cc1d562c103d67894b2563837d3481f0a1819ff7f
