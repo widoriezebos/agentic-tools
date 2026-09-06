@@ -1,16 +1,14 @@
 # effort-by-complexity-per-model
 
-- State: approved
+- State: queued
 - Risk: severity=1 novelty=2 exposure=2 accumulation=1 basis="severity 1: a wrong effort costs money or review depth, nothing breaks; novelty 2: a generic effort scale and its per-model translation do not exist yet, the hazard table is the only effort authority today; exposure 2: every dispatch on every runtime; accumulation 1: nothing compounds"
 - Tier: 2
 - Intent: Wido's word 2026-09-06 21:3x: dynamic effort by complexity, per model, from the config. Today internal/dispatch/hazard.go fixes the reasoning effort per hazard class for every runtime and model (medium for MECHANICAL, xhigh for DESIGN-BEARING and DESTRUCTIVE-REACH) and each runtime's own effort constants leak into that table. DONE means: (1) a small set of GENERIC effort levels owned by the metasystem (for example low, standard, high, maximal) that briefs, hazard classes and records speak in; (2) a translation table per runtime and model from the generic level to that model's own constants (Codex xhigh/high/medium, Claude's effort names, a runtime with no effort switch maps every level to nothing), kept in config with sane shipped defaults; (3) the complexity of the work selects the level: the hazard class remains the default selector, and the config can set a different level per model per complexity class so a roster can, for instance, keep Sol at maximal for design-bearing work while running Fable at high for the same class, or pay maximal only for the complex cases; (4) the job record carries the generic level, the translated constant and the origin of each; (5) the admission check compares generic levels, so a human's per-model choice is the authority and the hazard table is the default, not a fence; (6) fixtures drive every runtime's translation and one dispatch per complexity class; (7) the human page documents the keys. Goal fable-effort-high is the first, narrow instance (one key for one model) and folds into this one or lands ahead of it as the seat sees fit.
 - Origin: main
 - Next step: WIDO'S CORRECTION 2026-09-06 23:0x SUPERSEDES THE INTENT ABOVE: no generic metasystem effort scale and no translation table. The config already names the model per role and runtime (role.<role>.model.<runtime>=<model>), so the effort is written beside it in that model's OWN words, keyed by hazard class: role.<role>.effort.<runtime>.<class>=<value> (for example role.implementer.effort.claude.design-bearing=high, role.implementer.effort.codex.mechanical=medium), with role.default.effort.<runtime>.<class>=<value> that a role line shadows, resolved in the same order as the model keys. The engine validates a value only as one the named runtime accepts (Codex minimal/low/medium/high/xhigh; Claude its effort names; a runtime without a switch accepts only its no-op) and refuses a bad value at dispatch naming the key and the accepted list. internal/dispatch/hazard.go keeps only the admission FLOOR per class: a configured value weaker than the floor refuses, never silently raised; stronger is allowed. The job record shows the effort sent and the key it came from. Fixtures: role line shadows default; bad value refuses naming the key; under-floor refuses; no-switch runtime; recorded effort equals what the adapter received. Tier 2, MECHANICAL: no design page; Sol builds behind the fixtures (read hazard.go, build.go reasoningEffort, roster.go, cmd/metasystem/adapter_runtime_verbs.go --reasoning-effort, metasystem.conf role lines), Fable code review, land. fable-effort-high (xhigh to high) becomes the first config line this feature carries.
 - OpenedAt: 2026-09-06T19:54:04Z
-- Revision: 5
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 6
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T21:54:14Z revision=5 opid=J68CTNEBJZ52YWMQZ0285NM2J0-m1-7cd0bd60 authority=proven digest=f15ab1188ea1c88cdf7eb9ec859e9620d869b70bb5f16ac9bb0256567206d4b4
 
 History:
 - 2026-09-06T19:54:04Z 4XJ816WDYXXAX5DTCHHQM8TDDW-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=effort-by-complexity-per-model
@@ -18,4 +16,5 @@ History:
 - 2026-09-06T21:53:23Z WBFFC91PZHKMBNHWYQESZNX0Q6-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=effort-by-complexity-per-model
 - 2026-09-06T21:53:41Z TW1AYKWN99FDNK014JR12KFVMD-m1-7cd0bd60 unapprove actor=human:Wido targets=effort-by-complexity-per-model reason=intent corrected: model-native effort words, no generic scale
 - 2026-09-06T21:54:14Z J68CTNEBJZ52YWMQZ0285NM2J0-m1-7cd0bd60 approve actor=human:Wido targets=effort-by-complexity-per-model
-Integrity: sha256=6dbfc0e969c3f67e5c4b557f1d8fae9b4c472e7f8da37cfd085e083fa0bcfb23
+- 2026-09-06T21:54:57Z 763FVXAZT18NBR1PEK4AZ4MTM0-m1-7cd0bd60 unapprove actor=human:Wido targets=effort-by-complexity-per-model reason=intent corrected: model-native effort words, no generic scale
+Integrity: sha256=3a979f66f21e65fd3b0c21c3b95fe361c7c93b0ee512a642a4617526ed0897b6
