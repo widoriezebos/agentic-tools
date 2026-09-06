@@ -1,19 +1,18 @@
 # engine-rebuild-rearms-itself
 
-- State: claimed
+- State: done
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the enrollment pin is the trust boundary for which engine becomes the steward and supervision owner, so a wrong relaxation lets unintended bytes supervise the repository; novelty 2: no auto re-enrollment existed, though the same act (mint a generation, replace the runner) is the shipped human arm path reused unchanged; exposure 3: every machine in the fleet arms through this path, and the scheduler's unattended recovery uses it too; accumulation 2: the wedge cost m1 a full day of refused turn ends on 2026-09-05 and cost m2 a night of re-prompts on 2026-09-04 (goal stop-hook-wedge-on-enrollment-drift), which treated the symptom"
 - Tier: 3
 - Intent: A rebuilt engine wedges every seat: metasystem up refuses ENROLLMENT_DRIFT whenever bin/metasystem's digest differs from the steward's enrolled pin, and rebuilding the engine is ordinary work here, so no session can arm until a human re-arms at an agent-free terminal. DONE means a rebuild of the enrolled engine at its own enrolled path, invoked by that engine, re-arms itself (fresh generation, runner replaced onto the new bytes, temporary human word and review date carried forward) and reports accepted-engine outcome=re-armed, while every drift cause that names a DIFFERENT installation still refuses to the human, proven by tests and a live rebuild-then-up on m1
 - Origin: main
 - Next step: STATE 2026-09-06 (m1): revision 3 landed (ad84c90cd) on Wido's provenance decision; design critique round 3 (err-crit3-20260906) returned five material findings, carried with the coordinator's dispositions in records/misc/engine-rebuild-rearm-critique-r3.md (094664d7d): stage holes -> four stages with one fixture per transition; identity durability -> the existing durable-publication contract, success only on confirmed durability; landing ref ownership -> local-scope config, a metasystem-owned ref namespace moved fast-forward only by the engine's own push paths, the boundary stated honestly as ordinary operation; the 64-commit cap -> no cap, tree-hash digest cache, wall-time bound with a loud refusal; the main seed -> human arm/restart seed from the checked-out branch, the machine path never seeds. Third prose revision, three critiques: per the implementation-first ruling the findings are built behind fixtures, not folded into a fourth revision. BUILD DISPATCHED: err-build1-20260906 (Sol implementer, DESIGN-BEARING) from the build brief in m1's scratch; then conformance, one code critique, fold if needed, close, land with --chain, rebuild the engine, steward restart at Wido's terminal (this landing changes the enrollment rule itself), done. The design chain does not close (design-chain-has-no-lawful-close, on m1b).
+- Concluded: A rebuilt engine at its enrolled path re-arms itself when its build stamp names a commit reachable from the canonical branch's remote-tracking ref; dirty or unpushed bytes refuse; the caller's identity plays no part. Every steward enrolled before this landing keeps running and refuses its first automatic re-arm closed until one human steward restart seeds the landing ref from the checkout's upstream - asked of every machine on 2026-09-06. Four low notes went to rearm-remedies-and-adoption-notes; the VM seats' upstream remote must be the one they pull from or the seeded ref goes stale (critic's gap, to check at their restart).
 - OpenedAt: 2026-09-05T10:02:09Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1080 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T10:37:56Z revision=18 opid=0MMCB31VCBFGWQR8FCDDBZV1QW-m1-a4f8999f authority=proven digest=5665dbb25b0546d27fbe5c3f6a17c9c06b9b8ec62df479dcd50b6abeb4eae4c5
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=8 at=2026-09-05T22:18:46Z
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T10:37:56Z revision=18 accountingRevision=18
-- StopCapability: generation=18 revision=18 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:02:09Z CEK1GRKK6YHJN66D1A44EV2THJ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
@@ -34,4 +33,5 @@ History:
 - 2026-09-06T08:03:13Z 0PKRTVG64P6C2X51JC1H5P6JAK-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-06T10:07:30Z AC00JA2T77DP9QJMNZWZ11ZSKH-m1-a4f8999f set-budget actor=human:Wido targets=engine-rebuild-rearms-itself
 - 2026-09-06T10:37:56Z 0MMCB31VCBFGWQR8FCDDBZV1QW-m1-a4f8999f set-budget actor=human:Wido targets=engine-rebuild-rearms-itself
-Integrity: sha256=c89cf3cc8633b89e3b530285f527f442e1cb85eca246f442a0d7062eef25d5a4
+- 2026-09-06T11:17:39Z 89BSA6AG60XP1P7BDWST4217BK-m1-a4f8999f done actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
+Integrity: sha256=6120f3cac88c59ae1eaf1ed846cdb04e51aa1a2e6ce7d26602e2ebdd3eb6b615
