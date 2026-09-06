@@ -1,15 +1,17 @@
 # job-record-birth-token
 
-- State: approved
+- State: claimed
 - Intent: Every job record incarnation carries a mandatory, immutable, machine-minted birth token: the create path mints it under the record lock (timestamp plus nonce generation - a second-precision timestamp alone collides on same-second identifier reuse), ignores any caller-supplied value, and the field joins immutableFields. Proven necessary by executable spike (records/misc/alert-channel-spike-verdicts.md, 2026-09-01): no shipped field qualifies - createdAt is neither mandatory nor immutable through the real writers, startedAt and claimEpoch are optional and caller-supplied, inode identity changes on every atomic rewrite - and the alert design's retention pin (its critical identifier-reuse closure) depends on exactly this contract. Consumer: alert-escalation-channel revision 11; Ruling R applies - whoever builds this runs every reader of the record identity
 - Origin: main
 - Next step: PAUSED BY WIDO 2026-09-03 15:52Z (m0 and m0b paused; nothing under way). Approved and was claimed by m0 as the first headless run's target; released so the 4h elapsed clock does not burn during the pause. RESUME: re-claim, then follow plans/first-headless-run-plan.md step 6 from 'shut down the seat owner' (contract sealed+signed on main, mission birth-token born and waiting; the post-session handover watcher was disarmed for the pause and must be re-armed).
 - OpenedAt: 2026-09-01T21:26:07Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=12 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=19f4b7d2be58a073ad58d696f7996bd2535d26361dac33300b296180ca3beab0
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-02T17:23:10Z
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T20:29:37Z revision=13 accountingRevision=13
+- StopCapability: generation=13 revision=13 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-01T21:26:07Z YGRS58CS27XPHHVC7FAVCK8B9R-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=job-record-birth-token
@@ -24,4 +26,5 @@ History:
 - 2026-09-03T15:59:16Z QRKT7DP158FV0SKGB0Y0QTXT5Y-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=job-record-birth-token
 - 2026-09-03T15:59:20Z C08MS6EJY3570ZYVA0MJYG3A5V-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=job-record-birth-token
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=job-record-birth-token reason=sweep
-Integrity: sha256=0cf33bac0aad77be5ac3d238967ffaec1f7adb1761a602f4b2ca1908d7495c08
+- 2026-09-06T20:29:37Z EPTGCY9JE0Z32BD0M3EZWDKPJJ-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=job-record-birth-token
+Integrity: sha256=e5ca63985fd581660f96ff47e9c0b4ee16604a3db02abf2d6369c64b97ea24df
