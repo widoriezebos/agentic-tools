@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Confirmed 2026-09-06 on m1: proc probe on the root-owned login (pid 92843) returns argv null; on the wido zsh under it argv is readable; Terminal.app itself is readable. Decide the rule for a root-owned ancestor with withheld argv (executable path plus owner root plus a known system login binary is not an agent), pin it with a fixture that builds the Terminal.app chain shape, and make the refusal name the workaround until then. Workaround to verify: a shell inside a tmux server the human started from Terminal has no root-owned ancestor between the shell and launchd
 - OpenedAt: 2026-09-06T06:36:15Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:49:47Z revision=2 opid=88SXT1QR03302DAF55PYCSGDM6-m1-a4f8999f authority=proven digest=12de7a3c6c6cca6fe6f29e3263786f9d4790d0dc44be14d169db578083bceef8
@@ -15,4 +16,5 @@
 History:
 - 2026-09-06T06:36:15Z 8Q3WR34BMV3GWVW2MN7H9K111N-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=enroll-terminal-refuses-macos-terminal
 - 2026-09-06T06:49:47Z 88SXT1QR03302DAF55PYCSGDM6-m1-a4f8999f approve actor=human:Wido targets=enroll-terminal-refuses-macos-terminal
-Integrity: sha256=7a71110f7c20492f447f4646f58cd2cb0efae1ae758c9aa75c34dd00c1a88bcd
+- 2026-09-06T07:28:54Z F8RWYD9Z5QA8RAGH8N0GG05AGG-m1-a4f8999f set-pin actor=human:Wido targets=enroll-terminal-refuses-macos-terminal
+Integrity: sha256=884c0082e299857c7edefe00e1a9d10b8937cd4e949cad6815e1c6943308cd98
