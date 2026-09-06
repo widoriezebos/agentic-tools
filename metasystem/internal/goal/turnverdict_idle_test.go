@@ -55,6 +55,55 @@ func installIdleLiveClaim(t *testing.T, root, lineage string) identity.Prober {
 	return idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 }
 
+func TestIdleBacklogDisplayLimitsAndPrioritizesGoalNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		work    ClaimableBudgetedWork
+		machine string
+		want    string
+		notWant string
+	}{
+		{
+			name: "more than five promotes only this machine's pins",
+			work: ClaimableBudgetedWork{
+				Claimable: []string{"queue-one", "local-one", "foreign", "queue-two", "local-two", "queue-three", "queue-four"},
+				Pinned: map[string]string{
+					"local-one": "bed-m1", "foreign": "bed-m2", "local-two": "bed-m1",
+				},
+			},
+			machine: "bed-m1",
+			want:    "IDLE WITH BACKLOG: 7 claimable goals await a live claim or job: local-one, local-two, queue-one, foreign, queue-two and 2 more (metasystem goal list names them all);",
+			notWant: "local-one, local-two, foreign",
+		},
+		{
+			name: "five or fewer names every goal",
+			work: ClaimableBudgetedWork{
+				Claimable: []string{"queue-one", "local-one", "queue-two"},
+				Pinned:    map[string]string{"local-one": "bed-m1"},
+			},
+			machine: "bed-m1",
+			want:    "IDLE WITH BACKLOG: 3 claimable goals await a live claim or job: local-one, queue-one, queue-two;",
+			notWant: " more (metasystem goal list names them all)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			verdict := Verdict{}
+			session := &sessionState{}
+			store := &Store{}
+			store.enforceIdleBacklog(&verdict, &tt.work, nil, session, "session", "main", TurnVerdictOptions{
+				SeatActor: Actor{Machine: tt.machine},
+			})
+			if !strings.Contains(verdict.Display, tt.want) {
+				t.Fatalf("idle backlog display did not contain %q: %s", tt.want, verdict.Display)
+			}
+			if strings.Contains(verdict.Display, tt.notWant) {
+				t.Fatalf("idle backlog display unexpectedly contained %q: %s", tt.notWant, verdict.Display)
+			}
+		})
+	}
+}
+
 func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),

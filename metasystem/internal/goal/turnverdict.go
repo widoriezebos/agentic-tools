@@ -349,8 +349,38 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 	verdict.BlockSource = &source
 	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 the steward claims if needed and continues the seat's goal", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
-		"IDLE WITH BACKLOG: claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
-		strings.Join(work.Claimable, ", "), countText, options.StopHookActive))
+		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
+		len(work.Claimable), idleBacklogNames(*work, options.SeatActor.Machine), countText, options.StopHookActive))
+}
+
+func idleBacklogNames(work ClaimableBudgetedWork, machine string) string {
+	names := make([]string, 0, min(5, len(work.Claimable)))
+	if machine != "" {
+		for _, id := range work.Claimable {
+			if work.Pinned[id] == machine {
+				names = append(names, id)
+				if len(names) == 5 {
+					break
+				}
+			}
+		}
+	}
+	if len(names) < 5 {
+		for _, id := range work.Claimable {
+			if machine != "" && work.Pinned[id] == machine {
+				continue
+			}
+			names = append(names, id)
+			if len(names) == 5 {
+				break
+			}
+		}
+	}
+	display := strings.Join(names, ", ")
+	if remaining := len(work.Claimable) - len(names); remaining > 0 {
+		display += fmt.Sprintf(" and %d more (metasystem goal list names them all)", remaining)
+	}
+	return display
 }
 
 func idleBacklogDigest(work ClaimableBudgetedWork) string {

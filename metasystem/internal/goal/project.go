@@ -185,13 +185,15 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string) (string, error) {
 // ClaimableBudgetedWork is the shared backlog-and-activity predicate consumed
 // by both TurnVerdict and the steward. Claimable is goal.Next's ready frontier
 // with a valid structured budget in the converted world, and every queued
-// legacy goal before migration. InFlight contains only claims and jobs joined
-// to a process that is alive at its recorded birth identity. NonTerminalJobs
-// contains every job id whose record has not reached a terminal status,
-// independent of whether its process is live.
+// legacy goal before migration. Pinned maps claimable converted goals to their
+// non-empty machine nickname and remains nil for legacy work. InFlight contains
+// only claims and jobs joined to a process that is alive at its recorded birth
+// identity. NonTerminalJobs contains every job id whose record has not reached
+// a terminal status, independent of whether its process is live.
 type ClaimableBudgetedWork struct {
 	Claimed         []string
 	Claimable       []string
+	Pinned          map[string]string
 	InFlight        []string
 	NonTerminalJobs []string
 	Queued          int
@@ -323,6 +325,12 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 		file := projection.Tree.Live[id]
 		if file != nil && file.Budget != nil && file.Budget.Validate() == nil {
 			work.Claimable = append(work.Claimable, id)
+			if file.Pinned != "" {
+				if work.Pinned == nil {
+					work.Pinned = make(map[string]string)
+				}
+				work.Pinned[id] = file.Pinned
+			}
 		}
 	}
 	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, claimLineages, false, prober)
