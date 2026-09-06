@@ -66,24 +66,44 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 	}
 
 	filesystemSandbox := map[string]any{"allowWrite": allowWrite}
-	if len(writeRoots) == 0 && isClaudeCriticRole(record) {
-		readRoots, err := ClaudeReadRoots(recordPath)
+	readRoots, err := ClaudeReadRoots(recordPath)
+	if err != nil {
+		return err
+	}
+	resolvedWriteRoots := []string{}
+	for _, root := range stringList(requested["writeRoots"]) {
+		if root != "" {
+			resolvedWriteRoots = append(resolvedWriteRoots, resolve(root))
+		}
+	}
+	workspace, _ := record["workspaceRoot"].(string)
+	denyWrite := []any{}
+	seen := map[string]bool{}
+	// Claude's sandbox makes the working directory and every --add-dir root
+	// writable, and a denied ancestor overrides a nested allow. Ancestors of a
+	// write root therefore stay open while each existing sibling entry is
+	// denied. A delegate can still create new entries directly in worktree
+	// ancestors such as the repository root, metasystem/, artifacts/, agents/,
+	// and worktrees/, because those directories must remain writable for the
+	// nested write root; every existing entry outside its path is denied.
+	for _, root := range append([]string{workspace}, readRoots...) {
+		if root == "" {
+			continue
+		}
+		root = resolve(root)
+		if seen[root] {
+			continue
+		}
+		seen[root] = true
+		denied, err := claudeDenyWritePaths(root, resolvedWriteRoots)
 		if err != nil {
 			return err
 		}
-		workspace, _ := record["workspaceRoot"].(string)
-		denyWrite := []any{}
-		seen := map[string]bool{}
-		for _, root := range append([]string{workspace}, readRoots...) {
-			if root == "" {
-				continue
-			}
-			root = resolve(root)
-			if !seen[root] {
-				seen[root] = true
-				denyWrite = append(denyWrite, root)
-			}
+		for _, path := range denied {
+			denyWrite = append(denyWrite, path)
 		}
+	}
+	if len(denyWrite) > 0 {
 		filesystemSandbox["denyWrite"] = denyWrite
 	}
 
@@ -112,6 +132,40 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) 
 		return fmt.Errorf("write claude settings: %w", err)
 	}
 	return nil
+}
+
+func claudeDenyWritePaths(root string, writeRoots []string) ([]string, error) {
+	for _, writeRoot := range writeRoots {
+		if pathContains(writeRoot, root) {
+			return nil, nil
+		}
+	}
+
+	containsWriteRoot := false
+	for _, writeRoot := range writeRoots {
+		if pathContains(root, writeRoot) {
+			containsWriteRoot = true
+			break
+		}
+	}
+	if !containsWriteRoot {
+		return []string{root}, nil
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("read Claude write-root ancestor %s: %w", root, err)
+	}
+	var denied []string
+	for _, entry := range entries {
+		child := filepath.Join(root, entry.Name())
+		childDenied, err := claudeDenyWritePaths(child, writeRoots)
+		if err != nil {
+			return nil, err
+		}
+		denied = append(denied, childDenied...)
+	}
+	return denied, nil
 }
 
 // ClaudeUsage extracts the native token counts and cost a Claude result

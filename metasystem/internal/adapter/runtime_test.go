@@ -133,9 +133,9 @@ func TestBuildCodexCommandCarriesReasoningEffort(t *testing.T) {
 
 func claudeRecord(writeRoots, network string) string {
 	return `{
-	  "workspaceRoot": "/ws",
+	  "workspaceRoot": "/ws/sub",
 	  "permissions": {"requested": {
-	    "readRoots": ["/ws", "/extra", "/more"],
+	    "readRoots": ["/ws/sub", "/extra", "/more"],
 	    "writeRoots": ` + writeRoots + `,
 	    "network": "` + network + `"
 	  }}
@@ -247,9 +247,9 @@ func TestBuildClaudeSettingsImplementerAddsScratch(t *testing.T) {
 	out := filepath.Join(dir, "settings.json")
 	writeFile(t, record, `{
 	  "role": "implementer",
-	  "workspaceRoot": "/ws",
+	  "workspaceRoot": "/ws/sub",
 	  "permissions": {"requested": {
-	    "readRoots": ["/ws"],
+	    "readRoots": ["/ws/sub"],
 	    "writeRoots": ["/ws/sub"],
 	    "network": "deny"
 	  }}
@@ -266,6 +266,122 @@ func TestBuildClaudeSettingsImplementerAddsScratch(t *testing.T) {
 	}
 	if _, present := fs["denyWrite"]; present {
 		t.Fatalf("an implementer should not have denyWrite: %v", fs["denyWrite"])
+	}
+}
+
+func TestBuildClaudeSettingsImplementerDeniesReadRootOutsideWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	out := filepath.Join(dir, "settings.json")
+	writeFile(t, record, `{
+	  "role": "implementer",
+	  "workspaceRoot": "/worktree",
+	  "permissions": {"requested": {
+	    "readRoots": ["/worktree", "/live"],
+	    "writeRoots": ["/worktree"],
+	    "network": "deny"
+	  }}
+	}`)
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+		t.Fatal(err)
+	}
+	got := readJSONFile(t, out)
+	sandbox := got["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	allowWrite := fs["allowWrite"].([]any)
+	if len(allowWrite) != 2 || allowWrite[0] != "/worktree" || allowWrite[1] != "/scratch" {
+		t.Fatalf("an implementer should write only to its worktree and scratch directory: %v", allowWrite)
+	}
+	denyWrite := fs["denyWrite"].([]any)
+	if len(denyWrite) != 1 || denyWrite[0] != "/live" {
+		t.Fatalf("an implementer should deny writes to read roots outside its worktree: %v", denyWrite)
+	}
+}
+
+func TestBuildClaudeSettingsKeepsNestedWorktreeWritable(t *testing.T) {
+	dir := t.TempDir()
+	treeRoot := filepath.Join(dir, "root")
+	if err := os.MkdirAll(treeRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	treeRoot = resolve(treeRoot)
+	worktrees := filepath.Join(treeRoot, "metasystem", "artifacts", "agents", "worktrees")
+	job1 := filepath.Join(worktrees, "job1")
+	job2 := filepath.Join(worktrees, "job2")
+	for _, path := range []string{job1, job2} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(treeRoot, "a.txt"), "root sibling")
+	writeFile(t, filepath.Join(treeRoot, "metasystem", "go.mod"), "module sibling")
+
+	record := filepath.Join(dir, "job.json")
+	out := filepath.Join(dir, "settings.json")
+	writeFile(t, record, `{
+	  "role": "implementer",
+	  "workspaceRoot": "`+job1+`",
+	  "permissions": {"requested": {
+	    "readRoots": ["`+treeRoot+`"],
+	    "writeRoots": ["`+job1+`"],
+	    "network": "deny"
+	  }}
+	}`)
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+		t.Fatal(err)
+	}
+	got := readJSONFile(t, out)
+	sandbox := got["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	denyWrite := toStringSet(fs["denyWrite"].([]any))
+	for _, path := range []string{
+		filepath.Join(treeRoot, "a.txt"),
+		filepath.Join(treeRoot, "metasystem", "go.mod"),
+		job2,
+	} {
+		if !denyWrite[path] {
+			t.Errorf("an entry outside the worktree path should be denied: %s", path)
+		}
+	}
+	for _, path := range []string{
+		treeRoot,
+		filepath.Join(treeRoot, "metasystem"),
+		filepath.Join(treeRoot, "metasystem", "artifacts"),
+		filepath.Join(treeRoot, "metasystem", "artifacts", "agents"),
+		worktrees,
+		job1,
+	} {
+		if denyWrite[path] {
+			t.Errorf("the worktree and its ancestor should not be denied: %s", path)
+		}
+	}
+	if len(denyWrite) != 3 {
+		t.Fatalf("denyWrite should contain only the three entries outside the worktree path: %v", fs["denyWrite"])
+	}
+}
+
+func TestBuildClaudeSettingsDoesNotDenyReadRootUnderWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	out := filepath.Join(dir, "settings.json")
+	writeFile(t, record, `{
+	  "role": "implementer",
+	  "workspaceRoot": "/worktree",
+	  "permissions": {"requested": {
+	    "readRoots": ["/worktree", "/worktree/docs", "/live"],
+	    "writeRoots": ["/worktree"],
+	    "network": "deny"
+	  }}
+	}`)
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+		t.Fatal(err)
+	}
+	got := readJSONFile(t, out)
+	sandbox := got["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	denyWrite := fs["denyWrite"].([]any)
+	if len(denyWrite) != 1 || denyWrite[0] != "/live" {
+		t.Fatalf("a read root under a write root should not be denied: %v", denyWrite)
 	}
 }
 
