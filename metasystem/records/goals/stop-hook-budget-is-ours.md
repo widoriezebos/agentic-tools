@@ -1,20 +1,19 @@
 # stop-hook-budget-is-ours
 
-- State: claimed
+- State: done
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a slow hook holds a turn end a few seconds longer, nothing unsafe is permitted and the fail-closed refusal stays; novelty 1: three numbers that already exist move together; exposure 3: every seat on every machine ends every turn through this hook; accumulation 1: nothing compounds, a wrong number is one edit away"
 - Tier: 3
 - Intent: The Stop hook's five-second budget is our own number, not the provider's: the hook's comment says 'Claude gives the complete Stop hook five seconds', but the five seconds is the timeout we wrote in the repository's Claude settings for the Stop hook, and the runtime's own default is sixty. The parent gives its worker four of those seconds and keeps one. Under load - a builder round, a suite run, a Go build, three seats on one host - a healthy Stop takes longer than four seconds and the parent blocks the turn end with 'deadline expired before a safe turn verdict': eight expiries on m1 on 2026-09-06 before 10:00, every one while something else was building, each costing the seat a turn. Wido's decision (2026-09-06): the budget is sixty seconds, the runtime's own default; the fail-closed refusal on a genuine hang stays and simply comes at sixty. And because nothing records how long a Stop takes, every Stop measures itself from now on, and the steward reads those measurements and flags a hook that is getting slow before it starts costing turns - the ceiling stops being a guess and the steward, not a human reading hooks.log, notices drift.
 - Origin: main
 - Next step: SLICE 1 LANDED (fe61beb7, 2026-09-06 15:2x local, chain shbo-build2-20260906, the re-issue of chain shbo-build1-20260906 onto main after Wido's human commit d165cbec put the live repository-root Stop timeout at sixty): the three Stop registrations say 60, the deadline parent gives its worker 57 and names where the number lives, every Stop records its elapsed seconds in the hooks log and on the supervision-hook component record (lastStopElapsedSec on the record, stopElapsedSec on history entries, absent means unmeasured), an older engine's refusal of the new flag is retried without it, the fixtures assert it all at the real numbers. Seats read the new timeout on their next start; checkouts rebuild on their next pull. NOW SLICE 2 (brief plans/stop-hook-budget-slice2-build-brief.md): a deadline expiry becomes a recorded completion (steward hook-expire, outcome DEADLINE_EXPIRED with its elapsed), a health role stop-hook-duration reads the last measured Stop and goes unhealthy above steward.stop-slow-sec (default 15, a quarter of the ceiling) or on an expiry, naming the seat, the duration and the ceiling, delivered through the alert channel like every other health line; fixtures: a synthetic slow record flags, a fast one stays alive, an expiry flags. Backlog opened from this goal's reviews: stop-deadline-parent-trusts-ps (approved). Toolchain note: gates and landings on this host need GOTOOLCHAIN=go1.26.5 until go-toolchain-pinned-in-go-mod lands.
+- Concluded: The Stop hook's budget is sixty seconds and ours: shipped in the three registrations, owned by the deadline parent (worker 57, reserve 3), measured on every Stop, and read by the steward, which flags a Stop at or above fifteen seconds or an expiry through the health line. Carry-over: on the self-hosting layout the tick reads components under the metasystem directory while the hook writes under the outer git top, so the alert channel carries the new role only once hook-root-resolver-design lands (the hook's own turn-end line flags it today). Backlog opened from the reviews: stop-deadline-parent-trusts-ps, stop-hook-open-work-refusal-repeats, repo-root-paths-ride-agent-commits-unjudged.
 - OpenedAt: 2026-09-06T07:39:12Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1d
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T07:43:29Z revision=4 opid=AV2WVNQN81XXQFN38QFQKTYM52-m1-a4f8999f authority=proven digest=b64e68e88eac3a2821471c2c091bef7efc44e67b9e70fe255172781d93651037
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=6 at=2026-09-06T08:51:09Z
-- Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T12:40:48Z revision=11 accountingRevision=11
-- StopCapability: generation=11 revision=11 machine=m1d claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T07:39:12Z 2BXWAPKW3W8TGXDRADDWH9XH8N-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-budget-is-ours
@@ -29,4 +28,5 @@ History:
 - 2026-09-06T12:38:02Z AN0FTS1G6M63J2WTZY228H8JM1-m1d-62183579 unpark actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-budget-is-ours
 - 2026-09-06T12:40:48Z TC7JPWG3CYMR4AJ63JHJG3KDFD-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-budget-is-ours
 - 2026-09-06T13:20:20Z QKS56E54PG2ETYWJ0P1WSYNVQT-m1d-62183579 edit actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-budget-is-ours
-Integrity: sha256=f844482ea3d5dd7a87125af8013c06d90726979de26c76fb1a8b4bc093e663b3
+- 2026-09-06T14:44:33Z DRMDRMARY6ZD5MXZ53JX4STKAQ-m1d-62183579 done actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-budget-is-ours
+Integrity: sha256=6bde74d7a6e8eb6415089f6c93fb84a4a076d33e3bf6766a0aa754d9d88fbe18
