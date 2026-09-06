@@ -84,7 +84,7 @@ your worktree; fold all four.
    metasystem/scripts/agents/supervision-fixtures.sh, the loop over
    announcement files) with "announced main pid <empty> outside its
    scenario bed". That loop reads every JSON file under a harness
-   root's artifacts/agents/mains directory and asks each for its pid.
+   root's announcements directory (the mains directory under the agent artifacts) and asks each for its pid.
    Three files there are the holder's own state, not announcements,
    and carry no pid: the protocol cursor (a name ending in
    .protocol-cursor.json), reaped-after-claim.json and
