@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: dispatch.sh (fetch, base on refs/remotes/<remote>/<branch>, refusal on fetch failure, clean-checkout fast-forward), the follow-up admission in internal/dispatch (merge-or-refuse instead of the warning), goal claim's lag line; fixtures: a dispatch against a stale local main bases on the remote tip; a fetch failure refuses; a follow-up on a behind worktree without product conflicts merges, with conflicts refuses naming the files; the existing dispatch fixtures keep passing. Any free seat; half a day.
 - OpenedAt: 2026-09-06T12:31:31Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:31:59Z revision=2 opid=QTM46H2XYQ075XHFX1D7FD5WWW-m1-7cd0bd60 authority=proven digest=b1cd64f41ce42fee1f6d65f44fcf8210010887c256da435bf991cd96b587b7d9
@@ -15,4 +16,5 @@
 History:
 - 2026-09-06T12:31:31Z 5T8DE34F5JFW4ZZRYNBESXDPKW-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=dispatch-bases-chains-on-the-remote-tip
 - 2026-09-06T12:31:59Z QTM46H2XYQ075XHFX1D7FD5WWW-m1-7cd0bd60 approve actor=human:Wido targets=dispatch-bases-chains-on-the-remote-tip
-Integrity: sha256=28bc12a9c527e8b43c7afa7b68e058d142eb654bd36aed60e2ba17d801e57c34
+- 2026-09-06T15:43:21Z PGPVXWCVW692657AAD21TD88JM-m1-7cd0bd60 set-pin actor=human:Wido targets=dispatch-bases-chains-on-the-remote-tip
+Integrity: sha256=96a98a90dd53b7473562b2e67ecf70e01984a7782b88b340e6219a33340fbc2f
