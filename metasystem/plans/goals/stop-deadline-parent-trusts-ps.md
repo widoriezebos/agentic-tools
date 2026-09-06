@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: in the deadline parent, split 'is the worker alive' (kill -0, which needs no ps) from 'is it my worker' (the ps command-line check used only before signalling); the deadline loop uses the first; a fixture puts a ps shim on PATH that prints nothing and asserts the deadline block still arrives under sixty seconds. Receipt: supervision-hook-fixtures.sh.
 - OpenedAt: 2026-09-06T09:38:27Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:52:20Z revision=2 opid=Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 authority=proven digest=a5fa9d9591c44f5e9e0c50ea59e56b49f37baf3001c22e5690302d6a1a60665d
+- Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=3 at=2026-09-06T20:46:36Z
 - Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-06T20:45:34Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1d claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-06T09:38:27Z FDAPZ18VF4J2FX061WP8XCFQW8-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=stop-deadline-parent-trusts-ps
 - 2026-09-06T12:52:20Z Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 approve actor=human:Wido targets=human-goal-verbs-forgiving,repo-root-paths-ride-agent-commits-unjudged,stop-deadline-parent-trusts-ps,stop-hook-open-work-refusal-repeats,verbs-match-intent
 - 2026-09-06T20:45:34Z GT72493D10HF6A9F51Y4EQD4B8-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=stop-deadline-parent-trusts-ps
-Integrity: sha256=fb17e2d4928dcfb347b27aef37cf8556b44899bb23a918706c677b6841022ec7
+- 2026-09-06T20:46:36Z FZ931HS7JGKBPMD19S2SHQKB1Q-m1d-62183579 slice-start actor=m1d+main-1788683763-71870-f7f607 targets=stop-deadline-parent-trusts-ps
+Integrity: sha256=ce273086fe78c13f712fbb9c1c7e23d73e8735ac4dad5a54edb3d4f98a01a99c
