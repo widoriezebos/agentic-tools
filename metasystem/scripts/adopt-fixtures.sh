@@ -436,7 +436,8 @@ PLAN
   printf 'preset landing ref target\n' >"$preset_tgt/README.md"
   git -C "$preset_tgt" add README.md
   git -C "$preset_tgt" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
-  git -C "$preset_tgt" update-ref refs/remotes/origin/trunk HEAD
+  git -C "$preset_tgt" remote add origin "$preset_tgt"
+  git -C "$preset_tgt" fetch -q origin
   git -C "$preset_tgt" branch --set-upstream-to=origin/trunk trunk >/dev/null
   git -C "$preset_tgt" config --local metasystem.steward.landing-ref refs/remotes/kept/stable
   if ! bash "$adopt" "$preset_tgt" --runtimes none >"$tmp/adopt-preset-landing-ref.out" 2>&1; then
