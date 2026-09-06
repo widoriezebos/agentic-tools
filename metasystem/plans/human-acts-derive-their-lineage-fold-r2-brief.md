@@ -7,7 +7,7 @@ Date: 2026-09-06
 Round one built metasystem/plans/human-acts-derive-their-lineage-brief.md;
 the round-one critique (hal-critic1) found two material defects and
 three notes, dispositions in
-metasystem/records/misc/human-acts-derive-their-lineage-critique-r1-dispositions.md.
+records/misc/human-acts-derive-their-lineage-critique-r1-dispositions.md (landed on main at 4f5248e7, after this chain's base).
 The brief's premise that a name plus an enrollment proves who acts was
 too wide: only six verbs obtain a terminal proof, and the rest accept
 a name unproven, so the derivation as built lets any shell that passes
