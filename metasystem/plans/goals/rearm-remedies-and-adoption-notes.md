@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: MECHANICAL, tier-1 lane or one small chain: scripts/adopt.sh (detached target continues and reports; existing key preserved), internal/steward/rearm_resolver.go and internal/up/up.go (remedy texts), with a test per remedy. FIFTH ITEM, from the field: on m1b and m1d the human steward verb that seeded metasystem.steward.landing-ref (run by Wido in an agent-free terminal at 11:20Z and 11:23Z, with the new engine at the enrolled path) was followed at once by a generation minted as mintedBy=machine-rebuild with humanWitnessedGeneration absent (arming.log: 'engine-re-armed generation=2 previous=1 engine=999e2c07 landed=999e2c0 ref=refs/remotes/origin/main'). The bytes were landed, so nothing unsafe re-armed, but a human's own arm or restart must leave a human-witnessed generation, not a machine-labelled one: decide whether the human verbs mint before the machine rule runs, or record the human  RECEIPT from the honest bed on landed main fba7d0b0 (m1c, 2026-09-06 13:35Z, stock bash 3.2): rearm-rebuild and rearm-provenance genuinely green (engine really replaced, identity assertions ran, no unbound line); rearm-launch-fails genuinely red, 'the next up did not report a repaired runner' (evidence preserved under artifacts/agents/suite-failures on m1c, 20260906T133xZ). The all-three-green receipt this goal wants comes after that scenario or the engine is fixed; goal bed-child-death-reported-as-pass is concluded with this transfer.
 - OpenedAt: 2026-09-06T11:17:34Z
-- Revision: 6
+- Revision: 7
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:16:40Z revision=3 opid=STXTKSF0EBWQFXA3AEE2ARS7XJ-m1-7cd0bd60 authority=proven digest=faed688e447a25e760743da415acf6b80b523cde838b44ce8af37d9d52eb228e
@@ -19,4 +20,5 @@ History:
 - 2026-09-06T12:45:49Z FK9682XKEEA1CTD10X5D3ZV9EN-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T12:45:59Z ZJQ7FJW5K6QT2KERKACQEVZ0TD-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T13:35:55Z PZRYP0257S6QQJZWMBMKC9FSNQ-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
-Integrity: sha256=11c91b3339c69bf287f1573f6031eb1377698272caa3dd8ebffb738a4a65246a
+- 2026-09-06T15:43:32Z AY3C6SMZYWRV6EQMP40T5XVDBQ-m1-7cd0bd60 set-pin actor=human:Wido targets=rearm-remedies-and-adoption-notes
+Integrity: sha256=39f518bd1a06ea27541d22234ea132c5abf79ab5b60321e14ea0251701d65150
