@@ -123,3 +123,43 @@ undefined. Decided here, on the code as it stands.
   Status stays the success status so launches gated on it proceed; the
   hook and health lines read "re-armed generation N (durability pending)"
   while the marker stands. No new stage, no new error type.
+
+## Coordinator decisions after code critique round 2 (m1, 2026-09-06)
+
+The second code critique (err-review2-20260906) found two high defects,
+both in the coordinator's own dispositions above, not in the design or
+the builder's reading of it. Corrected here.
+
+- ERR-CC2-02 overturns the landing-ref decision under ERAR-R3-03. A ref
+  moved only by this clone's own pushes is never ahead of a pulled
+  landing, so every seat except the one that landed a Go change would be
+  refused after the ordinary pull, rebuild, up. The owned landing ref is
+  the REMOTE-TRACKING ref of the canonical branch (refs, then remotes,
+  then the remote name, then the branch: what git writes as
+  refs/remotes/origin/main). It is owned by the remote: a fetch or pull
+  moves it to the remote's truth and nothing else lawful moves it -
+  local commits, rebases and resets cannot, and the only pushes to the
+  canonical branch are the landing wrapper and the goal verbs, which
+  update it on push. Eligibility is therefore "ancestor of the
+  remote-tracking ref", which a pulled landing satisfies and an unpushed
+  local commit never does. Consequences: the refs/metasystem/landing
+  namespace and the post-push advance in the goal transaction and the
+  landing wrapper are removed with their tests and fixture legs; the key
+  metasystem.steward.landing-ref holds a remote-tracking ref and nothing
+  else (the machine path refuses closed on any other value and names it);
+  the human arm and restart verbs seed it from the checked-out branch's
+  upstream (git's @{upstream}) and print that they did; no upstream or a
+  detached HEAD arms without seeding and says why. The witness walk
+  enumerates commits reachable from that ref. The fixture bed creates the
+  ref by hand in its scratch repositories as it did before.
+- ERR-CC2-01: the dirty-tree stamp missed untracked engine files because
+  the two git enumerations print paths from different roots (diff from
+  the toplevel, ls-files from the current directory). The untracked
+  enumeration prints full names so both lists carry the toplevel prefix
+  the policy selector expects; a fixture proves an untracked Go file
+  under the engine surface yields the dirty stamp in the nested layout.
+- Notes folded because they are cheap: a doubted marker publication is
+  treated like a doubted identity publication (continue with the
+  durability-pending outcome, never an error, per the atomicfile
+  contract); the digest cache is written once on return and once on
+  expiry, not per candidate.
