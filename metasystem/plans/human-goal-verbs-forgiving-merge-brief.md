@@ -2,7 +2,11 @@ Working Mode: build
 Orchestrator Identity: m1d+main-1788683763-71870-f7f607 (dispatch delegate under goal human-goal-verbs-forgiving)
 Date: 2026-09-07
 
-# Merge round: chain hgvf-build1-20260906 onto current main
+# Merge chain: the reviewed diff of hgvf-build1-20260906 onto current main
+
+This is a fresh chain (the reviewed chain is closed and cannot take a
+follow-up). Your worktree starts from current main, which already
+holds 6ce7d5b2.
 
 Your round four (reviewed tree da6cad7dc9cc7de01f1e0555beab37ca47c67b32)
 closed the chain with zero material findings, but it cannot land: main
@@ -17,9 +21,12 @@ the goal record metasystem/plans/goals/human-goal-verbs-forgiving.md.
 
 # The change
 
-1. In your worktree, merge origin/main into your branch (git fetch,
-   then git merge origin/main; never rebase, never squash) and resolve
-   the three conflicts so that BOTH changes hold: everything 6ce7d5b2
+1. Apply the reviewed diff
+   metasystem/artifacts/agents/hgvf-build1-20260906/rounds/4/diff.patch
+   onto your worktree with a three-way apply (from the repository root:
+   git apply --3way --directory=metasystem <that file>; the sixteen
+   other files apply cleanly) and resolve the three conflicts so that
+   BOTH changes hold: everything 6ce7d5b2
    does (read its diff and its tests before you touch a hunk; it
    derives a human act's lineage at the enrolled terminal, so it lives
    near the same human-authority code your goal budget verb uses) and
@@ -41,6 +48,6 @@ the goal record metasystem/plans/goals/human-goal-verbs-forgiving.md.
 
 Wall-clock budget: 40 minutes; return before it ends even if something
 is red, naming it. MECHANICAL reach (tier 2). Declare the boundary as
-every file that differs from main after the merge. Gap rule: if a
+every file that differs from main; the expected set is the 19 files of the reviewed diff. Gap rule: if a
 conflict cannot be resolved so that both sides' tests pass, stop and
 report it with both sides' intent written out.
