@@ -5,8 +5,9 @@
 - Origin: main
 - Next step: PAUSED BY WIDO 2026-09-03 15:52Z before the runner ever started ('I would rather do this later'). STATE PRESERVED: contract sealed+signed on main (f57dae45); mission birth-token born (state.json status running, no runner record); target job-record-birth-token approved (released for the pause); four launch findings recorded (resume-not-start; re-arm after rebuild; lease held by the seat session; retire does not free the lease); the handover watcher DISARMED. RESUME RECIPE: re-arm steward if the engine was rebuilt; re-claim job-record-birth-token; shut down the seat owner (arm-supervision.sh --shutdown); arm the watcher (wait for the seat's claude pid to exit, then mission resume --mission birth-token); end the seat session; watch via mission status / runners/birth-token.log / asks/.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 15
+- Revision: 16
 - Arc: headless-fleet
+- Pinned: m1
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=15 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=0c9d3b9a12438d4b0c36b5798c98f1e73e3bdf3312756c4b09088d8921cecf5f
@@ -27,4 +28,5 @@ History:
 - 2026-09-03T15:50:30Z P82T4H9HBFQ4N7XBPM1J1KTK8Q-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-03T15:59:24Z QYRJFVYYFJKBE6VQ5DHXSJ7C9D-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=first-headless-run
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=first-headless-run reason=sweep
-Integrity: sha256=a1b3f2301fe868bf6e81cb07d76e4c8b45df83fbc376bb93380c126d7eb71b84
+- 2026-09-06T15:43:04Z BG43FSRNGHE2E5BTRJNC90G06X-m1-7cd0bd60 set-pin actor=human:Wido targets=first-headless-run
+Integrity: sha256=323e850be49d49f88b24650e17a8144abc03d5e873ca36abca27bdfc97f16956
