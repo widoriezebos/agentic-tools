@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: The turn verdict's idle-with-backlog block (enforceIdleBacklog in internal/goal/turnverdict.go) lists every claimable goal by id in one line: on 2026-09-06 with the grandfather sweep's 108 approved goals the Stop message on m1c ran to more than a hundred ids, which no reader can act on and which drowns the OPEN WORK line above it. The line exists to say that claimable work waits and to point at it, not to enumerate the queue. DONE means the line names the count and at most five goals (the seat's pinned ones first, then queue order), points the reader at the goal listing verb for the rest, keeps the same block-once behavior and block source, and the tests that pin the display (internal/goal) and any fixture greps update to the new shape.
 - Origin: main
-- Next step: Read enforceIdleBacklog and the tests that grep 'claimable goals await'; decide the five-name order (pinned to this machine first, then queue order) and the pointer wording; brief one round with the tests.
+- Next step: STATE 2026-09-06 20:45Z (m1c): claimed; brief plans/idle-backlog-line-names-a-few-not-all-brief.md landed; chain ibl-build1 (Sol, MECHANICAL, no critique owed) building: ClaimableBudgetedWork gains Pinned, the line names the count and at most five goals (this machine's pinned first, then queue order) with an 'and N more (metasystem goal list names them all)' pointer, digest and escalation untouched, one test with seven and three claimable goals. Then conformance, close, land.sh --chain (area width), rebuild, up, done.
 - OpenedAt: 2026-09-06T11:12:19Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -21,4 +21,5 @@ History:
 - 2026-09-06T11:13:04Z SF93QKH1A383QFP6X19MWXPCV1-m1-7cd0bd60 approve actor=human:Wido targets=idle-backlog-line-names-a-few-not-all
 - 2026-09-06T20:35:04Z DZB2JX362E0DBE95FR3NNM6BPN-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=idle-backlog-line-names-a-few-not-all
 - 2026-09-06T20:36:25Z JT5T1WXZMSJ01J22Q7NBE1ND4F-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=idle-backlog-line-names-a-few-not-all
-Integrity: sha256=68f47121bce5bd76ab1bfbfee7afadcfee7a76535a7eeb0be459714a2e62324a
+- 2026-09-06T20:36:46Z 3QXMHP5SHZJ946GRC5AESCV47V-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=idle-backlog-line-names-a-few-not-all
+Integrity: sha256=640c0fdd0e1ce0debbd3cae848af287074e7fa071e35797ea92892c0daa97730
