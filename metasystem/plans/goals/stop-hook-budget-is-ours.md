@@ -1,18 +1,20 @@
 # stop-hook-budget-is-ours
 
-- State: queued
+- State: approved
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a slow hook holds a turn end a few seconds longer, nothing unsafe is permitted and the fail-closed refusal stays; novelty 1: three numbers that already exist move together; exposure 3: every seat on every machine ends every turn through this hook; accumulation 1: nothing compounds, a wrong number is one edit away"
 - Tier: 3
 - Intent: The Stop hook's five-second budget is our own number, not the provider's: the hook's comment says 'Claude gives the complete Stop hook five seconds', but the five seconds is the timeout we wrote in the repository's Claude settings for the Stop hook, and the runtime's own default is sixty. The parent gives its worker four of those seconds and keeps one. Under load - a builder round, a suite run, a Go build, three seats on one host - a healthy Stop takes longer than four seconds and the parent blocks the turn end with 'deadline expired before a safe turn verdict': eight expiries on m1 on 2026-09-06 before 10:00, every one while something else was building, each costing the seat a turn. Wido's decision (2026-09-06): the budget is sixty seconds, the runtime's own default; the fail-closed refusal on a genuine hang stays and simply comes at sixty. And because nothing records how long a Stop takes, every Stop measures itself from now on, and the steward reads those measurements and flags a hook that is getting slow before it starts costing turns - the ceiling stops being a guess and the steward, not a human reading hooks.log, notices drift.
 - Origin: main
 - Next step: TWO SLICES. Slice 1, MECHANICAL, tier-1 lane candidate: the Stop hook timeout in the repository's Claude settings (5 -> 60), the worker deadline in the deadline parent in supervision-hook.sh (started + 4 -> started + 57, the parent keeps three) and its comment (the number is ours and this is where it lives), the deadline scenario in supervision-hook-fixtures.sh follows (the wrapper's sleep just under the worker deadline, the assertion under the provider timeout, the message names sixty); and the measurement: the worker's 'stop response decision=' evidence line in hooks.log and the steward component record the hook already writes (the hook-attempt site health reads for hook-freshness) both carry the elapsed seconds since the parent started, and the deadline parent's own 'stop response outcome=' line carries the elapsed seconds too. Receipt: the whole supervision-hook fixture suite, plus one assertion that the evidence line carries a number. Slice 2, steward (Go, internal/steward health): a health role reads the recorded Stop durations from the component record and flags drift - a Stop above a threshold (proposal: a quarter of the ceiling, 15s, on the last turn; or any expiry) is an unhealthy line naming the seat, the duration and the ceiling, delivered like every other health line through the alert channel, so the steward notices a slowing hook before it costs turns. Fixture: a synthetic component record with a slow duration flags; a fast one stays alive; an expiry flags. Threshold as a config key with the default above. This does not replace stop-hook-health-cost (the hook is still too expensive on an idle machine; that goal makes it cheap); it removes the lost turns now and makes the cost visible to the steward for good.
 - OpenedAt: 2026-09-06T07:39:12Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-06T07:43:29Z revision=4 opid=AV2WVNQN81XXQFN38QFQKTYM52-m1-a4f8999f authority=proven digest=b64e68e88eac3a2821471c2c091bef7efc44e67b9e70fe255172781d93651037
 
 History:
 - 2026-09-06T07:39:12Z 2BXWAPKW3W8TGXDRADDWH9XH8N-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-budget-is-ours
 - 2026-09-06T07:41:12Z 89ZCA0EZC8ATKD63ZDA82Z0SCC-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-budget-is-ours
 - 2026-09-06T07:43:03Z F7VDZQPHGM4RXWBHJPDKJT3T08-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-budget-is-ours
-Integrity: sha256=3711a08f85a95671ded1154860f054d1f15e5c61752dd7aa786ee1bbb1aa5d83
+- 2026-09-06T07:43:29Z AV2WVNQN81XXQFN38QFQKTYM52-m1-a4f8999f approve actor=human:Wido targets=stop-hook-budget-is-ours
+Integrity: sha256=1cf8665ad0e6deedd0423d5aa692576ff4a37e8848c34824ace48bdaf1cfcf0d
