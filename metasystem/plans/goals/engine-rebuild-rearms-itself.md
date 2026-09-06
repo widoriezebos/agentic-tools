@@ -1,17 +1,19 @@
 # engine-rebuild-rearms-itself
 
-- State: approved
+- State: claimed
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the enrollment pin is the trust boundary for which engine becomes the steward and supervision owner, so a wrong relaxation lets unintended bytes supervise the repository; novelty 2: no auto re-enrollment existed, though the same act (mint a generation, replace the runner) is the shipped human arm path reused unchanged; exposure 3: every machine in the fleet arms through this path, and the scheduler's unattended recovery uses it too; accumulation 2: the wedge cost m1 a full day of refused turn ends on 2026-09-05 and cost m2 a night of re-prompts on 2026-09-04 (goal stop-hook-wedge-on-enrollment-drift), which treated the symptom"
 - Tier: 3
 - Intent: A rebuilt engine wedges every seat: metasystem up refuses ENROLLMENT_DRIFT whenever bin/metasystem's digest differs from the steward's enrolled pin, and rebuilding the engine is ordinary work here, so no session can arm until a human re-arms at an agent-free terminal. DONE means a rebuild of the enrolled engine at its own enrolled path, invoked by that engine, re-arms itself (fresh generation, runner replaced onto the new bytes, temporary human word and review date carried forward) and reports accepted-engine outcome=re-armed, while every drift cause that names a DIFFERENT installation still refuses to the human, proven by tests and a live rebuild-then-up on m1
 - Origin: main
 - Next step: WIDO'S DECISION 2026-09-06: provenance-based eligibility. Revision 3 rebinds automatic re-arm from 'who is asking' to 'what the bytes are': a rebuilt engine is eligible iff its build stamp names a landed commit on an owned, installation-scoped landing ref (metasystem.steward.landing-ref, seeded by adoption and fleet bootstrap; hard-coded refs/heads/main withdrawn), witness-digest stamps of the canonical gate included; the caller's identity stops mattering, so ERAR-R2-01 (no session proof exists) is dissolved rather than answered, and ERAR-R2-02/03 fold into the same rule. The three medium findings of records/misc/engine-rebuild-rearm-critique-r2.md carry (pre-mint stop stage, three-record durability contract, the C16 fixture seam). Then critique on a fresh root, build, review. Note for the build: m1's hand-written implementation no longer compiles against main (supervise.ShutdownAt gained an argument at e516ad5d); it is prior art only. Needs re-approval at the enrolled terminal.
 - OpenedAt: 2026-09-05T10:02:09Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:human:Wido at=2026-09-06T06:46:47Z revision=14 opid=X660MCYWHJSMWRFGY73NKC9S15-m1-a4f8999f authority=proven digest=a9d794a1427827ef06e9704e5c2348839072bd24456e2474e5ca18b6b511f92c
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=8 at=2026-09-05T22:18:46Z
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T07:33:09Z revision=15 accountingRevision=15
+- StopCapability: generation=15 revision=15 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-05T10:02:09Z CEK1GRKK6YHJN66D1A44EV2THJ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
@@ -28,4 +30,5 @@ History:
 - 2026-09-06T06:38:33Z 559YZPDKKKGAVY9Z3J9FT2E8CS-m1-a4f8999f unpark actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-06T06:39:06Z ZC8359H155NAJ5V5FVAG26EYGA-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
 - 2026-09-06T06:46:47Z X660MCYWHJSMWRFGY73NKC9S15-m1-a4f8999f approve actor=human:human:Wido targets=engine-rebuild-rearms-itself
-Integrity: sha256=789d6dec1249486ae9e1804ce52f5f12769fc4f9cf82ef77039b076e1801d2c5
+- 2026-09-06T07:33:09Z 1Y9Z4Q04P80HGNHWRQPRKFYH8H-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=engine-rebuild-rearms-itself
+Integrity: sha256=20b8e945aa1618cae0a3b4a7bbdf6e7eb90d64445ea11cd42d8c118025a2cd0b
