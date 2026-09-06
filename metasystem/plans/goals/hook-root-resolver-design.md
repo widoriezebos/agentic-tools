@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: After hook-root-installation-fix lands: fold revision 6 from the r5 record by id on a fresh critic root (fold brief drafted in m1's scratch), critique, build from the re-aimed build brief (drafted), code review, land. Its own tier-3 box at the norm. TWO CARRY-OVERS from the installation-fix code critique (hrif-review1b-20260906, 2026-09-06): (1) hook-freshness is NOT fixed by the installation fix - the hook writes the steward component record with the Git toplevel (supervision-hook.sh, the steward hook-attempt site) and health reads it under the steward's own --repo root (internal/steward/health.go loadComponentEvidenceForHealth, component_evidence.go), and nothing in Go reads hooks.log; the consumer sweep owns that site and the goal's 'hook-freshness read dead against the installation' symptom stays open until it lands. (2) The operator-layout scenario in supervision-fixtures.sh checks 'no artifacts beneath the vendored installation' BEFORE its hook Stop; add the same check after the Stop so a trail or state write below the vendored installation is caught. The installation fix's fold moved the three hooks.log sites onto the hook's state root (installation in the self-hosting layout, scope in the operator layout); the resolver design must keep those two layouts producing one root.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 5
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 6
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=960 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:human:Wido at=2026-09-06T06:46:41Z revision=2 opid=0N5KDTJK1JWHCQXZYH17W4W5XN-m1-a4f8999f authority=proven digest=8cceb63e97c325e259a6296c55a542d49f7882c7b9f11f23c156788b20042e91
+- Approved: by=human:Wido at=2026-09-06T14:29:22Z revision=6 opid=FXR7R86YD911JJW7FW6R73P3SB-m1-7cd0bd60 authority=proven digest=4bcd7b59c1045ac40494028c4dd3dc884d526be9d5e74c5aa6edde9b0efdbf5c
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T11:21:23Z revision=4 accountingRevision=4
-- StopCapability: generation=4 revision=4 machine=m1 claimEpoch=5 fenceEpoch=0
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-06T14:29:22Z revision=6 accountingRevision=6
+- StopCapability: generation=6 revision=6 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -21,4 +21,5 @@ History:
 - 2026-09-06T07:18:03Z E960KHH0HNAZGS2EPR68NZ0VMN-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
 - 2026-09-06T11:21:23Z E72K0W9AVFXZ1SWJ4HKYWN0DR3-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
 - 2026-09-06T11:22:23Z N1DBGWSWG0VR4AFA1QRZN2H9N6-m1-a4f8999f slice-start actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
-Integrity: sha256=bd0c4738532aef745a0e71302ec866ebd156398e4163d4867f99330acbf01b4f
+- 2026-09-06T14:29:22Z FXR7R86YD911JJW7FW6R73P3SB-m1-7cd0bd60 set-budget actor=human:Wido targets=hook-root-resolver-design displaced=m1+main-1788594343-3833-fb64b9@2026-09-06T11:21:23Z
+Integrity: sha256=12e58ac0ccfbcbecbd50f5150b5c9a72d8108ba96520ef3c3bc1ecb31985c01f
