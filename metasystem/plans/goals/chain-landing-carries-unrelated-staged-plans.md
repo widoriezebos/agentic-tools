@@ -1,0 +1,16 @@
+# chain-landing-carries-unrelated-staged-plans
+
+- State: queued
+- Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a chain commit can carry unreviewed plan bytes; novelty 1: the evaluator already computes the certified paths; exposure 2: every chain landing; accumulation 1: nothing compounds"
+- Tier: 2
+- Intent: On 2026-09-07 00:20 local the chain landing of ccn-fix1 (7c93ce31, land.sh --chain --staged-only) committed a staged RENAME of a plan file (plans/claude-critic-shell-network-deny-conf-fold-r2-brief.md to ...-preset-assertions-brief.md, with content edits) together with the certified round diff, and the landing evaluator passed it: the same rename had just been refused by the register-carriage lane as record-not-owned. The chain lane binds the candidate to the certified diff for the product files but evidently lets unrelated staged plan changes ride the commit. DONE means a chain landing refuses any staged path outside the certified diff (a message naming the extra paths), a landing test pins it, and the register-carriage rule for renames of existing records is stated in that message.
+- Origin: main
+- Next step: Read internal/landing observe.go's chain binding (the candidate-to-certified-diff comparison) and find why a staged rename under plans/ passed; brief a MECHANICAL fix with a landing test.
+- OpenedAt: 2026-09-06T23:10:58Z
+- Revision: 1
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-06T23:10:58Z XHFG278NQE7YRSJZ0F8RT023R8-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=chain-landing-carries-unrelated-staged-plans
+Integrity: sha256=455a3126638e032088974e4e3134eaadb646155eab7202357c8ea81b10cd44f8
