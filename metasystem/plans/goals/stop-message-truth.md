@@ -5,11 +5,11 @@
 - Origin: main
 - Next step: After cutover retargets the verdict to the new projection (that half is a backlog-git-sync cutover obligation), fold in the steward's status surface: the stop message names any live worker, in-flight continuation, or pending steward incident, so silence is never ambiguous; acceptance = the frozen-ledger staleness observed 2026-08-20 cannot recur. Proposal from m2 (2026-08-24, for the primary dispatch delegate's ratification): extend the idle-watchdog predicate to be ledger-aware — arm the watchdog on every enrolled checkout, and revive/notify when goal next names a tokened, unclaimed, unblocked item AND the machine holds no claim; that makes the distributed backlog itself the wake signal, so a machine with standing work never sits idle behind a stale stop message. SIGHTING 2026-09-06 (m1, first Stop after c1525b90a): the Stop verdict named 244 run records from mid-August ('looks hung', 'ended ended-unknown', 'finished green; the run record says: no continuation recorded') in one refusal beside the single actionable line. Runs that finished weeks ago with no recorded continuation are not open work: the scanner ages them out or reports them as one class-and-count line; the printed shape is stop-refusal-fits-on-one-screen's, the judgement of what is open work is this goal's. open-work-scanner-blindspots stays parked as merged here (Wido tried to resume it 2026-09-06; the verb refuses an unclaimed parked goal, so nothing to resume).
 - OpenedAt: 2026-08-20T16:51:00Z
-- Revision: 8
+- Revision: 9
 - BlockedBy: backlog-git-sync, idle-watchdog
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=7 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=1fb5177ea482b59d8182a028f5b5b11381f08d50fb0e0377063fbd8dfed30523
+- Approved: by=human:Wido at=2026-09-06T14:41:18Z revision=9 opid=S7X3P2Y3TVZ95AMFPCA1V6JQJH-m1-7cd0bd60 authority=proven digest=7de8068c1f0781a1c549bd5a054db748d34ccd1a2e8551e6c34be5db0f5fabe2
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=stop-message-truth
@@ -20,4 +20,5 @@ History:
 - 2026-09-01T20:29:47Z X1Q5JHGZKDW5FWHSBJTQRK94BM-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=stop-message-truth
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=stop-message-truth reason=sweep
 - 2026-09-06T14:33:34Z TJJ3PRKXTFQ70HPTF4V0GE24NR-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-message-truth
-Integrity: sha256=173b3ad7dada68e805bee75a7804b289ab9a060d3badcde5516db615145b636a
+- 2026-09-06T14:41:18Z S7X3P2Y3TVZ95AMFPCA1V6JQJH-m1-7cd0bd60 approve actor=human:Wido targets=stop-message-truth
+Integrity: sha256=bb235b59372739af894a8c41b135cd99a8e3b02cf8275fd1f9e6379a58b1d396
