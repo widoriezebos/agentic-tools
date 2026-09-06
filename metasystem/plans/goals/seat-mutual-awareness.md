@@ -7,10 +7,10 @@
 - Origin: main
 - Next step: DESIGN LADDER IN PROGRESS, BOX SPENT (m1d, 2026-09-06). Revision 1 of the design landed (plans/seat-mutual-awareness-design.md, 6948392b): a per-machine presence record and a fleet view, seat-to-seat asks and answers as ledger transactions under the machines' own identities, mechanized surfacing through the steward tick and the Stop hook, the structural facts that keep a seat's words off the human's authority surface, fixtures, a three-slice build. The first design review (Sol, job sma-crit1-20260906; register records/misc/seat-mutual-awareness-critique-r1.md) found ten material defects, all grounded and all accepted: seat-authored words reach the human through the Stop hook's digest; an old checkout can land a malformed seat record before the fence exists; a refused presence publish would alert the human in twenty minutes through the unknown counter; seat publications cannot be recovered from the journal; no fleet membership source, so an idle machine and a nonexistent one look alike; timeout and late-answer semantics incomplete; the validator is not total; load, history growth and the legacy transport unstated; no dependency-safe seam returns the lineage to the steward package; the proof matrix cannot certify the riskiest behavior and the estimate understates it. The revision-2 brief is landed (plans/seat-mutual-awareness-fold2-brief.md) and its dispatch was refused BUDGET_REFUSED: the box's 240 job-minutes are spent by exactly two jobs (each reserves its 120-minute cap), design plus review. WAITING ON WIDO: raise the box to the tier-3 norm at the enrolled terminal (goal set-budget: 720 reserved job-minutes, 10 attempts, 3 review rounds) so revision 2 and its review can run; the design's own estimate says the build will need more, to be asked on revision 2's number. Then: re-claim, dispatch the follow-up to the designer with the fold brief, review, fold or close, then build slices per the design. Wido's binding word on inbound (single-use code on anything from outside; seats carry no authority) is untouched throughout.
 - OpenedAt: 2026-08-31T14:24:17Z
-- Revision: 14
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 15
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T10:15:15Z revision=11 opid=ANZ69ZJPSJZBFFCHRC1HA913Y7-m1d-62183579 authority=raise=ANZ69ZJPSJZBFFCHRC1HA913Y7-m1d-62183579 digest=76d34210c631e5266b47b24a1110aeb8d9c06a181436f212e1c67df91ce1a7bb
+- Approved: by=human:Wido at=2026-09-06T14:42:11Z revision=15 opid=2FSZ9E6JVBHXWDHG222WQY5GK5-m1-7cd0bd60 authority=proven digest=735ea5ba141b26ac0ffa48f224d2c878485edaa85d4989dc90faddad9ca85a1b
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=9 at=2026-09-06T10:14:44Z
 
 History:
@@ -28,4 +28,5 @@ History:
 - 2026-09-06T10:49:47Z 0DDEGS5XETFRVFA4T64FMVWFV5-m1d-62183579 edit actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness
 - 2026-09-06T10:49:50Z R1J2EQ5KGB9C7G9K1JGTA8W3KA-m1d-62183579 park actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness reason=design revision 1 landed and reviewed (ten accepted findings, fold brief landed); revision 2 cannot dispatch: the box's 240 job-minutes are spent by the design and its review; needs Wido's set-budget to the tier-3 norm at the enrolled terminal
 - 2026-09-06T14:39:21Z 0PQKHVPYD7PT482YMTSHFBXN5B-m1-a4f8999f unpark actor=m1+main-1788594343-3833-fb64b9 targets=seat-mutual-awareness
-Integrity: sha256=b3a85047d49077a6a016918b4b3eeb3b5c771eff68d115d792512c6aea0f9fcd
+- 2026-09-06T14:42:11Z 2FSZ9E6JVBHXWDHG222WQY5GK5-m1-7cd0bd60 approve actor=human:Wido targets=seat-mutual-awareness
+Integrity: sha256=6091a6e21b60a9d085d7a2f3645735038cfe3c6a85bbd694f153a21f61a48168
