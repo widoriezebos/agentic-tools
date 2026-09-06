@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: After code-critic-runtime-has-no-shell lands: probe the claude sandbox network keys with the same live-probe recipe (scratchpad ccs-probe2.sh pattern), then brief, build, critique, land.
 - OpenedAt: 2026-09-06T19:24:48Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:18:46Z revision=2 opid=10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 authority=proven digest=b08f019671386f8a8883cb4dbcff15adab87926c80432f2961d00d9902b425f9
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=3 at=2026-09-06T22:30:06Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-06T22:29:53Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-06T19:24:48Z W4E4JQ4APGSJ20W2WAP5GRQC2J-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
 - 2026-09-06T21:18:46Z 10S4262XEJBA9XC00VBMTQ7WE6-m1-7cd0bd60 approve actor=human:Wido targets=adopt-bed-authority-probe-passes-tier,adopt-bed-gate-unreachable-under-load,claude-critic-sandbox-allows-loopback,claude-critic-shell-network-deny,claude-delegate-scratch-cleanup,claude-implementer-read-roots-writable
 - 2026-09-06T22:29:53Z 3DFR259CW4D07PN7HBEZG3PKQZ-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
-Integrity: sha256=043637228af474fd602137c2230c15651066ab37eff0f65c8d894d30e620ba1f
+- 2026-09-06T22:30:06Z M72WCXCJDWGDFZMYYM1T9ARTBE-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=claude-critic-shell-network-deny
+Integrity: sha256=571294fcaf726719be2807a23f20db12638e4753ed8c34f302350254e6122f34
