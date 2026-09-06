@@ -1,7 +1,9 @@
 package spend
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -45,6 +47,17 @@ func newSpendBed(t *testing.T) spendBed {
 
 func writeSeatTranscript(t *testing.T, path, session, cwd, request string, input, output int) {
 	t.Helper()
+	line := seatTranscriptLine(t, session, cwd, request, input, output)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, line, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seatTranscriptLine(t *testing.T, session, cwd, request string, input, output int) []byte {
+	t.Helper()
 	line, err := json.Marshal(map[string]any{
 		"type": "assistant", "sessionId": session, "requestId": request,
 		"cwd": cwd, "timestamp": bedNow.Format(time.RFC3339),
@@ -56,12 +69,7 @@ func writeSeatTranscript(t *testing.T, path, session, cwd, request string, input
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, append(line, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	return append(line, '\n')
 }
 
 func copyFixtureTree(t *testing.T, source, destination string, rewrite func([]byte) []byte) {
@@ -327,6 +335,441 @@ func TestSeatTranscriptFiltersByCwd(t *testing.T) {
 	_, ledger := measureBed(t)
 	if !closeEnough(ledger.Seat.DayTokens, 118425925) {
 		t.Fatalf("a worktree or foreign working directory entered seat spend: %+v", ledger.Seat)
+	}
+}
+
+func TestSeatTranscriptSkipsForeignCheckoutAfterFirstCWDLine(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	foreignRoot := filepath.Join(filepath.Dir(root), "another-checkout")
+	foreignPath := filepath.Join(home, ".claude", "projects", slug+"-other-checkout", "foreign.jsonl")
+	first := seatTranscriptLine(t, "foreign-session", foreignRoot, "foreign-request", 1000, 2000)
+	content := append(append([]byte(nil), first...), bytes.Repeat([]byte{' '}, 5*1024*1024-len(first))...)
+	if err := os.MkdirAll(filepath.Dir(foreignPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(foreignPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefixCollision := filepath.Join(home, ".claude", "projects", slug+"suffix", "collision.jsonl")
+	writeSeatTranscript(t, prefixCollision, "collision", root, "collision-request", 5000, 5000)
+
+	readBytes := 0
+	priorObserver := transcriptBytesRead
+	transcriptBytesRead = func(count int) { readBytes += count }
+	cacheWrites := 0
+	priorCacheWriter := spendCacheWriter
+	spendCacheWriter = func(path, text string) error {
+		cacheWrites++
+		return priorCacheWriter(path, text)
+	}
+	t.Cleanup(func() {
+		transcriptBytesRead = priorObserver
+		spendCacheWriter = priorCacheWriter
+	})
+	ledger, err := Measure(root, "bed-m1", bedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ledger.Seat.SkippedForeignFiles != 1 || ledger.Seat.Files != 0 || ledger.Seat.UnmeasuredRequests != 0 || ledger.Seat.LifetimeTokens != 0 {
+		t.Fatalf("the foreign checkout transcript was not skipped as one file: %+v", ledger.Seat)
+	}
+	if readBytes == 0 || readBytes >= len(content) {
+		t.Fatalf("foreign selection consumed %d of %d transcript bytes instead of stopping after the first cwd line", readBytes, len(content))
+	}
+	readBytes = 0
+	cacheWrites = 0
+	if _, err := Measure(root, "bed-m1", bedNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if readBytes != 0 || cacheWrites != 0 {
+		t.Fatalf("the unchanged foreign transcript consumed %d bytes and made %d cache writes", readBytes, cacheWrites)
+	}
+	file, err := os.OpenFile(foreignPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte{' '}); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Measure(root, "bed-m1", bedNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if readBytes != 0 || cacheWrites != 0 {
+		t.Fatalf("the grown foreign transcript consumed %d bytes and made %d cache writes", readBytes, cacheWrites)
+	}
+}
+
+func TestTranscriptCursorMatchesFullParseAcrossChanges(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	path := filepath.Join(home, ".claude", "projects", slug, "seat.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initial := append([]byte("not-json\n"), seatTranscriptLine(t, "seat", root, "request-a", 10, 1)...)
+	if err := os.WriteFile(path, initial, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	call := 0
+	assertMatchesFullParse := func(label string) Ledger {
+		t.Helper()
+		call++
+		now := bedNow.Add(time.Duration(call) * time.Minute)
+		ledger, err := Measure(root, "bed-m1", now)
+		if err != nil {
+			t.Fatalf("%s incremental measurement failed: %v", label, err)
+		}
+		incremental, err := os.ReadFile(Path(root, now))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(transcriptCursorPath(root, path)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Measure(root, "bed-m1", now); err != nil {
+			t.Fatalf("%s full measurement failed: %v", label, err)
+		}
+		full, err := os.ReadFile(Path(root, now))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(incremental, full) {
+			t.Fatalf("%s cursor ledger differs from a full parse\nincremental=%s\nfull=%s", label, incremental, full)
+		}
+		return ledger
+	}
+
+	ledger := assertMatchesFullParse("initial file")
+	if ledger.Seat.LifetimeTokens != 11 || ledger.Seat.UnmeasuredRequests != 1 {
+		t.Fatalf("the initial full semantics are wrong: %+v", ledger.Seat)
+	}
+	appendTranscript := func(line []byte) {
+		t.Helper()
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write(line); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appendTranscript(seatTranscriptLine(t, "seat", root, "request-b", 20, 2))
+	ledger = assertMatchesFullParse("appended request")
+	if ledger.Seat.LifetimeTokens != 33 {
+		t.Fatalf("the appended request was not merged: %+v", ledger.Seat)
+	}
+	appendTranscript(seatTranscriptLine(t, "seat", root, "request-a", 100, 10))
+	ledger = assertMatchesFullParse("request identifier rewritten after cursor")
+	if ledger.Seat.LifetimeTokens != 132 {
+		t.Fatalf("the later request identifier did not replace the earlier request: %+v", ledger.Seat)
+	}
+	partial := bytes.TrimSuffix(seatTranscriptLine(t, "seat", root, "request-c", 30, 3), []byte{'\n'})
+	split := len(partial) / 2
+	appendTranscript(partial[:split])
+	ledger = assertMatchesFullParse("partial trailing line")
+	if ledger.Seat.LifetimeTokens != 132 || ledger.Seat.UnmeasuredRequests != 2 {
+		t.Fatalf("the partial trailing line did not match full-parse invalid-line semantics: %+v", ledger.Seat)
+	}
+	appendTranscript(append(append([]byte(nil), partial[split:]...), '\n'))
+	ledger = assertMatchesFullParse("partial trailing line completed after the cursor")
+	if ledger.Seat.LifetimeTokens != 165 || ledger.Seat.UnmeasuredRequests != 1 {
+		t.Fatalf("the completed trailing line did not replace its partial snapshot: %+v", ledger.Seat)
+	}
+	truncated := seatTranscriptLine(t, "seat", root, "request-b", 20, 2)
+	if err := os.WriteFile(path, truncated, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ledger = assertMatchesFullParse("truncated file")
+	if ledger.Seat.LifetimeTokens != 22 || ledger.Seat.UnmeasuredRequests != 0 {
+		t.Fatalf("the truncated file retained stale cursor entries: %+v", ledger.Seat)
+	}
+	if err := os.WriteFile(transcriptCursorPath(root, path), []byte("{corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ledger = assertMatchesFullParse("corrupt cursor cache")
+	if ledger.Seat.LifetimeTokens != 22 {
+		t.Fatalf("the corrupt cursor was trusted: %+v", ledger.Seat)
+	}
+	cacheBytes, err := os.ReadFile(transcriptCursorPath(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cache transcriptCursorCache
+	if json.Unmarshal(cacheBytes, &cache) != nil || !validTranscriptCursor(cache, path) {
+		t.Fatalf("the corrupt cursor cache was not replaced with valid state: %s", cacheBytes)
+	}
+}
+
+func TestCacheWriteFailureKeepsTheFullMeasurement(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record := `{"jobId":"terminal","goalId":"cache-failure","status":"completed","runtime":"fake","canonicalModelKey":"fixture-model","startedAt":"2026-09-02T10:00:00Z","usage":{"inputTokens":7}}`
+	if err := os.WriteFile(filepath.Join(jobs, "terminal.json"), []byte(record), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	writeSeatTranscript(t, filepath.Join(home, ".claude", "projects", slug, "seat.jsonl"), "seat", root, "request", 10, 2)
+
+	cacheDirectory := spendCacheDir(root)
+	if err := os.MkdirAll(filepath.Dir(cacheDirectory), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cacheDirectory, []byte("blocks cache directory creation"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := Measure(root, "bed-m1", bedNow)
+	if err != nil {
+		t.Fatalf("cache publication failure stopped measurement: %v", err)
+	}
+	if blocked.Seat.CacheWriteFailures != 2 || blocked.Seat.LifetimeTokens != 12 {
+		t.Fatalf("cache failures were not disclosed beside the complete spend: %+v", blocked.Seat)
+	}
+	if err := os.Remove(cacheDirectory); err != nil {
+		t.Fatal(err)
+	}
+	writable, err := Measure(root, "bed-m1", bedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked.Seat.CacheWriteFailures = 0
+	blockedBytes, err := json.Marshal(blocked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writableBytes, err := json.Marshal(writable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(blockedBytes, writableBytes) {
+		t.Fatalf("cache publication failure changed the full measurement\nblocked=%s\nwritable=%s", blockedBytes, writableBytes)
+	}
+}
+
+func TestPendingTerminalMeasurementIsReadAgainWhenItSettles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(jobs, "settling.json")
+	if err := os.WriteFile(recordPath, []byte(`{"jobId":"settling","status":"completed"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	reads := 0
+	priorJobUsageAt := jobUsageAt
+	jobUsageAt = func(string, string) mission.JobMeasurement {
+		reads++
+		record := map[string]any{
+			"jobId": "settling", "goalId": "settling-goal", "status": "completed",
+			"runtime": "fake", "canonicalModelKey": "fixture-model", "startedAt": "2026-09-02T10:00:00Z",
+		}
+		if reads == 1 {
+			return mission.JobMeasurement{Record: record, Tokens: map[string]float64{}, Provenance: "pending", Detail: "process group is still alive"}
+		}
+		return mission.JobMeasurement{Record: record, Tokens: map[string]float64{"inputTokens": 7}, Provenance: "derived"}
+	}
+	t.Cleanup(func() { jobUsageAt = priorJobUsageAt })
+	first, err := Measure(root, "bed-m1", bedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 1 || first.GoalScopes["settling-goal"].Tokens != 0 || first.GoalScopes["settling-goal"].Unmeasured != 1 {
+		t.Fatalf("the pending first outcome was not measured as pending: reads=%d scope=%+v", reads, first.GoalScopes["settling-goal"])
+	}
+	second, err := Measure(root, "bed-m1", bedNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 2 || second.GoalScopes["settling-goal"].Tokens != 7 || second.GoalScopes["settling-goal"].Unmeasured != 0 {
+		t.Fatalf("the settled outcome was not re-read and counted: reads=%d scope=%+v", reads, second.GoalScopes["settling-goal"])
+	}
+	if _, err := Measure(root, "bed-m1", bedNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 2 {
+		t.Fatalf("the settled terminal outcome was not cached: reads=%d", reads)
+	}
+}
+
+func TestDeletedTranscriptCursorIsPruned(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	transcript := filepath.Join(home, ".claude", "projects", slug, "deleted.jsonl")
+	writeSeatTranscript(t, transcript, "seat", root, "request", 10, 2)
+	if _, err := Measure(root, "bed-m1", bedNow); err != nil {
+		t.Fatal(err)
+	}
+	cursor := transcriptCursorPath(root, transcript)
+	if _, err := os.Stat(cursor); err != nil {
+		t.Fatalf("the initial measurement did not create its cursor: %v", err)
+	}
+	if err := os.Remove(transcript); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Measure(root, "bed-m1", bedNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cursor); !os.IsNotExist(err) {
+		t.Fatalf("the cursor for a deleted transcript was not pruned: %v", err)
+	}
+}
+
+func TestTranscriptCursorPreservesDelegateFilteringBeforeRequestReplacement(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	path := filepath.Join(home, ".claude", "projects", slug, "seat.jsonl")
+	content := append(seatTranscriptLine(t, "seat-session", root, "same-request", 10, 1),
+		seatTranscriptLine(t, "delegate-session", root, "same-request", 100, 100)...)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := Measure(root, "bed-m1", bedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Seat.LifetimeTokens != 200 {
+		t.Fatalf("the later request did not initially replace the earlier request: %+v", first.Seat)
+	}
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record := `{"jobId":"delegate","status":"completed","runtime":"fake","canonicalModelKey":"fixture-model","startedAt":"2026-09-02T10:00:00Z","sessionId":"delegate-session","usage":{"inputTokens":1}}`
+	if err := os.WriteFile(filepath.Join(jobs, "delegate.json"), []byte(record), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := Measure(root, "bed-m1", bedNow.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Seat.LifetimeTokens != 11 {
+		t.Fatalf("delegate filtering happened after replacement instead of before it: %+v", second.Seat)
+	}
+}
+
+func TestWarmMeasureReadsNoTranscriptBytesOrTerminalJobRecord(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	terminalPath := filepath.Join(jobs, "terminal.json")
+	runningPath := filepath.Join(jobs, "running.json")
+	job := func(id, status string) []byte {
+		return []byte(fmt.Sprintf(`{"jobId":%q,"status":%q,"runtime":"fake","canonicalModelKey":"fixture-model","startedAt":"2026-09-02T10:00:00Z","usage":{"inputTokens":1}}`, id, status))
+	}
+	if err := os.WriteFile(terminalPath, job("terminal", "completed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runningPath, job("running", "running"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	slug := strings.ReplaceAll(filepath.Clean(root), string(filepath.Separator), "-")
+	transcriptPath := filepath.Join(home, ".claude", "projects", slug, "seat.jsonl")
+	writeSeatTranscript(t, transcriptPath, "seat", root, "request", 10, 2)
+
+	jobReads := map[string]int{}
+	priorJobUsageAt := jobUsageAt
+	jobUsageAt = func(repoRoot, recordPath string) mission.JobMeasurement {
+		jobReads[recordPath]++
+		return priorJobUsageAt(repoRoot, recordPath)
+	}
+	readBytes := 0
+	priorObserver := transcriptBytesRead
+	transcriptBytesRead = func(count int) { readBytes += count }
+	t.Cleanup(func() {
+		jobUsageAt = priorJobUsageAt
+		transcriptBytesRead = priorObserver
+	})
+	if _, err := Measure(root, "bed-m1", bedNow); err != nil {
+		t.Fatal(err)
+	}
+	if jobReads[terminalPath] != 1 || jobReads[runningPath] != 1 || readBytes == 0 {
+		t.Fatalf("the cold measurement did not exercise both sources: jobs=%v transcriptBytes=%d", jobReads, readBytes)
+	}
+	jobReads = map[string]int{}
+	readBytes = 0
+	if _, err := Measure(root, "bed-m1", bedNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if jobReads[terminalPath] != 0 || jobReads[runningPath] != 1 || readBytes != 0 {
+		t.Fatalf("the warm measurement reread cached input: jobs=%v transcriptBytes=%d", jobReads, readBytes)
+	}
+	if err := os.WriteFile(terminalJobCachePath(root), []byte("not-json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	jobReads = map[string]int{}
+	if _, err := Measure(root, "bed-m1", bedNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if jobReads[terminalPath] != 1 || jobReads[runningPath] != 1 {
+		t.Fatalf("a corrupt terminal-job cache was trusted: jobs=%v", jobReads)
+	}
+	cacheBytes, err := os.ReadFile(terminalJobCachePath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cache terminalJobMeasurementCache
+	if json.Unmarshal(cacheBytes, &cache) != nil || !validTerminalJobCache(cache) {
+		t.Fatalf("the corrupt terminal-job cache was not rewritten: %s", cacheBytes)
 	}
 }
 

@@ -78,6 +78,8 @@ type SeatSummary struct {
 	LifetimeTokens       float64 `json:"lifetimeTokens"`
 	Files                int     `json:"files"`
 	AgedFiles            int     `json:"agedFiles"`
+	SkippedForeignFiles  int     `json:"skippedForeignFiles"`
+	CacheWriteFailures   int     `json:"cacheWriteFailures"`
 	UnreadableFiles      int     `json:"unreadableFiles"`
 	UnmeasuredRequests   int     `json:"unmeasuredRequests"`
 	UnattributedRequests int     `json:"unattributedRequests"`
@@ -138,6 +140,10 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return Ledger{}, fmt.Errorf("cannot list jobs directory %s: %w", jobsDir, err)
 	}
+	jobCachePath := terminalJobCachePath(repoRoot)
+	jobCache, jobCacheDirty := loadTerminalJobCache(jobCachePath)
+	jobCacheWriteFailures := 0
+	seenJobRecords := make(map[string]bool, len(entries))
 	delegateSessions := map[string]bool{}
 	var measured []pricedMeasurement
 	for _, entry := range entries {
@@ -145,11 +151,24 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 			continue
 		}
 		recordPath := filepath.Join(jobsDir, entry.Name())
-		measurement := mission.JobUsageAt(repoRoot, recordPath)
+		seenJobRecords[recordPath] = true
+		info, infoErr := entry.Info()
+		cached, cacheHit := jobCache.Entries[recordPath]
+		if infoErr != nil || cached.Size != info.Size() || cached.ModTimeNanos != info.ModTime().UnixNano() {
+			cacheHit = false
+		}
+		measurement := cached.Measurement
+		if !cacheHit {
+			measurement = jobUsageAt(repoRoot, recordPath)
+		}
 		if measurement.Record == nil {
 			ledger.Unmeasured = append(ledger.Unmeasured, UnmeasuredEntry{
 				ID: entry.Name(), File: relativePath(repoRoot, recordPath), Provenance: "unreadable", Detail: fmt.Sprint(measurement.Detail),
 			})
+			if _, present := jobCache.Entries[recordPath]; present {
+				delete(jobCache.Entries, recordPath)
+				jobCacheDirty = true
+			}
 			continue
 		}
 		record := measurement.Record
@@ -159,6 +178,17 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 			}
 		}
 		status, _ := record["status"].(string)
+		if terminalStatus(status) && settledJobMeasurement(measurement.Provenance) && !cacheHit && infoErr == nil {
+			jobCache.Entries[recordPath] = cachedJobMeasurement{
+				Path: recordPath, Size: info.Size(), ModTimeNanos: info.ModTime().UnixNano(), Measurement: measurement,
+			}
+			jobCacheDirty = true
+		} else if !terminalStatus(status) || !settledJobMeasurement(measurement.Provenance) {
+			if _, present := jobCache.Entries[recordPath]; present {
+				delete(jobCache.Entries, recordPath)
+				jobCacheDirty = true
+			}
+		}
 		id, _ := record["jobId"].(string)
 		if id == "" {
 			id = strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
@@ -193,11 +223,23 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 			tokens: tokens, money: money, priced: priced, unpriced: unpriced, foreign: foreign, dayEligible: true,
 		})
 	}
+	for path := range jobCache.Entries {
+		if !seenJobRecords[path] {
+			delete(jobCache.Entries, path)
+			jobCacheDirty = true
+		}
+	}
+	if jobCacheDirty {
+		if err := writeSpendCache(jobCachePath, jobCache); err != nil {
+			jobCacheWriteFailures++
+		}
+	}
 
 	seatRows, seat, seatUnmeasured, err := readSeat(repoRoot, machine, now, delegateSessions, settings)
 	if err != nil {
 		return Ledger{}, err
 	}
+	seat.CacheWriteFailures += jobCacheWriteFailures
 	measured = append(measured, seatRows...)
 	ledger.Seat = seat
 	ledger.Unmeasured = append(ledger.Unmeasured, seatUnmeasured...)
@@ -227,6 +269,12 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 		return Ledger{}, err
 	}
 	return ledger, nil
+}
+
+var jobUsageAt = mission.JobUsageAt
+
+func settledJobMeasurement(provenance string) bool {
+	return provenance == "reported" || provenance == "derived"
 }
 
 func terminalStatus(status string) bool {

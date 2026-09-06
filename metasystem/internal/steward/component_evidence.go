@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,6 +78,16 @@ const componentAttemptHistoryLimit = 100
 type HookExpireConflictError struct {
 	Result  ComponentResult
 	Outcome string
+}
+
+// ComponentEvidenceBusyError means a health reader exhausted its bounded
+// wait while a producer was publishing the component's evidence.
+type ComponentEvidenceBusyError struct {
+	Component string
+}
+
+func (err *ComponentEvidenceBusyError) Error() string {
+	return fmt.Sprintf("component evidence for %s is busy (a writer holds its lock)", err.Component)
 }
 
 func (err *HookExpireConflictError) Error() string {
@@ -462,9 +473,28 @@ func loadComponentEvidence(path string) (ComponentEvidence, error) {
 }
 
 func loadComponentEvidenceForHealth(repoRoot, component string) (ComponentEvidence, bool, error) {
-	lock, err := lockComponentEvidence(repoRoot, component, unix.LOCK_SH)
-	if err != nil {
-		return ComponentEvidence{}, false, err
+	const waitLimit = 200 * time.Millisecond
+	const retryInterval = 10 * time.Millisecond
+	deadline := time.Now().Add(waitLimit)
+	var lock *os.File
+	for {
+		var err error
+		lock, err = lockComponentEvidence(repoRoot, component, unix.LOCK_SH|unix.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+			return ComponentEvidence{}, false, err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return ComponentEvidence{}, false, &ComponentEvidenceBusyError{Component: component}
+		}
+		if remaining < retryInterval {
+			time.Sleep(remaining)
+		} else {
+			time.Sleep(retryInterval)
+		}
 	}
 	defer unlockComponentEvidence(lock)
 	record, err := loadComponentEvidence(ComponentEvidencePath(repoRoot, component))

@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 )
 
 type healthProbe map[int64]struct {
@@ -793,6 +795,80 @@ func TestHookPreviewDoesNotAdvanceTheTickOwnedObservation(t *testing.T) {
 	}
 	if _, err := os.Stat(HealthRecordPath(root)); !os.IsNotExist(err) {
 		t.Fatalf("hook preview must not advance the durable health breaker: %v", err)
+	}
+}
+
+func TestHealthRoleDurationsArePublishedButNotRenderedOnTheHealthLine(t *testing.T) {
+	root := t.TempDir()
+	ledger := fixtureSpendLedger()
+	withSpendMeasurement(t, func(string, string, time.Time) (spend.Ledger, error) { return ledger, nil })
+	preview := PreviewHealth(root, time.Now(), healthProbe{})
+	if len(preview.Roles) != len(healthRoleOrder) {
+		t.Fatalf("health preview omitted roles: %+v", preview.Roles)
+	}
+	for _, role := range preview.Roles {
+		if role.DurationMillis < 1 {
+			t.Fatalf("role %s has no published millisecond duration: %+v", role.Role, role)
+		}
+	}
+	encoded, err := json.Marshal(preview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Roles []struct {
+			DurationMillis int64 `json:"durationMillis"`
+		} `json:"roles"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for index, role := range decoded.Roles {
+		if role.DurationMillis < 1 {
+			t.Fatalf("verdict JSON omitted duration for role %d: %s", index, encoded)
+		}
+	}
+	withoutDuration := preview
+	withoutDuration.Roles = append([]RoleVerdict(nil), preview.Roles...)
+	for index := range withoutDuration.Roles {
+		withoutDuration.Roles[index].DurationMillis = 0
+	}
+	if preview.Line() != withoutDuration.Line() {
+		t.Fatalf("role timing changed the health line:\nwith: %s\nwithout: %s", preview.Line(), withoutDuration.Line())
+	}
+
+	observed, err := ObserveHealth(root, time.Now().Add(time.Second), healthProbe{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordBytes, err := os.ReadFile(HealthRecordPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record healthRecord
+	if err := json.Unmarshal(recordBytes, &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Verdict.Roles) != len(observed.Roles) {
+		t.Fatalf("health record omitted timed roles: %s", recordBytes)
+	}
+	for _, role := range record.Verdict.Roles {
+		if role.DurationMillis < 1 {
+			t.Fatalf("health record omitted duration for %s: %s", role.Role, recordBytes)
+		}
+	}
+
+	if err := os.WriteFile(HealthRecordPath(root), []byte("{corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unreadableState, err := ObserveHealth(root, time.Now().Add(2*time.Second), healthProbe{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range unreadableState.Roles {
+		if role.DurationMillis < 1 {
+			t.Fatalf("unreadable prior state discarded the measured duration for %s: %+v", role.Role, role)
+		}
 	}
 }
 

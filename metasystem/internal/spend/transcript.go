@@ -3,8 +3,11 @@ package spend
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,8 +26,23 @@ type transcriptRequest struct {
 	dayEligible                              bool
 }
 
+var transcriptBytesRead func(int)
+
+type observedTranscriptReader struct {
+	reader io.Reader
+}
+
+func (r observedTranscriptReader) Read(buffer []byte) (int, error) {
+	count, err := r.reader.Read(buffer)
+	if count > 0 && transcriptBytesRead != nil {
+		transcriptBytesRead(count)
+	}
+	return count, err
+}
+
 func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool, settings config.SpendSettings) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, error) {
 	seat := SeatSummary{CodexUnmeasured: true}
+	visitedCursorPaths := map[string]bool{}
 	var unmeasured []UnmeasuredEntry
 	recordUnreadable := func(path string, err error) {
 		displayPath := path
@@ -51,6 +69,7 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 	projects := filepath.Join(home, ".claude", "projects")
 	dirs, err := os.ReadDir(projects)
 	if os.IsNotExist(err) {
+		seat.CacheWriteFailures += pruneTranscriptCursors(repoRoot, visitedCursorPaths)
 		return nil, seat, nil, nil
 	}
 	if err != nil {
@@ -59,7 +78,7 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 	}
 	var files []string
 	for _, dir := range dirs {
-		if !dir.IsDir() || !strings.HasPrefix(dir.Name(), slug) {
+		if !dir.IsDir() || (dir.Name() != slug && !strings.HasPrefix(dir.Name(), slug+"-")) {
 			continue
 		}
 		dirPath := filepath.Join(projects, dir.Name())
@@ -75,6 +94,7 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 	}
 	sort.Strings(files)
+	delegateDigest := delegateSessionDigest(delegates)
 	requests := map[string]transcriptRequest{}
 	var invalid []transcriptRequest
 	for _, path := range files {
@@ -88,50 +108,17 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 			continue
 		}
 		dayEligible := !info.ModTime().Before(now.Add(-48 * time.Hour))
-		data, readErr := os.ReadFile(path)
+		visitedCursorPaths[transcriptCursorPath(repoRoot, path)] = true
+		fileRequests, fileInvalid, foreign, cacheWriteFailed, readErr := readTranscriptCursor(repoRoot, path, info, toplevel, dayEligible, delegates, delegateDigest)
+		if cacheWriteFailed {
+			seat.CacheWriteFailures++
+		}
 		if readErr != nil {
-			recordUnreadable(path, fmt.Errorf("cannot read Claude transcript %s: %w", path, readErr))
+			recordUnreadable(path, readErr)
 			continue
 		}
-		scanner := bufio.NewScanner(bytes.NewReader(data))
-		scanner.Buffer(make([]byte, 0, 64*1024), 32*1024*1024)
-		fileRequests := map[string]transcriptRequest{}
-		var fileInvalid []transcriptRequest
-		line := 0
-		for scanner.Scan() {
-			line++
-			var raw map[string]any
-			decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
-			decoder.UseNumber()
-			if err := decoder.Decode(&raw); err != nil {
-				fileInvalid = append(fileInvalid, transcriptRequest{file: path, line: line, detail: "line is not JSON: " + err.Error(), dayEligible: dayEligible})
-				continue
-			}
-			if textOr(raw["type"], "") != "assistant" {
-				continue
-			}
-			session := textOr(raw["sessionId"], "")
-			if delegates[session] {
-				continue
-			}
-			cwd := textOr(raw["cwd"], "")
-			if !seatCWD(toplevel, cwd) {
-				continue
-			}
-			message, _ := raw["message"].(map[string]any)
-			request := transcriptRequest{
-				id: textOr(raw["requestId"], ""), file: path, line: line, session: session, cwd: cwd,
-				model: textOr(message["model"], "unknown"), timestamp: textOr(raw["timestamp"], ""), dayEligible: dayEligible,
-			}
-			request.usage, _ = message["usage"].(map[string]any)
-			key := request.id
-			if key == "" {
-				key = fmt.Sprintf("%s:%d", path, line)
-			}
-			fileRequests[key] = request
-		}
-		if err := scanner.Err(); err != nil {
-			recordUnreadable(path, fmt.Errorf("cannot scan Claude transcript %s: %w", path, err))
+		if foreign {
+			seat.SkippedForeignFiles++
 			continue
 		}
 		seat.Files++
@@ -143,6 +130,7 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 		invalid = append(invalid, fileInvalid...)
 	}
+	seat.CacheWriteFailures += pruneTranscriptCursors(repoRoot, visitedCursorPaths)
 
 	ordered := make([]transcriptRequest, 0, len(requests)+len(invalid))
 	for _, request := range requests {
@@ -196,6 +184,212 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 	}
 	return measured, seat, unmeasured, nil
+}
+
+func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, delegateDigest string) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
+	cachePath := transcriptCursorPath(repoRoot, path)
+	cache, valid := loadTranscriptCursor(cachePath, path)
+	valid = valid && cache.DelegateDigest == delegateDigest
+	unchanged := valid && cache.Size == info.Size() && cache.ModTimeNanos == info.ModTime().UnixNano()
+	grown := valid && cache.Size < info.Size()
+	if valid && cache.FirstCWD != "" && !seatCWD(toplevel, cache.FirstCWD) {
+		if grown {
+			return nil, nil, true, false, nil
+		}
+		if unchanged {
+			return nil, nil, true, false, nil
+		}
+	}
+	if unchanged {
+		requests, invalid, foreign := transcriptCursorSnapshot(cache, path, toplevel, dayEligible, delegates)
+		return requests, invalid, foreign, false, nil
+	}
+	if !grown {
+		cache = transcriptCursorCache{
+			SchemaVersion: spendCacheSchemaVersion, Path: path, DelegateDigest: delegateDigest,
+			Requests: map[string]cachedTranscriptRequest{}, Invalid: []cachedTranscriptRequest{},
+		}
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, false, false, fmt.Errorf("cannot read Claude transcript %s: %w", path, err)
+	}
+	defer file.Close()
+	if _, err := file.Seek(cache.Offset, io.SeekStart); err != nil {
+		return nil, nil, false, false, fmt.Errorf("cannot read Claude transcript %s from offset %d: %w", path, cache.Offset, err)
+	}
+	remaining := info.Size() - cache.Offset
+	reader := io.MultiReader(bytes.NewReader(cache.Tail), io.LimitReader(observedTranscriptReader{reader: file}, remaining))
+	cache.Tail = nil
+	foreign, err := scanTranscriptCursor(&cache, reader, path, toplevel, delegates)
+	if err != nil {
+		return nil, nil, false, false, fmt.Errorf("cannot scan Claude transcript %s: %w", path, err)
+	}
+	cache.Size = info.Size()
+	cache.Offset = info.Size()
+	cache.ModTimeNanos = info.ModTime().UnixNano()
+	if foreign {
+		cache.Requests = map[string]cachedTranscriptRequest{}
+		cache.Invalid = []cachedTranscriptRequest{}
+		cache.Tail = nil
+	}
+	cacheWriteFailed := writeSpendCache(cachePath, cache) != nil
+	if foreign {
+		return nil, nil, true, cacheWriteFailed, nil
+	}
+	requests, invalid, foreign := transcriptCursorSnapshot(cache, path, toplevel, dayEligible, delegates)
+	return requests, invalid, foreign, cacheWriteFailed, nil
+}
+
+func pruneTranscriptCursors(repoRoot string, visited map[string]bool) int {
+	directory := spendCacheDir(repoRoot)
+	entries, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		return 0
+	}
+	if err != nil {
+		return 0
+	}
+	failures := 0
+	for _, entry := range entries {
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || len(name) != sha256.Size*2 {
+			continue
+		}
+		if _, err := hex.DecodeString(name); err != nil {
+			continue
+		}
+		path := filepath.Join(directory, entry.Name())
+		if !visited[path] {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				failures++
+			}
+		}
+	}
+	return failures
+}
+
+const maxTranscriptLineBytes = 32 * 1024 * 1024
+
+func scanTranscriptCursor(cache *transcriptCursorCache, reader io.Reader, path, toplevel string, delegates map[string]bool) (bool, error) {
+	buffered := bufio.NewReader(reader)
+	for {
+		line, err := buffered.ReadBytes('\n')
+		if len(line) > maxTranscriptLineBytes {
+			return false, fmt.Errorf("token too long")
+		}
+		if err == nil {
+			cache.Line++
+			if applyTranscriptLine(cache, bytes.TrimSuffix(line, []byte{'\n'}), path, cache.Line, toplevel, delegates) {
+				return true, nil
+			}
+			continue
+		}
+		if err != io.EOF {
+			return false, err
+		}
+		if len(line) > 0 {
+			cache.Tail = append([]byte(nil), line...)
+			snapshot := cloneTranscriptCursor(*cache)
+			foreign := applyTranscriptLine(&snapshot, line, path, cache.Line+1, toplevel, delegates)
+			cache.FirstCWD = snapshot.FirstCWD
+			if foreign {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+}
+
+func applyTranscriptLine(cache *transcriptCursorCache, line []byte, path string, lineNumber int, toplevel string, delegates map[string]bool) bool {
+	var raw map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		cache.Invalid = append(cache.Invalid, cachedTranscriptRequest{Line: lineNumber, Detail: "line is not JSON: " + err.Error()})
+		return false
+	}
+	if cache.FirstCWD == "" {
+		cache.FirstCWD = textOr(raw["cwd"], "")
+		if cache.FirstCWD != "" && !seatCWD(toplevel, cache.FirstCWD) {
+			return true
+		}
+	}
+	if textOr(raw["type"], "") != "assistant" {
+		return false
+	}
+	session := textOr(raw["sessionId"], "")
+	if delegates[session] {
+		return false
+	}
+	cwd := textOr(raw["cwd"], "")
+	if !seatCWD(toplevel, cwd) {
+		return false
+	}
+	message, _ := raw["message"].(map[string]any)
+	request := cachedTranscriptRequest{
+		ID: textOr(raw["requestId"], ""), Session: session, CWD: cwd,
+		Model: textOr(message["model"], "unknown"), Timestamp: textOr(raw["timestamp"], ""), Line: lineNumber,
+	}
+	request.Usage, _ = message["usage"].(map[string]any)
+	key := request.ID
+	if key == "" {
+		key = fmt.Sprintf("%s:%d", path, lineNumber)
+	}
+	cache.Requests[key] = request
+	return false
+}
+
+func transcriptCursorSnapshot(cache transcriptCursorCache, path, toplevel string, dayEligible bool, delegates map[string]bool) (map[string]transcriptRequest, []transcriptRequest, bool) {
+	snapshot := cloneTranscriptCursor(cache)
+	if len(snapshot.Tail) > 0 {
+		if applyTranscriptLine(&snapshot, snapshot.Tail, path, snapshot.Line+1, toplevel, delegates) {
+			return nil, nil, true
+		}
+	}
+	requests := make(map[string]transcriptRequest, len(snapshot.Requests))
+	for key, request := range snapshot.Requests {
+		requests[key] = transcriptRequestFromCache(path, request, dayEligible)
+	}
+	invalid := make([]transcriptRequest, 0, len(snapshot.Invalid))
+	for _, request := range snapshot.Invalid {
+		invalid = append(invalid, transcriptRequestFromCache(path, request, dayEligible))
+	}
+	return requests, invalid, false
+}
+
+func delegateSessionDigest(delegates map[string]bool) string {
+	sessions := make([]string, 0, len(delegates))
+	for session, delegated := range delegates {
+		if delegated {
+			sessions = append(sessions, session)
+		}
+	}
+	sort.Strings(sessions)
+	hash := sha256.New()
+	for _, session := range sessions {
+		hash.Write([]byte(session))
+		hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func cloneTranscriptCursor(cache transcriptCursorCache) transcriptCursorCache {
+	clone := cache
+	clone.Requests = make(map[string]cachedTranscriptRequest, len(cache.Requests))
+	for key, request := range cache.Requests {
+		clone.Requests[key] = request
+	}
+	clone.Invalid = append([]cachedTranscriptRequest(nil), cache.Invalid...)
+	clone.Tail = append([]byte(nil), cache.Tail...)
+	return clone
+}
+
+func transcriptRequestFromCache(path string, request cachedTranscriptRequest, dayEligible bool) transcriptRequest {
+	return transcriptRequest{
+		id: request.ID, file: path, session: request.Session, cwd: request.CWD, model: request.Model,
+		timestamp: request.Timestamp, line: request.Line, usage: request.Usage, detail: request.Detail, dayEligible: dayEligible,
+	}
 }
 
 func gitToplevel(repoRoot string) (string, error) {

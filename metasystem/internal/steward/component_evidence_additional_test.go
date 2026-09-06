@@ -7,8 +7,40 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+func TestComponentEvidenceHealthReadIsBoundedWhenWriterIsBusy(t *testing.T) {
+	root := t.TempDir()
+	lock, err := lockComponentEvidence(root, "supervision-hook", unix.LOCK_EX|unix.LOCK_NB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, _, err = loadComponentEvidenceForHealth(root, "supervision-hook")
+	elapsed := time.Since(started)
+	var busy *ComponentEvidenceBusyError
+	if !errors.As(err, &busy) || busy.Component != "supervision-hook" {
+		unlockComponentEvidence(lock)
+		t.Fatalf("the contended health read did not return its typed busy error: %v", err)
+	}
+	if elapsed >= time.Second {
+		unlockComponentEvidence(lock)
+		t.Fatalf("the contended health read exceeded its one-second test bound: %s", elapsed)
+	}
+	role := checkHookFreshness(root, time.Now())
+	if role.Status != HealthUnknown || role.Reason != "component evidence for supervision-hook is busy (a writer holds its lock)" {
+		unlockComponentEvidence(lock)
+		t.Fatalf("hook health did not surface the bounded-lock reason with its usual remedy: %+v", role)
+	}
+	unlockComponentEvidence(lock)
+	role = checkHookFreshness(root, time.Now())
+	if role.Status != HealthDead || role.Reason != "no hook turn generation is recorded" {
+		t.Fatalf("an uncontended health read changed the missing-evidence behavior: %+v", role)
+	}
+}
 
 func TestExpireHookAttemptCompletesAttemptWithElapsedHistory(t *testing.T) {
 	root := t.TempDir()

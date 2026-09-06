@@ -87,6 +87,7 @@ type RoleVerdict struct {
 	Status              HealthStatus `json:"status"`
 	Reason              string       `json:"reason"`
 	Remedy              string       `json:"remedy,omitempty"`
+	DurationMillis      int64        `json:"durationMillis,omitempty"`
 	ConsecutiveUnknown  int          `json:"consecutiveUnknown,omitempty"`
 	ConsecutiveFailures int          `json:"consecutiveFailures,omitempty"`
 	FailureEscalation   string       `json:"failureEscalation,omitempty"`
@@ -224,7 +225,9 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
 		for index := range roles {
 			if roles[index].Role != RoleSpendFence && roles[index].Status == HealthAlive {
+				durationMillis := roles[index].DurationMillis
 				roles[index] = roleUnknown(roles[index].Role, "the prior health observation state was unreadable", remedy)
+				roles[index].DurationMillis = durationMillis
 			}
 		}
 	}
@@ -268,25 +271,41 @@ func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober iden
 
 func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) ([]RoleVerdict, SpendObservation) {
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
+	spendStarted := time.Now()
 	spendRole, spendObservation := checkSpendFence(repoRoot, now)
+	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
+	timed := func(check func() RoleVerdict) RoleVerdict {
+		started := time.Now()
+		role := check()
+		role.DurationMillis = elapsedRoleMillis(started)
+		return role
+	}
 	return []RoleVerdict{
-		checkStewardRunner(repoRoot, now, prober),
-		checkSupervisionOwner(repoRoot, prober),
-		checkRepoWatcher(repoRoot, now, state, stateErr, prober),
-		checkCensusFreshness(repoRoot, now, state, stateErr),
-		checkNarratorFreshness(repoRoot, now),
-		checkRetroDebt(repoRoot),
-		checkSessionMain(repoRoot, prober),
-		checkHookFreshnessAt(repoRoot, now, currentHookAttempt),
-		checkStopHookDuration(repoRoot),
-		checkLedgerAttention(repoRoot, now),
-		checkClaimedGoalBudgets(repoRoot, now),
-		checkClaimedGoalDelivery(repoRoot, now),
+		timed(func() RoleVerdict { return checkStewardRunner(repoRoot, now, prober) }),
+		timed(func() RoleVerdict { return checkSupervisionOwner(repoRoot, prober) }),
+		timed(func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, prober) }),
+		timed(func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) }),
+		timed(func() RoleVerdict { return checkNarratorFreshness(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkRetroDebt(repoRoot) }),
+		timed(func() RoleVerdict { return checkSessionMain(repoRoot, prober) }),
+		timed(func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHookAttempt) }),
+		timed(func() RoleVerdict { return checkStopHookDuration(repoRoot) }),
+		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkClaimedGoalBudgets(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkClaimedGoalDelivery(repoRoot, now) }),
 		spendRole,
-		checkGovernedObligations(repoRoot),
-		checkNonterminalJobs(repoRoot, prober),
-		checkCapabilitySnapshots(repoRoot, metasystemRoot, now),
+		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
+		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),
+		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
 	}, spendObservation
+}
+
+func elapsedRoleMillis(started time.Time) int64 {
+	elapsed := time.Since(started).Milliseconds()
+	if elapsed < 1 {
+		return 1
+	}
+	return elapsed
 }
 
 var measureSpend = spend.Measure
@@ -385,6 +404,10 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 	remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
+		var busy *ComponentEvidenceBusyError
+		if errors.As(err, &busy) {
+			return roleUnknown(RoleHookFreshness, busy.Error(), remedy)
+		}
 		if os.IsNotExist(err) {
 			return roleDead(RoleHookFreshness, "no hook turn generation is recorded", remedy)
 		}
@@ -429,6 +452,10 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 	reread := fmt.Sprintf("metasystem health --repo %q", repoRoot)
 	record, _, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
+		var busy *ComponentEvidenceBusyError
+		if errors.As(err, &busy) {
+			return roleUnknown(RoleStopHookDuration, busy.Error(), reread)
+		}
 		if os.IsNotExist(err) {
 			return roleAlive(RoleStopHookDuration, "no Stop has been measured yet")
 		}
@@ -634,6 +661,10 @@ func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) 
 	}
 	generation := installed.Generation
 	record, _, evidenceErr := loadComponentEvidenceForHealth(repoRoot, "steward-tick")
+	var busy *ComponentEvidenceBusyError
+	if errors.As(evidenceErr, &busy) {
+		return withEnrollment(roleUnknown(RoleStewardRunner, busy.Error(), remedy))
+	}
 	if evidenceErr == nil && record.Generation == generation && record.Outcome == "ATTEMPTING" {
 		attemptProcess := identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt, StartTicks: record.PidStartTicks, BootID: record.BootID}
 		if sameComponentProcess(attemptProcess, process) {
@@ -795,6 +826,10 @@ func checkNarratorFreshness(repoRoot string, now time.Time) RoleVerdict {
 func componentFreshness(repoRoot, component string, role HealthRole, generation int, window time.Duration, now time.Time, remedy string, expectedSuccess *identity.Ref, aliveReason string) RoleVerdict {
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, component)
 	if err != nil {
+		var busy *ComponentEvidenceBusyError
+		if errors.As(err, &busy) {
+			return roleUnknown(role, busy.Error(), remedy)
+		}
 		if os.IsNotExist(err) {
 			return roleDead(role, "no successful component pass is recorded", remedy)
 		}
