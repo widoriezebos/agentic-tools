@@ -729,3 +729,31 @@ the channel decision returns here and the payload rides plain stdout instead.
 Second weakest: the four-hour status cadence publishes a second brain only
 when the brain seat turns; a brain declared and never used is published
 never, which is the human rule's own limit and is stated as such.
+
+## Addendum: two build gaps decided by the coordinator (m1, 2026-09-07)
+
+The first build round stopped on two gaps in this page and left the tree
+clean. Both are decided here so the build can proceed; neither changes a
+rule of the role packet or any authority.
+
+1. **`goal open --claim` and the fence.** Section 3 says the claim fence
+   is inherited from `goal.Claim` and `goal.ClaimArc`. The `goal open
+   --claim` route calls `goal.OpenClaim` instead, which reaches neither
+   and always answers APPROVAL_REQUIRED for a goal that was just opened.
+   Decision: the fence for that route lives at the command layer, in the
+   `goal open` handler of cmd/metasystem/goalsync_mutations.go, checked
+   before `goal.OpenClaim` is called, with the same refusal text and
+   node command the claim fence prints. `goal claim` keeps its fence at
+   `goal.Claim` and `goal.ClaimArc` as written. The brain-claim-refuses
+   fixture row is unchanged; it now observes the command-layer refusal
+   for the open form.
+
+2. **The packet in adopted installations.** scripts/adopt.sh removes the
+   records tree from an adopted installation and restores only the
+   goals migration manifest, so boot could not read
+   records/misc/fleet-coordinator-brain-role-packet.md there. Decision:
+   the packet is an engine input like the manifest. adopt.sh preserves
+   that exact record at its own path in the adopted tree, the same way
+   it preserves the manifest, and the missing-packet line of section 2
+   stays the answer for any installation that lacks it. The packet's
+   canonical source does not move and is not copied into code.
