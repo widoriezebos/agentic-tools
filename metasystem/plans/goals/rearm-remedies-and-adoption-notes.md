@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: Four notes the third code critique (err-review3-20260906) left on the engine re-arm landing ea8c3ead7, none material: adoption refuses a detached target outright where it should continue and report that automatic re-arm stays off; adoption overwrites an existing metasystem.steward.landing-ref where the human verbs preserve one; the not-landed refusal remedy names only the terminal though a merely stale remote-tracking ref is repaired by one fetch of the configured remote, so the remedy names both; and a machine re-arm that fails before any stage transition with a non-drift error (missing notification channel, missing runner directory, lock error) gets the remedy 'repair the named enrollment publication failure' regardless of cause - the remedy names the actual error class.
 - Origin: main
-- Next step: Chain rra-build1 (DESIGN-BEARING for item five alone) builds from plans/rearm-remedies-and-adoption-notes-brief.md (bced1868): adopt.sh continues on a detached target and keeps a preset landing ref; up.go names the fetch in the not-landed remedy and the actual class in the before-mint remedy; a human arm with changed enrolled bytes beside a live runner takes the replace path and mints its own witnessed generation; a test per item. Then one Fable critique, close, records, receipt, land.sh --chain --test-receipt, and the all-three-green rearm receipt stays owed to the rearm-launch-fails scenario (still red on the honest bed).
+- Next step: STATE 2026-09-06 18:21Z (m1c): chain rra-build1 round one built all five items (Sol, brief bced1868); Fable critique r1 (rra-critic1) found two material lows: the arm-lock remedy named a holder the blocking flock can never produce, and a detached target with a preset landing ref got the not-seeded note; both folded in round two (rra-build1-r2, fold brief 8c81f033) with a third adopt leg and a pinned fallback sentence; dispositions records/misc/rearm-remedies-and-adoption-notes-critique-r1-dispositions.md (0c475f54). Seat-side proof on the folded tree (eeb990d9): up and steward packages green, vet, gofmt, bash -n clean. Critique r2 (rra-critic2, the last review round) running on the whole chain diff. The adopt fixture bed's frozen gate (full race+coverage suite) failed once under load 7 on three unrelated timing tests (sightings recorded, 59b34696); rerunning the bed on the folded tree now. Then: r2 dispositions, register advance, close, land.sh --chain (area width), go-build, goal done. The all-three-green rearm receipt stays owed to the rearm-launch-fails scenario.
 - OpenedAt: 2026-09-06T11:17:34Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -27,4 +27,5 @@ History:
 - 2026-09-06T17:13:06Z Q0Y7Q24ARA42P25T0AN6CSSDJG-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T17:13:54Z Q0C37QD404SGMFFAN15XKAT0Q3-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
 - 2026-09-06T17:14:17Z QNQ3R3VKQRPT3410BDDNVC2S4T-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
-Integrity: sha256=9428dac8ecc51cb42d54a71db60119dad79fc797acba02bdbf9aa3ee70f21218
+- 2026-09-06T18:21:05Z M063C7JZCJQMPGRDXPEAYAXVQ3-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=rearm-remedies-and-adoption-notes
+Integrity: sha256=57bf12c76adffe32ad1b9f37ca8404263356750849bf73dc641a0f6f3557665a
