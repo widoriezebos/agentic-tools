@@ -1,17 +1,19 @@
 # account-provenance
 
 - State: claimed
+- Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a wrong or missing account field misattributes cost, never work; novelty 2: a new leaf package, an adapter verb on four runtimes and a landing observation field; exposure 2: every metasystem up and every dispatch runs the capture, bounded and non-gating; accumulation 1: the hand-written stamp is one string per landing and retires per machine"
+- Tier: 2
 - Intent: ACCOUNT PROVENANCE (m0, re-opened on the fleet line at reconciliation): m0's Claude runtime signs into a different account than m1/m2 — a separate capacity pool, which is why m0 exists. m0's landings are stamped m0 while another account paid for them. The run record should carry the account identity alongside runtime and model so cost and capacity attribution survive in the record. Wido's word (decision-ask 2026-08-31): the string m0 stamps in every landing message until this lands is 'Wido@M0'.
 - Origin: main
 - Next step: PARKED COLD-RESUMABLE (yields the claim slot to Wido's highest-priority seat-stop machinery): design landed (plans/account-provenance-design.md), round-1 critique returned eight material findings (records/misc/account-provenance-critique-r1.md). RESUME: fold all eight by id, closing critique, build, code critique — fits one box at the R-45 attempt count
 - OpenedAt: 2026-08-31T19:09:19Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=542c802a95977d8cc8c8c3fa0b6b2f53133cc19438586e881dd943f75b503414
+- Approved: by=human:Wido at=2026-09-06T19:58:10Z revision=11 opid=XN7ZQ13TV2FCF2P6AW98S8KWA5-m1b-c6925449 authority=raise=XN7ZQ13TV2FCF2P6AW98S8KWA5-m1b-c6925449 digest=4ff25617d07572e01b7887f2123d56cc1127a18b63d7d238b386b30adb8ac9dc
 - Sliced: machine=m0b lineage=main-1788250419-3170380-8a1fb3 revision=3 at=2026-09-02T05:51:12Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-06T19:49:31Z revision=10 accountingRevision=10
-- StopCapability: generation=10 revision=10 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-06T19:49:31Z revision=11 accountingRevision=10
+- StopCapability: generation=11 revision=11 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-31T19:09:19Z NHE37NCWZ1MATB7WFYK0PA87KP-m0-c5dbf036 open actor=m0+main-1788178136-1684505-4ffe42 targets=account-provenance
@@ -24,4 +26,5 @@ History:
 - 2026-09-02T18:18:02Z HJSSPBFQB7G0JC97F4ENRMKM9E-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=account-provenance
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=account-provenance reason=sweep
 - 2026-09-06T19:49:31Z QK2TR6ZCD1PG4HXWEQHF4WP03E-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance
-Integrity: sha256=d164caa812696a146ed730b808ef6a3ed7bafa14f0f3692b75cbecc93b114e42
+- 2026-09-06T19:58:10Z XN7ZQ13TV2FCF2P6AW98S8KWA5-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=account-provenance reason=Misclassified: from=0 to=2 evidence=root:account-provenance-crit2
+Integrity: sha256=86ff83e3d03b02c3512563cc4fe3406e020ec2a2b9142798906d12217422ab2d
