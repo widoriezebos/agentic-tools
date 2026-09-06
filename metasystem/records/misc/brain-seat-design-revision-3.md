@@ -757,3 +757,20 @@ rule of the role packet or any authority.
    it preserves the manifest, and the missing-packet line of section 2
    stays the answer for any installation that lacks it. The packet's
    canonical source does not move and is not copied into code.
+
+## Addendum 2: the header bound (m1, 2026-09-07)
+
+The second build round stopped on an arithmetic contradiction in section
+1: the exact header grammar with every field at its cap is 276 bytes,
+and the page says at most 256. Decision: the header bound is 320 bytes.
+It is derived, not chosen: the fixed text of the header plus the four
+field caps (32, 26, 64, 20) plus a margin of 32 bytes for a later fixed
+word, so a maximal valid declaration always fits with room to spare. The
+brain-boot-caps fixture row asserts at most 320 bytes. Nothing else in
+sections 1 or 2 changes; the payload's minimum bound of 2,048 bytes
+already leaves room for a 320-byte header.
+
+A builder who meets a contradiction that the page's own numbers settle
+(a bound smaller than the sum of the caps that feed it) reports it in
+the return with the resolution used and keeps building; built and
+passing sections are never removed because a later row is in doubt.
