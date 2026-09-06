@@ -92,6 +92,14 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     deadline_record_failure=
   }
   deadline_resolve_record || true
+  deadline_log_stop_outcome() {
+    local outcome=$1 supervision_dir
+    [[ -n "${deadline_repo:-}" ]] || return 0
+    supervision_dir="$deadline_repo/artifacts/agents/supervision"
+    mkdir -p "$supervision_dir" || true
+    printf '%s stop response outcome=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      "$outcome" >>"$supervision_dir/hooks.log" 2>/dev/null || true
+  }
   deadline_capture_engine_coordinates() {
     local first second
     [[ "$deadline_coordinates_from_engine" == false && -f "$deadline_resolution_ready" ]] || return 0
@@ -174,6 +182,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       [[ "$deadline_raw" == "$raw_missing_engine_stop" ]] && deadline_valid=true
     fi
     if (( deadline_rc != 0 )) || [[ "$deadline_valid" != true ]]; then
+      deadline_log_stop_outcome invalid-worker-output-block
       emit_raw_stop_block
     else
       command cat "$deadline_stdout" || true
@@ -211,8 +220,10 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
   fi
   if [[ -n "$deadline_response" && -z "$deadline_record_failure" ]]; then
+    deadline_log_stop_outcome deadline-expired-block
     printf '%s\n' "$deadline_response"
   else
+    deadline_log_stop_outcome deadline-expired-record-failure-allow
     printf '%s\n' '{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
   fi
   rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
@@ -453,6 +464,12 @@ fi
 
 emit_stop_payload() { # response
   response=$1
+  stop_decision=$("$ms" json get --value "$response" --field decision 2>/dev/null || true)
+  [[ -n "$stop_decision" ]] || stop_decision=allow
+  supervision_dir="$repo/artifacts/agents/supervision"
+  mkdir -p "$supervision_dir" || true
+  printf '%s stop response decision=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$stop_decision" >>"$supervision_dir/hooks.log" 2>/dev/null || true
   response_file_rc=0
   response_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-response.XXXXXX") || response_file_rc=$?
   if (( response_file_rc != 0 )) || [[ -z "$response_file" ]]; then
