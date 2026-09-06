@@ -131,6 +131,16 @@ command -v python3 >/dev/null 2>&1 \
 # also keeps this process-owning suite from swapping the checkout's live engine.
 tmp=$(mktemp -d)
 tmp=$(cd "$tmp" && pwd -P)
+osascript_calls=$tmp/osascript.log
+mkdir -p "$tmp/notify-shim"
+cat >"$tmp/notify-shim/osascript" <<'OSASCRIPT_SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${METASYSTEM_FIXTURE_OSASCRIPT_CALLS:?}"
+exit 97
+OSASCRIPT_SHIM
+chmod +x "$tmp/notify-shim/osascript"
+export METASYSTEM_FIXTURE_OSASCRIPT_CALLS=$osascript_calls
+export PATH="$tmp/notify-shim:$PATH"
 engine="$tmp/fixture-engine"
 bash scripts/agents/go-build.sh --out "$engine" >/dev/null
 
@@ -229,7 +239,7 @@ enroll_fixture_repo() { # repository, optional installed engine
   digest=$("$repo_engine" util sha256 --file "$repo_engine")
   identity_dir=$repo/artifacts/agents/steward
   mkdir -p "$identity_dir"
-  printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+  printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z","enrollment":"fixture"}\n' \
     "$repo" "$repo_engine" "$digest" >"$identity_dir/identity.json"
   chmod 0600 "$identity_dir/identity.json"
 }
@@ -3961,3 +3971,6 @@ grep -q "launched=true" <<<"$steward_outage" \
 
 echo "steward continuation fixtures passed"
 fi
+
+[[ ! -s "$osascript_calls" ]] \
+  || { echo "dispatch fixture invoked osascript" >&2; cat "$osascript_calls" >&2; exit 1; }

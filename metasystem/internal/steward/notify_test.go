@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,133 @@ import (
 	"testing"
 	"time"
 )
+
+func notifyIdentity(t *testing.T, root, enrollment string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
+		RepoIdentity: canonicalPath(root), Generation: 1, InstallPath: "/bin/true",
+		MintedAt: "2026-09-06T00:00:00Z", Enrollment: enrollment,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func notifyRepoWithoutCommand(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	return root
+}
+
+func fakeDarwinNotifier(t *testing.T) *[]string {
+	t.Helper()
+	originalOS, originalCommand := notifyPlatformOS, notifyCommandContext
+	notifyPlatformOS = "darwin"
+	invocation := []string{}
+	notifyCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		invocation = append([]string{name}, args...)
+		return exec.CommandContext(ctx, "/usr/bin/true")
+	}
+	t.Cleanup(func() {
+		notifyPlatformOS = originalOS
+		notifyCommandContext = originalCommand
+	})
+	return &invocation
+}
+
+func TestNotifyCommandUsesPlatformForHumanEnrollments(t *testing.T) {
+	originalOS := notifyPlatformOS
+	notifyPlatformOS = "darwin"
+	t.Cleanup(func() { notifyPlatformOS = originalOS })
+
+	for _, enrollment := range []string{EnrollmentHumanTerminal, EnrollmentTemporaryWord} {
+		t.Run(enrollment, func(t *testing.T) {
+			human := notifyRepoWithoutCommand(t)
+			notifyIdentity(t, human, enrollment)
+			if command, ok := NotifyCommand(human); !ok || command != "" {
+				t.Fatalf("%s enrollment did not choose the platform notifier: command=%q ok=%v", enrollment, command, ok)
+			}
+		})
+	}
+
+	fixture := notifyRepoWithoutCommand(t)
+	notifyIdentity(t, fixture, EnrollmentFixture)
+	if command, ok := NotifyCommand(fixture); !ok || command != "" {
+		t.Fatalf("fixture enrollment did not choose its local delivery channel: command=%q ok=%v", command, ok)
+	}
+}
+
+func TestHumanDeliveryUsesRepositoryRootInPlatformTitle(t *testing.T) {
+	root := notifyRepoWithoutCommand(t)
+	notifyIdentity(t, root, EnrollmentHumanTerminal)
+	invocation := fakeDarwinNotifier(t)
+	if err := Deliver(root, "worker dead"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(*invocation, " ")
+	if !strings.Contains(joined, "osascript -e") || !strings.Contains(joined, "metasystem steward - "+canonicalPath(root)) {
+		t.Fatalf("platform notification did not name its repository root: %q", joined)
+	}
+}
+
+func TestFixtureDeliveryAppendsTimestampedLocalLog(t *testing.T) {
+	root := notifyRepoWithoutCommand(t)
+	notifyIdentity(t, root, EnrollmentFixture)
+	invocation := fakeDarwinNotifier(t)
+	if err := Deliver(root, "HEALTH unhealthy"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*invocation) != 0 {
+		t.Fatalf("fixture delivery invoked the platform notifier: %v", *invocation)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "notifications.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 3 || fields[1] != "HEALTH" || fields[2] != "unhealthy" {
+		t.Fatalf("fixture notification log omitted its message: %q", data)
+	}
+	stamp, err := time.Parse(time.RFC3339, fields[0])
+	if err != nil || stamp.Location() != time.UTC {
+		t.Fatalf("fixture notification log did not start with a UTC timestamp: %q %v", fields[0], err)
+	}
+}
+
+func TestConfiguredCommandWinsForEveryEnrollment(t *testing.T) {
+	for _, enrollment := range []string{EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture} {
+		t.Run(enrollment, func(t *testing.T) {
+			root, sink := notifyRepo(t, "")
+			notifyIdentity(t, root, enrollment)
+			command, ok := NotifyCommand(root)
+			if !ok || command == "" {
+				t.Fatalf("configured command was not resolved for %s", enrollment)
+			}
+			if err := Deliver(root, enrollment); err != nil {
+				t.Fatal(err)
+			}
+			if data, err := os.ReadFile(sink); err != nil || !strings.Contains(string(data), enrollment) {
+				t.Fatalf("configured command did not receive %s: %q %v", enrollment, data, err)
+			}
+		})
+	}
+}
+
+func TestMissingIdentityDeliversAsHuman(t *testing.T) {
+	root := notifyRepoWithoutCommand(t)
+	invocation := fakeDarwinNotifier(t)
+	if err := Deliver(root, "legacy installation"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*invocation) == 0 || (*invocation)[0] != "osascript" {
+		t.Fatalf("missing identity did not retain platform delivery: %v", *invocation)
+	}
+}
 
 // notifyRepo is a git repository whose notify-command appends to a
 // sink file — a fully observable delivery channel.

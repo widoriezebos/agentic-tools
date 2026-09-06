@@ -79,11 +79,11 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios health \
-    "health fixtures: direct rc 0/1/2, eleven asserted healthy roles, silent first-failure history, escalated episode dedup, acknowledgment, and healthy clear PASSED" \
-    "$fixture_bed_script" direct-verdicts narrator-recovery alert-episode
+    "health fixtures: direct rc 0/1/2, eleven asserted healthy roles, silent first-failure history, configured and fixture-local escalated episode delivery, dedup, acknowledgment, and healthy clear PASSED" \
+    "$fixture_bed_script" direct-verdicts narrator-recovery alert-episode fixture-notification
 fi
 case "$fixture_scenario" in
-  direct-verdicts | narrator-recovery | alert-episode) ;;
+  direct-verdicts | narrator-recovery | alert-episode | fixture-notification) ;;
   *) echo "health fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -99,6 +99,16 @@ ms=${METASYSTEM_BIN:-$root/bin/metasystem}
 source_ms=$ms
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-health.XXXXXX")
+osascript_calls=$tmp/osascript.log
+mkdir -p "$tmp/notify-shim"
+cat >"$tmp/notify-shim/osascript" <<'OSASCRIPT_SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${METASYSTEM_FIXTURE_OSASCRIPT_CALLS:?}"
+exit 97
+OSASCRIPT_SHIM
+chmod +x "$tmp/notify-shim/osascript"
+export METASYSTEM_FIXTURE_OSASCRIPT_CALLS=$osascript_calls
+export PATH="$tmp/notify-shim:$PATH"
 runner_pid=
 owner_pid=
 watcher_pid=
@@ -401,20 +411,27 @@ runner_pid=$(read_runner_pid)
 wait_for_healthy narrator-recovered || fail "the stale narrator's focused restart did not heal health"
 fi
 
-if [[ "$fixture_scenario" == alert-episode ]]; then
+if [[ "$fixture_scenario" == alert-episode || "$fixture_scenario" == fixture-notification ]]; then
+alert_delivery_log=$tmp/alerts.log
+if [[ "$fixture_scenario" == fixture-notification ]]; then
+  git -C "$repo" config --unset-all metasystem.steward.notify-command
+  alert_delivery_log=$repo/artifacts/agents/steward/notifications.log
+  grep -Fq '"enrollment": "fixture"' "$repo/artifacts/agents/steward/identity.json" \
+    || fail "fixture-granted HUMAN arm did not record fixture enrollment"
+fi
 # Killing the actual resident runner proves the acceptance path and starts the
 # five-observation breaker from a healthy reset.
 kill "$runner_pid"
 wait_for_pid_exit "killed runner exit" "$runner_pid" || fail "killed runner did not exit"
 # This bed isolates the consecutive-failure breaker from the earlier
 # stop-and-recover exercise, which deliberately contributes a flap episode.
-rm -f "$repo/artifacts/agents/steward/health.json" "$tmp/alerts.log"
+rm -f "$repo/artifacts/agents/steward/health.json" "$alert_delivery_log" "$tmp/alerts.log"
 run_health runner-dead
 dead_rc=$health_rc
 [[ "$dead_rc" -eq 1 ]] || { cat "$tmp/runner-dead.err" >&2; fail "dead bed returned $dead_rc"; }
 grep -Fq 'steward-runner=dead' "$tmp/runner-dead.out" || fail "dead verdict did not name the killed runner"
 grep -Fq 'metasystem up --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the up remedy"
-if [[ -f "$tmp/alerts.log" ]] && grep -Fq 'HEALTH unhealthy' "$tmp/alerts.log"; then
+if [[ -f "$alert_delivery_log" ]] && grep -Fq 'HEALTH unhealthy' "$alert_delivery_log"; then
   fail "a recoverable first failure notified the human before escalation"
 fi
 silent_episode=
@@ -446,13 +463,21 @@ done
 [[ "$episode_count" -eq 1 ]] || fail "failure five must open one digest-keyed episode, found $episode_count"
 grep -Fq '"transportResult": "TRANSPORT_SUBMITTED"' "$episode_file" || fail "notifier exit zero was not recorded as transport submitted"
 episode_id=$("$ms" json get --file "$episode_file" --field episodeId) || fail "episode id unreadable"
-[[ $(grep -c '^HEALTH unhealthy' "$tmp/alerts.log" 2>/dev/null || true) -eq 1 ]] || fail "one episode must submit one desktop notification"
+[[ $(grep -c 'HEALTH unhealthy' "$alert_delivery_log" 2>/dev/null || true) -eq 1 ]] || fail "one episode must submit one notification"
+if [[ "$fixture_scenario" == fixture-notification ]]; then
+  grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z HEALTH unhealthy' "$alert_delivery_log" \
+    || fail "fixture notification log omitted its UTC timestamp or alert"
+  [[ ! -e "$tmp/alerts.log" ]] || fail "fixture default unexpectedly used the configured notifier sink"
+else
+  [[ ! -s "$repo/artifacts/agents/steward/notifications.log" ]] \
+    || fail "configured notifier did not win over fixture-local delivery"
+fi
 
 "$ms" steward tick --repo "$repo" >"$tmp/tick-dedup.out" 2>"$tmp/tick-dedup.err" || {
   cat "$tmp/tick-dedup.err" >&2
   fail "same-digest dedup tick failed"
 }
-[[ $(grep -c '^HEALTH unhealthy' "$tmp/alerts.log" 2>/dev/null || true) -eq 1 ]] || fail "same digest submitted a second desktop notification"
+[[ $(grep -c 'HEALTH unhealthy' "$alert_delivery_log" 2>/dev/null || true) -eq 1 ]] || fail "same digest submitted a second notification"
 active_episodes=0
 for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
   [[ -f "$candidate" ]] || continue
@@ -481,3 +506,4 @@ fi
 "$ms" steward disarm --repo "$repo" >/dev/null 2>&1 || true
 wait_for_pid_exit "disarmed runner exit" "$runner_pid" || fail "disarmed runner did not exit"
 runner_pid=
+[[ ! -s "$osascript_calls" ]] || fail "fixture invoked osascript: $(cat "$osascript_calls")"

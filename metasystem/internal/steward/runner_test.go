@@ -201,7 +201,7 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 		t.Fatal("a disarmed repository has no runner")
 	}
 	id, err := VerifyIdentity(RepoIdentityPath(root), mustAbs(t, root))
-	if err != nil || id.Generation < 1 {
+	if err != nil || id.Generation < 1 || id.Enrollment != EnrollmentHumanTerminal {
 		t.Fatalf("arm mints the identity: %+v %v", id, err)
 	}
 }

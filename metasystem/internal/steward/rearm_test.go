@@ -530,7 +530,7 @@ func TestRearmAndTemporaryHumanArmPreserveTheHumanWord(t *testing.T) {
 			t.Fatalf("re-arm did not observe the completed human arm: %+v", got)
 		}
 		installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
-		if err != nil || installed.MintedBy != "human-word" || installed.TemporaryHumanWord != "approved-word" || installed.ReviewBy != "2026-09-30" {
+		if err != nil || installed.MintedBy != "human-word" || installed.TemporaryHumanWord != "approved-word" || installed.ReviewBy != "2026-09-30" || installed.Enrollment != EnrollmentTemporaryWord {
 			t.Fatalf("the human word was not preserved: %+v %v", installed, err)
 		}
 	})
@@ -545,11 +545,31 @@ func TestRearmAndTemporaryHumanArmPreserveTheHumanWord(t *testing.T) {
 			t.Fatal(err)
 		}
 		installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
-		if err != nil || installed.Generation != machine.Generation+1 || installed.MintedBy != "human-word" ||
+		if err != nil || installed.Generation != machine.Generation+1 || installed.MintedBy != "human-word" || installed.Enrollment != EnrollmentTemporaryWord ||
 			installed.HumanWitnessedGeneration != installed.Generation || installed.TemporaryHumanWord != "approved-word" {
 			t.Fatalf("the later human arm did not witness its own generation: %+v %v", installed, err)
 		}
 	})
+}
+
+func TestMachineRebuildCarriesFixtureEnrollmentForward(t *testing.T) {
+	bed := newRearmBed(t, false)
+	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed.Enrollment = EnrollmentFixture
+	if err := MintIdentity(RepoIdentityPath(bed.root), installed); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+	if err != nil || outcome.Status != "re-armed" {
+		t.Fatalf("machine re-arm: %+v %v", outcome, err)
+	}
+	installed, err = VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil || installed.Enrollment != EnrollmentFixture {
+		t.Fatalf("machine rebuild changed fixture enrollment: %+v %v", installed, err)
+	}
 }
 
 func TestHumanArmBesideALiveLegacyRunnerNamesRestart(t *testing.T) {
@@ -590,7 +610,7 @@ func TestHumanArmBesideALiveLegacyRunnerNamesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	installed, err = VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
-	if err != nil || installed.Generation != 2 || installed.MintedBy != "human-terminal" || installed.HumanWitnessedGeneration != 2 {
+	if err != nil || installed.Generation != 2 || installed.MintedBy != "human-terminal" || installed.HumanWitnessedGeneration != 2 || installed.Enrollment != EnrollmentHumanTerminal {
 		t.Fatalf("restart did not witness the replacement generation: %+v %v", installed, err)
 	}
 }

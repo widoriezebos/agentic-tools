@@ -69,8 +69,8 @@ func TestClassifyHumanWhenNoAncestorRecognisedAtATerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Class != ClassHuman {
-		t.Fatalf("want HUMAN, got %+v", got)
+	if got.Class != ClassHuman || !got.FixtureGranted {
+		t.Fatalf("want fixture-granted HUMAN, got %+v", got)
 	}
 }
 

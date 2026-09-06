@@ -11,7 +11,9 @@ package steward
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -21,39 +23,85 @@ import (
 // failed attempt, retried next tick, never a wedged tick.
 const notifyTimeout = 15 * time.Second
 
-// NotifyCommand resolves the configured delivery command.
-func NotifyCommand(repoRoot string) (string, bool) {
+var notifyPlatformOS = runtime.GOOS
+var notifyCommandContext = exec.CommandContext
+
+type notifyKind int
+
+const (
+	notifyUnavailable notifyKind = iota
+	notifyConfigured
+	notifyPlatform
+	notifyFixtureLog
+)
+
+func resolveNotify(repoRoot string) (string, notifyKind) {
 	out, err := exec.Command("git", "-C", repoRoot, "config", "--get", "metasystem.steward.notify-command").Output()
 	if err == nil {
 		if cmd := strings.TrimSpace(string(out)); cmd != "" {
-			return cmd, true
+			return cmd, notifyConfigured
 		}
 	}
-	if runtime.GOOS == "darwin" {
-		return "", true // the platform notifier below
+	top := canonicalPath(repoRoot)
+	if installed, err := VerifyIdentity(RepoIdentityPath(top), top); err == nil && installed.Enrollment == EnrollmentFixture {
+		return "", notifyFixtureLog
 	}
-	return "", false
+	if notifyPlatformOS == "darwin" {
+		return "", notifyPlatform
+	}
+	return "", notifyUnavailable
+}
+
+// NotifyCommand resolves the configured delivery command.
+func NotifyCommand(repoRoot string) (string, bool) {
+	command, kind := resolveNotify(repoRoot)
+	return command, kind != notifyUnavailable
 }
 
 // Deliver attempts one delivery. Returning nil MEANS delivered — the
 // caller may gate a launch on it.
 func Deliver(repoRoot, message string) error {
-	command, ok := NotifyCommand(repoRoot)
-	if !ok {
+	command, kind := resolveNotify(repoRoot)
+	if kind == notifyUnavailable {
 		return fmt.Errorf("no notification channel is configured and this platform has no default; the operator cannot be reached")
+	}
+	if kind == notifyFixtureLog {
+		return appendFixtureNotification(repoRoot, message)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 	defer cancel()
 	var cmd *exec.Cmd
-	if command == "" {
-		script := fmt.Sprintf("display notification %q with title %q", message, "metasystem steward")
-		cmd = exec.CommandContext(ctx, "osascript", "-e", script)
+	if kind == notifyPlatform {
+		title := "metasystem steward - " + canonicalPath(repoRoot)
+		script := fmt.Sprintf("display notification %q with title %q", message, title)
+		cmd = notifyCommandContext(ctx, "osascript", "-e", script)
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		cmd = notifyCommandContext(ctx, "/bin/sh", "-c", command)
 		cmd.Env = append(cmd.Environ(), "STEWARD_MESSAGE="+message)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("notification not delivered: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func appendFixtureNotification(repoRoot, message string) error {
+	directory := runnerDir(canonicalPath(repoRoot))
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return fmt.Errorf("fixture notification not delivered: %w", err)
+	}
+	path := filepath.Join(directory, "notifications.log")
+	log, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("fixture notification not delivered: %w", err)
+	}
+	line := time.Now().UTC().Format(time.RFC3339) + " " + message + "\n"
+	if _, err := log.WriteString(line); err != nil {
+		_ = log.Close()
+		return fmt.Errorf("fixture notification not delivered: %w", err)
+	}
+	if err := log.Close(); err != nil {
+		return fmt.Errorf("fixture notification not delivered: %w", err)
 	}
 	return nil
 }

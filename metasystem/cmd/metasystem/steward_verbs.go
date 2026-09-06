@@ -548,8 +548,11 @@ func runStewardArm(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward arm:", err)
 		return 2
 	}
+	fixtureEnrollment := false
 	if *temporaryWord == "" {
-		if !requireHumanStewardEnrollment(*repo, "steward arm") {
+		var authorized bool
+		fixtureEnrollment, authorized = requireHumanStewardEnrollment(*repo, "steward arm")
+		if !authorized {
 			return 1
 		}
 	} else {
@@ -576,6 +579,8 @@ func runStewardArm(args []string) int {
 	var msg string
 	if *temporaryWord != "" {
 		msg, err = steward.ArmTemporary(*repo, bin, *temporaryWord, *reviewBy)
+	} else if fixtureEnrollment {
+		msg, err = steward.ArmFixture(*repo, bin)
 	} else {
 		msg, err = steward.Arm(*repo, bin)
 	}
@@ -597,7 +602,8 @@ func runStewardRestart(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward restart: --repo is required")
 		return 2
 	}
-	if !requireHumanStewardEnrollment(*repo, "steward restart") {
+	fixtureEnrollment, authorized := requireHumanStewardEnrollment(*repo, "steward restart")
+	if !authorized {
 		return 1
 	}
 	if seed, err := seedStewardLandingRef(*repo); err != nil {
@@ -613,7 +619,12 @@ func runStewardRestart(args []string) int {
 		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
 		return 1
 	}
-	msg, err := steward.Restart(*repo, bin)
+	var msg string
+	if fixtureEnrollment {
+		msg, err = steward.RestartFixture(*repo, bin)
+	} else {
+		msg, err = steward.Restart(*repo, bin)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
 		return 1
@@ -653,22 +664,22 @@ func seedStewardLandingRef(repo string) (stewardLandingRefSeed, error) {
 	return stewardLandingRefSeed{Ref: landingRef}, nil
 }
 
-func requireHumanStewardEnrollment(repo, verb string) bool {
+func requireHumanStewardEnrollment(repo, verb string) (fixtureGranted, authorized bool) {
 	metasystemRoot, err := upMetasystemRoot("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: cannot resolve the installed engine: %v\n", verb, err)
-		return false
+		return false, false
 	}
 	classification, err := lease.ClassifyAt(repo, metasystemRoot, int64(os.Getppid()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: human ancestry proof failed: %v\n", verb, err)
-		return false
+		return false, false
 	}
 	if classification.Class != lease.ClassHuman {
 		fmt.Fprintf(os.Stderr, "%s: explicit engine enrollment requires an agent-free terminal; caller classified %s\n", verb, classification.Class)
-		return false
+		return false, false
 	}
-	return true
+	return classification.FixtureGranted, true
 }
 
 func runStewardDisarm(args []string) int {

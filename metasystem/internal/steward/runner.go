@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -152,7 +152,14 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 // repo's own binary, verify the operator is reachable, and spawn the
 // detached runner unless one already lives. Idempotent.
 func Arm(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, false, false, humanMintDecision("human-terminal", "", ""))
+	outcome, err := arm(repoRoot, binaryPath, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
+	return outcome.Message, err
+}
+
+// ArmFixture is Arm when the caller's HUMAN classification came from the
+// fixture-authority process table rather than a real terminal.
+func ArmFixture(repoRoot, binaryPath string) (string, error) {
+	outcome, err := arm(repoRoot, binaryPath, false, false, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
 	return outcome.Message, err
 }
 
@@ -167,7 +174,7 @@ func ArmTemporary(repoRoot, binaryPath, humanWord, reviewBy string) (string, err
 	if humanWord == "" {
 		return "", fmt.Errorf("temporary steward arm requires the verbatim word and review-by date")
 	}
-	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-word", humanWord, reviewBy))
+	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-word", humanWord, reviewBy, EnrollmentTemporaryWord))
 	return outcome.Message, err
 }
 
@@ -208,6 +215,7 @@ type mintPlan struct {
 	EngineBuild  string
 	LandedCommit string
 	LandingRef   string
+	Enrollment   string
 }
 
 type armOutcome struct {
@@ -217,12 +225,12 @@ type armOutcome struct {
 
 type mintDecision func(prior InstallIdentity, priorErr error, bytes enrolledBytes) (mintPlan, error)
 
-func humanMintDecision(mintedBy, word, reviewBy string) mintDecision {
+func humanMintDecision(mintedBy, word, reviewBy, enrollment string) mintDecision {
 	return func(_ InstallIdentity, _ error, bytes enrolledBytes) (mintPlan, error) {
 		if bytes.Err != nil {
 			return mintPlan{}, bytes.Err
 		}
-		return mintPlan{MintedBy: mintedBy, Word: word, ReviewBy: reviewBy, EngineBuild: bytes.Stamp}, nil
+		return mintPlan{MintedBy: mintedBy, Word: word, ReviewBy: reviewBy, EngineBuild: bytes.Stamp, Enrollment: enrollment}, nil
 	}
 }
 
@@ -258,7 +266,7 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 		return mintPlan{
 			MintedBy: "machine-rebuild", Word: prior.TemporaryHumanWord, ReviewBy: prior.ReviewBy,
 			Witnessed: witnessed, WitnessedAt: witnessedAt, EngineBuild: bytes.Stamp,
-			LandedCommit: commit, LandingRef: landingRef,
+			LandedCommit: commit, LandingRef: landingRef, Enrollment: prior.Enrollment,
 		}, nil
 	}
 	outcome, err := arm(repoRoot, invokingBinary, true, true, decision)
@@ -269,7 +277,13 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 // the repair path for a process that remains alive but no longer completes
 // ticks.
 func Restart(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-terminal", "", ""))
+	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
+	return outcome.Message, err
+}
+
+// RestartFixture is Restart under fixture-granted HUMAN classification.
+func RestartFixture(repoRoot, binaryPath string) (string, error) {
+	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
 	return outcome.Message, err
 }
 
@@ -470,7 +484,7 @@ func runnerExclusion(top string) (string, bool) {
 			return "linked worktree (the primary checkout owns the watchdog)", true
 		}
 	}
-	if config.ConfValue(filepath.Join(top, "metasystem.conf"), "metasystem.runtimes", "") == "fake" {
+	if fixtureauth.FixtureModeRoot(top) {
 		return "fake-runtimes repository (fixtures arm deliberately)", true
 	}
 	return "", false
@@ -539,6 +553,9 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 	if err != nil {
 		return outcome, err
 	}
+	if plan.Enrollment != EnrollmentTemporaryWord && fixtureauth.FixtureModeRoot(top) {
+		plan.Enrollment = EnrollmentFixture
+	}
 	outcome.EngineBuild, outcome.LandedCommit, outcome.LandingRef = plan.EngineBuild, plan.LandedCommit, plan.LandingRef
 	outcome.PreviousGeneration = prior.Generation
 	if afterArmDecision != nil {
@@ -578,6 +595,7 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 	}
 	durable, err := publishIdentity(identityPath, InstallIdentity{
 		RepoIdentity: top, Generation: generation, InstallPath: bytesPath, InstallDigest: bytes.Digest, MintedAt: mintedAt,
+		Enrollment:         plan.Enrollment,
 		TemporaryHumanWord: plan.Word, ReviewBy: plan.ReviewBy, MintedBy: plan.MintedBy,
 		HumanWitnessedGeneration: witnessed, HumanWitnessedAt: witnessedAt, EngineBuild: plan.EngineBuild,
 		LandedCommit: plan.LandedCommit, LandingRef: plan.LandingRef,

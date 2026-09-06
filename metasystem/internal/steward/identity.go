@@ -32,6 +32,12 @@ var ErrEnrollmentDrift = errors.New("ENROLLMENT_DRIFT")
 // resolve this one cause after proving the new bytes came from a landed tree.
 var ErrEngineRebuilt = errors.New("enrolled engine digest changed")
 
+const (
+	EnrollmentHumanTerminal = "human-terminal"
+	EnrollmentTemporaryWord = "temporary-word"
+	EnrollmentFixture       = "fixture"
+)
+
 // InstallIdentity is the minted record's content.
 type InstallIdentity struct {
 	// RepoIdentity pins which repository this installation serves.
@@ -45,6 +51,10 @@ type InstallIdentity struct {
 	// ordinary up. The steward and supervision owner use the same binary.
 	InstallDigest string `json:"installDigest,omitempty"`
 	MintedAt      string `json:"mintedAt"`
+	// Enrollment records the authority that admitted this installation. An
+	// absent value is a human-terminal enrollment created before this field
+	// existed.
+	Enrollment string `json:"enrollment,omitempty"`
 	// TemporaryHumanWord records a remote human authorization for an
 	// enrollment performed without an agent-free terminal (the human was
 	// away from the machine and spoke through an agent session). It is
@@ -138,6 +148,13 @@ func VerifyIdentity(path, wantRepoIdentity string) (InstallIdentity, error) {
 	}
 	if id.Generation < 1 {
 		return id, fmt.Errorf("steward identity carries no valid generation")
+	}
+	switch id.Enrollment {
+	case "":
+		id.Enrollment = EnrollmentHumanTerminal
+	case EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture:
+	default:
+		return id, fmt.Errorf("steward identity carries unknown enrollment %q", id.Enrollment)
 	}
 	return id, nil
 }

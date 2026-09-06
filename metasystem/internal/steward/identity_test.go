@@ -10,13 +10,24 @@ import (
 
 func TestIdentityMintVerifyRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "identity.json")
-	want := InstallIdentity{RepoIdentity: "repo-ulid", Generation: 2, InstallPath: "/opt/x", MintedAt: "2026-08-20T09:00:00Z"}
+	want := InstallIdentity{RepoIdentity: "repo-ulid", Generation: 2, InstallPath: "/opt/x", MintedAt: "2026-08-20T09:00:00Z", Enrollment: EnrollmentFixture}
 	if err := MintIdentity(path, want); err != nil {
 		t.Fatal(err)
 	}
 	got, err := VerifyIdentity(path, "repo-ulid")
 	if err != nil || got != want {
 		t.Fatalf("round trip: %+v %v", got, err)
+	}
+}
+
+func TestIdentityWithoutEnrollmentReadsAsHumanTerminal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.json")
+	if err := os.WriteFile(path, []byte(`{"repoIdentity":"repo-ulid","generation":1,"installPath":"/opt/x","mintedAt":"2026-08-20T09:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := VerifyIdentity(path, "repo-ulid")
+	if err != nil || got.Enrollment != EnrollmentHumanTerminal {
+		t.Fatalf("an identity minted before enrollment provenance must remain a human installation: %+v %v", got, err)
 	}
 }
 

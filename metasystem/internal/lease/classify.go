@@ -73,11 +73,12 @@ const (
 
 // Classification is who a caller is relative to this checkout.
 type Classification struct {
-	Class        string
-	MainId       string
-	Pid          int64
-	JobId        string
-	Announcement *Announcement
+	Class          string
+	MainId         string
+	Pid            int64
+	JobId          string
+	Announcement   *Announcement
+	FixtureGranted bool
 }
 
 // readAnnouncements lists the valid main announcements. In strict mode a
@@ -365,7 +366,12 @@ func ClassifyAt(root, metasystemRoot string, caller int64) (Classification, erro
 		}
 		current, ok = ParentPid(current)
 	}
-	if has, tok := identity.ControllingTerminal(caller, probe); tok && has {
+	fixtureTerminal, fixtureTerminalPresent := probeFixtureTerminal(caller, probe)
+	if fixtureTerminalPresent {
+		if fixtureTerminal {
+			return Classification{Class: ClassHuman, FixtureGranted: true}, nil
+		}
+	} else if has, tok := identity.ControllingTerminal(caller, probe); tok && has {
 		return Classification{Class: ClassHuman}, nil
 	}
 	// A person's subprocess can lose the terminal (setsid, some
@@ -374,7 +380,7 @@ func ClassifyAt(root, metasystemRoot string, caller int64) (Classification, erro
 	// verdict depend on where the test suite happens to run.
 	for pid := range seen {
 		if entry, present := probeFixtureTerminal(pid, probe); present && entry {
-			return Classification{Class: ClassHuman}, nil
+			return Classification{Class: ClassHuman, FixtureGranted: true}, nil
 		}
 	}
 	// The caller itself running the installed binary's steward

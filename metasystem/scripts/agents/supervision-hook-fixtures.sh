@@ -11,6 +11,16 @@ harness_fixture_budget_init "$root"
 hook_evidence_cap=$(harness_fixture_cap supervision-hook-evidence)
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-supervision-hook-fixture.XXXXXX")
+osascript_calls=$tmp/osascript.log
+mkdir -p "$tmp/notify-shim"
+cat >"$tmp/notify-shim/osascript" <<'OSASCRIPT_SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${METASYSTEM_FIXTURE_OSASCRIPT_CALLS:?}"
+exit 97
+OSASCRIPT_SHIM
+chmod +x "$tmp/notify-shim/osascript"
+export METASYSTEM_FIXTURE_OSASCRIPT_CALLS=$osascript_calls
+export PATH="$tmp/notify-shim:$PATH"
 hook_process_pid=
 hook_process_path=
 stop_hook_process() {
@@ -677,7 +687,7 @@ cp "$root/scripts/agents/permissions/workspace.json" "$template_root/scripts/age
 template_engine_digest=$("$template_root/bin/metasystem" util sha256 --file "$template_root/bin/metasystem")
 template_identity_root=$(cd "$template_root" && pwd -P)
 template_identity_engine=$(cd "$template_root/bin" && pwd -P)/metasystem
-printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z"}\n' \
+printf '{"repoIdentity":"%s","generation":1,"installPath":"%s","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z","enrollment":"fixture"}\n' \
   "$template_identity_root" "$template_identity_engine" "$template_engine_digest" \
   >"$template_root/artifacts/agents/steward/identity.json"
 chmod 0600 "$template_root/artifacts/agents/steward/identity.json"
@@ -860,4 +870,6 @@ grep -Fq 'cannot replay' "$tmp/template-replay.out" \
   && grep -Fq 'reached the bound of 3' "$tmp/template-replay.out" \
   || { echo "template SessionEnd no-replay evidence was lost beside the bounded idle escalation" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
 
+[[ ! -s "$osascript_calls" ]] \
+  || { echo "supervision hook fixture invoked osascript" >&2; cat "$osascript_calls" >&2; exit 1; }
 echo "supervision hook launcher, runtime membership, fail-closed pre-verdict, re-arm visibility, external failure block-once records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline block-once behavior, missing-engine refusal, nested installation ancestry, bounded template backlog escalation, template holder-state, and SessionEnd no-replay fixtures passed"
