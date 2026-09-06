@@ -16,15 +16,24 @@ import (
 // under. The tool allow/deny lists and OS sandbox are derived from the job's
 // requested permissions, and the SessionStart hook signals session
 // establishment back to the adapter by running the metasystem session-signal
-// verb. metasystemBin is the binary that command invokes.
-func BuildClaudeSettings(recordPath, outputPath, metasystemBin string) error {
+// verb. metasystemBin is the binary that command invokes. scratch is the
+// delegate's private writable directory; an empty value grants no scratch.
+func BuildClaudeSettings(recordPath, outputPath, metasystemBin, scratch string) error {
 	requested, err := requestedPermissions(recordPath)
+	if err != nil {
+		return err
+	}
+	record, err := readObject(recordPath)
 	if err != nil {
 		return err
 	}
 	writeRoots, _ := requested["writeRoots"].([]any)
 	if writeRoots == nil {
 		writeRoots = []any{}
+	}
+	allowWrite := append([]any{}, writeRoots...)
+	if scratch != "" {
+		allowWrite = append(allowWrite, scratch)
 	}
 	network, _ := requested["network"].(string)
 	if network == "" {
@@ -41,7 +50,12 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin string) error {
 	if len(writeRoots) > 0 {
 		allow = append(allow, "Bash", "Edit", "Write", "NotebookEdit")
 	} else {
-		deny = append(deny, "Bash", "Edit", "Write", "NotebookEdit")
+		if isClaudeCriticRole(record) {
+			allow = append(allow, "Bash")
+		} else {
+			deny = append(deny, "Bash")
+		}
+		deny = append(deny, "Edit", "Write", "NotebookEdit")
 	}
 
 	// An empty allowlist with an empty denylist permits ordinary egress; the
@@ -51,6 +65,28 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin string) error {
 		networkSandbox = map[string]any{"allowedDomains": []any{}, "deniedDomains": []any{}}
 	}
 
+	filesystemSandbox := map[string]any{"allowWrite": allowWrite}
+	if len(writeRoots) == 0 && isClaudeCriticRole(record) {
+		readRoots, err := ClaudeReadRoots(recordPath)
+		if err != nil {
+			return err
+		}
+		workspace, _ := record["workspaceRoot"].(string)
+		denyWrite := []any{}
+		seen := map[string]bool{}
+		for _, root := range append([]string{workspace}, readRoots...) {
+			if root == "" {
+				continue
+			}
+			root = resolve(root)
+			if !seen[root] {
+				seen[root] = true
+				denyWrite = append(denyWrite, root)
+			}
+		}
+		filesystemSandbox["denyWrite"] = denyWrite
+	}
+
 	settings := map[string]any{
 		"permissions": map[string]any{"allow": allow, "ask": []any{}, "deny": deny},
 		"sandbox": map[string]any{
@@ -58,7 +94,7 @@ func BuildClaudeSettings(recordPath, outputPath, metasystemBin string) error {
 			"failIfUnavailable":        true,
 			"autoAllowBashIfSandboxed": true,
 			"allowUnsandboxedCommands": false,
-			"filesystem":               map[string]any{"allowWrite": writeRoots},
+			"filesystem":               filesystemSandbox,
 			"network":                  networkSandbox,
 		},
 		"hooks": map[string]any{
@@ -212,10 +248,16 @@ func ClaudeSessionSignal(r io.Reader, signalPath, eventsPath string) (string, er
 // codex pattern:
 // one builder, NUL-separated tokens on the wire, both shells read it back.
 
-// claudeFullTools is the read-write tool list; the read-only list is the
-// envelope's narrowing of it.
+// claudeFullTools is the read-write tool list; the critic and read-only lists
+// are the envelope's narrowings of it.
 const claudeFullTools = "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit"
+const claudeCriticTools = "Bash,Read,Glob,Grep"
 const claudeReadOnlyTools = "Read,Glob,Grep"
+
+func isClaudeCriticRole(record map[string]any) bool {
+	role, _ := record["role"].(string)
+	return role == "code-critic" || role == "design-critic" || role == "warden"
+}
 
 // ClaudeBudget validates the native budget and turn-limit policy from the
 // environment. The --max-budget-usd flag is omitted unless the operator sets
@@ -243,10 +285,10 @@ func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, 
 
 // BuildClaudeCommand assembles the claude -p argv. Adapter mode (recordPath
 // non-empty) derives the permission envelope: an empty requested writeRoots
-// means dontAsk with the read-only tools plus --add-dir for every extra
-// read root; anything else means acceptEdits with the full tools. Host mode
-// (recordPath empty) is the orchestrator's own turn: acceptEdits with the
-// full tools, no settings file, no add-dirs.
+// means dontAsk with either the critic or read-only tools plus --add-dir for
+// every extra read root; anything else means acceptEdits with the full tools.
+// Host mode (recordPath empty) is the orchestrator's own turn: acceptEdits
+// with the full tools, no settings file, no add-dirs.
 // ClaudeOutputModes are the two argv output shapes: "json" (the
 // blocking single document — the host launcher's mode, unchanged)
 // and "stream-json" (the dispatch stream; the CLI refuses print-mode
@@ -270,7 +312,14 @@ func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget
 		writeRoots := stringList(requested["writeRoots"])
 		if len(writeRoots) == 0 {
 			permissionMode = "dontAsk"
-			tools = claudeReadOnlyTools
+			// A critic can use Bash safely for evidence: the settings deny every
+			// write to the workspace and read roots, the only writable place is the
+			// private scratch directory, and the role packet still forbids editing.
+			if isClaudeCriticRole(record) {
+				tools = claudeCriticTools
+			} else {
+				tools = claudeReadOnlyTools
+			}
 			if addDirs, err = ClaudeReadRoots(recordPath); err != nil {
 				return nil, err
 			}

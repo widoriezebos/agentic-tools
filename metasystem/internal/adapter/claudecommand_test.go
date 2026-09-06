@@ -139,6 +139,54 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 	})
 }
 
+func TestBuildClaudeCommandRoleEnvelopes(t *testing.T) {
+	tests := []struct {
+		name           string
+		role           string
+		writeRoots     string
+		wantTools      string
+		wantPermission string
+	}{
+		{"implementer with write roots", "implementer", `["/ws"]`, "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit", "acceptEdits"},
+		{"code critic without write roots", "code-critic", `[]`, "Bash,Read,Glob,Grep", "dontAsk"},
+		{"design critic without write roots", "design-critic", `[]`, "Bash,Read,Glob,Grep", "dontAsk"},
+		{"warden without write roots", "warden", `[]`, "Bash,Read,Glob,Grep", "dontAsk"},
+		{"other role without write roots", "verifier", `[]`, "Read,Glob,Grep", "dontAsk"},
+	}
+	argumentValue := func(t *testing.T, command []string, flag string) string {
+		t.Helper()
+		for index, argument := range command {
+			if argument == flag && index+1 < len(command) {
+				return command[index+1]
+			}
+		}
+		t.Fatalf("argv has no value for %s: %v", flag, command)
+		return ""
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := writeClaudeRecord(t, `{
+				"workspaceRoot": "/ws",
+				"instanceTag": "job-tag",
+				"role": "`+test.role+`",
+				"permissions": {"requested": {"writeRoots": `+test.writeRoots+`}}
+			}`)
+			command, err := BuildClaudeCommand(record, "sonnet", "{}", "/tmp/settings.json", "", "", "50", "json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := argumentValue(t, command, "--permission-mode"); got != test.wantPermission {
+				t.Fatalf("permission mode = %q, want %q", got, test.wantPermission)
+			}
+			for _, flag := range []string{"--tools", "--allowedTools"} {
+				if got := argumentValue(t, command, flag); got != test.wantTools {
+					t.Fatalf("%s = %q, want %q", flag, got, test.wantTools)
+				}
+			}
+		})
+	}
+}
+
 func TestBuildClaudeCommandRequiresADelegateInstanceTag(t *testing.T) {
 	record := writeClaudeRecord(t, `{
 		"workspaceRoot": "/ws",

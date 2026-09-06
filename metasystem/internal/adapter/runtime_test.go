@@ -147,7 +147,7 @@ func TestBuildClaudeSettingsWriteAndNetwork(t *testing.T) {
 	record := filepath.Join(dir, "job.json")
 	out := filepath.Join(dir, "settings.json")
 	writeFile(t, record, claudeRecord(`["/ws/sub"]`, "allow"))
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", ""); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -180,7 +180,7 @@ func TestBuildClaudeSettingsReadOnlyNoNetwork(t *testing.T) {
 	record := filepath.Join(dir, "job.json")
 	out := filepath.Join(dir, "settings.json")
 	writeFile(t, record, claudeRecord(`[]`, "deny"))
-	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem"); err != nil {
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", ""); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, out)
@@ -198,6 +198,74 @@ func TestBuildClaudeSettingsReadOnlyNoNetwork(t *testing.T) {
 	blocked := net["allowedDomains"].([]any)
 	if len(blocked) != 1 || blocked[0] != "metasystem.invalid" {
 		t.Fatalf("no-network turn should carry the non-resolving sentinel: %v", net)
+	}
+}
+
+func TestBuildClaudeSettingsCodeCriticAllowsSandboxedBash(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	out := filepath.Join(dir, "settings.json")
+	writeFile(t, record, `{
+	  "role": "code-critic",
+	  "workspaceRoot": "/ws",
+	  "permissions": {"requested": {
+	    "readRoots": ["/ws", "/extra", "/extra"],
+	    "writeRoots": [],
+	    "network": "deny"
+	  }}
+	}`)
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+		t.Fatal(err)
+	}
+	got := readJSONFile(t, out)
+	perms := got["permissions"].(map[string]any)
+	allow := toStringSet(perms["allow"].([]any))
+	deny := toStringSet(perms["deny"].([]any))
+	if !allow["Bash"] || deny["Bash"] {
+		t.Fatalf("a code critic should allow sandboxed Bash: allow=%v deny=%v", perms["allow"], perms["deny"])
+	}
+	for _, tool := range []string{"Edit", "Write", "NotebookEdit"} {
+		if !deny[tool] || allow[tool] {
+			t.Fatalf("a code critic should deny %s: allow=%v deny=%v", tool, perms["allow"], perms["deny"])
+		}
+	}
+	sandbox := got["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	allowWrite := fs["allowWrite"].([]any)
+	if len(allowWrite) != 1 || allowWrite[0] != "/scratch" {
+		t.Fatalf("a code critic should write only to its scratch directory: %v", allowWrite)
+	}
+	denyWrite := fs["denyWrite"].([]any)
+	if len(denyWrite) != 2 || denyWrite[0] != "/ws" || denyWrite[1] != "/extra" {
+		t.Fatalf("a code critic should deny writes to its workspace and read roots: %v", denyWrite)
+	}
+}
+
+func TestBuildClaudeSettingsImplementerAddsScratch(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	out := filepath.Join(dir, "settings.json")
+	writeFile(t, record, `{
+	  "role": "implementer",
+	  "workspaceRoot": "/ws",
+	  "permissions": {"requested": {
+	    "readRoots": ["/ws"],
+	    "writeRoots": ["/ws/sub"],
+	    "network": "deny"
+	  }}
+	}`)
+	if err := BuildClaudeSettings(record, out, "/opt/bin/metasystem", "/scratch"); err != nil {
+		t.Fatal(err)
+	}
+	got := readJSONFile(t, out)
+	sandbox := got["sandbox"].(map[string]any)
+	fs := sandbox["filesystem"].(map[string]any)
+	allowWrite := fs["allowWrite"].([]any)
+	if len(allowWrite) != 2 || allowWrite[0] != "/ws/sub" || allowWrite[1] != "/scratch" {
+		t.Fatalf("an implementer should write to its requested roots and scratch directory: %v", allowWrite)
+	}
+	if _, present := fs["denyWrite"]; present {
+		t.Fatalf("an implementer should not have denyWrite: %v", fs["denyWrite"])
 	}
 }
 

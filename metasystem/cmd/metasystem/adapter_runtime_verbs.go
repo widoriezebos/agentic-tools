@@ -211,14 +211,15 @@ func runAdapterClaudeSettings(args []string) int {
 	record := flags.String("record", "", "job record file")
 	output := flags.String("output", "", "settings output file")
 	bin := flags.String("metasystem-bin", "", "metasystem binary the session-signal hook runs")
+	scratch := flags.String("scratch", "", "private writable scratch directory")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *record == "" || *output == "" || *bin == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-settings --record FILE --output FILE --metasystem-bin PATH")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-settings --record FILE --output FILE --metasystem-bin PATH [--scratch DIR]")
 		return 2
 	}
-	if err := adapter.BuildClaudeSettings(*record, *output, *bin); err != nil {
+	if err := adapter.BuildClaudeSettings(*record, *output, *bin, *scratch); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

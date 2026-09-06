@@ -84,10 +84,10 @@ probe() {
     "$key_hashes"
 }
 
-build_claude_settings() { # output settings
+build_claude_settings() { # output settings, scratch directory
   # The emitted SessionStart hook runs the metasystem session-signal verb, which
   # signals session establishment back to this adapter.
-  "$ms" adapter claude-settings --record "$record" --output "$1" --metasystem-bin "$ms"
+  "$ms" adapter claude-settings --record "$record" --output "$1" --metasystem-bin "$ms" --scratch "$2"
 }
 
 claude_usage() { # result JSON, usage output
@@ -106,6 +106,7 @@ supervise() { # dispatch|follow-up and supervisor args
   local signal_file="$round_dir/claude-session-signal.json"
   local result_file="$round_dir/claude-result.json"
   local usage_file="$round_dir/usage.json"
+  local scratch_dir="${TMPDIR:-/tmp}/metasystem-claude/$job-$round"
   local cli_pid command_status
   local signalled_session signalled_model result_session result_model
   local -a command
@@ -113,7 +114,7 @@ supervise() { # dispatch|follow-up and supervisor args
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
-  build_claude_settings "$settings_file"
+  build_claude_settings "$settings_file" "$scratch_dir"
   # The argv, the envelope's mode/tool mapping, and the budget policy are
   # the engine's (`adapter claude-command`, script-adapters-02/D25); this
   # adapter reads the tokens back NUL by NUL like codex.sh does. Exit 3 is
@@ -140,6 +141,12 @@ supervise() { # dispatch|follow-up and supervisor args
   mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   (
     cd "$workspace"
+    # Claude's sandbox cannot write the user's caches or the system temporary
+    # directory itself; the settings allow only this private scratch directory.
+    mkdir -p "$scratch_dir/go-cache" "$scratch_dir/go-tmp"
+    export TMPDIR="$scratch_dir"
+    export GOCACHE="$scratch_dir/go-cache"
+    export GOTMPDIR="$scratch_dir/go-tmp"
     export METASYSTEM_CLAUDE_SESSION_SIGNAL="$signal_file"
     export METASYSTEM_CLAUDE_EVENTS="$events"
     while IFS= read -r assignment; do export "${assignment?}"; done < <(job_git_quarantine_env "$workspace")
