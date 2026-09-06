@@ -147,9 +147,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     deadline_resolver=
   }
   deadline_running() {
-    local state
-    state=$(ps -p "$deadline_worker" -o stat= 2>/dev/null || true)
-    [[ -n "$state" && "$state" != Z* ]]
+    kill -0 "$deadline_worker" 2>/dev/null
   }
   while deadline_running && (( SECONDS < deadline_expires )); do
     deadline_capture_engine_coordinates
@@ -217,15 +215,18 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   # A complete response is already a safe decision even when completion
   # bookkeeping uses the rest of the Stop budget. Validate it before stopping
   # the worker so a real verdict is never replaced by a deadline refusal.
-  deadline_published=false
-  deadline_published_decision=
-  deadline_published_reason=
-  deadline_published_message=
-  deadline_published_decision_rc=0
-  deadline_published_reason_rc=0
-  deadline_published_message_rc=0
-  deadline_published_shape_rc=0
-  if [[ -x "$deadline_validator" && -s "$deadline_stdout" ]]; then
+  deadline_check_published() {
+    deadline_published=false
+    deadline_published_decision=
+    deadline_published_reason=
+    deadline_published_message=
+    deadline_published_decision_rc=0
+    deadline_published_reason_rc=0
+    deadline_published_message_rc=0
+    deadline_published_shape_rc=0
+    if [[ ! -x "$deadline_validator" || ! -s "$deadline_stdout" ]]; then
+      return 0
+    fi
     deadline_published_decision=$("$deadline_validator" json get --file "$deadline_stdout" --field decision 2>/dev/null) \
       || deadline_published_decision_rc=$?
     deadline_published_reason=$("$deadline_validator" json get --file "$deadline_stdout" --field reason 2>/dev/null) \
@@ -254,12 +255,17 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
              -n "$deadline_published_message" && "$deadline_published_message_string" == true ]]; }; then
       deadline_published=true
     fi
-  fi
+  }
+  deadline_check_published
 
   deadline_stop_resolver
+  deadline_worker_signalled=false
+  deadline_worker_waited=false
   deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
   if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
-    kill -TERM "$deadline_worker" 2>/dev/null || true
+    if kill -TERM "$deadline_worker" 2>/dev/null; then
+      deadline_worker_signalled=true
+    fi
   fi
   for _deadline_stop_attempt in {1..10}; do
     deadline_running || break
@@ -268,10 +274,28 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   if deadline_running; then
     deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
     if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
-      kill -KILL "$deadline_worker" 2>/dev/null || true
+      if kill -KILL "$deadline_worker" 2>/dev/null; then
+        deadline_worker_signalled=true
+      fi
     fi
   fi
-  wait "$deadline_worker" 2>/dev/null || true
+  if [[ "$deadline_worker_signalled" == true ]] || ! deadline_running; then
+    wait "$deadline_worker" 2>/dev/null || true
+    deadline_worker_waited=true
+    if [[ "$deadline_worker_signalled" == false ]]; then
+      command cat "$deadline_stderr" >&2 || true
+      deadline_check_published
+      if [[ "$deadline_published" == true ]]; then
+        command cat "$deadline_stdout" || true
+        rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+          "$deadline_resolution" "$deadline_resolution_ready" || true
+        rmdir "$deadline_dir" 2>/dev/null || true
+        exit 0
+      fi
+    fi
+  else
+    printf 'stop deadline: worker %s left running, command line unverifiable\n' "$deadline_worker" >&2
+  fi
   deadline_now_epoch=$(date -u +%s)
   deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
   (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
@@ -281,9 +305,11 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   fi
   if [[ "$deadline_published" == true ]]; then
     command cat "$deadline_stdout" || true
-    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
-      "$deadline_resolution" "$deadline_resolution_ready" || true
-    rmdir "$deadline_dir" 2>/dev/null || true
+    if [[ "$deadline_worker_waited" == true ]]; then
+      rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+        "$deadline_resolution" "$deadline_resolution_ready" || true
+      rmdir "$deadline_dir" 2>/dev/null || true
+    fi
     exit 0
   fi
   deadline_cause='stop deadline expired'
@@ -303,9 +329,11 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     deadline_log_stop_outcome deadline-expired-record-failure-allow "$deadline_elapsed_sec"
     printf '%s\n' '{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
   fi
-  rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
-    "$deadline_resolution" "$deadline_resolution_ready" || true
-  rmdir "$deadline_dir" 2>/dev/null || true
+  if [[ "$deadline_worker_waited" == true ]]; then
+    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+      "$deadline_resolution" "$deadline_resolution_ready" || true
+    rmdir "$deadline_dir" 2>/dev/null || true
+  fi
   exit 0
 fi
 

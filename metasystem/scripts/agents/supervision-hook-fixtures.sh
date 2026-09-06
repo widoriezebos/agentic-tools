@@ -590,6 +590,63 @@ grep -Fq 'occurrence 2' "$tmp/deadline-second.out" \
   && grep -Fq 'A human or steward must restore supervision outside this seat, then retry.' "$tmp/deadline-second.out" \
   || { echo "repeated deadline overrun omitted its cause, count, or remedy" >&2; cat "$tmp/deadline-second.out" >&2; exit 1; }
 
+# A restricted host may prove that the worker still exists without exposing
+# its command line. The parent must keep the Stop deadline but must not signal
+# or wait for a process whose ownership it cannot verify.
+empty_ps_dir=$tmp/empty-ps-shim
+empty_ps_deadline_root=$tmp/empty-ps-deadline
+mkdir -p "$empty_ps_dir" "$empty_ps_deadline_root"
+cat >"$empty_ps_dir/ps" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$empty_ps_dir/ps"
+printf '{"session_id":"empty-ps-deadline-fixture","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$line_root" >"$tmp/empty-ps-deadline-payload.json"
+empty_ps_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
+empty_ps_started=$SECONDS
+empty_ps_rc=0
+PATH="$empty_ps_dir:$PATH" TMPDIR="$empty_ps_deadline_root" \
+  METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/empty-ps-deadline-payload.json" \
+    >"$tmp/empty-ps-deadline.out" 2>"$tmp/empty-ps-deadline.err" || empty_ps_rc=$?
+empty_ps_elapsed=$((SECONDS - empty_ps_started))
+(( empty_ps_rc == 0 )) \
+  || { echo "empty-ps supervision hook deadline fixture returned $empty_ps_rc" >&2; exit 1; }
+(( empty_ps_elapsed < 60 )) \
+  || { echo "empty-ps supervision hook deadline fixture exceeded the provider's sixty-second budget: ${empty_ps_elapsed}s" >&2; exit 1; }
+grep -Fq '"decision":"block"' "$tmp/empty-ps-deadline.out" \
+  || { echo "empty-ps supervision hook deadline fixture emitted no blocking response" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1; }
+grep -Fq 'deadline expired before a safe turn verdict' "$tmp/empty-ps-deadline.out" \
+  || { echo "empty-ps supervision hook deadline fixture did not name its fail-closed timeout" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1; }
+sed -n "$((empty_ps_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/hooks.log" \
+  | grep -Fq 'stop response outcome=deadline-expired-block' \
+  || { echo "empty-ps supervision hook deadline fixture did not log its deadline refusal" >&2; exit 1; }
+empty_ps_worker=$(sed -n 's/^stop deadline: worker \([0-9][0-9]*\) left running, command line unverifiable$/\1/p' \
+  "$tmp/empty-ps-deadline.err" | tail -1)
+[[ "$empty_ps_worker" =~ ^[0-9]+$ ]] \
+  || { echo "empty-ps supervision hook deadline fixture did not identify its unverifiable live worker" >&2; cat "$tmp/empty-ps-deadline.err" >&2; exit 1; }
+empty_ps_deadline_dirs=("$empty_ps_deadline_root"/metasystem-stop-deadline.*)
+(( ${#empty_ps_deadline_dirs[@]} == 1 )) && [[ -d "${empty_ps_deadline_dirs[0]}" ]] \
+  || { echo "empty-ps supervision hook deadline fixture did not retain exactly one worker directory" >&2; exit 1; }
+hook_process_pid=$empty_ps_worker
+hook_process_path=$line_root/scripts/agents/supervision-hook.sh
+empty_ps_worker_deadline=$((SECONDS + 70))
+while kill -0 "$empty_ps_worker" 2>/dev/null; do
+  if (( SECONDS >= empty_ps_worker_deadline )); then
+    stop_hook_process || true
+    echo "empty-ps supervision hook deadline fixture worker remained alive past its seventy-second cleanup ceiling" >&2
+    exit 1
+  fi
+  sleep 0.05
+done
+hook_process_pid=
+hook_process_path=
+grep -Fq 'supervision hook: emitted the health line but could not record completion' \
+  "${empty_ps_deadline_dirs[0]}/stderr" \
+  || { echo "empty-ps supervision hook deadline fixture did not prove the unsignalled worker continued after the parent returned" >&2; cat "${empty_ps_deadline_dirs[0]}/stderr" >&2; exit 1; }
+
 missing_template_outer=$tmp/missing-template-root
 missing_template_root=$missing_template_outer/metasystem
 mkdir -p "$missing_template_outer/development" "$missing_template_root/scripts/agents"
