@@ -7,14 +7,14 @@
 - Origin: main
 - Next step: SECOND RESURRECTION PATH, recorded 2026-09-07 by m1d and carried here: after that seat was stopped, its Stop hook re-armed the steward, and the revived steward logged 'steward revival: intent ... revives fixture-review-by-date-expired via job steward-...' - it judged a claimed goal stalled and moved to take it over while its holder was mid-landing. It got no further than the intent. The design already covers the path that matters: section 2's reader table names dispatch.ClaimLaunch as fenced, reached by delegate, by dispatch.sh directly AND by the steward's revival, so under a closed fence the revival cannot launch a job; and the runner itself is stopped and refuses to start (steward run reads the fence). The stop-fence scenario asserts the dispatch refusal today; if a round has room, assert the revival path by name too. STATUS 2026-09-07 08:0xZ: 10 of 20 attempts and 1200 of 2400 minutes spent. Green outside the sandbox on the round-8 tree: the fast Go gate, seat-survives (the seat's session and its Stop hook create nothing after a stop), status-is-live, seat-refused, and every pre-existing supervision scenario but rearm-launch-fails which is red on main. Round 9 (in flight) fixes the last three acceptance scenarios, all fixture bugs: a manifest path missing the metasystem/ prefix, a wait on a standing component that never exits, and a join passing a session pid outside its own ancestry. Then: the full package matrix and both battery beds outside the sandbox, the FIRST code critique of 62 files and about 6900 lines, close, land with the battery receipt, live stop/status/arm proof on this Mac, receipt, done. Main moved under the chain: 423e6ed6 landed the same dispatch-fixtures fixture-authority line this chain carries, so the next follow-up round rebases and resolves that hunk.
 - OpenedAt: 2026-09-06T12:24:49Z
-- Revision: 19
-- Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 1
-- NormApproval: approvedRef=R-83-m1b minutes=2400 reviewRounds=3 goalRevision=16
-- Approved: by=human:Wido at=2026-09-07T07:29:27Z revision=17 opid=E1485VS3N1VW95FTYV0JSPQZ9X-m1b-927ecfdd authority=proven digest=ab1a6d382abeefed2e89c7dbdc01610fb08453e65d900c36612ce05df09d8bc9
+- Revision: 20
+- Budget: elapsedLimit=3d attemptLimit=30 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 2
+- NormApproval: approvedRef=R-84-m1b minutes=3600 reviewRounds=3 goalRevision=19
+- Approved: by=human:Wido at=2026-09-07T17:22:36Z revision=20 opid=RY5SPBFK2NCY72KTWM17MTT1ZD-m1b-927ecfdd authority=proven digest=ec7dec360596a33cdbb81a59f9dba6037b13e68913ed32898d557b6a89ab47d1
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T18:59:41Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-07T07:29:27Z revision=17 accountingRevision=17
-- StopCapability: generation=17 revision=17 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-07T17:22:36Z revision=20 accountingRevision=20
+- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T12:24:49Z ZKBER0FQHEW28XV1PJ2X0K49PP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=metasystem-stop-verb
@@ -36,4 +36,5 @@ History:
 - 2026-09-07T07:29:27Z E1485VS3N1VW95FTYV0JSPQZ9X-m1b-927ecfdd set-budget actor=human:Wido targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T00:54:32Z
 - 2026-09-07T07:50:18Z 0AV2DH69TN79CRMYKJE4SDZ4NC-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
 - 2026-09-07T09:07:28Z NB8J1X1WKA3AB6Z3AJH27PCS8K-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
-Integrity: sha256=37e3eaa637a9f2a5dcdaa4de3cebb031d10f04c6c32ab0e913856c675c438f9c
+- 2026-09-07T17:22:36Z RY5SPBFK2NCY72KTWM17MTT1ZD-m1b-927ecfdd set-budget actor=human:Wido targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T07:29:27Z
+Integrity: sha256=25b94c21de28a09886aabc995602ba4827822480fed5ed8a103b39e1f28c0823
