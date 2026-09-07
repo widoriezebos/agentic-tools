@@ -1791,8 +1791,7 @@ METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" 
 	--basis "This established, isolated fixture has low novelty, exposure, and accumulation, but a misbound goal could give a delegated critic the wrong authority context." >/dev/null
 "$engine" goal approve --root "$agent_repo" --id fixture-serving --by Wido --lineage agent-fixture \
 	--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
-	--review-round-limit 3 --temporary-human-word 'Wido approves this fixture budget' \
-	--review-by 2026-09-06 >/dev/null
+	--review-round-limit 3 --fixture-human-authority >/dev/null
 "$engine" goal claim --root "$agent_repo" --id fixture-serving --lineage agent-fixture >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
 sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
