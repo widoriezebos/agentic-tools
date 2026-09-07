@@ -7,14 +7,14 @@
 - Origin: human
 - Next step: Implement registry-driven host setup and hook checks; cover nested and adopted layouts, existing settings, repeated setup, imported Claude hooks in Devin, and runtime trust limitations; install and verify in this checkout before resuming prior work.
 - OpenedAt: 2026-09-07T05:41:13Z
-- Revision: 5
-- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1440 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 1
-- NormApproval: approvedRef=R-84-m1c minutes=1440 reviewRounds=3 goalRevision=4
-- Approved: by=human:Wido at=2026-09-07T10:34:41Z revision=5 opid=AS1JDFQSA6T2NJW0BWWHC5ZYVC-m1c-7cd0bd60 authority=proven digest=8e61bdbd262d9580758398ee0367cda8bcd677056d5be1f8194099ec62aa7e20
+- Revision: 6
+- Budget: elapsedLimit=9d attemptLimit=24 reservedJobMinutesLimit=2880 activeJobLimit=2 reviewRoundLimit=3
+- BudgetExceptions: 2
+- NormApproval: approvedRef=R-86-m1c minutes=2880 reviewRounds=3 goalRevision=5
+- Approved: by=human:Wido at=2026-09-07T19:03:27Z revision=6 opid=9ZZ7SHCGZPWJMZ3JGHSZA381Z4-m1c-7cd0bd60 authority=proven digest=ded6f46db604b60a1a0988b39282ab1cf914b52edadcc3139971a9e85c76ac62
 - Sliced: machine=m1c lineage=main-1788759014-39092-24fa5c revision=3 at=2026-09-07T05:51:33Z
-- Claimed: machine=m1c lineage=main-1788759014-39092-24fa5c at=2026-09-07T10:34:41Z revision=5 accountingRevision=5
-- StopCapability: generation=5 revision=5 machine=m1c claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1c lineage=main-1788759014-39092-24fa5c at=2026-09-07T19:03:27Z revision=6 accountingRevision=6
+- StopCapability: generation=6 revision=6 machine=m1c claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-07T05:41:13Z 627Q493CTPEA321NRM4RG0X5HH-m1c-1274caf4 open actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup
@@ -22,4 +22,5 @@ History:
 - 2026-09-07T05:46:29Z C5QDX4WYB00BW4Q44EQ9V127FQ-m1c-1274caf4 claim actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup
 - 2026-09-07T05:51:33Z 9MPT30W94WE6JNW8FGYBXSNZ46-m1c-1274caf4 slice-start actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup
 - 2026-09-07T10:34:41Z AS1JDFQSA6T2NJW0BWWHC5ZYVC-m1c-7cd0bd60 set-budget actor=human:Wido targets=host-runtime-setup displaced=m1c+main-1788759014-39092-24fa5c@2026-09-07T05:46:29Z
-Integrity: sha256=6ae76e536352e8937bbdc1c49d3aa761505c9e76501cae589406c944f634c08d
+- 2026-09-07T19:03:27Z 9ZZ7SHCGZPWJMZ3JGHSZA381Z4-m1c-7cd0bd60 set-budget actor=human:Wido targets=host-runtime-setup displaced=m1c+main-1788759014-39092-24fa5c@2026-09-07T10:34:41Z
+Integrity: sha256=2d0fc7a8d54944e58fb508fb248e22c4168672cbdd3cbcdd31cf0ff78617e277
