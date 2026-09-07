@@ -1,15 +1,18 @@
 # fleet-coordinator-brain
 
-- State: queued
+- State: approved
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the brain drafts and proposes and never approves, builds or dispatches, so a wrong brain wastes Wido's attention and misorders the queue rather than authorizing anything; novelty 1: the session form is a role packet and a standing instruction with the narrator's digest as input, explicitly no new build per R-67-m1; exposure 3: it is the single seat between Wido and every node in the fleet; accumulation 2: its absence has now produced a concrete failure - on 2026-09-05 m1 stood in for both the brain and the missing runner, hand-drove eight dispatches and four critique rounds, and Wido had to ask why the system was so complicated"
 - Tier: 3
 - Intent: One brain seat for a fleet of headless nodes. The nodes run the mission runner on approved goals and talk over the fleet conversation channel; the brain never builds anything. It works with Wido on the backlog: drafts items from his words and from what the nodes report, classifies them into tiers, proposes budgets and order, keeps the queue honest, and hands him the one act only he does, approval for execution. It watches the cluster (which node runs what, who is stuck, what a question means), answers what the records can answer, and escalates to him only what needs his word. It is the narrator plus judgment plus a hand on the queue. Three constraints: the brain is never a bottleneck (nodes proceed on rules and records; the cluster keeps working the approved queue when the brain is down); authority stays with Wido (the brain drafts and proposes, never approves execution, never mints rulings, carries his words verbatim); the first form is a Claude session on m1 with the channel, the ledger and the census, forbidden from dispatching work, and later a runner role of its own.
 - Origin: main
 - Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 27
+- Revision: 28
 - Arc: headless-fleet
+- Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=2040 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
+- NormApproval: approvedRef=YK8T1TYDNNG5T0JTKEJQ0KS3S8-m1c-7cd0bd60 minutes=2040 reviewRounds=3 goalRevision=27
+- Approved: by=human:Wido at=2026-09-07T14:27:42Z revision=28 opid=DQ3TDSFYEVA5VRN45FS9B9FMG3-m1-7cd0bd60 authority=proven digest=71b3c158a10a64ee520a2d50e58ffa121177986d5f803c537edcc79ae71086b4
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=10 at=2026-09-06T21:07:20Z
 
 History:
@@ -40,4 +43,5 @@ History:
 - 2026-09-07T14:19:13Z AQQ6S1J14P3JQHJ5P7HAABWJKV-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-07T14:20:30Z S35J7NRFGW5ZVY26SYHXKZEPVT-m1-a4f8999f release actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-07T14:26:00Z YK8T1TYDNNG5T0JTKEJQ0KS3S8-m1c-7cd0bd60 unapprove actor=human:Wido targets=fleet-coordinator-brain reason=goal=fleet-coordinator-brain minutes=2040 reviewRounds=3 goalRevision=27
-Integrity: sha256=247b40f24d3d2eed812e6bb160575370e6a0416bcff3a01a27ba94b03bdcebf0
+- 2026-09-07T14:27:42Z DQ3TDSFYEVA5VRN45FS9B9FMG3-m1-7cd0bd60 approve actor=human:Wido targets=fleet-coordinator-brain
+Integrity: sha256=3eb8b5b69396882723cce21052a9511f5d107d5858b7cfc5b40ce6a9be231359
