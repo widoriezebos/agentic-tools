@@ -73,7 +73,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 				needs = append(needs, approvalRequestLine(id))
 				approvalGoal = id
 			}
-			for _, id := range frontier.Ready {
+			for _, id := range frontier.Claimed {
 				next = append(next, "Next up: "+featureName(id))
 				if len(next) == 2 {
 					break
@@ -83,6 +83,9 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	}
 	sort.Strings(needs)
 	delivered = landingLines(c, features)
+	if len(delivered) == 0 {
+		next = nil
+	}
 
 	lineLimit := 12
 	if c.Undelivered > 0 {

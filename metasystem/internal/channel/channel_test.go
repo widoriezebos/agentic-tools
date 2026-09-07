@@ -293,9 +293,9 @@ func TestReportShowsOneQuestionTwoLandingsAndOnlyTwoNextItems(t *testing.T) {
 	root := reportLedger(t,
 		reportGoal("delivery-one", "Deliver one.", goal.StateApproved, "other-machine", now),
 		reportGoal("delivery-two", "Deliver two.", goal.StateApproved, "other-machine", now),
-		reportGoal("alpha-next", "Do alpha.", goal.StateApproved, "fleet-one", now),
-		reportGoal("beta-next", "Do beta.", goal.StateApproved, "", now),
-		reportGoal("gamma-next", "Do gamma.", goal.StateApproved, "fleet-one", now),
+		reportClaimedGoal("alpha-next", "Do alpha.", "fleet-one", now),
+		reportClaimedGoal("beta-next", "Do beta.", "fleet-one", now),
+		reportClaimedGoal("gamma-next", "Do gamma.", "fleet-one", now),
 	)
 	if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "launch-choice", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
 		t.Fatal(err)
@@ -552,8 +552,23 @@ func TestReportDoesNotRequestApprovalWhenFirstBudgetedGoalIsApproved(t *testing.
 	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
 	root := reportLedger(t, approved, waiting)
 	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
-	if strings.Contains(text, "Needs you:") || !strings.Contains(text, "Next up: alpha approved") {
-		t.Fatalf("an approved first goal should need no approval:\n%s", text)
+	if strings.Contains(text, "Needs you:") || strings.Contains(text, "Next up:") {
+		t.Fatalf("an approved but unclaimed goal should produce neither approval nor Next up:\n%s", text)
+	}
+}
+
+func TestReportNextUpRequiresClaimAndDelivery(t *testing.T) {
+	now := time.Now().UTC().Add(time.Minute)
+	ready := reportGoal("ready-goal", "Ready.", goal.StateApproved, "fleet-one", now)
+	root := reportLedger(t, ready)
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship work\n\nGoal-Item: "+ready.Id)
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	if text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC}); strings.Contains(text, "Next up:") {
+		t.Fatalf("ready but unclaimed goal rendered as Next up:\n%s", text)
+	}
+	root = reportLedger(t, reportClaimedGoal("claimed-goal", "Claimed.", "fleet-one", now))
+	if text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}); strings.Contains(text, "Next up:") {
+		t.Fatalf("claimed goal without a delivery rendered as Next up:\n%s", text)
 	}
 }
 
@@ -632,6 +647,15 @@ func reportGoal(id, intent, state, pin string, now time.Time) *goal.GoalFile {
 		f.History = append(f.History, goal.HistoryLine{At: approvedAt, Opid: opid, Verb: "approve", Actor: "human:wido", Targets: []string{id}, Keep: -1})
 		f.Approved = &goal.ApprovalRecord{By: "human:wido", At: approvedAt, Revision: 2, Opid: opid, Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(intent, 1, *budget)}
 	}
+	return f
+}
+
+func reportClaimedGoal(id, intent, machine string, now time.Time) *goal.GoalFile {
+	f := reportGoal(id, intent, goal.StateApproved, machine, now)
+	f.State = goal.StateClaimed
+	f.Revision++
+	f.History = append(f.History, goal.HistoryLine{At: now.Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000R2", machine, id), Verb: "claim", Actor: machine + "+test-lineage", Targets: []string{id}, Keep: -1})
+	f.Claimed = &goal.ClaimRecord{Machine: machine, Lineage: "test-lineage", At: now.Format(time.RFC3339), Revision: f.Revision}
 	return f
 }
 
