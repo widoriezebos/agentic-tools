@@ -1432,6 +1432,77 @@ closed fence because some other record is unreadable. A retry of arm
 is a remedy only when the refusal names what makes that retry capable
 of succeeding; a generic error is no such reason.
 
+**A classifier's record failure names the record, not the caller's
+ancestry.** The human gate can fail before arm reaches a survivor
+probe. Section 9's classification-failure row is therefore restricted
+to a failure to inspect the calling process or its ancestry. For that
+case its ancestry sentence and agent-free-terminal remedy stay. A
+successfully classified non-human caller still gets section 9's
+non-human refusal. Neither case includes a failure to read or identify
+data that the classifier needs.
+
+The caller classifier in `internal/lease` owns that distinction. Its
+failure must carry whether caller observation failed or supporting
+data failed, with the source, full file path when a file is involved,
+and the underlying reason. Every failing read or validation of a
+supporting record is covered, including job records, announcements and
+supervision state. A read error retains its
+cause, a parse error retains its diagnostic, and an unidentifiable
+record names the missing or invalid identity field. A filename alone
+or the combined words `corrupt or unidentified` do not explain the
+repair. The distinction reaches the human gate and refusal renderer
+as the classifier's decision; those callers do not infer it by
+matching error-message words. The classifier's admission rules and
+which inputs it requires remain unchanged.
+
+For a supporting-data failure, stop and arm print these two lines to
+stderr and exit 1, with `<verb>` the verb the person requested:
+
+```text
+metasystem <verb>: caller classification is blocked by <source> <path>: <reason>.
+repair <path>, then at an agent-free terminal, run: metasystem <verb> --repo <toplevel>
+```
+
+Here `<source>` names the input, such as `job record` or `supervision
+state`, and `<path>` is its full path. The command retains
+`--installation` when needed to resolve this checkout's engine. For
+an access failure, repair means restoring readability; for corrupt or
+unidentifiable contents, it means restoring the valid record from its
+owner's evidence. A job or machine is named only when established by
+readable evidence, never guessed from the damaged file. The existing
+remote-job rule still requires matching terminal evidence before its
+survivor objection clears; restoring a readable non-terminal record
+repairs classification alone.
+
+Neither stop nor arm repairs another record during classification.
+Repairing that named input clears the classification obstacle; the
+printed retry then classifies the caller again and, if authorized,
+applies the requested verb's ordinary fence and survivor rules. This
+is the retry section 15.2 permits after a named change. It differs from
+an unprobeable survivor after successful classification, whose remedy
+remains the stop command and prerequisites specified above. Sending
+every classification error to stop would merely move the same failure
+to another verb using the same classifier. Moving to another terminal
+alone is never presented as a repair for unreadable supporting data.
+
+Such a refusal authorizes nothing: no process is started or signalled,
+no record is repaired or removed, and the fence, generation, actor,
+time and survivor list remain byte-identical. An open fence stays open
+and a closed fence stays closed. A bad record is not skipped to obtain
+a human classification, and a valid record is not fabricated to erase
+an identity or a remote obligation. The existing human mission fence
+opening uses the same distinction and repair-before-retry rule.
+
+Status has no caller-classification gate, as sections 1 and 7 require;
+it does not acquire one to share this refusal path. If one of its own
+required reads reports an unreadable or unidentifiable record, it follows
+18.3's partial-report rule: the source, path and reason are printed,
+later independent families remain visible, exit is 1, and its last
+line names repair followed by status, without a terminal requirement.
+A failure confined to data used by the authority classifier does not
+prevent status from reporting what its own reads establish. No extra
+classification or inventory pass is added.
+
 **18.2 One thing has one final line (SVC8-02).** Section 6's one-line
 rule applies to the whole stop, not separately to each pass. A thing's
 place in the report is the order in which it was first acted on or
@@ -1667,6 +1738,17 @@ proofs belong to section 10's existing package tests and scenarios:
   exit 1, retention over a repeated stop, and recovery after the fixture
   restores matching terminal evidence and follows the printed remedy.
   These seed local records and require no remote cancellation.
+  Its corrupt and unidentifiable job cases exercise the actual caller
+  classifier before the survivor probe, without bypassing that gate.
+  They assert the record-failure sentence, full path, precise reason,
+  repair-before-arm command and unchanged records. The same supporting
+  data failure through stop names repair-before-stop and changes no
+  fence state. Restoring readable non-terminal contents must reach the
+  ordinary remote-survivor refusal; matching terminal evidence then
+  permits the normal recovery. Status over the corrupt job still
+  produces 18.3's partial report with exit 1 and no human gate. These
+  are assertions within the existing supervision-bed scenario, not a
+  new scenario or a waiver of its failed acceptance assertion.
 - The `creator-race` and `survives-kill` package tests in
   `internal/stoptransition` cover one persistent survivor across all
   passes, failure followed by success, a repeated adopted run, a
