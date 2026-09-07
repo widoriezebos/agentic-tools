@@ -786,3 +786,16 @@ agent's act; the checkout stays a brain), override `brain withdraw`
 declaration and the act runs as a node's), commands 1. No exclusion, no
 pending marker. The corrupt-state remedy line is the same code with the
 same row.
+
+## Addendum 4: the absent-node fixture's landing (m1, 2026-09-07)
+
+The brain-absent-node-proceeds row's positive leg has clone B land a
+plain file with no landing declaration, which the landing driver refuses
+as missing-declaration on any tree. Decision: clone B's landing in that
+row is the plain landing the brain-land-refuses row already proves
+succeeds on a declared leg, a register carriage of one new record file
+(`land.sh -m <message> --direct-fix register-carriage <records path>`),
+with the same authenticated fixture lease the sibling legs carry. The
+row observes what it always meant to: the node lands and pushes green
+while the brain checkout has no session. No engine chain is seeded and
+nothing else in the row changes.
