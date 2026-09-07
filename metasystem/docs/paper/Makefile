@@ -33,11 +33,12 @@ CHAPTERS := \
 	11-economy.md \
 	12-learning-systems.md \
 	13-the-human-role.md \
-	14-the-sitting.md \
-	15-the-transition.md \
-	16-self-application.md \
-	17-outlook.md \
-	18-appendix-functional-design.md
+	14-how-engineers-learn.md \
+	15-the-sitting.md \
+	16-the-transition.md \
+	17-self-application.md \
+	18-outlook.md \
+	19-appendix-functional-design.md
 
 SOURCES := metadata.yaml $(PREFACE) $(CHAPTERS)
 
@@ -114,7 +115,7 @@ $(TARGET_DIR) $(BUILD_DIR):
 mermaid-cli: | $(BUILD_DIR)
 	@mkdir -p "$(BUILD_DIR)"
 	npm install --prefix "$(BUILD_DIR)" @mermaid-js/mermaid-cli
-	@echo "Installed. `make pdf` now finds it automatically."
+	@echo "Installed. Run make pdf to render the diagrams."
 
 ## clean: Remove the generated PDF and build intermediates
 clean:

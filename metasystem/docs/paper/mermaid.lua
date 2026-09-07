@@ -54,10 +54,12 @@ local base_config = decode(read_file(base_config_path)) or {}
 local layout = decode(read_file(layout_path)) or {}
 
 -- The config a diagram is actually rendered with: the shared theme, plus this
--- diagram's spacing overrides if it has any.
+-- diagram's layout overrides if it has any.
 local function effective_config(override)
   local config = decode(pandoc.json.encode(base_config)) or {}
   if override then
+    if override.layout then config.layout = override.layout end
+    if override.elk then config.elk = override.elk end
     config.flowchart = config.flowchart or {}
     if override.nodeSpacing then config.flowchart.nodeSpacing = override.nodeSpacing end
     if override.rankSpacing then config.flowchart.rankSpacing = override.rankSpacing end
@@ -116,7 +118,9 @@ function CodeBlock(block)
     end
   end
 
-  -- No explicit width: pandoc then bounds the image to both the text width and
-  -- the text height, so a tall diagram cannot run off the page.
-  return pandoc.Para({ pandoc.Image({}, image_path, "") })
+  -- By default pandoc bounds the image to the text width and height. A layout
+  -- override can reduce the width to leave room for the surrounding text.
+  local image = pandoc.Image({}, image_path, "")
+  if override and override.width then image.attributes.width = override.width end
+  return pandoc.Para({ image })
 end

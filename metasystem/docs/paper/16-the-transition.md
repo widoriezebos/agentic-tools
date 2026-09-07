@@ -1,4 +1,4 @@
-# 15. The Transition
+# 16. The Transition
 
 **Authority follows demonstrated protection, and every transferred responsibility keeps a tested way back.**
 
@@ -24,6 +24,8 @@ These facts form a baseline only when their sources and uncertainty are recorded
 
 The baseline connects cost to protected outcomes. It measures elapsed delivery time and human attention, but also failures found before release, failures missed, the number of people exposed, time to containment, success of reversal, repeated sign-ins, lost work and unresolved support reports. Activity counts alone cannot show whether the old process is safe. A quick release that harms users is not an efficient reference point, and an expensive review that never catches a relevant fault may not be protection.
 
+The baseline also covers the judgment the team depends on. Can its reviewers diagnose an unfamiliar session failure and challenge misleading advice? Can newer engineers learn to do so? Chapter 14's practice cases provide evidence that can be compared over time, including the effort needed to develop that understanding. Early results measure the expertise people bring into the transition; later results must show whether the new way of working sustains it.
+
 Some entries are blank. The team has never measured whether responsive readers are ejected or whether reversal restores rewritten sessions. That absence belongs in the baseline because present protection is unknown. A new measure is valuable only if it distinguishes an outcome the team cares about.
 
 The baseline makes later claims testable. If the new path finds clock-boundary failures earlier but doubles recovery time, the trade is visible. If it lowers routine review effort while more people lose work, the transfer has failed. If both paths miss the same background-refresh error, running them side by side has revealed a shared blind spot rather than agreement. Every transfer later in the transition is judged against this baseline: the responsible authority moves a verification or release responsibility to machinery only when the measured protection under the new path at least matches this reference.
@@ -46,6 +48,8 @@ After several low-risk changes, the new checks reproduce known failures, permit 
 
 That separation is intentional. Machinery may receive permission to propose a change before it receives permission to test against sensitive data. It may receive permission to test before it may accept the result. It may accept a low-risk candidate before it may expose users, and it may release to a small group before it may expand further. Each permission is transferred only after evidence shows that the machinery can perform the action and contain its consequences.
 
+Each transfer also identifies the human expertise it will still need and how people will develop it. If reviewers can no longer investigate the behavior they govern, or newcomers cannot learn to examine it, the authority narrows the delegation or brings in qualified help. Fast delivery alone cannot justify widening permission.
+
 The session-expiry change begins high on several risk dimensions: a small comparison affects every signed-in user, changes a security boundary and includes behavior not previously tested. During transition, the machinery can build and examine the candidate, while a responsible authority makes the three-interpretation ruling and retains release approval. The releaser first observes what it would do. On a later attempt, it may release to internal accounts and stop automatically on named signals. Wider expansion remains under the responsible authority's approval until repeated evidence shows that automatic expansion and reversal protect the declared bounds.
 
 Scope widens from reversible, familiar, limited work because failures are cheaper to study and contain. That evidence does not authorize an irreversible migration or policy waiver. Authority follows demonstrated protection across the relevant risk range.
@@ -58,13 +62,13 @@ The method we built in Chapter 4 asks for that need before choosing a form. A du
 
 There is also a deletion branch. In Chapter 4 we already established the sprint case in which no need survives and the cadence is discarded. Transition does not repeat that analysis. It confirms that the recorded decision still applies, removes the ceremony without replacement and preserves the evidence and authority for the deletion. Without that record, simplification would be indistinguishable from neglect.
 
-Replacement evidence is required only when the need remains. In that case, the old practice stays until the proposed mechanism demonstrably serves that need as well or better across a declared period and range of risk. The team may adapt the old practice while learning; it must not claim that a new dashboard preserves negotiation, accountability or independent scrutiny just because it has the same inputs on a screen.
+Replacement evidence is required only when the need remains. In that case, the old practice stays until the proposed mechanism demonstrably serves that need as well or better across a declared period and range of risk. Learning gained through the old practice is part of that comparison. The team may adapt the old practice while learning; it must not claim that a new dashboard preserves negotiation, accountability or independent scrutiny just because it has the same inputs on a screen.
 
 ## Make rollback part of adoption
 
 > *During a limited release, the new path reports healthy sign-in rates while support receives credible reports of lost work. The measures disagree, and the new appeal path has not yet routed those reports to the release authority. The system narrows its own permission, restores the previous release procedure and session behavior and preserves both sets of evidence.*
 
-That response was designed before authority moved. Every transferred responsibility has a tested route back to the last safe process, data state and authority boundary. Reversing the application alone is insufficient if sessions have been irreversibly rewritten. Restoring the old runbook is insufficient if the people named in it no longer hold authority. A rollback identifies what can be restored automatically, what requires compensating action and which responsible authority may order it.
+That response was designed before authority moved. Every transferred responsibility has a tested route back to the last safe process, data state and authority boundary. Reversing the application alone is insufficient if sessions have been irreversibly rewritten. Restoring the old runbook is insufficient if the people named in it no longer hold authority or can no longer carry out the procedure. A rollback identifies what can be restored automatically, what requires compensating action and which responsible authority may order it.
 
 Rollback contains harm and restores known protection while the team examines the divergence. The next attempt may add the missing user signal, narrow exposure or retain human release authority longer. The failed comparison remains available for learning.
 

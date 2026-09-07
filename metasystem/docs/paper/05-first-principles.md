@@ -66,6 +66,8 @@ Construction and verification receive explicit budgets proportional to risk. A b
 
 Some decisions cannot be bought with more computation. Machinery may gather information, construct alternatives and test claims. Value rulings, irreversible acts, changes to the governing rules and accountability always end with responsible authorities. That is unconditional. More evidence can improve a human decision; it cannot turn the machinery into the responsible authority.
 
+That authority depends on people who can understand and question the evidence. The delivery system must help develop the human judgment it requires, including in people who have yet to acquire it. A transfer of work is incomplete while it removes necessary experience without a demonstrated way to replace it. Chapter 14 develops this obligation.
+
 ## Failure leaves a record
 
 > *An examination reaches its spending limit after finding that two devices disagree near the expiry boundary. It has not shown the candidate safe, but it has found a precise uncertainty.*

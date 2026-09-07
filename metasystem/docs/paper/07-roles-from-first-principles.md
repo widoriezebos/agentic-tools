@@ -82,7 +82,7 @@ A narrator can turn the record into that report. The report has influence becaus
 
 That influence is exactly why the narrator is given no power. Every material claim points back to the source record. The narrator cannot remove the refused candidate, soften a failed check, accept the work or release it. If the report states a material result, the responsible authority can reach the exact observation supporting it. The report becomes inspectable, while authority remains with actors whose powers are named.
 
-The role is easy to undervalue because it decides nothing. The decisions we reserve for people (value rulings, irreversible acts, rule changes and accountability) are only as good as the person's understanding of the situation, and every other record in the system is written for machinery to act on. The narration is what keeps the responsible authority able to rule. Without it, human authority exists in name only.
+The role is easy to undervalue because it decides nothing. The decisions we reserve for people (value rulings, irreversible acts, rule changes and accountability) depend on the person's understanding of the situation, and every other record in the system is written for machinery to act on. The narration makes that evidence usable. The reader still needs enough judgment to question an explanation or notice what it leaves out. Developing that judgment requires the learning we will describe in Chapter 14; a clear report alone cannot supply it.
 
 ## Configurations rather than job titles
 

@@ -1,8 +1,8 @@
-# 14. The Sitting
+# 15. The Sitting
 
 **The partner who helped shape a design is the last one who may judge it.**
 
-Chapter 1's day begins at 8:40, when the responsible authority records an outcome. We have not yet seen where that record came from. A request arrives as one sentence. An outcome precise enough to guide construction is a different thing. The distance between them is crossed in a conversation. We now describe that conversation: what it is, who takes part, what it must leave behind and how it ends. We call it a sitting: a working conversation between a responsible human and the delivery system's machinery, whose purpose is to end in records. Most of what follows concerns the sitting that shapes intent or a design; the same form returns later, inside the delivery loop, when a human reviews.
+Chapter 1's day begins at 8:40, when the responsible authority records an outcome. We have not yet seen where that record came from. A request arrives as one sentence. An outcome precise enough to guide construction is a different thing. The distance between them is crossed in a conversation. We now describe that conversation: what it is, who takes part, what it must leave behind and how it ends. We call it a sitting: a working conversation between a responsible human and the delivery system's machinery, whose results enter the record. Most of what follows concerns the sitting that shapes intent or a design. The same form supports human review and the learning described in Chapter 14.
 
 > *Thursday, 8:05. The responsible authority for account security reads the request: change how long a user stays signed in. Instead of writing a task, they start a conversation with the delivery system.*
 
@@ -20,11 +20,11 @@ The room itself has no authority. Nothing said in a sitting holds anyone to anyt
 
 ## Who is in the room
 
-The human is there in two capacities at once. As the responsible authority, they choose between values and answer for the choice. As an engineer, they bring judgment about how software behaves and fails. Both capacities are needed, sometimes within the same minute.
+When shaping intent, the human is there in two capacities at once. As the responsible authority, they choose between values and answer for the choice. As an engineer, they bring judgment about how software behaves and fails. Both capacities are needed, sometimes within the same minute. A person attending a sitting to learn holds only the permissions of that work; participation grants no authority to rule.
 
 The machinery is there only in functions that judge nothing. It retrieves earlier rulings and standing rules that touch the topic. It anchors every claim about current behavior in the application itself, so the conversation argues from facts rather than from memory. It produces the cases at the edge and shows where two stated wishes conflict. It writes the record as the conversation moves. These functions may combine in one worker, because none of them accepts work, changes the application or settles a value.
 
-One role is kept out of the room on purpose: the independent examiner. A sitting that produces a design has an author, and the author of a design never judges its own claim. The same problem reaches further than authorship. Whoever sat in the room heard the options that were considered and dropped, the tentative reasoning, the authority thinking aloud. An examiner is valuable precisely because it starts free of all that: it receives the recorded intent and the rulings, not the trail of arguments behind them. A mind cannot unhear what it has heard, so the fresh view must come from a worker who was never in the room. That is also what the separation buys. The people in the sitting can afford to grow attached to an idea, because the challenge to it will come from outside. One caution stands: a fresh worker escapes the room's framing, not every blind spot.
+When a sitting shapes intent or a design, the independent examiner of the resulting work stays outside it. A design has an author, and the author never judges its own claim. The same problem reaches further than authorship. Whoever sat in the room heard the options that were considered and dropped, the tentative reasoning, the authority thinking aloud. An examiner is valuable precisely because it starts free of all that: it receives the recorded intent and the rulings, not the trail of arguments behind them. A mind cannot unhear what it has heard, so the fresh view must come from a worker who was never in the room. That is also what the separation buys. The people in the sitting can afford to grow attached to an idea, because the challenge to it will come from outside. One caution stands: a fresh worker escapes the room's framing, not every blind spot.
 
 ## The sitting has no memory
 
@@ -36,9 +36,9 @@ One test covers all three. End the sitting at any moment, without warning. A fre
 
 ## How a sitting ends
 
-A sitting ends when more conversation stops changing what would be recorded. What exists at that point is recorded intent, or a framed design with the decisions behind it and its open questions named.
+A sitting ends when it has served its purpose or needs work that further conversation cannot supply. A sitting that shapes work leaves recorded intent or a framed design with its open questions named. In a sitting for learning, the design may stay the same while the person's understanding changes. The record then keeps the experiment and what the person could explain, including where more practice is needed.
 
-Then the governed loop takes over. If the sitting produced intent, construction begins against it, and the questions the room left open return as ruling requests with their consequences attached, the way the builder returns them at 9:12 in Chapter 1. If the sitting produced a design, that design becomes a builder's proposal, and the independent examination that follows challenges the candidate, the design and the code together. In neither case does the room's agreement count as evidence.
+When a sitting produces work, the governed loop takes over. If the sitting produced intent, construction begins against it, and the questions the room left open return as ruling requests with their consequences attached, the way the builder returns them at 9:12 in Chapter 1. If the sitting produced a design, that design becomes a builder's proposal, and the independent examination that follows challenges the candidate, the design and the code together. In neither case does the room's agreement count as evidence.
 
 The thoroughness of the room is not a reason to skip that challenge. It is the reason to hold it. Everything the room agreed on, it agreed on from inside one shared framing.
 
@@ -54,6 +54,12 @@ A sitting is not only for the start of work. The same form returns inside the lo
 
 What leaves a review sitting is again records: findings answered one by one, a ruling, or a named demand for evidence. A review sitting that ends in a nod has produced nothing anyone can be held to.
 
+## A sitting for learning
+
+The engineer investigating the retained session failure in Chapter 14 can use a sitting to choose an experiment and examine its result. The machinery withholds the earlier diagnosis while the engineer makes a prediction. It retrieves the relevant evidence and can request an isolated run through the governed tools. The engineer decides what to investigate next. An explanation comes after that attempt, when there is an observed result to explain.
+
+Later practice tests whether the understanding lasts, with assessment on unfamiliar cases as described in Chapter 14.
+
 ## What a sitting must not become
 
 Not a status meeting. Records already carry the state of the work, and any authorized reader can inspect them. A sitting spent reciting what the records already say is the mimicry trap again.
@@ -62,8 +68,8 @@ Not an approval performed for show. A sitting gives that failure more room than 
 
 And the preparation must not quietly supply the values. When every option comes pre-weighed, choosing the recommended one every time is the approval habit in conversational form. The guard is the same as elsewhere: the human's decision is recorded with their reasons, and a run of sittings whose rulings always match the preparation is itself evidence worth examining.
 
-Proportion applies here as everywhere. A mechanical repair with a clear defect needs no sitting to shape what is already stated; holding one would cost more than it protects. The repair does not thereby escape review: whether the evidence requires an independent human look is answered by consequence, not by how obvious the repair seems. The sitting is for what conversation alone can produce: intent nobody has stated yet and design directions not yet framed.
+Proportion applies here as everywhere. A mechanical repair with a clear defect needs no sitting to shape what is already stated. A separate learning purpose may justify working through such a case with an engineer who has yet to understand it. Review still depends on the consequences and the evidence. Each sitting needs a reason to spend the person's attention, and a result by which its value can be judged.
 
 ## What has changed
 
-Of everything we have described, the sitting looks most like current practice: people and their tools talking through a design. What has changed is what the talk must produce. It leaves decisions instead of impressions, anchored facts instead of recollections and open questions instead of silence. And it has changed who may judge the result: not those who produced it, however good the conversation was, but a fresh mind with the record in front of it.
+Of everything we have described, the sitting looks most like current practice: people and their tools working through a problem. What has changed is what the talk must produce. Decisions enter the record with their reasons, and facts stay connected to where they can be checked. A proposed change goes on to examination by someone who was outside the conversation that shaped it. A gap in understanding calls for further practice.

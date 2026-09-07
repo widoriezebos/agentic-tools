@@ -1,4 +1,4 @@
-# 16. Self-Application
+# 17. Self-Application
 
 **A rule change must never be its own judge.**
 
@@ -59,6 +59,8 @@ Self-application is a necessary but insufficient test. Failure directly contradi
 Consider three organizations that adopt the proposed principles for different applications. They record more checks, clearer authority and successful self-changes, yet escaped harm repeatedly rises, and total delivery cost remains higher than under simpler controls. If the comparison covers similar risk and does not just count a difficult transition period, that result weighs against the thesis. The proposal cannot preserve itself by calling every failure incomplete adoption.
 
 My claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations (because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority) count against them. Retained human ceremonies that outperform proposed replacements at serving the same need, across comparable cases and costs, count against the claim that those replacements are better.
+
+The same applies to human learning. If experienced reviewers become less able to challenge faulty advice, or newcomers fail to acquire the judgment the work needs, the transfer has lost a necessary capability. Comparisons must run long enough to distinguish expertise inherited from the earlier practice from expertise developed under the new one, with learning time included in the cost.
 
 Support must come from reproducible evidence across different teams, risk levels, applications and operating conditions. It must include negative results, unsuccessful transitions and comparisons with simpler approaches. Evidence gathered by the system about itself may contribute one case, but it cannot be the only case. Independent examiners must be able to inspect the assumptions, measures, missed harms and selection of examples.
 

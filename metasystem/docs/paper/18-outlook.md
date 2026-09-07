@@ -1,4 +1,4 @@
-# 17. What Engineering Becomes
+# 18. What Engineering Becomes
 
 **The generic machinery can be reused; much of a metasystem's value lives in the half that cannot be.**
 
@@ -22,7 +22,7 @@ The shape is not universal. A small organization may combine compatible function
 
 Careers change with the responsibility. An engineer may spend less time producing each edit and more time making intent checkable, catching plausible mistakes, limiting failed actions or improving recovery. Another may specialize in evidence custody and explanation without authority to alter it. Leadership moves toward assigning purpose, budgets, limits and accountability that survive individual decisions.
 
-This shift does not remove construction knowledge. A person who governs a builder must understand what the machinery can change, how tests can mislead and where the application can harm people. The craft moves up a level only by retaining contact with the level below. A compiler engineer still needs to understand programs; an engineer of delivery systems still needs to understand software behavior.
+A person who governs a builder must understand what the machinery can change and how its evidence can mislead. Chapter 14 develops that understanding through practice: engineers choose their own experiments, and later cases test whether they can apply what they learned. The delivery system is responsible for helping new engineers develop that judgment as well as keeping experienced engineers able to use it. The improvement has to be demonstrated over time.
 
 ## New scarcities, new skills
 
@@ -38,7 +38,7 @@ Incidents create another skill: turning experience into a measured change in fut
 
 Plain explanation remains essential. A responsible authority deciding whether to shorten sessions needs a bounded question, credible alternatives and a traceable report of likely effects. Affected people challenging the decision need to understand what happened and where appeal goes. Producing more internal detail is not explanation. The skill is to connect each material claim to evidence in language the person holding the responsibility can use.
 
-Human attention remains scarce throughout. The system should not spend it on routine approvals performed for show or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, severe possible harm, changes to governing rules, weak or correlated evidence and accountability. Deciding where human judgment is mandatory (and designing reliable machinery for the rest) becomes a central engineering act.
+Human attention remains scarce throughout. The system should not spend it on routine approvals performed for show or on reconstructing state that durable records can provide. It should reserve attention for purpose, conflicting values, irreversible acts, severe possible harm, changes to governing rules, weak or correlated evidence and accountability. Time spent developing the judgment those decisions require is part of the cost. Deciding where human judgment is mandatory (and designing reliable machinery for the rest) becomes a central engineering act.
 
 ## What must not be lost
 
@@ -72,7 +72,7 @@ These are limits of the concept rather than promised features awaiting implement
 
 We began with a small request whose consequences exceed its wording. We returned to intent: state the desired outcome, expose ambiguity, record conflict and revise the purpose when reality shows it to be wrong. We examined inherited ceremony: identify the need a practice served, then retain, adapt, replace or explicitly discard the form according to that need.
 
-We then designed for the workforce that actually performs the work. Builders construct within narrow permissions. Independent examiners challenge finished claims. Durable records preserve state without pretending to settle values. Enforced rules refuse unsupported action. Releasers limit exposure and reverse when observations leave their bounds. Care brings production evidence back into intent, checks and policy. Learning changes future behavior without turning every past surprise into a permanent law.
+We then designed for the workforce that actually performs the work. Builders construct within narrow permissions. Independent examiners challenge finished claims. Durable records preserve state without pretending to settle values. Enforced rules refuse unsupported action. Releasers limit exposure and reverse when observations leave their bounds. Care brings production evidence back into intent, checks and policy. Learning changes future behavior without turning every past surprise into a permanent law. It also develops the people whose judgment makes human oversight possible.
 
 Finally, the machinery is held to rules it cannot evade when it changes itself. That test is necessary and insufficient. The larger proposal must win support across different applications, organizations, consequences and costs. Where it fails, the evidence should change the design or reject the investment.
 

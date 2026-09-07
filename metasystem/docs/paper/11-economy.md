@@ -72,6 +72,8 @@ Building durable role separation, continuous observation, an acceptance custodia
 
 This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost. The possibility of automation alone does not justify it.
 
+Supplying human judgment includes developing it. A person who builds a small session handler may spend more time than machinery would, yet gain experience that improves later examination. The comparison includes that benefit and the cost of maintaining expertise as the application changes. Chapter 14 asks what evidence would show that a different way of learning serves those needs. Savings that depend on expertise nobody maintains are temporary.
+
 One-off prototypes, disposable explorations, small low-risk tools and short-lived software often fall below that point. Manual construction and judgment can be cheaper and clearer. A prototype that begins handling identity, money, private data or a decision people depend on can cross the point even before it is large. Repetition also changes the answer. A small release performed hundreds of times can justify durable controls that no single release would repay.
 
 The argument allows a rational decision not to build the system, without exempting small work from thought: even the disposable comparison needs care to match its consequence.
