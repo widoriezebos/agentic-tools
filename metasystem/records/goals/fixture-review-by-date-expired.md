@@ -1,19 +1,18 @@
 # fixture-review-by-date-expired
 
-- State: claimed
+- State: done
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="severity 1: a fixture bed goes red on the calendar, nothing in production; novelty 1: compute a date; exposure 1: every seat landing through the full battery from 2026-09-07 on; accumulation 1: one fix"
 - Tier: 1
 - Intent: scripts/agents/dispatch-fixtures.sh (line 1795) and scripts/agents/channel-fixtures.sh (lines 105, 170) pass --review-by 2026-09-06 hard-coded; from 2026-09-07 the temporary-human-word scenario refuses the past date and the dispatch bed goes red before its assertions, so every full-battery landing on the fleet fails until it is fixed. DONE means the review-by date is computed at run time (today plus one day, UTC) in both beds and the beds are green again
 - Origin: main
 - Next step: VERIFIED REMEDY 2026-09-07 05:5xZ (read in internal/humanauthority/authority.go lines 243-252, internal/fixtureauth/fixtureauth.go lines 257-293, internal/config/conf.go line 39). The two rules on --review-by are now mutually unsatisfiable: the date may not be before today (reviewDate.Before(checkedDate)) and may not exceed TemporaryGoalAuthorityHorizon=2026-09-06, so since 2026-09-07 no date passes and computing tomorrow (the stop chain's round-3 change) is refused too. Relayed/temporary human authority is therefore retired in fact, fixtures included. THE BATTERY FIX (unblocks every landing on the fleet): dispatch-fixtures.sh is the only battery bed affected (fullBatteryCommand in internal/landing/tierone.go runs go-gate --fast, dispatch-fixtures.sh, goal-cli-fixtures.sh). Its failing call is the goal approve of fixture-serving near line 1795 in agent_repo, and that repo is tailored to metasystem.runtimes=fake (config tailor --runtimes fake, near line 470), so FixtureModeRoot is true there and --fixture-human-authority is lawful, exactly as the budget fixture already does at line 1273. Switch that call to --fixture-human-authority and drop the review-by computation there; GoalHumanAuthorityProbe is documented as deliberately independent of the clock and the governance horizon. CHANNEL BED, not in the battery and not blocking landings: channel-fixtures.sh lines 105 and 170 run in an export of the real repo whose committed conf says metasystem.runtimes=claude,codex,devin, and ConfValue reads only the committed conf, so fixture authority is unavailable there; leave those two until Wido rules on the horizon, or tailor that export to fake in a later round. STILL WIDO'S: extend TemporaryGoalAuthorityHorizon or confirm relayed authority stays retired.
+- Concluded: Landed 423e6ed6 on main: the dispatch bed's fixture-serving approve uses --fixture-human-authority, and --temporary-human-word and --review-by are gone, so the expired-date refusal no longer blocks any landing on the fleet. Implementer job frbd-build1 produced the diff and the full battery passed on that exact tree, exitStatus 0, receipt fefccd8d at 2026-09-07T08:33:53Z. It landed as a human commit by Wido rather than through the tier-1 lane: two lane attempts failed on plumbing (goal-item-not-held, because the goal CLI pushes ledger commits without moving the local branch; then the commit comparison tripping on records/narrator-digest.log, which the narrator appended to during the 35-minute battery), and land.sh deletes the stale receipt before making a new one, so each retry re-ran the full battery to re-prove an already-green tree - m1b has that as goal land-retry-rediscards-valid-receipt. channel-fixtures.sh lines 105 and 170 are deliberately untouched: they run in an export of the real repo where fixture authority is unavailable and that bed is not in the battery. STILL WIDO'S: extend TemporaryGoalAuthorityHorizon or confirm relayed authority stays retired.
 - OpenedAt: 2026-09-07T00:54:29Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-07T07:34:26Z revision=5 opid=QA926AARTGQZCM67BZW2WA52Q1-m1b-927ecfdd authority=proven digest=e336b186f3c98bf65197247ccf5c7f9b3509bae47adfaae6ee2e49cc817a5423
 - Sliced: machine=m1d lineage=main-1788764558-63534-a15b0d revision=6 at=2026-09-07T08:02:46Z
-- Claimed: machine=m1d lineage=main-1788764558-63534-a15b0d at=2026-09-07T07:37:35Z revision=6 accountingRevision=6
-- StopCapability: generation=6 revision=6 machine=m1d claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-07T00:54:29Z AFXY0YFPDFP42YTHS2GJPE0SNE-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=fixture-review-by-date-expired
@@ -23,4 +22,5 @@ History:
 - 2026-09-07T07:34:26Z QA926AARTGQZCM67BZW2WA52Q1-m1b-927ecfdd approve actor=human:Wido targets=fixture-review-by-date-expired
 - 2026-09-07T07:37:35Z Q6R7NP0K1228A4KXY2ARX5478E-m1d-25755dc0 claim actor=m1d+main-1788764558-63534-a15b0d targets=fixture-review-by-date-expired
 - 2026-09-07T08:02:46Z SGVSFN25XDT2M4VN1ADM85ADKN-m1d-25755dc0 slice-start actor=m1d+main-1788764558-63534-a15b0d targets=fixture-review-by-date-expired
-Integrity: sha256=b1c2556caa7da443f00b91cd3bcc319a60af965f481dc014242e9bfb6d7433f9
+- 2026-09-07T09:08:15Z RJ382E6NXV9BHHJ2F9ABV9FPAT-m1d-25755dc0 done actor=m1d+main-1788764558-63534-a15b0d targets=fixture-review-by-date-expired
+Integrity: sha256=865cf72d239de4928524e00593040d5cba7b46cbe0cf779babdfd1263226adb7
