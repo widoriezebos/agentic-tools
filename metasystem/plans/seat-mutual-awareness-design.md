@@ -1,4 +1,4 @@
-# seat-mutual-awareness — design: seats see each other and ask each other (revision 4)
+# seat-mutual-awareness — design: seats see each other and ask each other (revision 5)
 
 Goal: plans/goals/seat-mutual-awareness.md. Wido's order (2026-08-31,
 verbatim on the goal record): seats must be aware of each other and
@@ -58,6 +58,29 @@ revision overrides it. Every cite this revision touched
 ledgerattention.go, path-classes.txt, observe.go, lease/classify.go)
 was re-read at branch agent/sma-design4-20260907 on main 968af5e4;
 the rest stand from revision 3.
+
+Revision 5 answers critique round 4 (job sma-crit4c-20260907, three
+findings at commit 7f8c13a6, register at
+records/misc/seat-mutual-awareness-critique-r4.md), each bounded, and
+touches nothing else; ruling A stands. In one breath: the rollout
+rule's confirmation admits only surfaces that read the RUNNING
+reader's generation, the re-arm outcome of `metasystem up` and the
+`steward-runner` line of `metasystem health`, and drops `supervise
+status`, whose `engineBuild` is the stamp of the command process, with
+a fixture proving that rebuilt bytes alone confirm nothing (SMA-C-25);
+every fixture assertion in section 9 is assigned to the slice that
+owns the behaviour it asserts, so SMA-F-SPOILED-TIP loses its
+presence-republish assertion to a slice-2 fixture and four other
+fixtures split the same way, and section 10's gates name exactly the
+fixtures and tests each slice owns (SMA-C-26); and the box asks Wido
+for exactly the fifteen reservations and 1800 job-minutes the work
+needs, because `goal set-budget` starts a fresh accounting revision
+that counts none of the earlier reservations (SMA-C-20). Every cite
+this revision touched (supervise.go, up.go, health.go, identity.go,
+runner.go, steward_verbs.go, supervision-fixtures.sh, verbs.go,
+budget.go, the goal record) was re-read at branch
+agent/sma-design5b-20260907 on main 7887b061; the rest stand from
+revision 4.
 
 The shape in one paragraph. Every machine already shares one git
 branch that the goal verbs commit to and push, with a transaction
@@ -193,7 +216,41 @@ prints at every turn end, and reads the words with one verb.
    pull followed by a rebuild and `up` replaces the running engine
    without a terminal act. Fresh joining arms the steward before `up`
    (plans/fleet-join-bootstrap-design.md:234-263), so at arm time on a
-   fresh machine there may be no lease.
+   fresh machine there may be no lease. What proves WHICH engine is
+   reading (SMA-C-25, round 4): `metasystem supervise status --repo`
+   fills `engineBuild` from `supervise.BuildStamp`, the build stamp of
+   the command process itself, and reads only the supervision owner
+   and state files (cmd/metasystem/supervise.go:109-120, 145-151), so
+   rebuilt bytes at the enrolled path show the new stamp there while
+   the old runner keeps ticking. The running reader's generation is
+   proven by two surfaces. First, `up`'s re-arm: ordinaryBody
+   (up.go:553-605) records the `accepted-engine` component with
+   outcome `re-armed` and a detail naming generation, previous
+   generation, engine stamp, landed commit and landing ref
+   (acceptedEngine, up.go:521-533), prints it as `component=accepted-engine
+   outcome=re-armed` (up.go:81) with the aggregate fact
+   `re-armed="generation=<n> previous=<n-1> engine=<stamp> landed=<commit>"`
+   (up.go:94-95, 502-512), and appends `engine-re-armed
+   generation=<n> ...` to artifacts/agents/supervision/arming.log
+   (up.go:325, 562-573); the outcome exists only after the old runner
+   was stopped and the new identity minted (runner.go:576-617, Stage
+   StageMinted). Second, the `steward-runner` health role
+   (health.go:626-687, printed by `metasystem health --repo`,
+   steward_verbs.go:44-62): it reads runner.json, proves the runner
+   pid alive, reads the enrolled generation (installedEnrollment,
+   health.go:1265-1282) and is alive only when the running tick's own
+   evidence carries that generation with a fresh success, then appends
+   the enrollment's provenance, which names the generation and the
+   engine stamp (EnrollmentProvenance, runner.go:734-754). That stamp
+   is read from the enrolled bytes at mint time, never from the
+   process performing the enrollment (identity.go:71-73), and
+   VerifyIdentity checks no bytes digest (identity.go:127-157), so a
+   health line printed by rebuilt bytes still names the generation and
+   stamp of the runner that is actually reading. The rearm fixture bed
+   (scripts/agents/supervision-fixtures.sh:673-695 helpers; the
+   `rearm-rebuild` scenario at 1000-1044) already builds a stamped
+   engine, installs it at the enrolled path and asserts the re-arm
+   output, identity.json, the health provenance and the arming log.
 8. The ledger-attention pass projects every intervening commit
    (ledgerattention.go:226-268) and emits an event only on a change of
    claimable, pinned or queue sets. Publish pushes the configured
@@ -208,7 +265,19 @@ prints at every turn end, and reads the words with one verb.
    activeJobLimit=1 reviewRoundLimit=2` (plans/goals/seat-mutual-awareness.md:11);
    its next-step line at revision 24 counts three reservations and 360
    of the 720 job-minutes used since re-approval, before this revision
-   and its one review, which make five and 600.
+   and its one review, which make five and 600. What a new box counts
+   (SMA-C-20, round 4): the goal record at revision 26 reads
+   `Claimed: ... revision=24 accountingRevision=24`
+   (plans/goals/seat-mutual-awareness.md:15). `goal set-budget` on a
+   claimed goal calls bindClaim with the new revision
+   (internal/goal/verbs.go:753-760), and bindClaim writes a fresh
+   claim record whose AccountingRevision IS that revision
+   (verbs.go:252-268). The projection reads that accounting revision
+   (internal/dispatch/budget.go:250-254) and skips every reservation
+   whose goalRevision is older (budget.go:359-361). So after Wido's
+   set-budget every attempt and minute of the new tuple is fresh
+   authority, and nothing spent under revision 24 or earlier is
+   counted against it.
    Coverage floors: internal/goal 80.0 and internal/steward 74.0
    (scripts/agents/coverage-ratchet.json).
 
@@ -655,11 +724,42 @@ lands every machine already runs the one before it; under the re-arm
 law a pull followed by a rebuild and `up` replaces the running engine
 when the build commit is reachable from the configured landing ref
 (up.go:427-456, ReArmRebuiltEngine at runner.go:240), so "every
-machine pulled" and "every machine runs the new engine" are one step,
-and the seat of record confirms each machine through `metasystem
-supervise status --repo <checkout>` (engineBuild), through the
-`engine` field of its presence record once slice 2 is in, or through
-the machine's own word; (b) the upgraded validator refuses a spoiled
+machine pulled" and "every machine runs the new engine" are one step.
+THE CONFIRMATION (SMA-C-25, round 4): the seat of record confirms a
+machine only through a surface that reads the generation of the
+RUNNING reader, the steward runner, and the machine is confirmed for
+a slice when that surface names a generation minted from the slice's
+landed commit or later. Exactly two forms are admitted, and each is
+quoted into the goal record's next-step line with the machine's name
+before the next slice is dispatched. Form one, the re-arm outcome of
+`metasystem up`: the `component=accepted-engine outcome=re-armed`
+line and its `re-armed="generation=<n> previous=<n-1> engine=<stamp>
+landed=<commit>"` fact (up.go:81, 94-95, 521-533), or the same fact
+as the `engine-re-armed generation=<n> ...` line of the machine's
+artifacts/agents/supervision/arming.log (up.go:325, 562-573); that
+outcome is written only after the previous runner was stopped and the
+new identity minted (runner.go:576-617), so it proves the replacement
+happened, not that bytes were built. Form two, the enrolled running
+steward's generation as the health surface reads it from the enrolled
+runner: the `steward-runner` line of `metasystem health --repo
+<checkout>` (steward_verbs.go:44-62), alive at generation `<n>` with
+the provenance `enrollment generation <n> ... (engine <stamp> ...)`
+(health.go:626-687, runner.go:734-754); that role reads runner.json,
+proves the pid alive, and is alive only when the running tick's own
+evidence carries the enrolled generation, so it proves what is
+ticking. NOT admitted: `metasystem supervise status --repo` and its
+`engineBuild`, because that field is the build stamp of the command
+process itself (supervise.go:109-120), so rebuilt bytes at the
+enrolled path show the new stamp while an old runner keeps reading;
+a machine's own word, unless it quotes one of the two forms; and any
+reading of the binary on disk. The `engine` field of the presence
+record (section 3) is form two seen from the ledger once slice 2 is
+in, because the tick that composes it runs inside the enrolled
+runner and stamps the runner's own build; it confirms slices 3 and 4
+but never slice 2 itself, whose confirmation is forms one and two.
+SMA-F-REBUILT-BYTES-NOT-REARMED (section 9) proves that rebuilt bytes
+alone satisfy neither admitted form while satisfying the dropped
+one; (b) the upgraded validator refuses a spoiled
 tip, that is a tip carrying a record an upgraded engine cannot read:
 ledger-attention refuses to advance (ledgerattention.go:540-542) and
 every transaction refuses the captured tip before it mutates,
@@ -691,7 +791,10 @@ accident; and, as before, a process that hand-crafts a commit with a
 forged `Goal-Transaction` trailer can mint any seat record exactly as
 it could forge a goal approval today, because the tree is not
 authenticated (accepted.go:9). SMA-F-SPOILED-TIP proves (b) and both
-forms of (c) end to end.
+forms of (c) end to end at slice 1, with nothing but slice 1's
+validator, fences and verbs; SMA-F-SPOILED-TIP-REPUBLISH proves the
+owner's republication of a removed record at slice 2, when the
+writers that republish exist (SMA-C-26).
 
 ```
 git -C <checkout> fetch origin
@@ -740,105 +843,173 @@ plus `export-b` enrolled as `fixture-b` with its own lineage and
 `fixture-machine`. Human verbs run under the fixture's terminal
 classification. Every assertion reads origin/main, a verb's stdout
 and exit code, a component record, the health line, the hook's
-rendered message, or `steward digest-pending`.
+rendered message, or `steward digest-pending`. Every fixture below
+names in brackets the slice of section 10 that gates it, and no
+assertion is gated before the slice that owns the behaviour it
+asserts (SMA-C-26): a fixture whose assertions belonged to two slices
+is split into two named fixtures, and where a slice-1 fixture needs a
+record on the tip before any writer exists, the fixture commits the
+record plainly, carrying an opid that IS a `Goal-Transaction` trailer
+of an earlier goal verb from the same machine, so the validator
+reaches the row under test.
 
-- SMA-F-SPOILED-TIP (section 8's rollout rule, replacing revision 3's
-  SPOILED-REPAIR): with `plans/seats/junk.json` committed plainly from
-  `export-old`, both upgraded machines refuse the tip with
-  `seat-unknown-path` in their ledger-attention pass, and a goal verb
-  and a seat writer on A both refuse with "the captured tip does not
-  validate; repair the canonical branch deliberately". Form one: the
-  hand act of section 8 on A under the fixture's terminal
+- SMA-F-SPOILED-TIP [slice 1] (section 8's rollout rule, replacing
+  revision 3's SPOILED-REPAIR): with `plans/seats/junk.json` committed
+  plainly from `export-old`, both upgraded machines refuse the tip
+  with `seat-unknown-path` in their ledger-attention pass, and a goal
+  verb and `seat retire` on A both refuse with "the captured tip does
+  not validate; repair the canonical branch deliberately". Form one:
+  the hand act of section 8 on A under the fixture's terminal
   classification (the guard's `lease classify` returns `HUMAN`)
   removes the file and pushes on top; origin/main no longer holds it;
-  A's and B's next pass advance; A's next tick republishes presence.
+  A's and B's next pass advance and the seat tree validates again.
   The same staged removal from an agent-classified caller is refused
   by the guard with the seat message. Form two: the branch is
   force-pushed to the commit before the spoil; A's and B's pass refuse
   the rewind; `goal repair --accept-remote --by fixture-human --root`
   on each advances it; a run of the same verb against the still
   spoiled tip is refused by its whole-tree validation and moves
-  nothing.
-- SMA-F-MIXED: `export-old` fetches a tip carrying every record kind
-  and lands a goal verb on it; a landing from `export-old` that
+  nothing. Nothing here republishes: slice 1 has no writer that could.
+- SMA-F-SPOILED-TIP-REPUBLISH [slice 2] (the owner republishes,
+  section 8 (c)): run one, A's presence record on the tip is
+  overwritten by a plain commit from `export-old` with an unknown
+  key; both upgraded machines refuse `seat-json`; the hand act removes
+  the file; A's next tick republishes presence with a fresh opid whose
+  commit is on origin/main and the tree validates. Run two, the same
+  with A's membership record; A's next `up` republishes it
+  (`component=seat-member outcome=written`). Because the path was
+  absent when `up` wrote, section 2's Mutate has no tip to carry
+  joinedAt from, so the republished record's joinedAt is the
+  republishing write, and the fixture asserts exactly that rather
+  than the removed record's older value.
+- SMA-F-REBUILT-BYTES-NOT-REARMED [slice 1] (SMA-C-25, round 4; the
+  confirmation of section 8 (a)): a scenario `rearm-bytes-only` in
+  scripts/agents/supervision-fixtures.sh on the rearm bed
+  (prepare_rearm_repo, build_rearm_engine, install_rearm_engine,
+  supervision-fixtures.sh:673-695; modelled on `rearm-rebuild` at
+  1000-1044). Generation 1 is armed with engine A; engine B is built
+  with the trunk stamp and installed at the enrolled path, and NO `up`
+  runs. Then: `supervise status --repo` from the installed bytes
+  prints `engineBuild` equal to B's stamp (the dropped form says
+  "new"); artifacts/agents/steward/identity.json still reads
+  generation 1 with engine A's stamp; `metasystem health --repo` from
+  the same installed bytes prints the `steward-runner` role alive at
+  generation 1 with A's stamp in its provenance; arming.log carries no
+  `engine-re-armed generation=2` line; runner.json's pid is the
+  generation-1 runner and alive. So neither admitted form names
+  generation 2 while the dropped form does, and the fixture fails if
+  either admitted surface ever reports B's stamp before `up`. Then
+  `up` runs: `component=accepted-engine outcome=re-armed` with
+  `re-armed="generation=2 previous=1 engine=<B stamp> ..."`, the
+  arming log line, health at generation 2 with B's stamp, and a new
+  runner pid. The fixture reads no seat record and needs nothing of
+  slices 2 to 4; it gates slice 1 because the first fleet rebuild
+  follows slice 1.
+- SMA-F-MIXED-OLD-LANDING [slice 1]: a landing from `export-old` that
   creates a seat record is accepted by the old engine and refused by
-  the upgraded ones by name (then repaired as above).
-- SMA-F-MEMBER: `up` on A writes membership; B's `seat fleet` prints A
-  `unreachable, no presence yet`; a claim-only machine prints under
-  `unknown to the ledger`.
-- SMA-F-RETIRE-THEN-UP (SMA-C-16, SMA-C-19): `seat retire --machine
-  fixture-machine --by fixture-human`; A's next `up` records
+  the upgraded ones by name (`seat-writer`, because a landing commit
+  carries no transaction trailer), then repaired as in
+  SMA-F-SPOILED-TIP form one.
+- SMA-F-MIXED [slice 4]: `export-old` fetches a tip carrying every
+  record kind, written by their real writers (membership from `up`,
+  presence from the tick, an ask from `seat ask`), and lands a goal
+  verb on it; the old engine's read path ignores the directory and
+  the landing is accepted by every machine.
+- SMA-F-MEMBER [slice 2]: `up` on A writes membership; B's `seat
+  fleet` prints A `unreachable, no presence yet`; a claim-only machine
+  prints under `unknown to the ledger`.
+- SMA-F-RETIRE-THEN-UP [slice 2] (SMA-C-16, SMA-C-19): `seat retire
+  --machine fixture-machine --by fixture-human`; A's next `up` records
   `component=seat-member outcome=seat-retired` and origin/main's
-  record keeps retiredAt and retiredBy; `seat ask --to fixture-machine`
-  is refused `seat-retired`; `seat unretire` clears both and the next
-  `up` refreshes normally.
-- SMA-F-RECOVER-RETIRE (SMA-C-14): FAIL_AT after the push with the
-  outcome unknown, for retire and for unretire; `goal recover` reports
-  the human-act rejection naming the verb when the commit is absent,
-  and `confirmed on the canonical tip` when it landed; the record is
-  never written twice.
-- SMA-F-PRESENCE: A ticks; presence lands with updatedAt equal to
-  tickAt; a hand-committed presence with updatedAt one second later is
-  refused `seat-state` (SMA-C-18); a second tick within
+  record keeps retiredAt and retiredBy; `seat unretire` clears both
+  and the next `up` refreshes normally. The refusal of an ask to a
+  retired machine is asserted by SMA-F-UNKNOWN-VS-UNREACHABLE at
+  slice 4, where the ask verb exists.
+- SMA-F-RECOVER-RETIRE [slice 2] (SMA-C-14): FAIL_AT after the push
+  with the outcome unknown, for retire and for unretire, against a
+  membership record `up` wrote; `goal recover` reports the human-act
+  rejection naming the verb when the commit is absent, and `confirmed
+  on the canonical tip` when it landed; the record is never written
+  twice. Gated at slice 2 because the record it retires is written by
+  `up`, which slice 2 owns; the verbs and their recovery cases are
+  slice 1's and are unit-tested there (TestSeatRequestsRebuildFromIntent).
+- SMA-F-PRESENCE [slice 2]: A ticks; presence lands with updatedAt
+  equal to tickAt; a hand-committed presence with updatedAt one second
+  later is refused `seat-state` (SMA-C-18); a second tick within
   seat.presence-min with nothing changed adds no commit.
-- SMA-F-LINEAGE (SMA-C-17): `steward arm` before any `up` on a fresh
-  clone writes runner.json with `armedLineage: no-lease` and presence
-  shows it; after `up` and a re-arm the value is the session's
-  lineage; a lease succession without re-arm leaves it unchanged; a
-  runner started without the flag shows `unknown`.
-- SMA-F-UNKNOWN-VS-UNREACHABLE: `--to nobody` is refused
-  `seat-unknown-machine`; an aged presence makes the ask proceed with
-  the unreachable warning.
-- SMA-F-ASK-ANSWER: A asks B; B's tick with seat.answer-min=0 prints
-  the owed reason with the qid and no words; B's digest names the ask
-  once across two ticks; B answers; A's wait exits 0 with the text; A's
-  digest names the answer once.
-- SMA-F-DIGEST-NO-WORDS: every text field a sentinel; no sentinel in
-  either machine's health line, digest, narration line, status post or
-  the Stop hook's rendered message; `seat show` prints it.
-- SMA-F-DEADLINE-SECOND (SMA-C-19, SMA-C-24; section 5's one
+- SMA-F-LINEAGE [slice 2] (SMA-C-17): `steward arm` before any `up` on
+  a fresh clone writes runner.json with `armedLineage: no-lease` and
+  presence shows it; after `up` and a re-arm the value is the
+  session's lineage; a lease succession without re-arm leaves it
+  unchanged; a runner started without the flag shows `unknown`.
+- SMA-F-WRONG-MACHINE-RECORD [slice 1]: a plain commit writing B's
+  presence under an opid that is a trailer of A's earlier goal verb
+  is refused `seat-writer` on the next pass (the machine segment
+  clause), and the same record under an opid that is no trailer at
+  all is refused `seat-writer` (the history clause).
+- SMA-F-UNKNOWN-KEY [slice 1]: a plainly committed ask record with a
+  `wants` key, otherwise valid, is refused `seat-json`; the same with
+  a six-digit code in `question` is refused `seat-secret`.
+- SMA-F-UNKNOWN-VS-UNREACHABLE [slice 4]: `--to nobody` is refused
+  `seat-unknown-machine`; `--to <retired machine>` is refused
+  `seat-retired`; an aged presence makes the ask proceed with the
+  unreachable warning.
+- SMA-F-ASK-ANSWER [slice 4]: A asks B; B's tick with seat.answer-min=0
+  prints the owed reason with the qid and no words; B's digest names
+  the ask once across two ticks; B answers; A's wait exits 0 with the
+  text; A's digest names the answer once.
+- SMA-F-DIGEST-NO-WORDS [slice 4]: every text field a sentinel; no
+  sentinel in either machine's health line, digest, narration line,
+  status post or the Stop hook's rendered message; `seat show` prints
+  it.
+- SMA-F-DEADLINE-SECOND [slice 4] (SMA-C-19, SMA-C-24; section 5's one
   boundary): with the fake clock the answer transaction's now equal to
   deadlineAt lands as answered; one second later it lands as late with
   kind answer and state expired; and a plainly committed expired
   record whose expiredAt equals deadlineAt is refused `seat-state` by
   A's and B's next pass, while the same record stamped one second
   later is accepted.
-- SMA-F-WAITER-ABSENT-EXPIRY (SMA-C-15, SMA-C-19): A asks with
-  `--deadline 1` and runs no wait; B's tick expires it with expiredBy
-  fixture-b; a second run where B never ticks and A ticks expires it
-  with expiredBy fixture-machine; with neither ticking, `seat fleet`
-  and B's health treat it as expired while the record still reads
-  open, and the first later tick writes it.
-- SMA-F-POST-DEADLINE-NOT-MINE (SMA-C-15, SMA-C-19): after the
-  deadline, B's `--not-mine` exits 3 and lands in `late` with kind
+- SMA-F-WAITER-ABSENT-EXPIRY [slice 4] (SMA-C-15, SMA-C-19): A asks
+  with `--deadline 1` and runs no wait; B's tick expires it with
+  expiredBy fixture-b; a second run where B never ticks and A ticks
+  expires it with expiredBy fixture-machine; with neither ticking,
+  `seat fleet` and B's health treat it as expired while the record
+  still reads open, and the first later tick writes it.
+- SMA-F-POST-DEADLINE-NOT-MINE [slice 4] (SMA-C-15, SMA-C-19): after
+  the deadline, B's `--not-mine` exits 3 and lands in `late` with kind
   not-mine; A's `seat close` after the deadline lands in `late` with
   kind withdrawn only when `late` is still null, else
   `seat-already-late`; the record never reaches closed.
-- SMA-F-TIMEOUT-THEN-LATE: A's wait exits 4; B's answer exits 3 and
-  lands in `late`; A's digest names it as answered late.
-- SMA-F-NOT-MINE, SMA-F-WITHDRAW (on time): exit 2 on A's wait with the
-  reason; the digest names the close.
-- SMA-F-ALREADY: a second answer exits 3 `seat-already-answered`.
-- SMA-F-WRONG-MACHINE: `seat answer` on an ask addressed to B is
-  refused `seat-not-addressee`; a plain commit writing B's presence
-  under A's opid is refused `seat-writer` on the next pass.
-- SMA-F-HUMAN-QUESTION-REFUSED: a channel question id is refused with
-  "is a question to the human"; a seat ask with a `wants` key is
-  refused `seat-json`.
-- SMA-F-NO-STEWARD and SMA-F-OLD-STEWARD: as revision 2, with the
-  target's expiration now written by the asker's tick.
-- SMA-F-RECOVER-ASK, -ANSWER, -CLOSE, -PRESENCE, -MEMBER, -EXPIRE:
-  FAIL_AT failure points; `goal recover` reports `completed from the
-  stored intent: confirmed` for ask, answer and close with the record's
-  opid equal to the entry's, `abandoned` for presence, member and
-  expire; an answer entry recovered after the deadline lands in `late`.
-- SMA-F-UNKNOWN-ALERT: an unreadable accepted ref sets ShouldAlert
-  through `seat-questions=unknown` after two ticks; a failed push
-  leaves the role alive and ShouldAlert false with the component error
-  recorded.
-- SMA-F-CHURN, SMA-F-TRANSPORT, SMA-F-STATUS-CLAUSE: as revision 2.
+- SMA-F-TIMEOUT-THEN-LATE [slice 4]: A's wait exits 4; B's answer
+  exits 3 and lands in `late`; A's digest names it as answered late.
+- SMA-F-NOT-MINE, SMA-F-WITHDRAW [slice 4] (on time): exit 2 on A's
+  wait with the reason; the digest names the close.
+- SMA-F-ALREADY [slice 4]: a second answer exits 3
+  `seat-already-answered`.
+- SMA-F-WRONG-MACHINE [slice 4]: `seat answer` on an ask addressed to
+  B is refused `seat-not-addressee`; `seat close` from B is refused
+  `seat-not-asker`.
+- SMA-F-HUMAN-QUESTION-REFUSED [slice 4]: a channel question id is
+  refused with "is a question to the human".
+- SMA-F-NO-STEWARD and SMA-F-OLD-STEWARD [slice 4]: as revision 2,
+  with the target's expiration now written by the asker's tick.
+- SMA-F-RECOVER-PRESENCE, -MEMBER [slice 2]: FAIL_AT failure points;
+  `goal recover` reports `abandoned` with the named detail.
+- SMA-F-RECOVER-ASK, -ANSWER, -CLOSE, -EXPIRE [slice 4]: FAIL_AT
+  failure points; `goal recover` reports `completed from the stored
+  intent: confirmed` for ask, answer and close with the record's opid
+  equal to the entry's, `abandoned` for expire; an answer entry
+  recovered after the deadline lands in `late`.
+- SMA-F-UNKNOWN-ALERT [slice 3]: an unreadable accepted ref sets
+  ShouldAlert through `seat-questions=unknown` after two ticks; a
+  failed presence push leaves the role alive and ShouldAlert false
+  with the component error recorded.
+- SMA-F-CHURN, SMA-F-TRANSPORT [slice 2]: as revision 2.
+- SMA-F-STATUS-CLAUSE: as revision 2; its zero-owed half [slice 3]
+  and its owed half [slice 4].
 
-Go unit tests, under the floors of section 1 item 9:
+Go unit tests, under the floors of section 1 item 9, each gated by
+the slice that lands the code it tests (SMA-C-26). Slice 1,
 internal/goal/seats_test.go: TestValidateSeatTreeIsTotal (the
 state-by-field grid, including the presence equality row and the
 three deadline rows of section 5's boundary: answer.at at and past the
@@ -852,21 +1023,24 @@ on time; disjoint FROM rows), TestSeatExpireFirstCommitWins (two
 clones expiring one ask), TestSeatRequestsRebuildFromIntent (ask,
 answer, close rebuild to the entry's opid; member, presence, expire
 abandoned; retire and unretire rejected toward the terminal),
-TestSeatOpidMachineSegment, TestSeatSecretRefusesSixDigitsAnywhere.
+TestSeatOpidMachineSegment, TestSeatSecretRefusesSixDigitsAnywhere;
+cmd/metasystem: TestSeatHumanVerbsRefuseAgentCallerAndRequireBy;
 scripts/agents (guard fixture): a staged removal under `plans/seats/`
 passes for a `HUMAN` caller and is refused with the seat message for
 an agent caller, while the `plans/(goals|channel)/` fence is unchanged.
+Slice 2, internal/steward/seats_test.go:
+TestPresenceComposesChainFromJobRecords,
+TestPresencePublishFailureNeverDegradesTick,
+TestStageBuilderSkipsSeatOnlyCommits, TestRunLoopWritesArmedLineageFromFlag,
+TestLaunchRunnerPassesArmedLineage; internal/lease:
+TestOwnerLineageReadSeamAbsentLease; internal/up:
+TestUpPublishesMembership, TestUpRefusesRetiredMember. Slice 3,
 internal/steward/seats_test.go: TestSeatQuestionsRoleThreeAges,
 TestSeatQuestionsRoleNeverUnknownOnPresenceFailure,
-TestSeatAttentionExpiresOverdueAsksBothSides, TestSeatDigestEntriesFireOnce,
-TestNoSeatTextReachesHumanSurfaces, TestPresenceComposesChainFromJobRecords,
-TestPresencePublishFailureNeverDegradesTick, TestStageBuilderSkipsSeatOnlyCommits,
-TestRunLoopWritesArmedLineageFromFlag, TestLaunchRunnerPassesArmedLineage.
-internal/lease: TestOwnerLineageReadSeamAbsentLease. internal/up:
-TestUpPublishesMembership, TestUpRefusesRetiredMember.
+TestSeatAttentionExpiresOverdueAsksBothSides,
+TestSeatDigestEntriesFireOnce, TestNoSeatTextReachesHumanSurfaces;
 internal/channel/report_test.go: TestStatusReportOwedClauseOnlyWhenOwed.
-cmd/metasystem: TestChannelWaitDelegatesToSeatWait,
-TestSeatHumanVerbsRefuseAgentCallerAndRequireBy.
+Slice 4, cmd/metasystem: TestChannelWaitDelegatesToSeatWait.
 
 ## 10. Build order and the box, counted in reservations
 
@@ -879,57 +1053,85 @@ member that cannot hear: every member of the ledger at the moment the
 first `seat ask` exists runs RunSeatAttention, the `seat-questions`
 role, the digest lines and the status clause.
 
+Each slice's gate names exactly the fixtures and tests tagged with
+its number in section 9 (SMA-C-26); a gate never names an assertion
+whose behaviour a later slice owns, and the slice-1 fixtures need no
+seat writer, only the validator, the fences, the human verbs'
+refusal paths and plain commits.
+
 1. Records (three kinds), the validator with the trailer binding and
    the one deadline boundary, the two fences (path class and the
    guard's seat line), the request constructors and recovery cases,
    and the two human verbs `seat retire`/`seat unretire`. Gate: `go
-   test ./internal/goal` under the coverage delta, path-class and
-   pre-commit-guard fixtures, SMA-F-SPOILED-TIP, SMA-F-MIXED,
-   SMA-F-RECOVER-RETIRE. Two attempts, 45 to 75 minutes. The rollout
-   rule's fleet rebuild follows, as after every slice.
+   test ./internal/goal` under the coverage delta with the slice-1
+   unit tests of section 9, TestSeatHumanVerbsRefuseAgentCallerAndRequireBy,
+   the path-class and pre-commit-guard fixtures, SMA-F-SPOILED-TIP,
+   SMA-F-REBUILT-BYTES-NOT-REARMED, SMA-F-MIXED-OLD-LANDING,
+   SMA-F-WRONG-MACHINE-RECORD, SMA-F-UNKNOWN-KEY. Two attempts, 45 to
+   75 minutes. The rollout rule's fleet rebuild follows, as after
+   every slice, confirmed per machine by section 8 (a)'s two forms.
 2. Membership in `up`, the lineage handoff, presence in the tick with
    its component record, the stage builder's skip, `seat fleet`. Gate:
-   MEMBER, RETIRE-THEN-UP, PRESENCE, LINEAGE, CHURN, TRANSPORT,
-   RECOVER-PRESENCE, RECOVER-MEMBER and the steward unit tests. Two
-   attempts, 75 to 100 minutes.
+   the slice-2 unit tests of section 9, SMA-F-SPOILED-TIP-REPUBLISH,
+   MEMBER, RETIRE-THEN-UP, RECOVER-RETIRE, PRESENCE, LINEAGE, CHURN,
+   TRANSPORT, RECOVER-PRESENCE, RECOVER-MEMBER. Two attempts, 75 to
+   100 minutes.
 3. The reader and notification path: RunSeatAttention with the two
    expiration owners' tick side, the `seat-questions` health role, the
    digest lines, the status clause and `seat show`. No ask verb yet;
    the unit tests publish asks through slice 1's request constructors
-   in their fixture beds. Gate: the steward and report unit tests
-   (TestSeatQuestionsRoleThreeAges, TestSeatAttentionExpiresOverdueAsksBothSides,
+   in their fixture beds. Gate: the slice-3 unit tests of section 9
+   (TestSeatQuestionsRoleThreeAges,
+   TestSeatQuestionsRoleNeverUnknownOnPresenceFailure,
+   TestSeatAttentionExpiresOverdueAsksBothSides,
    TestSeatDigestEntriesFireOnce, TestNoSeatTextReachesHumanSurfaces,
    TestStatusReportOwedClauseOnlyWhenOwed), SMA-F-UNKNOWN-ALERT and
    the zero-owed half of SMA-F-STATUS-CLAUSE. Two attempts, 45 to 75
    minutes.
 4. `seat ask`, `seat answer`, `seat close`, `seat wait`, the wait's
    expiration, the `channel wait` delegation, and every end-to-end ask
-   fixture: ASK-ANSWER, DIGEST-NO-WORDS, DEADLINE-SECOND,
-   WAITER-ABSENT-EXPIRY, POST-DEADLINE-NOT-MINE, TIMEOUT-THEN-LATE,
-   NOT-MINE, WITHDRAW, ALREADY, WRONG-MACHINE, HUMAN-QUESTION-REFUSED,
-   UNKNOWN-VS-UNREACHABLE, NO-STEWARD, OLD-STEWARD, RECOVER-ASK,
+   fixture: MIXED, UNKNOWN-VS-UNREACHABLE, ASK-ANSWER, DIGEST-NO-WORDS,
+   DEADLINE-SECOND, WAITER-ABSENT-EXPIRY, POST-DEADLINE-NOT-MINE,
+   TIMEOUT-THEN-LATE, NOT-MINE, WITHDRAW, ALREADY, WRONG-MACHINE,
+   HUMAN-QUESTION-REFUSED, NO-STEWARD, OLD-STEWARD, RECOVER-ASK,
    -ANSWER, -CLOSE, -EXPIRE, and the owed half of STATUS-CLAUSE. Gate:
-   those fixtures and the goal unit tests. Three attempts, 100 to 130
-   minutes.
+   those fixtures, TestChannelWaitDelegatesToSeatWait and the goal
+   unit tests. Three attempts, 100 to 130 minutes.
 
-Reservations (SMA-C-20), every one counted at the dispatcher's 120
-job-minutes: build attempts, nine at the maximum above; two closing
-code-review chains (after slice 2 and after slice 4), each at the
-record's two rounds at one reservation per round, four; a conformance
-or verification job per review chain, two. Maximum fifteen
-reservations and 1800 reserved job-minutes, down from revision 3's
-seventeen because the enable and repair verbs, their three fixtures
-and their recovery cases are gone and slice 1 shrank; the raise of the
-review-round member to three is no longer asked, and a chain that
-needs a third round is a recorded budget exception, not a plan.
-Against the goal record (item 9): five reservations and 600 of the
-720 job-minutes are used since re-approval once this revision's review
-is counted, so the build needs twenty attempts and 2400 job-minutes in
-total. Elapsed: the slices are sequential, each waits for its fleet
-rebuild and two for their review, so three working days at the
-fleet's cadence. The complete five-part tuple the seat asks Wido for,
-before slice 1 is dispatched: `elapsedLimit=3d attemptLimit=20
-reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=2`.
+Reservations (SMA-C-20, reopened in round 4 and answered here), every
+one counted at the dispatcher's 120 job-minutes and every one mapped
+to what it builds:
+
+| reservations | what each builds or reviews |
+|---|---|
+| 2 | slice 1 build attempts (the second only if the first is refused or fails its gate) |
+| 2 | slice 2 build attempts, likewise |
+| 2 | slice 3 build attempts, likewise |
+| 3 | slice 4 build attempts, likewise |
+| 2 | the code-review chain after slice 2, one reservation per round at the record's two rounds |
+| 2 | the code-review chain after slice 4, likewise |
+| 1 | the conformance and verification job that closes the slice-2 review chain |
+| 1 | the conformance and verification job that closes the slice-4 review chain |
+
+Fifteen reservations and 1800 reserved job-minutes in total, and the
+box asked for is exactly that. Revision 4 asked for twenty and 2400
+by adding the five reservations spent on the design and its reviews
+under the current claim; that was wrong in the engine's terms, because
+`goal set-budget` on a claimed goal rebinds the claim with a fresh
+accounting revision (verbs.go:753-760, bindClaim at 252-268) and the
+projection skips every reservation recorded under an older revision
+(budget.go:250-254, 359-361), so nothing spent before Wido's approval
+counts against the new tuple and every attempt in it is fresh
+authority (section 1 item 9). Five unnamed attempts would have been
+600 job-minutes nobody had a use for. The raise of the review-round
+member to three is not asked; a chain that needs a third round is a
+recorded budget exception, not a plan. Elapsed: the slices are
+sequential, each waits for its fleet rebuild and two for their
+review, so three working days at the fleet's cadence. One active job:
+the slices are sequential and each review chain runs alone. The
+complete five-part tuple the seat asks Wido for, before slice 1 is
+dispatched: `elapsedLimit=3d attemptLimit=15
+reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=2`.
 
 ## 11. Non-goals
 
@@ -949,8 +1151,32 @@ by Wido's ruling.
 Confidence: high that the shape is right and buildable in the existing
 engine, higher than revision 3 because the two pieces it graded
 weakest, the validation exemption and the repair transaction, no
-longer exist. Weakest claim now: the pre-commit guard's seat line
-(section 8). Revision 3 said the human's hand commit passes "under the
+longer exist; revision 5 changed no mechanism, only what counts as
+confirmation, which slice gates which proof, and what box is asked.
+What revision 5 grades weakest in its own folds: the confirmation's
+form two rests on two traced facts, that VerifyIdentity checks no
+bytes digest (identity.go:127-157) so `metasystem health` invoked
+from rebuilt bytes still reads the enrolled generation, and that the
+running tick's evidence carries that generation (health.go:668-686);
+if the build finds a pin or digest check on the health path that
+this reading missed, `health` from rebuilt bytes reports the role
+unknown instead of generation 1, and SMA-F-REBUILT-BYTES-NOT-REARMED
+still holds because no admitted surface names generation 2, but the
+fixture's exact assertion text changes and the builder must say so
+rather than weaken it. Second, revision 4 admitted "the machine's own
+word" as a confirmation and revision 5 drops it; the seat of record
+now has to collect one of two quoted lines per machine per slice,
+which is more operator work than before and is the cost of C-25. On
+the slice assignment, the one judgment call: SMA-F-RECOVER-RETIRE
+moved from slice 1 to slice 2 because the record it retires is
+written by `up`, which slice 2 owns, even though the verb itself is
+slice 1's; the verb's recovery case stays proven at slice 1 by
+TestSeatRequestsRebuildFromIntent. On the box, the reservation table
+counts every attempt at the ceiling; a slice that lands on its first
+attempt leaves its second unspent, and the tuple is a ceiling, not a
+forecast. Weakest claim carried from revision 4: the pre-commit
+guard's seat line (section 8). Revision 3 said the human's hand
+commit passes "under the
 guard's existing acknowledgement path"; there is none for the ledger
 fence (pre-commit-guard.sh:80-86 exits without one), so this revision
 adds one guard line that lets the `HUMAN` class through and refuses
@@ -1019,3 +1245,11 @@ in pieces.
 | SMA-C-23 | resolved by ruling A (removed) | The replace form's opid named the terminal's machine while the validator requires the record owner's; no repair verb exists now, and the hand act removes and never rewrites | Section 8: "remove, never rewrite"; every record kind's owner republishes it (membership at the next `up`, presence at the next tick, an ask is asked again). Section 2: nothing under `plans/seats/` is deleted by any Mutate |
 | SMA-C-24 | accepted | The transition table made equality on time while the validator refused only expiredAt earlier than deadlineAt, so an expired record stamped at the deadline second was accepted and blocked a lawful answer | Section 5: the deadline boundary stated once (on time is not later than deadlineAt; past is strictly later) and referenced from the live predicate, the validator's `seat-state` row (answer.at past, late.at not past, expiredAt not past are refused) and SMA-F-DEADLINE-SECOND, which now also rejects an expired record stamped at equality; TestValidateSeatTreeIsTotal gains the three deadline rows |
 | SMA-C-25 | accepted | Revision 3 exposed `seat ask` in slice 3 and landed RunSeatAttention, the health role, the digest and the status clause in slice 4, so a slice-3 machine could ask a slice-2 member that could not hear | Section 10: the reader and notification path is slice 3 and the ask writer is slice 4, and the rollout rule (section 8) lands no slice until every machine runs the one before it, so every member can hear before the first ask exists; slice 3's unit tests publish asks through slice 1's request constructors; the box recounted at fifteen reservations and the tuple restated with the record's two review rounds |
+
+## Dispositions (round 4, job sma-crit4c-20260907)
+
+| Finding id | Disposition | Reasoning and evidence | What changed in the design |
+|---|---|---|---|
+| SMA-C-25 (reopened) | accepted | `supervise status` fills `engineBuild` from the command process's own build stamp and reads only the supervision owner and state files (cmd/metasystem/supervise.go:109-120, 145-151), so rebuilt bytes at the enrolled path show the new stamp while an old runner keeps reading; the state that proves the running reader is `up`'s re-arm outcome, written only after the previous runner was stopped and the new identity minted (up.go:521-533, 553-605; runner.go:576-617), and the `steward-runner` health role, alive only when the running tick's evidence carries the enrolled generation (health.go:626-687) | Section 8 (a): the confirmation admits exactly two forms, the re-arm outcome of `metasystem up` (its `component=accepted-engine outcome=re-armed` line, its `re-armed="generation=..."` fact or the arming-log line) and the `steward-runner` line of `metasystem health` with its enrollment provenance; `supervise status`, a machine's bare word and any reading of the bytes on disk are named as not admitted; the presence record's `engine` field is form two seen from the ledger and confirms only slices 3 and 4. Section 1 item 7 traces both surfaces. Section 9: SMA-F-REBUILT-BYTES-NOT-REARMED, a `rearm-bytes-only` scenario on the supervision rearm bed (supervision-fixtures.sh:673-695, 1000-1044), proves that installed rebuilt bytes without `up` satisfy the dropped form and neither admitted one, and that `up` then satisfies both; it gates slice 1 |
+| SMA-C-26 | accepted | Section 10 gated all of SMA-F-SPOILED-TIP at slice 1 while its last assertion, the tick republishing presence, needs the presence writer slice 2 owns; the same audit found four more assertions gated before their owner slice: SMA-F-MIXED's "every record kind" (writers land through slice 4), SMA-F-RETIRE-THEN-UP's ask refusal (the ask verb is slice 4), SMA-F-RECOVER-RETIRE's record to retire (written by `up`, slice 2), SMA-F-WRONG-MACHINE's and SMA-F-HUMAN-QUESTION-REFUSED's plain-commit halves (validator only, slice 1, but listed under slice 4 where they also passed) | Section 9: every fixture carries its gating slice in brackets; SMA-F-SPOILED-TIP keeps the slice-1 assertions (refusal by name, the hand act, the tree validating again, the guard's refusal of an agent caller, the rewind form) and says plainly that nothing republishes at slice 1; SMA-F-SPOILED-TIP-REPUBLISH (slice 2) proves the tick and `up` republish a removed record; SMA-F-MIXED splits into MIXED-OLD-LANDING (slice 1) and MIXED (slice 4); the retired-target ask refusal moves into SMA-F-UNKNOWN-VS-UNREACHABLE (slice 4); SMA-F-RECOVER-RETIRE moves to slice 2; SMA-F-WRONG-MACHINE-RECORD and SMA-F-UNKNOWN-KEY are the plain-commit validator fixtures at slice 1; the unit tests are listed per slice. Section 10: each gate names exactly its slice's fixtures and tests |
+| SMA-C-20 (reopened) | accepted | Revision 4 totalled fifteen reservations and 1800 job-minutes and asked for twenty and 2400 by adding five reservations already spent under the current claim; `goal set-budget` on a claimed goal calls bindClaim with the new revision (verbs.go:753-760), bindClaim sets AccountingRevision to that revision (verbs.go:252-268), and the projection skips every reservation under an older goalRevision (budget.go:250-254, 359-361), so the five would have been fresh, unnamed authority | Section 10: a table maps all fifteen reservations to the slice build attempt, review round or conformance job each buys; the tuple asked is exactly `elapsedLimit=3d attemptLimit=15 reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=2`, with the elapsed and active-job members justified in words; section 1 item 9 traces the accounting-revision rule |
