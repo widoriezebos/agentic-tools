@@ -1,19 +1,21 @@
 # fleet-coordinator-brain
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the brain drafts and proposes and never approves, builds or dispatches, so a wrong brain wastes Wido's attention and misorders the queue rather than authorizing anything; novelty 1: the session form is a role packet and a standing instruction with the narrator's digest as input, explicitly no new build per R-67-m1; exposure 3: it is the single seat between Wido and every node in the fleet; accumulation 2: its absence has now produced a concrete failure - on 2026-09-05 m1 stood in for both the brain and the missing runner, hand-drove eight dispatches and four critique rounds, and Wido had to ask why the system was so complicated"
 - Tier: 3
 - Intent: One brain seat for a fleet of headless nodes. The nodes run the mission runner on approved goals and talk over the fleet conversation channel; the brain never builds anything. It works with Wido on the backlog: drafts items from his words and from what the nodes report, classifies them into tiers, proposes budgets and order, keeps the queue honest, and hands him the one act only he does, approval for execution. It watches the cluster (which node runs what, who is stuck, what a question means), answers what the records can answer, and escalates to him only what needs his word. It is the narrator plus judgment plus a hand on the queue. Three constraints: the brain is never a bottleneck (nodes proceed on rules and records; the cluster keeps working the approved queue when the brain is down); authority stays with Wido (the brain drafts and proposes, never approves execution, never mints rulings, carries his words verbatim); the first form is a Claude session on m1 with the channel, the ledger and the census, forbidden from dispatching work, and later a runner role of its own.
 - Origin: main
 - Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 20
+- Revision: 21
 - Arc: headless-fleet
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=2040 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - NormApproval: approvedRef=7D8N6906ER3M54RZ1Q4XJYRFHD-m1-7cd0bd60 minutes=2040 reviewRounds=3 goalRevision=19
 - Approved: by=human:Wido at=2026-09-07T10:32:56Z revision=20 opid=DEMHFT08F2G0W5W41ENEYVTBY9-m1-7cd0bd60 authority=proven digest=71b3c158a10a64ee520a2d50e58ffa121177986d5f803c537edcc79ae71086b4
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=10 at=2026-09-06T21:07:20Z
+- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-07T10:33:58Z revision=21 accountingRevision=21
+- StopCapability: generation=21 revision=21 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-03T12:14:47Z E43RG504Z3FDHSSZBFKFC3DQMH-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=fleet-coordinator-brain
@@ -36,4 +38,5 @@ History:
 - 2026-09-07T10:31:41Z NAAMKAV6C8AJZM2V8EVFKQBKKK-m1-a4f8999f release actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-07T10:32:16Z 7D8N6906ER3M54RZ1Q4XJYRFHD-m1-7cd0bd60 unapprove actor=human:Wido targets=fleet-coordinator-brain reason=goal=fleet-coordinator-brain minutes=2040 reviewRounds=3 goalRevision=19
 - 2026-09-07T10:32:56Z DEMHFT08F2G0W5W41ENEYVTBY9-m1-7cd0bd60 approve actor=human:Wido targets=fleet-coordinator-brain
-Integrity: sha256=a507e10c29660364ddeea9eda3c6bfaf512632871a207be80284dcc7edf286c1
+- 2026-09-07T10:33:58Z 69GY95XS272PPTKJ544GC0DBBD-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
+Integrity: sha256=5165892028066a15c83e634ab1c9b849ad5172ee32c12cb661e88e00e2568532
