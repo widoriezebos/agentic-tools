@@ -7,10 +7,13 @@
   the stop design means this file.
 - Goal: metasystem-stop-verb (member of the arc verbs-match-intent; its
   slice 0 absorbs this page as the human page's three process verbs)
-- Next step: no design work remains. The build waits on review budget:
-  62 files and about 6,900 added lines put a fence read in front of every
-  creation path, and no code critique has run, so the goal record carries
-  the park reading and the resume verbs
+- Next step: settled. No design work remains and the build has budget
+  (R-83-m1b). Slice 1 is built and its whole acceptance is green outside
+  the delegate sandbox: stop-everything, seat-survives, status-is-live,
+  stop-fence, arm-again and seat-refused, beside every pre-existing
+  supervision scenario. What remains is the first code critique of the
+  chain and whatever it finds, then the landing. The goal record carries
+  the state; slices 1b and 2 are their own goals
 
 Revision 2 folded the first critique's register in full. Revision 3
 (2026-09-06) folds the second, `records/misc/metasystem-stop-critique-r2.md`,
