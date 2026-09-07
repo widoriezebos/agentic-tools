@@ -1,14 +1,16 @@
 # One word stops the metasystem: `metasystem stop`, `status` and `arm` (goal metasystem-stop-verb)
 
-- Status: design, revision 3 with the build addendum of section 13; the
-  design ladder is closed and slice 1 is being built. This file supersedes `plans/metasystem-stop-design.md`
+- Status: design closed at revision 3 with the build addendum of section
+  13; slice 1 is built and PARKED in chain stopverb-build1, unreviewed and
+  unlanded. This file supersedes `plans/metasystem-stop-design.md`
   (revisions 1 and 2, frozen where they landed); every later reference to
   the stop design means this file.
 - Goal: metasystem-stop-verb (member of the arc verbs-match-intent; its
   slice 0 absorbs this page as the human page's three process verbs)
-- Next step: one closing critique; the build proceeds behind the fixtures
-  in section 10 whatever it says, any remaining finding carried as a build
-  finding
+- Next step: no design work remains. The build waits on review budget:
+  62 files and about 6,900 added lines put a fence read in front of every
+  creation path, and no code critique has run, so the goal record carries
+  the park reading and the resume verbs
 
 Revision 2 folded the first critique's register in full. Revision 3
 (2026-09-06) folds the second, `records/misc/metasystem-stop-critique-r2.md`,
