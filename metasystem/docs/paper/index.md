@@ -39,4 +39,4 @@ One ordinary change, how long a user stays signed in, runs as an example through
 16. [Self-Application](16-self-application.md)
 17. [What Engineering Becomes](17-outlook.md)
 
-Appendix: [How the Metasystem Works](18-appendix-functional-design.md), four diagrams of the functional design.
+Appendix: [How the Metasystem Works](18-appendix-functional-design.md), seven diagrams of the functional design, including the fleet of headless nodes with one brain and one channel.

@@ -1,8 +1,8 @@
 # Appendix: How the Metasystem Works
 
-**Four pictures of one system: how work moves, how records hold it together, who may move it and how it learns.**
+**Seven pictures of one system: how work moves, how records hold it together, who may move it, how it learns, and how a fleet of headless machines runs it with one brain and one channel.**
 
-This appendix draws the paper's functional design. A reader should be able to follow how the metasystem works with people from these four diagrams and their descriptions alone, without the seventeen chapters. The vocabulary is the paper's; the closing section says where the accompanying software's names and reach differ today, because the paper's design goes beyond what the software currently does.
+This appendix draws the paper's functional design. A reader should be able to follow how the metasystem works with people from these seven diagrams and their descriptions alone, without the seventeen chapters. The vocabulary is the paper's; the closing section says where the accompanying software's names and reach differ today, because the paper's design goes beyond what the software currently does.
 
 Two conventions hold in every diagram. Solid arrows carry the work forward, and the work travels as records: each stage writes what it did and the next stage reads it, so nothing authoritative depends on a private conversation between actors. Dashed arrows are exchanges with people: questions going to a person, reports written for a person and the decisions a person records.
 
@@ -116,8 +116,86 @@ flowchart TD
     OBS -->|"evidence against the<br/>intent itself"| REV["The intent-holder revises the intent;<br/>a new version controls from here"]
 ```
 
+## The fleet: headless nodes, one brain, one channel
+
+The first four diagrams show one change on one machine with a person at the keyboard. The design's target is a fleet. Several headless machines, the nodes, each run the governed loop of the first diagram with no session on top. One brain works with the responsible authority. One channel carries the fleet's messages to the authority's phone and the authority's answers back. The fifth diagram shows how the four connect; the software calls the seat "the brain" as a working name.
+
+Three things fix the shape. The nodes' scope is exactly backlog to candidate to release. They send two kinds of message, a question that unblocks and a raise that a boundary was broken, and they keep working the approved queue when the brain is down, because they proceed on rules and records, not on instruction. The brain builds, examines, accepts and releases nothing, and in its first form may not dispatch either. It is the sitting's machinery kept standing: the narrator with judgment and a hand on the queue. It drafts backlog items from the authority's words and from what the nodes report, splits what is too big, proposes a tier, a budget and an order, watches which node runs what and who is stuck, answers what the records can answer and escalates only what needs the authority's word. Approval for execution is the one act only the authority performs. Under a recorded power of attorney, the Chapter 13 delegation with a named decision class, a review date and a revocation route, the brain may take decisions of that class, and each one is logged against the row it rests on. The separations hold at the actions, not in anyone's conduct: a claim refuses a goal no human approved, and approval needs proof that a human gave it, from the terminal they enrolled or by a verified word over the channel.
+
+```mermaid
+flowchart TD
+    RA["Responsible authority,<br/>at the enrolled terminal or a phone"]
+    BRAIN["The brain: the sitting's machinery, kept standing.<br/>Drafts, splits, tiers, orders and budgets backlog items;<br/>watches the cluster; answers from the records;<br/>escalates what needs a word.<br/>Builds, examines, accepts and releases nothing."]
+    REC[("The shared record, synced through git:<br/>the goal ledger (the backlog), rulings,<br/>the channel inbox, the answer archive")]
+    CH["One channel bot for the whole fleet<br/>(Telegram, Slack or another provider)"]
+    subgraph FLEET["Headless nodes, each running the governed loop of the first diagram"]
+        N1["Node"]
+        N2["Node"]
+        N3["Node"]
+    end
+    RA -.->|"the sitting: intent, decisions,<br/>backlog operations, delegations"| BRAIN
+    BRAIN -.->|"drafts, proposals, reports,<br/>escalations"| RA
+    RA -.->|"approval for execution,<br/>rulings, revisions of intent"| REC
+    BRAIN -->|"drafted items, tiers,<br/>proposed order and budgets"| REC
+    REC -->|"ledger, census,<br/>the narrator's digests"| BRAIN
+    REC -->|"approved claimable work,<br/>answers, rulings"| FLEET
+    FLEET -->|"claims, candidates, evidence,<br/>landings, progress and stops"| REC
+    FLEET -->|"status per node; a question<br/>that unblocks; a raise that a<br/>boundary was broken"| CH
+    CH -->|"the authority's reply: the first node<br/>to commit it to the inbox wins,<br/>the others read it there"| FLEET
+    CH -.->|"threads on the phone"| RA
+    RA -.->|"a reply, signed with<br/>a one-time code"| CH
+```
+
+## A question's path through the channel
+
+The sixth diagram follows one message from a node to the authority and back. Every provider fixes one fact: one bot has one reader, and a message read by one machine is gone for the others. The fleet does not answer that with a leader that could die. Every node reads the same bot, and the first node to commit an inbound message to the shared inbox wins; the others find it committed, keyed by the provider's message id, and skip. A node confirms receipt to the provider only after its commit is durable, so a node that dies between reading and committing has confirmed nothing and the message is delivered again. The node that committed the reply checks two things first: that the sender is the authority's account and that the one-time code the authority typed is current and unused. The asking node then reads the answer from the inbox, records it as the authority's word against the ask and the goal, and continues or stops as the answer says. The inbox is the working queue; the answer archive is the durable memory of everything the authority ever said. While the question waits, the goal that raised it sits at a safe stop with its records kept, and every other node keeps working the approved queue.
+
+```mermaid
+sequenceDiagram
+    participant N as Asking node
+    participant R as Shared record
+    participant C as Channel bot
+    participant H as Responsible authority
+    participant O as Any other node
+    N->>R: records the question with the goal, what is asked and what form of answer is wanted
+    N->>C: posts the question as a thread
+    Note over N: the goal waits at a safe stop with its records kept
+    C-->>H: the thread reaches the phone
+    H-->>C: replies in the thread, signed with a one-time code
+    par every node long-polls the same bot
+        O->>C: receives the reply
+        N->>C: receives the reply
+    end
+    O->>O: checks that the sender is the authority and the code is current and unused
+    O->>R: commits the reply to the inbox keyed by the message id, and the first commit wins
+    N->>R: finds it already committed and skips
+    O->>C: confirms receipt only after the commit is durable
+    N->>R: reads the answer as the authority's word and archives it against the ask
+    N->>N: continues, or stops if the answer refuses
+```
+
+## The backlog states and who may move them
+
+The seventh diagram is the shared backlog as a state machine, and the authority boundary is the one transition that matters most. An item begins as a draft: a free-form note with no grammar and no budget, started by a person, the brain or a node that found work. Drafting is where the brain does most of its work with the authority: it turns words into an item that says what done looks like, splits what is too big and proposes a tier. A draft enters the queue when it passes the intake checklist, and a big item enters only on the authority's word. The brain orders what is queued, and only the authority moves an item to approved, which is the moment the budget attaches. That act is human-only by construction: the verb works from an enrolled terminal or through the channel with a verified code, and an edit to an approved item invalidates the approval, because what was approved is the item as it read then. An idle node pulls approved work by itself, whole arcs at once, so fleet liveness is machinery's duty and never a human's memory. A budget stop, a question or a revocation parks the claim at the next safe point, and a fresh budget or the answer resumes it. The landing cites the item, and the item is done. The brain proposes every step of this and performs none of the reserved ones.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft : anyone starts a draft, a person, the brain or a node
+    Draft --> Draft : the brain shapes it with the authority, splits what is too big and proposes a tier
+    Draft --> Queued : it passes the intake checklist and is opened, a big item only on the authority's word
+    Draft --> [*] : it is dropped with a recorded reason
+    Queued --> Queued : the brain orders it and proposes a budget, and the authority edits it
+    Queued --> Approved : the authority approves it for execution and attaches the budget, a human-only act
+    Approved --> Queued : the authority revokes, or an edit invalidates the approval
+    Approved --> Claimed : an idle node pulls it and claims it, whole arcs at once
+    Claimed --> Parked : a question waits, a budget limit stops the work or the authority revokes
+    Parked --> Claimed : the answer or a fresh budget resumes it
+    Claimed --> Approved : the node releases the claim for another node
+    Claimed --> Done : the node lands the result and the landing cites the item
+```
+
 ## Where the software stands today
 
 The diagrams draw the design; the software holds part of it, in its own vocabulary. The goal ledger is the recorded intent, the backlog and the budget in one place: a goal is queued, claimed with the complete budget, parked or done, and the budget's four limits are elapsed time, attempts, reserved machine minutes and concurrent jobs. Reaching most limits closes further admission while running work finishes; an elapsed-time breach stops live work. Resuming needs a fresh complete budget from a human. Delegate jobs are the machine workers, with their own setup, running and terminal states, and a critic chain is the independent examination. Dispatch fixes the minimum examination duty from a declared hazard class. The three classes name what kind of wrongness the work could carry: purely mechanical work, work that carries design and work that can reach live data destructively. The class sets the required roles, while the four risk questions remain the judgment behind budgets and depth. The chain's closure gate refuses to close work whose required examination is missing, stale or performed by a session that saw the builder's path; it binds that evidence to the final round of work, not yet to an exact candidate tree. Closure is custody of evidence; it is not the custodian's acceptance and not a release, and the ordinary landing of a change does not yet consume a closed chain, a gap with queued backlog work against it.
 
-The other gaps matter as much. Bounded release, production observation against intent conditions and the care machinery are the design's direction; the software does not hold them yet. The coordinator seat today combines dispatch, custody of landing and reporting in one actor, exactly the configuration Chapter 7 warns about, so until the queued guards land, that separation holds by conduct rather than at the actions. Liveness watching exists as supervision, and the narrator exists as reports and digests. Where a diagram and the software disagree, the diagram shows the design the software is being built toward.
+The other gaps matter as much. Bounded release, production observation against intent conditions and the care machinery are the design's direction; the software does not hold them yet. The coordinator seat today combines dispatch, custody of landing and reporting in one actor, exactly the configuration Chapter 7 warns about, so until the queued guards land, that separation holds by conduct rather than at the actions. Liveness watching exists as supervision, and the narrator exists as reports and digests. The fleet half stands partly. The channel exists for Slack, with a fake provider for tests and a Telegram adapter; questions and replies travel as threads, and a reply is verified by a one-time code. The approved state and the human-only approve verb are on main, so a claim on an unapproved goal is refused today. The spend fence measures tokens and alerts at a ceiling but does not yet refuse. The tier is derived at intake. Not yet built: the one gateway and shared inbox for the whole fleet, so each machine still reads the bot with its own cursor and polls only when asked to; the first headless run, paused before the runner started; the pull by which an idle machine takes approved work; the answer archive; and the brain itself, queued, with its first form a session on one machine that holds the channel, the ledger and the census and is forbidden to dispatch. Where a diagram and the software disagree, the diagram shows the design the software is being built toward.

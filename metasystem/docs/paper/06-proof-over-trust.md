@@ -2,7 +2,7 @@
 
 **A check that has never failed on a broken version has proved nothing yet.**
 
-> *In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.*
+> *In Chapter 1's hypothetical day, the first session-expiry candidate comes with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.*
 
 The gap between the explanation and the observation is the whole principle: a convincing claim can point you somewhere, but only well-grounded evidence and bounded proof can authorize an action with consequences. The aim is an accurate statement of what one exact result has and has not shown.
 

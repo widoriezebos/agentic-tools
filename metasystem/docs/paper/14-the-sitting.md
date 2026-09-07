@@ -42,7 +42,7 @@ Then the governed loop takes over. If the sitting produced intent, construction 
 
 The thoroughness of the room is not a reason to skip that challenge. It is the reason to hold it. Everything the room agreed on, it agreed on from inside one shared framing.
 
-> *Months later, evidence from the release has arrived: restoring the last page after sign-in exposed one person's work to the next person on a clinic computer. The implementation had followed the written rule. A sitting convenes: the responsible authority and machinery carrying the release observations, the support reports and the original rulings.*
+> *Months later, evidence from the release has come in: restoring the last page after sign-in exposed one person's work to the next person on a clinic computer. The implementation had followed the written rule. A sitting convenes: the responsible authority and machinery carrying the release observations, the support reports and the original rulings.*
 
 > *The machinery lays out what the service can observe about a device and how reliable each observation is. Nothing stored today says whether a session runs on a shared computer. The authority rules on the boundary and gives the reason: when in doubt, treat the device as shared and do not restore the page. The ruling is recorded as it is spoken, and the open questions around device detection are written down beside it.*
 
@@ -60,7 +60,7 @@ Not a status meeting. Records already carry the state of the work, and any autho
 
 Not an approval performed for show. A sitting gives that failure more room than a written report does, because the preparation is fluent and the conversation is pleasant.
 
-And the preparation must not quietly supply the values. When every option arrives pre-weighed, choosing the recommended one every time is the approval habit in conversational form. The guard is the same as elsewhere: the human's decision is recorded with their reasons, and a run of sittings whose rulings always match the preparation is itself evidence worth examining.
+And the preparation must not quietly supply the values. When every option comes pre-weighed, choosing the recommended one every time is the approval habit in conversational form. The guard is the same as elsewhere: the human's decision is recorded with their reasons, and a run of sittings whose rulings always match the preparation is itself evidence worth examining.
 
 Proportion applies here as everywhere. A mechanical repair with a clear defect needs no sitting to shape what is already stated; holding one would cost more than it protects. The repair does not thereby escape review: whether the evidence requires an independent human look is answered by consequence, not by how obvious the repair seems. The sitting is for what conversation alone can produce: intent nobody has stated yet and design directions not yet framed.
 
