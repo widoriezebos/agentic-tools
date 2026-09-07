@@ -774,3 +774,15 @@ A builder who meets a contradiction that the page's own numbers settle
 (a bound smaller than the sum of the caps that feed it) reports it in
 the return with the resolution used and keeps building; built and
 passing sections are never removed because a later row is in doubt.
+
+## Addendum 3: the refusal register row (m1, 2026-09-07)
+
+The build's fast gate requires every refusal code to have a row in
+internal/refusal/register.go, and the page did not name one for
+BRAIN_REFUSED. Decision: one row, owner internal/brain, site the line
+that renders the refusal in brain.go, shape Agent (the refusal binds an
+agent's act; the checkout stays a brain), override `brain withdraw`
+(the one human verb that carries past it: the human withdraws the
+declaration and the act runs as a node's), commands 1. No exclusion, no
+pending marker. The corrupt-state remedy line is the same code with the
+same row.
