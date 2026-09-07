@@ -6,7 +6,8 @@ Date: 2026-09-07
 
 The chain's first independent read found six material items, all
 accepted. Dispositions are in
-metasystem/records/misc/metasystem-stop-critique-r4.md; the design gained
+records/misc/metasystem-stop-critique-r4.md (landed on main after this
+worktree was cut, so it arrives with the rebase); the design gained
 section 14 deciding the two classes the earlier sections left open. Two
 of the six are the orchestrator's fault, not yours, and are named as such
 below. This round folds all six.
