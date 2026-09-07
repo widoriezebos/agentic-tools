@@ -1101,3 +1101,58 @@ refusals; the seat's own session; every section 10 scenario except
 `fleet`. Slice 2: the fleet form of section 8 as amended by 13.3, with
 the `fleet` fixture. Nothing in slice 1 may make slice 2 harder: the
 inventory and the transaction are per checkout from the start.
+
+## 14. After the first code critique (round-4 amendment)
+
+The chain's first independent read
+(`records/misc/metasystem-stop-critique-r4.md`, six material findings,
+all accepted) found two classes the earlier sections left open. These
+decide them; where they contradict an earlier section they win.
+
+**14.1 No exit between closing the fence and finishing (SVC-04).** Once
+`stop` has written the record closed, it does not exit early for any
+reason. Every failure inside the transaction becomes a printed line and
+the transaction continues to the next step, exactly as a `NOT STOPPED`
+component does. In particular, in the creation-claim directory: a file
+that cannot be parsed is reported by name, removed, and the removal
+printed, because a claim that cannot be read can never prove a live
+creator and leaving it would wedge every future stop; a claim whose
+creator liveness is UNKNOWN rather than dead is waited out once, then
+reported as `NOT STOPPED creator <verb> claim <file>: liveness unknown`
+and removed if it was opened before the fence closed, so it cannot wedge
+the next stop either. Both set exit 1. `arm`'s survivor probe follows
+the same rule: it names the claim file in its refusal, so a human is
+never left to guess which file in a directory the engine owns is the
+problem.
+
+**14.2 An unreadable record is repairable, and status never goes dark
+(SVC-05).** The reader keeps refusing malformed JSON and an unsupported
+schema version, and every creation path keeps refusing with it. The three
+human verbs do not: `status` prints the inventory it assembled and one
+further line, `fence record unreadable: <reason>; repair with metasystem
+arm --repo <toplevel>`; `arm`, a human act at a terminal, repairs it by
+writing a fresh open record at the highest generation it can establish
+plus one and printing `fence record replaced (was unreadable: <reason>)`;
+`stop` refuses with that reason and the second line `run: metasystem arm
+--repo <toplevel>`. Replacing an unreadable record is not the deletion
+section 2 forbids: the forbidden thing is losing a readable stopped
+state.
+
+**14.3 The mission handover is a human path, not a refusal (SVC-01).**
+Section 7 step 2 stands and must be built: `mission start` and `mission
+resume` classify their caller; a `HUMAN` caller takes the transition
+lock, opens the fence, releases the lock and then arms; every other
+caller is refused with the stopped sentence. A launcher that refuses
+every caller makes an unattended machine unrecoverable by the person
+standing at it, which is the case this verb exists for.
+
+**14.4 Which scenarios belong to which slice (SVC-06).** Section 10's
+list is one list for three slices, which made a deliberate cut invisible.
+Slice 1 owns stop-everything, seat-survives, status-is-live, stop-fence,
+arm-again, seat-refused, wrong-terminal, and — brought back by the
+critique, because they prove behaviour slice 1 claims — mission-stop and
+arm-refuses-survivor. Slice 1b (goal
+metasystem-stop-escalation-proofs) owns proof-run-stop, remote-job,
+slow-owner, crash-recovery and ignored-signal, with the escalation seams
+they need. Slice 2 owns fleet. A round's return names every scenario it
+did not build as a gap, whatever a brief deferred.
