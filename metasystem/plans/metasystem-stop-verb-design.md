@@ -1175,3 +1175,50 @@ for <toplevel>; <n> not stopped, listed above; run: metasystem stop
 --repo <toplevel>`, exit 1. The old wording claimed success on a run that
 had just listed survivors, which is the one thing this verb must never
 do: a person reads the last line.
+
+## 15. After the closing critique (round-5 amendment)
+
+The second independent read
+(`records/misc/metasystem-stop-critique-r5.md`) found three material
+items and one note worth acting on. These decide them and win over any
+earlier section.
+
+**15.1 The record says what the page says (SVC5-01).** The durable
+record and the printed report are two views of one run and may never
+disagree. Every reason the run prints a `NOT STOPPED` line writes a
+matching entry in `notStopped`, including a reason that has no process
+behind it: a family whose records could not be read is itself a survivor
+entry, naming the family and the reason with no pid. The phase is
+decided from the same count as the closing line, never from the survivor
+list alone. Arm treats an unreadable-family survivor as a survivor it
+cannot probe: it refuses, names the family, and points at a second stop,
+because the only thing that can clear it is a stop that reads those
+records.
+
+**15.2 A refusal names the command that can clear it (SVC5-02).** No
+refusal may name the command that just produced it. Arm's refusal over a
+creator whose liveness cannot be established points at `metasystem stop`
+with section 2's words; the arm command is the second line only for
+failures a retried arm could actually fix.
+
+**15.3 Arm never advises killing what stop refuses to touch (SVC5-03).**
+The re-inventory that follows a crashed stop records as survivors only
+what stop itself would act on. Untracked processes and runs held under
+adopted custody are reported in the listing and never written to
+`notStopped`, because stop names both as not the metasystem's and
+signals neither; advising a person to end them by pid contradicts the
+same page.
+
+**15.4 The run is described by its end, not its first attempt
+(SVC5-04).** When a late-arrivals pass stops something an earlier pass
+could not, its outcome is printed and the survivor entry from the
+earlier pass is removed. The exit status and the record follow the state
+at the end of the run. This is 15.1 in the other direction: the page
+must not understate what the run achieved any more than it may overstate
+it.
+
+**15.5 The precedence rule holds everywhere, including where nothing
+depends on it (SVC5-06).** Every creation path reads the fence before
+its other gates, `run launch` included, even where no other gate can
+fail because the checkout is stopped. A rule kept only where it
+currently matters is a rule the next gate breaks silently.
