@@ -1,15 +1,18 @@
 # fleet-coordinator-brain
 
-- State: queued
+- State: approved
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the brain drafts and proposes and never approves, builds or dispatches, so a wrong brain wastes Wido's attention and misorders the queue rather than authorizing anything; novelty 1: the session form is a role packet and a standing instruction with the narrator's digest as input, explicitly no new build per R-67-m1; exposure 3: it is the single seat between Wido and every node in the fleet; accumulation 2: its absence has now produced a concrete failure - on 2026-09-05 m1 stood in for both the brain and the missing runner, hand-drove eight dispatches and four critique rounds, and Wido had to ask why the system was so complicated"
 - Tier: 3
 - Intent: One brain seat for a fleet of headless nodes. The nodes run the mission runner on approved goals and talk over the fleet conversation channel; the brain never builds anything. It works with Wido on the backlog: drafts items from his words and from what the nodes report, classifies them into tiers, proposes budgets and order, keeps the queue honest, and hands him the one act only he does, approval for execution. It watches the cluster (which node runs what, who is stuck, what a question means), answers what the records can answer, and escalates to him only what needs his word. It is the narrator plus judgment plus a hand on the queue. Three constraints: the brain is never a bottleneck (nodes proceed on rules and records; the cluster keeps working the approved queue when the brain is down); authority stays with Wido (the brain drafts and proposes, never approves execution, never mints rulings, carries his words verbatim); the first form is a Claude session on m1 with the channel, the ledger and the census, forbidden from dispatching work, and later a runner role of its own.
 - Origin: main
 - Next step: The session form's role packet is landed at records/misc/fleet-coordinator-brain-role-packet.md (a records carriage; plans/ turned out not to be the register's path class). It binds the next brain session: never build, never dispatch, never approve, never a bottleneck; when the work needs a node and none is running, say so and stop. Still owed for the session form per R-67-m1: the standing instruction wired into the seat's boot so it loads unprompted, and the narrator's digest as its input. The runner-role form is a tier-3 design afterwards.
 - OpenedAt: 2026-09-03T12:14:47Z
-- Revision: 15
+- Revision: 16
 - Arc: headless-fleet
+- Budget: elapsedLimit=2d attemptLimit=16 reservedJobMinutesLimit=1680 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
+- NormApproval: approvedRef=VXGRRC5VYNS1BNY5V4JX4P9THS-m1-7cd0bd60 minutes=1680 reviewRounds=3 goalRevision=15
+- Approved: by=human:Wido at=2026-09-07T05:41:24Z revision=16 opid=XCMBPEWGJ0GXHHJEMJQV05KC1D-m1-7cd0bd60 authority=proven digest=758dce4e3dfd4950246e07690b7e1082e18e1bc26eb12caab0770b36eec1c2c7
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=10 at=2026-09-06T21:07:20Z
 
 History:
@@ -28,4 +31,5 @@ History:
 - 2026-09-07T05:30:29Z TAFH5VD5PV6DZTHA8X4MV9D99H-m1-a4f8999f park actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain reason=PARKED 2026-09-07 05:5xZ at Wido's 'finish the slice then STOP', on two blockers only he can lift. STATE: design revision 3 + four addenda landed (records/misc/brain-seat-design-revision-3.md); build chain brain-build1b-20260907 round 4 = all four sections built, host gate green (go test, fast gate, brain/hook/dispatch/goal-cli beds; land row brain-absent-node-proceeds needs the addendum-4 landing form), conformance reviewedTree 50f6b6e1f0d35c545d8a8ee742c1a3b9912a0c8f, diff rounds/4/diff.patch. The Fable code review brain-review1b-20260907 died on the account's 429 session limit and its 120 minutes filled the 1200 box (goal runtime-limit-is-not-a-protocol-error). BLOCKER 1: the box is at the tier-3 norm; the retry needs an over-norm budget (1680/16/3, elapsed 2d): set-budget was GOAL_NORM_REFUSED; the norm's own path is to record Wido's word and pass --approved-ref (strict form goal=fleet-coordinator-brain minutes=1680 reviewRounds=3 goalRevision=<r>), or Wido's word on a norm exception. BLOCKER 2: internal/governance/types.go TemporaryGoalAuthorityHorizon=2026-09-06 expired today: --review-by refuses every date and dispatch-fixtures.sh goes red before its assertions, so the full battery receipt every chain landing on this goal needs cannot be made fleet-wide until the horizon is extended or retired (goal fixture-review-by-date-expired). RESUME: claim; retry the review (delegate --role code-critic --brief scratch brain-review1-brief.md --reviews brain-build1b-20260907-r4); fold + addendum-4 row in round 5; host gate; dispatch.sh close; landing test-receipt with the full battery; land.sh --chain brain-build1b-20260907 --test-receipt; goal done.
 - 2026-09-07T05:33:35Z 1K1JEQ9FK4W4EBVAG5RVYWQ1AJ-m1-a4f8999f unpark actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain
 - 2026-09-07T05:38:25Z VXGRRC5VYNS1BNY5V4JX4P9THS-m1-7cd0bd60 unapprove actor=human:Wido targets=fleet-coordinator-brain reason=goal=fleet-coordinator-brain minutes=1680 reviewRounds=3 goalRevision=15
-Integrity: sha256=61522cc1131c3ae39eb939f4e41b11c587f177fda77a967d42cc01c9c1c10126
+- 2026-09-07T05:41:24Z XCMBPEWGJ0GXHHJEMJQV05KC1D-m1-7cd0bd60 approve actor=human:Wido targets=fleet-coordinator-brain
+Integrity: sha256=53b318b71de5cb89602d81dc6673d1899d65105efc73122084e5af0d27894e08
