@@ -1321,3 +1321,403 @@ recorded or printed as a survivor of a pass that never signalled it:
 error after the fence is closed becomes a printed line like any other
 failure. This is the third latent variant of the same fault; the rule is
 now absolute, whatever the source of the error.
+
+## 18. After the fifth read (round-8 amendment)
+
+The fifth independent read found three material failures in what a
+person is told: a refusal with no way forward, repeated lines for one
+thing, and a status summary claiming a stop had finished when it had
+not. All three are accepted. These decisions apply the existing rules
+of sections 6, 14.6, 15.1, 15.2 and 17.2 throughout the per-checkout
+verbs and their fence messages; where they contradict earlier wording,
+they win. The transition owner and the refusal renderer of sections 2
+and 9 keep their responsibilities. No new record, recovery verb,
+barrier or pass is introduced.
+
+The design critique of this section found three further holes: loss of
+remote-job evidence across retries, failure to save the final result,
+and an unspecified partial status report. All three are accepted and
+decided below, within 18.1, 18.2 and 18.3 respectively.
+
+**18.1 An unprobeable survivor has a named way forward (SVC8-01).**
+Section 15.2 governs every survivor probe, including a failure returned
+by a record reader. Failure to establish a survivor's state is a
+refusal saying that it cannot be established, naming the component,
+its recorded identity or job and machine, and the file and reason when
+a file failed. It is never a claim that the process is alive. Its
+second line is `run: metasystem stop --repo <toplevel>`. If the file
+exists but cannot be read or parsed, the first line also says to repair
+that named record before running stop. No such refusal falls back to
+the arm command, and none advises ending a local pid to solve a remote
+job or a record-reading failure.
+
+For a job owned by another machine the cases are explicit:
+
+- A readable terminal record clears that job's objection to arm. A
+  readable non-terminal record retains it: the person sees the job and
+  machine, the instruction to cancel it from that machine with
+  `metasystem delegate --cancel <job>`, and then to arm after its record
+  is terminal. That is a prerequisite followed by arm, not advice to
+  repeat an unchanged refusal.
+- A missing record is missing evidence, not a terminal job. Arm names
+  the missing file, job and owning machine. Its first line says to
+  restore that job's record from the owning machine; if the job is
+  still open there, cancel it there with `metasystem delegate --cancel
+  <job>` and restore the resulting terminal record. Its second line
+  remains the stop command, with that prerequisite made explicit.
+  Neither repeating stop nor repeating arm replaces terminal evidence.
+- A malformed or otherwise unreadable record follows the same
+  unprobeable-survivor rule, with its path and read or parse reason and
+  the repair instruction. The absence of a file must remain
+  distinguishable from the inability to read one; neither becomes an
+  unexplained error or an instruction to retry arm.
+
+A refusal over an ordinary `stop-incomplete` record leaves that record
+unchanged: closed, with its generation, actor, time and survivor list
+intact. The refusal describes the new probe, not a newly completed stop.
+The crashed-stop re-inventory still writes its findings first, as
+sections 2 and 16.3 require, subject to the remote-evidence rule below.
+The next stop performs the ordinary fresh inventory and writes that
+run's result. An unreadable-family entry clears when that family is
+successfully read under section 17.2; a recorded remote job does not
+clear merely because the family's directory is readable. If nothing
+remains unresolved and the final publication succeeds, stop writes
+`closed / stopped`, prints the start-again arm command and exits 0;
+otherwise it follows the incomplete or publication-failure result of
+18.2. Stop never opens the fence; opening it remains the human arm act,
+including the fence opening in a human mission start or resume. When
+every listed survivor is directly proved gone or terminal, arm may
+still open it without an intervening stop, as section 2 already allows.
+
+**Terminal evidence survives retries (S18-01).** Section 2's rule wins:
+a recorded job owned by another machine remains an objection until a
+readable record for that same job and machine establishes a terminal
+status under the job family's existing terminal-status rule. A missing,
+unreadable, mismatched or non-terminal record cannot discharge it. This
+chooses terminal evidence, not a new human risk-acceptance path. If
+that evidence cannot be recovered, the person is told that the remote
+job's terminal state remains unproven and restarting remains blocked;
+no local retry is presented as a cure for unavailable remote evidence.
+
+Every subsequent stop carries those recorded remote entries into its
+existing first `closed / stopping / generation+1` publication, with
+the new stop's actor and time. Its ordinary jobs step considers them
+alongside the current job records; a missing file does not remove the
+job from consideration. Each stays in `notStopped`, with its job and
+machine intact and its reason updated to the evidence now available,
+until the matching terminal record is read. An unreadable-file error
+for that same job is described on its one job line and entry, not
+substituted with an anonymous family failure or counted a second time.
+Other unreadable files still use section 17.2's family entries. Stop
+prints one `NOT STOPPED` line for each unresolved remote job, naming
+the record problem and the restoration or cancellation prerequisite,
+and publishes `stop-incomplete` with exit 1 while any remains.
+
+This retention also applies to the existing crashed-stop re-inventory
+by stop, arm and human mission handover. It is the narrow exception to
+section 2's instruction to replace the pre-crash list without consulting
+it: local liveness can be reconstructed here, but a previously recorded
+remote obligation cannot. The first closing write preserves it even
+if the stop later crashes or cannot publish its final result. There is
+no additional write or pass. Restoring a readable non-terminal record
+removes the read error but retains the job; restoring matching terminal
+evidence lets the existing stop or arm path clear it. Merely deleting
+the damaged record, or clearing a family's read error, never does.
+
+The unprobeable-survivor refusal rule governs every family. The human
+mission start and resume paths apply the same rules when they open the
+fence. Section 14.2's repair of an unreadable fence record does not
+authorize discarding a readable
+closed fence because some other record is unreadable. A retry of arm
+is a remedy only when the refusal names what makes that retry capable
+of succeeding; a generic error is no such reason.
+
+**18.2 One thing has one final line (SVC8-02).** Section 6's one-line
+rule applies to the whole stop, not separately to each pass. A thing's
+place in the report is the order in which it was first acted on or
+reported. Later passes settle the outcome in that same place. They do
+not append another line for it. The identity is the family's recorded
+thing and process incarnation, including its machine where applicable,
+never just the printed text or a bare pid. Different process
+incarnations remain different things. A failure without a process is
+identified by its component and the failed record or claim file when
+there is one.
+
+Sections 15.1 and 15.4 determine the final contents. A later successful
+stop replaces an earlier failure, removes its survivor entry and
+leaves one successful line. A later observation that the identity is
+gone does not erase the action that ended it: a reported cancellation,
+TERM or KILL stays attributable to the action actually taken. A family
+read that succeeds after failing leaves one line saying its records
+were read on retry and no unreadable-family survivor. A thing still
+unresolved has one `NOT STOPPED` line and one matching `notStopped`
+entry in the final result to be published. When that publication
+succeeds, the number of final `NOT STOPPED` lines, the number of saved
+survivor entries and the closing count are equal; the phase and exit
+code follow that same result. The case where publication fails is
+explicitly bounded below.
+
+In particular, the remote job that remains open throughout all passes
+has one line naming its machine and cancel remedy, one survivor entry,
+and a closing count of one. An adopted run or an untracked process has
+one line saying it was not signalled, no survivor entry and no effect
+on that count, under section 15.3. Re-encountering a thing from the
+first pass does not turn its reason into `arrived during stop`; that
+qualification belongs only to a thing first discovered in a later
+pass. The family-specific reason and action remain visible beside it.
+
+This changes reporting, not which passes act. Every late-arrivals pass
+and the final sweep still use the ordinary family stop path, including
+for a thing seen before, as sections 17.1 and 17.4 require. Suppressing
+a repeated line must never suppress another attempt or a newly found
+identity. There is no durable history of attempts: the existing report
+and fence record describe the end of this stop.
+
+**A failed final publication is reported, not invented as saved
+(S18-02).** The equality with the saved record in sections 15.1 and
+18.2 is conditional on successful publication. The obligation to print
+every failure in sections 14.1 and 17.5 remains unconditional. Once
+all family and observer outcomes are settled, stop attempts its
+existing final fence write. If that write fails before publication,
+the atomic replacement contract leaves the last published bytes
+unchanged: `closed / stopping`, with this stop's generation, actor,
+time and the remote entries carried into its first write. That list
+is unfinished evidence, not a complete inventory of the final result.
+
+Stop prints the complete report it assembled, then exactly one further
+line:
+
+```text
+NOT STOPPED fence record <file>: final result could not be saved: <error>; did: left the last published fence closed
+```
+
+This is one failure of recording, not another live process. It adds
+one to the printed closing count, but no matching saved entry is
+claimed. The last line is:
+
+```text
+stop incomplete for <toplevel>; <n> not stopped, listed above; final result not saved in <file>; fence remains closed; repair the named write failure, then run: metasystem stop --repo <toplevel>
+```
+
+Here `<n>` counts the final unresolved report entries plus that one
+publication failure. Even when every process was stopped, the count
+is one and the exit code is 1. Stop does not discard the report, claim
+`stopped`, retry the failed publication, write a substitute record,
+delete the fence or reopen it. This qualification is chosen because a
+failed write cannot also save proof of its own failure; another record
+or retry would not repair that contradiction.
+
+Later status can only report the saved `stopping` phase as unfinished,
+with the carried entries explicitly an incomplete list. It cannot
+reconstruct the unsaved report. After the write problem is repaired,
+the printed stop command performs the existing stop transaction and
+must publish its result before claiming completion. Arm encountering
+the unfinished record follows the existing live-writer refusal or
+dead-writer re-inventory, including 18.1's remote retention. Failure to
+save that re-inventory refuses with the file and write error, the
+instruction to repair it, and the stop remedy; it never opens the
+fence on an unsaved result.
+
+The existing atomic writer distinguishes a failure before publication
+from a committed write whose survival across a crash is uncertain.
+The latter keeps its committed contents, phase and normal report
+count; it adds `fence record <file>: final result published; durability
+unconfirmed` as a warning, not a `NOT STOPPED` entry, and does not
+retry or undo the write. Its exit follows the committed stop result.
+Equality then describes the published record, without claiming crash
+durability. A reported write error must never be used to pretend a
+committed replacement left the previous bytes in place.
+
+**18.3 Status distinguishes a closed fence from a completed stop
+(SVC8-03).** Section 14.6 applies whenever the system describes a stop,
+not just to stop's own last line. Status reads the current inventory
+and the durable fence record. Its inventory remains a present-tense
+observation; `notStopped` is separately identified as unresolved
+evidence from the last stop, not proof of current liveness. Every
+recorded entry is visible, including a creator with unknown liveness
+and an unreadable family with no process. An entry matching an
+inventory item by the identity rule of 18.2 annotates that item's line
+with `unresolved from last stop: <reason>`; an entry absent from the
+inventory gets its own
+`unresolved from last stop: <component> <identity or file>: <reason>`
+line. The job and owning machine, or the failed file and error, are
+never dropped. Separate unresolved entries remain separately visible.
+
+For `closed / stop-incomplete`, status ends with:
+
+```text
+stop incomplete for <toplevel> since <changedAt> by <verb> pid <pid>; <n> unresolved entries from the last stop, listed above; run: metasystem stop --repo <toplevel>
+```
+
+Here `<n>` is the number of entries in the record, not the number of
+processes found now. An empty live inventory in this case says `no
+live processes found; the last stop is still unresolved`, never the
+unqualified `nothing is running`. Status neither removes entries it
+cannot see now nor changes the phase, generation, actor or time. A
+fresh stop can settle the stored uncertainty only with the evidence
+18.1 requires; status merely shows it.
+The remote cancellation and unreadable-record repair instructions of
+18.1 accompany the relevant entries, so the next action has its
+prerequisite in view.
+
+Only `closed / stopped` with an empty survivor list gets `stopped since
+<changedAt> by <verb> pid <pid>; start again: metasystem arm --repo
+<toplevel>`. A `stop-incomplete` phase remains incomplete even with
+zero entries; a `stopped` phase carrying entries is also reported as
+incomplete. Both name a fresh stop and neither is silently repaired by
+status. A `stopping` phase says `stop unfinished since <changedAt> by
+<verb> pid <pid>; run: metasystem stop --repo <toplevel>`: the record
+does not by itself prove that its writer is still alive. Any entries
+it carries are shown as recorded, without claiming a completed list.
+The transition lock still decides whether another stop may proceed.
+
+This phase distinction also governs the human-readable fence messages
+in `up`, `health` and every creation refusal in sections 2 and 9.
+Their existing machine outcomes for blocked creation remain; their
+description says `stop incomplete` with the recorded unresolved count
+and the stop remedy, or `stop unfinished` with the stop remedy, in the
+cases above. Health uses `HEALTH STOP INCOMPLETE` or `HEALTH STOP
+UNFINISHED` in those cases. The clean stopped case keeps its arm
+remedy. Refusals keep their two-line form and terminal qualification
+where required. No reader clears or repairs the record merely to
+print it, and none presents a closed fence alone as proof of a
+completed shutdown.
+
+Status still exits 0 when it successfully reads the inventory and
+fence, including an incomplete stop. Section 1 makes that a successful
+observation, not a health verdict. Stop's own incomplete result remains
+exit 1.
+
+**Read failures do not hide independent families (S18-03).** Status
+attempts every family in section 3's existing order once, even after
+an earlier family fails. It keeps every item successfully assembled
+before the error, prints `inventory unreadable: <family> <file or
+source>: <reason>` at that family's position, and continues to the
+later independent families. It does not claim to have read the
+remainder of the failed family. A later family dependent on the same
+unavailable source reports its own failure instead of being silently
+omitted. There is no retry or additional inventory pass.
+
+The fence read is independent too: it is attempted even if an
+inventory family failed, and its failure never prevents the family
+reads. After the family lines, a readable fence is described as above;
+if an inventory read failed, that fence description is prefixed
+`recorded fence: ` so it cannot imply that the live inventory was
+complete. An unreadable fence prints section 14.2's `fence record
+unreadable: <reason>; repair with metasystem arm --repo <toplevel>`
+instead. No unreadable fence is inferred open or stopped. If any read
+failed, both `nothing is running` and `no live processes found` are
+suppressed: a partial inventory is no proof of absence.
+
+After those lines, any read failure makes the last line:
+
+```text
+status incomplete for <toplevel>; <m> read failures, listed above; repair the named read failures, then run: metasystem status --repo <toplevel>
+```
+
+`<m>` counts this status call's failed family reads, one per failed
+family, plus one if its fence read failed. It does not count the
+recorded survivors of a previous stop. The exit code is 1 whether
+the failure was the first family, a later family, the fence, or both
+inventory and fence. The successful family lines and each failure
+remain visible. Status changes no file: it neither turns these fresh
+read errors into durable survivor entries nor repairs the fence.
+This continues the read-only rule and section 14.2's promise that
+status never goes dark; it gives the person everything independently
+readable without claiming that the observation was complete.
+
+**18.4 A lock holder is named honestly (SVC8-N2).** Accept the wording
+correction. For any live holder the contention sentence is `a checkout
+transition by pid <pid> holds the checkout`, followed by `run:
+metasystem status --repo <toplevel>`. It covers stop, arm and mission
+handover without guessing which is running or adding anything to the
+lock record. Section 16.2's bounded wait and holder proof remain; a
+refused contender changes neither the lock nor the fence record.
+
+**18.5 The date repair is fixture maintenance (SVC8-N1).** It adds no
+stop-verb requirement. The already bounded repair in
+`scripts/agents/channel-fixtures.sh` and
+`scripts/agents/goal-cli-fixtures.sh` may remain in the implementation
+diff: computing tomorrow in coordinated universal time keeps a valid
+approval fixture valid without relaxing the approval check. Further
+work belongs to the fixtures' owner, not this goal. It changes neither
+the process verbs' output nor their durable records and earns no new
+acceptance scenario here.
+
+**18.6 Proof stays in the assigned beds.** No scenario is renamed or
+removed. The existing eight fixture scenarios across their three beds
+and the package matrix remain the acceptance surface. These focused
+proofs belong to section 10's existing package tests and scenarios:
+
+- `internal/stoptransition` package tests of the survivor refusal cover
+  a terminal remote job, an open remote job, a missing job record, a
+  malformed record and an injected read failure. They check the named
+  prerequisite and next command, the unchanged fence on refusal, and
+  the evidence-then-stop-or-arm path: a missing remote job stays listed
+  across two further stops whose family reads succeed, and arm still
+  refuses. They check retention in the first closing write and after
+  an injected interruption followed by the existing crashed-stop
+  re-inventory; this is package proof, not the deferred crash fixture.
+  Restoring a non-terminal or mismatched record still refuses;
+  restoring matching terminal evidence clears that job's objection.
+  An ordinary unreadable-family entry still clears when its read
+  succeeds. The `arm-refuses-survivor` scenario in the supervision bed
+  retains its live-identity and eventual-arm proof and gains the missing and
+  unreadable-record cases at the command boundary: two-line stderr,
+  exit 1, retention over a repeated stop, and recovery after the fixture
+  restores matching terminal evidence and follows the printed remedy.
+  These seed local records and require no remote cancellation.
+- The `creator-race` and `survives-kill` package tests in
+  `internal/stoptransition` cover one persistent survivor across all
+  passes, failure followed by success, a repeated adopted run, a
+  repeated unreadable-family failure followed by a successful read,
+  and distinct identities arriving late. They check the final lines,
+  their order, survivor entries, count, phase and exit together, while
+  proving that the later passes still act.
+- The `final-publication-failure` package test in
+  `internal/stoptransition` lets the first closing write succeed and
+  fails only the final publication, both with all processes stopped
+  and with one remaining survivor. It asserts the full action report,
+  one publication-failure line, closing counts of one and two
+  respectively, exit 1, and byte-identical contents to the first
+  `closed / stopping` publication. It checks carried remote evidence,
+  status's unfinished description, and recovery through a subsequent
+  stop with a working writer followed by arm, after supplying matching
+  terminal evidence for any retained remote job and proving any local
+  survivor gone. The same package covers
+  a failed crashed-stop re-inventory write refusing to open, and a
+  committed but durability-unconfirmed write keeping its result with
+  the warning, no extra survivor and no retry.
+- `internal/stoptransition` package tests of status cover clean,
+  unfinished and incomplete records, both with and without live
+  inventory items, matching and unmatched recorded entries, and the
+  phase/list disagreements above. They check every printed entry,
+  the last line, read-success exit 0 and byte-identical durable state.
+  `status-is-live` keeps its existing clean-stop assertions. Section
+  10's `fence-readers` package matrix checks the same phase words and
+  remedies at the reader boundaries. The lock-refusal package tests in
+  `internal/stoptransition` cover holders labelled stop, arm,
+  mission-start and mission-resume with the neutral contention sentence
+  and no contender write; `internal/stopfence` retains the contention
+  and dead-holder proofs.
+- The `status-read-failures` package test in
+  `internal/stoptransition` injects an unreadable early family followed
+  by readable families, including items obtained before the failure;
+  two failed families; a malformed or unsupported-version fence with
+  readable families; and combined inventory and fence failures. It
+  asserts that every family is attempted once in order, later items
+  and all failure lines print, the closing read-failure count is
+  exact, neither empty-inventory success sentence appears, exit is 1,
+  and all durable bytes are unchanged. A readable clean fence beside
+  a failed family must be labelled as recorded and end with the
+  incomplete-status line. The existing malformed-fence status test's
+  exit-0 expectation is replaced with exit 1 while retaining its
+  inventory and repair-message assertions: a failed read is different
+  from a successfully read incomplete stop.
+
+These are proofs of the per-checkout report and recovery contract, not
+new escalation scenarios. `proof-run-stop`, `remote-job`, `slow-owner`,
+`crash-recovery` and `ignored-signal` remain with goal
+metasystem-stop-escalation-proofs; `fleet` and the fleet form remain
+with goal metasystem-stop-fleet-form. No proof here promotes one of
+those deferrals into this slice.
