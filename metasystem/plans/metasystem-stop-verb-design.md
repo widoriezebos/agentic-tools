@@ -1222,3 +1222,58 @@ depends on it (SVC5-06).** Every creation path reads the fence before
 its other gates, `run launch` included, even where no other gate can
 fail because the checkout is stopped. A rule kept only where it
 currently matters is a rule the next gate breaks silently.
+
+## 16. After the third critique (round-6 amendment)
+
+The third independent read
+(`records/misc/metasystem-stop-critique-r6.md`) found five material
+items and three notes, two of them accepted. These decide them and win
+over any earlier section.
+
+**16.1 Arm is reachable wherever stop is (SVC-06-01).** The three verbs
+share one scope resolution. `arm` takes `--installation` exactly as
+`stop` and `status` do, and resolves the checkout and the engine through
+the same parser, so a checkout whose installation is neither at its top
+nor at `<checkout>/metasystem` can be armed by the person who stopped
+it. This is not a convenience: Wido's requirement is that only a human
+arm clears a stop, so a layout where no human arm can run is a layout
+where the fence is permanent. No refusal may name a flag the verb it
+names does not accept.
+
+**16.2 A live transition holder is recognised by its holder, not by a
+timeout (SVC-06-02).** A stop holds the lock for its whole transaction,
+which routinely outlasts the bounded wait, so exhausting the wait
+against a live holder IS the stop-in-progress case: it refuses with the
+holder named and the second line `run: metasystem status --repo
+<toplevel>`. Only an unreadable or dead-holder lock falls to another
+branch.
+
+**16.3 The crashed-stop re-inventory records what it cannot read
+(SVC-06-03).** Section 15.1 applies to arm's own re-inventory: a family
+whose records cannot be read becomes a survivor entry naming the family
+and the reason, and the refusal points at `metasystem stop`. It never
+aborts on the first unreadable family.
+
+**16.4 Arm refuses `--all` in the grammar (SVC-06-04).** `arm` parses
+`--all` through the same path `stop` and `status` use and refuses it with
+section 13.3's sentence and section 9's two-line shape, exit 1. A flag
+parser's usage block is not a refusal.
+
+**16.5 A return names its own deferrals (SVC-06-05).** Section 14.4
+stands and binds the orchestrator as much as the builder: a brief that
+defers a scenario says so, and the round's return lists every unbuilt
+slice-1 scenario as a gap. A chain closed from a return that hides its
+deferrals is closed on an incomplete record.
+
+**16.6 The transaction has no remaining exit after the fence closes
+(SVC-06-N1).** An unknown family name is a printed `NOT STOPPED` line
+like any other failure, never a returned error that discards the report.
+The trap is latent today and arms itself the moment a family is added.
+
+**16.7 Remedies print paths unquoted (SVC-06-N2).** Every stopped remedy
+prints its path the same way, so a person can paste any of them.
+
+Recorded, not decided here: the untracked family re-runs the census on
+every inventory pass, so one stop can run several censuses where section
+3 says one. That cost belongs to the shared enumeration deferred to
+slice 2 (goal metasystem-stop-fleet-form), whose record now carries it.
