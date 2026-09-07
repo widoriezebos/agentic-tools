@@ -1,16 +1,18 @@
 # delegate-death-names-the-account-limit
 
-- State: queued
+- State: done
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a seat cannot tell a provider usage-limit death from a real protocol failure, so it retries the wrong thing or stops working a good goal, and the burned attempt looks like the delegate's fault; nothing unsafe is permitted; novelty 1: one field read from the return the adapter already captures; exposure 2: every claude-runtime delegate on every machine, only when the account window closes mid-run; accumulation 1: each death is independent"
 - Tier: 2
 - Intent: On 2026-09-06 21:30 CEST the code critic hgvf-cc1b-20260906 (claude runtime, Fable) died four minutes and fifty seconds in, after 30 turns and 3.62 US dollars, with the stream's final result carrying is_error true, api_error_status 429 and the text 'You've hit your session limit, resets 12:10am (Europe/Amsterdam)'. Its job record says only error=protocol_error, phase=runtime, with no protocolError block and no mention of the limit; the reason exists solely in artifacts/agents/<job>/rounds/<n>/claude-stream.jsonl. The death also consumed one attempt and 120 reserved job-minutes of goal human-goal-verbs-forgiving, a goal later parked twice for a spent box. DONE means: a delegate whose runtime returns a provider limit or rate-limit status is recorded with its own error class (say account-limit) carrying the provider status, the message and the reset time the return names; the seat's watch and the job listing show that class; the class is documented as retryable without a new op-mismatch trap; and a fixture drives an adapter return with api_error_status 429 and asserts the record.
 - Origin: main
 - Next step: MECHANICAL, one chain: the claude adapter (scripts/agents/adapters/claude.sh) already writes the stream; read the terminal result object's api_error_status and result text, and pass them to the record-stamping path in internal/dispatch/record.go that today writes error=protocol_error with phase=runtime, so a limit death lands as its own class with the provider's words. Verify first by replaying the preserved stream of hgvf-cc1b-20260906 through the adapter's return parser; the codex runtime has its own capacity deaths (goal codex-capacity-outage-2026-08-31), so name the class runtime-agnostic. Fixture in the dispatch fixture suite.
+- Concluded: DUPLICATE, retired unbuilt. Seat m1 opened runtime-limit-is-not-a-protocol-error at 2026-09-07 05:26Z for the same defect, two hours before this one; that goal is the survivor and carries the work. This record keeps the m1d evidence for it: code critic hgvf-cc1b-20260906 (claude runtime, Fable) died on 2026-09-06 at 19:30:28Z after four minutes fifty seconds, 30 turns and 3.62 US dollars; the stream's terminal result carried is_error true, api_error_status 429 and the text about the session limit resetting at 12:10am Europe/Amsterdam, while the job record says only error=protocol_error, phase=runtime, with no protocolError block. The death charged one attempt and 120 reserved job-minutes to goal human-goal-verbs-forgiving, which was later parked twice for a spent box. Two further facts for the survivor: a retry with a fresh --op succeeded seventeen minutes later, well before the named reset time, so the window reopens sooner than the message implies; and the whole m1d ledger holds exactly one such death, so the classification defect is rare but expensive.
 - OpenedAt: 2026-09-07T05:26:34Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-07T05:26:34Z 2H3VTQPN30CGS30P9D1YK46QXV-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=delegate-death-names-the-account-limit
-Integrity: sha256=8ba3d9ab4e227ace828162dcf2e8ec5057b316a2aabf7abcfa7cc8ae20cc2668
+- 2026-09-07T05:42:08Z 4YWZRGJRB4KZDHFTW3WB4MEAX7-m1d-62183579 done actor=m1d+main-1788683763-71870-f7f607 targets=delegate-death-names-the-account-limit
+Integrity: sha256=dca6b629cc59f9248c63b7df9c70c4823bb1c63aeb15cffac8637af19eab09d0
