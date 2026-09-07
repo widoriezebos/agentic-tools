@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: in the turn-verdict path (internal/steward or wherever the open-work scan lives; grep for 'does not repeat for the same work'), persist the refused plan lines in the supervision artifacts keyed by plan path plus line digest and skip them on later stops; treat a job record on this checkout in status running, or a chain root with chainClosed false whose newest round is not terminal, as in flight; classify '<one line, required>' placeholders as template-unfilled with their own line. Fixtures: the supervision-hook fixture suite gains one scenario per rule.
 - OpenedAt: 2026-09-06T10:53:06Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:52:20Z revision=2 opid=Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 authority=proven digest=93ab5bcd8ccb820b62d295da654d52a6446a72410ab8a772685938718e4bc683
+- Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=3 at=2026-09-07T00:47:48Z
 - Claimed: machine=m1d lineage=main-1788683763-71870-f7f607 at=2026-09-07T00:47:01Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1d claimEpoch=1 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-06T10:53:06Z YP7WG37N4VN1X8VMS5RHV2JWXG-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-open-work-refusal-repeats
 - 2026-09-06T12:52:20Z Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 approve actor=human:Wido targets=human-goal-verbs-forgiving,repo-root-paths-ride-agent-commits-unjudged,stop-deadline-parent-trusts-ps,stop-hook-open-work-refusal-repeats,verbs-match-intent
 - 2026-09-07T00:47:01Z AEEHJBWD71JFSAPGQSPT9XWYG2-m1d-62183579 claim actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-open-work-refusal-repeats
-Integrity: sha256=6a91ed5d557a6a4253c8b59029468e630023a5a807dc2cce83f1841d04f8de3a
+- 2026-09-07T00:47:48Z 8MAYZ9F0TQHZ3AHJKD712C2BPP-m1d-62183579 slice-start actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-open-work-refusal-repeats
+Integrity: sha256=ba69673ff1aa3d7e7cea22b4a19f5d6423586398b6b79310e497350f007d29fd
