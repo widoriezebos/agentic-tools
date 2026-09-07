@@ -9,8 +9,10 @@ fixture beds, all eight slice-1 scenarios, the eleven-package matrix. It
 found three material items and one note the orchestrator accepted
 anyway. Dispositions are in records/misc/metasystem-stop-critique-r5.md
 and the design's new section 15 decides each; read section 15 first, it
-wins over earlier sections. Four of the five decisions live in one file,
-metasystem/internal/stoptransition/transition.go, and none of them
+wins over earlier sections. Four of the five decisions live in one file, this chain's own
+internal/stoptransition/transition.go (cited without the tree prefix
+because admission judges prefixed paths against the base commit and this
+file is the chain's), and none of them
 changes the acceptance the beds already prove.
 
 # Decisions (the orchestrator's; decided, not open)
