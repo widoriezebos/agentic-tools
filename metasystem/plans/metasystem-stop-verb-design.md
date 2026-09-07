@@ -1156,3 +1156,22 @@ metasystem-stop-escalation-proofs) owns proof-run-stop, remote-job,
 slow-owner, crash-recovery and ignored-signal, with the escalation seams
 they need. Slice 2 owns fleet. A round's return names every scenario it
 did not build as a gap, whatever a brief deferred.
+
+**14.5 A component whose owner cannot report is still stopped by the
+caller.** Section 4 step 6 says the caller sweeps the recorded and
+tag-discovered components after the owner's own teardown. When the owner
+returns no outcome for a recorded component, that is not a survivor: the
+caller stops it by identity, TERM then the orderly wait then KILL with
+the identity re-proved beside each signal, and reports what it did. Only
+a component that outlives that ladder, or whose identity cannot be
+inspected, is `NOT STOPPED`. An owner that cannot report is the ordinary
+case after a crash, not an exception.
+
+**14.6 An incomplete stop never closes by saying the checkout is
+stopped.** The closing line of section 6 splits in two. When every line
+ended in a stop: `stopped <toplevel>; start again: metasystem arm --repo
+<toplevel>`, exit 0. When any line reads `NOT STOPPED`: `stop incomplete
+for <toplevel>; <n> not stopped, listed above; run: metasystem stop
+--repo <toplevel>`, exit 1. The old wording claimed success on a run that
+had just listed survivors, which is the one thing this verb must never
+do: a person reads the last line.
