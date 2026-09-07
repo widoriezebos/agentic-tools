@@ -1277,3 +1277,47 @@ Recorded, not decided here: the untracked family re-runs the census on
 every inventory pass, so one stop can run several censuses where section
 3 says one. That cost belongs to the shared enumeration deferred to
 slice 2 (goal metasystem-stop-fleet-form), whose record now carries it.
+
+## 17. After the fourth read (round-7 amendment)
+
+The fourth independent read
+(`records/misc/metasystem-stop-critique-r7.md`) found four material
+items, one of them critical, and all four live in the late-arrivals and
+final-sweep machinery that section 13.1 introduced. That machinery has
+now produced the worst findings of two consecutive reads, so these
+decisions simplify it rather than patch it.
+
+**17.1 The final sweep is not a special case (SVC7-01, critical).** The
+sweep that follows the late-arrivals passes stops everything still live
+through the same family stop path every other pass uses. Nothing is
+discarded by inspecting its key: the untracked family already reports
+its own processes as not the metasystem's and signals nothing, so no
+caller needs a filter. A run may never print that a checkout is stopped
+while an item its own inventory found is alive. The critic proved the
+opposite behaviour by probe: three inventories, zero stops, exit 0, and
+a report reading "nothing is running" over a live owned process.
+
+**17.2 An unreadable record names the file (SVC7-02).** A survivor entry
+for a family whose records cannot be read carries the FILE that failed
+and the parse error, and both the stop line and arm's refusal print it,
+because a person can only fix what is named. Arm says it cannot probe
+that survivor rather than implying it is alive, and the entry clears as
+soon as a stop reads that family successfully. Wido's rule that only a
+human arm clears a stop requires that a human be able to.
+
+**17.3 The generation never moves backwards (SVC7-03).** When the record
+cannot be parsed at all, the repair establishes the highest generation
+visible in any durable source (the supervision state and the host
+registry's rows) and writes one above it, and its printed line says the
+counter was recovered rather than read. A counter that exists to order
+transitions may not be reset by the corruption it is meant to survive.
+
+**17.4 Every pass acts (SVC7-04).** Each iteration of the late-arrivals
+loop runs the family stop path, the last one included. Nothing is
+recorded or printed as a survivor of a pass that never signalled it:
+"arrived during stop" means stop tried and it lived.
+
+**17.5 No hook ends the transaction (SVC7-N1).** An observer or hook
+error after the fence is closed becomes a printed line like any other
+failure. This is the third latent variant of the same fault; the rule is
+now absolute, whatever the source of the error.
