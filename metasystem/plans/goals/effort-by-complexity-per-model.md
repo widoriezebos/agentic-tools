@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: Tier 2, MECHANICAL: no design page. Sol builds behind the fixtures (read internal/dispatch/hazard.go, internal/dispatch/build.go reasoningEffort composition, internal/dispatch/roster.go for how role.<role>.model.<runtime> resolves, cmd/metasystem/adapter_runtime_verbs.go --reasoning-effort, metasystem.conf role lines), Fable code review, land.
 - OpenedAt: 2026-09-06T19:54:04Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:55:31Z revision=8 opid=B583HCFB873QFD1HYHE7QVA258-m1-7cd0bd60 authority=proven digest=91187c8eb9fa3217c89f3a08f4717f90174922b58f6069d987025a538ecd4cc8
+- Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=9 at=2026-09-07T00:18:41Z
 - Claimed: machine=m1c lineage=main-1788680061-17829-64951c at=2026-09-07T00:16:50Z revision=9 accountingRevision=9
 - StopCapability: generation=9 revision=9 machine=m1c claimEpoch=1 fenceEpoch=0
 
@@ -24,4 +25,5 @@ History:
 - 2026-09-06T21:55:16Z 0RHMQFYYHAXDVZ56720SQ7TE9Y-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=effort-by-complexity-per-model
 - 2026-09-06T21:55:31Z B583HCFB873QFD1HYHE7QVA258-m1-7cd0bd60 approve actor=human:Wido targets=effort-by-complexity-per-model
 - 2026-09-07T00:16:50Z MBM0TQQWBY870YKSFVM7KEDWAA-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=effort-by-complexity-per-model
-Integrity: sha256=0e8873b06ce6d8e04882eced6a93b0e591b6480f05b6bfe6f16ee3e57dcdcd09
+- 2026-09-07T00:18:41Z T29JKEVADY2ZFMH39V7NNQQBR7-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=effort-by-complexity-per-model
+Integrity: sha256=ac3c12212a4206b8ff65b7e22390071d1f10045cc8f2f1b1066dcc0671da7df8
