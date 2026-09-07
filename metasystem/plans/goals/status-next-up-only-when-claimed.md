@@ -5,9 +5,9 @@
 - Tier: 1
 - Intent: The channel status post prints 'Next up' from the ledger's ready frontier (internal/channel/report.go, ComposeReport, goal.Next(...).Ready), so it names goals no machine has claimed. Wido 2026-09-05: 'Next up is only interesting when you have completed something and will indeed pick that up, but only then. It is not interesting if you have not claimed it yet because then it means nothing. any other machine could pick it up.' DONE means the status post's Next up line names only a goal this machine has claimed, and only in a post that also carries a Delivered line; with nothing claimed there is no Next up line at all; the report tests prove both.
 - Origin: main
-- Next step: Tier 1: one change in ComposeReport (claimed-by-this-machine instead of the ready frontier, gated on a Delivered line) with its test in report_test.go; go test ./internal/channel/; land as a declared tier-1 direct fix. Waits for Wido's word on when.
+- Next step: STATE 2026-09-07 01:50Z (m1c): claimed; brief plans/status-next-up-only-when-claimed-brief.md landed; chain snu-build1 (Sol, MECHANICAL, tier 1) building: Next up names only this machine's claimed goals and only beside a Delivered line, two tests. Then go test ./internal/channel/ seat-side, conformance, tier-1 landing (land.sh --direct-fix tier-1 --root-job snu-build1 --tests), rebuild, up, done.
 - OpenedAt: 2026-09-05T05:37:06Z
-- Revision: 4
+- Revision: 5
 - Labels: robustness
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
@@ -21,4 +21,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=status-next-up-only-when-claimed reason=sweep
 - 2026-09-07T01:23:07Z XEG1YJVWT616EZDHH9ZBXPJ08P-m1c-7cd0bd60 claim actor=m1c+main-1788680061-17829-64951c targets=status-next-up-only-when-claimed
 - 2026-09-07T01:23:48Z VR8B20YJBR3S2JX686WV5K6JKE-m1c-7cd0bd60 slice-start actor=m1c+main-1788680061-17829-64951c targets=status-next-up-only-when-claimed
-Integrity: sha256=97ab1cf9d6847c0547f1eda52dc099c6694229911cb08d96b0507d67880d0909
+- 2026-09-07T01:24:20Z SVGNVZV3DACR8CYPAJRH2N04AN-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=status-next-up-only-when-claimed
+Integrity: sha256=c234be3ea7da48cb2e35fa158451362a36a3118d4217be2cad7c4aecb6eb0209
