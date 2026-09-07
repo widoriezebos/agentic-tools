@@ -10,7 +10,7 @@ If the proposal can install itself and then judge whether its own evidence is su
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
-This stress test is necessary for my proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
+This is like a stress test and I think it is really necessary for the metasystem to evolve. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
 
 ## The distinctive self-change problem
 
