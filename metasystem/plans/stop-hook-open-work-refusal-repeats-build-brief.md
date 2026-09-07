@@ -37,8 +37,8 @@ placeholder is classified template-unfilled on its own line.
 # The change
 
 1. A durable seen-state for open-work lines under the supervision
-   artifacts (artifacts/agents/supervision/open-work-seen.json or the
-   file the existing StopRefusal state uses, keyed by plan path plus a
+   artifacts (a new file open-work-seen.json in the supervision
+   artifacts directory, or the file the existing StopRefusal state uses, keyed by plan path plus a
    digest of the line), written the first time a line refuses a turn
    end and read on every later stop; a line already seen renders
    visible in the verdict but does not block. The deadline path
