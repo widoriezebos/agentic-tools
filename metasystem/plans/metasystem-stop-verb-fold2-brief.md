@@ -11,8 +11,12 @@ focused package tests green, and stopped at the partial-slice boundary
 the brief allowed. It carried seven gaps. This round closes them. The
 specification stays metasystem/plans/metasystem-stop-verb-design.md
 (section 13 wins over earlier sections); the boundary stays D2 as
-amended by D5 in metasystem/plans/metasystem-stop-verb-fold1-brief.md,
-plus the one file D8 adds.
+amended by D5 in the round-2 brief (plans/metasystem-stop-verb-fold1-brief.md,
+landed after this worktree was cut: the command-layer files main.go,
+run.go, supervise_owner.go, supervise_component.go, supervise_arming.go,
+up.go, steward_verbs.go, missionrunner_verbs.go, proof_run.go,
+dispatch_verbs.go, delegate.go and the new process_verbs.go under
+cmd/metasystem), plus the one file D8 adds.
 
 # Facts (the orchestrator's runs, 2026-09-07 00:55Z to 01:05Z)
 
