@@ -47,8 +47,9 @@ D61. If, having done that, the gate still refuses a fixture-granted human
 classification, STOP and name it as a finding rather than working around
 it. Section 7 of the design says a fixture-granted HUMAN classification
 is admitted as it is for arm, and the gate's own comment in
-metasystem/cmd/metasystem/process_verbs.go says fixture-granted
-classifications are explicit authority. If that is not true in the code,
+cmd/metasystem/process_verbs.go (a file this chain created, cited without
+the tree prefix because admission judges prefixed paths against the base
+commit) says fixture-granted classifications are explicit authority. If that is not true in the code,
 it is a product defect and this round's job is to report it precisely,
 not to hide it.
 
