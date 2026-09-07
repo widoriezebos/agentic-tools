@@ -96,7 +96,7 @@ func TestSyncReqLineage(t *testing.T) {
 			t.Fatalf("first enrollment generation = %d, want 1", enrollment.Generation)
 		}
 
-		req, err := syncReq(root, "Wido", "")
+		req, err := syncReq("test", root, "Wido", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestSyncReqLineage(t *testing.T) {
 		if enrollmentErr == nil {
 			t.Fatal("unenrolled fixture unexpectedly has an enrollment")
 		}
-		_, err := syncReq(root, "Wido", "")
+		_, err := syncReq("test", root, "Wido", "")
 		want := noEnrollmentRefusal + ": " + enrollmentErr.Error()
 		if err == nil || err.Error() != want {
 			t.Fatalf("human refusal = %v, want %q", err, want)
@@ -126,7 +126,7 @@ func TestSyncReqLineage(t *testing.T) {
 		_, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_01")
 		reader.terminalID = "ttys:another-shell"
 		proveSyncReqWithReader(t, reader)
-		_, err := syncReq(root, "Wido", "")
+		_, err := syncReq("test", root, "Wido", "")
 		if err == nil || err.Error() != wrongShellRefusal {
 			t.Fatalf("wrong-shell refusal = %v, want %q", err, wrongShellRefusal)
 		}
@@ -135,7 +135,7 @@ func TestSyncReqLineage(t *testing.T) {
 	t.Run("agent keeps coordinator identity refusal", func(t *testing.T) {
 		root := syncedClaimedGoalFixture(t)
 		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
-		_, err := syncReq(root, "", "")
+		_, err := syncReq("test", root, "", "")
 		if err == nil || err.Error() != agentRefusal {
 			t.Fatalf("agent refusal = %v, want %q", err, agentRefusal)
 		}

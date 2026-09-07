@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -91,7 +92,14 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	if c.Undelivered > 0 {
 		lineLimit--
 	}
-	lines := []string{fmt.Sprintf("%s status %s", c.Machine, c.Now.In(c.Location).Format("2006-01-02 15:04 -0700"))}
+	lines := []string{}
+	brainState := brain.Read(c.RepoRoot, goal.ExistingLedgerIdentity(c.RepoRoot))
+	if brainState.State == brain.Declared {
+		if status, statusErr := brain.ReadStatus(c.RepoRoot); statusErr == nil && status.Line == brain.StatusLine(*brainState.Record) {
+			lines = append(lines, status.Line)
+		}
+	}
+	lines = append(lines, fmt.Sprintf("%s status %s", c.Machine, c.Now.In(c.Location).Format("2006-01-02 15:04 -0700")))
 	for _, part := range [][]string{needs, delivered, next} {
 		for _, line := range part {
 			if len(lines) == lineLimit {

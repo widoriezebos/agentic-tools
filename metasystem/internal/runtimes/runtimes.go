@@ -59,6 +59,15 @@ type Declaration struct {
 	// runtime exports into sessions ("" when it has none). The grammar
 	// is pinned so shell consumers can expand it indirectly, never eval.
 	SessionEnv string
+	// StartContextField is the dotted JSON field into which a session-start
+	// hook injects model context. An empty field declares the capability
+	// absent. StartContextEventName is the runtime-owned event-name value
+	// carried beside the context field, StartContextBytes is its byte bound,
+	// and StartContextSources are the lifecycle sources that re-inject it.
+	StartContextField     string
+	StartContextEventName string
+	StartContextBytes     int
+	StartContextSources   []string
 	// InstructionFile is the runtime's instruction-bearing filename at
 	// a repository root.
 	InstructionFile string
@@ -158,6 +167,9 @@ var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 // expansion only, never eval).
 var envRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
+var startContextFieldRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$`)
+var startContextEventNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,63}$`)
+
 // declarations is the universe, in tailoring-priority order.
 var declarations = []Declaration{
 	{
@@ -223,6 +235,10 @@ var declarations = []Declaration{
 		InstructionFile:          "CLAUDE.md",
 		RegistrationDirs:         []string{".claude/skills", ".claude/agents"},
 		ShippedEnforcementConfig: "claude-code-hooks.json",
+		StartContextField:        "hookSpecificOutput.additionalContext",
+		StartContextEventName:    "SessionStart",
+		StartContextBytes:        10000,
+		StartContextSources:      []string{"startup", "resume", "clear", "compact"},
 		SelfCheck:                &LiveSelfCheck{VendoredMarker: "$CLAUDE_PROJECT_DIR/metasystem"},
 		ExpectedEnvelopeEnforcement: map[string]Enforcement{
 			"writeRoots": Mapped, "readRoots": Mapped, "network": Mapped,
@@ -412,6 +428,34 @@ func Validate() []string {
 		}
 		if d.SessionEnv != "" && !envRe.MatchString(d.SessionEnv) {
 			add("%s: session env %q violates the variable grammar", d.Name, d.SessionEnv)
+		}
+		if d.StartContextField == "" {
+			if d.StartContextEventName != "" || d.StartContextBytes != 0 || len(d.StartContextSources) != 0 {
+				add("%s: absent start context must have no event name, a zero bound, and no sources", d.Name)
+			}
+		} else {
+			if !startContextFieldRe.MatchString(d.StartContextField) {
+				add("%s: start context field %q violates the dotted-field grammar", d.Name, d.StartContextField)
+			}
+			if d.StartContextBytes < 2048 {
+				add("%s: start context byte bound %d is below the minimum 2048", d.Name, d.StartContextBytes)
+			}
+			if !startContextEventNameRe.MatchString(d.StartContextEventName) {
+				add("%s: start context event name %q violates the event-name grammar", d.Name, d.StartContextEventName)
+			}
+			if len(d.StartContextSources) == 0 {
+				add("%s: start context requires at least one lifecycle source", d.Name)
+			}
+			seenSources := map[string]bool{}
+			for _, source := range d.StartContextSources {
+				if !nameRe.MatchString(source) {
+					add("%s: start context source %q violates the source grammar", d.Name, source)
+				}
+				if seenSources[source] {
+					add("%s: start context source %q declared twice", d.Name, source)
+				}
+				seenSources[source] = true
+			}
 		}
 		if d.ExpectedACP != nil && d.ExpectedACP.ExpectedProtocolVersion < 1 {
 			add("%s: an ACP expectation requires a positive protocol version", d.Name)

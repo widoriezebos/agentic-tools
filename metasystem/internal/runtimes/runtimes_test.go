@@ -18,6 +18,8 @@ func TestDeclarationInvariants(t *testing.T) {
 	declarations = []Declaration{
 		{Name: "Bad Name", TailoringPriority: 1, AdoptionDefault: true, Adoptable: true,
 			SessionEnv: "lower", InstructionFile: "../escape.md",
+			StartContextField: "bad", StartContextEventName: "Bad Event!", StartContextBytes: 2047,
+			StartContextSources: []string{"Bad Source", "Bad Source"},
 			PermissionResiduals: map[string]string{"bogus": ""}},
 		{Name: "dup", TailoringPriority: 1},
 		{Name: "dup", TailoringPriority: 0, InstructionFile: "./dot.md",
@@ -27,7 +29,8 @@ func TestDeclarationInvariants(t *testing.T) {
 	for _, want := range []string{"shell-safe grammar", "variable grammar", "clean-relative",
 		"already belongs", "not a permission field", "empty residual",
 		"declared twice", "must be positive", "ascending priority order",
-		"nonblank vendored marker"} {
+		"nonblank vendored marker", "dotted-field grammar", "below the minimum 2048",
+		"event-name grammar", "source grammar"} {
 		found := false
 		for _, p := range problems {
 			if contains(p, want) {

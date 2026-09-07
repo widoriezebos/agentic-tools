@@ -1,13 +1,17 @@
 package report
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -39,6 +43,102 @@ func writeFile(t *testing.T, root, rel, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func reportGit(t *testing.T, root string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func newDraftScanRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	reportGit(t, root, "init", "-q", "-b", "main")
+	reportGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
+	reportGit(t, root, "config", "goal.sync-remote", "local")
+	reportGit(t, root, "config", "user.name", "report-fixture")
+	reportGit(t, root, "config", "user.email", "report-fixture@example.invalid")
+
+	const ledger = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	writeFile(t, root, "plans/goals/backlog.md", string(goal.RenderRoot(&goal.RootRecord{
+		Identity: ledger, FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
+	})))
+	writeFile(t, root, "plans/goals/draft-here.md", string(goal.RenderFile(&goal.GoalFile{
+		Id: "draft-here", State: goal.StateQueued, Intent: "Test the draft scan", Origin: goal.OriginMain,
+		NextStep: "Have a human approve this draft.", OpenedAt: "2026-09-07T00:00:00Z", Revision: 1,
+		History: []goal.HistoryLine{{
+			At: "2026-09-07T00:00:00Z", Opid: goal.Opid(ledger, "bed-m1", "coordinator"),
+			Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"draft-here"}, Keep: -1,
+		}},
+	})))
+	reportGit(t, root, "add", "plans/goals/backlog.md", "plans/goals/draft-here.md")
+	reportGit(t, root, "commit", "-q", "-m", "report scanner bed")
+	reportGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	return root
+}
+
+func TestBrainDeclarationScanIncludesPendingSetupBeforeDeclaration(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "artifacts/agents/jobs/pending-setup.json",
+		`{"jobId":"pending-setup","status":"pending-setup","role":"implementer","runtime":"fake","chainClosed":true}`)
+	ordinary := Scan(root)
+	if len(ordinary.Busy) != 0 || len(ordinary.Jobs) != 0 {
+		t.Fatalf("ordinary undeclared scan changed trunk's in-flight set: %+v", ordinary)
+	}
+	declaration := ScanForBrainDeclaration(root)
+	if len(declaration.Busy) != 1 || declaration.Busy[0].Id != "pending-setup" || len(declaration.Jobs) != 1 || declaration.Jobs[0].Status != "pending-setup" {
+		t.Fatalf("brain declaration scan missed pending-setup: %+v", declaration)
+	}
+
+	declaredRoot := newDraftScanRoot(t)
+	writeFile(t, declaredRoot, "artifacts/agents/jobs/pending-setup.json",
+		`{"jobId":"pending-setup","status":"pending-setup","role":"implementer","runtime":"fake","chainClosed":true}`)
+	record := brain.Record{
+		Schema: brain.Schema, Ledger: goal.ExistingLedgerIdentity(declaredRoot), Machine: "bed-m1",
+		DeclaredBy: "Wido", DeclaredAt: "2026-09-07T00:00:00Z",
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, declaredRoot, "artifacts/agents/brain.json", string(data)+"\n")
+	declared := Scan(declaredRoot)
+	if len(declared.Busy) != 1 || declared.Busy[0].Id != "pending-setup" || len(declared.Jobs) != 1 || declared.Jobs[0].Status != "pending-setup" {
+		t.Fatalf("declared brain scan did not classify pending-setup as in flight: %+v", declared)
+	}
+}
+
+func TestQuestionAndDraftScansKeepUndeclaredVerdictUnchanged(t *testing.T) {
+	root := newDraftScanRoot(t)
+	writeFile(t, root, "artifacts/agents/channel/questions/valid.json",
+		`{"id":"valid","goal":"draft-here","kind":"other","machine":"bed-m2","openedAt":"2026-09-07T00:01:00Z","wants":"Choose the safe option.","state":"open"}`)
+	writeFile(t, root, "artifacts/agents/channel/questions/broken.json", `{broken`)
+
+	reportGit(t, root, "config", "--unset", "metasystem.goal.machine")
+	unreadable := Scan(root)
+	if len(unreadable.Questions) != 1 || unreadable.Questions[0].Id != "valid" {
+		t.Fatalf("valid question was hidden by its malformed neighbor: %+v", unreadable.Questions)
+	}
+	details := strings.Join(unreadable.Unreadable, "\n")
+	if !strings.Contains(details, "question scan:") || !strings.Contains(details, "broken.json") ||
+		!strings.Contains(details, "draft scan:") || !strings.Contains(details, "no machine nickname") {
+		t.Fatalf("question and draft read failures were not named: %v", unreadable.Unreadable)
+	}
+
+	reportGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
+	verdict, err := (&goal.Store{Root: root}).TurnVerdict(unreadable, "undeclared-report-scan", "", "")
+	if err != nil || verdict.ShouldBlock || strings.Contains(verdict.Display, "UNCERTAIN") {
+		t.Fatalf("brain-only scanner failures changed an undeclared checkout's verdict: %+v %v", verdict, err)
+	}
+
+	readable := Scan(root)
+	if len(readable.Drafts) != 1 || readable.Drafts[0].Id != "draft-here" ||
+		readable.Drafts[0].Detail != "Have a human approve this draft." {
+		t.Fatalf("machine-owned queued draft was not scanned: %+v", readable.Drafts)
 	}
 }
 

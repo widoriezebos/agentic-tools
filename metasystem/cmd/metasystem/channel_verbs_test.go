@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 func captureChannelOutput(t *testing.T, run func() int) (int, string, string) {
@@ -101,6 +103,48 @@ func commandFakeBed(t *testing.T) (string, string) {
 			t.Fatal("fake did not start")
 		}
 		runtime.Gosched()
+	}
+}
+
+func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
+	dir, _ := commandFakeBed(t)
+	root := syncedClaimedGoalFixture(t)
+	conf, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(conf, "channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir=%s\n", dir); err != nil {
+		_ = conf.Close()
+		t.Fatal(err)
+	}
+	if err := conf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	record := brain.Record{
+		Schema: brain.Schema, Ledger: goal.ExistingLedgerIdentity(root), Machine: "mac-cli",
+		DeclaredBy: "Wido", DeclaredAt: "2026-09-07T00:00:00Z",
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(brain.Path(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(brain.Path(root), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(brain.StatusPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("unbooted fixture unexpectedly had a status file: %v", err)
+	}
+
+	code, _, problem := captureChannelOutput(t, func() int { return runChannelStatus([]string{"--root", root, "--post"}) })
+	if code != 0 || problem != "" {
+		t.Fatalf("first status post failed: code=%d stderr=%q", code, problem)
+	}
+	status, err := brain.ReadStatus(root)
+	if err != nil || status.Line != brain.StatusLine(record) || status.LastPostedAt == "" {
+		t.Fatalf("first status post did not seed and mark brain status: status=%+v err=%v", status, err)
 	}
 }
 

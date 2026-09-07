@@ -27,8 +27,9 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (7 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one full-width-chain build-stamp
+  run_fixture_bed_scenarios land "land fixtures passed (9 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one full-width-chain build-stamp \
+    brain-land-refuses brain-absent-node-proceeds
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -172,6 +173,168 @@ SH
   git -C "$leg_peer" config user.name fixture-peer
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
 }
+
+make_brain_source_leg() { # name
+  local name=$1 source_top source_prefix legacy ledger digest manifest fixture_start migrate_out
+  leg_root=$tmp/$name
+  leg_seed=$leg_root/seed
+  leg_remote=$leg_root/origin.git
+  leg_local=$leg_root/local
+  leg_peer=$leg_root/peer
+  source_top=$(git -C "$root" rev-parse --show-toplevel)
+  source_prefix=$(git -C "$root" rev-parse --show-prefix)
+  source_prefix=${source_prefix%/}
+  mkdir -p "$leg_seed"
+  if [[ -n "$source_prefix" ]]; then
+    git -C "$source_top" archive "HEAD:$source_prefix" | tar -x -C "$leg_seed"
+  else
+    git -C "$source_top" archive HEAD | tar -x -C "$leg_seed"
+  fi
+  mkdir -p "$leg_seed/bin"
+  cp "$root/scripts/agents/land.sh" "$leg_seed/scripts/agents/land.sh"
+  cp "$root/scripts/agents/commit.sh" "$leg_seed/scripts/agents/commit.sh"
+  cp "$source_engine" "$leg_seed/bin/metasystem"
+  rm -rf "$leg_seed/plans/goals"
+  rm -f "$leg_seed/plans/goals.md" "$leg_seed/plans/goals-accepted.json"
+  mkdir -p "$leg_seed/plans" "$leg_seed/records/misc"
+  cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$leg_seed/records/misc/"
+  cat >"$leg_seed/plans/goals.md" <<'LEDGER'
+# Goals
+
+## Current goal: ship-widget — Ship the widget
+- Origin: main
+- Next step: Let a node finish it.
+LEDGER
+  for fixture_template in "$leg_seed/docs/project-rules.md" "$leg_seed/metasystem.conf"; do
+    awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$fixture_template" >"$fixture_template.fixture"
+    mv "$fixture_template.fixture" "$fixture_template"
+  done
+  legacy=$(cat "$leg_seed/plans/goals.md" && printf x) && legacy=${legacy%x}
+  "$source_engine" json object ledger="$legacy" sha256="$(shasum -a 256 "$leg_seed/plans/goals.md" | cut -d' ' -f1)" >"$leg_seed/plans/goals-accepted.json"
+  "$source_engine" json set --file "$leg_seed/plans/goals-accepted.json" --int schemaVersion=1
+  git -C "$leg_seed" init -q -b main
+  git -C "$leg_seed" config user.name fixture
+  git -C "$leg_seed" config user.email fixture@example.invalid
+  git -C "$leg_seed" config metasystem.goal.machine brain-leg
+  git -C "$leg_seed" add -A
+  git -C "$leg_seed" add -f bin/metasystem
+  git -C "$leg_seed" commit -qm seed
+  git init -q --bare "$leg_remote"
+  git -C "$leg_seed" remote add origin "$leg_remote"
+  git -C "$leg_seed" push -q -u origin main
+  git clone -q "$leg_remote" "$leg_local"
+  git -C "$leg_local" config user.name fixture-local
+  git -C "$leg_local" config user.email fixture-local@example.invalid
+  git -C "$leg_local" config metasystem.goal.machine brain-leg
+  fixture_start=$("$source_engine" proc started-at --pid "$$")
+  leg_fixture_start=$fixture_start
+  "$source_engine" lease announce --root "$leg_local" --session brain-land-fixture \
+    --pid "$$" --start "$fixture_start" --tag brain-land-fixture --runtime fake --owner-lineage fixture-lineage >/dev/null
+  digest=$("$source_engine" goal source-digest --root "$leg_local")
+  manifest=$leg_root/migration.md
+  cat >"$manifest" <<MANIFEST
+# Queue amendments
+
+MIGRATION_EPOCH: 2026-09-07T00:00:00Z
+REVIEWED_SOURCE_SHA256: $digest
+MANIFEST
+  migrate_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal migrate --root "$leg_local" \
+    --source-digest "$digest" --manifest "$manifest" --by Wido)
+  leg_identity=$(sed -n 's/.*"identity": "\([^"]*\)".*/\1/p' <<<"$migrate_out" | head -1)
+  [[ ${#leg_identity} -eq 26 ]] || { echo "brain land fixture migration reported no identity" >&2; exit 1; }
+  git -C "$leg_local" fetch -q origin
+  git -C "$leg_local" reset -q --hard origin/main
+  git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal release --root "$leg_local" --id ship-widget >/dev/null
+  git -C "$leg_local" fetch -q origin
+  git -C "$leg_local" reset -q --hard origin/main
+  git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+}
+
+declare_fixture_brain_temporarily() { # checkout
+  local checkout=$1 saved=$leg_root/metasystem.conf.saved
+  cp "$checkout/metasystem.conf" "$saved"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$checkout/metasystem.conf"
+  "$source_engine" brain declare --root "$checkout" --by Wido --fixture-human-authority >/dev/null
+  mv "$saved" "$checkout/metasystem.conf"
+}
+
+assert_land_brain_refusal() { # root, expected, command...
+  local checkout=$1 expected=$2 output rc before after
+  shift 2
+  before=$(git -C "$checkout" rev-parse HEAD)
+  set +e
+  output=$("$@" 2>&1)
+  rc=$?
+  set -e
+  after=$(git -C "$checkout" rev-parse HEAD)
+  [[ $rc -eq 2 && "$output" == *"$expected"* && "$after" == "$before" ]] || {
+    echo "brain landing fence wanted exit 2 and '$expected' without moving HEAD; rc=$rc before=$before after=$after output=$output" >&2
+    exit 1
+  }
+}
+
+if [[ "$fixture_scenario" == brain-land-refuses ]]; then
+  make_brain_source_leg brain-land
+  registry=$leg_root/registry
+  mkdir -p "$registry"
+  export METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry
+  declare_fixture_brain_temporarily "$leg_local"
+  message=$leg_root/message.txt
+  printf '%s\n' "brain landing fixture" >"$message"
+  refusal="land refused: this checkout is declared the brain; the brain never lands"
+  assert_land_brain_refusal "$leg_local" "$refusal" bash "$leg_local/scripts/agents/land.sh" -m "$message" --chain brain-root payload.txt
+  assert_land_brain_refusal "$leg_local" "$refusal" bash "$leg_local/scripts/agents/land.sh" -m "$message" --direct-fix tier-1 payload.txt
+  assert_land_brain_refusal "$leg_local" "$refusal" bash "$leg_local/scripts/agents/commit.sh" --chain brain-root -F "$message" payload.txt
+  assert_land_brain_refusal "$leg_local" "$refusal" bash "$leg_local/scripts/agents/commit.sh" --direct-fix register-carriage -F "$message" payload.txt
+  "$source_engine" lease retire --root "$leg_local" --session brain-land-fixture --pid "$$" --start "$leg_fixture_start" >/dev/null
+  rm -f "$leg_local/artifacts/agents/mains/worktree-lease.json"
+  mkdir -p "$leg_local/records/misc"
+  printf '%s\n' "plain brain record" >"$leg_local/records/misc/brain-fixture-record.md"
+  git -C "$leg_local" add records/misc/brain-fixture-record.md
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage bash "$leg_local/scripts/agents/commit.sh" -F "$message" records/misc/brain-fixture-record.md >/dev/null
+  corrupt_head=$(git -C "$leg_local" rev-parse HEAD)
+  printf '%s\n' '{broken' >"$leg_local/artifacts/agents/brain.json"
+  remedy="this checkout's brain declaration is unreadable"
+  assert_land_brain_refusal "$leg_local" "$remedy" bash "$leg_local/scripts/agents/land.sh" -m "$message" --chain brain-root payload.txt
+  assert_land_brain_refusal "$leg_local" "$remedy" bash "$leg_local/scripts/agents/land.sh" -m "$message" --direct-fix tier-1 payload.txt
+  assert_land_brain_refusal "$leg_local" "$remedy" bash "$leg_local/scripts/agents/commit.sh" --chain brain-root -F "$message" payload.txt
+  assert_land_brain_refusal "$leg_local" "$remedy" bash "$leg_local/scripts/agents/commit.sh" --direct-fix register-carriage -F "$message" payload.txt
+  [[ $(git -C "$leg_local" rev-parse HEAD) == "$corrupt_head" ]] || { echo "corrupt brain landing moved HEAD" >&2; exit 1; }
+  echo "brain-land-refuses passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
+  make_brain_source_leg brain-absent
+  registry=$leg_root/registry
+  mkdir -p "$registry"
+  export METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry
+  "$source_engine" lease retire --root "$leg_local" --session brain-land-fixture --pid "$$" \
+    --start "$("$source_engine" proc started-at --pid "$$")" >/dev/null
+  declare_fixture_brain_temporarily "$leg_local"
+  node=$leg_root/node
+  git clone -q "$leg_remote" "$node"
+  git -C "$node" config user.name fixture-node
+  git -C "$node" config user.email fixture-node@example.invalid
+  git -C "$node" config metasystem.goal.machine node-leg
+  git -C "$node" update-ref refs/metasystem/goals/accepted origin/main
+	"$source_engine" lease announce --root "$node" --session brain-absent-node-fixture \
+		--pid "$$" --start "$leg_fixture_start" --tag brain-absent-node-fixture \
+		--runtime fake --owner-lineage fixture-lineage >/dev/null
+	node_record=records/misc/brain-absent-node.txt
+	mkdir -p "$node/records/misc"
+	printf '%s\n' "node landing" >"$node/$node_record"
+	printf '%s\n' "absent node landing" >"$leg_root/node-message.txt"
+	METASYSTEM_OWNER_LINEAGE=fixture-lineage bash "$node/scripts/agents/land.sh" -m "$leg_root/node-message.txt" \
+		--skip-transport --direct-fix register-carriage "$node_record" >/dev/null
+	[[ $(git --git-dir="$leg_remote" show "main:$node_record") == "node landing" ]] || {
+    echo "undeclared node did not land and push while its peer was the brain" >&2
+    exit 1
+  }
+  echo "brain-absent-node-proceeds passed"
+  exit 0
+fi
 
 # The default build stamp is a landed commit only when every path selected by
 # the compiled ENGINE policy matches HEAD. The fixture keeps the metasystem

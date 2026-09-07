@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -42,6 +44,10 @@ func runDelegate(args []string) int {
 	internalArgs, mode, err := normalizeDelegateArgs(args)
 	if err != nil {
 		printJSON(delegateOutcome{Outcome: "REFUSED-REQUEST", Headline: "refused", Detail: err.Error()})
+		return 2
+	}
+	if detail := brain.Fence(root, mode, goal.ExistingLedgerIdentity(root)); detail != "" {
+		printJSON(delegateOutcome{Outcome: "BRAIN_REFUSED", Headline: "refused", Detail: detail})
 		return 2
 	}
 	outcomeFile, err := os.CreateTemp("", "metasystem-delegate-outcome.*")

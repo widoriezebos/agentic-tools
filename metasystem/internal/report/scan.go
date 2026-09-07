@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -27,12 +29,23 @@ func Scan(root string) goal.ScanResult {
 	return scanWithProber(root, identity.KernelProber{})
 }
 
+// ScanForBrainDeclaration applies the brain's full in-flight set before a
+// declaration exists, so quiescence cannot overlook a pending-setup job.
+func ScanForBrainDeclaration(root string) goal.ScanResult {
+	root = resolveRepo(root)
+	return scanWithProberAndStatuses(root, identity.KernelProber{}, brainInFlightStatus)
+}
+
 func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
 	root = resolveRepo(root)
+	return scanWithProberAndStatuses(root, prober, inFlightStatuses(root))
+}
+
+func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map[string]bool) goal.ScanResult {
 	var result goal.ScanResult
 
 	// Busy, three classes, all file facts.
-	jobItems, jobUnreadable := busyJobs(root)
+	jobItems, jobUnreadable := busyJobs(root, statuses)
 	result.Busy = append(result.Busy, jobItems...)
 	if len(jobItems) == 0 {
 		for _, rootJob := range openChainsInFlight(readJobRecords(root)) {
@@ -65,23 +78,74 @@ func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
 	// unwatched rule, run facts for warnings + the green cursor, and the
 	// run readers' own failure channel. Live runs also join Busy so the
 	// STILL WORKING sentence names them.
-	result.Jobs = jobFacts(root, prober)
+	result.Jobs = jobFacts(root, prober, statuses)
 	runFacts, runBusy, runUnreadable := runFactsFor(root, prober)
 	result.Runs = runFacts
 	result.Busy = append(result.Busy, runBusy...)
 	result.RunUnreadable = runUnreadable
 
+	questions, questionUnreadable := channel.WalkOpenQuestions(root)
+	for _, question := range questions {
+		result.Questions = append(result.Questions, goal.Item{
+			Kind: "question", Id: question.ID,
+			Detail: clipDetail(fmt.Sprintf("%s goal %s %s from %s since %s: %s", question.ID, question.Goal,
+				question.Kind, question.Machine, question.OpenedAt.UTC().Format(time.RFC3339), question.Wants)),
+		})
+	}
+	for _, detail := range questionUnreadable {
+		result.Unreadable = append(result.Unreadable, "question scan: "+detail)
+	}
+	result = scanDrafts(root, result)
+
 	// Plans: open steps, human waits, staleness — goals.md never counts
 	// (scanner disjointness: only the goal parser reads the ledger).
 	if info, err := os.Stat(filepath.Join(root, "plans")); err == nil && info.IsDir() {
-		result = scanPlans(root, result)
+		result = scanPlans(root, result, statuses)
 	}
 	return result
 }
 
+func scanDrafts(root string, result goal.ScanResult) goal.ScanResult {
+	if !goal.NewWorld(root) {
+		return result
+	}
+	machine, err := goal.ResolveMachine(root)
+	if err != nil {
+		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
+		return result
+	}
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
+		return result
+	}
+	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	if err != nil {
+		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
+		return result
+	}
+	for id, item := range projection.Tree.Live {
+		if item.State != goal.StateQueued || item.Approved != nil {
+			continue
+		}
+		openedHere := false
+		for _, history := range item.History {
+			if history.Verb == "open" {
+				openedHere = strings.HasPrefix(history.Actor, machine+"+")
+				break
+			}
+		}
+		if openedHere {
+			result.Drafts = append(result.Drafts, goal.Item{Kind: "draft", Id: id, Detail: clipDetail(item.NextStep)})
+		}
+	}
+	sort.Slice(result.Drafts, func(i, j int) bool { return result.Drafts[i].Id < result.Drafts[j].Id })
+	return result
+}
+
 // scanPlans classifies every plan stream.
-func scanPlans(root string, result goal.ScanResult) goal.ScanResult {
-	for _, line := range stalePlans(root) {
+func scanPlans(root string, result goal.ScanResult, statuses map[string]bool) goal.ScanResult {
+	for _, line := range stalePlansWithStatuses(root, statuses) {
 		result.StalePlans = append(result.StalePlans, goal.Item{Kind: "plan", Id: line, Detail: clipDetail(line)})
 	}
 	for _, plan := range planFiles(root) {
@@ -117,7 +181,7 @@ func scanPlans(root string, result goal.ScanResult) goal.ScanResult {
 }
 
 // busyJobs reads the checkout's delegate job records, surfacing failures.
-func busyJobs(root string) ([]goal.Item, []string) {
+func busyJobs(root string, statuses map[string]bool) ([]goal.Item, []string) {
 	var items []goal.Item
 	var unreadable []string
 	dir := filepath.Join(root, "artifacts", "agents", "jobs")
@@ -141,7 +205,7 @@ func busyJobs(root string) ([]goal.Item, []string) {
 			unreadable = append(unreadable, path+": unparsable job record")
 			continue
 		}
-		if !inFlightStatus[record.Status] {
+		if !statuses[record.Status] {
 			continue
 		}
 		if record.JobId == "" {
@@ -169,7 +233,7 @@ func clipDetail(s string) string {
 }
 
 // jobFacts reads the delegate job records' monitor-relevant slice.
-func jobFacts(root string, prober identity.Prober) []goal.JobFact {
+func jobFacts(root string, prober identity.Prober, statuses map[string]bool) []goal.JobFact {
 	var facts []goal.JobFact
 	paths, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
 	for _, path := range paths {
@@ -186,7 +250,7 @@ func jobFacts(root string, prober identity.Prober) []goal.JobFact {
 		if json.Unmarshal(data, &record) != nil {
 			continue
 		}
-		if !inFlightStatus[record.Status] {
+		if !statuses[record.Status] {
 			continue
 		}
 		if record.JobId == "" {

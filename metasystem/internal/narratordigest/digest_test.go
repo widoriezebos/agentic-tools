@@ -146,3 +146,29 @@ func TestAdvanceRefusesCursorEdgesThatWereNotEmitted(t *testing.T) {
 		})
 	}
 }
+
+func TestNamedBrainCursorLeavesHumanCursorUntouched(t *testing.T) {
+	root := t.TempDir()
+	if err := Append(root, []Entry{{
+		Kind: "highlight", Text: "The brain sees this line.", SourceType: "fixture", SourceID: "brain",
+	}}, time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	brainPending, err := Pending(root, "brain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Advance(root, brainPending.Cursor, brainPending.PrefixSHA256, "brain"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(CursorPath(root, "brain")); err != nil {
+		t.Fatalf("brain cursor absent: %v", err)
+	}
+	if _, err := os.Stat(CursorPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("brain advance changed the human cursor: %v", err)
+	}
+	humanPending, err := Pending(root)
+	if err != nil || !strings.Contains(humanPending.Message, "brain sees this line") {
+		t.Fatalf("human default cursor did not retain its independent pending log: %+v %v", humanPending, err)
+	}
+}

@@ -1,11 +1,39 @@
 package hooks
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
+
+func TestShippedStartMatcherComesFromRuntimeRegistry(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "enforcement", "claude-code-hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Hooks struct {
+			SessionStart []struct {
+				Matcher string `json:"matcher"`
+			} `json:"SessionStart"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	declaration, ok := runtimes.Lookup("claude")
+	if !ok || len(config.Hooks.SessionStart) != 1 {
+		t.Fatalf("claude declaration or shipped SessionStart hook missing")
+	}
+	want := strings.Join(declaration.StartContextSources, "|")
+	if got := config.Hooks.SessionStart[0].Matcher; got != want {
+		t.Fatalf("shipped SessionStart matcher %q, want registry sources %q", got, want)
+	}
+}
 
 func write(t *testing.T, dir, name, body string) string {
 	t.Helper()

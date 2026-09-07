@@ -5,6 +5,29 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 token=$root/artifacts/agents/mains/worktree-commit-token.json
 
+# Landing authority is fenced before lease re-entry so a declared brain gets
+# the one required refusal regardless of its current checkout-lease posture.
+landing_requested=0
+for argument in "$@"; do
+  [[ "$argument" != -- ]] || break
+  case "$argument" in
+    --chain|--direct-fix|--revert-of|--root-job|--test-receipt) landing_requested=1 ;;
+  esac
+done
+if (( landing_requested )); then
+  set +e
+  brain_fence=$("$ms" brain fence --root "$root" --act land)
+  brain_fence_rc=$?
+  set -e
+  if [[ $brain_fence_rc -eq 2 ]]; then
+    "$ms" json get --value "$brain_fence" --field detail >&2
+    exit 2
+  elif [[ $brain_fence_rc -ne 0 ]]; then
+    echo "land refused: brain fence failed" >&2
+    exit 1
+  fi
+fi
+
 if [[ ${1:-} != __lease-held ]]; then
   result=$("$ms" lease require-holder --root "$root" --caller-pid "$$") || exit $?
   # --default "" collapses an absent or null claimEpoch to empty, so the

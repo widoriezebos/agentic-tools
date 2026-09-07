@@ -29,6 +29,19 @@ type family struct {
 func families() []family {
 	return []family{
 		{
+			name:    "brain",
+			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
+			verbs: []verb{
+				{"declare", "human-only: designate this quiescent checkout as the brain", runBrainDeclare},
+				{"show", "show the declared, undeclared, or corrupt brain state", runBrainShow},
+				{"withdraw", "human-only: remove this checkout's brain declaration", runBrainWithdraw},
+				{"fence", "report whether a guarded act is refused", runBrainFence},
+				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
+				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
+				{"digest-advance", "advance the brain's narrator digest cursor after context emission (internal)", runBrainDigestAdvance},
+			},
+		},
+		{
 			name:    "proof-run",
 			summary: "priced validation runs with structural progress and a sibling watchdog",
 			verbs: []verb{
@@ -329,6 +342,7 @@ func families() []family {
 				{"self-check", "a runtime's live self-check vendored marker", runRuntimeSelfCheck},
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
 				{"session-env", "a runtime's project-dir environment variable", runRuntimeSessionEnv},
+				{"start-context", "a runtime's session-start context field, byte bound, and lifecycle sources", runRuntimeStartContext},
 				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
 			},
 		},
@@ -576,6 +590,20 @@ func main() {
 }
 
 func dispatch(args []string) int {
+	if len(args) == 2 && args[0] == "help" {
+		for _, fam := range families() {
+			if fam.name != args[1] {
+				continue
+			}
+			fmt.Printf("usage: metasystem %s <verb> [flags]\n%s\n", fam.name, fam.summary)
+			for _, v := range fam.verbs {
+				fmt.Printf("  %-14s %s\n", v.name, v.summary)
+			}
+			return 0
+		}
+		fmt.Fprintf(os.Stderr, "metasystem help: unknown family %q\n", args[1])
+		return 2
+	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		usage()
 		return 2

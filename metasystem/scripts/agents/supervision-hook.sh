@@ -359,6 +359,8 @@ ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 if [[ ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
     printf '%s\n' "$raw_missing_engine_stop"
+  elif [[ "$event" == start ]]; then
+    printf '%s\n' '{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run scripts/agents/go-build.sh, then start a new session"}'
   fi
   exit 0
 fi
@@ -427,6 +429,183 @@ fi
 # shape becomes its sha256 hex, and every downstream use rides the result.
 if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
   session=$(printf '%s' "$session" | "$ms" util sha256)
+fi
+
+# SessionStart is one relay object. Every existing start notice is collected
+# here; the engine alone decides whether a brain payload exists.
+start_notices=
+start_context_field=
+start_context_event=
+start_context_payload=
+brain_digest_emitted=false
+brain_digest_cursor=
+brain_digest_prefix=
+collect_start_notice() { # message
+  start_notices=$(printf '%s%s%s' "$start_notices" "${start_notices:+$'\n'}" "$1")
+}
+
+emit_start_payload() {
+	local response context_json event_json key rest rendered
+  [[ "$event" == start ]] || return 0
+  if [[ -n "$start_notices" ]]; then
+    response=$("$ms" json object "systemMessage=$start_notices") || return 1
+  else
+    response='{}'
+  fi
+  if [[ -n "$start_context_payload" && -n "$start_context_field" ]]; then
+    rest=$start_context_field
+		key=${rest##*.}
+		context_json=$("$ms" json object "$key=$start_context_payload") || return 1
+		rest=${rest%.*}
+		if [[ -n "$start_context_event" ]]; then
+			event_json=$("$ms" json object "hookEventName=$start_context_event") || return 1
+			context_json="${context_json%\}},${event_json#\{}"
+		fi
+		while [[ -n "$rest" ]]; do
+      key=${rest##*.}
+      context_json="{\"$key\":$context_json}"
+      [[ "$rest" == *.* ]] || break
+      rest=${rest%.*}
+    done
+    if [[ "$response" == '{}' ]]; then
+      response=$context_json
+    else
+      rendered=${context_json#\{}
+      response="${response%\}},$rendered"
+    fi
+  fi
+  printf '%s\n' "$response"
+  if [[ "$brain_digest_emitted" == true && "$brain_digest_cursor" =~ ^[0-9]+$ &&
+        "$brain_digest_prefix" =~ ^[0-9a-f]{64}$ ]]; then
+		"$ms" brain digest-advance --root "$state_root" --repo "$state_root" \
+      --cursor "$brain_digest_cursor" --prefix-sha256 "$brain_digest_prefix" >/dev/null 2>&1 || \
+      echo "supervision hook: emitted the brain digest but could not advance its cursor" >&2
+  fi
+}
+
+surface_json() { # message
+  local rendered parsed
+  if [[ "$event" == start ]]; then
+    collect_start_notice "$1"
+    return 0
+  fi
+  rendered=$("$ms" json object "systemMessage=$1")
+  parsed=$("$ms" json get --value "$rendered" --field systemMessage)
+  [[ -n "$rendered" && -n "$parsed" ]] || return 1
+  printf '%s\n' "$rendered"
+}
+
+if [[ "$event" == start ]]; then
+  start_context_rc=0
+  start_context_decl=$("$ms" runtime start-context "$runtime" 2>/dev/null) || start_context_rc=$?
+	if (( start_context_rc == 0 )); then
+		start_context_field=${start_context_decl#field=}
+		start_context_field=${start_context_field%% event=*}
+		start_context_event=${start_context_decl#* event=}
+		start_context_event=${start_context_event%% bytes=*}
+		start_context_bytes=${start_context_decl#* bytes=}
+    start_context_bytes=${start_context_bytes%% sources=*}
+		if ! [[ "$start_context_field" =~ ^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$ &&
+		      "$start_context_event" =~ ^[A-Za-z][A-Za-z0-9]{0,63}$ &&
+		      "$start_context_bytes" =~ ^[0-9]+$ && "$start_context_bytes" -ge 2048 ]]; then
+      start_context_rc=2
+    fi
+	elif (( start_context_rc == 1 )); then
+		start_context_field=
+		start_context_event=
+		start_context_bytes=2048
+  fi
+
+  brain_boot_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-brain-boot-hook.XXXXXX") || exit 1
+  brain_boot_out=$brain_boot_dir/stdout
+  brain_boot_err=$brain_boot_dir/stderr
+  brain_boot_rc=0
+  brain_boot_timeout=false
+  if (( start_context_rc > 1 )); then
+    brain_boot_rc=$start_context_rc
+    printf '%s\n' 'runtime start-context declaration unreadable' >"$brain_boot_err"
+  else
+		"$ms" brain boot --root "$state_root" --repo "$state_root" --bytes "$start_context_bytes" \
+      --deadline-ms 5000 >"$brain_boot_out" 2>"$brain_boot_err" &
+    brain_boot_pid=$!
+    brain_boot_started=$SECONDS
+    while kill -0 "$brain_boot_pid" 2>/dev/null && (( SECONDS - brain_boot_started < 8 )); do
+      sleep 0.05
+    done
+    if kill -0 "$brain_boot_pid" 2>/dev/null; then
+      brain_boot_timeout=true
+      brain_boot_command=$(ps -p "$brain_boot_pid" -o command= 2>/dev/null || true)
+      if [[ "$brain_boot_command" == *"$ms"* ]]; then
+        kill -TERM "$brain_boot_pid" 2>/dev/null || true
+        sleep 0.2
+        if kill -0 "$brain_boot_pid" 2>/dev/null; then
+          brain_boot_command=$(ps -p "$brain_boot_pid" -o command= 2>/dev/null || true)
+          [[ "$brain_boot_command" == *"$ms"* ]] && kill -KILL "$brain_boot_pid" 2>/dev/null || true
+        fi
+      fi
+    fi
+    wait "$brain_boot_pid" || brain_boot_rc=$?
+  fi
+
+  brain_boot_valid=false
+  brain_declared=
+  if [[ "$brain_boot_timeout" == false && "$brain_boot_rc" -eq 0 && -s "$brain_boot_out" ]]; then
+    brain_declared=$("$ms" json get --file "$brain_boot_out" --field declared 2>/dev/null || true)
+    brain_unknown=$("$ms" json strip --file "$brain_boot_out" --key declared --key state \
+      --key payload --key bytes --key sections --key digestEmitted --key digestCursor \
+      --key digestPrefixSha256 2>/dev/null || true)
+    if [[ "$brain_unknown" == '{}' && "$brain_declared" == false ]]; then
+      brain_false_unknown=$("$ms" json strip --file "$brain_boot_out" --key declared 2>/dev/null || true)
+      [[ "$brain_false_unknown" == '{}' ]] && brain_boot_valid=true
+    elif [[ "$brain_unknown" == '{}' && "$brain_declared" == true ]]; then
+      brain_state=$("$ms" json get --file "$brain_boot_out" --field state 2>/dev/null || true)
+      brain_bytes=$("$ms" json get --file "$brain_boot_out" --field bytes 2>/dev/null || true)
+      brain_digest_emitted=$("$ms" json get --file "$brain_boot_out" --field digestEmitted 2>/dev/null || true)
+      brain_digest_cursor=$("$ms" json get --file "$brain_boot_out" --field digestCursor 2>/dev/null || true)
+      brain_digest_prefix=$("$ms" json get --file "$brain_boot_out" --field digestPrefixSha256 2>/dev/null || true)
+      brain_payload_with_sentinel=$("$ms" json get --file "$brain_boot_out" --field payload 2>/dev/null; printf x) || true
+      brain_payload=${brain_payload_with_sentinel%x}
+      brain_payload=${brain_payload%$'\n'}
+      brain_sections_valid=true
+      for brain_section in asks held fleet digest; do
+        brain_section_state=$("$ms" json get --file "$brain_boot_out" --field "sections.$brain_section" 2>/dev/null || true)
+        case "$brain_section_state" in complete|cut|skipped|error) ;; *) brain_sections_valid=false ;; esac
+      done
+      if [[ ( "$brain_state" == declared || "$brain_state" == corrupt ) &&
+            "$brain_bytes" =~ ^[0-9]+$ && "$brain_digest_cursor" =~ ^[0-9]+$ &&
+            ( "$brain_digest_prefix" =~ ^[0-9a-f]{64}$ || ( "$brain_digest_emitted" == false && -z "$brain_digest_prefix" ) ) &&
+            ( "$brain_digest_emitted" == true || "$brain_digest_emitted" == false ) &&
+            "$brain_sections_valid" == true && -n "$brain_payload" ]]; then
+        brain_boot_valid=true
+        if [[ -n "$start_context_field" ]]; then
+          start_context_payload=$brain_payload
+        else
+          screen_only='this runtime has no session-context channel; the packet reached the screen only'
+          # The screen-only channel is exactly 2,048 bytes. The engine's
+          # minimum preserves phase one at the front, so any necessary cut
+          # removes optional tail text only.
+          start_notices="$screen_only
+$brain_payload"
+			start_notice_bytes=$(printf '%s' "$start_notices" | wc -c | tr -d ' ')
+			if (( start_notice_bytes > 2048 )); then
+				start_notices=$(printf '%s' "$start_notices" | LC_ALL=C head -c 2048)
+			fi
+        fi
+      fi
+    fi
+  fi
+  if [[ "$brain_boot_valid" != true ]]; then
+    if [[ "$brain_boot_timeout" == true ]]; then
+      brain_boot_result=timeout
+    else
+      brain_boot_result="exit $brain_boot_rc"
+    fi
+    brain_boot_tail=$(tail -c 500 "$brain_boot_err" 2>/dev/null | tr '\r\n' '  ' || true)
+		failure="Metasystem brain boot failed ($brain_boot_result; stderr tail: $brain_boot_tail): this session received no role context; if this checkout is a declared brain it is uninstructed: run metasystem brain boot --root $state_root --repo $state_root by hand and rebuild if it fails"
+		collect_start_notice "$failure"
+	fi
+  rm -f "$brain_boot_out" "$brain_boot_err" || true
+  rmdir "$brain_boot_dir" 2>/dev/null || true
 fi
 
 hook_generation=
@@ -516,14 +695,6 @@ if [[ -n "$identity_pid" ]]; then
     fi
   fi
 fi
-
-surface_json() { # message
-  local rendered parsed
-  rendered=$("$ms" json object "systemMessage=$1")
-  parsed=$("$ms" json get --value "$rendered" --field systemMessage)
-  [[ -n "$rendered" && -n "$parsed" ]] || return 1
-  printf '%s\n' "$rendered"
-}
 
 stop_block_json() { # system message, reason, bounded idle
   local rendered decision reason
@@ -845,18 +1016,21 @@ $checkin_tail")
     display_rc=0
     surface_watchdog_rc=0
     idle_refusal_rc=0
+    brain_status_due_rc=0
     should_block=$("$ms" json get --value "$verdict" --field shouldBlock 2>/dev/null) || should_block_rc=$?
     display=$("$ms" json get --value "$verdict" --field display 2>/dev/null) || display_rc=$?
     surface_watchdog=$("$ms" json get --value "$verdict" --field surfaceWatchdog 2>/dev/null) || surface_watchdog_rc=$?
     idle_refusal=$("$ms" json get --value "$verdict" --field idleRefusal 2>/dev/null) || idle_refusal_rc=$?
+    brain_status_due=$("$ms" json get --value "$verdict" --field brainStatusDue 2>/dev/null) || brain_status_due_rc=$?
     fail_closed=false
     if fail_closed_value=$("$ms" json get --value "$verdict" --field failClosed 2>/dev/null); then
       fail_closed=$fail_closed_value
     fi
-    if (( should_block_rc != 0 || display_rc != 0 || surface_watchdog_rc != 0 || idle_refusal_rc != 0 )) || [[ -z "$display" ]] ||
+    if (( should_block_rc != 0 || display_rc != 0 || surface_watchdog_rc != 0 || idle_refusal_rc != 0 || brain_status_due_rc != 0 )) || [[ -z "$display" ]] ||
         [[ ( "$should_block" != true && "$should_block" != false ) ||
            ( "$surface_watchdog" != true && "$surface_watchdog" != false ) ||
            ( "$idle_refusal" != true && "$idle_refusal" != false ) ||
+           ( "$brain_status_due" != true && "$brain_status_due" != false ) ||
            ( "$fail_closed" != true && "$fail_closed" != false ) ]]; then
       degraded_line='the turn verdict was unreadable'
     elif [[ "$fail_closed" == true ]]; then
@@ -873,10 +1047,28 @@ $checkin_tail")
     printf '%s stop verdict block=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$should_block" >>"$supervision_dir/hooks.log" 2>/dev/null || true
 
+    brain_post_failure=
+    if [[ "$brain_status_due" == true ]]; then
+      brain_post_before=$("$ms" json get --file "$state_root/artifacts/agents/brain-status.json" --field lastPostedAt --default '' 2>/dev/null || true)
+      brain_post_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-brain-status-post.XXXXXX")
+      brain_post_rc=0
+      "$ms" channel status --post --root "$state_root" >/dev/null 2>"$brain_post_stderr" || brain_post_rc=$?
+      brain_post_after=$("$ms" json get --file "$state_root/artifacts/agents/brain-status.json" --field lastPostedAt --default '' 2>/dev/null || true)
+      if (( brain_post_rc != 0 )); then
+        brain_post_reason=$(tail -1 "$brain_post_stderr" 2>/dev/null || true)
+        [[ -n "$brain_post_reason" ]] || brain_post_reason="channel status exited $brain_post_rc"
+        brain_post_failure="the brain's status line was not published: $brain_post_reason"
+      elif [[ -z "$brain_post_after" || "$brain_post_after" == "$brain_post_before" ]]; then
+        brain_post_failure="the brain's status line was not published: no channel provider is configured"
+      fi
+      rm -f "$brain_post_stderr"
+    fi
+
 	extras=$up_failure
 	[[ -z "$hook_evidence_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$hook_evidence_failure")
 	[[ "$surface_watchdog" != true || -z "$watchdog_text" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$watchdog_text")
     [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
+    [[ -z "$brain_post_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$brain_post_failure")
 
     if [[ -n "$stop_failure" ]]; then
       compose_failed_stop "$stop_failure" "$display" "$should_block" "$extras"
@@ -941,6 +1133,7 @@ fi
 
 if [[ -z "$identity" ]]; then
   surface_json "Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
+  emit_start_payload
   exit 0
 fi
 pid=$identity_pid
@@ -956,6 +1149,7 @@ if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$har
   if [[ "$up_aggregate" == *" re-armed="* ]]; then
     surface_json "Metasystem re-armed the rebuilt engine: $up_aggregate"
   fi
+  emit_start_payload
   exit 0
 fi
 up_aggregate=$(printf '%s' "$output" | tail -1)
@@ -965,3 +1159,4 @@ if [[ "$up_aggregate" == *" re-armed="* ]]; then
 Metasystem re-armed the rebuilt engine: $up_aggregate"
 fi
 surface_json "$up_message"
+emit_start_payload

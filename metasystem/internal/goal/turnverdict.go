@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -37,6 +38,8 @@ type ScanResult struct {
 	WaitingOnHuman   []Item
 	StalePlans       []Item
 	Busy             []Item
+	Questions        []Item
+	Drafts           []Item
 	// Unreadable lists every input the scanner could not read — plans,
 	// records, markers, enumeration failures, indeterminate runner
 	// liveness. Non-empty Unreadable vetoes BOTH the all-clear and any
@@ -128,6 +131,9 @@ type Verdict struct {
 	// counted idle-backlog branch, whose text must not use the open-work
 	// block-once preface.
 	IdleRefusal bool `json:"idleRefusal"`
+	// BrainStatusDue asks the Stop hook to carry the visibility line. Posting
+	// is plumbing after this verdict and never changes the stop decision.
+	BrainStatusDue bool `json:"brainStatusDue"`
 }
 
 // The Stop-state file: capped, pruned, flocked — the caps bound Stop
@@ -225,6 +231,11 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	store := *s
 	store.Root = resolvedRoot
 	s = &store
+	brainState := brain.Read(s.Root, ExistingLedgerIdentity(s.Root))
+	brainSeat := brainState.State == brain.Declared || brainState.State == brain.Corrupt
+	if !brainSeat {
+		scan = withoutBrainOnlyScanEffects(scan)
+	}
 
 	result, err := s.withLock(func() (Result, error) {
 		_, humanAuthorized, markerDetail, err := s.inspectSessionStop(sessionId, mainId)
@@ -233,7 +244,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		var work ClaimableBudgetedWork
 		var workErr error
-		if !humanAuthorized {
+		if !humanAuthorized && !brainSeat {
 			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober())
 		}
 		state, err := s.loadVerdictState()
@@ -242,18 +253,25 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		session := state.touch(sessionId, s.nowISO())
 
-		prefix := s.decideRuns(&verdict, scan, session, mainId)
-		s.decide(&verdict, scan, session, &work)
+		prefix := s.brainSummary(scan, brainState)
+		prefix = append(prefix, s.decideRuns(&verdict, scan, session, mainId)...)
+		s.decide(&verdict, scan, session, &work, brainSeat)
 		if markerDetail != "" {
 			verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
 			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
 		}
-		if !humanAuthorized {
+		if !humanAuthorized && !brainSeat {
 			s.enforceIdleBacklog(&verdict, &work, workErr, session, sessionId, mainId, options)
 		}
 		greens := s.decideGreens(scan, session)
 		verdict.Display = composeDisplay(prefix, verdict.Display, greens)
 		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
+		if brainState.State == brain.Declared {
+			verdict.BrainStatusDue = brain.StatusDue(s.Root, s.now())
+			if err := brain.WriteStatus(s.Root, *brainState.Record, s.now()); err != nil {
+				return Result{}, err
+			}
+		}
 
 		if err := s.saveVerdictState(state); err != nil {
 			return Result{}, err
@@ -285,6 +303,75 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		return failClosedTurnVerdict(err), nil
 	}
 	return verdict, nil
+}
+
+// withoutBrainOnlyScanEffects preserves the scanner's Questions and Drafts
+// population on a node while preventing a brain-only draft projection failure
+// from changing that node's existing turn verdict. Job classification remains
+// the scanner's decision so an open chain retains trunk's STILL WORKING branch.
+func withoutBrainOnlyScanEffects(scan ScanResult) ScanResult {
+	unreadable := make([]string, 0, len(scan.Unreadable))
+	for _, detail := range scan.Unreadable {
+		if strings.HasPrefix(detail, "draft scan: ") || strings.HasPrefix(detail, "question scan: ") {
+			continue
+		}
+		unreadable = append(unreadable, detail)
+	}
+	scan.Unreadable = unreadable
+	return scan
+}
+
+func (s *Store) brainSummary(scan ScanResult, state brain.ReadResult) []string {
+	if state.State == brain.Undeclared {
+		return nil
+	}
+	var claimed, held, approved []string
+	machine, _ := ResolveMachine(s.Root)
+	if endpoint, err := ResolveEndpoint(s.Root); err == nil {
+		if projection, projectErr := Project(endpoint, false, s.now()); projectErr == nil && projection.Tree != nil {
+			for id, item := range projection.Tree.Live {
+				if item.Claimed != nil {
+					claimed = append(claimed, id)
+					if item.Claimed.Machine == machine {
+						held = append(held, id)
+					}
+				} else if item.Approved != nil {
+					approved = append(approved, id)
+				}
+			}
+		}
+	}
+	sort.Strings(claimed)
+	sort.Strings(held)
+	sort.Strings(approved)
+	questionIDs := itemIDs(scan.Questions)
+	draftIDs := itemIDs(scan.Drafts)
+	line := fmt.Sprintf("BRAIN SEAT: nodes hold %d claims (%s); %d approved goals await a node; %d asks await Wido (%s); %d drafts await approval (%s)",
+		len(claimed), displayIDs(claimed), len(approved), len(questionIDs), displayIDs(questionIDs), len(draftIDs), displayIDs(draftIDs))
+	lines := []string{line}
+	if state.State == brain.Corrupt {
+		lines = append(lines, brain.RemedialRefusal(state.Reason, s.Root))
+	}
+	if len(held) > 0 {
+		lines = append(lines, "HELD HERE: "+strings.Join(held, ", ")+"; release them to a node")
+	}
+	return lines
+}
+
+func itemIDs(items []Item) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.Id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func displayIDs(ids []string) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	return strings.Join(ids, ", ")
 }
 
 func failClosedTurnVerdict(err error) Verdict {
@@ -635,7 +722,7 @@ func composeDisplay(prefix []string, ladder string, greens []string) string {
 }
 
 // decide is the precedence ladder from the design, in order.
-func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork) {
+func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork, brainSeat bool) {
 	for _, item := range scan.Open {
 		verdict.OpenWork = append(verdict.OpenWork, item.Detail)
 	}
@@ -709,6 +796,9 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		display = append(display, fmt.Sprintf("%d inputs unreadable: %s", len(scan.Unreadable), strings.Join(scan.Unreadable, "; ")))
 
 	default:
+		if brainSeat {
+			break
+		}
 		// The scanner reports nothing at all: the goal has the floor.
 		switch status {
 		case "ok":

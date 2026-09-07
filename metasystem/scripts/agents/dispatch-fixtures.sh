@@ -12,6 +12,7 @@ else
   [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
 fi
 unset METASYSTEM_FIXTURE_SCENARIO
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 export METASYSTEM_DELEGATE_INTERNAL=1
 export METASYSTEM_DISPATCH_FIXTURE_HAZARD=MECHANICAL
 
@@ -80,12 +81,14 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios dispatch \
-    "dispatch, adapter selftest, and mission-runner fixtures passed" \
-    "$fixture_bed_script" dispatch mission-runner adapter-selftest steward-continuation
+	run_fixture_bed_scenarios dispatch \
+		"dispatch, adapter selftest, and mission-runner fixtures passed" \
+		"$fixture_bed_script" dispatch mission-runner adapter-selftest steward-continuation \
+		brain-delegate-refuses brain-cancel-close-reap-refuse brain-breach-stop-exempt brain-absent-node-proceeds \
+		brain-fence-helper-fails
 fi
 case "$fixture_scenario" in
-  dispatch | mission-runner | adapter-selftest | steward-continuation) ;;
+	dispatch | mission-runner | adapter-selftest | steward-continuation | brain-delegate-refuses | brain-cancel-close-reap-refuse | brain-breach-stop-exempt | brain-absent-node-proceeds | brain-fence-helper-fails) ;;
   *) echo "dispatch fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -328,6 +331,199 @@ cleanup() {
   return "$status"
 }
 trap cleanup EXIT
+
+setup_brain_dispatch_bed() {
+  brain_origin=$tmp/brain-origin.git
+  brain_repo=$tmp/brain-repo
+  git init -q --bare "$brain_origin"
+  git init -q -b main "$brain_repo"
+  git -C "$brain_repo" config user.name fixture
+  git -C "$brain_repo" config user.email fixture@example.invalid
+  git -C "$brain_repo" config metasystem.goal.machine brain
+  git -C "$brain_repo" remote add origin "$brain_origin"
+  mkdir -p "$brain_repo/bin" "$brain_repo/scripts/agents" "$brain_repo/records/misc" "$brain_repo/plans"
+  cp "$engine" "$brain_repo/bin/metasystem"
+  cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" \
+    "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
+  cp "$root/scripts/metasystem-config.sh" "$brain_repo/scripts/"
+  cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
+  printf 'metasystem.runtimes=fake\n' >"$brain_repo/metasystem.conf"
+  cat >"$brain_repo/plans/goals.md" <<'LEDGER'
+# Goals
+
+## Current goal: ship-widget — Ship the widget
+- Origin: main
+- Next step: Let a node finish it.
+LEDGER
+  brain_ledger=$(cat "$brain_repo/plans/goals.md" && printf x); brain_ledger=${brain_ledger%x}
+  "$engine" json object ledger="$brain_ledger" sha256="$(shasum -a 256 "$brain_repo/plans/goals.md" | cut -d' ' -f1)" >"$brain_repo/plans/goals-accepted.json"
+  "$engine" json set --file "$brain_repo/plans/goals-accepted.json" --int schemaVersion=1
+  git -C "$brain_repo" add .
+  git -C "$brain_repo" commit -qm seed
+  git -C "$brain_repo" push -q origin main
+  brain_start=$("$engine" proc started-at --pid "$$")
+  "$engine" lease announce --root "$brain_repo" --session brain-dispatch --pid "$$" --start "$brain_start" --tag brain-dispatch --runtime fake --owner-lineage fixture-lineage >/dev/null
+  brain_digest=$("$engine" goal source-digest --root "$brain_repo")
+  cat >"$tmp/brain-manifest.md" <<MANIFEST
+# Queue amendments
+
+MIGRATION_EPOCH: 2026-09-07T00:00:00Z
+REVIEWED_SOURCE_SHA256: $brain_digest
+MANIFEST
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$engine" goal migrate --root "$brain_repo" --source-digest "$brain_digest" --manifest "$tmp/brain-manifest.md" --by Wido >/dev/null
+  git -C "$brain_repo" fetch -q origin
+  git -C "$brain_repo" reset -q --hard origin/main
+  git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$engine" goal release --root "$brain_repo" --id ship-widget >/dev/null
+  git -C "$brain_repo" fetch -q origin
+  git -C "$brain_repo" reset -q --hard origin/main
+  git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$engine" brain declare --root "$brain_repo" --by Wido --fixture-human-authority >/dev/null
+}
+
+assert_brain_dispatch_refusal() {
+  local output rc
+  set +e
+  output=$("$@" 2>&1)
+  rc=$?
+  set -e
+  [[ $rc -eq 2 && "$output" == *'"outcome":"BRAIN_REFUSED"'* ]] || {
+    echo "expected BRAIN_REFUSED exit 2, got $rc: $output" >&2
+    return 1
+  }
+  printf '%s\n' "$output"
+}
+
+if [[ "$fixture_scenario" == brain-fence-helper-fails ]]; then
+	failing_fence_engine=$tmp/failing-fence-engine
+	cat >"$failing_fence_engine" <<'FAILING_FENCE_ENGINE'
+#!/usr/bin/env bash
+if [[ ${1:-} == brain && ${2:-} == fence ]]; then
+	echo 'fixture brain fence failure' >&2
+	exit 1
+fi
+exec "${BRAIN_FENCE_REAL_ENGINE:?}" "$@"
+FAILING_FENCE_ENGINE
+	chmod +x "$failing_fence_engine"
+		for form in dispatch reap; do
+		set +e
+		fence_failure=$(METASYSTEM_DELEGATE_INTERNAL=1 METASYSTEM_BIN="$failing_fence_engine" \
+			BRAIN_FENCE_REAL_ENGINE="$engine" "$root/scripts/agents/dispatch.sh" "$form" 2>&1)
+		fence_failure_rc=$?
+		set -e
+		[[ $fence_failure_rc -eq 1 && "$fence_failure" == *"brain fence failed for $form"* ]] || {
+			echo "failing $form fence did not stop closed with exit 1: rc=$fence_failure_rc output=$fence_failure" >&2
+			exit 1
+		}
+			done
+		set +e
+		legacy_fence_failure=$(env -u METASYSTEM_DELEGATE_INTERNAL METASYSTEM_BIN="$failing_fence_engine" \
+			BRAIN_FENCE_REAL_ENGINE="$engine" "$root/scripts/agents/dispatch.sh" dispatch 2>&1)
+		legacy_fence_failure_rc=$?
+		set -e
+		[[ $legacy_fence_failure_rc -eq 1 && "$legacy_fence_failure" == *"brain fence failed for dispatch"* ]] || {
+			echo "legacy guard's failing brain fence did not stop closed with exit 1: rc=$legacy_fence_failure_rc output=$legacy_fence_failure" >&2
+			exit 1
+		}
+		echo "brain-fence-helper-fails passed"
+	exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == brain-cancel-close-reap-refuse || "$fixture_scenario" == brain-breach-stop-exempt || "$fixture_scenario" == brain-absent-node-proceeds ]]; then
+  setup_brain_dispatch_bed
+	if [[ "$fixture_scenario" == brain-delegate-refuses ]]; then
+	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
+	    [[ "$out" == *"the brain never dispatches"* && "$out" == *"metasystem delegate --role"* ]] || { echo "delegate refusal omitted the node remedy" >&2; exit 1; }
+	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --follow-up missing-job --brief "$tmp/missing")
+	    [[ "$out" == *"the brain never dispatches"* ]] || { echo "follow-up refusal omitted the brain detail" >&2; exit 1; }
+		out=$(assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" dispatch)
+		[[ "$out" == *"the brain never dispatches"* ]] || { echo "direct dispatch omitted the brain detail" >&2; exit 1; }
+		assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_INTERNAL=1 "$brain_repo/scripts/agents/dispatch.sh" dispatch >/dev/null
+    [[ ! -d "$brain_repo/artifacts/agents/jobs" ]] || [[ -z "$(find "$brain_repo/artifacts/agents/jobs" -name '*.json' -print -quit)" ]] || { echo "brain refusal wrote a job record" >&2; exit 1; }
+    printf '%s\n' '{broken' >"$brain_repo/artifacts/agents/brain.json"
+    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
+    [[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt delegate refusal omitted the remedy" >&2; exit 1; }
+  elif [[ "$fixture_scenario" == brain-cancel-close-reap-refuse ]]; then
+    mkdir -p "$brain_repo/artifacts/agents/jobs"
+    printf '%s\n' '{"jobId":"pending-job","status":"pending"}' >"$brain_repo/artifacts/agents/jobs/pending-job.json"
+    printf '%s\n' '{"jobId":"closed-root","status":"completed","chainClosed":true}' >"$brain_repo/artifacts/agents/jobs/closed-root.json"
+    before_pending=$(shasum -a 256 "$brain_repo/artifacts/agents/jobs/pending-job.json")
+    before_root=$(shasum -a 256 "$brain_repo/artifacts/agents/jobs/closed-root.json")
+    assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --cancel pending-job >/dev/null
+		for form in "cancel --job pending-job" "close --job closed-root" "reap"; do
+			read -r -a form_args <<<"$form"
+			assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}" >/dev/null
+			assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_INTERNAL=1 "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}" >/dev/null
+		done
+    [[ "$before_pending" == "$(shasum -a 256 "$brain_repo/artifacts/agents/jobs/pending-job.json")" && "$before_root" == "$(shasum -a 256 "$brain_repo/artifacts/agents/jobs/closed-root.json")" ]] || { echo "brain dispatcher fence mutated a record" >&2; exit 1; }
+    printf '%s\n' '{broken' >"$brain_repo/artifacts/agents/brain.json"
+		for form in "cancel --job pending-job" "close --job closed-root" "reap"; do
+			read -r -a form_args <<<"$form"
+			out=$(assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}")
+			[[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt dispatcher refusal omitted the remedy" >&2; exit 1; }
+			out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_INTERNAL=1 "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}")
+			[[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt internal dispatcher refusal omitted the remedy" >&2; exit 1; }
+		done
+  elif [[ "$fixture_scenario" == brain-breach-stop-exempt ]]; then
+    set +e
+    breach=$(METASYSTEM_DELEGATE_INTERNAL=1 "$brain_repo/scripts/agents/dispatch.sh" __breach-stop-goal --goal ship-widget --revision 1 2>&1)
+    breach_rc=$?
+    set -e
+    [[ $breach_rc -ne 0 && "$breach" != *BRAIN_REFUSED* && "$breach" != *"brain never"* ]] || { echo "breach-stop was caught by the brain fence: $breach" >&2; exit 1; }
+  else
+    node_repo=$tmp/node-repo
+    git clone -q "$brain_origin" "$node_repo"
+    git -C "$node_repo" config metasystem.goal.machine node
+    git -C "$node_repo" update-ref refs/metasystem/goals/accepted origin/main
+    mkdir -p "$node_repo/bin" "$node_repo/scripts/agents"
+    cp "$engine" "$node_repo/bin/metasystem"
+    cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" "$node_repo/scripts/agents/"
+    cp "$root/scripts/metasystem-config.sh" "$node_repo/scripts/"
+    node_fence=$("$node_repo/bin/metasystem" brain fence --root "$node_repo" --act dispatch)
+    [[ "$("$node_repo/bin/metasystem" json get --value "$node_fence" --field fenced)" == false ]] || { echo "another checkout's declaration fenced the node" >&2; exit 1; }
+
+		# Give clone B the disposable installation that a real fake-runtime
+		# delegate needs, then arm and start that delegate. This is deliberately
+		# more than a no-argument router probe: the adapter's start transcript is
+		# the positive evidence that another checkout's designation did not stop
+		# this node at a later seam.
+		cp -R "$root/scripts/agents/." "$node_repo/scripts/agents/"
+		cp "$root/scripts/"*.sh "$node_repo/scripts/"
+		cp -R "$root/docs" "$root/skills" "$node_repo/"
+		cp "$root/metasystem.conf" "$node_repo/metasystem.conf"
+		node_evidence=$tmp/node-evidence
+		"$engine" config tailor --conf "$node_repo/metasystem.conf" --runtimes fake \
+			--set evidence.root="$node_evidence" \
+			--set role.default.model.fake=fake-model \
+			--set model.tier.1=fake:fake-model \
+			--set model.tier.2=fake:fake-model
+		enroll_fixture_repo "$node_repo"
+		METASYSTEM_BIN="$enrolled_engine" "$node_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
+		track_armed_supervision "$node_repo"
+		node_start=$("$engine" proc started-at --pid "$$")
+		run_fixture_arm "brain absent-node arm" "$tmp/node-arm.out" \
+			env METASYSTEM_AGENT_RUNTIME=fake "$node_repo/scripts/agents/arm-supervision.sh" \
+				--repo "$node_repo" --session brain-absent-node --pid "$$" \
+				--start-time "$node_start" --tag brain-absent-node-fixture
+		cat >"$tmp/node-brief.md" <<'NODE_BRIEF'
+# Task Direction
+
+Working Mode: implement
+
+Run the plain absent-node fake-runtime fixture brief.
+NODE_BRIEF
+		node_dispatch=$(cd "$node_repo" && \
+			METASYSTEM_BIN="$enrolled_engine" METASYSTEM_DELEGATE_ROOT="$node_repo" \
+			METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+				"$node_repo/bin/metasystem" delegate --role implementer --brief "$tmp/node-brief.md" \
+				--goal none-explicit --destructive-reach MECHANICAL --op brain-absent-node-delegate --wait)
+		[[ "$node_dispatch" != *BRAIN_REFUSED* ]] || { echo "absent node dispatch was brain-refused" >&2; exit 1; }
+		grep -Fq 'fake supervisor started' "$node_repo/artifacts/agents/jobs/brain-absent-node-delegate.log" \
+			|| { echo "absent node's fake-runtime delegate did not start" >&2; exit 1; }
+  fi
+  echo "$fixture_scenario passed"
+  exit 0
+fi
 
 # The cap owner is exercised through the shipped job verbs before the full
 # dispatch-driver bed below.

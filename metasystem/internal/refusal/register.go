@@ -38,6 +38,8 @@ var Rows = []Row{
 	{Code: "PROCESS_REUSED", Owner: "internal/humanauthority", Site: "authority.go:34", Shape: Identity},
 	{Code: "TERMINAL_NOT_REACHED", Owner: "internal/humanauthority", Site: "authority.go:30", Shape: Identity},
 
+	{Code: "BRAIN_REFUSED", Owner: "internal/brain", Site: "brain.go:420", Shape: Agent, Override: "brain withdraw", Commands: 1},
+
 	{Code: "APPROVAL_REQUIRED", Owner: "internal/goal", Site: "approval.go:266", Shape: Agent, Override: "goal approve", Commands: 1},
 	{Code: "APPROVAL_EXPIRED", Owner: "internal/goal", Site: "approval.go:301", Shape: Agent, Override: "goal approve", Commands: 1},
 	{Code: "RELAY_AFTER_ENROLLMENT", Owner: "internal/goal", Site: "approval.go:329", Shape: Identity},

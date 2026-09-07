@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
@@ -181,6 +182,21 @@ func runRuntimeSessionEnv(args []string) int {
 	}
 	return singleValue(declaration.SessionEnv,
 		"no session environment declared for "+declaration.Name)
+}
+
+func runRuntimeStartContext(args []string) int {
+	declaration, code := runtimeArg(args, "start-context")
+	if code != 0 {
+		return code
+	}
+	if declaration.StartContextField == "" {
+		fmt.Fprintln(os.Stderr, "no start context declared for "+declaration.Name)
+		return 1
+	}
+	fmt.Printf("field=%s event=%s bytes=%d sources=%s\n", declaration.StartContextField,
+		declaration.StartContextEventName, declaration.StartContextBytes,
+		strings.Join(declaration.StartContextSources, ","))
+	return 0
 }
 
 func runRuntimeRegistration(args []string) int {

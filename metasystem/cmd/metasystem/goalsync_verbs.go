@@ -331,6 +331,11 @@ func runGoalMigrate(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal migrate: --root, --source-digest, and --by are required — the cutover is a human act on reviewed bytes")
 		return 2
 	}
+	classification, classErr := brainHumanWordClassification("migrate", *root, *by, nil)
+	if classErr != nil {
+		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", classErr)
+		return 1
+	}
 	adoption := *identity
 	if adoption == "" {
 		// A rerun never mints a second identity: the ledger's own
@@ -366,7 +371,7 @@ func runGoalMigrate(args []string) int {
 		return 1
 	}
 	res, err := goal.Migrate(goal.VerbRequest{
-		Endpoint: endpoint, Actor: actor, Ulid: ulid, Now: time.Now(),
+		Endpoint: endpoint, Actor: actor, Ulid: ulid, Now: time.Now(), CallerClass: classification.Class,
 	}, goal.MigrateOptions{
 		SourceDigest: *sourceDigest, ManifestPath: *manifest,
 		Identity: adoption, SyncMode: *syncMode,
@@ -433,6 +438,10 @@ func runGoalRepair(args []string) int {
 	if *root == "" {
 		fmt.Fprintln(os.Stderr, "goal repair: --root is required")
 		return 2
+	}
+	if _, classErr := brainHumanWordClassification("repair", *root, *by, nil); classErr != nil {
+		fmt.Fprintf(os.Stderr, "goal repair: %v\n", classErr)
+		return 1
 	}
 	endpoint, err := goal.ResolveEndpoint(*root)
 	if err != nil {

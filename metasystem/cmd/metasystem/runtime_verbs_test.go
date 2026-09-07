@@ -52,6 +52,8 @@ func TestRuntimeVerbContract(t *testing.T) {
 		{"instruction-file", runRuntimeInstructionFile, []string{"claude"}, 0, "CLAUDE.md\n"},
 		{"session-env", runRuntimeSessionEnv, []string{"devin"}, 0, "DEVIN_PROJECT_DIR\n"},
 		{"session-env absent", runRuntimeSessionEnv, []string{"codex"}, 1, ""},
+		{"start-context", runRuntimeStartContext, []string{"claude"}, 0, "field=hookSpecificOutput.additionalContext event=SessionStart bytes=10000 sources=startup,resume,clear,compact\n"},
+		{"start-context absent", runRuntimeStartContext, []string{"codex"}, 1, ""},
 	}
 	for _, row := range rows {
 		t.Run(strings.ReplaceAll(row.name, " ", "-"), func(t *testing.T) {

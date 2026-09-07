@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
@@ -85,6 +86,18 @@ func runChannelStatus(args []string) int {
 		if e = channel.SaveStatusState(*root, state); e != nil {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
+		}
+		brainState := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
+		if brainState.State == brain.Declared {
+			postedAt := time.Now().UTC()
+			if e = brain.WriteStatus(*root, *brainState.Record, postedAt); e != nil {
+				fmt.Fprintln(os.Stderr, e)
+				return 1
+			}
+			if e = brain.MarkStatusPosted(*root, postedAt); e != nil {
+				fmt.Fprintln(os.Stderr, e)
+				return 1
+			}
 		}
 	}
 	return 0

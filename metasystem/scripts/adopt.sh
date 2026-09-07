@@ -246,7 +246,11 @@ done
 goals_migration_manifest=$stage/records/misc/goals-migration-manifest.md
 [[ -f "$goals_migration_manifest" && ! -L "$goals_migration_manifest" ]] \
   || die 1 "payload is missing the engine's goals migration manifest"
+brain_role_packet=$stage/records/misc/fleet-coordinator-brain-role-packet.md
+[[ -f "$brain_role_packet" && ! -L "$brain_role_packet" ]] \
+  || die 1 "payload is missing the fleet coordinator brain role packet"
 mv "$goals_migration_manifest" "$stage/.goals-migration-manifest.md"
+mv "$brain_role_packet" "$stage/.fleet-coordinator-brain-role-packet.md"
 rm -rf "$stage/records"
 # plans/ ships its README and fresh goal ledgers, while memory/ is rebuilt with
 # fresh living registers rather than this repository's accumulated state. Shipping
@@ -265,6 +269,7 @@ SKELETON
 mkdir -p "$stage/records/goals"
 mkdir -p "$stage/records/misc"
 mv "$stage/.goals-migration-manifest.md" "$stage/records/misc/goals-migration-manifest.md"
+mv "$stage/.fleet-coordinator-brain-role-packet.md" "$stage/records/misc/fleet-coordinator-brain-role-packet.md"
 cat >"$stage/records/README.md" <<'SKELETON'
 # Records
 

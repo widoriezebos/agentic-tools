@@ -79,10 +79,12 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-    "$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep
+    "$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
+    brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line
 fi
 case "$fixture_scenario" in
-  migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep) ;;
+  migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
+  brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -99,14 +101,26 @@ harness_fixture_warn_if_engine_stale "$root"
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "goal-cli fixtures: bin/metasystem is not built" >&2; exit 1; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-goal-cli.XXXXXX")
+brain_fake_server_pid=
+brain_fake_server_dir=
 cleanup() {
-  local status=$? keep
+  local status=$? keep command
+  if [[ -n "$brain_fake_server_pid" ]]; then
+    command=$(ps -p "$brain_fake_server_pid" -o command= 2>/dev/null || true)
+    if [[ "$command" == *"$brain_fake_server_dir"* ]]; then
+      kill -TERM "$brain_fake_server_pid" 2>/dev/null || true
+      wait "$brain_fake_server_pid" 2>/dev/null || true
+    else
+      echo "goal CLI fixture could not prove ownership of fake channel server pid $brain_fake_server_pid" >&2
+      status=1
+    fi
+  fi
   if [[ $status -ne 0 && -d "$tmp" ]]; then
     keep="$root/artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-goal-cli-$$"
     mkdir -p "$(dirname "$keep")"
     mv "$tmp" "$keep" 2>/dev/null \
       && echo "goal CLI fixture evidence preserved: $keep" >&2
-    return 0
+    return "$status"
   fi
   rm -rf "$tmp"
 }
@@ -248,11 +262,313 @@ if [[ "$fixture_scenario" != migration-recovery ]]; then
 fi
 
 approve_fixture_goal() { # goal id, optional complete tuple flags
-  local goal_id=$1
+  local goal_id=$1 output
   shift
-  "$ms" goal approve --root "$clone" --id "$goal_id" --by Wido \
-    --fixture-human-authority "$@" >/dev/null
+  if ! output=$("$ms" goal approve --root "$clone" --id "$goal_id" --by Wido \
+      --fixture-human-authority "$@" 2>&1); then
+    echo "fixture approval for $goal_id failed: $output" >&2
+    exit 1
+  fi
 }
+
+declare_brain_fixture() {
+  local registry=$tmp/brain-registry
+  mkdir -p "$registry"
+  export METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry
+  "$ms" brain declare --root "$clone" --by Wido --fixture-human-authority >/dev/null
+}
+
+assert_brain_goal_refusal() { # expected fragment, command...
+  local expected=$1 output rc
+  shift
+  set +e
+  output=$("$@" 2>&1)
+  rc=$?
+  set -e
+  [[ $rc -ne 0 && "$output" == *"$expected"* ]] || {
+    echo "brain goal fence wanted '$expected', got rc=$rc: $output" >&2
+    exit 1
+  }
+}
+
+prepare_brain_stop_bed() {
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" goal open --root "$clone" --id brain-approved-one \
+    --intent "Wait for the first node." --next "A node claims this." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "brain stop fixture" >/dev/null
+  approve_fixture_goal brain-approved-one --budget box
+  "$ms" goal open --root "$clone" --id brain-approved-two \
+    --intent "Wait for a node." --next "A node claims this." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "brain stop fixture" >/dev/null
+  approve_fixture_goal brain-approved-two --budget box
+  METASYSTEM_OWNER_LINEAGE=earlier-brain-lineage "$ms" goal open --root "$clone" --id brain-draft \
+    --intent "Draft work for Wido." --next "Wido approves this draft." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "brain draft fixture" >/dev/null
+  mkdir -p "$clone/artifacts/agents/channel/questions"
+  printf '%s\n' '{"id":"brain-ask","goal":"brain-draft","kind":"other","machine":"fixture-machine","openedAt":"2026-09-07T00:00:00Z","wants":"Wido chooses","state":"open"}' \
+    >"$clone/artifacts/agents/channel/questions/brain-ask.json"
+  mkdir -p "$clone/plans"
+  printf '%s\n' '# Brain open plan' '- Next step: Finish the local note.' >"$clone/plans/brain-open-plan.md"
+  printf '%s\n' '# Brain waiting plan' '- Waiting on the human: Choose a direction.' '- Next step: Continue after the answer.' \
+    >"$clone/plans/brain-waiting-plan.md"
+  declare_brain_fixture
+}
+
+if [[ "$fixture_scenario" == brain-stop-seeded ]]; then
+  prepare_brain_stop_bed
+  for stop in 1 2 3; do
+    verdict=$("$ms" report turn-verdict --root "$clone" --session brain-stop --stop-hook-active=true)
+    display=$("$ms" json get --value "$verdict" --field display)
+    first=${display%%$'\n'*}
+    [[ "$first" == BRAIN\ SEAT:* && "$first" == *'2 approved goals'* && "$first" == *'1 asks await Wido (brain-ask)'* && \
+       "$first" == *'1 drafts await approval (brain-draft)'* ]] \
+      || { echo "brain summary did not lead with ask and draft on stop $stop: $display" >&2; exit 1; }
+    [[ "$("$ms" json get --value "$verdict" --field idleRefusal)" == false ]] \
+      || { echo "brain stop $stop entered idle refusal" >&2; exit 1; }
+    block_source=$("$ms" json get --value "$verdict" --field blockSource --default '')
+    [[ "$block_source" != idle-backlog ]] || { echo "brain stop $stop used idle-backlog source" >&2; exit 1; }
+    if (( stop == 1 )); then
+      [[ "$block_source" == open-work ]] || { echo "first brain stop did not preserve open-work block: $block_source" >&2; exit 1; }
+      [[ "$("$ms" json get --value "$verdict" --field brainStatusDue)" == true ]] \
+        || { echo "first brain stop did not mark status due" >&2; exit 1; }
+      "$ms" json set --file "$clone/artifacts/agents/brain-status.json" --field lastPostedAt=2026-09-07T00:00:00Z
+      export METASYSTEM_GOAL_NOW=2026-09-07T01:00:00Z
+    else
+      [[ -z "$block_source" ]] || { echo "repeated brain stop blocked again: $block_source" >&2; exit 1; }
+      [[ "$("$ms" json get --value "$verdict" --field brainStatusDue)" == false ]] \
+        || { echo "fresh brain status remained due" >&2; exit 1; }
+    fi
+  done
+  [[ -f "$clone/artifacts/agents/brain-status.json" ]] || { echo "brain stop wrote no status record" >&2; exit 1; }
+  if find "$clone/artifacts/agents/steward/intents" -type f -name '*.json' -print -quit 2>/dev/null | grep -q .; then
+    echo "brain stop staged a steward continuation intent" >&2
+    exit 1
+  fi
+  echo "brain-stop-seeded passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-stop-corrupt ]]; then
+  prepare_brain_stop_bed
+  printf '%s\n' '{broken' >"$clone/artifacts/agents/brain.json"
+  verdict=$("$ms" report turn-verdict --root "$clone" --session brain-corrupt --stop-hook-active=true)
+  display=$("$ms" json get --value "$verdict" --field display)
+  first=${display%%$'\n'*}
+  second=${display#*$'\n'}; second=${second%%$'\n'*}
+  [[ "$first" == BRAIN\ SEAT:* && "$second" == "this checkout's brain declaration is unreadable"* ]] \
+    || { echo "corrupt brain did not lead with summary and remedy: $display" >&2; exit 1; }
+  [[ "$("$ms" json get --value "$verdict" --field idleRefusal)" == false ]] \
+    || { echo "corrupt brain entered idle refusal" >&2; exit 1; }
+  echo "brain-stop-corrupt passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-status-line ]]; then
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  mkdir -p "$clone/records/misc"
+  cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$clone/records/misc/"
+  declare_brain_fixture
+  "$ms" brain boot --root "$clone" --repo "$clone" --bytes 10000 --deadline-ms 5000 >/dev/null
+  status=$("$ms" channel status --root "$clone")
+  first=${status%%$'\n'*}
+  [[ "$first" == "BRAIN: fixture-machine for ledger "* && "$first" != *"://"* ]] \
+    || { echo "declared status did not lead with transport-free brain line: $status" >&2; exit 1; }
+  "$ms" brain withdraw --root "$clone" --by Wido --fixture-human-authority >/dev/null
+  undeclared_status=$("$ms" channel status --root "$clone")
+  [[ "$undeclared_status" != BRAIN:* ]] || { echo "undeclared status retained brain line" >&2; exit 1; }
+  echo "brain-status-line passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-claim-refuses ]]; then
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" goal open --root "$clone" --id brain-claim-target \
+    --intent "A node must claim this approved goal." --next "Claim it on a node." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture claim fence" >/dev/null
+  approve_fixture_goal brain-claim-target --budget box
+  declared_tip=$(git -C "$origin" rev-parse main)
+  declare_brain_fixture
+  claim_command="this checkout is declared the brain; the brain never claims. A node claims: metasystem goal claim --root <checkout> --id <id>"
+  assert_brain_goal_refusal "$claim_command" "$ms" goal claim --root "$clone" --id brain-claim-target
+  assert_brain_goal_refusal "$claim_command" "$ms" goal open --root "$clone" --id brain-open-claim-target \
+    --intent "A node must open and claim this goal." --next "Open it on a node." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture open claim fence" \
+    --claim --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0
+  [[ $(git -C "$origin" rev-parse main) == "$declared_tip" ]] || {
+    echo "brain claim refusal advanced the ledger tip" >&2
+    exit 1
+  }
+  printf '%s\n' '{broken' >"$clone/artifacts/agents/brain.json"
+  assert_brain_goal_refusal "this checkout's brain declaration is unreadable" "$ms" goal claim --root "$clone" --id brain-claim-target
+  assert_brain_goal_refusal "this checkout's brain declaration is unreadable" "$ms" goal open --root "$clone" --id brain-open-claim-corrupt \
+    --intent "A corrupt brain still cannot claim." --next "Repair the declaration." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture corrupt claim fence" \
+    --claim --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0
+  [[ $(git -C "$origin" rev-parse main) == "$declared_tip" ]] || {
+    echo "corrupt brain claim refusal advanced the ledger tip" >&2
+    exit 1
+  }
+  echo "brain-claim-refuses passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-classification-fails ]]; then
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" goal open --root "$clone" --id classification-target \
+    --intent "Exercise fail-closed caller classification." --next "Keep the ledger unchanged." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture classification fence" >/dev/null
+  declare_brain_fixture
+  mkdir -p "$clone/artifacts/agents/supervision"
+  printf '%s\n' '{broken' >"$clone/artifacts/agents/supervision/state.json"
+  classifier_text="this checkout is declared the brain and the caller could not be classified"
+  assert_brain_goal_refusal "$classifier_text" "$ms" goal approve --root "$clone" --id classification-target \
+    --by Wido --budget box --fixture-human-authority
+  assert_brain_goal_refusal "$classifier_text" "$ms" goal steal --root "$clone" --id classification-target --by Wido
+  rm "$clone/artifacts/agents/supervision/state.json"
+  "$ms" brain withdraw --root "$clone" --by Wido --fixture-human-authority >/dev/null
+  undeclared_approve=$("$ms" goal approve --root "$clone" --id classification-target --by Wido --budget box --fixture-human-authority)
+  [[ "$undeclared_approve" == *'"outcome":"confirmed"'* ]] || {
+    echo "undeclared fixture approval no longer behaved as before: $undeclared_approve" >&2
+    exit 1
+  }
+  set +e
+  undeclared_steal=$("$ms" goal steal --root "$clone" --id classification-target --by Wido 2>&1)
+  set -e
+  [[ "$undeclared_steal" != *"caller could not be classified"* ]] || {
+    echo "undeclared steal inherited the brain classification refusal: $undeclared_steal" >&2
+    exit 1
+  }
+  echo "brain-classification-fails passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == brain-human-word-refuses ]]; then
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  mkdir -p "$clone/artifacts/agents/channel/questions"
+  printf '%s\n' '{broken' >"$clone/artifacts/agents/channel/questions/undeclared-broken.json"
+  undeclared_question_verdict=$("$ms" report turn-verdict --root "$clone" --session brain-undeclared-question)
+  undeclared_question_display=$("$ms" json get --value "$undeclared_question_verdict" --field display)
+  [[ "$undeclared_question_display" != *'inputs unreadable:'* && "$undeclared_question_display" != *'undeclared-broken.json'* ]] || {
+    echo "an undeclared checkout inherited the brain-only malformed-question failure: $undeclared_question_display" >&2
+    exit 1
+  }
+  rm "$clone/artifacts/agents/channel/questions/undeclared-broken.json"
+  classification_draft=$tmp/brain-human-word-classification.txt
+  cat >"$classification_draft" <<'DRAFT'
+fix-docs 1,1,1,1 queued fixture
+perf-pass 2,1,1,1 parked fixture
+ship-widget 3,1,1,1 released fixture
+DRAFT
+  classification_preview=$("$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" --preview)
+  classification_digest=$(sed -n 's/^listing-digest //p' <<<"$classification_preview")
+  [[ "$classification_digest" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "brain human-word fixture could not prepare its classification confirmation" >&2
+    exit 1
+  }
+  declare_brain_fixture
+  cp "$clone/artifacts/agents/brain.json" "$tmp/valid-brain.json"
+
+  assert_human_word_matrix() { # expected text
+    local expected=$1
+    assert_brain_goal_refusal "$expected" "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box \
+      --temporary-human-word "Wido approves this fixture" --review-by 2026-09-08
+    assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
+      --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
+      --temporary-human-word "Wido resumes this fixture" --review-by 2026-09-08
+    assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
+      --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
+      --approved-ref fixture-answer
+    assert_brain_goal_refusal "$expected" "$ms" goal set-obligation --root "$clone" --id fix-docs --by Wido \
+      --state LIMITED --owner Wido --recurrence single-experiment --platform darwin-arm64 \
+      --toolchain-identity go-fixture --surface-digest fixture-surface --max-active-jobs 1 --timing-envelope-sec 60 \
+      --effect local-write --value-judgment no --reversibility reversible --severe-harm no \
+      --unfamiliar-approach no --test-discrimination strong --correlated-assumption-risk no \
+      --authority-scope-change no --destructive-reach reversible-local \
+      --temporary-human-word "Wido authorizes this fixture" --review-by 2026-09-08
+    assert_brain_goal_refusal "$expected" "$ms" goal steal --root "$clone" --id fix-docs --by Wido
+    assert_brain_goal_refusal "$expected" "$ms" goal set-pin --root "$clone" --id fix-docs --pin node --by Wido
+    assert_brain_goal_refusal "$expected" "$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" \
+      --confirm "$classification_digest" --by Wido
+    assert_brain_goal_refusal "$expected" "$ms" goal set-budget --root "$clone" --id fix-docs --by Wido \
+      --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
+    assert_brain_goal_refusal "$expected" "$ms" goal unapprove --root "$clone" --id fix-docs --by Wido --because "fixture reversal"
+    assert_brain_goal_refusal "$expected" "$ms" goal accept-risk --root "$clone" --id fix-docs --finding F1 \
+      --chain brain-fixture-chain --by Wido --why "fixture risk decision"
+    assert_brain_goal_refusal "$expected" "$ms" goal discharge-review-obligation --root "$clone" --id fix-docs \
+      --finding F1 --chain brain-fixture-chain --by Wido --test "fixture test"
+    assert_brain_goal_refusal "$expected" "$ms" goal repair --root "$clone" --accept-remote --by Wido
+  }
+
+  declared_tip=$(git -C "$origin" rev-parse main)
+  assert_human_word_matrix "this checkout is declared the brain; the brain never carries a human's word into goal"
+  cp "$clone/metasystem.conf" "$tmp/fake-root.conf"
+  printf '%s\n' 'metasystem.runtimes=codex' >"$clone/metasystem.conf"
+  assert_brain_goal_refusal "this checkout is declared the brain; the brain never carries a human's word into goal approve" \
+    "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box --fixture-human-authority
+  cp "$tmp/fake-root.conf" "$clone/metasystem.conf"
+  [[ $(git -C "$origin" rev-parse main) == "$declared_tip" ]] || {
+    echo "brain human-word refusal advanced the ledger tip" >&2
+    exit 1
+  }
+  printf '%s\n' '{broken' >"$clone/artifacts/agents/brain.json"
+  assert_human_word_matrix "this checkout's brain declaration is unreadable"
+  [[ $(git -C "$origin" rev-parse main) == "$declared_tip" ]] || {
+    echo "corrupt brain human-word refusal advanced the ledger tip" >&2
+    exit 1
+  }
+  cp "$tmp/valid-brain.json" "$clone/artifacts/agents/brain.json"
+
+  "$ms" goal open --root "$clone" --id brain-fixture-authority-target \
+    --intent "Prove fixture human authority crosses the brain seam." --next "Approve this classified goal." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture human-authority positive path" >/dev/null
+  fixture_approval=$("$ms" goal approve --root "$clone" --id brain-fixture-authority-target \
+    --by Wido --budget box --fixture-human-authority)
+  [[ "$fixture_approval" == *'"outcome":"confirmed"'* ]] || {
+    echo "fixture-only human authority did not cross the brain seam: $fixture_approval" >&2
+    exit 1
+  }
+
+  "$ms" goal open --root "$clone" --id brain-channel-target \
+    --intent "Let a verified channel answer approve this draft." --next "Poll the verified answer." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture verified channel answer" >/dev/null
+  brain_fake_server_dir=$tmp/brain-channel-fake
+  mkdir -p "$brain_fake_server_dir"
+  "$ms" channel fake serve --dir "$brain_fake_server_dir" >"$tmp/brain-channel-server.log" 2>&1 &
+  brain_fake_server_pid=$!
+  deadline=$((SECONDS + 30))
+  while [[ ! -s "$brain_fake_server_dir/base-url" ]]; do
+    (( SECONDS < deadline )) || { echo "brain channel fake did not start within 30 seconds" >&2; exit 1; }
+    sleep 0.05
+  done
+  secret=JBSWY3DPEHPK3PXP
+  cat >>"$clone/metasystem.conf.local" <<CONF
+channel.destination.fleet.adapter=fake
+channel.destination.fleet.fake.dir=$brain_fake_server_dir
+channel.human.slack.user-id=UWIDO
+channel.human.totp-secret=$secret
+channel.poll-timeout-sec=15
+CONF
+  qid=$("$ms" channel ask --root "$clone" --goal brain-channel-target --kind budget-above-norm \
+    --fact "Approve the brain channel fixture." --option "approve: continue" \
+    --elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 --review-round-limit 3 \
+    --recommend approve --wants "goal=brain-channel-target minutes=60 reviewRounds=3 goalRevision=3")
+  question_file=$clone/artifacts/agents/channel/questions/$qid.json
+  thread_object=$("$ms" json get --file "$question_file" --field thread)
+  thread_id=$("$ms" json get --value "$thread_object" --field id)
+  answer_token=$("$ms" json get --file "$question_file" --field wants)
+  code=$("$ms" channel fake code --secret "$secret")
+  printf '{"thread_ts":"%s","user":"UWIDO","text":"%s %s"}\n' "$thread_id" "$answer_token" "$code" >>"$brain_fake_server_dir/replies.jsonl"
+  "$ms" channel poll --root "$clone" >/dev/null
+  channel_tip=$(git -C "$origin" rev-parse main)
+  channel_goal=$(git -C "$origin" show "$channel_tip:plans/goals/brain-channel-target.md")
+  grep -q 'approve actor=human:UWIDO.*authorityOutcome=VERIFIED_CHANNEL_ANSWER' <<<"$channel_goal" || {
+    echo "verified channel answer did not approve through the brain checkout" >&2
+    printf '%s\n' "$channel_goal" >&2
+    exit 1
+  }
+  echo "brain-human-word-refuses passed"
+  exit 0
+fi
 
 if [[ "$fixture_scenario" == human-lineage ]]; then
 # A fixture-authorized human act still gets its coordinator identity from the

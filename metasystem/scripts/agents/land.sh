@@ -107,6 +107,19 @@ while (( $# )); do
   esac
 done
 
+set +e
+brain_fence=$("$ms" brain fence --root "$root" --act land)
+brain_fence_rc=$?
+set -e
+if [[ $brain_fence_rc -eq 2 ]]; then
+  "$ms" json get --value "$brain_fence" --field detail >&2
+  exit 2
+elif [[ $brain_fence_rc -ne 0 ]]; then
+  echo "land refused: brain fence failed" >&2
+  exit 1
+fi
+set +e
+
 [[ -n "$message_source" ]] || { usage; exit 2; }
 if (( staged_only && ${#pathspecs[@]} > 0 )); then
   echo "land refused: --staged-only cannot be combined with pathspecs" >&2

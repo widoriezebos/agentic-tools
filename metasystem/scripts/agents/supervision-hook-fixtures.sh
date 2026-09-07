@@ -23,6 +23,8 @@ export METASYSTEM_FIXTURE_OSASCRIPT_CALLS=$osascript_calls
 export PATH="$tmp/notify-shim:$PATH"
 hook_process_pid=
 hook_process_path=
+brain_fake_pid=
+brain_fake_path=
 stop_hook_process() {
   local command stop_deadline
   [[ -n "$hook_process_pid" ]] || return 0
@@ -48,6 +50,13 @@ stop_hook_process() {
 }
 cleanup() {
   stop_hook_process || true
+  if [[ -n "$brain_fake_pid" ]] && kill -0 "$brain_fake_pid" 2>/dev/null; then
+    brain_fake_command=$(ps -p "$brain_fake_pid" -o command= 2>/dev/null || true)
+    if [[ "$brain_fake_command" == *"$brain_fake_path"* ]]; then
+      kill -TERM "$brain_fake_pid" 2>/dev/null || true
+      wait "$brain_fake_pid" 2>/dev/null || true
+    fi
+  fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -165,6 +174,247 @@ grep -Fq '"decision":"block"' "$tmp/missing.out" \
   || { echo "supervision hook missing-engine fixture emitted no blocking decision" >&2; exit 1; }
 grep -Fq 'engine missing' "$tmp/missing.out" \
   || { echo "supervision hook missing-engine fixture omitted its remedy" >&2; exit 1; }
+
+# Brain SessionStart: build one declared adopted-style checkout, let the real
+# engine decide the role, and keep the hook a one-object relay.
+brain_origin=$tmp/brain-origin.git
+brain_repo=$tmp/brain-repo
+brain_registry=$tmp/brain-registry
+mkdir -p "$brain_registry"
+git init -q --bare "$brain_origin"
+git init -q -b main "$brain_repo"
+git -C "$brain_repo" config user.name fixture
+git -C "$brain_repo" config user.email fixture@example.invalid
+git -C "$brain_repo" config metasystem.goal.machine brain-hook
+git -C "$brain_repo" remote add origin "$brain_origin"
+mkdir -p "$brain_repo/plans" "$brain_repo/scripts/agents" "$brain_repo/records/misc"
+cp "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
+cp -R "$root/scripts/agents/adapters" "$brain_repo/scripts/agents/"
+cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
+cat >"$brain_repo/plans/goals.md" <<'BRAIN_LEDGER'
+# Goals
+
+## Current goal: brain-hook-goal — Exercise the brain start hook
+- Origin: main
+- Next step: Ask Wido one question.
+BRAIN_LEDGER
+brain_ledger=$(cat "$brain_repo/plans/goals.md" && printf x); brain_ledger=${brain_ledger%x}
+"$ms" json object ledger="$brain_ledger" sha256="$(shasum -a 256 "$brain_repo/plans/goals.md" | cut -d' ' -f1)" \
+  >"$brain_repo/plans/goals-accepted.json"
+"$ms" json set --file "$brain_repo/plans/goals-accepted.json" --int schemaVersion=1
+printf '%s\n' 'metasystem.runtimes=fake' >"$brain_repo/metasystem.conf"
+git -C "$brain_repo" add plans scripts records metasystem.conf
+git -C "$brain_repo" commit -qm 'brain hook legacy ledger'
+git -C "$brain_repo" push -q origin main
+brain_fixture_started=$("$ms" proc started-at --pid "$$")
+"$ms" lease announce --root "$brain_repo" --session brain-hook-fixture --pid "$$" \
+  --start "$brain_fixture_started" --tag brain-hook-fixture --runtime fake --owner-lineage fixture-lineage >/dev/null
+brain_source_digest=$("$ms" goal source-digest --root "$brain_repo")
+cat >"$tmp/brain-manifest.md" <<BRAIN_MANIFEST
+# Queue amendments
+
+MIGRATION_EPOCH: 2026-09-07T00:00:00Z
+REVIEWED_SOURCE_SHA256: $brain_source_digest
+BRAIN_MANIFEST
+METASYSTEM_OWNER_LINEAGE=fixture-lineage "$ms" goal migrate --root "$brain_repo" \
+  --source-digest "$brain_source_digest" --manifest "$tmp/brain-manifest.md" --by Wido >/dev/null
+git -C "$brain_repo" fetch -q origin
+git -C "$brain_repo" reset -q --hard origin/main
+git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
+METASYSTEM_OWNER_LINEAGE=fixture-lineage "$ms" goal release --root "$brain_repo" --id brain-hook-goal >/dev/null
+git -C "$brain_repo" fetch -q origin
+git -C "$brain_repo" reset -q --hard origin/main
+git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry "$ms" brain declare --root "$brain_repo" \
+  --by Wido --fixture-human-authority >/dev/null
+cp "$brain_repo/artifacts/agents/brain.json" "$tmp/valid-brain.json"
+
+brain_fake_path=$tmp/brain-fake
+mkdir -p "$brain_fake_path"
+"$ms" channel fake serve --dir "$brain_fake_path" >"$tmp/brain-fake.log" 2>&1 &
+brain_fake_pid=$!
+brain_fake_deadline=$((SECONDS + 30))
+while [[ ! -s "$brain_fake_path/base-url" ]]; do
+  (( SECONDS < brain_fake_deadline )) || { echo "brain hook fake channel did not start" >&2; exit 1; }
+  sleep 0.05
+done
+cat >>"$brain_repo/metasystem.conf.local" <<BRAIN_CHANNEL
+channel.destination.fleet.adapter=fake
+channel.destination.fleet.fake.dir=$brain_fake_path
+channel.poll-timeout-sec=15
+BRAIN_CHANNEL
+brain_qid=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$ms" channel ask --root "$brain_repo" \
+  --goal brain-hook-goal --kind other --fact 'The brain needs Wido.' \
+  --option 'answer: continue' --recommend answer --wants 'Wido decides the next step')
+brain_fake_command=$(ps -p "$brain_fake_pid" -o command= 2>/dev/null || true)
+[[ "$brain_fake_command" == *"$brain_fake_path"* ]] \
+  || { echo "brain hook fixture could not prove fake channel ownership" >&2; exit 1; }
+kill -TERM "$brain_fake_pid"
+wait "$brain_fake_pid" 2>/dev/null || true
+brain_fake_pid=
+printf '%s\n' '2026-09-07T00:00:00Z HIGHLIGHT — brain startup digest line (source: fixture startup)' \
+  >"$brain_repo/records/narrator-digest.log"
+printf '{"session_id":"brain-start","cwd":"%s","source":"startup"}\n' "$brain_repo" >"$tmp/brain-start.json"
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry bash "$hook" claude start <"$tmp/brain-start.json" \
+  >"$tmp/brain-start.out" 2>"$tmp/brain-start.err"
+[[ $(wc -l <"$tmp/brain-start.out" | tr -d ' ') -eq 1 ]] \
+  || { echo "declared brain start emitted more than one object" >&2; cat "$tmp/brain-start.out" >&2; exit 1; }
+brain_context_sentinel=$("$ms" json get --file "$tmp/brain-start.out" --field hookSpecificOutput.additionalContext; printf x)
+brain_context=${brain_context_sentinel%x}; brain_context=${brain_context%$'\n'}
+[[ "$("$ms" json get --file "$tmp/brain-start.out" --field hookSpecificOutput.hookEventName)" == SessionStart ]] \
+  || { echo "declared brain start omitted the registry event name" >&2; exit 1; }
+(( $(printf '%s' "$brain_context" | wc -c | tr -d ' ') <= 10000 )) || { echo "brain start context exceeded registry bound" >&2; exit 1; }
+grep -Fq '# The brain seat: role packet and standing instruction' <<<"$brain_context" \
+  && grep -Fq 'brain startup digest line' <<<"$brain_context" \
+  && grep -Fq "$brain_qid" <<<"$brain_context" \
+  || { echo "declared brain start omitted packet, digest, or ask" >&2; exit 1; }
+[[ -f "$brain_repo/artifacts/agents/steward/narrator-digest-brain-cursor.json" ]] \
+  || { echo "brain start did not advance its digest cursor" >&2; exit 1; }
+[[ ! -e "$brain_repo/artifacts/agents/steward/narrator-digest-cursor.json" ]] \
+  || { echo "brain start changed the human digest cursor" >&2; exit 1; }
+[[ -f "$brain_repo/artifacts/agents/brain-status.json" ]] \
+  || { echo "brain start did not write brain-status.json" >&2; exit 1; }
+
+# Template layout: the repository is the git toplevel while its metasystem
+# directory owns the engine, state, role packet, and narrator digest.
+brain_template_repo=$tmp/brain-template-repo
+brain_template_root=$brain_template_repo/metasystem
+mkdir -p "$brain_template_repo/development" "$brain_template_root/bin" \
+  "$brain_template_root/scripts/agents" "$brain_template_root/records/misc" \
+  "$brain_template_root/artifacts/agents"
+printf '%s\n' '# Template fixture marker' >"$brain_template_repo/development/metasystem-design.md"
+cp "$ms" "$brain_template_root/bin/metasystem"
+cp "$hook" "$brain_template_root/scripts/agents/supervision-hook.sh"
+cp -R "$root/scripts/agents/adapters" "$brain_template_root/scripts/agents/"
+cp "$brain_repo/metasystem.conf" "$brain_template_root/metasystem.conf"
+cp -R "$brain_repo/plans" "$brain_template_repo/"
+cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_template_root/records/misc/"
+cp "$tmp/valid-brain.json" "$brain_template_root/artifacts/agents/brain.json"
+printf '%s\n' '2026-09-07T00:00:30Z HIGHLIGHT — template-layout brain digest line (source: fixture template)' \
+  >"$brain_template_root/records/narrator-digest.log"
+git -C "$brain_template_repo" init -q -b main
+git -C "$brain_template_repo" config user.name fixture
+git -C "$brain_template_repo" config user.email fixture@example.invalid
+git -C "$brain_template_repo" config metasystem.goal.machine brain-hook
+git -C "$brain_template_repo" add development metasystem plans
+git -C "$brain_template_repo" commit -qm 'template-layout brain hook fixture'
+git -C "$brain_template_repo" update-ref refs/metasystem/goals/accepted HEAD
+printf '{"session_id":"brain-template","cwd":"%s","source":"startup"}\n' "$brain_template_repo" \
+  >"$tmp/brain-template.json"
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry \
+  bash "$brain_template_root/scripts/agents/supervision-hook.sh" claude start \
+    <"$tmp/brain-template.json" >"$tmp/brain-template.out" 2>"$tmp/brain-template.err"
+[[ $(wc -l <"$tmp/brain-template.out" | tr -d ' ') -eq 1 ]] \
+  || { echo "template-layout brain start emitted more than one object" >&2; cat "$tmp/brain-template.out" >&2; exit 1; }
+brain_template_context=$("$ms" json get --file "$tmp/brain-template.out" --field hookSpecificOutput.additionalContext)
+[[ "$("$ms" json get --file "$tmp/brain-template.out" --field hookSpecificOutput.hookEventName)" == SessionStart ]] \
+  && grep -Fq '# The brain seat: role packet and standing instruction' <<<"$brain_template_context" \
+  && grep -Fq 'template-layout brain digest line' <<<"$brain_template_context" \
+  || { echo "template-layout start omitted the event name, packet, or installation digest" >&2; cat "$tmp/brain-template.out" >&2; exit 1; }
+
+printf '%s\n' '2026-09-07T00:01:00Z HIGHLIGHT — brain compact digest line (source: fixture compact)' \
+  >>"$brain_repo/records/narrator-digest.log"
+printf '{"session_id":"brain-compact","cwd":"%s","source":"compact"}\n' "$brain_repo" >"$tmp/brain-compact.json"
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry bash "$hook" claude start <"$tmp/brain-compact.json" \
+  >"$tmp/brain-compact.out" 2>"$tmp/brain-compact.err"
+brain_compact_context=$("$ms" json get --file "$tmp/brain-compact.out" --field hookSpecificOutput.additionalContext)
+grep -Fq '# The brain seat: role packet and standing instruction' <<<"$brain_compact_context" \
+  && grep -Fq 'brain compact digest line' <<<"$brain_compact_context" \
+  || { echo "compact start omitted packet or new digest" >&2; exit 1; }
+grep -Fq 'brain startup digest line' <<<"$brain_compact_context" \
+  && { echo "compact start replayed the already advanced digest" >&2; exit 1; }
+brain_registry_sources=$("$ms" runtime start-context claude)
+brain_registry_sources=${brain_registry_sources##*sources=}
+brain_registry_matcher=${brain_registry_sources//,/|}
+grep -Fq "\"matcher\": \"$brain_registry_matcher\"" "$root/scripts/enforcement/claude-code-hooks.json" \
+  || { echo "shipped compact matcher differs from registry sources" >&2; exit 1; }
+
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry "$ms" brain withdraw --root "$brain_repo" \
+  --by Wido --fixture-human-authority >/dev/null
+printf '{"session_id":"brain-undeclared","cwd":"%s","source":"startup"}\n' "$brain_repo" >"$tmp/brain-undeclared.json"
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry bash "$hook" claude start <"$tmp/brain-undeclared.json" \
+  >"$tmp/brain-undeclared.out" 2>"$tmp/brain-undeclared.err"
+if "$ms" json get --file "$tmp/brain-undeclared.out" --field hookSpecificOutput.additionalContext >/dev/null 2>&1; then
+  echo "undeclared start carried brain context" >&2
+  exit 1
+fi
+grep -Eq 'brain startup digest line|brain compact digest line|The brain seat: role packet' "$tmp/brain-undeclared.out" \
+  && { echo "undeclared start leaked brain input text" >&2; exit 1; }
+
+printf '%s\n' '{broken' >"$brain_repo/artifacts/agents/brain.json"
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry bash "$hook" claude start <"$tmp/brain-start.json" \
+  >"$tmp/brain-corrupt.out" 2>"$tmp/brain-corrupt.err"
+brain_corrupt_context=$("$ms" json get --file "$tmp/brain-corrupt.out" --field hookSpecificOutput.additionalContext)
+grep -Fq '## The standing instruction' <<<"$brain_corrupt_context" \
+  && grep -Fq "this checkout's brain declaration is unreadable" <<<"$brain_corrupt_context" \
+  || { echo "corrupt brain start omitted standing instruction or remedy" >&2; exit 1; }
+cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
+"$ms" json set --file "$brain_repo/artifacts/agents/brain.json" --field ledger=ZZZZZZZZZZZZZZZZZZZZZZZZZZ
+METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry bash "$hook" claude start <"$tmp/brain-start.json" \
+  >"$tmp/brain-wrong-ledger.out" 2>"$tmp/brain-wrong-ledger.err"
+brain_wrong_context=$("$ms" json get --file "$tmp/brain-wrong-ledger.out" --field hookSpecificOutput.additionalContext)
+grep -Fq 'not this checkout' <<<"$brain_wrong_context" \
+  || { echo "wrong-ledger corrupt start omitted its reason" >&2; exit 1; }
+
+cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
+printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" bash "$hook" claude start >"$tmp/brain-no-engine-declared.out"
+rm "$brain_repo/artifacts/agents/brain.json"
+printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" bash "$hook" claude start >"$tmp/brain-no-engine-undeclared.out"
+for no_engine in "$tmp/brain-no-engine-declared.out" "$tmp/brain-no-engine-undeclared.out"; do
+  [[ $(wc -l <"$no_engine" | tr -d ' ') -eq 1 ]] \
+    && grep -Fq 'Metasystem engine missing' "$no_engine" \
+    && grep -Fq 'go-build.sh' "$no_engine" \
+    || { echo "missing-engine start omitted its one rebuild notice" >&2; exit 1; }
+  grep -Fq 'hookSpecificOutput' "$no_engine" \
+    && { echo "missing-engine start injected context" >&2; exit 1; }
+done
+
+cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
+printf '%s\n' '2026-09-07T00:02:00Z LOWLIGHT — unadvanced failure digest (source: fixture failure)' \
+  >>"$brain_repo/records/narrator-digest.log"
+brain_cursor_before=$(shasum -a 256 "$brain_repo/artifacts/agents/steward/narrator-digest-brain-cursor.json" | cut -d' ' -f1)
+brain_failure_engine=$tmp/brain-failure-engine
+cat >"$brain_failure_engine" <<'BRAIN_FAILURE_ENGINE'
+#!/usr/bin/env bash
+if [[ ${1:-} == brain && ${2:-} == boot ]]; then
+  case ${METASYSTEM_BRAIN_FAILURE_MODE:?} in
+    exit) echo 'fixture boot exit' >&2; exit 1 ;;
+    sleep) sleep 30; exit 0 ;;
+    invalid) echo 'not json'; exit 0 ;;
+  esac
+	fi
+if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
+	printf '{"pid":%s,"pidStartedAt":%s}\n' "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
+	exit 0
+fi
+if [[ ${1:-} == up ]]; then
+	printf '%s\n' "${METASYSTEM_BRAIN_FAILURE_MODE:?}" >>"${METASYSTEM_BRAIN_ARMING_LOG:?}"
+	printf '%s\n' 'UP aggregate=SUCCESS'
+	exit 0
+fi
+exec "${METASYSTEM_BRAIN_REAL_ENGINE:?}" "$@"
+BRAIN_FAILURE_ENGINE
+chmod +x "$brain_failure_engine"
+brain_arming_log=$tmp/brain-failure-arming.log
+for failure_mode in exit sleep invalid; do
+  METASYSTEM_BIN=$brain_failure_engine METASYSTEM_BRAIN_REAL_ENGINE=$ms \
+    METASYSTEM_BRAIN_FAILURE_MODE=$failure_mode METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry \
+    METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$brain_fixture_started \
+    METASYSTEM_BRAIN_ARMING_LOG=$brain_arming_log \
+    bash "$hook" claude start <"$tmp/brain-start.json" \
+      >"$tmp/brain-failure-$failure_mode.out" 2>"$tmp/brain-failure-$failure_mode.err"
+  failure_out=$tmp/brain-failure-$failure_mode.out
+  [[ $(wc -l <"$failure_out" | tr -d ' ') -eq 1 ]] \
+    && grep -Fq 'Metasystem brain boot failed' "$failure_out" \
+    && grep -Fq 'metasystem brain boot --root' "$failure_out" \
+    || { echo "brain boot $failure_mode failure omitted its one by-hand notice" >&2; cat "$failure_out" >&2; exit 1; }
+  grep -Fq 'hookSpecificOutput' "$failure_out" \
+    && { echo "brain boot $failure_mode failure injected context" >&2; exit 1; }
+  [[ "$brain_cursor_before" == "$(shasum -a 256 "$brain_repo/artifacts/agents/steward/narrator-digest-brain-cursor.json" | cut -d' ' -f1)" ]] \
+    || { echo "brain boot $failure_mode failure advanced the cursor" >&2; exit 1; }
+  grep -Fxq "$failure_mode" "$brain_arming_log" \
+    || { echo "brain boot $failure_mode failure skipped the supervision arming leg" >&2; exit 1; }
+done
 
 line_root=$tmp/line-root
 mkdir -p "$line_root/scripts/agents" "$line_root/bin" "$line_root/plans"

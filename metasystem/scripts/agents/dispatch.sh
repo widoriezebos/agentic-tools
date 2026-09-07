@@ -23,9 +23,42 @@ repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) \
   || die 1 "metasystem installation is not inside a git repository: $root"
 repo_scope=$(cd "$repo_scope" && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+brain_fence_outcome() { # act; prints the typed refusal only when fenced
+  local act=$1 fence rc detail
+  set +e
+  fence=$("$ms" brain fence --root "$root" --act "$act")
+  rc=$?
+	set -e
+	if [[ $rc -eq 0 ]]; then return 1; fi
+	if [[ $rc -ne 2 ]]; then
+		echo "brain fence failed for $act" >&2
+		return 2
+	fi
+	if ! detail=$("$ms" json get --value "$fence" --field detail); then
+		echo "brain fence failed for $act" >&2
+		return 2
+	fi
+	if ! "$ms" json object outcome=BRAIN_REFUSED headline=refused "detail=$detail"; then
+		echo "brain fence failed for $act" >&2
+		return 2
+	fi
+}
 # Operator launches have one public owner. This shell keeps custody callbacks
 # but refuses the retired authority-bearing grammar by naming its replacement.
 if [[ ${BASH_SOURCE[0]} == "$0" && -z "${METASYSTEM_DELEGATE_INTERNAL:-}" ]]; then
+  legacy_act=${1:-dispatch}
+  [[ "$legacy_act" == --* ]] && legacy_act=dispatch
+	case "$legacy_act" in
+		dispatch|follow-up|cancel|close|reap)
+			brain_fence_rc=0
+			brain_outcome=$(brain_fence_outcome "$legacy_act") || brain_fence_rc=$?
+			if (( brain_fence_rc == 0 )); then
+				printf '%s\n' "$brain_outcome"
+				exit 2
+			fi
+			(( brain_fence_rc == 1 )) || exit 1
+			;;
+  esac
   case "${1:-dispatch}" in
     dispatch|follow-up|cancel|--*)
       printf '%s\n' '{"outcome":"REFUSED-REQUEST","headline":"refused","detail":"the legacy dispatch authority grammar was removed; use metasystem delegate"}'
@@ -1231,6 +1264,14 @@ dispatch_job() {
   local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
   local -a product_root_args=() composition_source_args=()
+	local brain_fence_rc=0
+	brain_outcome=$(brain_fence_outcome dispatch) || brain_fence_rc=$?
+	if (( brain_fence_rc == 0 )); then
+		record_delegate_outcome_raw "$brain_outcome"
+		printf '%s\n' "$brain_outcome"
+		return 2
+	fi
+	(( brain_fence_rc == 1 )) || exit 1
   engine_script_skew_preflight
   while (($#)); do
     case "$1" in
@@ -2059,6 +2100,14 @@ follow_up() {
   local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
   local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
   local -a product_root_args=() continuation_args=() conflicted_paths=() rebase_record_args=()
+	local brain_fence_rc=0
+	brain_outcome=$(brain_fence_outcome follow-up) || brain_fence_rc=$?
+	if (( brain_fence_rc == 0 )); then
+		record_delegate_outcome_raw "$brain_outcome"
+		printf '%s\n' "$brain_outcome"
+		return 2
+	fi
+	(( brain_fence_rc == 1 )) || exit 1
   engine_script_skew_preflight
   while (($#)); do
     case "$1" in
@@ -2496,7 +2545,14 @@ surface_census_verdict() {
 }
 
 cancel_job() {
-  local job= cancel_status cancel_pid
+	local job= cancel_status cancel_pid brain_fence_rc=0
+	brain_outcome=$(brain_fence_outcome cancel) || brain_fence_rc=$?
+	if (( brain_fence_rc == 0 )); then
+		record_delegate_outcome_raw "$brain_outcome"
+		printf '%s\n' "$brain_outcome"
+		return 2
+	fi
+	(( brain_fence_rc == 1 )) || exit 1
   [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }; job=$2
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
   lease_entry_check
@@ -2517,7 +2573,14 @@ cancel_job() {
 }
 
 close_chain() {
-  local job= root_id root_record status patch runner_closed=false reconcile_evidence=
+	local job= root_id root_record status patch runner_closed=false reconcile_evidence= brain_fence_rc=0
+	brain_outcome=$(brain_fence_outcome close) || brain_fence_rc=$?
+	if (( brain_fence_rc == 0 )); then
+		record_delegate_outcome_raw "$brain_outcome"
+		printf '%s\n' "$brain_outcome"
+		return 2
+	fi
+	(( brain_fence_rc == 1 )) || exit 1
   [[ ${1:-} == --job && $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2
   while (($#)); do
     case "$1" in
@@ -2579,7 +2642,14 @@ close_chain() {
 # mission drain actually use. A kill-capable shell daemon mode must not come
 # back: the standing-reaper ruling denies shell reapers kill authority.
 reap_jobs() {
-  local job=
+	local job= brain_fence_rc=0
+	brain_outcome=$(brain_fence_outcome reap) || brain_fence_rc=$?
+	if (( brain_fence_rc == 0 )); then
+		record_delegate_outcome_raw "$brain_outcome"
+		printf '%s\n' "$brain_outcome"
+		return 2
+	fi
+	(( brain_fence_rc == 1 )) || exit 1
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -60,8 +61,30 @@ func Path(repoRoot string) string {
 	return filepath.Join(repoRoot, stateDirectory(stateroot.Records), "narrator-digest.log")
 }
 
-func CursorPath(repoRoot string) string {
-	return filepath.Join(repoRoot, stateDirectory(stateroot.Steward), "narrator-digest-cursor.json")
+var cursorNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+
+func cursorName(names []string) (string, error) {
+	if len(names) == 0 {
+		return "human", nil
+	}
+	if len(names) != 1 || !cursorNameRE.MatchString(names[0]) {
+		return "", fmt.Errorf("narrator digest cursor name must be one shell-safe word")
+	}
+	return names[0], nil
+}
+
+// CursorPath returns the named cursor path. With no name it preserves the
+// human Stop-hook cursor's original path and protocol.
+func CursorPath(repoRoot string, names ...string) string {
+	name, err := cursorName(names)
+	if err != nil {
+		return ""
+	}
+	base := "narrator-digest-" + name + "-cursor.json"
+	if name == "human" {
+		base = "narrator-digest-cursor.json"
+	}
+	return filepath.Join(repoRoot, stateDirectory(stateroot.Steward), base)
 }
 
 func lockPath(repoRoot string) string {
@@ -198,8 +221,8 @@ func digest(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func loadCursor(repoRoot string) (cursorRecord, error) {
-	data, err := os.ReadFile(CursorPath(repoRoot))
+func loadCursor(repoRoot, name string) (cursorRecord, error) {
+	data, err := os.ReadFile(CursorPath(repoRoot, name))
 	if os.IsNotExist(err) {
 		return cursorRecord{Schema: 1, PrefixSHA256: digest(nil)}, nil
 	}
@@ -222,7 +245,11 @@ func loadCursor(repoRoot string) (cursorRecord, error) {
 }
 
 // Pending returns the digest bytes after the last emitted check-in cursor.
-func Pending(repoRoot string) (PendingDigest, error) {
+func Pending(repoRoot string, names ...string) (PendingDigest, error) {
+	name, err := cursorName(names)
+	if err != nil {
+		return PendingDigest{}, err
+	}
 	lock, err := acquire(repoRoot)
 	if err != nil {
 		return PendingDigest{}, err
@@ -234,7 +261,7 @@ func Pending(repoRoot string) (PendingDigest, error) {
 	} else if err != nil {
 		return PendingDigest{}, err
 	}
-	cursor, err := loadCursor(repoRoot)
+	cursor, err := loadCursor(repoRoot, name)
 	if err != nil {
 		return PendingDigest{}, err
 	}
@@ -250,7 +277,11 @@ func Pending(repoRoot string) (PendingDigest, error) {
 }
 
 // Advance records that exactly one pending prefix reached the check-in.
-func Advance(repoRoot string, cursor int64, prefixSHA256 string) error {
+func Advance(repoRoot string, cursor int64, prefixSHA256 string, names ...string) error {
+	name, err := cursorName(names)
+	if err != nil {
+		return err
+	}
 	lock, err := acquire(repoRoot)
 	if err != nil {
 		return err
@@ -260,7 +291,7 @@ func Advance(repoRoot string, cursor int64, prefixSHA256 string) error {
 	if err != nil {
 		return err
 	}
-	current, err := loadCursor(repoRoot)
+	current, err := loadCursor(repoRoot, name)
 	if err != nil {
 		return err
 	}
@@ -272,7 +303,7 @@ func Advance(repoRoot string, cursor int64, prefixSHA256 string) error {
 	if err != nil {
 		return err
 	}
-	durable, err := atomicfile.WriteText(CursorPath(repoRoot), string(encoded)+"\n", repoRoot)
+	durable, err := atomicfile.WriteText(CursorPath(repoRoot, name), string(encoded)+"\n", repoRoot)
 	if err != nil {
 		return err
 	}

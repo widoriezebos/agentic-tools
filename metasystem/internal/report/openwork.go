@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -53,7 +54,18 @@ var (
 	roundRank      = regexp.MustCompile(`-r([0-9]+)$`)
 )
 
-var inFlightStatus = map[string]bool{"pending": true, "running": true}
+var (
+	inFlightStatus      = map[string]bool{"pending": true, "running": true}
+	brainInFlightStatus = map[string]bool{"pending-setup": true, "pending": true, "running": true}
+)
+
+func inFlightStatuses(root string) map[string]bool {
+	state := brain.Read(root, goal.ExistingLedgerIdentity(root))
+	if state.State == brain.Declared || state.State == brain.Corrupt {
+		return brainInFlightStatus
+	}
+	return inFlightStatus
+}
 
 func resolveRepo(root string) string {
 	if abs, err := filepath.Abs(root); err == nil {
@@ -96,8 +108,9 @@ func readJobRecords(root string) []map[string]any {
 func jobsInFlight(root string) int {
 	count := 0
 	records := readJobRecords(root)
+	statuses := inFlightStatuses(root)
 	for _, record := range records {
-		if status, _ := record["status"].(string); inFlightStatus[status] {
+		if status, _ := record["status"].(string); statuses[status] {
 			count++
 		}
 	}
@@ -286,6 +299,10 @@ func MarkOpenWorkSeen(root string, items []goal.Item, at time.Time) ([]goal.Item
 }
 
 func stalePlans(root string) []string {
+	return stalePlansWithStatuses(root, inFlightStatuses(root))
+}
+
+func stalePlansWithStatuses(root string, statuses map[string]bool) []string {
 	live := map[string]bool{}
 	chains := map[string]*chainEntry{}
 	for _, record := range readJobRecords(root) {
@@ -295,7 +312,7 @@ func stalePlans(root string) []string {
 			jobID = strings.TrimSuffix(filepath.Base(path), ".json")
 		}
 		status, _ := record["status"].(string)
-		if inFlightStatus[status] {
+		if statuses[status] {
 			live[jobID] = true
 		}
 		rootJob := roundSuffix.ReplaceAllString(jobID, "")

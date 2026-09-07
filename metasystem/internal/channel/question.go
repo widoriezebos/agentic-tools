@@ -134,6 +134,38 @@ func listQuestions(repo string) ([]Question, error) {
 	return out, nil
 }
 
+// WalkOpenQuestions is the tolerant local question walk shared by brain boot
+// and the turn-end scanner. One unreadable file never hides the other open
+// questions; its path is returned on the separate failure channel.
+func WalkOpenQuestions(repo string) ([]Question, []string) {
+	paths, globErr := filepath.Glob(filepath.Join(channelRoot(repo), "questions", "*.json"))
+	if globErr != nil {
+		return nil, []string{globErr.Error()}
+	}
+	var questions []Question
+	var unreadable []string
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			unreadable = append(unreadable, path+": "+err.Error())
+			continue
+		}
+		var question Question
+		if err := json.Unmarshal(data, &question); err != nil || question.ID == "" || question.OpenedAt.IsZero() || question.State == "" {
+			if err == nil {
+				err = fmt.Errorf("missing required question fields")
+			}
+			unreadable = append(unreadable, path+": "+err.Error())
+			continue
+		}
+		if question.State == "open" {
+			questions = append(questions, question)
+		}
+	}
+	sort.Slice(questions, func(i, j int) bool { return questions[i].OpenedAt.After(questions[j].OpenedAt) })
+	return questions, unreadable
+}
+
 func validateQuestionBudget(q Question) error {
 	if q.Kind == "budget-above-norm" {
 		if q.Budget == nil {

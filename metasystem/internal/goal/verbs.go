@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -197,6 +199,10 @@ type VerbRequest struct {
 	// ClaimEpoch is the authenticated checkout lease generation. Only
 	// transitions that create a claimed revision consume it.
 	ClaimEpoch int64
+	// CallerClass is the one command-edge classification used by every
+	// human-word mutation. It prevents later verbs from reclassifying a
+	// different process view after the actor was assembled.
+	CallerClass string
 }
 
 func (r VerbRequest) opid() string {
@@ -580,6 +586,9 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8,
 // Claim is AGENT-ONLY: humans direct agents; no human
 // lineage exists, so no human claim row.
 func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
+	if detail := brain.Fence(r.Endpoint.Root, "claim", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
+		return PublishResult{}, fmt.Errorf("%s", detail)
+	}
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
@@ -1942,6 +1951,9 @@ func classifyArcJoin(t *TreeGoals, arc, excludeID string, actor Actor) arcJoinSt
 // members, skips already-owned and parked members, and loses atomically to
 // any foreign claim it encounters.
 func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
+	if detail := brain.Fence(r.Endpoint.Root, "claim", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
+		return PublishResult{}, fmt.Errorf("%s", detail)
+	}
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}

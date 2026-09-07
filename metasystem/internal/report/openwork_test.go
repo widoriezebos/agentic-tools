@@ -92,8 +92,8 @@ func TestOpenWorkSilentWhenOpenChainNewestRoundIsNonTerminal(t *testing.T) {
 		t.Fatalf("turn-verdict scan did not count the open chain as work in flight: %+v", scan)
 	}
 	verdict, err := (&goal.Store{Root: root}).TurnVerdict(scan, "open-chain-session", "", "")
-	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "STILL WORKING") {
-		t.Fatalf("turn verdict did not allow while the open chain was in flight: %+v %v", verdict, err)
+	if err != nil || verdict.ShouldBlock || verdict.BlockSource != nil || !strings.Contains(verdict.Display, "STILL WORKING") || strings.Contains(verdict.Display, "OPEN WORK") {
+		t.Fatalf("pending-setup changed the undeclared checkout's trunk open-chain verdict: %+v %v", verdict, err)
 	}
 }
 
