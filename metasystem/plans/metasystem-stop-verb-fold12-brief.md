@@ -6,14 +6,20 @@ Date: 2026-09-07
 
 The chain's first independent read found six material items, all
 accepted. Dispositions are in
-records/misc/metasystem-stop-critique-r4.md (landed on main after this
-worktree was cut, so it arrives with the rebase); the design gained
+records/misc/metasystem-stop-critique-r4.md; the design gained
 section 14 deciding the two classes the earlier sections left open. Two
 of the six are the orchestrator's fault, not yours, and are named as such
 below. This round folds all six.
 
 Read section 14 of metasystem/plans/metasystem-stop-verb-design.md first.
 It wins wherever it contradicts an earlier section.
+
+Round 13 was right to stop: the amendment and the record were on main but
+not in the worktree, because the follow-up rebase fires only when trunk
+commits touch the CHAIN's files and these are plan and record files. The
+orchestrator has since brought the worktree to main by hand, so both are
+present now and the base is the commit that carries them. Nothing else
+about that round's reading changes.
 
 # Decisions (the orchestrator's; decided, not open)
 
