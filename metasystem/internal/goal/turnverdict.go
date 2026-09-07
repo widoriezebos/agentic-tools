@@ -21,17 +21,22 @@ import (
 // Item is one classified scanner fact. Busy items carry the bounded
 // display detail the hook renders verbatim (≤200 bytes at construction).
 type Item struct {
-	Kind   string // job | mission | gate | plan
-	Id     string
-	Detail string
+	Kind              string // job | mission | gate | plan
+	Id                string
+	Detail            string
+	FullDetail        string
+	LineDigest        string
+	PreviouslyRefused bool
 }
 
 // ScanResult is the verdict's input contract, produced by the scanner.
 type ScanResult struct {
-	Open           []Item
-	WaitingOnHuman []Item
-	StalePlans     []Item
-	Busy           []Item
+	Open             []Item
+	TemplateUnfilled []Item
+	OpenWorkWarnings []string
+	WaitingOnHuman   []Item
+	StalePlans       []Item
+	Busy             []Item
 	// Unreadable lists every input the scanner could not read — plans,
 	// records, markers, enumeration failures, indeterminate runner
 	// liveness. Non-empty Unreadable vetoes BOTH the all-clear and any
@@ -76,12 +81,18 @@ type RunFact struct {
 // OpenWorkSignature keys the open-work block-once slot: the sorted open
 // items' details, hashed.
 func (r ScanResult) OpenWorkSignature() string {
-	if len(r.Open) == 0 {
-		return ""
-	}
 	lines := make([]string, 0, len(r.Open))
 	for _, item := range r.Open {
-		lines = append(lines, item.Detail)
+		if !item.PreviouslyRefused {
+			line := item.LineDigest
+			if line == "" {
+				line = item.Detail
+			}
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return ""
 	}
 	sort.Strings(lines)
 	return sha256Hex([]byte(strings.Join(lines, "\n")))
@@ -641,6 +652,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 	alreadyBlocked := verdict.ShouldBlock
 
 	var display []string
+	for _, warning := range scan.OpenWorkWarnings {
+		display = append(display, warning)
+		verdict.Diagnostics = append(verdict.Diagnostics, warning)
+	}
+	for _, item := range scan.TemplateUnfilled {
+		display = append(display, item.Detail)
+		verdict.Diagnostics = append(verdict.Diagnostics, item.Detail)
+	}
 	blockGoal := func(reason string) {
 		if alreadyBlocked {
 			display = append(display, reason)
@@ -662,8 +681,10 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		display = append(display, "STILL WORKING: "+strings.Join(names, "; "))
 
 	case len(scan.Open) > 0:
-		// Open work blocks first — once per signature.
-		if session.OpenWorkSignature != verdict.OpenWorkSignature {
+		// Open work blocks once per durable plan-line marker. The session
+		// signature protects direct callers that supply unmarked scan facts;
+		// marked plan lines do not receive another refusal in any session.
+		if verdict.OpenWorkSignature != "" && session.OpenWorkSignature != verdict.OpenWorkSignature {
 			session.OpenWorkSignature = verdict.OpenWorkSignature
 			if !alreadyBlocked {
 				verdict.ShouldBlock = true

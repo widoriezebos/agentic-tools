@@ -179,6 +179,90 @@ git -C "$line_root" config user.name fixture
 git -C "$line_root" config user.email fixture@example.invalid
 git -C "$line_root" add metasystem.conf plans/goals.md
 git -C "$line_root" commit -qm fixture
+
+# The open-work marker belongs to the verdict inputs rather than one runtime
+# session. Exercise it through the same commands the ordinary Stop worker and
+# deadline parent call so either path preserves the once-only refusal.
+open_work_root=$tmp/open-work-root
+mkdir -p "$open_work_root/plans" "$open_work_root/artifacts/agents/jobs"
+printf '%s\n' 'metasystem.runtimes=none' >"$open_work_root/metasystem.conf"
+printf '# Goals\n\n## Goal-free: declared 2026-09-07T00:00:00Z by human over fixture\n' \
+  >"$open_work_root/plans/goals.md"
+printf '%s\n' '- Next step: Finish the fixture work' '- Waiting on the human: none' \
+  '- In flight right now: none' >"$open_work_root/plans/open.md"
+git -C "$open_work_root" init -q -b main
+git -C "$open_work_root" config user.name fixture
+git -C "$open_work_root" config user.email fixture@example.invalid
+git -C "$open_work_root" add metasystem.conf plans
+git -C "$open_work_root" commit -qm fixture
+
+first_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-first)
+[[ $("$ms" json get --value "$first_open_verdict" --field shouldBlock) == true ]] \
+  || { echo "the first open-work line did not refuse the turn" >&2; echo "$first_open_verdict" >&2; exit 1; }
+second_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-second)
+[[ $("$ms" json get --value "$second_open_verdict" --field shouldBlock) == false ]] \
+  && [[ $second_open_verdict == *'OPEN WORK (1)'* ]] \
+  || { echo "the durable open-work line blocked a second session or disappeared" >&2; echo "$second_open_verdict" >&2; exit 1; }
+
+assert_open_work_seen_reset() { # name, record bytes
+  local name=$1 body=$2 verdict display
+  printf '%s\n' "$body" >"$open_work_root/artifacts/agents/supervision/open-work-seen.json"
+  verdict=$("$ms" report turn-verdict --root "$open_work_root" --session "open-bad-$name")
+  display=$("$ms" json get --value "$verdict" --field display)
+  [[ $("$ms" json get --value "$verdict" --field shouldBlock) == true ]] \
+    && [[ $display == *'OPEN-WORK-SEEN-RESET '* ]] \
+    && [[ $display == *'open-work-seen.json'* ]] \
+    || { echo "the $name open-work seen-state did not reset visibly to a first refusal" >&2; echo "$verdict" >&2; exit 1; }
+}
+assert_open_work_seen_reset malformed '{not json'
+assert_open_work_seen_reset foreign-schema '{"schemaVersion":2,"plans":{}}'
+assert_open_work_seen_reset null-plans '{"schemaVersion":1,"plans":null}'
+assert_open_work_seen_reset digest-mismatch \
+  '{"schemaVersion":1,"plans":{"plans/open.md":{"wrong":{"line":"OPEN-WORK plans/open.md: old","firstAt":"2026-09-07T08:00:00Z"}}}}'
+
+"$ms" report stop-block --open-work-root "$open_work_root" 'deadline fixture' >/dev/null
+deadline_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-after-deadline)
+[[ $("$ms" json get --value "$deadline_open_verdict" --field shouldBlock) == false ]] \
+  || { echo "the deadline-parent path lost the open-work marker" >&2; echo "$deadline_open_verdict" >&2; exit 1; }
+
+printf '%s\n' '- Next step: Work first observed during an expiry' '- Waiting on the human: none' \
+  '- In flight right now: none' >"$open_work_root/plans/open.md"
+"$ms" report stop-block --open-work-root "$open_work_root" 'deadline fixture' >/dev/null
+deadline_new_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-new-after-deadline)
+[[ $("$ms" json get --value "$deadline_new_open_verdict" --field shouldBlock) == true ]] \
+  || { echo "the deadline-parent path spent a newly observed open-work refusal" >&2; echo "$deadline_new_open_verdict" >&2; exit 1; }
+
+printf '%s\n' '{"jobId":"fixture-chain","status":"completed","chainClosed":false}' \
+  >"$open_work_root/artifacts/agents/jobs/fixture-chain.json"
+printf '%s\n' '{"jobId":"fixture-chain-r2","status":"pending-setup"}' \
+  >"$open_work_root/artifacts/agents/jobs/fixture-chain-r2.json"
+printf '%s\n' '- Next step: Changed work while the chain is open' '- Waiting on the human: none' \
+  '- In flight right now: fixture-chain' >"$open_work_root/plans/open.md"
+chain_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-chain)
+[[ $("$ms" json get --value "$chain_open_verdict" --field shouldBlock) == false ]] \
+  && [[ $chain_open_verdict == *'STILL WORKING:'* ]] \
+  || { echo "an open chain did not suppress the turn verdict's open-work refusal" >&2; echo "$chain_open_verdict" >&2; exit 1; }
+rm -f "$open_work_root/artifacts/agents/jobs/fixture-chain.json" \
+  "$open_work_root/artifacts/agents/jobs/fixture-chain-r2.json"
+
+printf '%s\n' '{"jobId":"fixture-running","status":"running"}' \
+  >"$open_work_root/artifacts/agents/jobs/fixture-running.json"
+printf '%s\n' '- Next step: Changed work while the job runs' '- Waiting on the human: none' \
+  '- In flight right now: fixture-running' >"$open_work_root/plans/open.md"
+running_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-running)
+[[ $("$ms" json get --value "$running_open_verdict" --field shouldBlock) == false ]] \
+  && [[ $running_open_verdict == *'STILL WORKING:'* ]] \
+  || { echo "a running checkout job did not suppress the open-work refusal" >&2; echo "$running_open_verdict" >&2; exit 1; }
+
+rm -f "$open_work_root/artifacts/agents/jobs/fixture-running.json"
+printf '%s\n' '- Next step: <one line, required>' '- Waiting on the human: none' \
+  '- In flight right now: none' >"$open_work_root/plans/open.md"
+template_open_verdict=$("$ms" report turn-verdict --root "$open_work_root" --session open-template)
+template_open_display=$("$ms" json get --value "$template_open_verdict" --field display)
+[[ $template_open_display == *'TEMPLATE-UNFILLED plans/open.md: <one line, required>'* ]] \
+  && [[ $template_open_display != *'OPEN-WORK plans/open.md'* ]] \
+  || { echo "the plan placeholder was not classified as template-unfilled" >&2; echo "$template_open_verdict" >&2; exit 1; }
+
 mkdir -p "$line_root/records"
 printf '%s\n' '2026-08-29T10:00:00Z HIGHLIGHT — A landing moved the repository storyline to commit abc123. (source: commit abc123)' \
   >"$line_root/records/narrator-digest.log"

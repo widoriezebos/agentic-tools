@@ -1,6 +1,7 @@
 package report
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,6 +34,13 @@ func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
 	// Busy, three classes, all file facts.
 	jobItems, jobUnreadable := busyJobs(root)
 	result.Busy = append(result.Busy, jobItems...)
+	if len(jobItems) == 0 {
+		for _, rootJob := range openChainsInFlight(readJobRecords(root)) {
+			result.Busy = append(result.Busy, goal.Item{
+				Kind: "job", Id: rootJob, Detail: clipDetail(fmt.Sprintf("open delegate chain %s [non-terminal]", rootJob)),
+			})
+		}
+	}
 	result.Unreadable = append(result.Unreadable, jobUnreadable...)
 
 	gates := gaterun.Survey(root)
@@ -93,8 +101,16 @@ func scanPlans(root string, result goal.ScanResult) goal.ScanResult {
 		if !ok || step == "" || settledStep.MatchString(step) {
 			continue
 		}
+		if templateValue.MatchString(step) {
+			result.TemplateUnfilled = append(result.TemplateUnfilled, goal.Item{
+				Kind: "plan", Id: name, Detail: clipDetail(fmt.Sprintf("TEMPLATE-UNFILLED %s: %s", name, step)),
+			})
+			continue
+		}
+		line := fmt.Sprintf("OPEN-WORK %s: %s", name, step)
 		result.Open = append(result.Open, goal.Item{
-			Kind: "plan", Id: name, Detail: clipDetail(fmt.Sprintf("OPEN-WORK %s: %s", name, step)),
+			Kind: "plan", Id: name, Detail: clipDetail(line), FullDetail: line,
+			LineDigest: fmt.Sprintf("%x", sha256.Sum256([]byte(line))),
 		})
 	}
 	return result

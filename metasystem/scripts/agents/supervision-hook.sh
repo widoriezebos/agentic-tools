@@ -91,6 +91,12 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     deadline_repo=$(git -C "$deadline_cwd" rev-parse --show-toplevel 2>/dev/null || true)
     [[ -n "$deadline_repo" ]] || return 1
     deadline_repo=$(cd "$deadline_repo" && pwd -P)
+    deadline_open_work_root=$deadline_repo
+    if [[ -f "$deadline_repo/development/metasystem-design.md" &&
+          "$deadline_harness_root" == "$deadline_repo/metasystem" &&
+          -f "$deadline_harness_root/metasystem.conf" ]]; then
+      deadline_open_work_root=$deadline_harness_root
+    fi
     slug=$(printf '%s' "$deadline_session" | tr '[:upper:]' '[:lower:]' |
       sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')
     [[ -n "$slug" ]] || slug=session
@@ -319,6 +325,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   if [[ -n "$deadline_record" ]]; then
     deadline_response=$("$deadline_canonical" report stop-block \
       --refusal-record "$deadline_record" --session "$deadline_session" \
+      --open-work-root "$deadline_open_work_root" \
       --cause "$deadline_cause" --remedy "$deadline_remedy" "$deadline_detail" 2>/dev/null) || \
       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
   fi

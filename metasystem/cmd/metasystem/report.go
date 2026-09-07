@@ -20,8 +20,17 @@ func runReportStopBlock(args []string) int {
 	cause := flags.String("cause", "", "stable external stop-refusal cause")
 	remedy := flags.String("remedy", "", "operator remedy for an external stop refusal")
 	boundedIdle := flags.Bool("bounded-idle", false, "render a counted idle-backlog refusal without the open-work block-once preface")
+	openWorkRoot := flags.String("open-work-root", "", "checkout root whose open-work lines must be durably marked")
 	if flags.Parse(args) != nil {
 		return 2
+	}
+	if *openWorkRoot != "" {
+		if warning := report.OpenWorkSeenWarning(*openWorkRoot); warning != "" {
+			if *systemMessage != "" {
+				*systemMessage += "\n"
+			}
+			*systemMessage += warning
+		}
 	}
 	detail := ""
 	if flags.NArg() > 0 {

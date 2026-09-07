@@ -1,13 +1,16 @@
 package report
 
 import (
+	"encoding/json"
 	"strconv"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newPlanRoot(t *testing.T) string {
@@ -74,6 +77,148 @@ func TestOpenWorkSilentWhenJobInFlight(t *testing.T) {
 	writeJob(t, root, "job-1.json", `{"jobId":"job-1","status":"running"}`)
 	if lines := OpenWork(root); hasLine(lines, "OPEN-WORK") {
 		t.Fatalf("no open-work should be reported while a job is in flight: %v", lines)
+	}
+}
+
+func TestOpenWorkSilentWhenOpenChainNewestRoundIsNonTerminal(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "a.md", "- Next step: Finish the port\n- In flight right now: none\n")
+	writeJob(t, root, "chain.json", `{"jobId":"chain","status":"pending-setup","chainClosed":false}`)
+	if lines := OpenWork(root); hasLine(lines, "OPEN-WORK") {
+		t.Fatalf("an open chain with a non-terminal newest round is work in flight: %v", lines)
+	}
+	scan := Scan(root)
+	if len(scan.Busy) == 0 {
+		t.Fatalf("turn-verdict scan did not count the open chain as work in flight: %+v", scan)
+	}
+	verdict, err := (&goal.Store{Root: root}).TurnVerdict(scan, "open-chain-session", "", "")
+	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "STILL WORKING") {
+		t.Fatalf("turn verdict did not allow while the open chain was in flight: %+v %v", verdict, err)
+	}
+}
+
+func TestTemplatePlaceholderHasItsOwnClassification(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "template.md", "- Next step: <one line, required>\n- In flight right now: none\n")
+	lines := OpenWork(root)
+	if !hasLine(lines, "TEMPLATE-UNFILLED plans/template.md: <one line, required>") || hasLine(lines, "OPEN-WORK") {
+		t.Fatalf("template placeholder was not classified separately: %v", lines)
+	}
+	scan := Scan(root)
+	if len(scan.Open) != 0 || len(scan.TemplateUnfilled) != 1 || !strings.Contains(scan.TemplateUnfilled[0].Detail, "TEMPLATE-UNFILLED") {
+		t.Fatalf("turn scan did not preserve the template classification: %+v", scan)
+	}
+}
+
+func TestOpenWorkSeenStateIsDurablePerPlanAndLine(t *testing.T) {
+	root := newPlanRoot(t)
+	at := time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC)
+	firstLine := goal.Item{Kind: "plan", Id: "plans/a.md", Detail: "OPEN-WORK plans/a.md: Finish the port"}
+	first, warning, err := MarkOpenWorkSeen(root, []goal.Item{firstLine}, at)
+	if err != nil || warning != "" || len(first) != 1 || first[0].PreviouslyRefused {
+		t.Fatalf("first plan line was not recorded as new: %+v %q %v", first, warning, err)
+	}
+	second, warning, err := MarkOpenWorkSeen(root, []goal.Item{firstLine}, at.Add(time.Minute))
+	if err != nil || warning != "" || !second[0].PreviouslyRefused {
+		t.Fatalf("the same plan line was not remembered: %+v %q %v", second, warning, err)
+	}
+	changed := firstLine
+	changed.Detail = "OPEN-WORK plans/a.md: Finish the changed port"
+	third, warning, err := MarkOpenWorkSeen(root, []goal.Item{changed}, at.Add(2*time.Minute))
+	if err != nil || third[0].PreviouslyRefused {
+		t.Fatalf("changed line text did not receive a fresh refusal: %+v %q %v", third, warning, err)
+	}
+	data, err := os.ReadFile(openWorkSeenPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record openWorkSeenRecord
+	if err := json.Unmarshal(data, &record); err != nil || record.SchemaVersion != 1 || len(record.Plans["plans/a.md"]) != 1 {
+		t.Fatalf("unexpected durable seen record: %+v %v", record, err)
+	}
+}
+
+func TestOpenWorkSeenStateReadFailuresResetVisiblyAndFailOpen(t *testing.T) {
+	cases := map[string]string{
+		"malformed JSON": `{not json`,
+		"foreign schema": `{"schemaVersion":2,"plans":{}}`,
+		"null plans":     `{"schemaVersion":1,"plans":null}`,
+		"digest mismatch": `{"schemaVersion":1,"plans":{"plans/a.md":{"wrong":` +
+			`{"line":"OPEN-WORK plans/a.md: old","firstAt":"2026-09-07T08:00:00Z"}}}}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := newPlanRoot(t)
+			path := openWorkSeenPath(root)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			item := goal.Item{Kind: "plan", Id: "plans/a.md", Detail: "OPEN-WORK plans/a.md: current"}
+			marked, warning, err := MarkOpenWorkSeen(root, []goal.Item{item}, time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC))
+			if err != nil || warning == "" || !strings.Contains(warning, path) || marked[0].PreviouslyRefused {
+				t.Fatalf("bad state did not reset visibly and fail open: marked=%+v warning=%q err=%v", marked, warning, err)
+			}
+			again, secondWarning, err := MarkOpenWorkSeen(root, []goal.Item{item}, time.Date(2026, 9, 7, 8, 1, 0, 0, time.UTC))
+			if err != nil || secondWarning != "" || !again[0].PreviouslyRefused {
+				t.Fatalf("fresh rewrite was not readable: marked=%+v warning=%q err=%v", again, secondWarning, err)
+			}
+		})
+	}
+}
+
+func TestOpenWorkSeenStateUsesFullLineAndPrunesCurrentScan(t *testing.T) {
+	root := newPlanRoot(t)
+	at := time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC)
+	prefix := "OPEN-WORK plans/a.md: " + strings.Repeat("a", 240)
+	first := goal.Item{Kind: "plan", Id: "plans/a.md", Detail: prefix[:200], FullDetail: prefix + "first-tail"}
+	removed := goal.Item{Kind: "plan", Id: "plans/removed.md", Detail: "OPEN-WORK plans/removed.md: old"}
+	if _, _, err := MarkOpenWorkSeen(root, []goal.Item{first, removed}, at); err != nil {
+		t.Fatal(err)
+	}
+	changed := first
+	changed.FullDetail = prefix + "changed-tail"
+	marked, warning, err := MarkOpenWorkSeen(root, []goal.Item{changed}, at.Add(time.Minute))
+	if err != nil || warning != "" || marked[0].PreviouslyRefused {
+		t.Fatalf("a full-line tail edit was not new: %+v %q %v", marked, warning, err)
+	}
+	store := &goal.Store{Root: root, Now: func() time.Time { return at.Add(time.Minute) }}
+	firstMarked, _, err := MarkOpenWorkSeen(root, []goal.Item{first}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstVerdict, err := store.TurnVerdict(goal.ScanResult{Open: firstMarked}, "long-line-session", "", "")
+	if err != nil || !firstVerdict.ShouldBlock {
+		t.Fatalf("the first long line did not block: %+v %v", firstVerdict, err)
+	}
+	marked, _, err = MarkOpenWorkSeen(root, []goal.Item{changed}, at.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedVerdict, err := store.TurnVerdict(goal.ScanResult{Open: marked}, "long-line-session", "", "")
+	if err != nil || !changedVerdict.ShouldBlock {
+		t.Fatalf("a tail edit past the display clip did not block the same session: %+v %v", changedVerdict, err)
+	}
+	data, err := os.ReadFile(openWorkSeenPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record openWorkSeenRecord
+	if err := json.Unmarshal(data, &record); err != nil || len(record.Plans) != 1 || len(record.Plans["plans/a.md"]) != 1 {
+		t.Fatalf("stale plan or stale digest survived pruning: %+v %v", record, err)
+	}
+	if _, present := record.Plans["plans/removed.md"]; present {
+		t.Fatalf("removed plan survived pruning: %+v", record.Plans)
+	}
+	if _, _, err := MarkOpenWorkSeen(root, nil, at.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(openWorkSeenPath(root))
+	record = openWorkSeenRecord{}
+	if err := json.Unmarshal(data, &record); err != nil || len(record.Plans) != 0 {
+		t.Fatalf("an empty current scan retained removed plans: %+v %v", record, err)
 	}
 }
 

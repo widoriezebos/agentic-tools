@@ -1,6 +1,7 @@
 package report
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,7 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"golang.org/x/sys/unix"
 )
 
 // OpenWork reports plans that name an unblocked next step while nothing is
@@ -42,6 +47,7 @@ func graceSeconds() float64 {
 
 var (
 	settledStep    = regexp.MustCompile(`(?i)^(none|nothing|n/?a|done|completed?|-|tbd)\b[.\s]*$`)
+	templateValue  = regexp.MustCompile(`^<[^<>\r\n]+>$`)
 	unblockedField = regexp.MustCompile(`(?i)^(none|nothing)\b`)
 	roundSuffix    = regexp.MustCompile(`-r[0-9]+$`)
 	roundRank      = regexp.MustCompile(`-r([0-9]+)$`)
@@ -89,15 +95,58 @@ func readJobRecords(root string) []map[string]any {
 
 func jobsInFlight(root string) int {
 	count := 0
-	for _, record := range readJobRecords(root) {
+	records := readJobRecords(root)
+	for _, record := range records {
 		if status, _ := record["status"].(string); inFlightStatus[status] {
 			count++
 		}
+	}
+	if len(openChainsInFlight(records)) > 0 {
+		count++
 	}
 	if count == 0 && gatesRunning(root) {
 		count++
 	}
 	return count
+}
+
+func openChainsInFlight(records []map[string]any) []string {
+	chains := map[string]*chainEntry{}
+	for _, record := range records {
+		path, _ := record["__path"].(string)
+		jobID, _ := record["jobId"].(string)
+		if jobID == "" {
+			jobID = strings.TrimSuffix(filepath.Base(path), ".json")
+		}
+		rootJob := roundSuffix.ReplaceAllString(jobID, "")
+		entry := chains[rootJob]
+		if entry == nil {
+			entry = &chainEntry{}
+			chains[rootJob] = entry
+		}
+		if jobID == rootJob {
+			if closed, ok := record["chainClosed"].(bool); ok {
+				entry.rootOpen = !closed
+			}
+		}
+		rank := 1
+		if m := roundRank.FindStringSubmatch(jobID); m != nil {
+			rank, _ = strconv.Atoi(m[1])
+		}
+		if !entry.hasNewest || rank > entry.newestRank {
+			entry.hasNewest = true
+			entry.newestRank = rank
+			entry.status, _ = record["status"].(string)
+		}
+	}
+	var roots []string
+	for rootJob, entry := range chains {
+		if entry.rootOpen && entry.hasNewest && !dispatch.TerminalStatus(entry.status) {
+			roots = append(roots, rootJob)
+		}
+	}
+	sort.Strings(roots)
+	return roots
 }
 
 // gatesRunning reports whether a gate is in flight — from the fixture override
@@ -115,10 +164,125 @@ func gatesRunning(root string) bool {
 type chainEntry struct {
 	ids        map[string]bool
 	closed     bool
+	rootOpen   bool
 	hasNewest  bool
 	newestRank int
 	status     string
 	mtime      time.Time
+}
+
+type openWorkSeenRecord struct {
+	SchemaVersion int                                     `json:"schemaVersion"`
+	Plans         map[string]map[string]openWorkSeenEntry `json:"plans"`
+}
+
+type openWorkSeenEntry struct {
+	Line    string `json:"line"`
+	FirstAt string `json:"firstAt"`
+}
+
+func openWorkSeenPath(root string) string {
+	return filepath.Join(resolveRepo(root), "artifacts", "agents", "supervision", "open-work-seen.json")
+}
+
+func openWorkSeenWarning(path string, err error) string {
+	return fmt.Sprintf("OPEN-WORK-SEEN-RESET %s: %v", path, err)
+}
+
+func readOpenWorkSeen(path string) (openWorkSeenRecord, string) {
+	empty := openWorkSeenRecord{SchemaVersion: 1, Plans: map[string]map[string]openWorkSeenEntry{}}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return empty, ""
+	}
+	if err != nil {
+		return empty, openWorkSeenWarning(path, err)
+	}
+	var record openWorkSeenRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return empty, openWorkSeenWarning(path, err)
+	}
+	if record.SchemaVersion != 1 {
+		return empty, openWorkSeenWarning(path, fmt.Errorf("unexpected schema version %d", record.SchemaVersion))
+	}
+	if record.Plans == nil {
+		return empty, openWorkSeenWarning(path, fmt.Errorf("plans map is null"))
+	}
+	for plan, entries := range record.Plans {
+		if entries == nil {
+			return empty, openWorkSeenWarning(path, fmt.Errorf("plan %s has a null entries map", plan))
+		}
+		for digest, entry := range entries {
+			expected := fmt.Sprintf("%x", sha256.Sum256([]byte(entry.Line)))
+			if digest != expected {
+				return empty, openWorkSeenWarning(path, fmt.Errorf("plan %s contains a line digest mismatch", plan))
+			}
+		}
+	}
+	return record, ""
+}
+
+// OpenWorkSeenWarning reads the durable marker without changing it. A
+// deadline refusal uses this path so it cannot spend an open-work refusal.
+func OpenWorkSeenWarning(root string) string {
+	_, warning := readOpenWorkSeen(openWorkSeenPath(root))
+	return warning
+}
+
+// MarkOpenWorkSeen durably records the current open plan lines, prunes lines
+// no longer present, and tells the verdict which lines already refused a turn.
+func MarkOpenWorkSeen(root string, items []goal.Item, at time.Time) ([]goal.Item, string, error) {
+	path := openWorkSeenPath(root)
+	if len(items) == 0 {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return items, "", nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, "", fmt.Errorf("prepare open-work seen directory: %w", err)
+	}
+	lockFile, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, "", fmt.Errorf("open open-work seen lock: %w", err)
+	}
+	defer lockFile.Close()
+	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
+		return nil, "", fmt.Errorf("lock open-work seen record: %w", err)
+	}
+	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }()
+
+	record, warning := readOpenWorkSeen(path)
+
+	marked := append([]goal.Item(nil), items...)
+	current := openWorkSeenRecord{SchemaVersion: 1, Plans: map[string]map[string]openWorkSeenEntry{}}
+	stamp := at.UTC().Format(time.RFC3339)
+	for index := range marked {
+		plan := marked[index].Id
+		line := marked[index].FullDetail
+		if line == "" {
+			line = marked[index].Detail
+		}
+		digest := marked[index].LineDigest
+		if digest == "" {
+			digest = fmt.Sprintf("%x", sha256.Sum256([]byte(line)))
+		}
+		marked[index].LineDigest = digest
+		entries := record.Plans[plan]
+		entry, seen := entries[digest]
+		marked[index].PreviouslyRefused = seen
+		if !seen {
+			entry = openWorkSeenEntry{Line: line, FirstAt: stamp}
+		}
+		current.Plans[plan] = map[string]openWorkSeenEntry{digest: entry}
+	}
+	encoded, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return nil, "", fmt.Errorf("render open-work seen record: %w", err)
+	}
+	if _, err := atomicfile.WriteText(path, string(encoded)+"\n", ""); err != nil {
+		return nil, "", fmt.Errorf("write open-work seen record: %w", err)
+	}
+	return marked, warning, nil
 }
 
 func stalePlans(root string) []string {
@@ -229,6 +393,10 @@ func openWork(root string) []string {
 		}
 		step, ok := planField(string(text), "Next step")
 		if !ok || step == "" || settledStep.MatchString(step) {
+			continue
+		}
+		if templateValue.MatchString(step) {
+			lines = append(lines, fmt.Sprintf("TEMPLATE-UNFILLED %s: %s", relName(root, plan), step))
 			continue
 		}
 		if waiting, ok := planField(string(text), "Waiting on the human"); ok && waiting != "" && !unblockedField.MatchString(waiting) {

@@ -561,6 +561,17 @@ func runReportTurnVerdict(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if len(scan.Busy) == 0 {
+		var warning string
+		scan.Open, warning, err = report.MarkOpenWorkSeen(*root, scan.Open, now)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if warning != "" {
+			scan.OpenWorkWarnings = append(scan.OpenWorkWarnings, warning)
+		}
+	}
 	store := &goal.Store{Root: *root, Now: func() time.Time { return now }}
 	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive}
 	stateRoot, rootErr := goal.ResolveStateRoot(*root)
