@@ -16,13 +16,19 @@ The application also changes. An engineer may understand concurrent requests wel
 
 Each responsibility therefore needs an explicit account of the understanding it requires and how a person can demonstrate it. For the session reviewer, one useful demonstration is finding a case in which passing tests leave access unprotected, then choosing an experiment that exposes the gap. A record that says someone read the report establishes much less.
 
+## Learn by asking questions
+
+Engineers also learn through conversation about how the application behaves. An engineer asks why a request succeeded after the session expired. The machinery explains where access was checked and shows the evidence. A follow-up question explores whether the same explanation applies to an upload already in progress.
+
+The engineer's questions guide the conversation. The machinery can connect the behavior to earlier design decisions and explain consequences the engineer has yet to consider. Claims stay connected to evidence, and uncertainty stays visible. When an explanation leaves something unresolved, the conversation can lead to an experiment.
+
 ## Learn by predicting and investigating
 
 > *Months after Thursday's change, a new engineer works through its first refused candidate in an isolated copy of the application. The earlier diagnosis is withheld. A session expires while a background request is still in flight. The engineer predicts that access will remain closed and asks to send another request after the response arrives.*
 
 > *The request succeeds. The engineer follows the response through the application, finds where it updates activity and predicts what will happen if that update is removed. The machinery makes the trial change and repeats the experiment. Access stays closed.*
 
-The machinery prepares the environment and carries out the experiment the engineer chose. The engineer has to commit to an expectation before seeing the result, then investigate the difference. That is an encounter from which judgment can grow. An explanation supplied afterward can help the engineer understand the result and its limits.
+The machinery prepares the environment and carries out the experiment the engineer chose. In this exercise, the engineer has to commit to an expectation before seeing the result, then investigate the difference. That is an encounter from which judgment can grow. An explanation supplied afterward can help the engineer understand the result and its limits.
 
 The source of the expected behavior stays visible: the recorded ruling says that a background refresh must not extend the session. The experiment shows what this candidate does. A teaching agent's agreement establishes neither fact.
 

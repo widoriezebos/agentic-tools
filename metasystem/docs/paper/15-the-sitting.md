@@ -36,7 +36,7 @@ One test covers all three. End the sitting at any moment, without warning. A fre
 
 ## How a sitting ends
 
-A sitting ends when it has served its purpose or needs work that further conversation cannot supply. A sitting that shapes work leaves recorded intent or a framed design with its open questions named. In a sitting for learning, the design may stay the same while the person's understanding changes. The record then keeps the experiment and what the person could explain, including where more practice is needed.
+A sitting ends when it has served its purpose or needs work that further conversation cannot supply. A sitting that shapes work leaves recorded intent or a framed design with its open questions named. In a sitting for learning, the design may stay the same while the person's understanding changes. The record keeps the questions explored and the evidence used, including any experiments. It also records what the person could explain and what remains unclear.
 
 When a sitting produces work, the governed loop takes over. If the sitting produced intent, construction begins against it, and the questions the room left open return as ruling requests with their consequences attached, the way the builder returns them at 9:12 in Chapter 1. If the sitting produced a design, that design becomes a builder's proposal, and the independent examination that follows challenges the candidate, the design and the code together. In neither case does the room's agreement count as evidence.
 
@@ -56,7 +56,9 @@ What leaves a review sitting is again records: findings answered one by one, a r
 
 ## A sitting for learning
 
-The engineer investigating the retained session failure in Chapter 14 can use a sitting to choose an experiment and examine its result. The machinery withholds the earlier diagnosis while the engineer makes a prediction. It retrieves the relevant evidence and can request an isolated run through the governed tools. The engineer decides what to investigate next. An explanation comes after that attempt, when there is an observed result to explain.
+A sitting for learning can start with a question about the application's behavior. The machinery explains what the evidence supports, and the engineer's follow-up questions guide the conversation. Explanations are available whenever they help the person understand.
+
+In the retained session exercise in Chapter 14, the earlier diagnosis is withheld while the engineer makes a prediction. The sitting helps the engineer choose an experiment and examine its result. The machinery retrieves the relevant evidence and can request an isolated run through the governed tools. The engineer decides what to investigate next. The diagnosis is explained after the engineer has investigated the result.
 
 Later practice tests whether the understanding lasts, with assessment on unfamiliar cases as described in Chapter 14.
 
