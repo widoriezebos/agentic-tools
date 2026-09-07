@@ -5,7 +5,7 @@ Date: 2026-09-07
 # Goal
 
 Round one built the effort configuration from
-metasystem/plans/effort-by-complexity-per-model-brief.md and stopped
+plans/effort-by-complexity-per-model-brief.md (landed on main at 77d3ffa7, after this chain's base) and stopped
 on the gap rule with two owners outside the brief's boundary: the
 compose-role-packet command in metasystem/cmd/metasystem/dispatch_verbs.go
 must accept the dispatch mode and the inherited effort value and
