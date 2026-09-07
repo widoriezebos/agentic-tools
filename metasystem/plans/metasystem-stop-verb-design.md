@@ -742,6 +742,15 @@ at an agent-free terminal, run: metasystem stop --repo <toplevel>
 | `dispatch.ClaimLaunch`, `run launch/register/adopt`, `proof-run launch`, `mission run-loop` under a closed fence | the metasystem is stopped for `<toplevel>` since `<time>` | `at an agent-free terminal, run: metasystem arm --repo <toplevel>` |
 | `mission start` or `resume` under a closed fence, caller not `HUMAN` | the same sentence | `at an agent-free terminal, run: metasystem mission start --mission <id>` (or `resume`) |
 
+**Precedence.** The stopped refusal comes FIRST, before any other gate a
+creation path applies. A checkout whose fence is closed answers "the
+metasystem is stopped" and names how to start again, never a downstream
+complaint that is true only because it is stopped: in particular the
+dispatcher reads the fence before its census-freshness gate, since a
+stopped checkout has no live watcher and its last census verdict will
+fail by construction. Every creation path in the reader table follows
+this rule.
+
 `stop` never refuses because something is already stopped, dead or
 absent; those are lines in the report, not refusals. The `REFUSED-STOPPED`
 outcome of `delegate` carries the same two lines in its `detail`.
@@ -812,7 +821,10 @@ cases are package tests on the injectable seams that exist:
   ordinary and recovery-only.
 - **arm-again** (same bed): `arm`; assert the fence `open / armed`, a
   runner live, the owner, watcher and reaper live at a new generation; `up`
-  from the bed main joins with `verified`.
+  from the bed main joins the re-armed set: it reports the owner, watcher
+  and reaper verified at the new generation, and it becomes the writer,
+  because `arm` deliberately takes no lease and makes no announcement, so
+  no other main holds one.
 - **arm-refuses-survivor** (same bed): a fence record `stop-incomplete`
   listing a live sleeping process by identity; `arm` refuses with the
   named identity and the `stop` command; end the process; `arm` succeeds.
