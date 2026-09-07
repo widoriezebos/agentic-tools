@@ -7,10 +7,12 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: internal/landing (the chain stage of land.sh) reads the root's latest round diff, lists its changed paths, and refuses when the staged tree's blobs for those paths equal the base tree's; fixture in the landing fixture suite. Verify first on the 0b8d1bea case by replaying its staged set against the chain in a throwaway clone.
 - OpenedAt: 2026-09-06T22:26:51Z
-- Revision: 1
+- Revision: 2
+- Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-06T22:26:51Z 8N6SFVRDAKFY800KSWNKE88FG5-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=chain-landing-carries-the-reviewed-diff
-Integrity: sha256=9a9cf7e9591962ce39bd6e32329fc4d473d88da96462d641f98abef54997cbcc
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=chain-landing-carries-the-reviewed-diff
+Integrity: sha256=0ff41a56765a272944be0da061707e93bd7815e6f08e232fd9f50331dd5eeb84

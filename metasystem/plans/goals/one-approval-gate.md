@@ -5,8 +5,11 @@
 - Origin: main
 - Next step: INTENT: one human word governs both the backlog item and the unattended run of it. CONSTRAINTS: the goal ledger is the source of truth for budget; the contract may only NARROW it, never widen; exposure (money) stays explicit at approval as part of the tuple or its box; keep the runner's per-run fences (cycles, wall-clock) as DERIVED numbers with a recorded derivation rule. FREEDOMS: whether the contract carries the goal revision it was approved under, or the approve verb emits the sealed contract; whether the Approval line survives as a byte attestation of the derived contract. Tier 3 (design-bearing, touches the approval feature and the contract package). Budget Wido's word at approval.
 - OpenedAt: 2026-09-03T15:47:08Z
-- Revision: 1
+- Revision: 2
+- Labels: headless-execution, headless-fleet
+- BudgetExceptions: 0
 
 History:
 - 2026-09-03T15:47:08Z 5ZH6MSW3W3PKXQRH48E1NP56T8-m0-c5dbf036 open actor=human:Wido targets=one-approval-gate
-Integrity: sha256=ef699c9cea1628c0a67bcb4d461c432cad878fbb2a5348c5637e576e4c6e2f1b
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=one-approval-gate
+Integrity: sha256=3a672e68be22df056acd960e20e70128454579ddbc7647e84e66b68262a016f3

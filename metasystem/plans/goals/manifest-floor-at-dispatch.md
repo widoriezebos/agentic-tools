@@ -3,9 +3,11 @@
 - State: approved
 - Intent: The dispatch door trusts the dispatcher's self-declared hazard class: a build mis-declared MECHANICAL that touches design-bearing territory sails past the design gate entirely (internal/dispatch/hazard.go admits on the declared class; nothing cross-checks it against what the work touches). DONE means: dispatch admission evaluates the two-bars never-direct-fix path manifest against the dispatch's declared scope, and a MECHANICAL declaration touching a manifest path refuses with a typed message naming the path and the one-step reclassification.
 - Origin: main
-- Next step: INTENT: close the mis-declaration hole at admission using the manifest two-bars condition 2 defines. CONSTRAINTS: the manifest contract is two-bars' (a conservative floor, read from both trees, evaluated so a change cannot delete its own entry) - this goal is SEQUENCED BEHIND two-bars' contract-settling step, blocker edge recorded here; sibling to design-gate-at-dispatch (same admission seam, distinct condition - that goal gates certified-design references, this one cross-checks the class itself; whoever lands second rebases on the first, per that goal's own seam-split note); severity-tiered-rigor's misclassification consequences are downstream conduct, not this gate. FREEDOMS: where in the admission path the check runs, and whether scope is declared or derived from the brief's workspace stanza. TEST SHAPE: a MECHANICAL dispatch naming a manifest path refuses; the same dispatch reclassified DESIGN-BEARING with a certified design passes.
+- Next step: INTENT: refuse a MECHANICAL declaration when the dispatch scope touches design-bearing territory in the canonical path-class manifest. CONSTRAINTS: path-class-manifest already delivered the manifest, shared readers and second-bar promotion; its done record is the prerequisite, not the unfinished whole two-bars-for-changes goal. Reuse that owner and its protection against a candidate deleting its own floor. design-gate-at-dispatch is a sibling admission check for certified-design evidence; the two can be developed independently and must integrate without weakening either rule. FREEDOMS: derive or explicitly declare scope through the existing brief/admission contract. PROOF: a mechanical declaration touching a protected path refuses with the path and lawful reclassification; genuinely mechanical work passes; a reclassified design-bearing build still requires the certified design once its sibling gate is active.
 - OpenedAt: 2026-09-01T13:20:47Z
-- Revision: 3
+- Revision: 4
+- BlockedBy: path-class-manifest
+- Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=1cd20597347781f45febec04e54b487c04837256dbc9106ec03e5776120be9f4
@@ -14,4 +16,5 @@ History:
 - 2026-09-01T13:20:47Z 1E6XFBH5F2CRAK352ZRRZ740MF-m0-c5dbf036 open actor=human:Wido targets=manifest-floor-at-dispatch
 - 2026-09-01T20:27:03Z 2ET51042WPX19YB43Y4E0RRS9E-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=manifest-floor-at-dispatch
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=manifest-floor-at-dispatch reason=sweep
-Integrity: sha256=7de9d39a01f3589e7445db95d6b1c3ab171bed51731d3cc4156378dff28e0e67
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=manifest-floor-at-dispatch
+Integrity: sha256=ae6301a09572add5ceecfedcadf86f5fe913977cbb81dc3fe59821f3d13e31ff

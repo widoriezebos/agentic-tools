@@ -5,8 +5,10 @@
 - Origin: human
 - Next step: READ SURFACE LANDED AND HARDENED (m0, account Wido@M0): the verb live with all five terminal lows closed. REMAINING: marking-mode observation slice, then per-class action promotion through trials and Law 2 records - the acting side per the revision-3 design; W-HEAL and unauthorized classes wait for Wido. m0 releases.
 - OpenedAt: 2026-08-30T15:15:43Z
-- Revision: 14
-- Budget: elapsedLimit=6d attemptLimit=12 reservedJobMinutesLimit=1440 activeJobLimit=2
+- Revision: 15
+- Labels: headless-fleet, headless-recovery
+- Budget: elapsedLimit=6d attemptLimit=12 reservedJobMinutesLimit=1440 activeJobLimit=2 reviewRoundLimit=3
+- BudgetExceptions: 0
 - Sliced: machine=m0 lineage=main-1788178136-1684505-4ffe42 revision=5 at=2026-09-01T13:38:29Z
 
 History:
@@ -24,4 +26,5 @@ History:
 - 2026-09-01T22:54:45Z SXDBBS6EBTYH985RFXRDAFH7WW-m0-c5dbf036 claim actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
 - 2026-09-01T23:11:54Z D8VBEZH4FXTH5G56Q9CFVRTDTR-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
 - 2026-09-01T23:11:58Z C1ZX3T9C6VETA0YCQ2HARBHW6V-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
-Integrity: sha256=a3287f73e97b466f5f74fe71aaa973aa10a36984473863c27ad057df47710a24
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=watch-verb
+Integrity: sha256=b15dca6a36326ad21d2f1a173030dc6add3f2c01ca9f196d53b0969e564855c5

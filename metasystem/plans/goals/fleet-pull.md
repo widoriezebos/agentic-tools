@@ -1,12 +1,14 @@
 # fleet-pull
 
-- State: parked
+- State: queued
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
-- Next step: RE-SCOPE AUTHORIZED (Wido, 2026-08-24 afternoon): the reserved 1-day re-scope proceeds, queued BEHIND inception in the backlog order. The standing rulings bound it: agents are repo-scoped (no multi-repo pull — 'just launch a set of agents across machines for a specific repo'), the steward owns orphaned claims, and the FP-R3-01..07 findings from the stopped design chain are the starting material. Deliverable: a converged single-repo design (fleet claim/release across machines, orphan recovery through the steward's existing ladder) ready for an implementation appetite.
+- Next step: RESIDUAL RESTORED by Wido 2026-09-07 during headless-fleet backlog reconciliation. The earlier merge into ledger-attention did not finish this intent: that delivered owner notices ledger changes and explicitly does not grant claims; idle-with-backlog-alarm adds only a repeated-Stop-triggered claim/continuation path. INTENT: a running headless node repeatedly selects eligible approved work, atomically claims it, starts a mission under that goal approval, observes its durable completion or lawful park, and selects the next eligible item without a supervising chat or a hook-triggered rescue. CONSTRAINTS: one repository and its shared ledger; reuse goal claim/release, missionrunner and steward ownership rather than add another scheduler or leader. Unapproved, blocked and foreign-pinned goals never execute; an empty queue is a durable wait that notices later approvals; stop and capacity limits remain authoritative; retries cannot duplicate a live claim or completed effect. one-approval-gate owns the goal-to-contract authority conversion; backlog-ordered-by-priority owns optional future ranking, not this loop. FREEDOMS: the smallest connection among existing owners and notification/wait mechanisms. Before implementation, settle transition ownership and crash/retry behavior against the original FP-R3-01..07 findings and current code; if the approved box cannot contain the result, split before claiming more scope. The independent consecutive-feature acceptance is headless-continuous-delivery-proof. No budget or execution approval is supplied by restoring this queued item.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 14
-- Parked: by=m0+main-1788178136-1684505-4ffe42 at=2026-08-31T19:09:47Z because=R-33 triage (Wido 2026-08-31, replayed at reconciliation): merged into ledger-attention - one steward-tick mechanism notices ledger changes AND picks claimable work
+- Revision: 16
+- BlockedBy: one-approval-gate
+- Labels: headless-execution, headless-fleet
+- BudgetExceptions: 0
 
 History:
 - 2026-08-23T08:06:12Z B9R7HVR9Z1H2XQ1C9GGHX63018-widos-m5-pro-bf243850 open actor=widos-m5-pro+coordinator targets=fleet-pull
@@ -23,4 +25,6 @@ History:
 - 2026-08-23T19:43:33Z SP0DCX5170EA643KVZ73C0XEXQ-m1-bf243850 edit actor=human:wido targets=fleet-pull
 - 2026-08-24T13:14:35Z QGWDYRDQ7KZ3FR3K41BBH4N9PV-m1-bf243850 edit actor=m1+coordinator targets=fleet-pull
 - 2026-08-31T19:09:47Z JG0KTREHQ6WY5ZGGM39M9GFSSQ-m0-c5dbf036 park actor=m0+main-1788178136-1684505-4ffe42 targets=fleet-pull reason=R-33 triage (Wido 2026-08-31, replayed at reconciliation): merged into ledger-attention - one steward-tick mechanism notices ledger changes AND picks claimable work
-Integrity: sha256=3ccfa126e602bc36ec1ce75aa0a9413d8b683e03216b1119666fc548ca212549
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 unpark actor=human:Wido targets=fleet-pull
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=fleet-pull
+Integrity: sha256=38f3076e261f4b2240864f78aceac8d2376796cefa389f5dec2b76ac603b7b62

@@ -3,9 +3,10 @@
 - State: approved
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
-- Next step: ABORTED for the night by Wido 2026-09-06 20:58Z ('you hung. I now need to go to bed'); RETRY TOMORROW MORNING. What tonight taught: (1) the mission baseline is the WORKTREE projection, so birth (ledger-init + state-init) must happen immediately before the resume, with no landing or edit in between; the birth-token mission dir born tonight on m1 (baseline fb2ebfae83) will be stale by morning: archive artifacts/agents/missions/birth-token by hand and re-birth. (2) mission start refuses once state.json exists; the verb after birth is mission resume. (3) Before ending the seat, Wido runs 'metasystem session stop --by Wido' from the enrolled human tmux session, else the third idle refusal hands the held goal to the steward, colliding with the runner. Morning sequence: seat releases its claim and claims job-record-birth-token; seat re-births the mission; Wido: session stop; end the seat; scripts/agents/arm-supervision.sh --repo . --shutdown; ./bin/metasystem mission resume --root $PWD --mission birth-token. Tonight m1 continues the backlog toward the brain (stop verb first).
+- Next step: INTENT: obtain the first limited real headless feature-delivery receipt from the existing mission runner on the pinned machine, without a supervising chat. SCOPE: this proves one feature only; it cannot conclude sustained headless-fleet readiness. CONSTRAINTS: preserve the approved goal budget and machine pin, use a supported host whose current health/launch preflight passes, and retain the exact goal approval, contract, birth baseline, claim, job/review and landing records. The September 6 aborted/hung attempt is retained in history; its night-specific manual command sequence is evidence to recheck, never a standing startup procedure. host-runtime-setup, metasystem-stop-verb and mission-birth-baseline-from-dirty-worktree own the corresponding machinery; do not rebuild them or steal their claims. Use their current supported verbs and explicit refusals, never terminal tricks. This diagnostic may proceed before every fleet reliability item finishes; each exposed defect has a separate owner and is not silently waived. Consecutive delivery and omitted-stage negative proofs belong to headless-continuous-delivery-proof; multi-node and brain proof belong to headless-fleet-coordination-proof.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 20
+- Revision: 21
+- Labels: headless-fleet, headless-proof
 - Arc: headless-fleet
 - Pinned: m1
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
@@ -33,4 +34,5 @@ History:
 - 2026-09-06T20:30:04Z A80N0DGAEMXRYKFFZ1CKTV433V-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=first-headless-run
 - 2026-09-06T20:30:52Z P4TDTQG5PPVHYXT4M1KQ15RZNX-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=first-headless-run
 - 2026-09-06T21:03:06Z Y40DTHW2ENS7D9T1SJA6AVA1BE-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=first-headless-run
-Integrity: sha256=f1654898315b66472d0525f16ea48f428ec1e6dab06d59f4ad84ff2a79ca5500
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=first-headless-run
+Integrity: sha256=95311caaafef43805ce1a643404a23c293237658032cae0ecd570ca27b8acccb

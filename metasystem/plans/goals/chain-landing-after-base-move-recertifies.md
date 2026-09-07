@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: Read bindCertifiedChange, the WORKTREE-BEHIND hint in the follow-up path, and the critique register's round accounting; decide between a merge-only review round outside the box and a no-overlap proof; brief one round with a fixture.
 - OpenedAt: 2026-09-06T12:20:33Z
-- Revision: 1
-- Labels: robustness
+- Revision: 2
+- Labels: headless-fleet, headless-process, robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-06T12:20:33Z A7NATSTMKZ7S25XXSMY10W6WYV-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=chain-landing-after-base-move-recertifies
-Integrity: sha256=b1409c8723ca48534b863c86b10d40fea09d101baed1eaac4df22c7b18e2a159
+- 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=chain-landing-after-base-move-recertifies
+Integrity: sha256=76be23f84e3ec02019fc3dacfff3438c17834389ed0db6f5338cf3ad0d951ce5
