@@ -7,14 +7,14 @@
 - Origin: main
 - Next step: INTENT EDIT PENDING WIDO, and now TWO things belong in it, both his words. (1) durability, 2026-09-07: 'If I stop it, the supervisor obviously should die too, instead of starting it again. That kind of defeats the purpose.' (2) the arm verb, 2026-09-07, answering the seat's own admission that it had added scope without raising it: 'One word down, one word up is indeed what I want.' So metasystem arm is part of the ask, not scope creep: steward arm alone does not restore supervision, so after a full stop a human needs either two commands or one new one, and Wido chose one. The proposed replacement intent text is prepared in m1b's scratchpad (proposed-intent.txt) and he runs unapprove/edit/approve AFTER the landing, as agreed, because unapproving a claimed goal parks it. Build state: chain stopverb-build1 at round 20 (in flight), folding the third read's five findings; all slice-1 acceptance was green on the round-19 tree in m1b's environment. Remaining: verify r20, one read (the close law requires a fresh critic on the final round), fold only what changes behaviour or can wedge a checkout, land with the battery receipt, live proof, receipt, done.
 - OpenedAt: 2026-09-06T12:24:49Z
-- Revision: 21
-- Budget: elapsedLimit=3d attemptLimit=30 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 2
-- NormApproval: approvedRef=R-84-m1b minutes=3600 reviewRounds=3 goalRevision=19
-- Approved: by=human:Wido at=2026-09-07T17:22:36Z revision=20 opid=RY5SPBFK2NCY72KTWM17MTT1ZD-m1b-927ecfdd authority=proven digest=ec7dec360596a33cdbb81a59f9dba6037b13e68913ed32898d557b6a89ab47d1
+- Revision: 22
+- Budget: elapsedLimit=3d attemptLimit=40 reservedJobMinutesLimit=4800 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 3
+- NormApproval: approvedRef=R-85-m1b minutes=4800 reviewRounds=3 goalRevision=21
+- Approved: by=human:Wido at=2026-09-07T20:30:09Z revision=22 opid=RV03X9ZFZ49Q788Q6574D5Y269-m1b-927ecfdd authority=proven digest=a670f6144066d452d826af4266921f536eea42cb64274052a4406a4b3666e4f4
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T18:59:41Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-07T17:22:36Z revision=20 accountingRevision=20
-- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-07T20:30:09Z revision=22 accountingRevision=22
+- StopCapability: generation=22 revision=22 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T12:24:49Z ZKBER0FQHEW28XV1PJ2X0K49PP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=metasystem-stop-verb
@@ -38,4 +38,5 @@ History:
 - 2026-09-07T09:07:28Z NB8J1X1WKA3AB6Z3AJH27PCS8K-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
 - 2026-09-07T17:22:36Z RY5SPBFK2NCY72KTWM17MTT1ZD-m1b-927ecfdd set-budget actor=human:Wido targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T07:29:27Z
 - 2026-09-07T20:05:46Z YYZJEWCTEBWG0W33VFD2GSHRW1-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb
-Integrity: sha256=410cc16b5d7862c2c5407cd9a418c872b506ce392177489268e6e647ea44a32a
+- 2026-09-07T20:30:09Z RV03X9ZFZ49Q788Q6574D5Y269-m1b-927ecfdd set-budget actor=human:Wido targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T17:22:36Z
+Integrity: sha256=423803ee4d0afbf6584578820cda5143ac7848c0052c73879aa716ae6a9b31a3
