@@ -4,9 +4,10 @@ Date: 2026-09-08
 
 # Fold brief: round 26 of chain stopverb-build1, the sixth code read
 
-The sixth code read (job stopverb-crit10, register
-metasystem/records/misc/metasystem-stop-critique-r9.md) returned five
-material findings on the round-25 tree. All five are accepted. This
+The sixth code read (job stopverb-crit10) returned five material
+findings on the round-25 tree. Its register landed on trunk after this
+worktree was cut, so its findings are restated in full below rather than
+cited. All five are accepted. This
 round folds them and nothing else.
 
 Three of the five are in code the last two folds added, and two of those
@@ -21,8 +22,8 @@ Sections 16, 17 and 18 are the newest and win where they contradict
 earlier text. The goal record
 metasystem/plans/goals/metasystem-stop-verb.md carries Wido's durability
 requirement in his own words. The previous reads and their dispositions
-are metasystem/records/misc/metasystem-stop-critique-r4.md through
--r9.md. Decisions D1 to D107 are the orchestrator's from the earlier
+are the stop critique registers under metasystem/records/misc/, from
+metasystem/records/misc/metasystem-stop-critique-r4.md onwards. Decisions D1 to D107 are the orchestrator's from the earlier
 briefs and stand unless one of them is wrong.
 
 # The corrections
