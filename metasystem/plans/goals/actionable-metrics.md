@@ -5,12 +5,13 @@
 - Origin: human
 - Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=18 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=17028a9296208cd4471baa6c8a9d3ebfcf90a24e6dc3cf28ca7afd7019bbc8e2
 - Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-07T19:44:01Z revision=19 accountingRevision=19
-- StopCapability: generation=19 revision=19 machine=m1 claimEpoch=5 fenceEpoch=0
+- StopCapability: generation=19 revision=19 machine=m1 claimEpoch=5 fenceEpoch=1
+- StopFence: stopId=stop-actionable-metrics-r19-f1 revision=19 epoch=1 capabilityGeneration=19 closedAt=2026-09-08T07:44:51Z reason=ELAPSED_LIMIT
 
 History:
 - 2026-08-25T20:18:07Z CE1KNSABESNHJ68SZ8957XZ4V0-m2-bc1be9cb open actor=human:wido targets=actionable-metrics
@@ -32,4 +33,5 @@ History:
 - 2026-09-01T20:27:53Z DXH8TYJD1EAGZR2898KGCD0228-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=actionable-metrics
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=actionable-metrics reason=sweep
 - 2026-09-07T19:44:01Z QB5VAF4RBN3GB3JTP6B5017AT9-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=actionable-metrics
-Integrity: sha256=8131c3f49bcafe2a7491e4aea2d29deea9dc1c80dbeac29278f6612ffc0565c6
+- 2026-09-08T07:44:51Z 1H2JK5TCHETQB7V9R4AJ2KTKQJ-m1-43182c96 breach-stop actor=m1+goal-stop-custodian targets=actionable-metrics
+Integrity: sha256=96bb1b8b232eda0d4632609f821aaf0582e4670ab6fe386ede449d1dfc12708e
