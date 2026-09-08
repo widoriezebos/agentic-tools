@@ -1,11 +1,13 @@
 # suite-custody
 
 - State: approved
+- Priority: 1
+- Sequence: 27
 - Intent: Validation suites run under process-group custody: killing a suite reaps its whole tree, and gate locks carry pids and self-clean when their owner dies (2026-08-24 collateral: orphaned go-gate child blocked the next battery)
 - Origin: human
 - Next step: RELEASED for the fresh session. DIAGNOSIS of the investigator zombies (2x): the task reproduces the detached-silence bug, and the reproduction itself wedges — the worker waits forever on the wedged detached child, log silent, status lying 'running'. The bug eats its investigator. INSTRUCTION: wrap every reproduction in an outer bounded timeout (the tar pit has no bound of its own), and slice the task smaller (reproduce+diagnose first, fix as a second task). m2's xtrace handoff stands; acceptance = detached green or loud named refusal; appetite 6h intact; shared tree clean.
 - OpenedAt: 2026-08-24T13:24:00Z
-- Revision: 17
+- Revision: 18
 - Labels: custody
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -29,4 +31,5 @@ History:
 - 2026-08-27T06:09:57Z JJAJYB0EHF80HFFQ3RNDN84C0T-m1-bf243850 edit actor=m1+coordinator targets=suite-custody
 - 2026-09-01T20:27:27Z M9Q8WJH6NXT28C4EVTD3K1PPVX-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=suite-custody
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=suite-custody reason=sweep
-Integrity: sha256=4f91987ede9b149e0e121c5d3ca831754a3ac3e89802f5be4fd0d1ade00ee26f
+- 2026-09-08T15:56:53Z E6KD9Z3Q6VBB67D2TQ152C56W9-m1-7cd0bd60 set-priority actor=human:Wido targets=suite-custody reason=priority-order subject=suite-custody from=unranked to=1:27 requested-sequence=27
+Integrity: sha256=968308c48bf0f3e5e335a215585c4d47d78b23ab74e44529a55412e58839fc9b
