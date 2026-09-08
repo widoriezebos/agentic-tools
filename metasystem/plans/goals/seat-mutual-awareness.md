@@ -1,13 +1,15 @@
 # seat-mutual-awareness
 
 - State: approved
+- Priority: 2
+- Sequence: 27
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the seat-to-seat path sits beside the human's channel, and a seat message that reached the human's authority surface would be an unauthorized word, though the design forbids it and nothing else unsafe is permitted; novelty 2: new record kinds, verbs and a health role on a ledger and validator that already exist; exposure 3: every machine in the fleet and the shared ledger; accumulation 2: in-flight records and questions grow on the ledger with the fleet and unanswered questions pile up silently unless surfaced"
 - Tier: 3
 - Intent: Wido's order 2026-08-31: seats must be aware of each other and ask each other questions directly, without the human as relay - the m3-to-m2 seam check of this day routed through Wido when it should have been seat-to-seat by default; DONE means a seat can discover what other seats have in flight and put a question to them as the normal, mechanized path
 - Origin: main
 - Next step: READINESS MAPPING 2026-09-07: this goal owns remote-node discovery, work visibility and direct node questions; headless-fleet-coordination-proof consumes that evidence for the brain and nodes. Preserve the released design work and its exact handoff below; this planning pass claims nothing and overwrites no design artifact. REVISION 6 WRITTEN, LANDING BLOCKED FLEET-WIDE (m1d, 2026-09-07 02:50 CEST). Design round sma-design6-20260907 (Fable) folded C-25 for the last time: the rollout confirmation admits one class only, proof of the live steward runner at the new generation (the health steward-runner line read alive with enrollment provenance, or a successful up whose re-arm fact is paired with a verified steward-runner component at the same generation); mint-stage lines rejected by name; the fixture covers no-up, up-with-failed-launch, and successful up. The file is NOT on main: its landing is full-width (accumulation 2) and the full battery is red on every host since 2026-09-07 00:00 UTC because three fixture legs carry the literal --review-by 2026-09-06 (goal fixture-review-by-date-rolls-over, opened by m1c, QUEUED, needs Wido's approval). The revision-6 file sits in the m1d seat scratchpad (sma-design-r6.md, SHA-256 97e3c6d7f7f66114f7c53d244937cb3bc69ba83dba39cfb39355c4fafd4231b8) and in the job worktree artifacts/agents/worktrees/sma-design6-20260907. Box this claim: 5 of 10 attempts, 600 of 720 minutes; one critique fits. The claim is RELEASED so the seat can work area-width goals meanwhile. NEXT (any seat, once the rollover fix lands): claim; copy the revision-6 file in, git add, full battery receipt on the staged subtree, land.sh -m <msg> --chain sma-design6-20260907 --test-receipt <receipt> --direct-fix register-carriage --goal seat-mutual-awareness --staged-only --allow-new-plan --skip-transport; one Sol design critique (brief drafted in the m1d scratchpad as sma-design-critique-r6-brief.md, register named as a new file records/misc/seat-mutual-awareness-critique-r6.md, --outputs manifest); register-advance; if zero material: render and land the r6 register, close the design chain, and the goal edit states the build box the design declares for Wido's approval.
 - OpenedAt: 2026-08-31T14:24:17Z
-- Revision: 32
+- Revision: 33
 - Labels: headless-communication, headless-fleet
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -47,4 +49,5 @@ History:
 - 2026-09-07T00:46:40Z S0ZH55FSY1599PKYS6WK6MWY1M-m1d-62183579 edit actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness
 - 2026-09-07T00:46:44Z CPECWT652QZMGHJQ0J5DR4H6KR-m1d-62183579 release actor=m1d+main-1788683763-71870-f7f607 targets=seat-mutual-awareness
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=seat-mutual-awareness
-Integrity: sha256=fde3c47fa5272890a1dd9063b41fd40f82f1b0b0d4d83cd1c22e2a104f0d36e5
+- 2026-09-08T15:58:44Z S8BD3TMG9GPS13NSDZ1WY7RB5F-m1-7cd0bd60 set-priority actor=human:Wido targets=seat-mutual-awareness reason=priority-order subject=seat-mutual-awareness from=unranked to=2:27 requested-sequence=27
+Integrity: sha256=7d94b935b82c13ea71f66e849e9cbd56ad1d495348cf4a72e17bdace14d477ad
