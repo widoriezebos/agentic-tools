@@ -1,6 +1,6 @@
 # backlog-ordered-by-priority
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: without an order the fleet works whatever a seat happens to read first, and the human's priorities reach the machines only by hand through pins and prompts; novelty 2: a new field on the goal record, a human verb, an ordered listing and a next verb, all on the ledger's existing grammar; exposure 3: every seat's choice of work on every machine; accumulation 2: every day without it the human re-sorts the backlog in conversation"
@@ -9,14 +9,12 @@
 - Origin: main
 - Next step: SLICE 1 IS LANDED at f32fbfeb (2026-09-08): the priority and sequence fields with dense per-priority validation, goal set-priority as a human act at the enrolled terminal with re-sequencing and its event, lifecycle closure across done, reopen, split and reconciliation batches, and goal list printing the order with unranked last. Proven by the receipt-bound battery the design names (go-gate --fast plus the dispatch and goal-cli beds, exitStatus 0 on tree 4d76d6ee), the goal/command/channel/steward packages green in full, and thirty focused canaries. Wido can rank now: bin/metasystem goal set-priority --by Wido --id <goal> --priority 1 --sequence 1. SLICE 2, unclaimed and ready for any machine, all specified in plans/backlog-ordered-by-priority-design.md revision 2: (1) section 4, goal next --machine <nick>, returning the first approved unclaimed goal in rank order that is unpinned or pinned to that machine, tied to the one-claim-per-machine quota with pins filtering rather than ranking, and seats taking work through it instead of reading records; (2) section 5, the channel status report showing the global and local head; (3) the seat projection owners the page names after section 4; (4) BOB-03 from records/misc/backlog-ordered-by-priority-critique-r2.md, the read-side fetch option on the frontier reader, which section 3 asks for and slice 1 deliberately deferred; (5) BOC-01 from records/misc/backlog-ordered-by-priority-critique-r3.md, the one material finding slice 1 landed with: a goal that survives a neighbour's conclusion gains a done event, and concludingEpoch in internal/metrics/compute.go scans history backwards for the last done verb, so metasystem metrics --goal <id> calls an open goal finished, dated to another goal's conclusion. It cannot wedge the queue, refuse a human act or corrupt the ledger, and it is unreachable until a rank exists. The critic named the two candidate repairs: filter on the reading side, or mark a compaction event so it is distinguishable from a conclusion. Choosing between them is a design decision, so it goes to the design lane, not straight to a builder; (6) BOC-03, a new test helper that reads fields off a nil record inside the message explaining the record is nil, so a missing goal panics instead of reporting. Pick that up early, it costs a debugging session the first time a test fails for a real reason. Fixture canaries are in section 6 with the smallest proving run and a two-minute ceiling each.
 - OpenedAt: 2026-09-06T12:34:05Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:34:28Z revision=2 opid=YRABK927PRM5N2ASNMKZVEYKWH-m1-7cd0bd60 authority=proven digest=57ae2782caf8a6b6be34f6216d0244fa1b0923b0cd41b028e58e3eaf293f436b
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-08T06:11:48Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-08T17:01:09Z revision=9 accountingRevision=9
-- StopCapability: generation=9 revision=9 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T12:34:05Z TDE1XRY1CH2KR2VBCXFHJHW82P-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=backlog-ordered-by-priority
@@ -28,4 +26,5 @@ History:
 - 2026-09-08T10:27:44Z 8087QHM5PGKQANQ1M7AD9FAC88-m1b-c6925449 release actor=m1b+main-1788680071-18713-e76d5d targets=backlog-ordered-by-priority
 - 2026-09-08T15:55:29Z XP1DYWFEBFN9Q13SWNTP8614SF-m1-7cd0bd60 set-priority actor=human:Wido targets=backlog-ordered-by-priority reason=priority-order subject=backlog-ordered-by-priority from=unranked to=1:3 requested-sequence=3
 - 2026-09-08T17:01:09Z XR2031TXY1Q8MXG1K1BSRDRB26-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=backlog-ordered-by-priority
-Integrity: sha256=c63679af7449111c91e7e151ff9a95fabb3c39b3cff3130f51068da80988f4b3
+- 2026-09-08T17:01:54Z HRKKC2KXZR0SMT78JMK8X31NMF-m1b-c6925449 release actor=m1b+main-1788680071-18713-e76d5d targets=backlog-ordered-by-priority
+Integrity: sha256=0466e35e81c7f327e28e5bfe380c39c7188262d981220c2ec623b9c518e245f5
