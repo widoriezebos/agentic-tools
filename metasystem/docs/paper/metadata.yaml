@@ -4,6 +4,6 @@ subtitle: "The System That Builds the System"
 author: "Wido Riezebos"
 date: "September 2026"
 version: "v0.1"
-draft_watermark: false
+draft_watermark: true
 watermark_text: "DRAFT"
 ---
