@@ -1,11 +1,13 @@
 # app-guardrail-custody
 
 - State: approved
+- Priority: 3
+- Sequence: 110
 - Intent: Guardrail files get distinct custody: no implementation authorization may touch them; changes take their own review lane with the warden at its gate — the net cannot be quietly weakened by the work it judges
 - Origin: human
 - Next step: SLICE TWO, PARITY HALF LANDED 2d0b7d3 (rebased from efa5374; codex AGREE round one, zero findings): warden chains answer to the critic's critique-exhaustion discipline through one shared judgment — second exhaustion refuses outright, an exhausted warden with open material findings admits nothing, critic path behavior-identical through the extraction. THE HUMAN-TIER HALF WAITS, honestly recorded: budget loosening, golden replacement, and probe waivers rule on COVENANT-DECLARED surfaces (budgets, goldens live in covenant.json; probes are adequacy machinery) — building it on heuristics ahead of the covenant would violate staged minimality. It resumes when Wido's app-covenant decision lands (extend-or-park, raised on that goal; the H2 self-custody ruling would also make covenant-section changes escalate to this tier). Pilot's kit declaration still deferred with m2's arc.
 - OpenedAt: 2026-08-23T16:29:41Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=10 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=4316ed17c982b20de90a0f4133031c897bee58ba7386b0e3d27456185cd40d3b
@@ -21,4 +23,5 @@ History:
 - 2026-08-24T04:24:57Z SVNX23TFPM9YK066HCEHRPKHN5-m1-bf243850 release actor=m1+coordinator targets=app-guardrail-custody
 - 2026-09-01T20:28:02Z JARX30HTK1SA3TTSHRQ93KQX7K-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=app-guardrail-custody
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=app-guardrail-custody reason=sweep
-Integrity: sha256=befecaad882ee462e011133dc3276e7ce0a0d2c5e2ccdead395aa97729ca5307
+- 2026-09-08T16:05:35Z 38NPMV9ED7P0DYF6WGMSTF7C1Q-m1-7cd0bd60 set-priority actor=human:Wido targets=app-guardrail-custody reason=priority-order subject=app-guardrail-custody from=unranked to=3:110 requested-sequence=110
+Integrity: sha256=d6b72413d29eb2f561cdd935a6b226e76772d0989ec1bd40e681fcff3737f283
