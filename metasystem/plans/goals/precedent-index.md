@@ -1,11 +1,13 @@
 # precedent-index
 
 - State: approved
+- Priority: 3
+- Sequence: 105
 - Intent: Rulings become citable law: a first-class precedent index the counselor cites at sittings, so settled questions are distinguished, not re-litigated (Wido 2026-08-25, common-law study area)
 - Origin: human
 - Next step: Appetite: 1d design-first. The legal insight redesigned: a ruling binds by its PRINCIPLE, not its circumstances, and the discipline is distinguishing a new case from an old precedent rather than re-arguing. Design questions: the record shape (principle, circumstances, who ruled, what it superseded), the app-owned home (seeded at inception from harvested design decisions; this repo's D-numbers are the template's own instance), the citing surfaces (the counselor's sitting and the dispatch delegate's intake ask 'is this the same case?'), and supersession (a precedent is overturned by a new ruling that names it, never silently). Queue: after reconciliation-guards.
 - OpenedAt: 2026-08-25T06:54:54Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=4 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=a0314e5555b93bb5df7a47b7084581bd2ee3af2c85fc97ddc850e78b67a30441
@@ -15,4 +17,5 @@ History:
 - 2026-08-31T10:16:39Z 74V5YGZQQ70RCTRPQ2QP7VSF2A-m2-bc1be9cb edit actor=m2+mac-coordinator targets=precedent-index
 - 2026-09-01T20:29:11Z NFXY39VEF6PPXB1VKYHG33HTFT-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=precedent-index
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=precedent-index reason=sweep
-Integrity: sha256=4b8d7b23485283451a66ce70643b0d4d19a0644e6586f59e5516edd15553ee44
+- 2026-09-08T16:05:17Z WCWK7RX2EHKV2DY5QEB512X42F-m1-7cd0bd60 set-priority actor=human:Wido targets=precedent-index reason=priority-order subject=precedent-index from=unranked to=3:105 requested-sequence=105
+Integrity: sha256=f08db35dd3c55e0b99b035adf3ce60a48f6161dcbeef937d4c905d2cdfa4d489
