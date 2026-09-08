@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: Make this MetaSystem checkout and adopted installations discoverable and correctly supervised under Claude Code, Devin, and Codex, with repeatable automatic setup and explicit runtime selection, preserving existing Claude behavior and unrelated settings.
 - Origin: human
-- Next step: Implement registry-driven host setup and hook checks; cover nested and adopted layouts, existing settings, repeated setup, imported Claude hooks in Devin, and runtime trust limitations; install and verify in this checkout before resuming prior work.
+- Next step: Source delivered on origin/main at 8ed97738; full suite and normal landing passed, canonical engine rearmed at generation 27, and all three runtime setup/authentication probes passed. Human administrative closure remains. User has made coordinator-loop-prevention the immediate priority.
 - OpenedAt: 2026-09-07T05:41:13Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=9d attemptLimit=24 reservedJobMinutesLimit=2880 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 2
 - NormApproval: approvedRef=R-86-m1c minutes=2880 reviewRounds=3 goalRevision=5
@@ -23,4 +23,5 @@ History:
 - 2026-09-07T05:51:33Z 9MPT30W94WE6JNW8FGYBXSNZ46-m1c-1274caf4 slice-start actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup
 - 2026-09-07T10:34:41Z AS1JDFQSA6T2NJW0BWWHC5ZYVC-m1c-7cd0bd60 set-budget actor=human:Wido targets=host-runtime-setup displaced=m1c+main-1788759014-39092-24fa5c@2026-09-07T05:46:29Z
 - 2026-09-07T19:03:27Z 9ZZ7SHCGZPWJMZ3JGHSZA381Z4-m1c-7cd0bd60 set-budget actor=human:Wido targets=host-runtime-setup displaced=m1c+main-1788759014-39092-24fa5c@2026-09-07T10:34:41Z
-Integrity: sha256=2d0fc7a8d54944e58fb508fb248e22c4168672cbdd3cbcdd31cf0ff78617e277
+- 2026-09-08T05:30:30Z 1AJ8YH12YD5FB205WTAC2RKP7N-m1c-1274caf4 edit actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup
+Integrity: sha256=2915bb4ec667c9f83845cab503a30c9cdc3838daf0a0d52744d29aff539745bd
