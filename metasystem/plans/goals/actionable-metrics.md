@@ -1,11 +1,13 @@
 # actionable-metrics
 
 - State: claimed
+- Priority: 1
+- Sequence: 24
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
 - Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 20
+- Revision: 21
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=18 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=17028a9296208cd4471baa6c8a9d3ebfcf90a24e6dc3cf28ca7afd7019bbc8e2
@@ -34,4 +36,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=actionable-metrics reason=sweep
 - 2026-09-07T19:44:01Z QB5VAF4RBN3GB3JTP6B5017AT9-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=actionable-metrics
 - 2026-09-08T07:44:51Z 1H2JK5TCHETQB7V9R4AJ2KTKQJ-m1-43182c96 breach-stop actor=m1+goal-stop-custodian targets=actionable-metrics
-Integrity: sha256=96bb1b8b232eda0d4632609f821aaf0582e4670ab6fe386ede449d1dfc12708e
+- 2026-09-08T15:56:43Z MHEDM53B9562CFPSTB9SAF83WG-m1-7cd0bd60 set-priority actor=human:Wido targets=actionable-metrics reason=priority-order subject=actionable-metrics from=unranked to=1:24 requested-sequence=24
+Integrity: sha256=f1c38e6000d0a0d3ce17f55409d2904680e3632913e1e7ed8e7833df029d3d2c
