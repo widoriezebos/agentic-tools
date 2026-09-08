@@ -1,11 +1,13 @@
 # watch-verb
 
 - State: queued
+- Priority: 1
+- Sequence: 19
 - Intent: The watch verb: one command shows everything running with liveness verdicts and ACTS on stalls within Ruling L (heal-first escalation) - folds never-idle enforcement and Ruling M (delegated work is watched); the steward seam's operator surface (program L14). PRIORITY ESCALATED BY WIDO 2026-09-01 (verbatim: 'I hope you will do more than alerting if that happens: the system should act! Figure out what went wrong and act accordingly (recover process if it died, at actual budget overrun escalate etc etc)') - the acting layer above the landed claimed-goal-delivery detection: consume its dead verdicts, diagnose the class (died delegate round with intact product -> mechanize the budget-death adoption recovery, six specimens recorded; actual budget overrun -> the existing breach-stop route; wedged supervision -> the lawful shutdown+re-arm heal), act heal-first, escalate only what healing cannot fix. Design-bearing: the intervention ladder gets the full lane loop before any kill or auto-recovery authority exists.
 - Origin: human
 - Next step: READ SURFACE LANDED AND HARDENED (m0, account Wido@M0): the verb live with all five terminal lows closed. REMAINING: marking-mode observation slice, then per-class action promotion through trials and Law 2 records - the acting side per the revision-3 design; W-HEAL and unauthorized classes wait for Wido. m0 releases.
 - OpenedAt: 2026-08-30T15:15:43Z
-- Revision: 15
+- Revision: 16
 - Labels: headless-fleet, headless-recovery
 - Budget: elapsedLimit=6d attemptLimit=12 reservedJobMinutesLimit=1440 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -27,4 +29,5 @@ History:
 - 2026-09-01T23:11:54Z D8VBEZH4FXTH5G56Q9CFVRTDTR-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
 - 2026-09-01T23:11:58Z C1ZX3T9C6VETA0YCQ2HARBHW6V-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=watch-verb
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=watch-verb
-Integrity: sha256=b15dca6a36326ad21d2f1a173030dc6add3f2c01ca9f196d53b0969e564855c5
+- 2026-09-08T15:56:25Z V4DVNXR0QT35RJCVQ1YRMBSZPH-m1-7cd0bd60 set-priority actor=human:Wido targets=watch-verb reason=priority-order subject=watch-verb from=unranked to=1:19 requested-sequence=19
+Integrity: sha256=625ead3f6e8484870eee28f6ed76b91855ff2e2beacedce92014310b84393fa5
