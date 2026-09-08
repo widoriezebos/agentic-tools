@@ -1,12 +1,14 @@
 # human-carried-landing
 
 - State: approved
+- Priority: 3
+- Sequence: 63
 - Tier: 3
 - Intent: A verified human may fast-track a landing under close scrutiny and the machine never refuses that human. Wido, verbatim (2026-09-04): 'I'm considering a Just Fucking Do It risk tier for hot-patch scenarios that need to be fast-tracked under close human scrutiny' and 'it must also be fully authorized by the human explicitly', and the governing line: 'I do not ever want to be in a HAL2000 situation where the computer refuses under a situation judged as critical for the human'. Design shape agreed with the seat: an authority mode, not a tier (the tier stays derived from the four risk answers; urgency changes who carries the rigor, never the risk); one explicit human word per candidate tree, digest-bound, expiring in hours, through the enrolled terminal or the TOTP word; the closing review it skips becomes an open review obligation on the goal so conclude refuses until it is discharged; every use increments BudgetExceptions and the appetite line counts it; the gate width and the battery still run; the machine warns, records and counts and never blocks a verified human. DONE means the verb exists, the audit below is landed, and a tier-3 chain lands in one command on the human word with the obligation and the counter written.
 - Origin: human
 - Next step: SLICE 1 LANDED ef296c39 (the refusal register, internal/refusal, 171 tokens, three tests, closing review nothing material). RULING (Wido 2026-09-04, terminal, verbatim: 'All approved, also said this on Telegram', answering question XXG9ZYJJ7KHE1K0WVB28DJPC21 whose recommendation was 'new goal'): the carry (points 02, 04-09) moves to sibling goal human-carried-landing-carry; this goal concludes with the audit. Remaining here: slice 2 = the audit's review notes: (1) internal/landing/tierone.go:38 builds tier1-goal-tier-<n>-refused with %d, which no grammar collects; it needs a row by hand and a design amendment to HCL-AUDIT-03; (2) the eleven landing codes outside knownRefusalCode are rows without Defect entries because their sites already return Mode refuse; ruling on that reading belongs to slice 2; (3) land.sh:116 and :120 (the tier-1 declaration refusals) are not in ShellRows. Then conclude. Budget after slice 1 per goal health: 5 of 10 attempts, 165 of 360 reserved minutes (two setup refusals on new-file paths in briefs), two of three design review rounds consumed. m3 releases its claim to take fleet-channel-gateway; slice 2 is small and any seat may take it.
 - OpenedAt: 2026-09-04T10:56:02Z
-- Revision: 11
+- Revision: 12
 - Labels: governance
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -25,4 +27,5 @@ History:
 - 2026-09-04T17:14:43Z 8ZSCM08YH4J2HCW1PPKZGM231D-m3-a5da21ff edit actor=m3+mac-m3 targets=human-carried-landing
 - 2026-09-04T17:14:48Z C95VA7HNQ4YCBQAX5WXPJKJ65C-m3-a5da21ff release actor=m3+mac-m3 targets=human-carried-landing
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=human-carried-landing reason=sweep
-Integrity: sha256=3464db61e70d9092a9d3e04ef6dd616470cb9f021ca0fc29833c83247426642b
+- 2026-09-08T16:02:49Z YBG82JYM7N63F81VF6KBEQ0XZH-m1-7cd0bd60 set-priority actor=human:Wido targets=human-carried-landing reason=priority-order subject=human-carried-landing from=unranked to=3:63 requested-sequence=63
+Integrity: sha256=3a85044c11babb703915b085958349eacc114a3e2a78b37151046b74da8c5dab
