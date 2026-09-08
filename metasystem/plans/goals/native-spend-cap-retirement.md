@@ -1,11 +1,13 @@
 # native-spend-cap-retirement
 
 - State: approved
+- Priority: 3
+- Sequence: 30
 - Intent: KILL THE PER-WORKER DOLLAR CAP (Wido's order 2026-09-01, verbatim: 'backlog item to be executed immediately: KILL THIS STUPID CAP. But... as you have learned the hard way: backlog, design, critique. build, critique build. NO EXCEPTION. Make sure we do not inflict self-harm using this. The assumption is that we have enough protection in the machinery already. The assumption is that this one is a stupid one that actually harms us. If these are true (enough) then proceed and kill this stupid idea'): the engine's hardcoded $5.00 default --max-budget-usd on every Claude delegate (internal/adapter/claude.go ClaudeBudget, landed 24345044 on 2026-08-14 inside an argv consolidation, never designed or critiqued) fires only AFTER spend, cannot distinguish runaway from expensive legitimate work, and killed nine finished-but-unreported workers across three machines (three on m1/m2's ledger-attention chain, six on m0b's alert-channel design day 2026-09-01, each costing a paid recovery round plus 40 pool-minutes). CONDITIONAL MANDATE: the design must VERIFY both of Wido's stated assumptions before the kill — (1) enumerate the existing spend-bounding machinery (reserved job-minutes, per-round cap-minutes with watchdog, turn limit, attempt limits, breach fences, stop-loss conduct) and show each runaway scenario has a surviving owner; (2) establish the harm from the recorded specimens. If both hold (enough), the cap dies; if a real unowned runaway scenario emerges, the design says so and proposes the minimal owner instead
 - Origin: main
 - Next step: DONE, landed by m0b: the adapter emits no dollar flag unless the operator sets METASYSTEM_CLAUDE_MAX_BUDGET_USD; time and count are the law. Full ladder ran: five design revisions, five Sol critique rounds (final round zero findings), Sol build (MECHANICAL, closed, reviewedTree 19be6f3c), Fable code critique (two low non-material residuals riding here: zero-string equivalent forms in the override validation; one comment sentence beyond the specified text). Engine rebuilt and steward re-armed fleet-pattern R-37. Concluding is the opener's act. The operator override used during the chain's own executions retires with this landing
 - OpenedAt: 2026-09-01T16:58:42Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ed61ec3c0978456b7c463a379dbeb00297c101713d6cc9806fbdeeac307a86b0
@@ -21,4 +23,5 @@ History:
 - 2026-09-01T19:42:19Z EFN3G3SHC7PHX7EJB8CP08B5RS-m0b-6638932d edit actor=m0b+main-1788250419-3170380-8a1fb3 targets=native-spend-cap-retirement
 - 2026-09-01T19:42:23Z MQP3KYP7PCXM0H6HEAYSK5NH01-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=native-spend-cap-retirement
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=native-spend-cap-retirement reason=sweep
-Integrity: sha256=9caacbba7656ebcda028b3d0a4d8ea8ab72add633e2651ea6386a2c92ff619f8
+- 2026-09-08T16:00:53Z AFSHSGAD2BFPJEETGP5XV149J9-m1-7cd0bd60 set-priority actor=human:Wido targets=native-spend-cap-retirement reason=priority-order subject=native-spend-cap-retirement from=unranked to=3:30 requested-sequence=30
+Integrity: sha256=f57880b8b0c4f59f0f0ce64a0fd2238ff7d8adbe92bc6791de6a970a7ac4cb44
