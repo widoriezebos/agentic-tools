@@ -1,11 +1,13 @@
 # stop-message-truth
 
 - State: approved
+- Priority: 3
+- Sequence: 19
 - Intent: The stop message reflects the actual state of the system: the live ledger projection (claims, real next steps) plus whether work is in flight right now - a stale snapshot that says nothing about activity must be impossible (Wido 2026-08-20). ABSORBS open-work-scanner-blindspots (parked, R-33 merge): KI-34 - the scanner equates work with this-checkout dispatch job records, so cross-checkout worktree jobs and non-job in-flight processes (background critiques, verification runs) are invisible; it cries wolf or gets silenced by wording. One stop-hook honesty seam, one goal
 - Origin: main
 - Next step: After cutover retargets the verdict to the new projection (that half is a backlog-git-sync cutover obligation), fold in the steward's status surface: the stop message names any live worker, in-flight continuation, or pending steward incident, so silence is never ambiguous; acceptance = the frozen-ledger staleness observed 2026-08-20 cannot recur. Proposal from m2 (2026-08-24, for the primary dispatch delegate's ratification): extend the idle-watchdog predicate to be ledger-aware — arm the watchdog on every enrolled checkout, and revive/notify when goal next names a tokened, unclaimed, unblocked item AND the machine holds no claim; that makes the distributed backlog itself the wake signal, so a machine with standing work never sits idle behind a stale stop message. SIGHTING 2026-09-06 (m1, first Stop after c1525b90a): the Stop verdict named 244 run records from mid-August ('looks hung', 'ended ended-unknown', 'finished green; the run record says: no continuation recorded') in one refusal beside the single actionable line. Runs that finished weeks ago with no recorded continuation are not open work: the scanner ages them out or reports them as one class-and-count line; the printed shape is stop-refusal-fits-on-one-screen's, the judgement of what is open work is this goal's. open-work-scanner-blindspots stays parked as merged here (Wido tried to resume it 2026-09-06; the verb refuses an unclaimed parked goal, so nothing to resume).
 - OpenedAt: 2026-08-20T16:51:00Z
-- Revision: 9
+- Revision: 10
 - BlockedBy: backlog-git-sync, idle-watchdog
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -21,4 +23,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=stop-message-truth reason=sweep
 - 2026-09-06T14:33:34Z TJJ3PRKXTFQ70HPTF4V0GE24NR-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=stop-message-truth
 - 2026-09-06T14:41:18Z S7X3P2Y3TVZ95AMFPCA1V6JQJH-m1-7cd0bd60 approve actor=human:Wido targets=stop-message-truth
-Integrity: sha256=bb235b59372739af894a8c41b135cd99a8e3b02cf8275fd1f9e6379a58b1d396
+- 2026-09-08T16:00:13Z NNMRKPG3AJZKTYNMNE2X4MQ91G-m1-7cd0bd60 set-priority actor=human:Wido targets=stop-message-truth reason=priority-order subject=stop-message-truth from=unranked to=3:19 requested-sequence=19
+Integrity: sha256=256a478ff6cd7e61de0dc46dbfd5f4acda33faad828f0402c228144bde561006
