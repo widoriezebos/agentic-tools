@@ -2,7 +2,7 @@
 
 Goal: coordinator-loop-prevention. Owner: main-1788759014-39092-24fa5c.
 
-The investigation checkpoint in coordinator-loop-investigation.md retains cycles C1 and C2. This continuation retains their history and the same six-cycle budget; it is not a reset. C1 isolated ordinary proof admission and duplicate failure propagation. C2 is the isolated witness correction, currently finishing in native job loop-failstop. Its old-source focused fixture observed exit 23 concealed by a second gate and a successful wrapper exit. The candidate focused selection has passed in the delegate environment; main verification and independent critique remain required.
+The investigation checkpoint in coordinator-loop-investigation.md retains cycles C1 and C2. This continuation retains their history and the same six-cycle budget; it is not a reset. C1 isolated ordinary proof admission and duplicate failure propagation. C2 is the isolated witness correction completed in native job loop-failstop. Its old-source focused fixture observed exit 23 concealed by a second gate and a successful wrapper exit. The candidate focused selection passed in both environments. Main conformance then reproduced a seed-environment isolation defect in the new test (W-1), retained for the builder's next correction. Independent code critique remains required.
 
 - Cycle budget: 6
 
@@ -10,7 +10,7 @@ The investigation checkpoint in coordinator-loop-investigation.md retains cycles
 
 On 2026-09-08 the user explicitly directed integration of the completed remote stop/status/arm work before further loop work. Main fetched origin and rebased its proposed-design checkpoint onto the source commit a3131fbb and subsequent published goal/receipt records. Current integrated HEAD is 7896a80d. Existing narrator bytes were preserved exactly; all existing receipt rows were preserved across the union merge. Evidence: artifacts/coordinator-loop-prevention/stop-verb-integration/result.json and rebase.log, with a durable external mirror.
 
-The proposed design has not been critiqued and is now stale where it assigns proof process lifecycle to the run owner: proofrun now has its own durable launcher/suite/watchdog records and stoptransition consumes them. Independent design critique is deferred until this real owner is incorporated. No shared admission implementation has begun. The isolated witness correction does not overlap the incoming shell source.
+The proposal was revised to use proofrun's integrated durable launcher/suite/watchdog records and stoptransition inventory before independent critique. Round one completed on the revised design at 9ca4f88b, with six material findings. The full return was read, all six were joined to accepted dispositions and concrete amendments, and each now has a focused proof target. No shared admission implementation has begun. The isolated witness correction does not overlap the incoming shell source.
 
 The upstream stop-verb receipt records a known failing rearm-launch-fails fixture and omitted landing-wrapper checks. Integration does not turn that statement into green evidence. The incoming goal records show a peer working on fixture-review-by-date-rolls-over; do not duplicate that repair without establishing ownership and relevance.
 
@@ -58,3 +58,5 @@ The upstream stop-verb receipt records a known failing rearm-launch-fails fixtur
 - Budget and stop condition: design review target twenty minutes per round; native goal limits remain ten attempts, 1200 reserved job minutes and one active job. Stop at the first zero-material round. No full suite before implementation and independent code review settle.
 - Recoverable checkpoint: integrated source and exact witness candidate snapshots; this is cycle four of the original six, with no no-progress cycle discarded.
 - Expected classification and next action: contract-improved when the specified shared boundaries are implemented and focused proof passes; material design faults receive one joined disposition before correction, never an unbudgeted fresh critic root.
+- Interim result: native design-critic round one completed with six source-supported material findings. Corrected the finalization/stop race, proof-only goal stop batch contract, receipt reservation/deadline, actual measurement transport, governed reservation link and CLI retry/outcome interfaces. The findings remain in the same chain; invariant findings were not relabeled as mechanical to bypass review. No full suite ran.
+- Next action: same-chain review of the amended design, then existing builder continuation including W-1. The review should inspect changed contracts without repeating broad exploration already retained in round one.
