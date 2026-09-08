@@ -1,11 +1,13 @@
 # severity-tiered-rigor-p2
 
 - State: approved
+- Priority: 1
+- Sequence: 11
 - Intent: Part two of the tiering machinery, on Wido's word 2026-09-03: the tier is derived from four recorded risk answers (severity, novelty, exposure, accumulated change), never the shape of the change; then the material stop and the close (design revision 3 part two) and the docs. Built by m3 in parallel with m2's part one and three, 16 hours max.
 - Origin: main
 - Next step: Slice 2a, the risk basis, LANDED 2026-09-04: b4ae9395 (code, six rounds on str-p2-build-2a, two closing reviews, carried by member goal severity-tiered-rigor-p2-2a-carry on Wido's granted raise) and d46e18ee (the docs re-touch on its own reviewed chain). Remaining: slice 2b (material stop and close, design revision 3 part two; two Sol rounds str-p2-build-2b r1/r2 built nothing on field-grain gaps, the brief needs the grain clause before a third), then goal done. Budget at 630 of 660 minutes and 17 of 18 attempts with the one relayed raise spent: 2b needs a fresh box, opened as a member goal on Wido's word like 2a, or this goal concluded with 2b as its own goal.
 - OpenedAt: 2026-09-03T19:45:21Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=2d attemptLimit=18 reservedJobMinutesLimit=660 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=10 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ea720d86c735f270823a755fa863d8ec66f7211f13ff0c15b120baa851cad37c
@@ -22,4 +24,5 @@ History:
 - 2026-09-04T13:27:43Z 97XZHJ7B8Z7NJY91HZ510D9MXG-m3-a5da21ff release actor=m3+mac-m3 targets=severity-tiered-rigor-p2
 - 2026-09-04T14:44:39Z FQT6T8MWWSYZDNW7ZXETEA16R5-m3-a5da21ff edit actor=m3+mac-m3 targets=severity-tiered-rigor-p2
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=severity-tiered-rigor-p2 reason=sweep
-Integrity: sha256=19fa22c19408004286da1148715439ca42b0e08af285c696b910f836b039277e
+- 2026-09-08T15:55:57Z S98JVH71WWF7J8CPK27VHEKFEK-m1-7cd0bd60 set-priority actor=human:Wido targets=severity-tiered-rigor-p2 reason=priority-order subject=severity-tiered-rigor-p2 from=unranked to=1:11 requested-sequence=11
+Integrity: sha256=ff613ca5371e030a074c503d03bee154891bebcf3f8d7a2b3ff13aa4ec522a38
