@@ -23,7 +23,11 @@ type promotionRecord struct {
 // weaken the decision that judges it; changes to promotion policy become
 // effective only after they land through the implementation-chain bar.
 func applyPromotion(params ObserveParams, observation Observation) Observation {
-	refuseCodes, present, err := loadPromotion(params.RepoRoot)
+	return applyPromotionAtTree(params, observation, "")
+}
+
+func applyPromotionAtTree(params ObserveParams, observation Observation, baseTree string) Observation {
+	refuseCodes, present, err := loadPromotionAtTree(params.RepoRoot, baseTree)
 	if err != nil {
 		code := "promotion-record-malformed"
 		if errors.Is(err, errPromotionBaseUnreadable) {
@@ -39,11 +43,14 @@ func applyPromotion(params ObserveParams, observation Observation) Observation {
 	return observation
 }
 
-func loadPromotion(root string) (map[string]bool, bool, error) {
+func loadPromotionAtTree(root, baseTree string) (map[string]bool, bool, error) {
 	workspace := gittree.Workspace{Dir: root}
-	baseTree, err := workspace.HeadTree()
-	if err != nil {
-		return nil, true, fmt.Errorf("%w: %v", errPromotionBaseUnreadable, err)
+	if baseTree == "" {
+		var err error
+		baseTree, err = workspace.HeadTree()
+		if err != nil {
+			return nil, true, fmt.Errorf("%w: %v", errPromotionBaseUnreadable, err)
+		}
 	}
 	data, present, err := workspace.FileAt(baseTree, promotionRecordPath)
 	if err != nil {
@@ -89,7 +96,10 @@ func rejectPromotionTrailingJSON(decoder *json.Decoder) error {
 
 func knownRefusalCode(code string) bool {
 	switch code {
-	case "malformed-candidate-tree",
+	case "evaluator-unavailable",
+		"promotion-base-unreadable",
+		"promotion-record-malformed",
+		"malformed-candidate-tree",
 		"candidate-tree-unreadable",
 		"missing-declaration",
 		"conflicting-declarations",
@@ -108,6 +118,16 @@ func knownRefusalCode(code string) bool {
 		"chain-output-unreadable",
 		"chain-output-mismatch",
 		"chain-has-uncarried-paths",
+		"chain-full-gate-refused",
+		"chain-recertification-base-unproven",
+		"chain-recertification-source-changed",
+		"chain-recertification-overlap",
+		"chain-recertification-unproven",
+		"chain-recertification-worktree-incomplete",
+		"chain-recertification-timeout",
+		"chain-recertification-target-moved",
+		"chain-recertification-test-command-refused",
+		"chain-recertification-park-failed",
 		"register-carriage-policy-unreadable",
 		"register-carriage-path-refused",
 		"register-carriage-not-append-only",

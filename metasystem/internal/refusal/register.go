@@ -69,6 +69,7 @@ var Rows = []Row{
 
 	{Code: "malformed-candidate-tree", Owner: "internal/landing", Site: "observe.go:76", Shape: Question},
 	{Code: "candidate-tree-unreadable", Owner: "internal/landing", Site: "observe.go:80", Shape: Question},
+	{Code: "evaluator-unavailable", Owner: "scripts/agents", Site: "commit.sh:458", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "missing-declaration", Owner: "internal/landing", Site: "observe.go:89", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "conflicting-declarations", Owner: "internal/landing", Site: "observe.go:83", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "path-unclassified", Owner: "internal/landing", Site: "observe.go:602", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
@@ -86,6 +87,15 @@ var Rows = []Row{
 	{Code: "chain-output-unreadable", Owner: "internal/landing", Site: "observe.go:161", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "chain-output-mismatch", Owner: "internal/landing", Site: "observe.go:165", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "chain-has-uncarried-paths", Owner: "internal/landing", Site: "observe.go:199", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-base-unproven", Owner: "internal/validate", Site: "recertification.go:709", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-source-changed", Owner: "internal/validate", Site: "recertification.go:667", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-overlap", Owner: "internal/validate", Site: "recertification.go:719", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-unproven", Owner: "internal/validate", Site: "recertification.go:678", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-worktree-incomplete", Owner: "internal/validate", Site: "recertification.go:853", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-timeout", Owner: "internal/validate", Site: "recertification.go:530", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-target-moved", Owner: "internal/landing", Site: "observe.go:87", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-test-command-refused", Owner: "internal/landing", Site: "observe.go:117", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
+	{Code: "chain-recertification-park-failed", Owner: "internal/landing", Site: "park.go:76", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "register-carriage-policy-unreadable", Owner: "internal/landing", Site: "observe.go:171", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "register-carriage-path-refused", Owner: "internal/landing", Site: "observe.go:607", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
 	{Code: "register-carriage-not-append-only", Owner: "internal/landing", Site: "observe.go:648", Shape: Agent, Override: "land.sh --carried", Commands: 1, Pending: "human-carried-landing"},
@@ -189,7 +199,6 @@ var ShellRows = []Shell{
 
 var Defects = []Defect{
 	{Code: "GOAL_SPLIT_REFUSED", Why: "no human verb clears the sliced mark; the only path is park plus new goals"},
-	{Code: "chain-full-gate-refused", Why: "emitted by observe.go:149 and absent from knownRefusalCode (promotion.go:90-122); the promotion reader does not know it"},
 }
 
 var Slow = []string{

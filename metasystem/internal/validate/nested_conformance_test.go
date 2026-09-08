@@ -209,7 +209,7 @@ func TestMergeRefusesCommittedSiblingChanges(t *testing.T) {
 		workspace: worktree, roundText: "1", installPrefix: derived,
 		boundaryBase: headSHA, targetSha: headSHA,
 	}
-	_, errs, code := r.mergeStage(filepath.Join(t.TempDir(), "record.json"))
+	_, errs, code := r.mergeStage(filepath.Join(t.TempDir(), "record.json"), "")
 	if code == 0 {
 		t.Fatal("a committed sibling change must refuse the merge stage")
 	}
@@ -253,7 +253,7 @@ func TestNestedWaiverProtectsProjectPlans(t *testing.T) {
 		workspace: worktree, roundText: "1", installPrefix: derived,
 		boundaryBase: headSHA, targetSha: headSHA,
 	}
-	_, errs, code := r.mergeStage(filepath.Join(t.TempDir(), "record.json"))
+	_, errs, code := r.mergeStage(filepath.Join(t.TempDir(), "record.json"), "")
 	if code == 0 {
 		t.Fatal("a waiver touching the project's plans/ must refuse")
 	}

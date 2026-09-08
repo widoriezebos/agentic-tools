@@ -115,12 +115,17 @@ func mirrorSources(agents, payload, repoRoot, recordPath, job string, record map
 	}
 	roundDir := filepath.Join(payload, "rounds", round)
 	var roundFiles []string
-	filepath.WalkDir(roundDir, func(path string, entry fs.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() {
+	if err := filepath.WalkDir(roundDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() {
 			roundFiles = append(roundFiles, path)
 		}
 		return nil
-	})
+	}); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("cannot gather round evidence: %w", err)
+	}
 	sort.Strings(roundFiles)
 	for _, path := range roundFiles {
 		relative, err := filepath.Rel(roundDir, path)
@@ -151,6 +156,32 @@ func mirrorSources(agents, payload, repoRoot, recordPath, job string, record map
 				continue
 			}
 			sources = append(sources, mirrorSource{path, filepath.Join("authorizations", filepath.Base(path))})
+		}
+	}
+	// Recertification proofs and terminal landing-attempt parks are durable
+	// chain evidence. They live outside the round directory but mirror under
+	// the same chain manifest before worktree removal can drop their context.
+	for _, family := range []string{"recertifications", "parks"} {
+		evidenceDir := filepath.Join(agents, "landing", family, filepath.Base(payload))
+		var evidenceFiles []string
+		if err := filepath.WalkDir(evidenceDir, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.Type().IsRegular() {
+				evidenceFiles = append(evidenceFiles, path)
+			}
+			return nil
+		}); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("cannot gather landing %s evidence: %w", family, err)
+		}
+		sort.Strings(evidenceFiles)
+		for _, path := range evidenceFiles {
+			relative, err := filepath.Rel(evidenceDir, path)
+			if err != nil {
+				return nil, err
+			}
+			sources = append(sources, mirrorSource{path, filepath.Join("landing", family, relative)})
 		}
 	}
 	snapshotField, ok := record["capabilitySnapshot"].(string)

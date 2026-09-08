@@ -11,7 +11,7 @@ landing_requested=0
 for argument in "$@"; do
   [[ "$argument" != -- ]] || break
   case "$argument" in
-    --chain|--direct-fix|--revert-of|--root-job|--test-receipt) landing_requested=1 ;;
+    --chain|--direct-fix|--revert-of|--root-job|--test-receipt|--recertification) landing_requested=1 ;;
   esac
 done
 if (( landing_requested )); then
@@ -67,6 +67,7 @@ landing_goal=
 landing_goal_set=0
 landing_root_job=
 landing_test_receipt=
+landing_recertification=
 commit_args=()
 while (( $# )); do
   case "$1" in
@@ -125,6 +126,14 @@ while (( $# )); do
         exit 2
       }
       landing_test_receipt=$2
+      shift 2
+      ;;
+    --recertification)
+      [[ $# -ge 2 && -z "$landing_recertification" ]] || {
+        echo "commit refused: --recertification requires one canonical record path" >&2
+        exit 2
+      }
+      landing_recertification=$2
       shift 2
       ;;
     --)
@@ -443,6 +452,7 @@ landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
 [[ -z "$landing_goal" ]] || landing_observe_args+=(--goal "$landing_goal")
 [[ -z "$landing_root_job" ]] || landing_observe_args+=(--root-job "$landing_root_job")
 [[ -z "$landing_test_receipt" ]] || landing_observe_args+=(--test-receipt "$landing_test_receipt")
+[[ -z "$landing_recertification" ]] || landing_observe_args+=(--recertification "$landing_recertification")
 landing_observe_args+=(--actor "$landing_actor")
 landing_provenance="none change=unknown"
 landing_verdict="would-refuse code=evaluator-unavailable"

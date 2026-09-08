@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 const (
@@ -39,15 +40,16 @@ var (
 // combine only with register-carriage; every other declaration is singular.
 // RepoRoot may itself be nested in a Git worktree.
 type ObserveParams struct {
-	RepoRoot      string
-	CandidateTree string
-	Chain         string
-	DirectFix     string
-	RevertOf      string
-	Goal          string
-	Actor         string
-	RootJob       string
-	TestReceipt   string
+	RepoRoot        string
+	CandidateTree   string
+	Chain           string
+	DirectFix       string
+	RevertOf        string
+	Goal            string
+	Actor           string
+	RootJob         string
+	TestReceipt     string
+	Recertification string
 }
 
 // Observation is safe to put directly in a commit trailer. The values never
@@ -62,13 +64,31 @@ type Observation struct {
 	VerdictTrailer string   `json:"verdictTrailer"`
 	Unclassified   []string `json:"unclassified,omitempty"`
 	Refusal        string   `json:"refusal,omitempty"`
+	Detail         string   `json:"detail,omitempty"`
+	promotionTree  string
+	frozenTarget   string
 }
 
 // Observe evaluates one prospective landing, then applies the promotion
 // policy recorded in the landing base. The caller remains responsible for
 // enforcing Mode only for agent commits; human commits stay sovereign.
 func Observe(params ObserveParams) Observation {
-	return applyPromotion(params, observe(params))
+	observation := observe(params)
+	if params.Recertification == "" {
+		return applyPromotion(params, observation)
+	}
+	// Explicit proof failures are hard refusals independent of ordinary
+	// observation-promotion policy. Once the proof is valid, load that policy
+	// from frozen T rather than whatever commit HEAD may name after a race.
+	if observation.Mode != "refuse" {
+		observation = applyPromotionAtTree(params, observation, observation.promotionTree)
+	}
+	if observation.frozenTarget != "" && recertifiedTargetMoved(gittree.Workspace{Dir: params.RepoRoot}, observation.frozenTarget) {
+		moved := refuse("chain-recertification-target-moved", observation.Provenance)
+		moved.Detail = "target-commit"
+		return moved
+	}
+	return observation
 }
 
 func observe(params ObserveParams) Observation {
@@ -87,6 +107,14 @@ func observe(params ObserveParams) Observation {
 	}
 	if params.Chain == "" && params.DirectFix == "" {
 		return wouldRefuse("missing-declaration", "none change="+change)
+	}
+	if params.Recertification != "" && (params.Chain == "" || (params.DirectFix != "" && params.DirectFix != "register-carriage")) {
+		return refuse("conflicting-declarations", "invalid change="+change)
+	}
+	if params.Recertification == "" && params.Chain != "" && params.TestReceipt != "" {
+		// Ordinary full-width chains retain their existing receipt path.
+	} else if params.Recertification != "" && params.TestReceipt == "" {
+		return refuse("chain-recertification-test-command-refused", "invalid change="+change)
 	}
 	if params.Chain != "" && params.DirectFix != "" && params.DirectFix != "register-carriage" {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
@@ -117,7 +145,12 @@ func changeDigest(root, candidateTree string) (string, error) {
 	return fmt.Sprintf("%x", sum), nil
 }
 
-func observeChain(params ObserveParams, change string) Observation {
+func observeChain(params ObserveParams, change string) (observation Observation) {
+	frozenTargetCommit, frozenTargetTree := "", ""
+	defer func() {
+		observation.promotionTree = frozenTargetTree
+		observation.frozenTarget = frozenTargetCommit
+	}()
 	provenance := "invalid change=" + change
 	if !landingID.MatchString(params.Chain) {
 		return wouldRefuse("malformed-chain-id", provenance)
@@ -143,7 +176,7 @@ func observeChain(params ObserveParams, change string) Observation {
 			return wouldRefuse("chain-record-malformed", provenance)
 		}
 	}
-	if width == "full" {
+	if width == "full" && params.Recertification == "" {
 		receipt, receiptErr := readTestReceipt(params)
 		if receiptErr != nil || receipt.Command != fullBatteryCommand {
 			return wouldRefuse("chain-full-gate-refused", provenance)
@@ -156,19 +189,72 @@ func observeChain(params ObserveParams, change string) Observation {
 	if record["chainClosed"] != true {
 		return wouldRefuse("chain-open", provenance)
 	}
-	output, err := chainCertifiedOutput(params.RepoRoot, params.Chain, record)
-	if err != nil {
-		return wouldRefuse("chain-output-unreadable", provenance)
+	var certifiedDigest string
+	var extraPaths []string
+	if params.Recertification != "" {
+		verified, verifyErr := validate.VerifyRecertification(params.RepoRoot, params.Chain, params.Recertification)
+		if verifyErr != nil {
+			observation := refuse("chain-recertification-unproven", provenance)
+			var failure *validate.RecertificationFailure
+			if errors.As(verifyErr, &failure) {
+				observation.Code = failure.Reason
+				observation.Detail = failure.Detail
+				observation.VerdictTrailer = "would-refuse code=" + observation.Code
+			}
+			return observation
+		}
+		workspace := gittree.Workspace{Dir: params.RepoRoot}
+		head, unborn, headErr := workspace.HeadCommit()
+		if headErr != nil || unborn || head != verified.Record.TargetCommit {
+			observation := refuse("chain-recertification-target-moved", provenance)
+			observation.Detail = "target-commit"
+			return observation
+		}
+		frozenTargetCommit, frozenTargetTree = verified.Record.TargetCommit, verified.Record.TargetTree
+		if verified.Record.GateWidth != width {
+			observation := refuse("chain-recertification-test-command-refused", provenance)
+			observation.Detail = "gate-width"
+			return observation
+		}
+		receipt, receiptErr := readTestReceipt(params)
+		if receiptErr != nil || receipt.Command != verified.Record.TestCommand {
+			code := "chain-recertification-test-command-refused"
+			if verified.Record.GateWidth == "full" {
+				code = "chain-full-gate-refused"
+			}
+			observation := refuse(code, provenance)
+			observation.Detail = "receipt-command"
+			if receiptErr != nil {
+				observation.Detail += ": " + receiptErr.Error()
+			}
+			return observation
+		}
+		certifiedDigest, extraPaths, err = bindRecertifiedChange(params.RepoRoot, params.CandidateTree, verified.Record)
+		if err != nil {
+			observation := refuse("chain-output-mismatch", provenance)
+			observation.Detail = "merged-candidate"
+			return observation
+		}
+		provenance = fmt.Sprintf("chain=%s change=%s certified-change=%s recertification=%s target=%s",
+			params.Chain, change, certifiedDigest, verified.Record.RecordDigest, verified.Record.TargetCommit)
+	} else {
+		output, outputErr := chainCertifiedOutput(params.RepoRoot, params.Chain, record)
+		if outputErr != nil {
+			return wouldRefuse("chain-output-unreadable", provenance)
+		}
+		certifiedDigest, extraPaths, err = bindCertifiedChange(params.RepoRoot, params.CandidateTree, output)
+		if err != nil {
+			return wouldRefuse("chain-output-mismatch", provenance)
+		}
+		provenance = fmt.Sprintf("chain=%s change=%s certified-change=%s", params.Chain, change, certifiedDigest)
 	}
-	certifiedDigest, extraPaths, err := bindCertifiedChange(params.RepoRoot, params.CandidateTree, output)
-	if err != nil {
-		return wouldRefuse("chain-output-mismatch", provenance)
-	}
-	provenance = fmt.Sprintf("chain=%s change=%s certified-change=%s", params.Chain, change, certifiedDigest)
 	workspace := gittree.Workspace{Dir: params.RepoRoot}
-	baseTree, err := workspace.HeadTree()
-	if err != nil {
-		return wouldRefuse("register-carriage-policy-unreadable", provenance)
+	baseTree := frozenTargetTree
+	if baseTree == "" {
+		baseTree, err = workspace.HeadTree()
+		if err != nil {
+			return wouldRefuse("register-carriage-policy-unreadable", provenance)
+		}
 	}
 	classes, err := loadPathClasses(workspace, baseTree)
 	if err != nil {
@@ -203,11 +289,53 @@ func observeChain(params ObserveParams, change string) Observation {
 		if err := registerCarriage(params.RepoRoot, params.CandidateTree, extraPaths, params.Goal, params.Actor); err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
+		if frozenTargetCommit != "" && recertifiedTargetMoved(workspace, frozenTargetCommit) {
+			observation := refuse("chain-recertification-target-moved", provenance)
+			observation.Detail = "target-commit"
+			return observation
+		}
 		observation := pass(BarChain, "closed-chain", provenance)
 		observation.VerdictTrailer = "pass bar=a carriage=register-carriage"
 		return observation
 	}
+	if frozenTargetCommit != "" && recertifiedTargetMoved(workspace, frozenTargetCommit) {
+		observation := refuse("chain-recertification-target-moved", provenance)
+		observation.Detail = "target-commit"
+		return observation
+	}
 	return pass(BarChain, "closed-chain", provenance)
+}
+
+func recertifiedTargetMoved(workspace gittree.Workspace, expected string) bool {
+	head, unborn, err := workspace.HeadCommit()
+	return err != nil || unborn || head != expected
+}
+
+func bindRecertifiedChange(root, candidateTree string, record validate.RecertificationRecord) (string, []string, error) {
+	workspace := gittree.Workspace{Dir: root}
+	want, err := pathChangeDigest(workspace, record.TargetTree, record.MergedTree, record.CertifiedPaths)
+	if err != nil {
+		return "", nil, err
+	}
+	got, err := pathChangeDigest(workspace, record.TargetTree, candidateTree, record.CertifiedPaths)
+	if err != nil || got != want {
+		return "", nil, fmt.Errorf("candidate changed a certified path")
+	}
+	landingPaths, err := workspace.ChangedPaths(record.TargetTree, candidateTree)
+	if err != nil {
+		return "", nil, err
+	}
+	certified := map[string]bool{}
+	for _, path := range record.CertifiedPaths {
+		certified[path] = true
+	}
+	var extras []string
+	for _, path := range landingPaths {
+		if !certified[path] {
+			extras = append(extras, path)
+		}
+	}
+	return want, extras, nil
 }
 
 type certifiedOutput struct {

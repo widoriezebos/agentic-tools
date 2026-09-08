@@ -274,12 +274,12 @@ pipe characters; the column parser cannot see an escaped pipe as content.
 }
 
 // runValidateConformance relays the retired conformance wrapper's
-// calling convention: --stage review|merge and --job, with --root naming
+// calling convention: --stage review|recertify|merge and --job, with --root naming
 // the merge-target checkout. Exit 0 conforming; 1 conformance failure; 2
 // usage.
 func runValidateConformance(args []string) int {
 	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage: metasystem validate conformance --stage review|merge --job <job-id>
+		fmt.Fprint(os.Stderr, `Usage: metasystem validate conformance --stage review|recertify|merge --job <job-id> [--test-command <command>] [--recertification <record>]
 
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
@@ -289,6 +289,10 @@ branch's merge-base with the current target and checked against the cumulative
 union of immutable per-round declarations. The merge stage leaves review
 artifacts untouched and requires either a mechanically valid waiver or a
 closed, independent code-critic chain over the branch's final committed tree.
+The recertify stage preserves those review bytes while mechanically merging
+disjoint text hunks onto the current target. Area-width chains require an
+explicit --test-command. The merge stage accepts --recertification only for
+the exact proof produced for the same implementer job.
 
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 `)
@@ -297,6 +301,7 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 	flags.Usage = usage
 	root := flags.String("root", ".", "merge-target checkout root")
 	stage, job := "", ""
+	testCommand, recertification := "", ""
 	// A gate argument given twice is a caller confusion this verb refuses
 	// rather than last-wins (the hand-rolled loop's strictness, kept).
 	once := func(target *string, name string) func(string) error {
@@ -308,8 +313,10 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 			return nil
 		}
 	}
-	flags.Func("stage", "review or merge", once(&stage, "stage"))
+	flags.Func("stage", "review, recertify, or merge", once(&stage, "stage"))
 	flags.Func("job", "implementer job id", once(&job, "job"))
+	flags.Func("test-command", "explicit recertification test command", once(&testCommand, "test-command"))
+	flags.Func("recertification", "canonical recertification record path", once(&recertification, "recertification"))
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -320,7 +327,7 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 		usage()
 		return 2
 	}
-	if stage != "review" && stage != "merge" {
+	if stage != "review" && stage != "merge" && stage != "recertify" {
 		usage()
 		return 2
 	}
@@ -328,7 +335,14 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 		usage()
 		return 2
 	}
-	out, errs, code := validate.Conformance(*root, stage, job)
+	if (stage != "recertify" && testCommand != "") || (stage != "merge" && recertification != "") ||
+		(stage == "recertify" && recertification != "") || (stage == "merge" && testCommand != "") {
+		usage()
+		return 2
+	}
+	out, errs, code := validate.ConformanceWithOptions(*root, stage, job, validate.ConformanceOptions{
+		Recertification: recertification, TestCommand: testCommand,
+	})
 	for _, line := range out {
 		fmt.Println(line)
 	}

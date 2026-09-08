@@ -12,9 +12,10 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-const fullBatteryCommand = "scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh"
+const fullBatteryCommand = validate.FullBatteryCommand
 
 func observeTierOne(params ObserveParams, change string) Observation {
 	provenance := "direct-fix class=tier-1 change=" + change

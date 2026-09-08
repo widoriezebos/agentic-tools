@@ -104,7 +104,7 @@ func families() []family {
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
-				{"conformance", "review or merge conformance for an implementer job", runValidateConformance},
+				{"conformance", "review, recertify, or merge conformance for an implementer job", runValidateConformance},
 				{"stop-loss", "block further investigation cycles when a ledger trigger fired", runValidateStopLoss},
 			},
 		},
@@ -112,7 +112,8 @@ func families() []family {
 			name:    "landing",
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
-				{"observe", "emit a non-refusing provenance verdict for the prospective project tree", runLandingObserve},
+				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
+				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 			},
 		},

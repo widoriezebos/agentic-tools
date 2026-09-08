@@ -29,6 +29,7 @@ func newTreeFixture(t *testing.T) *treeFixture {
 func (f *treeFixture) git(args ...string) string {
 	f.t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", f.w.Dir}, args...)...)
+	cmd.Env = ScrubbedEnviron()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		f.t.Fatalf("git %v: %v %s", args, err, out)

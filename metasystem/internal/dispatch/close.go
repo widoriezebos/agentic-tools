@@ -126,6 +126,45 @@ func CloseCheck(repoRoot, root string) error {
 			return fmt.Errorf("manifest has a stale implementer diff.patch for %s", job)
 		}
 	}
+	// Every recertification and landing park on disk must be mirrored and
+	// byte-current, and a manifest entry may not outlive its source. Closing
+	// otherwise would certify a chain whose recovery proof was lost.
+	for _, family := range []string{"recertifications", "parks"} {
+		sourceRoot := filepath.Join(repoRoot, "artifacts", "agents", "landing", family, root)
+		seen := map[string]bool{}
+		walkErr := filepath.Walk(sourceRoot, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if info == nil || !info.Mode().IsRegular() {
+				return nil
+			}
+			relativeTail, relErr := filepath.Rel(sourceRoot, path)
+			if relErr != nil {
+				return relErr
+			}
+			relative := filepath.ToSlash(filepath.Join("landing", family, relativeTail))
+			seen[relative] = true
+			entry, ok := files[relative].(map[string]any)
+			if !ok {
+				return fmt.Errorf("landing %s evidence is not mirrored: %s", family, relativeTail)
+			}
+			digest, digestErr := sha256File(path)
+			if digestErr != nil || asString(entry["sha256"]) != digest {
+				return fmt.Errorf("manifest has stale landing %s evidence: %s", family, relativeTail)
+			}
+			return nil
+		})
+		if walkErr != nil && !os.IsNotExist(walkErr) {
+			return walkErr
+		}
+		prefix := "landing/" + family + "/"
+		for relative := range files {
+			if strings.HasPrefix(relative, prefix) && !seen[relative] {
+				return fmt.Errorf("landing %s evidence vanished after mirroring: %s", family, strings.TrimPrefix(relative, prefix))
+			}
+		}
+	}
 	// A mission chain's integration authorizations are the wall's
 	// evidence; a close that lets one go unmirrored or stale attests
 	// durability the mirror does not have.

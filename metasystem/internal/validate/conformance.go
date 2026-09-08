@@ -42,9 +42,17 @@ type conformanceRun struct {
 	installPrefix string
 	boundaryBase  string
 	targetSha     string
+	criticRoot    string
 
 	out  []string
 	errs []string
+}
+
+// ConformanceOptions carries only the two explicit recertification inputs.
+// Empty options preserve the pre-existing review and merge behavior.
+type ConformanceOptions struct {
+	Recertification string
+	TestCommand     string
 }
 
 type waiverPath struct {
@@ -59,9 +67,7 @@ func (r *conformanceRun) git(dir string, env []string, args ...string) (string, 
 
 func (r *conformanceRun) gitBytes(dir string, env []string, args ...string) ([]byte, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	if env != nil {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	cmd.Env = gittree.ScrubbedEnviron(env...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	// Bounded like every other external call.
@@ -189,6 +195,12 @@ func (r *conformanceRun) resolveFacts() []string {
 // one implementer job. It returns stdout lines, stderr lines, and the exit
 // code, matching the shell gate's contract exactly.
 func Conformance(root, stage, job string) (out, errs []string, code int) {
+	return ConformanceWithOptions(root, stage, job, ConformanceOptions{})
+}
+
+// ConformanceWithOptions implements conformance including the explicit
+// recertification stage and merge proof reference.
+func ConformanceWithOptions(root, stage, job string, options ConformanceOptions) (out, errs []string, code int) {
 	r := &conformanceRun{root: root, job: job}
 	recordPath := filepath.Join(root, "artifacts", "agents", "jobs", job+".json")
 	if _, err := os.Stat(recordPath); err != nil {
@@ -208,7 +220,7 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 		return r.fail("conformance failure: implementer round return is missing")
 	}
 	if _, err := r.git(r.workspace, nil, "cat-file", "-e", r.baseSha+"^{commit}"); err != nil {
-		return r.fail("conformance failure: baseSha is not a commit in the implementer workspace")
+		return r.fail(fmt.Sprintf("conformance failure: baseSha %s is not a commit in implementer workspace %s: %v", quoted(r.baseSha), quoted(r.workspace), err))
 	}
 	rootTop, _ := r.git(root, nil, "rev-parse", "--show-toplevel")
 	workspaceTop, _ := r.git(r.workspace, nil, "rev-parse", "--show-toplevel")
@@ -234,7 +246,10 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 	if stage == "review" {
 		return r.reviewStage(diffFile, reviewFile)
 	}
-	return r.mergeStage(recordPath)
+	if stage == "recertify" {
+		return r.recertify(options.TestCommand)
+	}
+	return r.mergeStage(recordPath, options.Recertification)
 }
 
 // projectInstallPrefix derives the mission project's path under its git
@@ -245,6 +260,7 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 // stripped, never characters a directory name may lawfully carry.
 func projectInstallPrefix(root string) (string, error) {
 	cmd := exec.Command("git", "-C", root, "rev-parse", "--show-prefix")
+	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	limit := boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local)
@@ -371,109 +387,7 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	if err != nil {
 		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
-	violations := r.boundaryViolations(paths)
-
-	currentRound := 0
-	if parsed, err := strconv.Atoi(r.roundText); err == nil {
-		currentRound = parsed
-	} else {
-		violations = append(violations, fmt.Sprintf("implementer round is not an integer: %s", quoted(r.roundText)))
-	}
-	// The chain's true round is the MAX across its job records — the root
-	// record stays at round 1 while follow-ups live in -rN records.
-	jobsDir := filepath.Join(r.root, "artifacts", "agents", "jobs")
-	if entries, err := os.ReadDir(jobsDir); err == nil {
-		for _, entry := range entries {
-			name := entry.Name()
-			if !strings.HasPrefix(name, r.rootJob) || !strings.HasSuffix(name, ".json") {
-				continue
-			}
-			record, ok := readJobRecord(jobsDir, strings.TrimSuffix(name, ".json"))
-			if !ok {
-				continue
-			}
-			if round, ok := record["round"].(float64); ok && int(round) > currentRound {
-				currentRound = int(round)
-			}
-		}
-	}
-	declared := map[string]bool{}
-	roundsRoot := filepath.Join(r.root, "artifacts", "agents", r.rootJob, "rounds")
-	var roundNames []string
-	if entries, err := os.ReadDir(roundsRoot); err == nil {
-		for _, entry := range entries {
-			roundNames = append(roundNames, entry.Name())
-		}
-	}
-	sort.Strings(roundNames)
-	for _, name := range roundNames {
-		candidate := filepath.Join(roundsRoot, name, "return.json")
-		if _, err := os.Stat(candidate); err != nil {
-			continue
-		}
-		candidateRound, err := strconv.Atoi(name)
-		if err != nil {
-			continue
-		}
-		if candidateRound > currentRound {
-			continue
-		}
-		data, err := os.ReadFile(candidate)
-		var parsed any
-		if err == nil {
-			err = json.Unmarshal(data, &parsed)
-		}
-		if err != nil {
-			violations = append(violations, fmt.Sprintf("round %d return.json is unreadable: %v", candidateRound, err))
-			continue
-		}
-		result, _ := parsed.(map[string]any)
-		claim, isList := result["diffBoundary"].([]any)
-		items := make([]string, 0, len(claim))
-		if isList {
-			for _, item := range claim {
-				text, ok := item.(string)
-				if !ok {
-					isList = false
-					break
-				}
-				items = append(items, text)
-			}
-		}
-		if !isList {
-			violations = append(violations, fmt.Sprintf("round %d return diffBoundary is not an array of paths", candidateRound))
-			continue
-		}
-		for _, item := range items {
-			projectItem, dialectViolation := r.projectDeclaration(item)
-			if dialectViolation != "" {
-				violations = append(violations, dialectViolation)
-				continue
-			}
-			declared[projectItem] = true
-		}
-	}
-	// Declarations and observed paths are BOTH project-relative — the
-	// review derives its paths from the project-scoped trees and the
-	// boundary must be declared in the same space. They compare
-	// verbatim: any rewriting would let two distinct project paths
-	// alias onto one declaration.
-	outsideSet := map[string]bool{}
-	for _, path := range paths {
-		if !declared[path] {
-			outsideSet[path] = true
-		}
-	}
-	outside := make([]string, 0, len(outsideSet))
-	for path := range outsideSet {
-		outside = append(outside, path)
-	}
-	sort.Strings(outside)
-	if len(outside) > 0 {
-		violations = append(violations, fmt.Sprintf(
-			"changed paths fall outside the cumulative implementation boundary: %s; some implementation round must declare every changed path",
-			quotedList(outside)))
-	}
+	violations := r.cumulativeBoundaryViolations(paths)
 	if len(violations) > 0 {
 		if reviewExists {
 			return r.refuseExistingReview(reviewFile, existingReview)
@@ -525,7 +439,10 @@ func (r *conformanceRun) configGet(key, def string) string {
 
 // mergeStage validates either a mechanically valid waiver or a closed,
 // independent code-critic chain over the final committed tree.
-func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int) {
+func (r *conformanceRun) mergeStage(recordPath, recertification string) ([]string, []string, int) {
+	if recertification != "" {
+		return r.mergeRecertified(recordPath, recertification)
+	}
 	finalTree, err := r.projectWorkspace().TreeOf("HEAD")
 	if err != nil {
 		return r.fail("conformance failure: implementer branch has no final committed tree")
@@ -591,6 +508,75 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 		return r.out, r.errs, 0
 	}
 	return out, errs, code
+}
+
+func (r *conformanceRun) mergeRecertified(recordPath, recertification string) ([]string, []string, int) {
+	verified, err := VerifyRecertification(r.root, r.rootJob, recertification)
+	if err != nil {
+		return r.fail("conformance failure: " + err.Error())
+	}
+	if verified.Record.CertifiedImplementerJob != r.job {
+		return r.fail(fmt.Sprintf("conformance failure: recertification names implementer job %s; invoke merge conformance with that exact job", quoted(verified.Record.CertifiedImplementerJob)))
+	}
+	integrationHead, err := (gittree.Workspace{Dir: r.root}).ResolveCommit("HEAD")
+	if err != nil || integrationHead != verified.Record.TargetCommit {
+		return r.fail("conformance failure: chain-recertification-target-moved")
+	}
+	project := r.projectWorkspace()
+	projectSnapshot, err := project.SnapshotSeeded(verified.Record.TargetCommit, verified.Record.MergedTree, nil)
+	if err != nil || projectSnapshot != verified.Record.MergedTree {
+		return r.fail("conformance failure: chain-recertification-source-changed: final source worktree is not the exact materialized merged tree")
+	}
+	topSnapshot, err := (gittree.Workspace{Dir: r.workspace}).SnapshotSeeded(verified.Record.TargetCommit, verified.Record.MergedWholeTree, nil)
+	if err != nil || topSnapshot != verified.Record.MergedWholeTree {
+		return r.fail("conformance failure: chain-recertification-source-changed: whole source worktree differs from the recertified result")
+	}
+	r.boundaryBase = verified.Record.TargetCommit
+	r.criticRoot = verified.Record.CriticRoot
+	configuredRuntime := r.configGet("role.code-critic.runtime", "__missing__")
+	independence := r.configGet("independence", "")
+
+	classes, err := pathclass.Load(r.root)
+	if err != nil {
+		return r.fail(fmt.Sprintf("conformance failure: path class manifest is unreadable: %v", err))
+	}
+	for _, declared := range runtimes.InstructionFiles() {
+		class := classes.Class(declared)
+		if class != pathclass.Behavior {
+			return r.fail(fmt.Sprintf("conformance failure: runtime instruction file %s has manifest class %s, not behavior", declared, class))
+		}
+	}
+
+	waiver := r.record["critiqueWaived"]
+	if waiver != nil {
+		if mission, _ := r.record["mission"].(string); mission != "" {
+			return r.fail("conformance failure: a mission chain cannot waive critique; the host-implementer wall issues integration authorizations only on critic closure, without exception")
+		}
+	}
+	var out, errs []string
+	var code int
+	if waiver != nil {
+		// The recertified source worktree still points at H. Compute the
+		// waiver over the proved whole-repository T-to-M result instead,
+		// preserving the ordinary merge gate's repository-relative paths.
+		rawPaths, _ := r.gitBytes(r.workspace, nil, "diff", "--name-only", "-z", "--no-renames", verified.Record.TargetCommit, verified.Record.MergedWholeTree, "--")
+		numstat, _ := r.gitBytes(r.workspace, nil, "diff", "--numstat", "--no-renames", verified.Record.TargetCommit, verified.Record.MergedWholeTree, "--")
+		paths, classErr := r.classifyWaiverPaths(classes, nulSplitPaths(rawPaths))
+		if classErr != nil {
+			return r.fail(fmt.Sprintf("conformance failure: cannot resolve waiver path class: %v", classErr))
+		}
+		out, errs, code = r.mergeWaiver(waiver, paths, string(numstat))
+	} else {
+		out, errs, code = r.mergeCritique(recordPath, verified.Record.ReviewedTree, configuredRuntime, independence)
+	}
+	if code != 0 {
+		return out, errs, code
+	}
+	if err := r.issueAuthorization(verified.Record.MergedTree); err != nil {
+		return r.fail("conformance failure: " + err.Error())
+	}
+	r.out = append(r.out, "recertification="+verified.RecordPath, "certifiedTree="+verified.Record.MergedTree)
+	return r.out, r.errs, 0
 }
 
 func (r *conformanceRun) mergeWaiver(waiver any, paths []waiverPath, numstat string) ([]string, []string, int) {
@@ -726,6 +712,107 @@ func (r *conformanceRun) boundaryViolations(paths []string) []string {
 	}
 	if r.controlPlaneTampered() {
 		violations = append(violations, "agent control plane contains delegate-created files")
+	}
+	return violations
+}
+
+// cumulativeBoundaryViolations is the ONE implementation of the review
+// boundary used by ordinary review, recertification production, and proof
+// consumption.
+func (r *conformanceRun) cumulativeBoundaryViolations(paths []string) []string {
+	violations := r.boundaryViolations(paths)
+	currentRound := 0
+	if r.roundText != "" {
+		if parsed, err := strconv.Atoi(r.roundText); err == nil {
+			currentRound = parsed
+		} else {
+			violations = append(violations, fmt.Sprintf("implementer round is not an integer: %s", quoted(r.roundText)))
+		}
+	}
+	jobsDir := filepath.Join(r.root, "artifacts", "agents", "jobs")
+	if entries, err := os.ReadDir(jobsDir); err == nil {
+		for _, entry := range entries {
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".json") {
+				continue
+			}
+			record, ok := readJobRecord(jobsDir, strings.TrimSuffix(name, ".json"))
+			if !ok {
+				continue
+			}
+			id, _ := record["jobId"].(string)
+			if root, rooted := chainRootIn(r.loadConformanceRecords(), id); !rooted || root != r.rootJob {
+				continue
+			}
+			if round, ok := record["round"].(float64); ok && int(round) > currentRound {
+				currentRound = int(round)
+			}
+		}
+	}
+	declared := map[string]bool{}
+	roundsRoot := filepath.Join(r.root, "artifacts", "agents", r.rootJob, "rounds")
+	var roundNames []string
+	if entries, err := os.ReadDir(roundsRoot); err == nil {
+		for _, entry := range entries {
+			roundNames = append(roundNames, entry.Name())
+		}
+	}
+	sort.Strings(roundNames)
+	for _, name := range roundNames {
+		candidateRound, err := strconv.Atoi(name)
+		if err != nil || candidateRound > currentRound {
+			continue
+		}
+		candidate := filepath.Join(roundsRoot, name, "return.json")
+		data, err := os.ReadFile(candidate)
+		if os.IsNotExist(err) {
+			continue
+		}
+		var parsed any
+		if err == nil {
+			err = json.Unmarshal(data, &parsed)
+		}
+		if err != nil {
+			violations = append(violations, fmt.Sprintf("round %d return.json is unreadable: %v", candidateRound, err))
+			continue
+		}
+		result, _ := parsed.(map[string]any)
+		claim, isList := result["diffBoundary"].([]any)
+		items := make([]string, 0, len(claim))
+		if isList {
+			for _, item := range claim {
+				text, ok := item.(string)
+				if !ok {
+					isList = false
+					break
+				}
+				items = append(items, text)
+			}
+		}
+		if !isList {
+			violations = append(violations, fmt.Sprintf("round %d return diffBoundary is not an array of paths", candidateRound))
+			continue
+		}
+		for _, item := range items {
+			projectItem, dialectViolation := r.projectDeclaration(item)
+			if dialectViolation != "" {
+				violations = append(violations, dialectViolation)
+				continue
+			}
+			declared[projectItem] = true
+		}
+	}
+	var outside []string
+	for _, path := range paths {
+		if !declared[path] {
+			outside = append(outside, path)
+		}
+	}
+	sort.Strings(outside)
+	if len(outside) > 0 {
+		violations = append(violations, fmt.Sprintf(
+			"changed paths fall outside the cumulative implementation boundary: %s; some implementation round must declare every changed path",
+			quotedList(outside)))
 	}
 	return violations
 }
@@ -932,6 +1019,9 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			continue
 		}
 		if reviews, ok := record["reviews"].(string); ok && implementationIDs[reviews] {
+			if r.criticRoot != "" && jobID != r.criticRoot {
+				continue
+			}
 			criticIDs = append(criticIDs, jobID)
 		}
 	}

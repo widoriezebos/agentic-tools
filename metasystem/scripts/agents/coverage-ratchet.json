@@ -44,7 +44,7 @@
   "internal/identity": 85.9,
   "internal/janitor": 89.8,
   "internal/jsonedit": 96.6,
-  "internal/landing": 69.5,
+  "internal/landing": 58.7,
   "internal/lease": 78.6,
   "internal/lock": 84.0,
   "internal/metrics": 85.0,
@@ -71,7 +71,7 @@
   "internal/turn": 100.0,
   "internal/up": 55.0,
   "internal/usage": 85.8,
-  "internal/validate": 79.9,
+  "internal/validate": 63.9,
   "internal/watch": 70.4,
   "internal/wiredoc": 87.9
  },

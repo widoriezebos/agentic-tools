@@ -6,7 +6,7 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--test-receipt <path>] [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> --tests <command>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--recertification <record> --test-receipt <path>] [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> --tests <command>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
@@ -26,6 +26,7 @@ landing_goal_set=0
 landing_root_job=
 landing_tests=
 landing_test_receipt=
+landing_recertification=
 pathspecs=()
 
 while (( $# )); do
@@ -88,6 +89,11 @@ while (( $# )); do
       landing_test_receipt=$2
       shift 2
       ;;
+    --recertification)
+      [[ $# -ge 2 && -z "$landing_recertification" ]] || { usage; exit 2; }
+      landing_recertification=$2
+      shift 2
+      ;;
     --)
       shift
       while (( $# )); do
@@ -142,6 +148,18 @@ fi
 if [[ -n "$landing_test_receipt" && -z "$landing_chain" ]]; then
   echo "land refused: --test-receipt belongs only with --chain; add --chain <root-job> or remove --test-receipt" >&2
   usage
+  exit 2
+fi
+if [[ -n "$landing_recertification" && -z "$landing_chain" ]]; then
+  echo "land refused: --recertification requires --chain <root-job>" >&2
+  exit 2
+fi
+if [[ -n "$landing_recertification" && -n "$landing_direct_fix" && "$landing_direct_fix" != register-carriage ]]; then
+  echo "land refused: --recertification combines only with the existing register-carriage class" >&2
+  exit 2
+fi
+if [[ -n "$landing_recertification" && -z "$landing_test_receipt" ]]; then
+  echo "land refused: a recertified landing requires a fresh --test-receipt for the actual candidate" >&2
   exit 2
 fi
 if [[ "$landing_direct_fix" == tier-1 ]]; then
@@ -304,12 +322,12 @@ stage_changes() {
     return 2
   fi
   if ! git diff --quiet --; then
-    echo "land refused: unstaged changes remain after staging; rebase requires a clean tree after commit" >&2
+    echo "land refused: unstaged changes remain after staging; transport requires a clean tree after commit" >&2
     return 2
   fi
   untracked=$(git ls-files --others --exclude-standard) || return $?
   if [[ -n "$untracked" ]]; then
-    echo "land refused: untracked paths remain after staging; rebase requires a clean tree after commit" >&2
+    echo "land refused: untracked paths remain after staging; transport requires a clean tree after commit" >&2
     printf '  %s\n' "$untracked" >&2
     return 2
   fi
@@ -326,6 +344,7 @@ commit_changes() {
   (( landing_goal_set )) && arguments=(--goal "$landing_goal" "${arguments[@]}")
   [[ -z "$landing_root_job" ]] || arguments=(--root-job "$landing_root_job" "${arguments[@]}")
   [[ -z "$landing_test_receipt" ]] || arguments=(--test-receipt "$landing_test_receipt" "${arguments[@]}")
+  [[ -z "$landing_recertification" ]] || arguments=(--recertification "$landing_recertification" "${arguments[@]}")
   bash "$root/scripts/agents/commit.sh" "${arguments[@]}"
 }
 
@@ -372,7 +391,7 @@ require_clean_after_commit() {
   local status
   status=$(git status --porcelain --untracked-files=normal) || return $?
   if [[ -n "$status" ]]; then
-    echo "land refused: commit succeeded but the tree is not clean, so rebase will not start" >&2
+    echo "land refused: commit succeeded but the tree is not clean, so transport will not start" >&2
     printf '%s\n' "$status" >&2
     return 1
   fi
@@ -394,6 +413,78 @@ push_was_moving_origin_rejection() {
   LC_ALL=C grep -Eq '\[rejected\].*\((non-fast-forward|fetch first)\)|non-fast-forward|fetch first|cannot lock ref .*is at .*but expected' "$step_output"
 }
 
+recert_target=
+recert_source_ref=
+recert_merged_ref=
+recert_candidate_tree=
+recert_candidate_commit=
+
+load_recertification_transport_facts() {
+  local repository_top record_path
+  [[ -n "$landing_recertification" ]] || return 0
+  repository_top=$(git -C "$root" rev-parse --show-toplevel) || return $?
+  [[ "$landing_recertification" != /* ]] || {
+    echo "land refused: --recertification must be the canonical repository-relative path" >&2
+    return 2
+  }
+  record_path=$repository_top/$landing_recertification
+  recert_target=$("$ms" json get --file "$record_path" --field targetCommit 2>/dev/null || true)
+  recert_source_ref=$("$ms" json get --file "$record_path" --field sourceAnchorRef 2>/dev/null || true)
+  recert_merged_ref=$("$ms" json get --file "$record_path" --field mergedAnchorRef 2>/dev/null || true)
+  if [[ -z "$recert_target" ]]; then
+    # An explicitly selected but unreadable proof is still parked after the
+    # Go evaluator names its refusal. The frozen local target is the only
+    # target identity available for that diagnostic record.
+    recert_target=$(git -C "$root" rev-parse HEAD^{commit}) || return $?
+  fi
+}
+
+park_recertified() { # original reason, detail
+  local reason=$1 detail=$2 park_output park_rc
+  local -a arguments=(landing park --root "$root" --chain "$landing_chain" \
+    --target "$recert_target" --reason "$reason" --detail "$detail" \
+    --recertification "$landing_recertification")
+  [[ -z "$recert_candidate_commit" ]] || arguments+=(--candidate-commit "$recert_candidate_commit")
+  [[ -z "$recert_source_ref" ]] || arguments+=(--recovery-ref "$recert_source_ref")
+  [[ -z "$recert_merged_ref" ]] || arguments+=(--recovery-ref "$recert_merged_ref")
+  park_output=$("$ms" "${arguments[@]}" 2>&1)
+  park_rc=$?
+  if (( park_rc == 0 )); then
+    echo "PARKED"
+    printf '%s\n' "$park_output"
+    exit 1
+  fi
+  echo "PARK-FAILED cause=$reason" >&2
+  printf '%s\n' "$park_output" >&2
+  exit 1
+}
+
+check_recertification_target() {
+  local local_head remote_head
+  local_head=$(git -C "$root" rev-parse HEAD^{commit}) || return $?
+  remote_head=$(git -C "$root" rev-parse "refs/remotes/origin/$branch^{commit}") || return $?
+  if [[ "$local_head" != "$recert_target" || "$remote_head" != "$recert_target" ]]; then
+    echo "chain-recertification-target-moved: local=$local_head remote=$remote_head expected=$recert_target" >&2
+    return 1
+  fi
+}
+
+recertification_refusal_from_output() {
+  LC_ALL=C sed -nE 's/.*code=([a-z][a-z0-9-]*).*/\1/p' "$step_output" | head -n 1
+}
+
+verify_recertified_commit() {
+  local current parent tree
+  current=$(git -C "$root" rev-parse HEAD^{commit}) || return $?
+  parent=$(git -C "$root" rev-parse HEAD^1) || return $?
+  tree=$(git -C "$root" rev-parse HEAD^{tree}) || return $?
+  if [[ "$parent" != "$recert_target" || "$tree" != "$recert_candidate_tree" ]]; then
+    echo "chain-recertification-target-moved: committed parent/tree $parent/$tree differ from $recert_target/$recert_candidate_tree" >&2
+    return 1
+  fi
+  recert_candidate_commit=$current
+}
+
 # Only the flag grants the hook acknowledgment. An inherited shell setting is
 # not evidence that this landing's caller chose to include a new plan.
 unset METASYSTEM_ALLOW_NEW_PLAN
@@ -402,35 +493,103 @@ if (( allow_new_plan )); then
 fi
 
 run_required_step "verify checks" verify_checks
+run_required_step "load recertification transport facts" load_recertification_transport_facts
+if [[ -n "$landing_recertification" ]]; then
+  run_required_step "fetch origin before recertified commit" fetch_origin
+  run_step "freeze recertified target before commit" check_recertification_target
+  target_rc=$?
+  if (( target_rc != 0 )); then
+    target_detail=$(tail -n 1 "$step_output")
+    park_recertified chain-recertification-target-moved "$target_detail"
+  fi
+fi
 run_required_step "stage caller paths" stage_changes
 if [[ -n "$landing_test_receipt" ]]; then
-  run_required_step "test receipt for staged candidate" check_supplied_test_receipt
+  if [[ -n "$landing_recertification" ]]; then
+    run_step "test receipt for staged candidate" check_supplied_test_receipt
+    receipt_rc=$?
+    if (( receipt_rc != 0 )); then
+      receipt_reason=chain-recertification-test-command-refused
+      [[ "${chain_gate_width:-}" != full ]] || receipt_reason=chain-full-gate-refused
+      receipt_detail=$(tail -n 1 "$step_output")
+      park_recertified "$receipt_reason" "$receipt_detail"
+    fi
+  else
+    run_required_step "test receipt for staged candidate" check_supplied_test_receipt
+  fi
 fi
 run_required_step "tier-1 test receipt" create_test_receipt
-run_required_step "commit" commit_changes
-run_required_step "verify clean after commit" require_clean_after_commit
-run_required_step "fetch origin" fetch_origin
-run_required_step "rebase onto origin/$branch" rebase_origin
-
-push_attempt=1
-push_limit=3
-while (( push_attempt <= push_limit )); do
-  run_step "push origin (attempt $push_attempt of $push_limit)" push_origin
-  push_rc=$?
-  if (( push_rc == 0 )); then
-    break
+if [[ -n "$landing_recertification" ]]; then
+  recert_candidate_tree=$(staged_candidate_tree) || fail_step $?
+  run_step "recheck recertified target before commit" check_recertification_target
+  target_rc=$?
+  if (( target_rc != 0 )); then
+    target_detail=$(tail -n 1 "$step_output")
+    park_recertified chain-recertification-target-moved "$target_detail"
   fi
-  if ! push_was_moving_origin_rejection || (( push_attempt == push_limit )); then
+  run_step "commit" commit_changes
+  commit_rc=$?
+  if (( commit_rc != 0 )); then
+    refusal=$(recertification_refusal_from_output || true)
+    if [[ -n "$refusal" ]]; then
+      refusal_detail=$(tail -n 1 "$step_output")
+      park_recertified "$refusal" "$refusal_detail"
+    fi
+    fail_step "$commit_rc"
+  fi
+  run_step "verify recertified commit parent and tree" verify_recertified_commit
+  commit_verify_rc=$?
+  if (( commit_verify_rc != 0 )); then
+    commit_verify_detail=$(tail -n 1 "$step_output")
+    park_recertified chain-recertification-target-moved "$commit_verify_detail"
+  fi
+else
+  run_required_step "commit" commit_changes
+fi
+if [[ -n "$landing_recertification" ]]; then
+  run_step "verify clean after commit" require_clean_after_commit
+  clean_rc=$?
+  if (( clean_rc != 0 )); then
+    clean_detail=$(tail -n 1 "$step_output")
+    park_recertified chain-recertification-source-changed "$clean_detail"
+  fi
+else
+  run_required_step "verify clean after commit" require_clean_after_commit
+fi
+if [[ -n "$landing_recertification" ]]; then
+  run_step "push recertified commit to origin (single attempt)" push_origin
+  push_rc=$?
+  if (( push_rc != 0 )); then
+    if push_was_moving_origin_rejection; then
+      push_detail=$(tail -n 1 "$step_output")
+      park_recertified chain-recertification-target-moved "$push_detail"
+    fi
     fail_step "$push_rc"
   fi
-  printf -- '-- retryable rejection: %s (exit %s)\n' "$step_name" "$push_rc"
-  tail -n 40 "$step_output"
-  printf -- '-- origin moved during push; fetching and rebasing before retry %s of %s\n' \
-    "$((push_attempt + 1))" "$push_limit"
-  run_required_step "fetch origin after push attempt $push_attempt" fetch_origin
-  run_required_step "rebase onto origin/$branch after push attempt $push_attempt" rebase_origin
-  push_attempt=$((push_attempt + 1))
-done
+else
+  run_required_step "fetch origin" fetch_origin
+  run_required_step "rebase onto origin/$branch" rebase_origin
+
+  push_attempt=1
+  push_limit=3
+  while (( push_attempt <= push_limit )); do
+    run_step "push origin (attempt $push_attempt of $push_limit)" push_origin
+    push_rc=$?
+    if (( push_rc == 0 )); then
+      break
+    fi
+    if ! push_was_moving_origin_rejection || (( push_attempt == push_limit )); then
+      fail_step "$push_rc"
+    fi
+    printf -- '-- retryable rejection: %s (exit %s)\n' "$step_name" "$push_rc"
+    tail -n 40 "$step_output"
+    printf -- '-- origin moved during push; fetching and rebasing before retry %s of %s\n' \
+      "$((push_attempt + 1))" "$push_limit"
+    run_required_step "fetch origin after push attempt $push_attempt" fetch_origin
+    run_required_step "rebase onto origin/$branch after push attempt $push_attempt" rebase_origin
+    push_attempt=$((push_attempt + 1))
+  done
+fi
 
 if (( ! skip_transport )); then
   run_required_step "sync transport" bash "$root/scripts/agents/sync-transport.sh" "$branch"

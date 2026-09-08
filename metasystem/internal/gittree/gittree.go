@@ -566,6 +566,63 @@ func (w Workspace) MaterializePaths(tree string, paths []string) error {
 	return nil
 }
 
+// PreflightMaterialize proves that MaterializePaths can traverse and replace
+// the requested paths without following a symlink, overwriting an ignored or
+// otherwise unrepresented obstruction, crossing a gitlink, or deciding a
+// file/directory transition. It performs no write.
+func (w Workspace) PreflightMaterialize(currentTree, intendedTree string, paths []string) error {
+	current, err := w.Entries(currentTree, paths)
+	if err != nil {
+		return fmt.Errorf("gittree materialize preflight: %w", err)
+	}
+	intended, err := w.Entries(intendedTree, paths)
+	if err != nil {
+		return fmt.Errorf("gittree materialize preflight: %w", err)
+	}
+	for _, path := range paths {
+		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+		if path == "" || path == "." || clean != path || strings.HasPrefix(path, "../") || filepath.IsAbs(path) {
+			return fmt.Errorf("gittree materialize preflight: unsafe path %q", path)
+		}
+		for _, entry := range []Entry{current[path], intended[path]} {
+			if entry.Mode != "" && entry.Mode != "100644" && entry.Mode != "100755" && entry.Mode != "120000" {
+				return fmt.Errorf("gittree materialize preflight: %s carries unsupported mode %s", path, entry.Mode)
+			}
+		}
+		absolute := filepath.Join(w.Dir, filepath.FromSlash(path))
+		parent := filepath.Dir(absolute)
+		for parent != filepath.Clean(w.Dir) {
+			info, statErr := os.Lstat(parent)
+			if statErr != nil {
+				if os.IsNotExist(statErr) {
+					parent = filepath.Dir(parent)
+					continue
+				}
+				return fmt.Errorf("gittree materialize preflight: %s: %w", path, statErr)
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return fmt.Errorf("gittree materialize preflight: unsafe parent of %s", path)
+			}
+			parent = filepath.Dir(parent)
+		}
+		info, statErr := os.Lstat(absolute)
+		if _, represented := current[path]; !represented && statErr == nil {
+			return fmt.Errorf("gittree materialize preflight: unrepresented obstruction at %s", path)
+		}
+		if statErr == nil {
+			if info.IsDir() {
+				return fmt.Errorf("gittree materialize preflight: unsafe file/directory transition at %s", path)
+			}
+			if info.Mode()&os.ModeSymlink != 0 && current[path].Mode != "120000" {
+				return fmt.Errorf("gittree materialize preflight: unrepresented symlink at %s", path)
+			}
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("gittree materialize preflight: %s: %w", path, statErr)
+		}
+	}
+	return nil
+}
+
 // descendNoFollow walks slash-separated directory components from a
 // root, Lstat-ing each one no-follow and refusing symlinks before
 // opening it (creating missing directories when create is set). It
