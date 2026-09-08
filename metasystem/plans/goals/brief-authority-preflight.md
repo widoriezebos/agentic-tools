@@ -1,11 +1,13 @@
 # brief-authority-preflight
 
 - State: approved
+- Priority: 3
+- Sequence: 33
 - Intent: Dispatch admission verifies a brief's cited authority mechanically: every repository path a brief names must exist in the delegate's base tree, and a declared diff boundary must parse repo-relative, or the dispatch refuses with a typed message naming the missing path - the orchestration doc's conduct rule become machinery. Three specimens in one day (2026-09-01, m0): an unlanded critique record, an overwritten round artifact, a frozen follow-up worktree - each cost a full delegate round to a gap-stop. IL-33.
 - Origin: main
 - Next step: GATE ROUGH EDGE (m0, 2026-09-02): the artifacts/ disk-existence branch does not match a job's own rounds/N/diff.patch path - flags it BRIEF_AUTHORITY_REFUSED though it exists on disk. Add to the fix set: artifacts/ paths verify on disk (already intended) AND the matcher must reach nested rounds/N artifact paths; interim worked around by softening the citation. Low - the goal is concluded, this reopens a small follow-up.
 - OpenedAt: 2026-09-01T20:27:44Z
-- Revision: 13
+- Revision: 14
 - Budget: elapsedLimit=2d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=13 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=a2ddf4990a1721d8eaff66424160c91d42227a798b14ae273301554397b5c1cf
@@ -25,4 +27,5 @@ History:
 - 2026-09-01T23:22:59Z 461Q082F8AHVR2V6NVFX45540F-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=brief-authority-preflight
 - 2026-09-02T10:29:50Z AJ5PVVTQ1ZZJ8N12K15X6YC00B-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=brief-authority-preflight
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=brief-authority-preflight reason=sweep
-Integrity: sha256=37d33b507212d8a28f0fff1ded4c3460b20888274b100f9085d0b2bc364bf04a
+- 2026-09-08T16:01:03Z M5F1HD1KEEZGCMPSEMPG786QQK-m1-7cd0bd60 set-priority actor=human:Wido targets=brief-authority-preflight reason=priority-order subject=brief-authority-preflight from=unranked to=3:33 requested-sequence=33
+Integrity: sha256=7291cf9499d105fb486acecc13fabf6395802807fa87b089a5df7535836fea19
