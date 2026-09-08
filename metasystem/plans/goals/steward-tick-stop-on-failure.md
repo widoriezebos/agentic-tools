@@ -1,11 +1,13 @@
 # steward-tick-stop-on-failure
 
 - State: approved
+- Priority: 3
+- Sequence: 83
 - Intent: Residual from the twice-fixed steward tick flake: the landed version of TestRunLoopTicksUntilTheStopFile (4a5ef499, m2's line) writes the runner stop file only on the happy path, so an assertion failure leaks the live RunLoop goroutine into TempDir teardown — the exact race the flake registry diagnosed ('TempDir teardown race with the live tick goroutine'). m0 reproduced that leak class live: a failed iteration's loop printed 'tick failed: record tick completion: open /tmp/Test.../steward-tick.json: no such file or directory' into the NEXT iteration's output. m0's independently built fix (97336c30, preserved on branch machine/m0) closed it with a t.Cleanup handshake registered after goroutine launch: write stop file, drain the done channel with a 30s failsafe, ordered before TempDir removal by cleanup LIFO; a close(done) after RunLoop returns keeps the double-receive safe. Port that handshake onto the landed version; the patience half needs no change.
 - Origin: main
 - Next step: ALREADY DONE, verified by m0's chain (2026-09-02): commit 65c36111 on the fleet line carries the exact stop-and-drain handshake this goal specified - another seat ported it. The verifying delegate proved it green 20/20 idle and 20/20 under -race with 8x load rather than manufacture a redundant change. Nothing remains.
 - OpenedAt: 2026-08-31T19:08:58Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=1d attemptLimit=3 reservedJobMinutesLimit=120 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=10 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=d0bf2a23f03d59961e0b08015f31cf3c6e8b82ec6cf2246273894c408a7b4469
@@ -22,4 +24,5 @@ History:
 - 2026-09-01T23:29:31Z JPCNCJDXYEMAE3HE47DXSXH5XD-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=steward-tick-stop-on-failure
 - 2026-09-01T23:29:35Z S6H1BGG970MVN9PN76WPBYAPNG-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=steward-tick-stop-on-failure
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=steward-tick-stop-on-failure reason=sweep
-Integrity: sha256=80399891883c9eb205cac31b7cc2af008348bdd71f7c8f98b475161d291cfde2
+- 2026-09-08T16:04:00Z 070V1ZDAS1GNCS0A67ERMQB9YA-m1-7cd0bd60 set-priority actor=human:Wido targets=steward-tick-stop-on-failure reason=priority-order subject=steward-tick-stop-on-failure from=unranked to=3:83 requested-sequence=83
+Integrity: sha256=9d1c5205b0d3a4274ffdc118c31d586bf3e48835a12f205b32baaa437c5ba75f
