@@ -1,13 +1,15 @@
 # registry-design-names-selection-rows
 
 - State: approved
+- Priority: 3
+- Sequence: 91
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="The registry design's REG-3 text no longer describes what the reduction keeps for owner selection; every reader of the design is exposed to a stale contract, and each further reduction change widens the gap."
 - Tier: 2
 - Intent: The custody landing (e516ad5d) made the registry reduction keep a published-owner projection from relaunched and launched rows, drop a row that names a second checkout for a known identity, and made compaction retain active production publications; docs/design/supervision-registry.md REG-3 still says everything not listed may be dropped, and the dropped conflicts are listed but no production caller reads the list (critic findings SCC-53 and SCC-63 of chains scp-build1-cc2 and scp-build1-cc3). DONE means REG-3 names the rows selection depends on and the drop rule, and a dropped conflict is logged by the reduction's caller so drop-and-log is real.
 - Origin: main
 - Next step: One doc round and one logging line; tier from the risk basis. Residue of goal supervision-custody-per-checkout.
 - OpenedAt: 2026-09-05T15:09:55Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -17,4 +19,5 @@ History:
 - 2026-09-05T15:09:55Z 7231WAM1A3DZTBYH58G0GKFYBS-m2-5fcf08ab open actor=human:Wido targets=registry-design-names-selection-rows
 - 2026-09-05T15:11:17Z 46WB6BQ63V4QB797EJRQQNN34C-m2-5fcf08ab approve actor=human:Wido targets=registry-design-names-selection-rows authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Yes, accept and land now (Recommended)"
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=registry-design-names-selection-rows reason=sweep
-Integrity: sha256=96e2595ff00cdf3fd03185f5b93c4d804876a204af16b81e10ff65843c1a7fa0
+- 2026-09-08T16:04:27Z ZNFXHZCPP5G77J9GSNWVWQBHEP-m1-7cd0bd60 set-priority actor=human:Wido targets=registry-design-names-selection-rows reason=priority-order subject=registry-design-names-selection-rows from=unranked to=3:91 requested-sequence=91
+Integrity: sha256=72c04de6eeef9bcc707753f2791d390a0a939187f0cb95b1c23b5e06e3ad9469
