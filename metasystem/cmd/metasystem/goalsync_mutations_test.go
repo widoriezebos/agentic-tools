@@ -14,6 +14,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -466,13 +467,27 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 }
 
 func TestGoalTemporaryAuthorityRefusesPastAndBeyondHorizon(t *testing.T) {
+	const dateLayout = "2006-01-02"
+	// These fixture dates follow the real authority clock because METASYSTEM_GOAL_NOW
+	// does not steer temporary human authority.
+	realNow := time.Now().UTC()
+	pastDate := realNow.AddDate(0, 0, -1).Format(dateLayout)
+	horizon, err := time.Parse(dateLayout, governance.TemporaryGoalAuthorityHorizon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beyondHorizon := horizon.AddDate(0, 0, 1)
+	if tomorrow := realNow.AddDate(0, 0, 1); tomorrow.After(beyondHorizon) {
+		beyondHorizon = tomorrow
+	}
+	beyondHorizonDate := beyondHorizon.Format(dateLayout)
 	for _, test := range []struct {
 		name     string
 		reviewBy string
 		want     string
 	}{
-		{name: "past", reviewBy: "2026-08-31", want: "--review-by 2026-08-31 is in the past"},
-		{name: "beyond horizon", reviewBy: "2026-09-07", want: "--review-by 2026-09-07 exceeds temporary goal authority horizon 2026-09-06"},
+		{name: "past", reviewBy: pastDate, want: fmt.Sprintf("--review-by %s is in the past", pastDate)},
+		{name: "beyond horizon", reviewBy: beyondHorizonDate, want: fmt.Sprintf("--review-by %s exceeds temporary goal authority horizon %s", beyondHorizonDate, governance.TemporaryGoalAuthorityHorizon)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := syncedClaimedGoalFixture(t)

@@ -5,16 +5,12 @@ import (
 	"strings"
 )
 
-// The registration rows: the canonical tagged-union declaration of every
-// runtime's installed artifacts, transcribed verbatim from adopt.sh's
-// arms. Today
-// the rows are VALIDATION DATA — the registration/v1 wire, the derived
-// dirs view, config validation's presence checks, and the declared
-// drift policies all read them; a future installer
-// will execute them.
+// The registration rows are the canonical tagged-union declaration of every
+// runtime's installed artifacts. Host setup executes them; registration/v1,
+// the derived dirs view, config validation, and drift checks read the same
+// declarations.
 
-// RowOperation is the closed operation vocabulary; the installer union
-// arm lands with the installer.
+// RowOperation is the closed operation vocabulary consumed by host setup.
 type RowOperation string
 
 const (

@@ -107,6 +107,10 @@ type server struct {
 }
 
 func Serve(ctx context.Context, dir string) error {
+	return serve(ctx, dir, nil)
+}
+
+func serve(ctx context.Context, dir string, connState func(net.Conn, http.ConnState)) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -115,7 +119,13 @@ func Serve(ctx context.Context, dir string) error {
 		return err
 	}
 	s := &server{dir: dir, counter: 1000000}
-	httpServer := &http.Server{Handler: s}
+	httpServer := &http.Server{
+		Handler:   s,
+		ConnState: connState,
+		BaseContext: func(net.Listener) context.Context {
+			return ctx
+		},
+	}
 	base := "http://" + ln.Addr().String()
 	if err := writeRename(filepath.Join(dir, "base-url"), []byte(base+"\n")); err != nil {
 		ln.Close()
@@ -125,11 +135,22 @@ func Serve(ctx context.Context, dir string) error {
 	go func() { done <- httpServer.Serve(ln) }()
 	select {
 	case <-ctx.Done():
-		_ = httpServer.Shutdown(context.Background())
-		<-done
+		// This is an isolated fixture server: cancellation ends every client,
+		// including StateNew partial requests and deliberately paused handlers.
+		// Close also cancels active request contexts through the server's base
+		// context; waiting gracefully for an uncooperative fixture client would
+		// make cancellation depend on that client's release file or headers.
+		closeErr := httpServer.Close()
+		serveErr := <-done
+		if closeErr != nil {
+			return closeErr
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			return serveErr
+		}
 		return nil
 	case err := <-done:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err

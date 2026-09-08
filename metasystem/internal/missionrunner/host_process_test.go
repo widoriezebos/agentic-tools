@@ -189,16 +189,8 @@ func TestTerminateGroup(t *testing.T) {
 	// merely mentions or embeds the tag never authorizes a signal (the
 	// substring-kill hazard the janitor shapes closed).
 	tag := "metasystem-job-mr-owned-4c1d"
-	owned := exec.Command("bash", "-c", "sleep 30", "metasystem", "util", "hold", "--tag", tag)
-	owned.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := owned.Start(); err != nil {
-		t.Fatal(err)
-	}
-	// Reap concurrently: a deferred Wait would hold the child as a zombie,
-	// and a zombie keeps its group technically alive after the wind-down's
-	// SIGTERM.
-	go owned.Wait()
-	ownedPgid, _ := syscall.Getpgid(owned.Process.Pid)
+	owned := spawnTaggedGroup(t, tag, false)
+	ownedPgid := owned.Process.Pid
 	if err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
 		t.Fatalf("terminating an owned group errored: %v", err)
 	}

@@ -1,6 +1,7 @@
 {
  "exempt": {
-  "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures"
+  "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures",
+  "internal/refusal": "declarative refusal types, constants, and register data contain no executable production statements; completeness tests independently join every row"
  },
  "floors": {
   "internal/acp": 88.6,
@@ -11,8 +12,14 @@
   "internal/authority": 95.0,
   "internal/behaviorsurface": 78.0,
   "internal/boundedexec": 92.0,
+  "internal/brain": 52.8,
   "internal/capability": 79.4,
   "internal/census": 73.6,
+  "internal/channel": 80.4,
+  "internal/channel/fake": 90.9,
+  "internal/channel/phase": 52.7,
+  "internal/channel/slack": 86.8,
+  "internal/channel/telegram": 85.6,
   "internal/config": 82.7,
   "internal/contract": 63.1,
   "internal/counselor": 83.7,
@@ -32,6 +39,7 @@
   "internal/governance": 100.0,
   "internal/hooks": 88.9,
   "internal/host": 79.8,
+  "internal/hostsetup": 79.6,
   "internal/humanauthority": 74.0,
   "internal/identity": 87.5,
   "internal/janitor": 89.8,
@@ -47,6 +55,7 @@
   "internal/obligationstate": 75.6,
   "internal/outage": 85.7,
   "internal/pathclass": 73.0,
+  "internal/progress": 76.9,
   "internal/proofrun": 70.0,
   "internal/receipt": 94.0,
   "internal/registry": 90.8,
@@ -55,12 +64,15 @@
   "internal/returnschema": 76.3,
   "internal/run": 73.1,
   "internal/runtimes": 85.1,
+  "internal/spend": 87.3,
   "internal/stateroot": 86.0,
+  "internal/steward": 78.5,
   "internal/supervise": 89.5,
   "internal/turn": 100.0,
   "internal/up": 55.0,
   "internal/usage": 85.8,
   "internal/validate": 79.9,
+  "internal/watch": 70.4,
   "internal/wiredoc": 87.9
  },
  "note": "Per-package coverage floors measured on LINUX (Debian 12 arm64, the verified host), seeded 2026-08-12 by the go-production-grade Phase 0c two-pass bootstrap: pass one ran the full gate with METASYSTEM_COVERAGE_RATCHET_SEED=1 (every check enforced except this join) and these values come from that green run; pass two re-runs the enforcing gate as the acceptance run. Floors only rise between re-seeds; a package split, rename, or composition change re-seeds the affected entries at their measured post-change values in the same commit with the rationale in that commit's message. Darwin floors live in coverage-ratchet.json \u2014 identity differs most (89.3 linux vs 68.1 darwin: each platform's prober file is dead code to the other)."

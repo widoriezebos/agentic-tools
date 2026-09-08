@@ -17,6 +17,17 @@ import (
 // when the metasystem is installed beneath an application repository.
 type Kind string
 
+// Layout names an explicitly resolved installation and the repository that
+// hosts its runtime entry points. Setup callers pass a path in the target
+// repository; resolution never depends on the binary performing the setup.
+type Layout struct {
+	GitRoot          string // actual containing Git root, or the fresh installation before Git exists
+	RepositoryRoot   string // root that owns host registration files
+	InstallationRoot string // canonical installation that supplies enforcement and skills
+	InstallationRel  string // installation path relative to GitRoot for generated launchers
+	Template         bool   // template-only pointers belong at RepositoryRoot
+}
+
 const (
 	Registers Kind = "registers"
 	Receipts  Kind = "receipts"
@@ -106,6 +117,99 @@ func RootForInstallation(installationRoot string) (string, error) {
 		return root, nil
 	}
 	return repositoryTop(root)
+}
+
+// ResolveLayout locates a checked-in metasystem installation from a repository
+// path or any directory below it. It distinguishes the template's nested
+// <repo>/metasystem installation, an adopted repository root, and an explicitly
+// selected adopted installation beneath its application's Git root.
+func ResolveLayout(repositoryPath string) (Layout, error) {
+	if strings.TrimSpace(repositoryPath) == "" {
+		return Layout{}, fmt.Errorf("state root: repository path is required")
+	}
+	absolute, err := filepath.Abs(repositoryPath)
+	if err != nil {
+		return Layout{}, fmt.Errorf("state root: locate repository path: %w", err)
+	}
+	info, err := os.Stat(absolute)
+	if err != nil {
+		return Layout{}, fmt.Errorf("state root: inspect repository path: %w", err)
+	}
+	if !info.IsDir() {
+		absolute = filepath.Dir(absolute)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
+		absolute = resolved
+	}
+	repository, err := repositoryTop(absolute)
+	if err != nil {
+		// Adoption has always supported a fresh target before `git init`.
+		// In that one layout the installation and application repository root
+		// coincide, so an ancestor carrying the complete installed shape is an
+		// explicit root without consulting the executing binary.
+		if adopted := adoptedAncestor(absolute); adopted != "" {
+			return Layout{GitRoot: adopted, RepositoryRoot: adopted, InstallationRoot: adopted, InstallationRel: "."}, nil
+		}
+		return Layout{}, err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(repository); resolveErr == nil {
+		repository = resolved
+	}
+	if installation := installationAncestor(absolute, repository); installation != "" {
+		if installation == filepath.Join(repository, "metasystem") && templateMode(installation) {
+			return Layout{GitRoot: repository, RepositoryRoot: repository, InstallationRoot: installation, InstallationRel: filepath.ToSlash(filepath.Base(installation)), Template: true}, nil
+		}
+		relative, relErr := filepath.Rel(repository, installation)
+		if relErr != nil {
+			return Layout{}, fmt.Errorf("state root: locate installation beneath repository: %w", relErr)
+		}
+		return Layout{GitRoot: repository, RepositoryRoot: installation, InstallationRoot: installation, InstallationRel: filepath.ToSlash(relative)}, nil
+	}
+	nested := filepath.Join(repository, "metasystem")
+	if templateMode(nested) && installationShape(nested) {
+		return Layout{GitRoot: repository, RepositoryRoot: repository, InstallationRoot: nested, InstallationRel: "metasystem", Template: true}, nil
+	}
+	return Layout{}, fmt.Errorf("state root: path %q selects neither a nested template nor an adopted installation", absolute)
+}
+
+func installationAncestor(path, boundary string) string {
+	relative, err := filepath.Rel(boundary, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	for candidate := filepath.Clean(path); ; candidate = filepath.Dir(candidate) {
+		if installationShape(candidate) {
+			return candidate
+		}
+		if candidate == boundary {
+			return ""
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			return ""
+		}
+	}
+}
+
+func adoptedAncestor(path string) string {
+	for candidate := filepath.Clean(path); ; candidate = filepath.Dir(candidate) {
+		if installationShape(candidate) {
+			if resolved, err := filepath.EvalSymlinks(candidate); err == nil {
+				candidate = resolved
+			}
+			return candidate
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			return ""
+		}
+	}
+}
+
+func installationShape(root string) bool {
+	conf, confErr := os.Stat(filepath.Join(root, "metasystem.conf"))
+	scripts, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents"))
+	return confErr == nil && !conf.IsDir() && scriptsErr == nil && scripts.IsDir()
 }
 
 // RelativeRoot returns the repository-relative directory owned by kind.

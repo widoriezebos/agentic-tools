@@ -165,6 +165,7 @@ type hazardFinalWorkState struct {
 func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMember) error {
 	var governed *ConfigurationObligations
 	var rootRecord map[string]any
+	criticOnly := len(members) > 0
 	memberIDs := make(map[string]bool, len(members))
 	memberSessions := make(map[string]bool, len(members))
 	for _, member := range members {
@@ -175,6 +176,9 @@ func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMem
 		}
 		if job == root {
 			rootRecord = member.record
+		}
+		if !exactCriticRole(member.record["role"]) {
+			criticOnly = false
 		}
 		class := HazardClass(asString(member.record["destructiveReach"]))
 		if class == "" {
@@ -191,6 +195,14 @@ func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMem
 		}
 	}
 	if governed == nil || rootRecord == nil {
+		return nil
+	}
+	// Review-only chains close through their own register, terminal, and
+	// durability checks. Applying the builder's independent-review or live
+	// proof duties to a chain made exclusively of exact critic roles would
+	// require an infinite chain of critics. Any malformed role or any work
+	// member keeps the normal builder duties below.
+	if criticOnly {
 		return nil
 	}
 	if !governed.IndependentCritiqueRequired && !governed.LiveProofRequired {
@@ -211,6 +223,19 @@ func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMem
 		}
 	}
 	return nil
+}
+
+func exactCriticRole(value any) bool {
+	role, ok := value.(string)
+	if !ok {
+		return false
+	}
+	switch role {
+	case "code-critic", "design-critic", "warden":
+		return true
+	default:
+		return false
+	}
 }
 
 func finalHazardWorkState(members []chainMember) (hazardFinalWorkState, string) {

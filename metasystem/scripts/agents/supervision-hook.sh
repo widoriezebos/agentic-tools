@@ -13,12 +13,13 @@ set -euo pipefail
 runtime=${1:-}
 event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
-case "$event" in start|stop|end) ;; *) exit 2 ;; esac
+case "$event" in start|receipt|stop|end) ;; *) exit 2 ;; esac
 
 emit_raw_stop_block() {
   printf '%s\n' '{"decision":"block","reason":"Metasystem could not prove that stopping is safe; stopping is refused."}'
 }
 raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing, so stopping safety cannot be judged; reinstall or rebuild bin/metasystem before stopping."}'
+internal_skip_result='METASYSTEM_INTERNAL_HOOK_SKIP_V1'
 
 # Claude Code marks a repeated Stop hook with stop_hook_active. The verdict
 # uses that evidence in its bounded three-refusal counter and attempts the
@@ -173,6 +174,13 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     deadline_message_rc=0
     deadline_shape_rc=0
     deadline_valid=false
+    deadline_raw=$(command cat "$deadline_stdout" 2>/dev/null || true)
+    if (( deadline_rc == 0 )) && [[ "$deadline_raw" == "$internal_skip_result" ]]; then
+      rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+        "$deadline_resolution" "$deadline_resolution_ready" || true
+      rmdir "$deadline_dir" 2>/dev/null || true
+      exit 0
+    fi
     if (( deadline_rc == 0 )) && [[ -x "$deadline_validator" ]]; then
       deadline_decision=$("$deadline_validator" json get --file "$deadline_stdout" --field decision 2>/dev/null) \
         || deadline_decision_rc=$?
@@ -356,6 +364,36 @@ fi
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
+
+intentional_hook_skip() {
+  if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" == "$PPID" ]]; then
+    printf '%s\n' "$internal_skip_result"
+  fi
+  exit 0
+}
+
+# A job-bound adapter supplies evidence coordinates before launching any
+# provider child. The coordinates never authorize a skip: the launcher's
+# engine must match this live ancestry to that exact job's recorded custody.
+delegate_state_hint=${METASYSTEM_HOOK_DELEGATE_STATE_ROOT:-}
+delegate_installation_hint=${METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT:-}
+delegate_job_hint=${METASYSTEM_HOOK_DELEGATE_JOB:-}
+if [[ -n "$delegate_state_hint$delegate_installation_hint$delegate_job_hint" ]]; then
+  if [[ -z "$delegate_state_hint" || -z "$delegate_installation_hint" || -z "$delegate_job_hint" ||
+        ! -x "$delegate_installation_hint/bin/metasystem" ]]; then
+    echo "supervision hook refused: delegate context hint is incomplete or its engine is unavailable" >&2
+    exit 1
+  fi
+  delegate_hint_rc=0
+  delegate_hint_result=$("$delegate_installation_hint/bin/metasystem" lease hook-delegate \
+    --root "$delegate_state_hint" --metasystem-root "$delegate_installation_hint" \
+    --job "$delegate_job_hint" --caller-pid "$PPID" 2>/dev/null) || delegate_hint_rc=$?
+  if (( delegate_hint_rc == 0 )) && [[ "$delegate_hint_result" == *'"delegate":true'* ]]; then
+    intentional_hook_skip
+  fi
+  echo "supervision hook refused: supplied delegate context did not authenticate this process ancestry" >&2
+  exit 1
+fi
 if [[ ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
     printf '%s\n' "$raw_missing_engine_stop"
@@ -429,6 +467,88 @@ fi
 # shape becomes its sha256 hex, and every downstream use rides the result.
 if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
   session=$(printf '%s' "$session" | "$ms" util sha256)
+fi
+
+hook_generation=
+hook_attempt_seq=
+health_line=
+checkin_tail=
+digest_message=
+digest_cursor=
+digest_prefix=
+hook_evidence_failure=
+stop_failure=
+record_stop_failure() { # fixed diagnostic
+  [[ -n "$stop_failure" ]] || stop_failure=$1
+}
+# Runtime signatures are anchored on the executable, so an intermediate
+# `/bin/sh -c` does not impersonate the runtime merely because its arguments
+# name this hook. Start at the immediate parent and let the process owner walk.
+# The adapter declarations belong to the installation, not the checkout.
+local_delegate_rc=0
+local_delegate=$("$ms" lease hook-delegate --root "$state_root" --metasystem-root "$harness_root" \
+  --caller-pid "$PPID" 2>/dev/null) || local_delegate_rc=$?
+if (( local_delegate_rc == 0 )) && [[ "$local_delegate" == *'"delegate":true'* ]]; then
+  intentional_hook_skip
+elif (( local_delegate_rc != 0 && local_delegate_rc != 3 )); then
+  echo "supervision hook refused: local delegate custody evidence was unreadable" >&2
+  exit 1
+fi
+
+if [[ "$runtime" == fake ]]; then
+  # The synthetic fixture runtime is deliberately outside the adoptable-host
+  # registry. Keep its existing exact signature and fixtureauth ancestry path;
+  # real provider hooks continue to discover foreign hosts through --all-hosts.
+  identity=$("$ms" proc find-ancestor --repo "$harness_root" --pid "$PPID" --runtime fake 2>/dev/null || true)
+else
+  identity=$("$ms" proc find-ancestor --repo "$harness_root" --pid "$PPID" --all-hosts 2>/dev/null || true)
+fi
+main_id=
+main_class=
+main_holder=false
+identity_pid=
+identity_started=
+if [[ -n "$identity" ]]; then
+  identity_runtime=$("$ms" json get --value "$identity" --field runtime 2>/dev/null || true)
+  if [[ -z "$identity_runtime" ]]; then
+    record_stop_failure "the runtime identity was unreadable"
+    identity=
+  elif [[ "$identity_runtime" != "$runtime" ]]; then
+    intentional_hook_skip
+  fi
+  if [[ -n "$identity" ]]; then
+    identity_pid=$("$ms" json get --value "$identity" --field pid 2>/dev/null || true)
+    identity_started=$("$ms" json get --value "$identity" --field pidStartedAt 2>/dev/null || true)
+    if ! [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]]; then
+      record_stop_failure "the runtime identity was unreadable"
+      identity=
+      identity_pid=
+      identity_started=
+    fi
+  fi
+else
+  # Recorded fallback: a hook may run in a test harness or runtime wrapper
+  # whose authenticated main was announced explicitly. Classification returns
+  # that exact announcement; an unannounced process gains nothing here.
+  parent_view_rc=0
+  parent_view=$("$ms" lease classify --root "$state_root" --metasystem-root "$harness_root" --caller-pid "$PPID" 2>/dev/null) || parent_view_rc=$?
+  parent_class=$("$ms" json get --value "$parent_view" --field class 2>/dev/null || true)
+  if (( parent_view_rc != 0 )) || [[ -z "$parent_class" ]]; then
+    record_stop_failure "the fallback runtime identity could not be classified"
+  elif [[ "$parent_class" == MAIN ]]; then
+    parent_runtime=$("$ms" json get --value "$parent_view" --field announcement.runtime 2>/dev/null || true)
+    if [[ -z "$parent_runtime" ]]; then
+      record_stop_failure "the fallback runtime identity was unreadable"
+    elif [[ "$parent_runtime" != "$runtime" ]]; then
+      intentional_hook_skip
+    else
+      identity_pid=$("$ms" json get --value "$parent_view" --field announcement.pid 2>/dev/null || true)
+      identity_started=$("$ms" json get --value "$parent_view" --field announcement.pidStartedAt 2>/dev/null || true)
+      [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]] \
+        && identity=recorded-main
+      [[ -n "$identity" ]] || record_stop_failure "the fallback runtime identity was unreadable"
+    fi
+  fi
 fi
 
 # SessionStart is one relay object. Every existing start notice is collected
@@ -608,18 +728,9 @@ $brain_payload"
   rmdir "$brain_boot_dir" 2>/dev/null || true
 fi
 
-hook_generation=
-hook_attempt_seq=
-health_line=
-checkin_tail=
-digest_message=
-digest_cursor=
-digest_prefix=
-hook_evidence_failure=
-stop_failure=
-record_stop_failure() { # fixed diagnostic
-  [[ -n "$stop_failure" ]] || stop_failure=$1
-}
+# Only after runtime and delegate context are decided may Stop publish its
+# attempt evidence. The parent treats no other empty or malformed result as a
+# skip, preserving the existing fail-closed deadline behavior.
 if [[ "$event" == stop ]]; then
   turn_key_rc=0
   turn_key=$({ printf '%s\n' "$session"; command cat "$payload"; } | "$ms" util sha256) || turn_key_rc=$?
@@ -628,9 +739,7 @@ if [[ "$event" == stop ]]; then
     record_stop_failure "turn evidence could not be prepared"
   else
     hook_attempt_rc=0
-    hook_attempt=$(
-      "$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null
-    ) || hook_attempt_rc=$?
+    hook_attempt=$("$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null) || hook_attempt_rc=$?
     if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
       hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
       record_stop_failure "attempt evidence could not be recorded"
@@ -642,43 +751,6 @@ if [[ "$event" == stop ]]; then
         record_stop_failure "attempt evidence was unreadable"
       fi
     fi
-  fi
-fi
-
-# Runtime signatures are anchored on the executable, so an intermediate
-# `/bin/sh -c` does not impersonate the runtime merely because its arguments
-# name this hook. Start at the immediate parent and let the process owner walk.
-# The adapter declarations belong to the installation, not the checkout.
-identity=$("$ms" proc find-ancestor --repo "$harness_root" --pid "$PPID" --runtime "$runtime" 2>/dev/null || true)
-main_id=
-main_class=
-main_holder=false
-identity_pid=
-identity_started=
-if [[ -n "$identity" ]]; then
-  identity_pid=$("$ms" json get --value "$identity" --field pid 2>/dev/null || true)
-  identity_started=$("$ms" json get --value "$identity" --field pidStartedAt 2>/dev/null || true)
-  if ! [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]]; then
-    record_stop_failure "the runtime identity was unreadable"
-    identity=
-    identity_pid=
-    identity_started=
-  fi
-else
-  # Recorded fallback: a hook may run in a test harness or runtime wrapper
-  # whose authenticated main was announced explicitly. Classification returns
-  # that exact announcement; an unannounced process gains nothing here.
-  parent_view_rc=0
-  parent_view=$("$ms" lease classify --root "$state_root" --metasystem-root "$harness_root" --caller-pid "$PPID" 2>/dev/null) || parent_view_rc=$?
-  parent_class=$("$ms" json get --value "$parent_view" --field class 2>/dev/null || true)
-  if (( parent_view_rc != 0 )) || [[ -z "$parent_class" ]]; then
-    record_stop_failure "the fallback runtime identity could not be classified"
-  elif [[ "$parent_class" == MAIN ]]; then
-    identity_pid=$("$ms" json get --value "$parent_view" --field announcement.pid 2>/dev/null || true)
-    identity_started=$("$ms" json get --value "$parent_view" --field announcement.pidStartedAt 2>/dev/null || true)
-    [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]] \
-      && identity=recorded-main
-    [[ -n "$identity" ]] || record_stop_failure "the fallback runtime identity was unreadable"
   fi
 fi
 if [[ -n "$identity_pid" ]]; then
@@ -714,6 +786,17 @@ external_stop_json() { # system message, reason, cause, remedy
     --refusal-record "$stop_refusal_record" --session "$session" \
     --cause "$3" --remedy "$4" "$2"
 }
+
+if [[ "$event" == receipt ]]; then
+  receipt_rc=0
+  bash "$script_dir/../receipt.sh" check >/dev/null 2>&1 || receipt_rc=$?
+  if (( receipt_rc == 1 )); then
+    surface_json "Metasystem retro due: run scripts/receipt.sh check for details, then skills/retro."
+  elif (( receipt_rc != 0 )); then
+    surface_json "Metasystem receipt check errored; run scripts/receipt.sh check to see why."
+  fi
+  exit 0
+fi
 
 tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
 up_failure=

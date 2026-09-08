@@ -7,34 +7,50 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// runHooksCheck verifies this repository runs under the metasystem it
-// ships. --runtime is REQUIRED and selects the registry's live
-// self-check declaration (the vendored-entry marker); the live and
-// shipped paths stay explicit arguments because the suite's
-// nested-template case resolves live settings in the parent repo.
+// runHooksCheck structurally verifies a selected host's live lifecycle
+// settings. The historical two-positional-argument form remains Claude.
 func runHooksCheck(args []string) int {
 	flags := flag.NewFlagSet("hooks check", flag.ContinueOnError)
-	runtime := flags.String("runtime", "", "runtime whose live self-check to verify (required)")
+	runtime := flags.String("runtime", "", "runtime whose live lifecycle settings to verify (default: claude)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	rest := flags.Args()
-	if *runtime == "" || len(rest) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem hooks check --runtime R <live settings> <shipped hooks>")
+	if len(rest) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem hooks check [--runtime R] <live settings> <shipped hooks>")
 		return 2
+	}
+	if *runtime == "" {
+		*runtime = "claude"
 	}
 	declaration, ok := runtimes.Lookup(*runtime)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "unknown runtime: %s\n", *runtime)
 		return 1
 	}
-	if declaration.SelfCheck == nil {
-		fmt.Fprintf(os.Stderr, "no live self-check declared for %s\n", *runtime)
+	if !declaration.Adoptable || declaration.ShippedEnforcementConfig == "" {
+		fmt.Fprintf(os.Stderr, "no host hook configuration declared for %s\n", *runtime)
 		return 1
 	}
-	if err := hooks.CheckOwnHooks(rest[0], rest[1], declaration.SelfCheck.VendoredMarker); err != nil {
+	layout, err := stateroot.ResolveLayout(rest[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	live, err := os.ReadFile(rest[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	shipped, err := os.ReadFile(rest[1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := hooks.CheckSettings(live, shipped, *runtime, layout.InstallationRel, layout.RepositoryRoot == layout.InstallationRoot); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

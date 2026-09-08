@@ -243,6 +243,7 @@ func families() []family {
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
 				{"coverage-ratchet", "judge go test -cover output against the checked-in per-package floors", runAuditCoverageRatchet},
+				{"dependency-ratchet", "refuse undeclared executable interpreter dependencies in shell sources", runAuditDependencyRatchet},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 			},
 		},
@@ -331,6 +332,7 @@ func families() []family {
 			name:    "runtime",
 			summary: "the declared agent-runtime registry (list, lookups)",
 			verbs: []verb{
+				{"setup", "install or check host runtime entry points without selecting an active runtime", runRuntimeSetup},
 				{"list", "runtime names in priority order (--adoptable/--with-* filter)", runRuntimeList},
 				{"signature-vectors", "a runtime's declared positive/lookalike process vectors", runRuntimeSignatureVectors},
 				{"collision-roots", "the deduplicated full population of adoption collision roots", runRuntimeCollisionRoots},
@@ -513,6 +515,7 @@ func families() []family {
 				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
 				{"retire", "remove this process's announcement", runLeaseRetire},
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
+				{"hook-delegate", "verify that a hook caller descends from exact delegate-job custody", runLeaseHookDelegate},
 				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
 				{"renew", "bump the holder's lease revision", runLeaseRenew},
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},

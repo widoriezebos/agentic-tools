@@ -176,6 +176,14 @@ SH
 
 make_brain_source_leg() { # name
   local name=$1 source_top source_prefix legacy ledger digest manifest fixture_start migrate_out
+  # These disposable roots need their own witness because the parent's witness describes a different repository.
+  unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
+    METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_EXPORT \
+    METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE METASYSTEM_GATE_WITNESS_WRITE \
+    METASYSTEM_GATE_WITNESS_CONTROLLER_PID METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT \
+    METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID \
+    METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT \
+    METASYSTEM_GATE_WITNESS_REUSE_OUT
   leg_root=$tmp/$name
   leg_seed=$leg_root/seed
   leg_remote=$leg_root/origin.git

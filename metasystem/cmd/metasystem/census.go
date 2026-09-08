@@ -202,6 +202,7 @@ func runCensusFindAncestor(args []string) int {
 	repo := flags.String("repo", "", "metasystem root")
 	pid := flags.Int64("pid", 0, "process id to walk up from")
 	runtime := flags.String("runtime", "", "restrict to one runtime (optional)")
+	allHosts := flags.Bool("all-hosts", false, "search every adoptable host independent of the execution roster")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -209,7 +210,17 @@ func runCensusFindAncestor(args []string) int {
 		fmt.Fprintln(os.Stderr, "proc find-ancestor: --repo and --pid are required")
 		return 2
 	}
-	ancestor, err := census.FindAncestorProduction(*repo, *pid, *runtime)
+	if *allHosts && *runtime != "" {
+		fmt.Fprintln(os.Stderr, "proc find-ancestor: --all-hosts and --runtime are mutually exclusive")
+		return 2
+	}
+	var ancestor census.AgentAncestor
+	var err error
+	if *allHosts {
+		ancestor, err = census.FindAncestorAllHosts(*repo, *pid)
+	} else {
+		ancestor, err = census.FindAncestorProduction(*repo, *pid, *runtime)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

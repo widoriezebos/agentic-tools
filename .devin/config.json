@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX; command -v git \u003e/dev/null 2\u003e\u00261 || exit $?; repo=$(git rev-parse --show-toplevel 2\u003e/dev/null); git_status=$?; if [ \"$git_status\" -ne 0 ]; then if git rev-parse --git-dir \u003e/dev/null 2\u003e\u00261; then git rev-parse --show-toplevel \u003e/dev/null; exit $?; fi; probe=$(pwd -P) || exit $?; while [ \"$probe\" != / ] \u0026\u0026 [ ! -e \"$probe/.git\" ] \u0026\u0026 [ ! -L \"$probe/.git\" ]; do probe=${probe%/*}; [ -n \"$probe\" ] || probe=/; done; if [ ! -e \"$probe/.git\" ] \u0026\u0026 [ ! -L \"$probe/.git\" ]; then exit 0; fi; git rev-parse --show-toplevel \u003e/dev/null; exit $?; fi; cd \"$repo/metasystem\" \u0026\u0026 bash scripts/agents/supervision-hook.sh devin end",
+            "timeout": 3,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX; command -v git \u003e/dev/null 2\u003e\u00261 || exit $?; repo=$(git rev-parse --show-toplevel 2\u003e/dev/null); git_status=$?; if [ \"$git_status\" -ne 0 ]; then if git rev-parse --git-dir \u003e/dev/null 2\u003e\u00261; then git rev-parse --show-toplevel \u003e/dev/null; exit $?; fi; probe=$(pwd -P) || exit $?; while [ \"$probe\" != / ] \u0026\u0026 [ ! -e \"$probe/.git\" ] \u0026\u0026 [ ! -L \"$probe/.git\" ]; do probe=${probe%/*}; [ -n \"$probe\" ] || probe=/; done; if [ ! -e \"$probe/.git\" ] \u0026\u0026 [ ! -L \"$probe/.git\" ]; then exit 0; fi; git rev-parse --show-toplevel \u003e/dev/null; exit $?; fi; cd \"$repo/metasystem\" \u0026\u0026 bash scripts/agents/supervision-hook.sh devin start",
+            "timeout": 15,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX; repo=$(git rev-parse --show-toplevel) \u0026\u0026 cd \"$repo/metasystem\" \u0026\u0026 bash scripts/agents/supervision-hook.sh devin stop",
+            "timeout": 60,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

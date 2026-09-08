@@ -20,6 +20,8 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
@@ -290,6 +292,21 @@ func (b *EnrolledBinary) PrepareForExecution() error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
+	// One preparer owns publication through the descriptor open, so another
+	// process can reuse but never replace a valid pin retained by this caller.
+	prepareLockPath := filepath.Join(directory, ".prepare.flock")
+	prepareLock, err := os.OpenFile(prepareLockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open engine pin preparation lock %s: %w", prepareLockPath, err)
+	}
+	if err := unix.Flock(int(prepareLock.Fd()), unix.LOCK_EX); err != nil {
+		_ = prepareLock.Close()
+		return fmt.Errorf("take engine pin preparation lock %s: %w", prepareLockPath, err)
+	}
+	defer func() {
+		_ = unix.Flock(int(prepareLock.Fd()), unix.LOCK_UN)
+		_ = prepareLock.Close()
+	}()
 	finalPath := EnrolledExecutionPath(b.repoRoot, b.Install)
 	if existing, err := os.Open(finalPath); err == nil {
 		if digest, digestErr := digestOpenFile(existing); digestErr == nil && digest == b.Install.InstallDigest {

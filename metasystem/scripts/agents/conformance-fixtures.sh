@@ -248,15 +248,16 @@ write_implementer '' source.txt
 commit_worktree
 printf 'round two\n' >>"$worktree/docs/note.md"
 write_followup_return 2 docs/note.md
-"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl-r2 >/dev/null
 printf 'undeclared\n' >"$worktree/extra.txt"
 expect_failure cumulative-boundary-outside 'some implementation round must declare every changed path' \
   "$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl-r2
 grep -Fq 'extra.txt' "$fixture_root/cumulative-boundary-outside.out" \
   || { echo "cumulative boundary refusal did not name the undeclared path" >&2; exit 1; }
+rm "$worktree/extra.txt"
+"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl-r2 >/dev/null
 
-# CC-1-2 and CC-1-3: advancing the merge target does not make an immutable
-# review-stage boundary fail, and merge never overwrites the critic's artifact,
+# CC-1-2 and CC-1-3: advancing the merge target cannot overwrite immutable
+# review-stage evidence, and merge never overwrites the critic's artifact,
 # whether the first merge attempt passes or refuses a stale review.
 new_case recovery
 printf 'changed\n' >>"$worktree/source.txt"
@@ -264,15 +265,20 @@ write_implementer '' source.txt
 "$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl >/dev/null
 first_tree=$("$source_root/bin/metasystem" json get \
   --file "$controller/artifacts/agents/impl/rounds/1/review.json" --field reviewedTree)
+artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
+review_artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/review.json" | awk '{print $1}')
 commit_worktree
 printf 'advanced target\n' >"$controller/upstream.txt"
 git -C "$controller" add upstream.txt
 git -C "$controller" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm upstream
 controller_branch=$(git -C "$controller" branch --show-current)
 git -C "$worktree" -c user.name=metasystem -c user.email=metasystem@example.invalid rebase -q "$controller_branch"
-"$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl >/dev/null
+expect_failure recovery-review-immutable 'immutable conformance review already exists' \
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl
+[[ "$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')" == "$artifact_sha" \
+   && "$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/review.json" | awk '{print $1}')" == "$review_artifact_sha" ]] \
+  || { echo "a refused review overwrite changed immutable conformance artifacts" >&2; exit 1; }
 final_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}')
-artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
 configure_critic
 write_critic "$first_tree" '' none critic-model
 expect_failure recovery-stale 'is stale' \

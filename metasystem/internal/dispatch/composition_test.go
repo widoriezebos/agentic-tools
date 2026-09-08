@@ -463,6 +463,164 @@ func wantHazardClosureRefusal(t *testing.T, err error, reason string) {
 	}
 }
 
+func closeReadyCriticHazardChain(t *testing.T, class HazardClass, role any) (repo, evidence, job string) {
+	t.Helper()
+	repo, evidence, job = mirrorFixture(t)
+	path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+	record := readJSONFile(t, path)
+	record["role"] = role
+	record["destructiveReach"] = class
+	record["configurationObligations"] = requiredConfigurationByHazard[class]
+	record["dispatchMode"] = DispatchModeFresh
+	record["resumedSessionId"] = nil
+	record["sessionId"] = "critic-chain-session"
+	record["endedAt"] = "2026-08-30T10:00:00Z"
+	record[findingRegisterField] = []any{}
+	record[findingRegisterRoundField] = 1
+	writeRecord(path, record)
+	refreshHazardMirror(t, repo, evidence, job)
+	return repo, evidence, job
+}
+
+func TestCriticOnlyHazardClosureDoesNotRecurse(t *testing.T) {
+	for _, row := range []struct {
+		role  string
+		class HazardClass
+	}{
+		{role: "code-critic", class: HazardDesignBearing},
+		{role: "design-critic", class: HazardDesignBearing},
+		{role: "warden", class: HazardDestructiveReach},
+	} {
+		t.Run(row.role, func(t *testing.T) {
+			repo, _, job := closeReadyCriticHazardChain(t, row.class, row.role)
+			if err := CloseCheck(repo, job); err != nil {
+				t.Fatalf("review-only %s chain required recursive builder evidence: %v", row.role, err)
+			}
+		})
+	}
+}
+
+func TestCriticOnlyHazardClosurePreservesOtherCloseChecks(t *testing.T) {
+	t.Run("malformed hazard class", func(t *testing.T) {
+		repo, evidence, job := closeReadyCriticHazardChain(t, HazardDesignBearing, "code-critic")
+		path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+		record := readJSONFile(t, path)
+		record["destructiveReach"] = "DESIGN-BEARING "
+		writeRecord(path, record)
+		refreshHazardMirror(t, repo, evidence, job)
+		wantHazardClosureRefusal(t, CloseCheck(repo, job), hazardRecordClosureRefusal)
+	})
+
+	for _, row := range []struct {
+		name   string
+		role   any
+		absent bool
+	}{
+		{name: "absent", absent: true},
+		{name: "non-string", role: 7},
+		{name: "empty", role: ""},
+		{name: "trailing-space", role: "code-critic "},
+		{name: "unknown", role: "critic"},
+	} {
+		t.Run("role-"+row.name, func(t *testing.T) {
+			repo, evidence, job := closeReadyCriticHazardChain(t, HazardDesignBearing, "code-critic")
+			path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+			record := readJSONFile(t, path)
+			if row.absent {
+				delete(record, "role")
+			} else {
+				record["role"] = row.role
+			}
+			writeRecord(path, record)
+			refreshHazardMirror(t, repo, evidence, job)
+			wantHazardClosureRefusal(t, CloseCheck(repo, job), hazardCritiqueClosureRefusal)
+		})
+	}
+
+	t.Run("open finding register", func(t *testing.T) {
+		repo, evidence, job := closeReadyCriticHazardChain(t, HazardDesignBearing, "code-critic")
+		path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+		record := readJSONFile(t, path)
+		record[findingRegisterField] = encodeFindingRegister([]registerFinding{{
+			FindingID: "HOST-T-OPEN", Critic: job, RigorClass: "bounded",
+			FactsDigest: strings.Repeat("a", 64), Facts: registerFacts(),
+			Artifact: "metasystem/internal/dispatch/hazard.go", Title: "open fixture finding",
+			Status: "open", Evidence: "fixture evidence", EvidenceDigest: strings.Repeat("b", 64), Multiplicity: 1,
+		}})
+		writeRecord(path, record)
+		refreshHazardMirror(t, repo, evidence, job)
+		if err := CloseCheck(repo, job); err == nil || !strings.Contains(err.Error(), "cannot close with unresolved finding HOST-T-OPEN") {
+			t.Fatalf("open critic register closure = %v", err)
+		}
+	})
+
+	t.Run("unfolded register", func(t *testing.T) {
+		repo, evidence, job := closeReadyCriticHazardChain(t, HazardDesignBearing, "code-critic")
+		path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+		record := readJSONFile(t, path)
+		record[findingRegisterRoundField] = 0
+		writeRecord(path, record)
+		refreshHazardMirror(t, repo, evidence, job)
+		if err := CloseCheck(repo, job); err == nil || !strings.Contains(err.Error(), "register is folded through round 0 while terminal round 1 exists") {
+			t.Fatalf("unfolded critic register closure = %v", err)
+		}
+	})
+
+	t.Run("missing mirror", func(t *testing.T) {
+		repo, _, job := closeReadyCriticHazardChain(t, HazardDesignBearing, "code-critic")
+		path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+		record := readJSONFile(t, path)
+		delete(record, "mirror")
+		writeRecord(path, record)
+		if err := CloseCheck(repo, job); err == nil || !strings.Contains(err.Error(), "unmirrored") {
+			t.Fatalf("missing critic mirror closure = %v", err)
+		}
+	})
+
+	t.Run("stale mirror", func(t *testing.T) {
+		repo, _, job := closeReadyCriticHazardChain(t, HazardDesignBearing, "code-critic")
+		record := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", job+".json"))
+		mirror := record["mirror"].(map[string]any)
+		if err := os.WriteFile(filepath.Join(asString(mirror["path"]), "manifest.json"), []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := CloseCheck(repo, job); err == nil || !strings.Contains(err.Error(), "manifest does not cover job record") {
+			t.Fatalf("stale critic mirror closure = %v", err)
+		}
+	})
+}
+
+func TestMixedHazardChainRetainsBuilderDuties(t *testing.T) {
+	repo, evidence, job := closeReadyHazardChain(t, HazardDesignBearing)
+	child := job + "-r2"
+	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), child+".json", map[string]any{
+		"jobId": child, "round": 2, "parentJob": job, "status": "completed",
+		"role": "code-critic", "sessionId": "member-critic-session",
+		"endedAt": "2026-08-30T10:02:00Z", "destructiveReach": HazardDestructiveReach,
+		"configurationObligations": requiredConfigurationByHazard[HazardDestructiveReach],
+		"capabilitySnapshot":       "artifacts/agents/capabilities/snap.json",
+	})
+	result := filepath.Join(t.TempDir(), "child-mirror.json")
+	if err := Mirror(repo, repo, evidence, job, child, result); err != nil {
+		t.Fatal(err)
+	}
+	refreshHazardMirror(t, repo, evidence, job)
+	wantHazardClosureRefusal(t, CloseCheck(repo, job), hazardCritiqueClosureRefusal)
+
+	writeHazardEvidenceJob(t, repo, "independent-mixed-critic", HazardDestructiveReach, map[string]any{
+		"role": "code-critic", "reviews": job, "parentJob": nil,
+		"dispatchMode": DispatchModeFresh, "resumedSessionId": nil,
+		"sessionId": "independent-mixed-session", "reasoningEffort": "xhigh",
+		"configurationObligations": requiredConfigurationByHazard[HazardDestructiveReach],
+	})
+	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+	root := readJSONFile(t, rootPath)
+	root["independentCritiqueJobRef"] = "independent-mixed-critic"
+	writeRecord(rootPath, root)
+	refreshHazardMirror(t, repo, evidence, job)
+	wantHazardClosureRefusal(t, CloseCheck(repo, job), hazardLiveProofClosureRefusal)
+}
+
 func TestHazardDutiesGateChainCompletion(t *testing.T) {
 	t.Run("destructive reach requires critique and live proof", func(t *testing.T) {
 		repo, evidence, job := closeReadyHazardChain(t, HazardDestructiveReach)

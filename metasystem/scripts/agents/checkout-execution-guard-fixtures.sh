@@ -41,9 +41,12 @@ engine=${METASYSTEM_BIN:-$root/bin/metasystem}
 script="$root/scripts/agents/checkout-execution-guard-fixtures.sh"
 tmp=$(mktemp -d)
 owned_pids=()
+fixture_completed=0
 
 cleanup() {
-  local pid
+  local status=$? pid
+  trap - EXIT
+  set +e
   for pid in ${owned_pids[@]+"${owned_pids[@]}"}; do
     if kill -0 "$pid" 2>/dev/null; then
       kill -TERM "$pid" 2>/dev/null || true
@@ -51,6 +54,10 @@ cleanup() {
     fi
   done
   rm -rf "$tmp"
+  if (( status == 0 && ! fixture_completed )); then
+    status=1
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -128,11 +135,13 @@ borrowed_validation_progress_env=(
   METASYSTEM_SUITE_PROGRESS_TMP="$tmp"
   METASYSTEM_SUITE_PROGRESS_TMP_OWNER=
 )
+suite_first_guard_root="$tmp/guard-state/suite-first"
+dispatch_first_guard_root="$tmp/guard-state/dispatch-first"
+nested_guard_root="$tmp/guard-state/nested-own-ancestry"
 if git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1; then
 # Suite first: launch the actual validation entrypoint, then the actual
 # dispatch verb. Dispatch must stay queued until validation releases; both
 # entrypoints then finish their explicit guard fixture with status zero.
-suite_first_guard_root="$tmp/guard-state/suite-first"
 suite_control="$tmp/suite-first-suite.json"
 dispatch_control="$tmp/suite-first-dispatch.json"
 write_control "$suite_control" "$tmp/suite-first-suite.ready" "$tmp/suite-first-suite.release"
@@ -161,7 +170,6 @@ wait "$dispatch_pid"
 
 # Dispatch first: the same production entrypoints in reverse order prove the
 # validation suite queues behind an active dispatch.
-dispatch_first_guard_root="$tmp/guard-state/dispatch-first"
 dispatch_control="$tmp/dispatch-first-dispatch.json"
 suite_control="$tmp/dispatch-first-suite.json"
 write_control "$dispatch_control" "$tmp/dispatch-first-dispatch.ready" "$tmp/dispatch-first-dispatch.release"
@@ -192,7 +200,6 @@ wait "$suite_pid"
 # process chain against a guard the fixture itself holds. Exact ancestry lets
 # the nested dispatch register immediately, explicitly preserving the join
 # exemption while the foreign queueing legs use separate private roots.
-nested_guard_root="$tmp/guard-state/nested-own-ancestry"
 nested_dispatch_control="$tmp/nested-dispatch.json"
 nested_suite_control="$tmp/nested-suite.json"
 printf '{"attempted":"%s","ready":"%s","release":"%s","capSec":%s,"detachReady":"%s","detachRelease":"%s"}\n' \
@@ -290,4 +297,5 @@ for private_guard_root in "$suite_first_guard_root" "$dispatch_first_guard_root"
   [[ ! -e "$private_guard_root/artifacts/agents/supervision/gate-runs/checkout-execution.lock.d" ]] \
     || { echo "checkout execution guard fixture left a private guard owned: $private_guard_root" >&2; exit 1; }
 done
+fixture_completed=1
 echo "checkout execution guard fixtures passed"

@@ -101,6 +101,8 @@ The status post requests execution approval only for the queued goal marked with
 
 `metasystem.conf` owns the runtime and model roster. Dispatch a rostered role through `metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <MECHANICAL|DESIGN-BEARING|DESTRUCTIVE-REACH>` even when the selected runtime matches the main agent; `metasystem help` owns the full operator interface. `runtime=main` means the current session performs that role and is not dispatchable. Native subagents remain available for cheap, read-only exploration outside the roster.
 
+The shared design-author lane selects Codex with `gpt-6-astra`. Design authoring uses the `DESIGN-BEARING` classification so the hazard contract requires xhigh reasoning effort and the Codex adapter passes it to the executable. Explicit flags, environment variables, and local configuration retain their existing precedence over this committed mode default.
+
 A brief asks the delegate only for verification it can actually perform. The validation suite is not one of those: its fixtures need real process visibility and every delegate sandbox denies it, so the orchestrator runs the suite outside the sandbox and the brief says so (KI-15). Demanding the impossible turns correct delegate behavior into a gap-stop.
 
 A brief that cites authority — a manifest key, a document section, a decided contract — is checked against that authority before dispatch, and the workspace the delegate will read is checked to actually contain it. Seven gap-stops on one chain came from briefs naming keys that were not there yet, or that existed only on the branch the delegate could not pull (IL-18, KI-9). A gap-stop is the correct delegate behavior and an avoidable orchestrator cost.
@@ -279,6 +281,14 @@ The specific shared paths, caches, and lock locations are project facts for `doc
 
 Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
 
+`bin/metasystem runtime setup --repo <path>` registers every adoptable host by
+default without selecting a globally active runtime or changing the execution
+roster. `--runtimes <csv>` selects explicit hosts, `--copy-skills` retains the
+adoption copy mode, and `--check` validates without writing. Its
+`CONFIG_READY`, provider-trust, and lifecycle-observation lines are deliberately
+separate: installed files do not approve provider trust, restart a provider,
+arm first-use supervision, or prove that a hook ran.
+
 The authoritative runtime set is the registry (`bin/metasystem runtime
 list`), and each runtime's registration column below is a REDUNDANT
 convenience view of `bin/metasystem runtime registration <name>` — the
@@ -292,7 +302,19 @@ runtimes, not the supported universe.
 | Devin CLI | `scripts/agents/adapters/devin.sh` | `.agents/skills/<name>`, `.devin/skills/<name>`, and `.devin/agents/<name>/AGENT.md` |
 | Fake | `scripts/agents/adapters/fake.sh` | No runtime registration; fixture-only protocol simulator |
 
-Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` registers them for the selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
+Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
+
+All rostered delegates remain children of the dispatcher's one shared job
+owner, even when their provider process runs in a linked worktree or a
+read-only role shares the coordinator checkout. The job-bound adapter exports
+only evidence-location hints to its provider children, resumes, and Devin's
+secondary delivery-repair launch. A lifecycle hook skips only after the
+launcher's engine joins the current child or its recorded adapter ancestor to
+exact job custody. Equal provider session identifiers, a runtime-shaped
+process, a `DELEGATE` classification, or a hint by itself proves nothing.
+Imported hooks for another proven runtime skip silently before announcement,
+lease, authorization, digest, receipt, or turn-state effects; unknown or
+unreadable identity retains the ordinary fail-closed behavior.
 
 ## Native subagents versus metasystem delegates
 

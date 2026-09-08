@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
+source "$source_root/metasystem/scripts/agents/fixture-budget.sh"
 ms=${METASYSTEM_BIN:-$source_root/metasystem/bin/metasystem}
 [[ -x "$ms" ]] || { echo "channel fixtures: bin/metasystem is not built" >&2; exit 1; }
 bed=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-channel.XXXXXX")
@@ -23,6 +24,8 @@ git -C "$source_root" push -q "$bed/origin.git" HEAD:refs/heads/main
 git clone -q "$bed/origin.git" "$bed/export"
 repo="$bed/export/metasystem"
 fake_dir="$bed/fake"
+conf_edit "$repo/metasystem.conf" replace-line-first \
+  '^metasystem[.]runtimes=.*$' 'metasystem.runtimes=fake'
 mkdir -p "$fake_dir"
 "$ms" channel fake serve --dir "$fake_dir" >"$bed/fake.log" 2>&1 &
 server_pid=$!
@@ -101,8 +104,7 @@ opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history
 [[ -n "$opid" ]]
 "$ms" goal approve --root "$repo" --id channel-fixture --by Wido \
 	--elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 \
-	--review-round-limit 3 --temporary-human-word 'Wido approves this channel fixture budget' \
-	--review-by 2026-09-06 >/dev/null
+	--review-round-limit 3 --fixture-human-authority >/dev/null
 "$ms" goal claim --root "$repo" --id channel-fixture >/dev/null
 [[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 
@@ -166,8 +168,7 @@ telegram_opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<
 [[ -n "$telegram_opid" ]]
 "$ms" goal approve --root "$repo" --id channel-telegram-fixture --by Wido \
 	--elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 \
-	--review-round-limit 3 --temporary-human-word 'Wido approves this Telegram channel fixture budget' \
-	--review-by 2026-09-06 >/dev/null
+	--review-round-limit 3 --fixture-human-authority >/dev/null
 "$ms" goal claim --root "$repo" --id channel-telegram-fixture >/dev/null
 [[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
 

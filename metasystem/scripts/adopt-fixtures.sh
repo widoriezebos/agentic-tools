@@ -211,6 +211,29 @@ if true; then  # template-gated by the orchestrator
   git -C "$nested_src" config metasystem.goal.machine fixture-machine
   git -C "$nested_src" add .
   git -C "$nested_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nested
+
+  # HOST-C3-001: adoption has always accepted an explicit installation
+  # beneath an application's Git root. Runtime registration must stay in that
+  # installation and must not strand a fully copied payload when it discovers
+  # the containing repository.
+  nested_app="$tmp/adopt-existing-application"
+  mkdir -p "$nested_app"
+  git -C "$nested_app" init -q -b main
+  git -C "$nested_app" config metasystem.goal.machine fixture-machine
+  printf 'application readme\n' >"$nested_app/README.md"
+  git -C "$nested_app" add README.md
+  git -C "$nested_app" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm application-base
+  nested_install="$nested_app/vendor/metasystem runtime"
+  "$nested_src/vendored/scripts/adopt.sh" "$nested_install" --runtimes claude >"$tmp/adopt-inside-application.out" 2>&1 \
+    || { echo "adoption beneath an existing application failed" >&2; cat "$tmp/adopt-inside-application.out" >&2; exit 1; }
+  [[ -f "$nested_install/metasystem.conf" && -f "$nested_install/.claude/settings.json" && -L "$nested_install/.claude/skills/verify" ]] \
+    || { echo "nested application adoption omitted its local Claude registration" >&2; exit 1; }
+  [[ ! -e "$nested_app/.claude" && "$(cat "$nested_app/README.md")" == "application readme" ]] \
+    || { echo "nested application adoption modified its parent application's files" >&2; exit 1; }
+  "$nested_install/bin/metasystem" runtime setup \
+    --repo "$nested_install/skills/verify" --runtimes claude --check >/dev/null \
+    || { echo "nested application adoption failed shared runtime setup check" >&2; exit 1; }
+
   nested_tgt="$tmp/adopt-nested-target"
   mkdir -p "$nested_tgt"
   git -C "$nested_tgt" init -q -b main
@@ -507,10 +530,11 @@ PLAN
     echo "adopt: unselected runtime-valued keys survived the default selection" >&2
     exit 1
   fi
-  grep -q systemMessage "$tgt/.claude/settings.json" || { echo "adopt: settings.json lacks the shipped hook" >&2; exit 1; }
   grep -q 'SessionStart' "$tgt/.claude/settings.json" \
     && grep -q 'supervision-hook.sh.*claude start' "$tgt/.claude/settings.json" \
     || { echo "adopt: Claude session-start supervision hook missing" >&2; exit 1; }
+  "$tgt/bin/metasystem" runtime setup --repo "$tgt" --runtimes claude --check >/dev/null \
+    || { echo "adopt: default Claude registration failed shared setup check" >&2; exit 1; }
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
   [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
   [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
@@ -549,7 +573,7 @@ PLAN
   fixture_view=$("$tgt/bin/metasystem" lease classify --root "$probe_tgt" --caller-pid $$ 2>/dev/null || true)
   fixture_class=$("$tgt/bin/metasystem" json get --value "$fixture_view" --field class 2>/dev/null || true)
   if open_out=$("$tgt/bin/metasystem" goal open --root "$probe_tgt" --id post-adopt-probe \
-      --intent "authority probe" --next "none" --tier 3 2>&1); then
+      --intent "authority probe" --next "none" 2>&1); then
     [[ "$fixture_class" == HUMAN ]] \
       || { echo "adopt: a $fixture_class caller opened a goal in the adopted target; genesis must not confer write authority" >&2; exit 1; }
   else
@@ -709,8 +733,12 @@ EVIDENCE
   rm "$tgt/covenant.json"
   mv "$tmp/covenant-green-reference.json" "$tgt/covenant.json"
 
+  # A positive delivery gate establishes engine readiness before each mutation;
+  # the negative calls below target registration auditing only.
   echo drift >>"$tgt/.claude/agents/verify.md"
-  if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/profile-drift.out" 2>&1; then
+  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
+      bash "$tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
+      >"$tmp/profile-drift.out" 2>&1; then
     echo "adopt: validation missed a drifted claude profile" >&2
     exit 1
   fi
@@ -764,6 +792,8 @@ EVIDENCE
   [[ -f "$tmp/adopt-devin/.devin/config.json" ]] \
     && grep -q 'supervision-hook.sh.*devin start' "$tmp/adopt-devin/.devin/config.json" \
     || { echo "adopt: Devin-compatible session-start supervision hook missing" >&2; exit 1; }
+  "$tmp/adopt-devin/bin/metasystem" runtime setup --repo "$tmp/adopt-devin" --runtimes devin --check >/dev/null \
+    || { echo "adopt: Devin registration failed shared setup check" >&2; exit 1; }
   [[ ! -e "$tmp/adopt-devin/.claude" ]] || { echo "adopt: devin-only target got .claude state" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-codex" --runtimes codex >/dev/null
   [[ -L "$tmp/adopt-codex/.agents/skills/verify" ]] || { echo "adopt: codex skill registration missing" >&2; exit 1; }
@@ -775,12 +805,16 @@ EVIDENCE
   [[ -f "$tmp/adopt-codex/.codex/hooks.json" ]] \
     && grep -q 'supervision-hook.sh.*codex start' "$tmp/adopt-codex/.codex/hooks.json" \
     || { echo "adopt: Codex session-start supervision hook missing" >&2; exit 1; }
+  "$tmp/adopt-codex/bin/metasystem" runtime setup --repo "$tmp/adopt-codex" --runtimes codex --check >/dev/null \
+    || { echo "adopt: Codex registration failed shared setup check" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-none" --runtimes none >/dev/null
   [[ ! -e "$tmp/adopt-none/.claude" && ! -e "$tmp/adopt-none/.devin" && ! -e "$tmp/adopt-none/.agents" ]] \
     || { echo "adopt: --runtimes none still registered a runtime" >&2; exit 1; }
   [[ -f "$tmp/adopt-none/.github/workflows/metasystem.yml" ]] || { echo "adopt: CI workflow skipped for --runtimes none" >&2; exit 1; }
   grep -qxF 'metasystem.runtimes=' "$tmp/adopt-none/metasystem.conf" \
     || { echo "adopt: --runtimes none did not record an empty runtime selection" >&2; exit 1; }
+  "$tmp/adopt-none/bin/metasystem" runtime setup --repo "$tmp/adopt-none" --runtimes none --check >/dev/null \
+    || { echo "adopt: none registration failed shared setup check" >&2; exit 1; }
   if grep -Eq '^(role\.|mode\..*\.role\.)' "$tmp/adopt-none/metasystem.conf"; then
     echo "adopt: --runtimes none retained roster lines" >&2
     exit 1
@@ -823,6 +857,9 @@ EVIDENCE
     || { echo "adopt: --copy-skills did not copy" >&2; exit 1; }
   [[ -d "$tmp/adopt-copy/.agents/skills/verify" && ! -L "$tmp/adopt-copy/.agents/skills/verify" ]] \
     || { echo "adopt: --copy-skills did not copy the codex registration" >&2; exit 1; }
+  "$tmp/adopt-copy/bin/metasystem" runtime setup --repo "$tmp/adopt-copy" \
+    --runtimes claude,codex --copy-skills --check >/dev/null \
+    || { echo "adopt: copied registrations failed shared setup check" >&2; exit 1; }
   grep -qxF 'metasystem.runtimes=claude,codex' "$tmp/adopt-copy/metasystem.conf" \
     || { echo "adopt: multi-runtime selection was not recorded" >&2; exit 1; }
   grep -qxF 'role.default.runtime=codex' "$tmp/adopt-copy/metasystem.conf" \
@@ -833,19 +870,31 @@ EVIDENCE
   bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-copied-skills.log" 2>&1 \
     || { echo "adopt: copied-skills target failed validation" >&2; tail -20 "$tmp/nested-copied-skills.log" >&2; exit 1; }
   echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
-  if bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
+  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
+      bash "$tmp/adopt-copy/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
+      >"$tmp/copied-claude-drift.out" 2>&1; then
     echo "adopt: validation missed a drifted claude skill copy" >&2
     exit 1
   fi
+  grep -Fq 'registered skill copy has drifted from its source: .claude/skills/verify vs skills/verify' \
+    "$tmp/copied-claude-drift.out" \
+    || { echo "adopt: drifted claude skill copy refusal did not name its registration" >&2; exit 1; }
   cp "$tmp/adopt-copy/skills/verify/SKILL.md" "$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
   echo drift >>"$tmp/adopt-copy/.agents/skills/verify/SKILL.md"
-  if bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
+  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
+      bash "$tmp/adopt-copy/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
+      >"$tmp/copied-codex-drift.out" 2>&1; then
     echo "adopt: validation missed a drifted codex skill copy" >&2
     exit 1
   fi
+  grep -Fq 'registered skill copy has drifted from its source: .agents/skills/verify vs skills/verify' \
+    "$tmp/copied-codex-drift.out" \
+    || { echo "adopt: drifted codex skill copy refusal did not name its registration" >&2; exit 1; }
   cp "$tmp/adopt-copy/skills/verify/SKILL.md" "$tmp/adopt-copy/.agents/skills/verify/SKILL.md"
   rm -rf "$tmp/adopt-copy/skills/verify"
-  if bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >"$tmp/orphan.out" 2>&1; then
+  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
+      bash "$tmp/adopt-copy/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
+      >"$tmp/orphan.out" 2>&1; then
     echo "adopt: validation missed an orphaned copy of a pruned skill" >&2
     exit 1
   fi
@@ -913,11 +962,13 @@ EVIDENCE
   fi
   git -C "$srcrepo" checkout -q -- wow.md
   rm -rf "$tgt/skills/take-a-step-back"
-  if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/dangling.out" 2>&1; then
+  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
+      bash "$tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
+      >"$tmp/dangling.out" 2>&1; then
     echo "adopt: validation missed a dangling registered skill link" >&2
     exit 1
   fi
-  grep -q "dangling" "$tmp/dangling.out" || {
+  grep -Fq 'registered skill link is dangling: .claude/skills/take-a-step-back' "$tmp/dangling.out" || {
     echo "adopt: pruned-skill failure did not name the dangling link" >&2
     exit 1
   }
@@ -1006,7 +1057,7 @@ if true; then  # template-gated by the orchestrator
       metasystem.conf|plans/goals-accepted.json|bin/metasystem) continue ;;
       .github/workflows/metasystem.yml) continue ;;
       memory/known-issues.md|memory/instruction-ledger.md) continue ;;
-      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep|records/misc/goals-migration-manifest.md) continue ;;
+      plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep|records/misc/goals-migration-manifest.md|records/misc/fleet-coordinator-brain-role-packet.md) continue ;;
       .claude/*|.agents/*|.devin/*|.codex/hooks.json) continue ;;
       *) echo "adoption wrote outside the computed inventory ($tracer_runtime): $written" >&2; exit 1 ;;
     esac

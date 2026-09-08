@@ -96,3 +96,28 @@ func runAuditMetasystem(args []string) int {
 	fmt.Println("metasystem audit passed")
 	return 0
 }
+
+func runAuditDependencyRatchet(args []string) int {
+	flags := flag.NewFlagSet("audit dependency-ratchet", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root to audit")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem audit dependency-ratchet [--root CHECKOUT]")
+		return 2
+	}
+	findings, err := audit.AuditDependencies(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, finding := range findings {
+		fmt.Fprintln(os.Stderr, "dependency ratchet: "+finding.String())
+	}
+	if len(findings) != 0 {
+		return 1
+	}
+	fmt.Println("dependency ratchet passed")
+	return 0
+}

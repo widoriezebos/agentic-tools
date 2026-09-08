@@ -34,6 +34,14 @@ root_job_id() { # job id
   "$ms" adapter root-job --jobs "$jobs" --job "$1"
 }
 
+initialize_hook_delegate_context() { # canonical installation/state root, job id
+  local context_root=$1 context_job=$2
+  [[ "$context_root" == /* && -n "$context_job" ]] || return 2
+  export METASYSTEM_HOOK_DELEGATE_STATE_ROOT="$context_root"
+  export METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT="$context_root"
+  export METASYSTEM_HOOK_DELEGATE_JOB="$context_job"
+}
+
 adapter_milliseconds_to_sleep() { # positive integer milliseconds
   local milliseconds=$1
   [[ "$milliseconds" =~ ^[1-9][0-9]*$ ]] \
@@ -54,6 +62,10 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
     echo "$runtime adapter instance tag does not match job $job" >&2
     return 1
   }
+  # Evidence-location hints are initialized only inside a job-bound adapter.
+  # Provider children, resumes, and secondary delivery-repair children inherit
+  # them; a hook still verifies current process ancestry against exact custody.
+  initialize_hook_delegate_context "$root" "$job" || return 2
   gate_poll=$(adapter_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}") || return 2
   # Capped like every host's wait (script-adapters-11): a dispatcher that
   # dies before opening the gate must not leave an immortal supervisor

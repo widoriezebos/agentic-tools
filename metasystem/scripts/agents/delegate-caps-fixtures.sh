@@ -93,6 +93,7 @@ watch.interval-sec=1
 census.log-max-bytes=1048576
 census.max-interval-share-percent=50
 dispatch.cap-min=120
+dispatch.cap-max=500
 dispatch.max-inline-input-kb=64
 capability.snapshot-max-age-days=30
 cap.min.fake.fake-model=200
@@ -117,6 +118,7 @@ git -C "$harness" init -q -b main
 git -C "$harness" add .
 git -C "$harness" -c user.name=fixture -c user.email=fixture.invalid commit -qm fixture
 armed_repo=$harness
+"$harness/scripts/agents/adapters/fake.sh" probe >/dev/null
 
 # Fake-runtime fixtures authorize their disposable enrollment by staging the
 # accepted engine identity directly. Keep that engine under the scratch root

@@ -214,3 +214,119 @@ func TestStateRootGitDiscoveryIgnoresSteeringEnvironment(t *testing.T) {
 		t.Fatalf("StateRoot(%q) with poisoned Git environment = %q, %v; want %q", Registers, got, err, want)
 	}
 }
+
+func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(map[bool]string{false: "adopted", true: "nested"}[nested], func(t *testing.T) {
+			repo := filepath.Join(t.TempDir(), "repository with spaces")
+			if err := os.MkdirAll(repo, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command("git", "init", "-q", "-b", "main", repo)
+			for _, entry := range os.Environ() {
+				if !strings.HasPrefix(entry, "GIT_") {
+					command.Env = append(command.Env, entry)
+				}
+			}
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("git init: %v: %s", err, output)
+			}
+			installation := repo
+			if nested {
+				installation = filepath.Join(repo, "metasystem")
+				writeLayoutFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n")
+			}
+			writeLayoutFile(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n")
+			if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			subdir := filepath.Join(repo, "sub", "directory")
+			if err := os.MkdirAll(subdir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			layout, err := ResolveLayout(subdir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantRepo, _ := filepath.EvalSymlinks(repo)
+			wantInstallation, _ := filepath.EvalSymlinks(installation)
+			if layout.RepositoryRoot != wantRepo || layout.InstallationRoot != wantInstallation || layout.Template != nested {
+				t.Fatalf("layout = %+v; want repository %s installation %s nested %v", layout, wantRepo, wantInstallation, nested)
+			}
+		})
+	}
+}
+
+func TestResolveLayoutSupportsFreshAdoptedTargetBeforeGitInit(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fresh adopted target")
+	writeLayoutFile(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=claude\n")
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(root, "skills", "demo")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	layout, err := ResolveLayout(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(root)
+	if layout.RepositoryRoot != want || layout.InstallationRoot != want || layout.Template {
+		t.Fatalf("fresh adopted layout = %+v; want root %s", layout, want)
+	}
+}
+
+func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
+	app := filepath.Join(t.TempDir(), "containing application")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "init", "-q", "-b", "main", app)
+	command.Env = scrubGitSteering(os.Environ())
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+
+	writeLayoutFile(t, filepath.Join(app, "metasystem.conf"), "metasystem.runtimes=claude\n")
+	if err := os.MkdirAll(filepath.Join(app, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installation := filepath.Join(app, "vendor", "nested runtime")
+	writeLayoutFile(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=codex\n")
+	child := filepath.Join(installation, "skills", "demo")
+	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	nested, err := ResolveLayout(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantApp, _ := filepath.EvalSymlinks(app)
+	wantInstallation, _ := filepath.EvalSymlinks(installation)
+	if nested.GitRoot != wantApp || nested.RepositoryRoot != wantInstallation || nested.InstallationRoot != wantInstallation || nested.InstallationRel != "vendor/nested runtime" || nested.Template {
+		t.Fatalf("nested adopted layout = %+v", nested)
+	}
+
+	parent, err := ResolveLayout(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parent.GitRoot != wantApp || parent.RepositoryRoot != wantApp || parent.InstallationRoot != wantApp || parent.InstallationRel != "." || parent.Template {
+		t.Fatalf("parent adopted layout = %+v", parent)
+	}
+}
+
+func writeLayoutFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

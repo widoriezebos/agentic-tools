@@ -15,25 +15,35 @@ bash "$root/scripts/agents/validate-section-selector.sh" catalog \
 diff -u "$tmp/guarded-sections" "$tmp/selected-sections" \
   || { echo "enumeration fixture: validator guards and selector rows disagree" >&2; exit 1; }
 
-# Context is repository identity, not a nearby filesystem coincidence. Copy
-# the implementation under test over a fresh clone because the working change
-# is not committed during local validation; the identity facts still come
-# only from the clone's committed tree.
-checkout=$(git -C "$root" rev-parse --show-toplevel)
-prefix=$(git -C "$root" rev-parse --show-prefix)
-template_clone="$tmp/template-clone"
-git clone -q --no-local "$checkout" "$template_clone"
-template_root=$template_clone/${prefix%/}
+# Context is repository identity, not a nearby filesystem coincidence. A
+# fixture-owned committed seed keeps that identity independent of whether the
+# invoking installation belongs to a Git checkout.
+template_seed="$tmp/template-seed"
+template_seed_root="$template_seed/metasystem"
+mkdir -p "$template_seed_root/scripts/agents" "$template_seed/development"
 cp "$root/scripts/agents/validate-section-selector.sh" \
-  "$template_root/scripts/agents/validate-section-selector.sh"
+  "$template_seed_root/scripts/agents/validate-section-selector.sh"
+cp "$root/go.mod" "$template_seed_root/go.mod"
+printf 'template fixture identity\n' >"$template_seed/development/metasystem-design.md"
+git -C "$template_seed" init -q -b main
+git -C "$template_seed" add development metasystem
+git -C "$template_seed" -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm template
+template_clone="$tmp/template-clone"
+git clone -q --no-local "$template_seed" "$template_clone"
+template_root="$template_clone/metasystem"
 # The checkout file is not the identity proof; the blob in HEAD is. Leaving
 # it absent here makes the fixture fail if classification regresses to an
 # untracked or worktree-only marker.
 rm "$template_clone/development/metasystem-design.md"
-[[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" context) == template ]] \
+[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" context) == template ]] \
   || { echo "enumeration fixture: an independent template clone classified as adopted" >&2; exit 1; }
-[[ $(bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 42 ]] \
-  || { echo "enumeration fixture: an independent template clone did not select 42 sections" >&2; exit 1; }
+[[ $(METASYSTEM_DELIVERY_CONTRACT=1 bash "$template_root/scripts/agents/validate-section-selector.sh" context) == adopted ]] \
+  || { echo "enumeration fixture: explicit delivery mode did not classify a template clone as adopted" >&2; exit 1; }
+[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 43 ]] \
+  || { echo "enumeration fixture: an independent template clone did not select 43 sections" >&2; exit 1; }
+METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq brain-fixtures \
+  || { echo "enumeration fixture: an independent template clone omitted brain-fixtures" >&2; exit 1; }
 
 adopted_repo="$tmp/adopted-repo"
 adopted_root="$adopted_repo/metasystem"
@@ -47,10 +57,12 @@ git -C "$adopted_repo" -c user.name=metasystem -c user.email=metasystem@example.
   commit -qm adopted
 # This is the old marker shape, deliberately left untracked.
 printf 'not repository identity\n' >"$adopted_repo/development/metasystem-design.md"
-[[ $(bash "$adopted_root/scripts/agents/validate-section-selector.sh" context) == adopted ]] \
+[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" context) == adopted ]] \
   || { echo "enumeration fixture: an untracked marker promoted an adopted installation" >&2; exit 1; }
-[[ $(bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 38 ]] \
-  || { echo "enumeration fixture: an adopted installation did not select 38 sections" >&2; exit 1; }
+[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 39 ]] \
+  || { echo "enumeration fixture: an adopted installation did not select 39 sections" >&2; exit 1; }
+METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq brain-fixtures \
+  || { echo "enumeration fixture: an adopted installation omitted brain-fixtures" >&2; exit 1; }
 
 selector="$tmp/selector.sh"
 cat >"$selector" <<'EOF'

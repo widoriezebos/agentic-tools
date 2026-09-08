@@ -136,6 +136,11 @@ cp "$source_root/scripts/metasystem-config.sh" \
 cp "$source_root/docs/project-rules.md" "$repo/docs/"
 cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
 cp "$source_root/metasystem.conf" "$repo/"
+fingerprint_declared_outputs=$tmp/fingerprint-declared-outputs.txt
+printf '%s\n' 'metasystem/internal/dispatch/build.go' >"$fingerprint_declared_outputs"
+fingerprint_design=metasystem/scripts/agents/roles/design-critic.md
+mkdir -p "$repo/$(dirname "$fingerprint_design")"
+cp "$repo/scripts/agents/roles/design-critic.md" "$repo/$fingerprint_design"
 # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
 # only harness-specific overrides ride --set.
 "$ms" config tailor --conf "$repo/metasystem.conf" --runtimes fake \
@@ -236,6 +241,7 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
   output=$tmp/dispatch-$iteration.out
   set +e
   METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+    --outputs "$fingerprint_declared_outputs" --design "$fingerprint_design" \
     --goal none-explicit --destructive-reach MECHANICAL \
     --op "fingerprint-$iteration" --wait >"$output" 2>&1
   status=$?

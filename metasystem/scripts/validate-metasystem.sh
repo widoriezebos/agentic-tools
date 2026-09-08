@@ -968,6 +968,7 @@ for link in \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-hook-fixtures.sh \
+  scripts/agents/runtime-hook-fixtures.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/return-schema-fixtures.sh \
@@ -1019,6 +1020,7 @@ fi
 # No later section consumes that armed state, so an arming failure is recorded
 # as the owning section's red and does not gate an unrelated section.
 supervision_and_census_section() {
+  scripts/agents/runtime-hook-fixtures.sh
   scripts/agents/supervision-hook-fixtures.sh
   scripts/agents/supervision-fixtures.sh
 }
@@ -1055,6 +1057,7 @@ bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-hook-fixtures.sh
+bash -n scripts/agents/runtime-hook-fixtures.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
 bash -n scripts/agents/return-schema-fixtures.sh
@@ -1200,13 +1203,21 @@ if section_selected enumeration-mode-fixtures; then
   run_section enumeration-mode-fixtures needs-engine enumeration_mode_fixtures_section
 fi
 runtime_contract_audits_static_section() {
-[[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
-  || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
-[[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
-  || { echo "template demotion fixture: mode role overrides are not three commented examples" >&2; exit 1; }
-if grep -Eq '^(model\.tier\.[1-9][0-9]*|mode\.[a-z0-9-]+\.role\.)' metasystem.conf; then
-  echo "template demotion fixture: an optional tier or mode role key is still active" >&2
-  exit 1
+if (( template_mode )); then
+  [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
+    || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
+  [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
+    || { echo "template demotion fixture: mode role overrides are not three commented examples" >&2; exit 1; }
+  active_mode_roles=$(grep -E '^mode\.[a-z0-9-]+\.role\.' metasystem.conf || true)
+  expected_design_mode_roles=$(printf '%s\n' \
+    'mode.design.role.implementer.runtime=codex' \
+    'mode.design.role.implementer.model.codex=gpt-6-astra')
+  [[ "$active_mode_roles" == "$expected_design_mode_roles" ]] \
+    || { echo "template demotion fixture: active mode role keys differ from the shared Codex/Astra design-author default" >&2; exit 1; }
+  if grep -Eq '^model\.tier\.' metasystem.conf; then
+    echo "template demotion fixture: an optional model tier key is still active" >&2
+    exit 1
+  fi
 fi
 for enforcement_source in scripts/enforcement/claude-code-hooks.json \
   scripts/enforcement/codex-hooks.json scripts/enforcement/devin-hooks.json; do
@@ -1412,6 +1423,44 @@ if (( ! template_mode )); then
       fi
     fi
   done
+
+  # The registration owner validates lifecycle structure as well as paths.
+  # Adopted copies may intentionally use copied skill trees; detect that one
+  # declared mode from any installed skill and ask the same setup owner to
+  # check it without writing.
+  setup_mode=()
+  registration_roots=()
+  runtime_selected claude && registration_roots+=(.claude/skills)
+  if runtime_selected codex || runtime_selected devin; then
+    registration_roots+=(.agents/skills)
+  fi
+  runtime_selected devin && registration_roots+=(.devin/skills)
+  registration_links=0
+  registration_copies=0
+  for skill_dir in skills/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    name=$(basename "$skill_dir")
+    for registration_root in ${registration_roots[@]+"${registration_roots[@]}"}; do
+      registered_skill="$registration_root/$name"
+      [[ -e "$registered_skill" || -L "$registered_skill" ]] || continue
+      if [[ -L "$registered_skill" ]]; then
+        registration_links=1
+      else
+        registration_copies=1
+      fi
+    done
+  done
+  if (( registration_links && registration_copies )); then
+    echo "selected runtime registrations mix linked and copied canonical skills" >&2
+    exit 1
+  fi
+  (( ! registration_copies )) || setup_mode=(--copy-skills)
+  registration_selection=$configured_runtimes
+  [[ -n "$registration_selection" ]] || registration_selection=none
+  setup_args=(runtime setup --repo "$root" --runtimes "$registration_selection")
+  setup_args+=(${setup_mode[@]+"${setup_mode[@]}"})
+  setup_args+=(--check)
+  "$engine" "${setup_args[@]}" >/dev/null
 fi
 }
 
@@ -1741,7 +1790,7 @@ done
 
 # Quote markers name their canonical source. The checker compares the content
 # bytes rather than trusting a second prose copy of the binding criterion.
-"$engine" validate preamble-quotes
+"$engine" validate preamble-quotes --root "$root" --roles-dir "$root/scripts/agents/roles"
 # Count the quote blocks from one source whose body carries one marker. A
 # block runs from a `<!-- quote source="..." -->` line to the first
 # `<!-- /quote -->` line; block bodies are whole lines, so a marker that
@@ -1794,7 +1843,7 @@ sed 's/build something DIFFERENT/build the same thing/' \
   "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
 mv "$tmp/drifted-roles/design-critic.md.new" "$tmp/drifted-roles/design-critic.md"
 set +e
-"$engine" validate preamble-quotes --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
+"$engine" validate preamble-quotes --root "$root" --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
 quote_status=$?
 set -e
 if [[ $quote_status -eq 0 ]]; then
@@ -1810,7 +1859,7 @@ sed 's/ship a defect/ship no defect/' \
   "$tmp/drifted-code-roles/code-critic.md" >"$tmp/drifted-code-roles/code-critic.md.new"
 mv "$tmp/drifted-code-roles/code-critic.md.new" "$tmp/drifted-code-roles/code-critic.md"
 set +e
-"$engine" validate preamble-quotes --roles-dir "$tmp/drifted-code-roles" >"$tmp/code-quote-drift.out" 2>&1
+"$engine" validate preamble-quotes --root "$root" --roles-dir "$tmp/drifted-code-roles" >"$tmp/code-quote-drift.out" 2>&1
 code_quote_status=$?
 set -e
 [[ $code_quote_status -eq 1 ]] \
@@ -1824,7 +1873,7 @@ mv "$tmp/drifted-orchestrator-roles/orchestrator.md.new" \
   "$tmp/drifted-orchestrator-roles/orchestrator.md"
 set +e
 "$engine" validate preamble-quotes \
-  --roles-dir "$tmp/drifted-orchestrator-roles" >"$tmp/orchestrator-quote-drift.out" 2>&1
+  --root "$root" --roles-dir "$tmp/drifted-orchestrator-roles" >"$tmp/orchestrator-quote-drift.out" 2>&1
 orchestrator_quote_status=$?
 set -e
 [[ $orchestrator_quote_status -eq 1 ]] \
@@ -1867,7 +1916,7 @@ printf '{%s,"mode":"design","reviewedCommit":"%s","findings":[{"id":"F-1","sever
   "$return_fixture_common" "$fixture_zero_sha" >"$return_fixtures/design-critic-positive.json"
 printf '{%s,"mode":"implement","reviewedTree":"%s","findings":[],"verdictMaterialCount":0}\n' \
   "$return_fixture_common" "$fixture_zero_sha" >"$return_fixtures/code-critic-positive.json"
-printf '{%s,"mode":"implement","riskiestPart":"schema boundary","diffBoundary":["scripts/example.sh"],"whatWasDone":"implemented the brief"}\n' \
+printf '{%s,"mode":"implement","riskiestPart":"schema boundary","diffBoundary":["metasystem/scripts/example.sh"],"whatWasDone":"implemented the brief"}\n' \
   "$return_fixture_common" >"$return_fixtures/implementer-positive.json"
 printf '{%s,"mode":"verify","riskiestPart":"failure path","whatWasDone":"drove the runnable surface"}\n' \
   "$return_fixture_common" >"$return_fixtures/verifier-positive.json"
@@ -1941,10 +1990,10 @@ check_bad_return design-critic "$return_fixtures/critic-miscount.json" '$.verdic
 
 if (( template_mode )); then
   set +e
-  scripts/agents/dispatch.sh dispatch --role code-critic --brief scripts/agents/templates/brief.md \
+  "$engine" delegate --role code-critic --brief scripts/agents/templates/brief.md --goal none-explicit --destructive-reach MECHANICAL \
     >"$tmp/code-critic-missing-reviews.out" 2>&1
   missing_reviews_status=$?
-  scripts/agents/dispatch.sh dispatch --role implementer --brief scripts/agents/templates/brief.md --reviews fixture-job \
+  "$engine" delegate --role implementer --brief scripts/agents/templates/brief.md --reviews fixture-job --goal none-explicit --destructive-reach MECHANICAL \
     >"$tmp/non-critic-reviews.out" 2>&1
   non_critic_reviews_status=$?
   set -e
@@ -1954,7 +2003,7 @@ if (( template_mode )); then
     || { echo "code-critic dispatch did not require its review relation" >&2; exit 1; }
   [[ $non_critic_reviews_status -eq 2 ]] \
     || { echo "non-critic --reviews dispatch did not use exit 2" >&2; exit 1; }
-  grep -Fq -- '--reviews is only valid for the code-critic and warden roles' "$tmp/non-critic-reviews.out" \
+  grep -Fq -- '--reviews is only valid for the code-critic, warden, and verifier roles' "$tmp/non-critic-reviews.out" \
     || { echo "dispatcher accepted --reviews for a non-critic role" >&2; exit 1; }
 fi
 
@@ -2195,26 +2244,15 @@ write_critique_table unjoinable-malformed-table '| --- | --- | --- |'
 # Plan consistency: a rule stated in several places must not disagree with
 # itself. Eight of nine rounds of one design critique found nothing else, and a
 # paid round is the wrong instrument for drift a script finds instantly.
-# This repository builds the metasystem and must run under it. Its own hooks were
-# never installed: adopt.sh writes .claude/settings.json into adopted targets,
-# and the template never adopts itself, so for the whole of development the
-# session-start arming, the untracked-process report, the stale-supervisor
-# warning and the open-work check were inert here. Everything was fixtured and
-# nothing was live. This check is why that cannot recur silently.
-# Template repository only. An adopted copy gets its hooks from adopt.sh at its
-# own root, with a different layout; this is about the repository that builds the
-# metasystem running under it.
-# The selector owns the run context used by this guard and the progress checker.
+# This repository builds the metasystem and must expose every adoptable host's
+# contract and lifecycle configuration. Setup check reads the registry and
+# validates all root registrations without writing or claiming live execution.
 if (( template_mode )); then
-  harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
-  [[ -f "$harness_own_settings" ]] \
-    || { echo "this repository has no .claude/settings.json: the metasystem is not running under itself" >&2; exit 1; }
-  "$root/bin/metasystem" hooks check --runtime claude "$harness_own_settings" \
-    "$root/scripts/enforcement/$("$root/bin/metasystem" runtime enforcement-config claude)"
-  echo "metasystem runs under its own hooks"
+  "$root/bin/metasystem" runtime setup --repo "$root/.." --check >/dev/null
+  echo "metasystem host registrations are configuration-ready"
 fi
 
-"$engine" validate plan-consistency >"$tmp/plan-consistency.out"
+"$engine" validate plan-consistency --plans-dir "$root/plans" >"$tmp/plan-consistency.out"
 grep -q 'retired term' "$tmp/plan-consistency.out" \
   || { echo "plan consistency check did not report its retired terms" >&2; exit 1; }
 
@@ -2388,50 +2426,6 @@ if section_selected dispatcher-adapter-and-mission-runner-fixtures \
 fi
 
 workflow_tooling_fixtures_section() {
-# The shipped Stop hook must stay rooted and surface via JSON output: hooks
-# run in the session's cwd, receipt.sh resolves its ledger from there, and a
-# non-blocking exit code shows only a first-line hook-error notice.
-hooks_json=scripts/enforcement/claude-code-hooks.json
-grep -Fq 'cd \"$CLAUDE_PROJECT_DIR\"' "$hooks_json" || { echo "stop hook is not rooted at CLAUDE_PROJECT_DIR" >&2; exit 1; }
-grep -Fq 'systemMessage' "$hooks_json" || { echo "stop hook does not surface a systemMessage when a retro is due" >&2; exit 1; }
-if grep -Fq '|| true' "$hooks_json"; then
-  echo "stop hook masks the retro-due exit code with || true" >&2
-  exit 1
-fi
-# The first Stop entry's first hook command, straight from the shipped
-# hooks file; a missing level fails the extraction rather than testing
-# an empty command.
-stop_entries=$("$engine" json get --file "$hooks_json" --field hooks.Stop)
-first_stop_entry=$(json_elements "$stop_entries" | head -n 1)
-[[ -n "$first_stop_entry" ]] || { echo "the shipped hooks file has no Stop entry" >&2; exit 1; }
-stop_hooks=$("$engine" json get --value "$first_stop_entry" --field hooks)
-first_stop_hook=$(json_elements "$stop_hooks" | head -n 1)
-[[ -n "$first_stop_hook" ]] || { echo "the shipped Stop entry carries no hooks" >&2; exit 1; }
-hook_cmd=$("$engine" json get --value "$first_stop_hook" --field command)
-[[ -n "$hook_cmd" ]] || { echo "the shipped Stop hook has no command" >&2; exit 1; }
-hookrepo="$tmp/hookrepo"
-mkdir -p "$hookrepo/scripts" "$hookrepo/plans" "$hookrepo/bin"
-git -C "$hookrepo" init -q -b main
-cp scripts/receipt.sh scripts/metasystem-config.sh "$hookrepo/scripts/"
-cp bin/metasystem "$hookrepo/bin/metasystem"
-cp metasystem.conf "$hookrepo/"
-mkdir -p "$hookrepo/memory"
-printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/memory/receipts.log"
-out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
-grep -q systemMessage <<<"$out" || { echo "stop hook stayed silent on a due retro" >&2; exit 1; }
-printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/memory/receipts.log"
-out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
-[[ -z "$out" ]] || { echo "stop hook emitted output when no retro is due" >&2; exit 1; }
-printf 'garbage\n' >"$hookrepo/memory/receipts.log"
-out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
-grep -q "errored" <<<"$out" || { echo "stop hook hid a failing receipt check" >&2; exit 1; }
-if grep -q "retro due" <<<"$out"; then
-  echo "stop hook misreported a check error as a due retro" >&2
-  exit 1
-fi
-out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$tmp/definitely-missing" bash -c "$hook_cmd")
-grep -q "project directory" <<<"$out" || { echo "stop hook stayed silent on an unresolvable project directory" >&2; exit 1; }
-
 # The debug-java preflight is optional: absent in adopted repositories that
 # excluded the skill, moved into skills/ in JVM repositories that enabled it.
 for preflight in optional-skills/debug-java/scripts/preflight.sh skills/debug-java/scripts/preflight.sh; do

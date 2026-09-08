@@ -72,15 +72,15 @@ type Declaration struct {
 	// a repository root.
 	InstructionFile string
 	// RegistrationDirs is the adopted-repository directory view (the
-	// `runtime dirs` verb; source of config validation's presence
-	// checks). The registration rows are to become this field's source
-	// of truth; until then it mirrors today's table.
+	// `runtime dirs` verb; source of config validation's presence checks).
+	// Registration rows own installation behavior and tests pin this view to
+	// their deduplicated directory projection.
 	RegistrationDirs []string
 	// ShippedEnforcementConfig is the scripts/enforcement filename this
 	// runtime ships ("" when none). Independent of LiveSelfCheck.
 	ShippedEnforcementConfig string
-	// SelfCheck declares the live repository self-check (claude only
-	// today); nil when the runtime has none.
+	// SelfCheck declares an optional provider-specific vendored marker. The
+	// structural host hook checker applies to every adoptable runtime.
 	SelfCheck *LiveSelfCheck
 	// ExpectedEnvelopeEnforcement is the static declaration the suite
 	// asserts against the adapter's snapshot shape, over exactly

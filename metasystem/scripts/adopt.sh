@@ -115,11 +115,12 @@ done
 # Validate runtime names before touching anything: a typo must not leave a
 # partially adopted target behind.
 IFS=, read -ra selected_runtimes <<<"$runtimes"
+adoptable_runtimes=$("$ms" runtime list --adoptable) \
+  || die 2 "could not read the adoptable runtime registry"
 for rt in "${selected_runtimes[@]}"; do
-  case "$rt" in
-    claude|devin|codex|none) ;;
-    *) die 2 "unknown runtime: $rt (claude, devin, codex, or none)" ;;
-  esac
+  [[ "$rt" == none ]] && continue
+  grep -Fxq "$rt" <<<"$adoptable_runtimes" \
+    || die 2 "unknown or non-adoptable runtime: $rt"
 done
 if [[ "$runtimes" == *none* && "$runtimes" != none ]]; then
   die 2 "--runtimes none cannot be combined with other runtimes"
@@ -428,58 +429,12 @@ grep -qxF 'artifacts/' "$target/.gitignore" || echo 'artifacts/' >>"$target/.git
 
 sed "s|<template sha>|$sha|" "$rules" >"$rules.new" && mv "$rules.new" "$rules"
 
-# Runtime registrations.
-register_skill_dir() { # $1 = runtime dir for skill links, $2 = skill name
-  if (( copy_skills )); then
-    cp -R "$target/skills/$2" "$1/$2"
-  else
-    ln -s "../../skills/$2" "$1/$2"
-  fi
-}
-
-skill_names=()
-for d in "$target"/skills/*/; do
-  [[ -d "$d" ]] || continue
-  skill_names+=("$(basename "$d")")
-done
-
-for rt in "${selected_runtimes[@]}"; do
-  case "$rt" in
-    claude)
-      mkdir -p "$target/.claude/skills" "$target/.claude/agents"
-      for n in ${skill_names[@]+"${skill_names[@]}"}; do
-        [[ -e "$target/.claude/skills/$n" ]] || register_skill_dir "$target/.claude/skills" "$n"
-        [[ -f "$target/skills/$n/agents/claude-profile.md" ]] \
-          && cp "$target/skills/$n/agents/claude-profile.md" "$target/.claude/agents/$n.md"
-      done
-      # Structurally, not by line-deleting JSON: the annotated enforcement
-      # asset keeps its comment for humans, the runtime config never sees it.
-      "$ms" json strip --file "$target/scripts/enforcement/claude-code-hooks.json" \
-        --key _comment >"$target/.claude/settings.json"
-      ;;
-    devin)
-      mkdir -p "$target/.agents/skills" "$target/.devin/skills"
-      for n in ${skill_names[@]+"${skill_names[@]}"}; do
-        [[ -e "$target/.agents/skills/$n" ]] || register_skill_dir "$target/.agents/skills" "$n"
-        [[ -e "$target/.devin/skills/$n" ]] || register_skill_dir "$target/.devin/skills" "$n"
-        if [[ -f "$target/skills/$n/agents/devin/AGENT.md" ]]; then
-          mkdir -p "$target/.devin/agents/$n"
-          cp "$target/skills/$n/agents/devin/AGENT.md" "$target/.devin/agents/$n/AGENT.md"
-        fi
-      done
-      cp "$target/scripts/enforcement/devin-hooks.json" "$target/.devin/config.json"
-      ;;
-    codex)
-      mkdir -p "$target/.agents/skills" "$target/.codex"
-      for n in ${skill_names[@]+"${skill_names[@]}"}; do
-        [[ -e "$target/.agents/skills/$n" ]] || register_skill_dir "$target/.agents/skills" "$n"
-      done
-      cp "$target/scripts/enforcement/codex-hooks.json" "$target/.codex/hooks.json"
-      ;;
-    none)
-      ;;
-  esac
-done
+# Runtime registrations are planned and published by the same owner used to
+# reconcile existing installations. This preserves foreign settings and makes
+# a retry converge instead of overwriting a partially prepared host.
+runtime_setup_args=(runtime setup --repo "$target" --runtimes "$runtimes")
+(( ! copy_skills )) || runtime_setup_args+=(--copy-skills)
+"$target/bin/metasystem" "${runtime_setup_args[@]}"
 
 # Runtime-neutral enforcement.
 mkdir -p "$target/.github/workflows"

@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 )
 
@@ -18,11 +20,16 @@ import (
 // ignore SIGTERM so only the kill-through path can end them.
 func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *exec.Cmd {
 	t.Helper()
-	script := "sleep 30"
+	ready := filepath.Join(t.TempDir(), "ready")
+	// The trailing no-op keeps Bash from replacing the positioned, tagged
+	// leader with its final external command. The ready file is published by
+	// that leader only after any TERM trap has been installed.
+	script := `: > "$METASYSTEM_TEST_OWNER_READY"; sleep 30; :`
 	if termImmune {
-		script = `trap "" TERM; sleep 30`
+		script = `trap "" TERM; : > "$METASYSTEM_TEST_OWNER_READY"; sleep 30; :`
 	}
 	cmd := exec.Command("bash", "-c", script, "metasystem", "util", "hold", "--tag", tag)
+	cmd.Env = append(os.Environ(), "METASYSTEM_TEST_OWNER_READY="+ready)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -33,9 +40,29 @@ func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *exec.Cmd {
 	// TestTerminateGroup records).
 	go func() { _ = cmd.Wait() }()
 	t.Cleanup(func() {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if taggedGroupLeader(cmd.Process.Pid, tag) {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
 	})
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(ready); err == nil && taggedGroupLeader(cmd.Process.Pid, tag) {
+			return cmd
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("tagged test owner pid %d never became a kernel-visible positioned group leader", cmd.Process.Pid)
 	return cmd
+}
+
+func taggedGroupLeader(pid int, tag string) bool {
+	exact, state, err := identity.KernelProber{}.Probe(int64(pid))
+	if err != nil || state != identity.Alive || !exact.ArgvKnown {
+		return false
+	}
+	pgid, err := syscall.Getpgid(pid)
+	_, positioned := janitor.MatchShape(janitor.DefaultShapes(), exact.Argv, tag)
+	return err == nil && pgid == pid && positioned
 }
 
 func waitGroupDead(pgid int, patience time.Duration) bool {

@@ -44,10 +44,15 @@ install:metasystem runtime
 install:metasystem.conf.local runtime
 
 # Repository-relative behavior, consulted only in template mode.
+repo:AGENTS.md behavior
+repo:CLAUDE.md behavior
 repo:README.md behavior
 repo:LICENSE behavior
 repo:.gitignore behavior
+repo:.agents/ behavior
 repo:.claude/ behavior
+repo:.codex/ behavior
+repo:.devin/ behavior
 repo:benchmark/ behavior
 repo:environment/ behavior
 repo:development/README.md behavior

@@ -1,6 +1,7 @@
 {
  "exempt": {
-  "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures"
+  "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures",
+  "internal/refusal": "declarative refusal types, constants, and register data contain no executable production statements; completeness tests independently join every row"
  },
  "floors": {
   "internal/acp": 88.7,
@@ -11,8 +12,14 @@
   "internal/authority": 95.0,
   "internal/behaviorsurface": 78.0,
   "internal/boundedexec": 92.0,
+  "internal/brain": 52.8,
   "internal/capability": 79.4,
   "internal/census": 74.1,
+  "internal/channel": 80.4,
+  "internal/channel/fake": 90.9,
+  "internal/channel/phase": 52.7,
+  "internal/channel/slack": 86.8,
+  "internal/channel/telegram": 85.6,
   "internal/config": 82.7,
   "internal/contract": 63.1,
   "internal/counselor": 83.7,
@@ -32,6 +39,7 @@
   "internal/governance": 100.0,
   "internal/hooks": 88.9,
   "internal/host": 79.8,
+  "internal/hostsetup": 79.6,
   "internal/humanauthority": 74.0,
   "internal/identity": 85.9,
   "internal/janitor": 89.8,
@@ -56,6 +64,7 @@
   "internal/returnschema": 76.3,
   "internal/run": 73.7,
   "internal/runtimes": 85.1,
+  "internal/spend": 87.3,
   "internal/stateroot": 86.0,
   "internal/steward": 74.0,
   "internal/supervise": 89.5,
@@ -63,6 +72,7 @@
   "internal/up": 55.0,
   "internal/usage": 85.8,
   "internal/validate": 79.9,
+  "internal/watch": 70.4,
   "internal/wiredoc": 87.9
  },
  "note": "Per-package coverage floors; they only rise between re-seeds. Procedures (go-production-grade Phase 0c): a package split or rename re-seeds the affected entries at their measured post-change values in the same commit, with the rationale in that commit's message; composition changes (code added to or deleted from a package) re-baseline the same way. These floors are darwin measurements; linux floors live in coverage-ratchet-linux.json, seeded at production-grade Phase 1 by the two-pass bootstrap (pass one: full gate with METASYSTEM_COVERAGE_RATCHET_SEED=1, floors written from that run; pass two: the enforcing gate as the acceptance run). The cmd exemption's reason is recorded in exempt."

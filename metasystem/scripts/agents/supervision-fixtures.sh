@@ -916,6 +916,7 @@ operator_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "
 (
   cd "$operator_harness"
   "${operator_env[@]}" \
+    METASYSTEM_AGENT_RUNTIME=fake \
     "$operator_arm" --repo "$PWD" --session operator-path --pid "$$" \
       --start-time "$operator_start" --tag operator-path
 ) >"$tmp/operator-arm.out" 2>&1 &
@@ -1078,10 +1079,42 @@ rmdir "$repo/artifacts/agents/steward/runner.log"
   --start-time "$(process_started_at $$)" --tag rearm-launch-recovers \
   >"$tmp/rearm-launch-recovers.out" 2>&1 \
   || { echo "the next up did not repair the generation-two runner" >&2; cat "$tmp/rearm-launch-recovers.out" >&2; exit 1; }
-grep -Fq 'component=steward-runner outcome=started' "$tmp/rearm-launch-recovers.out" \
-  || { echo "the next up did not report a repaired runner" >&2; cat "$tmp/rearm-launch-recovers.out" >&2; exit 1; }
-[[ $(json_field "$identity_file" generation) == 2 ]] \
-  || { echo "runner repair minted an extra generation" >&2; exit 1; }
+runner_outcome=
+if grep -Fq 'component=steward-runner outcome=started' "$tmp/rearm-launch-recovers.out"; then
+  runner_outcome=started
+elif grep -Fq 'component=steward-runner outcome=verified' "$tmp/rearm-launch-recovers.out"; then
+  runner_outcome=verified
+else
+  echo "the next up neither started nor verified the repaired runner" >&2
+  cat "$tmp/rearm-launch-recovers.out" >&2
+  exit 1
+fi
+runner_file=$repo/artifacts/agents/steward/runner.json
+runner_pid=$(json_field "$runner_file" pid)
+runner_started=$(json_field "$runner_file" pidStartedAt)
+runner_ticks=$(json_field "$runner_file" startTicks 0)
+runner_boot=$(json_field "$runner_file" bootId '')
+runner_line=$(grep -Fx "component=steward-runner outcome=${runner_outcome} detail=\"pid=${runner_pid} generation=2\"" \
+  "$tmp/rearm-launch-recovers.out" || true)
+[[ -n "$runner_line" ]] \
+  || { echo "the recovery result did not bind runner pid $runner_pid to generation two" >&2; cat "$tmp/rearm-launch-recovers.out" >&2; exit 1; }
+if [[ "$runner_ticks" =~ ^[1-9][0-9]*$ && -n "$runner_boot" ]]; then
+  "$ms" proc alive --pid "$runner_pid" --start-time "$runner_started" \
+    --start-ticks "$runner_ticks" --boot-id "$runner_boot" --root "$repo" >/dev/null 2>&1 \
+    || { echo "the recovered runner's exact kernel identity is not alive" >&2; cat "$runner_file" >&2; exit 1; }
+else
+  process_identity_alive "$runner_pid" "$runner_started" \
+    || { echo "the recovered runner's recorded kernel identity is not alive" >&2; cat "$runner_file" >&2; exit 1; }
+fi
+enrolled_generation=$(json_field "$identity_file" generation)
+enrolled_path=$(json_field "$identity_file" installPath)
+enrolled_digest=$(json_field "$identity_file" installDigest)
+current_engine=$(cd "$repo/bin" && pwd -P)/metasystem
+current_digest=sha256:$("$current_engine" util sha256 --file "$current_engine")
+[[ "$enrolled_generation" == 2 && "$enrolled_path" == "$current_engine" && "$enrolled_digest" == "$current_digest" ]] \
+  || { echo "runner recovery is not tied to the current generation-two enrollment" >&2; cat "$identity_file" >&2; exit 1; }
+printf 'rearm-launch-fails recovery: outcome=%s runnerPid=%s runnerStartedAt=%s generation=%s enrollment=current\n' \
+  "$runner_outcome" "$runner_pid" "$runner_started" "$enrolled_generation"
 fi
 
 if [[ "$fixture_scenario" == rearm-provenance ]]; then
@@ -1526,6 +1559,10 @@ inventory_has "$last" UNTRACKED "$custody_pid" \
 set_custody_process "$repo/artifacts/agents/jobs/owned.json" "$custody_start" \
   "$(json_field "$repo/artifacts/agents/jobs/owned.json" instanceTag)"
 wait_for_census "S4-2 child custody exact join" inventory_has CUSTODY "$custody_pid"
+# This synthetic job's custody scenario ends at the exact-join assertion.
+# Retire both of its evidence files so the fixture main is not subsequently
+# presented to the Stop hook as a delegate job process.
+rm -f "$repo/artifacts/agents/jobs/owned.json" "$repo/artifacts/agents/hb/owned"
 identity_staged=$(mktemp "$(dirname "$identity_fixture")/.identities.XXXXXX")
 printf '{}\n' >"$identity_staged"
 mv "$identity_staged" "$identity_fixture"

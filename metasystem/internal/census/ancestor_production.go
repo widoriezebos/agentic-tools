@@ -2,7 +2,6 @@ package census
 
 import (
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,7 +10,9 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // nativeProcTree reads a process's tree facts from the kernel: argv from the
@@ -55,6 +56,16 @@ type AgentAncestor struct {
 // delegate or wrapper runs under. A fake-agent ancestor may be pinned by
 // environment for the fake runtime.
 func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (AgentAncestor, error) {
+	return findAncestorProduction(metasystemRoot, pid, runtime, false)
+}
+
+// FindAncestorAllHosts walks against every adoptable host declaration,
+// independent of the execution roster configured for this installation.
+func FindAncestorAllHosts(metasystemRoot string, pid int64) (AgentAncestor, error) {
+	return findAncestorProduction(metasystemRoot, pid, "", true)
+}
+
+func findAncestorProduction(metasystemRoot string, pid int64, runtime string, allHosts bool) (AgentAncestor, error) {
 	// The AncestorProbe authority: the pin is honored
 	// only in a fixture-mode checkout AND for the fake runtime — the
 	// runtime guard stays, root authorization is necessary not
@@ -77,7 +88,7 @@ func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (A
 			}, nil
 		}
 	}
-	signatures, err := signaturesFor(metasystemRoot, runtime)
+	signatures, err := signaturesFor(metasystemRoot, runtime, allHosts)
 	if err != nil {
 		return AgentAncestor{}, err
 	}
@@ -104,9 +115,11 @@ func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (A
 
 // signaturesFor builds the runtime signatures to match against: just the named
 // runtime when one is given, otherwise every configured runtime.
-func signaturesFor(metasystemRoot, only string) ([]Signature, error) {
+func signaturesFor(metasystemRoot, only string, allHosts ...bool) ([]Signature, error) {
 	var selected []string
-	if only != "" {
+	if len(allHosts) > 0 && allHosts[0] {
+		selected = runtimes.Adoptable()
+	} else if only != "" {
 		selected = []string{only}
 	} else {
 		confPath := filepath.Join(metasystemRoot, "metasystem.conf")
