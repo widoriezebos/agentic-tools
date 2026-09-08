@@ -1,11 +1,13 @@
 # severity-tiered-rigor
 
 - State: approved
+- Priority: 1
+- Sequence: 12
 - Intent: Critique depth and fix-path choice track real value mechanically: every finding carries a critic-declared blast class grounded in checkable facts (path frequency, blast radius); bounded-class chains get a round budget the machinery enforces (then land-with-recorded-residual or raise); refusing gates with a declared cheap unblock default to cheap+auto-debt-goal for bounded blockers; misclassification is guarded by critic-owned classification, human escalation on dispute, and auto-promotion to severe when a residual recurs in the near-miss register. Wido 2026-08-26: implement as mechanism, not prose.
 - Origin: human
 - Next step: PARTS ONE, THREE AND FOUR LANDED (m2): 6c86953a the tier at intake; efaa5cf4 the tier-1 landing class; 6c3c7a26 the docs (2026-09-04 09:3x local; chain str-build4, one Fable review, one correction, one re-review; records/misc/severity-tiered-rigor-build4-critique-cc1.md and -cc2.md; the obligation matrix at records/misc/severity-tiered-rigor-obligation-matrix.md). Remaining: part two on m3's goal severity-tiered-rigor-p2 (the four risk answers, the material stop and close); when it lands, the part-two seat re-touches the pending clauses in docs/orchestration.md, the two critique skills and AGENTS.md's intake sentence, and the matrix's pending rows; then the journey chapter (one chain) and goal done. m2 releases now. Note for every seat: the always-loaded instruction budget stands at 1,398 of 1,400 words.
 - OpenedAt: 2026-08-26T10:47:00Z
-- Revision: 28
+- Revision: 29
 - Arc: headless-fleet
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -42,4 +44,5 @@ History:
 - 2026-09-04T07:31:10Z DJG8JNEA2VV8MYE9S2CJP5D1R8-m2-5fcf08ab edit actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
 - 2026-09-04T07:32:13Z HDDASP638S5BAKRBTDDVE4RQFM-m2-5fcf08ab release actor=m2+main-1788441779-14484-82d6ed targets=severity-tiered-rigor
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=severity-tiered-rigor reason=sweep
-Integrity: sha256=f8cfc0f0e1013539c07b72242bf8f0ed9b4ca87ba2cd52989c53fb024b9a9b18
+- 2026-09-08T15:56:00Z AT3M9N3W807V57A8QHR26Z1G0N-m1-7cd0bd60 set-priority actor=human:Wido targets=severity-tiered-rigor reason=priority-order subject=severity-tiered-rigor from=unranked to=1:12 requested-sequence=12
+Integrity: sha256=260ee31caebc68eea39d0efccae22faa57a10eba15cb1d0d3ecbb535e4dd025d
