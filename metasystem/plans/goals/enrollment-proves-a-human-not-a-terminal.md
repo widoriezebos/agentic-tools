@@ -1,6 +1,6 @@
 # enrollment-proves-a-human-not-a-terminal
 
-- State: queued
+- State: approved
 - Priority: 3
 - Sequence: 119
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the enrolled terminal is the only thing separating an agent from every human-reserved act in a checkout, including stop, arm, approve, set-budget, steal and resume, and today an agent can create one; novelty 2: a second factor and its storage are new to this system, though the enrollment record and its generation already exist; exposure 3: every checkout on every machine, and the whole point of the stop verb's classifier depends on it; accumulation 2: every act performed through an agent-made enrollment is a ledger line that says a human typed it, and those accumulate unreadably"
@@ -9,12 +9,14 @@
 - Origin: main
 - Next step: Read internal/humanauthority/authority.go around Enroll and ReadEnrollment, the callers that demand enrolled ancestry (the human-act gate in cmd/metasystem/goalsync_mutations.go and the classifier paths the stop verb fixed), and ruling R-88-m1b in memory/rulings.md. Design first, on the design lane: where the secret lives so an agent in the checkout cannot read it, how the code is presented and verified, what happens to the enrolments that already exist, and whether renewal is periodic or per-act. Canary before battery: the smallest proof is one enrolment attempt without a code refused and one with a valid code accepted, each a named test with a ceiling, before any bed runs. Note for whoever takes it: relayed approval was retired when the authority horizon passed on 2026-09-06, and this goal is what could replace it, so it is worth asking Wido about that in the same design round rather than after.
 - OpenedAt: 2026-09-08T10:42:59Z
-- Revision: 2
+- Revision: 3
 - Labels: security
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-08T20:45:16Z revision=3 opid=ARMSSWKCR3ER156C992E06YGRW-m1b-c6925449 authority=proven digest=a395150289be80f4f391b8b1f62fff794ec32945d57e511caeac5eee14575624
 
 History:
 - 2026-09-08T10:42:59Z 6V62XC1SN8TEWMJSFFWQF7Z7W0-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-proves-a-human-not-a-terminal
 - 2026-09-08T16:06:10Z VVJYXW2NGTH2E5SARVQ1K6BAEY-m1-7cd0bd60 set-priority actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal reason=priority-order subject=enrollment-proves-a-human-not-a-terminal from=unranked to=3:119 requested-sequence=119
-Integrity: sha256=ab33b724d99a6255cd8203b2efbce573a8f8cf2e2e290eb075b651ed5bc6a620
+- 2026-09-08T20:45:16Z ARMSSWKCR3ER156C992E06YGRW-m1b-c6925449 approve actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal
+Integrity: sha256=0b8401175276d5766f9ee4a899547e925b66c46f39cc45532770c9275028b8a2
