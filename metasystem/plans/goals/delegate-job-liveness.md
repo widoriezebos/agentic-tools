@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 23
+- Sequence: 22
 - Intent: The live delegation lane comes back under metasystem custody, and delegated worker status must not lie. Evidence through 2026-08-27: at least six zombie/launch failures in two days — status fields raced or lied in four sightings 2026-08-26/27, then the correction pass for actionable-metrics double-fired at launch (a >10min first call retried, minting a duplicate resume whose id was handed back while the real task ran under another) and later zombied (status running 15+min after log, work products, and process were all dead; caught only by a coordinator's hand-rolled monitor applying the work-product-mtime + process-probe + timed-verdict triad). Root cause: the fleet's real lane (codex companion, raw codex exec) runs outside the job-record machinery entirely — no job record since 2026-08-12, no process identity, no idempotent launch, no cap, no reaper. Every protection exists in the metasystem dispatch lane and none of it applies to the lane in daily use (Wido approved this arc re-scope 2026-08-27)
 - Origin: human
 - Next step: L12 LANDED 2637083 (+floor-key fix 39403b8): claim-launch CLI surface + call-site wiring live end to end - dispatch.sh fresh/follow paths on the claim state machine with m1's admission chain woven in v4 lock order; six new job verbs (claim-launch, claim-occupancy-prepare, prefork-mark, custody-groups, reconcile-reservation, ownership-patch) + proc group-owned; adapters carry output-stream/prefork/tag-match; janitor shapes + GroupOwnership; internal/progress evaluator (KEEP verdict) with RecordSetup scope capture; reap-facts reconciliationDue; RecordSetup unconditional reservation carry (fixture-proven). Dispatch/adapter/mission-runner bed GREEN end to end, all area race suites green. EXCLUDED per lane: delegate verb + custodial-exec routing (m1's L13; custodial fixture scenarios travel with it). Remaining goal scope (liveness verb semantics) = L13, m1's lane.
 - OpenedAt: 2026-08-27T06:12:18Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=60 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=26 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=7539da6d3abd0d55bfa29ad388e9e4deaf250a96f7d5497236ac56d97ea34274
@@ -40,4 +40,5 @@ History:
 - 2026-08-29T23:50:11Z GWJMG46686Q3CPCA4W9Q1QA4YE-m2-bc1be9cb release actor=m2+mac-coordinator targets=delegate-job-liveness
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=delegate-job-liveness reason=sweep
 - 2026-09-08T15:56:39Z 82SJEQGE9EX9M2W3Y13RBX3QVX-m1-7cd0bd60 set-priority actor=human:Wido targets=delegate-job-liveness reason=priority-order subject=delegate-job-liveness from=unranked to=1:23 requested-sequence=23
-Integrity: sha256=ce9281b33d735fcd065c6ba14cb44eaf161a05313b147de0fcd7a717b286446f
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:23 to=1:22
+Integrity: sha256=549d510772881861580c202d94ff80e11f877619820c199451f63cb15fa8a3c0

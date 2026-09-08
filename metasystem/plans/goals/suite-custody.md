@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 27
+- Sequence: 26
 - Intent: Validation suites run under process-group custody: killing a suite reaps its whole tree, and gate locks carry pids and self-clean when their owner dies (2026-08-24 collateral: orphaned go-gate child blocked the next battery)
 - Origin: human
 - Next step: RELEASED for the fresh session. DIAGNOSIS of the investigator zombies (2x): the task reproduces the detached-silence bug, and the reproduction itself wedges — the worker waits forever on the wedged detached child, log silent, status lying 'running'. The bug eats its investigator. INSTRUCTION: wrap every reproduction in an outer bounded timeout (the tar pit has no bound of its own), and slice the task smaller (reproduce+diagnose first, fix as a second task). m2's xtrace handoff stands; acceptance = detached green or loud named refusal; appetite 6h intact; shared tree clean.
 - OpenedAt: 2026-08-24T13:24:00Z
-- Revision: 18
+- Revision: 19
 - Labels: custody
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -32,4 +32,5 @@ History:
 - 2026-09-01T20:27:27Z M9Q8WJH6NXT28C4EVTD3K1PPVX-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=suite-custody
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=suite-custody reason=sweep
 - 2026-09-08T15:56:53Z E6KD9Z3Q6VBB67D2TQ152C56W9-m1-7cd0bd60 set-priority actor=human:Wido targets=suite-custody reason=priority-order subject=suite-custody from=unranked to=1:27 requested-sequence=27
-Integrity: sha256=968308c48bf0f3e5e335a215585c4d47d78b23ab74e44529a55412e58839fc9b
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:27 to=1:26
+Integrity: sha256=13f0c9dc0cc31953b8ed4a978e73aa775cd95441843b1aaee67ced9a43a9bc60

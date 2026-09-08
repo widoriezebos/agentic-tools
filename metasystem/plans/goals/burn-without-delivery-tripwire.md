@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 18
+- Sequence: 17
 - Intent: The case-study day's class 1 (Wido 2026-08-25): hours and tokens burned with no product landed, noticed only by the human. The ledger already holds every fact needed - claim time, structured budget, landing receipts - but nothing compares them LIVE. ESCALATED TO HIGHEST PRIORITY by Wido 2026-09-01 after m0's 8-hour idle night (specimen on this goal): 'I need this to be fixed before you do anything else... proven with tests.' SCOPE BOUNDARY for fleet coordination (no duplicate work): this goal builds the DETECTION PRIMITIVE ONLY - a steward tick check per machine-held claim raising a steward alert through the existing alert/notify machinery when (a) a job under the claim is terminal-failed/process-lost with no landing receipt for the goal since that failure, or (b) the claim is older than 1.5x the slice norm with jobs reserved but zero landing receipts since claim. Notification only, no kill authority (the steward-watch relay delegation's bound). watch-verb (unclaimed) later CONSUMES these alerts to act on stalls; alert-escalation-channel (m3, in flight) later CARRIES them to Wido externally; ledger-attention (m2, in flight) is ledger-change noticing, disjoint. m0 builds only the primitive.
 - Origin: main
 - Next step: DONE twice over, landed d252c785 + aad398c2 by m0 (account Wido@M0): detection primitive live fleet-wide at next engine rebuilds - failed-job-without-recovery alarms, and burn-without-delivery now measures each slice against ITS OWN reservation budget per Wido's correction (capDeadline + capMin/2; a 30-minute slice alarms at 46 minutes). Acting layer commissioned on watch-verb with Wido's order recorded.
 - OpenedAt: 2026-08-30T06:25:49Z
-- Revision: 13
+- Revision: 14
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=12 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=e8b39fc86f5ce1cb8e4236fb6325fc4d0f2df371971f3b3ab2190a4992629ea6
@@ -27,4 +27,5 @@ History:
 - 2026-09-01T08:06:39Z F5E92C4B9HDH2X4BKXBN6GZB5Z-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=burn-without-delivery-tripwire
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=burn-without-delivery-tripwire reason=sweep
 - 2026-09-08T15:56:21Z 6Y1JKD6AQ85HV71F5CA8NAFKYC-m1-7cd0bd60 set-priority actor=human:Wido targets=burn-without-delivery-tripwire reason=priority-order subject=burn-without-delivery-tripwire from=unranked to=1:18 requested-sequence=18
-Integrity: sha256=de4bade913c14632343a3476b43ae5e82374a42255966597df858266bd82929f
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:18 to=1:17
+Integrity: sha256=dec7424da7a8869de6df491ffad3a0ab4d819409aa3a239c229e3f1139e870fb

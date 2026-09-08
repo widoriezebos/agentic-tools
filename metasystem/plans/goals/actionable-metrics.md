@@ -2,12 +2,12 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 24
+- Sequence: 23
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
 - Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=18 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=17028a9296208cd4471baa6c8a9d3ebfcf90a24e6dc3cf28ca7afd7019bbc8e2
@@ -37,4 +37,5 @@ History:
 - 2026-09-07T19:44:01Z QB5VAF4RBN3GB3JTP6B5017AT9-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=actionable-metrics
 - 2026-09-08T07:44:51Z 1H2JK5TCHETQB7V9R4AJ2KTKQJ-m1-43182c96 breach-stop actor=m1+goal-stop-custodian targets=actionable-metrics
 - 2026-09-08T15:56:43Z MHEDM53B9562CFPSTB9SAF83WG-m1-7cd0bd60 set-priority actor=human:Wido targets=actionable-metrics reason=priority-order subject=actionable-metrics from=unranked to=1:24 requested-sequence=24
-Integrity: sha256=f1c38e6000d0a0d3ce17f55409d2904680e3632913e1e7ed8e7833df029d3d2c
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:24 to=1:23
+Integrity: sha256=d8ac0c964c59fe93b5c2fda139022f6c82ff889b5cc4ec6ad9fa32e08f758a22

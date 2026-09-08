@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 25
+- Sequence: 24
 - Intent: The lease claim sweep stamps a stale job's endedAt and terminal status the moment SIGTERM delivery succeeds (internal/lease/sweep.go:198-204 returns on nil or ESRCH; concludeStaleJob :146-170 stamps at once) without waiting for the process group to die, unlike dispatch.sh's wind-down (:339-368: bounded wait, SIGKILL, group-absence check). A record can be terminal while its runtime still runs, so anything that reads endedAt as the end of the job's life - the reservation settlement, custody, the census - is wrong for that window. DONE means the sweep stamps only after death evidence and leaves the record non-terminal when the group will not die
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=eea23ef275cedb2931e697ca8a2e6cb26832792d6eb7b411da932297fd3e2183
@@ -17,4 +17,5 @@ History:
 - 2026-09-02T18:38:01Z X8A2VJKV53D5WRDVFAF1WR0CZF-m1b-fad3674e set-budget actor=m1b+main-1788333346-60696-6a3256 targets=lease-sweep-death-evidence
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=lease-sweep-death-evidence reason=sweep
 - 2026-09-08T15:56:46Z 64WMK5SP99XC88QQ05FPRZ0M21-m1-7cd0bd60 set-priority actor=human:Wido targets=lease-sweep-death-evidence reason=priority-order subject=lease-sweep-death-evidence from=unranked to=1:25 requested-sequence=25
-Integrity: sha256=fb157b129a9bb14023ebb30a3ab28dd5752e235a6b45abec3bd5a67d152aa85c
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:25 to=1:24
+Integrity: sha256=88299b81611f0525f592eea8ce5d6db7f9395c26efd9f7ba3e157cab18b49ce3

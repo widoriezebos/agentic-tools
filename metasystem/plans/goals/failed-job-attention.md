@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 17
+- Sequence: 16
 - Intent: Wido's order 2026-09-01 (verbatim: 'Designing is not enough, I need this to be fixed before you do anything else... proven with tests'): the machinery that knows a delegate job died must say so loudly through what exists TODAY - the steward tick raises an escalation episode when a job under a claimed goal reaches terminal failed status unacknowledged, and when a breach-stop fires; episodes already reach health output and the digest. DONE means both events produce visible escalations proven by fixtures
 - Origin: main
 - Next step: RESUME RECIPE (any seat where Codex opens a session under the 10-second cap): claim; fill the identity line of plans/failed-job-attention-critique3-brief.md and land it; dispatch the design-critic (Sol, DESIGN-BEARING) as the closing round; land the register under records/misc/failed-job-attention-critique-r3.md; if zero material, the design is certified and the BUILD waits on goal job-record-birth-token (m1 claimed it 2026-09-02 evening and its design round is running; the mechanical BlockedBy edge needs a human hand because goal reconcile refuses a seat-made blocker edit without --by, so the dependency is recorded here in prose by Wido's word (R-53-m1, 2026-09-02: "record it by word"); the design's dedup digest reads the minted birth generation), then build (Sol), code critique (Fable), land with --chain. Revision 3 (landed 8fd1420c) removed the write-ahead journal (derive-on-next-tick everywhere) and the birth-token fallback chain, put queued-notification delivery under the tick's lock per item, and gave the channel-migration window an owner and an end; three declared gaps are on the return of job failed-job-fold3 (m1). NOTE for the record's own history: a seat edit at 20:0x briefly replaced this step with the stale parked text because it composed from an unfetched ref; this text restores it (goal goal-edit-next-append owns the footgun).
 - OpenedAt: 2026-09-01T06:47:55Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=18 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=c724841dd295fa5e88d869a4d393cae1f5c5ca4d175d4ee4f9192087d22c1471
@@ -33,4 +33,5 @@ History:
 - 2026-09-02T19:30:58Z 4GKBM2SJZ0XB99N132A7KS9S8D-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=failed-job-attention
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=failed-job-attention reason=sweep
 - 2026-09-08T15:56:18Z 0R5CNG9DT1Q4BZ2VHQH8FQ37RX-m1-7cd0bd60 set-priority actor=human:Wido targets=failed-job-attention reason=priority-order subject=failed-job-attention from=unranked to=1:17 requested-sequence=17
-Integrity: sha256=9cfb429cdd42c87db1d5c527c8a1cf601f32d7b9f58db82db975a098728d5dc8
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:17 to=1:16
+Integrity: sha256=22b9da3eaa1db492cdfcc9990a48f6d035dd46776a044094f97c2a6882acebb2

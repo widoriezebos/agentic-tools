@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 5
+- Sequence: 4
 - Intent: Wido's highest-priority order (2026-09-01, verbatim: 'This needs to be fixed immediately... Only resume work after these problems are fixed, proven with tests'): two of the three proven breach-machinery breakdowns from the night of 2026-08-31, sharing the goal-machinery seam. (1) THE RAISE-RESET CLOCK: SetBudget re-binds the claim record on every raise and the elapsed breach clock anchors on the current revision's claim timestamp - every budget raise restarts the breach clock (the night reset it five times lawfully; internal/goal/verbs.go SetBudget comment + internal/dispatch/budget.go anchor are the proof). (2) DISHONEST DURATIONS: budget elapsed limits parse through a working-hours grammar (d = 8 hours) and New() normalizes inputs into it - a human's 24h displays as 3d, and a human's 9d is enforced at 72 clock hours, one third of intent, silently, across every live budget.
 - Origin: main
 - Next step: HOLD (Wido's word via m1, 2026-09-02 23:05, verbatim: 'HOLD. Do not dispatch any new delegate round or start any new build; finish only what is already running, land what is already certified, then stop and wait.'). Nothing running, nothing certified: the fix build breach-build-3b (worktree commit e355c030 = cherry-pick of 0d8e47ef plus the F-1/F-2/F-4 folds of records/misc/breach-code-critique-r1.md) is built and host-gate green (five packages, goal-cli fixtures PASSED) but uncertified; Fable round 2 (plans/breach-clock-code-critique-r2-brief.md, landed) is NOT dispatched. Attempts 10 of 10 used. TO RESUME on Wido's word: rm the guard litter artifacts/agents/worktrees/breach-build-3b/metasystem/artifacts/agents/landing-observe.log; raise attemptLimit (asked 10 to 14); validate conformance --stage review --job breach-build-3b; dispatch round 2 (cap 20); apply the worktree diff HEAD~2 at the repo root; land --chain breach-build-3b with this Goal-Item. OPEN FOR WIDO (not built): should a later human set-obligation inherit a discharge consumed inside the same claim episode.
 - OpenedAt: 2026-09-01T06:54:30Z
-- Revision: 35
+- Revision: 36
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=840 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=34 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=2142bad3c2d3dbf735f8981046cac2475a29900b6aa0daf607bac07be1355c06
@@ -49,4 +49,5 @@ History:
 - 2026-09-03T05:47:43Z PHCS589HEQCHB9DZSQZH452M54-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=breach-clock-and-budget-honesty
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=breach-clock-and-budget-honesty reason=sweep
 - 2026-09-08T15:55:36Z 7YX591MQC2HP7GRJ29GJD00FJM-m1-7cd0bd60 set-priority actor=human:Wido targets=breach-clock-and-budget-honesty reason=priority-order subject=breach-clock-and-budget-honesty from=unranked to=1:5 requested-sequence=5
-Integrity: sha256=e66ec29681e8089de6e471a0c8cb0cd602fba0f9f5f1d2f5743431c4b993d400
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:5 to=1:4
+Integrity: sha256=c896549c4f3cba53c81f8eb46c2d8a9ab47af0050171e3cebfd0998c9d62f3cd

@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 16
+- Sequence: 15
 - Intent: Every job record incarnation carries a mandatory, immutable, machine-minted birth token: the create path mints it under the record lock (timestamp plus nonce generation - a second-precision timestamp alone collides on same-second identifier reuse), ignores any caller-supplied value, and the field joins immutableFields. Proven necessary by executable spike (records/misc/alert-channel-spike-verdicts.md, 2026-09-01): no shipped field qualifies - createdAt is neither mandatory nor immutable through the real writers, startedAt and claimEpoch are optional and caller-supplied, inode identity changes on every atomic rewrite - and the alert design's retention pin (its critical identifier-reuse closure) depends on exactly this contract. Consumer: alert-escalation-channel revision 11; Ruling R applies - whoever builds this runs every reader of the record identity
 - Origin: main
 - Next step: PAUSED BY WIDO 2026-09-03 15:52Z (m0 and m0b paused; nothing under way). Approved and was claimed by m0 as the first headless run's target; released so the 4h elapsed clock does not burn during the pause. RESUME: re-claim, then follow plans/first-headless-run-plan.md step 6 from 'shut down the seat owner' (contract sealed+signed on main, mission birth-token born and waiting; the post-session handover watcher was disarmed for the pause and must be re-armed).
 - OpenedAt: 2026-09-01T21:26:07Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=12 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=19f4b7d2be58a073ad58d696f7996bd2535d26361dac33300b296180ca3beab0
@@ -29,4 +29,5 @@ History:
 - 2026-09-06T20:29:37Z EPTGCY9JE0Z32BD0M3EZWDKPJJ-m1-a4f8999f claim actor=m1+main-1788594343-3833-fb64b9 targets=job-record-birth-token
 - 2026-09-06T21:02:58Z JFGE3KZM2GJGJ19X7CKDVY085T-m1-a4f8999f release actor=m1+main-1788594343-3833-fb64b9 targets=job-record-birth-token
 - 2026-09-08T15:56:14Z N78M9B5TM6EVBGXQVV63QWW3W7-m1-7cd0bd60 set-priority actor=human:Wido targets=job-record-birth-token reason=priority-order subject=job-record-birth-token from=unranked to=1:16 requested-sequence=16
-Integrity: sha256=6f89d40f83188761b4759e13bbb662e98472e5ccdde14ab3b1f351565c4fae46
+- 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:16 to=1:15
+Integrity: sha256=d44cdec0a4a90bb8aeebcd72b3c0eeb2562f9173d3d4cf0d59a58fe36206e4c3
