@@ -4,10 +4,11 @@ Date: 2026-09-08
 
 # Design fold: revision 2 of the backlog ordering page, and the last one
 
-Deliverable: revision 2 of plans/backlog-ordered-by-priority-design.md,
-edited in place. You wrote revision 1 this hour; this round folds the
-one independent critique and closes the page. No code, no fixtures, no
-other file.
+Deliverable: revision 2 of
+metasystem/plans/backlog-ordered-by-priority-design.md, edited in place.
+Revision 1 was written on this lane an hour ago and is landed on trunk;
+read it first. This round folds its one independent critique and closes
+the page. No code, no fixtures, no other file.
 
 The critique is job backlogorder-crit1 (design-critic, gpt-5.6-sol,
 xhigh, read-only) and its disposition is
@@ -39,7 +40,16 @@ Decide and write:
   change per path;
 - what the resulting tree must look like after a batch that concludes
   two ranked goals in the same priority, and after a batch that
-  concludes one and reopens another;
+  concludes two in different priorities;
+
+SCOPE CLARIFICATION, added 2026-09-08 after this round's first attempt
+reported the gap: cover only the batch shapes reconciliation supports
+TODAY. Do not expand reconciliation's grammar or its executor; that is
+outside this goal's intent, which is ordering the backlog. If a mixed
+batch that both concludes and reopens is unsupported, say so in the page
+as a stated limitation, name the refusal a person would see, and treat
+reopen as its own transaction. A limitation written down is a finished
+design; an invented mechanism is not.
 - a focused reconciliation fixture in section 6, with the smallest
   proving run and its independent observation, in the same shape as the
   rows already there.

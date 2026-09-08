@@ -1,6 +1,14 @@
 # Backlog ordered by priority
 
-Revision: 1. Date: 2026-09-08. Design authoring job: `backlogorder-design3`.
+Revision: 2 (final design round). Date: 2026-09-08. Design authoring job:
+`backlogorder-design5`.
+
+Folds the three accepted findings from independent critique
+`backlogorder-crit1`: BOP-01, coherent reconciliation compaction; BOP-02,
+rank-versus-claim collision canaries in both publication orders; and BOP-03,
+preservation of an existing rank through approval sweep. BOP-04, two free
+machines reading the same candidate, remains recorded without action. The
+disposition is `metasystem/records/misc/backlog-ordered-by-priority-critique-r1.md`.
 
 This page specifies the build; it implements nothing. Independent critique,
 dispositions, the obligation matrix, certification, and receipts belong to the
@@ -33,6 +41,7 @@ revision read for this design.
 | Claim | `metasystem/internal/goal/verbs.go:588`, `Claim`; `:605`, `claimRequest`; `metasystem/internal/goal/validate.go:269`, quota block in `ValidateTree` | Claims require approved work, satisfied dependencies and a matching pin; publication validates the quota. Claims are keyed by machine and lineage. The human-approved budget is already present; a claim does not choose one. |
 | Machine context | `metasystem/internal/goal/actor.go:21`, `ResolveMachine`; `metasystem/internal/goal/verbs.go:2341`, `validPinnedNickname` | Machine identity comes from enrolled Git configuration. A pin uses a nonempty word with no Unicode whitespace; its special `-` exclusion is only because set-pin uses that token to clear a pin. |
 | Lifecycle and manual edits | `metasystem/internal/goal/verbs.go:1107`, `doneRequest`; `:1326`, `reopenRequest`; `metasystem/internal/goal/split.go:224`, mutation in `splitRequest`; `metasystem/internal/goal/reconcilemap.go:58`, `MapDeltas`; `:205`, `mapOneChange` | Done and split remove live records; reopen restores one. Split creates new member records. Reconcile already refuses a hand-edited pin and must likewise refuse direct rank edits. |
+| Reconciliation batch | `metasystem/internal/goal/reconcilemap.go:270`, hand-done mapping; `:114`, archive-edit refusal; `metasystem/internal/goal/reconcilepub.go:90`, mutation; `:98`, row loop; `:104`, first-change-per-path fold; `:114`, final render; `:300`, done application; `:540`, unsupported-verb refusal | Reconcile archives directly rather than calling `doneRequest`. Its fold preserves the first change's deletion flag, then refreshes content from the final in-memory tree. Compact only after every row has applied. Archive edits cannot map to reopen, and the executor has no reopen arm. The fold is in `reconcilepub.go`, not the critique's cited `reconcile.go`. |
 | Read projections | `metasystem/internal/goal/project.go:51`, `Project`; `:512`, `Next`; `metasystem/cmd/metasystem/goal.go:273`, `runGoalList`; `:337`, `listSynced`; `:455`, `nextSynced`; `:501`, `runGoalNext` | Reads use the accepted Git tree. Listing is alphabetical within state groups. Next already exists, resolves the local machine, and reports claimed/ready/blocked/awaiting work. Ready excludes expired approvals and unfinished blockers. Neither CLI reader currently declares `--fetch`, despite the projection banner advertising it; next has no `--machine`. |
 | Seat consumers | `metasystem/internal/goal/project.go:278`, `ReadClaimableBudgetedWork`; `metasystem/internal/goal/turnverdict.go:410`, `enforceIdleBacklog`; `:473`, `idleBacklogNames`; `:503`, `idleBacklogDigest`; `:960`, `queuedFrontier`; `metasystem/internal/steward/ledgerattention.go:147`, `snapshotLedger`; `metasystem/internal/steward/revive.go:177`, `claimSeatIdleGoal`; `:208`, `decideForRevival` | The fresh work projection preserves Ready order. Idle continuation takes its first item, unless already holding a claim. A recorded continuation rechecks eligibility, not current rank. Some diagnostic queues sort by age or put pins first. These are existing consumers, not grounds to introduce another selection loop. |
 | Channel status | `metasystem/internal/channel/report.go:37`, `ComposeStatusReport`; `:125`, `markedNextGoal`; `:229`, `Digest`; `:270`, `ShouldPost` | Next up currently means at most two held goals and is suppressed without a recent delivery. No ordered backlog head is shown. The report has a twelve-line ceiling. Execution approval separately targets one queued, locally pinned goal labeled `next`. |
@@ -147,7 +156,7 @@ callers fold its changes into their existing transaction and event:
 | Transition | Rank effect |
 | --- | --- |
 | Claim, release, approve, unapprove, park, unpark, resume, pin or arc membership edit | Preserve the pair. Parked and claimed goals still occupy their positions. |
-| Done | Preserve the archived pair as history; compact the departed priority's remaining open goals in the same `doneRequest` commit. |
+| Done | Preserve the archived pair as history; compact the departed priority's remaining open goals in the same `doneRequest` commit. Edit-then-reconcile uses its separate batch completion rule below. |
 | Reopen | Preserve a previously assigned priority but append at its current tail; an unranked archive entry reopens unranked. Never reclaim an archived number that now belongs to another goal. Existing reopen approval/state rules still apply. |
 | Split | Archive the parent's pair and compact its old bucket. New members start unranked: priority was assigned to the parent, not independently to those new intents. Existing member dependencies and pins remain governed by split. |
 | Prune or deletion from the archive | No live ordering effect. |
@@ -158,6 +167,51 @@ relative order. In split, a dependent whose blockers and sequence both change
 must receive one merged file change and one revision/event, not duplicate
 path writes or two touches. Apply the same single-touch rule to existing
 acknowledgment piggybacks.
+
+**Reconciliation compacts once per batch attempt.** In `Reconcile`'s mutation
+in `metasystem/internal/goal/reconcilepub.go`, keep the existing mapped-row
+order, `applyRow` predicates and first-change-per-path fold. The `done` arm
+only archives and deletes as today; it must not compact peers per row. After
+all rows succeed, use the existing `session.archived` set and those records'
+retained pairs in `t.Done` to identify the departed priorities. Invoke the
+order helper once over that set and the final `t.Live`, before the existing
+final-render loop. For each affected priority, retain surviving sequence
+order and number it 1..N. An emptied priority has no live slots; other
+priorities and unranked goals are unchanged. All archived pairs remain those
+at the fetched tip for this attempt, even when several departures shared a
+priority. A row conflict refuses the entire transaction before compaction;
+a publication collision reloads the tip and repeats rows and compaction.
+
+Add a change only for a shifted survivor whose live path is not already in
+`touched`; the final-render loop updates existing entries for already-touched
+survivors. Never emit a live write for an ID in `session.archived` or replace
+its deletion. This uses the existing fold without changing its precedence:
+no earlier compaction write can suppress a later done row's deletion.
+For each affected priority, the compaction event targets are the sorted union
+of its departed IDs and shifted survivors. An otherwise untouched survivor
+gets one `done` event and revision under this reconcile's human, timestamp
+and operation identifier, with its before/after pair in Reason. For an
+already-touched survivor, append that explanation and union those targets
+into its last event for this operation, retaining that event's verb and
+coordinates; add no revision or event for compaction. Preserve all existing
+row events, reasons, displacement and acknowledgment effects. In particular,
+done-plus-edit on a departed record still edits its archive, and an edit on a
+survivor keeps both the edited fields and its compacted pair.
+
+For example, priority 1 `a:1, b:2, c:3, d:4, e:5` with done rows for b and d
+publishes live `a:1, c:2, e:3` and archived pairs `b=1:2, d=1:4` in one
+commit; neither b nor d has a live file. With priority 1 `a:1, b:2, c:3` and
+priority 2 `d:1, e:2, f:3`, done rows for b and e publish live priority 1
+`a:1, c:2` and priority 2 `d:1, f:2`, with archived pairs `b=1:2, e=2:2`.
+Each bucket closes independently, with no cross-priority movement.
+
+**Current limitation:** a batch that concludes and reopens is unsupported.
+`MapDeltas` refuses a changed archive with `<path>: the archive has no
+hand-edit grammar; reopen is a verb`, before publication. Its grammar and
+`applyRow`'s supported verbs stay unchanged. Leave the archive unedited,
+reconcile the lawful live edits, then invoke `goal reopen` as its own
+transaction, using the append-at-current-tail rule above. Reconciliation
+does not gain reopen, row reordering or a general batch executor redesign.
 
 For all rank-only touches, retain `Approved`, its digest and revision,
 `Claimed` including its timestamp, revision and accounting revision, Budget,
@@ -186,7 +240,9 @@ uses its existing `Reason` field. It is evidence, never authority or replay
 input. A lifecycle compaction uses that lifecycle's verb and actor, with the
 same before/after explanation appended to any existing reason, and includes
 all affected IDs in its event targets. The original event coordinates and
-existing displacement/acknowledgment semantics remain intact.
+existing displacement/acknowledgment semantics remain intact. Reconciliation
+merges compaction into an already-touched survivor's row event as specified
+above, retaining that row's verb.
 
 Publication order settles races. Two terminal-authorized insertions at
 position 1 can both succeed: the first successful commit inserts first, and
@@ -387,11 +443,13 @@ failure to investigate, not permission to loop a battery.
 | --- | --- | --- |
 | Set-priority reorders and re-sequences: new `metasystem/internal/goal/order_test.go`, `TestPriorityReordersAndResequences` | `cd metasystem && go test ./internal/goal -run '^TestPriorityReordersAndResequences$/^insert$' -count=1 -timeout=2m` | Three ranked goals in a real temporary ledger; move the last to position 2, then read the published tree and assert the exact order, dense positions, affected revisions and human event. Separate selectable subtests `move-priority`, `append`, `same-priority-noop`, and `claimed-peer` prove those respective rules with the same command's final selector replaced by that name. |
 | Removal and lifecycle closure: same new file, `TestPriorityLifecycle` | `cd metasystem && go test ./internal/goal -run '^TestPriorityLifecycle$/^done-reopen$' -count=1 -timeout=2m` | Conclude the middle of three, observe compaction and unchanged survivor order, then reopen it at the tail. Subtest `split` proves unranked children and one revision for a dependent whose sequence also changes. |
-| Two seats race: same new file, `TestPriorityRace` | `cd metasystem && go test ./internal/goal -run '^TestPriorityRace$/^same-position$' -count=1 -timeout=2m` | Use `twoClones` and the existing `PublishRequest.BeforePush` seam to force competing insertions without sleeps. Read both commits and the converged tree: both events survive, the later insertion is first, no duplicate/hole is published. Subtests `same-target` and `range-changed` prove serial human edits and refusal when a concurrent removal invalidates the position. |
+| Reconciliation batch closure: extend `metasystem/internal/goal/reconcilepub_test.go`, new `TestPriorityReconcile` | `cd metasystem && go test ./internal/goal -run '^TestPriorityReconcile$/^same-priority$' -count=1 -timeout=2m` | Materialize the five-goal example above with the existing `materialize` helper, hand-edit only b and d to done with conclusions, then call `Reconcile` through `humanReconcileReq`. Independently read the published commit and refreshed files: both live paths are absent, both archives retain their original pairs, survivors are exactly a:1, c:2, e:3, and the tree validates. Assert one commit, the shared human/operation identifier, one compaction revision/event per shifted survivor and no touch of unchanged a. Subtest `different-priorities` proves the second example and unchanged unrelated priorities/unranked records; `survivor-edit` also edits c and proves its edit and final pair share the existing row event with no extra revision; `done-edit` proves d's additional edit lands only in its archive; `reopen-refused` combines a lawful done edit with an archive state edit and asserts the named archive-grammar refusal and unchanged canonical tip, then restores the archive, reconciles and reopens separately at the tail. Each subtest runs by replacing `same-priority` in this command and retains its two-minute ceiling. |
+| Two seats race: new `metasystem/internal/goal/order_test.go`, `TestPriorityRace` | `cd metasystem && go test ./internal/goal -run '^TestPriorityRace$/^same-position$' -count=1 -timeout=2m` | Use `twoClones` and the existing `PublishRequest.BeforePush` seam to force competing insertions without sleeps. Read both commits and the converged tree: both events survive, the later insertion is first, no duplicate/hole is published. Subtests `same-target` and `range-changed` prove serial human edits and refusal when a concurrent removal invalidates the position. |
+| Rank races claim: new `metasystem/internal/goal/order_test.go`, `TestPriorityRace` subtests `claim-first` and `priority-first` | `cd metasystem && go test ./internal/goal -run '^TestPriorityRace$/^claim-first$' -count=1 -timeout=2m`; reverse order: `cd metasystem && go test ./internal/goal -run '^TestPriorityRace$/^priority-first$' -count=1 -timeout=2m` | Use real `setPriorityRequest` and `claimRequest` mutations on the same approved goal in `twoClones`. In `claim-first`, the first rank attempt's `BeforePush` synchronously publishes the claim from the other clone; in `priority-first`, the first claim attempt's callback publishes the authorized rank edit instead. Inject only once, without sleeps, and assert both publications confirm and the held request reaches at least attempt 2. Read both published commits and the converged tree: the requested new pair and dense peer ranks survive together with the claim's machine, lineage, timestamp, claim revision and accounting revision exactly as published by the successful claim; both operation histories and the approval binding survive. Ground the collision in `metasystem/internal/goal/txn.go:484` and the existing pattern at `metasystem/internal/goal/txn_test.go:170–249`; a pre-existing claim or two competing claims does not exercise this overwrite risk. |
 | Human act and recovery: new `metasystem/cmd/metasystem/goal_priority_test.go`, `TestGoalPriorityAuthority`; new domain `order_test.go`, `TestPriorityRecovery` | `cd metasystem && go test ./cmd/metasystem -run '^TestGoalPriorityAuthority$/^wrong-terminal$' -count=1 -timeout=2m` | A supplied human and lineage with unproved ancestry cannot publish; the same Go test's `proven` subtest drives the new handler successfully with the existing exact-root fixture proof. For recovery run `cd metasystem && go test ./internal/goal -run '^TestPriorityRecovery$/^unlanded$' -count=1 -timeout=2m`: a dead owner's stored human string cannot reorder. Its `landed` subtest confirms without a duplicate event. |
 | Next returns the expected goal for pinned and unpinned machines: new `metasystem/internal/goal/order_test.go`, `TestNextPriority`; new command test file, `TestGoalPrioritySelection` | `cd metasystem && go test ./internal/goal -run '^TestNextPriority$/^pins$' -count=1 -timeout=2m` | Rank A at 1:1 pinned to m1, B at 1:2 unpinned, C at 1:3 pinned to m2. Free m1 selects A; free m2 and unpinned m3 select B. Selecting B ahead of C proves a local pin confers no extra rank. Subtests `held`, `blocked-expired`, `none` and `labels` cover quota/eligibility without changing claim semantics. `cd metasystem && go test ./cmd/metasystem -run '^TestGoalPrioritySelection$/^machine$' -count=1 -timeout=2m` drives explicit-machine CLI selection; its `fetch-failure` and `claim-race` subtests prove honest read failure and reselect-after-lost-claim. |
 | A goal without priority sorts last: new domain `order_test.go`, `TestPriorityUnranked`; new command test file, `TestGoalPriorityListing` | `cd metasystem && go test ./internal/goal -run '^TestPriorityUnranked$/^sort-last$' -count=1 -timeout=2m` | Unranked alphabetical A must follow ranked Z even at priority 3. Multiple unranked records remain valid and ID-ordered. Subtests `grammar` and `manual-edit` refuse partial/zero/invalid pairs, duplicates/holes and rank edits through reconcile. `cd metasystem && go test ./cmd/metasystem -run '^TestGoalPriorityListing$/^cross-state$' -count=1 -timeout=2m` proves JSON `open` and pretty rows interleave states in the same rank order while exposing state and pin. |
-| Sweep-approved backlog stays valid: extend `metasystem/internal/goal/approval_test.go`, existing `TestSweepBindsListedIntentAndPreservesClaimedWork` | `cd metasystem && go test ./internal/goal -run '^TestSweepBindsListedIntentAndPreservesClaimedWork$' -count=1 -timeout=2m` | Existing test already publishes a sweep over unranked queued and claimed records. Extend it to assign one priority afterward and validate the resulting tree: other records stay unranked; approval digests, approved payloads and held claim coordinates survive. No bulk fixture migration. |
+| Sweep-approved backlog stays valid: extend `metasystem/internal/goal/approval_test.go`, existing `TestSweepBindsListedIntentAndPreservesClaimedWork` | `cd metasystem && go test ./internal/goal -run '^TestSweepBindsListedIntentAndPreservesClaimedWork$' -count=1 -timeout=2m` | Seed the swept `sweep-running` record with pair 2:1 before `publishGoalFixtures` and the first `PreviewApprovalSweep`; keep `sweep-waiting` and other records unranked. Retain the stale-listing refusal and successful fresh-preview sweep. Independently read the published tree and validate it: the running record still has exactly 2:1, all other records still lack both rank fields, the waiting record is approved and the running record remains claimed with its original claim coordinates. Check approval payloads and digests and retain the existing fleet-gate assertion. This drives the whole-record renders in `metasystem/internal/goal/approval.go:660–684` with rank already present; no bulk fixture migration. |
 | Channel shows the head without a delivery: extend `metasystem/internal/channel/channel_test.go`, new `TestReportPriority` | `cd metasystem && go test ./internal/channel -run '^TestReportPriority$/^no-delivery$' -count=1 -timeout=2m` | A ranked global head pinned elsewhere and a lower local candidate appear with distinct global/local meanings. Subtests `line-cap`, `unavailable`, `stale`, and `approval-binding` prove visibility under twelve-line pressure, honest read limitations and unchanged marked-goal approval binding. |
 | Existing seat projections carry order: extend `metasystem/internal/goal/turnverdict_idle_test.go`, new `TestPriorityIdleProjection`; extend `metasystem/internal/steward/ledgerattention_test.go`, new `TestPriorityLedgerSnapshot` | `cd metasystem && go test ./internal/goal -run '^TestPriorityIdleProjection$' -count=1 -timeout=2m` | The idle continuation chooses the ranked Ready head; diagnostics do not promote a pin and reorder alone does not reset idle enforcement. `cd metasystem && go test ./internal/steward -run '^TestPriorityLedgerSnapshot$' -count=1 -timeout=2m` checks the waiting/ready projection order. |
 
@@ -439,10 +497,12 @@ Per the supplied orchestration contract's delegate-sandbox limitation, the
 orchestrator runs process-owning fixture gates outside the delegate sandbox.
 No runtime gate is claimed for this design-only artifact.
 
-This revision settles the scale, scoped uniqueness, absent-field exception,
-lifecycle compaction, read-to-claim race and status meaning explicitly. The
-missing public fixture selector and existing next/fetch differences are
-accounted for, not assumed away. No second design round is needed for this
-scope. A demand for globally unique sequence numbers, atomic selection-plus-
-claim, or new human authority over another channel would reopen the design;
-the builder must report such a gap rather than invent that behavior.
+This final revision adds reconciliation batch closure and the two corrected
+canaries to the settled scale, scoped uniqueness, absent-field exception,
+lifecycle compaction, read-to-claim race and status meaning. The unsupported
+reconcile/reopen batch is a stated limitation; reopen remains a separate
+transaction. The build proceeds behind section 6. A demand for globally
+unique sequence numbers, atomic selection-plus-claim, new human authority
+over another channel or expanded reconciliation grammar is outside this
+design; the builder must report that gap rather than invent behavior or open
+a third prose revision.
