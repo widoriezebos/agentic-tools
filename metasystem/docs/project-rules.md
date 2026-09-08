@@ -43,6 +43,10 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - A receipt is appended in the same commit as the work it describes; bookkeeping-only commits hide the ratio of records to evidence.
 - When the same repository is developed by expensive models and measured or exercised by cheap ones, pin both rosters explicitly and name which activity each configuration serves; a cost rule applied to the wrong roster cancels healthy work.
 
+## Paper prose
+
+For `docs/paper`, use Wido's plain English. Keep the prose concise and easy to understand. Use ASCII only, with no em dashes. Avoid unnecessary abstractions or metaphors, "not this, but that" framing, and stock groups of three used for rhythm. Preserve the running story and the order in which the argument develops. New chapters must improve readability. Check chapter references and the build order after moving chapters.
+
 ## Decisions Reserved for Humans
 
 These require explicit in-task approval even when technically easy. Default set, which adaptation may extend but should not silently shrink:

@@ -4,7 +4,7 @@
 
 > *A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.*
 
-Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system we propose must be built for what this workforce actually is, not for what people hope or fear it is.
+Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work and new failure modes become important. The delivery system I propose must be built for what this workforce actually is, not for what people hope or fear it is.
 
 ## What falls or changes shape
 
@@ -14,11 +14,11 @@ A second attempt also becomes easier to start. There is no need to wait for the 
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
-Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction, and tools can stop. What falls away is fatigue; cost and failure stay.
+Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction and tools can stop. What falls away is fatigue; cost and failure stay.
 
 ## What actually goes away
 
-Consider a fault found at the end of a human workday. The person who understands it may be exhausted, unavailable until morning or reluctant to abandon a design that took a week to produce. A fresh machine worker need not inherit those conditions. For a single unit of machine work, working hours, bodily fatigue, personal ego and career incentives do not constrain the attempt. Another fresh worker can begin without waiting for the first to recover or agree.
+Consider a fault found at the end of a human workday. The person who understands it may be exhausted, unavailable until morning or reluctant to abandon a design that took a week to produce. A fresh machine worker does not have these problems. For a single unit of machine work, working hours, bodily fatigue, personal ego and career incentives do not constrain the attempt. Another fresh worker can begin without waiting for the first to recover or agree.
 
 What goes away is limited. A service can still ration access to machinery. An organization can still have deadlines. The people responsible for consequences still have finite attention, and a poor record can still make a fresh attempt ignorant. Scarcity does not vanish. But several reasons for arranging human work no longer apply to the worker carrying a single task with stated limits on scope, time and spend. From now on we call such a task a 'bounded attempt'. Every candidate is the result of one bounded attempt.
 
@@ -32,9 +32,9 @@ Memory existed during the attempt but did not survive it. Machine workers are st
 
 > *Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely.*
 
-To an observer, all four look the same: a worker that needs more time. This paper calls that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
+To an observer, all four look the same: a worker that needs more time. We call that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
-> *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right, and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
+> *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
 
 Work can be convincing and wrong at the same time: a coherent explanation can carry a false claim. That is why direct observation is worth more than a confident presentation.
 
@@ -46,11 +46,11 @@ Long attempts introduce another failure.
 
 > *A builder begins with the authorized request, follows a nearby problem, improves that problem and returns with a result that no longer serves the original outcome.*
 
-Nothing in the final work is obviously absurd; the attempt just changed direction. This paper calls that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
+Nothing in the final work is obviously absurd; the attempt just changed direction. We call that drift. Durable intent, intermediate state and explicit bounds make movement away from the requested outcome visible.
 
 Even the identity of an active attempt can be unclear. A delayed message may come from the original worker, a retry or a replacement. Two apparent attempts may share the same hidden context. A resumed worker may look fresh while retaining the assumption an independent examiner was meant to challenge. Where independence or custody is at stake, the system needs evidence of which actor performed which action, what context it received and which exact candidate it judged.
 
-Every retry, copied context, tool call, test and competing candidate also consumes a measured resource. Computation is metered: some effort becomes cheap enough to repeat, but never free. And an extra candidate creates a second cost that the meter may not show directly: trustworthy comparison. A budget that counts production but not judging encourages a pile of plausible alternatives without a way to choose among them.
+Every retry, copied context, tool call, test and competing candidate also consumes a resource we have to pay for one way or another. Computation is metered: some effort becomes cheap enough to repeat, but never free. And an extra candidate creates a second cost that the meter may not show directly: trustworthy comparison. A budget that counts production but not judging encourages a pile of plausible alternatives without a way to choose among them.
 
 These failures are real: seen in practice or easy to reproduce. Not every attempt has them all. A delivery system should assume any of them can happen, make them visible when they do and keep the damage contained.
 

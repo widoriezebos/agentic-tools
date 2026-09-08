@@ -2,7 +2,7 @@
 
 **A check that has never failed on a broken version has proved nothing yet.**
 
-> *In Chapter 1's hypothetical day, the first session-expiry candidate arrives with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.*
+> *In Chapter 1's hypothetical day, the first session-expiry candidate comes with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.*
 
 The gap between the explanation and the observation is the whole principle: a convincing claim can point you somewhere, but only well-grounded evidence and bounded proof can authorize an action with consequences. The aim is an accurate statement of what one exact result has and has not shown.
 
@@ -38,11 +38,11 @@ Expected results need their own source. The rule that background refresh does no
 
 An independent examiner asked "does this solution look correct?" after reading the builder's full argument may follow the same path and accept the same choices. An independent examiner given the authorized intent, relevant constraints, finished candidate and resulting evidence can instead begin from the claims that must survive and look for ways to break them. The object of judgment is the work itself rather than the builder's story about reaching it.
 
-Each new independent examiner receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That withholding protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a newly started machine worker that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority (no more access than the task needs), but it cannot manufacture independence after the fact. Chapter 8 develops how one durable record can support both continuity and appropriately limited access.
+Each new independent examiner receives the materials needed to examine the claim but not the builder's private reasoning trace or path to the work. That withholding protects a fresh perspective only when the independent examiner is actually fresh: a distinct person or a newly started machine worker that has not already seen the withheld reasoning. Removing access from an actor after exposure does not erase what that actor knows. Role-scoped access still provides least authority (no more access than the task needs), but it cannot manufacture independence after the fact. In Chapter 8 we will see how one durable record can support both continuity and appropriately limited access.
 
 Fresh context removes one source of shared error: the builder's path. A newly started examiner using the same model can still find faults that a review performed inside the builder's context missed. The two workers still share the model and its data, so their agreement cannot by itself rule out a shared mistake.
 
-The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair and produces another examination of the changed result. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision rather than the moment the process stops producing output.
+The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair, or calls for stronger evidence when the fault lies in the support rather than the work; either way, what changed is examined again. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision rather than the moment the process stops producing output. One test separates a material issue from a preference: if the finding stands, must the candidate change, or does the evidence stop supporting its claim? When the bounded search runs its full round and produces no material issue, the search has completed. Repeating the same search then adds little, though an examination aimed differently can still find what it missed.
 
 ## Four questions set verification depth
 
@@ -50,7 +50,7 @@ Changing a comma in internal help text and reversing one comparison in account a
 
 Four questions set verification depth. How severe could the harm be if the change is wrong? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? How much change has accumulated since the last broad examination? Severity decides how strong the evidence must be. Novelty calls for challenges beyond the checks that grew around the old design. Exposure raises the price of one missed fault. Accumulation justifies a broad examination that catches interactions among modest changes.
 
-Chapter 11 applies the same questions to production, comparison and the decision whether the next unit of effort is worth spending.
+In Chapter 11 we will apply the same questions to production, comparison and the decision whether the next unit of effort is worth spending.
 
 ## What proof cannot prove
 
@@ -68,13 +68,13 @@ The answer to these limits is to claim only what was shown. The system records w
 
 A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. A person repeating the same inspection checks what the machine already checked. That adds delay and little protection.
 
-A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption that could make them agree for the same mistaken reason. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. Chapter 13 says who may perform that review, how accountability is assigned and how an appeal proceeds.
+A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption that could make them agree for the same mistaken reason. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. In Chapter 13 we will see who may perform that review, how accountability is assigned and how an appeal proceeds.
 
 Low risk does not mean no control. A path authorized by enforced rules still needs traceable intent, evidence tied to the exact candidate and a way to reverse the result. Human review adds an independent judgment required by named conditions; it does not replace those protections.
 
 ## Repair a mistaken classification
 
-> *In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. The releaser contains or reverses the change, the builder repairs the defect, and the responsible authority handles any value or rule change revealed by it.*
+> *In a separate hypothetical release, a session change passes its assigned checks and proceeds without human review because it was classified as a routine timeout adjustment. Live observation then shows responsive users being signed out during long reading. The releaser contains or reverses the change, the builder repairs the defect and the responsible authority handles any value or rule change revealed by it.*
 
 Together those acts form care.
 
@@ -84,7 +84,7 @@ Repair then tests a revised classification against this case and against cases t
 
 ## The change, continued
 
-Chapter 1 already records the ruling, named checks, refused candidate and one human interruption. Here those facts set the task: find the observations that tell supported behavior apart from the known failure.
+Chapter 1's day already gave us the ruling, named checks, refused candidate and one human interruption. Here those facts set the task: find the observations that tell supported behavior apart from the known failure.
 
 > *The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison on purpose and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.*
 

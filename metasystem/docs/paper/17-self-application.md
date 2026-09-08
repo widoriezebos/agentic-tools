@@ -1,16 +1,16 @@
-# 15. Self-Application
+# 17. Self-Application
 
 **A rule change must never be its own judge.**
 
 > *A builder proposes a faster release rule. The current enforced rule requires an independent examination, a tested rollback and evidence bound to the exact candidate. The proposed rule removes one check that its builder calls redundant.*
 
-The idea for such a change usually arrives from the system's own records: an incident, a review, a report showing a rule's cost. Whoever turns the idea into a concrete proposal acts as its builder from that moment, and everything below applies to them.
+The idea for such a change usually comes from the system's own records: an incident, a review, a report showing a rule's cost. Whoever turns the idea into a concrete proposal acts as its builder from that moment, and everything below applies to them.
 
 If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
 
 An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
-This stress test is necessary for the paper's proposal. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
+This is like a stress test and I think it is really necessary for the metasystem to evolve. A delivery system that cannot safely change its own enforced rules will either freeze or exempt its most consequential work. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
 
 ## The distinctive self-change problem
 
@@ -32,7 +32,7 @@ That sequence is the bootstrap: a limited starting authority followed by a chain
 
 Recovery also needs to cover authority and data, not only program files. If a candidate wrongly grants itself release permission, restoring its code while leaving that grant active does not return to the prior authority. If a new record format loses earlier decisions, restarting the old worker does not restore memory. The bootstrap record identifies the full state that must survive and the authorized person who may order recovery when automatic reversal is unsafe.
 
-## Rules bind their own maintenance
+## Rules apply to their own maintenance
 
 > *The builder of the faster release rule argues that the ordinary review requirement should not apply because the work only changes delivery machinery.*
 
@@ -48,17 +48,19 @@ The same discipline governs emergency maintenance. A failed delivery service may
 
 > *The proposed clock rule is tested first against the retained broken cases. It refuses the local-time comparison, permits display formatting and detects the newly introduced interface. The current release rule verifies those results before the authority it names grants the proposed rule its power. A separate independent examiner then changes the proposed rule in a way expected to fail and confirms that the surrounding examination catches the regression. Finally, a rehearsal restores the prior rule set and authority record.*
 
-This sequence can expose several structural defects: an enforced rule that can judge its replacement only by relying on that replacement, evidence that disappears when its producer stops, a builder able to weaken the independent examination or alter a retained failure case, and a recovery path that restores code but not authority. These failures are the point of the exercise: they test the delivery system under the unusual pressure of being both means and object of change.
+This sequence can expose several structural defects: an enforced rule that can judge its replacement only by relying on that replacement, evidence that disappears when its producer stops, a recovery path that restores code but not authority and a builder able to weaken the independent examination or alter a retained failure case. These failures are the point of the exercise: they test the delivery system under the unusual pressure of being both means and object of change.
 
 Passing shows that, under the stated cases and assumptions, the system preserves an older basis for judgment, maintains required separation and can recover from the candidate it is examining. That is useful evidence of internal consistency. It leaves open whether the clock rule protects users in every environment, whether the organization has assigned authority wisely and whether governed delivery reduces cost or harm outside this system.
 
-Self-application is a necessary but insufficient test. Failure directly contradicts a system's claim that its rules bind important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
+Self-application is a necessary but insufficient test. Failure directly contradicts a system's claim that its rules hold for all important work: the most important maintenance has escaped them. Success removes that contradiction only within the tested boundary. The stronger claims require evidence the system cannot generate by examining itself.
 
 ## Falsifiability and independent support
 
 Consider three organizations that adopt the proposed principles for different applications. They record more checks, clearer authority and successful self-changes, yet escaped harm repeatedly rises, and total delivery cost remains higher than under simpler controls. If the comparison covers similar risk and does not just count a difficult transition period, that result weighs against the thesis. The proposal cannot preserve itself by calling every failure incomplete adoption.
 
-The paper's claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations (because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority) count against them. Retained human ceremonies that outperform proposed replacements at serving the same need, across comparable cases and costs, count against the claim that those replacements are better.
+My claims are explicitly falsifiable. Repeated failures across independent applications to reduce harm or total delivery cost count against them. Authority boundaries that cannot survive real organizations (because responsibility becomes untraceable, appeal is unusable, or informal power routinely defeats recorded authority) count against them. Retained human ceremonies that outperform proposed replacements at serving the same need, across comparable cases and costs, count against the claim that those replacements are better.
+
+The same applies to human learning. If experienced reviewers become less able to challenge faulty advice, or newcomers fail to acquire the judgment the work needs, the transfer has lost a necessary capability. Comparisons must run long enough to distinguish expertise inherited from the earlier practice from expertise developed under the new one, with learning time included in the cost.
 
 Support must come from reproducible evidence across different teams, risk levels, applications and operating conditions. It must include negative results, unsuccessful transitions and comparisons with simpler approaches. Evidence gathered by the system about itself may contribute one case, but it cannot be the only case. Independent examiners must be able to inspect the assumptions, measures, missed harms and selection of examples.
 
@@ -68,6 +70,6 @@ The comparisons must define what they include and make omitted effects visible. 
 
 After the new release rule passes, it can govern a later change to the delivery system. It still cannot decide why the organization exists, which people deserve protection or whether the session-expiry policy is just. Those questions are answered by accountable people, informed by observable effects. The system can reveal conflict, test consequences and refuse actions outside existing authority. It cannot grant itself a purpose.
 
-That is where the recursion ends. Rules govern changes to rules, prior states govern the acceptance of proposed states, and where a mechanism cannot judge its own replacement, an external check or a named human authority steps in. Beneath that chain remain people who answer for purpose and a world that can contradict their assumptions. Both can require the system to change; neither is made correct by appearing in its records.
+That is where the recursion ends. Rules govern changes to rules. Prior states govern the acceptance of proposed states. Where a mechanism cannot judge its own replacement, an external check or a named human authority steps in. Beneath that chain remain people who answer for purpose and a world that can contradict their assumptions. Both can require the system to change; neither is made correct by appearing in its records.
 
 A system that builds the system must pass this examination. A paper about that system must still face evidence from somewhere else.
