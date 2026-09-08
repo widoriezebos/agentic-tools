@@ -102,3 +102,22 @@ IL-32 KEPT.
 | IL-35 | retro-2026-09-01 | A conformance run writes a new round directory or refuses; re-runs never overwrite persisted review artifacts (goal conformance-round-immutability) | internal/validate/conformance.go | rounds/1/review.json overwritten destroying chain evidence; flagged independently by two critics (F2-7, watch chain) | The overwrite class never recurs | next retro | ADOPTED |
 | IL-36 | retro-2026-09-01 | Amends IL-26: every watch a session arms is harness-tracked; the claimed-goal-delivery tripwire is the mechanical floor on every enrolled machine | docs/orchestration.md | m0's two conduct failures this period; the tripwire and watch surface landed | No silent-stall incident on any machine running the tripwire | next retro | ADOPTED |
 | IL-37 | retro-2026-09-01 | Amends IL-30: the transport-mirrors-origin rule binds only checkouts with a transport remote; sync-transport no-ops gracefully elsewhere | scripts/agents/sync-transport.sh | The GitHub migration froze the transport relay; every m0 landing tripped the sync step | No landing fails its transport step on a machine without the remote | next retro | ADOPTED |
+
+## User correction 2026-09-08: required testing and failure collection
+
+Wido approved replacing the blanket full-battery completion requirement with
+the shared testing contract. The existing local testing rule now points to
+that owner. Required evidence still gates delivery; the approved change
+removes repeated measurement, not the failure-stopping boundary.
+
+The change gate is supported by the retained 3,380.39-second validation run,
+fixed-command consumer code, and early exits that suppress independent
+failures in adoption and portions of the Go gate. This replaces conflicting
+owners; another always-loaded reminder would leave those causes intact.
+The shared Go policy, runner and delivery consumers provide enforcement.
+Runtime and cost acceptance are pending implementation and final verification;
+the historical duration is not a claim of savings.
+
+| Id | Retro | Change | Owner doc | Evidence pattern | Expected effect | Review by | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| IL-38 | correction-2026-09-08 | Replace the blanket battery requirement with required test selection, complete independent results within each admitted stage, batch repair and matching-proof consumption | docs/project-rules.md + development/project-rules-local.md; enforcement in testpolicy, proofrun and landing | Repeated expensive validation and commit measurement; first failures suppress later independent checks | Lawful low-risk standard delivery; zero repeated test/build launches when proof matches; all independent failures reported before an expensive rerun | next retro, against TEST-03/05/11/14/19 runtime and cost evidence | ADOPTED |
