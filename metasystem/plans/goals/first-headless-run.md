@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 2
-- Sequence: 29
+- Sequence: 28
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
 - Next step: INTENT: obtain the first limited real headless feature-delivery receipt from the existing mission runner on the pinned machine, without a supervising chat. SCOPE: this proves one feature only; it cannot conclude sustained headless-fleet readiness. CONSTRAINTS: preserve the approved goal budget and machine pin, use a supported host whose current health/launch preflight passes, and retain the exact goal approval, contract, birth baseline, claim, job/review and landing records. The September 6 aborted/hung attempt is retained in history; its night-specific manual command sequence is evidence to recheck, never a standing startup procedure. host-runtime-setup, metasystem-stop-verb and mission-birth-baseline-from-dirty-worktree own the corresponding machinery; do not rebuild them or steal their claims. Use their current supported verbs and explicit refusals, never terminal tricks. This diagnostic may proceed before every fleet reliability item finishes; each exposed defect has a separate owner and is not silently waived. Consecutive delivery and omitted-stage negative proofs belong to headless-continuous-delivery-proof; multi-node and brain proof belong to headless-fleet-coordination-proof.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 22
+- Revision: 23
 - Labels: headless-fleet, headless-proof
 - Arc: headless-fleet
 - Pinned: m1
@@ -38,4 +38,5 @@ History:
 - 2026-09-06T21:03:06Z Y40DTHW2ENS7D9T1SJA6AVA1BE-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=first-headless-run
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=first-headless-run
 - 2026-09-08T15:58:51Z YZDBHH82E1944WMEZNH1MDDNP1-m1-7cd0bd60 set-priority actor=human:Wido targets=first-headless-run reason=priority-order subject=first-headless-run from=unranked to=2:29 requested-sequence=29
-Integrity: sha256=34b90a593243d8d8ccf22ab48dae8c63b27e0b2d44808984662960be37c6bb69
+- 2026-09-08T16:24:03Z 72ERBGBZNWN6FH95PQQA5BTAQ4-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:29 to=2:28
+Integrity: sha256=3a7bfd523a01c2f28784032e2b4ca3047d664c706fbb945c564fb7443e2b1e2f

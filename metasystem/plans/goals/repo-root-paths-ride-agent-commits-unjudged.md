@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 2
-- Sequence: 14
+- Sequence: 13
 - Risk: severity=3 novelty=1 exposure=2 accumulation=2 basis="severity 3: an unjudged behavior change (a hook timeout, a runtime registration) can land under a pass verdict, which is the landing law failing at its one job; novelty 1: one enumeration at a scope that already exists elsewhere (the conformance review does it); exposure 2: every agent landing from a nested checkout, which is all of them today, but only when someone stages a repository-root path; accumulation 2: every such ride is silent, so a wrong one is found only by its effect"
 - Tier: 3
 - Intent: An agent commit made through the commit wrapper can carry a change to a path outside the metasystem directory (the repository-root .claude settings file, the benchmark kit, the development notes) that the landing never judged: the landing evaluator observes the metasystem subtree of the index (commit.sh resolves landing_tree to the prefix), the conformance review refuses such paths inside a delegate worktree (refuseOutsideProjectChanges), no direct-fix lane names them, yet the post-commit check only compares the whole-repository tree with the proved index tree, so a staged repository-root change rides through with a pass verdict it was never part of. Found 2026-09-06 by seat m1d while landing goal stop-hook-budget-is-ours: the live Stop hook timeout lives in the repository-root settings file, which no agent lane can carry, and the only agent path that would move it is this unobserved ride. The path-class manifest already has repository-relative rows (repo:.claude/ behavior, consulted in template mode), so the intent that these paths are classified exists; the evaluator just never sees them. DONE means an agent commit whose index changes a path outside the project prefix is refused by the landing (a named refusal code), a fixture proves it, and the one lawful way to change such a path is stated (a human commit at the enrolled terminal, or a named lane if Wido wants one).
 - Origin: main
 - Next step: MECHANICAL, one chain: the landing evaluator (internal/landing, observe.go) enumerates changed paths at the repository level between the base tree and the settled index tree, and refuses with repo-root-path-unjudged when any changed path lies outside the installation prefix while a prefix exists; commit.sh passes the whole-repository settled tree alongside the prefix tree so the evaluator can see both; a landing fixture stages a repository-root file and proves the refusal; docs name the human path for such files. Verify first that the ride is real: stage a one-byte change to a repository-root file in a throwaway clone and run the commit wrapper under an agent identity; if it refuses already, record where and close this as not-a-defect.
 - OpenedAt: 2026-09-06T08:52:29Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:52:20Z revision=2 opid=Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 authority=proven digest=427030a06cae6b132998505407fa77382ff1a8cc75b30fff9d8da98ffbe307c6
@@ -18,4 +18,5 @@ History:
 - 2026-09-06T08:52:29Z XZGKDTQRQ4MY68GSRH291EXKNW-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=repo-root-paths-ride-agent-commits-unjudged
 - 2026-09-06T12:52:20Z Q0HMY137H80MMNZMS7PMA8FPSE-m1-7cd0bd60 approve actor=human:Wido targets=human-goal-verbs-forgiving,repo-root-paths-ride-agent-commits-unjudged,stop-deadline-parent-trusts-ps,stop-hook-open-work-refusal-repeats,verbs-match-intent
 - 2026-09-08T15:57:58Z 7QZ4MK3BQW2YVXPJGM544385V5-m1-7cd0bd60 set-priority actor=human:Wido targets=repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=unranked to=2:14 requested-sequence=14
-Integrity: sha256=2113b3bf144bbd8f921d85a2f5b6cdc0f25debf504b355364a07859e394624f9
+- 2026-09-08T16:24:03Z 72ERBGBZNWN6FH95PQQA5BTAQ4-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:14 to=2:13
+Integrity: sha256=e75abd9c25d8e2b5d2bdb6b49806e54fb03be3bd0e514d1f8f5d3c430d055082

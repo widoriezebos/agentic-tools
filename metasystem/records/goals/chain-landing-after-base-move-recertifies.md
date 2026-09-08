@@ -1,6 +1,6 @@
 # chain-landing-after-base-move-recertifies
 
-- State: claimed
+- State: done
 - Priority: 2
 - Sequence: 13
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Every chain that takes more than an hour on a busy fleet day meets it; today it left a landing carrying a would-refuse verdict; nothing is destroyed; the fix is a lane, not a patch."
@@ -8,15 +8,14 @@
 - Intent: When main changes a file a reviewed chain also changes, between the chain's base and its landing, the landing evaluator (internal/landing/observe.go, bindCertifiedChange) finds the reviewed tree's entries differ from the candidate's and records would-refuse chain-output-mismatch, and the commit is admitted with that verdict. Seen 2026-09-06 on m1c landing chain shr-build1 at c1525b90: the engine-rearm landing ea8c3ead had touched supervision-hook.sh and both supervision fixture files after the chain's base; every hunk applied cleanly and the merged candidate passed the suite and the receipt seat-side, but the critic's certification named the pre-merge tree. The dispatcher already warns WORKTREE-BEHIND and suggests merging main into the chain worktree, yet after a merge the conformance diff and the critic's reviewed tree must be recomputed and the review budget may be spent. DONE means the landing lane has a named path for this case: merge main into the chain worktree, recompute conformance, and either a bounded re-review of the merge (one critic round that does not count against the goal's box, reviewing only the merge) or a mechanical proof that no hunk of the chain overlaps a hunk main added to the same file, after which the landing passes bar a instead of recording would-refuse; a fixture pins it.
 - Origin: main
 - Next step: Read bindCertifiedChange, the WORKTREE-BEHIND hint in the follow-up path, and the critique register's round accounting; decide between a merge-only review round outside the box and a no-overlap proof; brief one round with a fixture.
+- Concluded: Landed as fe7212a9. A reviewed chain whose base moved can now land through a mechanical no-overlap recertification: main is merged into the stopped worktree, conformance recomputes into a separate immutable record, and the landing compares against the merged tree while the critic's original reviewed tree stays untouched. A candidate that quietly changed a certified file still refuses. There is no merge-only critic lane, so review accounting gains no exception: a proof failure refuses and parks. One text predicate, owned by one function and called by the producer, the recomputation and the canary alike, decides what content the proof accepts; the hunk grammar matches what Git actually prints; binary on both sides, structural conflicts, symlinks, mode changes and ambiguous provenance are explicit refusals. Area-width recertification needs an explicit coordinator test command with no default, frozen in the record and both digests and matched byte for byte against the receipt. An unattended node gets one durable move, a landing-attempt park with named codes, and never a bypass. Two design cycles, three work rounds, three independent reads; the closing read returned zero material findings and confirmed the only route for an unreviewed line is the pre-existing extra-path lane, inherited without widening. Proven by the receipt-bound battery on tree 44576092 with exit 0, the three canaries individually, and five packages in full. Carried forward, all recorded in records/misc/chain-landing-after-base-move-recertifies-critique-r3.md: the shared review-boundary helper parses every job record once per job record, 624ms at 99 records and growing; the durable park record covers the enumerated failures but not a Git hook rejection or a wrapper rollback; and package-level coverage is a weaker signal for landing and validate until direct unit tests exist for the park and the recertification owner. Round 1 was killed at its cap with the work complete, and continuing it took three manual steps the machinery should own, which is goal capped-round-continues-instead-of-restarting.
 - OpenedAt: 2026-09-06T12:20:33Z
-- Revision: 6
+- Revision: 7
 - Labels: headless-fleet, headless-process, robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-08T10:40:50Z revision=3 opid=JJ1SE0ZBSQDKGK5158E5VQ8AG3-m1b-c6925449 authority=proven digest=64be6fe4726bc5e9238a47cb7fed19867d6b78c5154e9a9b12e4253399596f0d
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-08T10:44:52Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-08T10:41:06Z revision=4 accountingRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T12:20:33Z A7NATSTMKZ7S25XXSMY10W6WYV-m1c-7cd0bd60 open actor=m1c+main-1788680061-17829-64951c targets=chain-landing-after-base-move-recertifies
@@ -25,4 +24,5 @@ History:
 - 2026-09-08T10:41:06Z 0Y4R9RJX78F88E9W3GQESP03NT-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies
 - 2026-09-08T10:44:52Z 80832NERRZ781J4SGMYG24P86S-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies
 - 2026-09-08T15:57:54Z 8169ZC8DQQW436XCY4A2XR45WB-m1-7cd0bd60 set-priority actor=human:Wido targets=chain-landing-after-base-move-recertifies reason=priority-order subject=chain-landing-after-base-move-recertifies from=unranked to=2:13 requested-sequence=13
-Integrity: sha256=79fc2948ec1d17bd3d9680c616537011f1a6e6b09e488327c4ff8b6c8f9a247d
+- 2026-09-08T16:24:03Z 72ERBGBZNWN6FH95PQQA5BTAQ4-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes
+Integrity: sha256=1e7bff87681ef40225c686becafd6cde545e32f2aebac99eca2dec935d38be5b

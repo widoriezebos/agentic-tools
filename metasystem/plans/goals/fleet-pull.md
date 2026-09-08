@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 25
+- Sequence: 24
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
 - Next step: RESIDUAL RESTORED by Wido 2026-09-07 during headless-fleet backlog reconciliation. The earlier merge into ledger-attention did not finish this intent: that delivered owner notices ledger changes and explicitly does not grant claims; idle-with-backlog-alarm adds only a repeated-Stop-triggered claim/continuation path. INTENT: a running headless node repeatedly selects eligible approved work, atomically claims it, starts a mission under that goal approval, observes its durable completion or lawful park, and selects the next eligible item without a supervising chat or a hook-triggered rescue. CONSTRAINTS: one repository and its shared ledger; reuse goal claim/release, missionrunner and steward ownership rather than add another scheduler or leader. Unapproved, blocked and foreign-pinned goals never execute; an empty queue is a durable wait that notices later approvals; stop and capacity limits remain authoritative; retries cannot duplicate a live claim or completed effect. one-approval-gate owns the goal-to-contract authority conversion; backlog-ordered-by-priority owns optional future ranking, not this loop. FREEDOMS: the smallest connection among existing owners and notification/wait mechanisms. Before implementation, settle transition ownership and crash/retry behavior against the original FP-R3-01..07 findings and current code; if the approved box cannot contain the result, split before claiming more scope. The independent consecutive-feature acceptance is headless-continuous-delivery-proof. No budget or execution approval is supplied by restoring this queued item.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 17
+- Revision: 18
 - BlockedBy: one-approval-gate
 - Labels: headless-execution, headless-fleet
 - BudgetExceptions: 0
@@ -30,4 +30,5 @@ History:
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 unpark actor=human:Wido targets=fleet-pull
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=fleet-pull
 - 2026-09-08T15:58:37Z G2786V8ZCWSFJNZHH0VGFXHJ4N-m1-7cd0bd60 set-priority actor=human:Wido targets=fleet-pull reason=priority-order subject=fleet-pull from=unranked to=2:25 requested-sequence=25
-Integrity: sha256=9f46f936a42375c338a878e56415a02cb71009edf86438bacdf65b5b02af691b
+- 2026-09-08T16:24:03Z 72ERBGBZNWN6FH95PQQA5BTAQ4-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:25 to=2:24
+Integrity: sha256=f787926b2c66b78614548fd08b480f5e24ad1dd5f0fae4d855007612ea473e76
