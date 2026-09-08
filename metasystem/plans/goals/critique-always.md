@@ -1,11 +1,13 @@
 # critique-always
 
 - State: approved
+- Priority: 2
+- Sequence: 7
 - Intent: Wido's order 2026-09-01, verbatim: 'Anything that gets build in the metasystem, how small it is: DO NOT CARE needs to be backlog. And anything backlog MUST ALWAYS GET CRITIQUED. That is the metasystemway' - the MECHANICAL hazard class loses its independent-critique exemption: every dispatched build chain requires an independent cross-family critique before closure, regardless of class. DONE means the enforcement table refuses a critique-free chain for every class, in Go, proven by tests
 - Origin: main
 - Next step: Appetite: 1h. INTENT: flip independentCritiqueRequired to true for the MECHANICAL row in BOTH surfaces that change together per the exact-equality fingerprint law - scripts/agents/role-packets.json and requiredConfigurationByHazard in internal/dispatch/hazard.go - and prove: (a) a MECHANICAL chain without a distinct critique job refuses closure exactly as design-bearing chains do; (b) the hazard-table equality tests hold; (c) a one-sided change refuses. CONSTRAINT: effort tiers per Ruling O unchanged. SPECIMENS: four uncritiqued MECHANICAL landings 2026-08-31 (ruling sweep, tick patience, kill-guard proofs, lease fold), all flagged for retroactive critique
 - OpenedAt: 2026-09-01T07:18:55Z
-- Revision: 4
+- Revision: 5
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -16,4 +18,5 @@ History:
 - 2026-09-01T20:26:31Z 8YEDFZ2F6JDGV4TBZSKHEEWQ8V-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=critique-always
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=critique-always reason=sweep
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=critique-always
-Integrity: sha256=169a4fd312492a3fba550da2dcf697f57de194e916ed24b2b070c6fca031dd51
+- 2026-09-08T15:57:33Z V0J511Y1Y1HSC1PVKBYS38KR5Z-m1-7cd0bd60 set-priority actor=human:Wido targets=critique-always reason=priority-order subject=critique-always from=unranked to=2:7 requested-sequence=7
+Integrity: sha256=28af50654b416155db3749a02b9139b5d66cdd46c56b824cbb1835b2f3bdf0db
