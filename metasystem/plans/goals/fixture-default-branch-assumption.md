@@ -1,11 +1,13 @@
 # fixture-default-branch-assumption
 
 - State: approved
+- Priority: 3
+- Sequence: 75
 - Intent: Five missionrunner wall-scope test beds (TestScopeCleanBedPasses and siblings) run 'git init' without '-b main' and assume the machine's init.defaultBranch is main - red on any host without that global config (git's own default is master through at least 2.39). Found by m0 (Debian guest, 2026-09-01) during the two-bars joint-round verification: the failures predate the round (proven by stash-revert at HEAD) and vanish when the guest sets init.defaultBranch=main. m0 healed its own environment; the portable fix is the beds passing -b main explicitly like the nested bed at wallscope_test.go:471 already does. R-33: robustness gain, well under 4h. Second sighting of the environment-assumption class after supervise-start-gate-linux-red.
 - Origin: main
 - Next step: BUILT AND CERTIFIED, LANDING BLOCKED (correcting the premature DONE note): the one-line fix is chain-closed (fixture-branch-v1, reviewedTree 9e8baef9) and proven under an emptied global config, but the landing gate runs the whole missionrunner package and the terminate-flake family is now CONSISTENTLY red on m0 (twice blocking in a row - the identity-drift symptom hardening). The certified diff is durable in the chain artifacts and staged in m0's checkout; it lands the moment the root fix (vm-epoch-identity-drift) un-reds the package. No further work needed on this goal itself.
 - OpenedAt: 2026-09-01T09:50:49Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=2d attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=9 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=76bdacab55489019e0eb6585b224f4420dc94e4b0145475b19a99f6f614ad6fb
@@ -21,4 +23,5 @@ History:
 - 2026-09-01T21:30:31Z RR4W4C7QE9Z8A1NWQ1Z9VY188N-m0-c5dbf036 release actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
 - 2026-09-01T21:35:32Z 7H3J6J9NFSRCRJP5H5AEV9NVAF-m0-c5dbf036 edit actor=m0+main-1788178136-1684505-4ffe42 targets=fixture-default-branch-assumption
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=fixture-default-branch-assumption reason=sweep
-Integrity: sha256=638cd0eb78f5915f7d7d38a0a96b80b2906fda30f8ee34bed4361d51137bc84c
+- 2026-09-08T16:03:31Z NQ3SZZRZ4XA7DYNYH4AKEK1BNM-m1-7cd0bd60 set-priority actor=human:Wido targets=fixture-default-branch-assumption reason=priority-order subject=fixture-default-branch-assumption from=unranked to=3:75 requested-sequence=75
+Integrity: sha256=7981c2db0a38d9f957afba6f384a3cc01674f9daf0f324c0471b56c16fa76154
