@@ -1,11 +1,13 @@
 # alert-escalation-channel
 
 - State: approved
+- Priority: 3
+- Sequence: 116
 - Intent: Ruling L escalations reach Wido IMMEDIATELY over a dedicated external channel - distinct from the narrator's channel - so he is notified the moment machinery lawfully needs his judgment, decision, or answer to unblock something; explicitly back of the backlog behind the planned program (Wido 2026-08-29) MERGED (backlog triage 2026-08-31, Wido's order): this goal now ALSO carries narrator-delivery-channel's scope - the narrator's digests and account delivery ride the same external channel as a second, lower-urgency message class (alerts immediate and unmissable; digests batched), one channel design, one credential shape, one delivery-receipt law.
 - Origin: human
 - Next step: PAUSED AT A SCOPE FORK, Wido's word requested (round-7 register records/misc/alert-channel-critique-r13.md): the remedy-advertisement corner diverged (1-2-3 findings across rounds 5-7, all its own; the rest of the design stable three rounds). Option A, seat-recommended: the alert advertises stale-proof facts only (goal id, job id, failure reason, where to look) plus the one resume command his word requires on the stop class, marked verified-at-journal-time best-effort — one fold, likely clean critique, then build. Option B: keep folding the dispatcher-precondition mirror (evidence says it diverges). His morning word required the two producer classes in slice 1; it did not require command-advertisement machinery. Work continues elsewhere meanwhile (retro due)
 - OpenedAt: 2026-08-29T06:19:06Z
-- Revision: 38
+- Revision: 39
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=38 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=122513456914e3c7a07a2e5011ff1efe793ea1a62a7e9464f4333f04a4a85da6
@@ -50,4 +52,5 @@ History:
 - 2026-09-01T22:27:31Z V96VQXWPYYF5Y8XWPP8JHGZ77Z-m0b-6638932d release actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-02T06:53:22Z KBF1D4GA9QFBWVD6NKJN5QGJ18-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=alert-escalation-channel
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=alert-escalation-channel reason=sweep
-Integrity: sha256=4b15a87ae3780a6e75437fe6a91f048c8730d6108fb925d9c43e1b8a39ef4ae3
+- 2026-09-08T16:05:59Z 6TMDPQAAESJ8QFX748SDYXFAC0-m1-7cd0bd60 set-priority actor=human:Wido targets=alert-escalation-channel reason=priority-order subject=alert-escalation-channel from=unranked to=3:116 requested-sequence=116
+Integrity: sha256=1b10fc8a07a9e8c1bf72f56fd60b35e56ce414d886ab5ef5937f12d356301dc8
