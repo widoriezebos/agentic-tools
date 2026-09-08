@@ -1,6 +1,6 @@
 # closing-read-follows-the-change-not-the-label
 
-- State: queued
+- State: approved
 - Priority: 3
 - Sequence: 120
 - Risk: severity=2 novelty=3 exposure=3 accumulation=2 basis="severity 2: no data or ledger is at risk, but finished reviewed work sits unlandable and a review is spent finding nothing, and a careless rule here would let an unreviewed behaviour change land, which is why the test must be mechanical rather than a judgment; novelty 3: deciding review need from the content of a change, in a way nobody can game, is a new judgment-free rule rather than a tuning of an existing one; exposure 3: every chain on every machine, and every headless node that cannot ask a human whether a round was trivial; accumulation 2: each stuck fold burns one review round and blocks one landing, and the reviews that find nothing train readers to skim the ones that matter"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Design first, on the design lane, because the mechanical test is the whole difficulty. Read validateIndependentCritiqueReference in internal/dispatch/hazard.go, which today derives the requirement from the chain's recorded destructiveReach, and finalHazardWorkState beside it, which picks the final work round. Decide what 'changed nothing that needs reading' means in bytes rather than in intention: an empty diff is easy, and a restoration is the hard case because the design must define how the target value is proved to be already fixed by the chain's own certified evidence. Say explicitly what happens when the test cannot be established: it must fall back to requiring the read, never to skipping it. Canary before battery: the smallest proof is one closed chain per case, each a named test with a ceiling, and the disguised-change case must fail for the reason named with every other prerequisite valid, not merely fail to close. Evidence to hand the designer: artifacts/agents/stopverb-build1/rounds/29/return.json is the round that changed no file, and goal human-goal-verbs-forgiving carries the one-line restoration.
 - OpenedAt: 2026-09-08T13:01:51Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-08T20:45:20Z revision=3 opid=29GS9C95ECBX7DWW4PAFVRJTVZ-m1b-c6925449 authority=proven digest=ac0b8eca1c6291e1a55182e1af2df7e88f37ab356b5952c4523bf51a92f23997
 
 History:
 - 2026-09-08T13:01:51Z ZACPK5S9ZCRSWKCTJYHRHZHV82-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=closing-read-follows-the-change-not-the-label
 - 2026-09-08T16:06:14Z GEAS88MTGZT59MM223Z5N04SWD-m1-7cd0bd60 set-priority actor=human:Wido targets=closing-read-follows-the-change-not-the-label reason=priority-order subject=closing-read-follows-the-change-not-the-label from=unranked to=3:120 requested-sequence=120
-Integrity: sha256=26ff3e2505c98f72e3889e827c6ccb61d78d1cc516a8c5877bf74ea20ab3cbbf
+- 2026-09-08T20:45:20Z 29GS9C95ECBX7DWW4PAFVRJTVZ-m1b-c6925449 approve actor=human:Wido targets=closing-read-follows-the-change-not-the-label
+Integrity: sha256=d5920e7c5025633934da3562af2f13a73dc6205e56bad6f3666c4e3c4ad23f8e
