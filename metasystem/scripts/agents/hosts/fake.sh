@@ -27,6 +27,21 @@ if [[ ${METASYSTEM_FAKE_HOST_START_UNVERIFIED:-0} == 1 ]]; then
 fi
 host_require_cli ""
 
+if [[ ${METASYSTEM_FAKE_HOST_HOLD:-0} == 1 || ${METASYSTEM_FAKE_HOST_IGNORE_TERM:-0} == 1 ]]; then
+  fixture_runtime=$("$ms" config conf-value --file "$root/metasystem.conf" --key metasystem.runtimes 2>/dev/null || true)
+  [[ "$fixture_runtime" == fake ]] \
+    || { echo "METASYSTEM_FAKE_HOST_HOLD and METASYSTEM_FAKE_HOST_IGNORE_TERM are available only in a fixture-mode root" >&2; exit 3; }
+fi
+if [[ ${METASYSTEM_FAKE_HOST_HOLD:-0} == 1 ]]; then
+  if [[ ${METASYSTEM_FAKE_HOST_IGNORE_TERM:-0} == 1 ]]; then
+    trap '' TERM
+  else
+    trap 'exit 0' TERM
+  fi
+  : >"$turn_dir/host-ready"
+  while true; do sleep 1; done
+fi
+
 behaviors=$(sed -n 's/.*FAKEHOST:\([a-z-][a-z-]*\).*/\1/p' "$prompt" | sort -u)
 behavior_count=$(printf '%s\n' "$behaviors" | sed '/^$/d' | wc -l | tr -d ' ')
 if (( behavior_count > 1 )); then

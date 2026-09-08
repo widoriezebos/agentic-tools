@@ -76,7 +76,7 @@ func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) 
 		}
 	}
 
-	view, err := lease.ClassifyVerb(root, callerPid)
+	view, err := classifyVerbCaller(root, callerPid)
 	if err != nil {
 		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}

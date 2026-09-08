@@ -86,6 +86,9 @@ exit_cleanup_chain=
 exit_cleanup_authorization=
 exit_cleanup_message=
 exit_cleanup_lifecycle=
+exit_cleanup_creation_claim=
+wind_down_escalated_to_kill=0
+cancel_refusal_class=
 # Flight-recorder witness (docs/design/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
@@ -126,6 +129,19 @@ record_delegate_outcome() { # outcome, headline, optional detail, optional job
 record_delegate_outcome_raw() { # already encoded JSON
   [[ -n "${METASYSTEM_DELEGATE_OUTCOME_FILE:-}" ]] || return 0
   printf '%s\n' "$1" >"$METASYSTEM_DELEGATE_OUTCOME_FILE"
+}
+
+close_creation_claim() { # exact claim path returned by claim-launch
+  local claim=${1:-${exit_cleanup_creation_claim:-}}
+  [[ -n "$claim" ]] || return 0
+  "$ms" stopfence creating-close --claim "$claim"
+  if [[ "${exit_cleanup_creation_claim:-}" == "$claim" ]]; then
+    exit_cleanup_creation_claim=
+  fi
+}
+
+cleanup_creation_claim() {
+  close_creation_claim "${exit_cleanup_creation_claim:-}" >/dev/null 2>&1 || true
 }
 
 die() {
@@ -174,6 +190,22 @@ require_fresh_census() {
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
   "$ms" job census-fresh --verdict "$verdict" --state "$state" \
     --arm "$arm_supervision" --repo "$repo_scope" --root "$root" || exit $?
+}
+
+require_open_dispatch_fence() {
+  local output outcome rc=0
+  set +e
+  output=$("$ms" job fence-before-launch --root "$root")
+  rc=$?
+  set -e
+  outcome=$(json_value "$output" outcome 2>/dev/null || true)
+  if [[ "$outcome" == REFUSED-STOPPED ]]; then
+    record_delegate_outcome_raw "$output"
+    printf '%s\n' "$output"
+    return 1
+  fi
+  (( rc == 0 )) && [[ "$outcome" == OPEN ]] \
+    || die 1 "dispatch refused: the process-creation fence could not be read"
 }
 
 json_field() { # file, dotted field
@@ -433,6 +465,7 @@ wind_down_one_group() { # record, pgid
   if group_alive "$pgid"; then
     group_owned "$record" "$pgid" || { echo "lost ownership proof for process group $pgid" >&2; return 1; }
     kill -KILL -- "-$pgid" 2>/dev/null || true
+    wind_down_escalated_to_kill=1
   fi
   until=$(( $(date +%s) + 2 ))
   while group_alive "$pgid" && (( $(date +%s) < until )); do sleep 0.05; done
@@ -442,6 +475,7 @@ wind_down_one_group() { # record, pgid
 
 wind_down_group() { # record
   local record=$1 groups pgid refused=0
+  wind_down_escalated_to_kill=0
   groups=$("$ms" job custody-groups --record "$record") || return 1
   while IFS= read -r pgid; do
     [[ -z "$pgid" ]] && continue
@@ -1262,7 +1296,7 @@ dispatch_job() {
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
   local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
   local -a product_root_args=() composition_source_args=()
 	local brain_fence_rc=0
 	brain_outcome=$(brain_fence_outcome dispatch) || brain_fence_rc=$?
@@ -1326,6 +1360,7 @@ dispatch_job() {
   [[ -n "$role" && -f "$brief" && ( "$destructive_reach" == MECHANICAL || "$destructive_reach" == DESIGN-BEARING || "$destructive_reach" == DESTRUCTIVE-REACH ) ]] || { usage; exit 2; }
   [[ -z "$goal" ]] || valid_id "$goal" || die 2 "invalid goal id: $goal"
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
+  require_open_dispatch_fence
   # Source admission is a pure preflight. A forbidden assertion refuses
   # before a runtime probe, worktree, branch, quarantine, lock, or job exists.
   if (( ${#composition_source_args[@]} )); then
@@ -1501,7 +1536,7 @@ dispatch_job() {
   exit_cleanup_job=$job
   exit_cleanup_chain=$job
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
   # A payload without a reservation belongs to another operation. A payload
   # beside a reservation is resolved by claim-launch as the same operation.
   [[ -e "$jobs/$job.json" || ! -e "$agents/$job" ]] \
@@ -1690,6 +1725,9 @@ dispatch_job() {
   (( claim_rc == 0 )) || return "$claim_rc"
   launch_capability=$(json_value "$claim_output" evidence.launchCapability)
   [[ -n "$launch_capability" ]] || die 1 "claim-launch won without an adapter launch capability"
+  creation_claim=$(json_value "$claim_output" evidence.creationClaimPath)
+  [[ -n "$creation_claim" ]] || die 1 "claim-launch won without a process-creation claim"
+  exit_cleanup_creation_claim=$creation_claim
   exit_cleanup_authorization=
   release_cap_authority_lock
 
@@ -1720,7 +1758,7 @@ dispatch_job() {
     "${product_root_args[@]+"${product_root_args[@]}"}" \
     --output-stream "$output_stream"
   rm -f "$cap_resolution"
-  finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait" "$launch_capability"
+  finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait" "$launch_capability" "$creation_claim"
 }
 
 # The authorize-and-launch tail, shared by dispatch_job and follow_up
@@ -1767,15 +1805,19 @@ read_snapshot_fields() { # snapshot json — sets snapshot_path, fallbacks, sign
   resume_cap=$(json_field "$1" resume 2>/dev/null || true)
 }
 
-finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag, capability
-  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 launch_capability=$8 patch launch_rc=0 tag
+finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag, capability, creation claim
+  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 launch_capability=$8 creation_claim=$9 patch launch_rc=0 tag fence_output fence_rc=0 fence_outcome
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
   # Launch returns only after the adapter has published the exact process
-  # identity. The chain and goal locks therefore cover the final fence read,
-  # reservation, spawn, and identity publication as one ranked interval.
+  # identity. The chain and goal locks cover reservation, spawn, and identity
+  # publication as one ranked interval; the creation claim remains visible
+  # until the post-publication fence read and any required cancellation finish.
   tag=$(json_field "$jobs/$job.json" instanceTag)
   [[ -n "$tag" && "$tag" != null ]] || die 1 "job $job record carries no reservation instance tag"
+  if [[ -n "${METASYSTEM_FIXTURE_PAUSE_BEFORE_LAUNCH:-}" ]]; then
+    "$ms" job fixture-pause-before-launch --root "$root" --seconds "$METASYSTEM_FIXTURE_PAUSE_BEFORE_LAUNCH"
+  fi
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
     --job "$job" --tag "$tag" --launch-capability "$launch_capability" || launch_rc=$?
   release_exit_lifecycle
@@ -1783,6 +1825,25 @@ finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, 
   release_chain_lock "$chain"
   exit_cleanup_chain=
   trap 'checkout_execution_guard_release || true' EXIT
+  set +e
+  fence_output=$("$ms" job fence-after-launch --root "$root" --job "$job")
+  fence_rc=$?
+  set -e
+  fence_outcome=$(json_value "$fence_output" outcome 2>/dev/null || true)
+  if [[ "$fence_outcome" == REFUSED-STOPPED ]]; then
+    cancel_refusal_class=stopped
+    internal_cancel "$job" || true
+    cancel_refusal_class=
+    close_creation_claim "$creation_claim" || true
+    record_delegate_outcome_raw "$fence_output"
+    return 1
+  fi
+  if (( fence_rc != 0 )) || [[ "$fence_outcome" != OPEN ]]; then
+    close_creation_claim "$creation_claim" || true
+    die 1 "job $job could not complete its process-creation fence handshake"
+  fi
+  close_creation_claim "$creation_claim" \
+    || die 1 "job $job could not close its process-creation claim"
   if (( launch_rc != 0 )); then
     record_delegate_outcome LAUNCH-FAILED refused "the adapter launch failed after reservation" "$job"
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
@@ -2096,7 +2157,7 @@ prepend_follow_up_rebase_paragraph() { # source, output, rebased from, rebased t
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal reviews=
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
   local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
   local -a product_root_args=() continuation_args=() conflicted_paths=() rebase_record_args=()
@@ -2123,6 +2184,7 @@ follow_up() {
   authority_message=$message
   operation_brief_hash=$(sha256_file "$message")
   lease_entry_check
+  require_open_dispatch_fence
   require_fresh_census
   report_plan_drift
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
@@ -2355,7 +2417,7 @@ follow_up() {
   exit_cleanup_job=$child
   exit_cleanup_chain=$root_id
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   permission_digest=$(sha256_file "$permission_json")
@@ -2482,6 +2544,9 @@ follow_up() {
   (( claim_rc == 0 )) || return "$claim_rc"
   launch_capability=$(json_value "$claim_output" evidence.launchCapability)
   [[ -n "$launch_capability" ]] || die 1 "claim-launch won without an adapter launch capability"
+  creation_claim=$(json_value "$claim_output" evidence.creationClaimPath)
+  [[ -n "$creation_claim" ]] || die 1 "claim-launch won without a process-creation claim"
+  exit_cleanup_creation_claim=$creation_claim
   exit_cleanup_authorization=
   release_cap_authority_lock
 
@@ -2517,7 +2582,7 @@ follow_up() {
     --launch-mode "$launch_mode" --output-stream "$output_stream"
   rm -f "$cap_resolution"
   cleanup_follow_up_message
-  finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait" "$launch_capability"
+  finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait" "$launch_capability" "$creation_claim"
 }
 
 status_job() {
@@ -2767,12 +2832,28 @@ internal_cancel() {
   # json_field renders a JSON null as the string "null": a death stamp needs
   # a real signalable group id, so the predicate is numeric and above one.
   if [[ "$cancel_pgid" =~ ^[0-9]+$ && "$cancel_pgid" -gt 1 ]]; then
-    printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
+    if (( wind_down_escalated_to_kill )); then
+      if [[ "$cancel_refusal_class" == stopped ]]; then
+        printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s","cancelEscalatedToKill":true,"refusalClass":"stopped"}\n' "$(now_iso)" >"$patch"
+      else
+        printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s","cancelEscalatedToKill":true}\n' "$(now_iso)" >"$patch"
+      fi
+    else
+      if [[ "$cancel_refusal_class" == stopped ]]; then
+        printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s","refusalClass":"stopped"}\n' "$(now_iso)" >"$patch"
+      else
+        printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
+      fi
+    fi
   else
     # No group was ever recorded: the record must not claim a death
     # that never happened — cancelled-before-launch is its own
     # honest shape.
-    printf '{"error":null,"phase":"cancelled"}\n' >"$patch"
+    if [[ "$cancel_refusal_class" == stopped ]]; then
+      printf '{"error":null,"phase":"cancelled","refusalClass":"stopped"}\n' >"$patch"
+    else
+      printf '{"error":null,"phase":"cancelled"}\n' >"$patch"
+    fi
   fi
   if ! record_cas "$job" "$status" cancelled "$patch"; then
     if [[ -n "$stop_cancel_authorized" ]]; then

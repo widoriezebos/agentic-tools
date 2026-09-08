@@ -164,7 +164,7 @@ func TestTerminateGroup(t *testing.T) {
 	engine := &Engine{Mission: "mr-test", Root: t.TempDir()}
 
 	// Dead group: nothing to do, no error.
-	if err := engine.terminateGroup(1<<28, "any", false); err != nil {
+	if _, err := engine.terminateGroup(1<<28, "any", false); err != nil {
 		t.Fatalf("a dead group errored: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestTerminateGroup(t *testing.T) {
 	defer unowned.Process.Kill()
 	defer unowned.Wait()
 	pgid, _ := syscall.Getpgid(unowned.Process.Pid)
-	if err := engine.terminateGroup(pgid, "tag-no-member-carries", false); err != nil {
+	if _, err := engine.terminateGroup(pgid, "tag-no-member-carries", false); err != nil {
 		t.Fatalf("skipping an unowned group errored: %v", err)
 	}
 	if err := unowned.Process.Signal(syscall.Signal(0)); err != nil {
@@ -191,7 +191,7 @@ func TestTerminateGroup(t *testing.T) {
 	tag := "metasystem-job-mr-owned-4c1d"
 	owned := spawnTaggedGroup(t, tag, false)
 	ownedPgid := owned.Process.Pid
-	if err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
+	if _, err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
 		t.Fatalf("terminating an owned group errored: %v", err)
 	}
 	if groupAlive(ownedPgid) {
@@ -264,7 +264,7 @@ func TestEngineFixtureConstructionRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.terminateGroup(self, "any-tag", true); err == nil {
+	if _, err := engine.terminateGroup(self, "any-tag", true); err == nil {
 		t.Fatal("a leaked fixture did not refuse the fake-mode terminate path")
 	}
 	// The custodian degrades to Unknown, which authorizes nothing.

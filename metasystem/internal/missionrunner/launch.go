@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 // The launch side of the runner: what happens in the caller's process before
@@ -286,12 +287,13 @@ func (e *Engine) cleanupStaleLease() error {
 		if !pgidOK || !turnTagOK || !groupAlive(int(pgid)) {
 			continue
 		}
-		if err := e.terminateGroup(int(pgid), turnTag, turn["runtime"] == "fake"); err != nil {
+		termination, err := e.terminateGroup(int(pgid), turnTag, turn["runtime"] == "fake")
+		if err != nil {
 			return err
 		}
 		for key, value := range map[string]any{
 			"status": "failed", "outcome": "failed",
-			"error": "turn-lost", "detail": "turn-lost", "endedAt": nowISO(),
+			"error": "turn-lost", "detail": "turn-lost", "hostTermination": termination, "endedAt": nowISO(),
 		} {
 			turn[key] = value
 		}
@@ -299,6 +301,12 @@ func (e *Engine) cleanupStaleLease() error {
 			return err
 		}
 	}
+	return clearLeaseFilesLocked(marker, leasePath, markerExists)
+}
+
+// clearLeaseFilesLocked is the one dead-runner release rule. Its caller holds
+// lease.lock and has already proved the recorded runner dead.
+func clearLeaseFilesLocked(marker, leasePath string, markerExists bool) error {
 	if markerExists {
 		entries, err := os.ReadDir(marker)
 		if err != nil {
@@ -346,7 +354,7 @@ type armingIdentity struct {
 // announces itself.
 func (e *Engine) resolveArmingIdentity() (armingIdentity, error) {
 	pid := os.Getpid()
-	if view, err := lease.ClassifyVerb(e.Root, int64(pid)); err == nil {
+	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
 		if view.Holder && view.Announcement != nil {
 			return armingIdentity{
 				session: view.Announcement.SessionId,
@@ -525,14 +533,45 @@ func (e *Engine) armAndPreflight(mode string) error {
 // the first host turn verifiably starts (or the refusal is known). Prints the
 // outcome and returns the process exit code.
 func (e *Engine) Launch(mode string, foreground bool) int {
-	if err := e.launch(mode, foreground); err != nil {
+	fence, err := e.readFence()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return exitFor(err)
+	}
+	if fence.State == stopfence.StateClosed {
+		err = fenceRefusal(e.Root, fence)
+		fmt.Fprintln(os.Stderr, err)
+		return exitFor(err)
+	}
+	return e.LaunchAtGeneration(mode, foreground, fence.Generation)
+}
+
+// LaunchAtGeneration launches after the command layer has performed the
+// human-only closed-fence transition and hands the resulting generation to
+// both creator handshakes.
+func (e *Engine) LaunchAtGeneration(mode string, foreground bool, generation int64) int {
+	if err := e.launch(mode, foreground, generation); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return exitFor(err)
 	}
 	return 0
 }
 
-func (e *Engine) launch(mode string, foreground bool) error {
+func (e *Engine) launch(mode string, foreground bool, generations ...int64) error {
+	fence, err := e.readFence()
+	if err != nil {
+		return err
+	}
+	if fence.State == stopfence.StateClosed {
+		return fenceRefusal(e.Root, fence)
+	}
+	generation := fence.Generation
+	if len(generations) > 0 {
+		generation = generations[0]
+	}
+	if fence.Generation != generation {
+		return rearmedCreationError(e.Root, "the mission launcher")
+	}
 	statePath := filepath.Join(e.missionDir(), "state.json")
 	if err := stateShapeRefusal(statePath); err != nil {
 		return err
@@ -634,18 +673,60 @@ func (e *Engine) launch(mode string, foreground bool) error {
 		"--mode", mode,
 		"--instance-tag", tag,
 		"--start-signal", signalPath,
+		"--fence-generation", strconv.FormatInt(generation, 10),
 	)
+	if os.Getenv("METASYSTEM_MISSION_RUNNER_IGNORE_TERM") != "" {
+		if !fixtureauth.FixtureModeRoot(e.Root) {
+			return failf(3, "METASYSTEM_MISSION_RUNNER_IGNORE_TERM is fixture-only")
+		}
+		command.Args = append(command.Args, "--ignore-term")
+	}
 	command.Dir = e.Root
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if foreground {
 		command.Stdout = os.Stdout
 		command.Stderr = os.Stderr
 	} else {
 		command.Stdout = logFile
 		command.Stderr = logFile
-		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	}
+	creator, err := currentProcessRef()
+	if err != nil {
+		return err
+	}
+	claim, err := stopfence.Creating(e.Root, "mission-"+mode, generation, creator)
+	if err != nil {
+		return err
+	}
+	defer claim.Close()
 	process, err := startProcess(command)
 	if err != nil {
+		return err
+	}
+	secondFence, err := e.readFence()
+	if err != nil {
+		return err
+	}
+	if secondFence.State == stopfence.StateClosed || secondFence.Generation != generation {
+		if command.Process != nil {
+			if pgid, pgErr := unix.Getpgid(command.Process.Pid); pgErr == nil {
+				_, _ = e.terminateGroup(pgid, tag, false)
+			}
+		}
+		if secondFence.State == stopfence.StateClosed {
+			description, descriptionErr := stopfence.ClosedDescription(secondFence, e.Root)
+			command, commandErr := stopfence.ClosedCommand(secondFence, e.Root)
+			if descriptionErr != nil {
+				return descriptionErr
+			}
+			if commandErr != nil {
+				return commandErr
+			}
+			return failf(3, "%s; while the mission runner started, it has been ended\nat an agent-free terminal, run: %s", description, command)
+		}
+		return rearmedCreationError(e.Root, "the mission runner")
+	}
+	if err := claim.Close(); err != nil {
 		return err
 	}
 	// The verification window bounds REAL work — the child runner's boot,
@@ -701,7 +782,7 @@ func (e *Engine) launch(mode string, foreground bool) error {
 		pid := command.Process.Pid
 		if strings.Contains(processCommand(pid, fixtureauth.CommandProbe{}), tag) {
 			if pgid, pgErr := unix.Getpgid(pid); pgErr == nil {
-				if err := e.terminateGroup(pgid, tag, false); err != nil {
+				if _, err := e.terminateGroup(pgid, tag, false); err != nil {
 					return err
 				}
 			}

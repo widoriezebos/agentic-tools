@@ -281,7 +281,8 @@ func TestClaimLaunchWONReservationCompletesRecordSetup(t *testing.T) {
 	}
 	record := readRecord(t, root, params.OpID)
 	if record["status"] != "pending" || record["mainId"] != "main-1" ||
-		!looseEqual(record["claimEpoch"], 5) || record["goalId"] != "goal-a" || !looseEqual(record["goalTier"], 2) || record["fingerprint"] == "" {
+		!looseEqual(record["claimEpoch"], 5) || record["goalId"] != "goal-a" || !looseEqual(record["goalTier"], 2) ||
+		record["fingerprint"] == "" || !looseEqual(record["fenceGeneration"], 0) {
 		t.Fatalf("completed claim-launch reservation = %+v", record)
 	}
 }

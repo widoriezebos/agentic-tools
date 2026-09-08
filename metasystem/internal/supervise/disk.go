@@ -30,6 +30,10 @@ type DiskCheckout struct {
 	IntervalSec int
 	Fingerprint string
 	WatcherCap  int
+	// ComponentStopCeiling is the orderly wait each held component may
+	// consume during teardown. PublishState uses it to publish the complete
+	// owner teardown bound for shutdown callers.
+	ComponentStopCeiling time.Duration
 
 	// clock is injectable for tests; nil means time.Now.
 	clock func() time.Time
@@ -110,6 +114,7 @@ type stateDocument struct {
 	Generation           int64                     `json:"generation"`
 	Fingerprint          string                    `json:"fingerprint"`
 	DerivedWatcherCapMin int                       `json:"derivedWatcherCapMin"`
+	TeardownCeilingSec   int                       `json:"teardownCeilingSeconds"`
 	StartedAt            string                    `json:"startedAt"`
 	Engine               string                    `json:"engine"`
 	EngineBuild          string                    `json:"engineBuild,omitempty"`
@@ -197,6 +202,11 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 			Heartbeat:     filepath.Join(c.supervisionDir(), string(member.Component)+".heartbeat.json"),
 		}
 	}
+	componentCeiling := c.ComponentStopCeiling
+	if componentCeiling <= 0 {
+		componentCeiling = defaultComponentStopCeiling
+	}
+	teardownCeiling := time.Duration(len(held))*(componentCeiling+componentPostKillProofInterval) + registryAppendLockWait
 	document := stateDocument{
 		SchemaVersion: 1,
 		Owner: stateIdentity{
@@ -208,6 +218,7 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 		Generation:           current,
 		Fingerprint:          c.Fingerprint,
 		DerivedWatcherCapMin: c.WatcherCap,
+		TeardownCeilingSec:   int((teardownCeiling + time.Second - 1) / time.Second),
 		StartedAt:            c.now().UTC().Format("2006-01-02T15:04:05Z"),
 		Engine:               "go",
 		EngineBuild:          BuildStamp,

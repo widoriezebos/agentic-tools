@@ -25,7 +25,7 @@ func brainHumanAct(root, verb string, fixture bool) error {
 			return nil
 		}
 	}
-	classification, err := lease.ClassifyVerb(root, int64(os.Getppid()))
+	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
 	if err != nil {
 		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
 	}

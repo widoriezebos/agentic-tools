@@ -1,6 +1,7 @@
 package lease
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -173,6 +174,12 @@ func TestReadAnnouncementsSkipsIncompleteButRefusesTampered(t *testing.T) {
 		`{"sessionId":"s","pid":1,"pidStartedAt":1,"pgid":1,"runtime":"fake","instanceTag":"t","announcedAt":"a","mainId":"NOPE","commandHash":"`+CommandHash("x")+`"}`)
 	if _, err := readAnnouncements(root, true); err == nil {
 		t.Fatal("a malformed main identity must refuse a strict read")
+	} else {
+		var failure *ClassificationFailure
+		path := filepath.Join(dir, "bad.json")
+		if !errors.As(err, &failure) || failure.Kind != ClassificationSupportingData || failure.Source != "announcement" || failure.Path != path || !strings.Contains(failure.Reason(), "mainId") {
+			t.Fatalf("announcement classification failure = %#v, err %v", failure, err)
+		}
 	}
 	// The same malformed record is skipped by a lax read.
 	if _, err := readAnnouncements(root, false); err != nil {

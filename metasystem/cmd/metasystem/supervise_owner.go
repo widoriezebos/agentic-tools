@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
@@ -41,6 +42,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	watcherCap := flags.Int("watcher-cap", 0, "derived watcher cap ceiling in minutes; published as derivedWatcherCapMin and loaded into the watcher heartbeat attestation")
 	registryPath := flags.String("registry", registryDefault, "machine-wide registry file")
 	gate := flags.String("gate", "", "start-gate file: wait for it to appear, then delete it, before supervising (the armer publishes the lock, then signals the gate — avoids the lock/pid chicken-and-egg)")
+	ignoreTerm := flags.Bool("ignore-term", false, "ignore TERM (fixture-only)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -65,6 +67,21 @@ func runSuperviseOwnerLoop(args []string) int {
 	}
 	if *metasystemRoot == "" {
 		*metasystemRoot = *repo
+	}
+	fixtureMode := fixtureauth.FixtureModeRoot(*metasystemRoot)
+	if *ignoreTerm && !fixtureMode {
+		fmt.Fprintln(os.Stderr, "supervise owner: --ignore-term is fixture-only")
+		return 1
+	}
+	for _, variable := range []string{
+		"METASYSTEM_GO_COMPONENT_CRASH_ON_START",
+		"METASYSTEM_GO_COMPONENT_IGNORE_TERM",
+		"METASYSTEM_GO_COMPONENT_SLOW_STOP",
+	} {
+		if os.Getenv(variable) != "" && !fixtureMode {
+			fmt.Fprintf(os.Stderr, "supervise owner: %s is fixture-only\n", variable)
+			return 1
+		}
 	}
 	componentBinary, _ := os.Executable()
 
@@ -98,9 +115,10 @@ func runSuperviseOwnerLoop(args []string) int {
 
 	checkout := &supervise.DiskCheckout{
 		Root: *repo, Self: self, SelfTag: ownerTag,
-		IntervalSec: *intervalSec,
-		Fingerprint: *fingerprint,
-		WatcherCap:  *watcherCap,
+		IntervalSec:          *intervalSec,
+		Fingerprint:          *fingerprint,
+		WatcherCap:           *watcherCap,
+		ComponentStopCeiling: 5 * time.Second,
 	}
 	prober := identity.KernelProber{}
 	lockSelf := lock.Identity{Pid: self.Pid, PidStartedAt: self.StartedAtSec, Tag: ownerTag}
@@ -135,6 +153,12 @@ func runSuperviseOwnerLoop(args []string) int {
 			if os.Getenv("METASYSTEM_GO_COMPONENT_CRASH_ON_START") != "" {
 				argv = append(argv, "--crash-on-start")
 			}
+			if os.Getenv("METASYSTEM_GO_COMPONENT_IGNORE_TERM") != "" {
+				argv = append(argv, "--ignore-term")
+			}
+			if delay := os.Getenv("METASYSTEM_GO_COMPONENT_SLOW_STOP"); delay != "" {
+				argv = append(argv, "--slow-stop", delay)
+			}
 			return argv
 		},
 	}
@@ -164,7 +188,12 @@ func runSuperviseOwnerLoop(args []string) int {
 	// concurrently with one — an unhandled TERM would kill the owner with
 	// the default action and leak its detached components forever.
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	if *ignoreTerm {
+		signal.Ignore(syscall.SIGTERM)
+		signal.Notify(stop, syscall.SIGINT)
+	} else {
+		signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	}
 	owner.Sleep = func(d time.Duration) {
 		select {
 		case <-time.After(d):

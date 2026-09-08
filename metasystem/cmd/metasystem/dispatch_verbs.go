@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"golang.org/x/sys/unix"
 )
 
@@ -296,6 +296,75 @@ func runDispatchClaimLaunch(args []string) int {
 	}
 	printJSON(result)
 	return dispatchcore.ClaimOutcomeExitCode(result.Outcome)
+}
+
+func runDispatchFenceAfterLaunch(args []string) int {
+	flags := flag.NewFlagSet("job fence-after-launch", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout state root")
+	job := flags.String("job", "", "launched job id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" || *job == "" {
+		fmt.Fprintln(os.Stderr, "job fence-after-launch: --root and --job are required")
+		return 2
+	}
+	result, err := dispatchcore.FenceAfterLaunch(*root, *job)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printJSON(result)
+	if result.Outcome == dispatchcore.LaunchFenceRefusedStopped {
+		return 1
+	}
+	return 0
+}
+
+func runDispatchFenceBeforeLaunch(args []string) int {
+	flags := flag.NewFlagSet("job fence-before-launch", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout state root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" {
+		fmt.Fprintln(os.Stderr, "job fence-before-launch: --root is required")
+		return 2
+	}
+	result, err := dispatchcore.FenceBeforeLaunch(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printJSON(result)
+	if result.Outcome == dispatchcore.LaunchFenceRefusedStopped {
+		return 1
+	}
+	return 0
+}
+
+func runDispatchFixturePauseBeforeLaunch(args []string) int {
+	flags := flag.NewFlagSet("job fixture-pause-before-launch", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout state root")
+	seconds := flags.String("seconds", "", "positive fixture pause in seconds")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" || *seconds == "" {
+		fmt.Fprintln(os.Stderr, "job fixture-pause-before-launch: --root and --seconds are required")
+		return 2
+	}
+	if !fixtureauth.FixtureModeRoot(*root) {
+		fmt.Fprintln(os.Stderr, "job fixture-pause-before-launch is available only in a fixture-mode root")
+		return 1
+	}
+	value, err := strconv.ParseFloat(*seconds, 64)
+	if err != nil || value <= 0 {
+		fmt.Fprintln(os.Stderr, "job fixture-pause-before-launch: --seconds must be a positive decimal")
+		return 2
+	}
+	time.Sleep(time.Duration(value * float64(time.Second)))
+	return 0
 }
 
 // claimLaunchInternalAuthorized keeps reservation publication behind the
@@ -1058,7 +1127,7 @@ func runDispatchBreachStop(args []string) int {
 		fmt.Fprintln(os.Stderr, "job breach-stop: --root, --goal, and --revision are required")
 		return 2
 	}
-	caller, err := lease.ClassifyVerb(*root, int64(os.Getppid()))
+	caller, err := classifyVerbCaller(*root, int64(os.Getppid()))
 	if err != nil {
 		return recordExit(fmt.Errorf("job breach-stop: caller authority is unreadable: %w", err))
 	}

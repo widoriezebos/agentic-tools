@@ -23,6 +23,7 @@ repo=$fixture_root/repo
 remote=$fixture_root/origin.git
 watcher_pid=
 reaper_pid=
+owned_process_file=$fixture_root/owned-processes
 
 wait_for_fixture_pid() { # name, pid, named cap
   local name=$1 pid=$2 maximum started deadline elapsed
@@ -43,12 +44,38 @@ wait_for_fixture_pid() { # name, pid, named cap
 }
 
 cleanup() {
-  local pid
+  local pid started label command maximum deadline
   for pid in "$watcher_pid" "$reaper_pid"; do
     [[ -n "$pid" ]] || continue
     kill -TERM "$pid" 2>/dev/null || true
     wait_for_fixture_pid supervisor-cleanup "$pid" mission-process-wait || true
   done
+  if [[ -f "$owned_process_file" && -x "$repo/bin/metasystem" ]]; then
+    while read -r pid started label; do
+      [[ "$pid" =~ ^[0-9]+$ && "$started" =~ ^[0-9]+$ ]] || continue
+      "$repo/bin/metasystem" proc alive --pid "$pid" --start-time "$started" --root "$repo" >/dev/null 2>&1 || continue
+      command=$(ps -p "$pid" -o command= 2>/dev/null || true)
+      if [[ "$command" != *"$repo"* ]]; then
+        echo "mission fixture cleanup refused unproven $label process $pid: $command" >&2
+        continue
+      fi
+      kill -TERM "$pid" 2>/dev/null || true
+      maximum=$(harness_fixture_cap mission-process-wait)
+      deadline=$((SECONDS + maximum))
+      while (( SECONDS < deadline )) \
+        && "$repo/bin/metasystem" proc alive --pid "$pid" --start-time "$started" --root "$repo" >/dev/null 2>&1; do
+        sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+      done
+      if "$repo/bin/metasystem" proc alive --pid "$pid" --start-time "$started" --root "$repo" >/dev/null 2>&1; then
+        command=$(ps -p "$pid" -o command= 2>/dev/null || true)
+        if [[ "$command" == *"$repo"* ]]; then
+          kill -KILL "$pid" 2>/dev/null || true
+        else
+          echo "mission fixture cleanup refused unproven $label process $pid after TERM: $command" >&2
+        fi
+      fi
+    done <"$owned_process_file"
+  fi
   rm -rf "$fixture_root"
 }
 trap cleanup EXIT
@@ -121,7 +148,7 @@ if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios mission \
     "mission contract, state, and runner end-state fixtures passed" \
-    "$fixture_bed_script" contract-and-state runner-end-state
+    "$fixture_bed_script" contract-and-state runner-end-state mission-stop
 fi
 
 # Fabricate only the supervisor facts preflight reads; both scenarios
@@ -130,15 +157,17 @@ fabricate_supervisor_facts() {
   # Fabricate only the supervisor facts preflight reads. Each process is a real
   # live process whose argv carries the recorded tag; cleanup waits are named
   # and ceiling-bounded above.
-  "$root/bin/metasystem" util hold --tag mission-watcher-tag & watcher_pid=$!
-  "$root/bin/metasystem" util hold --tag mission-reaper-tag & reaper_pid=$!
+  watcher_pid=$("$root/bin/metasystem" supervise launch-detached --cwd "$repo" \
+    "$root/bin/metasystem" util hold --tag mission-watcher-tag)
+  reaper_pid=$("$root/bin/metasystem" supervise launch-detached --cwd "$repo" \
+    "$root/bin/metasystem" util hold --tag mission-reaper-tag)
   # The engine ships in this fixture repo, so preflight demands EXACT-START
   # liveness: record the holders' real start times, not synthetic ones.
   watcher_start=$("$root/bin/metasystem" proc started-at --pid "$watcher_pid")
   reaper_start=$("$root/bin/metasystem" proc started-at --pid "$reaper_pid")
   identity_file=$fixture_root/mission-process-identities.json
-  printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"}}\n' \
-    "$watcher_pid" "$watcher_start" "$reaper_pid" "$reaper_start" >"$identity_file"
+  printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"},"%s":{"terminal":true}}\n' \
+    "$watcher_pid" "$watcher_start" "$reaper_pid" "$reaper_start" "$$" >"$identity_file"
   export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE=$identity_file
   supervision=$repo/artifacts/agents/supervision
   mkdir -p "$supervision"
@@ -316,7 +345,7 @@ race_ask=$repo/artifacts/agents/missions/race/asks/fence-bound.json
 
 fi
 
-if [[ "$fixture_scenario" != runner-end-state ]]; then exit 0; fi
+if [[ "$fixture_scenario" != runner-end-state && "$fixture_scenario" != mission-stop ]]; then exit 0; fi
 
 # The end-state fixtures run the real runner with the fake host and synthetic
 # process identities. They stay independent of the process-owning validator
@@ -351,6 +380,17 @@ git -C "$repo" push -qu origin main
 
 fabricate_supervisor_facts
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
+# A process fixture that drives human-reserved control-plane verbs cannot
+# borrow the ambient session's class. Keep only the configured fake runtime's
+# signature before mission-stop reaches its staged terminal fact, matching the
+# supervision bed's agent-free fixture ancestry.
+if [[ "$fixture_scenario" == mission-stop ]]; then
+  for adapter in "$repo"/scripts/agents/adapters/*.sh; do
+    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
+      *) rm -f "$adapter" ;;
+    esac
+  done
+fi
 # Refresh the supervision facts to now; json set stages beside each file
 # and renames, so no reader can observe a torn record.
 supervision_now=$(date +%s)
@@ -442,6 +482,177 @@ wait_end_state() { # mission, expected status exit
   sed -n '1,240p' "$repo/artifacts/agents/missions/$mission/state.json" >&2 2>/dev/null || true
   return 1
 }
+
+wait_for_mission_path() { # name, path
+  local name=$1 path=$2 maximum deadline
+  maximum=$(harness_fixture_cap mission-process-wait)
+  deadline=$((SECONDS + maximum))
+  while (( SECONDS < deadline )); do
+    [[ -e "$path" ]] && return 0
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  echo "mission fixture wait ceiling reached: $name ($path; scaled cap: ${maximum}s)" >&2
+  return 1
+}
+
+if [[ "$fixture_scenario" == mission-stop ]]; then
+  resolved_repo=$(cd "$repo" && pwd -P)
+  # Both fake-host hold controls are fixture-only. Prove the rejection before
+  # entering the fake checkout, where the scenario is authorized to use them.
+  outside_turn=$fixture_root/outside-turn
+  mkdir -p "$outside_turn"
+  printf '{"missionId":"outside","turnId":"outside-t1","cycle":1}\n' >"$outside_turn/turn.json"
+  printf 'outside fixture control\n' >"$outside_turn/prompt.md"
+  for control in METASYSTEM_FAKE_HOST_HOLD METASYSTEM_FAKE_HOST_IGNORE_TERM; do
+    set +e
+    env "$control=1" "$root/scripts/agents/hosts/fake.sh" start-turn \
+      --mission outside --turn-id outside-t1 --prompt "$outside_turn/prompt.md" \
+      --result "$outside_turn/result.json" --instance-tag outside-fixture-control \
+      >"$outside_turn/$control.out" 2>&1
+    outside_rc=$?
+    set -e
+    (( outside_rc != 0 )) && grep -Fq 'available only in a fixture-mode root' "$outside_turn/$control.out" \
+      || { echo "$control was not refused outside fixture mode" >&2; cat "$outside_turn/$control.out" >&2; exit 1; }
+  done
+
+  launch_held_mission() { # mission, ignore TERM (0|1), start|resume
+    local mission=$1 ignore_term=$2 mode=$3 output turn runner_record turn_record
+    local runner_pid runner_started host_pid host_started status
+    output=$fixture_root/$mission-$mode.out
+    set +e
+    if [[ "$ignore_term" == 1 ]]; then
+      METASYSTEM_AGENT_RUNTIME=fake METASYSTEM_FAKE_HOST_HOLD=1 METASYSTEM_FAKE_HOST_IGNORE_TERM=1 \
+        "$repo/bin/metasystem" mission "$mode" --root "$repo" --mission "$mission" >"$output"
+    else
+      METASYSTEM_AGENT_RUNTIME=fake METASYSTEM_FAKE_HOST_HOLD=1 \
+        "$repo/bin/metasystem" mission "$mode" --root "$repo" --mission "$mission" >"$output"
+    fi
+    status=$?
+    set -e
+    if [[ $status -ne 0 ]]; then
+      echo "held mission $mission $mode failed with exit $status" >&2
+      cat "$output" >&2
+      return 1
+    fi
+    turn=$(sed -n "s/^mission=$mission started=yes turn=//p" "$output" | tail -n 1)
+    [[ -n "$turn" ]] || { echo "held mission did not report its started turn" >&2; cat "$output" >&2; return 1; }
+    wait_for_mission_path "$mission host readiness" \
+      "$repo/artifacts/agents/missions/$mission/turns/$turn/host-ready"
+    runner_record=$repo/artifacts/agents/missions/runners/$mission.json
+    turn_record=$repo/artifacts/agents/missions/$mission/turns/$turn/turn.json
+    runner_pid=$("$repo/bin/metasystem" json get --file "$runner_record" --field pid)
+    runner_started=$("$repo/bin/metasystem" json get --file "$runner_record" --field pidStartedAt)
+    host_pid=$("$repo/bin/metasystem" json get --file "$turn_record" --field pid)
+    host_started=$("$repo/bin/metasystem" json get --file "$turn_record" --field pidStartedAt)
+    printf '%s %s %s\n%s %s %s\n' \
+      "$runner_pid" "$runner_started" "$mission-runner" \
+      "$host_pid" "$host_started" "$mission-host" >>"$owned_process_file"
+    printf '%s\n' "$turn"
+  }
+
+  run_complete_stop() { # case name, output file
+    local name=$1 output=$2 status closing
+    set +e
+    "$repo/bin/metasystem" stop --repo "$repo" >"$output" 2>&1
+    status=$?
+    set -e
+    closing="stopped $resolved_repo; start again: metasystem arm --repo $resolved_repo"
+    if [[ $status -ne 0 ]] || grep -q '^NOT STOPPED ' "$output" \
+      || [[ "$(tail -n 1 "$output")" != "$closing" ]]; then
+      echo "$name did not stop every component with the complete-stop grammar (exit $status)" >&2
+      cat "$output" >&2
+      return 1
+    fi
+  }
+
+  make_end_state_contract cooperating-host no-return
+  close_bed_baseline "$repo"
+  cooperating_turn=$(launch_held_mission cooperating-host 0 start)
+  cooperating_state=$repo/artifacts/agents/missions/cooperating-host/state.json
+  cp "$cooperating_state" "$fixture_root/cooperating-state.before-stop"
+
+  # The first launch needed the checkout's holder. Retire it now so stop and
+  # the closed-fence resume below classify this shell through terminal facts.
+  "$repo/bin/metasystem" lease retire --root "$repo" --session mission-fixtures \
+    --pid $$ --start "$("$root/bin/metasystem" proc started-at --pid $$)"
+  rm -f "$repo/artifacts/agents/mains/worktree-lease.json" \
+    "$repo/artifacts/agents/mains/reaped-after-claim.json"
+
+  run_complete_stop cooperating-host "$fixture_root/cooperating-host.stop"
+  grep -Fq "repo-watcher pid $watcher_pid: stopped (TERM)" "$fixture_root/cooperating-host.stop" \
+    && grep -Fq "job-reaper pid $reaper_pid: stopped (TERM)" "$fixture_root/cooperating-host.stop" \
+    || { echo "cooperating stop omitted its ownerless supervision outcomes" >&2; cat "$fixture_root/cooperating-host.stop" >&2; exit 1; }
+  if "$repo/bin/metasystem" proc group-exists --pgid "$watcher_pid" \
+    || "$repo/bin/metasystem" proc group-exists --pgid "$reaper_pid"; then
+    echo "cooperating stop left the ownerless watcher or reaper process group live" >&2
+    cat "$fixture_root/cooperating-host.stop" >&2
+    exit 1
+  fi
+  cooperating_runner=$repo/artifacts/agents/missions/runners/cooperating-host.json
+  cooperating_turn_record=$repo/artifacts/agents/missions/cooperating-host/turns/$cooperating_turn/turn.json
+  cooperating_runner_pgid=$("$repo/bin/metasystem" json get --file "$cooperating_runner" --field pgid)
+  cooperating_host_pgid=$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field pgid)
+  [[ "$("$repo/bin/metasystem" json get --file "$cooperating_runner" --field status)" == stopped \
+    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field status)" == failed \
+    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field error)" == turn-lost \
+    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field detail)" == 'stopped by metasystem stop' \
+    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field hostTermination)" == term ]] \
+    || { echo "cooperating host did not conclude as a stopped mission turn" >&2; cat "$fixture_root/cooperating-host.stop" >&2; cat "$cooperating_runner" >&2; cat "$cooperating_turn_record" >&2; exit 1; }
+  [[ ! -e "$repo/artifacts/agents/missions/cooperating-host/lease.d" \
+    && ! -e "$repo/artifacts/agents/missions/cooperating-host/lease.json" ]] \
+    || { echo "mission stop left the cooperating runner lease" >&2; cat "$fixture_root/cooperating-host.stop" >&2; exit 1; }
+  if "$repo/bin/metasystem" proc group-exists --pgid "$cooperating_runner_pgid" \
+    || "$repo/bin/metasystem" proc group-exists --pgid "$cooperating_host_pgid"; then
+    echo "mission stop left the cooperating runner or host process group live" >&2
+    cat "$fixture_root/cooperating-host.stop" >&2
+    exit 1
+  fi
+  cmp -s "$fixture_root/cooperating-state.before-stop" "$cooperating_state" \
+    || { echo "mission stop changed runner-owned mission state" >&2; cat "$fixture_root/cooperating-host.stop" >&2; exit 1; }
+  set +e
+  "$repo/bin/metasystem" mission status --root "$repo" --mission cooperating-host \
+    >"$fixture_root/cooperating-host.status" 2>&1
+  cooperating_status_rc=$?
+  set -e
+  [[ $cooperating_status_rc -eq 13 \
+    && "$(cat "$fixture_root/cooperating-host.status")" == 'mission=cooperating-host status=stopped reason=metasystem-stop' ]] \
+    || { echo "stopped mission status did not name resume" >&2; cat "$fixture_root/cooperating-host.status" >&2; exit 1; }
+
+  fabricate_supervisor_facts
+  export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
+  resumed_turn=$(launch_held_mission cooperating-host 0 resume)
+  [[ "$resumed_turn" != "$cooperating_turn" ]] \
+    || { echo "mission resume did not start a successor turn" >&2; cat "$fixture_root/cooperating-host-resume.out" >&2; exit 1; }
+  [[ "$("$repo/bin/metasystem" json get --file "$repo/artifacts/agents/supervision/transition.json" --field state)" == open \
+    && "$("$repo/bin/metasystem" json get --file "$repo/artifacts/agents/supervision/transition.json" --field by.verb)" == mission-resume ]] \
+    || { echo "fixture-human resume did not open the closed process fence" >&2; cat "$fixture_root/cooperating-host-resume.out" >&2; exit 1; }
+  run_complete_stop cooperating-host-resumed "$fixture_root/cooperating-host-resumed.stop"
+
+  fabricate_supervisor_facts
+  export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
+  make_end_state_contract ignores-term no-return
+  close_bed_baseline "$repo"
+  ignored_turn=$(launch_held_mission ignores-term 1 start)
+  run_complete_stop ignores-term "$fixture_root/ignores-term.stop"
+  grep -Fq 'mission ignores-term runner ' "$fixture_root/ignores-term.stop" \
+    && grep -Fq ': stopped (TERM, runner concluded)' "$fixture_root/ignores-term.stop" \
+    && grep -Fq "mission ignores-term turn $ignored_turn host " "$fixture_root/ignores-term.stop" \
+    && grep -Fq ': killed (by the runner, TERM ignored)' "$fixture_root/ignores-term.stop" \
+    || { echo "ignore-TERM host did not exercise the runner's kill ladder" >&2; cat "$fixture_root/ignores-term.stop" >&2; exit 1; }
+  ignored_turn_record=$repo/artifacts/agents/missions/ignores-term/turns/$ignored_turn/turn.json
+  [[ "$("$repo/bin/metasystem" json get --file "$ignored_turn_record" --field hostTermination)" == kill ]] \
+    || { echo "ignore-TERM host turn did not record kill termination" >&2; cat "$fixture_root/ignores-term.stop" >&2; cat "$ignored_turn_record" >&2; exit 1; }
+  ignored_runner_record=$repo/artifacts/agents/missions/runners/ignores-term.json
+  ignored_runner_pgid=$("$repo/bin/metasystem" json get --file "$ignored_runner_record" --field pgid)
+  ignored_host_pgid=$("$repo/bin/metasystem" json get --file "$ignored_turn_record" --field pgid)
+  if "$repo/bin/metasystem" proc group-exists --pgid "$ignored_runner_pgid" \
+    || "$repo/bin/metasystem" proc group-exists --pgid "$ignored_host_pgid"; then
+    echo "mission stop left the ignore-TERM runner or host process group live" >&2
+    cat "$fixture_root/ignores-term.stop" >&2
+    exit 1
+  fi
+  exit 0
+fi
 
 make_end_state_contract gate-and-close close-stream
 # A landed return no host ever acted on (records/patience/patience-orphan-usage.md):

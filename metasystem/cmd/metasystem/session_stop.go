@@ -17,7 +17,7 @@ const sessionStopLifetime = 8 * time.Hour
 var (
 	classifySessionStopCaller = lease.Classify
 	currentSessionStopHolder  = lease.CurrentHolder
-	classifySessionStopView   = lease.ClassifyVerb
+	classifySessionStopView   = classifyVerbCaller
 	sessionStopNow            = time.Now
 	proveSessionStopHuman     = func(root string, pid int64, now time.Time) (humanauthority.Proof, error) {
 		proof, err := humanauthority.Prove(root, pid, nil, now)

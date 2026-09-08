@@ -82,13 +82,13 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
 	run_fixture_bed_scenarios dispatch \
-		"dispatch, adapter selftest, and mission-runner fixtures passed" \
+		"dispatch, adapter selftest, mission-runner, and process-control fixtures passed" \
 		"$fixture_bed_script" dispatch mission-runner adapter-selftest steward-continuation \
 		brain-delegate-refuses brain-cancel-close-reap-refuse brain-breach-stop-exempt brain-absent-node-proceeds \
-		brain-fence-helper-fails
+		brain-fence-helper-fails seat-refused
 fi
 case "$fixture_scenario" in
-	dispatch | mission-runner | adapter-selftest | steward-continuation | brain-delegate-refuses | brain-cancel-close-reap-refuse | brain-breach-stop-exempt | brain-absent-node-proceeds | brain-fence-helper-fails) ;;
+	dispatch | mission-runner | adapter-selftest | steward-continuation | brain-delegate-refuses | brain-cancel-close-reap-refuse | brain-breach-stop-exempt | brain-absent-node-proceeds | brain-fence-helper-fails | seat-refused) ;;
   *) echo "dispatch fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -1196,6 +1196,83 @@ wait_for_agent_recollection() { # description, job, terminal field, expected val
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
 }
+
+fixture_record_snapshot() { # repository
+  local repository=$1 record digest
+  (
+    cd "$repository"
+    if [[ ! -d artifacts/agents ]]; then
+      printf '<no agent records>\n'
+      return
+    fi
+    find artifacts/agents -type f -print | LC_ALL=C sort | while IFS= read -r record; do
+      digest=$(shasum -a 256 "$record" | awk '{print $1}')
+      printf '%s %s\n' "$record" "$digest"
+    done
+  )
+}
+
+if [[ "$fixture_scenario" == seat-refused ]]; then
+seat_process_fixture="$agent_fixture/seat-processes.json"
+seat_identity_fixture="$agent_fixture/seat-identities.json"
+printf '[]\n' >"$seat_process_fixture"
+printf '{}\n' >"$seat_identity_fixture"
+export METASYSTEM_CENSUS_PROCESS_FILE="$seat_process_fixture"
+export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$seat_identity_fixture"
+
+# The extra shell keeps the runtime-shaped process in the engine's ancestry,
+# exactly where the authority classifier recognizes delegate custody.
+seat_delegate="$agent_fixture/metasystem-fake-agent"
+seat_tool_shell="$agent_fixture/seat-tool-shell"
+cat >"$seat_delegate" <<'SEAT_DELEGATE'
+#!/usr/bin/env bash
+set -euo pipefail
+identity_file=$1
+engine=$2
+tool_shell=$3
+shift 3
+started=$($engine proc started-at --pid $$)
+printf '{"%s":{"pidStartedAt":%s,"command":"metasystem-fake-agent fixture","terminal":false}}\n' \
+  "$$" "$started" >"$identity_file"
+"$tool_shell" "$engine" "$@"
+SEAT_DELEGATE
+cat >"$seat_tool_shell" <<'SEAT_TOOL_SHELL'
+#!/usr/bin/env bash
+set -euo pipefail
+engine=$1
+shift
+"$engine" "$@"
+SEAT_TOOL_SHELL
+chmod +x "$seat_delegate" "$seat_tool_shell"
+
+seat_records_before=$(fixture_record_snapshot "$agent_repo")
+set +e
+METASYSTEM_BIN="$agent_repo/bin/metasystem" \
+  "$seat_delegate" "$seat_identity_fixture" "$agent_repo/bin/metasystem" "$seat_tool_shell" \
+    stop --repo "$agent_repo" >"$agent_fixture/seat-stop.out" 2>&1
+seat_stop_rc=$?
+set -e
+[[ $seat_stop_rc -eq 1 ]] \
+  || { echo "a fake delegate's stop returned $seat_stop_rc instead of refusing" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
+seat_stop_expected=$(printf '%s\n%s' \
+  'metasystem stop: stop is a human act at a terminal; this caller is DELEGATE.' \
+  "at an agent-free terminal, run: metasystem stop --repo $agent_repo")
+seat_stop_actual=$(cat "$agent_fixture/seat-stop.out")
+[[ "$seat_stop_actual" == "$seat_stop_expected" ]] \
+  || { echo "a fake delegate's stop did not print the exact terminal refusal" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
+
+METASYSTEM_BIN="$agent_repo/bin/metasystem" \
+  "$seat_delegate" "$seat_identity_fixture" "$agent_repo/bin/metasystem" "$seat_tool_shell" \
+    status --repo "$agent_repo" >"$agent_fixture/seat-status.out" 2>&1
+seat_status_expected=$(printf 'checkout %s\nnothing is running' "$agent_repo")
+seat_status_actual=$(cat "$agent_fixture/seat-status.out")
+[[ "$seat_status_actual" == "$seat_status_expected" ]] \
+  || { echo "a fake delegate's status did not return the exact empty inventory" >&2; cat "$agent_fixture/seat-status.out" >&2; exit 1; }
+seat_records_after=$(fixture_record_snapshot "$agent_repo")
+[[ "$seat_records_after" == "$seat_records_before" ]] \
+  || { echo "the refused stop or read-only status changed the fixture's agent records" >&2; diff -u <(printf '%s\n' "$seat_records_before") <(printf '%s\n' "$seat_records_after") >&2 || true; exit 1; }
+echo "seat-refused fixtures passed"
+fi
 
 if [[ "$fixture_scenario" == dispatch ]]; then
 # Build-stamp skew refuses before any dispatch state exists. The fixture engine

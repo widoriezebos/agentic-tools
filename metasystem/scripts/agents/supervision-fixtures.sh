@@ -98,12 +98,12 @@ if (( ! fixture_bed_child )); then
   else
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
       "$fixture_bed_script" bed-death-self-test operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
-      rearm-rebuild rearm-launch-fails rearm-provenance
+      rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor
   fi
 fi
 case "$fixture_scenario" in
   bed-death-self-test | operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
-    rearm-rebuild | rearm-launch-fails | rearm-provenance) ;;
+    rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -625,6 +625,7 @@ cat >"$live_arm_driver" <<'SH'
 #!/usr/bin/env bash
 set -u
 engine=$1 arm=$2 repo=$3 session=$4 tag=$5 output=$6 status_file=$7 ready=$8 release=$9
+join_request=${10:-} join_output=${11:-} join_status_file=${12:-}
 started=$("$engine" proc started-at --pid $$)
 "$arm" --repo "$repo" --session "$session" --pid $$ --start-time "$started" --tag "$tag" >"$output" 2>&1
 status=$?
@@ -632,6 +633,12 @@ printf '%s\n' "$status" >"$status_file"
 touch "$ready"
 (( status == 0 )) || exit "$status"
 while [[ ! -e "$release" ]]; do
+  if [[ -n "$join_request" && -e "$join_request" && ! -e "$join_status_file" ]]; then
+    "$arm" --repo "$repo" --session "$session" --pid $$ --start-time "$started" --tag "$tag" >"$join_output" 2>&1
+    join_status=$?
+    printf '%s\n' "$join_status" >"$join_status_file"
+    (( join_status == 0 )) || exit "$join_status"
+  fi
   sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:-0.05}"
 done
 SH
@@ -967,6 +974,13 @@ if [[ "$fixture_scenario" != operator-layout ]]; then
 repo=$tmp/repo
 mkdir -p "$repo"
 make_repo "$repo"
+if [[ "$fixture_scenario" == stop-everything ]]; then
+  mkdir -p "$repo/metasystem/scripts/agents/roles"
+  cp "$source_root/scripts/agents/roles/design-critic.md" "$repo/metasystem/scripts/agents/roles/"
+  git -C "$repo" add metasystem/scripts/agents/roles/design-critic.md
+  git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid \
+    commit -qm 'add stop fixture design artifact'
+fi
 arm="$repo/scripts/agents/arm-supervision.sh"
 # One writer per checkout. Phases that arm a DIFFERENT main than the phase
 # before them release the checkout first, the way a departing main does.
@@ -996,6 +1010,719 @@ process_fixture=$repo/process-fixture.json
 identity_fixture=$repo/process-identities.json
 printf '[]\n' >"$process_fixture"
 printf '{}\n' >"$identity_fixture"
+fi
+
+assert_exact_stdout() { # name, output file, expected lines...
+  local name=$1 output=$2 expected=$tmp/$1.expected
+  shift 2
+  printf '%s\n' "$@" >"$expected"
+  if ! cmp -s "$expected" "$output"; then
+    echo "$name stdout did not match the process-verb grammar" >&2
+    diff -u "$expected" "$output" >&2 || true
+    exit 1
+  fi
+}
+
+acceptance_identity_alive() { # pid, start time, repository
+  "$3/bin/metasystem" proc alive --pid "$1" --start-time "$2" --root "$3" >/dev/null 2>&1
+}
+
+acceptance_wait_for_json_value() { # name, file, field, expected
+  local name=$1 file=$2 field=$3 expected=$4
+  wait_until "$name" bash -c '
+    file=$1 field=$2 expected=$3 engine=$4
+    [[ -f "$file" ]] && [[ "$("$engine" json get --file "$file" --field "$field" 2>/dev/null)" == "$expected" ]]
+  ' _ "$file" "$field" "$expected" "$repo/bin/metasystem"
+}
+
+prepare_process_acceptance() {
+  local adapter output=$tmp/$fixture_scenario-up.out status=$tmp/$fixture_scenario-up.status
+  local ready=$tmp/$fixture_scenario-up.ready release=$tmp/$fixture_scenario-up.release
+
+  repo=$(cd "$repo" && pwd -P)
+
+  # Only the configured fake adapter participates in these process fixtures.
+  # Removing unrelated copied adapters prevents the ambient test runner from
+  # being mistaken for a delegate before the staged terminal fact is read.
+  for adapter in "$repo"/scripts/agents/adapters/*.sh; do
+    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
+      *) rm -f "$adapter" ;;
+    esac
+  done
+  export METASYSTEM_CENSUS_PROCESS_FILE=$process_fixture
+  export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_fixture
+  export METASYSTEM_WATCH_INTERVAL_SEC=1
+  printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_fixture"
+
+  acceptance_main_session="process-$fixture_scenario"
+  acceptance_main_release=$release
+  acceptance_main_join_request=$tmp/$fixture_scenario-up-join.request
+  acceptance_main_join_output=$tmp/$fixture_scenario-up-join.out
+  acceptance_main_join_status=$tmp/$fixture_scenario-up-join.status
+  bash "$live_arm_driver" "$repo/bin/metasystem" "$arm" "$repo" \
+    "$acceptance_main_session" "$acceptance_main_session" "$output" "$status" "$ready" "$release" \
+    "$acceptance_main_join_request" "$acceptance_main_join_output" "$acceptance_main_join_status" &
+  acceptance_main_pid=$!
+  acceptance_main_start=$(process_started_at "$acceptance_main_pid")
+  owned_pids+=("$acceptance_main_pid:$acceptance_main_start")
+  wait_until "$fixture_scenario up command completion" test -e "$ready"
+  [[ $(cat "$status") == 0 ]] \
+    || { echo "$fixture_scenario could not arm its scratch checkout" >&2; cat "$output" >&2; exit 1; }
+  grep -Fq 'up outcome=armed authority=writer' "$output" \
+    || { echo "$fixture_scenario did not start through the production up verb" >&2; cat "$output" >&2; exit 1; }
+
+  acceptance_runner=$repo/artifacts/agents/steward/runner.json
+  acceptance_state=$repo/artifacts/agents/supervision/state.json
+  acceptance_owner=$repo/artifacts/agents/supervision/lock.d/owner.json
+  "$repo/bin/metasystem" steward arm --repo "$repo" \
+    >"$tmp/$fixture_scenario-steward-arm.out" 2>&1 \
+    || { echo "$fixture_scenario could not explicitly arm its steward runner" >&2; cat "$tmp/$fixture_scenario-steward-arm.out" >&2; exit 1; }
+  wait_until "$fixture_scenario runner publication caused by steward arm --repo" \
+    test -s "$acceptance_runner"
+  runner_pid=$(json_field "$acceptance_runner" pid)
+  runner_start=$(json_field "$acceptance_runner" pidStartedAt)
+  owner_pid=$(json_field "$acceptance_owner" pid)
+  owner_start=$(json_field "$acceptance_owner" pidStartedAt)
+  owner_tag=$(json_field "$acceptance_owner" instanceTag)
+  owner_generation=$(json_field "$acceptance_state" generation)
+  watcher_pid=$(json_field "$acceptance_state" components.watcher.pid)
+  watcher_start=$(json_field "$acceptance_state" components.watcher.pidStartedAt)
+  reaper_pid=$(json_field "$acceptance_state" components.reaper.pid)
+  reaper_start=$(json_field "$acceptance_state" components.reaper.pidStartedAt)
+}
+
+assert_minimal_running_status() { # output file
+  assert_exact_stdout "$fixture_scenario-running-status" "$1" \
+    "checkout $repo" \
+    "steward-runner pid $runner_pid started $runner_start: running" \
+    "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: running" \
+    "repo-watcher pid $watcher_pid: running" \
+    "job-reaper pid $reaper_pid: running"
+}
+
+stop_minimal_acceptance() { # output file
+  "$repo/bin/metasystem" stop --repo "$repo" >"$1"
+  assert_exact_stdout "$fixture_scenario-stop" "$1" \
+    "checkout $repo" \
+    "steward-runner pid $runner_pid started $runner_start: stopped (TERM)" \
+    "narrator: stopped with the steward runner" \
+    "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: stopped (TERM, exited reason=shutdown)" \
+    "repo-watcher pid $watcher_pid: already gone (by the owner)" \
+    "job-reaper pid $reaper_pid: already gone (by the owner)" \
+    "stopped $repo; start again: metasystem arm --repo $repo"
+  fence_changed=$(json_field "$repo/artifacts/agents/supervision/transition.json" changedAt)
+  fence_by_verb=$(json_field "$repo/artifacts/agents/supervision/transition.json" by.verb)
+  fence_by_pid=$(json_field "$repo/artifacts/agents/supervision/transition.json" by.pid)
+}
+
+acceptance_start_job() {
+  local brief=$tmp/stop-everything-brief.md outputs=$tmp/stop-everything-outputs.txt
+  local record=$repo/artifacts/agents/jobs/stop-fixture-job.json
+  (cd "$repo" && scripts/agents/adapters/fake.sh probe >/dev/null)
+  sed 's/^Working Mode:.*/Working Mode: design/' \
+    "$repo/scripts/agents/templates/brief.md" >"$brief"
+  printf '\nFAKE:custodial-critique=%s\n' "$tmp/stop-everything-job-release" >>"$brief"
+  printf '%s\n' 'metasystem/scripts/agents/adapters/fake.sh' >"$outputs"
+  (
+    cd "$repo"
+    METASYSTEM_DELEGATE_ROOT="$repo" METASYSTEM_FAKE_CRITIQUE_HOLD_CAP_SEC="$fixture_ceiling_sec" \
+      "$repo/bin/metasystem" delegate --role design-critic --outputs "$outputs" \
+        --design metasystem/scripts/agents/roles/design-critic.md --brief "$brief" \
+        --op stop-fixture-job --goal none-explicit --destructive-reach MECHANICAL
+  ) >"$tmp/stop-everything-dispatch.out" 2>&1 \
+    || { echo "stop-everything could not dispatch its held fake job" >&2; cat "$tmp/stop-everything-dispatch.out" >&2; exit 1; }
+  acceptance_wait_for_json_value "stop-everything delegate command job running" "$record" status running
+  wait_until "stop-everything custody child caused by delegate command" test -s \
+    "$repo/artifacts/agents/stop-fixture-job/rounds/1/custody-child.pid"
+  job_pid=$(json_field "$record" pid)
+  job_start=$(json_field "$record" pidStartedAt)
+  job_pgid=$(json_field "$record" pgid)
+  job_role=$(json_field "$record" role)
+}
+
+acceptance_start_run() {
+  local record=$repo/artifacts/agents/runs/stop-fixture-run.json
+  "$repo/bin/metasystem" run launch --root "$repo" --id stop-fixture-run \
+    --kind custom --display "the stop fixture run" --log "$repo/artifacts/agents/runs/stop-fixture-run.log" \
+    --expect-unknown "the stop fixture ended" --caller-pid "$acceptance_main_pid" -- /bin/sleep 600 \
+    >"$tmp/stop-everything-run-launch.out"
+  acceptance_wait_for_json_value "stop-everything run launch command running" "$record" status running
+  run_pid=$(json_field "$record" pid)
+  run_start=$(json_field "$record" pidStartedAt)
+  run_pgid=$(json_field "$record" pgid)
+}
+
+assert_closed_fence_refusal() { # name, second line, command...
+  local name=$1 second=$2 output=$tmp/$1.out rc
+  shift 2
+  set +e
+  "$@" >"$output" 2>&1
+  rc=$?
+  set -e
+  (( rc != 0 )) \
+    || { echo "$name created work under the closed fence" >&2; cat "$output" >&2; exit 1; }
+  assert_exact_stdout "$name" "$output" \
+    "the metasystem is stopped for $repo since $fence_changed, by $fence_by_verb pid $fence_by_pid" "$second"
+}
+
+assert_closed_fence_up() { # name, command...
+  local name=$1 output=$tmp/$1.out
+  shift
+  "$@" >"$output" 2>&1 \
+    || { echo "$name did not return the stopped success outcome" >&2; cat "$output" >&2; exit 1; }
+  assert_exact_stdout "$name" "$output" \
+    "component=stopped outcome=standing detail=\"since $fence_changed\"" \
+    "up outcome=stopped remedy=\"metasystem arm --repo $repo\""
+}
+
+acceptance_process_snapshot() { # output, tag prefix
+  local output=$1 tag_prefix=$2 raw=$1.raw
+  LC_ALL=C ps -axo pid=,ppid=,pgid=,command= >"$raw"
+  awk -v scope="$repo" -v tag_prefix="$tag_prefix" \
+    'index($0, scope) || index($0, tag_prefix) { print }' "$raw" \
+    | LC_ALL=C sort >"$output"
+  rm -f "$raw"
+}
+
+assert_acceptance_runner_not_live() { # assertion name
+  local name=$1 recorded_pid recorded_start
+  [[ -f "$acceptance_runner" ]] || return 0
+  recorded_pid=$(json_field "$acceptance_runner" pid 0)
+  recorded_start=$(json_field "$acceptance_runner" pidStartedAt 0)
+  if [[ "$recorded_pid" =~ ^[1-9][0-9]*$ && "$recorded_start" =~ ^[1-9][0-9]*$ ]] \
+    && acceptance_identity_alive "$recorded_pid" "$recorded_start" "$repo"; then
+    echo "$name found live runner $recorded_pid in the runner record" >&2
+    exit 1
+  fi
+}
+
+assert_stop_fence_unchanged() { # assertion name
+  local name=$1 transition=$repo/artifacts/agents/supervision/transition.json
+  [[ "$(json_field "$transition" state)" == closed \
+    && "$(json_field "$transition" phase)" == stopped \
+    && "$(json_field "$transition" generation)" == "$fence_generation" \
+    && "$(json_field "$transition" changedAt)" == "$fence_changed" \
+    && "$(json_field "$transition" by.verb)" == "$fence_by_verb" \
+    && "$(json_field "$transition" by.pid)" == "$fence_by_pid" ]] \
+    || { echo "$name changed the closed stop fence" >&2; cat "$transition" >&2; exit 1; }
+}
+
+if [[ "$fixture_scenario" == stop-everything ]]; then
+  prepare_process_acceptance
+  acceptance_start_job
+  acceptance_start_run
+  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/stop-everything.status"
+  assert_exact_stdout stop-everything-status "$tmp/stop-everything.status" \
+    "checkout $repo" \
+    "job stop-fixture-job running pid $job_pid pgid $job_pgid role $job_role: running" \
+    "run stop-fixture-run running pid $run_pid pgid $run_pgid wrapped: running" \
+    "steward-runner pid $runner_pid started $runner_start: running" \
+    "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: running" \
+    "repo-watcher pid $watcher_pid: running" \
+    "job-reaper pid $reaper_pid: running"
+  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/stop-everything.stop"
+  assert_exact_stdout stop-everything-stop "$tmp/stop-everything.stop" \
+    "checkout $repo" \
+    "job stop-fixture-job running pid $job_pid pgid $job_pgid role $job_role: cancelled (cancel path, TERM)" \
+    "run stop-fixture-run running pid $run_pid pgid $run_pgid wrapped: concluded ended-unknown (TERM)" \
+    "steward-runner pid $runner_pid started $runner_start: stopped (TERM)" \
+    "narrator: stopped with the steward runner" \
+    "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: stopped (TERM, exited reason=shutdown)" \
+    "repo-watcher pid $watcher_pid: already gone (by the owner)" \
+    "job-reaper pid $reaper_pid: already gone (by the owner)" \
+    "stopped $repo; start again: metasystem arm --repo $repo"
+  [[ "$(json_field "$repo/artifacts/agents/jobs/stop-fixture-job.json" status)" == cancelled ]] \
+    || { echo "stop-everything left its fake job non-terminal" >&2; exit 1; }
+  [[ "$(json_field "$repo/artifacts/agents/runs/stop-fixture-run.json" status)" == ended-unknown ]] \
+    || { echo "stop-everything did not conclude its wrapped run ended-unknown" >&2; exit 1; }
+  grep -Fq 'stopped by metasystem stop' "$repo/artifacts/agents/runs/stop-fixture-run.json" \
+    || { echo "stop-everything run record omitted the stop note" >&2; exit 1; }
+  for tuple in "$runner_pid:$runner_start" "$owner_pid:$owner_start" \
+    "$watcher_pid:$watcher_start" "$reaper_pid:$reaper_start"; do
+    IFS=: read -r stopped_pid stopped_start <<<"$tuple"
+    if acceptance_identity_alive "$stopped_pid" "$stopped_start" "$repo"; then
+      echo "stop-everything left process $stopped_pid alive" >&2
+      exit 1
+    fi
+  done
+  [[ ! -e "$repo/artifacts/agents/supervision/lock.d" ]] \
+    || { echo "stop-everything left the supervision owner lock" >&2; exit 1; }
+  registry_file=$fixture_registry_home/.metasystem/armed-checkouts.jsonl
+  grep -F '"event":"exited"' "$registry_file" \
+    | grep -F "\"ownerTag\":\"$owner_tag\"" \
+    | grep -Fq '"reason":"shutdown"' \
+    || { echo "stop-everything did not record the owner's orderly shutdown" >&2; exit 1; }
+  [[ "$(json_field "$repo/artifacts/agents/supervision/transition.json" state)" == closed \
+    && "$(json_field "$repo/artifacts/agents/supervision/transition.json" phase)" == stopped ]] \
+    || { echo "stop-everything did not finish its stop fence" >&2; exit 1; }
+  assert_fixture_supervision_isolation
+  fixture_child_completed=1
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == status-is-live ]]; then
+  prepare_process_acceptance
+  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/status-is-live.before"
+  assert_minimal_running_status "$tmp/status-is-live.before"
+  stop_minimal_acceptance "$tmp/status-is-live.stop"
+
+  # The identity portion of status is exactly the identity portion stop acted
+  # on; only the verdict text differs between the two pages.
+  sed -E 's/: running$//' "$tmp/status-is-live.before" | tail -n +2 >"$tmp/status-is-live.status-identities"
+  sed -E 's/: (stopped|already gone|killed).*//' "$tmp/status-is-live.stop" \
+    | sed -n '/^steward-runner /p;/^supervision-owner /p;/^repo-watcher /p;/^job-reaper /p' \
+    >"$tmp/status-is-live.stop-identities"
+  cmp -s "$tmp/status-is-live.status-identities" "$tmp/status-is-live.stop-identities" \
+    || { echo "status and stop did not name the same live identities" >&2; exit 1; }
+
+  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/status-is-live.after"
+  assert_exact_stdout status-is-live-after "$tmp/status-is-live.after" \
+    "checkout $repo" "nothing is running" \
+    "stopped since $fence_changed by $fence_by_verb pid $fence_by_pid; start again: metasystem arm --repo $repo"
+  find "$repo/artifacts/agents" -type f ! -path '*/supervision/transition.json' -print0 \
+    | LC_ALL=C sort -z | xargs -0 shasum -a 256 >"$tmp/status-is-live.files.before"
+  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/status-is-live.second-stop"
+  assert_exact_stdout status-is-live-second-stop "$tmp/status-is-live.second-stop" \
+    "checkout $repo" "nothing is running" \
+    "stopped $repo; start again: metasystem arm --repo $repo"
+  find "$repo/artifacts/agents" -type f ! -path '*/supervision/transition.json' -print0 \
+    | LC_ALL=C sort -z | xargs -0 shasum -a 256 >"$tmp/status-is-live.files.after"
+  cmp -s "$tmp/status-is-live.files.before" "$tmp/status-is-live.files.after" \
+    || { echo "the second stop changed state outside the fence record" >&2; exit 1; }
+  assert_fixture_supervision_isolation
+  fixture_child_completed=1
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == seat-survives ]]; then
+  prepare_process_acceptance
+  announcement=
+  while IFS= read -r candidate; do
+    [[ "$(json_field "$candidate" pid 0)" == "$acceptance_main_pid" ]] && { announcement=$candidate; break; }
+  done < <(find "$repo/artifacts/agents/mains" -type f -name '*.json' 2>/dev/null | LC_ALL=C sort)
+  [[ -n "$announcement" ]] || { echo "seat-survives found no announcement for its bed main" >&2; exit 1; }
+  cp "$announcement" "$tmp/seat-survives.announcement"
+  stop_minimal_acceptance "$tmp/seat-survives.stop"
+  acceptance_identity_alive "$acceptance_main_pid" "$acceptance_main_start" "$repo" \
+    || { echo "stop ended the bed main identity" >&2; exit 1; }
+  cmp -s "$tmp/seat-survives.announcement" "$announcement" \
+    || { echo "stop changed the bed main announcement" >&2; exit 1; }
+
+  mkdir -p "$repo/plans"
+  printf '%s\n' '- In flight right now: claim the next fixture goal' '- Waiting on the human: nothing blocking' '- Next step: claim the next fixture goal' >"$repo/plans/stream.md"
+  stop_payload=$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}' "$acceptance_main_session" "$repo")
+  printf '%s' "$stop_payload" \
+    | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$acceptance_main_pid \
+      run_fixture_hook "$repo" "$repo/scripts/agents/supervision-hook.sh" fake stop \
+      >"$tmp/seat-survives.hook"
+  [[ "$(json_field "$tmp/seat-survives.hook" decision allow)" == allow ]] \
+    || { echo "the stopped checkout blocked its bed main at turn end" >&2; cat "$tmp/seat-survives.hook" >&2; exit 1; }
+  grep -Fq "Metasystem is stopped for this checkout; start again with metasystem arm --repo $repo." "$tmp/seat-survives.hook" \
+    || { echo "the stopped checkout's hook omitted the stopped outcome" >&2; cat "$tmp/seat-survives.hook" >&2; exit 1; }
+  assert_fixture_supervision_isolation
+  fixture_child_completed=1
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == stop-fence ]]; then
+  prepare_process_acceptance
+  stop_minimal_acceptance "$tmp/stop-fence.stop"
+  fence_generation=$(json_field "$repo/artifacts/agents/supervision/transition.json" generation)
+  acceptance_process_snapshot "$tmp/stop-fence.processes.before" stop-fence-
+
+  assert_closed_fence_refusal stop-fence-steward-arm \
+    "run: metasystem arm --repo $repo" \
+    "$repo/bin/metasystem" steward arm --repo "$repo"
+  assert_closed_fence_refusal stop-fence-steward-restart \
+    "run: metasystem arm --repo $repo" \
+    "$repo/bin/metasystem" steward restart --repo "$repo"
+  assert_closed_fence_refusal stop-fence-steward-run \
+    "at an agent-free terminal, run: metasystem arm --repo $repo" \
+    "$repo/bin/metasystem" steward run --repo "$repo"
+
+  watcher_heartbeat=$tmp/stop-fence-watcher.heartbeat
+  METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture" \
+    METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$identity_fixture" \
+    "$repo/bin/metasystem" supervise component --component watcher \
+      --repo "$repo" --metasystem-root "$repo" --scope "$repo" \
+      --tag stop-fence-watcher --heartbeat "$watcher_heartbeat" \
+      --interval 1 --generation "$owner_generation" \
+      >"$tmp/stop-fence-watcher.out" 2>&1 &
+  fence_watcher_pid=$!
+  fence_watcher_start=$(process_started_at "$fence_watcher_pid")
+  owned_pids+=("$fence_watcher_pid:$fence_watcher_start")
+  wait_until "stop-fence first heartbeat caused by supervise component --component watcher" \
+    test -s "$watcher_heartbeat"
+  first_watcher_heartbeat=$(json_field "$watcher_heartbeat" observedAtEpoch)
+  wait_until "stop-fence next heartbeat caused by supervise component --component watcher" \
+    bash -c '
+      file=$1 first=$2 engine=$3
+      observed=$("$engine" json get --file "$file" --field observedAtEpoch 2>/dev/null || true)
+      [[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
+    ' _ "$watcher_heartbeat" "$first_watcher_heartbeat" "$repo/bin/metasystem"
+  acceptance_identity_alive "$fence_watcher_pid" "$fence_watcher_start" "$repo" \
+    || { echo "the bounded closed-fence watcher exited before its effect was checked" >&2; cat "$tmp/stop-fence-watcher.out" >&2; exit 1; }
+  [[ ! -e "$repo/artifacts/agents/steward/runner.json" ]] \
+    || { echo "the watcher repair launched a steward under the closed fence" >&2; exit 1; }
+  acceptance_process_snapshot "$tmp/stop-fence.processes.during-watcher" stop-fence-
+  awk -v watcher_pid="$fence_watcher_pid" '$1 != watcher_pid { print }' \
+    "$tmp/stop-fence.processes.during-watcher" >"$tmp/stop-fence.processes.during-watcher-without-self"
+  cmp -s "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.during-watcher-without-self" \
+    || { echo "the bounded watcher created a process under the closed fence" >&2; diff -u "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.during-watcher-without-self" >&2 || true; exit 1; }
+  stop_owned_pid "stop-fence watcher" "$fence_watcher_pid" "$fence_watcher_start"
+
+  common_fence_remedy="at an agent-free terminal, run: metasystem arm --repo $repo"
+  assert_closed_fence_refusal stop-fence-run-launch "$common_fence_remedy" \
+    "$repo/bin/metasystem" run launch --root "$repo" --id stop-fence-launch \
+      --caller-pid "$acceptance_main_pid" -- /bin/true
+  assert_closed_fence_refusal stop-fence-run-register "$common_fence_remedy" \
+    "$repo/bin/metasystem" run register --root "$repo" --id stop-fence-register \
+      --pid "$acceptance_main_pid" --caller-pid "$acceptance_main_pid"
+  assert_closed_fence_refusal stop-fence-run-adopt "$common_fence_remedy" \
+    "$repo/bin/metasystem" run adopt --root "$repo" --id stop-fence-adopt \
+      --pid "$acceptance_main_pid" --caller-pid "$acceptance_main_pid"
+  assert_closed_fence_refusal stop-fence-proof-run "$common_fence_remedy" \
+    "$repo/bin/metasystem" proof-run launch --suite stop-fence-proof --root "$repo" \
+      --conf "$repo/metasystem.conf" --progress "$tmp/stop-fence-progress.jsonl" \
+      --log "$tmp/stop-fence-proof.log" --banner stop-fence -- /bin/true
+
+  fence_brief=$tmp/stop-fence-brief.md
+  fence_outputs=$tmp/stop-fence-outputs.txt
+  sed 's/^Working Mode:.*/Working Mode: design/' \
+    "$repo/scripts/agents/templates/brief.md" >"$fence_brief"
+  printf '%s\n' 'scripts/agents/adapters/fake.sh' >"$fence_outputs"
+  [[ "$(json_field "$repo/artifacts/agents/supervision/last-census.json" verdict)" == CENSUS-FAILED ]] \
+    || { echo "stop-fence requires a failed census to prove the stopped refusal takes precedence" >&2; exit 1; }
+  set +e
+  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate \
+    --role design-critic --outputs "$fence_outputs" \
+    --design scripts/agents/roles/design-critic.md --brief "$fence_brief" \
+    --op stop-fence-job --goal none-explicit --destructive-reach MECHANICAL \
+    >"$tmp/stop-fence-delegate.out" 2>&1
+  fence_delegate_rc=$?
+  set -e
+  (( fence_delegate_rc != 0 )) \
+    || { echo "delegate launched a job under the closed fence" >&2; cat "$tmp/stop-fence-delegate.out" >&2; exit 1; }
+  [[ "$(json_field "$tmp/stop-fence-delegate.out" outcome)" == REFUSED-STOPPED ]] \
+    || { echo "delegate did not return REFUSED-STOPPED" >&2; cat "$tmp/stop-fence-delegate.out" >&2; exit 1; }
+  expected_delegate_detail=$(printf '%s\n%s' \
+    "the metasystem is stopped for $repo since $fence_changed, by $fence_by_verb pid $fence_by_pid" "$common_fence_remedy")
+  [[ "$(json_field "$tmp/stop-fence-delegate.out" detail)" == "$expected_delegate_detail" ]] \
+    || { echo "delegate's stopped refusal did not carry the two required lines" >&2; cat "$tmp/stop-fence-delegate.out" >&2; exit 1; }
+
+  fence_followup_job=stop-fence-followup
+  fence_followup_brief=$tmp/stop-fence-followup.md
+  printf '%s\n' '# stopped follow-up fixture' >"$fence_followup_brief"
+  mkdir -p "$repo/artifacts/agents/jobs"
+  printf '{"jobId":"%s","round":1,"status":"completed"}\n' "$fence_followup_job" \
+    >"$repo/artifacts/agents/jobs/$fence_followup_job.json"
+  set +e
+  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate \
+    --follow-up "$fence_followup_job" --brief "$fence_followup_brief" \
+    >"$tmp/stop-fence-followup.out" 2>&1
+  fence_followup_rc=$?
+  set -e
+  (( fence_followup_rc != 0 )) \
+    || { echo "follow-up launched under the closed fence" >&2; cat "$tmp/stop-fence-followup.out" >&2; exit 1; }
+  [[ "$(json_field "$tmp/stop-fence-followup.out" outcome)" == REFUSED-STOPPED ]] \
+    || { echo "follow-up did not return REFUSED-STOPPED" >&2; cat "$tmp/stop-fence-followup.out" >&2; exit 1; }
+  [[ "$(json_field "$tmp/stop-fence-followup.out" detail)" == "$expected_delegate_detail" ]] \
+    || { echo "follow-up's stopped refusal did not carry the two required lines" >&2; cat "$tmp/stop-fence-followup.out" >&2; exit 1; }
+  [[ ! -e "$repo/artifacts/agents/jobs/$fence_followup_job-r2.json" ]] \
+    || { echo "follow-up published a child record under the closed fence" >&2; exit 1; }
+
+  stop_fence_agent=$tmp/metasystem-fake-agent
+  cat >"$stop_fence_agent" <<'FAKE_AGENT'
+#!/usr/bin/env bash
+set -euo pipefail
+METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ "$@"
+FAKE_AGENT
+  chmod +x "$stop_fence_agent"
+  assert_closed_fence_refusal stop-fence-mission-start \
+    "at an agent-free terminal, run: metasystem mission start --root $repo --mission <id>" \
+    "$stop_fence_agent" "$repo/bin/metasystem" mission start \
+      --root "$repo" --mission stop-fence-mission
+  assert_closed_fence_refusal stop-fence-mission-run-loop "$common_fence_remedy" \
+    "$repo/bin/metasystem" mission run-loop --root "$repo" --mission stop-fence-loop \
+      --mode start --instance-tag stop-fence-loop --start-signal "$tmp/stop-fence-loop.signal" \
+      --fence-generation "$fence_generation"
+
+  assert_closed_fence_up stop-fence-up \
+    "$repo/bin/metasystem" up --metasystem-root "$repo" --repo "$repo"
+  assert_closed_fence_up stop-fence-recovery \
+    "$repo/bin/metasystem" up --metasystem-root "$repo" --repo "$repo" --recover-only --if-down
+
+  mkdir -p "$repo/plans"
+  printf '%s\n' '- In flight right now: keep the stopped fixture closed' \
+    '- Waiting on the human: nothing blocking' \
+    '- Next step: keep the stopped fixture closed' >"$repo/plans/stream.md"
+  stop_payload=$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}' \
+    "$acceptance_main_session" "$repo")
+  printf '%s' "$stop_payload" \
+    | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$acceptance_main_pid \
+      run_fixture_hook "$repo" "$repo/scripts/agents/supervision-hook.sh" fake stop \
+      >"$tmp/stop-fence.hook"
+  [[ "$(json_field "$tmp/stop-fence.hook" decision allow)" == allow ]] \
+    || { echo "the closed-fence stop hook did not return allow" >&2; cat "$tmp/stop-fence.hook" >&2; exit 1; }
+  grep -Fq "Metasystem is stopped for this checkout; start again with metasystem arm --repo $repo." "$tmp/stop-fence.hook" \
+    || { echo "the closed-fence stop hook omitted the stopped outcome" >&2; cat "$tmp/stop-fence.hook" >&2; exit 1; }
+
+  transition=$repo/artifacts/agents/supervision/transition.json
+  cp "$transition" "$tmp/stop-fence.completed-transition.json"
+  awk '
+    /"phase": "stopped"/ { sub(/"stopped"/, "\"stop-incomplete\"") }
+    /"notStopped": \[\]/ {
+      print "  \"notStopped\": ["
+      print "    {"
+      print "      \"component\": \"job\","
+      print "      \"id\": \"stop-fence-unresolved\","
+      print "      \"reason\": \"fixture unresolved\""
+      print "    }"
+      print "  ]"
+      next
+    }
+    { print }
+  ' "$tmp/stop-fence.completed-transition.json" >"$transition"
+  printf '%s' "$stop_payload" \
+    | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$acceptance_main_pid \
+      run_fixture_hook "$repo" "$repo/scripts/agents/supervision-hook.sh" fake stop \
+      >"$tmp/stop-fence-incomplete.hook"
+  grep -Fq "Metasystem stop incomplete for $repo since $fence_changed by $fence_by_verb pid $fence_by_pid; 1 unresolved entries from the last stop; run: metasystem stop --repo $repo." "$tmp/stop-fence-incomplete.hook" \
+    || { echo "the closed-fence stop hook hid the incomplete phase or its stop remedy" >&2; cat "$tmp/stop-fence-incomplete.hook" >&2; exit 1; }
+
+  sed 's/"phase": "stopped"/"phase": "stopping"/' \
+    "$tmp/stop-fence.completed-transition.json" >"$transition"
+  printf '%s' "$stop_payload" \
+    | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$acceptance_main_pid \
+      run_fixture_hook "$repo" "$repo/scripts/agents/supervision-hook.sh" fake stop \
+      >"$tmp/stop-fence-unfinished.hook"
+  grep -Fq "Metasystem stop unfinished for $repo since $fence_changed by $fence_by_verb pid $fence_by_pid; run: metasystem stop --repo $repo." "$tmp/stop-fence-unfinished.hook" \
+    || { echo "the closed-fence stop hook hid the unfinished phase or its stop remedy" >&2; cat "$tmp/stop-fence-unfinished.hook" >&2; exit 1; }
+  cp "$tmp/stop-fence.completed-transition.json" "$transition"
+
+  for path in \
+    "$repo/artifacts/agents/steward/runner.json" \
+    "$repo/artifacts/agents/supervision/lock.d" \
+    "$repo/artifacts/agents/jobs/stop-fence-job.json" \
+    "$repo/artifacts/agents/jobs/stop-fence-followup-r2.json" \
+    "$repo/artifacts/agents/runs/stop-fence-launch.json" \
+    "$repo/artifacts/agents/runs/stop-fence-register.json" \
+    "$repo/artifacts/agents/runs/stop-fence-adopt.json" \
+    "$repo/artifacts/agents/proof-runs/stop-fence-proof.json" \
+    "$repo/artifacts/agents/missions/stop-fence-mission" \
+    "$repo/artifacts/agents/missions/stop-fence-loop"; do
+    [[ ! -e "$path" ]] || { echo "closed-fence creator left $path" >&2; exit 1; }
+  done
+  if find "$repo/artifacts/agents/supervision/creating" -type f -name '*.json' -print -quit 2>/dev/null | grep -q .; then
+    echo "a closed-fence creator left a creation claim" >&2
+    exit 1
+  fi
+  assert_acceptance_runner_not_live stop-fence
+  assert_stop_fence_unchanged stop-fence
+  acceptance_process_snapshot "$tmp/stop-fence.processes.after" stop-fence-
+  cmp -s "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.after" \
+    || { echo "a process remained after the closed-fence creation attempts" >&2; diff -u "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.after" >&2 || true; exit 1; }
+  acceptance_identity_alive "$acceptance_main_pid" "$acceptance_main_start" "$repo" \
+    || { echo "stop-fence ended the bed main identity" >&2; exit 1; }
+  assert_fixture_supervision_isolation
+  fixture_child_completed=1
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == arm-again ]]; then
+  prepare_process_acceptance
+  stop_minimal_acceptance "$tmp/arm-again.stop"
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-again.arm"
+  new_fence_generation=$(json_field "$repo/artifacts/agents/supervision/transition.json" generation)
+  [[ "$(json_field "$repo/artifacts/agents/supervision/transition.json" state)" == open \
+    && "$(json_field "$repo/artifacts/agents/supervision/transition.json" phase)" == armed ]] \
+    || { echo "arm did not publish an open armed fence" >&2; exit 1; }
+  [[ "$(tail -n 1 "$tmp/arm-again.arm")" == "armed $repo generation $new_fence_generation" ]] \
+    || { echo "arm did not finish with its exact generation line" >&2; cat "$tmp/arm-again.arm" >&2; exit 1; }
+  new_runner_pid=$(json_field "$acceptance_runner" pid)
+  new_runner_start=$(json_field "$acceptance_runner" pidStartedAt)
+  new_owner_pid=$(json_field "$acceptance_owner" pid)
+  new_owner_start=$(json_field "$acceptance_owner" pidStartedAt)
+  new_watcher_pid=$(json_field "$acceptance_state" components.watcher.pid)
+  new_watcher_start=$(json_field "$acceptance_state" components.watcher.pidStartedAt)
+  new_reaper_pid=$(json_field "$acceptance_state" components.reaper.pid)
+  new_reaper_start=$(json_field "$acceptance_state" components.reaper.pidStartedAt)
+  [[ "$(json_field "$acceptance_state" generation)" -gt "$owner_generation" ]] \
+    || { echo "arm did not start supervision at a new generation" >&2; exit 1; }
+  for tuple in "$new_runner_pid:$new_runner_start" "$new_owner_pid:$new_owner_start" \
+    "$new_watcher_pid:$new_watcher_start" "$new_reaper_pid:$new_reaper_start"; do
+    IFS=: read -r live_pid live_start <<<"$tuple"
+    acceptance_identity_alive "$live_pid" "$live_start" "$repo" \
+      || { echo "arm left process $live_pid absent" >&2; exit 1; }
+  done
+  touch "$acceptance_main_join_request"
+  wait_until "arm-again writer join caused by the surviving bed main running up" \
+    test -s "$acceptance_main_join_status"
+  [[ "$(cat "$acceptance_main_join_status")" == 0 ]] \
+    || { echo "the surviving bed main could not join the re-armed set" >&2; cat "$acceptance_main_join_output" >&2; exit 1; }
+  grep -Fq "component=supervision-owner outcome=verified detail=\"pid=$new_owner_pid generation=$new_fence_generation\"" "$acceptance_main_join_output" \
+    && grep -Fq "component=repo-watcher outcome=verified detail=\"generation=$new_fence_generation\"" "$acceptance_main_join_output" \
+    && grep -Fq "component=job-reaper outcome=verified detail=\"generation=$new_fence_generation\"" "$acceptance_main_join_output" \
+    && [[ "$(tail -n 1 "$acceptance_main_join_output")" == 'up outcome=armed authority=writer' ]] \
+    || { echo "the surviving bed main did not verify the re-armed set as its writer" >&2; cat "$acceptance_main_join_output" >&2; exit 1; }
+  assert_fixture_supervision_isolation
+  fixture_child_completed=1
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
+  prepare_process_acceptance
+  stop_minimal_acceptance "$tmp/arm-refuses-survivor.stop"
+  "$repo/bin/metasystem" util hold --tag arm-refuses-survivor-held & survivor_pid=$!
+  survivor_start=$(process_started_at "$survivor_pid")
+  owned_pids+=("$survivor_pid:$survivor_start")
+  transition=$repo/artifacts/agents/supervision/transition.json
+  fence_generation=$(json_field "$transition" generation)
+  stop_actor_start=$(json_field "$transition" by.pidStartedAt 0)
+  printf '{"schemaVersion":1,"state":"closed","phase":"stop-incomplete","generation":%s,"changedAt":"%s","by":{"verb":"stop","pid":%s,"pidStartedAt":%s},"checkout":"%s","notStopped":[{"component":"run","pid":%s,"pidStartedAt":%s,"reason":"survived orderly stop"}]}\n' \
+    "$fence_generation" "$fence_changed" "$fence_by_pid" "$stop_actor_start" "$repo" \
+    "$survivor_pid" "$survivor_start" >"$transition"
+
+  set +e
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.arm-refusal" 2>&1
+  survivor_arm_rc=$?
+  set -e
+  (( survivor_arm_rc == 1 )) \
+    || { echo "arm admitted a survivor of the last stop" >&2; cat "$tmp/arm-refuses-survivor.arm-refusal" >&2; exit 1; }
+  assert_exact_stdout arm-refuses-survivor-refusal "$tmp/arm-refuses-survivor.arm-refusal" \
+    "metasystem arm: run pid $survivor_pid started $survivor_start survived the last stop." \
+    "run: metasystem stop --repo $repo; if it survives a second stop, end pid $survivor_pid yourself; it is listed with its start time"
+  [[ "$(json_field "$transition" state)" == closed \
+    && "$(json_field "$transition" phase)" == stop-incomplete ]] \
+    || { echo "refused arm changed the incomplete fence" >&2; cat "$transition" >&2; exit 1; }
+  acceptance_identity_alive "$survivor_pid" "$survivor_start" "$repo" \
+    || { echo "refused arm ended the listed survivor" >&2; exit 1; }
+
+  stop_owned_pid "arm-refuses-survivor held process" "$survivor_pid" "$survivor_start"
+
+  remote_job=arm-refuses-remote
+  remote_machine=fixture-remote
+  remote_record=$repo/artifacts/agents/jobs/$remote_job.json
+  mkdir -p "$(dirname "$remote_record")"
+  printf '{"schemaVersion":1,"state":"closed","phase":"stop-incomplete","generation":%s,"changedAt":"%s","by":{"verb":"stop","pid":%s,"pidStartedAt":%s},"checkout":"%s","notStopped":[{"component":"job","id":"%s","machineId":"%s","reason":"remote terminal state remains unproven"}]}\n' \
+    "$fence_generation" "$fence_changed" "$fence_by_pid" "$stop_actor_start" "$repo" \
+    "$remote_job" "$remote_machine" >"$transition"
+
+  set +e
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-arm" 2>&1
+  missing_arm_rc=$?
+  set -e
+  (( missing_arm_rc == 1 )) \
+    && grep -Fq "job $remote_job on machine $remote_machine" "$tmp/arm-refuses-survivor.remote-missing-arm" \
+    && grep -Fq "record $remote_record is missing" "$tmp/arm-refuses-survivor.remote-missing-arm" \
+    && grep -Fq "restore that job's record from $remote_machine" "$tmp/arm-refuses-survivor.remote-missing-arm" \
+    && [[ "$(tail -n 1 "$tmp/arm-refuses-survivor.remote-missing-arm")" == "run: metasystem stop --repo $repo" ]] \
+    || { echo "arm's missing-remote refusal was not actionable" >&2; cat "$tmp/arm-refuses-survivor.remote-missing-arm" >&2; exit 1; }
+
+  set +e
+  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-stop" 2>&1
+  missing_stop_rc=$?
+  set -e
+  retained_remote=$(json_array_items "$transition" notStopped)
+  (( missing_stop_rc == 1 )) \
+    && [[ "$(grep -c '^NOT STOPPED ' "$tmp/arm-refuses-survivor.remote-missing-stop")" == 1 ]] \
+    && grep -Fq "record $remote_record is missing" "$tmp/arm-refuses-survivor.remote-missing-stop" \
+    && [[ "$(json_field "$transition" phase)" == stop-incomplete ]] \
+    && [[ "$(printf '%s\n' "$retained_remote" | grep -c .)" == 1 ]] \
+    && [[ "$("$ms" json get --value "$retained_remote" --field id)" == "$remote_job" ]] \
+    && [[ "$("$ms" json get --value "$retained_remote" --field machineId)" == "$remote_machine" ]] \
+    || { echo "stop did not retain one missing remote obligation" >&2; cat "$tmp/arm-refuses-survivor.remote-missing-stop" >&2; cat "$transition" >&2; exit 1; }
+
+  set +e
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-arm-again" 2>&1
+  repeated_missing_rc=$?
+  set -e
+  (( repeated_missing_rc == 1 )) \
+    && grep -Fq "record $remote_record is missing" "$tmp/arm-refuses-survivor.remote-missing-arm-again" \
+    && [[ "$(tail -n 1 "$tmp/arm-refuses-survivor.remote-missing-arm-again")" == "run: metasystem stop --repo $repo" ]] \
+    || { echo "a repeated arm discarded missing remote evidence" >&2; cat "$tmp/arm-refuses-survivor.remote-missing-arm-again" >&2; exit 1; }
+
+  printf '{\n' >"$remote_record"
+  cp "$transition" "$tmp/arm-refuses-survivor.classifier-transition.before"
+  cp "$remote_record" "$tmp/arm-refuses-survivor.classifier-job.before"
+  set +e
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-arm" 2>&1
+  unreadable_arm_rc=$?
+  set -e
+  (( unreadable_arm_rc == 1 )) \
+    || { echo "arm admitted a corrupt classifier input" >&2; cat "$tmp/arm-refuses-survivor.remote-unreadable-arm" >&2; exit 1; }
+  assert_exact_stdout arm-refuses-survivor-unreadable-classifier-arm "$tmp/arm-refuses-survivor.remote-unreadable-arm" \
+    "metasystem arm: caller classification is blocked by job record $remote_record: invalid JSON: unexpected end of JSON input." \
+    "repair $remote_record, then at an agent-free terminal, run: metasystem arm --repo $repo"
+  cmp -s "$transition" "$tmp/arm-refuses-survivor.classifier-transition.before" \
+    && cmp -s "$remote_record" "$tmp/arm-refuses-survivor.classifier-job.before" \
+    || { echo "arm's classifier refusal changed durable records" >&2; exit 1; }
+
+  set +e
+  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-stop" 2>&1
+  unreadable_stop_rc=$?
+  set -e
+  (( unreadable_stop_rc == 1 )) \
+    || { echo "stop admitted a corrupt classifier input" >&2; cat "$tmp/arm-refuses-survivor.remote-unreadable-stop" >&2; exit 1; }
+  assert_exact_stdout arm-refuses-survivor-unreadable-classifier-stop "$tmp/arm-refuses-survivor.remote-unreadable-stop" \
+    "metasystem stop: caller classification is blocked by job record $remote_record: invalid JSON: unexpected end of JSON input." \
+    "repair $remote_record, then at an agent-free terminal, run: metasystem stop --repo $repo"
+  cmp -s "$transition" "$tmp/arm-refuses-survivor.classifier-transition.before" \
+    && cmp -s "$remote_record" "$tmp/arm-refuses-survivor.classifier-job.before" \
+    || { echo "stop's classifier refusal changed durable records" >&2; exit 1; }
+
+  set +e
+  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-status" 2>&1
+  unreadable_status_rc=$?
+  set -e
+  (( unreadable_status_rc == 1 )) \
+    && grep -Fq "inventory unreadable: job $remote_record: cannot read the job record: unexpected EOF" "$tmp/arm-refuses-survivor.remote-unreadable-status" \
+    && [[ "$(tail -n 1 "$tmp/arm-refuses-survivor.remote-unreadable-status")" == "status incomplete for $repo; 1 read failures, listed above; repair the named read failures, then run: metasystem status --repo $repo" ]] \
+    && ! grep -Fq 'agent-free terminal' "$tmp/arm-refuses-survivor.remote-unreadable-status" \
+    || { echo "status did not report the corrupt job independently of caller classification" >&2; cat "$tmp/arm-refuses-survivor.remote-unreadable-status" >&2; exit 1; }
+  cmp -s "$transition" "$tmp/arm-refuses-survivor.classifier-transition.before" \
+    && cmp -s "$remote_record" "$tmp/arm-refuses-survivor.classifier-job.before" \
+    || { echo "status changed records while reporting a corrupt job" >&2; exit 1; }
+
+  printf '{"machineId":"%s","status":"running"}\n' "$remote_machine" >"$remote_record"
+  set +e
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unidentified-arm" 2>&1
+  unidentified_arm_rc=$?
+  set -e
+  (( unidentified_arm_rc == 1 )) \
+    || { echo "arm admitted an unidentifiable classifier input" >&2; cat "$tmp/arm-refuses-survivor.remote-unidentified-arm" >&2; exit 1; }
+  assert_exact_stdout arm-refuses-survivor-unidentified-classifier-arm "$tmp/arm-refuses-survivor.remote-unidentified-arm" \
+    "metasystem arm: caller classification is blocked by job record $remote_record: jobId is missing." \
+    "repair $remote_record, then at an agent-free terminal, run: metasystem arm --repo $repo"
+  ! grep -Fq "$remote_machine" "$tmp/arm-refuses-survivor.remote-unidentified-arm" \
+    || { echo "arm guessed an identity from an unidentifiable classifier input" >&2; cat "$tmp/arm-refuses-survivor.remote-unidentified-arm" >&2; exit 1; }
+
+  printf '{"jobId":"%s","machineId":"%s","status":"running"}\n' "$remote_job" "$remote_machine" >"$remote_record"
+  set +e
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-readable-open-arm" 2>&1
+  readable_open_arm_rc=$?
+  set -e
+  (( readable_open_arm_rc == 1 )) \
+    && grep -Fq "metasystem arm: job $remote_job is owned by machine $remote_machine and is not terminal." "$tmp/arm-refuses-survivor.remote-readable-open-arm" \
+    && [[ "$(tail -n 1 "$tmp/arm-refuses-survivor.remote-readable-open-arm")" == "cancel it from $remote_machine with metasystem delegate --cancel $remote_job; then run: metasystem arm --repo $repo" ]] \
+    || { echo "repairing classification with a non-terminal record bypassed the survivor refusal" >&2; cat "$tmp/arm-refuses-survivor.remote-readable-open-arm" >&2; exit 1; }
+
+  printf '{"jobId":"%s","machineId":"%s","status":"completed"}\n' "$remote_job" "$remote_machine" >"$remote_record"
+  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-recovered-stop" 2>&1 \
+    || { echo "stop did not accept restored matching terminal evidence" >&2; cat "$tmp/arm-refuses-survivor.remote-recovered-stop" >&2; exit 1; }
+  [[ "$(json_field "$transition" phase)" == stopped \
+    && "$(json_field "$transition" notStopped)" == '[]' ]] \
+    || { echo "restored terminal evidence did not clear the remote obligation" >&2; cat "$transition" >&2; exit 1; }
+
+  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.arm"
+  new_fence_generation=$(json_field "$transition" generation)
+  [[ "$(json_field "$transition" state)" == open \
+    && "$(json_field "$transition" phase)" == armed \
+    && "$(tail -n 1 "$tmp/arm-refuses-survivor.arm")" == "armed $repo generation $new_fence_generation" ]] \
+    || { echo "arm did not recover after the listed survivor ended" >&2; cat "$tmp/arm-refuses-survivor.arm" >&2; cat "$transition" >&2; exit 1; }
+  assert_fixture_supervision_isolation
+  fixture_child_completed=1
+  exit 0
 fi
 
 if [[ "$fixture_scenario" == rearm-rebuild ]]; then

@@ -376,7 +376,7 @@ func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {
 	}
 	rearmGit(t, root, "init", "-q", "-b", "trunk")
 	rearmGit(t, root, "config", "metasystem.steward.notify-command", "true")
-	_, armErr := arm(root, "/bin/true", false, false,
+	_, armErr := arm(root, "/bin/true", false, false, false,
 		func(_ InstallIdentity, priorErr error, _ enrolledBytes) (mintPlan, error) {
 			return mintPlan{}, priorErr
 		})

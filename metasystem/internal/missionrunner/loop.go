@@ -13,11 +13,13 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 // The detached run loop: the process that holds the mission lease, records
@@ -30,6 +32,56 @@ import (
 // runner's recorded identity, then hands off to the loop; the exit code is
 // the process exit code.
 func (e *Engine) RunLoop(mode, tag, startSignal string) int {
+	record, err := e.readFence()
+	if err != nil {
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		return exitFor(err)
+	}
+	return e.RunLoopAtGeneration(mode, tag, startSignal, record.Generation, false)
+}
+
+// RunLoopAtGeneration starts the loop under the launcher's open fence
+// generation. The fixture-only ignore switch exists solely to exercise the
+// stop caller's escalation path.
+func (e *Engine) RunLoopAtGeneration(mode, tag, startSignal string, generation int64, ignoreSignals bool) int {
+	if ignoreSignals && !fixtureauth.FixtureModeRoot(e.Root) {
+		err := failf(3, "mission run-loop --ignore-term is fixture-only")
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
+		return exitFor(err)
+	}
+	fence, err := e.readFence()
+	if err != nil {
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
+		return exitFor(err)
+	}
+	if fence.State == stopfence.StateClosed {
+		err := fenceRefusal(e.Root, fence)
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
+		return exitFor(err)
+	}
+	if fence.Generation != generation {
+		err := rearmedCreationError(e.Root, "the mission runner")
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
+		return exitFor(err)
+	}
+	ref, err := currentProcessRef()
+	if err != nil {
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		return exitFor(err)
+	}
+	claim, err := stopfence.Creating(e.Root, "mission-run-loop", generation, ref)
+	if err != nil {
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		return exitFor(err)
+	}
+	defer claim.Close()
+	e.fenceGeneration = generation
+	stopSignals := e.beginSignalHandling(ignoreSignals)
+	defer stopSignals()
 	// The FIRST act of the runner's life: refuse ledger semantics this
 	// binary does not implement — before the runner-started event, the
 	// lease, the runner record, the heartbeat, and every resume healer
@@ -50,10 +102,19 @@ func (e *Engine) RunLoop(mode, tag, startSignal string) int {
 		e.emitter.PidStartedAt = started
 	}
 	e.emit("runner-started", "mode="+mode, map[string]string{"missionId": e.Mission})
-	return e.internalRun(mode, tag, startSignal)
+	return e.internalRunAtGeneration(mode, tag, startSignal, generation, claim)
 }
 
 func (e *Engine) internalRun(mode, tag, startSignal string) int {
+	record, err := e.readFence()
+	if err != nil {
+		return exitFor(err)
+	}
+	e.fenceGeneration = record.Generation
+	return e.internalRunAtGeneration(mode, tag, startSignal, record.Generation, nil)
+}
+
+func (e *Engine) internalRunAtGeneration(mode, tag, startSignal string, generation int64, claim *stopfence.Claim) int {
 	notified := false
 	leaseHeld := false
 	// fail is the one exit ramp for a runner that dies mid-mission: tell the
@@ -74,7 +135,12 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 			// lease winner, and after release another runner may own
 			// it. A loser that never held the lease
 			// never touches the record at all.
-			e.finishRunner("failed", err.Error())
+			status, detail := "failed", any(err.Error())
+			var stopped *runnerStoppedError
+			if errors.As(err, &stopped) {
+				status, detail = "stopped", nil
+			}
+			e.finishRunner(status, detail)
 			e.releaseLease()
 			leaseHeld = false
 		}
@@ -116,6 +182,24 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 	}
 	if err := atomicWriteJSON(recordPath, e.runnerRecord(pid, pgid, started, tag)); err != nil {
 		return fail(err)
+	}
+	secondFence, err := e.readFence()
+	if err != nil {
+		return fail(err)
+	}
+	if secondFence.State == stopfence.StateClosed || secondFence.Generation != generation {
+		if claim != nil {
+			_ = claim.Close()
+		}
+		if secondFence.State == stopfence.StateOpen {
+			return fail(rearmedCreationError(e.Root, "the mission runner"))
+		}
+		return fail(&runnerStoppedError{})
+	}
+	if claim != nil {
+		if err := claim.Close(); err != nil {
+			return fail(err)
+		}
 	}
 	if err := e.heartbeat(nil); err != nil {
 		return fail(err)
@@ -168,18 +252,19 @@ func (e *Engine) runnerRecord(pid, pgid int, started int64, tag string) map[stri
 		startTicks, bootID = exact.StartTicks, exact.BootID
 	}
 	return map[string]any{
-		"missionId":     e.Mission,
-		"status":        "running",
-		"error":         nil,
-		"workspaceRoot": e.Root,
-		"pid":           pid,
-		"pidStartedAt":  started,
-		"pidStartTicks": startTicks,
-		"bootId":        bootID,
-		"pgid":          pgid,
-		"instanceTag":   tag,
-		"startedAt":     nowISO(),
-		"endedAt":       nil,
+		"missionId":       e.Mission,
+		"status":          "running",
+		"error":           nil,
+		"workspaceRoot":   e.Root,
+		"pid":             pid,
+		"pidStartedAt":    started,
+		"pidStartTicks":   startTicks,
+		"bootId":          bootID,
+		"pgid":            pgid,
+		"instanceTag":     tag,
+		"startedAt":       nowISO(),
+		"endedAt":         nil,
+		"fenceGeneration": e.fenceGeneration,
 	}
 }
 
@@ -217,6 +302,9 @@ func (e *Engine) finishRunner(status string, errMsg any) {
 // heartbeat republishes the runner's liveness, carrying the turn it is
 // driving when one is in flight.
 func (e *Engine) heartbeat(turnID any) error {
+	if err := e.checkStopNotification(turnID); err != nil {
+		return err
+	}
 	recordPath, heartbeatPath, _ := e.runnerPaths()
 	record, err := readDocLabeled(recordPath, "mission runner record", 3)
 	if err != nil {

@@ -13,6 +13,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
+const (
+	defaultComponentStopCeiling    = 5 * time.Second
+	componentPostKillProofInterval = 500 * time.Millisecond
+	registryAppendLockWait         = 30 * time.Second
+)
+
 // ProcComponents implements Components against real processes: each
 // component is launched detached in its own session (setsid, so it
 // survives the owner's shell exactly as the shell system's
@@ -194,7 +200,8 @@ func (p *ProcComponents) Stop(held Held) (proven bool) {
 	p.signalGroup(held.Identity.Pid, syscall.SIGKILL)
 	// Give the kill a moment to land, reaping the zombie so death is
 	// provable; only a definitive absence is proven.
-	for i := 0; i < 25; i++ {
+	deadline = p.now().Add(componentPostKillProofInterval)
+	for p.now().Before(deadline) {
 		p.reap(held.Identity.Pid)
 		if identity.AliveRef(p.Prober, held.Identity) == identity.Dead {
 			return true

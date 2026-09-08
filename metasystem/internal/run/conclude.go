@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -58,6 +59,25 @@ func (s *Store) readSidecar(record *Record) (*Sidecar, error) {
 		return nil, nil
 	}
 	return &sidecar, nil
+}
+
+// HasMatchingSidecar reports whether the wrapper has published atomic exit
+// evidence for the current run generation. It does not assess or mutate the
+// run: callers that owe an evidence-arrival grace period can wait without a
+// dead, empty process group being concluded as ended-unknown too early.
+func (s *Store) HasMatchingSidecar(id string) (bool, error) {
+	record, err := s.Read(id)
+	if err != nil {
+		return false, err
+	}
+	if record == nil {
+		return false, fmt.Errorf("no run record %s", id)
+	}
+	sidecar, err := s.readSidecar(record)
+	if err != nil {
+		return false, err
+	}
+	return sidecar != nil, nil
 }
 
 // AssessResult reports what one pass over one record observed.
@@ -401,43 +421,28 @@ func (s *Store) SweepStale(epoch int64,
 			if record.Status != StatusRunning && record.Status != StatusDraining {
 				continue
 			}
-			if record.Custody != CustodyWrapped {
-				return fmt.Errorf("run sweep refused: stale run %s has custody %s — never signaled, only surfaced", record.RunId, record.Custody)
+			outcome := s.stopHeld(record, "swept at takeover: forced conclusion", stopMechanism{
+				proof: proof,
+				signal: func(pgid int64, _ syscall.Signal) error {
+					return kill(pgid)
+				},
+				escalate:        false,
+				proofBeforeGone: true,
+			})
+			if outcome.err != nil {
+				return fmt.Errorf("run sweep cannot stop stale run %s: %v", record.RunId, outcome.err)
 			}
-			if record.Pgid == nil {
-				return fmt.Errorf("run sweep refused: stale run %s has no bound group", record.RunId)
-			}
-			owned, provable := proof(*record.Pgid, record.LaunchNonce)
-			if !provable {
+			if outcome.Result == StopResultNotStopped {
+				if record.Custody != CustodyWrapped {
+					return fmt.Errorf("run sweep refused: stale run %s has custody %s — never signaled, only surfaced", record.RunId, record.Custody)
+				}
+				if outcome.Reason == "group ownership is disproven" {
+					return fmt.Errorf("run sweep refused: stale run %s group ownership disproven; surfacing", record.RunId)
+				}
 				if unprovableRun == "" {
 					unprovableRun = record.RunId
 				}
 				continue
-			}
-			if !owned {
-				return fmt.Errorf("run sweep refused: stale run %s group ownership disproven; surfacing", record.RunId)
-			}
-			if err := kill(*record.Pgid); err != nil {
-				return fmt.Errorf("run sweep cannot stop stale run %s: %v", record.RunId, err)
-			}
-			// Bounded drain: give the TERM five seconds to land.
-			deadline := time.Now().Add(5 * time.Second)
-			for time.Now().Before(deadline) && !s.groupEmpty(*record.Pgid) {
-				time.Sleep(100 * time.Millisecond)
-			}
-			var result AssessResult
-			if err := s.assessHeld(record.RunId, &result); err != nil {
-				return err
-			}
-			fresh, err := s.Read(record.RunId)
-			if err != nil {
-				return err
-			}
-			if !Terminal(fresh.Status) {
-				note := "swept at takeover: forced conclusion"
-				if err := s.terminalizeWithVerdict(fresh, StatusEndedUnknown, nil, &note, &result); err != nil {
-					return fmt.Errorf("run sweep could not conclude %s: %v", record.RunId, err)
-				}
 			}
 			s.emit("run-swept", map[string]string{"runId": record.RunId, "reason": "stale-claim-epoch"})
 		}

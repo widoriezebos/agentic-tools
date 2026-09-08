@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 // The turn verdict: one verb, one structured decision. The scanner fills ScanResult (the
@@ -235,6 +236,24 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	brainSeat := brainState.State == brain.Declared || brainState.State == brain.Corrupt
 	if !brainSeat {
 		scan = withoutBrainOnlyScanEffects(scan)
+	}
+	if closed, fence, fenceErr := stopfence.Closed(s.Root); fenceErr != nil {
+		return failClosedTurnVerdict(fenceErr), nil
+	} else if closed {
+		description, descriptionErr := stopfence.ClosedDescription(fence, fence.Checkout)
+		command, commandErr := stopfence.ClosedCommand(fence, fence.Checkout)
+		if descriptionErr != nil {
+			return failClosedTurnVerdict(descriptionErr), nil
+		}
+		if commandErr != nil {
+			return failClosedTurnVerdict(commandErr), nil
+		}
+		return Verdict{
+			SchemaVersion: 1,
+			ShouldBlock:   false,
+			LedgerStatus:  "stopped",
+			Display:       description + "; run: " + command,
+		}, nil
 	}
 
 	result, err := s.withLock(func() (Result, error) {

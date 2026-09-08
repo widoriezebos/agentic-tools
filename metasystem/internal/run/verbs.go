@@ -45,6 +45,9 @@ type LaunchParams struct {
 	GoalId                 string
 	ObligationRevision     uint64
 	StandingShared         bool
+	// FenceGeneration binds a command-layer creation claim to the record.
+	// Nil keeps library callers on the ordinary single pre-creation read.
+	FenceGeneration *int64
 }
 
 // Launch writes the PENDING record — before any process exists — and
@@ -52,6 +55,16 @@ type LaunchParams struct {
 // deletes on failure; the fence concludes stale pendings.
 func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) {
 	err = s.withLock(func() error {
+		fence, err := s.readFence()
+		if err != nil {
+			return fmt.Errorf("stop fence cannot be read: %w", err)
+		}
+		if fence.State == "closed" {
+			return stoppedAt(s.Root, fence)
+		}
+		if p.FenceGeneration != nil && fence.Generation != *p.FenceGeneration {
+			return fmt.Errorf("stop fence generation changed from %d to %d before run launch", *p.FenceGeneration, fence.Generation)
+		}
 		if err := s.checkEpoch(caller); err != nil {
 			return err
 		}
@@ -94,7 +107,7 @@ func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) 
 		}
 		record := &Record{
 			SchemaVersion: 1, RunId: p.Id, Kind: p.Kind, Display: p.Display,
-			Custody: CustodyWrapped, Generation: 1, LaunchNonce: minted,
+			Custody: CustodyWrapped, Generation: 1, FenceGeneration: fence.Generation, LaunchNonce: minted,
 			Log: logPath, StartedAt: s.nowISO(),
 			MainId: mainId, OwnerLineage: lineage, ClaimEpoch: epoch,
 			SessionId: caller.SessionId, GoalId: p.GoalId, Governed: governed,
@@ -157,8 +170,17 @@ func (s *Store) Bind(id, nonce string, pid, pgid int64) error {
 // kinship predicate (pgid terms only, both-ways ancestry) upgrades to
 // adopted-verified; anything less is adopted-unverified, honestly
 // labeled and never signaled.
-func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPattern string) error {
-	return s.withLock(func() error {
+func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPattern string) (err error) {
+	creation, err := s.BeginCreation("run-register")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := creation.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+	err = s.withLock(func() error {
 		if err := s.checkEpoch(caller); err != nil {
 			return err
 		}
@@ -218,7 +240,7 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 		}
 		record := &Record{
 			SchemaVersion: 1, RunId: p.Id, Kind: p.Kind, Display: p.Display,
-			Custody: custody, Generation: 1, LaunchNonce: nonce,
+			Custody: custody, Generation: 1, FenceGeneration: creation.Generation, LaunchNonce: nonce,
 			Pid: &pid, PidStartedAt: &started, Pgid: &pgid64,
 			PidStartTicks: exact.StartTicks, BootID: exact.BootID,
 			Log: logPath, StartedAt: s.nowISO(),
@@ -235,6 +257,10 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 		s.emit("run-launched", map[string]string{"runId": p.Id, "kind": p.Kind, "custody": custody})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return s.completeForeignCreation(p.Id, creation.Generation)
 }
 
 // kinship: there exists a live process P with P.pgid equal to the
@@ -275,8 +301,17 @@ func (s *Store) kinship(targetPgid int64) bool {
 // Adopt rebinds identity on a RUNNING record — only when the old
 // generation's leader is provably dead AND its recorded group provably
 // empty. Generation increments; hungSince clears.
-func (s *Store) Adopt(caller Caller, id string, pid int64) error {
-	return s.withLock(func() error {
+func (s *Store) Adopt(caller Caller, id string, pid int64) (err error) {
+	creation, err := s.BeginCreation("run-adopt")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := creation.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+	err = s.withLock(func() error {
 		if err := s.checkEpoch(caller); err != nil {
 			return err
 		}
@@ -322,6 +357,7 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 			r.BootID = exact.BootID
 			r.Pgid = &pgid64
 			r.Generation = from + 1
+			r.FenceGeneration = creation.Generation
 			r.LaunchNonce = nonce
 			r.HungSince = nil
 			// Custody is RECOMPUTED from fresh kinship every adoption —
@@ -345,6 +381,10 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 		}
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	return s.completeForeignCreation(id, creation.Generation)
 }
 
 // Ack acknowledges a terminal record.

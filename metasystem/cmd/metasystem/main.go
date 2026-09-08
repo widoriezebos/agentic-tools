@@ -42,6 +42,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "stopfence",
+			summary: "the checkout-wide process-creation barrier",
+			verbs: []verb{
+				{"creating-close", "close one completed process-creation claim (internal)", runStopFenceCreatingClose},
+			},
+		},
+		{
 			name:    "proof-run",
 			summary: "priced validation runs with structural progress and a sibling watchdog",
 			verbs: []verb{
@@ -144,6 +151,9 @@ func families() []family {
 				{"chain-usage", "aggregate a chain's usage (exit 7 when unchanged)", runDispatchChainUsage},
 				{"custody-add", "append a custody process to a job record under its lock", runDispatchCustodyAdd},
 				{"claim-launch", "reserve a launch operation through the typed claim state machine", runDispatchClaimLaunch},
+				{"fence-before-launch", "read the checkout process-creation fence before dispatch admission", runDispatchFenceBeforeLaunch},
+				{"fence-after-launch", "re-read the checkout process-creation fence after a job launch", runDispatchFenceAfterLaunch},
+				{"fixture-pause-before-launch", "pause a launch only in a fixture-mode root", runDispatchFixturePauseBeforeLaunch},
 				{"launch-capability-consume", "verify and spend one admitted adapter launch capability", runDispatchLaunchCapabilityConsume},
 				{"claim-occupancy-prepare", "prepare session-occupancy evidence off the record lock", runDispatchClaimOccupancyPrepare},
 				{"prefork-mark", "persist the pre-fork custody marker for an imminent launch", runDispatchPreforkMark},
@@ -481,8 +491,8 @@ func families() []family {
 				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
 				{"revive", "one revival end to end: stage, mint, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
-				{"arm", "explicit human enrollment: pin this engine generation and spawn the detached runner", runStewardArm},
-				{"restart", "replace the runner and arm it again after a stalled pass", runStewardRestart},
+				{"arm", "explicit human enrollment and runner start (long form of metasystem arm)", runStewardArm},
+				{"restart", "replace and re-arm the runner (long form of metasystem arm)", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
@@ -614,6 +624,15 @@ func dispatch(args []string) int {
 	if args[0] == "up" {
 		return runUp(args[1:])
 	}
+	if args[0] == "stop" {
+		return runProcessStop(args[1:])
+	}
+	if args[0] == "status" {
+		return runProcessStatus(args[1:])
+	}
+	if args[0] == "arm" {
+		return runProcessArm(args[1:])
+	}
 	if args[0] == "health" {
 		if len(args) > 1 && args[1] == "acknowledge-alert" {
 			return runHealthAcknowledgeAlert(args[2:])
@@ -652,6 +671,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: metasystem <family> <verb> [flags]")
 	fmt.Fprintln(os.Stderr, "       metasystem up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
 	fmt.Fprintln(os.Stderr, "       metasystem up --print-scheduler-entry [--repo <checkout>]")
+	fmt.Fprintln(os.Stderr, "       metasystem stop [--repo <path>] [--installation <dir>] [--all]")
+	fmt.Fprintln(os.Stderr, "       metasystem status [--repo <path>] [--installation <dir>] [--all]")
+	fmt.Fprintln(os.Stderr, "       metasystem arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
 	fmt.Fprintln(os.Stderr, "       metasystem health --repo <checkout>")
 	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
 	fmt.Fprintln(os.Stderr, "       metasystem watch [--root <checkout>] [--json]")

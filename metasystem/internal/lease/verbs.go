@@ -305,7 +305,7 @@ func ClassifyVerbAt(root, metasystemRoot string, callerPid int64) (ClassifyResul
 	}
 	lease, err := loadLease(root, false)
 	if err != nil {
-		return ClassifyResult{}, err
+		return ClassifyResult{}, classificationDataFailure("checkout lease", leasePaths(root).Lease, err)
 	}
 	out := classificationView(identity)
 	out.Holder = identity.Class == ClassMain && (lease == nil || identity.MainId == lease.HolderMainId)
@@ -318,7 +318,7 @@ func ClassifyVerbAt(root, metasystemRoot string, callerPid int64) (ClassifyResul
 		// job its consumed, not-yet-launched authorization names.
 		job, ok, err := steward.ConsumedActiveJob(root)
 		if err != nil {
-			return ClassifyResult{}, err
+			return ClassifyResult{}, classificationDataFailure("steward intent store", filepath.Join(root, "artifacts/agents/steward/intents"), err)
 		}
 		if ok {
 			out.StewardJob = job

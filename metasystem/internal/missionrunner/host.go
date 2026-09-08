@@ -91,9 +91,9 @@ func hostStartVerified(pid, pgid int, command, tag string, forceUnverified bool)
 // We never signal without proof; we also never die over a group that already
 // stopped being ours. Anything genuinely left behind is UNTRACKED to the
 // census, which is the safety net designed to catch it.
-func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
+func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, error) {
 	if !groupAlive(pgid) {
-		return nil
+		return TerminationAlreadyGone, nil
 	}
 	// The GroupOwnershipGrant is issued HERE, on the runner's one signal
 	// path: allowFake gates whether the grant is
@@ -102,7 +102,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 	if allowFake {
 		authorization, authErr := e.fixtures()
 		if authErr != nil {
-			return fmt.Errorf("fixture authorization refused: %w", authErr)
+			return "", fmt.Errorf("fixture authorization refused: %w", authErr)
 		}
 		grant = authorization.GroupOwnership()
 	}
@@ -112,23 +112,23 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		e.emit("wind-down", fmt.Sprintf("group %d unowned; skipped", pgid), map[string]string{
 			"missionId": e.Mission, "action": "skipped-unowned", "reason": "ownership-proof-absent",
 		})
-		return nil
+		return TerminationAlreadyGone, nil
 	}
 	e.emit("wind-down", fmt.Sprintf("group %d", pgid), map[string]string{
 		"missionId": e.Mission, "action": "sigterm",
 	})
-	_ = unix.Kill(-pgid, syscall.SIGTERM)
+	_ = stopSignal(-pgid, syscall.SIGTERM)
 	// Process death is a REAL fact: a compressed test scale must not
 	// shrink the TERM grace below the time a live group actually needs
 	// to exit, or every compressed run abandons half-dead groups into
 	// the next test (timing-tests slice 2's measured wedge).
 	grace, err := ScaledWaitAtLeast(5, 2*time.Second)
 	if err != nil {
-		return err
+		return "", err
 	}
 	pollInterval, err := Interval("METASYSTEM_HEARTBEAT_INTERVAL_MS", 50)
 	if err != nil {
-		return err
+		return "", err
 	}
 	deadline := time.Now().Add(grace)
 	for groupAlive(pgid) && time.Now().Before(deadline) {
@@ -146,12 +146,12 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 			e.emit("wind-down", fmt.Sprintf("group %d recycled; kill skipped", pgid), map[string]string{
 				"missionId": e.Mission, "action": "skipped-recycled",
 			})
-			return nil
+			return TerminationTerm, nil
 		}
-		_ = unix.Kill(-pgid, syscall.SIGKILL)
+		_ = stopSignal(-pgid, syscall.SIGKILL)
 		killFloor, floorErr := ScaledWaitAtLeast(1, time.Second)
 		if floorErr != nil {
-			return floorErr
+			return "", floorErr
 		}
 		killDeadline := time.Now().Add(killFloor)
 		for groupAlive(pgid) && time.Now().Before(killDeadline) {
@@ -165,20 +165,21 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 				e.emit("wind-down", fmt.Sprintf("group %d down to zombies pending reap", pgid), map[string]string{
 					"missionId": e.Mission, "action": "zombie-pending-reap",
 				})
-				return nil
+				return TerminationKill, nil
 			}
 			// Loud, typed evidence — an abandoned group is the leak the
 			// compressed suite bleeds from; it must never exit silently.
 			e.emit("wind-down", fmt.Sprintf("group %d survived SIGKILL", pgid), map[string]string{
 				"missionId": e.Mission, "action": "leaked-group",
 			})
-			return fmt.Errorf("host process group %d survived the kill-through window", pgid)
+			return TerminationKill, fmt.Errorf("host process group %d survived the kill-through window", pgid)
 		}
+		return TerminationKill, nil
 	}
 	e.emit("wind-down", fmt.Sprintf("group %d down", pgid), map[string]string{
 		"missionId": e.Mission, "action": "group-down",
 	})
-	return nil
+	return TerminationTerm, nil
 }
 
 // patchTurn merges fields into a turn record on disk and returns the result.
@@ -245,6 +246,8 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 	if err := e.assembleHostCommand(l); err != nil {
 		return 0, nil, "", err
 	}
+	e.activeHost = l
+	defer func() { e.activeHost = nil }()
 	if code, detail, done, err := e.spawnAndVerifyHost(l); err != nil || done {
 		return code, nil, detail, err
 	}
@@ -388,7 +391,7 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 	}
 	if !verified || !haveStarted {
 		if !process.exited() {
-			if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
+			if _, err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 				return 0, "", false, err
 			}
 		}
@@ -441,7 +444,7 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 			return 0, nil, "", err
 		}
 		if !time.Now().Before(capDeadline) {
-			if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
+			if _, err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 				return 0, nil, "", err
 			}
 			capped = true
@@ -450,7 +453,7 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 		l.process.waitFor(heartbeatInterval)
 	}
 	if !l.process.waitFor(l.grace) {
-		if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
+		if _, err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 			return 0, nil, "", err
 		}
 		if !l.process.waitFor(l.grace) {

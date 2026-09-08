@@ -316,6 +316,7 @@ func TestStartSignalShape(t *testing.T) {
 
 func TestRunnerRecordAndHeartbeatShape(t *testing.T) {
 	engine := NewEngine(t.TempDir(), "m1")
+	engine.fenceGeneration = 7
 	recordPath, heartbeatPath, _ := engine.runnerPaths()
 	if err := atomicWriteJSON(recordPath, engine.runnerRecord(41, 41, 1700000000, "tag-x")); err != nil {
 		t.Fatal(err)
@@ -325,7 +326,7 @@ func TestRunnerRecordAndHeartbeatShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Drivers grep these exact spellings out of the record.
-	for _, want := range []string{`"status": "running"`, `"missionId": "m1"`, `"pidStartedAt": 1700000000`, `"endedAt": null`, `"pidStartTicks"`, `"bootId"`} {
+	for _, want := range []string{`"status": "running"`, `"missionId": "m1"`, `"pidStartedAt": 1700000000`, `"endedAt": null`, `"pidStartTicks"`, `"bootId"`, `"fenceGeneration": 7`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("runner record lost %s:\n%s", want, data)
 		}

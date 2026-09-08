@@ -137,6 +137,9 @@ func TestDiskGenerationReadsFailClosedAndExcludeRetiredComponents(t *testing.T) 
 	if document.StartedAt != fixed.Format(isoSecond) {
 		t.Fatalf("publication ignored its supplied clock: %q", document.StartedAt)
 	}
+	if document.TeardownCeilingSec != 41 {
+		t.Fatalf("published teardown ceiling = %d seconds, want 41 for two held identities", document.TeardownCeilingSec)
+	}
 }
 
 func TestDiskStateOwnershipReportsMissingMalformedAndForeignState(t *testing.T) {

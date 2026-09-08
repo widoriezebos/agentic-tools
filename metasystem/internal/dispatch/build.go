@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -137,6 +138,14 @@ func nullableGoalTier(goalID string, tier uint8) (any, error) {
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
 func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, goalTier uint8, capResolution, machineID, approvedRef string) error {
+	fenceGeneration := int64(0)
+	if repoRoot != "" {
+		fence, err := stopfence.Read(repoRoot)
+		if err != nil {
+			return fmt.Errorf("cannot read the process-creation fence for setup: %w", err)
+		}
+		fenceGeneration = fence.Generation
+	}
 	gateWidth := ""
 	if goalID != "" {
 		gateWidth = "area"
@@ -198,6 +207,7 @@ func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID 
 		"gateWidth":          nullableString(gateWidth),
 		"machineId":          nullableString(machineID),
 		"approvedRef":        nullableString(approvedRef),
+		"fenceGeneration":    fenceGeneration,
 		"sliceApprovalClaim": sliceApprovalClaim(approvalClaim),
 		"capMin":             authority.capMin,
 		"createdAt":          nowISO(),

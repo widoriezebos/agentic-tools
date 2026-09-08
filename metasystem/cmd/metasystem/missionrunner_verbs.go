@@ -261,7 +261,11 @@ func runMissionRunnerLaunch(mode string, args []string) int {
 		missionRunnerUsage()
 		return 2
 	}
-	return missionrunner.NewEngine(root, mission).Launch(mode, foreground)
+	generation, code := missionFenceBeforeArm(root, mode)
+	if code != 0 {
+		return code
+	}
+	return missionrunner.NewEngine(root, mission).LaunchAtGeneration(mode, foreground, generation)
 }
 
 func runMissionRunnerStatus(args []string) int {
@@ -357,14 +361,18 @@ func runMissionRunnerResolveTaint(args []string) int {
 // runMissionRunnerRunLoop is the detached child that start/resume spawn; it
 // is internal and deliberately prints no usage.
 func runMissionRunnerRunLoop(args []string) int {
-	var root, mission, mode, tag, signal string
+	var root, mission, mode, tag, signal, generationText string
+	ignoreTerm := false
 	ok := parseRunnerArgs(args, map[string]*string{
 		"--root": &root, "--mission": &mission, "--mode": &mode,
 		"--instance-tag": &tag, "--start-signal": &signal,
-	}, nil)
+		"--fence-generation": &generationText,
+	}, map[string]*bool{"--ignore-term": &ignoreTerm})
+	generation, generationErr := strconv.ParseInt(generationText, 10, 64)
 	if !ok || root == "" || tag == "" || signal == "" ||
-		!missionIDRe.MatchString(mission) || (mode != "start" && mode != "resume") {
+		generationErr != nil || generation < 0 || !missionIDRe.MatchString(mission) ||
+		(mode != "start" && mode != "resume") {
 		return 2
 	}
-	return missionrunner.NewEngine(root, mission).RunLoop(mode, tag, signal)
+	return missionrunner.NewEngine(root, mission).RunLoopAtGeneration(mode, tag, signal, generation, ignoreTerm)
 }

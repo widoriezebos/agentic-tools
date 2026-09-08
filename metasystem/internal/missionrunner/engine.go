@@ -7,14 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -49,9 +52,10 @@ func exitFor(err error) int {
 // Engine drives one mission's runner lifecycle under one checkout root. Its
 // event stream is the flight-recorder witness: emitting never fails a caller.
 type Engine struct {
-	Root    string
-	Mission string
-	emitter events.Emitter
+	Root         string
+	Installation string
+	Mission      string
+	emitter      events.Emitter
 	// unattendedCheckout is the MISSION-START fact:
 	// true when the checkout lease carried this mission's own lineage as
 	// the loop began — the unattended arming's signature. A live read at
@@ -87,6 +91,45 @@ type Engine struct {
 	// Production binds identity.TaggedSurvivors — the group-death half
 	// of the kill-less reap proof, shared with the standing reaper.
 	survivorsFn func(tag string, exclude, pgid int64) (alive bool, certain bool)
+
+	// fenceGeneration is the open generation under which this runner was
+	// created. It is published with the runner identity so a concurrent stop
+	// can recognize a late arrival.
+	fenceGeneration int64
+	// stopNotifications receives TERM and INT in the run loop. Signals are
+	// checked at heartbeat points so the runner can close its host turn before
+	// releasing the mission lease.
+	stopNotifications chan os.Signal
+	activeHost        *hostLaunch
+	// fenceRead is the creation-handshake seam. Production reads the durable
+	// fence; tests can close it between publication and the second read.
+	fenceRead func(string) (stopfence.Record, error)
+}
+
+func (e *Engine) classifierInstallation() string {
+	if e.Installation != "" {
+		return e.Installation
+	}
+	if executable, err := os.Executable(); err == nil {
+		candidate := filepath.Dir(filepath.Dir(executable))
+		if info, statErr := os.Stat(filepath.Join(candidate, "metasystem.conf")); statErr == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	for _, candidate := range []string{e.Root, filepath.Join(e.Root, "metasystem")} {
+		if info, err := os.Stat(filepath.Join(candidate, "bin", "metasystem")); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	// Unit tests model the self-hosted installation directly at Root.
+	return e.Root
+}
+
+func (e *Engine) readFence() (stopfence.Record, error) {
+	if e.fenceRead != nil {
+		return e.fenceRead(e.Root)
+	}
+	return stopfence.Read(e.Root)
 }
 
 // fixtures is the engine's root-checked fixture authority, constructed on
@@ -124,6 +167,25 @@ func NewEngine(root, mission string) *Engine {
 		Root:    root,
 		Mission: mission,
 		emitter: events.Emitter{Component: "runner", Pid: int64(os.Getpid())},
+	}
+}
+
+func (e *Engine) beginSignalHandling(ignore bool) func() {
+	if ignore {
+		signal.Ignore(syscall.SIGTERM)
+		e.stopNotifications = make(chan os.Signal, 1)
+		signal.Notify(e.stopNotifications, os.Interrupt)
+		return func() {
+			signal.Stop(e.stopNotifications)
+			signal.Reset(syscall.SIGTERM)
+			e.stopNotifications = nil
+		}
+	}
+	e.stopNotifications = make(chan os.Signal, 2)
+	signal.Notify(e.stopNotifications, os.Interrupt, syscall.SIGTERM)
+	return func() {
+		signal.Stop(e.stopNotifications)
+		e.stopNotifications = nil
 	}
 }
 

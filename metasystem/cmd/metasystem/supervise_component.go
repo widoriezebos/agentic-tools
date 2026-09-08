@@ -51,6 +51,8 @@ func runSuperviseComponent(args []string) int {
 	// four-fail-then-reset pattern), which is a different, non-terminal
 	// shape. Fixture-only.
 	crashOnStart := flags.Bool("crash-on-start", false, "exit immediately without beating (fixture-only)")
+	ignoreTerm := flags.Bool("ignore-term", false, "ignore TERM (fixture-only)")
+	slowStop := flags.Int("slow-stop", 0, "delay orderly signal exit by this many seconds (fixture-only)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -68,6 +70,20 @@ func runSuperviseComponent(args []string) int {
 			return 2
 		}
 	}
+	if *scope == "" {
+		*scope = *repo
+	}
+	if *metasystemRoot == "" {
+		*metasystemRoot = *repo
+	}
+	if *slowStop < 0 {
+		fmt.Fprintln(os.Stderr, "supervise component: --slow-stop must be non-negative")
+		return 2
+	}
+	if (*crashOnStart || *ignoreTerm || *slowStop > 0) && !fixtureauth.FixtureModeRoot(*metasystemRoot) {
+		fmt.Fprintln(os.Stderr, "supervise component: crash and signal-control flags are fixture-only")
+		return 1
+	}
 	if *crashOnStart {
 		fmt.Fprintln(os.Stderr, "supervise component: crash-on-start (fixture)")
 		return 1
@@ -81,19 +97,18 @@ func runSuperviseComponent(args []string) int {
 	}
 
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	if *ignoreTerm {
+		signal.Ignore(syscall.SIGTERM)
+		signal.Notify(stop, syscall.SIGINT)
+	} else {
+		signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	}
 
 	if *capMin < 1 {
 		*capMin = *intervalSec
 	}
 	beat := heartbeatWriter(*heartbeat, *component, self, *tag, *intervalSec, *capMin)
 
-	if *scope == "" {
-		*scope = *repo
-	}
-	if *metasystemRoot == "" {
-		*metasystemRoot = *repo
-	}
 	var work func() error
 	switch *component {
 	case "watcher":
@@ -141,6 +156,9 @@ func runSuperviseComponent(args []string) int {
 	for {
 		select {
 		case <-stop:
+			if *slowStop > 0 {
+				time.Sleep(time.Duration(*slowStop) * time.Second)
+			}
 			return 0
 		case <-ticker.C:
 			if rootGone() {

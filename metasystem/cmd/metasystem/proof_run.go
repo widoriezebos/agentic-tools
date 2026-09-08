@@ -217,6 +217,7 @@ func runProofRunWatchdog(args []string) int {
 	suiteStarted := flags.Int64("suite-started-at", 0, "suite start epoch second")
 	suiteTicks := flags.Int64("suite-start-ticks", 0, "suite boot-relative start ticks")
 	suiteBoot := flags.String("suite-boot-id", "", "suite boot identity")
+	fenceGeneration := flags.Int64("fence-generation", 0, "stop-fence generation")
 	silenceMS := flags.Int64("silence-ms", 0, "output-silence milliseconds")
 	sectionCapMS := flags.Int64("section-cap-ms", 0, "section-cap milliseconds")
 	evidenceTimeoutMS := flags.Int64("evidence-timeout-ms", 0, "evidence timeout milliseconds")
@@ -246,6 +247,7 @@ func runProofRunWatchdog(args []string) int {
 	err = proofrun.RunWatchdog(proofrun.WatchdogOptions{
 		Suite: *suite, Root: *root, ProgressPath: *progress, DonePath: *done, LogPaths: logs,
 		SuiteIdentity:   identity.Ref{Pid: *suitePID, StartedAtSec: *suiteStarted, StartTicks: *suiteTicks, BootID: *suiteBoot},
+		FenceGeneration: *fenceGeneration,
 		Silence:         time.Duration(*silenceMS) * time.Millisecond,
 		SectionCap:      time.Duration(*sectionCapMS) * time.Millisecond,
 		EvidenceTimeout: time.Duration(*evidenceTimeoutMS) * time.Millisecond,

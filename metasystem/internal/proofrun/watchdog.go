@@ -22,6 +22,7 @@ type WatchdogOptions struct {
 	DonePath         string
 	LogPaths         []string
 	SuiteIdentity    identity.Ref
+	FenceGeneration  int64
 	Silence          time.Duration
 	SectionCap       time.Duration
 	EvidenceTimeout  time.Duration
@@ -80,6 +81,9 @@ func validateWatchdogOptions(options WatchdogOptions) error {
 	}
 	if options.SuiteIdentity.Pid < 1 || options.SuiteIdentity.StartedAtSec < 1 {
 		return errors.New("watchdog requires an exact suite identity")
+	}
+	if options.FenceGeneration < 0 {
+		return errors.New("watchdog requires a non-negative fence generation")
 	}
 	if options.Silence <= 0 || options.SectionCap <= 0 || options.EvidenceTimeout <= 0 || options.EvidenceMax < 1 {
 		return errors.New("watchdog bounds must be positive")
@@ -143,7 +147,7 @@ func stopStalledSuite(options WatchdogOptions, section, reason string, run Progr
 	} else if err := shutdownSupervision(options); err != nil {
 		fmt.Fprintf(options.ErrorOutput, "suite watchdog: supervision shutdown was incomplete: %v\n", err)
 	}
-	if err := signalSuiteGroup(options, prober); err != nil {
+	if err := SignalSuiteGroup(options, prober); err != nil {
 		fmt.Fprintf(options.ErrorOutput, "suite watchdog: suite process-group cleanup was incomplete: %v\n", err)
 	}
 	if err := sweepExecutionGuard(options, prober); err != nil {
@@ -201,23 +205,27 @@ func shutdownSupervision(options WatchdogOptions) error {
 	return nil
 }
 
-func signalSuiteGroup(options WatchdogOptions, prober identity.Prober) error {
+// SignalSuiteGroup applies the watchdog's CONT, TERM, then KILL ladder to the
+// recorded suite group. Each signal reauthenticates the suite leader first.
+func SignalSuiteGroup(options WatchdogOptions, prober identity.Prober) error {
 	pgid := -int(options.SuiteIdentity.Pid)
-	if err := signalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGCONT, "suite process group"); err != nil {
+	if err := SignalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGCONT, "suite process group"); err != nil {
 		return fmt.Errorf("continue process group: %w", err)
 	}
-	if err := signalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGTERM, "suite process group"); err != nil {
+	if err := SignalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGTERM, "suite process group"); err != nil {
 		return fmt.Errorf("terminate process group: %w", err)
 	}
 	waitForGroup(options.SuiteIdentity.Pid, options.TermGrace)
-	if err := signalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGKILL, "suite process group"); err != nil {
+	if err := SignalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGKILL, "suite process group"); err != nil {
 		return fmt.Errorf("kill process group: %w", err)
 	}
 	waitForGroup(options.SuiteIdentity.Pid, options.KillGrace)
 	return nil
 }
 
-func signalAuthenticated(options WatchdogOptions, prober identity.Prober, ref identity.Ref, target int, signalValue syscall.Signal, label string) error {
+// SignalAuthenticated sends one signal only after the recorded kernel
+// identity has been proved immediately beside the action.
+func SignalAuthenticated(options WatchdogOptions, prober identity.Prober, ref identity.Ref, target int, signalValue syscall.Signal, label string) error {
 	if state := identity.AliveRef(prober, ref); state != identity.Alive {
 		return fmt.Errorf("%s signal refused for %s because pid %d no longer has its recorded start identity (%s)", signalValue, label, ref.Pid, state)
 	}
@@ -229,6 +237,14 @@ func signalAuthenticated(options WatchdogOptions, prober identity.Prober, ref id
 		return err
 	}
 	return nil
+}
+
+func signalSuiteGroup(options WatchdogOptions, prober identity.Prober) error {
+	return SignalSuiteGroup(options, prober)
+}
+
+func signalAuthenticated(options WatchdogOptions, prober identity.Prober, ref identity.Ref, target int, signalValue syscall.Signal, label string) error {
+	return SignalAuthenticated(options, prober, ref, target, signalValue, label)
 }
 
 func waitForGroup(pgid int64, duration time.Duration) {

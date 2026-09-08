@@ -79,12 +79,12 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-    "$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
-    brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line
+	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
+	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal
 fi
 case "$fixture_scenario" in
-  migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
-  brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line) ;;
+	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
+	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -179,9 +179,56 @@ git -C "$clone" push -q origin main
 # This suite is intentionally headless. Enroll its shell as the exact fake
 # checkout holder so claim-bearing goal fixtures carry a real claim epoch.
 fixture_start=$("$ms" proc started-at --pid "$$")
-"$ms" lease announce --root "$clone" --session goal-cli-fixture \
-  --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
-  --runtime fake --owner-lineage fixture-lineage >/dev/null
+if [[ "$fixture_scenario" != wrong-terminal ]]; then
+  "$ms" lease announce --root "$clone" --session goal-cli-fixture \
+    --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
+    --runtime fake --owner-lineage fixture-lineage >/dev/null
+fi
+
+if [[ "$fixture_scenario" == wrong-terminal ]]; then
+  mkdir -p "$clone/bin"
+  cp "$ms" "$clone/bin/metasystem"
+  expected_checkout=$(cd "$clone" && pwd -P)
+  identity_file=$tmp/wrong-terminal-identities.json
+  export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
+  printf '{"%s":{"terminal":false}}\n' "$$" >"$identity_file"
+  set +e
+  "$clone/bin/metasystem" stop --repo "$clone" >"$tmp/wrong-terminal.refusal" 2>&1
+  refusal_rc=$?
+  set -e
+  (( refusal_rc == 1 )) \
+    || { echo "a non-terminal caller was allowed to stop the metasystem" >&2; cat "$tmp/wrong-terminal.refusal" >&2; exit 1; }
+  printf '%s\n' \
+    "metasystem stop: stop is a human act at a terminal; this caller is DELEGATE." \
+    "at an agent-free terminal, run: metasystem stop --repo $expected_checkout" \
+    >"$tmp/wrong-terminal.expected"
+  cmp -s "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" \
+    || { echo "wrong-terminal refusal did not match the process-verb grammar" >&2; diff -u "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" >&2 || true; exit 1; }
+
+  # The refusal above deliberately inherits the bed's delegate ancestry. For
+  # the fixture-human half, make the scratch installation's signature universe
+  # agent-free before its staged terminal fact is read, as the supervision bed
+  # does for control-plane scenarios.
+  for adapter in "$clone"/scripts/agents/adapters/*.sh; do
+    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
+      *) rm -f "$adapter" ;;
+    esac
+  done
+  printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
+  "$clone/bin/metasystem" stop --repo "$clone" >"$tmp/wrong-terminal.stop"
+  fence_changed=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field changedAt)
+  fence_pid=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field by.pid)
+  printf '%s\n' "checkout $expected_checkout" "nothing is running" \
+    "stopped $expected_checkout; start again: metasystem arm --repo $expected_checkout" >"$tmp/wrong-terminal.stop.expected"
+  cmp -s "$tmp/wrong-terminal.stop.expected" "$tmp/wrong-terminal.stop" \
+    || { echo "the fixture-human stop report changed grammar" >&2; diff -u "$tmp/wrong-terminal.stop.expected" "$tmp/wrong-terminal.stop" >&2 || true; exit 1; }
+  "$clone/bin/metasystem" status --repo "$clone" >"$tmp/wrong-terminal.status"
+  printf '%s\n' "checkout $expected_checkout" "nothing is running" \
+    "stopped since $fence_changed by stop pid $fence_pid; start again: metasystem arm --repo $expected_checkout" >"$tmp/wrong-terminal.status.expected"
+  cmp -s "$tmp/wrong-terminal.status.expected" "$tmp/wrong-terminal.status" \
+    || { echo "status did not report the fixture-human stop" >&2; diff -u "$tmp/wrong-terminal.status.expected" "$tmp/wrong-terminal.status" >&2 || true; exit 1; }
+  exit 0
+fi
 
 # 1. source-digest speaks the exact bytes.
 digest=$("$ms" goal source-digest --root "$clone")

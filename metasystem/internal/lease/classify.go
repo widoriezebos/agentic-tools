@@ -81,6 +81,56 @@ type Classification struct {
 	FixtureGranted bool
 }
 
+// ClassificationFailureKind distinguishes a failure to observe the caller
+// from a failure to read supporting authority data. Human-gated verbs use
+// this decision directly; they must not guess the remedy from error text.
+type ClassificationFailureKind string
+
+const (
+	ClassificationCallerObservation ClassificationFailureKind = "caller-observation"
+	ClassificationSupportingData    ClassificationFailureKind = "supporting-data"
+)
+
+// ClassificationFailure preserves the classifier input that failed, its
+// full path when it is file-backed, and the underlying diagnostic.
+type ClassificationFailure struct {
+	Kind   ClassificationFailureKind
+	Source string
+	Path   string
+	Cause  error
+}
+
+func (e *ClassificationFailure) Error() string {
+	input := e.Source
+	if e.Path != "" {
+		input += " " + e.Path
+	}
+	if e.Cause == nil {
+		return input
+	}
+	return input + ": " + e.Cause.Error()
+}
+
+func (e *ClassificationFailure) Unwrap() error { return e.Cause }
+
+// Reason is the precise read, parse, or validation diagnostic retained by
+// the classifier for the refusal renderer.
+func (e *ClassificationFailure) Reason() string {
+	if e.Cause == nil {
+		return "classification input could not be inspected"
+	}
+	return e.Cause.Error()
+}
+
+func classificationDataFailure(source, path string, cause error) error {
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = filepath.Clean(absolute)
+	}
+	return &ClassificationFailure{
+		Kind: ClassificationSupportingData, Source: source, Path: path, Cause: cause,
+	}
+}
+
 // readAnnouncements lists the valid main announcements. In strict mode a
 // malformed or tampering-shaped record refuses the whole read (a classifier
 // must not silently ignore a bad identity file); in lax mode — used by
@@ -92,7 +142,7 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 	dir := filepath.Join(root, "artifacts/agents/mains")
 	entries, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
-		return nil, err
+		return nil, classificationDataFailure("announcement directory", dir, err)
 	}
 	sort.Strings(entries)
 	var out []announcementFile
@@ -101,10 +151,17 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 		if !census.IsAnnouncementFile(name) {
 			continue
 		}
-		var raw map[string]json.RawMessage
-		if data, err := os.ReadFile(path); err != nil || json.Unmarshal(data, &raw) != nil {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
 			if strict {
-				return nil, fmt.Errorf("caller classification refused: unreadable announcement %s", name)
+				return nil, classificationDataFailure("announcement", path, readErr)
+			}
+			continue
+		}
+		var raw map[string]json.RawMessage
+		if parseErr := json.Unmarshal(data, &raw); parseErr != nil {
+			if strict {
+				return nil, classificationDataFailure("announcement", path, fmt.Errorf("invalid JSON: %w", parseErr))
 			}
 			continue
 		}
@@ -114,7 +171,7 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 			}
 		}); err != nil {
 			if strict {
-				return nil, fmt.Errorf("caller classification refused: invalid announcement schema %s: %v", name, err)
+				return nil, classificationDataFailure("announcement", path, fmt.Errorf("invalid schema: %w", err))
 			}
 			continue
 		}
@@ -124,21 +181,21 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 			continue // Names a process, authenticates nobody.
 		}
 		var ann Announcement
-		if data, _ := json.Marshal(raw); json.Unmarshal(data, &ann) != nil {
+		if decodeErr := json.Unmarshal(data, &ann); decodeErr != nil {
 			if strict {
-				return nil, fmt.Errorf("caller classification refused: invalid announcement schema %s", name)
+				return nil, classificationDataFailure("announcement", path, fmt.Errorf("invalid contents: %w", decodeErr))
 			}
 			continue
 		}
 		if !mainIDPattern.MatchString(ann.MainId) {
 			if strict {
-				return nil, fmt.Errorf("caller classification refused: invalid main identity %s", name)
+				return nil, classificationDataFailure("announcement", path, fmt.Errorf("mainId %q is invalid", ann.MainId))
 			}
 			continue
 		}
 		if !commandHashPattern.MatchString(ann.CommandHash) {
 			if strict {
-				return nil, fmt.Errorf("caller classification refused: invalid command hash %s", name)
+				return nil, classificationDataFailure("announcement", path, fmt.Errorf("commandHash %q is invalid", ann.CommandHash))
 			}
 			continue
 		}
@@ -185,7 +242,7 @@ func allAdapterSignatures(root string) ([]census.Signature, error) {
 	dir := filepath.Join(root, "scripts/agents/adapters")
 	entries, err := filepath.Glob(filepath.Join(dir, "*.sh"))
 	if err != nil {
-		return nil, err
+		return nil, classificationDataFailure("adapter signature directory", dir, err)
 	}
 	sort.Strings(entries)
 	var sigs []census.Signature
@@ -196,12 +253,12 @@ func allAdapterSignatures(root string) ([]census.Signature, error) {
 		}
 		text, err := census.SignatureText(path)
 		if err != nil {
-			return nil, fmt.Errorf("caller classification refused: signature registry failed for %s", name)
+			return nil, classificationDataFailure("adapter signature", path, err)
 		}
 		matches, excludes := census.ParseSignatureText(text)
 		sig, err := census.CompileSignature(strings.TrimSuffix(name, ".sh"), matches, excludes)
 		if err != nil {
-			return nil, fmt.Errorf("caller classification refused: invalid signature registry for %s", name)
+			return nil, classificationDataFailure("adapter signature", path, err)
 		}
 		sigs = append(sigs, sig)
 	}
@@ -230,15 +287,15 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 		// RequireHolder passes HUMAN through the write gate ungated. A
 		// permissions mishap must refuse, exactly as the neighbouring
 		// parse failure does.
-		return nil, nil, fmt.Errorf("caller classification refused: supervision state is unreadable: %v", readErr)
+		return nil, nil, classificationDataFailure("supervision state", statePath, readErr)
 	}
 	if readErr == nil {
 		var state struct {
 			Owner      *supervisedProc            `json:"owner"`
 			Components map[string]*supervisedProc `json:"components"`
 		}
-		if json.Unmarshal(data, &state) != nil {
-			return nil, nil, fmt.Errorf("caller classification refused: supervision state is unreadable")
+		if parseErr := json.Unmarshal(data, &state); parseErr != nil {
+			return nil, nil, classificationDataFailure("supervision state", statePath, fmt.Errorf("invalid JSON: %w", parseErr))
 		}
 		procs := []*supervisedProc{state.Owner}
 		for _, c := range state.Components {
@@ -251,7 +308,11 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 		}
 	}
 
-	jobs, _ := filepath.Glob(filepath.Join(root, "artifacts/agents/jobs", "*.json"))
+	jobsDir := filepath.Join(root, "artifacts/agents/jobs")
+	jobs, globErr := filepath.Glob(filepath.Join(jobsDir, "*.json"))
+	if globErr != nil {
+		return nil, nil, classificationDataFailure("job record directory", jobsDir, globErr)
+	}
 	for _, path := range jobs {
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
@@ -261,25 +322,31 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 			if os.IsNotExist(readErr) {
 				continue
 			}
-			return nil, nil, fmt.Errorf("caller classification refused: job record unreadable: %s: %v", filepath.Base(path), readErr)
+			return nil, nil, classificationDataFailure("job record", path, readErr)
 		}
 		var job struct {
-			JobId            string           `json:"jobId"`
+			JobId            *string          `json:"jobId"`
 			Pid              *int64           `json:"pid"`
 			PidStartedAt     *int64           `json:"pidStartedAt"`
 			CustodyProcesses []supervisedProc `json:"custodyProcesses"`
 		}
-		if json.Unmarshal(data, &job) != nil || job.JobId == "" {
+		if parseErr := json.Unmarshal(data, &job); parseErr != nil {
 			// Corrupt records refuse like corrupt state: silently dropping
 			// custody is the same fail-open with a different spelling.
-			return nil, nil, fmt.Errorf("caller classification refused: job record corrupt or unidentified: %s", filepath.Base(path))
+			return nil, nil, classificationDataFailure("job record", path, fmt.Errorf("invalid JSON: %w", parseErr))
+		}
+		if job.JobId == nil {
+			return nil, nil, classificationDataFailure("job record", path, fmt.Errorf("jobId is missing"))
+		}
+		if *job.JobId == "" {
+			return nil, nil, classificationDataFailure("job record", path, fmt.Errorf("jobId is empty"))
 		}
 		if job.Pid != nil && job.PidStartedAt != nil {
-			adapters[procKey{*job.Pid, *job.PidStartedAt}] = job.JobId
+			adapters[procKey{*job.Pid, *job.PidStartedAt}] = *job.JobId
 		}
 		for _, p := range job.CustodyProcesses {
 			if p.Pid > 0 {
-				adapters[procKey{p.Pid, p.PidStartedAt}] = job.JobId
+				adapters[procKey{p.Pid, p.PidStartedAt}] = *job.JobId
 			}
 		}
 	}
@@ -314,9 +381,15 @@ func Classify(root string, caller int64) (Classification, error) {
 // They are the same directory in a self-hosted checkout and distinct when the
 // metasystem is vendored beneath an application repository.
 func ClassifyAt(root, metasystemRoot string, caller int64) (Classification, error) {
+	if absolute, err := filepath.Abs(root); err == nil {
+		root = filepath.Clean(absolute)
+	}
+	if absolute, err := filepath.Abs(metasystemRoot); err == nil {
+		metasystemRoot = filepath.Clean(absolute)
+	}
 	probe, err := fixtureProbe(metasystemRoot)
 	if err != nil {
-		return Classification{}, err
+		return Classification{}, classificationDataFailure("fixture classification configuration", filepath.Join(metasystemRoot, "metasystem.conf"), err)
 	}
 	records, err := readAnnouncements(root, true)
 	if err != nil {

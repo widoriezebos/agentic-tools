@@ -19,6 +19,7 @@ import (
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -52,6 +53,7 @@ type ComponentOutcome struct {
 // Result carries every component line and the one aggregate outcome.
 type Result struct {
 	Components        []ComponentOutcome
+	RawLines          []string
 	Outcome           string
 	Authority         string
 	ReArmed           string
@@ -76,7 +78,7 @@ func quoteField(value string) string {
 
 // Lines renders stable key/value records for operators and fixtures.
 func (r Result) Lines() []string {
-	lines := make([]string, 0, len(r.Components)+1)
+	lines := make([]string, 0, len(r.Components)+len(r.RawLines)+1)
 	for _, component := range r.Components {
 		line := fmt.Sprintf("component=%s outcome=%s", component.Component, component.Outcome)
 		if component.Detail != "" {
@@ -87,6 +89,7 @@ func (r Result) Lines() []string {
 		}
 		lines = append(lines, line)
 	}
+	lines = append(lines, r.RawLines...)
 	aggregate := "up outcome=" + r.Outcome
 	if r.Authority != "" {
 		aggregate += " authority=" + r.Authority
@@ -361,6 +364,23 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 		failed := failure(components, "supervision-owner", err, "fix the named supervision configuration or fingerprint input, then rerun metasystem up")
 		return nil, supervise.EnsureResult{}, &failed
 	}
+	fence, err := stopfence.Read(options.Root)
+	if err != nil {
+		failed := failure(components, "supervision-owner", err, "repair the process-creation fence, then rerun metasystem arm")
+		return nil, supervise.EnsureResult{}, &failed
+	}
+	exact, state, probeErr := (processidentity.KernelProber{}).Probe(int64(os.Getpid()))
+	if probeErr != nil || state != processidentity.Alive {
+		failed := failure(components, "supervision-owner", fmt.Errorf("cannot prove the arming process identity: %v", probeErr), "retry from the same terminal")
+		return nil, supervise.EnsureResult{}, &failed
+	}
+	claim, err := stopfence.Creating(options.Root, "supervision-owner", fence.Generation, exact.Ref())
+	if err != nil {
+		failed := failure(components, "supervision-owner", err, "repair the creation-claim directory, then rerun metasystem arm")
+		return nil, supervise.EnsureResult{}, &failed
+	}
+	defer claim.Close()
+	armingOptions.FenceGeneration = fence.Generation
 	armingOptions.Command = enrolledCommand(enrolled)
 	result, err := supervise.EnsureArmed(armingOptions)
 	if err != nil {
@@ -376,6 +396,29 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 			remedy = "prove the recorded component identity and process group are gone, then rerun metasystem up"
 		}
 		failed := failure(components, component, err, remedy)
+		return nil, supervise.EnsureResult{}, &failed
+	}
+	second, err := stopfence.Read(options.Root)
+	if err != nil || second.State == stopfence.StateClosed || second.Generation != fence.Generation {
+		prefix := "metasystem-supervision-owner-" + lease.Slug(options.Scope) + "-"
+		_, _ = supervise.ShutdownAt(options.Root, installationRoot(options), options.Root, prefix, options.WaitScaleMilli)
+		remedy := "repair the process-creation fence, then rerun metasystem up"
+		if err == nil && second.State == stopfence.StateClosed {
+			description, renderErr := stopfence.ClosedDescription(second, options.Scope)
+			command, commandErr := stopfence.ClosedCommand(second, options.Scope)
+			if renderErr != nil {
+				err = renderErr
+			} else if commandErr != nil {
+				err = commandErr
+			} else {
+				err = fmt.Errorf("%s; while the supervision owner started, it has been ended", description)
+				remedy = "at an agent-free terminal, run: " + command
+			}
+		} else if err == nil {
+			err = fmt.Errorf("the checkout %s was stopped and armed again while the supervision owner started; the supervision owner has been ended; the caller may retry", options.Scope)
+			remedy = "retry metasystem up"
+		}
+		failed := failure(components, "supervision-owner", err, remedy)
 		return nil, supervise.EnsureResult{}, &failed
 	}
 	ownerOutcome := ComponentOutcome{
@@ -554,9 +597,6 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	components := []ComponentOutcome{}
 	fact := rearmFact{}
 	finish := func(result Result) (Result, rearmFact) { return result, fact }
-	if err := preflightCommands(); err != nil {
-		return finish(failure(components, "host-preflight", err, "install the named commands and rerun metasystem up"))
-	}
 	components = append(components, ComponentOutcome{Component: "host-preflight", Outcome: "verified"})
 	enrolled, rearmed, err := openInvokingEnrollment(options, true)
 	if rearmed.Stage == steward.StageMinted {
@@ -742,6 +782,32 @@ func clearInheritedExecutionID() {
 // Run performs ordinary session arming or the restricted recovery-only path.
 func Run(options Options) Result {
 	clearInheritedExecutionID()
+	if err := preflightCommands(); err != nil {
+		return failure(nil, "host-preflight", err, "install the named commands and rerun metasystem up")
+	}
+	if closed, record, err := stopfence.Closed(options.Root); err != nil {
+		return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem")
+	} else if closed {
+		detail := "since " + record.ChangedAt
+		if !stopfence.Completed(record) {
+			detail, err = stopfence.ClosedDescription(record, options.Scope)
+			if err != nil {
+				return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem")
+			}
+		}
+		remedy, renderErr := stopfence.ClosedCommand(record, options.Scope)
+		if renderErr != nil {
+			return failure(nil, "stopped", renderErr, "repair the stop fence before starting the metasystem")
+		}
+		return Result{
+			Components: []ComponentOutcome{{
+				Component: "stopped", Outcome: "standing",
+				Detail: detail,
+			}},
+			Outcome: "stopped",
+			Remedy:  remedy,
+		}
+	}
 	if options.RecoverOnly {
 		return recovery(options)
 	}
@@ -770,10 +836,17 @@ func Shutdown(options Options) Result {
 		return failure(nil, "checkout-lease", err, "run shutdown from the checkout holder")
 	}
 	prefix := "metasystem-supervision-owner-" + lease.Slug(options.Scope) + "-"
-	if err := supervise.ShutdownAt(options.Root, installationRoot(options), options.Root, prefix, options.WaitScaleMilli); err != nil {
+	report, err := supervise.ShutdownAt(options.Root, installationRoot(options), options.Root, prefix, options.WaitScaleMilli)
+	if err != nil {
 		return failure(nil, "supervision-owner", err, "inspect the recorded owner identity before retrying shutdown")
 	}
-	return Result{Components: []ComponentOutcome{{Component: "supervision-owner", Outcome: "stopped"}}, Outcome: "stopped"}
+	if !report.Complete() {
+		return Result{RawLines: report.Lines(), Components: []ComponentOutcome{{
+			Component: "supervision-owner", Outcome: "failed", Detail: "one or more recorded supervision identities were not stopped",
+			Remedy: "inspect the recorded identities before retrying shutdown",
+		}}, Outcome: "failed", Failed: "supervision-owner", Remedy: "inspect the recorded identities before retrying shutdown"}
+	}
+	return Result{RawLines: report.Lines(), Outcome: "stopped"}
 }
 
 func shellQuote(value string) string {

@@ -5,6 +5,14 @@ source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
 source "$source_root/metasystem/scripts/agents/fixture-budget.sh"
 ms=${METASYSTEM_BIN:-$source_root/metasystem/bin/metasystem}
 [[ -x "$ms" ]] || { echo "channel fixtures: bin/metasystem is not built" >&2; exit 1; }
+fixture_review_by_date() {
+  local review_by
+  review_by=$(date -u -v+1d +%Y-%m-%d 2>/dev/null) \
+    || review_by=$(date -u -d '+1 day' +%Y-%m-%d 2>/dev/null) \
+    || { echo "channel fixtures: this host's date cannot compute tomorrow in UTC" >&2; return 1; }
+  printf '%s\n' "$review_by"
+}
+fixture_review_by=$(fixture_review_by_date)
 bed=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-channel.XXXXXX")
 server_pid=
 cleanup() {

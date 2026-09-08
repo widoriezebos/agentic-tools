@@ -47,6 +47,9 @@ func (e *Engine) Status() int {
 			return exitFor(err)
 		}
 		switch record["status"] {
+		case "stopped":
+			fmt.Printf("mission=%s status=stopped reason=metasystem-stop\n", e.Mission)
+			return 13
 		case "failed":
 			failure := valueString(record["error"])
 			if failure == "" {

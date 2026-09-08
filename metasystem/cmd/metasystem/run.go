@@ -13,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -27,7 +26,7 @@ func runCaller(root string, callerPid int64, mode string) (run.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
 	}
-	view, err := lease.ClassifyVerb(root, callerPid)
+	view, err := classifyVerbCaller(root, callerPid)
 	if err != nil {
 		return run.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}
@@ -52,7 +51,7 @@ func runCaller(root string, callerPid int64, mode string) (run.Caller, error) {
 // records after a takeover; only library/test use leaves the seam nil.
 func runStore(root string) *run.Store {
 	return &run.Store{Root: root, CurrentEpoch: func() (*int64, bool) {
-		view, err := lease.ClassifyVerb(root, int64(os.Getpid()))
+		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 		if err != nil {
 			return nil, false
 		}
@@ -112,6 +111,13 @@ func runRunLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, "run launch requires -- <command...>")
 		return 2
 	}
+	store := runStore(*root)
+	creation, err := store.BeginCreation("run-launch")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer func() { _ = creation.Close() }()
 	caller, err := runCaller(*root, *callerPid, "holder-only")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -123,12 +129,13 @@ func runRunLaunch(args []string) int {
 		return 1
 	}
 	defer release()
-	store := runStore(*root)
+	fenceGeneration := creation.Generation
 	nonce, err := store.Launch(caller, run.LaunchParams{
 		Id: *id, Kind: *kind, Display: *display, Log: *log,
 		StaleAfterMin: *stale, WindDownMin: *windDown,
 		Expect: run.Expect{Green: *expectGreen, Red: *expectRed, Hung: *expectHung, Unknown: *expectUnknown},
 		GoalId: *goalID, ObligationRevision: *obligationRevision, StandingShared: *standingShared,
+		FenceGeneration: &fenceGeneration,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -156,6 +163,11 @@ func runRunLaunch(args []string) int {
 	if err := wrapper.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, "wrapper spawn failed:", err)
 		_ = store.FailLaunch(*id, "wrapper spawn failed: "+err.Error())
+		return 1
+	}
+	if err := store.CompleteLaunch(*id, fenceGeneration); err != nil {
+		_ = wrapper.Process.Release()
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	// The wrapper is detached on purpose; the record, not the process

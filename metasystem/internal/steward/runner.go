@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 func runnerDir(repoRoot string) string {
@@ -39,16 +40,58 @@ func runnerLogPath(repoRoot string) string  { return filepath.Join(runnerDir(rep
 
 // RunnerRecord names the live runner for status and disarm.
 type RunnerRecord struct {
-	Pid          int64  `json:"pid"`
-	StartTicks   int64  `json:"startTicks"`
-	BootID       string `json:"bootId"`
-	PidStartedAt int64  `json:"pidStartedAt"` // seconds identity: darwin has no ticks pair
-	StartedAt    string `json:"startedAt"`
+	Pid             int64  `json:"pid"`
+	StartTicks      int64  `json:"startTicks"`
+	BootID          string `json:"bootId"`
+	PidStartedAt    int64  `json:"pidStartedAt"` // seconds identity: darwin has no ticks pair
+	StartedAt       string `json:"startedAt"`
+	FenceGeneration int64  `json:"fenceGeneration"`
+}
+
+// StoppedError is the process-creation refusal returned while the checkout's
+// fence is closed. Callers render its two lines without adding a family prefix.
+type StoppedError struct {
+	Checkout string
+	Record   stopfence.Record
+	Thing    string
+	Raced    bool
+}
+
+func (e *StoppedError) Error() string {
+	first, err := stopfence.ClosedDescription(e.Record, e.Checkout)
+	if err != nil {
+		return "cannot render stopped steward-runner refusal: " + err.Error()
+	}
+	if e.Raced {
+		first += fmt.Sprintf("; while %s started, it has been ended", e.Thing)
+	}
+	command, err := stopfence.ClosedCommand(e.Record, e.Checkout)
+	if err != nil {
+		return "cannot render stopped steward-runner refusal: " + err.Error()
+	}
+	return first + "\nat an agent-free terminal, run: " + command
+}
+
+func stoppedError(checkout, thing string, record stopfence.Record, raced bool) error {
+	return &StoppedError{Checkout: checkout, Record: record, Thing: thing, Raced: raced}
+}
+
+func readOpenFence(checkout, thing string) (stopfence.Record, error) {
+	closed, record, err := stopfence.Closed(checkout)
+	if err != nil {
+		return stopfence.Record{}, fmt.Errorf("read process-creation fence: %w", err)
+	}
+	if closed {
+		return record, stoppedError(checkout, thing, record, false)
+	}
+	return record, nil
 }
 
 func runnerRecordPath(repoRoot string) string {
 	return filepath.Join(runnerDir(repoRoot), "runner.json")
 }
+
+var runnerAfterRecordPublished func()
 
 // TickSeconds reads the cadence; the default is ten minutes.
 func TickSeconds(repoRoot string) int {
@@ -68,10 +111,15 @@ func TickSeconds(repoRoot string) int {
 // launcher. The loop never crashes out of a tick: a failed pass is
 // reported and the next tick tries again.
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration) error {
-	if err := os.MkdirAll(runnerDir(repoRoot), 0o755); err != nil {
+	top := canonicalPath(repoRoot)
+	fence, err := readOpenFence(top, "the steward runner")
+	if err != nil {
 		return err
 	}
-	lockFile, err := os.OpenFile(runnerLockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
+		return err
+	}
+	lockFile, err := os.OpenFile(runnerLockPath(top), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
@@ -79,26 +127,48 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("a runner already guards this repository")
 	}
-	_ = os.Remove(runnerStopPath(repoRoot))
+	_ = os.Remove(runnerStopPath(top))
 
 	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		return fmt.Errorf("the runner cannot read its own identity")
 	}
-	if err := writeJSONAtomic(runnerRecordPath(repoRoot), RunnerRecord{
+	claim, err := stopfence.Creating(top, "steward-run", fence.Generation, self.Ref())
+	if err != nil {
+		return fmt.Errorf("open steward runner creation claim: %w", err)
+	}
+	defer claim.Close()
+	if err := writeJSONAtomic(runnerRecordPath(top), RunnerRecord{
 		Pid: int64(os.Getpid()), StartTicks: self.StartTicks, BootID: self.BootID,
-		PidStartedAt: self.StartedAt.Unix(),
-		StartedAt:    time.Now().UTC().Format(time.RFC3339),
+		PidStartedAt:    self.StartedAt.Unix(),
+		StartedAt:       time.Now().UTC().Format(time.RFC3339),
+		FenceGeneration: fence.Generation,
 	}); err != nil {
 		return err
 	}
-	defer os.Remove(runnerRecordPath(repoRoot))
+	defer os.Remove(runnerRecordPath(top))
+	if runnerAfterRecordPublished != nil {
+		runnerAfterRecordPublished()
+	}
+	closed, second, err := stopfence.Closed(top)
+	if err != nil {
+		return fmt.Errorf("re-read process-creation fence: %w", err)
+	}
+	if closed {
+		return stoppedError(top, "the steward runner", second, true)
+	}
+	if second.Generation != fence.Generation {
+		return fmt.Errorf("the checkout %s was stopped and armed again while the steward runner started; the steward runner has been ended; the caller may retry", top)
+	}
+	if err := claim.Close(); err != nil {
+		return fmt.Errorf("close steward runner creation claim: %w", err)
+	}
 
 	for {
-		if _, err := os.Stat(runnerStopPath(repoRoot)); err == nil {
+		if _, err := os.Stat(runnerStopPath(top)); err == nil {
 			return nil
 		}
-		result, err := RunTick(repoRoot, TickConfig{}, census)
+		result, err := RunTick(top, TickConfig{}, census)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
@@ -108,7 +178,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 			// active-continuation guard and would otherwise never complete.
 			// Resume it so CompleteRevival can re-arbitrate and either launch
 			// or cancel on the current world.
-			if _, ok, resumeErr := ResumableIntent(repoRoot); resumeErr == nil && ok {
+			if _, ok, resumeErr := ResumableIntent(top); resumeErr == nil && ok {
 				resume = true
 			}
 		}
@@ -119,7 +189,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 				// that dies before minting its intent would otherwise
 				// retry silently every tick — armed, dead worker, open
 				// goal, and both visibility channels quiet.
-				if qErr := QueueNotification(repoRoot, PendingNotification{
+				if qErr := QueueNotification(top, PendingNotification{
 					Nonce:   "revive-failure",
 					Message: "steward: revival failed — " + reviveErr.Error(),
 				}); qErr != nil {
@@ -130,17 +200,17 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
-		if _, deliverErr := DeliverPending(repoRoot); deliverErr != nil {
+		if _, deliverErr := DeliverPending(top); deliverErr != nil {
 			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
 		}
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
-		if undelivered, channelErr := channelphase.Run(channelContext, repoRoot); channelErr != nil {
+		if undelivered, channelErr := channelphase.Run(channelContext, top); channelErr != nil {
 			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
 		}
 		cancelChannel()
 		deadline := time.Now().Add(interval)
 		for time.Now().Before(deadline) {
-			if _, err := os.Stat(runnerStopPath(repoRoot)); err == nil {
+			if _, err := os.Stat(runnerStopPath(top)); err == nil {
 				return nil
 			}
 			time.Sleep(200 * time.Millisecond)
@@ -152,14 +222,14 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 // repo's own binary, verify the operator is reachable, and spawn the
 // detached runner unless one already lives. Idempotent.
 func Arm(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
+	outcome, err := arm(repoRoot, binaryPath, false, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
 	return outcome.Message, err
 }
 
 // ArmFixture is Arm when the caller's HUMAN classification came from the
 // fixture-authority process table rather than a real terminal.
 func ArmFixture(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, false, false, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
+	outcome, err := arm(repoRoot, binaryPath, false, false, true, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
 	return outcome.Message, err
 }
 
@@ -174,7 +244,7 @@ func ArmTemporary(repoRoot, binaryPath, humanWord, reviewBy string) (string, err
 	if humanWord == "" {
 		return "", fmt.Errorf("temporary steward arm requires the verbatim word and review-by date")
 	}
-	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-word", humanWord, reviewBy, EnrollmentTemporaryWord))
+	outcome, err := arm(repoRoot, binaryPath, true, false, false, humanMintDecision("human-word", humanWord, reviewBy, EnrollmentTemporaryWord))
 	return outcome.Message, err
 }
 
@@ -269,7 +339,7 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 			LandedCommit: commit, LandingRef: landingRef, Enrollment: prior.Enrollment,
 		}, nil
 	}
-	outcome, err := arm(repoRoot, invokingBinary, true, true, decision)
+	outcome, err := arm(repoRoot, invokingBinary, true, true, false, decision)
 	return outcome.ReArmOutcome, err
 }
 
@@ -277,13 +347,13 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 // the repair path for a process that remains alive but no longer completes
 // ticks.
 func Restart(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
+	outcome, err := arm(repoRoot, binaryPath, true, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
 	return outcome.Message, err
 }
 
 // RestartFixture is Restart under fixture-granted HUMAN classification.
 func RestartFixture(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, true, false, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
+	outcome, err := arm(repoRoot, binaryPath, true, false, true, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
 	return outcome.Message, err
 }
 
@@ -332,7 +402,14 @@ func waitForRunnerSuccess(repoRoot string, wait time.Duration) RoleVerdict {
 // generation-bound tick, and restores the runner without minting a generation.
 func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (EnsureRunnerResult, error) {
 	top := canonicalPath(repoRoot)
-	if _, excluded := runnerExclusion(top); excluded {
+	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
+		var stopped *StoppedError
+		if errors.As(err, &stopped) {
+			return EnsureRunnerResult{Action: "FENCED", Generation: int(fence.Generation)}, nil
+		}
+		return EnsureRunnerResult{}, err
+	}
+	if _, excluded := runnerExclusion(top, false); excluded {
 		return EnsureRunnerResult{Action: "excluded"}, nil
 	}
 	if _, ok := NotifyCommand(top); !ok {
@@ -400,6 +477,13 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
 		top = resolved
 	}
+	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
+		var stopped *StoppedError
+		if errors.As(err, &stopped) {
+			return RunnerRepairOutcome{Status: "FENCED", Generation: int(fence.Generation)}, nil
+		}
+		return RunnerRepairOutcome{}, err
+	}
 	if _, err := os.Stat(RepoIdentityPath(top)); errors.Is(err, os.ErrNotExist) {
 		return RunnerRepairOutcome{Status: "NOT_ENROLLED"}, nil
 	}
@@ -428,6 +512,13 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), w
 	}
 	defer armLock.Close()
 	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
+		return RunnerRepairOutcome{}, err
+	}
+	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
+		var stopped *StoppedError
+		if errors.As(err, &stopped) {
+			return RunnerRepairOutcome{Status: "FENCED", Generation: int(fence.Generation)}, nil
+		}
 		return RunnerRepairOutcome{}, err
 	}
 	lockedInstalled, err := VerifyIdentity(RepoIdentityPath(top), top)
@@ -477,14 +568,14 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), w
 	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within %s", replacement.Pid, installed.Generation, wait)
 }
 
-func runnerExclusion(top string) (string, bool) {
+func runnerExclusion(top string, allowFixture bool) (string, bool) {
 	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
 		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
 			canonicalGitPath(top, string(commonDir)) != canonicalGitPath(top, string(gitDir)) {
 			return "linked worktree (the primary checkout owns the watchdog)", true
 		}
 	}
-	if fixtureauth.FixtureModeRoot(top) {
+	if fixtureauth.FixtureModeRoot(top) && !allowFixture {
 		return "fake-runtimes repository (fixtures arm deliberately)", true
 	}
 	return "", false
@@ -493,7 +584,7 @@ func runnerExclusion(top string) (string, bool) {
 var beforeArmLock func()
 var afterArmDecision func()
 
-func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision) (armOutcome, error) {
+func arm(repoRoot, binaryPath string, replace, machine, allowFixture bool, decide mintDecision) (armOutcome, error) {
 	outcome := armOutcome{ReArmOutcome: ReArmOutcome{Stage: StageBeforeMint}}
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -502,7 +593,10 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 	if resolved, resolveErr := filepath.EvalSymlinks(top); resolveErr == nil {
 		top = resolved
 	}
-	if reason, excluded := runnerExclusion(top); excluded {
+	if _, err := readOpenFence(top, "the steward runner"); err != nil {
+		return outcome, err
+	}
+	if reason, excluded := runnerExclusion(top, allowFixture); excluded {
 		outcome.Message = "not armed: " + reason
 		return outcome, nil
 	}
@@ -526,6 +620,9 @@ func arm(repoRoot, binaryPath string, replace, machine bool, decide mintDecision
 	}
 	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
 		return outcome, fmt.Errorf("take arm lock %s: %w", armLockPath, err)
+	}
+	if _, err := readOpenFence(top, "the steward runner"); err != nil {
+		return outcome, err
 	}
 	identityPath := RepoIdentityPath(top)
 	prior, priorErr := VerifyIdentity(identityPath, top)
@@ -770,34 +867,134 @@ func canonicalGitPath(base, answer string) string {
 	return filepath.Clean(p)
 }
 
-// Disarm stops the runner: the stop file ends the loop at its next
-// check; a runner that lingers past the grace gets the signal.
-func Disarm(repoRoot string) (string, error) {
+// RunnerStopOutcome records the identity-safe ladder used to end a steward
+// runner. Signal is none, term, or kill; Result is stopped, already-gone, or
+// not-stopped.
+type RunnerStopOutcome struct {
+	Record RunnerRecord
+	Signal string
+	Result string
+	Reason string
+}
+
+// LongForm preserves the steward disarm command's established output.
+func (o RunnerStopOutcome) LongForm() string {
+	switch {
+	case o.Result == "already-gone":
+		return "not armed"
+	case o.Result == "stopped" && o.Signal == "none":
+		return "disarmed"
+	case o.Result == "stopped":
+		return "disarmed (signalled)"
+	default:
+		return "not disarmed: " + o.Reason
+	}
+}
+
+func runnerStopWait(root string, seconds int) (time.Duration, error) {
+	scale := 1000
+	if raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			return 0, fmt.Errorf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+		}
+		scale = parsed
+	}
+	wait := time.Duration(seconds) * time.Second * time.Duration(scale) / 1000
+	if wait < 10*time.Millisecond {
+		wait = 10 * time.Millisecond
+	}
+	return wait, nil
+}
+
+func sameRunner(left, right RunnerRecord) bool {
+	if left.Pid != right.Pid || left.Pid < 1 {
+		return false
+	}
+	if left.StartTicks > 0 && left.BootID != "" && right.StartTicks > 0 && right.BootID != "" {
+		return left.StartTicks == right.StartTicks && left.BootID == right.BootID
+	}
+	return left.PidStartedAt > 0 && left.PidStartedAt == right.PidStartedAt
+}
+
+func waitForRunnerGone(root string, record RunnerRecord, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		current, alive := liveRunner(root)
+		if !alive || !sameRunner(record, current) {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	current, alive := liveRunner(root)
+	return !alive || !sameRunner(record, current)
+}
+
+// Disarm stops the runner through its orderly marker, then TERM and KILL,
+// re-proving the recorded identity beside every signal.
+func Disarm(repoRoot string) (RunnerStopOutcome, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
-		return "", err
+		return RunnerStopOutcome{}, err
 	}
 	rec, alive := liveRunner(top)
 	if !alive {
-		return "not armed", nil
+		return RunnerStopOutcome{Record: rec, Signal: "none", Result: "already-gone", Reason: "not armed"}, nil
 	}
-	if err := os.WriteFile(runnerStopPath(top), []byte("disarm\n"), 0o644); err != nil {
-		return "", err
+	outcome := RunnerStopOutcome{Record: rec, Signal: "none", Result: "not-stopped"}
+	if err := runnerStopWriter(runnerStopPath(top), []byte("disarm\n"), 0o644); err != nil {
+		outcome.Reason = "write orderly stop marker: " + err.Error()
+		return outcome, err
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, still := liveRunner(top); !still {
-			return "disarmed", nil
-		}
-		time.Sleep(100 * time.Millisecond)
+	orderlyWait, err := runnerStopWait(top, 5)
+	if err != nil {
+		outcome.Reason = err.Error()
+		return outcome, err
 	}
-	// Revalidate beside the signal: five seconds passed since the
-	// last look, and a freed pid may already belong to a stranger.
-	if recNow, still := liveRunner(top); still && recNow.Pid == rec.Pid {
-		_ = syscall.Kill(int(rec.Pid), syscall.SIGTERM)
-		return "disarmed (signalled)", nil
+	if waitForRunnerGone(top, rec, orderlyWait) {
+		outcome.Result = "stopped"
+		outcome.Reason = "orderly stop marker"
+		return outcome, nil
 	}
-	return "disarmed", nil
+	current, still := liveRunner(top)
+	if !still || !sameRunner(rec, current) {
+		outcome.Result = "already-gone"
+		outcome.Reason = "identity changed before TERM"
+		return outcome, nil
+	}
+	outcome.Signal = "term"
+	if err := runnerSignal(int(rec.Pid), syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+		outcome.Reason = "TERM failed: " + err.Error()
+		return outcome, err
+	}
+	termWait, err := runnerStopWait(top, 2)
+	if err != nil {
+		outcome.Reason = err.Error()
+		return outcome, err
+	}
+	if waitForRunnerGone(top, rec, termWait) {
+		outcome.Result = "stopped"
+		outcome.Reason = "TERM"
+		return outcome, nil
+	}
+	current, still = liveRunner(top)
+	if !still || !sameRunner(rec, current) {
+		outcome.Result = "already-gone"
+		outcome.Reason = "identity changed before KILL"
+		return outcome, nil
+	}
+	outcome.Signal = "kill"
+	if err := runnerSignal(int(rec.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		outcome.Reason = "KILL failed: " + err.Error()
+		return outcome, err
+	}
+	if waitForRunnerGone(top, rec, termWait) {
+		outcome.Result = "stopped"
+		outcome.Reason = "KILL after TERM was ignored"
+		return outcome, nil
+	}
+	outcome.Reason = "runner remained alive after KILL"
+	return outcome, nil
 }
 
 // liveRunner reads the record and proves the process by the
@@ -823,6 +1020,13 @@ func liveRunner(repoRoot string) (RunnerRecord, bool) {
 	// A record with no identity at all proves nothing: treat the
 	// runner as absent rather than adopt a stranger.
 	return rec, false
+}
+
+// LiveRunner returns the runner only when its recorded kernel identity is
+// still the same live process. It is read-only and never adopts a pid from
+// record shape alone.
+func LiveRunner(repoRoot string) (RunnerRecord, bool) {
+	return liveRunner(canonicalPath(repoRoot))
 }
 
 // writeJSONAtomic and readJSON are the runner record's disk shape.

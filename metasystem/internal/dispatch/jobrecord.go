@@ -38,6 +38,16 @@ func (r JobRecord) Phase() string { return r.text("phase") }
 // RefusalClass identifies why dispatch refused a reservation during setup.
 func (r JobRecord) RefusalClass() string { return r.text("refusalClass") }
 
+// FenceGeneration is the checkout process-creation generation this job read
+// before publishing its reservation.
+func (r JobRecord) FenceGeneration() (int64, bool) {
+	value, present := r.doc.Get("fenceGeneration")
+	if !present {
+		return 0, false
+	}
+	return numInt(value)
+}
+
 // JobID is the record's job identity.
 func (r JobRecord) JobID() string { return r.text("jobId") }
 

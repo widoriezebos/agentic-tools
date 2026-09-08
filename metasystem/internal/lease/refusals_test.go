@@ -158,6 +158,17 @@ func TestExpectedEpochMismatchRefused(t *testing.T) {
 // classification instead of silently yielding empty custody, which
 // Classify would have escalated to HUMAN and RequireHolder would have
 // passed through the write gate ungated.
+func requireClassificationDataFailure(t *testing.T, err error, source, path, reason string) {
+	t.Helper()
+	var failure *ClassificationFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("classification failure is untyped: %v", err)
+	}
+	if failure.Kind != ClassificationSupportingData || failure.Source != source || failure.Path != path || !strings.Contains(failure.Reason(), reason) {
+		t.Fatalf("classification failure = %#v, want supporting data %s %s containing %q", failure, source, path, reason)
+	}
+}
+
 func TestCustodyIdentitiesFailClosed(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission bits cannot bite as root")
@@ -176,35 +187,31 @@ func TestCustodyIdentitiesFailClosed(t *testing.T) {
 	os.Chmod(statePath, 0o000)
 	_, _, err := custodyIdentities(root)
 	os.Chmod(statePath, 0o644)
-	if err == nil || !strings.Contains(err.Error(), "supervision state is unreadable") {
-		t.Fatalf("unreadable state did not refuse: %v", err)
-	}
+	requireClassificationDataFailure(t, err, "supervision state", statePath, "permission denied")
 
 	// Corrupt job record: refuses like corrupt state.
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	os.MkdirAll(jobs, 0o755)
-	os.WriteFile(filepath.Join(jobs, "j1.json"), []byte("{broken"), 0o644)
-	if _, _, err := custodyIdentities(root); err == nil ||
-		!strings.Contains(err.Error(), "corrupt or unidentified") {
-		t.Fatalf("corrupt record did not refuse: %v", err)
-	}
-	os.Remove(filepath.Join(jobs, "j1.json"))
+	j1 := filepath.Join(jobs, "j1.json")
+	os.WriteFile(j1, []byte("{broken"), 0o644)
+	_, _, err = custodyIdentities(root)
+	requireClassificationDataFailure(t, err, "job record", j1, "invalid JSON")
+	os.Remove(j1)
 
 	// A record without a jobId is unidentified custody: refuses.
-	os.WriteFile(filepath.Join(jobs, "j2.json"), []byte(`{"pid":1}`), 0o644)
-	if _, _, err := custodyIdentities(root); err == nil {
-		t.Fatal("an unidentified record did not refuse")
-	}
-	os.Remove(filepath.Join(jobs, "j2.json"))
+	j2 := filepath.Join(jobs, "j2.json")
+	os.WriteFile(j2, []byte(`{"pid":1}`), 0o644)
+	_, _, err = custodyIdentities(root)
+	requireClassificationDataFailure(t, err, "job record", j2, "jobId is missing")
+	os.Remove(j2)
 
 	// An unreadable job record refuses by name.
-	os.WriteFile(filepath.Join(jobs, "j3.json"), []byte(`{"jobId":"j3"}`), 0o644)
-	os.Chmod(filepath.Join(jobs, "j3.json"), 0o000)
+	j3 := filepath.Join(jobs, "j3.json")
+	os.WriteFile(j3, []byte(`{"jobId":"j3"}`), 0o644)
+	os.Chmod(j3, 0o000)
 	_, _, err = custodyIdentities(root)
-	os.Chmod(filepath.Join(jobs, "j3.json"), 0o644)
-	if err == nil || !strings.Contains(err.Error(), "job record unreadable") {
-		t.Fatalf("unreadable record did not refuse: %v", err)
-	}
+	os.Chmod(j3, 0o644)
+	requireClassificationDataFailure(t, err, "job record", j3, "permission denied")
 }
 
 // The sweep never certifies a generation it

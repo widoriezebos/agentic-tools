@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,19 +16,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 // ArmingOwner is the exact process identity recorded in the repository's
 // supervision lock.
 type ArmingOwner struct {
-	Pid           int64  `json:"pid"`
-	PidStartedAt  int64  `json:"pidStartedAt"`
-	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
-	BootID        string `json:"bootId,omitempty"`
-	InstanceTag   string `json:"instanceTag"`
-	AcquiredAt    string `json:"acquiredAt,omitempty"`
+	Pid             int64  `json:"pid"`
+	PidStartedAt    int64  `json:"pidStartedAt"`
+	PidStartTicks   int64  `json:"pidStartTicks,omitempty"`
+	BootID          string `json:"bootId,omitempty"`
+	InstanceTag     string `json:"instanceTag"`
+	AcquiredAt      string `json:"acquiredAt,omitempty"`
+	FenceGeneration int64  `json:"fenceGeneration"`
 }
 
 // PublishedGeneration is the owner and configuration bound into state.json.
@@ -43,17 +47,18 @@ type PublishedGeneration struct {
 
 // EnsureOptions are the complete inputs for one supervision arming attempt.
 type EnsureOptions struct {
-	Root           string
-	MetasystemRoot string
-	Scope          string
-	Binary         string
-	Command        func(args ...string) (*exec.Cmd, error)
-	Fingerprint    string
-	IntervalSec    int
-	WatcherCap     int64
-	OnlyIfDown     bool
-	WaitScaleMilli int
-	OwnerTagPrefix string
+	Root            string
+	MetasystemRoot  string
+	Scope           string
+	Binary          string
+	Command         func(args ...string) (*exec.Cmd, error)
+	Fingerprint     string
+	IntervalSec     int
+	WatcherCap      int64
+	OnlyIfDown      bool
+	WaitScaleMilli  int
+	OwnerTagPrefix  string
+	FenceGeneration int64
 }
 
 // EnsureResult describes whether arming joined, established, took over, or
@@ -63,6 +68,114 @@ type EnsureResult struct {
 	Owner      ArmingOwner
 	Generation int64
 	Inspection ArmedInspection
+}
+
+const (
+	ShutdownSignalNone = "none"
+	ShutdownSignalTerm = "term"
+	ShutdownSignalKill = "kill"
+
+	ShutdownStopped     = "stopped"
+	ShutdownAlreadyGone = "already-gone"
+	ShutdownNotStopped  = "not-stopped"
+)
+
+// ComponentOutcome is the identity-bound result of one supervision stop.
+type ComponentOutcome struct {
+	Component  string
+	Identity   identity.Ref
+	Tag        string
+	Generation int64
+	Signal     string
+	Result     string
+	Reason     string
+}
+
+// ShutdownReport preserves one outcome for every supervision identity the
+// caller inspected or signalled, in action order.
+type ShutdownReport struct {
+	Outcomes []ComponentOutcome
+	Failures []ShutdownFailure
+}
+
+// ShutdownFailure is one processless bookkeeping failure discovered after
+// supervision processes were acted on. It remains separate from a component
+// outcome so a stopped process is not rewritten as a survivor.
+type ShutdownFailure struct {
+	Component string
+	Path      string
+	Reason    string
+	Did       string
+}
+
+// Line renders one independently counted bookkeeping result.
+func (f ShutdownFailure) Line() string {
+	target := f.Component
+	if f.Path != "" {
+		target += " " + f.Path
+	}
+	return fmt.Sprintf("NOT STOPPED %s: %s; did: %s", target, f.Reason, f.Did)
+}
+
+// InventoryItem is one live supervision identity observed without mutation.
+type InventoryItem struct {
+	Component       string
+	Identity        identity.Ref
+	Tag             string
+	Generation      int64
+	FenceGeneration int64
+}
+
+// Complete reports whether every inventoried supervision identity was proven
+// stopped or already gone.
+func (r ShutdownReport) Complete() bool {
+	if len(r.Failures) > 0 {
+		return false
+	}
+	for _, outcome := range r.Outcomes {
+		if outcome.Result == ShutdownNotStopped {
+			return false
+		}
+	}
+	return true
+}
+
+// Lines renders the supervision portion of the process-stop line grammar.
+func (r ShutdownReport) Lines() []string {
+	lines := make([]string, 0, len(r.Outcomes)+len(r.Failures))
+	for _, outcome := range r.Outcomes {
+		prefix := fmt.Sprintf("%s pid %d", outcome.Component, outcome.Identity.Pid)
+		if outcome.Component == "supervision-owner" {
+			prefix += fmt.Sprintf(" tag %s generation %d", outcome.Tag, outcome.Generation)
+		}
+		switch outcome.Result {
+		case ShutdownAlreadyGone:
+			if outcome.Reason == "" {
+				lines = append(lines, prefix+": already gone")
+			} else {
+				lines = append(lines, fmt.Sprintf("%s: already gone (%s)", prefix, outcome.Reason))
+			}
+		case ShutdownStopped:
+			if outcome.Signal == ShutdownSignalKill {
+				if outcome.Component == "supervision-owner" && outcome.Reason == "shutdown-escalated" {
+					lines = append(lines, prefix+": killed (TERM ignored; reaped reason=shutdown-escalated)")
+				} else {
+					lines = append(lines, prefix+": killed (TERM ignored)")
+				}
+			} else if outcome.Component == "supervision-owner" && outcome.Reason == "shutdown" {
+				lines = append(lines, prefix+": stopped (TERM, exited reason=shutdown)")
+			} else {
+				lines = append(lines, prefix+": stopped (TERM)")
+			}
+		case ShutdownNotStopped:
+			lines = append(lines, fmt.Sprintf("NOT STOPPED %s pid %d started %d: %s; did: left it listed in the fence record",
+				outcome.Component, outcome.Identity.Pid, outcome.Identity.StartedAtSec, outcome.Reason))
+		}
+	}
+	for _, failure := range r.Failures {
+		lines = append(lines, failure.Line())
+	}
+	return lines
 }
 
 // ComponentFailure preserves which standing process prevented a safe arming
@@ -94,7 +207,7 @@ func ReadArmingOwner(root string) (ArmingOwner, error) {
 		return owner, fmt.Errorf("supervision owner record is malformed: %w", err)
 	}
 	if owner.Pid < 1 || owner.PidStartedAt < 1 || owner.InstanceTag == "" ||
-		(owner.PidStartTicks == 0) != (owner.BootID == "") {
+		owner.FenceGeneration < 0 || (owner.PidStartTicks == 0) != (owner.BootID == "") {
 		return owner, fmt.Errorf("supervision owner record is incomplete")
 	}
 	return owner, nil
@@ -104,7 +217,7 @@ func ReadArmingOwner(root string) (ArmingOwner, error) {
 // has acquired lock.d.
 func WriteArmingOwner(root string, owner ArmingOwner) error {
 	if owner.Pid < 1 || owner.PidStartedAt < 1 || owner.InstanceTag == "" ||
-		(owner.PidStartTicks == 0) != (owner.BootID == "") {
+		owner.FenceGeneration < 0 || (owner.PidStartTicks == 0) != (owner.BootID == "") {
 		return fmt.Errorf("supervision owner identity is incomplete")
 	}
 	data, err := json.MarshalIndent(owner, "", "  ")
@@ -267,52 +380,152 @@ func signalGroup(pid int64, signal syscall.Signal) error {
 	}
 }
 
-func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string) error {
+var (
+	armingOwnerSignal = signalGroup
+	armingNow         = time.Now
+	armingSleep       = time.Sleep
+)
+
+func scaledDuration(base time.Duration, scaleMilli int) time.Duration {
+	if scaleMilli < 1 {
+		scaleMilli = 1000
+	}
+	scaled := time.Duration((int64(base)*int64(scaleMilli) + 999) / 1000)
+	if scaled < time.Millisecond {
+		return time.Millisecond
+	}
+	return scaled
+}
+
+func publishedOwnerState(root string, expected ...ArmingOwner) (generation int64, teardownCeilingSeconds int) {
+	data, err := os.ReadFile(filepath.Join(SupervisionDir(root), "state.json"))
+	if err == nil {
+		var document stateDocument
+		if json.Unmarshal(data, &document) == nil {
+			if len(expected) > 0 {
+				published := ArmingOwner{
+					Pid: document.Owner.Pid, PidStartedAt: document.Owner.PidStartedAt,
+					PidStartTicks: document.Owner.PidStartTicks, BootID: document.Owner.BootID,
+					InstanceTag: document.Owner.InstanceTag,
+				}
+				if !sameArmingOwner(published, expected[0]) {
+					return 0, 41
+				}
+			}
+			generation = document.Generation
+			if document.TeardownCeilingSec > 0 {
+				return generation, document.TeardownCeilingSec
+			}
+		}
+	}
+	return generation, 41
+}
+
+func registryShowsOwnerExited(path, ownerTag string) bool {
+	frames, err := registry.ReadFrames(path)
+	if err != nil {
+		return false
+	}
+	reduction, err := registry.Reduce(frames)
+	if err != nil {
+		return false
+	}
+	claim := reduction.Claims[ownerTag]
+	return claim != nil && claim.Closed && claim.ClosedBy == registry.EventExited
+}
+
+func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string) (ComponentOutcome, error) {
+	generation, ceilingSeconds := publishedOwnerState(root, owner)
+	outcome := ComponentOutcome{
+		Component: "supervision-owner", Identity: identity.Ref{
+			Pid: owner.Pid, StartedAtSec: owner.PidStartedAt,
+			StartTicks: owner.PidStartTicks, BootID: owner.BootID,
+		}, Tag: owner.InstanceTag, Generation: generation, Signal: ShutdownSignalNone,
+	}
 	if armingOwnerLiveness(owner) == identity.Dead {
-		return nil
+		outcome.Result = ShutdownAlreadyGone
+		return outcome, nil
 	}
 	if armingOwnerLiveness(owner) == identity.Unknown {
-		return fmt.Errorf("owner identity is uninspectable; replacement is not authorized")
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = "owner identity is uninspectable; replacement is not authorized"
+		return outcome, fmt.Errorf("%s", outcome.Reason)
 	}
 	if err := writeShutdownIntent(root, owner, requester); err != nil {
-		return fmt.Errorf("write shutdown intent: %w", err)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = fmt.Sprintf("write shutdown intent: %v", err)
+		return outcome, fmt.Errorf("%s", outcome.Reason)
 	}
 	// Re-authenticate immediately beside signalling: the replacement caller
 	// did not spawn this owner and the shutdown-intent write created a race
 	// window in which the recorded pid could have changed.
 	switch armingOwnerLiveness(owner) {
 	case identity.Dead:
-		return nil
+		outcome.Result = ShutdownAlreadyGone
+		return outcome, nil
 	case identity.Unknown:
-		return fmt.Errorf("owner identity became uninspectable before signalling; replacement is not authorized")
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = "owner identity became uninspectable before signalling; replacement is not authorized"
+		return outcome, fmt.Errorf("%s", outcome.Reason)
 	}
-	if err := signalGroup(owner.Pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal owner: %w", err)
+	if err := armingOwnerSignal(owner.Pid, syscall.SIGTERM); err != nil {
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = fmt.Sprintf("signal owner: %v", err)
+		return outcome, fmt.Errorf("%s", outcome.Reason)
 	}
-	deadline := time.Now().Add(scaledWait(5, scaleMilli))
-	for time.Now().Before(deadline) {
+	outcome.Signal = ShutdownSignalTerm
+	registryPath, _ := registry.DefaultPath()
+	deadline := armingNow().Add(scaledWait(ceilingSeconds, scaleMilli))
+	for armingNow().Before(deadline) {
 		if armingOwnerLiveness(owner) == identity.Dead {
-			return nil
+			outcome.Result = ShutdownStopped
+			if registryPath != "" && registryShowsOwnerExited(registryPath, owner.InstanceTag) {
+				outcome.Reason = "shutdown"
+			}
+			return outcome, nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		if registryPath != "" && registryShowsOwnerExited(registryPath, owner.InstanceTag) {
+			outcome.Result = ShutdownStopped
+			outcome.Reason = "shutdown"
+			return outcome, nil
+		}
+		armingSleep(50 * time.Millisecond)
+	}
+	if registryPath != "" && registryShowsOwnerExited(registryPath, owner.InstanceTag) {
+		outcome.Result = ShutdownStopped
+		outcome.Reason = "shutdown"
+		return outcome, nil
 	}
 	switch armingOwnerLiveness(owner) {
 	case identity.Dead:
-		return nil
-	case identity.Unknown:
-		return fmt.Errorf("owner identity became uninspectable before SIGKILL; replacement is not authorized")
-	}
-	if err := signalGroup(owner.Pid, syscall.SIGKILL); err != nil {
-		return fmt.Errorf("kill owner: %w", err)
-	}
-	deadline = time.Now().Add(scaledWait(1, scaleMilli))
-	for time.Now().Before(deadline) {
-		if armingOwnerLiveness(owner) == identity.Dead {
-			return nil
+		outcome.Result = ShutdownStopped
+		if registryPath != "" && registryShowsOwnerExited(registryPath, owner.InstanceTag) {
+			outcome.Reason = "shutdown"
 		}
-		time.Sleep(20 * time.Millisecond)
+		return outcome, nil
+	case identity.Unknown:
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = "owner identity became uninspectable before SIGKILL; replacement is not authorized"
+		return outcome, fmt.Errorf("%s", outcome.Reason)
 	}
-	return fmt.Errorf("owner pid %d did not stop", owner.Pid)
+	if err := armingOwnerSignal(owner.Pid, syscall.SIGKILL); err != nil {
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = fmt.Sprintf("kill owner: %v", err)
+		return outcome, fmt.Errorf("%s", outcome.Reason)
+	}
+	outcome.Signal = ShutdownSignalKill
+	deadline = armingNow().Add(scaledDuration(componentPostKillProofInterval, scaleMilli))
+	for armingNow().Before(deadline) {
+		if armingOwnerLiveness(owner) == identity.Dead {
+			outcome.Result = ShutdownStopped
+			outcome.Reason = "shutdown-escalated"
+			return outcome, nil
+		}
+		armingSleep(20 * time.Millisecond)
+	}
+	outcome.Result = ShutdownNotStopped
+	outcome.Reason = fmt.Sprintf("owner pid %d did not stop after KILL", owner.Pid)
+	return outcome, nil
 }
 
 func recordedHeld(root string) ([]Held, error) {
@@ -397,40 +610,75 @@ func waitForRecordedGroupAbsence(control recordedComponentControl, pgid int64, w
 	}
 }
 
-func stopRecordedComponent(control recordedComponentControl, held Held, scaleMilli int) error {
+func supervisionComponentName(component Component) string {
+	if component == Reaper {
+		return "job-reaper"
+	}
+	return "repo-watcher"
+}
+
+func stopRecordedComponent(control recordedComponentControl, held Held, scaleMilli int) (ComponentOutcome, error) {
+	outcome := ComponentOutcome{
+		Component: supervisionComponentName(held.Component), Identity: held.Identity,
+		Tag: held.Tag, Generation: held.Generation, Signal: ShutdownSignalNone,
+	}
 	if err := authenticateRecordedComponent(control, held); err != nil {
 		if errors.Is(err, errRecordedComponentGone) {
-			return nil
+			outcome.Result = ShutdownAlreadyGone
+			return outcome, nil
 		}
-		return err
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = err.Error()
+		return outcome, err
 	}
 	// The identity and tag proof is immediately adjacent to this signal.
 	// These detached processes were not spawned by this up invocation.
 	if err := control.signalGroup(held.Identity.Pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal recorded %s process group: %w", held.Component, err)
+		err = fmt.Errorf("signal recorded %s process group: %w", held.Component, err)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = err.Error()
+		return outcome, err
 	}
+	outcome.Signal = ShutdownSignalTerm
 	if absent, err := waitForRecordedGroupAbsence(control, held.Identity.Pid, scaledWait(5, scaleMilli)); err != nil {
-		return fmt.Errorf("prove recorded %s process group stopped: %w", held.Component, err)
+		err = fmt.Errorf("prove recorded %s process group stopped: %w", held.Component, err)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = err.Error()
+		return outcome, err
 	} else if absent {
-		return nil
+		outcome.Result = ShutdownStopped
+		return outcome, nil
 	}
 	// Re-authenticate beside escalation. If the leader exited or changed
 	// identity while its group survived, custody is no longer sufficient to
 	// risk signalling whatever now occupies the recorded group id.
 	if err := authenticateRecordedComponent(control, held); err != nil {
-		return fmt.Errorf("refuse SIGKILL for %s: %w", held.Component, err)
+		err = fmt.Errorf("refuse SIGKILL for %s: %w", held.Component, err)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = err.Error()
+		return outcome, err
 	}
 	if err := control.signalGroup(held.Identity.Pid, syscall.SIGKILL); err != nil {
-		return fmt.Errorf("kill recorded %s process group: %w", held.Component, err)
+		err = fmt.Errorf("kill recorded %s process group: %w", held.Component, err)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = err.Error()
+		return outcome, err
 	}
-	absent, err := waitForRecordedGroupAbsence(control, held.Identity.Pid, scaledWait(1, scaleMilli))
+	outcome.Signal = ShutdownSignalKill
+	absent, err := waitForRecordedGroupAbsence(control, held.Identity.Pid, scaledDuration(componentPostKillProofInterval, scaleMilli))
 	if err != nil {
-		return fmt.Errorf("prove recorded %s process group killed: %w", held.Component, err)
+		err = fmt.Errorf("prove recorded %s process group killed: %w", held.Component, err)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = err.Error()
+		return outcome, err
 	}
 	if !absent {
-		return fmt.Errorf("recorded %s process group %d did not stop", held.Component, held.Identity.Pid)
+		outcome.Result = ShutdownNotStopped
+		outcome.Reason = fmt.Sprintf("death unproven after KILL for process group %d", held.Identity.Pid)
+		return outcome, nil
 	}
-	return nil
+	outcome.Result = ShutdownStopped
+	return outcome, nil
 }
 
 var enumerateTakeoverProcesses = census.EnumerateConfiguredProcesses
@@ -466,7 +714,11 @@ func taggedTakeoverComponents(root, ownerTag string, processes []census.Process)
 			(process.StartTicks == 0) != (process.BootID == "") {
 			return nil, fmt.Errorf("tagged %s pid %d has incomplete process-group identity", component, process.Pid)
 		}
-		held = append(held, Held{Component: component, Tag: tag, Identity: identity.Ref{
+		generation, err := strconv.ParseInt(processArgument(fields, "--generation"), 10, 64)
+		if err != nil || generation < 1 {
+			return nil, fmt.Errorf("tagged %s pid %d has an invalid generation", component, process.Pid)
+		}
+		held = append(held, Held{Component: component, Tag: tag, Generation: generation, Identity: identity.Ref{
 			Pid: process.Pid, StartedAtSec: process.Started,
 			StartTicks: process.StartTicks, BootID: process.BootID,
 		}})
@@ -485,10 +737,49 @@ func canonicalPathForTakeover(path string) string {
 	return filepath.Clean(absolute)
 }
 
+func mergeTakeoverComponents(recorded, discovered []Held) ([]Held, error) {
+	byPid := map[int64]Held{}
+	for _, component := range append(recorded, discovered...) {
+		if prior, exists := byPid[component.Identity.Pid]; exists {
+			if prior.Tag != component.Tag || prior.Component != component.Component || prior.Identity != component.Identity || prior.Generation != component.Generation {
+				return nil, fmt.Errorf("supervision component pid %d has conflicting recorded and census identities", component.Identity.Pid)
+			}
+			continue
+		}
+		byPid[component.Identity.Pid] = component
+	}
+	held := make([]Held, 0, len(byPid))
+	for _, component := range byPid {
+		held = append(held, component)
+	}
+	sort.Slice(held, func(i, j int) bool {
+		rank := func(component Component) int {
+			if component == Watcher {
+				return 0
+			}
+			return 1
+		}
+		if rank(held[i].Component) != rank(held[j].Component) {
+			return rank(held[i].Component) < rank(held[j].Component)
+		}
+		if held[i].Generation != held[j].Generation {
+			return held[i].Generation < held[j].Generation
+		}
+		return held[i].Identity.Pid < held[j].Identity.Pid
+	})
+	return held, nil
+}
+
 func takeoverComponents(root, metasystemRoot, ownerTag string) ([]Held, error) {
 	held, err := recordedHeld(root)
 	if err != nil {
 		return nil, err
+	}
+	// Without an owner tag there is no safe prefix for the census half of the
+	// sweep. Recorded identities remain sufficient for the ordinary
+	// crashed-owner path and are authenticated again beside every signal.
+	if ownerTag == "" {
+		return held, nil
 	}
 	processes, err := enumerateTakeoverProcesses(metasystemRoot)
 	if err != nil {
@@ -498,29 +789,77 @@ func takeoverComponents(root, metasystemRoot, ownerTag string) ([]Held, error) {
 	if err != nil {
 		return nil, err
 	}
-	byPid := map[int64]Held{}
-	for _, component := range append(held, discovered...) {
-		if prior, exists := byPid[component.Identity.Pid]; exists {
-			if prior.Tag != component.Tag || prior.Component != component.Component || prior.Identity != component.Identity {
-				return nil, fmt.Errorf("supervision component pid %d has conflicting recorded and census identities", component.Identity.Pid)
-			}
-			continue
-		}
-		byPid[component.Identity.Pid] = component
-	}
-	held = held[:0]
-	for _, component := range byPid {
-		held = append(held, component)
-	}
-	return held, nil
+	return mergeTakeoverComponents(held, discovered)
 }
 
-func stopTakeoverComponents(root, metasystemRoot, ownerTag string, scaleMilli int) error {
-	held, err := takeoverComponents(root, metasystemRoot, ownerTag)
-	if err != nil {
-		return err
+// ReadInventory returns live owner and component identities from the caller's
+// single process snapshot. It performs no writes and sends no signals.
+func ReadInventory(root string, processes []census.Process) ([]InventoryItem, error) {
+	owner, ownerErr := ReadArmingOwner(root)
+	if ownerErr != nil && !os.IsNotExist(ownerErr) {
+		return nil, ownerErr
 	}
-	control := recordedComponentControl{
+	var items []InventoryItem
+	ownerTag := ""
+	fenceGeneration := int64(0)
+	if ownerErr == nil {
+		ownerTag = owner.InstanceTag
+		fenceGeneration = owner.FenceGeneration
+		switch armingOwnerLiveness(owner) {
+		case identity.Unknown:
+			return nil, fmt.Errorf("owner identity is uninspectable")
+		case identity.Alive:
+			generation, _ := publishedOwnerState(root, owner)
+			items = append(items, InventoryItem{
+				Component: "supervision-owner",
+				Identity: identity.Ref{
+					Pid: owner.Pid, StartedAtSec: owner.PidStartedAt,
+					StartTicks: owner.PidStartTicks, BootID: owner.BootID,
+				},
+				Tag: ownerTag, Generation: generation, FenceGeneration: fenceGeneration,
+			})
+		}
+	}
+	recorded, err := recordedHeld(root)
+	if err != nil {
+		return nil, err
+	}
+	if ownerTag == "" {
+		var document stateDocument
+		if data, readErr := os.ReadFile(filepath.Join(SupervisionDir(root), "state.json")); readErr == nil && json.Unmarshal(data, &document) == nil {
+			ownerTag = document.Owner.InstanceTag
+		}
+	}
+	var discovered []Held
+	if ownerTag != "" {
+		discovered, err = taggedTakeoverComponents(root, ownerTag, processes)
+		if err != nil {
+			return nil, err
+		}
+	}
+	held, err := mergeTakeoverComponents(recorded, discovered)
+	if err != nil {
+		return nil, err
+	}
+	control := takeoverComponentControl()
+	for _, component := range held {
+		authErr := authenticateRecordedComponent(control, component)
+		if errors.Is(authErr, errRecordedComponentGone) {
+			continue
+		}
+		if authErr != nil {
+			return nil, authErr
+		}
+		items = append(items, InventoryItem{
+			Component: supervisionComponentName(component.Component), Identity: component.Identity,
+			Tag: component.Tag, Generation: component.Generation, FenceGeneration: fenceGeneration,
+		})
+	}
+	return items, nil
+}
+
+var takeoverComponentControl = func() recordedComponentControl {
+	return recordedComponentControl{
 		prober: identity.KernelProber{}, groupAbsent: kernelGroupAbsent,
 		signalGroup: func(pgid int64, signal syscall.Signal) error {
 			if err := syscall.Kill(-int(pgid), signal); err != nil && err != syscall.ESRCH {
@@ -529,16 +868,27 @@ func stopTakeoverComponents(root, metasystemRoot, ownerTag string, scaleMilli in
 			return nil
 		},
 	}
+}
+
+func stopTakeoverComponents(root, metasystemRoot, ownerTag string, scaleMilli int, ownerOrderly bool) ([]ComponentOutcome, error) {
+	held, err := takeoverComponents(root, metasystemRoot, ownerTag)
+	if err != nil {
+		return nil, err
+	}
+	control := takeoverComponentControl()
+	var outcomes []ComponentOutcome
+	var failures []error
 	for _, component := range held {
-		if err := stopRecordedComponent(control, component, scaleMilli); err != nil {
-			name := "repo-watcher"
-			if component.Component == Reaper {
-				name = "job-reaper"
-			}
-			return &ComponentFailure{Component: name, Err: err}
+		outcome, stopErr := stopRecordedComponent(control, component, scaleMilli)
+		if ownerOrderly && outcome.Result == ShutdownAlreadyGone {
+			outcome.Reason = "by the owner"
+		}
+		outcomes = append(outcomes, outcome)
+		if stopErr != nil {
+			failures = append(failures, &ComponentFailure{Component: outcome.Component, Err: stopErr})
 		}
 	}
-	return nil
+	return outcomes, errors.Join(failures...)
 }
 
 func releaseDeadOwnerLock(root string, expected ArmingOwner) error {
@@ -600,6 +950,19 @@ func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 	argv := []string{"supervise", "owner", "--repo", options.Root, "--metasystem-root", options.MetasystemRoot, "--scope", options.Scope,
 		"--gate", gate, "--tag", tag, "--interval", strconv.Itoa(options.IntervalSec),
 		"--fingerprint", options.Fingerprint, "--watcher-cap", strconv.FormatInt(options.WatcherCap, 10)}
+	for _, variable := range []string{
+		"METASYSTEM_GO_OWNER_IGNORE_TERM",
+		"METASYSTEM_GO_COMPONENT_CRASH_ON_START",
+		"METASYSTEM_GO_COMPONENT_IGNORE_TERM",
+		"METASYSTEM_GO_COMPONENT_SLOW_STOP",
+	} {
+		if os.Getenv(variable) != "" && !fixtureauth.FixtureModeRoot(options.MetasystemRoot) {
+			return ArmingOwner{}, fmt.Errorf("supervision fixture seam %s is fixture-only", variable)
+		}
+	}
+	if os.Getenv("METASYSTEM_GO_OWNER_IGNORE_TERM") != "" {
+		argv = append(argv, "--ignore-term")
+	}
 	var cmd *exec.Cmd
 	if options.Command != nil {
 		cmd, err = options.Command(argv...)
@@ -635,7 +998,7 @@ func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 	}
 	owner := ArmingOwner{
 		Pid: pid, PidStartedAt: exact.StartedAt.Unix(), PidStartTicks: exact.StartTicks, BootID: exact.BootID, InstanceTag: tag,
-		AcquiredAt: time.Now().UTC().Format(time.RFC3339)}
+		AcquiredAt: time.Now().UTC().Format(time.RFC3339), FenceGeneration: options.FenceGeneration}
 	if err := WriteArmingOwner(options.Root, owner); err != nil {
 		_ = cmd.Process.Kill()
 		return ArmingOwner{}, err
@@ -680,6 +1043,65 @@ func requireOwnerTagPrefix(requestedStateRoot, expectedTagPrefix string, owner A
 	return nil
 }
 
+func appendShutdownEscalated(root string, owner ArmingOwner, outcomes []ComponentOutcome, forceSweepPending bool, scaleMilli int) error {
+	registryPath, err := registry.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("resolve supervision registry for escalated shutdown: %w", err)
+	}
+	if registryShowsOwnerExited(registryPath, owner.InstanceTag) {
+		return nil
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		return fmt.Errorf("read shutdown caller identity for escalated registry row")
+	}
+	killed := make([]string, 0, len(outcomes))
+	sweepPending := forceSweepPending
+	for _, outcome := range outcomes {
+		if outcome.Signal == ShutdownSignalKill {
+			killed = append(killed, fmt.Sprintf("pid %d (%s)", outcome.Identity.Pid, outcome.Component))
+		}
+		if outcome.Result == ShutdownNotStopped {
+			sweepPending = true
+		}
+	}
+	record := map[string]any{
+		"schemaVersion": 1,
+		"event":         registry.EventReaped,
+		"checkoutPath":  root,
+		"at":            time.Now().UTC().Format(time.RFC3339),
+		"ownerTag":      owner.InstanceTag,
+		"reason":        "shutdown-escalated",
+		"killed":        killed,
+		"sweepPending":  sweepPending,
+		"engine":        "go",
+		"engineBuild":   BuildStamp,
+	}
+	payload, err := EncodeRecord(record)
+	if err != nil {
+		return fmt.Errorf("encode escalated shutdown registry row: %w", err)
+	}
+	self := lock.Identity{
+		Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(),
+		Tag: fmt.Sprintf("metasystem-shutdown-%d", exact.Pid),
+	}
+	probe := func(who lock.Identity) lock.Liveness {
+		switch identity.AliveRef(identity.KernelProber{}, identity.Ref{Pid: who.Pid, StartedAtSec: who.PidStartedAt}) {
+		case identity.Alive:
+			return lock.Alive
+		case identity.Dead:
+			return lock.Dead
+		default:
+			return lock.Unknown
+		}
+	}
+	if err := registry.LockedAppend(registryPath, self, payload,
+		scaledDuration(registryAppendLockWait, scaleMilli), 25*time.Millisecond, probe); err != nil {
+		return fmt.Errorf("append escalated shutdown registry row: %w", err)
+	}
+	return nil
+}
+
 // EnsureArmed establishes exactly one current supervision owner and waits
 // until its watcher, reaper, and first generation-bound census all verify.
 // A dead owner is taken over only after exact death; a live older generation
@@ -688,7 +1110,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 	if options.MetasystemRoot == "" {
 		options.MetasystemRoot = options.Root
 	}
-	if options.Root == "" || options.MetasystemRoot == "" || options.Scope == "" || (options.Binary == "" && options.Command == nil) || options.Fingerprint == "" || options.IntervalSec < 1 || options.WatcherCap < 1 || options.OwnerTagPrefix == "" {
+	if options.Root == "" || options.MetasystemRoot == "" || options.Scope == "" || (options.Binary == "" && options.Command == nil) || options.Fingerprint == "" || options.IntervalSec < 1 || options.WatcherCap < 1 || options.OwnerTagPrefix == "" || options.FenceGeneration < 0 {
 		return EnsureResult{}, fmt.Errorf("supervision arming options are incomplete")
 	}
 	if options.WaitScaleMilli < 1 {
@@ -745,7 +1167,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 			if err := requireCeilingClear(options.Root, options.MetasystemRoot, options.WatcherCap); err != nil {
 				return EnsureResult{}, err
 			}
-			if err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli); err != nil {
+			if _, err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
 				return EnsureResult{}, fmt.Errorf("dead-owner takeover refused: %w", err)
 			}
 			if err := releaseDeadOwnerLock(options.Root, owner); err != nil {
@@ -785,10 +1207,10 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		if err := requireCeilingClear(options.Root, options.MetasystemRoot, options.WatcherCap); err != nil {
 			return EnsureResult{}, err
 		}
-		if err := stopOwner(options.Root, owner, options.WaitScaleMilli, "metasystem up engine-generation replacement"); err != nil {
+		if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "metasystem up engine-generation replacement"); err != nil {
 			return EnsureResult{}, err
 		}
-		if err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli); err != nil {
+		if _, err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
 			return EnsureResult{}, fmt.Errorf("generation replacement refused: %w", err)
 		}
 		if err := releaseDeadOwnerLock(options.Root, owner); err != nil {
@@ -801,41 +1223,76 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 
 // Shutdown stops the exact owner recorded for this checkout. The expected tag
 // prefix prevents a copied lock from signalling another repository's owner.
-func Shutdown(root, requestedStateRoot, expectedTagPrefix string, scaleMilli int) error {
+func Shutdown(root, requestedStateRoot, expectedTagPrefix string, scaleMilli int) (ShutdownReport, error) {
 	return ShutdownAt(root, root, requestedStateRoot, expectedTagPrefix, scaleMilli)
 }
 
 // ShutdownAt stops repository supervision while using the installed
 // metasystem's authorized census source for the final tag sweep.
-func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix string, scaleMilli int) error {
+func ShutdownAt(root, metasystemRoot, requestedStateRoot, expectedTagPrefix string, scaleMilli int) (ShutdownReport, error) {
+	var report ShutdownReport
 	owner, err := ReadArmingOwner(root)
 	if os.IsNotExist(err) {
-		return nil
+		// A crashed owner can disappear before recording an outcome while its
+		// published watcher and reaper remain. The caller owns the final sweep:
+		// reuse the identity-bound component ladder instead of treating a
+		// missing owner record as proof that the components are gone.
+		ownerTag := ""
+		if published, publishedErr := ReadPublishedGeneration(root); publishedErr == nil {
+			ownerTag = published.Owner.InstanceTag
+		} else if !os.IsNotExist(publishedErr) {
+			return report, publishedErr
+		}
+		componentOutcomes, componentErr := stopTakeoverComponents(root, metasystemRoot, ownerTag, scaleMilli, false)
+		report.Outcomes = append(report.Outcomes, componentOutcomes...)
+		return report, componentErr
 	}
 	if err != nil {
-		return err
+		return report, err
 	}
 	// A copied lock never authorizes this checkout to act on another
 	// repository, regardless of whether its recorded owner is still alive.
 	if err := requireOwnerTagPrefix(requestedStateRoot, expectedTagPrefix, owner); err != nil {
-		return err
+		return report, err
 	}
 	// A dead owner cannot be selected as a signal target. Preserve the
 	// pre-custody behavior for its cleanup path even when it died before its
 	// first registry row or its recorded path is stale after a checkout move.
 	switch armingOwnerLiveness(owner) {
-	case identity.Unknown:
-		return fmt.Errorf("owner identity is uninspectable; replacement is not authorized")
 	case identity.Alive:
 		if err := requireOwnerCheckoutPath(requestedStateRoot, owner); err != nil {
-			return err
+			return report, err
 		}
 	}
-	if err := stopOwner(root, owner, scaleMilli, "metasystem up shutdown"); err != nil {
-		return err
+	ownerOutcome, ownerErr := stopOwner(root, owner, scaleMilli, "metasystem up shutdown")
+	report.Outcomes = append(report.Outcomes, ownerOutcome)
+	ownerOrderly := ownerOutcome.Result == ShutdownStopped && ownerOutcome.Signal == ShutdownSignalTerm
+	componentOutcomes, componentErr := stopTakeoverComponents(root, metasystemRoot, owner.InstanceTag, scaleMilli, ownerOrderly)
+	report.Outcomes = append(report.Outcomes, componentOutcomes...)
+	if ownerOutcome.Signal == ShutdownSignalKill {
+		if err := appendShutdownEscalated(root, owner, report.Outcomes, componentErr != nil, scaleMilli); err != nil {
+			registryPath, _ := registry.DefaultPath()
+			report.Failures = append(report.Failures, ShutdownFailure{
+				Component: "supervision-registry", Path: registryPath, Reason: err.Error(),
+				Did: "left the registry without the shutdown-escalated row",
+			})
+			// The process outcome remains a successful KILL, but it may not
+			// claim the registry row whose publication just failed.
+			if ownerOutcome.Result == ShutdownStopped && ownerOutcome.Reason == "shutdown-escalated" {
+				ownerOutcome.Reason = ""
+				report.Outcomes[0] = ownerOutcome
+			}
+			componentErr = errors.Join(componentErr, err)
+		}
 	}
-	if err := stopTakeoverComponents(root, metasystemRoot, owner.InstanceTag, scaleMilli); err != nil {
-		return err
+	if ownerOutcome.Result == ShutdownNotStopped {
+		return report, errors.Join(ownerErr, componentErr)
 	}
-	return releaseDeadOwnerLock(root, owner)
+	if err := releaseDeadOwnerLock(root, owner); err != nil {
+		report.Failures = append(report.Failures, ShutdownFailure{
+			Component: "supervision-lock", Path: ownerLockDir(root), Reason: err.Error(), Did: "left the lock",
+		})
+		return report, errors.Join(ownerErr, componentErr, err)
+	}
+	return report, errors.Join(ownerErr, componentErr)
 }

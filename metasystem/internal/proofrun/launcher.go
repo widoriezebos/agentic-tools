@@ -15,7 +15,12 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
+
+type CreationClaim interface {
+	Close() error
+}
 
 type LaunchOptions struct {
 	Suite              string
@@ -38,13 +43,62 @@ type LaunchOptions struct {
 	Command            []string
 	Output             io.Writer
 	ErrorOutput        io.Writer
+	FenceReader        func(string) (stopfence.Record, error)
+	ClaimCreator       func(string, string, int64, identity.Ref) (CreationClaim, error)
+	Prober             identity.Prober
+	Signal             func(int, syscall.Signal) error
 }
 
 func LaunchSuite(options LaunchOptions) int {
+	if options.Output == nil {
+		options.Output = io.Discard
+	}
+	if options.ErrorOutput == nil {
+		options.ErrorOutput = io.Discard
+	}
 	if err := validateLaunchOptions(options); err != nil {
 		fmt.Fprintln(options.ErrorOutput, "suite launcher:", err)
 		return 2
 	}
+	readFence := options.FenceReader
+	if readFence == nil {
+		readFence = stopfence.Read
+	}
+	fence, err := readFence(options.Root)
+	if err != nil {
+		fmt.Fprintln(options.ErrorOutput, "suite launcher: read stop fence:", err)
+		return 1
+	}
+	if fence.State == stopfence.StateClosed {
+		printStoppedRefusal(options.ErrorOutput, fenceCheckout(fence, options.Root), fence)
+		return 1
+	}
+	prober := options.Prober
+	if prober == nil {
+		prober = identity.KernelProber{}
+	}
+	launcherExact, state, err := prober.Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		fmt.Fprintf(options.ErrorOutput, "suite launcher: cannot record exact launcher identity: %v (%s)\n", err, state)
+		return 1
+	}
+	createClaim := options.ClaimCreator
+	if createClaim == nil {
+		createClaim = func(root, verb string, generation int64, ref identity.Ref) (CreationClaim, error) {
+			return stopfence.Creating(root, verb, generation, ref)
+		}
+	}
+	claim, err := createClaim(options.Root, "proof-run-launch", fence.Generation, launcherExact.Ref())
+	if err != nil {
+		fmt.Fprintln(options.ErrorOutput, "suite launcher: open creation claim:", err)
+		return 1
+	}
+	claimClosed := false
+	defer func() {
+		if !claimClosed {
+			_ = claim.Close()
+		}
+	}()
 	if err := os.MkdirAll(filepath.Dir(options.LogPath), 0o700); err != nil {
 		fmt.Fprintln(options.ErrorOutput, "suite launcher:", err)
 		return 1
@@ -80,7 +134,7 @@ func LaunchSuite(options LaunchOptions) int {
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
 	}
-	suiteExact, state, probeErr := (identity.KernelProber{}).Probe(int64(suite.Process.Pid))
+	suiteExact, state, probeErr := prober.Probe(int64(suite.Process.Pid))
 	if probeErr != nil || state != identity.Alive {
 		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
 		_ = suite.Wait()
@@ -94,7 +148,7 @@ func LaunchSuite(options LaunchOptions) int {
 	go copyStream(&copies, combinedErr, suiteErr)
 	donePath := options.LogPath + ".done"
 	_ = os.Remove(donePath)
-	watchdog := watchdogCommand(options, suiteExact.Ref(), donePath)
+	watchdog := watchdogCommand(options, suiteExact.Ref(), donePath, fence.Generation)
 	watchdog.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	watchdogOut, err := watchdog.StdoutPipe()
 	if err != nil {
@@ -116,19 +170,102 @@ func LaunchSuite(options LaunchOptions) int {
 		fmt.Fprintln(combinedErr, "suite launcher: start sibling watchdog:", err)
 		return 1
 	}
+	watchdogExact, watchdogState, watchdogProbeErr := prober.Probe(int64(watchdog.Process.Pid))
+	if watchdogProbeErr != nil || watchdogState != identity.Alive {
+		_ = watchdog.Process.Kill()
+		_ = watchdog.Wait()
+		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		_ = suite.Wait()
+		fmt.Fprintf(combinedErr, "suite launcher: cannot record exact watchdog identity: %v (%s)\n", watchdogProbeErr, watchdogState)
+		return 1
+	}
 	copies.Add(2)
 	go copyStream(&copies, combined, watchdogOut)
 	go copyStream(&copies, combinedErr, watchdogErr)
 
-	suiteErrWait := suite.Wait()
-	if err := touchDone(donePath); err != nil {
-		fmt.Fprintln(combinedErr, "suite launcher: write watchdog done file:", err)
+	launcherPgid, _ := syscall.Getpgid(os.Getpid())
+	record := Record{
+		Suite: options.Suite, Root: options.Root, FenceGeneration: fence.Generation,
+		Launcher:     processIdentity(launcherExact, int64(launcherPgid)),
+		SuiteProcess: processIdentity(suiteExact, int64(suite.Process.Pid)),
+		Watchdog:     processIdentity(watchdogExact, int64(watchdog.Process.Pid)),
+		Status:       StatusRunning,
+	}
+	if err := writeRecord(record); err != nil {
+		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		_ = suite.Wait()
+		_ = watchdog.Process.Kill()
+		_ = watchdog.Wait()
+		copies.Wait()
+		fmt.Fprintln(combinedErr, "suite launcher: publish proof-run record:", err)
+		return 1
+	}
+	secondFence, secondFenceErr := readFence(options.Root)
+	stoppedDuringStart := secondFenceErr == nil && (secondFence.State == stopfence.StateClosed || secondFence.Generation != fence.Generation)
+	var suiteWait <-chan error
+	if secondFenceErr != nil || stoppedDuringStart {
+		waited := make(chan error, 1)
+		suiteWait = waited
+		go func() { waited <- suite.Wait() }()
+		outcome := StopSuite(record.SuiteProcess, StopOptions{
+			TermGrace: options.TermGrace, KillGrace: options.KillGrace, Poll: options.Poll,
+			Prober: prober, Signal: options.Signal,
+		})
+		if secondFenceErr != nil {
+			fmt.Fprintln(combinedErr, "suite launcher: second stop-fence read:", secondFenceErr)
+		}
+		if outcome.Result == StopNotStopped {
+			fmt.Fprintf(combinedErr, "suite launcher: proof-run suite was not stopped: %s\n", outcome.Reason)
+			if err := claim.Close(); err != nil {
+				fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
+			} else {
+				claimClosed = true
+			}
+			return 1
+		}
+	}
+	closeAfterCleanup := secondFenceErr != nil || stoppedDuringStart
+	if !closeAfterCleanup {
+		if err := claim.Close(); err != nil {
+			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			_ = suite.Wait()
+			_ = watchdog.Process.Kill()
+			_ = watchdog.Wait()
+			copies.Wait()
+			fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
+			return 1
+		}
+		claimClosed = true
+	}
+
+	var suiteErrWait error
+	if suiteWait == nil {
+		suiteErrWait = suite.Wait()
+	} else {
+		suiteErrWait = <-suiteWait
+	}
+	doneErr := touchDone(donePath)
+	var recordDoneErr error
+	if doneErr != nil {
+		fmt.Fprintln(combinedErr, "suite launcher: write watchdog done file:", doneErr)
+	} else if recordDoneErr = markDone(options.Root, options.Suite, launcherExact.Ref()); recordDoneErr != nil {
+		fmt.Fprintln(combinedErr, "suite launcher: mark proof-run done:", recordDoneErr)
 	}
 	watchdogErrWait := watchdog.Wait()
 	copies.Wait()
 	defer os.Remove(donePath)
+	if closeAfterCleanup {
+		if err := claim.Close(); err != nil {
+			fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
+			return 1
+		}
+		claimClosed = true
+	}
 
 	result := exitStatus(suiteErrWait)
+	if doneErr != nil || recordDoneErr != nil {
+		result = 1
+	}
 	if watchdogErrWait != nil {
 		result = 1
 	}
@@ -146,6 +283,18 @@ func LaunchSuite(options LaunchOptions) int {
 			result = 1
 		}
 	}
+	if stoppedDuringStart {
+		checkout := fenceCheckout(secondFence, options.Root)
+		if secondFence.State == stopfence.StateClosed {
+			printStoppedDuringStartRefusal(combinedErr, checkout, secondFence)
+		} else {
+			printRearmedDuringStartRefusal(combinedErr, checkout, "the proof run")
+		}
+		return 1
+	}
+	if secondFenceErr != nil {
+		return 1
+	}
 	return result
 }
 
@@ -162,13 +311,43 @@ func validateLaunchOptions(options LaunchOptions) error {
 	if len(options.Command) == 0 {
 		return errors.New("suite command is required")
 	}
-	if options.Output == nil {
-		options.Output = io.Discard
-	}
-	if options.ErrorOutput == nil {
-		options.ErrorOutput = io.Discard
+	if _, err := RecordPath(options.Root, options.Suite); err != nil {
+		return err
 	}
 	return nil
+}
+
+func printStoppedRefusal(output io.Writer, checkout string, fence stopfence.Record) {
+	description, descriptionErr := stopfence.ClosedDescription(fence, checkout)
+	command, commandErr := stopfence.ClosedCommand(fence, checkout)
+	if descriptionErr != nil || commandErr != nil {
+		fmt.Fprintf(output, "suite launcher: cannot render stopped refusal: %v %v\n", descriptionErr, commandErr)
+		return
+	}
+	fmt.Fprintln(output, description)
+	fmt.Fprintln(output, "at an agent-free terminal, run: "+command)
+}
+
+func printStoppedDuringStartRefusal(output io.Writer, checkout string, fence stopfence.Record) {
+	description, descriptionErr := stopfence.ClosedDescription(fence, checkout)
+	command, commandErr := stopfence.ClosedCommand(fence, checkout)
+	if descriptionErr != nil || commandErr != nil {
+		fmt.Fprintf(output, "suite launcher: cannot render stopped refusal: %v %v\n", descriptionErr, commandErr)
+		return
+	}
+	fmt.Fprintln(output, description+"; while the proof run started, it has been ended")
+	fmt.Fprintln(output, "at an agent-free terminal, run: "+command)
+}
+
+func printRearmedDuringStartRefusal(output io.Writer, checkout, thing string) {
+	fmt.Fprintf(output, "the checkout %s was stopped and armed again while %s started; %s has been ended; the caller may retry\n", checkout, thing, thing)
+}
+
+func fenceCheckout(record stopfence.Record, fallback string) string {
+	if record.Checkout != "" {
+		return record.Checkout
+	}
+	return fallback
 }
 
 type lockedWriter struct {
@@ -195,7 +374,7 @@ func copyStream(group *sync.WaitGroup, destination io.Writer, source io.Reader) 
 	_, _ = io.Copy(destination, source)
 }
 
-func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string) *exec.Cmd {
+func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string, fenceGeneration int64) *exec.Cmd {
 	executable := options.WatchdogExecutable
 	if executable == "" {
 		executable, _ = os.Executable()
@@ -211,6 +390,7 @@ func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string) *
 		"--suite-started-at", strconv.FormatInt(ref.StartedAtSec, 10),
 		"--suite-start-ticks", strconv.FormatInt(ref.StartTicks, 10),
 		"--suite-boot-id", ref.BootID,
+		"--fence-generation", strconv.FormatInt(fenceGeneration, 10),
 		"--silence-ms", strconv.FormatInt(options.Silence.Milliseconds(), 10),
 		"--section-cap-ms", strconv.FormatInt(options.SectionCap.Milliseconds(), 10),
 		"--evidence-timeout-ms", strconv.FormatInt(options.EvidenceTimeout.Milliseconds(), 10),

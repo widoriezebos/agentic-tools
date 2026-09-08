@@ -816,6 +816,14 @@ if [[ "$event" == stop ]]; then
   up_aggregate=$(printf '%s' "$up_output" | tail -1)
   if [[ "$up_aggregate" == *" re-armed="* ]]; then
     up_notice="Metasystem re-armed the rebuilt engine: $up_aggregate"
+  elif [[ "$up_aggregate" == "up outcome=stopped"* ]]; then
+    up_stopped_component=$(printf '%s\n' "$up_output" | sed -n 's/^component=stopped outcome=standing detail="\(.*\)"$/\1/p' | tail -1)
+    up_stopped_remedy=$(printf '%s\n' "$up_aggregate" | sed -n 's/^up outcome=stopped remedy="\(.*\)"$/\1/p')
+    if [[ "$up_stopped_component" == "stop incomplete "* || "$up_stopped_component" == "stop unfinished "* ]]; then
+      up_notice="Metasystem $up_stopped_component; run: $up_stopped_remedy."
+    else
+      up_notice="Metasystem is stopped for this checkout; start again with $up_stopped_remedy."
+    fi
   fi
   if (( up_rc != 0 )); then
     up_failure="Metasystem supervision arming failed: $up_aggregate"

@@ -12,10 +12,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -23,12 +25,14 @@ import (
 
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 func stewardCensusFor(repo string) steward.WorkerCensus {
@@ -516,6 +520,13 @@ func runStewardRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward run: --repo is required")
 		return 2
 	}
+	if os.Getenv("METASYSTEM_STEWARD_RUNNER_IGNORE_TERM") != "" {
+		if !fixtureauth.FixtureModeRoot(*repo) {
+			fmt.Fprintln(os.Stderr, "steward run: METASYSTEM_STEWARD_RUNNER_IGNORE_TERM is fixture-only")
+			return 2
+		}
+		signal.Ignore(syscall.SIGTERM)
+	}
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
@@ -526,6 +537,11 @@ func runStewardRun(args []string) int {
 		return nil
 	}, interval)
 	if err != nil {
+		var stopped *steward.StoppedError
+		if errors.As(err, &stopped) {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 		fmt.Fprintf(os.Stderr, "steward run: %v\n", err)
 		return 1
 	}
@@ -544,6 +560,12 @@ func runStewardArm(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
 		return 2
 	}
+	if refused, err := refuseStewardIfStopped(*repo); err != nil {
+		fmt.Fprintln(os.Stderr, "steward arm:", err)
+		return 1
+	} else if refused {
+		return 1
+	}
 	if err := humanauthority.ValidateTemporaryWordPair(*temporaryWord, *reviewBy); err != nil {
 		fmt.Fprintln(os.Stderr, "steward arm:", err)
 		return 2
@@ -551,7 +573,7 @@ func runStewardArm(args []string) int {
 	fixtureEnrollment := false
 	if *temporaryWord == "" {
 		var authorized bool
-		fixtureEnrollment, authorized = requireHumanStewardEnrollment(*repo, "steward arm")
+		fixtureEnrollment, authorized = requireHumanTerminal(*repo, "steward arm")
 		if !authorized {
 			return 1
 		}
@@ -585,6 +607,11 @@ func runStewardArm(args []string) int {
 		msg, err = steward.Arm(*repo, bin)
 	}
 	if err != nil {
+		var stopped *steward.StoppedError
+		if errors.As(err, &stopped) {
+			printStewardStopped(stopped.Checkout, stopped.Record)
+			return 1
+		}
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
 		return 1
 	}
@@ -602,7 +629,13 @@ func runStewardRestart(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward restart: --repo is required")
 		return 2
 	}
-	fixtureEnrollment, authorized := requireHumanStewardEnrollment(*repo, "steward restart")
+	if refused, err := refuseStewardIfStopped(*repo); err != nil {
+		fmt.Fprintln(os.Stderr, "steward restart:", err)
+		return 1
+	} else if refused {
+		return 1
+	}
+	fixtureEnrollment, authorized := requireHumanTerminal(*repo, "steward restart")
 	if !authorized {
 		return 1
 	}
@@ -626,6 +659,11 @@ func runStewardRestart(args []string) int {
 		msg, err = steward.Restart(*repo, bin)
 	}
 	if err != nil {
+		var stopped *steward.StoppedError
+		if errors.As(err, &stopped) {
+			printStewardStopped(stopped.Checkout, stopped.Record)
+			return 1
+		}
 		fmt.Fprintf(os.Stderr, "steward restart: %v\n", err)
 		return 1
 	}
@@ -664,22 +702,31 @@ func seedStewardLandingRef(repo string) (stewardLandingRefSeed, error) {
 	return stewardLandingRefSeed{Ref: landingRef}, nil
 }
 
-func requireHumanStewardEnrollment(repo, verb string) (fixtureGranted, authorized bool) {
-	metasystemRoot, err := upMetasystemRoot("")
+func refuseStewardIfStopped(repo string) (bool, error) {
+	top, err := canonicalPath(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: cannot resolve the installed engine: %v\n", verb, err)
-		return false, false
+		return false, err
 	}
-	classification, err := lease.ClassifyAt(repo, metasystemRoot, int64(os.Getppid()))
+	closed, record, err := stopfence.Closed(top)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: human ancestry proof failed: %v\n", verb, err)
-		return false, false
+		return false, fmt.Errorf("read process-creation fence: %w", err)
 	}
-	if classification.Class != lease.ClassHuman {
-		fmt.Fprintf(os.Stderr, "%s: explicit engine enrollment requires an agent-free terminal; caller classified %s\n", verb, classification.Class)
-		return false, false
+	if !closed {
+		return false, nil
 	}
-	return classification.FixtureGranted, true
+	printStewardStopped(top, record)
+	return true, nil
+}
+
+func printStewardStopped(checkout string, record stopfence.Record) {
+	description, descriptionErr := stopfence.ClosedDescription(record, checkout)
+	command, commandErr := stopfence.ClosedCommand(record, checkout)
+	if descriptionErr != nil || commandErr != nil {
+		fmt.Fprintln(os.Stderr, "steward: cannot render stopped refusal:", errors.Join(descriptionErr, commandErr))
+		return
+	}
+	fmt.Fprintln(os.Stderr, description)
+	fmt.Fprintln(os.Stderr, "run: "+command)
 }
 
 func runStewardDisarm(args []string) int {
@@ -692,12 +739,12 @@ func runStewardDisarm(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward disarm: --repo is required")
 		return 2
 	}
-	msg, err := steward.Disarm(*repo)
+	outcome, err := steward.Disarm(*repo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward disarm: %v\n", err)
 		return 1
 	}
-	fmt.Println(msg)
+	fmt.Println(outcome.LongForm())
 	return 0
 }
 

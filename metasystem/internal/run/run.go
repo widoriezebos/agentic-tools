@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 // Bounds, every one at the source.
@@ -159,32 +160,33 @@ type GovernedAdmissionResult struct {
 
 // Record is the run record, schema v1.
 type Record struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	RunId         string           `json:"runId"`
-	Kind          string           `json:"kind"`
-	Display       string           `json:"display"`
-	Custody       string           `json:"custody"`
-	Generation    int              `json:"generation"`
-	Pid           *int64           `json:"pid"`
-	PidStartedAt  *int64           `json:"pidStartedAt"`
-	PidStartTicks int64            `json:"pidStartTicks,omitempty"`
-	BootID        string           `json:"bootId,omitempty"`
-	Pgid          *int64           `json:"pgid"`
-	LaunchNonce   string           `json:"launchNonce"`
-	Log           string           `json:"log"`
-	StartedAt     string           `json:"startedAt"`
-	MainId        *string          `json:"mainId"`
-	OwnerLineage  *string          `json:"ownerLineage"`
-	ClaimEpoch    *int64           `json:"claimEpoch"`
-	SessionId     string           `json:"sessionId"`
-	GoalId        string           `json:"goalId"`
-	Governed      *GovernedAttempt `json:"governed,omitempty"`
-	StaleAfterMin int              `json:"staleAfterMin"`
-	HungSince     *string          `json:"hungSince"`
-	WindDownMin   int              `json:"windDownMin"`
-	Evidence      Evidence         `json:"evidence"`
-	Expect        Expect           `json:"expect"`
-	Status        string           `json:"status"`
+	SchemaVersion   int              `json:"schemaVersion"`
+	RunId           string           `json:"runId"`
+	Kind            string           `json:"kind"`
+	Display         string           `json:"display"`
+	Custody         string           `json:"custody"`
+	Generation      int              `json:"generation"`
+	FenceGeneration int64            `json:"fenceGeneration"`
+	Pid             *int64           `json:"pid"`
+	PidStartedAt    *int64           `json:"pidStartedAt"`
+	PidStartTicks   int64            `json:"pidStartTicks,omitempty"`
+	BootID          string           `json:"bootId,omitempty"`
+	Pgid            *int64           `json:"pgid"`
+	LaunchNonce     string           `json:"launchNonce"`
+	Log             string           `json:"log"`
+	StartedAt       string           `json:"startedAt"`
+	MainId          *string          `json:"mainId"`
+	OwnerLineage    *string          `json:"ownerLineage"`
+	ClaimEpoch      *int64           `json:"claimEpoch"`
+	SessionId       string           `json:"sessionId"`
+	GoalId          string           `json:"goalId"`
+	Governed        *GovernedAttempt `json:"governed,omitempty"`
+	StaleAfterMin   int              `json:"staleAfterMin"`
+	HungSince       *string          `json:"hungSince"`
+	WindDownMin     int              `json:"windDownMin"`
+	Evidence        Evidence         `json:"evidence"`
+	Expect          Expect           `json:"expect"`
+	Status          string           `json:"status"`
 	// ProvisionalVerdict freezes at draining ENTRY: adopted-pattern
 	// evidence is evaluated once there, so descendants writing the log
 	// later cannot change it.
@@ -233,6 +235,10 @@ type Store struct {
 	// explicitly names an obligation revision.
 	AdmitGoverned   func(GovernedAdmissionRequest) (GovernedAdmissionResult, error)
 	ObserveGoverned func(*Record, time.Time) AssumptionObservation
+	// FenceRead is the process-creation fence reader. Production uses the
+	// durable stop fence; tests can deterministically close it between the
+	// two reads of the creation handshake.
+	FenceRead func(root string) (stopfence.Record, error)
 }
 
 func (s *Store) getpgid(pid int64) (int64, error) {

@@ -110,7 +110,7 @@ func runProcAcknowledge(args []string) int {
 	// authorization. A human types this command; wrappers that need
 	// identity forwarding have no business acknowledging.
 	parent := int64(os.Getppid())
-	view, err := lease.ClassifyVerb(*root, parent)
+	view, err := classifyVerbCaller(*root, parent)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acknowledge refused: caller classification failed:", err)
 		return 1

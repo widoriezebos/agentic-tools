@@ -72,7 +72,8 @@ var immutableFields = map[string]bool{
 	"instanceTag": true, "outputStream": true, "reasoningEffort": true,
 	"composition": true, "sliceApprovalClaim": true, "destructiveReach": true,
 	"configurationObligations": true, "launchCapability": true,
-	"aliasedFrom": true, "rosterAliasedFrom": true,
+	"fenceGeneration": true,
+	"aliasedFrom":     true, "rosterAliasedFrom": true,
 	"declaredOutputs": true, "declaredOutputsDigest": true, "declaredOutputsSource": true,
 	"design":      true,
 	"rebasedFrom": true, "rebasedTo": true, "conflictedPaths": true,
@@ -360,6 +361,7 @@ func RecordSetup(root, job, sourcePath string) error {
 			"instanceTag", "dispatchMode", "resumedSessionId", "canonicalModelKey",
 			"permissionEnvelopeDigest", "capRequest", "inputHash",
 			"launchCapability", "destructiveReach", "configurationObligations",
+			"fenceGeneration",
 		} {
 			// The reservation's truth wins unconditionally: a setup source
 			// carrying a lookalike spelling (a copied record, a stale

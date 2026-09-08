@@ -194,8 +194,8 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	if !alive || after.Pid == before.Pid {
 		t.Fatalf("restart must record a different live runner: before=%+v after=%+v", before, after)
 	}
-	if out, err := Disarm(root); err != nil || !strings.Contains(out, "disarmed") {
-		t.Fatalf("disarm ends it: %q %v", out, err)
+	if out, err := Disarm(root); err != nil || !strings.Contains(out.LongForm(), "disarmed") {
+		t.Fatalf("disarm ends it: %+v %v", out, err)
 	}
 	if _, alive := liveRunner(root); alive {
 		t.Fatal("a disarmed repository has no runner")

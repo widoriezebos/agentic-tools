@@ -125,7 +125,7 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 }
 
 func brainHumanWordClassification(verb, root, by string, observedProof *humanauthority.Proof) (lease.ClassifyResult, error) {
-	classification, classifyErr := lease.ClassifyVerb(root, int64(os.Getppid()))
+	classification, classifyErr := classifyVerbCaller(root, int64(os.Getppid()))
 	brainState := brain.Read(root, goal.ExistingLedgerIdentity(root))
 	if brainState.State != brain.Undeclared {
 		command := fmt.Sprintf("metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>", verb)
@@ -1062,7 +1062,7 @@ func runGoalSplit(args []string) int {
 		proof = &observed
 		ratification = goal.SplitRatification{Tier: goal.RatifierHuman, By: f.by, DraftSHA256: digest}
 	} else {
-		classification, classErr := lease.ClassifyVerb(f.root, int64(os.Getppid()))
+		classification, classErr := classifyVerbCaller(f.root, int64(os.Getppid()))
 		if classErr != nil {
 			fmt.Fprintln(os.Stderr, "SPLIT_RATIFY_REFUSED: caller classification failed:", classErr)
 			return 1

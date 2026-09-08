@@ -129,7 +129,7 @@ func TestTerminateGroupKillsThroughATermImmuneOwnedGroup(t *testing.T) {
 	tag := fmt.Sprintf("metasystem-job-winddown-%d", os.Getpid())
 	cmd := spawnTaggedGroup(t, tag, true)
 	pgid := cmd.Process.Pid
-	if err := engine.terminateGroup(pgid, tag, false); err != nil {
+	if _, err := engine.terminateGroup(pgid, tag, false); err != nil {
 		t.Fatalf("kill-through wind-down failed: %v", err)
 	}
 	if !waitGroupDead(pgid, 3*time.Second) {
@@ -149,7 +149,7 @@ func TestTerminateGroupNeverSignalsAForeignGroup(t *testing.T) {
 		_, _ = foreign.Process.Wait()
 	})
 	tag := fmt.Sprintf("metasystem-job-foreign-%d", os.Getpid())
-	if err := engine.terminateGroup(foreign.Process.Pid, tag, false); err != nil {
+	if _, err := engine.terminateGroup(foreign.Process.Pid, tag, false); err != nil {
 		t.Fatalf("foreign wind-down must skip without error: %v", err)
 	}
 	if !groupAlive(foreign.Process.Pid) {
@@ -237,7 +237,7 @@ func TestTerminateGroupLeaksNoGroupsUnderCompression(t *testing.T) {
 		tag := fmt.Sprintf("metasystem-job-scale-%d-%d", os.Getpid(), cycle)
 		cmd := spawnTaggedGroup(t, tag, cycle%2 == 1)
 		pgid := cmd.Process.Pid
-		windDownErr := engine.terminateGroup(pgid, tag, false)
+		_, windDownErr := engine.terminateGroup(pgid, tag, false)
 		if waitGroupDead(pgid, 3*time.Second) {
 			continue
 		}

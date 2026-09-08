@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 // HealthStatus is the complete role vocabulary. Unknown is evidence that
@@ -118,15 +119,18 @@ type HealthObservationState struct {
 
 // HealthVerdict is the typed result of one completed health observation.
 type HealthVerdict struct {
-	Schema        int                    `json:"schema"`
-	ObservedAt    time.Time              `json:"observedAt"`
-	Observation   int64                  `json:"observation"`
-	Aggregate     string                 `json:"aggregate"`
-	Roles         []RoleVerdict          `json:"roles"`
-	ShouldAlert   bool                   `json:"shouldAlert"`
-	FindingDigest string                 `json:"findingDigest"`
-	State         HealthObservationState `json:"-"`
-	Spend         SpendObservation       `json:"-"`
+	Schema         int                    `json:"schema"`
+	ObservedAt     time.Time              `json:"observedAt"`
+	Observation    int64                  `json:"observation"`
+	Aggregate      string                 `json:"aggregate"`
+	Roles          []RoleVerdict          `json:"roles"`
+	ShouldAlert    bool                   `json:"shouldAlert"`
+	Stopped        bool                   `json:"stopped,omitempty"`
+	StopPhase      string                 `json:"stopPhase,omitempty"`
+	StopUnresolved int                    `json:"stopUnresolved,omitempty"`
+	FindingDigest  string                 `json:"findingDigest"`
+	State          HealthObservationState `json:"-"`
+	Spend          SpendObservation       `json:"-"`
 }
 
 // SpendCrossing is one independently alertable ceiling multiple.
@@ -192,7 +196,19 @@ func (v HealthVerdict) Line() string {
 		}
 		items = append(items, item)
 	}
-	return "HEALTH " + v.Aggregate + " — " + strings.Join(items, "; ")
+	prefix := "HEALTH "
+	if v.Stopped {
+		record := stopfence.Record{State: stopfence.StateClosed, Phase: v.StopPhase}
+		if v.StopUnresolved > 0 {
+			record.NotStopped = make([]stopfence.Survivor, v.StopUnresolved)
+		}
+		var err error
+		prefix, err = stopfence.HealthPrefix(record)
+		if err != nil {
+			prefix = "HEALTH STOP STATE INVALID "
+		}
+	}
+	return prefix + v.Aggregate + " — " + strings.Join(items, "; ")
 }
 
 // ObserveHealth evaluates every role and durably advances exactly one
@@ -221,6 +237,11 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 		previous = healthRecord{}
 	}
 	roles, spendObservation := evaluateHealthRoles(repoRoot, repoRoot, now.UTC(), prober, false)
+	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, previous.State); err != nil {
+		return HealthVerdict{}, err
+	} else if stopped != nil {
+		return *stopped, nil
+	}
 	if stateUnreadable {
 		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
 		for index := range roles {
@@ -253,6 +274,9 @@ func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober iden
 		prober = identity.KernelProber{}
 	}
 	roles, spendObservation := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, true)
+	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
+		return *stopped
+	}
 	aggregate := "healthy"
 	for _, role := range roles {
 		if role.Status == HealthDead {
@@ -267,6 +291,46 @@ func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober iden
 		Schema: 1, ObservedAt: now.UTC(), Aggregate: aggregate,
 		Roles: roles, FindingDigest: healthFindingDigest(roles), Spend: spendObservation,
 	}
+}
+
+func healthStopped(repoRoot string, now time.Time, roles []RoleVerdict, spend SpendObservation, state HealthObservationState) (*HealthVerdict, error) {
+	closed, record, err := stopfence.Closed(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("read process-creation fence for health: %w", err)
+	}
+	if !closed {
+		return nil, nil
+	}
+	remedy, err := stopfence.ClosedCommand(record, repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	for index := range roles {
+		if strings.Contains(roles[index].Remedy, "metasystem up") {
+			roles[index].Remedy = remedy
+		}
+		roles[index].ConsecutiveUnknown = 0
+		roles[index].ConsecutiveFailures = 0
+		roles[index].FailureEscalation = ""
+	}
+	aggregate := "healthy"
+	for _, role := range roles {
+		if role.Status == HealthDead {
+			aggregate = "unhealthy"
+			break
+		}
+		if role.Status == HealthUnknown {
+			aggregate = "unknown"
+		}
+	}
+	verdict := HealthVerdict{
+		Schema: 1, ObservedAt: now.UTC(), Observation: state.Sequence,
+		Aggregate: aggregate, Roles: roles, ShouldAlert: false, Stopped: true, StopPhase: record.Phase,
+		StopUnresolved: len(record.NotStopped),
+		State:          state, Spend: spend,
+	}
+	verdict.FindingDigest = healthFindingDigest(roles)
+	return &verdict, nil
 }
 
 func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) ([]RoleVerdict, SpendObservation) {

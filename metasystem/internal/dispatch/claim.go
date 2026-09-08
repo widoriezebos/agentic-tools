@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 type ClaimOutcome string
@@ -26,6 +27,7 @@ const (
 	ClaimRefusedSessionBusy      ClaimOutcome = "REFUSED-SESSION-BUSY"
 	ClaimRefusedUnprovable       ClaimOutcome = "REFUSED-UNPROVABLE"
 	ClaimRefusedInternalSurface  ClaimOutcome = "REFUSED-INTERNAL-SURFACE"
+	ClaimRefusedStopped          ClaimOutcome = "REFUSED-STOPPED"
 	ClaimPreflightAvailable      ClaimOutcome = "PREFLIGHT-AVAILABLE"
 	ClaimPreflightMatched        ClaimOutcome = "PREFLIGHT-MATCHED"
 )
@@ -39,6 +41,7 @@ const (
 type ClaimResult struct {
 	Outcome  ClaimOutcome   `json:"outcome"`
 	Evidence map[string]any `json:"evidence"`
+	Detail   string         `json:"detail,omitempty"`
 }
 
 type ClaimLaunchParams struct {
@@ -86,6 +89,13 @@ func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 	fingerprint, err := CanonicalizeLaunchFingerprint(params.Root, params.Request, params.DefaultCapMinutes)
 	if err != nil {
 		return ClaimResult{}, err
+	}
+	fence, err := stopfence.Read(params.Root)
+	if err != nil {
+		return ClaimResult{}, fmt.Errorf("claim-launch cannot read the process-creation fence: %w", err)
+	}
+	if fence.State == stopfence.StateClosed {
+		return stoppedClaimResult(fingerprint, fence, params.Root, "")
 	}
 	_, recordPath, _ := paths(params.Root, params.OpID)
 	record, err := readObject(recordPath)
@@ -246,6 +256,13 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err != nil {
 		return ClaimResult{}, err
 	}
+	fence, err := stopfence.Read(params.Root)
+	if err != nil {
+		return ClaimResult{}, fmt.Errorf("claim-launch cannot read the process-creation fence: %w", err)
+	}
+	if fence.State == stopfence.StateClosed {
+		return stoppedClaimResult(fingerprint, fence, params.Root, "")
+	}
 	var approvalClaim *SliceApprovalClaim
 	if params.ApprovedRef != "" {
 		approvalClaim, err = proveSliceApprovalClaim(params.Root, uint64(fingerprint.Request.CapMinutes), params.ApprovedRef, params.GoalID, params.GoalRevision)
@@ -282,12 +299,12 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	}
 	dependencies = claimDependenciesWithDefaults(dependencies)
 	if !params.Wait {
-		result, err := claimLaunchAttempt(params, fingerprint, provenance, dependencies, 1, false)
+		result, err := claimLaunchAttempt(params, fingerprint, provenance, dependencies, fence.Generation, 1, false)
 		return finishClaimReconciliation(params, fingerprint, dependencies, result, err)
 	}
 	for attempt := 1; attempt <= ClaimWaitReads; attempt++ {
 		lastRead := attempt == ClaimWaitReads
-		result, err := claimLaunchAttempt(params, fingerprint, provenance, dependencies, attempt, lastRead)
+		result, err := claimLaunchAttempt(params, fingerprint, provenance, dependencies, fence.Generation, attempt, lastRead)
 		if err != nil || result.Outcome != ClaimInProgress {
 			return finishClaimReconciliation(params, fingerprint, dependencies, result, err)
 		}
@@ -415,16 +432,16 @@ func claimLaunchCapability() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint, provenance claimReservationProvenance, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (result ClaimResult, err error) {
+func claimLaunchAttempt(params ClaimLaunchParams, fingerprint LaunchFingerprint, provenance claimReservationProvenance, dependencies ClaimLaunchDependencies, fenceGeneration int64, attempt int, reconcileIdentityless bool) (result ClaimResult, err error) {
 	err = withOperationPublicationLock(params.Root, func() error {
 		var lockedErr error
-		result, lockedErr = claimLaunchAttemptLocked(params, fingerprint, provenance, dependencies, attempt, reconcileIdentityless)
+		result, lockedErr = claimLaunchAttemptLocked(params, fingerprint, provenance, dependencies, fenceGeneration, attempt, reconcileIdentityless)
 		return lockedErr
 	})
 	return result, err
 }
 
-func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFingerprint, provenance claimReservationProvenance, dependencies ClaimLaunchDependencies, attempt int, reconcileIdentityless bool) (result ClaimResult, err error) {
+func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFingerprint, provenance claimReservationProvenance, dependencies ClaimLaunchDependencies, fenceGeneration int64, attempt int, reconcileIdentityless bool) (result ClaimResult, err error) {
 	found := false
 	err = withRecordSessionLock(params.Root, params.OpID, func(recordPath string, _ *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
@@ -465,6 +482,13 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 	}
 	err = dependencies.Occupancy.Resolve(params.Root, fingerprint.Request.SessionKey, params.OpID, prepared, func(occupancy SessionOccupancy, transaction *SessionIndexTransaction) error {
 		return withRecordLock(params.Root, params.OpID, func(recordPath string) error {
+			var creationClaim *stopfence.Claim
+			claimTransferred := false
+			defer func() {
+				if creationClaim != nil && !claimTransferred {
+					_ = creationClaim.Close()
+				}
+			}()
 			record, readErr := readObject(recordPath)
 			if readErr == nil {
 				result, readErr = resolveSameOpID(params.OpID, params.OperationID, params.Reviews, recordPath, record, fingerprint, dependencies, attempt, reconcileIdentityless)
@@ -516,6 +540,10 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 			}
 			creatorBreadcrumb := exactIdentityFields(creator.Ref())
 			creatorBreadcrumb["recordedAt"] = createdAt.Format(time.RFC3339)
+			creationClaim, err = stopfence.Creating(params.Root, "delegate", fenceGeneration, creator.Ref())
+			if err != nil {
+				return fmt.Errorf("claim-launch cannot publish its creation claim: %w", err)
+			}
 			launchCapability, capabilityErr := dependencies.LaunchCapability()
 			if capabilityErr != nil {
 				return capabilityErr
@@ -525,6 +553,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 			}
 			capabilityDigest := sha256.Sum256([]byte(launchCapability))
 			record = claimReservationRecord(params.OpID, params.OperationID, params.Reviews, fingerprint, provenance, instanceTag, params.AdapterVerb, hex.EncodeToString(capabilityDigest[:]), creatorBreadcrumb, occupancy.FreeEvidence, createdAt)
+			record["fenceGeneration"] = fenceGeneration
 			record["sessionOccupancyHealing"] = healingObject(occupancy.Healing)
 			if sliceErr := dependencies.MarkFirstSlice(params, createdAt); sliceErr != nil {
 				return sliceErr
@@ -552,7 +581,10 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 				"freeSessionEvidence":     occupancy.FreeEvidence,
 				"sessionOccupancyHealing": healingObject(occupancy.Healing),
 				"launchCapability":        launchCapability,
+				"fenceGeneration":         fenceGeneration,
+				"creationClaimPath":       creationClaim.Path(),
 			})
+			claimTransferred = true
 			return nil
 		})
 	})

@@ -337,26 +337,27 @@ fi
 
 if [[ "$fixture_scenario" == brain-actor-seam-coverage ]]; then
 	actor_sites=$(cd "$root" && find cmd/metasystem internal -type f -name '*.go' ! -name '*_test.go' \
-		-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|lease\.ClassifyVerb\(' {} + \
+		-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
 		| grep -v '^cmd/metasystem/goalsync_mutations.go:[[:space:]]*Endpoint: e, Actor:' \
 		| LC_ALL=C sort)
 	expected_actor_sites=$(cat <<'ACTOR_SITES'
-cmd/metasystem/brain.go:	classification, err := lease.ClassifyVerb(root, int64(os.Getppid()))
-cmd/metasystem/census.go:	view, err := lease.ClassifyVerb(*root, parent)
-cmd/metasystem/dispatch_verbs.go:	caller, err := lease.ClassifyVerb(*root, int64(os.Getppid()))
+cmd/metasystem/brain.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
+cmd/metasystem/census.go:	view, err := classifyVerbCaller(*root, parent)
+cmd/metasystem/dispatch_verbs.go:	caller, err := classifyVerbCaller(*root, int64(os.Getppid()))
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
 cmd/metasystem/goal.go:		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
-cmd/metasystem/goal.go:	view, err := lease.ClassifyVerb(root, callerPid)
-cmd/metasystem/goalsync_mutations.go:		classification, classErr := lease.ClassifyVerb(f.root, int64(os.Getppid()))
+cmd/metasystem/goal.go:	view, err := classifyVerbCaller(root, callerPid)
+cmd/metasystem/goalsync_mutations.go:		classification, classErr := classifyVerbCaller(f.root, int64(os.Getppid()))
 cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
-cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := lease.ClassifyVerb(root, int64(os.Getppid()))
+cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := classifyVerbCaller(root, int64(os.Getppid()))
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
-cmd/metasystem/run.go:		view, err := lease.ClassifyVerb(root, int64(os.Getpid()))
-cmd/metasystem/run.go:	view, err := lease.ClassifyVerb(root, callerPid)
+cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
+cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
+cmd/metasystem/run.go:	view, err := classifyVerbCaller(root, callerPid)
 internal/channel/poll.go:				approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
 internal/channel/poll.go:		published, err := goal.Answer(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage}, Ulid: a.ULID, Now: a.At}, q.Goal, q.ID, a.Text, q.Wants, goal.AnswerProof{Provider: c.ProviderName, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step})
 internal/channel/poll.go:		published, err := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: "wido"}, Ulid: ulid, Now: c.Now}, []string{status.GoalID}, nil, &proof)
@@ -366,7 +367,7 @@ internal/dispatch/finding_register.go:			req := goal.VerbRequest{Endpoint: endpo
 internal/dispatch/stop.go:				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage},
 internal/dispatch/stop.go:	actor := goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage}
 internal/goal/recover.go:		r.Actor.Human = by
-internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerb(e.Root, int64(pid)); err == nil {
+internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
 ACTOR_SITES
 )
