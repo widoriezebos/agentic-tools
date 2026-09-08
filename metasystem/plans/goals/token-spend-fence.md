@@ -1,11 +1,13 @@
 # token-spend-fence
 
 - State: approved
+- Priority: 1
+- Sequence: 31
 - Intent: Wido's order 2026-09-03 (verbatim, R-58-m1): 'agent sessions are not the expensive resource, TOKENS are. So this is not what we need. For now set it higher and then make sure we design something better'. THE PROBLEM: the only spend control in the dispatcher is the reserved-minute pool per goal, which charges every dispatch its full cap (120 minutes) whether the round runs 15 minutes or 120, and knows nothing about tokens or money. On 2026-09-02 the fleet ran 126 dispatches and the VM account hit its usage limit while every goal's pool said something unrelated; on 2026-09-03 a lawful seven-rung ladder stalled at 720 of 720 minutes having used about a third of the time. The pool is a runaway guard and should stay one; it is not the fence. DONE means: spend is measured in tokens and money from the runtimes' own usage records (the adapters already collect claude and codex usage per round; the mission family aggregates typed usage), aggregated per goal, per machine and per day; the human sets ceilings (per day fleet-wide, per goal) as config with a recorded word; the dispatcher refuses a dispatch that would cross a ceiling and names the ceiling, the spend so far and who can raise it; the health role shows today's spend against the ceiling in one line; the minute pool stays as the runaway guard with a default high enough that a lawful ladder never stalls on it; proven by fixtures replaying 2026-09-02's counts against a ceiling.
 - Origin: main
 - Next step: STEP 1 (ALERT MODE) LANDED 2026-09-03 by m3 in 0acb0973 (chain fence-build-m3, one Fable review with one material finding corrected and re-reviewed once, R-70-m3 dead-code deletion on Wido's word; record records/misc/token-spend-fence-code-review.md): the spend package, six commented spend keys in metasystem.conf, the steward spend-fence health role alerting per crossing and refusing nothing. Machines rebuild their engines to run it. NEXT: calibration in alert mode on every machine (set the ceilings in metasystem.conf, watch the health line), then STEP 2, ENFORCE, only by Wido's word once he agrees the calibrated setting is good: the dispatcher refuses a dispatch that would cross the ceiling, naming the ceiling, the spend so far and who can raise it; full ladder (design, critique, build, code review). Twelve non-material review notes (TSF-C1, TSF-C2 in the record) are backlog candidates, not corrections.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 11
+- Revision: 12
 - Labels: robustness, spend
 - Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=3000 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -25,4 +27,5 @@ History:
 - 2026-09-03T16:34:41Z A4MRY4NZQ2SJQBZ2M4YJKE43MX-m3-a5da21ff edit actor=m3+mac-m3 targets=token-spend-fence
 - 2026-09-03T16:35:05Z DWG6C6MEE2BD7MNKG2HAGE8J68-m3-a5da21ff release actor=m3+mac-m3 targets=token-spend-fence
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=token-spend-fence reason=sweep
-Integrity: sha256=64735b1ff2257c6d2107ca18001c52426cf9de510bcd1f25279e0f2f35298996
+- 2026-09-08T15:57:08Z K3MCPZHYC6JJWRDHZD5HB9B4ZR-m1-7cd0bd60 set-priority actor=human:Wido targets=token-spend-fence reason=priority-order subject=token-spend-fence from=unranked to=1:31 requested-sequence=31
+Integrity: sha256=e505f9d84584f5bf6b852e28707ee8e17c373266bade0adc949b0ecf8f4209ab
