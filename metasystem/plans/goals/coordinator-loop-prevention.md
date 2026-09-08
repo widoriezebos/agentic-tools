@@ -7,10 +7,11 @@
 - Origin: human
 - Next step: Settle the bounded shared admission and proof-handoff design, then independently review, implement and prove the stop and reuse behavior through all runtime entrypoints.
 - OpenedAt: 2026-09-08T05:24:18Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-08T05:27:41Z revision=2 opid=NE7398PFN4BGN18QJ282PRQZXY-m1c-7cd0bd60 authority=proven digest=be0f8168c931f51591e4adffc3d6b8205c34fbcbd65f15302817327d44131574
+- Sliced: machine=m1c lineage=main-1788759014-39092-24fa5c revision=3 at=2026-09-08T05:51:20Z
 - Claimed: machine=m1c lineage=main-1788759014-39092-24fa5c at=2026-09-08T05:30:36Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1c claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-08T05:24:18Z CCPXF4Z60MFM3TR8HMWPSM2K8S-m1c-1274caf4 open actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention
 - 2026-09-08T05:27:41Z NE7398PFN4BGN18QJ282PRQZXY-m1c-7cd0bd60 approve actor=human:Wido targets=coordinator-loop-prevention
 - 2026-09-08T05:30:36Z GD32JSJFNFNKN1VV10TKF3YSHK-m1c-1274caf4 claim actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention
-Integrity: sha256=9f883045e78fd30af02c2732eaafa7acb77c524e5d9142e8ecd46afefa812d76
+- 2026-09-08T05:51:20Z GTZFDAVZYX55A2DS7PK0D5ERY6-m1c-1274caf4 slice-start actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention
+Integrity: sha256=7983485a74ffdc2930cc26080bf3f7bab81ea3a797a566297a07e7225ac39020
