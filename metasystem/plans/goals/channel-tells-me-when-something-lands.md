@@ -1,13 +1,15 @@
 # channel-tells-me-when-something-lands
 
 - State: approved
+- Priority: 3
+- Sequence: 27
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: nothing is authorized or lost wrongly, but the human's only view of fleet delivery is silent for up to four hours, which is what makes him ask whether the machinery is working at all; novelty 2: the trigger point is new - a landing completes in scripts/agents/land.sh while the poster lives on the steward tick - and where it lives, how it stays exactly-once across machines, and what happens when the post fails are real choices; exposure 3: every landing on every machine, into the one channel Wido reads; accumulation 2: the third channel defect he has reported today after the wall of text and the UTC stamps, all three sharing one cause - the channel was designed as a periodic digest and is being asked to be a notifier"
 - Tier: 3
 - Intent: A finished slice and a finished goal each tell Wido, the moment they finish - two different messages. Wido's correction of 2026-09-06: 'landing' meant finishing a slice and finishing a goal, not a git push. Both are ledger verbs, each with a machine-minted operation id: a slice ends with goal release after its Goal-Item landings; a goal ends with goal done and its conclusion. Nothing announces either today: the channel posts a four-hourly digest under ShouldPost's AND in internal/channel/report.go, and two landings on 2026-09-05 sat unsent until he asked whether the machinery worked. DONE means: goal done produces one message naming the goal and the first sentence of its conclusion; goal release produces one message naming the goal and the landings its slice carried, and NO message when the slice carried none (Wido 2026-09-06: an empty released slice is a status fact, not a notice); each fires promptly from the verb's own success path, with the steward's tick sweeping the ledger since a cursor for what that missed; identity is the operation id; delivery is at-least-once with a visibly marked repeat (Wido accepted 2026-09-06: Telegram's sendMessage has no idempotency input); a failed post never changes the verb's outcome; the four-hourly status keeps its meaning
 - Origin: main
 - Next step: WIDO'S CORRECTION 2026-09-06: 'landing' meant finishing a slice and finishing a goal - two different messages, both ledger verbs (goal release after Goal-Item landings; goal done with its conclusion), each with a machine-minted operation id. Decided: an empty released slice is NOT a notice; at-least-once with a visibly marked repeat is accepted. The intent still says 'a landing produces a message' in m1's words and must be re-approved: unapprove, edit the intent to the two-events wording, approve - human acts at the enrolled terminal. Then RE-AIM to revision 3 (not a fold): Decisions 1-3 rewritten on the two verbs and the opid; the trigger moves from land.sh to goal done / goal release in cmd/metasystem/goalsync_mutations.go plus the tick sweep in internal/channel/phase/phase.go; of the seven round-2 findings four dissolve (COMMIT-ERREXIT, REFLOG-REPLAY, NEW-BRANCH-STALE-REF, LANDING-SCOPE) and the rest carry (TIMEOUT-CAP as a constant, RETRY-OWNER, RETRY-FALLBACK-STALE, UNDELIVERED-AGE, RUNE-BOUND). Then critique on a fresh root, build, review.
 - OpenedAt: 2026-09-05T11:06:28Z
-- Revision: 13
+- Revision: 14
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T21:08:22Z revision=13 opid=1N940MFRAVVB6MPPAYQ2PA0JGC-m1-7cd0bd60 authority=proven digest=68b75bc46d1af58c95bbc146fd3f42d72cf0f31180b172df624338b707f02bd0
@@ -27,4 +29,5 @@ History:
 - 2026-09-06T06:47:47Z 48KJJQYW1YG7E63S5XXM1SR7Q7-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=channel-tells-me-when-something-lands
 - 2026-09-06T06:49:11Z 2H23YNNWZMZCWA42VH8H0X1YJY-m1-a4f8999f approve actor=human:Wido targets=channel-tells-me-when-something-lands
 - 2026-09-06T21:08:22Z 1N940MFRAVVB6MPPAYQ2PA0JGC-m1-7cd0bd60 approve actor=human:Wido targets=channel-tells-me-when-something-lands
-Integrity: sha256=b77a36130b07f8ab08e93dba94af3deec85c2be4fff05d7fefffed1e1d6138ab
+- 2026-09-08T16:00:42Z VGNF8DKDC47XQ5P9NRVQSMT7YK-m1-7cd0bd60 set-priority actor=human:Wido targets=channel-tells-me-when-something-lands reason=priority-order subject=channel-tells-me-when-something-lands from=unranked to=3:27 requested-sequence=27
+Integrity: sha256=fadaa21236395b7e5c18868e66a829417379dfb09f9d67611c3caea40dac5956
