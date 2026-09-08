@@ -1,13 +1,16 @@
 # counselor
 
 - State: queued
+- Priority: 3
+- Sequence: 104
 - Intent: The counselor — the third seat: advisory and ambient, about content; it holds the standing model of the gap between what the app is becoming and what the net actually bounds, and speaks to the human in briefs and sittings, never refusals; no pen — proposals flow through the warden lane and the human tier (name and shape ratified by Wido, 2026-08-24)
 - Origin: human
 - Next step: PROGRESS: slice 1 landed 1cdb948; DRIFT-BRIEF SIGNAL LAYER landed 6cbc3e99 (2026-08-30) through the first fully machinery-enforced chain (counselor-drift-s1: Sol built, Fable critiqued at gate-proven maximal, hazard gate closed on terminal-round coverage) - spend-versus-outcome and process-versus-product from durable records, auditable counting rules in the brief, every gap a named limitation with enrichment; two non-material lows recorded in the chain (unparsable end stamps fold to absent; root-resolution error message) ride the next slice. CARRIAGE LANDED dcc44ca9 (applied from m1's certified diff per the takeover; byte-equality no-softening proven). REGISTER LANDED ff49bb17 (slice b first half: accepted-risk register with class aggregation, auditable counting rules, three specimens intaken, both riding lows closed; near-miss-register goal concluded into it). REMAINING: (b2) the sitting ritual (4h): FIVE-WHYS, PATTERN-APPLICABILITY, SELF-APPLICATION consuming the landed register; (a-done)  (4h, next, steward seam): the tick renders and delivers the brief on cadence, fail-closed - the coordinator cannot suppress or soften it (the TEETH bindings recorded in this goal's history); (b) sitting + accepted-risk register (6h) with FIVE-WHYS, PATTERN-APPLICABILITY, SELF-APPLICATION, NEAR-MISS AGGREGATION BY CLASS - today's specimens queued: the ruling-enforcement sweep miss, the fixture-blind happy paths, the coordinator conflict-label near-miss; (c) ambient noticings (4h): process-vs-product inversion fires during a stretch, not at the sitting. Teeth binding 2 (warning JOINED at budget-extension decisions) implements with (a); binding 3 (lifecycle) governs its promotion
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 19
+- Revision: 20
 - Arc: app-guardrail-program
-- Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2
+- Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2 reviewRoundLimit=3
+- BudgetExceptions: 0
 
 History:
 - 2026-08-24T13:49:17Z 6GX63SFRD9E7S38SSPDM4AB1VS-m1-bf243850 open actor=human:wido targets=counselor
@@ -29,4 +32,5 @@ History:
 - 2026-08-31T06:17:44Z X0AP1C1HZF1QX8J99N6V1WXR6Z-m2-bc1be9cb claim actor=m2+mac-coordinator targets=counselor
 - 2026-08-31T10:46:38Z NZK3CJW9P376BQNKADZFSADYCX-m2-bc1be9cb edit actor=m2+mac-coordinator targets=counselor
 - 2026-08-31T10:46:54Z FF8ZZQAFM7KK4NMRKVBE42A0R3-m2-bc1be9cb release actor=m2+mac-coordinator targets=counselor
-Integrity: sha256=4dc3d1761252519105b4b91df136d04e2645053cce0bc42d672f66405887b0ae
+- 2026-09-08T16:05:13Z TDZ4RD46DJ65K9BRJMRVPQHZ1N-m1-7cd0bd60 set-priority actor=human:Wido targets=counselor reason=priority-order subject=counselor from=unranked to=3:104 requested-sequence=104
+Integrity: sha256=7ad6dac3c1d682d98b2ab71b432c8a41ef04600ba731a4145046b229c0420936
