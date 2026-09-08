@@ -1,11 +1,13 @@
 # app-doctrine
 
 - State: approved
+- Priority: 3
+- Sequence: 111
 - Intent: The target app's own patterns, architecture decisions, and conventions are scaffolded at inception and evolve by critique as living delegate input — the app's doctrine, living in the app
 - Origin: human
 - Next step: RESERVED, deliberately last: the scaffold half rides inception's slice; this goal keeps the evolution loop (doctrine critiqued and updated as the app grows), appetite 4-6h after inception lands. App-owned paths under the update-safety law like all app content. ENFORCEMENT RULING FOLDED IN (Wido 2026-08-26, m2 discussion — for m1's design slice), under Wido's role law stated precisely: NO NEW ROLE UNLESS THE CONFLICT TEST DEMANDS ONE — a new seat is justified exactly when assigning the responsibility to an existing seat would create conflicting responsibilities, never refused on principle. Applied: (1) PER-CHANGE ENFORCEMENT passes the conflict test on the CRITIC — the doctrine becomes a binding input to every app-touching critique brief with a converged design's standing; a doctrine violation is material by definition; a brief that CONTRADICTS the doctrine is itself a material finding to surface, never a precedence call the critic makes (judicial only, adjudication stays above); the design must make doctrine inclusion mechanical in the brief path. (2) DRIFT AUDIT passes on the COUNSELOR — doctrine staleness joins its receipts idiom (patterns claimed vs patterns present). (3) EVOLUTION OWNERSHIP is the OPEN conflict-test case the design slice must decide: doctrine authorship is legislative — on the critic it makes the judge write its own law (fails the test), on the dispatch delegate it makes the director of implementations author their measuring rules (tension). Either the standard loop dissolves it (any seat proposes, critique converges, the HUMAN ratifies every doctrine change) or a dedicated ARCHITECT seat is genuinely warranted (owns doctrine coherence and proposals, edits nothing else) — run the conflict test explicitly in the design and bring the answer to Wido. Division otherwise as ruled 2026-08-24: covenant = enforceable net, warden = guards the guards, human = top tier.
 - OpenedAt: 2026-08-23T16:30:15Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=6 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=7365793ff812c172f4bedd47d670c9c720102f6f784bde37356e92b72a8264d7
@@ -17,4 +19,5 @@ History:
 - 2026-08-31T10:14:35Z XWDVXMBMZZ2HGVSPT25NW35PQS-m2-bc1be9cb edit actor=m2+mac-coordinator targets=app-doctrine
 - 2026-09-01T20:27:57Z H11J7F8SSPW99H2MGQQ2P3AM22-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=app-doctrine
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=app-doctrine reason=sweep
-Integrity: sha256=fe910a1288d2a5ae9e862b7ce736aa72451b8919cd1ff9d6c45cf99145e4ec2b
+- 2026-09-08T16:05:39Z XSYQZJ1S5XRACKEGE5G4BH7RXA-m1-7cd0bd60 set-priority actor=human:Wido targets=app-doctrine reason=priority-order subject=app-doctrine from=unranked to=3:111 requested-sequence=111
+Integrity: sha256=5d007c31fbc1921e5da19c2ba699847bed0728baac4201f5add19d1a34cf5254
