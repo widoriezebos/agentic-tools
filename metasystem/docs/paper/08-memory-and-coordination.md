@@ -4,7 +4,7 @@
 
 > *Halfway through preparing existing sessions for the new expiry rule, a builder stops. No colleague remembers the last command, because there is no colleague watching over its shoulder.*
 
-The next builder must determine whether any session was changed, which candidate was in use, which decisions already bind the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
+The next builder must determine whether any session was changed, which candidate was in use, which rulings already apply to the work and whether continuing would repeat an unsafe action. If those facts live only in the first builder's private context, the work has not just paused. It has lost its memory.
 
 The system keeps memory outside its workers, because any worker can disappear. Intent, decisions, claims, actions, results and current state become durable records as the work proceeds. That memory also coordinates workers that do not share a conversation or a working day. It can show where work is, who may act next and what evidence an action must preserve. It cannot decide which human value should prevail.
 
@@ -16,15 +16,15 @@ If all three reports can determine the state of the work, "ready" has no stable 
 
 The remedy is one authoritative record: a structured, history-preserving source that alone determines the current state. For the case established in Chapter 1, it binds every state transition to the actor, authority, exact candidate and evidence that support it. Earlier states remain visible to authorized readers rather than being rewritten to make the final path look clean. A private note can help a worker think, but it cannot make a candidate accepted or an enforced rule passed until the relevant fact enters the authoritative record.
 
-One source does not mean one view for everyone. The record must be complete enough to recover and audit the work, while each role sees only what its task requires. Chapter 9 applies the same limit to both information and action: permission to examine a finished change does not imply permission to read every thought that produced it. This protects sensitive information and reduces the chance that irrelevant material steers the task.
+One source does not mean one view for everyone. The record must be complete enough to recover and audit the work, while each role sees only what its task requires. In Chapter 9 we will apply the same limit to both information and action: permission to examine a finished change does not imply permission to read every thought that produced it. This protects sensitive information and reduces the chance that irrelevant material steers the task.
 
 Access limits have a hard limit. They can prevent a mind from reading something next; they cannot remove what that mind has already learned. A person who built the session change does not become independent by receiving a new label and losing access to the earlier notes. A machine worker that has already absorbed the builder's sequence of ideas and failed attempts cannot supply a fresh view even if later permissions hide that sequence. Role-scoped access provides least authority. Only a fresh mind provides a fresh perspective.
 
-When Chapter 6 requires independent examination free from the builder's path, the independent examiner must be a distinct person or a newly started machine worker that has never received that path. Machine workers make this separation inexpensive because a new mind can begin with selected context. Human exposure is largely permanent.
+In Chapter 6 we required independent examination free from the builder's path, so the independent examiner must be a distinct person or a newly started machine worker that has never received that path. Machine workers make this separation inexpensive because a new mind can begin with selected context. Human exposure is largely permanent.
 
 ## What each role may read
 
-A builder begins with the authorized session outcome, its constraints, the human ruling on passive reading, refresh and uploads, and the parts of the application needed to make the change. It can read earlier rulings that apply to the task and the evidence needed to check its own work. Its sequence of attempts, discoveries and unresolved questions is recorded so that another builder can recover if it stops. That path belongs to construction and later audit; it is not automatically part of examination.
+A builder begins with the authorized session outcome, its constraints, the parts of the application needed to make the change and the human ruling on passive reading, refresh and uploads. It can read earlier rulings that apply to the task and the evidence needed to check its own work. Its sequence of attempts, discoveries and unresolved questions is recorded so that another builder can recover if it stops. That path belongs to construction and later audit; it is not automatically part of examination.
 
 An independent examiner receives the authorized outcome and the conditions the candidate must meet. It sees the relevant application behavior, the finished candidate and the results that the builder offers in support. It does not see the builder's private sequence of ideas, the arguments discarded along the way or the explanations used to defend the chosen design. Those omissions are intentional. The independent examiner needs enough context to find faults, but not a guided tour through the assumptions it is meant to challenge.
 
@@ -46,7 +46,7 @@ The test also exposes what must be recorded before an action completes. A builde
 
 Two builders propose different ways to protect an upload while ending the ordinary session. The record can ensure that they do not overwrite each other's candidates. It can show which proposal arrived first, preserve both and require an authorized choice before either becomes current. None of those operations decides whether uninterrupted work is worth a wider security exception.
 
-Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation or accountability conflict, a responsible authority must weigh the choice and bind the decision. Chapter 13 develops that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
+Coordination orders actions and preserves their relationships. It can require that one state change finish before another begins, prevent two actors from claiming the same authority and show which proposal replaced which. It cannot resolve a conflict of values or decide whose claim is stronger. When security, usability, legal obligation or accountability conflict, a responsible authority must weigh the choice and decide it, and the decision then stands for everyone involved. In Chapter 13 we will develop that governance. The record preserves the ruling and its reasons; it does not manufacture agreement.
 
 ## Two audiences, one source
 
@@ -62,4 +62,4 @@ The system produces two views from one source. Structured fields allow machinery
 
 Retrieving that ruling can expose a useful distinction and prevent the new decision from beginning in ignorance.
 
-The stored ruling is a precedent: it informs the later decision without binding it. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Kept rulings like these form institutional memory: what the organization has decided and why, preserved beyond the people and workers who decided it. That memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends there.
+The stored ruling is a precedent: it informs the later decision but does not settle it. The new operation may expose different data, last much longer or have a separate responsible authority. Only an enforced rule with the proper authority can make the earlier result compulsory. Kept rulings like these form institutional memory: what the organization has decided and why, preserved beyond the people and workers who decided it. That memory supports consistency and makes a change of mind visible, but a lookup is not judgment. The legal metaphor ends there.

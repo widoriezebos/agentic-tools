@@ -22,19 +22,29 @@ The same four questions that set evidence depth in Chapter 6 govern the spending
 
 Severity changes what the budget must cover. A change that can expose accounts needs room for independent judgment, controlled release and recovery even if the candidate is cheap to produce. Novelty changes the value of exploration. An unfamiliar approach may justify separate attempts or outside expertise because the first plausible design carries more uncertainty. Exposure changes the cost of learning from live use: broad reach makes a mistake expensive, so money and time move toward smaller stages, observation and response capacity. Accumulated change changes the value of a wider look. Many individually ordinary changes can move the application far enough that a broad examination becomes worth its cost.
 
-They direct marginal spending, meaning the next unit of time or attention. The system asks whether that next unit is more valuable in construction, examination, human judgment, gradual release, care or not being spent at all. Chapter 7 already named this decision: choosing the configuration for a change is choosing how to spend.
+They direct marginal spending, meaning the next unit of time or attention. The system asks whether that next unit is more valuable in construction, examination, human judgment, gradual release, care or not being spent at all. In Chapter 7 we already named this decision: choosing the configuration for a change is choosing how to spend.
 
 ## Budgets are enforced stop rules
 
 Suppose a builder makes two unsuccessful attempts to prevent delayed responses from reviving an expired session. A third attempt begins to repeat the first with different wording. Without a prior limit, every earlier expense becomes an argument for spending a little more: stopping now would seem to waste what has already been invested.
 
-Work begins instead with explicit limits on time, attempts and total spend. It names the person or authority that may approve an exception, and the evidence that an exception request must contain. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision. A live release expands only while enough budget remains to observe and contain harm.
+Work begins instead with explicit limits on time, attempts and total spend. It names the evidence an exception request must contain and the person or authority that may approve the exception. The limits are not forecasts of how long work ought to take. They are stop rules that prevent an uncertain loop from consuming resources without a new decision. A live release expands only while enough budget remains to observe and contain harm.
 
-This inverts the estimate: instead of asking how long the work will take, a budget states how much the outcome is worth spending. Worth is a value question, so the budget is set by the responsible authority and recorded. Some teams call that limit an appetite. The need Chapter 4 found behind estimates (a decision with a visible statement of expected cost and uncertainty) is met by the recorded decision that sets the budget, and again at the stop rule, where an exception request must carry its evidence.
+This inverts the estimate: instead of asking how long the work will take, a budget states how much the outcome is worth spending. Worth is a value question, so the budget is set by the responsible authority and recorded. Some teams call that limit an appetite. The need we found behind estimates in Chapter 4 (a decision with a visible statement of expected cost and uncertainty) is met by the recorded decision that sets the budget and again at the stop rule, where an exception request must carry its evidence.
 
-When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that. There is no economy role in any of this. The responsible authority decides worth, an enforced rule does the stopping, and a named judge decides exceptions. Chapter 7's test says why: when a rule and a record already control the hazard, no role is needed.
+When a limit is reached, an enforced rule stops or narrows the work. The record may ask the authority to accept more cost, reduce scope, choose a known alternative, gather missing information or abandon the outcome. It does not authorize another attempt on its own. Previous spending is already gone; it cannot establish the value of future spending. Only the expected benefit and risk of the next action can do that. There is no economy role in any of this. The responsible authority decides worth, an enforced rule does the stopping and a named judge decides exceptions. Chapter 7's test says why: when a rule and a record already control the hazard, no role is needed.
 
 This stop rule also makes failure visible. A stopped attempt is not disguised as ongoing progress. Repeated budget exceptions become evidence that the design, intent or cost model is wrong and needs examination of its own.
+
+## Large work lands in slices
+
+The session-expiry change could be delivered as one piece: the new limit, the warning, the upload continuation, the migration of existing sessions and the restored page, landing together. If the release then misbehaves, the observation cannot say which part is wrong, and the reversal takes back all of it, including the parts that worked.
+
+Large work is therefore split into pieces that each land whole, work on their own and leave the application better: first the inactivity limit for new sessions with its warning and the upload continuation the ruling requires, then the migration that brings existing sessions under the same rule, then the restored page after signing in again. Each piece is released, observed and reversible by itself. The record carries the next piece and names the remainder, which is split in turn when its time comes.
+
+A slice is still governed work. It binds to the intent version it serves, and the state it leaves behind must be one the responsible authority can accept. A stage that breaks a standing ruling, such as signing readers out with no warning, does not qualify as a slice, however convenient the split. Where an intermediate state meets only part of the outcome, that shortfall is recorded and authorized rather than discovered.
+
+Slicing is a different discipline from the budget. A budget limits what one attempt may consume; slicing governs the shape of what any attempt may deliver, and the two compose: each slice receives its own budget, and a piece that cannot be made to land whole is evidence that the design needs another look before more is spent on it. Slicing serves the fourth risk question directly: each slice carries less accumulated change and leaves a shorter path back. It does not shrink the other three. A small slice on an authorization boundary is as severe as ever, and how many users meet it is controlled by the gradual release, not by the split.
 
 ## Parallel attempts include the cost of judging
 
@@ -52,15 +62,17 @@ The decision comes before broad generation. Estimate what another attempt could 
 
 The final repair to session expiry may change a single comparison: a response received after expiry no longer counts as activity. That line sits on an authorization boundary used by every signed-in account. Reversing the comparison can keep unattended sessions open or eject active users. Its small size says little about its economic importance.
 
-A correction to thousands of low-impact help pages can be much larger and remain routine: visible, reversible, separated from money, identity and essential work, and checkable by machinery at far lower cost than a person reading every changed line. Chapter 6 drew the evidence conclusion: line count says little about what a change deserves. The economic conclusion is the same: the four questions, possible harm, unfamiliarity, reach and accumulated change, set the budget, the examination depth and the starting release bounds. Treating size as risk would lavish attention on bulky harmless work while letting a compact authorization mistake pass cheaply.
+A correction to thousands of low-impact help pages can be much larger and remain routine. It is visible and reversible, and it is separate from money, identity and essential work. Machinery can check it at far lower cost than a person reading every changed line. In Chapter 6 we drew the evidence conclusion: line count says little about what a change deserves. The economic conclusion is the same: the four questions, possible harm, unfamiliarity, reach and accumulated change, set the budget, the examination depth and the starting release bounds. Treating size as risk would lavish attention on bulky harmless work while letting a compact authorization mistake pass cheaply.
 
 ## When the machinery is not worth its cost
 
 > *A person writes a disposable program to compare two local data files once, examines the result and throws the program away.*
 
-Building durable role separation, continuous observation, an acceptance custodian and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low, and any mistake is easy to notice and reverse.
+Building durable role separation, continuous observation, an acceptance custodian and a learning system around that act could cost more than repeating the comparison by hand. Little reuse exists, the possible harm is low and any mistake is easy to notice and reverse.
 
 This is the break-even question. On one side sit the costs of building and changing the delivery machinery, operating it, examining its own results, preserving records and supplying human judgment. On the other sit expected reuse, avoided harm, faster recovery and learning that future work can retain. The machinery is worth building when its expected protection and repeated value exceed its total life cost. The possibility of automation alone does not justify it.
+
+Supplying human judgment includes developing it. A person who builds a small session handler may spend more time than machinery would, yet gain experience that improves later examination. The comparison includes that benefit and the cost of maintaining expertise as the application changes. Chapter 14 asks what evidence would show that a different way of learning serves those needs. Savings that depend on expertise nobody maintains are temporary.
 
 One-off prototypes, disposable explorations, small low-risk tools and short-lived software often fall below that point. Manual construction and judgment can be cheaper and clearer. A prototype that begins handling identity, money, private data or a decision people depend on can cross the point even before it is large. Repetition also changes the answer. A small release performed hundreds of times can justify durable controls that no single release would repay.
 
@@ -76,7 +88,7 @@ The proposed shift in engineering ownership is directional; it does not carry th
 
 ## Measuring the system, not activity
 
-Suppose the closing report says that three candidates were produced, eleven checks ran, and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
+Suppose the closing report says that three candidates were produced, eleven checks ran and hundreds of messages passed between workers. Those numbers can explain cost, but they cannot show that users are safer, that active work survives or that the delivery system deserves to continue in its present form.
 
 Useful measures connect total spend and delay to delivered intent, harm that escaped the controls, recovery time and learning that stays available for later work. They show how much construction and examination cost, how long required judgment waited, how often harmful behavior escaped, how quickly protected outcomes returned and whether a repeated change becomes cheaper without becoming less safe.
 

@@ -1,0 +1,17 @@
+{
+  "_comment": "Per-diagram render overrides for the PDF, keyed by the order the diagrams appear in the appendix. The source keeps what reads best on GitHub; the page has a different shape to fill. Only diagrams that need an override appear here.",
+  "2": {
+    "_why": "Place the roles beside the record. ELK separates the labels on arrows that run in opposite directions; model order keeps the record first.",
+    "direction": "LR",
+    "layout": "elk",
+    "elk": {
+      "cycleBreakingStrategy": "MODEL_ORDER",
+      "forceNodeModelOrder": true
+    }
+  },
+  "7": {
+    "_why": "ELK separates labels on loops and opposing transitions. A slightly smaller width keeps the final paragraph on the page.",
+    "layout": "elk",
+    "width": "95%"
+  }
+}

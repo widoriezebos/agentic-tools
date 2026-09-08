@@ -73,6 +73,8 @@
   "nonRepositoryPaths": [
     ".git/**",
     "bin/**",
+    "docs/paper/.obsidian/**",
+    "docs/paper/rendered/**",
     "metasystem.conf.local"
   ],
   "witnessSkips": [
