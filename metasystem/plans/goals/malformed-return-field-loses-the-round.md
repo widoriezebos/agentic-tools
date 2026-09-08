@@ -1,17 +1,20 @@
 # malformed-return-field-loses-the-round
 
 - State: queued
+- Priority: 3
+- Sequence: 39
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: wasted rounds and an unlandable tree, never wrong code; novelty 1: one validation branch plus the existing repair seam; exposure 2: every implementer round on every chain; accumulation 2: the third sighting of a round lost to its envelope rather than its work, and each costs a full cap plus a human budget raise"
 - Tier: 2
 - Intent: One malformed entry in an implementer return's diffBoundary voids the whole round: on 2026-09-07 brain-build1b-20260907-r7 folded a code review across 41 real files, then returned a 42nd boundary entry of keyboard noise ('lkjoiuytrewq'). The engine stamped DIFF_BOUNDARY_INVALID, recorded the job failed with error protocol_error, charged its 120-minute cap, and validate conformance refuses the same way, so two hours of correct work in the worktree cannot be certified or landed and only a fresh round can recover it. The round's own paid repair (job repair-claim) cannot help: it requires status running and the job is already terminal. Same family as critic-return-identity-loses-the-round, different field and role. DONE means: (1) the return validator, before failing the job, drops entries it can prove are not repository paths and reports them, or asks the round for one corrected return through the existing paid-repair seam while the job is still running; (2) a round whose only defect is an unparseable boundary entry does not consume its cap; (3) validate conformance names the offending entry and offers the same recovery rather than only refusing; (4) fixtures: a fake-runtime round returning one junk boundary entry beside valid ones is recovered, its cap unspent, and its diff certified; a round whose junk cannot be separated from real paths still fails.
 - Origin: main
 - Next step: SECOND FACE, found 2026-09-07 11:0xZ while recovering the brain chain: the damage is not confined to the round that returned badly. internal/validate/conformance.go walks EVERY rounds/N/return.json up to the current round and unions their diffBoundary declarations ('the cumulative union of immutable per-round declarations'), without consulting the round's job status. Round 7 was stamped failed/protocol_error and its declaration was refused by the engine, yet round 8's conformance still reads it and refuses identically, so NO number of later rounds can ever certify that chain again. The fix has two parts: (1) a declaration from a round whose job is failed at validation is not part of the union - the engine refused it, so it is not evidence; (2) the earlier part of this goal, recovering or reporting the junk entry before the round is failed at all. Fixture: a chain whose round N returns an invalid boundary and whose round N+1 returns a valid one conforms on N+1. Tier 2, MECHANICAL: one status check in the conformance walk plus the validator branch. Sol builds behind the fixtures, a code review, land.
 - OpenedAt: 2026-09-07T10:09:29Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-07T10:09:29Z 4QWGH9X1RR3XG26MH6N86T6T9S-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=malformed-return-field-loses-the-round
 - 2026-09-07T11:24:44Z 114K05SGKEXPX9TTRWBN9JFEYX-m1-a4f8999f edit actor=m1+main-1788594343-3833-fb64b9 targets=malformed-return-field-loses-the-round
-Integrity: sha256=5928fc314ba283c8cf075164cbd4527bbc3d70401380327d3320a6974af6f63f
+- 2026-09-08T16:01:24Z R8GF1N5VNG8XJZMMK4KR5JFZDY-m1-7cd0bd60 set-priority actor=human:Wido targets=malformed-return-field-loses-the-round reason=priority-order subject=malformed-return-field-loses-the-round from=unranked to=3:39 requested-sequence=39
+Integrity: sha256=36f7a837c0f56dc80b54bc1199e43dcc52a77aaf927b5a271fb8fd5ba226c1ef
