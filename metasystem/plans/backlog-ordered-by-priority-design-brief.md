@@ -5,8 +5,32 @@ Date: 2026-09-08
 # Design brief: the backlog gets a priority and a sequence
 
 Deliverable: a new file
-metasystem/plans/backlog-ordered-by-priority-design.md, revision 1.
+plans/backlog-ordered-by-priority-design.md (a NEW file, created by this
+round), revision 1.
 Write the design only. No code, no fixtures, no other file.
+
+## Authority to author this design
+
+The composed role prompt's mode table says the design itself is never
+delegated. For design AUTHORING that line is superseded by Wido's own
+standing word, recorded in metasystem/memory/rulings.md:
+
+- R-87-m1c, 2026-09-07, class=standing. Wido, verbatim: "who is doing
+  designs now, is that you or is that claude on Opus? I want designs
+  done by codex + Astra xhigh". Design authoring uses codex:gpt-6-astra
+  at xhigh.
+- R-86-m1b, 2026-09-07. Wido, verbatim: "I would rather use Codex using
+  Astra." A design brief dispatches the implementer role on codex with
+  gpt-6-astra; the design CRITIQUE stays on gpt-5.6-sol, because a
+  different model reading the design is the point of that lane.
+
+He restated it to this orchestrator today, 2026-09-08: "make sure you
+design with Astra." So writing this page and settling the decisions in
+it is your task, not a conflict to stop on.
+
+What remains the orchestrator's and is NOT yours: dispositions of the
+critique that follows, certification, the ledger, and the receipt. You
+author the design; the orchestrator carries it.
 
 ## The ask, in Wido's words
 
@@ -53,6 +77,17 @@ seat's kickoff prompt, and prose inside a few records.
    set-priority reorders and re-sequences; next returns the expected
    goal for a pinned and for an unpinned machine; a goal without a
    priority sorts last; the sweep-approved backlog stays valid.
+
+## Prove it with a canary, not a battery
+
+Wido's instruction, 2026-09-08: "Make sure you use the canary approach
+for testing. We should not waste cycles if we can avoid." So for every
+fixture you name in section 6, also name the SMALLEST run that proves
+it: one bed scenario by name, or one Go package, or one test. The build
+rounds that follow will run that canary first and widen only when the
+canary passes. A design that can only be proven by a full battery is a
+design that costs the fleet a battery per change, which is the pattern
+Wido already retired.
 
 ## Seams to read before you write
 
