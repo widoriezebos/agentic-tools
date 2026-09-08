@@ -1,11 +1,13 @@
 # manifest-floor-at-dispatch
 
 - State: approved
+- Priority: 2
+- Sequence: 6
 - Intent: The dispatch door trusts the dispatcher's self-declared hazard class: a build mis-declared MECHANICAL that touches design-bearing territory sails past the design gate entirely (internal/dispatch/hazard.go admits on the declared class; nothing cross-checks it against what the work touches). DONE means: dispatch admission evaluates the two-bars never-direct-fix path manifest against the dispatch's declared scope, and a MECHANICAL declaration touching a manifest path refuses with a typed message naming the path and the one-step reclassification.
 - Origin: main
 - Next step: INTENT: refuse a MECHANICAL declaration when the dispatch scope touches design-bearing territory in the canonical path-class manifest. CONSTRAINTS: path-class-manifest already delivered the manifest, shared readers and second-bar promotion; its done record is the prerequisite, not the unfinished whole two-bars-for-changes goal. Reuse that owner and its protection against a candidate deleting its own floor. design-gate-at-dispatch is a sibling admission check for certified-design evidence; the two can be developed independently and must integrate without weakening either rule. FREEDOMS: derive or explicitly declare scope through the existing brief/admission contract. PROOF: a mechanical declaration touching a protected path refuses with the path and lawful reclassification; genuinely mechanical work passes; a reclassified design-bearing build still requires the certified design once its sibling gate is active.
 - OpenedAt: 2026-09-01T13:20:47Z
-- Revision: 4
+- Revision: 5
 - BlockedBy: path-class-manifest
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
@@ -17,4 +19,5 @@ History:
 - 2026-09-01T20:27:03Z 2ET51042WPX19YB43Y4E0RRS9E-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=manifest-floor-at-dispatch
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=manifest-floor-at-dispatch reason=sweep
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=manifest-floor-at-dispatch
-Integrity: sha256=ae6301a09572add5ceecfedcadf86f5fe913977cbb81dc3fe59821f3d13e31ff
+- 2026-09-08T15:57:30Z NMTW4Z5DBMBP8Z0QEKFH68X74F-m1-7cd0bd60 set-priority actor=human:Wido targets=manifest-floor-at-dispatch reason=priority-order subject=manifest-floor-at-dispatch from=unranked to=2:6 requested-sequence=6
+Integrity: sha256=8dda8937a845264cb3e9fa5c4e24dd15ad7b0a64b1b738defaee803a61c6fdd1
