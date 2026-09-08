@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: One chain, DESIGN-BEARING at the ledger grammar (a design revision first, small): the record fields and their event grammar, the human verb with its re-sequencing rule, the ordered listing, the next verb and its tie to the claim rule (one claim per machine, pins respected), the status report line; fixtures: set-priority reorders and re-sequences; next returns the expected goal for a pinned and an unpinned machine; a goal without priority sorts last; the sweep-approved backlog stays valid. Wido sets the first priorities himself once the verb exists. Any free seat.
 - OpenedAt: 2026-09-06T12:34:05Z
-- Revision: 4
+- Revision: 5
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T12:34:28Z revision=2 opid=YRABK927PRM5N2ASNMKZVEYKWH-m1-7cd0bd60 authority=proven digest=57ae2782caf8a6b6be34f6216d0244fa1b0923b0cd41b028e58e3eaf293f436b
+- Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-08T06:11:48Z
 - Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-08T06:10:06Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-06T12:34:28Z YRABK927PRM5N2ASNMKZVEYKWH-m1-7cd0bd60 approve actor=human:Wido targets=backlog-ordered-by-priority
 - 2026-09-06T15:43:18Z DC782RYCANRSNPZP6ZSEBP01VZ-m1-7cd0bd60 set-pin actor=human:Wido targets=backlog-ordered-by-priority
 - 2026-09-08T06:10:06Z 1TZYJK3Q3DMC2HM5MJX3R9B3MR-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=backlog-ordered-by-priority
-Integrity: sha256=617667d2c2c05c7e1d5c2fb239875aa1d748b258c322baa7c49f6538e12d9a22
+- 2026-09-08T06:11:48Z KPV4VP6QD7Y2G8YVN84J6JFFWB-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=backlog-ordered-by-priority
+Integrity: sha256=cff6a5137cc65722179e0cf6eb10b47c9c07c60ad0cd42f65e3a6761ee1c6a80
