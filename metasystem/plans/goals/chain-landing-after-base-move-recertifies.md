@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: Read bindCertifiedChange, the WORKTREE-BEHIND hint in the follow-up path, and the critique register's round accounting; decide between a merge-only review round outside the box and a no-overlap proof; brief one round with a fixture.
 - OpenedAt: 2026-09-06T12:20:33Z
-- Revision: 4
+- Revision: 5
 - Labels: headless-fleet, headless-process, robustness
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-08T10:40:50Z revision=3 opid=JJ1SE0ZBSQDKGK5158E5VQ8AG3-m1b-c6925449 authority=proven digest=64be6fe4726bc5e9238a47cb7fed19867d6b78c5154e9a9b12e4253399596f0d
+- Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-08T10:44:52Z
 - Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-08T10:41:06Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=chain-landing-after-base-move-recertifies
 - 2026-09-08T10:40:50Z JJ1SE0ZBSQDKGK5158E5VQ8AG3-m1b-c6925449 approve actor=human:Wido targets=chain-landing-after-base-move-recertifies
 - 2026-09-08T10:41:06Z 0Y4R9RJX78F88E9W3GQESP03NT-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies
-Integrity: sha256=abca9beb3d4773e52299eedbdd8cfe337bec05aba8b38ec13592eefc496be819
+- 2026-09-08T10:44:52Z 80832NERRZ781J4SGMYG24P86S-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies
+Integrity: sha256=ba416ddf19066c55431327d77372f9147318fc298e87d7168607b8c18bf9d25f
