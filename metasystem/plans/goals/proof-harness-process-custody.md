@@ -1,11 +1,13 @@
 # proof-harness-process-custody
 
 - State: approved
+- Priority: 1
+- Sequence: 28
 - Intent: Seat-run proof harnesses leak their load generators: twelve CPU-hog busy loops from m2's 2026-08-31 proof legs orphaned to init at 95-100 percent CPU for 12-13 hours (pids preserved in the session records; m3's twelve from the prior afternoon were the same class), because 'kill $LOADPIDS' from a jobs list races shell detachment under the background-execution wrapper - the kill fires in a shell whose job table no longer owns the loops. The leaked load then poisoned the very load diagnoses the harnesses served, and starved m3's steward startup confirmation. Same disease the delegate machinery already cured for its own children (process-group custody, dab1dbd family) - seat-run harnesses have no custody at all.
 - Origin: main
 - Next step: Appetite: 2h, full ladder per R-38-m2 (backlog, design, design critique, build, code critique, tests). Direction for the designer: proof harnesses own their processes DETERMINISTICALLY - a harness runs its load generators in one process group it kills whole on every exit path (trap on EXIT, kill by negative pgid), or better: a small engine verb (proc load-generate --seconds N --workers K) whose group the existing kill-through machinery owns, so no shell job table is ever the custodian. Fixture: a harness killed mid-run leaves zero orphans; the census sees nothing unowned. SECOND SPECIMEN (m1, 2026-09-02): 325 orphaned fixture processes on the m1 Mac, two to four days old, 303 of them steward runners from agent-fixture beds under the user's temp directory (plus fixture-battery-owner supervise components, a revocation-race battery loop and a fake-adapter handshake loop), still ticking and writing narration logs at 34 files per minute while Apple's fseventsd sat at 100 percent CPU and 12.7 GB resident for 17 days; 949 stale temp beds totalling 5.6 GB remain on disk. No engine verb owns leaked fixture processes, so the seat had nothing lawful to run. DONE for this goal now also means a sweep the seat may run: reap fixture beds whose processes are orphaned and older than a bound, under the census's eye. THIRD SPECIMEN (m3, 2026-09-04): twenty steward runners from agent-fixture beds (runner-repo, steward-repo, budget-dispatch-repo, selftest-repo; dispatch-fixtures.sh) orphaned to init for 6 to 12 hours, idle at 0 percent CPU, their temp beds still on disk; killed by hand on Wido's word ("kill all please. We need to keep the machine healthy").
 - OpenedAt: 2026-09-01T07:21:28Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=10 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=d9257ea79621b979031e0fe497066d2b64ecd2c2b97949158395d9e92fe37dff
@@ -22,4 +24,5 @@ History:
 - 2026-09-03T06:25:43Z E5VGA365KT55WBYD8JJTZVTSHX-m1-7bb1546e release actor=m1+main-1788333680-2840-7f79f4 targets=proof-harness-process-custody
 - 2026-09-04T09:37:16Z 1CY6EQRNN09PTZFXVVH9B65VKY-m3-a5da21ff edit actor=m3+mac-m3 targets=proof-harness-process-custody
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=proof-harness-process-custody reason=sweep
-Integrity: sha256=15d8eed0074dc493b6b9c7df3182cdb9b5faff5622510c2917e9757a0d0d175d
+- 2026-09-08T15:56:57Z TRGQGY4JV1KZK5TSZPMBWQ135A-m1-7cd0bd60 set-priority actor=human:Wido targets=proof-harness-process-custody reason=priority-order subject=proof-harness-process-custody from=unranked to=1:28 requested-sequence=28
+Integrity: sha256=48c9117549305a918462ad27b47bcd1290c277836f8587b31a075ea5f33e824a
