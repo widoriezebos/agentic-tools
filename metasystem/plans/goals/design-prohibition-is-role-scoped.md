@@ -1,16 +1,19 @@
 # design-prohibition-is-role-scoped
 
 - State: queued
+- Priority: 3
+- Sequence: 118
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no data or process is at risk, but a design delegate refuses its own brief and the goal stalls until a human notices; novelty 1: the rule is one table row and one role prohibition list; exposure 3: every design round on every machine, on the lane Wido chose for design authoring; accumulation 2: every design brief has to carry an override paragraph, and each one is a place the override can be forgotten or misquoted"
 - Tier: 3
 - Intent: Wido's word 2026-09-08: 'There for sure as hell has to be the possibility for a design delegate. If we have this currently as a restriction, then we should make that dependent on the role of the delegate. If we have a builder delegate, that builder cannot design, that's for sure, but this restriction is wrong.' Today the prohibition is scoped to the MODE, not the role: the composed delegate prompt's Working Modes table says that under Design mode the delegable part is 'Critique rounds (design-critic)' and the never-delegated part is 'The design itself, dispositions, the obligation matrix'. That row is role-blind, so it forbids design authoring to every delegate including one dispatched precisely to author a design. It is live: job backlogorder-design2 (codex, gpt-6-astra, xhigh, 2026-09-08 06:13Z) read that row against a brief telling it to write plans/backlog-ordered-by-priority-design.md, reported the conflict as a gap, wrote nothing and returned. The only way through today is an override paragraph in every design brief quoting R-87-m1c and R-86-m1b, which is fragile and easy to forget. DONE means the prohibition is scoped to the delegate's role instead of the mode: a builder delegate still may not make design decisions, a delegate dispatched to author a design may, and the orchestrator keeps what it always kept, which is the dispositions of any critique, certification, the ledger and the receipt. The rule reads the same way in the composed prompt as in the doctrine it comes from, so a delegate needs no brief-level override to do the job it was dispatched for; a design authoring round on the design lane completes without reporting an authority conflict; and a builder round asked to make a design decision still stops and says so.
 - Origin: main
 - Next step: Read the surfaces before deciding the shape. The row lives in the composed delegate prompt; find its source (the working-modes doctrine the composition pulls from, and whatever assembles it in internal/dispatch/composition.go) and decide whether the fix is a role-conditioned row, a first-class design-authoring role beside implementer, code-critic and design-critic, or a per-role prohibition list. Wido's sentence is the contract: make it depend on the ROLE of the delegate, and keep his boundary intact so a builder still cannot design. Canary before battery: the smallest proof is one design-lane dispatch that completes without an authority gap plus one builder-role check that still refuses a design decision, before any wider bed run. Evidence for the builder: artifacts/agents/backlogorder-design2/rounds/1/return.json holds the refusal in the delegate's own words, and that job's prompt.md line 308 is the offending row.
 - OpenedAt: 2026-09-08T06:22:17Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-08T06:22:17Z 4EF38E5P4E17CYP0MAXTVNPKPW-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=design-prohibition-is-role-scoped
-Integrity: sha256=1a332a3bf77d5eb65a4bbbb34f934cc0e30e1871d84d19b72bd47aa66b850b92
+- 2026-09-08T16:06:06Z CZ9BWWYQ0XK7W7AJX4A12WPDW9-m1-7cd0bd60 set-priority actor=human:Wido targets=design-prohibition-is-role-scoped reason=priority-order subject=design-prohibition-is-role-scoped from=unranked to=3:118 requested-sequence=118
+Integrity: sha256=fee5f8dd5af8a93f3dce07735fd11c6f5a10e49fd4d63b0366ba723665b18eef
