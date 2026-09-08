@@ -1,11 +1,13 @@
 # missionrunner-terminate-flake
 
 - State: approved
+- Priority: 3
+- Sequence: 80
 - Intent: TestTerminateGroupLeaksNoGroupsUnderCompression (internal/missionrunner) failed in the first governed weight-discharge validation (run governed-discharge-20260831-c, 2026-08-31) on a quiet-held shared machine where the package still took 1271s - the wall-clock-patience-under-load family (same class as steward-tick-load-flake, which failed twice in the same gate). Evidence: artifacts/agents/suite-failures/20260831T123307Z-52778/go-engine-gate.log.
 - Origin: main
 - Next step: PARKED COLD-RESUMABLE at the box edge, design NEARLY CLOSED (9 findings converged to 3, register records/misc/missionrunner-patience-critique-r2.md): RESUME RECIPE: fresh box per R-44, one fold of the three custody findings (walk-completeness must treat unreadable argv as incomplete; group custody needs every substantive member not one row; pid continuity needs the birth-token class or walk-ordering proof — note goal job-record-birth-token owns the sibling contract), closing critique, then the build per the design's port section, proof under load per the steward-tick precedent. Attempts spent include one cancelled pre-landing critique (cause-blind, lawful) Sightings 2026-09-06 (m1c, evidence for the resume): TestTerminateGroupLeaksNoGroupsUnderCompression red in both full race-gate runs on m1 (loaded 18-core Mac, 7.3s and 10.4s: one of four groups left alive outside census custody, 'host process group N is not provably ours'), green in the standalone missionrunner run the same morning; TestTerminateGroup red on m2's full gate ('the owned group survived its wind-down', records/misc/race-gate-m2-evidence-2026-09-06.md). It is now the only red in the full gate on both Macs.
 - OpenedAt: 2026-08-31T12:34:34Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=11 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=85b0bb451577bf376f9557f646e57cb3c0f5fd1d06c643ab460dcacc2c8c0822
@@ -24,4 +26,5 @@ History:
 - 2026-09-02T06:53:14Z YAHFVQVSTHNQS4WSGYJN39T91F-m0b-6638932d set-budget actor=m0b+main-1788250419-3170380-8a1fb3 targets=missionrunner-terminate-flake
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=missionrunner-terminate-flake reason=sweep
 - 2026-09-06T09:53:09Z RHCWCG6D0NE8GZ41QMXH2JJ01J-m1c-7cd0bd60 edit actor=m1c+main-1788680061-17829-64951c targets=missionrunner-terminate-flake
-Integrity: sha256=3b72e5d5cc83371c56048f86ec429d63664ba547574d82f972d91afd2c028833
+- 2026-09-08T16:03:49Z PYRBBYM24V61XGFX6RJGD46Z2X-m1-7cd0bd60 set-priority actor=human:Wido targets=missionrunner-terminate-flake reason=priority-order subject=missionrunner-terminate-flake from=unranked to=3:80 requested-sequence=80
+Integrity: sha256=1e5278074ae44785c999356c299d34b4a331c3c765dfce5caebdec2086a8f57f
