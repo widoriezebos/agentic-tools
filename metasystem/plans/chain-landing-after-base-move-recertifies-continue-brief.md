@@ -2,73 +2,93 @@ Working Mode: implement
 Orchestrator Identity: m1b (lineage main-1788680071-18713-e76d5d, dispatch delegate under goal chain-landing-after-base-move-recertifies)
 Date: 2026-09-08
 
-# Continuation: round 1 was cut off at its cap, finish and report it
+# Continue a build that was killed at its cap
 
-READ THIS FIRST. You are not starting this build. Round 1 of this chain
-ran for 120 minutes, hit its budget cap and was killed before it could
-write its return. Its work survives: chain rounds accumulate in this
-worktree rather than starting clean, and the worktree you have opened
-already contains it. Do NOT restart, re-plan or rewrite what is there.
-Your job is to confirm it, finish anything genuinely missing, and return
-a proper account of it.
+## FIRST ACTION, before anything else
 
-The specification is unchanged:
+Your worktree is seeded by the orchestrator immediately after your
+dispatch, so it may be empty for the first seconds of your life. Before
+you read anything else or touch any file, wait for the seed:
+
+```sh
+for i in $(seq 1 60); do [ -f .orchestrator-seeded ] && break; sleep 2; done
+cat .orchestrator-seeded
+git status --porcelain | wc -l
+```
+
+The marker file `.orchestrator-seeded` sits at the root of your
+workspace, one level above `metasystem/`. When it appears, the working
+tree carries the previous round's work. The status count must be 21:
+twenty changed paths plus the marker.
+
+If the marker has not appeared after two minutes, STOP and report that
+as a gap. Do not build anything from scratch. Do not delete the marker.
+
+## What happened, and what you are not doing
+
+Round 1 of this work ran for 120 minutes, hit its budget cap and was
+killed before it could write its return. Its code survives and is what
+the orchestrator seeded into your worktree. The machinery could not hand
+it to you itself: a follow-up refuses after a timeout, and a fresh
+dispatch refuses to reuse an existing worktree, so the orchestrator
+carried the diff across by hand. Goal
+capped-round-continues-instead-of-restarting exists to remove that
+manual step.
+
+You are NOT starting this build. Do not restart, re-plan or rewrite what
+is there.
+
+The specification is
 metasystem/plans/chain-landing-after-base-move-recertifies-design.md,
 revision 2, final. The build contract is
-metasystem/plans/chain-landing-after-base-move-recertifies-build-brief.md,
-which still applies in full, including its prohibitions.
+metasystem/plans/chain-landing-after-base-move-recertifies-build-brief.md
+and it still applies in full, including every prohibition in it.
 
-## What the orchestrator verified on the tree you are holding
+## The baseline the orchestrator verified on exactly this code
 
-Twenty paths are dirty in this worktree: sixteen modified and four new,
-the four new ones being `internal/gittree/disjoint_merge.go`,
-`internal/gittree/disjoint_merge_test.go`, `internal/landing/park.go`
-and `internal/validate/recertification.go`.
+Twenty paths: sixteen modified, four new. The four new files are
+`internal/gittree/disjoint_merge.go`,
+`internal/gittree/disjoint_merge_test.go`,
+`internal/landing/park.go` and
+`internal/validate/recertification.go`.
 
-`go build ./...` succeeds.
+`go build ./...` succeeds, and all three of the design's canaries pass,
+each run individually outside the delegate sandbox:
 
-All three of the design's canaries exist and PASS, run individually by
-the orchestrator outside your sandbox on exactly this tree:
+- `go test ./internal/gittree -run '^TestDisjointMergeProof$'`, 4.1s.
+- `go test ./cmd/metasystem -run '^TestChainLandingRecertifiesAfterBaseMove$'`, 14.9s.
+- `go test ./cmd/metasystem -run '^TestRecertifiedLandingParksOnOriginMove$'`, 8.7s.
 
-- `go test ./internal/gittree -run '^TestDisjointMergeProof$'` passed in
-  4.1 seconds.
-- `go test ./cmd/metasystem -run '^TestChainLandingRecertifiesAfterBaseMove$'`
-  passed in 14.9 seconds.
-- `go test ./cmd/metasystem -run '^TestRecertifiedLandingParksOnOriginMove$'`
-  passed in 8.7 seconds.
-
-So the acceptance the design asks for is already met on this tree. Treat
-that as the baseline and protect it: if any change you make turns one of
-those three red, revert your change rather than adjusting the test.
+So the design's acceptance is already met. Protect that: if a change of
+yours turns one of those three red, revert your change rather than
+adjusting the test.
 
 ## What to do
 
 1. **Check one gap.** The design's implementation boundary names
    `metasystem/internal/validate/authorization.go` as a primary target
-   and round 1 did not touch it. The page discusses mission
-   authorization binding around its authorization section. Decide
-   whether a change there is required by the specification. If it is,
-   make the smallest one. If it is not, say so in the return and name
-   why, citing the page.
-2. **Look for its own loose ends.** Round 1 was interrupted, so check
-   for the marks of unfinished work in the dirty paths: a declared flag
-   with no handler, a refusal code defined and never returned, a help
-   entry missing for a new command, a test helper referenced but not
-   written. Fix what is genuinely incomplete. Do not refactor what
-   works.
-3. **Return a complete account**, which is the thing round 1 never got
-   to write. The return must carry the full cumulative `diffBoundary`
-   naming every one of the paths this chain has changed, including the
-   four new files, or conformance cannot validate the round. Also state
-   plainly in the return that round 1 was capped and that this round
-   continued its worktree rather than rebuilding it.
+   and round 1 never touched it. Decide from the page whether a change
+   there is required. If it is, make the smallest one. If it is not, say
+   so in the return and cite the page.
+2. **Find the marks of interruption.** Round 1 was cut off mid-flight,
+   so look for a declared flag with no handler, a refusal code defined
+   and never returned, a missing help entry for a new command, a helper
+   referenced but not written. Fix what is genuinely incomplete. Do not
+   refactor what works.
+3. **Return the account round 1 never wrote.** The return must carry the
+   full cumulative `diffBoundary` naming every path this chain changed,
+   including the four new files, or conformance cannot validate the
+   round. State in the return that round 1 was capped and that this
+   round continued its code rather than rebuilding it.
+4. **Delete the marker** as your last file action, so it never reaches
+   the review: `rm -f .orchestrator-seeded`, from your workspace root.
 
 ## Verification
 
-Canary first, and report each individually:
+Canary first, each reported individually:
 
-- The three canaries above, by their exact commands, so the return
-  carries them in your own evidence rather than only mine.
+- The three canaries above, by their exact commands, so your evidence
+  carries them and not only mine.
 - `go build ./...`
 - `go test` once for the packages this chain touches:
   `./internal/gittree ./internal/landing ./internal/validate ./internal/dispatch ./cmd/metasystem`
@@ -79,6 +99,6 @@ Canary first, and report each individually:
 Do not run the fixture beds and do not run a battery; the orchestrator
 runs those and the receipt-bound battery outside your sandbox.
 
-Gap rule: stop and report a gap; never fill it silently. If you believe
-round 1 left something structurally wrong rather than merely unfinished,
-say that in the return instead of redesigning it.
+Gap rule: stop and report a gap; never fill it silently. If round 1 left
+something structurally wrong rather than merely unfinished, say that in
+the return instead of redesigning it.
