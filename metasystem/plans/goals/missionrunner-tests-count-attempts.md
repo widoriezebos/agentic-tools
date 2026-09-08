@@ -1,13 +1,15 @@
 # missionrunner-tests-count-attempts
 
 - State: approved
+- Priority: 3
+- Sequence: 81
 - Risk: severity=1 novelty=2 exposure=2 accumulation=2 basis="The mission-runner tests pass on a quiet Mac in 24 minutes but failed under load; converting their sleeps and deadlines to attempt-counted patience touches the unfinished process-custody design, which must not be pre-empted; every gate that runs them is exposed to load."
 - Tier: 2
 - Intent: internal/missionrunner's tests use explicit sleeps, deadlines, elapsed-time assertions and process waits; on m2 2026-09-04 the package failed in the adopt fixture's Go gate after 1443 seconds while three other suites ran, and passed on a quiet Mac in 1454 seconds. Converting them to the patience rule (attempts counted in observed progress, a silence-only failsafe) needs three decisions the implementer of chain agm-build1 rightly refused to make alone: the attempt marker and budget per asynchronous actor, whether to touch the process-group conversion whose recorded design says it cannot be implemented safely yet (goal proof-harness-process-custody), and which tests count as inherently long for a -short gate. DONE means those decisions are recorded in a short design note, the tests count attempts, the package passes under the load of two concurrent fixture suites, and -short skips only the tests the note names.
 - Origin: main
 - Next step: A design note first (three decisions), then the test conversion; tier from the risk basis; waits for Wido's word if above tier 1.
 - OpenedAt: 2026-09-04T20:40:58Z
-- Revision: 3
+- Revision: 4
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -17,4 +19,5 @@ History:
 - 2026-09-04T20:40:58Z CK21RB56WY46CB2A7CHW67ASMY-m2-5fcf08ab open actor=human:Wido targets=missionrunner-tests-count-attempts
 - 2026-09-04T22:10:57Z AET31FWF5TGZD8XD30YZDDH3QN-m2-5fcf08ab approve actor=human:Wido targets=missionrunner-tests-count-attempts authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Yes, all five (Recommended)"
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=missionrunner-tests-count-attempts reason=sweep
-Integrity: sha256=e0b7540fc8c4ddc75464c75cdc61db28d9b728167ebda79e417cbfa97b58f0bd
+- 2026-09-08T16:03:53Z FV68YJYMQZA6TGVGK9HCJT5E7Z-m1-7cd0bd60 set-priority actor=human:Wido targets=missionrunner-tests-count-attempts reason=priority-order subject=missionrunner-tests-count-attempts from=unranked to=3:81 requested-sequence=81
+Integrity: sha256=85a9f4bb97e666e007e3dc4f6e7f4105094e299cb29b1190632cc5a071f8ac11
