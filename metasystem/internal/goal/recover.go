@@ -151,6 +151,14 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		CleanupRefs(e, entry.Opid)
 		return "escalation required: " + detail, nil
 	}
+	if taken.Intent.Verb == "set-priority" {
+		detail := "human authority cannot be recovered from journal text; rerun goal set-priority from the enrolled terminal"
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
+			return "", err
+		}
+		CleanupRefs(e, entry.Opid)
+		return "escalation required: " + detail, nil
+	}
 	if taken.Intent.Verb == "steal" {
 		detail := "human authority cannot be recovered from journal text; rerun goal steal from the enrolled terminal and pass its --approved-ref again when the goal is over norm"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
@@ -300,6 +308,8 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return claimRequest(r, target, budget), nil
 	case "set-budget":
 		return PublishRequest{}, fmt.Errorf("APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand")
+	case "set-priority":
+		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
 		if err != nil {

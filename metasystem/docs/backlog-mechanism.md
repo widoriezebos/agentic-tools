@@ -121,6 +121,15 @@ A machine's own frontier (goal next) skips goals pinned elsewhere —
 they are not claimable there, and reporting them ready would hide
 genuinely claimable work.
 
+## Ordering the backlog
+
+An open goal may carry a priority from 1 (highest) through 3 and a one-based
+sequence within that priority. Both fields absent means unranked, and unranked
+goals sort after every ranked goal. Rank is a human act at the enrolled
+terminal: `metasystem goal set-priority --by <human> --id <goal> --priority
+<n> [--sequence <n>]`. Inserting a position re-sequences the other goals in
+that priority so its positions remain consecutive.
+
 ## Dispatch delegate sequencing
 
 Backlog sequencing within recorded priorities, mechanical item shaping,

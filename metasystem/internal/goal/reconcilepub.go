@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -109,6 +110,32 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 					}
 					touched[c.Path] = true
 					changes = append(changes, c)
+				}
+			}
+			departedIDs := make([]string, 0, len(session.archived))
+			for id := range session.archived {
+				departedIDs = append(departedIDs, id)
+			}
+			sort.Strings(departedIDs)
+			departed := make([]*GoalFile, 0, len(departedIDs))
+			for _, id := range departedIDs {
+				departed = append(departed, t.Done[id])
+			}
+			for _, compaction := range compactDepartedPriorities(t.Live, departed) {
+				for _, id := range compaction.Departed {
+					file := t.Done[id]
+					if file != nil && len(file.History) > 0 && file.History[len(file.History)-1].Opid == r.opid() {
+						last := &file.History[len(file.History)-1]
+						last.Targets = sortedUnique(append(last.Targets, compaction.Targets...))
+					}
+				}
+				for _, priorityChange := range compaction.Changed {
+					mergePriorityEvent(priorityChange.File, r, "done", compaction.Targets, priorityChange.Before, priorityChange.After)
+					path := livePath(priorityChange.File.Id)
+					if !touched[path] {
+						touched[path] = true
+						changes = append(changes, Change{Path: path, Content: RenderFile(priorityChange.File)})
+					}
 				}
 			}
 			// Re-render every touched live file once, LAST state wins

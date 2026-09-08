@@ -747,24 +747,29 @@ fi
 
 # 8. List filters use AND across repeated labels and leave zero-label
 # goals lawful but absent from a filtered result.
+pretty_goal_ids() {
+  awk 'NF == 5 && $1 ~ /^([123]|-)$/ && $2 ~ /^([0-9]+|-)$/ && $3 ~ /^(queued|approved|claimed|parked)$/ && $5 ~ /^[a-z][a-z0-9-]*$/ { print $5 }'
+}
 "$ms" goal open --root "$clone" --id labeled-two \
 	--intent "Second labeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
   --label shared --label alpha >/dev/null
 one_filter=$("$ms" goal list --root "$clone" --pretty --label shared)
-grep -q '^  labeled-one' <<<"$one_filter" && grep -q '^  labeled-two' <<<"$one_filter" \
+one_ids=$(pretty_goal_ids <<<"$one_filter")
+grep -Fxq 'labeled-one' <<<"$one_ids" && grep -Fxq 'labeled-two' <<<"$one_ids" \
   || { echo "one-label list filtering lost a match: $one_filter" >&2; exit 1; }
-if grep -q '^  plain-goal' <<<"$one_filter"; then
+if grep -Fxq 'plain-goal' <<<"$one_ids"; then
   echo "a zero-label goal appeared in a filtered list" >&2; exit 1
 fi
 two_filters=$("$ms" goal list --root "$clone" --pretty --label alpha --label shared)
-grep -q '^  labeled-one' <<<"$two_filters" && grep -q '^  labeled-two' <<<"$two_filters" \
+two_ids=$(pretty_goal_ids <<<"$two_filters")
+grep -Fxq 'labeled-one' <<<"$two_ids" && grep -Fxq 'labeled-two' <<<"$two_ids" \
   || { echo "two-label AND filtering lost a match: $two_filters" >&2; exit 1; }
 "$ms" goal open --root "$clone" --id and-a \
 	--intent "Carries only a." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a >/dev/null
 "$ms" goal open --root "$clone" --id and-ab \
 	--intent "Carries a and b." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a --label b >/dev/null
 and_probe=$("$ms" goal list --root "$clone" --pretty --label a --label b)
-and_ids=$(sed -n 's/^  \([a-z][a-z0-9-]*\)$/\1/p' <<<"$and_probe")
+and_ids=$(pretty_goal_ids <<<"$and_probe")
 [[ "$and_ids" == "and-ab" ]] \
   || { echo "the two-label list filter did not return exactly the goal carrying both labels: $and_probe" >&2; exit 1; }
 

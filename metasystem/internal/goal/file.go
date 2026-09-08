@@ -23,6 +23,8 @@ import (
 type GoalFile struct {
 	Id       string
 	State    string // queued | approved | claimed | parked | done
+	Priority uint8  // 1 is highest, 3 is lowest; zero with Sequence zero is unranked
+	Sequence uint64 // one-based position within Priority; zero with Priority zero is unranked
 	Tier     uint8  // 1 | 2 | 3; zero is tolerated during the classification migration
 	Risk     *RiskRecord
 	Intent   string
@@ -434,6 +436,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Tier > 3 {
 		addProblem("Tier %d is not 1, 2, or 3", f.Tier)
 	}
+	if seen["Priority"] != seen["Sequence"] {
+		addProblem("Priority and Sequence must both be present or both be absent")
+	}
 	if f.Risk != nil {
 		if err := f.Risk.Validate(); err != nil {
 			addProblem("Risk: %v", err)
@@ -704,6 +709,20 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
+	case "Priority":
+		n, err := parseUnsignedDecimal(value, 8)
+		if err != nil || n < 1 || n > 3 {
+			addProblem("Priority %q is not 1, 2, or 3", value)
+			return
+		}
+		f.Priority = uint8(n)
+	case "Sequence":
+		n, err := parseUnsignedDecimal(value, 64)
+		if err != nil || n == 0 {
+			addProblem("Sequence %q is not a positive unsigned 64-bit integer", value)
+			return
+		}
+		f.Sequence = n
 	case "Risk":
 		without, basis, present, err := cutQuotedRecordField(value, "basis")
 		if err != nil || !present {
@@ -967,6 +986,18 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	}
 }
 
+func parseUnsignedDecimal(value string, bitSize int) (uint64, error) {
+	if value == "" {
+		return 0, fmt.Errorf("empty decimal")
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return 0, fmt.Errorf("not decimal digits")
+		}
+	}
+	return strconv.ParseUint(value, 10, bitSize)
+}
+
 func tierBoxReviewRounds(tier uint8) int64 {
 	switch tier {
 	case 1:
@@ -1105,6 +1136,12 @@ func RenderFile(f *GoalFile) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", f.Id)
 	fmt.Fprintf(&b, "- State: %s\n", f.State)
+	if f.Priority != 0 {
+		fmt.Fprintf(&b, "- Priority: %d\n", f.Priority)
+	}
+	if f.Sequence != 0 {
+		fmt.Fprintf(&b, "- Sequence: %d\n", f.Sequence)
+	}
 	if f.Risk != nil {
 		fmt.Fprintf(&b, "- Risk: severity=%d novelty=%d exposure=%d accumulation=%d basis=%s\n", f.Risk.Severity, f.Risk.Novelty, f.Risk.Exposure, f.Risk.Accumulation, strconv.Quote(f.Risk.Basis))
 	}

@@ -166,6 +166,36 @@ func ValidateTree(t *TreeGoals) []Problem {
 		}
 	}
 
+	// Ranked open goals form one dense, one-based sequence within each
+	// priority. Archived ranks are historical and unranked goals occupy no
+	// slot.
+	for priority := uint8(1); priority <= 3; priority++ {
+		var ranked []*GoalFile
+		for _, id := range sortedGoalIds(t.Live) {
+			file := t.Live[id]
+			if file.Priority == priority {
+				ranked = append(ranked, file)
+			}
+		}
+		sort.Slice(ranked, func(i, j int) bool {
+			return ranked[i].Sequence < ranked[j].Sequence
+		})
+		valid := true
+		for index, file := range ranked {
+			if file.Sequence != uint64(index+1) {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			positions := make([]string, 0, len(ranked))
+			for _, file := range ranked {
+				positions = append(positions, fmt.Sprintf("%s%s.md=%d", goalsPrefix, file.Id, file.Sequence))
+			}
+			addf("priority %d ranked open goals must occupy exactly 1..%d once each; got %s", priority, len(ranked), strings.Join(positions, ", "))
+		}
+	}
+
 	// One id, one file: the live set and the archive never both
 	// carry a goal.
 	for _, id := range sortedGoalIds(t.Live) {

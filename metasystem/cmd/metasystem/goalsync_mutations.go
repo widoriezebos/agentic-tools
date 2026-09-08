@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -614,6 +615,89 @@ func proveGoalHumanAuthority(name string, f *syncFlags, prove goalAuthorityProve
 		return humanauthority.Proof{}, fmt.Errorf("goal %s could not bind its temporary recorded relay: %w", name, err)
 	}
 	return proof, nil
+}
+
+func proveEnrolledGoalHumanAuthority(root string, pid int64, reader humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
+	return humanauthority.Prove(root, pid, reader, now)
+}
+
+func runGoalSetPriority(args []string) int {
+	return runGoalSetPriorityWithAuthority(args, proveEnrolledGoalHumanAuthority)
+}
+
+func runGoalSetPriorityWithAuthority(args []string, prove goalAuthorityProver) int {
+	flags := flag.NewFlagSet("goal set-priority", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	by := flags.String("by", "", "the directing human")
+	lineage := flags.String("lineage", "", "this coordinator's lineage")
+	fixtureAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
+	priorityRaw, sequenceRaw := "", ""
+	prioritySet, sequenceSet := false, false
+	flags.Func("priority", "priority 1, 2, or 3", func(value string) error {
+		prioritySet = true
+		priorityRaw = value
+		return nil
+	})
+	flags.Func("sequence", "one-based position within the priority", func(value string) error {
+		sequenceSet = true
+		sequenceRaw = value
+		return nil
+	})
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "goal set-priority takes no positional arguments")
+		return 2
+	}
+	if *id == "" || *by == "" || !prioritySet {
+		fmt.Fprintln(os.Stderr, "goal set-priority needs --id, --by, and --priority")
+		return 2
+	}
+	priorityValue, err := parseGoalRankDecimal("priority", priorityRaw, 8)
+	if err != nil || priorityValue < 1 || priorityValue > 3 {
+		fmt.Fprintf(os.Stderr, "goal set-priority priority %q is not 1, 2, or 3\n", priorityRaw)
+		return 2
+	}
+	var sequence *uint64
+	if sequenceSet {
+		sequenceValue, parseErr := parseGoalRankDecimal("sequence", sequenceRaw, 64)
+		if parseErr != nil || sequenceValue == 0 {
+			fmt.Fprintf(os.Stderr, "goal set-priority sequence %q is not a positive unsigned 64-bit integer\n", sequenceRaw)
+			return 2
+		}
+		sequence = &sequenceValue
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal set-priority works only with the synced backlog; migrate this checkout first")
+		return 1
+	}
+	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
+	proof, err := proveGoalHumanAuthority("set-priority", shared, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	request, err := syncReqWithProof("set-priority", *root, *by, *lineage, &proof)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	result, err := goal.SetPriority(request, *id, uint8(priorityValue), sequence, &proof)
+	return printSyncResult(result, err)
+}
+
+func parseGoalRankDecimal(name, value string, bitSize int) (uint64, error) {
+	if value == "" {
+		return 0, fmt.Errorf("%s is empty", name)
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return 0, fmt.Errorf("%s contains a non-decimal character", name)
+		}
+	}
+	return strconv.ParseUint(value, 10, bitSize)
 }
 
 // recordGoalApprovalProof keeps the proof file's action bound to the exact

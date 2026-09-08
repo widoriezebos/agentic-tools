@@ -444,7 +444,14 @@ func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
 	waiting := vGoal("sweep-waiting", StateQueued)
 	waiting.Budget = &budget
 	running := legacyClaimedFixture("sweep-running", budget)
+	running.Priority, running.Sequence = 2, 1
 	publishGoalFixtures(t, root, waiting, running)
+	published, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalClaim := *published.Live[running.Id].Claimed
+	originalBudget := *published.Live[running.Id].Budget
 
 	first, err := PreviewApprovalSweep(endpointFor(root), verbReq(root, "01J5X00000000000000000SW00", "mac-a").Now)
 	if err != nil || len(first.Lines) != 2 || !strings.Contains(strings.Join(first.Lines, "\n"), `intent="Do the thing called sweep-waiting"`) {
@@ -479,6 +486,18 @@ func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
 	}
 	if tree.Live[running.Id].State != StateClaimed || tree.Live[running.Id].Claimed == nil || tree.Live[running.Id].Approved == nil {
 		t.Fatalf("the sweep broke or failed to grandfather claimed work: %+v", tree.Live[running.Id])
+	}
+	if got := tree.Live[running.Id]; got.Priority != 2 || got.Sequence != 1 || *got.Claimed != originalClaim || *got.Budget != originalBudget {
+		t.Fatalf("the sweep changed the ranked claim or its budget: %+v", got)
+	}
+	if got := tree.Live[waiting.Id]; got.Priority != 0 || got.Sequence != 0 {
+		t.Fatalf("the sweep manufactured a rank for the waiting goal: %+v", got)
+	}
+	if got := tree.Live[running.Id].Approved; got.Digest != legacyApprovalDigest(running.Intent, budget) {
+		t.Fatalf("the sweep changed the existing approval payload or digest contract: %+v", got)
+	}
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("the swept ranked backlog does not validate: %v", problems)
 	}
 	if tree.Root.ApprovalGate == nil || tree.Root.ApprovalGate.Opid != human.opid() {
 		t.Fatalf("the sweep did not arm the fleet gate in the same transaction: %+v", tree.Root.ApprovalGate)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
@@ -274,6 +275,7 @@ func runGoalList(args []string) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	pretty := flags.Bool("pretty", false, "a human table instead of JSON")
+	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before listing")
 	var labels repeatedStrings
 	flags.Var(&labels, "label", "label token required on every listed goal (repeatable)")
 	if flags.Parse(args) != nil {
@@ -284,10 +286,10 @@ func runGoalList(args []string) int {
 		return 1
 	}
 	if converted(*root) {
-		return listSynced(*root, *pretty, labels...)
+		return listSynced(*root, *pretty, *fetch, labels...)
 	}
-	if len(labels) > 0 {
-		fmt.Fprintln(os.Stderr, "goal list --label reads the synced backlog; this checkout still carries the legacy ledger")
+	if len(labels) > 0 || *fetch {
+		fmt.Fprintln(os.Stderr, "goal list --label and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
 		return 1
 	}
 	store := &goal.Store{Root: *root}
@@ -334,23 +336,25 @@ func converted(root string) bool {
 
 // listSynced prints the accepted world: the same JSON idea as the
 // legacy list, grouped by state, with the projection's banners.
-func listSynced(root string, pretty bool, requiredLabels ...string) int {
+func listSynced(root string, pretty, fetchFirst bool, requiredLabels ...string) int {
 	e, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	p, err := goal.Project(e, false, time.Now())
+	p, err := goal.Project(e, fetchFirst, time.Now())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	grouped := map[string][]*goal.GoalFile{}
-	for _, id := range goal.SortedGoalIds(p.Tree.Live) {
+	open := make([]*goal.GoalFile, 0, len(p.Tree.Live))
+	for _, id := range goal.OrderedOpenGoalIDs(p.Tree.Live) {
 		f := p.Tree.Live[id]
 		if !goal.MatchesLabels(f.Labels, requiredLabels) {
 			continue
 		}
+		open = append(open, f)
 		grouped[f.State] = append(grouped[f.State], f)
 	}
 	var done []*goal.GoalFile
@@ -363,44 +367,48 @@ func listSynced(root string, pretty bool, requiredLabels ...string) int {
 		for _, banner := range p.Banners {
 			fmt.Println("! " + banner)
 		}
-		section := func(name string, goals []*goal.GoalFile) {
-			if len(goals) == 0 {
-				return
+		writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(writer, "PRIORITY\tSEQUENCE\tSTATE\tPIN\tGOAL")
+		for _, f := range open {
+			priority, sequence, pin := "-", "-", "-"
+			if f.Priority != 0 {
+				priority = fmt.Sprintf("%d", f.Priority)
 			}
-			fmt.Println(name + ":")
-			for _, f := range goals {
-				line := "  " + f.Id
-				if f.Claimed != nil {
-					line += "  [" + f.Claimed.Machine + "+" + f.Claimed.Lineage + "]"
+			if f.Sequence != 0 {
+				sequence = fmt.Sprintf("%d", f.Sequence)
+			}
+			if f.Pinned != "" {
+				pin = f.Pinned
+			}
+			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", priority, sequence, f.State, pin, f.Id)
+			var details []string
+			if f.Intent != "" {
+				details = append(details, f.Intent)
+			}
+			if f.Claimed != nil {
+				details = append(details, "claimed by "+f.Claimed.Machine+"+"+f.Claimed.Lineage)
+			}
+			if f.Parked != nil && f.Parked.Because != "" {
+				details = append(details, "parked: "+f.Parked.Because)
+			}
+			if f.Approved != nil && f.Approved.Authority == goal.ApprovalAuthorityRelayed {
+				if expired, why := f.ApprovalExpired(p.Horizon); expired {
+					details = append(details, "relayed, EXPIRED: "+why)
+				} else {
+					details = append(details, "relayed, review by "+f.Approved.ReviewBy)
 				}
-				if f.Pinned != "" {
-					line += "  (pinned: " + f.Pinned + ")"
-				}
-				if f.Parked != nil && f.Parked.Because != "" {
-					line += "  (parked: " + f.Parked.Because + ")"
-				}
-				if f.Approved != nil && f.Approved.Authority == goal.ApprovalAuthorityRelayed {
-					if expired, why := f.ApprovalExpired(p.Horizon); expired {
-						line += "  (relayed, EXPIRED: " + why + ")"
-					} else {
-						line += "  (relayed, review by " + f.Approved.ReviewBy + ")"
-					}
-				}
-				fmt.Println(line)
-				if f.Intent != "" {
-					fmt.Println("      " + f.Intent)
-				}
+			}
+			if len(details) > 0 {
+				fmt.Fprintf(writer, "\t\t\t\t  %s\n", strings.Join(details, "; "))
 			}
 		}
-		section("claimed", grouped[goal.StateClaimed])
-		section("approved", grouped[goal.StateApproved])
-		section("queued", grouped[goal.StateQueued])
-		section("parked", grouped[goal.StateParked])
+		_ = writer.Flush()
 		fmt.Printf("done: %d archived\n", len(done))
 		return 0
 	}
 	printJSON(map[string]any{
 		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
+		"open":   open,
 		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
 		"parked": grouped[goal.StateParked], "done": done,
 	})

@@ -1158,13 +1158,25 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 				return nil, err
 			}
 			f.Parked = nil
-			touchDisplaced(f, r, "done", []string{id}, displaced)
 			t.Done[id] = f
 			delete(t.Live, id)
-			return ackDisplacements(t, r, []Change{
+			compactions := compactDepartedPriorities(t.Live, []*GoalFile{f})
+			targets := []string{id}
+			if len(compactions) > 0 {
+				targets = compactions[0].Targets
+			}
+			touchDisplaced(f, r, "done", targets, displaced)
+			changes := []Change{
 				{Path: livePath(id), Delete: true},
 				{Path: donePath(id), Content: RenderFile(f)},
-			}), nil
+			}
+			for _, compaction := range compactions {
+				for _, change := range compaction.Changed {
+					mergePriorityEvent(change.File, r, "done", compaction.Targets, change.Before, change.After)
+					changes = append(changes, Change{Path: livePath(change.File.Id), Content: RenderFile(change.File)})
+				}
+			}
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
@@ -1360,6 +1372,8 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 					}
 				}
 			}
+			beforeRank := rankOf(f)
+			archivePath := archivedPath(t, id)
 			// A mixed arc has no single standing state. Reopen defaults
 			// queued, except that an all-parked destination copies its
 			// newest park record under human authority, while the caller's
@@ -1386,9 +1400,17 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 					return nil, fmt.Errorf("goal %s reopens queued; joining a claimed arc no longer manufactures approval or a claim", id)
 				}
 			}
+			if f.Priority != 0 {
+				f.Sequence = uint64(len(priorityIDs(t.Live, f.Priority, "")) + 1)
+			}
 			touch(f, r, "reopen", []string{id})
+			if afterRank := rankOf(f); afterRank != beforeRank {
+				mergePriorityEvent(f, r, "reopen", []string{id}, beforeRank, afterRank)
+			}
+			delete(t.Done, id)
+			t.Live[id] = f
 			changes := []Change{
-				{Path: archivedPath(t, id), Delete: true},
+				{Path: archivePath, Delete: true},
 				{Path: livePath(id), Content: RenderFile(f)},
 			}
 			if t.Root != nil && t.Root.Free != nil {

@@ -608,7 +608,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "captured tip refused: "+valErr.Error())
 				CleanupRefs(e, req.Opid)
-				return PublishResult{}, fmt.Errorf("the captured tip does not validate; repair the canonical branch deliberately: %w", valErr)
+				return PublishResult{}, fmt.Errorf("the captured tip does not validate; follow the ledger repair process: restore a valid canonical tree, then after any rewind run metasystem goal repair --accept-remote --by <human> --root <checkout> on each affected clone: %w", valErr)
 			}
 		}
 		if err := RecordSteps(e.Root, req.Opid, tip, ""); err != nil {

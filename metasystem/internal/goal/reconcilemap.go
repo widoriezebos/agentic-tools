@@ -92,6 +92,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.Id != id {
 				return nil, fmt.Errorf("%s: file name and Id disagree (%s)", d.Path, edited.Id)
 			}
+			if edited.Priority != 0 || edited.Sequence != 0 || rankDiagnosticPresent(problems) {
+				return nil, fmt.Errorf("%s: Priority and Sequence are written by goal set-priority at the enrolled terminal; a hand-created rank has no reconcile grammar", d.Path)
+			}
 			if edited.State != "" && edited.State != StateQueued {
 				return nil, fmt.Errorf("%s: a hand-created goal opens queued; %s is unmappable", d.Path, edited.State)
 			}
@@ -121,6 +124,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			edited, problems := ParseFile(handLenient(snap.Files[d.Path]))
 			if edited == nil {
 				return nil, fmt.Errorf("%s: the edited file does not parse", d.Path)
+			}
+			if edited.Priority != baseFile.Priority || edited.Sequence != baseFile.Sequence || rankDiagnosticPresent(problems) {
+				return nil, fmt.Errorf("%s: Priority and Sequence are written by goal set-priority at the enrolled terminal; a hand-edited rank has no reconcile grammar", d.Path)
 			}
 			// Integrity diagnostics are the hand edit's OWN signature
 			// — the human changed bytes under a machine digest, and
@@ -282,6 +288,9 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	if edited.Pinned != base.Pinned {
 		return nil, fmt.Errorf("%s: Pinned is written by the set-pin verb; a hand-edited pin has no reconcile grammar", p)
 	}
+	if edited.Priority != base.Priority || edited.Sequence != base.Sequence {
+		return nil, fmt.Errorf("%s: Priority and Sequence are written by goal set-priority at the enrolled terminal; a hand-edited rank has no reconcile grammar", p)
+	}
 	if (edited.Budget == nil) != (base.Budget == nil) ||
 		(edited.Budget != nil && *edited.Budget != *base.Budget) {
 		return nil, fmt.Errorf("%s: Budget is written by the set-budget verb; a hand-edited budget has no reconcile grammar", p)
@@ -345,6 +354,16 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		return nil, fmt.Errorf("%s: the bytes changed but no editable field did; the surface is closed", p)
 	}
 	return rows, nil
+}
+
+func rankDiagnosticPresent(problems []Problem) bool {
+	for _, problem := range problems {
+		text := string(problem)
+		if strings.Contains(text, "Priority") || strings.Contains(text, "Sequence") {
+			return true
+		}
+	}
+	return false
 }
 
 func sameApprovalRecord(left, right *ApprovalRecord) bool {

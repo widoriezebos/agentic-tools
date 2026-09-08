@@ -3,10 +3,184 @@ package goal
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestPriorityReconcile(t *testing.T) {
+	t.Run("same-priority", func(t *testing.T) {
+		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c", "d", "e"), nil)
+		for _, id := range []string{"b", "d"} {
+			editFile(t, root, livePath(id), func(file *GoalFile) {
+				file.State = StateDone
+				file.Conclude = "Concluded " + id + "."
+			})
+		}
+		request := humanReconcileReq(root, "01J5X000000000000000000T10")
+		result, err := Reconcile(request)
+		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
+			t.Fatalf("reconcile two departures in one priority: %+v %v", result, err)
+		}
+		if parent := mustGit(t, root, "rev-parse", result.Publish.Commit+"^"); parent != base {
+			t.Fatalf("reconciliation was not one commit over the materialized base: parent=%s base=%s", parent, base)
+		}
+		tree, _ := loadTree(root, result.Publish.Tip)
+		assertPriorityOrder(t, tree, []string{"a", "c", "e"})
+		assertPair(t, tree.Done["b"], 1, 2)
+		assertPair(t, tree.Done["d"], 1, 4)
+		assertPair(t, tree.Live["a"], 1, 1)
+		assertPair(t, tree.Live["c"], 1, 2)
+		assertPair(t, tree.Live["e"], 1, 3)
+		if tree.Live["a"].Revision != 1 || tree.Live["c"].Revision != 2 || tree.Live["e"].Revision != 2 {
+			t.Fatalf("batch compaction touched unchanged a or revised a survivor more than once: a=%d c=%d e=%d", tree.Live["a"].Revision, tree.Live["c"].Revision, tree.Live["e"].Revision)
+		}
+		for _, id := range []string{"c", "e"} {
+			last := tree.Live[id].History[len(tree.Live[id].History)-1]
+			if last.Opid != request.opid() || last.Actor != "human:wido" || last.Verb != "done" || !reflect.DeepEqual(last.Targets, []string{"b", "c", "d", "e"}) {
+				t.Fatalf("shifted survivor %s lacks one shared compaction event: %+v", id, last)
+			}
+		}
+	})
+
+	t.Run("different-priorities", func(t *testing.T) {
+		live := append(rankedPriorityGoals(1, "a", "b", "c"), rankedPriorityGoals(2, "d", "e", "f")...)
+		live = append(live, vGoal("unranked", StateQueued))
+		root, _ := priorityReconcileBed(t, live, nil)
+		for _, id := range []string{"b", "e"} {
+			editFile(t, root, livePath(id), func(file *GoalFile) {
+				file.State = StateDone
+				file.Conclude = "Concluded " + id + "."
+			})
+		}
+		result, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T20"))
+		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
+			t.Fatalf("reconcile departures across priorities: %+v %v", result, err)
+		}
+		tree, _ := loadTree(root, result.Publish.Tip)
+		assertPair(t, tree.Live["a"], 1, 1)
+		assertPair(t, tree.Live["c"], 1, 2)
+		assertPair(t, tree.Live["d"], 2, 1)
+		assertPair(t, tree.Live["f"], 2, 2)
+		if tree.Live["a"].Revision != 1 || tree.Live["d"].Revision != 1 || tree.Live["unranked"].Revision != 1 || tree.Live["unranked"].Priority != 0 {
+			t.Fatalf("unrelated ranks or unranked record changed: a=%+v d=%+v unranked=%+v", tree.Live["a"], tree.Live["d"], tree.Live["unranked"])
+		}
+	})
+
+	t.Run("survivor-edit", func(t *testing.T) {
+		root, _ := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
+		editFile(t, root, livePath("b"), func(file *GoalFile) {
+			file.State = StateDone
+			file.Conclude = "Concluded b."
+		})
+		editFile(t, root, livePath("c"), func(file *GoalFile) {
+			file.NextStep = "Edited while b leaves."
+		})
+		request := humanReconcileReq(root, "01J5X000000000000000000T30")
+		result, err := Reconcile(request)
+		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
+			t.Fatalf("reconcile survivor edit: %+v %v", result, err)
+		}
+		tree, _ := loadTree(root, result.Publish.Tip)
+		c := tree.Live["c"]
+		assertPair(t, c, 1, 2)
+		if c.NextStep != "Edited while b leaves." || c.Revision != 2 || len(c.History) != 2 {
+			t.Fatalf("survivor edit and compaction did not share one touch: %+v", c)
+		}
+		last := c.History[len(c.History)-1]
+		if last.Verb != "edit" || last.Opid != request.opid() || !reflect.DeepEqual(last.Targets, []string{"b", "c"}) || !strings.Contains(last.Reason, "from=1:3 to=1:2") {
+			t.Fatalf("survivor edit did not retain its row event with merged compaction: %+v", last)
+		}
+	})
+
+	t.Run("done-edit", func(t *testing.T) {
+		root, _ := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
+		editFile(t, root, livePath("b"), func(file *GoalFile) {
+			file.State = StateDone
+			file.Conclude = "Concluded b."
+			file.NextStep = "Archive-only edit."
+		})
+		result, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T40"))
+		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
+			t.Fatalf("reconcile done plus edit: %+v %v", result, err)
+		}
+		tree, _ := loadTree(root, result.Publish.Tip)
+		if tree.Live["b"] != nil || tree.Done["b"] == nil || tree.Done["b"].NextStep != "Archive-only edit." {
+			t.Fatalf("done edit did not land only in the archive: live=%+v done=%+v", tree.Live["b"], tree.Done["b"])
+		}
+		assertPair(t, tree.Done["b"], 1, 2)
+		assertPair(t, tree.Live["c"], 1, 2)
+	})
+
+	t.Run("reopen-refused", func(t *testing.T) {
+		archived := vGoal("already-done", StateDone)
+		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), []*GoalFile{archived})
+		editFile(t, root, livePath("b"), func(file *GoalFile) {
+			file.State = StateDone
+			file.Conclude = "Concluded b."
+		})
+		editFile(t, root, donePath("already-done"), func(file *GoalFile) {
+			file.State = StateQueued
+			file.Conclude = ""
+		})
+		if _, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T50")); err == nil || !strings.Contains(err.Error(), "archive has no hand-edit grammar; reopen is a verb") {
+			t.Fatalf("archive edit did not refuse with the named grammar: %v", err)
+		}
+		if tip := acceptedTip(t, root); tip != base {
+			t.Fatalf("refused batch changed the canonical tip: before=%s after=%s", base, tip)
+		}
+		baseFiles, err := ReadCommitGoals(root, base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(donePath("already-done"))), baseFiles[donePath("already-done")], 0o644); err != nil {
+			t.Fatal(err)
+		}
+		result, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T60"))
+		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
+			t.Fatalf("lawful done after restoring archive: %+v %v", result, err)
+		}
+		reopened, err := Reopen(verbReq(root, "01J5X000000000000000000T70", "mac-a"), "b")
+		if err != nil || reopened.Outcome != OutcomeConfirmed {
+			t.Fatalf("separate reopen: %+v %v", reopened, err)
+		}
+		tree, _ := loadTree(root, reopened.Tip)
+		assertPair(t, tree.Live["b"], 1, 3)
+	})
+}
+
+func priorityReconcileBed(t *testing.T, live, done []*GoalFile) (string, string) {
+	t.Helper()
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	changes := make([]Change, 0, len(live)+len(done))
+	for _, file := range live {
+		changes = append(changes, Change{Path: livePath(file.Id), Content: RenderFile(file)})
+	}
+	for _, file := range done {
+		changes = append(changes, Change{Path: donePath(file.Id), Content: RenderFile(file)})
+	}
+	result, err := Publish(endpointFor(root), PublishRequest{
+		Opid: "priority-reconcile-fixture", Machine: "mac-fixture", Lineage: "lin-fixture",
+		Intent: testIntentFor("migrate"), Message: "seed priority reconcile fixture",
+		Mutate:   func(string) ([]Change, error) { return changes, nil },
+		Validate: func(commit string) error { return ValidateCommit(root, commit) },
+	})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish priority reconcile fixture: %+v %v", result, err)
+	}
+	materialize(t, root, result.Tip)
+	return root, result.Tip
+}
+
+func rankedPriorityGoals(priority uint8, ids ...string) []*GoalFile {
+	files := make([]*GoalFile, 0, len(ids))
+	for index, id := range ids {
+		files = append(files, rankedGoal(id, priority, uint64(index+1)))
+	}
+	return files
+}
 
 func humanReconcileReq(root, ulid string) VerbRequest {
 	return VerbRequest{

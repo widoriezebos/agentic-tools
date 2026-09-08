@@ -294,13 +294,55 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			}
 			parent.Ratified = &SplitRatification{Tier: ratification.Tier, By: ratification.By, MainID: ratification.MainID, ClaimEpoch: ratification.ClaimEpoch, DraftSHA256: ratification.DraftSHA256}
 			touch(parent, r, "split", targets)
+			t.Done[parentID] = parent
+			delete(t.Live, parentID)
 			changes = append(changes, Change{Path: livePath(parentID), Delete: true}, Change{Path: donePath(parentID), Content: RenderFile(parent)})
+
+			compactions := compactDepartedPriorities(t.Live, []*GoalFile{parent})
+			allTargets := append([]string{}, targets...)
+			for _, compaction := range compactions {
+				allTargets = append(allTargets, compaction.Targets...)
+			}
+			allTargets = sortedUnique(allTargets)
+			for _, file := range t.Live {
+				if len(file.History) > 0 && file.History[len(file.History)-1].Opid == r.opid() {
+					file.History[len(file.History)-1].Targets = allTargets
+				}
+			}
+			parent.History[len(parent.History)-1].Targets = allTargets
+			for _, compaction := range compactions {
+				for _, priorityChange := range compaction.Changed {
+					mergePriorityEvent(priorityChange.File, r, "split", allTargets, priorityChange.Before, priorityChange.After)
+					path := livePath(priorityChange.File.Id)
+					present := false
+					for _, change := range changes {
+						if change.Path == path {
+							present = true
+							break
+						}
+					}
+					if !present {
+						changes = append(changes, Change{Path: path, Content: RenderFile(priorityChange.File)})
+					}
+				}
+			}
 
 			t.Root.Free = nil
 			t.Root.Decomposed = append(t.Root.Decomposed, DecomposedEntry{Id: parentID, Opid: r.opid(), At: r.stamp(), OldArc: parent.Arc})
 			t.Root.Revision++
-			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "split", Actor: r.Actor.historyActor(), Targets: targets, Keep: -1})
+			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "split", Actor: r.Actor.historyActor(), Targets: allTargets, Keep: -1})
 			changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
+			for index, change := range changes {
+				if change.Delete || change.Path == goalsPrefix+"backlog.md" {
+					continue
+				}
+				id := goalIDFromPath(change.Path)
+				if file := t.Live[id]; file != nil {
+					changes[index].Content = RenderFile(file)
+				} else if file := t.Done[id]; file != nil {
+					changes[index].Content = RenderFile(file)
+				}
+			}
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
