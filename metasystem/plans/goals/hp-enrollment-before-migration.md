@@ -1,0 +1,19 @@
+# hp-enrollment-before-migration
+
+- State: approved
+- Risk: severity=2 novelty=2 exposure=1 accumulation=1 basis="severity 2: bootstrap ordering of enrollment and migration; a wrong order leaves migrate on the weaker grade; novelty 2: splitting enroll into local write and fleet publication; exposure 1: one act per checkout lifetime; accumulation 1: nothing compounds"
+- Tier: 2
+- Intent: A checkout can enroll a terminal before its backlog is migrated, and the fleet-cutoff publication waits until the backlog exists, so migrate can take the enrolled grade and the bootstrap needs no exception. Finding HPA-05.
+- Origin: main
+- Next step: Sol splits enroll-terminal into the local write and the fleet publication, defers the publication until the backlog is converted, and grades migrate enrolled; a fixture enrolls on an unconverted checkout, migrates, and sees the cutoff published after. One Sol round, one Opus review, land. ORDER: after hp-every-by-proves-a-human lands. Shared design: plans/human-proof-fits-the-act-design.md revision 2 (the parent human-proof-fits-the-act, concluded as decomposed).
+- OpenedAt: 2026-09-09T14:35:30Z
+- Revision: 2
+- Labels: security
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-09T14:36:28Z revision=2 opid=76XV3QEKM1Y759NSDZ4GYEH9R3-m1-c6925449 authority=proven digest=26cb6a3cf77428aef508a14973cfb0ba2f451b40f162cb3d04c2dc4c65a8130a
+
+History:
+- 2026-09-09T14:35:30Z S5HBNF0PRTRKM216MAZA9BB25C-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=hp-enrollment-before-migration
+- 2026-09-09T14:36:28Z 76XV3QEKM1Y759NSDZ4GYEH9R3-m1-c6925449 approve actor=human:Wido targets=fixture-human-authority-mintable-from-conf,hp-enrollment-before-migration,hp-every-by-proves-a-human,hp-grading-matrix-for-widening-acts,hp-recovery-grants-no-grade-to-unstamped-intents,hp-refusals-print-the-one-command,hp-relayed-word-retired,hp-resume-takes-its-budget-from-the-ledger,hp-terminal-grade-for-stopping-acts
+Integrity: sha256=cb367aff2a2add2cd90b86942019e9b2aa404fb1b07cd749e357988778df866d
