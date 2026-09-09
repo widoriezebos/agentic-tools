@@ -1,0 +1,16 @@
+# brain-checkout-seat-is-told-why-claim-refuses
+
+- State: queued
+- Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a seat on a brain checkout is told to take work through goal next and then refused by goal claim every time, with no instruction for the refusal, which is a retry loop by construction; novelty 1: one sentence the design already specifies, in two guidance documents, plus the word-ceiling trim that makes room for it; exposure 2: only checkouts declared the fleet brain, but every seat on one; accumulation 2: the loop costs a turn per attempt until the sentence exists"
+- Tier: 2
+- Intent: On a checkout declared the fleet brain, the seat is instructed to take work through goal next --machine <nick> --fetch, goal next returns a ready goal, and goal claim refuses it unconditionally because the claim verb's first act is the brain fence and the frontier never consults that state. The seat guidance tells a seat what to do when it loses a claim race and says nothing about a refusal on authority, so the seat is told to fetch again and loops. The design for the ordering goal specified the missing sentence and slice 2 landed two of that paragraph's three requirements in both guidance documents; this one landed in neither because the always-loaded contract sits two words under its audited ceiling. DONE means the sentence is present in AGENTS.md and steward-continuation.md, the audit still passes, and a fixture on a brain-declared checkout shows the seat report the refusal cause and stop rather than fetch again.
+- Origin: main
+- Next step: The sentence is specified verbatim in plans/backlog-ordered-by-priority-design.md line 360: 'Stop a retry cycle on a transport, authority or quota error and report that cause.' It belongs in AGENTS.md beside the goal next guidance (line 34 today) and in scripts/agents/roles/steward-continuation.md beside its fetch-and-claim instruction. The blocker is scripts/agents/audit-metasystem.sh's 1400-word cap on AGENTS.md plus wow.md, which stand at 1398; the sentence needs about seventeen, so a trim of that size comes first, and Wido's word 2026-09-09 is that the seat is allowed to trim itself. The defect this closes is BOQ-01 in records/misc/backlog-ordered-by-priority-critique-r7.md: goal claim opens with an unconditional brain fence (internal/goal/verbs.go, the claim verb's first act) that the frontier in internal/goal/project.go never consults, so on a brain checkout goal next answers with a ready goal and claim refuses it; plans/backlog-ordered-by-priority-conclusion-vs-compaction-design.md section 2.6 confirms it is a checkout fact, not a frontier category, so the frontier is not the fix. AGENTS.md is a certified path: land it through a chain or the register-carriage route the audit accepts, not a hand edit.
+- OpenedAt: 2026-09-09T11:08:18Z
+- Revision: 1
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-09T11:08:18Z KBQBAP4VA78V5KZGPR3S077P5F-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=brain-checkout-seat-is-told-why-claim-refuses
+Integrity: sha256=5bdb4dd84838e916fa41235369ae266892888a405e0ea5e764bd74ff4664533d
