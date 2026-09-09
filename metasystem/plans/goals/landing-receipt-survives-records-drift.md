@@ -1,0 +1,16 @@
+# landing-receipt-survives-records-drift
+
+- State: queued
+- Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it refuses proven landings and discards batteries, but loses no work and every recovery is mechanical; novelty 1: the exclusion mechanism already exists as gittree.FilterTree and this applies it to the receipt's posture reads; exposure 3: every landing on every machine reads that posture twice; accumulation 2: it cost seven refusals and one twenty-minute battery in a single evening, and every future landing pays the same manual recovery"
+- Tier: 3
+- Intent: A landing receipt binds the candidate tree four ways, including the working-tree projection before and after the battery, and the projection is computed by adding every tracked file in the workspace. Two tracked bookkeeping logs, metasystem/records/narrator-digest.log and metasystem/memory/receipts.log, are appended by background writers and by turn-boundary hooks while a landing is in flight. Tonight that refused the slice-2 landing of backlog-ordered-by-priority seven separate times, once discarding a twenty-minute battery, and each recovery is a manual git checkout of the two paths followed by an immediate retry before the next write. The machinery already has the right idea elsewhere: gittree.FilterTree exists precisely so the mission wall's identity space excludes force-tracked bookkeeping, and its comment says tracked-ledger bytes poisoned crash recovery. DONE means the receipt's posture reads exclude the tracked bookkeeping paths the same way, so an append to a digest or a receipts log cannot void a proven battery or refuse a clean landing, with a fixture that appends to one of those logs mid-landing and still lands.
+- Origin: main
+- Next step: Start from internal/landing/receipt.go receiptPosture, which reads workspace.StagedTree and workspace.Snapshot(HEAD), and from internal/gittree/gittree.go Snapshot, whose git add -A over the workspace is what pulls the bookkeeping logs in. gittree.FilterTree already removes named paths from a tree for the mission wall and its comment records why. Decide where the excluded set is declared so it is one list rather than a second policy, then apply it to both posture reads and to the receipt's stored binding. The proving fixture appends a line to records/narrator-digest.log between the battery finishing and the landing committing, and the landing must still pass.
+- OpenedAt: 2026-09-09T07:04:37Z
+- Revision: 1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+
+History:
+- 2026-09-09T07:04:37Z JB3MDBKSRAXWJ33SFQGCW5V96K-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
+Integrity: sha256=797fd80f019b73e1e8e0f1396e0be624eab5cc913e11fd9b122e79535ea6e31d
