@@ -1,6 +1,6 @@
 # stop-refusal-fits-on-one-screen
 
-- State: approved
+- State: claimed
 - Priority: 3
 - Sequence: 20
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a refusal nobody can read is a refusal nobody acts on, and the one actionable line drowns; novelty 1: the same bound the Telegram ask got last night, applied to the hook's refusal text; exposure 3: every seat on every machine ends every turn through this text; accumulation 1: each refusal is the same wall, it does not compound"
@@ -9,14 +9,17 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: the renderer of the Stop refusal and systemMessage (the turn-verdict text builder the hook prints, in Go under internal/supervise or the hook's emit path), a class-and-count summariser for repeated lines, the full-text file beside the stop refusal records, a fixture that feeds two hundred stale run lines and asserts the bounded shape with the actionable line first; the stale-run listing itself (whether those runs are open work at all) stays with open-work-scanner-blindspots. Any free seat.; ASKED XN0DP5ADB4NQRN6XWG58K415C1 (reserved-decision): m1's one claim slot is held by actionable-metrics, claimed 2026-09-07 by a dead session (main-1788594343-3833-fb64b9); that goal's own next step says the claim was released, but the release never reached the ledger
 - OpenedAt: 2026-09-06T14:30:14Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T14:32:44Z revision=2 opid=C6Y1SKS3RC6T936TYZDM0W0EVS-m1-7cd0bd60 authority=proven digest=f34eb5076eb486ff58b6e2af66442a9d66304b18d5c89874afcd4ac88edb1846
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-09T09:10:52Z revision=5 accountingRevision=5
+- StopCapability: generation=5 revision=5 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-06T14:30:14Z AE3TVHYT4WVWE623BDZZK3XWBK-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-refusal-fits-on-one-screen
 - 2026-09-06T14:32:44Z C6Y1SKS3RC6T936TYZDM0W0EVS-m1-7cd0bd60 approve actor=human:Wido targets=stop-refusal-fits-on-one-screen
 - 2026-09-08T16:00:17Z EJH57HEC22FMP1F7MC7XXVRZR7-m1-7cd0bd60 set-priority actor=human:Wido targets=stop-refusal-fits-on-one-screen reason=priority-order subject=stop-refusal-fits-on-one-screen from=unranked to=3:20 requested-sequence=20
 - 2026-09-09T08:53:37Z FHWWRMV97KENPG9GJP2HJ2M9QZ-m1-1701c13c ask actor=m1+main-1788940932-18533-7fa6c2 targets=stop-refusal-fits-on-one-screen
-Integrity: sha256=da64ec7f1fab26d65df1e5acce06aba0135f28f54a40cd9af0ee9e193ff36a67
+- 2026-09-09T09:10:52Z C98C5DA0N3WNC9QCNBVZYWPF3N-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=stop-refusal-fits-on-one-screen
+Integrity: sha256=6d76de31cb48002914ab73d8f64c60b921f23653103eb460f5543bace912b0a5
