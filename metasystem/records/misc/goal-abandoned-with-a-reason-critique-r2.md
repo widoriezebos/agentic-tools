@@ -141,3 +141,10 @@ Directions the fold brief carries, one per finding:
 - GAW-17: input-only refusals precede tree-reading ones; renumber.
 - GAW-18: a slot-class predicate for the floor check, decided against the
   six classes in registry/slots.go.
+
+Correction (m1b, later the same day): the note on the parked goal
+landing-receipt-survives-records-drift was refused; editing a parked goal is
+a human act. The GAW-12 requirement (every route that pushes a landing
+commit, including that chain's repair route, runs the held check at the
+rebased parent) is carried here and in the fold brief, and goes onto that
+goal when it is unparked.
