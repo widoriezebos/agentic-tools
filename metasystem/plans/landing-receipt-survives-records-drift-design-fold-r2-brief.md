@@ -70,7 +70,7 @@ rebase, abort, reset-keep or ancestor operation. Name the exported
 operations advance needs, each with its typed outcome: an ancestor probe;
 rebase and abort inside `NewDetachedCommitWorktree`; `reset --keep` at the
 toplevel. Every one goes through the bounded wrapper; an implementer must
-never reach for `os/exec` from package landing. Put them in the
+never reach for the standard library's exec package from package landing. Put them in the
 implementation map.
 
 ## LRE-07: the refusal register
