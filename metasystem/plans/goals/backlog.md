@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 14
+- Revision: 15
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -25,4 +25,7 @@ History:
 - 2026-09-09T07:02:39Z HM0265CA42BEV4C7KJK8MRDJ7J-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-08T15:17:31Z ack
 - 2026-09-09T07:53:19Z BSM7M0966AW6PP27KX7KNFB6HA-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T06:15:30Z ack
 - 2026-09-09T10:07:26Z 7FWJB1WRYQWTXYBHTE20KAWFDC-m1d-a38bcdde ack actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-09T09:08:59Z ack
-Integrity: sha256=6cc590212bbda8c4c1ede8ae144f31c69a003c2cd09f0faa1da065e4d1ee5972
+- 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T07:45:39Z ack
+- 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T09:14:14Z ack
+- 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T10:32:42Z ack
+Integrity: sha256=b157dc63b7e52dcc514b58a53aecd2f47286a690783c0c86f07c66a9c9d6e6d2
