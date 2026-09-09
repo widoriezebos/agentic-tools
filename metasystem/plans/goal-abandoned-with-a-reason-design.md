@@ -1,13 +1,14 @@
 # A goal that will never be worked, and why (goal goal-abandoned-with-a-reason)
 
-Revision: 3. Date: 2026-09-09. Design authoring job: `gawr-design4`, folding
-the round-2 read `metasystem/records/misc/goal-abandoned-with-a-reason-critique-r2.md`
-of revision 2 (`gawr-design2`, landed 7ae27b7e), which folded the round-1
-read of revision 1 (`gawr-design1`, landed 03f94dfc). The revision record at
-the end names each finding and what moved. This is the last prose revision:
-what its read leaves open becomes named fixtures for the build, so every
-rule below that can be stated as a fixture that fails today is stated that
-way.
+Revision: 4. Date: 2026-09-09. Design authoring job: `gawr-design5`, folding
+the round-3 read `metasystem/records/misc/goal-abandoned-with-a-reason-critique-r3.md`
+of revision 3 (`gawr-design4`, landed 81995968), which folded the round-2
+read of revision 2 (`gawr-design2`, landed 7ae27b7e) and, before it, the
+round-1 read of revision 1 (`gawr-design1`, landed 03f94dfc). The revision
+record at the end names each finding and what moved. Revision 3 was the last
+prose revision; this one is a targeted fold of its read, confined to the five
+findings, and the build starts from it. Every rule below that can be stated
+as a fixture that fails today is stated that way.
 
 This page specifies the build; it implements nothing. Independent critique,
 dispositions, certification, the ledger and the receipt belong to the
@@ -30,6 +31,12 @@ parked design `landing-receipt-survives-records-drift-design.md:503-515`,
 under `metasystem/scripts/agents/` or `metasystem/internal/landing/` has
 changed since 7ae27b7e (`git diff --name-status 7ae27b7e..634ca2a2` over
 those paths is empty), so every revision-2 citation into them still holds.
+Revision 4 read `land.sh:462-470`, `:497-505`, `:522-529`, `commit.sh:448-478`,
+`recertification.go:333-429`, `landing_verbs_test.go:58`, `:131-164`, `:474`,
+`:584-627`, `order.go:212-220` and `land-fixtures.sh:394-412` at `b6337774`,
+where the same diff from 634ca2a2 over `metasystem/scripts/agents/`,
+`metasystem/internal/landing/`, `metasystem/internal/validate/` and
+`metasystem/internal/goal/` is empty.
 
 The contract is the Intent of `metasystem/plans/goals/goal-abandoned-with-a-reason.md`:
 
@@ -55,8 +62,8 @@ as evidence. A job that was already running against the claim cannot land
 its work above the abandonment: a goal-bound chain root binds its landing to
 its goal (a landing that names no goal or another goal is refused, not
 unchecked), the landing binds the claim revision it observed, and the engine
-re-checks that binding at the rebased parent on every route that pushes a
-landing commit. The ledger tree gains a third map, `Abandoned`, beside `Live`
+re-checks that binding at every commit a push introduces, on every route
+that pushes a landing commit. The ledger tree gains a third map, `Abandoned`, beside `Live`
 and `Done`, so that every reader that today equates "in the archive map"
 with "done" keeps meaning done, and every reader that needs abandoned
 records opts in by name. The first abandon on a ledger refuses until a human
@@ -96,7 +103,7 @@ the goal stays abandoned and a human opens a successor that the record's
 | Landing observation | `metasystem/internal/landing/observe.go:742-753` `heldGoal`: reads `plans/goals/<id>.md` from the base tree, requires State claimed and the actor's machine and lineage, binds no revision. Base tree is `HeadTree()` at observation (`:254`), or the frozen target for a recertification (`:252`). Called at `:277` (chain), `:665` (register carriage), `:1175` (exact revert) and `tierone.go:34` (tier 1). Chain roots are read at `:159-167` as a map; neither `goalId` nor `goalRevision` is consulted. Every call is guarded by `params.Goal != ""` (`:276`, `:664`, `:1174`), so a landing that names no goal runs no goal check at all, and `recordCarriageError` accepts a new `records/` file without a held goal (`:831-836`). `land.sh` takes `--goal` as an option (`:71-76`) and forwards it only when set (`:344`). | The observation proves the goal was held at the checkout's HEAD when the commit was made, but only when the caller chose to name one. Nothing derives the goal from the chain, nothing binds the revision, and nothing re-observes later. The closure is voluntary; section 4a makes it mandatory. |
 | Goal-bound job records | `metasystem/internal/dispatch/claim.go:280-296` writes `goalId` and `goalRevision` on every goal-bound record (`goalId` is null on a goal-free one: `metasystem/cmd/metasystem/delegate.go:309-311` drops `--goal none-explicit` before dispatch); `dispatch/budget.go:344-350` refuses a goal-bound record without a revision. The revision is `Claimed.Revision` (`dispatch/stop.go:53-84` `ResolveGoalBinding`). | Every chain root that names a goal carries the claim revision it was dispatched under, and the goal it was dispatched for. A goal-free root exists (fixtures, `checkout-execution-guard.sh:124`) and carries neither. |
 | Goal-free ledger | `metasystem/internal/goal/verbs.go:1655-1682` `declare-free` sets `Root.Free` only when no live goal is queued, approved or claimed (`:1664-1668`); `open` (`:569`), `reopen` (`:1415`) and two further verbs (`:1313`, `:2251`) clear it; the root record is `plans/goals/backlog.md` (`validate.go:39` `goalsPrefix`) | The one lawful state in which agent work has no goal to name. A non-human landing without a goal is admitted only against a Goal-free root (section 4a). |
-| Landing sequence | `metasystem/scripts/agents/land.sh:495-596`: verify, stage, `commit.sh` (`:547`, observation inside), clean check, then three push routes: the recertified single attempt (`:559-568`, parent frozen by `verify_recertified_commit` at `:540`), the normal route (`fetch_origin` `:570`, `rebase_origin` `:571`, `push_origin` `:576`), and the retry route (fetch and rebase again at `:588-589` after a non-fast-forward rejection, `:412-414`, up to three attempts). `push_origin` (`:408-410`) pushes `origin` and `refs/heads/$branch`, where `branch` is the checked-out branch (`:294`). | The commit is rebased onto whatever origin holds and pushed with no second look at the goal. The push itself is a compare-and-swap: plain `git push` accepts only when origin's tip is the pushed commit's parent. Three routes push; a check that guards one guards nothing. |
+| Landing sequence | `metasystem/scripts/agents/land.sh:495-596`: verify, stage, `commit.sh` (`:547`, observation inside), clean check, then three push routes: the recertified single attempt (`:559-568`, parent frozen by `verify_recertified_commit` at `:540`), the normal route (`fetch_origin` `:570`, `rebase_origin` `:571`, `push_origin` `:576`), and the retry route (fetch and rebase again at `:588-589` after a non-fast-forward rejection, `:412-414`, up to three attempts). `push_origin` (`:408-410`) pushes `origin` and `refs/heads/$branch`, where `branch` is the checked-out branch (`:294`). | The commit is rebased onto whatever origin holds and pushed with no second look at the goal. The push accepts any fast-forward: every commit between origin's tip and the pushed tip lands, not only the one the route just made, and a local branch can carry more than one (the parked register-carriage repair pushes two). Three routes push; a check that guards one guards nothing. |
 | The other push route | `commit.sh:583-600` `--push`: `git push origin <branch>` (`:588`) then `sync-transport.sh` (`:596`), with no fetch, rebase or second look | A landing commit reaches origin through `commit.sh --push` as well as through `land.sh`. Section 4a's rule is a property of every route that pushes a landing commit. |
 | Trailers | `commit.sh:552-557` stamps `Machine`, `Landing-Provenance`, `Landing-Provenance-Verdict` and `Goal-Item`; `:559-578` re-proves the landed tree and exactly one `Goal-Item`. `:159-235` `scan_commit_message_inputs` refuses a caller-typed `Goal-Item` in every scannable message source and refuses the unscannable ones; nothing scans for a caller-typed `Machine`, so a message that already carries `Machine: forged+human` lands with two `Machine` lines (`git interpret-trailers` keeps both; the critic ran it). The actor is `<nickname>+${METASYSTEM_OWNER_LINEAGE:-human}` (`:441`); whether the commit is an agent's is decided separately from the lease holder's claim epoch (`:31-54`, `agent_commit`). | The commit message is where the observation's facts survive to push time. `metasystem/internal/channel/report.go:243` and `metasystem/internal/refusal/register.go:197` read `Goal-Item` by key; a new trailer key is invisible to them. A reader that keys a human exemption off `Machine` must first prove there is exactly one, and the wrapper must never write `+human` on an agent commit. On `origin/main`'s last 400 commits every one of the 59 non-human `Machine` trailers is accompanied by a `Goal-Item` (counted at `634ca2a2`), so requiring one changes no live route. |
 | Goal endpoint | `metasystem/internal/goal/txn.go:46-61` `ResolveEndpoint`: `goal.sync-remote` (default `origin`) and `goal.sync-branch` (default `refs/heads/main`) from git config; `:64` `LocalMode` when the remote is `local`, whose ledger is the local branch `refs/heads/metasystem/goals` (`:35`); `:347-373` `PublishCAS` pushes that remote and branch. `land.sh` pushes `origin` and the checked-out branch; `sync-transport.sh:31-35` mirrors origin to `transport` and cannot carry a commit origin rejected. This checkout sets neither key (`git config --get goal.sync-remote` is empty at `634ca2a2`); the dispatch fixture beds set `local`. | The ledger the abandonment lands on is the configured endpoint; the branch a landing pushes is origin's checked-out branch. They coincide only under one configuration, which section 4a names and `held` enforces. |
@@ -141,7 +148,7 @@ type AbandonRecord struct {
     Opid      string // that event's opid, like ApprovalRecord.Opid
     Displaced string
     StopID    string // the frozen fence's stopId; empty when the goal was not stopped
-    Carried   string // the successor goal named by --carried; empty otherwise
+    Carried   string // the successor named by --carried, or by a later goal carry (section 6); empty otherwise
     Because   string
 }
 ```
@@ -153,7 +160,8 @@ the event's `opid` as `ApprovalRecord` does. The History grammar gains two
 optional keys, `stopId=` and `carried=`, parsed in `ParseHistoryLine`
 (`file.go:1303-1424`) with the same duplicate guard as `displaced=` and
 rendered immediately after `displaced=` (or after `targets=` when there is no
-displacement) and before `ack`. They appear only on `abandon` lines:
+displacement) and before `ack`. `stopId=` appears only on `abandon` lines
+and `carried=` only on `abandon` and `carry` lines (section 6):
 `ParseHistoryLine` does not validate the verb (`:1328`), so the restriction
 is section 8's rule 11, checked over every History line of every record.
 They exist so that a reopen, which removes the `Abandoned` record from the
@@ -331,8 +339,16 @@ Effects, in one transaction (all files rendered from the same tip):
   location as done). `clearClaimBinding` and `bindClaim` are not called.
 - Compact departed priorities with `compactDepartedPriorities(t.Live, A)` and
   land compaction lines on ranked survivors through `mergePriorityEvent` with
-  verb `abandon` (the exact analogue of `done` at `verbs.go:1162-1176`); the
-  abandoned goal's own line takes the compaction targets, as done's does.
+  verb `abandon` (the analogue of `done` at `verbs.go:1162-1176`), with one
+  difference in the targets: `done` takes them sorted (`order.go:212-220`),
+  abandon orders them. Each abandoned goal's own line names itself first,
+  then the other departed goals, then the re-sequenced survivors; each
+  survivor's compaction line names the departed goals first, then the
+  survivors, so it never names the survivor first. Rule 11 tells a goal's
+  own abandonment from a compaction line by that first target, and the
+  transaction keeps the order on every line it writes (`mergePriorityEvent`'s
+  fresh-line branch keeps the order it is given; the dependent lines below
+  go through `touch`).
 - Dependents. For each live D with edges into A, in sorted id order: if D is
   in A, nothing (it is abandoned). Else if `--waive` names D: remove every
   edge from D into A, `touch(D, r, "abandon", [X...])`, `reason = "blocker <X>
@@ -486,15 +502,31 @@ Human commits keep their sovereignty exactly as at `:434-437`: the trailers
 are stamped from whatever the observation returned, and the refusal bit is
 never consumed.
 
-**Mechanism 2: the engine re-checks the binding at the rebased parent.** New
-verb `metasystem landing held --root <root> --commit <commit> --remote
-<name> --ref <refs/heads/...>`, implemented by `landing.Held(root, commit,
-remote, ref string) (HeldVerdict, error)` in a new
-`metasystem/internal/landing/held.go`. `--remote` and `--ref` name what the
-caller is about to push. It resolves the commit's first parent and the
-workspace subtree of the parent's tree (the same subtree resolution
-`staged_candidate_tree` performs at `land.sh:351-359`) and decides, in this
-order, stopping at the first refusal:
+**Mechanism 2: the engine re-checks the binding at every commit the push
+introduces.** New verb `metasystem landing held --root <root> --base
+<commit> --commit <commit> --remote <name> --ref <refs/heads/...>`,
+implemented by `landing.Held(root, base, commit, remote, ref string)
+(HeldVerdict, error)` in a new `metasystem/internal/landing/held.go`.
+`--base` is the fetched tip of the ref the caller is about to push above,
+`--commit` the tip it is about to push, and `--remote` and `--ref` name
+where. A push accepts any fast-forward, so every commit between the two
+lands, not only the newest; `held` therefore judges the range, not the tip:
+
+0. *The range.* Resolve both. When they are the same commit, print `held:
+   nothing to push` and exit 0. Otherwise walk from `--commit` along first
+   parents until `--base` is met; every commit visited before it is in the
+   range, oldest first. A visited commit with two or more parents refuses
+   `range-not-linear` ("commit %s is a merge; a landing pushes a linear
+   range above %s"), and a walk that reaches a root commit without meeting
+   the base refuses the same code ("%s is not a first-parent ancestor of
+   %s"). Both exit 2 for every actor, before any message is read, because
+   there is no actor to exempt until the range is known. Then, for each
+   commit in the range, oldest first, resolve its first parent and the
+   workspace subtree of the parent's tree (the same subtree resolution
+   `staged_candidate_tree` performs at `land.sh:351-359`) and apply rules 1
+   to 5 to that commit against that parent, stopping at the first refusal,
+   which names the commit; a pass prints `held: ok %d commit(s) above %s`
+   and exits 0. The rules, per commit:
 
 1. *The trailers.* Read the commit message. Exactly one `Machine:` line,
    else `machine-trailer-malformed` ("the commit carries %d Machine
@@ -503,9 +535,10 @@ order, stopping at the first refusal:
    most one `Goal-Revision:`, else the same code with the trailer named.
    The actor is the one `Machine` value; it is human when its lineage part
    (after the `+`) is `human`. From here on, for a human actor every
-   refusal is printed as `held: warning <code>: <detail>` and the exit is 0,
-   because a human commit stays sovereign; for any other actor it is
-   `held refused: <code>: <detail>` on stderr and exit 1.
+   refusal is printed as `held: warning <code>: <commit>: <detail>` and the
+   walk moves to the next commit, exit 0 when nothing else refuses, because
+   a human commit stays sovereign; for any other actor it is `held refused:
+   <code>: <commit>: <detail>` on stderr and exit 1.
 2. *The endpoint.* `goal.ResolveEndpoint(root)` (`txn.go:49-61`). When
    `--remote` is not its `Remote`, or `--ref` is not its `Branch`, or the
    endpoint is `LocalMode()` (`:64`, whose ledger is the local branch
@@ -542,69 +575,101 @@ order, stopping at the first refusal:
    state refuses `goal-item-not-held` ("goal %s is %s at %s", the state or
    `absent`, and the parent's short id); a different claim revision refuses
    `goal-revision-moved`.
-5. A commit with no parent or more than one parent, or an unreadable
-   message, exits 2 with `held: unreadable`, for every actor.
+5. A commit whose message cannot be read exits 2 with `held: unreadable`
+   naming it, for every actor. A commit with no parent or more than one
+   never reaches this rule: rule 0 refused the range.
 
-**Every route that pushes a landing commit runs `held` at the parent.** The
-rule is a property of the push, not of `land.sh`'s current lines: no route
-pushes a landing commit whose parent, at the moment of the push, has not
-passed `held` for that commit, that remote and that ref. The routes at
-`634ca2a2`, and where the call goes:
+**Every route that pushes a landing commit runs `held` over the range it
+pushes.** The rule is a property of the push, not of `land.sh`'s current
+lines: no route pushes a landing commit whose range, from the tip it fetched
+to the commit it pushes, has not passed `held` for that remote and that ref.
+The routes at `634ca2a2`, and where the call goes:
 
 - `land.sh`, normal route: `run_required_step "goal held at the rebased
   base" held_check` after `rebase_origin` at `:571`, where `held_check() {
-  "$ms" landing held --root "$root" --commit HEAD --remote origin --ref
-  "refs/heads/$branch"; }` and `branch` is the one resolved at `:294`;
+  "$ms" landing held --root "$root" --base "refs/remotes/origin/$branch"
+  --commit HEAD --remote origin --ref "refs/heads/$branch"; }` and `branch`
+  is the one resolved at `:294`. `refs/remotes/origin/$branch` is exactly
+  what `fetch_origin` (`:400-402`) wrote and what `rebase_origin` rebased
+  onto, so the range is every local commit above the fetched tip: the one
+  `commit_changes` made and any unpushed commit that was already standing
+  on the branch beneath it;
 - `land.sh`, retry route: the same step after the retry rebase at `:589`,
-  before the next `push_origin`;
+  before the next `push_origin`, against the tip the retry fetch at `:588`
+  wrote;
 - `land.sh`, recertified route: the same step before the single attempt at
-  `:560` (the parent is already frozen to the target commit by
-  `verify_recertified_commit`, so the step passes or names a real change,
-  and a refusal parks with `chain-recertification-target-moved` through the
-  branch's existing `park_recertified` path);
-- `commit.sh --push`: the same call before `git push origin` at `:588`,
-  with the branch it resolved at `:584`; a refusal exits 1 with the commit
-  standing locally, which is the branch's existing failure posture (`:589`);
+  `:560`, with `--base "$recert_target"`: `check_recertification_target`
+  (`:462-470`, run at `:499` and `:524`) proved the fetched tip and the
+  pre-commit HEAD equal the target, and `verify_recertified_commit` (`:540`)
+  proved the commit's parent is the target, so the range is that one
+  commit. A refusal parks with `chain-recertification-target-moved` through
+  the branch's existing `park_recertified` path;
+- `commit.sh --push`: after the branch is resolved at `:584` and before
+  `git push origin` at `:588`, `git fetch --quiet origin
+  "+refs/heads/$branch:refs/remotes/origin/$branch"` (a failed fetch exits
+  1 with "landing push refused: origin could not be fetched; the commit
+  stands locally"), then the same `held` call with `--base
+  refs/remotes/origin/$branch`; a refusal exits 1 with the commit standing
+  locally, which is the branch's existing failure posture (`:589`). This
+  route has no rebase: when origin moved after the commit was made, the
+  fetched tip is not an ancestor of HEAD and `held` refuses
+  `range-not-linear` before any push, where today `git push` is rejected as
+  non-fast-forward. The outcome (exit 1, the commit standing, the operator
+  rebases or lands through `land.sh`) is the same, with `held`'s sentence
+  instead of git's;
 - the parked chain `landing-receipt-survives-records-drift`: its design
   prescribes a repair route for a refused unpushed commit that ends in a raw
   `git push` (`landing-receipt-survives-records-drift-design.md:503-515`:
-  fetch, `landing advance`, `git push origin <branch>`, transport sync).
-  That route must call `held` between the advance and the push. The
-  coordinator's note could not be placed on the parked goal (editing a
-  parked goal is a human act), so the requirement is carried here and on
-  that goal at its unpark; the two chains share the files named below.
+  fetch, `landing advance`, `git push origin <branch>`, transport sync), and
+  the range it pushes is two commits, the refused one and the carriage
+  commit above it (`:915-936`). That route must call `held` between the
+  advance and the push with `--base` the tip its fetch wrote, so both
+  commits are judged. The coordinator's note could not be placed on the
+  parked goal (editing a parked goal is a human act), so the requirement is
+  carried here and on that goal at its unpark; the two chains share the
+  files named below.
 
-A refusal on any route leaves the commit made and unpushed, which is the
+A refusal on any route leaves the commits made and unpushed, which is the
 state every repair route starts from. A force push, and a `git push` typed
 by hand, are outside every rule on this page.
 
-**Why the two together close it, re-derived with the binding mandatory.**
-Take a job dispatched under goal G at claim revision c, and G abandoned
-while the job runs. Its chain root carries `goalId: G` and `goalRevision:
-c`. Whoever lands it is a non-human actor (a human landing is sovereign and
-outside the argument). At commit time, rule (a) requires `--goal G`: without
-it or with another goal the commit is refused; with it, `heldGoal` binds
-`want = c` against the checkout's HEAD, which either still shows G claimed
-at c (the commit is made, with `Goal-Item: G`, `Goal-Revision: c` and one
-`Machine`) or already shows the abandonment (refused at the observation).
-At push time the push is the compare-and-swap: plain `git push`
-(`land.sh:408-410`) accepts only when origin's tip is an ancestor of the
-pushed commit, and a rebased landing is exactly one commit above the tip it
-was rebased onto, so the push succeeds only when origin's tip is the
-commit's parent. `held` checked G in that parent, on the branch that is the
-goal endpoint (rule 2), and found it claimed at c by this actor. If the
-abandonment lands on origin between the check and the push, the push is
-rejected as non-fast-forward (`:412-414`), the route fetches, rebases onto
-the abandonment and runs `held` again, which now finds G in `records/goals/`
-with State abandoned and refuses `goal-item-not-held`. If the coordinator
-instead lands without `--goal`, rule (a) refuses at the observation, and a
-commit that somehow carries no `Goal-Item` (an older wrapper, a hand
-commit) is refused by `held` at rule 3 unless the parent's ledger is
-Goal-free, which a ledger with G claimed cannot be. The window between
-observation and push is closed by the pair "check the parent, push only
-above that parent", and the pair now has no opt-out: the goal comes from
-the chain, the actor comes from the one `Machine` line the wrapper wrote,
-and the branch is checked against the endpoint.
+**Why the two together close it, re-derived over the range.** Take a job
+dispatched under goal G at claim revision c, and G abandoned while the job
+runs. Its chain root carries `goalId: G` and `goalRevision: c`. Whoever
+lands it is a non-human actor (a human landing is sovereign and outside the
+argument). At commit time, rule (a) requires `--goal G`: without it or with
+another goal the commit is refused; with it, `heldGoal` binds `want = c`
+against the checkout's HEAD, which either still shows G claimed at c (the
+commit is made, with `Goal-Item: G`, `Goal-Revision: c` and one `Machine`)
+or already shows the abandonment (refused at the observation). At push time
+the route has fetched origin's tip T and rebased, so the local branch is T
+followed by the commits it will push: the new one, and any commit that was
+already standing unpushed beneath it, which the observation never saw
+against T. `held` walks every one of them, oldest first, each against its
+own first parent, on the branch that is the goal endpoint (rule 2). The
+commit for G is refused wherever it sits in the range when its parent
+carries the abandonment (`goal-item-not-held`), and a valid tip commit for a
+still-held goal H above it does not rescue it, because the walk reaches the
+lower commit first. Plain `git push` (`land.sh:408-410`) then accepts only a
+fast-forward: origin's tip must be an ancestor of the pushed commit. When
+it is still T, the push lands exactly the checked range; when it is a commit
+inside the checked range (a peer pushed part of the same stack), the push
+lands a suffix of it, every commit of which was checked; when it is anything
+else, the push is rejected as non-fast-forward (`:412-414`), the route
+fetches, rebases onto the new tip and runs `held` again over the new range,
+which now finds G in `records/goals/` with State abandoned and refuses. The
+one tip below T that is an ancestor of the pushed commit is a rewind of
+origin by a force push, which is outside every rule on this page and
+re-lands only origin's own former history beneath the checked range. If the
+coordinator instead lands without `--goal`, rule (a) refuses at the
+observation, and a commit that somehow carries no `Goal-Item` (an older
+wrapper, a hand commit) is refused by `held` at rule 3 unless the parent's
+ledger is Goal-free, which a ledger with G claimed cannot be. The window
+between observation and push is closed by the pair "check every commit
+above the fetched tip, push only above that tip", and the pair has no
+opt-out: the goal comes from the chain, the actor comes from the one
+`Machine` line the wrapper wrote, the range comes from the fetch, and the
+branch is checked against the endpoint.
 
 **The transition is atomic against this checkout's dispatch.** `Abandon`,
 after pre-publish refusal 4 and before refusal 5, takes the goal-revision
@@ -695,9 +760,9 @@ goal's, and the records of a pruned goal are still kept.
 (its design, section 3b and 3e) and holds the checkout lease lock inside
 that verb. This design changes neither `rebase_origin` nor the lock. It
 inserts one step, `held_check`, before each push, after whichever of
-`rebase_origin` or `landing advance` produced the rebased commit; `held`
-reads only the commit, its parent and the endpoint, so it is indifferent to
-how the rebase was done. The files both chains touch, from that design's
+`rebase_origin` or `landing advance` produced the rebased commits; `held`
+reads only the fetched tip, the commits above it, their parents and the
+endpoint, so it is indifferent to how the rebase was done. The files both chains touch, from that design's
 implementation map (`:938-967`) against this page: `scripts/agents/land.sh`
 (its three edits of 3b; this page's three `held_check` steps),
 `scripts/agents/land-fixtures.sh` (its seed and canaries; this page's
@@ -728,7 +793,7 @@ lands second re-bases those hunks; the repair route in its design gains the
 | 10 | Metrics (`metrics/compute.go`) | `concludedAt` needs State done; debt age skips done | The metrics world (`data.go:824`) includes `Abandoned` records in `w.Goals`. `concludedAt` is unchanged (State check excludes abandoned; `abandon` is not an archive verb). Debt age skips `StateAbandoned` exactly as it skips done and does not count it in `usable`. |
 | 11 | Counselor (`sources.go:542`, `:578`) | history over Live and Done; `done` verb is the product class | Also walks `Abandoned` history (its open, edit, claim events happened). `goalVerbClass("abandon")`, `("engine-floor")` stay unmapped: excluded from the ratio and counted in the existing "Goal-event exclusions" limitation. The Done count cannot move. |
 | 12 | Dispatch admission (`dispatch/admission.go:112-145`) | requires State claimed in `Live` | Unchanged; refuses. |
-| 13 | Landing observe (`landing/observe.go:742`), `commit.sh` and every push route | runs the goal check only when `--goal` was named; binds no revision; no second look | Section 4a: a goal-bound root binds its landing's goal (`goal-binding-missing`, `goal-binding-mismatch`), a non-human landing names a goal or lands on a Goal-free ledger, the observation binds the claim revision (`goal-revision-moved`), `commit.sh` stamps `Goal-Revision` and exactly one `Machine`, and `landing held` re-checks at the rebased parent on every route that pushes a landing commit, at the goal endpoint. A straggler job cannot land above an abandonment, with or without `--goal`. |
+| 13 | Landing observe (`landing/observe.go:742`), `commit.sh` and every push route | runs the goal check only when `--goal` was named; binds no revision; no second look | Section 4a: a goal-bound root binds its landing's goal (`goal-binding-missing`, `goal-binding-mismatch`), a non-human landing names a goal or lands on a Goal-free ledger, the observation binds the claim revision (`goal-revision-moved`), `commit.sh` stamps `Goal-Revision` and exactly one `Machine`, and `landing held` re-checks every commit the push introduces, each at its own parent, on every route that pushes a landing commit, at the goal endpoint. A straggler job cannot land above an abandonment, with or without `--goal`. |
 | 14 | Archived lookups: `gc.go:502`, `norm.go:87`, `slice.go:160`, `conformance.go:1206`, `verbs.go:1089`, `split.go:342`, `reconcilepub.go:150`, `report.go:73` | `Done[id]` | Use `Archived(id)` (or iterate both maps where the site iterates). An abandoned goal's approval, norm, slice and accepted-risk evidence stays readable; gc treats its job evidence as it treats a done goal's (section 4a gives the exact edit). |
 | 15 | `open` (`verbs.go:556`), `split` member collision and arc-in-use (`split.go:401`, `:414`), split member blockers (`:425`) | `Done` | Collision and arc-in-use include `Abandoned`. A split member whose `BlockedBy` names an abandoned goal refuses with the rule-5 wording. |
 | 16 | `done` on an archived id (`verbs.go:1118`) | AlreadyApplied or LostToCompetitor | Same for `Abandoned`. |
@@ -803,13 +868,35 @@ intent `Intent{Verb: "reopen", Targets: [id], Args: {from: "abandoned"}}`;
   anywhere: no checkout can prove the batch complete, and nothing on this
   page manufactures that proof from a history line. The recovery is the
   successor: a human opens a new goal and records it on the abandoned goal
-  with `goal edit --carried <successor>` (a new `goal edit` option that
-  sets `Abandoned.Carried` on an abandoned record only, through the same
-  proof as abandon, appending an `edit` line with `carried=` and
-  `reason=carried to <successor>`; rule 4 binds the field to the newest
-  `abandon` or `edit` line that carries `carried=`). The abandoned record
-  then answers "where did the work go" the same way a `--carried` abandon
-  does. The reopen fixture for the lost checkout is in section 13.
+  with a dedicated verb, `metasystem goal carry --root <checkout> --id
+  <abandoned-goal> --to <successor> --by <human>`. It is not a `goal edit`
+  submode: `edit` is a proof-less multi-field verb over live records
+  (`goalsync_mutations.go:1392-1465`, `verbs.go:1447-1498`), and a
+  proof-bearing field on an archived record does not belong in it. `carry`
+  takes abandon's authority (`proveGoalHumanAuthority("carry", ...)`,
+  `syncReqWithProof`, and in the goal package `Carry(r VerbRequest, id,
+  successor string, proof *humanauthority.Proof)` with `carryRequest`,
+  refusing before `Publish` on a missing `Actor.Human` or a proof that is
+  not `ValidFor` the root, with abandon's two sentences and the verb
+  renamed). Its argument grammar is abandon's refusal 3 for `--to`: a valid
+  goal id that is not `--id`. In the transaction: `Live[id]` refuses "goal
+  %s is live; carry records a successor on an abandoned goal only"; an id
+  in neither map refuses "goal %s is not abandoned"; `Abandoned[id]` with
+  the opid already landed is `AlreadyApplied`; `--to` that is not live, or
+  names `--id`, refuses with refusal 9's sentence. Effects: set
+  `Abandoned.Carried` to the successor and `touch(f, r, "carry", [id])`,
+  whose line is `- <at> <opid> carry actor=human:<name> targets=<id>
+  carried=<successor> reason=carried to <successor>`; the file stays at
+  `archivedPath`; no dependent is touched (under rule 5 none is blocked by
+  an abandoned goal). A second `carry` replaces the field and appends
+  another line, whatever the earlier successor was; rule 4 binds the field
+  to the newest such line, and older `carry` lines are history, compared to
+  nothing. Journal intent `Intent{Verb: "carry", Targets: [id], Args: {to:
+  <successor>}}`; recovery refuses to replay it (section 9). The abandoned
+  record then answers "where did the work go" the same way a `--carried`
+  abandon does, and the `carry` lines survive a later reopen in the
+  append-only History, where rule 11 judges each at its own line. The
+  reopen fixture for the lost checkout is in section 13.
 - Effects: `State = queued`; `Abandoned = nil`; `StopCapability = nil`;
   `StopFence = nil`; `Approved = nil`; `Budget = nil`; `NormApproval = nil`;
   `Conclude` is already empty; `Priority = 0`, `Sequence = 0` (rank not
@@ -877,17 +964,21 @@ which is the retention rule the goal asks for.
    the problem is "Abandoned record does not bind its abandon History
    event": `event.Verb == "abandon"`, `event.At == At`, `event.Opid ==
    Opid`, `event.Actor == By`, `event.Targets[0] == f.Id` (the abandoned
-   goal's own line puts itself first, before any compaction targets, as
-   `done` does at `verbs.go:1163-1166`), `event.Displaced == Displaced`,
-   `event.StopID == StopID`, `event.Reason == Because`. `Carried` binds to
-   the newest line that carries `carried=`: the abandon event itself, or an
-   `edit` line after it whose `carried=` names the successor (section 6's
-   lost-checkout recovery); a `Carried` that no such line names, or a
-   `carried=` line whose successor is not the record's `Carried`, is the
-   same problem. A record whose event has the right verb but a different
-   human, reason, displacement, stop id, successor or target goal is
-   therefore refused at parse time, so a reopen can never delete a field
-   that contradicted its event.
+   goal's own line puts itself first, before any compaction target;
+   section 4's effects order the targets, because `done`'s are sorted at
+   `order.go:212-220`), `event.Displaced == Displaced`, `event.StopID ==
+   StopID`, `event.Reason == Because`. `Carried` binds to the newest line,
+   from the abandon event onward (`History[Revision-1:]`), that carries
+   `carried=`: the event itself when `--carried` was given, or a later
+   `carry` line (section 6's lost-checkout recovery); `Carried` must equal
+   that line's successor, and must be empty when no such line exists.
+   Older `carry` lines, and any `carried=` line before the event (an
+   earlier abandonment of the same goal, since reopened), are compared to
+   nothing: a second `carry` replaces the field and the newest line wins.
+   A record whose event has the right verb but a different human, reason,
+   displacement, stop id, successor or target goal is therefore refused at
+   parse time, so a reopen can never delete a field that contradicted its
+   event.
 5. Dependency: for every live goal, every `BlockedBy` that resolves to an
    abandoned goal is "%s: blocked by abandoned goal %s; re-point, waive with a
    reason, or abandon it too". For done goals the existing rule at
@@ -911,36 +1002,48 @@ which is the retention rule the goal asks for.
     the first whitespace-separated token of `reason=` is a 40-character
     lowercase hex commit id; otherwise "engine-floor line without a commit".
     Older engines do not know this rule and accept the line as history.
-11. History keys by verb: on every record, live or archived, a History line
-    carrying `stopId=` must have verb `abandon`, and a line carrying
-    `carried=` must have verb `abandon` or be an `edit` line on a record
-    whose State is abandoned (section 6's recovery); otherwise "%s line
-    carries %s=, which only an abandon line may". `ParseHistoryLine` accepts
-    the keys on any verb (`file.go:1328`, the verb is not validated), so
-    this rule lives in `ParseFile`'s History pass, where the record's State
-    is known.
+11. History keys by verb, judged at the line: on every record, live or
+    archived, a History line carrying `stopId=` must have verb `abandon`,
+    and a line carrying `carried=` must have verb `abandon` or `carry`;
+    otherwise "%s line carries %s=, which only an abandon or carry line
+    may". A `carry` line is valid only where the record was abandoned at
+    that line, meaning after the lines before it: among the lines before
+    it, the newest whose verb is `reopen`, or `abandon` with the record
+    itself as first target (a compaction line on a survivor names a
+    departed goal first, section 4's effects), is such an `abandon` line.
+    That is the record's state at the line exactly, because abandoned is
+    entered only by `abandon` and left only by `reopen`. Otherwise "carry
+    line on a goal that was not abandoned at that line". No rule on this
+    page judges a History line against the record's current State: a
+    reopened record validates with its `carry` lines in place, and a live
+    record that never carried its own abandon line refuses a `carry` line.
+    `ParseHistoryLine` accepts the keys on any verb (`file.go:1328`, the
+    verb is not validated), so this rule lives in `ParseFile`'s History
+    pass, which walks the lines in order.
 
 ## 9. Recovery, reconcile, and the command table
 
-- `recover.go`: `case "abandon"` and `case "engine-floor"` refuse replay;
-  `case "reopen"` refuses when `Args["from"] == "abandoned"` (section 5, row
-  20); `case "edit"` refuses the same way when `Args["carried"]` is set
-  (section 6's recovery is proof-bearing).
+- `recover.go`: `case "abandon"`, `case "engine-floor"` and `case "carry"`
+  refuse replay (section 6's recovery is proof-bearing); `case "reopen"`
+  refuses when `Args["from"] == "abandoned"` (section 5, row 20).
 - `reconcilemap.go`: no new mapping; the two existing refusals cover hand
   edits. Add the tests named in section 13.
 - `main.go:440` table: `{"abandon", "human-only: record that a goal will never be worked and why; retained with its reason, satisfies no dependency, never pruned, reopenable", runGoalAbandon}`
   and `{"engine-floor", "human-only: record the oldest engine commit every enrolled seat runs; the first abandon refuses without it", runGoalEngineFloor}`.
   The `reopen` help text gains "or an abandoned goal, as a proven human act".
-- The landing verb table gains `{"held", "re-check a landing commit's goal binding at its parent and endpoint; every route that pushes a landing commit runs it first", runLandingHeld}` in `metasystem/cmd/metasystem/landing_verbs.go` beside `runLandingObserve` (`:20`).
-- `goal edit` gains `--carried <successor>` for abandoned records (section 6).
+- The landing verb table gains `{"held", "re-check the goal binding of every commit a push introduces, each at its parent, against the goal endpoint; every route that pushes a landing commit runs it first", runLandingHeld}` in `metasystem/cmd/metasystem/landing_verbs.go` beside `runLandingObserve` (`:20`).
+- The `main.go:440` table also gains `{"carry", "human-only: record the successor goal that carries an abandoned goal's work; abandoned goals only", runGoalCarry}` (section 6). `goal edit` is unchanged.
 - `metasystem/internal/refusal/register.go`: one `Row` per new Go refusal
   code with its emitting site in `held.go` and `observe.go`
   (`goal-binding-missing`, `goal-binding-mismatch`, `goal-revision-moved`,
   `goal-revision-unbound`, `machine-trailer-malformed`, `endpoint-mismatch`,
-  `goal-item-not-held` already exists for `observe.go` and gains no second
-  row), all `Shape: Agent` with `Override` "a human commit is sovereign;
-  re-dispatch under the current claim"; one `Shell` row per new `commit.sh`
-  refusal sentence (section 4a names four), and the three existing
+  `range-not-linear`; `goal-item-not-held` already exists for `observe.go`
+  and gains no second row), all `Shape: Agent` with `Override` "a human
+  commit is sovereign; re-dispatch under the current claim" except
+  `range-not-linear`, which refuses every actor and whose override is
+  "rebase onto the fetched tip, or land through land.sh"; one `Shell` row
+  per new `commit.sh` refusal sentence (section 4a names them, including
+  the `--push` route's fetch failure), and the three existing
   `commit.sh` rows re-pointed to the lines the edit moves them to. The fast
   gate runs the register, so a missing row fails the required gate.
 - `metasystem help` output changes accordingly; no other command changes.
@@ -1181,15 +1284,16 @@ Go tests, package `metasystem/internal/goal` unless noted; names are new.
 | `TestMetricsExcludeAbandonedFromConcludedAndDebt` (`metasystem/internal/metrics`) | Same. | The concluded set and the debt-age rows omit the abandoned goal; `usable` does not count it. |
 | `TestObservationBindsTheChainRootsGoalAndRevision` (`metasystem/internal/landing`, `observe_test.go`) | `heldGoal`'s new parameter and `Observation.GoalRevision` do not exist: compile failure. | A closed chain whose root says `goalId: G, goalRevision: 3` with `--goal G` against a base tree claimed at revision 3 passes and the observation carries `goalRevision: 3`; the same with no `--goal` would-refuse `goal-binding-missing`; with `--goal H` would-refuse `goal-binding-mismatch`; against a base claimed at revision 4 would-refuse `goal-revision-moved`; a goal-bound root without `goalRevision` is `chain-record-malformed`; a goal-free root (`goalId` null) with `--goal G` held by the actor passes as today; register carriage with `--goal` and no record binds the base tree's revision. The tier-1 route with a root job whose `goalId` is not `--goal` would-refuse `goal-binding-mismatch`. |
 | `TestObservationRequiresAGoalFromANonHumanActor` (`observe_test.go`) | `goal-binding-missing` is not a code the observation can return. | `--direct-fix register-carriage` with no `--goal`: actor `m+lineage` on a base whose root is not Goal-free would-refuse `goal-binding-missing`; the same on a base whose root carries `Goal-free` passes with ` goal-free` in the provenance; actor `m+human` on a non-free base records the same would-refuse (the caller, not the observation, decides enforcement). A goal-bound chain root with no `--goal` on a Goal-free base still would-refuse `goal-binding-missing`, because rule (a) runs before rule (b). |
-| `TestHeldRecheckReadsTheParent` (`metasystem/internal/landing`, `held_test.go`) | `Held` undefined. | With `--remote origin --ref refs/heads/main` on a checkout that sets neither endpoint key: a commit with `Goal-Item`, `Goal-Revision: 3` and one `Machine: m+l` above a parent whose goal is claimed by `m+l` at revision 3 passes; above a parent where the goal is in `records/goals/` with State abandoned refuses `goal-item-not-held` naming `abandoned`; above a parent claimed at revision 5 refuses `goal-revision-moved`; the same with `Machine: m+human` exits 0 with the warning line; `Goal-Item` without `Goal-Revision` refuses `goal-revision-unbound` for an agent actor. |
+| `TestHeldRecheckReadsTheParent` (`metasystem/internal/landing`, `held_test.go`) | `Held` undefined. | Every `held` canary passes `base` as the commit's first parent unless it says otherwise. With `--remote origin --ref refs/heads/main` on a checkout that sets neither endpoint key: a commit with `Goal-Item`, `Goal-Revision: 3` and one `Machine: m+l` above a parent whose goal is claimed by `m+l` at revision 3 passes and prints `held: ok 1 commit(s)`; above a parent where the goal is in `records/goals/` with State abandoned refuses `goal-item-not-held` naming the commit and `abandoned`; above a parent claimed at revision 5 refuses `goal-revision-moved`; the same with `Machine: m+human` exits 0 with the warning line; `Goal-Item` without `Goal-Revision` refuses `goal-revision-unbound` for an agent actor. |
 | `TestHeldRefusesAMalformedMachineTrailerBeforeAnythingElse` (`held_test.go`) | Same. | A message with two `Machine` lines, one of them `+human`, refuses `machine-trailer-malformed` with exit 1 (no warning, no exemption), even above a parent where the goal is held; no `Machine` line, the same; two `Goal-Item` lines, the same code naming `Goal-Item`. The refusal is produced without the parent tree being read (the test passes a commit whose parent is unreadable and asserts the trailer code, not `held: unreadable`). |
 | `TestHeldChecksTheGoalEndpoint` (`held_test.go`) | Same. | `--remote transport` refuses `endpoint-mismatch`; `--ref refs/heads/paper` refuses it; a checkout with `goal.sync-remote=local` refuses it naming the local ledger branch; `goal.sync-branch=refs/heads/other` with `--ref refs/heads/other` and `--remote origin` passes the endpoint step. For a `+human` actor each is the warning line and exit 0. |
 | `TestHeldRequiresAGoalBindingFromANonHumanActor` (`held_test.go`) | Same. | No `Goal-Item`, actor `m+l`, parent's root not Goal-free: `goal-binding-missing`; parent's root Goal-free: `held: goal-free ledger`, exit 0; `Landing-Provenance: chain=<id>` naming a root record on this checkout with `goalId: G` and a commit whose `Goal-Item` is `H`: `goal-binding-mismatch`; with no `Goal-Item`: `goal-binding-missing` even on a Goal-free parent; an unreadable record: the ordinary checks alone. |
+| `TestHeldChecksEveryCommitIntroducedByPush` (`held_test.go`) | Same. | Rule 0 and the range, the two-commit shape of GAW-19. Base B holds G in `records/goals/` with State abandoned and H claimed by `m+l` at revision r. Commit L1 above B carries `Goal-Item: G`, `Goal-Revision: c` and `Machine: m+l`; L2 above L1 carries `Goal-Item: H`, `Goal-Revision: r` and `Machine: m+l`. `Held(base=B, commit=L2)` refuses `goal-item-not-held` naming L1 and `abandoned`, and names no other commit; `Held(base=L1, commit=L2)` passes, which is the tip-only judgment the range rule exists to replace; `Held(base=B, commit=L2)` with L1 stamped `m+human` prints the warning for L1, passes L2 and exits 0; a merge commit in the range, and a `base` that is an ancestor of `commit` but not along first parents, each refuse `range-not-linear` with exit 2 before any message is read (the test gives the merge an unreadable message and asserts the range code); `base == commit` prints `held: nothing to push` and exits 0; the pass line over B..L2 with both goals held counts 2. |
 | `TestKeepsSpendingFactTreatsAbandonedLikeDone` (`metasystem/internal/evidence`) | The state word does not parse. | A terminal record of an abandoned goal is not kept; of a pruned (unknown) goal it is kept; of a live claimed goal at the claim revision it is kept. |
-| `TestAbandonRecordMustBindItsEvent` (`file_test.go`) | The state word does not parse. | Rule 4, one case per field: a rendered abandoned record whose `Abandoned:` line names a different human, `at`, `opid`, `revision` (pointing at a `claim` line: the wrong-verb case), `displaced`, `stopId`, `carried` or `because` than its `abandon` History line, and one whose event's first target is another goal, each parse with exactly the problem "Abandoned record does not bind its abandon History event"; the record `Abandon` renders parses clean. A `carried=` set by a later `edit` line on an abandoned record binds; a `Carried` that no line names does not. |
-| `TestHistoryKeysStopIdAndCarriedOnlyOnAbandonLines` (`file_test.go`) | `stopId=` is an unknown History key (`file.go:1421`), a different problem. | Rule 11: a `claim` line carrying `stopId=` and a `done` line carrying `carried=` are each a problem naming the verb and the key; an `abandon` line carrying both is not; an `edit` line carrying `carried=` is a problem on a live record and not on an abandoned one. |
+| `TestAbandonRecordMustBindItsEvent` (`file_test.go`) | The state word does not parse. | Rule 4, one case per field: a rendered abandoned record whose `Abandoned:` line names a different human, `at`, `opid`, `revision` (pointing at a `claim` line: the wrong-verb case), `displaced`, `stopId`, `carried` or `because` than its `abandon` History line, and one whose event's first target is another goal, each parse with exactly the problem "Abandoned record does not bind its abandon History event"; the record `Abandon` renders parses clean. A `carried=` set by a later `carry` line binds; two `carry` lines bind the field to the newer, and the older is compared to nothing; a `Carried` that no line from the event onward names does not bind; a `carry` line before the event (an earlier abandonment, since reopened) does not bind either. An own abandon line whose first target is a survivor, not the record, is the wrong-target case. |
+| `TestHistoryKeysStopIdAndCarriedOnlyOnAbandonLines` (`file_test.go`) | `stopId=` is an unknown History key (`file.go:1421`), a different problem. | Rule 11: a `claim` line carrying `stopId=` and a `done` line carrying `carried=` are each a problem naming the verb and the key; an `abandon` line carrying both is not; a `carry` line is judged at its line: a problem on a live record with no abandon line before it, on a line after a `reopen`, and after a survivor's compaction `abandon` line (which names the departed goal first); not a problem after the record's own `abandon` line, whether the record is abandoned now or has since been reopened. |
 | `TestReconcileEditRowSeesAnAbandonedArchive` (`reconcilepub_test.go`) | The state word does not parse. | Row 25: a hand edit captured against a live goal whose fetched tip holds the goal in `records/goals/` with State abandoned conflicts with "archived on the fetched tip; the hand edit was made against a live goal", not "not live on the fetched tip"; the same tip with the goal done conflicts identically. |
-| `TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers` (`stop_test.go`) | `ReopenAbandoned` undefined. | A fenced abandoned record whose `COMPLETE` batch lives under root A: `ReopenAbandoned` with an endpoint at root B and a fixture proof valid for B refuses "cannot prove stop batch %s complete" and the record is unchanged (section 6's limitation, as a fixture); `goal edit --carried S` at root B with the same proof sets `Abandoned.Carried = S`, appends an `edit` line with `carried=S`, and the record parses clean under rule 4; the same edit on a live goal, or naming a goal that is not live, refuses. Then at root A the reopen lands. |
+| `TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers` (`stop_test.go`) | `ReopenAbandoned` undefined. | A fenced abandoned record whose `COMPLETE` batch lives under root A: `ReopenAbandoned` with an endpoint at root B and a fixture proof valid for B refuses "cannot prove stop batch %s complete" and the record is unchanged (section 6's limitation, as a fixture); `Carry` to S at root B with the same proof sets `Abandoned.Carried = S`, appends a `carry` line with `carried=S`, and the record parses clean under rule 4; a second `Carry` to S2 replaces the field with S2, appends a second line, and still parses clean; `Carry` without `Actor.Human` or a valid proof, on a live goal, naming a successor that is not live, or naming the goal itself, each refuse with section 6's sentence and change nothing. Then at root A the reopen lands, and the reopened queued record, with the `abandon`, both `carry` and the `reopen` lines in place, passes `ValidateCommit` and parses clean (rule 11 judges the `carry` lines at their lines); a live record forged with a `carry` line and no abandon line before it is refused. |
 
 The specimen, as a Go test and as a shell scenario:
 
@@ -1265,7 +1369,7 @@ route, through the `git` shim the push-retry leg already uses
   --fixture-human-authority` in the peer before the fetch proceeds. Assert
   `land.sh` prints `== STEP: goal held at the rebased base` after `rebase
   onto origin/main`, exits non-zero with `held refused: goal-item-not-held:
-  goal ship-widget is abandoned at <parent>`, the push-attempts file is
+  <commit>: goal ship-widget is abandoned at <parent>`, the push-attempts file is
   empty, and origin's `main` does not contain the commit.
 - *Retry route.* The shim's first `push origin` runs the same abandon in the
   peer and lets the push through to be rejected `(fetch first)`. Assert the
@@ -1273,28 +1377,87 @@ route, through the `git` shim the push-retry leg already uses
   1`, `rebase onto origin/main after push attempt 1`, then `goal held at the
   rebased base`, the same refusal, exactly one push attempt, and origin
   unchanged by the landing.
-- *Recertified route.* A closed chain with conformance output is seeded the
-  way the `full-width-chain` leg seeds one (`:136-146`, the chain record and
-  `rounds/1/review.json` with its `diff.patch`), the base moves under it
-  (the peer lands an unrelated file), `metasystem validate conformance
-  --stage recertify --job <root>` mints the recertification record
-  (`validate_verbs.go:339`), and the peer then abandons `ship-widget`.
-  `land.sh --chain <root> --goal ship-widget --recertification <record>`
-  must print `goal held at the rebased base` before `push recertified commit
-  to origin (single attempt)`, park with `chain-recertification-target-moved`
-  naming the `held` refusal, and push nothing.
+- *Recertified route.* The chain is seeded the way
+  `TestRecertifiedLandingParksOnOriginMove` (`landing_verbs_test.go:474`,
+  `:584-611`) seeds its chain, with every record
+  `selectOriginalCertification` requires (`recertification.go:333-429`): a
+  root job record with `role` `implementer`, `status` `completed`,
+  `chainClosed` true, `gateWidth` `area`, `goalId` `ship-widget`,
+  `goalRevision` the claim revision, `workspaceRoot` a chain worktree at
+  `baseSha` (the tip after the claim) holding the chain's change to a new
+  `records/misc/*.md`, and `independentCritiqueJobRef` naming a critic
+  record; the root's `rounds/1/return.json` with that path in
+  `diffBoundary`; `metasystem validate conformance --stage review --job
+  <root>` to mint `rounds/1/review.json` and its `diff.patch`; then the
+  critic record (`role` `code-critic`, `parentJob` null, `reviews` `<root>`,
+  `status` `completed`, `chainClosed` true, an empty `findingRegister`) and
+  its `rounds/1/return.json` carrying the review's `reviewedTree`. No critic
+  process runs; the records are the proof, as in that test. The base moves
+  (the peer lands an unrelated file), the local clone fast-forwards to it,
+  and `metasystem validate conformance --stage recertify --job <root>
+  --test-command <that test's grep>` mints the recertification against that
+  tip. No abandonment has happened yet: `check_recertification_target`
+  (`land.sh:462-470`) runs before staging (`:499`) and again before the
+  commit (`:524`), so an abandonment already on origin would park the
+  landing there, before `held` is reached. Instead the shim's first `push
+  origin` runs the abandon in the peer, exactly as the retry route's trigger
+  does, and lets the push through to be rejected. Assert from `land.sh
+  --chain <root> --goal ship-widget --recertification <record>`'s output:
+  the banners `goal held at the rebased base` and then `push recertified
+  commit to origin (single attempt)`, in that order; `held: ok 1 commit(s)
+  above <target>` under the first (the parent is the frozen target, where
+  the goal was still held); `[rejected]` under the second; `PARKED` with
+  `chain-recertification-target-moved` naming the push rejection; exactly
+  one push attempt; origin's `main` at the abandonment, untouched by the
+  landing. This proves the route runs `held` over its range before its
+  single push and that a push above the frozen parent is refused once that
+  parent stops being origin's tip. On this route a parent that carries the
+  abandonment is reached by the observation first, whose base tree is the
+  frozen target (`observe.go:252`): re-mint the recertification against the
+  abandonment's tip, run `land.sh` again, and assert it parks at `commit`
+  with `goal-item-not-held` through `recertification_refusal_from_output`
+  (`:533-537`) and pushes nothing.
 - *The wrapper's own refusals*, on the same leg before any abandonment:
   `commit.sh -m 'x' --trailer 'Machine: forged+human'` refuses "Machine is
   stamped by the wrapper, never typed" with exit 2 and no commit; an agent
   commit under an empty `METASYSTEM_OWNER_LINEAGE` with a numeric claim
   epoch refuses the owner-lineage sentence; `land.sh --direct-fix
   register-carriage` with no `--goal` under the lineage refuses at the
-  observation with the `goal-binding-missing` sentence; `commit.sh --push`
-  of a commit whose parent carries the abandonment (made with the shim
-  holding the fetch) refuses at `held` before `git push origin`.
-- *The positive control.* With no abandonment, the normal route lands, and
-  the landed commit carries exactly one `Machine: brain-leg+fixture-lineage`,
-  one `Goal-Item: ship-widget` and one `Goal-Revision: <claim revision>`.
+  observation with the `goal-binding-missing` sentence.
+- *`commit.sh --push`, two legs.* The route observes before it commits
+  (`commit.sh:448-478`) and never rebases, so one parent cannot pass the
+  observation and then fail `held`. First leg, `held` runs on this route:
+  with `ship-widget` held at local HEAD, `commit.sh --goal ship-widget
+  --direct-fix register-carriage --push` of a new `records/misc/*.md`,
+  with the shim's `fetch` trigger running the abandon in the peer before
+  the fetch proceeds; assert the commit exists locally, `held refused:
+  range-not-linear` naming the fetched tip on stderr, exit 1, the shim's
+  push log empty (`git push` never ran), and origin's `main` at the
+  abandonment. Second leg, a non-fast-forward is refused as today: no
+  abandonment; the shim's first `push origin` lands an unrelated peer
+  commit and lets the push through; assert `held: ok 1 commit(s)` before
+  the push, `[rejected]` from git, "landing push failed at origin; the
+  commit stands locally", exit 1, and the commit local and absent from
+  origin.
+- *The stack.* The two-commit shape of GAW-19 through the normal route.
+  With `ship-widget` held at local HEAD `T`, `commit.sh --goal ship-widget
+  --direct-fix register-carriage` (no `--push`) makes `L1`, a lawful
+  commit for a held goal, standing unpushed. The peer abandons
+  `ship-widget` (origin at `T+1`). In the local clone open, approve and
+  claim a second goal `ship-gadget` under the same lineage (the quota is one
+  claim per machine, `validate.go:329`, and the abandonment freed it), then
+  `git pull --rebase` so the branch is `T+1`, the claim commit, then `L1`
+  rebased above them. `land.sh --goal ship-gadget --direct-fix
+  register-carriage` of a second new record: the observation at HEAD sees
+  `ship-gadget` held and `L2` is made; fetch and rebase change nothing;
+  assert `held refused: goal-item-not-held: <L1>: goal ship-widget is
+  abandoned at <parent>` naming the lower commit, an empty push-attempts
+  file, and origin's `main` unchanged. A `held` that judged only the tip
+  would have passed `L2` and pushed both.
+- *The positive control.* With no abandonment, the normal route lands, its
+  output carries `held: ok 1 commit(s) above <tip>`, and the landed commit
+  carries exactly one `Machine: brain-leg+fixture-lineage`, one `Goal-Item:
+  ship-widget` and one `Goal-Revision: <claim revision>`.
 
 Untouched tree: `landing held` is an unknown verb and `land.sh` prints no
 `goal held` banner, which is the named reason; the scenario fails at its
@@ -1336,14 +1499,7 @@ fast gate for the landing is unchanged:
 - Whether a ledger configured with any endpoint other than `origin` and
   `refs/heads/main` is used anywhere for goal-bound landings. `held` refuses
   every other configuration for a non-human actor; if one exists, its first
-  agent landing after this build names it.
-- Whether the land-fixtures bed can mint a recertification record without a
-  real critic chain. The recertified-route leg names the recipe (`validate
-  conformance --stage recertify` over a seeded chain with conformance
-  output); if the verb needs more than the seed provides, the build says so
-  and the leg is narrowed to what the bed can mint, with the narrowing
-  recorded on the chain.
-- Whether `held` needs a `behaviorsurface` policy row or a static-reproof
+  agent landing after this build names it.- Whether `held` needs a `behaviorsurface` policy row or a static-reproof
   case-list entry; the gate answers when it runs.
 
 ## 15. What must not change
@@ -1367,6 +1523,73 @@ unchanged. Abandoned is not a frontier category. Stop proofs are never
 rewritten.
 
 ## Revision record
+
+Revision 4 folds the five findings of the round-3 read, every one accepted
+by the coordinator, and touches only what they name and the sentences that
+restate it. Sections 3, 7, 10, 11 and 12 are unchanged. Every line that
+moved is listed here.
+
+- **GAW-19 (critical).** The page said a plain push lands exactly one commit
+  above origin's tip; git accepts any fast-forward, so a commit stamped for
+  an abandoned goal can ride beneath a valid tip commit for a held goal
+  (the parked register-carriage repair pushes exactly that shape). `held`
+  now takes `--base`, the fetched tip, walks every commit from it to
+  `--commit` in first-parent order, oldest first, applies the per-commit
+  rules to each against its own parent, refuses on the first failure naming
+  the commit, and refuses `range-not-linear` (every actor, exit 2) for a
+  merge in the range or a base that is not a first-parent ancestor. Section
+  4a's mechanism 2 gains rule 0, rule 5 loses the parent cases to it, and
+  the route list says what base each route passes: the normal and retry
+  routes the tip their fetch wrote, the recertified route the frozen
+  target, `commit.sh --push` a tip it now fetches first, and the parked
+  chain's repair route the tip of its fetch. The closing argument is
+  re-derived over the range, including the suffix a peer's partial push
+  leaves and the rewind a force push would make. Moved with it: the section
+  1 landing-sequence row's false compare-and-swap sentence, section 0's and
+  row 13's "at the rebased parent", the parked-chain paragraph, the `held`
+  command-table entry, the register list (`range-not-linear`), the `held`
+  canaries (each passes `base` as the parent; the abandoned case names the
+  commit), the new canary `TestHeldChecksEveryCommitIntroducedByPush`, the
+  normal-route refusal line, the positive control, and the new *stack* leg
+  of the land-fixtures scenario, which pushes the two-commit shape through
+  the normal route and asserts the lower commit is named and nothing lands.
+- **GAW-20 and GAW-22 (high).** `goal edit --carried` is withdrawn. The
+  recovery is a dedicated human verb, `goal carry --id <abandoned> --to
+  <successor> --by <human>`, under abandon's proof, on abandoned records
+  only, with its refusals, effects, History line and journal intent in
+  section 6; a second use replaces the field and appends another line. Rule
+  4 binds `Carried` to the newest `carried=` line from the abandon event
+  onward and compares older lines to nothing. Rule 11 judges a `carry` line
+  against the record's state at that line, never the current State, so a
+  reopened record validates with its `carry` lines in place. That state is
+  read from the newest earlier `reopen` line or own `abandon` line, and
+  telling a goal's own abandon line from a survivor's compaction line needs
+  the first target: revision 3's rule 4 already required the goal itself
+  first "as `done` does", but `done` sorts its targets
+  (`order.go:212-220`), so section 4's compaction effect now orders them
+  (the departed goal first on its own line, the departed goals first on a
+  survivor's) and rule 4's parenthetical says so. Moved with it: section
+  2's key sentence and the struct comment, section 9's recovery case and
+  command-table entry, and the three fixtures (rule 4, rule 11, the
+  lost-checkout reopen), which now cover the second `carry`, the verb's
+  refusals, the compaction-line case, and the reopened record passing
+  `ValidateCommit`.
+- **GAW-21 (high).** The recertified leg could not reach `held`: an
+  abandonment already on origin parks the landing at
+  `check_recertification_target`, before staging. The leg now seeds every
+  record `selectOriginalCertification` requires, as
+  `TestRecertifiedLandingParksOnOriginMove` does, mints the recertification
+  before any abandonment, and publishes the abandonment from the shim's
+  first `push origin`, between the target checks and the single push. It
+  asserts the banner order, `held`'s pass over the frozen parent, the push
+  rejection, the park, and origin untouched; and, re-minted against the
+  abandonment, the park at `commit` with `goal-item-not-held`. The section
+  14 entry that allowed the leg to be narrowed is removed.
+- **GAW-23 (high).** The `commit.sh --push` assertion could not both pass
+  the observation and refuse at `held` on one parent. It is two legs: an
+  abandonment present only at origin, brought in by the route's new fetch,
+  refused by `held` (`range-not-linear`) before any push; and origin moving
+  after `held` passed, rejected by git as today with the commit standing.
 
 Revision 3 folds the eleven findings of the round-2 read, every one
 accepted by the coordinator, and is the last prose revision: what its read
