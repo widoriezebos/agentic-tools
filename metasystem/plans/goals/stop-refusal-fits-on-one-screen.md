@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido, 2026-09-06: 'the stop message is still insanely long.' The Stop hook's refusal text has no bound: on m1's first Stop after c1525b90a (the refusal carries the turn verdict) it printed about two hundred run records from August ('no continuation recorded') and one actionable line (an unwatched job) in a single refusal. The Telegram ask got its bound last night (renderQuestion, 1600 runes, the token first, the rest trimmed with a notice); the hook's refusal and its systemMessage get the same discipline. DONE means: the refusal reads, in order, the verdict in one line, the actionable items (each with the command that clears it), then at most a few lines of everything else summarized by class and count ('244 runs without a recorded continuation, oldest 2026-08-16; full list: <path>'), the whole thing bounded to roughly a screen; the full unbounded text is written to a file under the checkout's supervision evidence and the refusal names it. Not a change to what is judged - only to what is printed.
 - Origin: main
-- Next step: MECHANICAL, one chain: the renderer of the Stop refusal and systemMessage (the turn-verdict text builder the hook prints, in Go under internal/supervise or the hook's emit path), a class-and-count summariser for repeated lines, the full-text file beside the stop refusal records, a fixture that feeds two hundred stale run lines and asserts the bounded shape with the actionable line first; the stale-run listing itself (whether those runs are open work at all) stays with open-work-scanner-blindspots. Any free seat.
+- Next step: MECHANICAL, one chain: the renderer of the Stop refusal and systemMessage (the turn-verdict text builder the hook prints, in Go under internal/supervise or the hook's emit path), a class-and-count summariser for repeated lines, the full-text file beside the stop refusal records, a fixture that feeds two hundred stale run lines and asserts the bounded shape with the actionable line first; the stale-run listing itself (whether those runs are open work at all) stays with open-work-scanner-blindspots. Any free seat.; ASKED XN0DP5ADB4NQRN6XWG58K415C1 (reserved-decision): m1's one claim slot is held by actionable-metrics, claimed 2026-09-07 by a dead session (main-1788594343-3833-fb64b9); that goal's own next step says the claim was released, but the release never reached the ledger
 - OpenedAt: 2026-09-06T14:30:14Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T14:32:44Z revision=2 opid=C6Y1SKS3RC6T936TYZDM0W0EVS-m1-7cd0bd60 authority=proven digest=f34eb5076eb486ff58b6e2af66442a9d66304b18d5c89874afcd4ac88edb1846
@@ -18,4 +18,5 @@ History:
 - 2026-09-06T14:30:14Z AE3TVHYT4WVWE623BDZZK3XWBK-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-refusal-fits-on-one-screen
 - 2026-09-06T14:32:44Z C6Y1SKS3RC6T936TYZDM0W0EVS-m1-7cd0bd60 approve actor=human:Wido targets=stop-refusal-fits-on-one-screen
 - 2026-09-08T16:00:17Z EJH57HEC22FMP1F7MC7XXVRZR7-m1-7cd0bd60 set-priority actor=human:Wido targets=stop-refusal-fits-on-one-screen reason=priority-order subject=stop-refusal-fits-on-one-screen from=unranked to=3:20 requested-sequence=20
-Integrity: sha256=a90ff4f144f62b54baf7941913117c6cd01c82c15747013619059cc4061e8282
+- 2026-09-09T08:53:37Z FHWWRMV97KENPG9GJP2HJ2M9QZ-m1-1701c13c ask actor=m1+main-1788940932-18533-7fa6c2 targets=stop-refusal-fits-on-one-screen
+Integrity: sha256=da64ec7f1fab26d65df1e5acce06aba0135f28f54a40cd9af0ee9e193ff36a67
