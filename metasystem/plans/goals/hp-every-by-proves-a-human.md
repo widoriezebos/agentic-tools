@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: An exported lineage plus --by no longer reaches any human-only act without a proof: the CLI builder proves on every --by regardless of how the lineage arrived, and migrate, repair, fleet enrollment, reopen's all-parked-arc branch and set-pin get explicit proof plumbing, so Actor.Human alone is never sufficient anywhere. Findings HPA-01 and HPA-16 of the human-proof critiques; the primary canary is an agent shell with the lineage exported, --by on steal, foreign release, classify-sweep, set-pin, reconcile, migrate and repair, every one refused, in a scratch ledger and never the live one.
 - Origin: main
-- Next step: Sol builds the builder change in cmd/metasystem/goalsync_mutations.go and the proof plumbing on the routes that bypass syncReq (goalsync_verbs.go for migrate and repair, internal/goal/approval.go for fleet enrollment, verbs.go for reopen's parked-arc branch and set-pin); the scratch-ledger canary and an engine fixture proving Actor.Human without Authority is refused everywhere. One Sol round, one Opus review at xhigh, land. Sequence with fixture-human-authority-mintable-from-conf, which closes the other mint. ORDER: after hp-terminal-grade-for-stopping-acts lands. Shared design: plans/human-proof-fits-the-act-design.md revision 2 (the parent human-proof-fits-the-act, concluded as decomposed).
+- Next step: Sol builds the builder change in cmd/metasystem/goalsync_mutations.go and the proof plumbing on the routes that bypass syncReq (goalsync_verbs.go for migrate and repair, internal/goal/approval.go for fleet enrollment, verbs.go for reopen's parked-arc branch and set-pin); the scratch-ledger canary and an engine fixture proving Actor.Human without Authority is refused everywhere. One Sol round, one Opus review at xhigh, land. Sequence with fixture-human-authority-mintable-from-conf, which closes the other mint. ORDER: after hp-terminal-grade-for-stopping-acts lands. Shared design: plans/human-proof-fits-the-act-design.md revision 2 (the parent human-proof-fits-the-act, concluded as decomposed). DESIGN POINT carried from hp-terminal-grade-for-stopping-acts critique r2 (HPT-07, 2026-09-09): ProveTerminal follows each recorded parent identifier upward with no continuity check, where Prove refuses PROCESS_REUSED when the next process is not the one it just recorded as the parent; Enroll's own walk had none either, so the first member kept parity. When this goal makes every --by prove a human, decide whether the terminal grade carries the continuity check too, since a reused pid between two reads is the one shape a weaker walk cannot see.
 - OpenedAt: 2026-09-09T14:35:15Z
-- Revision: 2
+- Revision: 3
 - Labels: security
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -16,4 +16,5 @@
 History:
 - 2026-09-09T14:35:15Z H81P75EJYDX71EWQ0CP0DS9F2J-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=hp-every-by-proves-a-human
 - 2026-09-09T14:36:28Z 76XV3QEKM1Y759NSDZ4GYEH9R3-m1-c6925449 approve actor=human:Wido targets=fixture-human-authority-mintable-from-conf,hp-enrollment-before-migration,hp-every-by-proves-a-human,hp-grading-matrix-for-widening-acts,hp-recovery-grants-no-grade-to-unstamped-intents,hp-refusals-print-the-one-command,hp-relayed-word-retired,hp-resume-takes-its-budget-from-the-ledger,hp-terminal-grade-for-stopping-acts
-Integrity: sha256=a95b5b69cbd45bbc5342f7ff4f5c6fb07530091889ef971ea4d74e17d8c8b33f
+- 2026-09-09T16:22:30Z DS1VZRWXR1E3E40P7PMEKTA348-m1-1701c13c edit actor=m1+main-1788940932-18533-7fa6c2 targets=hp-every-by-proves-a-human
+Integrity: sha256=d44b51cf17dbb65c43332a7824b3da2cc7820dfc0e2ca802cc2f822ac566af77

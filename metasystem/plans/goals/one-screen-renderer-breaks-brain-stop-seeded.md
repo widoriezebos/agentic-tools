@@ -1,0 +1,17 @@
+# one-screen-renderer-breaks-brain-stop-seeded
+
+- State: queued
+- Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="severity 3: the goal-cli fixture bed fails on main, and that bed is part of the full battery every receipt-bound landing must pass, so every full-width landing on this machine is refused at its receipt until this is settled; novelty 1: two landed intents disagree about which line leads a stop summary, and the fix is to make the renderer and the fixture agree, one way or the other; exposure 3: every seat's landing on every machine that pulls main, and every brain checkout's stop summary; accumulation 3: it blocks landings now, it was landed without the bed that would have caught it, and each landing that hits it costs a twenty-minute battery to discover"
+- Tier: 3
+- Intent: On a brain-declared checkout the turn verdict's display no longer leads with the BRAIN SEAT summary; it leads with the OPEN WORK line, because the one-screen verdict renderer landed by commit d533caf1 places the verdict line first. The goal-cli fixture bed's brain-stop-seeded scenario pins the old order and fails on main, and that bed is part of the full battery every receipt-bound landing must pass, so every full-width landing on this machine is refused at its receipt until the renderer and the fixture agree. The landing that introduced it ran without the bed. DONE means the two landed intents are reconciled by decision, the renderer and the fixture agree, goal-cli-fixtures.sh runs green on main, and the brain design's page states which line leads a brain checkout's stop display and why.
+- Origin: main
+- Next step: CONFIRMED EMPIRICALLY 2026-09-09 15:10Z: scripts/agents/goal-cli-fixtures.sh on untouched main (1c0950a6) exits 1; scenario brain-stop-seeded fails with 'brain summary did not lead with ask and draft on stop 1: OPEN WORK (1) ...', and brain-stop-corrupt reports a failure in the same run. The fixture at scripts/agents/goal-cli-fixtures.sh lines 365-372 requires the turn verdict's FIRST display line to be the BRAIN SEAT summary on a brain-declared checkout. Commit d533caf1 ('The Stop refusal fits on one screen', goal stop-refusal-fits-on-one-screen, now parked at 3:117, no design page) added internal/goal/verdictrender.go whose renderTurnVerdict at lines 39-61 places the verdict line first and the brain lines after, and did not touch the fixture; its landing provenance reads would-refuse chain-not-design-bearing and no test receipt exists for it, so the bed never ran on it. This blocks every full-width landing on this machine at its receipt battery, including goal landing-receipt-survives-records-drift, whose chain is otherwise fully proven. DECIDE which line leads a brain checkout's stop display, make the renderer and the fixture agree, run goal-cli-fixtures.sh green on main. Also for small-change-lane: a chain landed as not-design-bearing skipped the very bed that covered its change.
+- OpenedAt: 2026-09-09T15:09:48Z
+- Revision: 2
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+
+History:
+- 2026-09-09T15:09:48Z PHDCYW6SHSJ2WCW8PZSC4C92ME-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=one-screen-renderer-breaks-brain-stop-seeded
+- 2026-09-09T15:11:41Z 1WBC72608MB071V5V6ZVKG9GKT-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=one-screen-renderer-breaks-brain-stop-seeded
+Integrity: sha256=b689b5375e679fd97fe6c46791f3174cc16c19f5500efcaeb8118e9ec0adf3d3
