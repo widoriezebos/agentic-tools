@@ -101,13 +101,27 @@ func TestTurnVerdictPrintsOneHungRunInFull(t *testing.T) {
 	}
 }
 
+func TestRenderTurnVerdictLeadsWithBrainSummaryBeforeVerdict(t *testing.T) {
+	display := renderTurnVerdict(
+		Verdict{Display: "OPEN WORK (1)\nOPEN-WORK open-plan: finish it"},
+		[]string{"BRAIN SEAT: one ask awaits Wido"},
+		runDisplayLines{},
+		nil,
+		"Full turn verdict: /checkout/artifacts/agents/supervision/stop-verdicts/session.txt",
+	)
+	lines := strings.Split(display, "\n")
+	if len(lines) < 2 || lines[0] != "BRAIN SEAT: one ask awaits Wido" || lines[1] != "OPEN WORK (1)" {
+		t.Fatalf("brain summary did not precede the verdict line: %q", display)
+	}
+}
+
 func TestTurnVerdictTrimsActionableItemsFromTheBottom(t *testing.T) {
 	var actionable []string
 	for i := 0; i < 40; i++ {
 		actionable = append(actionable, fmt.Sprintf("OPEN-WORK item-%02d: %s", i, strings.Repeat("work", 40)))
 	}
 	fileLine := "Full turn verdict: /checkout/artifacts/agents/supervision/stop-verdicts/session.txt"
-	display := boundedVerdictLines("OPEN WORK (40)", actionable, []string{"40 runs went red, oldest old-run"}, fileLine)
+	display := boundedVerdictLines(nil, "OPEN WORK (40)", actionable, []string{"40 runs went red, oldest old-run"}, fileLine)
 	if len([]rune(display)) > TurnVerdictDisplayRuneLimit || !strings.HasPrefix(display, "OPEN WORK (40)\n") || !strings.HasSuffix(display, fileLine) {
 		t.Fatalf("mandatory verdict or file line was lost: %s", display)
 	}
