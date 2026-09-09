@@ -1,0 +1,503 @@
+diff --git a/cmd/metasystem/main.go b/cmd/metasystem/main.go
+index 66a3676b8..661c11ded 100644
+--- a/cmd/metasystem/main.go
++++ b/cmd/metasystem/main.go
+@@ -299,6 +299,7 @@ func families() []family {
+ 			name:    "report",
+ 			summary: "turn-end report decisions",
+ 			verbs: []verb{
++				{"bound-message", "fit text within the Stop system-message display bound", runReportBoundMessage},
+ 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
+ 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
+ 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
+diff --git a/cmd/metasystem/report.go b/cmd/metasystem/report.go
+index c7e0c6af5..f3b0ff27b 100644
+--- a/cmd/metasystem/report.go
++++ b/cmd/metasystem/report.go
+@@ -10,6 +10,16 @@ import (
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+ )
+ 
++func runReportBoundMessage(args []string) int {
++	flags := flag.NewFlagSet("report bound-message", flag.ContinueOnError)
++	message := flags.String("text", "", "message text to fit within the Stop display bound")
++	if flags.Parse(args) != nil {
++		return 2
++	}
++	fmt.Println(report.BoundSystemMessage(*message))
++	return 0
++}
++
+ // runReportStopBlock prints the stop-hook block decision, leading with any caller
+ // detail given as the sole positional argument.
+ func runReportStopBlock(args []string) int {
+diff --git a/cmd/metasystem/report_verbs_test.go b/cmd/metasystem/report_verbs_test.go
+new file mode 100644
+index 000000000..38555107e
+--- /dev/null
++++ b/cmd/metasystem/report_verbs_test.go
+@@ -0,0 +1,24 @@
++package main
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++)
++
++func TestReportBoundMessageUsesStopDisplayBound(t *testing.T) {
++	output, code := captureStdout(t, func() int {
++		return runReportBoundMessage([]string{"--text", "ALLOW\n" + strings.Repeat("detail", 1000)})
++	})
++	if code != 0 {
++		t.Fatalf("report bound-message exited %d", code)
++	}
++	output = strings.TrimSuffix(output, "\n")
++	if len([]rune(output)) > goal.TurnVerdictDisplayRuneLimit {
++		t.Fatalf("bounded message has %d runes", len([]rune(output)))
++	}
++	if !strings.HasPrefix(output, "ALLOW\n") || !strings.Contains(output, "system message trimmed") {
++		t.Fatalf("bounded message lost its leading line or trim notice: %q", output)
++	}
++}
+diff --git a/cmd/metasystem/steward_verbs.go b/cmd/metasystem/steward_verbs.go
+index af0e58510..fbc765a28 100644
+--- a/cmd/metasystem/steward_verbs.go
++++ b/cmd/metasystem/steward_verbs.go
+@@ -23,6 +23,7 @@ import (
+ 	"syscall"
+ 	"time"
+ 
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+ 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+ 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+@@ -50,6 +51,7 @@ func runStewardHealth(args []string) int {
+ 	repo := flags.String("repo", "", "checkout root")
+ 	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
+ 	hookPreview := flags.Bool("hook-preview", false, "render current hook facts without advancing the tick-owned alert breaker (internal)")
++	session := flags.String("session", "", "write full hook-preview evidence for this safe session id (internal)")
+ 	if flags.Parse(args) != nil {
+ 		return 2
+ 	}
+@@ -62,17 +64,28 @@ func runStewardHealth(args []string) int {
+ 	}
+ 	if *hookPreview {
+ 		verdict := steward.PreviewHealthAt(*repo, *metasystemRoot, time.Now(), nil)
+-		fmt.Println(verdict.Line())
++		if *session != "" {
++			if strings.ContainsAny(*session, `/\\`) || *session == "." || *session == ".." {
++				fmt.Fprintln(os.Stderr, "health: --session must be a safe file name")
++				return 2
++			}
++			fullLineOutput := filepath.Join(*metasystemRoot, "artifacts", "agents", "supervision", "stop-verdicts", *session+"-health.txt")
++			if _, err := atomicfile.WriteText(fullLineOutput, verdict.Line()+"\n", ""); err != nil {
++				fmt.Fprintf(os.Stderr, "health: write full health evidence: %v\n", err)
++				return 2
++			}
++		}
++		fmt.Println(verdict.HookPreviewLine())
+ 		return verdict.ExitCode()
+ 	}
+-	verdict, err := steward.ObserveHealth(*repo, time.Now(), nil)
++	verdict, err := steward.ObserveHealthAt(*repo, *metasystemRoot, time.Now(), nil)
+ 	if err != nil {
+ 		fmt.Fprintf(os.Stderr, "health: health evidence is unknown: %v\n", err)
+ 		return 2
+ 	}
+ 	alertView := verdict
+ 	alertView.ShouldAlert = false
+-	if _, err := steward.UpdateAlertEpisodes(*repo, alertView, verdict.Line(), time.Now()); err != nil {
++	if _, err := steward.UpdateAlertEpisodes(*metasystemRoot, alertView, verdict.Line(), time.Now()); err != nil {
+ 		fmt.Fprintf(os.Stderr, "health: alert episode state is unknown: %v\n", err)
+ 		return 2
+ 	}
+diff --git a/internal/steward/health.go b/internal/steward/health.go
+index 65fdfb511..39903f393 100644
+--- a/internal/steward/health.go
++++ b/internal/steward/health.go
+@@ -178,8 +178,9 @@ func (v HealthVerdict) ExitCode() int {
+ 	}
+ }
+ 
+-// Line is the one-line operator view. Every role remains on the line so an
+-// all-clear is self-evident rather than implied by silence.
++// Line is the full one-line operator view. Every role remains on the line so
++// the durable health evidence records each check rather than implying an
++// all-clear from silence.
+ func (v HealthVerdict) Line() string {
+ 	items := make([]string, 0, len(v.Roles))
+ 	for _, role := range v.Roles {
+@@ -196,6 +197,38 @@ func (v HealthVerdict) Line() string {
+ 		}
+ 		items = append(items, item)
+ 	}
++	return v.linePrefix() + v.Aggregate + " — " + strings.Join(items, "; ")
++}
++
++// HookPreviewLine keeps the hook-visible health view actionable and short:
++// non-alive checks retain their reasons and remedies, while alive checks are
++// represented by one aggregate count.
++func (v HealthVerdict) HookPreviewLine() string {
++	items := make([]string, 0, len(v.Roles)+1)
++	alive := 0
++	for _, role := range v.Roles {
++		if role.Status == HealthAlive {
++			alive++
++			continue
++		}
++		item := fmt.Sprintf("%s=%s", role.Role, role.Status)
++		if role.Reason != "" {
++			item += " (" + role.Reason
++			if role.Remedy != "" {
++				item += "; remedy: " + role.Remedy
++			}
++			item += ")"
++		}
++		if role.ConsecutiveFailures > 0 {
++			item += fmt.Sprintf(" [failure %d/%d; %s]", role.ConsecutiveFailures, healthFailureLimit, strings.ToLower(strings.ReplaceAll(role.FailureEscalation, "_", " ")))
++		}
++		items = append(items, item)
++	}
++	items = append(items, fmt.Sprintf("%d checks alive", alive))
++	return v.linePrefix() + v.Aggregate + " — " + strings.Join(items, "; ")
++}
++
++func (v HealthVerdict) linePrefix() string {
+ 	prefix := "HEALTH "
+ 	if v.Stopped {
+ 		record := stopfence.Record{State: stopfence.StateClosed, Phase: v.StopPhase}
+@@ -208,20 +241,27 @@ func (v HealthVerdict) Line() string {
+ 			prefix = "HEALTH STOP STATE INVALID "
+ 		}
+ 	}
+-	return prefix + v.Aggregate + " — " + strings.Join(items, "; ")
++	return prefix
+ }
+ 
+ // ObserveHealth evaluates every role and durably advances exactly one
+ // observation. The state and its rendered verdict share one atomic record so
+ // a restart cannot observe a counter without the verdict that advanced it.
+ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (HealthVerdict, error) {
++	return ObserveHealthAt(repoRoot, repoRoot, now, prober)
++}
++
++// ObserveHealthAt evaluates repository health using the installation-owned
++// state when it is distinct from the repository scope.
++func ObserveHealthAt(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober) (HealthVerdict, error) {
+ 	if prober == nil {
+ 		prober = identity.KernelProber{}
+ 	}
+-	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
++	healthRoot := healthStateRoot(repoRoot, metasystemRoot)
++	if err := os.MkdirAll(filepath.Dir(healthLockPath(healthRoot)), 0o755); err != nil {
+ 		return HealthVerdict{}, err
+ 	}
+-	lockFile, err := os.OpenFile(healthLockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
++	lockFile, err := os.OpenFile(healthLockPath(healthRoot), os.O_CREATE|os.O_RDWR, 0o644)
+ 	if err != nil {
+ 		return HealthVerdict{}, err
+ 	}
+@@ -231,19 +271,19 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
+ 	}
+ 	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
+ 
+-	previous, err := loadHealthRecord(HealthRecordPath(repoRoot))
++	previous, err := loadHealthRecord(HealthRecordPath(healthRoot))
+ 	stateUnreadable := err != nil && !os.IsNotExist(err)
+ 	if stateUnreadable {
+ 		previous = healthRecord{}
+ 	}
+-	roles, spendObservation := evaluateHealthRoles(repoRoot, repoRoot, now.UTC(), prober, false)
+-	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, previous.State); err != nil {
++	roles, spendObservation := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, false)
++	if stopped, err := healthStopped(healthRoot, now.UTC(), roles, spendObservation, previous.State); err != nil {
+ 		return HealthVerdict{}, err
+ 	} else if stopped != nil {
+ 		return *stopped, nil
+ 	}
+ 	if stateUnreadable {
+-		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
++		remedy := fmt.Sprintf("metasystem health --repo %q", healthRoot)
+ 		for index := range roles {
+ 			if roles[index].Role != RoleSpendFence && roles[index].Status == HealthAlive {
+ 				durationMillis := roles[index].DurationMillis
+@@ -252,9 +292,9 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
+ 			}
+ 		}
+ 	}
+-	verdict := applyHealthObservation(repoRoot, previous.State, roles, now.UTC())
++	verdict := applyHealthObservation(healthRoot, previous.State, roles, now.UTC())
+ 	verdict.Spend = spendObservation
+-	if err := saveHealthRecord(repoRoot, HealthRecordPath(repoRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
++	if err := saveHealthRecord(healthRoot, HealthRecordPath(healthRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
+ 		return HealthVerdict{}, err
+ 	}
+ 	return verdict, nil
+@@ -267,14 +307,15 @@ func PreviewHealth(repoRoot string, now time.Time, prober identity.Prober) Healt
+ 	return PreviewHealthAt(repoRoot, repoRoot, now, prober)
+ }
+ 
+-// PreviewHealthAt reads durable health state from repoRoot and installed
+-// configuration and adapters from metasystemRoot.
++// PreviewHealthAt reads installed state, configuration, and adapters from
++// metasystemRoot while repoRoot retains the repository-scope input boundary.
+ func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober) HealthVerdict {
+ 	if prober == nil {
+ 		prober = identity.KernelProber{}
+ 	}
+ 	roles, spendObservation := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, true)
+-	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
++	healthRoot := healthStateRoot(repoRoot, metasystemRoot)
++	if stopped, err := healthStopped(healthRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
+ 		return *stopped
+ 	}
+ 	aggregate := "healthy"
+@@ -334,9 +375,10 @@ func healthStopped(repoRoot string, now time.Time, roles []RoleVerdict, spend Sp
+ }
+ 
+ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) ([]RoleVerdict, SpendObservation) {
+-	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
++	healthRoot := healthStateRoot(repoRoot, metasystemRoot)
++	state, stateErr := readHealthObject(filepath.Join(healthRoot, "artifacts", "agents", "supervision", "state.json"))
+ 	spendStarted := time.Now()
+-	spendRole, spendObservation := checkSpendFence(repoRoot, now)
++	spendRole, spendObservation := checkSpendFence(healthRoot, now)
+ 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
+ 	timed := func(check func() RoleVerdict) RoleVerdict {
+ 		started := time.Now()
+@@ -345,25 +387,32 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober
+ 		return role
+ 	}
+ 	return []RoleVerdict{
+-		timed(func() RoleVerdict { return checkStewardRunner(repoRoot, now, prober) }),
+-		timed(func() RoleVerdict { return checkSupervisionOwner(repoRoot, prober) }),
+-		timed(func() RoleVerdict { return checkRepoWatcher(repoRoot, now, state, stateErr, prober) }),
+-		timed(func() RoleVerdict { return checkCensusFreshness(repoRoot, now, state, stateErr) }),
+-		timed(func() RoleVerdict { return checkNarratorFreshness(repoRoot, now) }),
+-		timed(func() RoleVerdict { return checkRetroDebt(repoRoot) }),
+-		timed(func() RoleVerdict { return checkSessionMain(repoRoot, prober) }),
+-		timed(func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHookAttempt) }),
+-		timed(func() RoleVerdict { return checkStopHookDuration(repoRoot) }),
+-		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
+-		timed(func() RoleVerdict { return checkClaimedGoalBudgets(repoRoot, now) }),
+-		timed(func() RoleVerdict { return checkClaimedGoalDelivery(repoRoot, now) }),
++		timed(func() RoleVerdict { return checkStewardRunner(healthRoot, now, prober) }),
++		timed(func() RoleVerdict { return checkSupervisionOwner(healthRoot, prober) }),
++		timed(func() RoleVerdict { return checkRepoWatcher(healthRoot, now, state, stateErr, prober) }),
++		timed(func() RoleVerdict { return checkCensusFreshness(healthRoot, now, state, stateErr) }),
++		timed(func() RoleVerdict { return checkNarratorFreshness(healthRoot, now) }),
++		timed(func() RoleVerdict { return checkRetroDebt(healthRoot) }),
++		timed(func() RoleVerdict { return checkSessionMain(healthRoot, prober) }),
++		timed(func() RoleVerdict { return checkHookFreshnessAt(healthRoot, now, currentHookAttempt) }),
++		timed(func() RoleVerdict { return checkStopHookDuration(healthRoot) }),
++		timed(func() RoleVerdict { return checkLedgerAttention(healthRoot, now) }),
++		timed(func() RoleVerdict { return checkClaimedGoalBudgets(healthRoot, now) }),
++		timed(func() RoleVerdict { return checkClaimedGoalDelivery(healthRoot, now) }),
+ 		spendRole,
+-		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
+-		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),
+-		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
++		timed(func() RoleVerdict { return checkGovernedObligations(healthRoot) }),
++		timed(func() RoleVerdict { return checkNonterminalJobs(healthRoot, prober) }),
++		timed(func() RoleVerdict { return checkCapabilitySnapshots(healthRoot, metasystemRoot, now) }),
+ 	}, spendObservation
+ }
+ 
++func healthStateRoot(repoRoot, metasystemRoot string) string {
++	if metasystemRoot != "" {
++		return metasystemRoot
++	}
++	return repoRoot
++}
++
+ func elapsedRoleMillis(started time.Time) int64 {
+ 	elapsed := time.Since(started).Milliseconds()
+ 	if elapsed < 1 {
+diff --git a/internal/steward/health_test.go b/internal/steward/health_test.go
+index e7c6cb9b8..7973411be 100644
+--- a/internal/steward/health_test.go
++++ b/internal/steward/health_test.go
+@@ -798,6 +798,77 @@ func TestHookPreviewDoesNotAdvanceTheTickOwnedObservation(t *testing.T) {
+ 	}
+ }
+ 
++func TestPreviewHealthAtReadsRunnerFromDistinctInstallationRoot(t *testing.T) {
++	repoRoot := t.TempDir()
++	metasystemRoot := filepath.Join(repoRoot, "metasystem")
++	now := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
++	process := identity.Ref{Pid: 47001, StartedAtSec: 100, StartTicks: 901, BootID: "boot-template"}
++	if err := os.MkdirAll(metasystemRoot, 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(metasystemRoot, "metasystem.conf"), nil, 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(metasystemRoot)), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	installationIdentity, err := filepath.EvalSymlinks(metasystemRoot)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := MintIdentity(RepoIdentityPath(metasystemRoot), InstallIdentity{
++		RepoIdentity: installationIdentity, Generation: 3, InstallPath: "/fixture/metasystem", MintedAt: now.Format(time.RFC3339),
++	}); err != nil {
++		t.Fatal(err)
++	}
++	if err := writeJSONAtomic(runnerRecordPath(metasystemRoot), RunnerRecord{
++		Pid: process.Pid, PidStartedAt: process.StartedAtSec, StartTicks: process.StartTicks, BootID: process.BootID,
++	}); err != nil {
++		t.Fatal(err)
++	}
++	attempt, err := beginComponentAttempt(metasystemRoot, "steward-tick", 3, process, now.Add(-time.Minute))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err := completeComponentAttempt(metasystemRoot, "steward-tick", 3, attempt.AttemptSeq,
++		ComponentOK, "PASS_COMPLETE", "template fixture", nil, now.Add(-time.Second)); err != nil {
++		t.Fatal(err)
++	}
++	probe := healthProbe{process.Pid: {
++		exact: identity.Exact{Pid: process.Pid, StartedAt: time.Unix(process.StartedAtSec, 0), StartTicks: process.StartTicks, BootID: process.BootID},
++		state: identity.Alive,
++	}}
++	verdict := PreviewHealthAt(repoRoot, metasystemRoot, now, probe)
++	for _, role := range verdict.Roles {
++		if role.Role == RoleStewardRunner {
++			if role.Status != HealthAlive {
++				t.Fatalf("runner state under the installation root was not alive: %+v", role)
++			}
++			return
++		}
++	}
++	t.Fatal("hook preview omitted the steward runner role")
++}
++
++func TestHookPreviewLineShowsOnlyNonAliveChecksAndAliveCount(t *testing.T) {
++	verdict := HealthVerdict{Aggregate: "unhealthy", Roles: []RoleVerdict{
++		{Role: RoleStewardRunner, Status: HealthAlive, Reason: "runner is alive", Remedy: "do not print this remedy"},
++		{Role: RoleRepoWatcher, Status: HealthDead, Reason: "watcher is stopped", Remedy: "metasystem up --repo /installation"},
++	}}
++	line := verdict.HookPreviewLine()
++	if len([]rune(line)) >= 400 {
++		t.Fatalf("hook preview has %d runes, want fewer than 400: %q", len([]rune(line)), line)
++	}
++	for _, want := range []string{"HEALTH unhealthy", "repo-watcher=dead", "watcher is stopped", "metasystem up --repo /installation", "1 checks alive"} {
++		if !strings.Contains(line, want) {
++			t.Fatalf("hook preview omitted %q: %q", want, line)
++		}
++	}
++	if strings.Contains(line, "steward-runner") || strings.Contains(line, "do not print this remedy") {
++		t.Fatalf("hook preview expanded an alive check: %q", line)
++	}
++}
++
+ func TestHealthRoleDurationsArePublishedButNotRenderedOnTheHealthLine(t *testing.T) {
+ 	root := t.TempDir()
+ 	ledger := fixtureSpendLedger()
+diff --git a/scripts/agents/supervision-hook-fixtures.sh b/scripts/agents/supervision-hook-fixtures.sh
+index cb14a15e4..87fb6ec5a 100755
+--- a/scripts/agents/supervision-hook-fixtures.sh
++++ b/scripts/agents/supervision-hook-fixtures.sh
+@@ -1068,7 +1068,7 @@ fi
+ [[ -s "$tmp/nested-up.log" ]] \
+   || { echo "nested installation ancestor fixture did not reach arming" >&2; exit 1; }
+ 
+-template_outer=$tmp/template-root
++template_outer=$tmp/template-layout-health-evidence/installation-root-is-distinct-from-the-containing-repository/long-remedies-make-the-full-health-line-exceed-the-stop-message-bound/every-artifact-backed-role-reads-the-installed-state-tree/remedies-name-that-installed-state-tree/preview-keeps-only-checks-that-need-attention/full-evidence-keeps-every-check/template-root
+ template_root=$template_outer/metasystem
+ mkdir -p "$template_outer/development" "$template_root/bin" "$template_root/plans" \
+   "$template_root/scripts/agents/adapters" "$template_root/scripts/agents/roles" \
+@@ -1136,6 +1136,16 @@ template_lifecycle_json=$(printf \
+   "$template_session" "$template_main" "$template_pid" "$template_pid_started" "$template_identity_json" \
+   "$template_runtime" "$template_tag" "$template_command_hash" "$template_announced" "$template_pgid")
+ template_lifecycle=$(printf '%s' "$template_lifecycle_json" | "$template_root/bin/metasystem" util sha256)
++template_health_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
++mkdir -p "$template_root/artifacts/agents/steward/components"
++printf '{"pid":%s,"startTicks":%s,"bootId":"%s","pidStartedAt":%s,"startedAt":"%s","fenceGeneration":0}\n' \
++  "$template_pid" "${template_ticks:-0}" "$template_boot" "$template_pid_started" "$template_health_now" \
++  >"$template_root/artifacts/agents/steward/runner.json"
++printf '{"component":"steward-tick","generation":1,"pid":%s,"pidStartedAt":%s,"pidStartTicks":%s,"bootId":"%s","successPid":%s,"successPidStartedAt":%s,"successPidStartTicks":%s,"successBootId":"%s","successAttemptSeq":1,"attemptSeq":1,"lastAttempt":"%s","lastCompletion":"%s","lastSuccess":"%s","result":"OK","outcome":"PASS_COMPLETE","evidenceDigest":"0000000000000000000000000000000000000000000000000000000000000000"}\n' \
++  "$template_pid" "$template_pid_started" "${template_ticks:-0}" "$template_boot" \
++  "$template_pid" "$template_pid_started" "${template_ticks:-0}" "$template_boot" \
++  "$template_health_now" "$template_health_now" "$template_health_now" \
++  >"$template_root/artifacts/agents/steward/components/steward-tick.json"
+ printf \
+   '{"schemaVersion":3,"authorizationId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","sessionId":"%s","holderMainId":"%s","claimEpoch":%s,"by":"Wido","writtenAt":"2000-01-01T00:00:00Z","expiresAt":"2099-01-01T00:00:00Z","human":{"pid":%s,"pidStartedAt":%s%s},"humanAuthorityProof":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sessionLifecycle":"%s"}\n' \
+   "$template_session" "$template_main" "$template_epoch" "$template_pid" "$template_pid_started" "$template_human_json" "$template_lifecycle" \
+@@ -1188,6 +1198,43 @@ grep -Fq 'SESSION STOP authorized once by Wido' "$tmp/template-human.out" \
+ [[ ! -e "$template_outer/artifacts/agents/supervision/hooks.log" ]] \
+   || { echo "template hook trail split state into the containing Git root" >&2; exit 1; }
+ 
++mkdir -p "$template_root/artifacts/agents/jobs"
++printf '{"jobId":"template-running","role":"implementer","runtime":"claude","status":"running","pid":%s,"pidStartedAt":%s,"pidStartTicks":%s,"bootId":"%s","mainId":"%s"}\n' \
++  "$template_pid" "$template_pid_started" "${template_ticks:-0}" "$template_boot" "$template_main" \
++  >"$template_root/artifacts/agents/jobs/template-running.json"
++template_running_rc=0
++METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
++  METASYSTEM_TEMPLATE_REPORT_LOG="$tmp/template-report.log" \
++  METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
++  bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
++    >"$tmp/template-running.out" 2>"$tmp/template-running.err" || template_running_rc=$?
++(( template_running_rc == 0 )) \
++  || { echo "template running-work Stop returned $template_running_rc" >&2; cat "$tmp/template-running.err" >&2; exit 1; }
++template_running_message=$("$ms" json get --file "$tmp/template-running.out" --field systemMessage)
++template_running_runes=$(printf '%s' "$template_running_message" | wc -m | tr -d ' ')
++(( template_running_runes <= 4000 )) \
++  || { echo "template allow message has $template_running_runes characters, above the 4000-rune bound" >&2; exit 1; }
++grep -Fq 'STILL WORKING:' <<<"$template_running_message" \
++  && grep -Fq 'HEALTH ' <<<"$template_running_message" \
++  || { echo "template running-work Stop omitted its allow verdict or health aggregate" >&2; cat "$tmp/template-running.out" >&2; exit 1; }
++if grep -Fq 'steward-runner=dead' <<<"$template_running_message"; then
++  echo "template health preview read the runner from the containing repository" >&2
++  cat "$tmp/template-running.out" >&2
++  exit 1
++fi
++template_health_file="$template_root/artifacts/agents/supervision/stop-verdicts/$template_session-health.txt"
++[[ -f "$template_health_file" ]] \
++  && grep -Fq 'steward-runner=alive' "$template_health_file" \
++  || { echo "template full health evidence did not report the installation runner alive" >&2; exit 1; }
++template_full_health_runes=$(wc -m <"$template_health_file" | tr -d ' ')
++(( template_full_health_runes > 4000 )) \
++  || { echo "template full health evidence has only $template_full_health_runes characters" >&2; exit 1; }
++if grep -Fq 'runner pid' <<<"$template_running_message"; then
++  echo "template hook preview expanded the alive runner instead of aggregating it" >&2
++  exit 1
++fi
++rm -f "$template_root/artifacts/agents/jobs/template-running.json"
++
+ template_agent_rc=0
+ METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+   METASYSTEM_TEMPLATE_REPORT_LOG="$tmp/template-report.log" \
+diff --git a/scripts/agents/supervision-hook.sh b/scripts/agents/supervision-hook.sh
+index cb62a963c..771be202b 100755
+--- a/scripts/agents/supervision-hook.sh
++++ b/scripts/agents/supervision-hook.sh
+@@ -604,12 +604,13 @@ emit_start_payload() {
+ }
+ 
+ surface_json() { # message
+-  local rendered parsed
++  local bounded rendered parsed
+   if [[ "$event" == start ]]; then
+     collect_start_notice "$1"
+     return 0
+   fi
+-  rendered=$("$ms" json object "systemMessage=$1")
++  bounded=$("$ms" report bound-message --text "$1")
++  rendered=$("$ms" json object "systemMessage=$bounded")
+   parsed=$("$ms" json get --value "$rendered" --field systemMessage)
+   [[ -n "$rendered" && -n "$parsed" ]] || return 1
+   printf '%s\n' "$rendered"
+@@ -830,7 +831,8 @@ if [[ "$event" == stop ]]; then
+     record_stop_failure "supervision arming failed"
+   fi
+   health_rc=0
+-  health_line=$("$ms" health --hook-preview --repo "$repo" --metasystem-root "$harness_root" 2>/dev/null) || health_rc=$?
++  health_line=$("$ms" health --hook-preview --repo "$repo" --metasystem-root "$harness_root" \
++    --session "$session" 2>/dev/null) || health_rc=$?
+   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
+     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
+     record_stop_failure "the health engine returned no verdict"
