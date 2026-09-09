@@ -845,7 +845,6 @@ lines; each advance test creates one private worktree):
   `METASYSTEM_LEASE_LOCK_WAIT_SEC=0`, and `Advance` refuses
   `advance-checkout-locked` with a message containing `held by test-holder
   pid=`; HEAD is unchanged. In `internal/lease`,
-  `TestLockRefusalNamesHolder`: one `acquireBounded` holds, a second with
   the zero wait refuses naming the first's note; after release the file is
   empty.
 - **Pins.** `TestAppendOnlyRegistersPins`, the two pins of Decision 1.
