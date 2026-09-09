@@ -1,0 +1,16 @@
+# diagnostics-never-swallowed
+
+- State: queued
+- Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Severity 2: a swallowed diagnostic turns a one-line fix into an hour of guessing, but admits nothing. Novelty 1: a shared helper and a sweep over existing scripts. Exposure 2: every fixture and gate on every host. Accumulation 1: one helper, many call sites, no cross-owner change."
+- Tier: 2
+- Intent: Every refusal on a proof, validation or fixture path prints its cause where the failing caller's output lands: no gate redirects a diagnostic to a file it then discards, and no fixture reports only a tail. DONE means one shared helper prints the failing block, every failure branch that redirects to a file uses it, and a sweep over metasystem/scripts finds no bare tail as the only failure output.
+- Origin: main
+- Next step: Specimens from goal coordinator-loop-prevention, each of which cost a 30 to 90 minute proof to see: (1) metasystem/scripts/validate-metasystem.sh go_engine_gate_section redirected the test verify output to its stage workspace and fell back silently; the real cause was a shell declare on an unassigned variable, found only by rerunning with the log printed (E/diagnosis.md finding 1; E is /Users/wido/metasystem-evidence/agentic-tools/coordinator-loop-prevention/fable-second-opinion-20260909T1440Z). (2) metasystem/scripts/adopt-fixture-helpers.sh assert_filled_target_delivery printed tail -20 of a 200-line validation, and forty gated sections pushed the SECTION RED block out of view; it now also greps the RED block, which is a patch, not a rule. (3) The adoption fixture's temporary targets were removed before their group logs were read; Codex added native failure log retention and detached suite-failure preservation, and proof-mtubh3qb-d45d7adb2847d779 still reported adoption as invalid on preserve detached suite-failure evidence. (4) Per-leg outputs such as the dangling.out written at metasystem/scripts/adopt-fixtures.sh line 806 are not in the preserved bed (the 20260909T195127Z-adopt-48435 bed holds adopt-both.out and five others but no dangling.out), so the nested validator's own suite log was the only trace of the last adoption failure. Mechanism: one shared helper in the existing fixture helper file that, on a failed redirected command, prints the captured file's SECTION RED block and its last lines to the caller's stderr, used by every failure branch of the form redirect-to-file-then-fail; the evidence collector copies every .out and .log under the fixture's tmp. Acceptance: a grep of metasystem/scripts for tail followed by a number on a tmp file in a failure branch finds only calls through the helper; the adoption dangling case's nested output appears in the preserved bed; the sweep changes no assertion. Tier 2, small appetite, no design round, land through a chain with a critic. Do not start while coordinator-loop-prevention is in flight.
+- OpenedAt: 2026-09-09T20:16:00Z
+- Revision: 1
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-09T20:16:00Z 1AN53EN5JNB0WFR3VXDB3P4KBD-m1c-8d678ae8 open actor=m1c+main-1788963308-60248-b019cb targets=diagnostics-never-swallowed
+Integrity: sha256=a230555f0f9b0cf3746893d01eef5e7105bcbebb327a1dafdb71929e2b291121
