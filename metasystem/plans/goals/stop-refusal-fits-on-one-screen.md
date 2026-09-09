@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: the renderer of the Stop refusal and systemMessage (the turn-verdict text builder the hook prints, in Go under internal/supervise or the hook's emit path), a class-and-count summariser for repeated lines, the full-text file beside the stop refusal records, a fixture that feeds two hundred stale run lines and asserts the bounded shape with the actionable line first; the stale-run listing itself (whether those runs are open work at all) stays with open-work-scanner-blindspots. Any free seat.; ASKED XN0DP5ADB4NQRN6XWG58K415C1 (reserved-decision): m1's one claim slot is held by actionable-metrics, claimed 2026-09-07 by a dead session (main-1788594343-3833-fb64b9); that goal's own next step says the claim was released, but the release never reached the ledger
 - OpenedAt: 2026-09-06T14:30:14Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T14:32:44Z revision=2 opid=C6Y1SKS3RC6T936TYZDM0W0EVS-m1-7cd0bd60 authority=proven digest=f34eb5076eb486ff58b6e2af66442a9d66304b18d5c89874afcd4ac88edb1846
+- Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-09T09:11:17Z
 - Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-09T09:10:52Z revision=5 accountingRevision=5
 - StopCapability: generation=5 revision=5 machine=m1 claimEpoch=6 fenceEpoch=0
 
@@ -22,4 +23,5 @@ History:
 - 2026-09-08T16:00:17Z EJH57HEC22FMP1F7MC7XXVRZR7-m1-7cd0bd60 set-priority actor=human:Wido targets=stop-refusal-fits-on-one-screen reason=priority-order subject=stop-refusal-fits-on-one-screen from=unranked to=3:20 requested-sequence=20
 - 2026-09-09T08:53:37Z FHWWRMV97KENPG9GJP2HJ2M9QZ-m1-1701c13c ask actor=m1+main-1788940932-18533-7fa6c2 targets=stop-refusal-fits-on-one-screen
 - 2026-09-09T09:10:52Z C98C5DA0N3WNC9QCNBVZYWPF3N-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=stop-refusal-fits-on-one-screen
-Integrity: sha256=6d76de31cb48002914ab73d8f64c60b921f23653103eb460f5543bace912b0a5
+- 2026-09-09T09:11:17Z SHWPSN60HKQJ7PXA5YX5RE5F4X-m1-1701c13c slice-start actor=m1+main-1788940932-18533-7fa6c2 targets=stop-refusal-fits-on-one-screen
+Integrity: sha256=fde1c6d3ecc5bd7af5ea14c55f60df8ebafb7e6f04210536a8db04e576e93ad5
