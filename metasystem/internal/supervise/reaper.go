@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 //   - budget-cap: a dead custodian whose RUNNING record is past its budget
 //     reads timeout — the budget verdict still outranks process-lost so this
 //     reaper and the dispatch-side ladder agree on one expired record.
+//   - recollected: a dead custodian with a complete delivered return completes.
 //   - process-lost: a dead custodian otherwise fails with process-lost.
 //   - abandoned-setup: a pending-setup husk old enough that its creating
 //     dispatcher is certainly gone; no process ever existed, so no death is
@@ -51,6 +53,9 @@ type ReaperConfig struct {
 	// survivors is a live group). nil binds identity.TaggedSurvivors;
 	// tests bind a fake. certain=false defers like Unknown does.
 	Survivors func(tag string, exclude, pgid int64) (alive bool, certain bool)
+	// ReturnComplete binds the same role validator as dispatch recollection.
+	// A nil owner preserves process-lost handling without recollection.
+	ReturnComplete func(role, file string) bool
 	// Apply lands one terminal verdict through the locked job-record
 	// compare-and-swap owner: the transition happens only if the record still
 	// carries the expected status, so a completion landing after this
@@ -204,9 +209,71 @@ func (cfg ReaperConfig) reapOne(path string) error {
 		resolution, _ := record["capResolution"].(map[string]any)
 		return mission.RefuseBudgetCap(cfg.Repo, missionID, jobIDFor(record, path), resolution, cfg.Emit)
 	}
+	if status == "running" {
+		role, _ := record["role"].(string)
+		recollected, err := cfg.recollectedReturn(path, role, now)
+		if err != nil {
+			return err
+		}
+		if recollected != nil {
+			for key, value := range recollected {
+				patch[key] = value
+			}
+			_, err := cfg.transition(path, record, status, "completed", "recollected", patch)
+			return err
+		}
+	}
 	patch["error"] = "process-lost"
 	_, err = cfg.transition(path, record, status, "failed", "process-lost", patch)
 	return err
+}
+
+// A delivered return survives the loss of its supervisor. Adjudicate it before
+// the standing reaper can publish a failure that the dispatch reaper cannot
+// subsequently recollect. Cancellation and expired budgets have already won.
+func (cfg ReaperConfig) recollectedReturn(recordPath, role string, now time.Time) (map[string]any, error) {
+	if cfg.ReturnComplete == nil {
+		return nil, nil
+	}
+	job := strings.TrimSuffix(filepath.Base(recordPath), ".json")
+	rounds := filepath.Join(filepath.Dir(cfg.JobsDir), job, "rounds")
+	entries, err := os.ReadDir(rounds)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	latest, roundDir := int64(0), ""
+	for _, entry := range entries {
+		round, err := strconv.ParseInt(entry.Name(), 10, 64)
+		if err == nil && entry.IsDir() && round > latest {
+			latest, roundDir = round, filepath.Join(rounds, entry.Name())
+		}
+	}
+	if roundDir == "" {
+		return nil, nil
+	}
+	returnPath := filepath.Join(roundDir, "return.json")
+	info, err := os.Stat(returnPath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || !cfg.ReturnComplete(role, returnPath) {
+		return nil, nil
+	}
+	patch := map[string]any{"error": nil, "usage": nil,
+		"recollectedAt": now.UTC().Format(isoSecond), "recollectedFrom": "process-lost"}
+	usagePath := filepath.Join(roundDir, "usage.json")
+	if info, err := os.Stat(usagePath); err == nil && info.Mode().IsRegular() {
+		data, err := os.ReadFile(usagePath)
+		if err != nil {
+			return nil, err
+		}
+		var usage any
+		if err := json.Unmarshal(data, &usage); err != nil {
+			return nil, fmt.Errorf("read recollected usage for %s: %w", job, err)
+		}
+		patch["usage"] = usage
+	}
+	return patch, nil
 }
 
 // transition lands the verdict through the injected compare-and-swap owner.

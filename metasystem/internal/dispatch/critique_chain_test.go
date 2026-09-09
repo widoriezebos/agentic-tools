@@ -116,6 +116,15 @@ func TestBoundaryAtThreeRounds(t *testing.T) {
 	if state.boundary != boundedTerminalExhaustion || state.round != 3 {
 		t.Fatalf("round-three state = %+v", state)
 	}
+	message := filepath.Join(t.TempDir(), "message.md")
+	if err := os.WriteFile(message, []byte("Address B-1.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = CritiqueExhaustionAdvance(repo, "critic", "design-critic", message, "critic-r4")
+	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with bounded findings; close the critique register to defer them at round 3 with open finding identifiers: B-1"
+	if err == nil || err.Error() != want {
+		t.Fatalf("bounded terminal boundary = %v, want %q", err, want)
+	}
 }
 
 func TestCompletedAndFailedRoundsCountButCancelledDoesNot(t *testing.T) {

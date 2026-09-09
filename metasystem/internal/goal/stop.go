@@ -44,6 +44,9 @@ type StopBatch struct {
 	Pending              []string            `json:"pendingJobs"`
 	Terminal             []string            `json:"terminalJobs"`
 	Foreign              []string            `json:"foreignJobs,omitempty"`
+	PendingProofs        []string            `json:"pendingProofAttempts"`
+	TerminalProofs       []string            `json:"terminalProofAttempts"`
+	ObservedProofs       []StopProof         `json:"observedProofAttempts"`
 	Observed             []StopJob           `json:"observedJobs"`
 	CancelOutcomes       []StopOutcome       `json:"cancelOutcomes"`
 	FiringEvidence       *StopFiringEvidence `json:"firingEvidence,omitempty"`
@@ -77,6 +80,25 @@ type StopOutcome struct {
 	OperationID string `json:"operationId"`
 	Outcome     string `json:"outcome"`
 	ObservedAt  string `json:"observedAt"`
+}
+
+// StopProof is one exact retained proof attempt joined to the stopped goal
+// revision. Its terminal state, rather than an empty job list, closes the
+// proof side of the batch.
+type StopProof struct {
+	AttemptID            string   `json:"attemptId"`
+	GoalID               string   `json:"goalId"`
+	GoalRevision         uint64   `json:"goalRevision"`
+	AccountingRevision   uint64   `json:"accountingRevision"`
+	Machine              string   `json:"machineId"`
+	ClaimEpoch           int64    `json:"claimEpoch"`
+	StopID               string   `json:"stopId"`
+	FenceEpoch           uint64   `json:"fenceEpoch"`
+	CapabilityGeneration uint64   `json:"capabilityGeneration"`
+	ProcessKeys          []string `json:"processKeys"`
+	Terminal             string   `json:"terminal,omitempty"`
+	Cancellation         string   `json:"cancellationIntent,omitempty"`
+	ObservedAt           string   `json:"observedAt"`
 }
 
 func stopBatchPath(root, stopID string) (string, error) {
@@ -114,7 +136,7 @@ func validateStopBatch(batch StopBatch) error {
 		return fmt.Errorf("stop batch has invalid timestamps")
 	}
 	if batch.State == StopBatchComplete {
-		if !validStamp(batch.CompletedAt) || len(batch.Pending) != 0 || batch.Failure != "" {
+		if !validStamp(batch.CompletedAt) || len(batch.Pending) != 0 || len(batch.PendingProofs) != 0 || batch.Failure != "" {
 			return fmt.Errorf("complete stop batch contradicts its completion evidence")
 		}
 	} else if batch.CompletedAt != "" {
@@ -137,6 +159,21 @@ func validateStopBatch(batch StopBatch) error {
 	for _, outcome := range batch.CancelOutcomes {
 		if !safeStopID(outcome.JobID) || !safeStopID(outcome.OperationID) || outcome.Outcome == "" || !validStamp(outcome.ObservedAt) {
 			return fmt.Errorf("stop batch has an incomplete cancellation outcome")
+		}
+	}
+	for _, proof := range batch.ObservedProofs {
+		if !safeStopID(proof.AttemptID) || !validId(proof.GoalID) || proof.GoalID != batch.GoalID ||
+			proof.GoalRevision == 0 || proof.GoalRevision > batch.GoalRevision || proof.AccountingRevision == 0 ||
+			proof.AccountingRevision > proof.GoalRevision || proof.Machine != batch.Machine ||
+			proof.ClaimEpoch != batch.ClaimEpoch || proof.StopID != batch.StopID ||
+			proof.FenceEpoch != batch.FenceEpoch || proof.CapabilityGeneration != batch.CapabilityGeneration ||
+			!validStamp(proof.ObservedAt) {
+			return fmt.Errorf("stop batch has an incomplete observed proof attempt")
+		}
+		for _, key := range proof.ProcessKeys {
+			if key == "" {
+				return fmt.Errorf("stop batch has an empty proof process key")
+			}
 		}
 	}
 	return nil
@@ -169,6 +206,15 @@ func normalizeStopBatch(batch *StopBatch) {
 	}
 	if batch.Terminal == nil {
 		batch.Terminal = []string{}
+	}
+	if batch.PendingProofs == nil {
+		batch.PendingProofs = []string{}
+	}
+	if batch.TerminalProofs == nil {
+		batch.TerminalProofs = []string{}
+	}
+	if batch.ObservedProofs == nil {
+		batch.ObservedProofs = []StopProof{}
 	}
 	if batch.Observed == nil {
 		batch.Observed = []StopJob{}

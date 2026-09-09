@@ -147,7 +147,7 @@ func shippedInventoryPath(slashed string) bool {
 	}
 	switch slashed {
 	case "go.mod", "go.sum", "wow.md", "AGENTS.md", "CLAUDE.md",
-		"metasystem.conf", "docs/orchestration.md", "docs/collaboration.md",
+		"metasystem.conf", "testing.json", "docs/orchestration.md", "docs/collaboration.md",
 		"docs/project-rules.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
 		"docs/working-modes.md", "docs/working-with-agents.md":
 		return true

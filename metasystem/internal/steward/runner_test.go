@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -141,12 +140,9 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 }
 
 func TestArmRefusesWithoutANotifier(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		// darwin always has the platform notifier; the refusal is
-		// the no-default platforms' behavior, proven on the Debian
-		// guest in the battery.
-		t.Skip("darwin's platform notifier makes an unconfigured channel reachable")
-	}
+	originalOS := notifyPlatformOS
+	notifyPlatformOS = "linux"
+	t.Cleanup(func() { notifyPlatformOS = originalOS })
 	root := gitRepoWithCurrentGoal(t) // no notify-command configured
 	if _, err := Arm(root, "/usr/bin/true"); err == nil {
 		t.Fatal("an unreachable watchdog guards nothing; arm must refuse")

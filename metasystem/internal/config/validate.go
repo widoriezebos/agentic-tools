@@ -11,6 +11,7 @@ import (
 	"time"
 
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // Validation of the whole metasystem.conf domain: the runtime roster, capability
@@ -122,6 +123,27 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	// The runtime roster gates almost everything else.
 	if _, ok := values["metasystem.runtimes"]; !ok {
 		add("metasystem.runtimes is required")
+	}
+	contractRel, hasTestingContract := values["testing.contract"]
+	if !hasTestingContract {
+		add("testing.contract is required")
+	} else if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
+		add("testing.contract must be a relative normalized path")
+	} else {
+		contractPath := filepath.Join(filepath.Dir(confPath), filepath.FromSlash(contractRel))
+		if _, loadErr := testpolicy.Load(contractPath); loadErr != nil {
+			add("testing.contract is invalid: %v", loadErr)
+		}
+	}
+	if isFile(localPath) {
+		if _, present, lookupErr := ConfLookup(localPath, "testing.contract"); lookupErr != nil {
+			add("%v", lookupErr)
+		} else if present {
+			add("testing.contract cannot be replaced by local configuration")
+		}
+	}
+	if _, present := os.LookupEnv(EnvName("testing.contract")); present {
+		add("testing.contract cannot be replaced by environment configuration")
 	}
 	var runtimes []string
 	runtimeSet := map[string]bool{}

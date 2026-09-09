@@ -157,6 +157,7 @@ echo "go supervision: cycle-trace observability PASSED" >&2
 #     complete teardown and an honest terminal — the OTHER half of the
 #     KI-32 fix (a self-heal that cannot bound itself is the incident).
 repo4="$tmp/breaker"; mkdir -p "$repo4"
+printf 'metasystem.runtimes=fake\n' >"$repo4/metasystem.conf"
 owner4=$(METASYSTEM_GO_COMPONENT_CRASH_ON_START=1 arm "$repo4" "$fixture_tag-breaker" "$registry" 1)
 # At interval 1s and N=5, giving-up lands within ~10s even with backoff
 # (backoff gates relaunches, never observations — SLC-R3-005).

@@ -1048,3 +1048,13 @@ func productRootsEmpty(value any) bool {
 		return value == nil
 	}
 }
+
+// TestingRequirement is the one runtime-neutral brief requirement for both
+// initial and follow-up implementers. Gate width remains an immutable risk
+// fact, but it no longer selects a literal repository-wide shell battery.
+func TestingRequirement(goalID, gateWidth string) (string, error) {
+	if goalID == "" || (gateWidth != "area" && gateWidth != "full") {
+		return "", fmt.Errorf("testing requirement needs an accepted goal and gate width")
+	}
+	return fmt.Sprintf("\n# Required testing contract\n\nUse the committed shared testing contract for goal %s (recorded gate width %s). Compute the actual whole-project candidate, run the risk-selected public `metasystem test` plan through its admitted proof owner, collect every independent result in each entered stage, and require `test verify` to report sufficient delivery evidence before returning. A failed canary blocks every later stage; do not substitute a fixed full battery or erase the recorded risk.\n", goalID, gateWidth), nil
+}

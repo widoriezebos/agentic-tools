@@ -367,9 +367,12 @@ if [[ "$fixture_scenario" == brain-stop-seeded ]]; then
     verdict=$("$ms" report turn-verdict --root "$clone" --session brain-stop --stop-hook-active=true)
     display=$("$ms" json get --value "$verdict" --field display)
     first=${display%%$'\n'*}
+    second=${display#*$'\n'}; second=${second%%$'\n'*}
+    third=${display#*$'\n'}; third=${third#*$'\n'}; third=${third%%$'\n'*}
     [[ "$first" == BRAIN\ SEAT:* && "$first" == *'2 approved goals'* && "$first" == *'1 asks await Wido (brain-ask)'* && \
-       "$first" == *'1 drafts await approval (brain-draft)'* ]] \
-      || { echo "brain summary did not lead with ask and draft on stop $stop: $display" >&2; exit 1; }
+       "$first" == *'1 drafts await approval (brain-draft)'* && "$second" == 'OPEN WORK (1)' && \
+       "$third" == 'OPEN-WORK plans/brain-open-plan.md: Finish the local note.' ]] \
+      || { echo "brain display lost its open work, action, ask, or draft on stop $stop: $display" >&2; exit 1; }
     [[ "$("$ms" json get --value "$verdict" --field idleRefusal)" == false ]] \
       || { echo "brain stop $stop entered idle refusal" >&2; exit 1; }
     block_source=$("$ms" json get --value "$verdict" --field blockSource --default '')
@@ -402,8 +405,11 @@ if [[ "$fixture_scenario" == brain-stop-corrupt ]]; then
   display=$("$ms" json get --value "$verdict" --field display)
   first=${display%%$'\n'*}
   second=${display#*$'\n'}; second=${second%%$'\n'*}
-  [[ "$first" == BRAIN\ SEAT:* && "$second" == "this checkout's brain declaration is unreadable"* ]] \
-    || { echo "corrupt brain did not lead with summary and remedy: $display" >&2; exit 1; }
+  third=${display#*$'\n'}; third=${third#*$'\n'}; third=${third%%$'\n'*}
+  fourth=${display#*$'\n'}; fourth=${fourth#*$'\n'}; fourth=${fourth#*$'\n'}; fourth=${fourth%%$'\n'*}
+  [[ "$first" == BRAIN\ SEAT:* && "$second" == "this checkout's brain declaration is unreadable"* && \
+     "$third" == 'OPEN WORK (1)' && "$fourth" == 'OPEN-WORK plans/brain-open-plan.md: Finish the local note.' ]] \
+    || { echo "corrupt brain lost its leading summary, remedy, or following action: $display" >&2; exit 1; }
   [[ "$("$ms" json get --value "$verdict" --field idleRefusal)" == false ]] \
     || { echo "corrupt brain entered idle refusal" >&2; exit 1; }
   echo "brain-stop-corrupt passed"

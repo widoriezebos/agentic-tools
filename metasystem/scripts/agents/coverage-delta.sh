@@ -112,7 +112,7 @@ elif [[ "$ratchet" != /* ]]; then
   ratchet="$invocation_dir/$ratchet"
 fi
 
-engine="$root/bin/metasystem"
+engine=${METASYSTEM_BIN:-$root/bin/metasystem}
 if [[ ! -x "$engine" ]]; then
   echo "coverage delta: engine is unavailable at $engine" >&2
   exit 1
@@ -162,6 +162,51 @@ done
 if [[ ${#normalized[@]} -eq 0 ]]; then
   echo "coverage delta: no Go packages selected"
   exit 0
+fi
+
+coverage_reuse_args=(proof-run coverage-reuse --root "$root" --baseline "$ratchet")
+for package in "${normalized[@]}"; do
+  coverage_reuse_args+=(--package "$package")
+done
+coverage_reuse_rc=0
+coverage_reuse_output=$(GOFLAGS=-mod=readonly "$engine" "${coverage_reuse_args[@]}" 2>&1) || coverage_reuse_rc=$?
+if [[ $coverage_reuse_rc -eq 0 ]]; then
+  printf '%s\n' "$coverage_reuse_output"
+  echo "coverage delta: reused authenticated full-gate measurements; no coverage test launched"
+  exit 0
+fi
+if [[ $coverage_reuse_rc -ne 3 ]]; then
+  printf '%s\n' "$coverage_reuse_output" >&2
+  echo "coverage delta: retained coverage authority was unreadable" >&2
+  exit 1
+fi
+
+# A cache miss is one admitted affected-package proof. A child already inside
+# that proof is authenticated by the Go owner and performs the existing test
+# loop; ambient context strings cannot select the worker path.
+coverage_proof_worker=0
+coverage_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$engine}
+if [[ -x "$coverage_auth_bin" ]] && "$coverage_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+  coverage_proof_worker=1
+fi
+if [[ $coverage_proof_worker -ne 1 ]]; then
+  coverage_proof_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  coverage_proof_progress="$root/artifacts/agents/supervision/coverage-delta-$coverage_proof_run.progress.jsonl"
+  coverage_proof_log="$root/artifacts/agents/supervision/suite-logs/coverage-delta-$coverage_proof_run.log"
+  coverage_proof_banner=$(
+    "$engine" proof-run banner --suite coverage-delta --root "$root" \
+      --progress "$coverage_proof_progress" --log "$coverage_proof_log"
+  ) || { echo "coverage delta: could not prepare admitted coverage fallback" >&2; exit 1; }
+  coverage_ratchet_digest=$("$engine" util sha256 --file "$ratchet") \
+    || { echo "coverage delta: could not bind the selected ratchet" >&2; exit 1; }
+  coverage_proof_args=(proof-run launch --suite coverage-delta --root "$root" --conf "$root/metasystem.conf" \
+    --progress "$coverage_proof_progress" --log "$coverage_proof_log" --banner "$coverage_proof_banner" \
+    --scope coverage --command-class coverage-delta --identity-input "coverage-ratchet=$coverage_ratchet_digest")
+  for package in "${normalized[@]}"; do
+    coverage_proof_args+=(--identity-input "coverage-package=$package")
+  done
+  exec "$engine" "${coverage_proof_args[@]}" -- \
+    bash "$root/scripts/agents/coverage-delta.sh" --ratchet "$ratchet" -- "${normalized[@]}"
 fi
 
 below=()

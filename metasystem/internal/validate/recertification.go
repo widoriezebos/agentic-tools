@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
@@ -65,6 +66,7 @@ type RecertificationRecord struct {
 	MergedPatchDigest       string                      `json:"mergedPatchDigest"`
 	GateWidth               string                      `json:"gateWidth"`
 	TestCommand             string                      `json:"testCommand"`
+	TestingReceiptSchema    int                         `json:"testingReceiptSchema,omitempty"`
 	InputDigest             string                      `json:"inputDigest"`
 	RecordDigest            string                      `json:"recordDigest"`
 }
@@ -216,7 +218,7 @@ func fileDigest(path string) ([]byte, string, error) {
 }
 
 func recertificationInput(record RecertificationRecord) map[string]any {
-	return map[string]any{
+	input := map[string]any{
 		"proofKind": record.ProofKind,
 		"rootChain": record.RootChain, "certifiedImplementerJob": record.CertifiedImplementerJob,
 		"reviewArtifact": record.ReviewArtifact, "reviewDigest": record.ReviewDigest,
@@ -227,6 +229,10 @@ func recertificationInput(record RecertificationRecord) map[string]any {
 		"reviewedTree": record.ReviewedTree, "targetCommit": record.TargetCommit, "targetTree": record.TargetTree,
 		"gateWidth": record.GateWidth, "testCommand": record.TestCommand,
 	}
+	if record.TestingReceiptSchema != 0 {
+		input["testingReceiptSchema"] = record.TestingReceiptSchema
+	}
+	return input
 }
 
 // RecertificationInputDigest recomputes the canonical immutable-input hash.
@@ -429,25 +435,35 @@ func (r *conformanceRun) selectOriginalCertification() (originalCertification, e
 		criticRoot: criticRoot, criticRound: round, criticPath: criticPath, criticBytes: criticBytes}, nil
 }
 
-func commandForWidth(rootRecord map[string]any, supplied string) (string, string, error) {
+func commandForWidth(root string, rootRecord map[string]any, supplied string) (string, string, int, error) {
 	width := "area"
 	if value, present := rootRecord["gateWidth"]; present && value != nil {
 		var ok bool
 		width, ok = value.(string)
 		if !ok || (width != "area" && width != "full") {
-			return "", "", fmt.Errorf("root chain gate width is malformed")
+			return "", "", 0, fmt.Errorf("root chain gate width is malformed")
 		}
+	}
+	contractPath, migrated, configErr := config.ConfLookup(filepath.Join(root, "metasystem.conf"), "testing.contract")
+	if configErr != nil {
+		return "", "", 0, configErr
+	}
+	if migrated && strings.TrimSpace(contractPath) != "" {
+		if strings.TrimSpace(supplied) != "" {
+			return "", "", 0, fmt.Errorf("migrated recertification consumes schema-2 testing evidence instead of --test-command")
+		}
+		return width, "", 2, nil
 	}
 	if width == "area" {
 		if strings.TrimSpace(supplied) == "" {
-			return "", "", fmt.Errorf("area-width recertification requires an explicit non-whitespace --test-command")
+			return "", "", 0, fmt.Errorf("area-width recertification requires an explicit non-whitespace --test-command")
 		}
-		return width, supplied, nil
+		return width, supplied, 1, nil
 	}
 	if supplied != "" && supplied != FullBatteryCommand {
-		return "", "", fmt.Errorf("full-width --test-command must byte-equal the full battery command")
+		return "", "", 0, fmt.Errorf("full-width --test-command must byte-equal the full battery command")
 	}
-	return width, FullBatteryCommand, nil
+	return width, FullBatteryCommand, 1, nil
 }
 
 func filterRecertificationRefs(refs map[string]string, inputDigest string) map[string]string {
@@ -666,7 +682,7 @@ func (r *conformanceRun) recertify(testCommand string) ([]string, []string, int)
 	if err != nil {
 		return fail("chain-recertification-source-changed", "root-record", err)
 	}
-	width, command, err := commandForWidth(rootRecord, testCommand)
+	width, command, receiptSchema, err := commandForWidth(r.root, rootRecord, testCommand)
 	if err != nil {
 		return fail("chain-recertification-test-command-refused", "selection", err)
 	}
@@ -819,7 +835,7 @@ func (r *conformanceRun) recertify(testCommand string) ([]string, []string, int)
 		TargetCommit: t, TargetTree: treeT, MergedTree: m,
 		SourceWholeTree: originalWhole, MergedWholeTree: mergedWhole,
 		CertifiedPaths: append([]string(nil), certifiedPaths...),
-		GateWidth:      width, TestCommand: command,
+		GateWidth:      width, TestCommand: command, TestingReceiptSchema: receiptSchema,
 		MergedPatchDigest: sha256Bytes(q),
 	}
 	record.InputDigest, err = RecertificationInputDigest(record)
@@ -946,8 +962,13 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if record.GateWidth != "area" && record.GateWidth != "full" {
 		return fail("gate-width", fmt.Errorf("recorded gate width is invalid"))
 	}
-	if strings.TrimSpace(record.TestCommand) == "" || (record.GateWidth == "full" && record.TestCommand != FullBatteryCommand) {
-		return fail("test-command", fmt.Errorf("recorded test command does not satisfy its gate width"))
+	if record.TestingReceiptSchema == 2 {
+		if record.TestCommand != "" {
+			return fail("test-command", fmt.Errorf("schema-2 recertification retains no legacy command"))
+		}
+	} else if (record.TestingReceiptSchema != 0 && record.TestingReceiptSchema != 1) || strings.TrimSpace(record.TestCommand) == "" ||
+		(record.GateWidth == "full" && record.TestCommand != FullBatteryCommand) {
+		return fail("test-command", fmt.Errorf("recorded legacy test command does not satisfy its gate width"))
 	}
 	if !sort.StringsAreSorted(record.CertifiedPaths) || len(record.CertifiedPaths) == 0 {
 		return fail("certified-paths", fmt.Errorf("certified paths are empty or unsorted"))

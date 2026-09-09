@@ -291,9 +291,11 @@ type suiteStopGroups struct {
 }
 
 type proofRunItem struct {
-	record    proofrun.Record
-	component string
-	identity  proofrun.ProcessIdentity
+	record      proofrun.Record
+	component   string
+	identity    proofrun.ProcessIdentity
+	attemptID   string
+	attemptOnly bool
 }
 
 func newProofRunFamily(root string, scaleMilli int, suiteStops *suiteStopGroups) *proofRunFamily {
@@ -308,6 +310,7 @@ func (f *proofRunFamily) Inventory() ([]Item, error) {
 		return nil, err
 	}
 	var result []Item
+	represented := map[string]bool{}
 	for _, record := range records {
 		if record.Status != proofrun.StatusRunning {
 			continue
@@ -317,11 +320,14 @@ func (f *proofRunFamily) Inventory() ([]Item, error) {
 			process   proofrun.ProcessIdentity
 		}{{"suite", record.SuiteProcess}, {"watchdog", record.Watchdog}, {"launcher", record.Launcher}}
 		for _, process := range processes {
-			if identity.AliveRef(identity.KernelProber{}, process.process.Ref()) != identity.Alive {
+			if identity.AliveRef(identity.KernelProber{}, process.process.Ref()) == identity.Dead {
 				continue
 			}
-			key := fmt.Sprintf("proof-run:%s:%s", record.Suite, process.component)
-			f.items[key] = proofRunItem{record: record, component: process.component, identity: process.process}
+			if record.AttemptID != "" {
+				represented[record.AttemptID] = true
+			}
+			key := fmt.Sprintf("proof-run:%s:%s", record.Key(), process.component)
+			f.items[key] = proofRunItem{record: record, component: process.component, identity: process.process, attemptID: record.AttemptID}
 			generation := record.FenceGeneration
 			line := fmt.Sprintf("proof-run %s %s pid %d", record.Suite, process.component, process.process.Pid)
 			if process.component == "suite" && process.process.Pgid > 0 {
@@ -329,8 +335,26 @@ func (f *proofRunFamily) Inventory() ([]Item, error) {
 			}
 			line += ": running"
 			result = append(result, Item{Key: key, StatusLine: line, FenceGeneration: &generation,
-				Survivor: stopfence.Survivor{Component: "proof-run-" + process.component, ID: record.Suite, Pid: process.process.Pid, PidStartedAt: process.process.PidStartedAt}})
+				Survivor: stopfence.Survivor{Component: "proof-run-" + process.component, ID: record.Key(), Pid: process.process.Pid, PidStartedAt: process.process.PidStartedAt}})
 		}
+	}
+	attempts, err := proofrun.ReadAttempts(f.root)
+	if err != nil {
+		return nil, err
+	}
+	for _, attempt := range attempts {
+		if attempt.Terminal != nil || represented[attempt.AttemptID] {
+			continue
+		}
+		key := "proof-run:attempt:" + attempt.AttemptID + ":launcher"
+		f.items[key] = proofRunItem{component: "launcher", identity: attempt.Launcher,
+			attemptID: attempt.AttemptID, attemptOnly: true}
+		generation := int64(0)
+		result = append(result, Item{Key: key,
+			StatusLine:      fmt.Sprintf("proof attempt %s launcher pid %d: reserved before process publication", attempt.AttemptID, attempt.Launcher.Pid),
+			FenceGeneration: &generation,
+			Survivor: stopfence.Survivor{Component: "proof-run-launcher", ID: attempt.AttemptID,
+				Pid: attempt.Launcher.Pid, PidStartedAt: attempt.Launcher.PidStartedAt}})
 	}
 	return result, nil
 }
@@ -340,7 +364,10 @@ func (f *proofRunFamily) Stop(item Item) (Outcome, error) {
 	if !ok {
 		return Outcome{}, fmt.Errorf("proof-run item %s disappeared from the typed inventory", item.Key)
 	}
-	cacheKey := current.record.Suite + ":" + current.component
+	cacheKey := current.record.Key() + ":" + current.component
+	if current.attemptOnly {
+		cacheKey = current.attemptID + ":attempt-launcher"
+	}
 	outcome, ok := f.outcomes[cacheKey]
 	if !ok {
 		waitScale := f.scaleMilli
@@ -349,15 +376,28 @@ func (f *proofRunFamily) Stop(item Item) (Outcome, error) {
 		}
 		term := time.Duration((int64(5*time.Second)*int64(waitScale) + 999) / 1000)
 		kill := time.Duration((int64(time.Second)*int64(waitScale) + 999) / 1000)
-		for _, stopped := range proofrun.Stop(current.record, proofrun.StopOptions{TermGrace: term, KillGrace: kill}) {
-			f.outcomes[current.record.Suite+":"+stopped.Component] = stopped
-			if stopped.Component == "suite" && stopped.Result == proofrun.StopStopped && f.suiteStops != nil && current.record.Launcher.Pgid > 1 {
-				f.suiteStops.groups[current.record.Launcher.Pgid] = true
+		if current.attemptOnly {
+			outcome = proofrun.StopRecordedIdentity("launcher", current.identity, proofrun.StopOptions{TermGrace: term, KillGrace: kill})
+			f.outcomes[cacheKey] = outcome
+		} else {
+			for _, stopped := range proofrun.Stop(current.record, proofrun.StopOptions{TermGrace: term, KillGrace: kill}) {
+				f.outcomes[current.record.Key()+":"+stopped.Component] = stopped
+				if stopped.Component == "suite" && stopped.Result == proofrun.StopStopped && f.suiteStops != nil && current.record.Launcher.Pgid > 1 {
+					f.suiteStops.groups[current.record.Launcher.Pgid] = true
+				}
 			}
+			outcome = f.outcomes[cacheKey]
 		}
-		outcome = f.outcomes[cacheKey]
+	}
+	if outcome.Result != proofrun.StopNotStopped && current.attemptID != "" {
+		if err := f.joinStoppedAttempt(current.attemptID); err != nil {
+			return Outcome{}, err
+		}
 	}
 	line := fmt.Sprintf("proof-run %s %s pid %d", current.record.Suite, current.component, current.identity.Pid)
+	if current.attemptOnly {
+		line = fmt.Sprintf("proof attempt %s launcher pid %d", current.attemptID, current.identity.Pid)
+	}
 	if current.component == "suite" && current.identity.Pgid > 0 {
 		line += fmt.Sprintf(" pgid %d", current.identity.Pgid)
 	}
@@ -372,6 +412,33 @@ func (f *proofRunFamily) Stop(item Item) (Outcome, error) {
 		line += ": stopped (" + outcome.Reason + ")"
 	}
 	return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+}
+
+func (f *proofRunFamily) joinStoppedAttempt(attemptID string) error {
+	attempt, err := proofrun.ReadAttempt(f.root, attemptID)
+	if err != nil || attempt.Terminal != nil {
+		return err
+	}
+	if identity.AliveRef(identity.KernelProber{}, attempt.Launcher.Ref()) != identity.Dead {
+		return nil
+	}
+	for _, key := range attempt.ProcessKeys {
+		record, readErr := proofrun.ReadProcessRecord(f.root, key)
+		if readErr != nil {
+			return readErr
+		}
+		for _, process := range []proofrun.ProcessIdentity{record.Launcher, record.SuiteProcess, record.Watchdog} {
+			if identity.AliveRef(identity.KernelProber{}, process.Ref()) != identity.Dead {
+				return nil
+			}
+		}
+	}
+	if err := proofrun.RequestCancellation(f.root, attemptID, "checkout stop transition"); err != nil {
+		return err
+	}
+	_, err = proofrun.FinalizeAttempt(f.root, attemptID, proofrun.TerminalCancelled, 1,
+		"all retained proof identities joined by checkout stop", nil, time.Now().UTC())
+	return err
 }
 
 type runFamily struct {

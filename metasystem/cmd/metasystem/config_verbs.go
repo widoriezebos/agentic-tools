@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -33,6 +34,7 @@ func runConfigTailor(args []string) int {
 	flags := flag.NewFlagSet("config tailor", flag.ContinueOnError)
 	conf := flags.String("conf", "", "path to the metasystem.conf to rewrite")
 	runtimes := flags.String("runtimes", "", "comma-separated selected runtimes, or none")
+	testingContract := flags.String("testing-contract", "", "write an explicit incomplete first-adoption testing contract")
 	var sets repeatedFlag
 	flags.Var(&sets, "set", "key=value to set after tailoring (repeatable)")
 	if flags.Parse(args) != nil {
@@ -81,6 +83,17 @@ func runConfigTailor(args []string) int {
 	if len(settings) > 0 {
 		if err := validate.SetConfKeys(*conf, settings); err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	if *testingContract != "" {
+		data, err := testpolicy.IncompleteTemplate()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(*testingContract, data, 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "write incomplete testing contract: %v\n", err)
 			return 1
 		}
 	}

@@ -50,12 +50,13 @@ func Freeze(root string) (result FrozenExport, err error) {
 	if err != nil {
 		return FrozenExport{}, fmt.Errorf("re-read source after frozen export: %w", err)
 	}
-	if before.digest != exported.digest || before.digest != after.digest {
+	beforeDigest, exportedDigest, afterDigest := before.fullDigest(), exported.fullDigest(), after.fullDigest()
+	if beforeDigest != exportedDigest || beforeDigest != afterDigest {
 		return FrozenExport{}, fmt.Errorf("frozen export voided because the source changed while it was copied: before %s, export %s, after %s",
-			before.digest, exported.digest, after.digest)
+			beforeDigest, exportedDigest, afterDigest)
 	}
 	published = true
-	return FrozenExport{Digest: before.digest, Root: exportRoot}, nil
+	return FrozenExport{Digest: beforeDigest, Root: exportRoot}, nil
 }
 
 func exportEntries(sourceRoot, exportRoot string, entries []entry) error {

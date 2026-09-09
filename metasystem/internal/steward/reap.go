@@ -103,6 +103,9 @@ func reconcileContinuationCustody(repoRoot string, active []Intent) error {
 		Custodian: func(pid, start int64, tag string) identity.Liveness {
 			return identity.Custodian(pid, start, tag, authorization.Identity())
 		},
+		ReturnComplete: func(role, file string) bool {
+			return len(validate.ReturnCompleteRole(repoRoot, role, file)) == 0
+		},
 		Apply: func(job, expect, target string, patch map[string]any) (bool, error) {
 			return applyContinuationReap(repoRoot, job, expect, target, patch)
 		},

@@ -25,6 +25,8 @@ cd "$root"
 gate_fast=0
 gate_proof_out=
 gate_witness_check_only=0
+gate_goal=
+gate_cap_min=
 while (($#)); do
   case "$1" in
     --fast) gate_fast=1; shift ;;
@@ -32,6 +34,12 @@ while (($#)); do
       [[ $# -ge 2 && -n "$2" ]] || { echo "go gate: --proof-out needs a path" >&2; exit 2; }
       gate_proof_out=$2; shift 2 ;;
     --witness-check-only) gate_witness_check_only=1; shift ;;
+    --goal)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "go gate: --goal needs an accepted goal id" >&2; exit 2; }
+      gate_goal=$2; shift 2 ;;
+    --cap-min)
+      [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]*$ ]] || { echo "go gate: --cap-min needs positive minutes" >&2; exit 2; }
+      gate_cap_min=$2; shift 2 ;;
     *) echo "go gate: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -43,8 +51,48 @@ if [[ -n "$gate_proof_out" && "$gate_fast" != 1 ]]; then
   echo "go gate: --proof-out is a fast-mode flag (the landing boundary's side-effect-free build proof)" >&2
   exit 2
 fi
+if [[ "$gate_fast" == 1 && ( -n "$gate_goal" || -n "$gate_cap_min" ) ]]; then
+  echo "go gate: proof reservation flags apply only to the full gate" >&2
+  exit 2
+fi
 gate_witness_reuse_out=${METASYSTEM_GATE_WITNESS_REUSE_OUT:-}
 unset METASYSTEM_GATE_WITNESS_REUSE_OUT
+
+# The full proof admits the environment it actually executes. Pin readonly
+# module resolution before the outer proof reservation, not only inside a
+# later frozen-snapshot branch, so coverage producers and retained consumers
+# identify one real Go environment.
+if [[ "$gate_fast" != 1 && "$gate_witness_check_only" != 1 ]]; then
+  export GOFLAGS=-mod=readonly
+fi
+
+# A standalone full gate enters the same retained proof owner as validation
+# and adoption. Only the Go owner may recognize a worker; ambient progress or
+# locator strings do not bypass the wrapper.
+proof_worker=0
+proof_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
+if [[ -x "$proof_auth_bin" ]] && "$proof_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+  proof_worker=1
+fi
+if [[ "$gate_fast" != 1 && "$gate_witness_check_only" != 1 \
+  && "$proof_worker" != 1 \
+  && -f "$root/go.mod" ]] \
+  && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod"; then
+  proof_progress="$root/artifacts/agents/supervision/suite-progress.jsonl"
+  proof_log="$root/artifacts/agents/supervision/suite-logs/go-gate-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
+  proof_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-go-gate.XXXXXX")
+  proof_engine="$proof_tmp/metasystem"
+  go build -o "$proof_engine" ./cmd/metasystem
+  proof_launcher=("$proof_engine")
+  proof_banner=$("${proof_launcher[@]}" proof-run banner --suite go-gate --root "$root" \
+    --progress "$proof_progress" --log "$proof_log") \
+    || { echo "go gate: could not prepare retained proof launch" >&2; exit 1; }
+  proof_args=(proof-run launch --suite go-gate --root "$root" --conf "$root/metasystem.conf" \
+    --progress "$proof_progress" --log "$proof_log" --banner "$proof_banner" --scope full --command-class go-gate)
+  [[ -z "$gate_goal" ]] || proof_args+=(--goal "$gate_goal")
+  [[ -z "$gate_cap_min" ]] || proof_args+=(--cap-min "$gate_cap_min")
+  exec "${proof_launcher[@]}" "${proof_args[@]}" --tmp "$proof_tmp" -- bash "$root/scripts/agents/go-gate.sh"
+fi
 
 # Fast mode is an edit-loop tool, not a landing gate: it must neither
 # consume nor produce a witness, so a witness handoff arriving alongside it
@@ -105,7 +153,7 @@ if [[ -x "$root/bin/metasystem" ]]; then
     exit 1
   }
 fi
-trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"; [[ -z "${consumer_export_parent:-}" ]] || rm -rf "$consumer_export_parent"' EXIT
+trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"; [[ -z "${consumer_export_parent:-}" ]] || rm -rf "$consumer_export_parent"; [[ -z "${gate_build_scratch:-}" ]] || rm -f "$gate_build_scratch"' EXIT
 
 # ---- The boundary-scoped gate witness (D33) ----------------------------
 # One validation run, one gate: the outer suite runs this gate inside an
@@ -136,22 +184,10 @@ gate_surface_digest() { # compatibility for the build stamp path
 }
 
 gate_toolchain_identity() {
-  if [[ "${METASYSTEM_GATE_FROZEN_TOOLCHAIN:-0}" == 1 ]]; then
-    # -mod=readonly is a fixed protocol guard, not a varying toolchain input.
-    # Clearing it only for the identity read keeps historical clean witnesses
-    # compatible when their ambient GOFLAGS was empty; the actual frozen build
-    # remains pinned below. A clean witness made under other flags mismatches
-    # and pays the full frozen gate.
-    {
-      GOFLAGS= go version
-      GOFLAGS= go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
-    } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
-  else
-    {
-      go version
-      go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
-    } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
-  fi
+  {
+    go version
+    go env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN
+  } | { shasum -a 256 2>/dev/null || sha256sum; } | cut -d' ' -f1
 }
 
 frozen_toolchain_refusal() {
@@ -391,6 +427,32 @@ if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
   fi
 fi
 
+# Authenticate the worker before any gate stage can launch descendants. The
+# producer decision and claim wait until the exact point this process starts
+# the full measurement, so a fence or static refusal cannot consume the slot.
+ratchet_baseline=scripts/agents/coverage-ratchet.json
+if [[ "$(uname -s)" == Linux ]]; then
+  ratchet_baseline=scripts/agents/coverage-ratchet-linux.json
+fi
+coverage_proof_handoff=0
+coverage_proof_candidate=0
+if [[ -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" || -n "${METASYSTEM_PROOF_ATTEMPT:-}" ]]; then
+  [[ -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" ]] \
+    || { echo "go gate: proof worker locator has no control root" >&2; exit 1; }
+  [[ -x "$proof_auth_bin" ]] \
+    || { echo "go gate: proof worker has no authentication engine" >&2; exit 1; }
+  "$proof_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1 \
+    || { echo "go gate: proof worker custody is not authenticated" >&2; exit 1; }
+  # A legacy launch has a live control-root/process binding but no admitted
+  # attempt, so it runs every stage without retained coverage. An admitted
+  # unseeded full gate defers the source-identity decision until measurement.
+  if [[ -n "${METASYSTEM_PROOF_ATTEMPT:-}" \
+    && "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 \
+    && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]]; then
+    coverage_proof_candidate=1
+  fi
+fi
+
 # Rebuilding bin/metasystem while a FOREIGN gate run is live would swap the
 # binary under that run mid-flight. The suite that sourced or spawned this
 # gate is its own run — the fence exempts this process's chain — so only a
@@ -446,8 +508,9 @@ fi
 gate_build_scratch=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-collect.XXXXXX")
 if ! bash scripts/agents/go-build.sh --out "$gate_build_scratch" >/dev/null 2>&1; then
   gate_static_reds+=("build failed (go-build.sh)")
+  rm -f "$gate_build_scratch"
+  gate_build_scratch=
 fi
-rm -f "$gate_build_scratch"
 
 if (( ${#gate_static_reds[@]} )); then
   echo "go gate: ${#gate_static_reds[@]} static check(s) red — the complete block:" >&2
@@ -460,19 +523,28 @@ fi
 # Fast mode stops here: the static verdicts are in, and the build proves
 # the engine still compiles while handing the edit loop a fresh binary.
 if [[ "$gate_fast" == 1 ]]; then
-  if [[ -n "$gate_proof_out" ]]; then
-    # The landing boundary's build proof: compile to the caller's scratch
-    # path and leave bin/metasystem alone — a supervision-armed checkout
-    # fingerprints the live binary, and the boundary must prove, not swap.
-    bash scripts/agents/go-build.sh --out "$gate_proof_out" \
-      || { echo "go gate: build failed" >&2; exit 1; }
-  else
-    bash scripts/agents/go-build.sh \
-      || { echo "go gate: build failed" >&2; exit 1; }
-  fi
+  # Publish the exact engine already built by the collected static stage.
+  # The temporary sibling plus comparison keeps publication atomic and
+  # proves that no second compile or byte substitution occurred.
+  gate_build_target=${gate_proof_out:-$root/bin/metasystem}
+  mkdir -p "$(dirname "$gate_build_target")"
+  gate_build_publish="$gate_build_target.gate.$$"
+  cp "$gate_build_scratch" "$gate_build_publish" \
+    || { rm -f "$gate_build_publish"; echo "go gate: publish static build failed" >&2; exit 1; }
+  cmp -s "$gate_build_scratch" "$gate_build_publish" \
+    || { rm -f "$gate_build_publish"; echo "go gate: published static build changed bytes" >&2; exit 1; }
+  chmod 755 "$gate_build_publish"
+  mv -f "$gate_build_publish" "$gate_build_target"
+  rm -f "$gate_build_scratch"
+  gate_build_scratch=
   echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
   exit 0
 fi
+
+# Full mode may require a later witness-specific build stamp, so the static
+# proof artifact is not itself the final runtime binary in that mode.
+rm -f "$gate_build_scratch"
+gate_build_scratch=
 
 # The standing Linux signal (go-production-grade Phase 1, P3): a darwin-only
 # regression is invisible until someone tries, so both Linux architectures
@@ -531,6 +603,22 @@ fi
 # the freshly built temporary binary below, because THIS invocation's
 # rebuild is what always-rebuild means.
 coverage_log=$(mktemp)
+if (( coverage_proof_candidate )); then
+  coverage_eligibility_rc=0
+  "$proof_auth_bin" proof-run coverage-eligible --root "$root" \
+    --baseline "$ratchet_baseline" --producer-pid $$ >/dev/null 2>&1 \
+    || coverage_eligibility_rc=$?
+  case "$coverage_eligibility_rc" in
+    0)
+      "$proof_auth_bin" proof-run coverage-begin --root "$root" \
+        --baseline "$ratchet_baseline" --producer-pid $$ \
+        || { rm -f "$coverage_log"; echo "go gate: could not claim the authenticated coverage producer slot" >&2; exit 1; }
+      coverage_proof_handoff=1
+      ;;
+    3) ;;
+    *) rm -f "$coverage_log"; echo "go gate: coverage producer eligibility could not be authenticated" >&2; exit 1 ;;
+  esac
+fi
 # The per-package ceiling is a hang bound, not a runtime target. The goal and
 # missionrunner packages contain 353 and 296 serial tests; each drives real
 # git repositories, and mission cycles carry real waits. Individual tests
@@ -579,10 +667,6 @@ bash scripts/agents/go-build.sh \
 pkg_list=$(mktemp)
 go list ./internal/... >"$pkg_list" \
   || { rm -f "$coverage_log" "$pkg_list"; echo "go gate: go list failed; cannot join the coverage inventory" >&2; exit 1; }
-ratchet_baseline=scripts/agents/coverage-ratchet.json
-if [[ "$(uname -s)" == Linux ]]; then
-  ratchet_baseline=scripts/agents/coverage-ratchet-linux.json
-fi
 if [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" == 1 ]]; then
   echo "go gate: coverage ratchet in SEED mode; floors not enforced this run (bootstrap pass one)" >&2
 elif [[ ! -f "$ratchet_baseline" ]]; then
@@ -592,6 +676,11 @@ elif [[ ! -f "$ratchet_baseline" ]]; then
 else
   bin/metasystem audit coverage-ratchet --baseline "$ratchet_baseline" --input "$coverage_log" --packages "$pkg_list" \
     || { rm -f "$coverage_log" "$pkg_list"; echo "go gate: coverage ratchet refused" >&2; exit 1; }
+fi
+if (( coverage_proof_handoff )); then
+  bin/metasystem proof-run coverage-complete --root "$root" --baseline "$ratchet_baseline" \
+    --input "$coverage_log" --packages "$pkg_list" --producer-pid $$ \
+    || { rm -f "$coverage_log" "$pkg_list"; echo "go gate: authenticated coverage publication refused" >&2; exit 1; }
 fi
 rm -f "$coverage_log" "$pkg_list"
 

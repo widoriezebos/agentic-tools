@@ -218,14 +218,15 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 	if err := os.WriteFile(message, []byte("Address S-1.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, code = captureStdout(t, func() int {
+	stderr, code := captureStderr(t, func() int {
 		return runDispatchCritiqueExhaustionAdvance([]string{
 			"--repo", repo, "--root-job", "critic", "--role", "design-critic",
 			"--message", message, "--successor", "critic-r4",
 		})
 	})
-	if code != 10 || strings.TrimSpace(out) != "" {
-		t.Fatalf("terminal exhaustion: exit=%d out=%q", code, out)
+	wantStderr := "reason=cap-exhausted-human-raise the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy at terminal round 3 with open finding identifiers: S-1\n"
+	if code != 10 || stderr != wantStderr {
+		t.Fatalf("terminal exhaustion: exit=%d stderr=%q want=%q", code, stderr, wantStderr)
 	}
 	rootRecord, err := os.ReadFile(filepath.Join(jobs, "critic.json"))
 	if err != nil || strings.Contains(string(rootRecord), `"successorJobId": "critic-r4"`) {

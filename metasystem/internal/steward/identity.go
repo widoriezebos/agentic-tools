@@ -265,6 +265,17 @@ type EnrolledBinary struct {
 	execFile *os.File
 }
 
+// BuildStamp returns the linker-stamped source identity from the same open
+// executable descriptor whose digest enrollment authenticated. Callers that
+// need source-bound policy decisions must compare this value with their
+// captured destination commit instead of trusting a path or record label.
+func (b *EnrolledBinary) BuildStamp() string {
+	if b == nil || b.file == nil {
+		return ""
+	}
+	return buildStampFromOpenFile(b.file)
+}
+
 // Close releases the pinned engine descriptor.
 func (b *EnrolledBinary) Close() error {
 	if b == nil || b.file == nil {

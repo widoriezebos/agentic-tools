@@ -6,7 +6,7 @@
 # Contract: the caller sets $root (the metasystem root, already cwd),
 # $delivery_contract (0/1), and WITNESS_GATE_FALLBACK as an EXPLICIT
 # choice — "plain" runs the ordinary go-gate when the witness is
-# ineligible or fails (validate-metasystem's historical behavior);
+# ineligible before a gate starts; an executed gate is never retried;
 # "none" arms nothing and runs nothing, for callers whose nested
 # validations carry their own gates. Any other value refuses: the
 # fallback decides whether a gate runs at all, so ambient or mistyped
@@ -103,57 +103,116 @@ fi
 if (( witness_common_eligible && witness_roots_clean )); then
   # This is the established clean-tree path. It intentionally does not call
   # witness-freeze, alter the toolchain environment, or change witness bytes.
-  witness_state=$(mktemp -d)
-  chmod 700 "$witness_state"
-  witness_snap=$(mktemp -d)
-  chmod 700 "$witness_snap"
+  witness_prepared=1
+  witness_state=
+  witness_snap=
+  if ! witness_state=$(mktemp -d); then
+    witness_prepared=0
+  fi
+  if (( witness_prepared )) && ! chmod 700 "$witness_state"; then
+    witness_prepared=0
+  fi
+  if (( witness_prepared )); then
+    if ! witness_snap=$(mktemp -d); then
+      witness_prepared=0
+    fi
+  fi
+  if (( witness_prepared )) && ! chmod 700 "$witness_snap"; then
+    witness_prepared=0
+  fi
   witness_run="run-$$-$RANDOM"
   witness_controller_pid=$$
   witness_controller_started_at=
   witness_controller_start_ticks=
   witness_controller_boot_id=
-  if read -r witness_controller_started_at witness_controller_start_ticks witness_controller_boot_id \
-      < <(go run ./cmd/metasystem proc started-at --pid $$ --emit pair); then
-    [[ "$witness_controller_boot_id" == - ]] && witness_controller_boot_id=
-  else
-    witness_roots_clean=0
+  if (( witness_prepared )); then
+    if read -r witness_controller_started_at witness_controller_start_ticks witness_controller_boot_id \
+        < <(go run ./cmd/metasystem proc started-at --pid $$ --emit pair); then
+      [[ "$witness_controller_boot_id" == - ]] && witness_controller_boot_id=
+    else
+      witness_prepared=0
+    fi
   fi
-  witness_toplevel=$(git rev-parse --show-toplevel)
-  witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
-  if [[ -n "$witness_prefix" ]]; then
-    git -C "$witness_toplevel" archive "HEAD:$witness_prefix" | tar -x -C "$witness_snap"
-  else
-    git -C "$witness_toplevel" archive HEAD | tar -x -C "$witness_snap"
+  if (( witness_prepared )); then
+    if ! witness_toplevel=$(git rev-parse --show-toplevel); then
+      witness_prepared=0
+    fi
   fi
-  if (( witness_roots_clean )) && ( cd "$witness_snap" \
+  if (( witness_prepared )); then
+    witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
+    if [[ -n "$witness_prefix" ]]; then
+      if ! ( set -o pipefail; git -C "$witness_toplevel" archive "HEAD:$witness_prefix" | tar -x -C "$witness_snap" ); then
+        witness_prepared=0
+      fi
+    elif ! ( set -o pipefail; git -C "$witness_toplevel" archive HEAD | tar -x -C "$witness_snap" ); then
+      witness_prepared=0
+    fi
+  fi
+
+  if (( ! witness_prepared )); then
+    echo "witness gate preparation did not complete" >&2
+    [[ -z "$witness_state" ]] || rm -rf "$witness_state" || true
+    [[ -z "$witness_snap" ]] || rm -rf "$witness_snap" || true
+    witness_state=
+    witness_fallback_rc=0
+    if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
+      bash scripts/agents/go-gate.sh || witness_fallback_rc=$?
+    fi
+    return "$witness_fallback_rc" 2>/dev/null || exit "$witness_fallback_rc"
+  fi
+
+  witness_gate_rc=0
+  ( cd "$witness_snap" \
       && METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
          METASYSTEM_GATE_WITNESS_RUN="$witness_run" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_PID="$witness_controller_pid" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT="$witness_controller_started_at" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS="$witness_controller_start_ticks" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID="$witness_controller_boot_id" \
-         bash scripts/agents/go-gate.sh ) \
-    && [[ -f "$witness_state/witness.json" ]]; then
-    # Clean roots mean the snapshot's binary IS this tree's binary.
-    # Stage beside the target and rename over it (go-build.sh's
-    # documented pattern): cp over the live inode poisons macOS's
-    # code-signature cache and later execs die SIGKILL — exactly the
-    # silent suite death this line caused on 2026-08-16.
-    mkdir -p bin \
-      && cp "$witness_snap/bin/metasystem" "bin/.metasystem.witness.$$" \
-      && mv -f "bin/.metasystem.witness.$$" bin/metasystem
-    export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
-    export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
-    export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
-    echo "gate witness armed for this run's nested validations"
-  else
-    echo "witness gate did not complete; falling back to the plain gate" >&2
-    rm -rf "$witness_state"; witness_state=
-    if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
-      bash scripts/agents/go-gate.sh
-    fi
+         bash scripts/agents/go-gate.sh ) || witness_gate_rc=$?
+  if (( witness_gate_rc != 0 )); then
+    echo "witness gate failed in its clean snapshot" >&2
+    rm -rf "$witness_state" || true
+    rm -rf "$witness_snap" || true
+    witness_state=
+    return "$witness_gate_rc" 2>/dev/null || exit "$witness_gate_rc"
   fi
-  rm -rf "$witness_snap"
+  if [[ ! -f "$witness_state/witness.json" ]]; then
+    echo "witness gate completed without publishing witness evidence" >&2
+    rm -rf "$witness_state" || true
+    rm -rf "$witness_snap" || true
+    witness_state=
+    return 1 2>/dev/null || exit 1
+  fi
+
+  # Clean roots mean the snapshot's binary IS this tree's binary.
+  # Stage beside the target and rename over it (go-build.sh's
+  # documented pattern): cp over the live inode poisons macOS's
+  # code-signature cache and later execs die SIGKILL — exactly the
+  # silent suite death this line caused on 2026-08-16.
+  witness_publish_rc=0
+  witness_stage="bin/.metasystem.witness.$$"
+  mkdir -p bin || witness_publish_rc=$?
+  if (( witness_publish_rc == 0 )); then
+    cp "$witness_snap/bin/metasystem" "$witness_stage" || witness_publish_rc=$?
+  fi
+  if (( witness_publish_rc == 0 )); then
+    mv -f "$witness_stage" bin/metasystem || witness_publish_rc=$?
+  fi
+  if (( witness_publish_rc != 0 )); then
+    echo "witness gate completed but the proven binary could not be published" >&2
+    rm -f "$witness_stage" || true
+    rm -rf "$witness_state" || true
+    rm -rf "$witness_snap" || true
+    witness_state=
+    return "$witness_publish_rc" 2>/dev/null || exit "$witness_publish_rc"
+  fi
+  export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
+  export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
+  export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
+  echo "gate witness armed for this run's nested validations"
+  rm -rf "$witness_snap" || true
+  return 0 2>/dev/null || exit 0
 elif (( witness_common_eligible && witness_clean_check_ok )); then
   # Frozen proof runs discard ambient build flags, force read-only module
   # selection, and keep GOMODCACHE inherited. The shared module cache is safe:

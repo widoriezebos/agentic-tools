@@ -21,6 +21,7 @@ func aliasValidationRepo(t *testing.T, body string) (repo, conf string) {
 		t.Fatal(err)
 	}
 	putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
+	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
 	conf = filepath.Join(repo, "metasystem.conf")
 	body = strings.ReplaceAll(body, "@EVIDENCE@", t.TempDir())
 	body = strings.ReplaceAll(body, "@REPO@", repo)

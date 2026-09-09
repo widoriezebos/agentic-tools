@@ -12,8 +12,9 @@ mechanical adaptation steps: exports the payload from the template's tracked
 HEAD, writes metasystem.conf for the selected runtimes, registers skills and
 profiles, installs the shipped enforcement, creates the gitignored artifacts/
 directory, and records the template SHA in docs/project-rules.md. What remains
-manual afterwards: fill docs/project-rules.md and metasystem.conf with verified
-project facts, then run
+manual afterwards: replace the explicitly incomplete testing.json with the
+project's reviewed application test contract, fill docs/project-rules.md and
+metasystem.conf with verified project facts, then run
 scripts/validate-metasystem.sh in the target; it must pass with zero
 placeholders.
 
@@ -206,6 +207,15 @@ elif [[ "$probe_out" != *"not a git repository"* ]]; then
   die 1 "target's repository shape cannot be proven: $probe_out"
 fi
 
+# Adoption ships the engine: the harness scripts decide nothing without the
+# metasystem binary, so a target without it would be armed but inert. The
+# engine is ALWAYS rebuilt from the template source through the shared
+# fenced build (go-production-grade Phase 0a) — a pre-existing bin/ may be
+# stale, foreign, or unstamped, and no verb can prove freshness against a
+# dirty tree, so nothing that already exists is ever copied on trust.
+bash "$root/scripts/agents/go-build.sh" \
+  || die 1 "could not build the metasystem engine for adoption"
+
 # Stage the payload from the tracked HEAD.
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
@@ -233,7 +243,7 @@ rm -f "$stage/payload.tar"
 # ships source and CI rebuilds, so the pair of scripts and engine can prove
 # its coherence by building. The adoption-time binary copy into gitignored
 # bin/ remains a host convenience, never the delivery.
-payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal metasystem.conf optional-skills plans records scripts skills wow.md"
+payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal memory metasystem.conf optional-skills plans records scripts skills testing.json wow.md"
 for entry in "$stage"/* "$stage"/.[!.]*; do
   [[ -e "$entry" || -L "$entry" ]] || continue
   keep=0
@@ -253,6 +263,10 @@ brain_role_packet=$stage/records/misc/fleet-coordinator-brain-role-packet.md
 mv "$goals_migration_manifest" "$stage/.goals-migration-manifest.md"
 mv "$brain_role_packet" "$stage/.fleet-coordinator-brain-role-packet.md"
 rm -rf "$stage/records"
+# The Go landing owner selects required authority and preserves application memory.
+"$root/bin/metasystem" landing adoption-rulings --source "$stage" --target "$target" \
+  >"$stage/.landing-rulings.md" || die 1 "could not prepare the adopted landing authority"
+rm -rf "$stage/memory"
 # plans/ ships its README and fresh goal ledgers, while memory/ is rebuilt with
 # fresh living registers rather than this repository's accumulated state. Shipping
 # the real instruction ledger and known-issues register was an early deliberate
@@ -267,6 +281,7 @@ cat >"$stage/memory/README.md" <<'SKELETON'
 
 This tree holds the living registers — records that accrete and are never finished (rulings, known issues, flakes, receipts, notes); static explanation belongs in docs/ and concluded history belongs in records/.
 SKELETON
+mv "$stage/.landing-rulings.md" "$stage/memory/rulings.md"
 mkdir -p "$stage/records/goals"
 mkdir -p "$stage/records/misc"
 mv "$stage/.goals-migration-manifest.md" "$stage/records/misc/goals-migration-manifest.md"
@@ -276,7 +291,9 @@ cat >"$stage/records/README.md" <<'SKELETON'
 
 This tree holds concluded history — critique rounds, dispositions, facts, finished designs, concluded goals under records/goals/; append-only for agents and humans (the goal engine alone mutates records/goals/ under its ledger rules); live intent belongs in plans/ and living registers in memory/.
 SKELETON
-touch "$stage/records/goals/.gitkeep"
+# The concluded-goal parser owns every path under records/goals/. An empty
+# directory needs no placeholder: a .gitkeep there is policy-shaped input,
+# not a concluded goal, and would make the first migrated tree invalid.
 cat >"$stage/memory/instruction-ledger.md" <<'SKELETON'
 # Instruction Ledger
 
@@ -318,7 +335,9 @@ rm -rf "$stage/optional-skills"
 # repository.
 conf="$stage/metasystem.conf"
 [[ -f "$conf" ]] || die 1 "payload is missing metasystem.conf"
-"$ms" config tailor --conf "$conf" --runtimes "$runtimes"
+testing_contract="$stage/testing.json"
+[[ -f "$testing_contract" ]] || die 1 "payload is missing testing.json"
+"$ms" config tailor --conf "$conf" --runtimes "$runtimes" --testing-contract "$testing_contract"
 
 # Collision policy: .gitattributes and .gitignore merge by line-append; every
 # other payload path that exists in the target with different content refuses,
@@ -332,6 +351,8 @@ while IFS= read -r p; do
   # and digest), so a re-adoption neither collides on it nor overwrites it.
   case "$rel" in plans/goals.md|plans/goals-accepted.json)
     [[ -e "$target/plans/goals.md" ]] && continue ;; esac
+  # The Go owner has already checked and preserved the existing register.
+  [[ "$rel" == memory/rulings.md ]] && continue
   if [[ -e "$target/$rel" ]] && ! cmp -s "$p" "$target/$rel"; then
     echo "collision: $rel" >&2
     collisions=$((collisions + 1))
@@ -361,14 +382,6 @@ done
 [[ -f "$target/metasystem.conf" && -f "$target/scripts/agents/dispatch.sh" ]] \
   || die 1 "adopted payload is missing metasystem.conf or scripts/agents/"
 
-# Adoption ships the engine: the harness scripts decide nothing without the
-# metasystem binary, so a target without it would be armed but inert. The
-# engine is ALWAYS rebuilt from the template source through the shared
-# fenced build (go-production-grade Phase 0a) — a pre-existing bin/ may be
-# stale, foreign, or unstamped, and no verb can prove freshness against a
-# dirty tree, so nothing that already exists is ever copied on trust.
-bash "$root/scripts/agents/go-build.sh" \
-  || die 1 "could not build the metasystem engine for adoption"
 mkdir -p "$target/bin"
 cp "$root/bin/metasystem" "$target/bin/metasystem"
 chmod +x "$target/bin/metasystem"
@@ -446,8 +459,11 @@ cp "$target/scripts/enforcement/github-actions-metasystem.yml" "$target/.github/
 
 echo "adopted at template SHA $sha"
 echo "finish the adoption:"
-echo "  1. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
-echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
+echo "  1. Replace testing.json with a reviewed application test contract; until then runtime setup reports TEST_CONTRACT_REQUIRED."
+echo "  2. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
+echo "  3. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
+echo "  4. Commit and publish those reviewed initialization bytes from the enrolled human terminal, migrate the committed goal ledger, then fast-forward the published baseline before opening the first implementation goal."
+echo "  5. Run test run --mode auto --purpose delivery, project it with landing test-receipt --mode auto, and use the normal commit/land wrappers for the first agent change."
 echo "  Or run the guided path for both plus covenant v1 and the first goals: the inception interview (skills/inception/SKILL.md), on the coordinator seat, with the human present."
 # --git-common-dir answers relative to the target, so resolve it there or the
 # hook lands wherever this script happens to be standing (it once created a
@@ -519,4 +535,4 @@ exit 0
 else
   echo "target is not a git repository; the new-plan guard hook was not installed (install it when git init happens)" >&2
 fi
-echo "  3. Run scripts/validate-metasystem.sh in the target; it must pass with zero placeholders."
+echo "  4. Run bin/metasystem test check --root \"$target\" and scripts/validate-metasystem.sh in the target; both must pass."

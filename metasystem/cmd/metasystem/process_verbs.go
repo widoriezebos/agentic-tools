@@ -12,7 +12,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -73,11 +72,7 @@ func resolveProcessScope(repo, installation string) (processScope, error) {
 			return processScope{}, fmt.Errorf("%s carries no metasystem installation", checkout)
 		}
 	}
-	root, err := stateroot.RootForInstallation(installation)
-	if err != nil {
-		return processScope{}, err
-	}
-	return processScope{Checkout: checkout, Installation: installation, InstallationExplicit: installationExplicit, Root: root, Binary: filepath.Join(installation, "bin", "metasystem")}, nil
+	return processScope{Checkout: checkout, Installation: installation, InstallationExplicit: installationExplicit, Root: installation, Binary: filepath.Join(installation, "bin", "metasystem")}, nil
 }
 
 func regularFile(path string) bool {
@@ -414,7 +409,10 @@ func missionFenceBeforeArm(root, mode string) (int64, int) {
 		return 0, 1
 	}
 	retryCommand := fmt.Sprintf("metasystem mission %s --root %s --mission <id>", mode, scope.Checkout)
-	classification, classifyErr := classifyProcessVerbCaller(scope.Root, scope.Installation, int64(os.Getpid()))
+	// Mission state and its stop fence remain application-owned. Only the
+	// process-control verbs move their supervision/accounting root to the
+	// authenticated installation.
+	classification, classifyErr := classifyProcessVerbCaller(scope.Checkout, scope.Installation, int64(os.Getpid()))
 	if classifyErr != nil {
 		if refuseClassificationData("mission "+mode, scope.Checkout, retryCommand, classifyErr) {
 			return 0, 1

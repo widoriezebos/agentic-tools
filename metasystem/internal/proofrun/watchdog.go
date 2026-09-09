@@ -23,6 +23,7 @@ type WatchdogOptions struct {
 	LogPaths         []string
 	SuiteIdentity    identity.Ref
 	FenceGeneration  int64
+	Deadline         time.Time
 	Silence          time.Duration
 	SectionCap       time.Duration
 	EvidenceTimeout  time.Duration
@@ -63,7 +64,9 @@ func RunWatchdog(options WatchdogOptions) error {
 			section, sectionStarted = CurrentSection(run, options.Suite)
 		}
 		reason := ""
-		if now.Sub(lastGrowth) > options.Silence {
+		if !options.Deadline.IsZero() && !now.Before(options.Deadline) {
+			reason = "absolute proof deadline expired"
+		} else if now.Sub(lastGrowth) > options.Silence {
 			reason = fmt.Sprintf("no output grew for %s", options.Silence)
 		} else if !sectionStarted.IsZero() && now.Sub(sectionStarted) > options.SectionCap {
 			reason = fmt.Sprintf("section exceeded its %s cap while still producing output", options.SectionCap)

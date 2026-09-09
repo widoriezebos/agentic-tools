@@ -35,9 +35,20 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 	if err != nil {
 		return nil, err
 	}
-	parent, err := os.MkdirTemp("", "metasystem-landing-receipt.")
+	rawParent, err := os.MkdirTemp("", "metasystem-landing-receipt.")
 	if err != nil {
 		return nil, fmt.Errorf("gittree detached worktree: %w", err)
+	}
+	parent, err := filepath.Abs(rawParent)
+	if err == nil {
+		parent, err = filepath.EvalSymlinks(parent)
+	}
+	if err != nil {
+		cleanupErr := os.RemoveAll(rawParent)
+		if cleanupErr != nil {
+			cleanupErr = fmt.Errorf("remove temporary worktree directory: %w", cleanupErr)
+		}
+		return nil, errors.Join(fmt.Errorf("gittree detached worktree: resolve temporary directory: %w", err), cleanupErr)
 	}
 	detached := &DetachedWorktree{
 		control: Workspace{Dir: top},
@@ -65,6 +76,31 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 	worktree := Workspace{Dir: detached.top}
 	if _, err = worktree.git(nil, "read-tree", "--reset", "-u", candidateTop); err != nil {
 		return nil, fmt.Errorf("gittree detached worktree: checkout candidate: %w", err)
+	}
+	baseCommit, err := worktree.gitLine(nil, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil || !treeID.MatchString(baseCommit) {
+		return nil, fmt.Errorf("gittree detached worktree: resolve base commit: %w", err)
+	}
+	candidateCommit, err := worktree.gitLine(nil,
+		"-c", "user.name=MetaSystem",
+		"-c", "user.email=metasystem@invalid",
+		"commit-tree", candidateTop, "-p", baseCommit, "-m", "temporary candidate snapshot")
+	if err != nil || !treeID.MatchString(candidateCommit) {
+		return nil, fmt.Errorf("gittree detached worktree: create candidate commit: %w", err)
+	}
+	if _, err = worktree.git(nil, "update-ref", "--no-deref", "HEAD", candidateCommit, baseCommit); err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: bind detached HEAD to candidate: %w", err)
+	}
+	headTree, err := worktree.gitLine(nil, "rev-parse", "HEAD^{tree}")
+	if err != nil || headTree != candidateTop {
+		return nil, fmt.Errorf("gittree detached worktree: candidate HEAD tree mismatch: got %q want %q: %w", headTree, candidateTop, err)
+	}
+	indexTree, err := worktree.gitLine(nil, "write-tree")
+	if err != nil || indexTree != candidateTop {
+		return nil, fmt.Errorf("gittree detached worktree: candidate index tree mismatch: got %q want %q: %w", indexTree, candidateTop, err)
+	}
+	if _, err = worktree.git(nil, "diff-index", "--quiet", "HEAD", "--"); err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: candidate projection is dirty: %w", err)
 	}
 	detached.root = detached.top
 	if prefix != "" {

@@ -2,14 +2,22 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
@@ -227,5 +235,328 @@ func TestProofRunLimitsRejectEffectiveLocalAndEnvironmentOverlays(t *testing.T) 
 				t.Fatalf("effective environment error = %v", err)
 			}
 		})
+	}
+}
+
+func TestCommitProofTerminalRechecksDeadlineAfterPreparation(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "deadline-finalization", nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now().UTC().Add(-59*time.Second - 500*time.Millisecond)
+	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1,
+		Identity: proofIdentity, Launcher: launcher, Now: started})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDir := filepath.Join(root, "artifacts", "deadline-finalization")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	watchdog := filepath.Join(artifactDir, "watchdog.sh")
+	if err := os.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.005; done
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "deadline-finalization", Root: root, ControlRoot: root,
+		AttemptID: attempt.AttemptID, Deadline: deadline, ConfPath: filepath.Join(root, "metasystem.conf"),
+		ProgressPath: filepath.Join(artifactDir, "progress.jsonl"), LogPath: filepath.Join(artifactDir, "proof.log"),
+		Banner: "deadline finalization fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second,
+		EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
+		WatchdogExecutable: watchdog, Command: []string{"true"},
+		PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
+			<-time.After(700 * time.Millisecond)
+			return json.RawMessage(`{"preparedAt":"before-terminal-locks"}`), nil
+		}, CommitTerminal: commitProofTerminal})
+	if result == 0 {
+		t.Fatal("terminal commit published success after preparation crossed the deadline")
+	}
+	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal != nil || len(stored.DeliveryReceipt) != 0 {
+		t.Fatalf("deadline-crossing finalization retained a successful receipt: attempt=%+v err=%v", stored, err)
+	}
+	if _, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalFailed, 1, "deadline canary cleanup", nil, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
+	controlRoot := syncedClaimedGoalFixture(t)
+	controlRoot, err := filepath.EvalSymlinks(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalPath := filepath.Join(controlRoot, "plans", "goals", "standing-validation.md")
+	goalBytes, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalFile, problems := goal.ParseFile(goalBytes)
+	if len(problems) != 0 {
+		t.Fatalf("parse command canary goal: %v", problems)
+	}
+	goalFile.StopCapability = &goal.StopCapability{Generation: 2, Revision: goalFile.Claimed.Revision,
+		Machine: goalFile.Claimed.Machine, ClaimEpoch: 1}
+	goalFile.Budget.ElapsedLimit = "10000h"
+	goalFile.Approved.Digest = goal.ApprovalDigest(goalFile.Intent, goalFile.Tier, *goalFile.Budget, goalFile.Risk)
+	if err := os.WriteFile(goalPath, goal.RenderFile(goalFile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, controlRoot, "add", "plans/goals/standing-validation.md")
+	goalSyncMutationGit(t, controlRoot, "commit", "-qm", "bind command canary stop capability")
+	goalSyncMutationGit(t, controlRoot, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, controlRoot, "update-ref", goal.AcceptedRef, "HEAD")
+	makeExecutionRoot := func() string {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		conf, err := os.ReadFile(filepath.Join(controlRoot, "metasystem.conf"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), conf, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+			if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root
+	}
+	firstRoot, renamedRoot := makeExecutionRoot(), makeExecutionRoot()
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.Command("go", "build", "-o", engine, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build command canary engine: %v\n%s", err, output)
+	}
+	identities := filepath.Join(t.TempDir(), "process-identities.json")
+	if err := os.WriteFile(identities, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	count := filepath.Join(t.TempDir(), "child-launches")
+	body := `count=0; test ! -f "$1" || count=$(cat "$1"); count=$((count+1)); printf '%d\n' "$count" >"$1"; test "$count" -gt 1`
+	environment := append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identities)
+	run := func(root, retry, result string) (int, proofrun.LaunchResult, string) {
+		args := []string{"proof-run", "launch", "--suite", "command-retry", "--root", root, "--control-root", controlRoot,
+			"--goal", "standing-validation", "--cap-min", "1", "--command-class", "command-retry", "--conf", filepath.Join(root, "metasystem.conf"),
+			"--progress", result + ".progress.jsonl", "--log", result + ".log",
+			"--banner", "command retry canary", "--result", result}
+		if retry != "" {
+			args = append(args, "--retry-decision", retry)
+		}
+		args = append(args, "--", "bash", "-c", body, "fixture", count)
+		command := exec.Command(engine, args...)
+		command.Env = environment
+		output, err := command.CombinedOutput()
+		status := 0
+		if exit, ok := err.(*exec.ExitError); ok {
+			status = exit.ExitCode()
+		} else if err != nil {
+			t.Fatalf("launch command failed outside a child status: %v\n%s", err, output)
+		}
+		var resultRecord proofrun.LaunchResult
+		data, readErr := os.ReadFile(result)
+		if readErr != nil || json.Unmarshal(data, &resultRecord) != nil {
+			t.Fatalf("read launch result: err=%v bytes=%s", readErr, data)
+		}
+		return status, resultRecord, string(output)
+	}
+	firstResult := filepath.Join(t.TempDir(), "first.json")
+	status, first, output := run(firstRoot, "", firstResult)
+	if status != 1 || first.Disposition != proofrun.DispositionFailed || first.AttemptID == "" {
+		t.Fatalf("first diagnosed failure status=%d result=%+v output=%s", status, first, output)
+	}
+	secondResult := filepath.Join(t.TempDir(), "second.json")
+	status, second, _ := run(renamedRoot, "", secondResult)
+	if status != proofrun.ExitRetryRequired || second.Disposition != proofrun.DispositionRetryRequired || second.PriorAttempt != first.AttemptID {
+		t.Fatalf("undiagnosed repeat status=%d result=%+v", status, second)
+	}
+	evidence := filepath.Join(t.TempDir(), "failure.log")
+	if err := os.WriteFile(evidence, []byte("controlled first child failure\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retryPath := filepath.Join(t.TempDir(), "retry.json")
+	retryBytes, _ := json.Marshal(proofrun.RetryDecision{SchemaVersion: 1, PriorAttempt: first.AttemptID,
+		Cause: "controlled child refusal", EvidencePath: evidence, Rationale: "the helper succeeds on its diagnosed second execution"})
+	if err := os.WriteFile(retryPath, retryBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	thirdResult := filepath.Join(t.TempDir(), "third.json")
+	status, third, output := run(renamedRoot, retryPath, thirdResult)
+	if status != 0 || third.Disposition != proofrun.DispositionExecuted || third.PriorAttempt != first.AttemptID {
+		t.Fatalf("diagnosed retry status=%d result=%+v output=%s", status, third, output)
+	}
+	launches, err := os.ReadFile(count)
+	if err != nil || strings.TrimSpace(string(launches)) != "2" {
+		t.Fatalf("no-child decision launched work or retry did not execute: launches=%q err=%v", launches, err)
+	}
+	attempts, err := proofrun.ReadAttempts(controlRoot)
+	if err != nil || len(attempts) != 2 || attempts[1].Retry == nil || attempts[1].PreviousAttempt != first.AttemptID ||
+		attempts[0].ExecutionRoot == attempts[1].ExecutionRoot {
+		t.Fatalf("command accounting after renamed-root retry: attempts=%+v err=%v", attempts, err)
+	}
+}
+
+func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
+	if os.Getenv("GO_WANT_GOVERNED_COMMAND_PARENT") == "1" {
+		if err := os.WriteFile(os.Getenv("GOVERNED_COMMAND_READY"), []byte("ready\n"), 0o600); err != nil {
+			os.Exit(97)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(os.Getenv("GOVERNED_COMMAND_RELEASE")); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				os.Exit(97)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		root := os.Getenv("GOVERNED_COMMAND_ROOT")
+		command := exec.Command(os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
+			"--suite", "governed-command", "--root", root, "--control-root", root,
+			"--conf", filepath.Join(root, "metasystem.conf"), "--progress", filepath.Join(root, "artifacts", "governed.progress.jsonl"),
+			"--log", filepath.Join(root, "artifacts", "governed.log"), "--banner", "governed command canary", "--", "true")
+		command.Env = os.Environ()
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			if exit, ok := err.(*exec.ExitError); ok {
+				os.Exit(exit.ExitCode())
+			}
+			os.Exit(97)
+		}
+		os.Exit(0)
+	}
+	root := syncedClaimedGoalFixture(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	goalBytes, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	governedGoal, problems := goal.ParseFile(goalBytes)
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	governedGoal.StopCapability = &goal.StopCapability{Generation: 2, Revision: governedGoal.Claimed.Revision,
+		Machine: governedGoal.Claimed.Machine, ClaimEpoch: 1}
+	governedGoal.Budget.ElapsedLimit = "10000h"
+	governedGoal.Approved.Digest = goal.ApprovalDigest(governedGoal.Intent, governedGoal.Tier, *governedGoal.Budget, governedGoal.Risk)
+	if err := os.WriteFile(goalPath, goal.RenderFile(governedGoal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md")
+	goalSyncMutationGit(t, root, "commit", "-qm", "bind governed command authority")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+		path := filepath.Join(root, "scripts", "agents", name)
+		if err := os.WriteFile(path, []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.Command("go", "build", "-o", engine, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build governed canary engine: %v\n%s", err, output)
+	}
+	now := time.Now().UTC()
+	weight := uint64(0)
+	store := &runpkg.Store{Root: root, Now: func() time.Time { return now }}
+	store.AdmitGoverned = func(runpkg.GovernedAdmissionRequest) (runpkg.GovernedAdmissionResult, error) {
+		return runpkg.GovernedAdmissionResult{Attempt: runpkg.GovernedAttempt{GoalRevision: 2, ObligationRevision: 7,
+			WeightGeneration: &weight, Recurrence: governance.StandingSharedProcess, ExecutionCostMinutes: 2, AttemptOrdinal: 1,
+			Budget:          goalbudget.Budget{ElapsedLimit: "10000h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2},
+			BudgetStartedAt: now.Add(-time.Hour).Format(time.RFC3339), CorrelationPolicy: "exact-run-generation",
+			ExpectedAssumptions: governance.ObligationAssumptions{Recurrence: governance.StandingSharedProcess,
+				Platform: "fixture/os", ToolchainIdentity: "fixture-go", SurfaceDigest: "fixture-surface", MaxActiveJobs: 1,
+				TimingEnvelopeSeconds: 120, ObservationSource: "run-terminal-record"},
+			AdmissionDecision: governance.ConsequenceDecision{Apply: true}, Breaker: runpkg.BreakerClosed}}, nil
+	}
+	nonce, err := store.Launch(runpkg.Caller{Class: "MAIN", MainId: "main-fixture", OwnerLineage: "main-fixture"}, runpkg.LaunchParams{
+		Id: "governed-command", Kind: "suite", Display: "governed command owner", Log: "artifacts/governed-parent.log",
+		GoalId: "standing-validation", ObligationRevision: 7, StandingShared: true,
+		Expect: runpkg.Expect{Green: "green", Red: "red", Hung: "hung", Unknown: "unknown"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, release := filepath.Join(t.TempDir(), "ready"), filepath.Join(t.TempDir(), "release")
+	child := exec.Command(os.Args[0], "-test.run=^TestProofRunCommandGovernedParentSharesOneCharge$")
+	child.Env = append(receiptCanaryEnvironment(), "GO_WANT_GOVERNED_COMMAND_PARENT=1", "GOVERNED_COMMAND_READY="+ready,
+		"GOVERNED_COMMAND_RELEASE="+release, "GOVERNED_COMMAND_ROOT="+root, "GOVERNED_COMMAND_ENGINE="+engine,
+		"METASYSTEM_PROOF_RUN_ROOT="+root, "METASYSTEM_PROOF_RUN_ID=governed-command")
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var output bytes.Buffer
+	child.Stdout, child.Stderr = &output, &output
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	finished := false
+	t.Cleanup(func() {
+		if !finished {
+			_ = child.Process.Kill()
+			_ = child.Wait()
+		}
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("governed parent did not become ready: %s", output.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	pgid, err := syscall.Getpgid(child.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Bind("governed-command", nonce, int64(child.Process.Pid), int64(pgid)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(release, []byte("go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Wait(); err != nil {
+		t.Fatalf("governed command failed: %v\n%s", err, output.String())
+	}
+	finished = true
+	attempts, err := proofrun.ReadAttempts(root)
+	if err != nil || len(attempts) != 1 || attempts[0].ReservationOwner == nil || attempts[0].ReservationOwner.RunID != "governed-command" ||
+		attempts[0].Terminal == nil || attempts[0].Terminal.Result != proofrun.TerminalSuccess {
+		t.Fatalf("governed command attempt=%+v err=%v output=%s", attempts, err, output.String())
+	}
+	goalBytes, err = os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(goalBytes)
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	projection := dispatchcore.ProjectBudget(root, file, now.Add(time.Second))
+	if projection.Status != dispatchcore.BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != 2 {
+		t.Fatalf("governed parent and proof were not one accounting charge: %+v", projection)
 	}
 }

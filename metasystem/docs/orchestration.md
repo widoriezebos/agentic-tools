@@ -74,8 +74,10 @@ with `--evidence` in a fixed grammar (`root:<jobId>`, `finding:<jobId>/<id>`,
 or `refusal:<code>` with a code from the admission list), and the risk gate runs in the mode
 `metasystem.budget.risk-gate` names: `mark` prints `RISK_UNANSWERED` and
 admits, `enforce` refuses with that code. Accumulation 2 or higher writes
-`gateWidth: full` on the chain root, and a full-width chain lands only with
-the full battery receipt. Every over-box budget member increments the goal's
+`gateWidth: full` on the chain root. The width remains a frozen risk fact;
+the shared testing contract converts it and the affected surfaces into the
+required groups, and landing requires sufficient current schema-2 evidence
+for those groups rather than a literal full-battery command. Every over-box budget member increments the goal's
 `BudgetExceptions`; a second exception marks the appetite line `repeated
 exception: defect signal`.
 
@@ -103,7 +105,7 @@ The status post requests execution approval only for the queued goal marked with
 
 The shared design-author lane selects Codex with `gpt-6-astra`. Design authoring uses the `DESIGN-BEARING` classification so the hazard contract requires xhigh reasoning effort and the Codex adapter passes it to the executable. Explicit flags, environment variables, and local configuration retain their existing precedence over this committed mode default.
 
-A brief asks the delegate only for verification it can actually perform. The validation suite is not one of those: its fixtures need real process visibility and every delegate sandbox denies it, so the orchestrator runs the suite outside the sandbox and the brief says so (KI-15). Demanding the impossible turns correct delegate behavior into a gap-stop.
+A brief asks the delegate only for verification it can actually perform. Initial and follow-up implementer briefs carry the same shared-testing requirement: plan from the actual goal, candidate and destination policy, run focused canaries while developing, then collect every independent group across all selected stages even after an earlier group fails. The validation suite is not an automatic delegate requirement: process-owning selections need real process visibility that delegate sandboxes may deny, so the orchestrator runs the named runtime selection outside the sandbox and the brief says so (KI-15). Demanding the impossible turns correct delegate behavior into a gap-stop.
 
 A brief that cites authority — a manifest key, a document section, a decided contract — is checked against that authority before dispatch, and the workspace the delegate will read is checked to actually contain it. Seven gap-stops on one chain came from briefs naming keys that were not there yet, or that existed only on the branch the delegate could not pull (IL-18, KI-9). A gap-stop is the correct delegate behavior and an avoidable orchestrator cost.
 

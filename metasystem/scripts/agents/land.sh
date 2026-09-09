@@ -6,12 +6,13 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--recertification <record> --test-receipt <path>] [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> --tests <command>] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
+  echo "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> [--goal <id>] [--chain <root-job> [--recertification <record> --test-receipt <path>] [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of <commit> | --direct-fix tier-1 --root-job <job-id> (--test-receipt <path> | --tests <legacy-command>)] [--staged-only | <pathspec>...] [--ratchet <path>] [--allow-new-plan] [--skip-transport]" >&2
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || exit $?
 cd "$root" || exit $?
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+testing_contract=$($ms config conf-value --file "$root/metasystem.conf" --key testing.contract 2>/dev/null || true)
 
 message_source=
 staged_only=0
@@ -140,13 +141,8 @@ if [[ -n "$landing_tests" && -n "$landing_test_receipt" ]]; then
   usage
   exit 2
 fi
-if [[ "$landing_direct_fix" == tier-1 && -n "$landing_test_receipt" ]]; then
-  echo "land refused: --test-receipt cannot be combined with --direct-fix tier-1; remove --test-receipt and use --tests so land.sh creates the tier-1 receipt" >&2
-  usage
-  exit 2
-fi
-if [[ -n "$landing_test_receipt" && -z "$landing_chain" ]]; then
-  echo "land refused: --test-receipt belongs only with --chain; add --chain <root-job> or remove --test-receipt" >&2
+if [[ -n "$landing_test_receipt" && -z "$landing_chain" && "$landing_direct_fix" != tier-1 ]]; then
+  echo "land refused: --test-receipt belongs with --chain or --direct-fix tier-1" >&2
   usage
   exit 2
 fi
@@ -163,8 +159,8 @@ if [[ -n "$landing_recertification" && -z "$landing_test_receipt" ]]; then
   exit 2
 fi
 if [[ "$landing_direct_fix" == tier-1 ]]; then
-  [[ $landing_goal_set -eq 1 && -n "$landing_goal" && -n "$landing_root_job" && -n "$landing_tests" ]] || {
-    echo "land refused: --direct-fix tier-1 requires --goal, --root-job, and --tests" >&2
+  [[ $landing_goal_set -eq 1 && -n "$landing_goal" && -n "$landing_root_job" && ( -n "$landing_tests" || -n "$landing_test_receipt" ) ]] || {
+    echo "land refused: --direct-fix tier-1 requires --goal, --root-job, and either --test-receipt or legacy --tests" >&2
     exit 2
   }
 elif [[ -n "$landing_root_job" || -n "$landing_tests" ]]; then
@@ -177,7 +173,11 @@ if [[ -n "$landing_chain" && "$landing_chain" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
     --file "$root/artifacts/agents/jobs/$landing_chain.json" \
     --field gateWidth --default area 2>/dev/null || true)
   if [[ "$chain_gate_width" == full && -z "$landing_test_receipt" ]]; then
-    echo "land refused: chain $landing_chain is full-width (its goal's accumulation is 2 or more); make the full battery receipt for the candidate tree first (metasystem landing test-receipt --root . --tree <subtree> --command \"<the full battery command from metasystem/internal/landing/tierone.go>\") and pass it with --test-receipt" >&2
+    if [[ -n "$testing_contract" ]]; then
+      echo "land refused: chain $landing_chain requires sufficient schema-2 testing evidence; run metasystem landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" >&2
+    else
+      echo "land refused: legacy full-width chain $landing_chain requires its full-battery receipt" >&2
+    fi
     exit 2
   fi
 fi
@@ -358,10 +358,19 @@ staged_candidate_tree() {
   printf '%s\n' "$candidate_tree"
 }
 
+staged_project_tree() {
+  git -C "$root" write-tree
+}
+
 check_supplied_test_receipt() {
-  local candidate_tree receipt_tree receipt_failure=
+  local candidate_tree receipt_tree receipt_schema receipt_failure=
   # A caller-provided --test-receipt belongs to one exact staged candidate.
-  candidate_tree=$(staged_candidate_tree) || return $?
+  receipt_schema=$($ms json get --file "$landing_test_receipt" --field schemaVersion 2>/dev/null || true)
+  if [[ "$receipt_schema" == 2 ]]; then
+    candidate_tree=$(staged_project_tree) || return $?
+  else
+    candidate_tree=$(staged_candidate_tree) || return $?
+  fi
   if [[ ! -e "$landing_test_receipt" ]]; then
     receipt_failure=missing
   elif [[ ! -f "$landing_test_receipt" || ! -r "$landing_test_receipt" ]]; then
@@ -485,6 +494,16 @@ verify_recertified_commit() {
   recert_candidate_commit=$current
 }
 
+verify_current_testing_proof() {
+  local tree
+  local -a arguments
+  [[ -n "$testing_contract" ]] || return 0
+  tree=$(git -C "$root" rev-parse HEAD^{tree}) || return $?
+  arguments=(test verify --root "$root" --tree "$tree" --mode auto --purpose delivery)
+  (( landing_goal_set )) && arguments+=(--goal "$landing_goal")
+  "$ms" "${arguments[@]}"
+}
+
 # Only the flag grants the hook acknowledgment. An inherited shell setting is
 # not evidence that this landing's caller chose to include a new plan.
 unset METASYSTEM_ALLOW_NEW_PLAN
@@ -520,7 +539,7 @@ if [[ -n "$landing_test_receipt" ]]; then
 fi
 run_required_step "tier-1 test receipt" create_test_receipt
 if [[ -n "$landing_recertification" ]]; then
-  recert_candidate_tree=$(staged_candidate_tree) || fail_step $?
+  recert_candidate_tree=$(staged_project_tree) || fail_step $?
   run_step "recheck recertified target before commit" check_recertification_target
   target_rc=$?
   if (( target_rc != 0 )); then
@@ -557,6 +576,12 @@ else
   run_required_step "verify clean after commit" require_clean_after_commit
 fi
 if [[ -n "$landing_recertification" ]]; then
+  run_step "verify shared testing proof before recertified push" verify_current_testing_proof
+  proof_rc=$?
+  if (( proof_rc != 0 )); then
+    proof_detail=$(tail -n 1 "$step_output")
+    park_recertified chain-recertification-test-command-refused "$proof_detail"
+  fi
   run_step "push recertified commit to origin (single attempt)" push_origin
   push_rc=$?
   if (( push_rc != 0 )); then
@@ -569,6 +594,7 @@ if [[ -n "$landing_recertification" ]]; then
 else
   run_required_step "fetch origin" fetch_origin
   run_required_step "rebase onto origin/$branch" rebase_origin
+  run_required_step "verify shared testing proof after rebase" verify_current_testing_proof
 
   push_attempt=1
   push_limit=3
@@ -587,6 +613,7 @@ else
       "$((push_attempt + 1))" "$push_limit"
     run_required_step "fetch origin after push attempt $push_attempt" fetch_origin
     run_required_step "rebase onto origin/$branch after push attempt $push_attempt" rebase_origin
+    run_required_step "verify shared testing proof after retry rebase" verify_current_testing_proof
     push_attempt=$((push_attempt + 1))
   done
 fi

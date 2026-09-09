@@ -176,9 +176,14 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 			return wouldRefuse("chain-record-malformed", provenance)
 		}
 	}
-	if width == "full" && params.Recertification == "" {
+	if testingContractEnabled(params.RepoRoot) && params.Recertification == "" {
 		receipt, receiptErr := readTestReceipt(params)
-		if receiptErr != nil || receipt.Command != fullBatteryCommand {
+		if receiptErr != nil || receipt.SchemaVersion != 2 {
+			return wouldRefuse("chain-test-receipt-refused", provenance)
+		}
+	} else if width == "full" && params.Recertification == "" {
+		receipt, receiptErr := readTestReceipt(params)
+		if receiptErr != nil || !fullReceiptCommandAccepted(receipt) {
 			return wouldRefuse("chain-full-gate-refused", provenance)
 		}
 	}
@@ -217,7 +222,17 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 			return observation
 		}
 		receipt, receiptErr := readTestReceipt(params)
-		if receiptErr != nil || receipt.Command != verified.Record.TestCommand {
+		if verified.Record.TestingReceiptSchema == 2 {
+			if receiptErr != nil || receipt.SchemaVersion != 2 || receipt.Testing == nil ||
+				!receipt.Testing.Delivery.Sufficient || receipt.Tree != verified.Record.MergedWholeTree {
+				observation := refuse("chain-recertification-test-command-refused", provenance)
+				observation.Detail = "testing-receipt"
+				if receiptErr != nil {
+					observation.Detail += ": " + receiptErr.Error()
+				}
+				return observation
+			}
+		} else if receiptErr != nil || receipt.Command != verified.Record.TestCommand {
 			code := "chain-recertification-test-command-refused"
 			if verified.Record.GateWidth == "full" {
 				code = "chain-full-gate-refused"
@@ -634,13 +649,12 @@ type landingClassManifest struct {
 	SchemaVersion       int `json:"schemaVersion"`
 	EnginePolicyVersion int `json:"enginePolicyVersion"`
 	Classes             []struct {
-		ID                 string   `json:"id"`
-		PathRule           string   `json:"pathRule"`
-		RequiredFields     []string `json:"requiredFields"`
-		AuthorizedBy       string   `json:"authorizedBy"`
-		MaxFiles           int      `json:"maxFiles,omitempty"`
-		MaxChangedLines    int      `json:"maxChangedLines,omitempty"`
-		FullBatteryCommand string   `json:"fullBatteryCommand,omitempty"`
+		ID              string   `json:"id"`
+		PathRule        string   `json:"pathRule"`
+		RequiredFields  []string `json:"requiredFields"`
+		AuthorizedBy    string   `json:"authorizedBy"`
+		MaxFiles        int      `json:"maxFiles,omitempty"`
+		MaxChangedLines int      `json:"maxChangedLines,omitempty"`
 	} `json:"classes"`
 }
 
@@ -921,18 +935,18 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string, requireTie
 		switch class.ID {
 		case "register-carriage":
 			if class.PathRule != "path-class-record" || len(class.RequiredFields) != 0 ||
-				class.MaxFiles != 0 || class.MaxChangedLines != 0 || class.FullBatteryCommand != "" {
+				class.MaxFiles != 0 || class.MaxChangedLines != 0 {
 				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong carriage rule")}
 			}
 		case "exact-revert":
 			if class.PathRule != "tree-shaped-exact-inverse" || !reflect.DeepEqual(class.RequiredFields, []string{"revert-of"}) ||
-				class.MaxFiles != 0 || class.MaxChangedLines != 0 || class.FullBatteryCommand != "" {
+				class.MaxFiles != 0 || class.MaxChangedLines != 0 {
 				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong exact-revert rule")}
 			}
 		case "tier-1":
 			if class.PathRule != "tier-1-bounded" ||
 				!reflect.DeepEqual(class.RequiredFields, []string{"goal", "root-job", "test-receipt"}) ||
-				class.MaxFiles != 3 || class.MaxChangedLines != 40 || class.FullBatteryCommand != fullBatteryCommand {
+				class.MaxFiles != 3 || class.MaxChangedLines != 40 {
 				return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest has the wrong tier-1 rule")}
 			}
 		default:
@@ -1251,4 +1265,75 @@ func refuse(code, provenance string) Observation {
 	observation := wouldRefuse(code, provenance)
 	observation.Mode = "refuse"
 	return observation
+}
+
+// AdoptionRulings prepares the landing authority register while preserving the
+// application's existing rulings. Only rows referenced by the shipped landing
+// classes enter a fresh register.
+func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
+	readRegular := func(path string) ([]byte, error) {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("adoption requires a regular policy file: %s", path)
+		}
+		return os.ReadFile(path)
+	}
+	manifestBytes, err := readRegular(filepath.Join(sourceRoot, "scripts", "agents", "landing-classes.json"))
+	if err != nil {
+		return nil, err
+	}
+	var manifest landingClassManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, err
+	}
+	if manifest.SchemaVersion != 1 || manifest.EnginePolicyVersion != 1 || len(manifest.Classes) == 0 {
+		return nil, fmt.Errorf("adoption landing classes are malformed")
+	}
+	source, err := readRegular(filepath.Join(sourceRoot, "memory", "rulings.md"))
+	if err != nil {
+		return nil, err
+	}
+	rows := func(data []byte) map[string][]string {
+		result := map[string][]string{}
+		for _, row := range strings.Split(string(data), "\n") {
+			if id, ok := rulingRowID(row); ok {
+				result[id] = append(result[id], row)
+			}
+		}
+		return result
+	}
+	canonical := rows(source)
+	data, err := readRegular(filepath.Join(targetRoot, "memory", "rulings.md"))
+	if os.IsNotExist(err) {
+		data = []byte("# Standing rulings register\n\nCanonical human rulings required by the shipped landing policy. Application rulings append here.\n\n| id | date | ruling | context | owner | review condition |\n|---|---|---|---|---|---|\n")
+	} else if err != nil {
+		return nil, err
+	}
+	existing := rows(data)
+	seen := map[string]bool{}
+	for _, class := range manifest.Classes {
+		id := class.AuthorizedBy
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if !rulingID.MatchString(id) || len(canonical[id]) != 1 {
+			return nil, fmt.Errorf("adoption landing authority %s is absent or ambiguous", id)
+		}
+		row := canonical[id][0]
+		if len(existing[id]) > 1 || (len(existing[id]) == 1 && existing[id][0] != row) {
+			return nil, fmt.Errorf("adoption conflicts with application ruling %s", id)
+		}
+		if len(existing[id]) == 0 {
+			if len(data) > 0 && data[len(data)-1] != '\n' {
+				data = append(data, '\n')
+			}
+			data = append(data, row...)
+			data = append(data, '\n')
+		}
+	}
+	return data, nil
 }

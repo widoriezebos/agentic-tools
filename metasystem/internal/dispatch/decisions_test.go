@@ -876,7 +876,7 @@ func critiqueFixture(t *testing.T) (repo string) {
 	return repo
 }
 
-func TestCritiqueExhaustionDesignCritic(t *testing.T) {
+func TestCritiqueSevereTerminalBoundary(t *testing.T) {
 	repo := critiqueFixture(t)
 	dir := t.TempDir()
 
@@ -890,8 +890,9 @@ func TestCritiqueExhaustionDesignCritic(t *testing.T) {
 	named := filepath.Join(dir, "named.md")
 	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
 	_, err = CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
-	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") {
-		t.Fatalf("severe terminal boundary = %v", err)
+	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy at terminal round 3 with open finding identifiers: F-1"
+	if err == nil || err.Error() != want {
+		t.Fatalf("severe terminal boundary = %v, want %q", err, want)
 	}
 	root := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", "crit.json"))
 	entries := root["critiqueExhaustions"].([]any)
@@ -900,7 +901,7 @@ func TestCritiqueExhaustionDesignCritic(t *testing.T) {
 	}
 }
 
-func TestCritiqueExhaustionRoundOffBudget(t *testing.T) {
+func TestCritiqueBeforeRoundLimitAllowsContinuation(t *testing.T) {
 	repo := t.TempDir()
 	writeCapRound(t, repo, "crit", "design-critic", 1, false,
 		[]any{registerFindingValue("F-9", true, "direct evidence")}, []any{registerRigor("F-9", "severe")})

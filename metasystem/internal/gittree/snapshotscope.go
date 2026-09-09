@@ -409,6 +409,88 @@ func (w Workspace) SnapshotSeeded(seedCommit, expectedTree string, declaredPaths
 	return w.subtreeOf(tree)
 }
 
+// SnapshotRelevant projects only the declared input paths from the current
+// worktree over expectedTree. Everything outside the declarations stays at
+// the expected candidate bytes. Declared directories are forced into the
+// isolated index so ignored inputs, deletions, modes, and symlinks cannot
+// disappear from a delivery-parity comparison.
+func (w Workspace) SnapshotRelevant(expectedTree string, declaredPaths []string) (string, error) {
+	if !treeID.MatchString(expectedTree) {
+		return "", fmt.Errorf("gittree relevant snapshot: %q is not a tree id", expectedTree)
+	}
+	prefix, err := w.treePrefix()
+	if err != nil {
+		return "", err
+	}
+	if prefix != "" {
+		return "", fmt.Errorf("gittree relevant snapshot requires the repository toplevel")
+	}
+	paths := make([]string, 0, len(declaredPaths))
+	seen := map[string]bool{}
+	for _, declared := range declaredPaths {
+		path := strings.TrimSuffix(strings.TrimPrefix(declared, "./"), "/**")
+		if path == "" || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") || filepath.ToSlash(filepath.Clean(path)) != path {
+			return "", fmt.Errorf("gittree relevant snapshot: invalid declared path %q", declared)
+		}
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return expectedTree, nil
+	}
+	entries, err := w.Entries(expectedTree, paths)
+	if err != nil {
+		return "", fmt.Errorf("gittree relevant snapshot: %w", err)
+	}
+	for path, entry := range entries {
+		if entry.Mode == "160000" {
+			return "", fmt.Errorf("gittree relevant snapshot: declared input %s crosses gitlink mode 160000", path)
+		}
+	}
+	env, cleanup, err := isolatedIndex()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	if _, err := w.git(env, "read-tree", expectedTree); err != nil {
+		return "", fmt.Errorf("gittree relevant snapshot: %w", err)
+	}
+	addPaths := make([]string, 0, len(paths))
+	for _, path := range paths {
+		_, statErr := os.Lstat(filepath.Join(w.Dir, filepath.FromSlash(path)))
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return "", fmt.Errorf("gittree relevant snapshot: inspect %s: %w", path, statErr)
+		}
+		seeded := false
+		for name := range entries {
+			if name == path || strings.HasPrefix(name, path+"/") {
+				seeded = true
+				break
+			}
+		}
+		if statErr == nil || seeded {
+			addPaths = append(addPaths, path)
+		}
+	}
+	if len(addPaths) > 0 {
+		args := append([]string{"add", "-A", "-f", "--"}, addPaths...)
+		if _, err := w.git(env, args...); err != nil {
+			return "", fmt.Errorf("gittree relevant snapshot: %w", err)
+		}
+	}
+	tree, err := w.gitLine(env, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("gittree relevant snapshot: %w", err)
+	}
+	if !treeID.MatchString(tree) {
+		return "", fmt.Errorf("gittree relevant snapshot: write-tree returned %q", tree)
+	}
+	return tree, nil
+}
+
 // anchorName is the grammar for named commit anchors — no slashes, no
 // hex-only names, so a commit anchor can never collide with a tree
 // anchor's id-named ref in the same mission namespace.

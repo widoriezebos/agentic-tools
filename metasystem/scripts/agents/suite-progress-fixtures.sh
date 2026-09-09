@@ -72,7 +72,12 @@ launch_fixture() { # bed, suite, section, banner, extra launcher flags -- comman
   local bed=$1 suite=$2 section=$3 banner=$4
   shift 4
   mkdir -p "$bed/tmp" "$bed/logs"
-  "$bin" proof-run launch --suite "$suite" --root "$bed" --conf "$root/metasystem.conf" \
+  env -u METASYSTEM_PROOF_CONTROL_ROOT -u METASYSTEM_PROOF_ATTEMPT \
+    -u METASYSTEM_PROOF_RUN_ROOT -u METASYSTEM_PROOF_RUN_ID \
+    -u METASYSTEM_HOOK_DELEGATE_STATE_ROOT -u METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT \
+    -u METASYSTEM_HOOK_DELEGATE_JOB -u METASYSTEM_PROOF_RECORD_KEY \
+    -u METASYSTEM_PROOF_CREATION_CLAIM -u METASYSTEM_PROOF_AUTH_BIN \
+    "$bin" proof-run launch --suite "$suite" --root "$bed" --control-root "$bed" --conf "$root/metasystem.conf" \
     --progress "$bed/progress.jsonl" --log "$bed/logs/suite.log" --tmp "$bed/tmp" \
     --banner "$banner" --selected "$section" "$@"
 }

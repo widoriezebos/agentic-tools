@@ -47,11 +47,26 @@ func writeArmingHelperJSON(path string, value any) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-func TestArmingOwnerHelper(t *testing.T) {
-	args, helper := armingHelperArgs()
-	if !helper {
-		t.Skip("only runs as an arming owner subprocess")
+// Subprocess helpers are process entrypoints, not independently skipped tests.
+func TestMain(m *testing.M) {
+	if args, helper := armingHelperArgs(); helper {
+		if err := armingOwnerHelper(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
+	for _, argument := range os.Args {
+		if argument == "--takeover-component-helper" {
+			for {
+				time.Sleep(time.Hour)
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func armingOwnerHelper(args []string) error {
 	root := processArgument(args, "--repo")
 	gate := processArgument(args, "--gate")
 	tag := processArgument(args, "--tag")
@@ -64,13 +79,13 @@ func TestArmingOwnerHelper(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the parent did not open the owner publication gate")
+			return errors.New("the parent did not open the owner publication gate")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
-		t.Fatalf("read helper identity: state=%s err=%v", state, err)
+		return fmt.Errorf("read helper identity: state=%s err=%v", state, err)
 	}
 	checkout := &DiskCheckout{
 		Root: root, Self: exact.Ref(), SelfTag: tag, IntervalSec: interval,
@@ -83,50 +98,39 @@ func TestArmingOwnerHelper(t *testing.T) {
 		command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", componentTag)
 		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		if err := command.Start(); err != nil {
-			t.Fatal(err)
+			return err
 		}
 		componentExact, componentState, componentErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
 		if componentErr != nil || componentState != identity.Alive {
 			_ = command.Process.Kill()
-			t.Fatalf("read %s helper identity: state=%s err=%v", component, componentState, componentErr)
+			return fmt.Errorf("read %s helper identity: state=%s err=%v", component, componentState, componentErr)
 		}
 		held = append(held, Held{Component: component, Tag: componentTag, Identity: componentExact.Ref(), Generation: generation})
 		go func() { _ = command.Wait() }()
 	}
 	if err := checkout.PublishState(held); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	now := time.Now().Unix()
 	supervisionDir := SupervisionDir(root)
 	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "watcher.heartbeat.json"), map[string]any{
 		"observedAtEpoch": now, "loadedCapMin": watcherCap,
 	}); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "reaper.heartbeat.json"), map[string]any{
 		"observedAtEpoch": now,
 	}); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "last-census.json"), map[string]any{
 		"verdict": "SUCCESS", "fingerprint": fingerprint, "generation": generation, "completedAtEpoch": now,
 	}); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	for {
 		time.Sleep(time.Hour)
 	}
-}
-
-func TestTakeoverComponentHelper(t *testing.T) {
-	for _, argument := range os.Args {
-		if argument == "--takeover-component-helper" {
-			for {
-				time.Sleep(time.Hour)
-			}
-		}
-	}
-	t.Skip("only runs as a takeover component subprocess")
 }
 
 func armingOwnerCommand(args ...string) (*exec.Cmd, error) {

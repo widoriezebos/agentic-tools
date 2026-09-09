@@ -24,6 +24,7 @@
     "plans/README.md",
     "scripts/**",
     "skills/**",
+    "testing.json",
     "wow.md"
   ],
   "coordinationPaths": [
@@ -50,7 +51,8 @@
       "docs/project-rules.md",
       "metasystem.conf",
       "metasystem.conf.local",
-      "optional-skills/**"
+      "optional-skills/**",
+      "testing.json"
     ],
     "registrations": [
       ".agents/**",

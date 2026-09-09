@@ -24,8 +24,8 @@ harness_fixture_warn_if_engine_stale() { # metasystem root
 }
 
 harness_fixture_bed_child_scenario() { # bed name, optional private child arguments
-  local bed=$1 capability expected extra fixture_capability_scenario
-  shift
+	local bed=$1 capability expected extra fixture_capability_scenario
+	shift
   if [[ -n "${METASYSTEM_FIXTURE_SCENARIO:-}" ]]; then
     printf '%s fixtures: ignoring untrusted ambient METASYSTEM_FIXTURE_SCENARIO=%s\n' \
       "$bed" "$METASYSTEM_FIXTURE_SCENARIO" >&2
@@ -45,30 +45,129 @@ harness_fixture_bed_child_scenario() { # bed name, optional private child argume
     printf '%s fixtures: private child capability is unreadable\n' "$bed" >&2
     return 64
   }
-  IFS= read -r fixture_capability_scenario <&3 || {
+	IFS= read -r fixture_capability_scenario <&3 || {
     exec 3<&-
     printf '%s fixtures: private child capability is unreadable\n' "$bed" >&2
     return 64
   }
-  if IFS= read -r extra <&3; then
+	if IFS= read -r extra <&3; then
     exec 3<&-
     printf '%s fixtures: private child capability has extra data\n' "$bed" >&2
     return 64
   fi
   exec 3<&-
-  [[ "$fixture_capability_scenario" == "$expected" ]] || {
+	[[ "$fixture_capability_scenario" == "$expected" ]] || {
     printf '%s fixtures: private child capability does not authorize scenario %s\n' \
       "$bed" "$expected" >&2
     return 64
   }
-  printf '%s\n' "$expected"
+	printf '%s\n' "$expected"
+}
+
+harness_dispatch_fixture_bed_child_scenario() { # bed name, optional private child arguments
+	local bed=$1 capability expected extra fixture_capability_scenario engine digest stamp actual actual_stamp capability_dir engine_dir
+	shift
+	if [[ -n "${METASYSTEM_FIXTURE_SCENARIO:-}" ]]; then
+		printf '%s fixtures: ignoring untrusted ambient METASYSTEM_FIXTURE_SCENARIO=%s\n' \
+			"$bed" "$METASYSTEM_FIXTURE_SCENARIO" >&2
+	fi
+	(( $# > 0 )) || return 1
+	if [[ $# -ne 3 || "$1" != --fixture-bed-child ]]; then
+		printf '%s fixtures: invalid private child invocation\n' "$bed" >&2
+		return 64
+	fi
+	expected=$2
+	capability=$3
+	[[ -f "$capability" && ! -L "$capability" ]] || {
+		printf '%s fixtures: private child capability is absent or unsafe\n' "$bed" >&2
+		return 64
+	}
+	exec 3<"$capability" || {
+		printf '%s fixtures: private child capability is unreadable\n' "$bed" >&2
+		return 64
+	}
+	IFS= read -r fixture_capability_scenario <&3 || {
+		exec 3<&-
+		printf '%s fixtures: private child capability is unreadable\n' "$bed" >&2
+		return 64
+	}
+	IFS= read -r engine <&3 || {
+		exec 3<&-
+		printf '%s fixtures: private child capability has no immutable engine locator\n' "$bed" >&2
+		return 64
+	}
+	IFS= read -r digest <&3 || {
+		exec 3<&-
+		printf '%s fixtures: private child capability has no immutable engine digest\n' "$bed" >&2
+		return 64
+	}
+	IFS= read -r stamp <&3 || {
+		exec 3<&-
+		printf '%s fixtures: private child capability has no immutable engine build descriptor\n' "$bed" >&2
+		return 64
+	}
+	if IFS= read -r extra <&3; then
+		exec 3<&-
+		printf '%s fixtures: private child capability has extra data\n' "$bed" >&2
+		return 64
+	fi
+	exec 3<&-
+	[[ "$fixture_capability_scenario" == "$expected" ]] || {
+		printf '%s fixtures: private child capability does not authorize scenario %s\n' \
+			"$bed" "$expected" >&2
+		return 64
+	}
+	capability_dir=$(cd "$(dirname "$capability")" && pwd -P) || return 64
+  [[ -f "$engine" && ! -L "$engine" ]] || {
+    printf '%s fixtures: shared immutable engine is absent or unsafe\n' "$bed" >&2
+    return 64
+  }
+  engine_dir=$(cd "$(dirname "$engine")" && pwd -P) || return 64
+  [[ "$engine_dir" == "$capability_dir" ]] || {
+    printf '%s fixtures: shared immutable engine locator is foreign to the private parent\n' "$bed" >&2
+    return 64
+  }
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+    printf '%s fixtures: shared immutable engine digest is malformed\n' "$bed" >&2
+    return 64
+  }
+  [[ -n "$stamp" && "$stamp" != *[[:space:]]* ]] || {
+    printf '%s fixtures: shared immutable engine build descriptor is malformed\n' "$bed" >&2
+    return 64
+  }
+  actual=$($fixture_bed_root/bin/metasystem util sha256 --file "$engine") || return 64
+  [[ "$actual" == "$digest" ]] || {
+    printf '%s fixtures: shared immutable engine digest mismatch\n' "$bed" >&2
+    return 64
+  }
+  actual_stamp=$(go version -m "$engine" | sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' | head -1)
+  [[ "$actual_stamp" == "$stamp" ]] || {
+    printf '%s fixtures: shared immutable engine build descriptor mismatch\n' "$bed" >&2
+    return 64
+  }
+	harness_fixture_shared_engine=$engine
+	harness_fixture_shared_engine_digest=$digest
+	harness_fixture_shared_engine_stamp=$stamp
+	harness_fixture_child_scenario=$expected
 }
 
 harness_fixture_bed_mint_capability() { # private directory, index, scenario
-  local directory=$1 index=$2 scenario=$3 capability
-  capability=$(mktemp "$directory/$index.capability.XXXXXX") || return 1
-  chmod 600 "$capability" || return 1
-  printf '%s\n' "$scenario" >"$capability" || return 1
+	local directory=$1 index=$2 scenario=$3 capability
+	capability=$(mktemp "$directory/$index.capability.XXXXXX") || return 1
+	chmod 600 "$capability" || return 1
+	printf '%s\n' "$scenario" >"$capability" || return 1
+	printf '%s\n' "$capability"
+}
+
+harness_dispatch_fixture_bed_mint_capability() { # private directory, index, scenario, immutable engine
+	local directory=$1 index=$2 scenario=$3 engine=$4 capability digest stamp
+	capability=$(mktemp "$directory/$index.capability.XXXXXX") || return 1
+	chmod 600 "$capability" || return 1
+	[[ -f "$engine" && ! -L "$engine" ]] || return 1
+  digest=$($fixture_bed_root/bin/metasystem util sha256 --file "$engine") || return 1
+  stamp=$(go version -m "$engine" | sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' | head -1)
+  [[ -n "$stamp" ]] || return 1
+  printf '%s\n%s\n%s\n%s\n' "$scenario" "$engine" "$digest" "$stamp" >"$capability" || return 1
   printf '%s\n' "$capability"
 }
 

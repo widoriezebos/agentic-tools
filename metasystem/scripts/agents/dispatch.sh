@@ -1586,11 +1586,12 @@ dispatch_job() {
     [[ "$design_check" = /* ]] || design_check="$workspace/$design_check"
     [[ -f "$design_check" ]] || die 2 "design-critic --design file does not exist in the reviewed workspace: $design"
   fi
-  if [[ "$role" == implementer && "$goal_width" == full ]]; then
+  if [[ "$role" == implementer && -n "$goal" ]]; then
     local brief_with_gate
     brief_with_gate=$(mktemp "$record_locks/brief-gate.XXXXXX")
     cat "$brief" >"$brief_with_gate"
-    printf '\n# Required full gate\n\n%s\n' 'scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh' >>"$brief_with_gate"
+    "$ms" job testing-requirement --goal "$goal" --gate-width "$goal_width" >>"$brief_with_gate" \
+      || die 1 "could not compose the implementer's shared testing requirement"
     brief=$brief_with_gate
   fi
   if is_review_role "$role" && (( use_worktree == 0 )) && [[ "$workspace" == "$repo_scope" ]] \
@@ -2427,11 +2428,12 @@ follow_up() {
   read_snapshot_fields "$snapshot_json"
   payload="$agents/$root_id"; round_dir="$payload/rounds/$round"
   delivery_content=$message
-  if [[ "$role" == implementer && "$goal_width" == full ]]; then
+  if [[ "$role" == implementer && -n "$goal" ]]; then
     local delivery_with_gate
     delivery_with_gate=$(mktemp "$record_locks/follow-gate.XXXXXX")
     cat "$delivery_content" >"$delivery_with_gate"
-    printf '\n# Required full gate\n\n%s\n' 'scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh' >>"$delivery_with_gate"
+    "$ms" job testing-requirement --goal "$goal" --gate-width "$goal_width" >>"$delivery_with_gate" \
+      || die 1 "could not compose the follow-up implementer's shared testing requirement"
     delivery_content=$delivery_with_gate
   fi
   local delivery_with_return_path_form
@@ -2872,7 +2874,7 @@ internal_cancel() {
 }
 
 internal_breach_stop_run() { # stop id
-  local stop_id=$1 verdict state job reconcile_rc
+  local stop_id=$1 verdict state job proof_attempt reconcile_rc
   while :; do
     set +e
     verdict=$("$ms" job stop-batch-reconcile --root "$root" --stop "$stop_id" 2>&1)
@@ -2890,6 +2892,11 @@ internal_breach_stop_run() { # stop id
       internal_cancel "$job"
       stop_cancel_authorized=
     done < <("$ms" job stop-batch-pending --root "$root" --stop "$stop_id")
+    while IFS= read -r proof_attempt; do
+      [[ -n "$proof_attempt" ]] || continue
+      "$ms" job stop-proof-cancel --root "$root" --stop "$stop_id" --attempt "$proof_attempt" \
+        || die 1 "breach-stop $stop_id could not cancel proof attempt $proof_attempt"
+    done < <("$ms" job stop-batch-proof-pending --root "$root" --stop "$stop_id")
   done
 }
 

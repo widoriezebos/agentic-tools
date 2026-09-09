@@ -187,3 +187,89 @@ func TestRunnerSignalClosesTurnWithoutChangingMissionState(t *testing.T) {
 		t.Fatal("stop signal wrote mission state")
 	}
 }
+
+func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
+	root, turn, command := fixtureOrphanTurn(t)
+	waited := make(chan struct{})
+	go func() { _ = command.Wait(); close(waited) }()
+	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "100")
+
+	engine := NewEngine(root, "orphan")
+	recordPath, _, _ := engine.runnerPaths()
+	// A stale start time proves that this runner identity is gone even if
+	// its PID has been reused. Stop must never signal that replacement.
+	runner := Item{Kind: ItemRunner, Root: root, MissionID: "orphan", Runtime: "fake",
+		RecordPath: recordPath, Pid: int64(os.Getpid()), PidStartedAt: 1,
+		Pgid: int64(os.Getpid()), Tag: "stale-runner"}
+	record := processFields(runner)
+	record["status"] = "running"
+	if err := atomicWriteJSON(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	leasePath := filepath.Join(engine.missionDir(), "lease.json")
+	leaseDir := filepath.Join(engine.missionDir(), "lease.d")
+	if err := os.MkdirAll(leaseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWriteJSON(leasePath, processFields(runner)); err != nil {
+		t.Fatal(err)
+	}
+	intentPath := filepath.Join(engine.missionDir(), "stop-intent.json")
+	if err := atomicWriteJSON(intentPath, map[string]any{"missionId": "orphan"}); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(engine.missionDir(), "state.json")
+	state := []byte("{\"state\":\"active\"}\n")
+	if err := os.WriteFile(statePath, state, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := Stop(runner, StopOptions{})
+	if err != nil || outcome.Result != "already-gone" {
+		t.Fatalf("dead runner stop: %#v, %v", outcome, err)
+	}
+	<-waited
+	stoppedRunner, err := readJSONDoc(recordPath)
+	if err != nil || stoppedRunner["status"] != "stopped" {
+		t.Fatalf("runner conclusion: %#v, %v", stoppedRunner, err)
+	}
+	stoppedTurn, err := readJSONDoc(turn.RecordPath)
+	if err != nil || stoppedTurn["status"] != "failed" || stoppedTurn["error"] != "turn-lost" || stoppedTurn["hostTermination"] != TerminationTerm {
+		t.Fatalf("orphan host conclusion: %#v, %v", stoppedTurn, err)
+	}
+	for _, path := range []string{leasePath, leaseDir, intentPath} {
+		if pathExists(path) {
+			t.Fatalf("stop retained %s", path)
+		}
+	}
+	if after, err := os.ReadFile(statePath); err != nil || string(after) != string(state) {
+		t.Fatalf("stop changed mission state: %q, %v", after, err)
+	}
+}
+
+func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
+	root, runner, command := fixtureOrphanTurn(t)
+	waited := make(chan struct{})
+	go func() { _ = command.Wait(); close(waited) }()
+	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "100")
+	runner.Kind = ItemRunner
+	engine := NewEngine(root, runner.MissionID)
+	runner.RecordPath, _, _ = engine.runnerPaths()
+	record := processFields(runner)
+	record["status"] = "running"
+	if err := atomicWriteJSON(runner.RecordPath, record); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := Stop(runner, StopOptions{})
+	if err != nil || outcome.Result != "stopped" || outcome.Signal != TerminationTerm {
+		t.Fatalf("live runner stop: %#v, %v", outcome, err)
+	}
+	<-waited
+	intent, err := readJSONDoc(filepath.Join(engine.missionDir(), "stop-intent.json"))
+	if err != nil || intent["missionId"] != runner.MissionID || !intentMatchesRunner(intent, record) {
+		t.Fatalf("stop intent did not bind the signalled runner: %#v, %v", intent, err)
+	}
+}

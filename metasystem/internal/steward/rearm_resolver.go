@@ -248,3 +248,76 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 	}
 	return commit, nil
 }
+
+// VerifySourceAtDestination proves that the pinned enrolled bytes still own
+// policy for a captured destination commit. The enrollment remains bound to
+// the commit that genuinely supplied the executable; later destination
+// commits may reuse it only while the complete ENGINE projection is equal.
+func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destinationCommit string) error {
+	if b == nil || b.file == nil {
+		return fmt.Errorf("the enrolled engine is not open")
+	}
+	if !commitBuildStamp.MatchString(destinationCommit) || len(destinationCommit) != 40 {
+		return fmt.Errorf("captured policy destination %q is not a full commit id", destinationCommit)
+	}
+	stamp := b.BuildStamp()
+	sourceCommit, err := resolveLandedBuild(b.repoRoot, installationRoot, destinationCommit, stamp)
+	if err != nil {
+		return err
+	}
+	// Only an automatic re-arm records landing provenance. A human enrollment
+	// still has to prove its actual pinned build stamp, ancestry and complete
+	// ENGINE projection below; it does not invent a machine landing record.
+	if b.Install.LandedCommit != "" && b.Install.LandedCommit != sourceCommit {
+		return fmt.Errorf("enrollment records landed source %q but the executable stamp resolves to %q", b.Install.LandedCommit, sourceCommit)
+	}
+	if b.Install.MintedBy == "machine-rebuild" && (b.Install.LandedCommit == "" || b.Install.LandingRef == "") {
+		return fmt.Errorf("machine enrollment is missing its landed source or landing ref")
+	}
+	if b.Install.LandedCommit == "" && b.Install.LandingRef != "" {
+		return fmt.Errorf("enrollment has a landing ref without a landed source")
+	}
+	seconds := RearmResolveSeconds(installationRoot)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
+	defer cancel()
+	policy, err := behaviorsurface.Load()
+	if err != nil {
+		return err
+	}
+	sourceDigest, err := archivedEngineDigestAtCommit(ctx, installationRoot, sourceCommit, policy)
+	if err != nil {
+		if ctx.Err() != nil {
+			return witnessTimeoutError(seconds)
+		}
+		return fmt.Errorf("read enrolled source ENGINE projection: %w", err)
+	}
+	destinationDigest, err := archivedEngineDigestAtCommit(ctx, installationRoot, destinationCommit, policy)
+	if err != nil {
+		if ctx.Err() != nil {
+			return witnessTimeoutError(seconds)
+		}
+		return fmt.Errorf("read destination ENGINE projection: %w", err)
+	}
+	if sourceDigest != destinationDigest {
+		return fmt.Errorf("enrolled source %s and destination %s have different ENGINE projections", sourceCommit, destinationCommit)
+	}
+	return nil
+}
+
+func archivedEngineDigestAtCommit(ctx context.Context, installationRoot, commit string, policy behaviorsurface.Policy) (string, error) {
+	toplevel, err := gitOutputContext(ctx, installationRoot, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	toplevel = canonicalPath(toplevel)
+	installationRoot = canonicalPath(installationRoot)
+	prefix, err := filepath.Rel(toplevel, installationRoot)
+	if err != nil || prefix == ".." || strings.HasPrefix(prefix, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("installation root %q is outside git toplevel %q", installationRoot, toplevel)
+	}
+	archiveSpec := commit
+	if prefix != "." {
+		archiveSpec = commit + ":" + filepath.ToSlash(prefix)
+	}
+	return digestArchivedTree(ctx, toplevel, archiveSpec, policy)
+}

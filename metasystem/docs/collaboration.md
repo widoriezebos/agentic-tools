@@ -34,33 +34,38 @@ Keep reviews small and cheap:
 
 ## Weight-Triggered Direct Validation
 
-Ordinary landings keep the existing touched-package, touched-fixture, and
-static checks. They add no governance command or form. The landing path only
-adds behavior-surface weight; when the configured threshold is due, the
-standing validator's custodian runs the retained validator directly through
-the governed run boundary:
+Ordinary landings consume the risk-selected shared testing result through
+`test verify`; they add no governance command or approval form. The landing
+path still adds behavior-surface weight. When the configured threshold is due,
+the standing validator's custodian runs the deep cadence selection through the
+governed run boundary and joins its testing worker to that one reservation:
 
 ```sh
 bin/metasystem run launch --root "$PWD" --id "direct-validation-<id>" \
   --kind suite --display "weight-triggered direct validation" \
   --log "artifacts/agents/runs/direct-validation-<id>.log" \
   --goal "<standing-validator-goal>" --obligation-revision "<revision>" \
-  --standing-shared-process -- scripts/validate-metasystem.sh
+  --standing-shared-process -- bin/metasystem test run --root "$PWD" \
+  --goal "<standing-validator-goal>" --mode deep --purpose cadence
 ```
 
 Watch that exact run with the command printed by `run launch`. A green run may
 discharge weight only through `gate weight-discharge` with the same goal,
-obligation revision, and run id. Direct shell diagnostics remain free to run,
-but cannot discharge weight or another obligation.
+obligation revision, run id, exact weight generation, and sufficient retained
+testing evidence for every catch class. Direct shell diagnostics and focused
+standard results cannot discharge cadence weight or another obligation.
 
 The retirement observation window is the next two weight-triggered direct
 validations. The steward is the observer and mechanically compares their
-stage-result section ids with the retained catch classes. Wido is the
+retained result group identities with the six catch classes. Wido is the
 custodian. Findings fix forward; no per-landing gate or retry is introduced.
 
-Ownership of the retained overlaps is explicit. `commit.sh` alone executes the
-per-landing coverage delta; `land.sh` only passes its ratchet argument through.
-`go-gate.sh` owns the repository-wide coverage ratchet. Wido owns the review,
+Ownership of the retained overlaps is explicit. For migrated contracts,
+`commit.sh` owns one verify-only consumption boundary and launches no tests or
+builds; `land.sh` may launch the selected shared run once when execution was
+explicitly requested and re-verifies after transport changes. Legacy
+installations retain their migration-only coverage delta. `go-gate.sh` owns
+the legacy repository-wide coverage ratchet. Wido owns the review,
 after the next declared milestone, of whether that sweep still catches debt
 the landing delta cannot. `validate-metasystem.sh` owns VM delivery and
 guest-runtime invariants; `adopt-fixtures.sh` owns installed-tree and update

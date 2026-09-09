@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // A fake custody table: a pid is alive only when listed with a matching start
@@ -184,6 +185,99 @@ func TestReaperPassCoreTransitions(t *testing.T) {
 	}
 	if declines != 1 {
 		t.Fatalf("live-over-budget must decline exactly once per pass: %v", emitted)
+	}
+}
+
+func TestReaperRecollectsDeliveredReturn(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"valid", "completed"}, {"missing", "failed"}, {"malformed", "failed"}, {"no-validator", "failed"},
+		{"cancelled", "cancelled"}, {"expired", "timeout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			jobs := JobsDir(root)
+			now := time.Unix(1786000000, 0).UTC()
+			record := map[string]any{
+				"jobId": "delivered", "status": "running", "role": "design-critic",
+				"round": 1, "runtime": "fake", "sessionId": "fake-session",
+				"requestedModel": "fake-model", "effectiveModel": "fake-model",
+				"pid": 777, "pidStartedAt": 7, "instanceTag": "returned-job",
+				"startedAt": now.Add(-time.Minute).Format(isoSecond), "capMin": 60,
+			}
+			if tc.name == "cancelled" {
+				record["phase"] = "cancelling"
+			}
+			if tc.name == "expired" {
+				record["startedAt"] = now.Add(-2 * time.Hour).Format(isoSecond)
+			}
+			path := writeJobRecord(t, jobs, "delivered", record)
+			schema, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "design-critic.schema.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			schemaDir := filepath.Join(root, "scripts", "agents", "schemas")
+			if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(schemaDir, "design-critic.schema.json"), schema, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			roundDir := filepath.Join(root, "artifacts", "agents", "delivered", "rounds", "1")
+			if err := os.MkdirAll(roundDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			returned := `{
+  "schemaVersion":3,"jobId":"delivered","round":1,"runtime":"fake",
+  "sessionId":"fake-session","model":{"requested":"fake-model","effective":"fake-model"},
+  "claimed":{"model":null,"sessionId":null},"mode":"design","reviewedCommit":"abc1234",
+  "evidence":[{"command":"fixture delivery","observed":"canonical return recorded","level":"ran"}],
+  "gaps":[],"findings":[],"rigor":[],"verdictMaterialCount":0
+}`
+			if tc.name == "malformed" {
+				returned = `{`
+			}
+			if tc.name != "missing" {
+				if err := os.WriteFile(filepath.Join(roundDir, "return.json"), []byte(returned), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(roundDir, "usage.json"), []byte(`{"cost":{"usd":0.5}}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg := ReaperConfig{
+				Repo: root, JobsDir: jobs, Now: func() time.Time { return now },
+				Custodian: func(int64, int64, string) identity.Liveness { return identity.Dead },
+				Survivors: func(string, int64, int64) (bool, bool) { return false, true },
+				Apply:     casApplier(t, jobs),
+				ReturnComplete: func(role, file string) bool {
+					return len(validate.ReturnCompleteRole(root, role, file)) == 0
+				},
+			}
+			if tc.name == "no-validator" {
+				cfg.ReturnComplete = nil
+			}
+			if err := cfg.ReaperPass(); err != nil {
+				t.Fatal(err)
+			}
+			got := readStatus(t, path)
+			if got["status"] != tc.want {
+				t.Fatalf("reaped return: want %s, got %#v", tc.want, got)
+			}
+			if tc.want == "failed" && got["error"] != "process-lost" {
+				t.Fatalf("missing process-loss reason: %#v", got)
+			}
+			if tc.want == "completed" {
+				if got["error"] != nil || got["recollectedFrom"] != "process-lost" || got["recollectedAt"] != now.Format(isoSecond) {
+					t.Fatalf("missing recollection provenance: %#v", got)
+				}
+				usage, _ := json.Marshal(got["usage"])
+				if string(usage) != `{"cost":{"usd":0.5}}` {
+					t.Fatalf("delivered usage was lost: %s", usage)
+				}
+			} else if got["recollectedAt"] != nil {
+				t.Fatalf("non-recollected outcome has recollection provenance: %#v", got)
+			}
+		})
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
@@ -136,12 +135,10 @@ func runUp(args []string) int {
 		fmt.Println(up.SchedulerEntry(options))
 		return 0
 	}
-	stateRoot, err := stateroot.RootForInstallation(root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "up:", err)
-		return 1
-	}
-	options.Root = stateRoot
+	// Supervision control, enrollment and accounting belong to the
+	// authenticated installation. Scope remains the containing application
+	// repository so census still observes application processes and sources.
+	options.Root = root
 	if *retire {
 		return printUpResult(up.Retire(options))
 	}

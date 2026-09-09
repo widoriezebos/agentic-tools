@@ -112,7 +112,7 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
 	scope, scale, code := parseProcessScope("arm", []string{"--repo", repo, "--installation", installation})
-	if code != 0 || scope.Checkout != repo || scope.Installation != installation || scope.Root != repo || scale < 1 {
+	if code != 0 || scope.Checkout != repo || scope.Installation != installation || scope.Root != installation || scale < 1 {
 		t.Fatalf("arm scope = %#v scale=%d code=%d", scope, scale, code)
 	}
 	if err := stopfence.Write(scope.Root, stopfence.Record{

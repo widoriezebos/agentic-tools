@@ -110,6 +110,63 @@ func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 	return rearmBed{root: root, engine: engine, replacement: replacement, first: first, second: second}
 }
 
+func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
+	root := initRearmRepo(t)
+	source := commitRearmTree(t, root, "enrolled source")
+	engine := filepath.Join(canonicalPath(t.TempDir()), "metasystem")
+	buildFakeRunner(t, engine, source)
+	digest, err := installDigest(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	human := InstallIdentity{RepoIdentity: root, Generation: 1, InstallPath: engine, InstallDigest: digest,
+		MintedAt: time.Now().UTC().Format(time.RFC3339), MintedBy: "human-terminal",
+		Enrollment: EnrollmentHumanTerminal, EngineBuild: source}
+	if err := MintIdentity(RepoIdentityPath(root), human); err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := OpenEnrolledBinary(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	writeRearmFile(t, filepath.Join(root, "plans", "goals", "peer.md"), "record-only peer update\n")
+	rearmGit(t, root, "add", ".")
+	rearmGit(t, root, "commit", "-qm", "peer record")
+	destination := rearmGit(t, root, "rev-parse", "HEAD")
+	for _, at := range []string{source, destination} {
+		if err := pinned.VerifySourceAtDestination(root, at); err != nil {
+			t.Fatalf("lawful human enrollment at %s: %v", at, err)
+		}
+	}
+	if pinned.Install.LandedCommit != "" || pinned.Install.LandingRef != "" {
+		t.Fatal("source verification manufactured machine enrollment provenance")
+	}
+	pinned.Install.MintedBy = "machine-rebuild"
+	if err := pinned.VerifySourceAtDestination(root, destination); err == nil || !strings.Contains(err.Error(), "missing its landed source") {
+		t.Fatalf("incomplete machine provenance was accepted: %v", err)
+	}
+	pinned.Install.LandedCommit, pinned.Install.LandingRef = source, "refs/remotes/origin/trunk"
+	if err := pinned.VerifySourceAtDestination(root, destination); err != nil {
+		t.Fatalf("machine rearm lost record-only reuse: %v", err)
+	}
+	pinned.Install.LandedCommit = destination
+	if err := pinned.VerifySourceAtDestination(root, destination); err == nil || !strings.Contains(err.Error(), "executable stamp resolves") {
+		t.Fatalf("machine source mismatch was accepted: %v", err)
+	}
+	pinned.Install = human
+	changed := commitRearmTree(t, root, "different engine")
+	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") {
+		t.Fatalf("human enrollment accepted changed engine source: %v", err)
+	}
+	rearmGit(t, root, "checkout", "--orphan", "unrelated")
+	unrelated := commitRearmTree(t, root, "unrelated source")
+	if err := pinned.VerifySourceAtDestination(root, unrelated); err == nil || !strings.Contains(err.Error(), "not landed") {
+		t.Fatalf("human enrollment accepted unrelated destination: %v", err)
+	}
+}
+
 func TestWitnessResolverWalksPastTheSixtyFourthCandidate(t *testing.T) {
 	root := initRearmRepo(t)
 	first := commitRearmTree(t, root, "candidate-00")

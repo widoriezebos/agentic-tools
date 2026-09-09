@@ -18,8 +18,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type WeightDecision struct {
@@ -371,6 +373,19 @@ func WeightDischarge(root, goalID string, obligationRevision uint64, runID strin
 	}
 	if !sameWeightEpoch(record.Governed.BudgetEpoch, projection.WeightEpoch) {
 		return result, fmt.Errorf("REFUSED-PROOF-STALE: run %s is not bound to the current obligation budget epoch", runID)
+	}
+	if _, migrated, lookupErr := config.ConfLookup(filepath.Join(root, "metasystem.conf"), "testing.contract"); lookupErr != nil {
+		return result, fmt.Errorf("weight discharge refused: testing contract migration state is unreadable: %w", lookupErr)
+	} else if migrated {
+		attempt, testingResult, proofErr := proofrun.GovernedTestResult(root, runID)
+		if proofErr != nil || attempt.GoalID != goalID || attempt.GoalRevision != binding.Revision || attempt.ReservationOwner == nil ||
+			attempt.ReservationOwner.RunGeneration != record.Generation || attempt.ReservationOwner.ObligationRevision != obligationRevision ||
+			testingResult.Purpose != testpolicy.PurposeCadence || testingResult.RequiredMode != testpolicy.ModeDeep || testingResult.ExecutedMode != testpolicy.ModeDeep {
+			return result, fmt.Errorf("weight discharge refused: governed run %s lacks exact sufficient deep cadence evidence: %v", runID, proofErr)
+		}
+		if err := proofrun.RequireResultGroups(testingResult, testpolicy.CadenceCatchGroupIDs()); err != nil {
+			return result, fmt.Errorf("weight discharge refused: %w", err)
+		}
 	}
 	source := fmt.Sprintf("%s-r%d-weight-g%d-%s", goalID, obligationRevision, state.Generation, runID)
 	if _, err := retrodebt.Raise(root, retrodebt.KindObligation, source, now); err != nil {

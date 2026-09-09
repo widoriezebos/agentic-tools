@@ -36,6 +36,17 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 real_git=$(command -v git)
 
+clear_independent_fixture_context() {
+  unset METASYSTEM_PROOF_CONTROL_ROOT METASYSTEM_PROOF_ATTEMPT \
+    METASYSTEM_PROOF_RUN_ROOT METASYSTEM_PROOF_RUN_ID \
+    METASYSTEM_PROOF_RECORD_KEY METASYSTEM_PROOF_CREATION_CLAIM \
+    METASYSTEM_PROOF_AUTH_BIN METASYSTEM_HOOK_DELEGATE_STATE_ROOT \
+    METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT METASYSTEM_HOOK_DELEGATE_JOB \
+    METASYSTEM_SUITE_PROGRESS_ACTIVE METASYSTEM_SUITE_PROGRESS_ROOT \
+    METASYSTEM_SUITE_PROGRESS_LOG METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY \
+    METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT
+}
+
 make_leg() { # name
   leg_root=$tmp/$1
   leg_seed=$leg_root/seed
@@ -153,15 +164,64 @@ SH
   printf 'seed\n' >"$leg_seed/payload.txt"
   printf 'existing plan\n' >"$leg_seed/plans/existing.md"
   printf 'artifacts/\n' >"$leg_seed/.gitignore"
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+    cat >"$leg_seed/metasystem.conf" <<'CONF'
+metasystem.runtimes=fake
+dispatch.cap-min=1
+dispatch.cap-max=120
+CONF
+    mkdir -p "$leg_seed/plans/goals"
+    cat >"$leg_seed/plans/goals/backlog.md" <<'BACKLOG'
+# Backlog
+
+- Identity: 01ARZ3NDEKTSV4RRFFQ69G5FBV
+- FormatVersion: 1
+- SyncMode: local
+- Revision: 1
+
+History:
+BACKLOG
+    receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
+    printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
+  fi
   git -C "$leg_seed" init -q
   git -C "$leg_seed" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" config user.name fixture
   git -C "$leg_seed" config user.email fixture@example.invalid
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+    git -C "$leg_seed" config goal.sync-remote local
+    git -C "$leg_seed" config goal.sync-branch refs/heads/metasystem/goals
+    git -C "$leg_seed" config metasystem.goal.machine fixture-machine
+  fi
   git -C "$leg_seed" add -- scripts bin payload.txt plans/existing.md .gitignore
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+    git -C "$leg_seed" add -- metasystem.conf plans/goals/backlog.md
+  fi
   if [[ "$fixture_scenario" == full-width-chain ]]; then
     git -C "$leg_seed" add -- memory/rulings.md
   fi
   git -C "$leg_seed" commit -qm seed
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+    git -C "$leg_seed" update-ref refs/heads/metasystem/goals HEAD
+    git -C "$leg_seed" update-ref refs/metasystem/goals/accepted HEAD
+    receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
+    "$source_engine" lease announce --root "$leg_seed" --session "land-$fixture_scenario-seed" \
+      --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario-seed" \
+      --runtime fake --owner-lineage land-receipt-fixture >/dev/null
+    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$source_engine" goal open --root "$leg_seed" \
+      --id fx --intent "Create an exact fixture-local landing receipt." \
+      --next "Run the bounded fixture receipt." \
+      --risk severity=1,novelty=1,exposure=1,accumulation=1 \
+      --basis "This disposable fixture executes only its bounded local landing receipt." >/dev/null
+    "$source_engine" goal approve --root "$leg_seed" --id fx --by Wido \
+      --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
+      --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
+      --fixture-human-authority
+    "$source_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
+    git -C "$leg_seed" reset -q --hard refs/metasystem/goals/accepted
+    "$source_engine" lease retire --root "$leg_seed" --session "land-$fixture_scenario-seed" \
+      --pid "$$" --start "$receipt_fixture_start" >/dev/null
+  fi
   git init --bare -q "$leg_remote"
   git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" remote add origin "$leg_remote"
@@ -172,10 +232,22 @@ SH
   git -C "$leg_local" config user.email fixture-local@example.invalid
   git -C "$leg_peer" config user.name fixture-peer
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+    git -C "$leg_local" config goal.sync-remote local
+    git -C "$leg_local" config goal.sync-branch refs/heads/metasystem/goals
+    git -C "$leg_local" config metasystem.goal.machine fixture-machine
+    git -C "$leg_local" update-ref refs/heads/metasystem/goals origin/main
+    git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+    receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
+    "$source_engine" lease announce --root "$leg_local" --session "land-$fixture_scenario" \
+      --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario" \
+      --runtime fake --owner-lineage land-receipt-fixture >/dev/null
+  fi
 }
 
 make_brain_source_leg() { # name
   local name=$1 source_top source_prefix legacy ledger digest manifest fixture_start migrate_out
+  clear_independent_fixture_context
   # These disposable roots need their own witness because the parent's witness describes a different repository.
   unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
     METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_EXPORT \
@@ -217,6 +289,9 @@ LEDGER
     awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$fixture_template" >"$fixture_template.fixture"
     mv "$fixture_template.fixture" "$fixture_template"
   done
+  awk '$0 !~ /^[[:space:]]*testing[.]contract[[:space:]]*=/' "$leg_seed/metasystem.conf" \
+    >"$leg_seed/metasystem.conf.legacy"
+  mv "$leg_seed/metasystem.conf.legacy" "$leg_seed/metasystem.conf"
   legacy=$(cat "$leg_seed/plans/goals.md" && printf x) && legacy=${legacy%x}
   "$source_engine" json object ledger="$legacy" sha256="$(shasum -a 256 "$leg_seed/plans/goals.md" | cut -d' ' -f1)" >"$leg_seed/plans/goals-accepted.json"
   "$source_engine" json set --file "$leg_seed/plans/goals-accepted.json" --int schemaVersion=1
@@ -263,7 +338,7 @@ declare_fixture_brain_temporarily() { # checkout
   local checkout=$1 saved=$leg_root/metasystem.conf.saved
   cp "$checkout/metasystem.conf" "$saved"
   printf '%s\n' 'metasystem.runtimes=fake' >"$checkout/metasystem.conf"
-  "$source_engine" brain declare --root "$checkout" --by Wido --fixture-human-authority >/dev/null
+  "$source_engine" brain declare --root "$checkout" --by Wido --fixture-human-authority
   mv "$saved" "$checkout/metasystem.conf"
 }
 
@@ -589,6 +664,7 @@ fi
 # 5. Tier 1 runs the declared command against the staged candidate before the
 # commit boundary, then carries the root job and exact receipt path together.
 if [[ "$fixture_scenario" == tier-one ]]; then
+clear_independent_fixture_context
 make_leg tier-one
 tier_one_log=$leg_root/tier-one.log
 tier_one_message=$leg_root/message.txt
@@ -625,6 +701,7 @@ fi
 # receipt for another tree before commit, and lands with the exact candidate's
 # full-battery receipt and bar-a provenance.
 if [[ "$fixture_scenario" == full-width-chain ]]; then
+clear_independent_fixture_context
 make_leg full-width-chain
 full_chain_message=$leg_root/message.txt
 full_chain_missing_output=$leg_root/missing-receipt.out
@@ -632,8 +709,8 @@ full_chain_usage_output=$leg_root/usage-refusal.out
 full_chain_mismatch_output=$leg_root/mismatched-receipt.out
 full_chain_landing_output=$leg_root/land.out
 full_chain_log=$leg_root/chain.log
-full_battery_command=$(sed -n 's/^const fullBatteryCommand = "\(.*\)"$/\1/p' \
-  "$root/internal/landing/tierone.go")
+full_battery_command=$(sed -n 's/^const FullBatteryCommand = "\(.*\)"$/\1/p' \
+  "$root/internal/validate/recertification.go")
 [[ -n "$full_battery_command" ]] \
   || { echo "land full-width-chain fixture: full battery command source is unreadable" >&2; exit 1; }
 printf 'fixture lands a receipted full-width chain\n' >"$full_chain_message"
@@ -665,7 +742,7 @@ full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 (
   cd "$leg_local"
   "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_other_tree" --command "$full_battery_command"
+    --tree "$full_chain_other_tree" --command "$full_battery_command" --goal fx --cap-min 1
 ) >/dev/null
 full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
 
@@ -677,6 +754,7 @@ mkdir -p "$leg_local/artifacts/agents/jobs" \
 cat >"$leg_local/artifacts/agents/jobs/full-chain.json" <<'JSON'
 {
   "jobId": "full-chain",
+  "goalId": null,
   "parentJob": null,
   "role": "implementer",
   "round": 1,
@@ -709,12 +787,35 @@ set -e
   sed -n '1,160p' "$full_chain_missing_output" >&2
   exit 1
 }
-grep -Fqx "land refused: chain full-chain is full-width (its goal's accumulation is 2 or more); make the full battery receipt for the candidate tree first (metasystem landing test-receipt --root . --tree <subtree> --command \"<the full battery command from metasystem/internal/landing/tierone.go>\") and pass it with --test-receipt" \
+grep -Fqx "land refused: legacy full-width chain full-chain requires its full-battery receipt" \
   "$full_chain_missing_output"
 if grep -Fq '== STEP: verify checks' "$full_chain_missing_output"; then
   echo "land full-width-chain fixture: missing receipt reached verification" >&2
   exit 1
 fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+
+# The same refusal in a contract-bearing repository names the testing receipt
+# it wants, never the legacy full battery. The key is unstaged and removed
+# again, so the later receipted landing still takes the legacy path.
+printf 'testing.contract=testing.json\n' >>"$leg_local/metasystem.conf"
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+    --staged-only --skip-transport
+) >"$full_chain_missing_output" 2>&1
+full_chain_schema2_rc=$?
+set -e
+grep -v '^testing\.contract=testing\.json$' "$leg_local/metasystem.conf" >"$leg_local/metasystem.conf.new"
+mv "$leg_local/metasystem.conf.new" "$leg_local/metasystem.conf"
+[[ $full_chain_schema2_rc == 2 ]] || {
+  echo "land full-width-chain fixture: schema-2 missing receipt exited $full_chain_schema2_rc, want 2" >&2
+  sed -n '1,160p' "$full_chain_missing_output" >&2
+  exit 1
+}
+grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing evidence; run metasystem landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" \
+  "$full_chain_missing_output"
 [[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
 
 set +e
@@ -741,7 +842,7 @@ fi
 (
   cd "$leg_local"
   "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_candidate" --command "$full_battery_command"
+    --tree "$full_chain_candidate" --command "$full_battery_command" --goal fx --cap-min 1
 ) >/dev/null
 full_chain_receipt=artifacts/agents/landing/receipts/$full_chain_candidate.json
 (

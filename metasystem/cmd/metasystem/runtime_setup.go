@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func runRuntimeSetup(args []string) int {
@@ -50,6 +52,26 @@ func runRuntimeSetup(args []string) int {
 	for _, changed := range result.Changed {
 		absolute := filepath.Join(result.Layout.RepositoryRoot, filepath.FromSlash(changed))
 		fmt.Printf("INSTALLED %s\n", absolute)
+	}
+	confPath := filepath.Join(result.Layout.InstallationRoot, "metasystem.conf")
+	contractRel, present, lookupErr := config.ConfLookup(confPath, "testing.contract")
+	switch {
+	case lookupErr != nil || !present:
+		// Registration remains independently checkable while an older
+		// installation is still outside the testing-contract migration.
+	case strings.TrimSpace(contractRel) == "":
+		fmt.Printf("TEST_CONTRACT_INVALID configuration=%s reason=testing.contract-is-unavailable\n", confPath)
+	case filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../"):
+		fmt.Printf("TEST_CONTRACT_INVALID configuration=%s reason=testing.contract-is-not-relative-and-normalized\n", confPath)
+	default:
+		contractPath := filepath.Join(result.Layout.InstallationRoot, filepath.FromSlash(contractRel))
+		if _, contractErr := testpolicy.Load(contractPath); contractErr == nil {
+			fmt.Printf("TEST_CONTRACT_READY contract=%s\n", contractPath)
+		} else if strings.Contains(contractErr.Error(), "TEST_CONTRACT_REQUIRED:") {
+			fmt.Printf("TEST_CONTRACT_REQUIRED contract=%s\n", contractPath)
+		} else {
+			fmt.Printf("TEST_CONTRACT_INVALID contract=%s reason=%s\n", contractPath, strings.ReplaceAll(contractErr.Error(), " ", "-"))
+		}
 	}
 	return 0
 }

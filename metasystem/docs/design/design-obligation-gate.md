@@ -14,7 +14,7 @@ If any answer is weak, fix or report it. Escalate to the full matrix only on the
 
 ## Milestone Check (declared milestones only)
 
-At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), run the project's full suite once in your own environment before certifying, in addition to the focused checks above. Focused selections miss cross-cutting fan-out, and a delegate's green run proves its environment, not yours. This is the named question that justifies the full suite's expense; between milestones, focused verification stays the default.
+At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), recompute the shared testing contract from the actual goal, destination policy and whole-project candidate. Run its required selection once in your own environment and consume the sufficient retained result with `test verify`, in addition to the focused checks above. A low-risk milestone may finish with standard evidence; deep and cadence groups run only when the contract requires them, while the standing validator remains the broader backstop. A delegate's green run proves its environment, not yours. This named question justifies the selected expense; there is no blanket full-suite prerequisite between milestones.
 
 ## Full Matrix (risky changes only)
 

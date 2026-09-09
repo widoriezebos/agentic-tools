@@ -206,6 +206,19 @@ func runRunWrap(args []string) int {
 	}
 	defer logFile.Close()
 	workload := exec.Command(command[0], command[1:]...)
+	workload.Env = os.Environ()
+	bound, boundErr := store.Read(*id)
+	if boundErr != nil || bound == nil {
+		fmt.Fprintln(os.Stderr, "bound run record unreadable before workload launch")
+		_ = store.WriteSidecar(*id, 1, *nonce, 127)
+		return 1
+	}
+	if bound.Governed != nil {
+		workload.Env = append(workload.Env,
+			"METASYSTEM_PROOF_RUN_ROOT="+*root,
+			"METASYSTEM_PROOF_RUN_ID="+*id,
+		)
+	}
 	workload.Stdout = logFile
 	workload.Stderr = logFile
 	exitCode := int64(0)

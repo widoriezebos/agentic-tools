@@ -74,6 +74,13 @@ func StopSuite(process ProcessIdentity, options StopOptions) StopOutcome {
 	return stopOne("suite", process, -int(process.Pgid), true, options)
 }
 
+// StopRecordedIdentity stops one exact non-group process identity. It is used
+// when cancellation wins before a suite process record can be published.
+func StopRecordedIdentity(component string, process ProcessIdentity, options StopOptions) StopOutcome {
+	options = stopDefaults(options)
+	return stopOne(component, process, int(process.Pid), false, options)
+}
+
 func stopDefaults(options StopOptions) StopOptions {
 	if options.Prober == nil {
 		options.Prober = identity.KernelProber{}

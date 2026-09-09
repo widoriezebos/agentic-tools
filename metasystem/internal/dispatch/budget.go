@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -386,6 +387,68 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			projection.ActiveJobs++
 		}
 	}
+	proofAttempts, proofErr := proofrun.ReadAttempts(repoRoot)
+	if proofErr != nil {
+		return unknownBudget(file.Id, revision, "artifacts/agents/proof-runs/attempts", "the retained proof-attempt inventory is unreadable: "+proofErr.Error())
+	}
+	for _, attempt := range proofAttempts {
+		logicalPath := filepath.ToSlash(strings.TrimPrefix(mustProofAttemptPath(repoRoot, attempt.AttemptID), repoRoot+string(filepath.Separator)))
+		if attempt.GoalID != file.Id {
+			continue
+		}
+		if attempt.GoalRevision > revision || attempt.AccountingRevision > revision {
+			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation is bound to a later goal revision")
+		}
+		if attempt.AccountingRevision < accountingRevision {
+			continue
+		}
+		if weightEpoch != nil && !sameUint64(attempt.BudgetEpoch, weightEpoch) {
+			continue
+		}
+		if weightEpoch == nil && attempt.BudgetEpoch != nil {
+			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation claims a missing budget epoch")
+		}
+		startedAt, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+		if startErr != nil {
+			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation has no readable startedAt")
+		}
+		if weightEpoch == nil && budgetStartedAt.After(claimedAt) && !startedAt.After(budgetStartedAt) {
+			continue
+		}
+		if attempt.ReservationOwner != nil {
+			owner := attempt.ReservationOwner
+			if owner.ControlRoot != repoRoot || owner.GoalRevision != attempt.GoalRevision ||
+				!sameUint64(owner.BudgetEpoch, attempt.BudgetEpoch) || owner.Deadline != attempt.Deadline {
+				return unknownBudget(file.Id, revision, logicalPath, "the governed proof reservation owner contradicts the joined attempt")
+			}
+			record, readErr := (&run.Store{Root: repoRoot}).Read(owner.RunID)
+			if readErr != nil || record == nil || record.Governed == nil {
+				return unknownBudget(file.Id, revision, logicalPath, "the governed proof reservation owner is missing or unreadable")
+			}
+			governed := record.Governed
+			started, startErr := time.Parse(time.RFC3339, record.StartedAt)
+			ownerDeadline := started.Add(time.Duration(governed.ExecutionCostMinutes) * time.Minute).UTC().Format(time.RFC3339Nano)
+			if startErr != nil || record.RunId != owner.RunID || record.Generation != owner.RunGeneration ||
+				record.LaunchNonce != owner.LaunchNonce || record.GoalId != attempt.GoalID ||
+				governed.GoalRevision != owner.GoalRevision || governed.ObligationRevision != owner.ObligationRevision ||
+				governed.AttemptOrdinal != owner.AttemptOrdinal || !sameUint64(governed.BudgetEpoch, owner.BudgetEpoch) ||
+				ownerDeadline != owner.Deadline {
+				return unknownBudget(file.Id, revision, logicalPath, "the governed proof reservation has no exact run-generation owner")
+			}
+			continue
+		}
+		if projection.Attempts == math.MaxUint64 || attempt.ReservedMinutes > math.MaxUint64-projection.ReservedJobMinutes {
+			return unknownBudget(file.Id, revision, logicalPath, "proof-attempt accounting overflowed")
+		}
+		projection.Attempts++
+		projection.ReservedJobMinutes += attempt.ReservedMinutes
+		if attempt.Terminal == nil {
+			if projection.ActiveJobs == math.MaxUint64 {
+				return unknownBudget(file.Id, revision, logicalPath, "active proof-attempt accounting overflowed")
+			}
+			projection.ActiveJobs++
+		}
+	}
 	type durableAttempt struct {
 		attempt obligationstate.TerminalAttempt
 		record  string
@@ -499,6 +562,11 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		projection.ReservedJobMinutes += attempt.ObservedCostMinutes
 	}
 	return finishBudgetProjection(projection)
+}
+
+func mustProofAttemptPath(root, id string) string {
+	path, _ := proofrun.AttemptPath(root, id)
+	return path
 }
 
 func terminalStateContradiction(record *run.Record, attempt obligationstate.TerminalAttempt) string {

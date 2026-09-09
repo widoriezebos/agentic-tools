@@ -1210,6 +1210,34 @@ func runDispatchStopBatchPending(args []string) int {
 	return 0
 }
 
+func runDispatchStopBatchProofPending(args []string) int {
+	flags := flag.NewFlagSet("job stop-batch-proof-pending", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	stopID := flags.String("stop", "", "stop batch id")
+	if flags.Parse(args) != nil || *root == "" || *stopID == "" {
+		return 2
+	}
+	batch, err := goal.ReadStopBatch(*root, *stopID)
+	if err != nil {
+		return recordExit(err)
+	}
+	for _, attempt := range batch.PendingProofs {
+		fmt.Println(attempt)
+	}
+	return 0
+}
+
+func runDispatchStopProofCancel(args []string) int {
+	flags := flag.NewFlagSet("job stop-proof-cancel", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	stopID := flags.String("stop", "", "stop batch id")
+	attemptID := flags.String("attempt", "", "proof attempt id")
+	if flags.Parse(args) != nil || *root == "" || *stopID == "" || *attemptID == "" {
+		return 2
+	}
+	return recordExit(dispatchcore.CancelStopProof(*root, *stopID, *attemptID))
+}
+
 func runDispatchStopCancelAuthorize(args []string) int {
 	flags := flag.NewFlagSet("job stop-cancel-authorize", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
@@ -1414,6 +1442,36 @@ func runDispatchCensusFresh(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func runDispatchCensusWait(args []string) int {
+	flags := flag.NewFlagSet("job census-wait", flag.ContinueOnError)
+	verdict := flags.String("verdict", "", "last-census verdict file")
+	state := flags.String("state", "", "supervision arming record file")
+	arm := flags.String("arm", "", "re-arm command named in refusal messages")
+	repo := flags.String("repo", "", "repository path named in refusal messages")
+	root := flags.String("root", "", "metasystem root used to authenticate the census fingerprint")
+	postGeneration := flags.Int64("post-generation", 0, "captured generation for an explicit post-event wait")
+	postScan := flags.Int64("post-scan", 0, "captured scan sequence for an explicit post-event wait")
+	attemptBudget := flags.Int("attempt-budget", 2, "completed census passes allowed")
+	maxRegressions := flags.Int("max-regressions", 5, "writer sequence regressions allowed")
+	pollMS := flags.Int64("poll-ms", 5000, "poll interval in milliseconds")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *verdict == "" || *state == "" || *root == "" {
+		fmt.Fprintln(os.Stderr, "job census-wait: --verdict, --state, and --root are required")
+		return 2
+	}
+	fingerprint, err := census.Fingerprint(*root, *repo)
+	if err != nil {
+		return recordExit(fmt.Errorf("dispatch refused: census fingerprint cannot be computed: %w", err))
+	}
+	err = dispatchcore.WaitForCensus(dispatchcore.CensusWaitOptions{VerdictPath: *verdict, StatePath: *state, ArmHint: *arm,
+		RepoHint: *repo, ExpectedFingerprint: fingerprint, PostGeneration: *postGeneration, PostScanSeq: *postScan,
+		AttemptBudget: *attemptBudget, MaxRegressions: *maxRegressions, PollInterval: time.Duration(*pollMS) * time.Millisecond,
+		Observe: func(measurement dispatchcore.CensusWaitMeasurement) {
+			data, _ := json.Marshal(measurement)
+			fmt.Fprintf(os.Stderr, "CENSUS-WAIT-MEASUREMENT %s\n", data)
+		}})
+	return recordExit(err)
 }
 
 func runDispatchWatcherCeiling(args []string) int {
@@ -1700,6 +1758,21 @@ func runDispatchCapResolution(args []string) int {
 		return 2
 	}
 	return recordExit(dispatchcore.WriteCapResolution(*output, *capMin, *rule, *origin))
+}
+
+func runDispatchTestingRequirement(args []string) int {
+	flags := flag.NewFlagSet("job testing-requirement", flag.ContinueOnError)
+	goalID := flags.String("goal", "", "accepted goal identifier")
+	gateWidth := flags.String("gate-width", "", "recorded area or full risk width")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	requirement, err := dispatchcore.TestingRequirement(*goalID, *gateWidth)
+	if err != nil {
+		return recordExit(err)
+	}
+	fmt.Print(requirement)
+	return 0
 }
 
 func runDispatchBriefMode(args []string) int {

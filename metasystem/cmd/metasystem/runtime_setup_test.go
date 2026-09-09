@@ -90,6 +90,26 @@ func TestRuntimeSetupCLIRejectsUnknownInputAndPendingCheck(t *testing.T) {
 	}
 }
 
+func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
+	repo, installation := setupCLIFixture(t)
+	contract := filepath.Join(installation, "testing.json")
+	conf := filepath.Join(installation, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude\ntesting.contract=testing.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := runConfigTailor([]string{"--conf", conf, "--runtimes", "none", "--testing-contract", contract}); code != 0 {
+		t.Fatalf("config tailor exit = %d", code)
+	}
+	data, err := os.ReadFile(contract)
+	if err != nil || !strings.Contains(string(data), `"tailoringRequired": true`) {
+		t.Fatalf("fresh testing contract is not explicitly incomplete: %q err=%v", data, err)
+	}
+	output, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--runtimes", "none"}) })
+	if code != 0 || !strings.Contains(output, "TEST_CONTRACT_REQUIRED") || strings.Contains(output, "CONFIG_READY") {
+		t.Fatalf("readiness dimensions were conflated: exit=%d output=%q", code, output)
+	}
+}
+
 func TestRuntimeSetupCLISupportsNestedAdoptedInstallationAndSubdirectory(t *testing.T) {
 	app, installation := setupCLIFixture(t)
 	if err := os.Remove(filepath.Join(app, "development", "metasystem-design.md")); err != nil {

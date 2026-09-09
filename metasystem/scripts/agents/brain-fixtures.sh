@@ -356,6 +356,9 @@ cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := classifyVer
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
+cmd/metasystem/proof_run.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
+cmd/metasystem/proof_run.go:	classifiedCaller, err := classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
+cmd/metasystem/proof_run.go:	classifiedCaller, err = classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/run.go:	view, err := classifyVerbCaller(root, callerPid)
 internal/channel/poll.go:				approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
@@ -369,6 +372,7 @@ internal/dispatch/stop.go:	actor := goal.Actor{Machine: binding.Machine, Lineage
 internal/goal/recover.go:		r.Actor.Human = by
 internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
+internal/steward/validation_window.go:	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}
 ACTOR_SITES
 )
 	[[ "$actor_sites" == "$expected_actor_sites" ]] || {

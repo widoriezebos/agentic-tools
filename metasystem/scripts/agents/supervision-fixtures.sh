@@ -244,7 +244,7 @@ assert_scratch_scoped_announcement_calls() {
   expected=$(printf '%s\n' \
     'scripts/agents/supervision-fixtures.sh:call:announced' \
     'scripts/agents/supervision-fixtures.sh:call:"$repo"' \
-    'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo"' \
+    'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo/metasystem"' \
     'scripts/agents/supervision-fixtures.sh:call:' \
     'scripts/agents/supervision-fixtures.sh:direct:"$repo"' \
     'scripts/agents/supervision-fixtures.sh:call:"$gate_repo"' | LC_ALL=C sort)
@@ -837,7 +837,7 @@ git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invali
 fixture_harness_roots+=("$operator_harness")
 operator_arm=$operator_harness/scripts/agents/arm-supervision.sh
 operator_engine=$operator_harness/bin/metasystem
-enroll_fixture_engine "$operator_scope" "$operator_engine"
+enroll_fixture_engine "$operator_harness" "$operator_engine"
 
 # A plain shell with no matching ancestor must refuse, but the refusal tells an
 # operator both supported ways forward. Restricting discovery to the fake
@@ -938,10 +938,10 @@ wait_for_child_exit "nested ordinary operator arming" "$operator_driver" \
   || { operator_driver_rc=$?; cat "$tmp/operator-arm.out" >&2; exit "$operator_driver_rc"; }
 grep -Fq 'up outcome=armed authority=writer' "$tmp/operator-arm.out" \
   || { cat "$tmp/operator-arm.out" >&2; exit 1; }
-[[ -s "$operator_scope/artifacts/agents/supervision/last-census.json" ]] \
-  || { echo "nested operator path did not write state at the Git repository scope" >&2; exit 1; }
-[[ ! -e "$operator_harness/artifacts" ]] \
-  || { echo "nested operator path split state beneath the vendored installation" >&2; exit 1; }
+[[ -s "$operator_harness/artifacts/agents/supervision/last-census.json" ]] \
+  || { echo "nested operator path did not write control state at the vendored installation" >&2; exit 1; }
+[[ ! -e "$operator_scope/artifacts" ]] \
+  || { echo "nested operator path duplicated control state at the Git repository scope" >&2; exit 1; }
 if grep -Eq 'metasystem\.runtimes has no signature adapters|No such file or directory' "$tmp/operator-arm.out"; then
   cat "$tmp/operator-arm.out" >&2
   exit 1
@@ -1381,10 +1381,24 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   assert_closed_fence_refusal stop-fence-run-adopt "$common_fence_remedy" \
     "$repo/bin/metasystem" run adopt --root "$repo" --id stop-fence-adopt \
       --pid "$acceptance_main_pid" --caller-pid "$acceptance_main_pid"
-  assert_closed_fence_refusal stop-fence-proof-run "$common_fence_remedy" \
+  set +e
+  env -u METASYSTEM_PROOF_CONTROL_ROOT -u METASYSTEM_PROOF_ATTEMPT \
+    -u METASYSTEM_PROOF_RUN_ROOT -u METASYSTEM_PROOF_RUN_ID \
+    -u METASYSTEM_PROOF_RECORD_KEY -u METASYSTEM_PROOF_CREATION_CLAIM \
+    -u METASYSTEM_PROOF_AUTH_BIN -u METASYSTEM_HOOK_DELEGATE_STATE_ROOT \
+    -u METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT -u METASYSTEM_HOOK_DELEGATE_JOB \
     "$repo/bin/metasystem" proof-run launch --suite stop-fence-proof --root "$repo" \
-      --conf "$repo/metasystem.conf" --progress "$tmp/stop-fence-progress.jsonl" \
-      --log "$tmp/stop-fence-proof.log" --banner stop-fence -- /bin/true
+      --control-root "$repo" --conf "$repo/metasystem.conf" \
+      --progress "$tmp/stop-fence-progress.jsonl" --log "$tmp/stop-fence-proof.log" \
+      --banner stop-fence -- /bin/true >"$tmp/stop-fence-proof-run.out" 2>&1
+  stop_fence_proof_rc=$?
+  set -e
+  (( stop_fence_proof_rc != 0 )) \
+    || { echo "stop-fence-proof-run created work under the closed fence" >&2; cat "$tmp/stop-fence-proof-run.out" >&2; exit 1; }
+  assert_exact_stdout stop-fence-proof-run "$tmp/stop-fence-proof-run.out" \
+    "the metasystem is stopped for $repo since $fence_changed, by $fence_by_verb pid $fence_by_pid" \
+    "$common_fence_remedy" \
+    'PROOF-RESULT {"schemaVersion":1,"disposition":"failed","exitStatus":1}'
 
   fence_brief=$tmp/stop-fence-brief.md
   fence_outputs=$tmp/stop-fence-outputs.txt
@@ -2671,7 +2685,7 @@ if [[ "$fixture_scenario" == foreign-owner ]]; then
 foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q -b main .)
-mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/artifacts/agents/supervision/lock.d"
+mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
 cp "$source_root/scripts/agents/arm-supervision.sh" \
   "$source_root/scripts/agents/preflight-commands.sh" \
   "$foreign/repo/metasystem/scripts/agents/"
@@ -2691,7 +2705,7 @@ printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' > "$fore
 # answers agent under an agent-run suite, and require-holder then
 # refuses UNTRUSTED before the foreign-owner rule is ever reached.
 METASYSTEM_CENSUS_PROCESS_FILE= METASYSTEM_FAKE_PROCESS_IDENTITY_FILE= \
-  become_main "$foreign/repo" foreign-owner-shutdown "$foreign/repo/metasystem/bin/metasystem"
+  become_main "$foreign/repo/metasystem" foreign-owner-shutdown "$foreign/repo/metasystem/bin/metasystem"
 foreign_sleep_pid=$(
   bash -c '"$1" util hold --tag metasystem-foreign-owner >/dev/null 2>&1 & echo $!' _ "$ms"
 )
@@ -2699,7 +2713,7 @@ foreign_start=$(process_started_at "$foreign_sleep_pid")
 owned_pids+=("$foreign_sleep_pid:$foreign_start")
 printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"metasystem-supervision-owner-some-other-checkout-1-2","acquiredAt":"1970-01-01T00:00:00Z"}\n' \
   "$foreign_sleep_pid" "$foreign_start" \
-  >"$foreign/repo/artifacts/agents/supervision/lock.d/owner.json"
+  >"$foreign/repo/metasystem/artifacts/agents/supervision/lock.d/owner.json"
 set +e
 "$foreign/repo/metasystem/scripts/agents/arm-supervision.sh" --repo "$foreign/repo" --shutdown \
   >"$tmp/foreign-shutdown.out" 2>&1

@@ -1,0 +1,258 @@
+package testpolicy
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
+
+func TestContractRejectsMissingNoopAndUnknownFields(t *testing.T) {
+	valid := fixtureContract()
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(encoded); err != nil {
+		t.Fatalf("valid contract refused: %v", err)
+	}
+	unknown := strings.Replace(string(encoded), `"schemaVersion":1`, `"schemaVersion":1,"surprise":true`, 1)
+	if _, err := Decode([]byte(unknown)); err == nil {
+		t.Fatal("unknown contract field was accepted")
+	}
+	noop := fixtureContract()
+	noop.Groups[0].Adapter = "command"
+	noop.Groups[0].Kind = "unit"
+	noop.Groups[0].Argv = []string{"true"}
+	noop.Groups[0].Format = "junit-xml"
+	noop.Groups[0].Reports = []string{"reports"}
+	noop.Groups[0].ExpectedTests = []ExpectedTest{{Report: "reports/test.xml", Name: "test"}}
+	noop.Groups[0].Packages, noop.Groups[0].Tests = nil, nil
+	if err := noop.Validate(); err == nil {
+		t.Fatal("blanket success command was accepted")
+	}
+}
+
+func TestOutputOwnershipPreservesTrackedBinAndInputIntegrity(t *testing.T) {
+	contract := fixtureContract()
+	contract.Groups[0].Outputs = []string{"../escape"}
+	if err := contract.Validate(); err == nil {
+		t.Fatal("escaping output path was accepted")
+	}
+	contract = fixtureContract()
+	contract.Groups[0].Inputs = []string{"bin/tool", "src/**"}
+	contract.Groups[0].Outputs = []string{"reports"}
+	if err := contract.Validate(); err != nil {
+		t.Fatalf("tracked bin input was blanket-excluded: %v", err)
+	}
+	contract = fixtureContract()
+	contract.Groups[0].Inputs = append(contract.Groups[0].Inputs, "reports/**")
+	contract.Groups[0].Outputs = []string{"reports"}
+	if err := contract.Validate(); err == nil {
+		t.Fatal("overlapping input and output ownership was accepted")
+	}
+}
+
+func TestSectionGroupNamespaceIsAccepted(t *testing.T) {
+	contract := fixtureContract()
+	contract.Groups = append(contract.Groups, Group{ID: "section/example", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "example"})
+	contract.Cadence = append(contract.Cadence, "section/example")
+	if err := contract.Validate(); err != nil {
+		t.Fatalf("canonical section group id refused: %v", err)
+	}
+}
+
+func TestExternalInputsRequireExplicitAbsoluteOrEnvironmentLocators(t *testing.T) {
+	contract := fixtureContract()
+	contract.Groups[0].ExternalInputs = []ExternalInput{{ID: "tool-config", Path: "${TOOL_HOME}/config.json"}, {ID: "system-ca", Path: "/etc/hosts"}}
+	if err := contract.Validate(); err != nil {
+		t.Fatalf("declared external input locators were refused: %v", err)
+	}
+	contract.Groups[0].ExternalInputs[0].Path = "relative/config.json"
+	if err := contract.Validate(); err == nil {
+		t.Fatal("undeclared relative external input authority was accepted")
+	}
+}
+
+func TestCoverageRequiresWholePackageTestInventory(t *testing.T) {
+	contract := fixtureContract()
+	contract.Groups[0].Coverage = true
+	contract.Groups[0].Tests = json.RawMessage(`["TestOutput"]`)
+	if err := contract.Validate(); err == nil || !strings.Contains(err.Error(), "tests=all") {
+		t.Fatalf("named subset claimed whole-package coverage: %v", err)
+	}
+	contract.Groups[0].Tests = json.RawMessage(`"all"`)
+	if err := contract.Validate(); err != nil {
+		t.Fatalf("whole-package coverage contract was refused: %v", err)
+	}
+}
+
+func TestMetaSystemContractKeepsMixedPackageCoverageExplicit(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := groupMap(contract.Groups)
+	for _, id := range []string{"goal-full-coverage", "missionrunner-full-coverage"} {
+		group, ok := groups[id]
+		if !ok {
+			t.Fatalf("explicit coverage group %s is absent", id)
+		}
+		all, _, err := GoTests(group)
+		if err != nil || !all || !group.Coverage {
+			t.Fatalf("coverage group %s is not a whole-package measurement: group=%+v err=%v", id, group, err)
+		}
+		if !contains(contract.Cadence, id) {
+			t.Fatalf("coverage group %s is absent from cadence", id)
+		}
+	}
+
+	standard, err := Select(contract, SelectionRequest{ChangedPaths: []string{"metasystem/internal/goal/stop.go"}, RequestedMode: ModeStandard, Purpose: PurposeDiagnostic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(standard.SelectedGroups, "goal-full-coverage") || contains(standard.SelectedGroups, "missionrunner-full-coverage") {
+		t.Fatalf("focused standard selection expanded to whole-package coverage: %+v", standard)
+	}
+	deep, err := Select(contract, SelectionRequest{ChangedPaths: []string{"metasystem/internal/testpolicy/select.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(deep.RequiredGroups, "goal-full-coverage") || !contains(deep.RequiredGroups, "missionrunner-full-coverage") {
+		t.Fatalf("coverage-sensitive deep selection omitted package floors: %+v", deep)
+	}
+}
+
+func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary := []string{
+		"metasystem/cmd/metasystem/adoption_comparison_test.go", "metasystem/cmd/metasystem/cap_contract_test.go",
+		"metasystem/cmd/metasystem/config_verbs.go", "metasystem/cmd/metasystem/dispatch_verbs.go",
+		"metasystem/cmd/metasystem/dispatch_verbs_test.go", "metasystem/cmd/metasystem/goal_test.go",
+		"metasystem/cmd/metasystem/landing_verbs.go", "metasystem/cmd/metasystem/landing_verbs_test.go",
+		"metasystem/cmd/metasystem/main.go", "metasystem/cmd/metasystem/process_verbs.go",
+		"metasystem/cmd/metasystem/process_verbs_test.go", "metasystem/cmd/metasystem/proof_run.go",
+		"metasystem/cmd/metasystem/proof_run_test.go", "metasystem/cmd/metasystem/run.go",
+		"metasystem/cmd/metasystem/runtime_setup.go", "metasystem/cmd/metasystem/runtime_setup_test.go",
+		"metasystem/cmd/metasystem/test.go", "metasystem/cmd/metasystem/test_protection.go",
+		"metasystem/cmd/metasystem/test_test.go", "metasystem/cmd/metasystem/testing_pruning_test.go",
+		"metasystem/cmd/metasystem/up.go", "metasystem/docs/collaboration.md",
+		"metasystem/docs/design/design-obligation-gate.md", "metasystem/docs/orchestration.md",
+		"metasystem/docs/project-adaptation.md", "metasystem/docs/project-rules.md",
+		"metasystem/internal/behaviorsurface/policy.v2.json", "metasystem/internal/behaviorsurface/policy_test.go",
+		"metasystem/internal/config/model_alias_validate_test.go", "metasystem/internal/config/validate.go",
+		"metasystem/internal/config/validate_test.go", "metasystem/internal/dispatch/budget.go",
+		"metasystem/internal/dispatch/build.go", "metasystem/internal/dispatch/census_wait.go",
+		"metasystem/internal/dispatch/census_wait_test.go", "metasystem/internal/dispatch/critique_chain_test.go",
+		"metasystem/internal/dispatch/decisions_test.go", "metasystem/internal/dispatch/proof_attempt_test.go",
+		"metasystem/internal/dispatch/stop.go", "metasystem/internal/dispatch/testing_contract_test.go",
+		"metasystem/internal/gaterun/weight.go", "metasystem/internal/gaterun/weight_test.go",
+		"metasystem/internal/gittree/detached.go", "metasystem/internal/gittree/detached_test.go",
+		"metasystem/internal/gittree/snapshotscope.go", "metasystem/internal/gittree/snapshotscope_test.go",
+		"metasystem/internal/goal/stop.go", "metasystem/internal/landing/observe.go",
+		"metasystem/internal/landing/proof_receipt_test.go", "metasystem/internal/landing/receipt.go",
+		"metasystem/internal/landing/testing.go", "metasystem/internal/landing/testing_test.go",
+		"metasystem/internal/landing/tierone.go", "metasystem/internal/proofrun/attempt.go",
+		"metasystem/internal/proofrun/attempt_test.go", "metasystem/internal/proofrun/coverage.go",
+		"metasystem/internal/proofrun/coverage_script_test.go", "metasystem/internal/proofrun/coverage_test.go",
+		"metasystem/internal/proofrun/evidence.go", "metasystem/internal/proofrun/execution_context.go",
+		"metasystem/internal/proofrun/execution_context_test.go", "metasystem/internal/proofrun/freeze.go",
+		"metasystem/internal/proofrun/launcher.go", "metasystem/internal/proofrun/launcher_test.go",
+		"metasystem/internal/proofrun/manifest.go", "metasystem/internal/proofrun/record.go",
+		"metasystem/internal/proofrun/stop.go", "metasystem/internal/proofrun/test_build.go",
+		"metasystem/internal/proofrun/test_command.go", "metasystem/internal/proofrun/test_command_test.go",
+		"metasystem/internal/proofrun/test_cost.go", "metasystem/internal/proofrun/test_cost_test.go",
+		"metasystem/internal/proofrun/test_go.go", "metasystem/internal/proofrun/test_result.go",
+		"metasystem/internal/proofrun/test_result_test.go", "metasystem/internal/proofrun/test_section.go",
+		"metasystem/internal/proofrun/watchdog.go", "metasystem/internal/proofrun/witness_gate_test.go",
+		"metasystem/internal/refusal/register.go", "metasystem/internal/stateroot/owner.go",
+		"metasystem/internal/steward/identity.go", "metasystem/internal/steward/rearm_resolver.go",
+		"metasystem/internal/steward/rearm_test.go", "metasystem/internal/steward/validation_window.go",
+		"metasystem/internal/steward/validation_window_test.go", "metasystem/internal/stoptransition/families.go",
+		"metasystem/internal/stoptransition/proof_attempt_inventory_test.go", "metasystem/internal/testpolicy/contract.go",
+		"metasystem/internal/testpolicy/contract_test.go", "metasystem/internal/testpolicy/metasystem.go",
+		"metasystem/internal/testpolicy/protection.go", "metasystem/internal/testpolicy/protection_test.go",
+		"metasystem/internal/testpolicy/risk.go", "metasystem/internal/testpolicy/select.go",
+		"metasystem/internal/testpolicy/select_test.go", "metasystem/internal/validate/recertification.go",
+		"metasystem/metasystem.conf", "metasystem/scripts/adopt-fixture-helpers.sh",
+		"metasystem/scripts/adopt-fixtures.sh", "metasystem/scripts/adopt.sh",
+		"metasystem/scripts/agents/commit.sh", "metasystem/scripts/agents/coverage-delta.sh",
+		"metasystem/scripts/agents/dispatch-fixtures.sh", "metasystem/scripts/agents/dispatch.sh",
+		"metasystem/scripts/agents/fixture-budget.sh", "metasystem/scripts/agents/go-gate.sh",
+		"metasystem/scripts/agents/land.sh", "metasystem/scripts/agents/landing-classes.json",
+		"metasystem/scripts/agents/witness-gate.sh", "metasystem/scripts/validate-metasystem.sh",
+		"metasystem/testing.json",
+		"development/project-rules-local.md", "metasystem/memory/instruction-ledger.md",
+		"metasystem/memory/receipts.log", "metasystem/plans/application-testing-contract-design.md",
+		"metasystem/plans/coordinator-loop-investigation.md", "metasystem/plans/coordinator-loop-prevention-design-r2-dispositions.md",
+		"metasystem/plans/coordinator-loop-prevention-design.md", "metasystem/plans/coordinator-loop-prevention-progress.md",
+		"metasystem/plans/coordinator-loop-prevention-testing-design-r1-dispositions.md",
+		"metasystem/plans/coordinator-loop-prevention-testing-design-r2-dispositions.md",
+		"metasystem/plans/coordinator-loop-prevention-testing-design-r3-dispositions.md",
+		"metasystem/plans/coordinator-loop-prevention-testing-design.md",
+	}
+	plan, err := Select(contract, SelectionRequest{ChangedPaths: boundary, GoalRisk: GoalRisk{Severity: 3, Novelty: 2, Exposure: 2, Accumulation: 3}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Uncertainty) != 0 {
+		t.Fatalf("complete accumulated delivery boundary has unowned paths: %v", plan.Uncertainty)
+	}
+	for _, id := range []string{"fast-static-build", "goal-full-coverage", "missionrunner-full-coverage"} {
+		if !contains(plan.RequiredGroups, id) {
+			t.Fatalf("coverage-sensitive delivery omitted %s: %+v", id, plan)
+		}
+	}
+	if contains(plan.SelectedGroups, "section/go-engine-gate") {
+		t.Fatalf("ordinary selected delivery pulled in the broad cadence Go battery: %+v", plan)
+	}
+
+	ordinary, err := Select(contract, SelectionRequest{ChangedPaths: []string{"metasystem/cmd/metasystem/goal_test.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err = RequireFirstTransition(contract, ordinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(ordinary.SelectedGroups, "fast-static-build") || contains(ordinary.SelectedGroups, "section/go-engine-gate") ||
+		contains(ordinary.SelectedGroups, "goal-full-coverage") || contains(ordinary.SelectedGroups, "missionrunner-full-coverage") {
+		t.Fatalf("first transition did not keep fast proof distinct from the full Go battery: %+v", ordinary)
+	}
+}
+
+func TestIncompleteAdoptionTemplateCannotReportReady(t *testing.T) {
+	data, err := IncompleteTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil || value["tailoringRequired"] != true {
+		t.Fatalf("incomplete template is not explicit: value=%v err=%v", value, err)
+	}
+	if _, err := Decode(data); err == nil || !strings.Contains(err.Error(), "TEST_CONTRACT_REQUIRED") {
+		t.Fatalf("incomplete template reported ready: %v", err)
+	}
+}
+
+func fixtureContract() Contract {
+	return Contract{SchemaVersion: 1,
+		ProjectRisk: ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []Surface{{ID: "app", Paths: []string{"src/**"}, Standard: []string{"app-unit"}, Deep: []string{"app-deep"}, Critical: []string{"app-output"}}},
+		Groups: []Group{
+			{ID: "app-unit", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"go.mod", "src/**"}, Outputs: []string{}, Tools: []Tool{}, Obligations: []string{"app-output"}, Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"src"}, Tests: json.RawMessage(`"all"`)},
+			{ID: "app-deep", Kind: "integration", Adapter: "go", CWD: ".", Inputs: []string{"go.mod", "src/**"}, Outputs: []string{}, Tools: []Tool{}, Obligations: []string{"app-recovery"}, Platforms: []string{"any"}, TargetMS: 2000, Packages: []string{"src"}, Tests: json.RawMessage(`["TestRestart"]`)},
+		},
+		Always: Always{Canary: []string{"app-unit"}, Standard: []string{}}, Unknown: []string{"app-unit"}, Cadence: []string{"app-unit", "app-deep"}}
+}

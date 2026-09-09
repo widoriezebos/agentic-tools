@@ -37,6 +37,19 @@ type manifest struct {
 	digest  string
 }
 
+func (m manifest) fullDigest() string {
+	var framed bytes.Buffer
+	for _, item := range m.entries {
+		body := recordBody(item)
+		var length [recordLengthBytes]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(body)))
+		framed.Write(length[:])
+		framed.Write(body)
+	}
+	digest := sha256.Sum256(framed.Bytes())
+	return hex.EncodeToString(digest[:])
+}
+
 // The manifest record format is normative. Each entry below the root, except
 // the root-level artifacts/, bin/, and .git closures, contributes one record.
 // A record body is the raw relative-path bytes followed by NUL, one kind byte
@@ -219,6 +232,16 @@ func Digest(root string) (string, error) {
 	return m.digest, nil
 }
 
+// FullDigest uses the same framing and exclusions as the witness manifest but
+// includes every non-runtime source/input entry, not only ENGINE projection.
+func FullDigest(root string) (string, error) {
+	m, err := readManifest(root)
+	if err != nil {
+		return "", err
+	}
+	return m.fullDigest(), nil
+}
+
 func Verify(root, expected string) (string, error) {
 	if len(expected) != sha256.Size*2 {
 		return "", fmt.Errorf("expected manifest digest must be 64 lowercase hexadecimal characters")
@@ -226,7 +249,7 @@ func Verify(root, expected string) (string, error) {
 	if _, err := hex.DecodeString(expected); err != nil || strings.ToLower(expected) != expected {
 		return "", fmt.Errorf("expected manifest digest must be 64 lowercase hexadecimal characters")
 	}
-	actual, err := Digest(root)
+	actual, err := FullDigest(root)
 	if err != nil {
 		return "", err
 	}

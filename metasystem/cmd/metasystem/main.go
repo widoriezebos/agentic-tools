@@ -29,6 +29,18 @@ type family struct {
 func families() []family {
 	return []family{
 		{
+			name:    "test",
+			summary: "risk-selected common application testing with retained proof and reuse",
+			verbs: []verb{
+				{"list", "list every group in the committed testing contract", runTestList},
+				{"check", "validate the committed contract and declared tools without running tests", runTestCheck},
+				{"plan", "compute the candidate's risk-selected groups without running tests", runTestPlan},
+				{"run", "admit and execute the recomputed selected test plan", runTestRun},
+				{"verify", "verify sufficient retained proof without launching tests or builds", runTestVerify},
+				{"worker", "execute one admitted selected plan (internal)", runTestWorker},
+			},
+		},
+		{
 			name:    "brain",
 			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
 			verbs: []verb{
@@ -55,9 +67,15 @@ func families() []family {
 				{"banner", "print the suite witness state, duration class, heartbeat, and log paths", runProofRunBanner},
 				{"heartbeat", "print the deepest live suite section under a root", runProofRunHeartbeat},
 				{"launch", "launch a suite in its own process group with a sibling watchdog", runProofRunLaunch},
+				{"worker-authorized", "authenticate a suite worker against its live parent proof", runProofRunWorkerAuthorized},
 				{"watchdog", "watch suite output growth and enforce the section ceiling (internal)", runProofRunWatchdog},
 				{"preserve", "copy bounded watchdog evidence (internal)", runProofRunPreserve},
 				{"assert", "assert selector sections produced well-formed start and end events", runProofRunAssert},
+				{"coverage-begin", "claim the actual full-gate coverage producer slot", runProofRunCoverageBegin},
+				{"coverage-eligible", "decide whether an authenticated worker owns full coverage production", runProofRunCoverageEligible},
+				{"coverage-complete", "commit measured coverage from the authenticated producer", runProofRunCoverageComplete},
+				{"coverage-reuse", "project matching successful full coverage for selected packages", runProofRunCoverageReuse},
+				{"fixture-selection", "select the owned fixture scenario set (internal)", runProofRunFixtureSelection},
 			},
 		},
 		{
@@ -113,6 +131,7 @@ func families() []family {
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
+				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 			},
@@ -142,6 +161,8 @@ func families() []family {
 				{"breach-stop-routes", "list steward and dispatch breach-stop routes", runDispatchBreachStopRoutes},
 				{"stop-batch-reconcile", "advance one stop batch from authoritative job records", runDispatchStopBatchReconcile},
 				{"stop-batch-pending", "list the matching non-terminal jobs in a stop batch", runDispatchStopBatchPending},
+				{"stop-batch-proof-pending", "list the matching non-terminal proof attempts in a stop batch", runDispatchStopBatchProofPending},
+				{"stop-proof-cancel", "cancel and terminally join one exact proof attempt", runDispatchStopProofCancel},
 				{"stop-cancel-authorize", "authorize cancellation of one exact stop-batch job", runDispatchStopCancelAuthorize},
 				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},
 				{"build-follow-record", "assemble a follow-up round's record from its parent", runDispatchBuildFollowRecord},
@@ -164,6 +185,7 @@ func families() []family {
 				{"handshake-eval", "evaluate a handshake into its record patch", runDispatchHandshakeEval},
 				{"reap-facts", "print a record's reap verdict facts", runDispatchReapFacts},
 				{"census-fresh", "require a fresh successful census for dispatch", runDispatchCensusFresh},
+				{"census-wait", "wait for current freshness or an explicit post-event census", runDispatchCensusWait},
 				{"watcher-ceiling", "print the attested watcher ceiling", runDispatchWatcherCeiling},
 				{"expand-permissions", "expand a role's permission preset for a workspace", runDispatchExpandPermissions},
 				{"validate-mission", "validate a mission id and lease for dispatch", runDispatchValidateMission},
@@ -177,6 +199,7 @@ func families() []family {
 				{"critique-exhaustion-advance", "atomically advance register-backed critique exhaustion", runDispatchCritiqueExhaustionAdvance},
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
 				{"resolve-cap", "resolve the non-mission cap chain or refuse an unsigned mission cap", runDispatchResolveCap},
+				{"testing-requirement", "print the shared testing requirement for an implementer brief", runDispatchTestingRequirement},
 				{"brief-mode", "check a brief names a known mode", runDispatchBriefMode},
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},

@@ -1,7 +1,6 @@
 package steward
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -13,26 +12,24 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 const directValidationWindowSize = 2
 
-var retiredCatchClassSections = []string{
-	"go-engine-gate",
-	"static-contract-audits",
-	"supervision-and-census-fixtures",
-	"dispatcher-adapter-and-mission-runner-fixtures",
-	"adoption-fixtures",
-	"witness-gate-fixtures",
-}
+var cadenceCatchGroups = testpolicy.CadenceCatchGroupIDs()
+
+var cadenceFailureLinker = linkCadenceFailure
 
 type validationWindowObservation struct {
-	RunID       string   `json:"runId"`
-	StageLedger string   `json:"stageLedger"`
-	ObservedAt  string   `json:"observedAt"`
-	Missing     []string `json:"missingSections"`
-	NonGreen    []string `json:"nonGreenSections"`
+	RunID      string   `json:"runId"`
+	AttemptID  string   `json:"attemptId"`
+	ObservedAt string   `json:"observedAt"`
+	Missing    []string `json:"missingGroups"`
+	NonGreen   []string `json:"nonGreenGroups"`
 }
 
 type validationWindowState struct {
@@ -40,7 +37,7 @@ type validationWindowState struct {
 	Custodian    string                        `json:"custodian"`
 	Observer     string                        `json:"observer"`
 	WindowSize   int                           `json:"windowSize"`
-	CatchClasses []string                      `json:"catchClassSectionIds"`
+	CatchClasses []string                      `json:"catchClassGroupIds"`
 	Observations []validationWindowObservation `json:"observations"`
 }
 
@@ -50,7 +47,7 @@ func validationWindowPath(repoRoot string) string {
 
 func newValidationWindow() validationWindowState {
 	return validationWindowState{Schema: 1, Custodian: "Wido", Observer: "steward",
-		WindowSize: directValidationWindowSize, CatchClasses: append([]string(nil), retiredCatchClassSections...)}
+		WindowSize: directValidationWindowSize, CatchClasses: append([]string(nil), cadenceCatchGroups...)}
 }
 
 func loadValidationWindow(repoRoot string) (validationWindowState, error) {
@@ -68,7 +65,7 @@ func loadValidationWindow(repoRoot string) (validationWindowState, error) {
 		return validationWindowState{}, err
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF || state.Schema != 1 || state.WindowSize != directValidationWindowSize ||
-		state.Custodian != "Wido" || state.Observer != "steward" || strings.Join(state.CatchClasses, "\x00") != strings.Join(retiredCatchClassSections, "\x00") {
+		state.Custodian != "Wido" || state.Observer != "steward" || strings.Join(state.CatchClasses, "\x00") != strings.Join(cadenceCatchGroups, "\x00") {
 		return validationWindowState{}, fmt.Errorf("direct-validation observation window has an unknown schema or contract")
 	}
 	return state, nil
@@ -89,57 +86,17 @@ func saveValidationWindow(repoRoot string, state validationWindowState) error {
 	return nil
 }
 
-func stageLedgerFromLog(repoRoot, logPath string) (string, error) {
-	if !filepath.IsAbs(logPath) {
-		logPath = filepath.Join(repoRoot, logPath)
+func compareTestingResult(result proofrun.TestResult) (missing, nonGreen []string) {
+	rows := map[string]proofrun.GroupResult{}
+	for _, group := range result.Groups {
+		rows[group.ID] = group
 	}
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		return "", err
-	}
-	ledger := ""
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "stage results: ") {
-			ledger = strings.TrimSpace(strings.TrimPrefix(line, "stage results: "))
-		}
-	}
-	if err := scanner.Err(); err != nil || ledger == "" {
-		return "", fmt.Errorf("the direct validator log has no readable stage-results path")
-	}
-	if !filepath.IsAbs(ledger) {
-		ledger = filepath.Join(repoRoot, ledger)
-	}
-	ledger, err = filepath.Abs(ledger)
-	if err != nil {
-		return "", err
-	}
-	wantRoot, err := filepath.Abs(filepath.Join(repoRoot, "artifacts", "agents", "validation-stage-results"))
-	if err != nil || (ledger != wantRoot && !strings.HasPrefix(ledger, wantRoot+string(filepath.Separator))) {
-		return "", fmt.Errorf("stage-results path is outside the validator ledger directory")
-	}
-	return ledger, nil
-}
-
-func compareStageLedger(path string) (missing, nonGreen []string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return append([]string(nil), retiredCatchClassSections...), []string{"ledger-unavailable"}
-	}
-	statuses := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Split(line, "\t")
-		if len(fields) >= 3 && fields[0] == "section" {
-			statuses[fields[1]] = fields[2]
-		}
-	}
-	for _, id := range retiredCatchClassSections {
-		status, present := statuses[id]
+	for _, id := range cadenceCatchGroups {
+		group, present := rows[id]
 		if !present {
 			missing = append(missing, id)
-		} else if status != "pass" {
-			nonGreen = append(nonGreen, id+"="+status)
+		} else if !group.CollectionComplete || (group.Status != "passed" && group.Status != "reused") {
+			nonGreen = append(nonGreen, id+"="+group.Status)
 		}
 	}
 	return missing, nonGreen
@@ -147,8 +104,22 @@ func compareStageLedger(path string) (missing, nonGreen []string) {
 
 func observeDirectValidationWindow(repoRoot string, now time.Time) error {
 	state, err := loadValidationWindow(repoRoot)
-	if err != nil || len(state.Observations) >= state.WindowSize {
+	if err != nil {
 		return err
+	}
+	// Observation and goal linkage are deliberately separate durable acts. A
+	// transient failure after the observation is published must be recoverable
+	// on the next cadence pass, including after the finite window is full.
+	for _, observation := range state.Observations {
+		if len(observation.Missing) == 0 && len(observation.NonGreen) == 0 {
+			continue
+		}
+		if err := cadenceFailureLinker(repoRoot, observation, now); err != nil {
+			return err
+		}
+	}
+	if len(state.Observations) >= state.WindowSize {
+		return nil
 	}
 	seen := map[string]bool{}
 	for _, observation := range state.Observations {
@@ -172,22 +143,71 @@ func observeDirectValidationWindow(repoRoot string, now time.Time) error {
 		if len(state.Observations) >= state.WindowSize {
 			break
 		}
-		ledger, ledgerErr := stageLedgerFromLog(repoRoot, record.Log)
-		if ledgerErr != nil {
+		attempt, result, resultErr := proofrun.LatestGovernedTestResult(repoRoot, record.RunId)
+		if resultErr != nil {
 			continue
 		}
-		observation := validationWindowObservation{RunID: record.RunId, StageLedger: ledger, ObservedAt: now.UTC().Format(time.RFC3339)}
-		observation.Missing, observation.NonGreen = compareStageLedger(ledger)
-		if len(observation.NonGreen) == 1 && observation.NonGreen[0] == "ledger-unavailable" {
-			continue
-		}
+		observation := validationWindowObservation{RunID: record.RunId, AttemptID: attempt.AttemptID, ObservedAt: now.UTC().Format(time.RFC3339)}
+		observation.Missing, observation.NonGreen = compareTestingResult(result)
 		state.Observations = append(state.Observations, observation)
 		changed = true
 	}
 	if !changed {
 		return nil
 	}
-	return saveValidationWindow(repoRoot, state)
+	if err := saveValidationWindow(repoRoot, state); err != nil {
+		return err
+	}
+	for _, observation := range state.Observations {
+		if len(observation.Missing) == 0 && len(observation.NonGreen) == 0 {
+			continue
+		}
+		if err := cadenceFailureLinker(repoRoot, observation, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func linkCadenceFailure(repoRoot string, observation validationWindowObservation, now time.Time) error {
+	if !goal.NewWorld(repoRoot) {
+		return nil
+	}
+	store := &run.Store{Root: repoRoot}
+	record, err := store.Read(observation.RunID)
+	if err != nil || record == nil || record.GoalId == "" {
+		return fmt.Errorf("cadence failure %s has no accountable goal: %w", observation.RunID, err)
+	}
+	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	if err != nil {
+		return err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil || projection.Tree == nil {
+		return fmt.Errorf("read cadence correction goal %s: %w", record.GoalId, err)
+	}
+	file := projection.Tree.Live[record.GoalId]
+	if file == nil || file.Claimed == nil {
+		return fmt.Errorf("cadence correction goal %s is not claimed", record.GoalId)
+	}
+	finding := "cadence-" + observation.RunID
+	chain := observation.AttemptID
+	for _, existing := range file.ReviewObligations {
+		if existing.Finding == finding && existing.Chain == chain {
+			return nil
+		}
+	}
+	ulid, err := goal.NewOperationULID()
+	if err != nil {
+		return err
+	}
+	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}
+	result, err := goal.DeferFindings(request, record.GoalId, []goal.ReviewObligation{{Finding: finding, Chain: chain,
+		Artifact: "retained cadence result " + observation.RunID, Test: "focused repair for testing attempt " + observation.AttemptID}})
+	if err != nil || (result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeConfirmedLate) {
+		return fmt.Errorf("link cadence failure %s to goal %s: outcome=%s: %w", observation.RunID, record.GoalId, result.Outcome, err)
+	}
+	return nil
 }
 
 func directValidationWindowFailures(repoRoot string) []string {

@@ -255,7 +255,28 @@ for arg in "${commit_args[@]}"; do
   fi
 done
 
-# Direct commits receive the same staged-package coverage boundary as landings.
+# Capture the one whole-project index endpoint before either legacy or shared
+# proof consumption. A conflicted index cannot represent a candidate.
+prefix=$(git -C "$root" rev-parse --show-prefix)
+toplevel=$(git -C "$root" rev-parse --show-toplevel)
+proved_tree=$(git -C "$toplevel" write-tree) || {
+  echo "agent commit refused: the index cannot be proved as a tree (unmerged entries?)" >&2
+  exit 1
+}
+testing_contract=$($ms config conf-value --file "$root/metasystem.conf" --key testing.contract 2>/dev/null || true)
+
+# Direct legacy commits receive the staged-package coverage boundary. A
+# migrated installation instead consumes the already-admitted shared result;
+# verify is read-only and starts neither tests nor builds.
+if [[ -n "$testing_contract" ]]; then
+  testing_verify_args=(test verify --root "$root" --tree "$proved_tree" --mode auto --purpose delivery)
+  [[ -z "$landing_goal" ]] || testing_verify_args+=(--goal "$landing_goal")
+  "$ms" "${testing_verify_args[@]}" 1>&2 || {
+    echo "agent commit refused: required shared testing proof is missing or insufficient" >&2
+    exit 1
+  }
+  policy_engine=$ms
+else
 # The delta checker owns package discovery and reports every package below its
 # floor before it refuses.
 coverage_arguments=(--staged)
@@ -284,16 +305,6 @@ bash "$root/scripts/agents/coverage-delta.sh" "${coverage_arguments[@]}" || {
 # them while the commit omits them. A staged gitlink in the projection still
 # refuses because it exposes a nested checkout the commit records only as an
 # object id.
-prefix=$(git -C "$root" rev-parse --show-prefix)
-toplevel=$(git -C "$root" rev-parse --show-toplevel)
-
-# The INDEX TREE is captured before either proof and checked again afterward.
-# A conflicted index cannot be represented as the one tree being judged.
-proved_tree=$(git -C "$root" write-tree) || {
-  echo "agent commit refused: the index cannot be proved as a tree (unmerged entries?)" >&2
-  exit 1
-}
-
 # Build the prospective policy owner without touching bin/metasystem. The same
 # proof engine later runs the audit and weighs the landing, so a stale live
 # binary cannot classify any prospective byte.
@@ -316,6 +327,7 @@ else
     echo "agent commit refused: no behavior-surface policy engine is available" >&2
     exit 1
   }
+fi
 fi
 
 enumerate_inputs_nul() {
@@ -411,14 +423,16 @@ rm -f "$hidden_file"
 # placeholder waiver is exactly the long-lived environment escape the
 # boundary forbids. On a non-Go adopted checkout the fast gate skips
 # without building, and the audit runs on the checkout's own engine.
-audit_engine=$policy_engine
-env -u METASYSTEM_MAX_ALWAYS_LOADED_WORDS -u METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS \
-  METASYSTEM_BIN="$audit_engine" \
-  "$root/scripts/audit-metasystem.sh" "$root" 1>&2 || {
-  echo "agent commit refused: the static re-proof failed (audit-metasystem.sh)" >&2
-  exit 1
-}
-settled_tree=$(git -C "$root" write-tree) || {
+if [[ -z "$testing_contract" ]]; then
+  audit_engine=$policy_engine
+  env -u METASYSTEM_MAX_ALWAYS_LOADED_WORDS -u METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS \
+    METASYSTEM_BIN="$audit_engine" \
+    "$root/scripts/audit-metasystem.sh" "$root" 1>&2 || {
+    echo "agent commit refused: the static re-proof failed (audit-metasystem.sh)" >&2
+    exit 1
+  }
+fi
+settled_tree=$(git -C "$toplevel" write-tree) || {
   echo "agent commit refused: the index cannot be re-proved as a tree" >&2
   exit 1
 }

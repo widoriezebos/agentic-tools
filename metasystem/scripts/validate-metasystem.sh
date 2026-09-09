@@ -9,7 +9,7 @@ stage_results_requested=${METASYSTEM_VALIDATION_STAGE_RESULTS_OUT:-}
 stage_results_writer=${METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER:-0}
 enumeration_engine_dependency=${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-}
 unset METASYSTEM_VALIDATION_STAGE_RESULTS_OUT METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER \
-  METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY \
+  METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT \
   METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE METASYSTEM_GATE_WITNESS_WRITE \
   METASYSTEM_GATE_WITNESS_CONTROLLER_PID METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT \
   METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID
@@ -88,7 +88,7 @@ delivery_contract_skip() { # section id, optional behavior family; returns 0 = s
   local section_id=$1 family=${2:-$1} policy_engine=${engine:-$root/bin/metasystem}
   "$policy_engine" behavior-surface skip-allowed --scope DELIVERY --family "$family" >/dev/null 2>&1 || return 1
   delivery_skipped+=("$family")
-  record_stage_result "$section_id" skipped 0 "delivery reuse: family proof carried by the witness"
+  record_stage_result "$section_id" skipped 0 "delivery reuse: completed source-specific proof"
   return 0
 }
 delegate_process_section() { # human-readable section name
@@ -103,29 +103,57 @@ delegate_process_section() { # human-readable section name
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
+# Adopted repositories can refuse their literal template placeholders without
+# consulting the engine. Keep this scan ahead of the engine gate so a known
+# textual refusal does not pay for a rebuild. The full audit remains later:
+# required-file grammar, active-instruction placeholders, and configuration
+# validation belong to the prospective engine.
+validation_context=$(scripts/agents/validate-section-selector.sh context)
+case "$validation_context" in
+  template) template_mode=1 ;;
+  adopted) template_mode=0 ;;
+  *) echo "validation selector returned an invalid run context: $validation_context" >&2; exit 1 ;;
+esac
+static_placeholder_scan_section() {
+  local placeholder_pattern
+  local placeholder_files=()
+  (( template_mode )) && return 0
+  [[ -z "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]] || return 0
+  placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
+  [[ -f docs/project-rules.md ]] && placeholder_files+=(docs/project-rules.md)
+  [[ -f metasystem.conf ]] && placeholder_files+=(metasystem.conf)
+  if (( ${#placeholder_files[@]} > 0 )) \
+    && grep -En -- "$placeholder_pattern" "${placeholder_files[@]}"; then
+    echo "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf" >&2
+    return 1
+  fi
+}
+
+# A known initialization refusal precedes proof admission and engine compilation.
+static_placeholder_scan_section
+
 # The entry process launches the suite into a separate process group beside
 # its watchdog. A stopped suite therefore cannot stop its own custodian.
 suite_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
 suite_progress_worker=0
 if [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
   && "${METASYSTEM_SUITE_PROGRESS_ROOT:-}" == "$root" ]]; then
-  suite_progress_worker=1
+  suite_progress_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
+  if [[ -x "$suite_progress_auth_bin" ]] \
+    && "$suite_progress_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+    suite_progress_worker=1
+  fi
 fi
 if (( ! suite_progress_worker )); then
   suite_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
   suite_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-validate.XXXXXX")
   suite_progress_log="$root/artifacts/agents/supervision/suite-logs/validate-$suite_progress_run.log"
-  suite_banner=$(go run ./cmd/metasystem proof-run banner \
+  suite_progress_engine="$suite_progress_tmp/metasystem"
+  go build -o "$suite_progress_engine" ./cmd/metasystem
+  suite_banner=$("$suite_progress_engine" proof-run banner \
     --suite validate-metasystem --root "$root" \
     --progress "$suite_progress_path" --log "$suite_progress_log")
-  suite_launcher_command=(go run ./cmd/metasystem)
-  if (( enumerate_mode )) || [[ -n "$enumeration_section" ]]; then
-    suite_progress_engine="$suite_progress_tmp/metasystem"
-    go build -o "$suite_progress_engine" ./cmd/metasystem
-    # Enumeration exposes pass, fail, and invalid as separate outcomes. The
-    # Go tool would translate both nonzero outcomes to its own exit code 1.
-    suite_launcher_command=("$suite_progress_engine")
-  fi
+  suite_launcher_command=("$suite_progress_engine")
   suite_depth=$(( ${METASYSTEM_SUITE_PROGRESS_DEPTH:--1} + 1 ))
   suite_selector="$root/scripts/agents/validate-section-selector.sh"
   selector_args=()
@@ -361,31 +389,6 @@ if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
   trap - EXIT
   exit 0
 fi
-# Adopted repositories can refuse their literal template placeholders without
-# consulting the engine. Keep this scan ahead of the engine gate so a known
-# textual refusal does not pay for a rebuild. The full audit remains later:
-# required-file grammar, active-instruction placeholders, and configuration
-# validation belong to the prospective engine.
-validation_context=$(scripts/agents/validate-section-selector.sh context)
-case "$validation_context" in
-  template) template_mode=1 ;;
-  adopted) template_mode=0 ;;
-  *) echo "validation selector returned an invalid run context: $validation_context" >&2; exit 1 ;;
-esac
-static_placeholder_scan_section() {
-  local placeholder_pattern
-  local placeholder_files=()
-  (( template_mode )) && return 0
-  [[ -z "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]] || return 0
-  placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
-  [[ -f docs/project-rules.md ]] && placeholder_files+=(docs/project-rules.md)
-  [[ -f metasystem.conf ]] && placeholder_files+=(metasystem.conf)
-  if (( ${#placeholder_files[@]} > 0 )) \
-    && grep -En -- "$placeholder_pattern" "${placeholder_files[@]}"; then
-    echo "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf" >&2
-    return 1
-  fi
-}
 if section_selected static-placeholder-scan; then
   run_section static-placeholder-scan needs-nothing static_placeholder_scan_section
   # A recorded cheap refusal ends the run before any engine rebuild can start.
@@ -565,6 +568,27 @@ fi
 go_engine_gate_section() {
   local engine_state_succeeded=0
   trap 'section_status=$?; if (( section_status != 0 && ! engine_state_succeeded )); then [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"; fi' EXIT
+  # A completed schema-two attempt is the migrated delivery prerequisite.
+  # The Go verifier rechecks the actual project, selected groups, enrollment,
+  # goal and terminal attempt. An active parent cannot certify itself.
+  if (( delivery_contract )) && [[ -x bin/metasystem ]] \
+    && bin/metasystem test verify --root "$root" --tree "$(git write-tree)" \
+      >"$stage_work/delivery-testing-verification.log" 2>&1; then
+    delivery_reuse=1
+    [[ "$(bin/metasystem json get --value '{"ok":1}' --field ok)" == 1 ]] \
+      || { echo "delivery contract: the verified binary did not answer" >&2; exit 1; }
+    echo "go gate: PASSED (completed schema-2 delivery proof verified)"
+    # No witness is armed on this branch; the state file still declares it.
+    witness_state=
+    declare -p witness_state witness_engine_reused delivery_reuse >"$go_engine_state_file"
+    engine_state_succeeded=1
+    trap - EXIT
+    return
+  fi
+  if (( delivery_contract )) && [[ -s "$stage_work/delivery-testing-verification.log" ]]; then
+    echo "delivery contract: no completed schema-2 proof was verified; the full gate runs" >&2
+    cat "$stage_work/delivery-testing-verification.log" >&2
+  fi
   # The witness-producing gate (D33): when the gate-input roots are clean
   # against HEAD, the full gate runs inside an extracted HEAD snapshot —
   # the exact bytes adoption stages — and its witness is handed to the

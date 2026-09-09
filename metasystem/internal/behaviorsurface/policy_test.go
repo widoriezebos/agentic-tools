@@ -72,7 +72,7 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 	if want := []string{
 		".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "cmd/**", "docs/**",
 		"go.mod", "go.sum", "internal/**", "metasystem.conf", "memory/README.md", "optional-skills/**",
-		"plans/README.md", "scripts/**", "skills/**", "wow.md",
+		"plans/README.md", "scripts/**", "skills/**", "testing.json", "wow.md",
 	}; !reflect.DeepEqual(policy.PayloadRoots, want) {
 		t.Fatalf("PAYLOAD allowlist drifted: got %q want %q", policy.PayloadRoots, want)
 	}
@@ -106,6 +106,7 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		{"plans/goals.md", Tailored, false, false, false},
 		{"memory/receipts.log", Tailored, false, false, false},
 		{"metasystem.conf", Tailored, false, true, false},
+		{"testing.json", Tailored, false, true, false},
 		{".agents/skills/verify/SKILL.md", Tailored, false, true, false},
 		{".gitignore", Tailored, false, true, false},
 		{"memory/instruction-ledger.md", Tailored, false, true, false},

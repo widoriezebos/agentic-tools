@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+adopt_fixture_selection=all
+adopt_fixture_forward=()
+if [[ $# -eq 1 && $1 == --comparison ]]; then
+  adopt_fixture_selection=comparison
+  adopt_fixture_forward=(--comparison)
+  shift
+fi
+if [[ $# -ne 0 ]]; then
+  echo "adopt fixtures: accepts only --comparison" >&2
+  exit 64
+fi
+
 # adopt.sh self-test (script-validate-4/D35): extracted verbatim from
 # validate-metasystem.sh's inline template-mode blocks into the sub-suite
 # shape the file already used everywhere else. Template mode only — the
@@ -16,17 +28,23 @@ adopt_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
 adopt_progress_parent=0
 if [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
   && "${METASYSTEM_SUITE_PROGRESS_ROOT:-}" == "$root" ]]; then
-  adopt_progress_parent=1
+  adopt_progress_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
+  if [[ -x "$adopt_progress_auth_bin" ]] \
+    && "$adopt_progress_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+    adopt_progress_parent=1
+  fi
 fi
 if (( ! adopt_progress_parent )); then
   adopt_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
   adopt_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-adopt.XXXXXX")
   adopt_progress_log="$root/artifacts/agents/supervision/suite-logs/adopt-$adopt_progress_run.log"
-  adopt_banner=$(go run ./cmd/metasystem proof-run banner \
+  adopt_progress_engine="$adopt_progress_tmp/metasystem"
+  go build -o "$adopt_progress_engine" ./cmd/metasystem
+  adopt_banner=$("$adopt_progress_engine" proof-run banner \
     --suite adopt-fixtures --root "$root" \
     --progress "$adopt_progress_path" --log "$adopt_progress_log")
   adopt_depth=$(( ${METASYSTEM_SUITE_PROGRESS_DEPTH:--1} + 1 ))
-  exec go run ./cmd/metasystem proof-run launch \
+  exec "$adopt_progress_engine" proof-run launch \
     --suite adopt-fixtures --root "$root" --conf "$root/metasystem.conf" \
     --progress "$adopt_progress_path" --log "$adopt_progress_log" \
     --tmp "$adopt_progress_tmp" --banner "$adopt_banner" -- \
@@ -36,7 +54,7 @@ if (( ! adopt_progress_parent )); then
       METASYSTEM_SUITE_PROGRESS_DEPTH="$adopt_depth" \
       METASYSTEM_SUITE_PROGRESS_TMP="$adopt_progress_tmp" \
       METASYSTEM_SUITE_PROGRESS_LOG="$adopt_progress_log" \
-      bash "$root/scripts/adopt-fixtures.sh"
+      bash "$root/scripts/adopt-fixtures.sh" ${adopt_fixture_forward[@]+"${adopt_fixture_forward[@]}"}
 elif [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" != adopt-fixtures ]]; then
   "$root/bin/metasystem" proof-run banner --suite adopt-fixtures --root "$root" \
     --progress "$adopt_progress_path" --log "$METASYSTEM_SUITE_PROGRESS_LOG"
@@ -78,44 +96,25 @@ trap cleanup EXIT
 # An outer validate's witness is inherited untouched; a dirty tree arms
 # nothing and the nested runs pay their own gates exactly as before
 # (fallback "none": this harness needs no worktree gate of its own).
-if [[ -z "${METASYSTEM_GATE_WITNESS:-}" ]] \
+if [[ "$adopt_fixture_selection" == all && -z "${METASYSTEM_GATE_WITNESS:-}" \
+  && -z "${METASYSTEM_PROOF_ATTEMPT:-}" ]] \
   && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod; then
   delivery_contract=0
   WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
 fi
 
-fill_harness_conf() { # config path, absolute evidence root
-  # Point evidence at the harness sandbox and give every rostered
-  # role a fixture model, so a nested validation never resolves a
-  # real model or writes evidence outside the fixture tree. Tier 1
-  # then names exactly the fixture models (sorted, deduplicated) and
-  # every deeper tier empties.
-  local path=$1 evidence=$2 line key value runtime joined out=""
-  local model_key='^(role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$'
-  local models=()
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" != *=* ]]; then out+="$line"$'\n'; continue; fi
-    key=${line%%=*}
-    value=${line#*=}
-    if [[ "$key" == evidence.root ]]; then
-      value=$evidence
-    elif [[ "$key" =~ $model_key ]]; then
-      runtime=${BASH_REMATCH[2]}
-      value="fixture-$runtime-model"
-      models+=("$runtime:$value")
-    elif [[ "$key" == model.tier.1 ]]; then
-      value=__MODELS__
-    elif [[ "$key" == model.tier.* ]]; then
-      value=""
-    fi
-    out+="$key=$value"$'\n'
-  done <"$path"
-  joined=""
-  if [[ ${#models[@]} -gt 0 ]]; then
-    joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
-  fi
-  printf '%s' "${out//model.tier.1=__MODELS__/model.tier.1=$joined}" >"$path"
+source "$root/scripts/adopt-fixture-helpers.sh"
+
+run_adoption_comparison() {
+  # The actual fixture owns source-specific prerequisites and real main
+  # custody in Go. The public shell remains the serial process parent.
+  METASYSTEM_ADOPTION_COMPARISON=1 go test -json -count=1 -timeout=30m -run '^TestAdoptionComparisonSelectedScenarios$' ./cmd/metasystem
 }
+
+if [[ "$adopt_fixture_selection" == comparison ]]; then
+  run_adoption_comparison
+  exit
+fi
 
 # Adopted-mode contract: a copy without the template marker validates with a
 # skill pruned, and a present-but-broken skill still fails. These legs call
@@ -124,19 +123,6 @@ fill_harness_conf() { # config path, absolute evidence root
 if true; then  # template-gated by the orchestrator
   adopted="$tmp/adopted"
   mkdir -p "$adopted"
-copy_tree_without_artifacts() { # source root, destination
-  # Only for copies whose source is the live metasystem root: artifacts/ is
-  # runtime state, not shipped content, and copying it races
-  # with any job writing lock directories, and an adoption fixture has no use
-  # for it. Excluding it makes the suite safe to run while work is in flight.
-  local from=$1 to=$2 entry
-  mkdir -p "$to"
-  (cd "$from" && for entry in * .[!.]*; do
-    [[ -e "$entry" ]] || continue
-    [[ "$entry" == artifacts || "$entry" == .git || "$entry" == metasystem.conf.local ]] && continue
-    cp -R "$entry" "$to/"
-  done)
-}
 
   copy_tree_without_artifacts "$root" "$adopted"
   rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/memory/receipts.log" "$adopted/.claude"
@@ -543,7 +529,7 @@ PLAN
     || { echo "adopt: the engine's goals migration manifest did not ship byte-for-byte" >&2; exit 1; }
   [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md goals-accepted.json goals.md " ]] \
 	|| { echo "adopt: plans/ payload must carry only live intent, including the goal pair" >&2; exit 1; }
-  [[ "$(ls "$tgt/memory" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md " ]] \
+  [[ "$(ls "$tgt/memory" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md rulings.md " ]] \
 	|| { echo "adopt: memory/ payload must carry only fresh living registers" >&2; exit 1; }
   grep -q '^## Goal-free: declared .* over ' "$tgt/plans/goals.md" \
     || { echo "adopt: the seeded goal ledger lacks its digest-pinned Goal-free declaration" >&2; exit 1; }
@@ -649,126 +635,11 @@ PLAN
   (( placeholder_refusal_elapsed < 60 )) \
     || { echo "adopt: configuration placeholder refusal took ${placeholder_refusal_elapsed}s; expected the pre-gate scan to fail within seconds" >&2; exit 1; }
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
-  # The covenant evidence gate rides the same green validate (counselor
-  # slice one): a fully valid covenant + canonical table + present deps
-  # must pass, and the run must PROVE the gate fired, not skipped.
-  printf '#!/usr/bin/env bash\nprintf "metric=greets=0\\n"\n' >"$tgt/gate.sh"
-  mkdir -p "$tgt/src"
-  printf 'print("hello")\n' >"$tgt/src/app.py"
-  cat >"$tgt/covenant.json" <<'COVENANT'
-{
-  "schemaVersion": 1,
-  "identity": {"name": "adopt-bed", "entryPoint": "bash gate.sh", "sourcePaths": ["src/"]},
-  "requirements": [
-    {"id": "1", "ref": "criterion 1: the app greets by name", "proof": "greets"}
-  ],
-  "battery": {"command": "bash gate.sh", "metric": "greets", "direction": "max", "threshold": ">=1"},
-  "budgets": [],
-  "guards": [],
-  "guardrails": ["gate.sh", "docs/covenant-evidence.md"]
-}
-COVENANT
-  cat >"$tgt/docs/covenant-evidence.md" <<'EVIDENCE'
-# Covenant evidence — adopt-bed
+  fill_harness_testing_contract "$srcrepo/testing.json" "$tgt/testing.json"
+  prepare_filled_target_covenant "$tgt"
+  METASYSTEM_ADOPTION_TARGET="$tgt" METASYSTEM_ADOPTION_KIND=filled \
+    METASYSTEM_ADOPTION_FIXTURE_ROOT="$tmp" run_adoption_comparison
 
-| criterion id | criterion | proof id | kind | exact command | repo deps | evidence source | status |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | The app greets by name | greets | repo | bash gate.sh | gate.sh,src/app.py | gate.sh runs the entrypoint | observed |
-
-Wired: 1. Floating: 0.
-EVIDENCE
-  # Capture, never discard: the receipt-stats flake's nested firings kept
-  # dying invisibly behind this redirect (2026-08-14, evidence 51987/94210).
-  # Digest equality before the nested run: the staged payload must be the
-  # exact content the outer witness gate proved (D33) — when a witness is
-  # armed, the check-only probe IS that comparison.
-  if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
-    ( cd "$tgt" && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
-        bash scripts/agents/go-gate.sh --witness-check-only >/dev/null ) \
-      || { echo "adopt: staged payload digest does not match the witness-gated tree" >&2; exit 1; }
-  fi
-  bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/adopt-filled.out" 2>&1 || {
-    echo "adopt: filled target failed validation" >&2
-    tail -20 "$tmp/adopt-filled.out" >&2
-    exit 1
-  }
-  # D17's whole point, asserted: with the source shipped, the adopted
-  # target's own validation rebuilds and gates the engine.
-  grep -Fq 'metasystem delivery contract validated' "$tmp/adopt-filled.out" \
-    || { echo "adopt: filled target did not end on the contract verdict" >&2; exit 1; }
-  if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
-    grep -Fq 'outer witness' "$tmp/adopt-filled.out" \
-      || { echo "adopt: filled target did not accept the outer witness" >&2; exit 1; }
-  fi
-  grep -Fq 'go gate: PASSED' "$tmp/adopt-filled.out" \
-    || { echo "adopt: filled target did not run the go gate" >&2; exit 1; }
-  grep -Fq 'covenant evidence gate passed' "$tmp/adopt-filled.out" \
-    || { echo "adopt: the covenant evidence gate did not fire in the green run" >&2; exit 1; }
-  # The red half: remove exactly the one criterion/proof pair the
-  # covenant cites and the same validation must refuse, NAMING the
-  # missing pair — then the table restores byte-for-byte so the later
-  # fixtures keep judging the green bed.
-  cp "$tgt/docs/covenant-evidence.md" "$tmp/evidence-green-reference.md"
-  sed 's/| greets |/| salutes |/' "$tgt/docs/covenant-evidence.md" >"$tgt/docs/covenant-evidence.md.new"
-  mv "$tgt/docs/covenant-evidence.md.new" "$tgt/docs/covenant-evidence.md"
-  if bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/evidence-red.out" 2>&1; then
-    echo "adopt: validation passed while the covenant cited a proof the table does not record" >&2
-    exit 1
-  fi
-  grep -Fq 'bound to proof greets in the covenant but records proof salutes' "$tmp/evidence-red.out" \
-    || { echo "adopt: the evidence refusal did not name the missing pair" >&2; tail -5 "$tmp/evidence-red.out" >&2; exit 1; }
-  cp "$tmp/evidence-green-reference.md" "$tgt/docs/covenant-evidence.md"
-  # A malformed entry at the covenant's home must REFUSE, never read
-  # as absent: a dangling symlink is the shape only no-follow presence
-  # detection sees (directory and FIFO refusals are the engine's,
-  # pinned by its unit tests on the same branch).
-  mv "$tgt/covenant.json" "$tmp/covenant-green-reference.json"
-  ln -s covenant-that-does-not-exist.json "$tgt/covenant.json"
-  if bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/evidence-symlink.out" 2>&1; then
-    echo "adopt: validation passed while the covenant home held a dangling symlink" >&2
-    exit 1
-  fi
-  grep -q "symlink" "$tmp/evidence-symlink.out" \
-    || { echo "adopt: the symlinked covenant refusal did not name the symlink" >&2; tail -5 "$tmp/evidence-symlink.out" >&2; exit 1; }
-  rm "$tgt/covenant.json"
-  mv "$tmp/covenant-green-reference.json" "$tgt/covenant.json"
-
-  # A positive delivery gate establishes engine readiness before each mutation;
-  # the negative calls below target registration auditing only.
-  echo drift >>"$tgt/.claude/agents/verify.md"
-  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
-      bash "$tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
-      >"$tmp/profile-drift.out" 2>&1; then
-    echo "adopt: validation missed a drifted claude profile" >&2
-    exit 1
-  fi
-  grep -q 'profile drifted' "$tmp/profile-drift.out" \
-    || { echo "adopt: profile-drift failure did not name the profile" >&2; exit 1; }
-  cp "$tgt/skills/verify/agents/claude-profile.md" "$tgt/.claude/agents/verify.md"
-
-  # The D17 fail-open, closed and asserted (D33): a source-delivery target
-  # whose go.mod vanished must FAIL — never read as "no engine expected".
-  mv "$tgt/go.mod" "$tgt/go.mod.hidden"
-  mkdir -p "$tmp/gomod-gone-progress"
-  # Enter the validator body directly: its ordinary progress launcher is a
-  # Go program, and this leg deliberately removed the module needed to start it.
-  # Invoke it relatively so its root and the worker identity share the same
-  # logical spelling even when macOS exposes /var through /private/var.
-  if ( cd "$tgt" && \
-      METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
-        METASYSTEM_SUITE_PROGRESS_SUITE=validate-metasystem \
-        METASYSTEM_SUITE_PROGRESS_ROOT="$PWD" \
-        METASYSTEM_SUITE_PROGRESS_DEPTH=0 \
-        METASYSTEM_SUITE_PROGRESS_TMP="$tmp/gomod-gone-progress" \
-        METASYSTEM_SUITE_PROGRESS_LOG="$tmp/gomod-gone-progress.log" \
-        bash scripts/validate-metasystem.sh --delivery-contract ) \
-      >"$tmp/gomod-gone.out" 2>&1; then
-    echo "adopt: a source-delivery target without go.mod validated green" >&2
-    exit 1
-  fi
-  grep -Fq 'engine source did not ship' "$tmp/gomod-gone.out" \
-    || { echo "adopt: the missing-go.mod refusal did not name the delivery" >&2; tail -5 "$tmp/gomod-gone.out" >&2; exit 1; }
-  mv "$tgt/go.mod.hidden" "$tgt/go.mod"
 
   mv "$tgt/.claude/skills" "$tgt/.claude/skills.missing"
   if "$tgt/scripts/metasystem-config.sh" validate >"$tmp/missing-registration.out" 2>&1; then
@@ -867,41 +738,9 @@ EVIDENCE
   sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
   mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
   fill_harness_conf "$tmp/adopt-copy/metasystem.conf" "$tmp/adopt-copy-evidence"
-  bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-copied-skills.log" 2>&1 \
-    || { echo "adopt: copied-skills target failed validation" >&2; tail -20 "$tmp/nested-copied-skills.log" >&2; exit 1; }
-  echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
-  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
-      bash "$tmp/adopt-copy/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
-      >"$tmp/copied-claude-drift.out" 2>&1; then
-    echo "adopt: validation missed a drifted claude skill copy" >&2
-    exit 1
-  fi
-  grep -Fq 'registered skill copy has drifted from its source: .claude/skills/verify vs skills/verify' \
-    "$tmp/copied-claude-drift.out" \
-    || { echo "adopt: drifted claude skill copy refusal did not name its registration" >&2; exit 1; }
-  cp "$tmp/adopt-copy/skills/verify/SKILL.md" "$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
-  echo drift >>"$tmp/adopt-copy/.agents/skills/verify/SKILL.md"
-  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
-      bash "$tmp/adopt-copy/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
-      >"$tmp/copied-codex-drift.out" 2>&1; then
-    echo "adopt: validation missed a drifted codex skill copy" >&2
-    exit 1
-  fi
-  grep -Fq 'registered skill copy has drifted from its source: .agents/skills/verify vs skills/verify' \
-    "$tmp/copied-codex-drift.out" \
-    || { echo "adopt: drifted codex skill copy refusal did not name its registration" >&2; exit 1; }
-  cp "$tmp/adopt-copy/skills/verify/SKILL.md" "$tmp/adopt-copy/.agents/skills/verify/SKILL.md"
-  rm -rf "$tmp/adopt-copy/skills/verify"
-  if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
-      bash "$tmp/adopt-copy/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
-      >"$tmp/orphan.out" 2>&1; then
-    echo "adopt: validation missed an orphaned copy of a pruned skill" >&2
-    exit 1
-  fi
-  grep -q "orphaned" "$tmp/orphan.out" || {
-    echo "adopt: pruned-skill failure did not name the orphaned copy" >&2
-    exit 1
-  }
+  fill_harness_testing_contract "$srcrepo/testing.json" "$tmp/adopt-copy/testing.json"
+  METASYSTEM_ADOPTION_TARGET="$tmp/adopt-copy" METASYSTEM_ADOPTION_KIND=copied \
+    METASYSTEM_ADOPTION_FIXTURE_ROOT="$tmp" run_adoption_comparison
 
   mkdir -p "$tmp/adopt-foreign"
   touch "$tmp/adopt-foreign/.cursorrules"
@@ -1056,15 +895,15 @@ if true; then  # template-gated by the orchestrator
       src/app.txt|docs/app.md|.gitignore|.gitattributes) continue ;;
       metasystem.conf|plans/goals-accepted.json|bin/metasystem) continue ;;
       .github/workflows/metasystem.yml) continue ;;
-      memory/known-issues.md|memory/instruction-ledger.md) continue ;;
+      memory/known-issues.md|memory/instruction-ledger.md|memory/rulings.md) continue ;;
       plans/goals.md|plans/goals/*|plans/README.md|memory/README.md|records/README.md|records/goals/.gitkeep|records/misc/goals-migration-manifest.md|records/misc/fleet-coordinator-brain-role-packet.md) continue ;;
       .claude/*|.agents/*|.devin/*|.codex/hooks.json) continue ;;
       *) echo "adoption wrote outside the computed inventory ($tracer_runtime): $written" >&2; exit 1 ;;
     esac
   done <"$tmp/tracer-after"
   [[ -s "$tmp/tracer-hooks" ]] || { echo "adoption installed no hook ($tracer_runtime)" >&2; exit 1; }
-  [[ ! -e "$tracer_tgt/metasystem/memory" && ! -e "$tracer_tgt/memory/rulings.md" ]] \
-    || { echo "adoption shipped template registers ($tracer_runtime)" >&2; exit 1; }
+  [[ ! -e "$tracer_tgt/metasystem/memory" && -f "$tracer_tgt/memory/rulings.md" ]] \
+    || { echo "adoption did not place the tailored landing rulings at the application root ($tracer_runtime)" >&2; exit 1; }
   done
 fi
 

@@ -193,6 +193,29 @@ func TestWeightDischargeConsumesExactFreshProofRaisesRetroAndReplayChangesNothin
 	}
 }
 
+func TestFocusedProofCannotDischargeCadence(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	root, _ := governedWeightBed(t, now)
+	priorNow := weightNow
+	weightNow = func() time.Time { return now }
+	t.Cleanup(func() { weightNow = priorNow })
+	conf := filepath.Join(root, "metasystem.conf")
+	data, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(data, []byte("testing.contract=testing.json\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := WeightAdd(root, "landing-one", []byte("1\t0\tdirect.go\n"), "", 1); err != nil {
+		t.Fatal(err)
+	}
+	completeGreenProof(t, root, "focused-green", &now)
+	if _, err := WeightDischarge(root, "bounded", 3, "focused-green"); err == nil || !strings.Contains(err.Error(), "lacks exact sufficient deep cadence evidence") {
+		t.Fatalf("focused outer green discharged cadence weight: %v", err)
+	}
+}
+
 func TestWeightDischargeAcceptsRecordedRelayReviewOutcome(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	root, file := governedWeightBed(t, now)

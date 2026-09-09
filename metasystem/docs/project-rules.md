@@ -14,6 +14,7 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 
 ## Commands
 
+- Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `test check` validates it without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test verify` consumes sufficient retained evidence without rerunning it.
 - Fast focused test: `<command>`
 - Full unit suite: `<command>`
 - Integration/end-to-end suite: `<command>`
@@ -40,6 +41,7 @@ Where agents can spend real money (model calls, paid APIs, cloud runs), state th
 List only rules that cannot be inferred from code or tooling and apply broadly in this repository. Prefer an executable check whenever the rule is binary.
 
 - A commit is gated on the verification run that produced its verdict, in one shell chain whose failure stops the push. Never read a verdict from a log tail or a previous shell.
+- The candidate index and every delivery-relevant working-tree input must describe the same whole-project bytes before selected testing evidence can authorize delivery; a mismatch is repaired, never treated as permission to publish partial coverage.
 - A receipt is appended in the same commit as the work it describes; bookkeeping-only commits hide the ratio of records to evidence.
 - When the same repository is developed by expensive models and measured or exercised by cheap ones, pin both rosters explicitly and name which activity each configuration serves; a cost rule applied to the wrong roster cancels healthy work.
 

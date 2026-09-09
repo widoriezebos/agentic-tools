@@ -5,8 +5,14 @@ fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
 fixture_bed_child=0
 fixture_scenario=
-if fixture_scenario=$(harness_fixture_bed_child_scenario dispatch "$@"); then
-  fixture_bed_child=1
+fixture_parent_selection=all
+if [[ $# -eq 1 && $1 == --comparison ]]; then
+	fixture_parent_selection=comparison
+	shift
+fi
+if harness_dispatch_fixture_bed_child_scenario dispatch "$@"; then
+	fixture_bed_child=1
+	fixture_scenario=$harness_fixture_child_scenario
 else
   fixture_bed_child_rc=$?
   [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
@@ -31,11 +37,13 @@ fixture_bed_parent_cleanup() {
 }
 
 run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
-  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
+  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0 shared_engine
   local failed_names=() failed_rcs=() failed_logs=()
   shift 3
   log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
   fixture_bed_parent_log_root=$log_root
+	shared_engine=$log_root/fixture-engine
+	bash "$fixture_bed_root/scripts/agents/go-build.sh" --out "$shared_engine" >/dev/null
   trap fixture_bed_parent_cleanup EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
@@ -43,7 +51,7 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   trap 'exit 143' TERM
   for scenario in "$@"; do
     log=$log_root/$index.log
-    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
+    capability=$(harness_dispatch_fixture_bed_mint_capability "$log_root" "$index" "$scenario" "$shared_engine")
     echo "$bed fixture scenario started: $scenario" >&2
     "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
     fixture_bed_parent_child_pid=$!
@@ -80,12 +88,20 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
 }
 
 if (( ! fixture_bed_child )); then
+	if [[ $# -gt 0 ]]; then
+		echo "dispatch fixtures: parent accepts only --comparison" >&2
+		exit 64
+	fi
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+	fixture_parent_scenarios=()
+	fixture_parent_scenario_lines=$("$fixture_bed_root/bin/metasystem" proof-run fixture-selection \
+		--family dispatcher --selection "$fixture_parent_selection")
+	while IFS= read -r scenario; do
+		fixture_parent_scenarios+=("$scenario")
+	done <<<"$fixture_parent_scenario_lines"
 	run_fixture_bed_scenarios dispatch \
 		"dispatch, adapter selftest, mission-runner, and process-control fixtures passed" \
-		"$fixture_bed_script" dispatch mission-runner adapter-selftest steward-continuation \
-		brain-delegate-refuses brain-cancel-close-reap-refuse brain-breach-stop-exempt brain-absent-node-proceeds \
-		brain-fence-helper-fails seat-refused
+		"$fixture_bed_script" "${fixture_parent_scenarios[@]}"
 fi
 case "$fixture_scenario" in
 	dispatch | mission-runner | adapter-selftest | steward-continuation | brain-delegate-refuses | brain-cancel-close-reap-refuse | brain-breach-stop-exempt | brain-absent-node-proceeds | brain-fence-helper-fails | seat-refused) ;;
@@ -145,7 +161,13 @@ chmod +x "$tmp/notify-shim/osascript"
 export METASYSTEM_FIXTURE_OSASCRIPT_CALLS=$osascript_calls
 export PATH="$tmp/notify-shim:$PATH"
 engine="$tmp/fixture-engine"
-bash scripts/agents/go-build.sh --out "$engine" >/dev/null
+if [[ -n "${harness_fixture_shared_engine:-}" ]]; then
+  cp "$harness_fixture_shared_engine" "$engine"
+  [[ "$($fixture_bed_root/bin/metasystem util sha256 --file "$engine")" == "$harness_fixture_shared_engine_digest" ]] \
+    || { echo "dispatch fixtures: private engine copy failed immutable verification" >&2; exit 64; }
+else
+  bash scripts/agents/go-build.sh --out "$engine" >/dev/null
+fi
 
 # Atomically replace one top-level field of a JSON object file, leaving
 # every other field exactly as the file's parser sees it. `json set`
@@ -281,23 +303,24 @@ track_armed_supervision() { # repository
 }
 cleanup() {
   status=$?
-  local repo
+  local repo cleanup_failed=0
+  trap - EXIT
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
     [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
     if [[ "$repo" == "${runner_repo:-}" ]] && declare -p runner_process_env >/dev/null 2>&1; then
       run_fixture_arm "cleanup shutdown for $repo" - \
         "${runner_process_env[@]}" "$repo/scripts/agents/arm-supervision.sh" \
           --repo "$repo" --shutdown \
-        || echo "dispatch fixture cleanup shutdown failed: $repo" >&2
+        || { echo "dispatch fixture cleanup shutdown failed: $repo" >&2; cleanup_failed=1; }
     elif [[ "$repo" == "${steward_repo:-}" && -n "${steward_enrolled_engine:-}" ]]; then
       run_fixture_arm "cleanup shutdown for $repo" - \
         env METASYSTEM_BIN="$steward_enrolled_engine" \
           "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown \
-        || echo "dispatch fixture cleanup shutdown failed: $repo" >&2
+        || { echo "dispatch fixture cleanup shutdown failed: $repo" >&2; cleanup_failed=1; }
     else
       run_fixture_arm "cleanup shutdown for $repo" - \
         "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown \
-        || echo "dispatch fixture cleanup shutdown failed: $repo" >&2
+        || { echo "dispatch fixture cleanup shutdown failed: $repo" >&2; cleanup_failed=1; }
     fi
   done
   # Kill any job child still rooted under this run's temp dir before the
@@ -321,14 +344,17 @@ cleanup() {
       kill -KILL $(pgrep -f "$tmp" 2>/dev/null || true) 2>/dev/null || true
     fi
   fi
+  if (( cleanup_failed && status == 0 )); then
+    status=1
+  fi
   if [[ $status != 0 && -d "$tmp" ]]; then
     keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-dispatch-$$"
     mkdir -p "$(dirname "$keep")"
     mv "$tmp" "$keep" 2>/dev/null && echo "dispatch fixture evidence preserved: $keep" >&2
-    return "$status"
+    exit "$status"
   fi
   rm -rf "$tmp" 2>/dev/null || { sleep 1; rm -rf "$tmp" 2>/dev/null || true; }
-  return "$status"
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -491,6 +517,7 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
 		cp "$root/scripts/"*.sh "$node_repo/scripts/"
 		cp -R "$root/docs" "$root/skills" "$node_repo/"
 		cp "$root/metasystem.conf" "$node_repo/metasystem.conf"
+		cp "$root/testing.json" "$node_repo/testing.json"
 		node_evidence=$tmp/node-evidence
 		"$engine" config tailor --conf "$node_repo/metasystem.conf" --runtimes fake \
 			--set evidence.root="$node_evidence" \
@@ -525,117 +552,6 @@ NODE_BRIEF
   exit 0
 fi
 
-# The cap owner is exercised through the shipped job verbs before the full
-# dispatch-driver bed below.
-cap_fixture_round() { # repository, root job, round, completed kind or protocol
-  local repo=$1 chain=$2 round=$3 kind=$4 parent=null role=design-critic job
-  job=$chain
-  if (( round > 1 )); then
-    job="$chain-r$round"
-    if (( round == 2 )); then parent="\"$chain\""; else parent="\"$chain-r$((round - 1))\""; fi
-  fi
-  mkdir -p "$repo/artifacts/agents/jobs"
-  if [[ "$kind" == protocol ]]; then
-    printf '{"jobId":"%s","role":"%s","round":%d,"parentJob":%s,"status":"failed","error":"protocol_error","protocolError":{"key":"protocol-%d","violation":"malformed critic return"}' \
-      "$job" "$role" "$round" "$parent" "$round" >"$repo/artifacts/agents/jobs/$job.json"
-  else
-    printf '{"jobId":"%s","role":"%s","round":%d,"parentJob":%s,"status":"completed"' \
-      "$job" "$role" "$round" "$parent" >"$repo/artifacts/agents/jobs/$job.json"
-  fi
-  if (( round == 1 )); then
-    printf ',"findingRegister":[],"findingRegisterRound":0,"reviewRoundLimit":3,"criticRoundsConsumed":0,"demotions":[],"declaredOutputs":["metasystem/internal/dispatch/build.go"],"critiqueExhaustions":[]' \
-      >>"$repo/artifacts/agents/jobs/$job.json"
-  fi
-  printf '}\n' >>"$repo/artifacts/agents/jobs/$job.json"
-  if [[ "$kind" != protocol ]]; then
-    mkdir -p "$repo/artifacts/agents/$chain/rounds/$round"
-    case "$kind" in
-      bounded|severe)
-        local prefix=B
-        [[ "$kind" == severe ]] && prefix=S
-        printf '{"schemaVersion":4,"jobId":"%s","round":%d,"findings":[{"id":"%s-1","severity":"high","material":true,"claim":"cap fixture finding","evidence":"direct fixture evidence"}],"rigor":[{"findingId":"%s-1","rigorClass":"%s","facts":{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false},"artifact":"metasystem/internal/dispatch/build.go","reopeningTrigger":"reopen if it recurs"}]}\n' \
-          "$job" "$round" "$prefix" "$prefix" "$kind" >"$repo/artifacts/agents/$chain/rounds/$round/return.json"
-        ;;
-      zero)
-        printf '{"schemaVersion":4,"jobId":"%s","round":%d,"findings":[],"rigor":[]}\n' \
-          "$job" "$round" >"$repo/artifacts/agents/$chain/rounds/$round/return.json"
-        ;;
-    esac
-  fi
-  "$engine" job critique-register-advance --repo "$repo" --root-job "$chain" --round-job "$job" >/dev/null
-}
-
-cap_fixture="$tmp/cap-engine"
-printf '{"role":"code-critic"}\n' >"$cap_fixture-critic-record.json"
-[[ "$("$engine" adapter adjudicate-turn --stage initial \
-    --record "$cap_fixture-critic-record.json" --cli-status 7 --handshake-done)" \
-    == 'finish failed protocol_error runtime' ]] \
-  || { echo "a critic adapter crash did not fold to protocol_error" >&2; exit 1; }
-[[ "$("$engine" adapter adjudicate-turn --stage empty-reply \
-    --record "$cap_fixture-critic-record.json" --handshake-done)" \
-    == 'finish failed protocol_error delivery' ]] \
-  || { echo "an empty critic return did not fold to protocol_error" >&2; exit 1; }
-
-set +e
-"$engine" job exhaustion-patches --manifest nowhere --dir "$tmp" \
-  >"$cap_fixture-retired-command.out" 2>&1
-retired_command_rc=$?
-set -e
-[[ "$retired_command_rc" -eq 2 ]] \
-  && grep -Fq 'unknown verb "exhaustion-patches"' "$cap_fixture-retired-command.out" \
-  || { echo "the retired exhaustion-patches compatibility command is still live" >&2; exit 1; }
-
-bounded_cap_repo="$cap_fixture/bounded"
-cap_fixture_round "$bounded_cap_repo" bounded-chain 1 bounded
-cap_fixture_round "$bounded_cap_repo" bounded-chain 2 zero
-cap_fixture_round "$bounded_cap_repo" bounded-chain 3 zero
-printf 'Address B-1.\n' >"$cap_fixture/bounded-message.md"
-set +e
-"$engine" job critique-exhaustion-advance --repo "$bounded_cap_repo" \
-    --root-job bounded-chain --role design-critic --message "$cap_fixture/bounded-message.md" \
-    --successor bounded-chain-r4 >"$cap_fixture/bounded.out" 2>&1
-bounded_cap_rc=$?
-set -e
-[[ "$bounded_cap_rc" -eq 10 ]] \
-  || { echo "bounded cap returned $bounded_cap_rc instead of typed human-raise exit 10" >&2; exit 1; }
-grep -Fq 'reason=cap-exhausted-human-raise' "$cap_fixture/bounded.out" \
-  && grep -Fq 'review-round limit is exhausted with bounded findings' "$cap_fixture/bounded.out" \
-  || { echo "bounded cap did not raise its human-only refusal" >&2; exit 1; }
-
-protocol_cap_repo="$cap_fixture/protocol"
-cap_fixture_round "$protocol_cap_repo" protocol-chain 1 protocol
-cap_fixture_round "$protocol_cap_repo" protocol-chain 2 protocol
-printf 'protocol correction\n' >"$cap_fixture/protocol-message.md"
-[[ "$($engine job critique-exhaustion-advance --repo "$protocol_cap_repo" \
-    --root-job protocol-chain --role design-critic --message "$cap_fixture/protocol-message.md" \
-    --successor protocol-chain-r3)" == none ]] \
-  || { echo "off-cap protocol error exhausted early" >&2; exit 1; }
-cap_fixture_round "$protocol_cap_repo" protocol-chain 3 protocol
-if "$engine" job critique-exhaustion-advance --repo "$protocol_cap_repo" \
-    --root-job protocol-chain --role design-critic --message "$cap_fixture/protocol-message.md" \
-    --successor protocol-chain-r4 >"$cap_fixture/protocol-round3.out" 2>&1; then
-  echo "round-three protocol error bought another unenumerated retry" >&2; exit 1
-fi
-grep -Fq 'synthetic-' "$cap_fixture/protocol-round3.out" \
-  || { echo "round-three protocol refusal did not enumerate its synthetic finding" >&2; exit 1; }
-
-severe_cap_repo="$cap_fixture/severe"
-cap_fixture_round "$severe_cap_repo" severe-chain 1 bounded
-cap_fixture_round "$severe_cap_repo" severe-chain 2 severe
-cap_fixture_round "$severe_cap_repo" severe-chain 3 zero
-printf 'Address B-1 and S-1.\n' >"$cap_fixture/severe-message.md"
-set +e
-"$engine" job critique-exhaustion-advance --repo "$severe_cap_repo" \
-    --root-job severe-chain --role design-critic --message "$cap_fixture/severe-message.md" \
-    --successor severe-chain-r4 >"$cap_fixture/severe-round3.out" 2>&1
-severe_cap_rc=$?
-set -e
-[[ "$severe_cap_rc" -eq 10 ]] \
-  || { echo "round-three exhaustion returned $severe_cap_rc instead of typed human-raise exit 10" >&2; exit 1; }
-grep -Fq 'reason=cap-exhausted-human-raise' "$cap_fixture/severe-round3.out" \
-  && grep -Fq 'terminal round 3' "$cap_fixture/severe-round3.out" \
-  || { echo "round-three exhaustion did not raise its terminal refusal" >&2; exit 1; }
-
 agent_fixture="$tmp/agent-fixture"
 agent_repo="$agent_fixture/repo"
 agent_evidence="$agent_fixture/evidence"
@@ -653,6 +569,7 @@ cp scripts/metasystem-config.sh scripts/assert-return-complete.sh \
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
 cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"
 cp metasystem.conf "$agent_repo/"
+cp testing.json "$agent_repo/"
 # Existing temporary roots retain their literal model ids. Alias fixtures add
 # their own fake-runtime family pointer only for the scenario that exercises it.
 conf_edit "$agent_repo/metasystem.conf" delete-lines '^runtime[.]claude[.]model-alias[.].*='
@@ -732,6 +649,7 @@ second_snapshot=$($fake_adapter probe)
 # repository and supervisor. They run only after the main dispatch fixture
 # set has shut down, so neither can queue behind its fixture state or reuse
 # its synthetic-process supervision set.
+if [[ "$fixture_scenario" == mission-runner ]]; then
 runner_repo="$agent_fixture/runner-repo"
 runner_evidence="$agent_fixture/runner-evidence"
 cp -R "$agent_repo" "$runner_repo"
@@ -766,6 +684,8 @@ runner_git() {
 
 conf_edit "$runner_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$runner_evidence"
+fi
+if [[ "$fixture_scenario" == adapter-selftest ]]; then
 agent_selftest_repo="$agent_fixture/selftest-repo"
 agent_selftest_evidence="$agent_fixture/selftest-evidence"
 cp -R "$agent_repo" "$agent_selftest_repo"
@@ -773,6 +693,7 @@ agent_selftest_repo=$(cd "$agent_selftest_repo" && pwd -P)
 enroll_fixture_repo "$agent_selftest_repo"
 conf_edit "$agent_selftest_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$agent_selftest_evidence"
+fi
 
 agent_fixture_cap_sec=$(harness_fixture_cap agent-command)
 agent_status_cap_sec=$(harness_fixture_cap agent-status)
@@ -783,57 +704,12 @@ export METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC
 
 wait_for_agent_census_fresh() { # fixture name
   local name=$1 verdict="$agent_supervision_repo/artifacts/agents/supervision/last-census.json"
-  local snap="$agent_fixture/census-wait-snapshot.json" base marker sequence interval silence
-  local last_advance=$SECONDS rebaselines=0 max_rebaselines=5 attempt_budget=2
   [[ -n "${agent_supervision_repo:-}" ]] || return 0
-  # The engine's OWN freshness ruling (script-validate-2/D34): the same
-  # verb every dispatch gates on, so the fixture can never drift from
-  # the policy internal/dispatch enforces. Census patience is counted in
-  # completed passes; wall time is only a silence failsafe for a wedged writer.
-  cp "$verdict" "$snap" 2>/dev/null || : >"$snap"
-  base=$("$engine" json get --file "$snap" --field scanSeq 2>/dev/null || true)
-  [[ "$base" =~ ^[0-9]+$ ]] || base=0
-  marker=$base
-  while :; do
-    cp "$verdict" "$snap" 2>/dev/null || : >"$snap"
-    sequence=$("$engine" json get --file "$snap" --field scanSeq 2>/dev/null || true)
-    if [[ "$sequence" =~ ^[0-9]+$ ]]; then
-      if (( sequence < marker )); then
-        rebaselines=$((rebaselines + 1))
-        if (( rebaselines > max_rebaselines )); then
-          echo "agent fixture census scanSeq regressed $rebaselines times while waiting for $name (last $marker -> $sequence)" >&2
-          return 1
-        fi
-        base=$sequence
-        marker=$sequence
-        last_advance=$SECONDS
-      elif (( sequence > marker )); then
-        marker=$sequence
-        last_advance=$SECONDS
-      fi
-    fi
-    if [[ "$sequence" =~ ^[0-9]+$ ]] && (( sequence >= base + 2 )) && \
-      "$agent_supervision_repo/bin/metasystem" job census-fresh \
-        --root "$agent_supervision_repo" --repo "$agent_supervision_repo" --arm rearm \
-        --verdict "$snap" \
-        --state "$agent_supervision_repo/artifacts/agents/supervision/state.json" >/dev/null 2>&1; then
-      return 0
-    fi
-    if [[ "$sequence" =~ ^[0-9]+$ ]] && (( sequence >= base + 1 + attempt_budget )); then
-      echo "agent fixture still lacked a fresh census after $attempt_budget completed passes while waiting for $name (scanSeq $base -> $sequence)" >&2
-      cat "$snap" >&2 || true
-      return 1
-    fi
-    interval=$("$engine" json get --file "$snap" --field intervalSec 2>/dev/null || true)
-    [[ "$interval" =~ ^[1-9][0-9]*$ ]] || interval=1
-    silence=$((30 * interval))
-    (( silence < 60 )) && silence=60
-    if (( SECONDS - last_advance >= silence )); then
-      echo "agent fixture saw no completed census pass for ${silence}s while waiting for $name (scanSeq stuck at $marker)" >&2
-      return 1
-    fi
-    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
-  done
+  "$agent_supervision_repo/bin/metasystem" job census-wait \
+    --root "$agent_supervision_repo" --repo "$agent_supervision_repo" --arm rearm \
+    --verdict "$verdict" --state "$agent_supervision_repo/artifacts/agents/supervision/state.json" \
+    --attempt-budget 2 --max-regressions 5 --poll-ms "$METASYSTEM_FIXTURE_POLL_INTERVAL_MS" \
+    || { echo "agent fixture lacked a current fresh census while waiting for $name" >&2; return 1; }
 }
 
 agent_fixture_job_from_args() {
@@ -1473,6 +1349,12 @@ grep -Fq 'BUDGET_UNKNOWN record=plans/goals/budgetless-survivor.md goal=budgetle
   || { echo "budgetless refusal did not name the exact goal record: $budgetless_admission" >&2; exit 1; }
 budgetless_brief="$agent_fixture/budgetless.md"
 make_agent_brief "$budgetless_brief" design
+# Caller identity must be explicit before testing the missing-budget refusal.
+budgetless_main_start=$("$budgetless_dispatch_repo/bin/metasystem" proc started-at --pid "$$")
+"$budgetless_dispatch_repo/bin/metasystem" lease announce \
+  --root "$budgetless_dispatch_repo" --session budgetless-validator --pid "$$" \
+  --start "$budgetless_main_start" --tag metasystem-main-fake-budgetless-validator \
+  --runtime fake --owner-lineage budgetless-fixture >/dev/null
 set +e
 env METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
   "$budgetless_dispatch_repo/scripts/agents/dispatch.sh" dispatch \

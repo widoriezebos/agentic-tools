@@ -16,6 +16,17 @@ import (
 )
 
 const fullBatteryCommand = validate.FullBatteryCommand
+const CanonicalValidatorCommand = "scripts/validate-metasystem.sh"
+
+func fullReceiptCommandAccepted(receipt TestReceipt) bool {
+	if receipt.SchemaVersion == 2 {
+		return receipt.Testing != nil && receipt.Testing.Delivery.Sufficient
+	}
+	if receipt.Command == fullBatteryCommand {
+		return true
+	}
+	return receipt.Command == CanonicalValidatorCommand && receipt.Proof != nil && receipt.Coverage != nil
+}
 
 func observeTierOne(params ObserveParams, change string) Observation {
 	provenance := "direct-fix class=tier-1 change=" + change
@@ -73,7 +84,10 @@ func observeTierOne(params ObserveParams, change string) Observation {
 	if err != nil {
 		return refuse("tier1-receipt-refused", provenance)
 	}
-	if gateWidth == "full" && receipt.Command != fullBatteryCommand {
+	if testingContractEnabled(params.RepoRoot) && receipt.SchemaVersion != 2 {
+		return refuse("tier1-receipt-refused", provenance)
+	}
+	if gateWidth == "full" && !fullReceiptCommandAccepted(receipt) {
 		return refuse("tier1-full-gate-refused", provenance)
 	}
 	return pass(BarDirectFix, "tier-1", provenance)

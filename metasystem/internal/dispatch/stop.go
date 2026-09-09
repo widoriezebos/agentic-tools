@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 const stopCustodianLineage = "goal-stop-custodian"
@@ -480,15 +481,46 @@ func ReconcileStopBatch(root, stopID string, now time.Time) (goal.StopBatch, err
 		}
 		pending = append(pending, jobID)
 	}
+	proofAttempts, proofErr := proofrun.ReadAttempts(root)
+	var pendingProofs, terminalProofs []string
+	observedProofs := make([]goal.StopProof, 0)
+	if proofErr != nil {
+		failure = firstStopFailure(failure, "proof-attempt inventory is unreadable: "+proofErr.Error())
+	} else {
+		for _, attempt := range proofAttempts {
+			if attempt.GoalID != batch.GoalID {
+				continue
+			}
+			if attempt.GoalRevision > batch.GoalRevision || attempt.AccountingRevision > batch.GoalRevision {
+				failure = firstStopFailure(failure, fmt.Sprintf("proof attempt %s is bound to future goal revision %d", attempt.AttemptID, attempt.GoalRevision))
+				continue
+			}
+			terminalResult := ""
+			if attempt.Terminal == nil {
+				pendingProofs = append(pendingProofs, attempt.AttemptID)
+			} else {
+				terminalResult = attempt.Terminal.Result
+				terminalProofs = append(terminalProofs, attempt.AttemptID)
+			}
+			observedProofs = append(observedProofs, goal.StopProof{
+				AttemptID: attempt.AttemptID, GoalID: attempt.GoalID, GoalRevision: attempt.GoalRevision,
+				AccountingRevision: attempt.AccountingRevision, Machine: batch.Machine, ClaimEpoch: batch.ClaimEpoch,
+				StopID: batch.StopID, FenceEpoch: batch.FenceEpoch, CapabilityGeneration: batch.CapabilityGeneration,
+				ProcessKeys: append([]string(nil), attempt.ProcessKeys...), Terminal: terminalResult,
+				Cancellation: attempt.CancellationIntent, ObservedAt: stamp,
+			})
+		}
+	}
 	batch.Pass++
 	batch.Pending, batch.Terminal, batch.Foreign = pending, terminal, foreign
+	batch.PendingProofs, batch.TerminalProofs, batch.ObservedProofs = pendingProofs, terminalProofs, observedProofs
 	batch.Observed, batch.CancelOutcomes = observed, outcomes
 	batch.UpdatedAt = stamp
 	batch.CompletedAt = ""
 	batch.Failure = failure
 	if failure != "" {
 		batch.State = goal.StopBatchIndeterminate
-	} else if len(pending) == 0 {
+	} else if len(pending) == 0 && len(pendingProofs) == 0 {
 		batch.State = goal.StopBatchComplete
 		batch.CompletedAt = batch.UpdatedAt
 	} else {
@@ -498,6 +530,13 @@ func ReconcileStopBatch(root, stopID string, now time.Time) (goal.StopBatch, err
 		return goal.StopBatch{}, err
 	}
 	return batch, nil
+}
+
+func firstStopFailure(existing, next string) string {
+	if existing != "" {
+		return existing
+	}
+	return next
 }
 
 // AuthorizeStopCancellation proves the exact job is still in the exact open
@@ -538,4 +577,95 @@ func AuthorizeStopCancellation(root, stopID, jobID string) error {
 		return fmt.Errorf("job %s has uncancellable status %q", jobID, lens.Status())
 	}
 	return nil
+}
+
+// CancelStopProof authenticates one exact proof-only member, persists its
+// cancellation intent, stops every published process identity, and commits a
+// terminal cancellation only after each identity is gone.
+func CancelStopProof(root, stopID, attemptID string) error {
+	batch, err := goal.ReadStopBatch(root, stopID)
+	if err != nil {
+		return err
+	}
+	if batch.State != goal.StopBatchOpen || !containsStopMember(batch.PendingProofs, attemptID) {
+		return fmt.Errorf("proof attempt %s is not pending in open stop batch %s", attemptID, stopID)
+	}
+	var observed *goal.StopProof
+	for index := range batch.ObservedProofs {
+		if batch.ObservedProofs[index].AttemptID == attemptID {
+			copy := batch.ObservedProofs[index]
+			observed = &copy
+			break
+		}
+	}
+	if observed == nil || observed.Terminal != "" || observed.StopID != batch.StopID ||
+		observed.FenceEpoch != batch.FenceEpoch || observed.CapabilityGeneration != batch.CapabilityGeneration ||
+		observed.Machine != batch.Machine || observed.ClaimEpoch != batch.ClaimEpoch {
+		return fmt.Errorf("proof attempt %s has no exact pending member in stop batch %s", attemptID, stopID)
+	}
+	attempt, err := proofrun.ReadAttempt(root, attemptID)
+	if err != nil {
+		return err
+	}
+	if attempt.GoalID != batch.GoalID || attempt.GoalID != observed.GoalID ||
+		attempt.GoalRevision != observed.GoalRevision || attempt.AccountingRevision != observed.AccountingRevision {
+		return fmt.Errorf("proof attempt %s no longer matches stop batch %s authority", attemptID, stopID)
+	}
+	if attempt.Terminal != nil {
+		return nil
+	}
+	if err := proofrun.RequestCancellation(root, attemptID, "goal stop batch "+stopID); err != nil {
+		return err
+	}
+	// The cancellation mutation serializes against process publication. Read
+	// again after it commits so a process key that won the preceding race is
+	// part of this exact stop, never stranded behind the persisted intent.
+	attempt, err = proofrun.ReadAttempt(root, attemptID)
+	if err != nil {
+		return err
+	}
+	if attempt.GoalID != observed.GoalID || attempt.GoalRevision != observed.GoalRevision ||
+		attempt.AccountingRevision != observed.AccountingRevision {
+		return fmt.Errorf("proof attempt %s accounting binding changed during stop", attemptID)
+	}
+	options := proofrun.StopOptions{TermGrace: 5 * time.Second, KillGrace: time.Second}
+	if len(attempt.ProcessKeys) == 0 {
+		outcome := proofrun.StopRecordedIdentity("launcher", attempt.Launcher, options)
+		if outcome.Result == proofrun.StopNotStopped {
+			return fmt.Errorf("proof attempt %s launcher was not stopped: %s", attemptID, outcome.Reason)
+		}
+	} else {
+		for _, key := range attempt.ProcessKeys {
+			record, readErr := proofrun.ReadProcessRecord(root, key)
+			if readErr != nil {
+				return fmt.Errorf("proof attempt %s process record %s is unreadable: %w", attemptID, key, readErr)
+			}
+			for _, outcome := range proofrun.Stop(record, options) {
+				if outcome.Result == proofrun.StopNotStopped {
+					return fmt.Errorf("proof attempt %s %s was not stopped: %s", attemptID, outcome.Component, outcome.Reason)
+				}
+			}
+		}
+	}
+	held, err := proofrun.AcquireMutation(root)
+	if err != nil {
+		return err
+	}
+	defer held.Release()
+	attempt, err = proofrun.ReadAttempt(root, attemptID)
+	if err != nil || attempt.Terminal != nil {
+		return err
+	}
+	_, err = proofrun.FinalizeAttemptLocked(root, attemptID, proofrun.TerminalCancelled, 1,
+		"cancelled by goal stop batch "+stopID, nil, time.Now().UTC())
+	return err
+}
+
+func containsStopMember(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

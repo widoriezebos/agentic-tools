@@ -308,6 +308,38 @@ func TestSnapshotSeededForcesDeclaredPaths(t *testing.T) {
 	}
 }
 
+func TestSnapshotRelevantIncludesIgnoredInputsAndExcludesUnrelatedWork(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write(".gitignore", "inputs/generated.txt\n")
+	f.write("inputs/source.txt", "candidate\n")
+	f.write("unrelated.txt", "candidate\n")
+	f.git("add", ".gitignore", "inputs/source.txt", "unrelated.txt")
+	f.commit("relevant snapshot base")
+	expected, err := f.w.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.write("unrelated.txt", "unstaged but irrelevant\n")
+	clean, err := f.w.SnapshotRelevant(expected, []string{"inputs/**"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean != expected {
+		t.Fatalf("irrelevant worktree change moved relevant snapshot: %s != %s", clean, expected)
+	}
+	f.write("inputs/generated.txt", "ignored relevant bytes\n")
+	drifted, err := f.w.SnapshotRelevant(expected, []string{"inputs/**"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if drifted == expected {
+		t.Fatalf("ignored relevant input did not move relevant snapshot")
+	}
+	if _, ok := f.entry(drifted, "inputs/generated.txt"); !ok {
+		t.Fatalf("ignored relevant input vanished from snapshot")
+	}
+}
+
 // The nested graft: the projection is judged in workspace path space
 // against the expected workspace tree, with sibling entries seeded from
 // the resolved commit.
@@ -500,5 +532,29 @@ func TestScrubbedEnvironStripsConfigInjection(t *testing.T) {
 	// Only the runner's own pin survives (appended after the scrub).
 	if seen["GIT_CONFIG_VALUE_0"] != "false" {
 		t.Fatalf("the runner pin must win: GIT_CONFIG_VALUE_0=%q", seen["GIT_CONFIG_VALUE_0"])
+	}
+}
+
+func TestSnapshotRelevantMissingPresentDeleted(t *testing.T) {
+	f := newTreeFixture(t)
+	expected, err := f.w.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.w.SnapshotRelevant(expected, []string{"go.sum"})
+	if err != nil || got != expected {
+		t.Fatalf("absent: %s %v", got, err)
+	}
+	f.write("go.sum", "checksum\n")
+	present, err := f.w.SnapshotRelevant(expected, []string{"go.sum"})
+	if err != nil || present == expected {
+		t.Fatalf("appearance: %s %v", present, err)
+	}
+	if err := os.Remove(filepath.Join(f.w.Dir, "go.sum")); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := f.w.SnapshotRelevant(present, []string{"go.sum"})
+	if err != nil || deleted != expected {
+		t.Fatalf("deletion: %s %v", deleted, err)
 	}
 }

@@ -21,13 +21,35 @@ func validateRepo(t *testing.T, confBody string) []string {
 	evidence := t.TempDir()
 	body := strings.ReplaceAll(confBody, "@EVIDENCE@", evidence)
 	body = strings.ReplaceAll(body, "@REPO@", repo)
+	if !strings.Contains(body, "testing.contract=") {
+		body += "testing.contract=testing.json\n"
+	}
 	putFile(t, conf, body)
+	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
 	tiersAbsent, problems, err := Validate(conf, repo)
 	if err != nil {
 		t.Fatalf("hard error: %v", err)
 	}
 	_ = tiersAbsent
 	return problems
+}
+
+const minimalTestingContract = `{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke"}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`
+
+func TestValidateRequiresStrictCommittedTestingContract(t *testing.T) {
+	repo := t.TempDir()
+	conf := filepath.Join(repo, "metasystem.conf")
+	putFile(t, conf, "metasystem.runtimes=fake\n")
+	_, problems, err := Validate(conf, repo)
+	if err != nil || !hasProblem(problems, "testing.contract is required") {
+		t.Fatalf("missing testing contract was not reported: problems=%v err=%v", problems, err)
+	}
+	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
+	putFile(t, conf, "metasystem.runtimes=fake\ntesting.contract=testing.json\n")
+	_, problems, err = Validate(conf, repo)
+	if err != nil || hasProblem(problems, "testing.contract") {
+		t.Fatalf("valid testing contract was rejected: problems=%v err=%v", problems, err)
+	}
 }
 
 func hasProblem(problems []string, substr string) bool {
@@ -41,6 +63,7 @@ func hasProblem(problems []string, substr string) bool {
 
 const validConf = "metasystem.version=1\n" +
 	"metasystem.runtimes=claude,codex,fake\n" +
+	"testing.contract=testing.json\n" +
 	"runtime.claude.maximal-models=claude-fable-5\n" +
 	"evidence.root=@EVIDENCE@\n" +
 	"role.default.runtime=fake\n" +
@@ -66,7 +89,9 @@ func TestValidateTiersAbsentInfo(t *testing.T) {
 	putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "x\n")
 	evidence := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
+	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
 	putFile(t, conf, "metasystem.runtimes=fake\n"+
+		"testing.contract=testing.json\n"+
 		"evidence.root="+evidence+"\n"+
 		"role.default.runtime=fake\n"+
 		"role.default.model.fake=fake-model\n")

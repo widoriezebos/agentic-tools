@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -167,6 +169,77 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 			t.Fatalf("an initialized root must be holder-only even for reconcile: %v", err)
 		}
 	})
+}
+
+func TestFreshInitializationUsesHumanGitCommitThenRealMigration(t *testing.T) {
+	root := t.TempDir()
+	runReceiptGit(t, root, "init", "-q", "-b", "main")
+	runReceiptGit(t, root, "config", "user.name", "fresh human fixture")
+	runReceiptGit(t, root, "config", "user.email", "fresh-human@example.invalid")
+	runReceiptGit(t, root, "config", "metasystem.goal.machine", "fresh-machine")
+	runReceiptGit(t, root, "config", "goal.sync-remote", "local")
+	runReceiptGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
+	for _, directory := range []string{"bin", "scripts/agents", "plans"} {
+		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	guardBytes, err := os.ReadFile("../../scripts/agents/pre-commit-guard.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), guardBytes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Only the terminal fact is simulated. The installed production guard,
+	// ordinary Git commit and goal migration all execute their real owners.
+	stub := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == lease && ${2:-} == classify ]]; then printf '%s\n' '{"class":"HUMAN"}'; exit 0; fi
+if [[ ${1:-} == json && ${2:-} == get ]]; then printf '%s\n' HUMAN; exit 0; fi
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh\nexec \""+filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")+"\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "# Goals\n\n## Goal-free: declared 2026-09-09T00:00:00Z by human over " + strings.Repeat("ab", 32) + "\n"
+	digest := bytesSHA256([]byte(legacy))
+	baseline, err := json.Marshal(map[string]any{"schemaVersion": 1, "ledger": legacy, "sha256": digest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals-accepted.json"), baseline, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runReceiptGit(t, root, "add", ".")
+	runReceiptGit(t, root, "commit", "-qm", "human initialization")
+	initial := runReceiptGit(t, root, "rev-parse", "HEAD")
+
+	stageHumanTerminal(t, root, int64(os.Getppid()))
+	if stderr, code := captureStderr(t, func() int {
+		return runGoalMigrate([]string{"--root", root, "--source-digest", digest, "--sync-mode", "local",
+			"--identity", "01J5XM00000000000000000000", "--by", "fixture-human"})
+	}); code != 0 {
+		t.Fatalf("real migration after the human initialization commit failed: code=%d stderr=%s", code, stderr)
+	}
+	tip := runReceiptGit(t, root, "rev-parse", goal.LocalLedgerBranch)
+	if tip == initial {
+		t.Fatal("migration did not advance the local accepted baseline")
+	}
+	if err := exec.Command("git", "-C", root, "cat-file", "-e", tip+":plans/goals.md").Run(); err == nil {
+		t.Fatal("migration retained the legacy ledger in the accepted baseline")
+	}
+	if err := exec.Command("git", "-C", root, "cat-file", "-e", tip+":plans/goals/backlog.md").Run(); err != nil {
+		contents, _ := exec.Command("git", "-C", root, "ls-tree", "-r", "--name-only", tip).CombinedOutput()
+		kind, _ := exec.Command("git", "-C", root, "cat-file", "-t", tip).CombinedOutput()
+		t.Fatalf("migration did not publish the native root record: %v object=%s tree=%s", err, kind, contents)
+	}
 }
 
 func TestGoalCommandClockOverrideIsFixtureOnly(t *testing.T) {
