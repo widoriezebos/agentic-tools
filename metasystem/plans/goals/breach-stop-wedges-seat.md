@@ -1,6 +1,6 @@
 # breach-stop-wedges-seat
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: one budget breach freezes a whole seat until a human resumes, no work lost; novelty 1: one predicate, a claim under a standing StopFence is not this machine's live work, applied where the machine's work is chosen; exposure 3: every machine's ledger validator, goal next and turn verdict; accumulation 2: each stranded claim adds a frozen seat until cleared"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: Appetite: 1h. Discovered live 2026-09-01 morning (records/misc/idle-loss-2026-09-01.md, the wedge specimen is in the ledger refusals at tips 4d8bff0e/88599665). CONSTRAINT: the budget law stays intact - only the quota interaction changes; a human word must still gate resuming the breached goal itself. Prove with a fixture: breach-stop a claim, then claim another goal successfully
 - OpenedAt: 2026-09-01T06:49:32Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T09:31:16Z revision=11 opid=QGWQQJXNP9HGF2QYYPF182B9NQ-m1-c6925449 authority=proven digest=ae55c9fad84c29eb051021c49567ac4495cdf8926364911e94d9ffbe60c04005
 - Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=8 at=2026-09-09T09:11:09Z
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-09T09:31:16Z revision=11 accountingRevision=11
-- StopCapability: generation=11 revision=11 machine=m1d claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-01T06:49:32Z FP70QX8HBN6WY1V8PX52K60QHN-m3-a5da21ff open actor=m3+mac-m3 targets=breach-stop-wedges-seat
@@ -29,4 +27,5 @@ History:
 - 2026-09-09T09:11:09Z BYFFDFAJFWS8540Y2E4XRF8PV4-m1d-a38bcdde slice-start actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat
 - 2026-09-09T09:23:30Z C0KAGC8QH1DTW4FZN9GYG0GMFE-m1d-c6925449 edit actor=human:Wido targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-09T09:08:59Z reason=Misclassified: from=0 to=3 evidence=root:bsws-build1b-20260909
 - 2026-09-09T09:31:16Z QGWQQJXNP9HGF2QYYPF182B9NQ-m1-c6925449 set-budget actor=human:Wido targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-09T09:08:59Z
-Integrity: sha256=d629f75d3e46aa39a921d1b697126dcba46a7c1df0420004532fce4cf5b31175
+- 2026-09-09T10:07:26Z 7FWJB1WRYQWTXYBHTE20KAWFDC-m1d-a38bcdde release actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat
+Integrity: sha256=3f33312dcaa15b60a5b092e72bbcd0689fa159161645905088fa38a11b1e687f
