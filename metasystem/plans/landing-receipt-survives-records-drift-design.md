@@ -843,10 +843,8 @@ lines; each advance test creates one private worktree):
 - **Advance under the lock.** `TestAdvanceRefusesWhenCheckoutLocked`
   holds `lease.LockBounded(lease.LockPath(root), "test-holder")`, sets
   `METASYSTEM_LEASE_LOCK_WAIT_SEC=0`, and `Advance` refuses
-  `advance-checkout-locked` with a message containing `held by test-holder
-  pid=`; HEAD is unchanged. In `internal/lease`,
-  the zero wait refuses naming the first's note; after release the file is
-  empty.
+  `advance-checkout-locked` with the lock's existing message; HEAD is
+  unchanged, no worktree is left behind.
 - **Pins.** `TestAppendOnlyRegistersPins`, the two pins of Decision 1.
 - **Policy row.** The digest row in `behaviorsurface/policy_test.go`.
 
