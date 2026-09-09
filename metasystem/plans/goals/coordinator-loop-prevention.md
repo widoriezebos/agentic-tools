@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: a false proof decision could admit unverified source or fail to stop runaway execution. Novelty 2: connect existing proof, landing and governed-admission owners. Exposure 3: common validation and landing paths used by every runtime. Accumulation 2: crosses proof launch, evidence carriage and commit consumption."
 - Tier: 3
 - Intent: Prevent repeated proof and repair cycles across Claude, Codex, Devin and every supported runtime by enforcing shared admission of ordinary coordinator proof runs, propagating failed gates without automatic retries, and consuming valid coverage proof at landing while retaining source, platform, review and failure checks.
 - Origin: human
 - Next step: Wido explicitly approved expanding this feature on 2026-09-08 in the Codex session: include a common machine-checked test interface for MetaSystem and adopted apps; canary, standard and risk-selected deep modes; low-risk fix-forward delivery without mandatory full battery; test runtime reduction; and separately tracked pruning of duplicate or non-beneficial tests (test-suite-pruning). Author the grounded design on Codex gpt-6-astra xhigh, reconcile the existing proof and landing owners, retain final-review findings F-8 and F-9, then implement, prove with focused canaries, run only the agreed final risk-appropriate verification and land on remote. Existing revision-5 budget and historical review evidence remain in force; this progress entry records session authorization, not a new native budget approval.
 - OpenedAt: 2026-09-08T05:24:18Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=3h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-09T18:15:06Z revision=14 opid=267J4VE7XDV56TCQJRK4S1EB58-m1c-c6925449 authority=proven digest=3fc7cde114341b9099e02f53b6056d8e9bf7fba27b65cc83a86538624b1f31a9
@@ -32,4 +32,5 @@ History:
 - 2026-09-09T12:29:23Z 7386MFWF2N77S9M20BKEQAW8VY-m1c-c6925449 set-budget actor=human:Wido targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T10:32:42Z
 - 2026-09-09T16:28:40Z S17HWMD8WDGB5SD6QQXX3ZQVTB-m1c-c6925449 set-budget actor=human:Wido targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T12:29:23Z
 - 2026-09-09T18:15:06Z 267J4VE7XDV56TCQJRK4S1EB58-m1c-c6925449 set-budget actor=human:Wido targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T16:28:40Z
-Integrity: sha256=10f2dac8230a93c602b506f5ad37b99b052ce1de188dd61155f9643459d7a67b
+- 2026-09-09T20:16:52Z 58PB14TJ4ARNET1QS5G1D8CBKB-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=one-screen-renderer-breaks-brain-stop-seeded from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=9803cecc0d97998a71dd21ffa52c57a2e4906864355a161e29b059991045b500
