@@ -438,6 +438,14 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 	if work == nil {
 		return
 	}
+	if len(work.Refused) > 0 {
+		detail := fmt.Sprintf("CLAIM WOULD REFUSE: %s: %s", work.Refused[0].GoalID, work.Refused[0].Cause)
+		if remaining := len(work.Refused) - 1; remaining > 0 {
+			detail += fmt.Sprintf(" (and %d more)", remaining)
+		}
+		verdict.Diagnostics = append(verdict.Diagnostics, detail)
+		verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+	}
 	digest := idleBacklogDigest(*work)
 	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() {
 		session.IdleBlockDigest = digest

@@ -193,6 +193,7 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string) (string, error) {
 type ClaimableBudgetedWork struct {
 	Claimed         []string
 	Claimable       []string
+	Refused         []AdmissionRefusal
 	InFlight        []string
 	NonTerminalJobs []string
 	Queued          int
@@ -314,6 +315,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 	}
 	work := ClaimableBudgetedWork{
 		Claimed:  append([]string(nil), frontier.Claimed...),
+		Refused:  append([]AdmissionRefusal(nil), frontier.Refused...),
 		GoalFree: projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
 	}
 	claimLineages := make(map[string]string, len(frontier.Claimed))
@@ -490,13 +492,21 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 	return activity, nonTerminal, nil
 }
 
+// AdmissionRefusal records a goal the claim gate would refuse, with the
+// gate's own cause. It is a fact about the goal, never about the machine.
+type AdmissionRefusal struct {
+	GoalID string
+	Cause  string
+}
+
 // NextVerdict is the complete ordered frontier read by backlog health,
 // dispatch, and steward decisions.
 type NextVerdict struct {
-	Claimed  []string // this machine's claimed goals in backlog order
-	Ready    []string // approved and unexpired with every blocker done
-	Blocked  []string // approved and unexpired behind an open blocker
-	Awaiting []string // queued or carrying an expired relayed approval
+	Claimed  []string           // this machine's claimed goals in backlog order
+	Ready    []string           // approved and unexpired with every blocker done
+	Blocked  []string           // approved and unexpired behind an open blocker
+	Awaiting []string           // queued or carrying an expired relayed approval
+	Refused  []AdmissionRefusal // approved and otherwise eligible, but the claim gate refuses; the cause is the gate's text
 }
 
 type NextSelectionKind string
@@ -570,7 +580,9 @@ func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, 
 				// work, so claim admission owns this final readiness check.
 				if _, err := requireApprovedForClaimWithContext(admission, t, f, p.Horizon.Now, "claim"); err == nil {
 					v.Ready = append(v.Ready, id)
-				} else if !isGoalAdmissionRefusal(err) {
+				} else if isGoalAdmissionRefusal(err) {
+					v.Refused = append(v.Refused, AdmissionRefusal{GoalID: id, Cause: err.Error()})
+				} else {
 					return NextVerdict{}, fmt.Errorf("cannot answer claimable backlog: %w", err)
 				}
 			} else {

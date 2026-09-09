@@ -201,6 +201,6 @@ func GoalReportTarget(root, id string) string {
 
 // ConcludedInWindow exposes the sweep predicate for focused callers and tests.
 func ConcludedInWindow(file *goal.GoalFile, start, end time.Time) bool {
-	done, ok := historyTime(file, "done")
+	_, done, ok := concludedAt(file)
 	return ok && !done.Before(start) && done.Before(end)
 }

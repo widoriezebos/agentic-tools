@@ -508,6 +508,8 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 		}
 		line := "no claimable goal for machine " + machine
 		switch {
+		case len(frontier.Refused) > 0:
+			line += fmt.Sprintf("; claim would refuse %d (first: %s): %s", len(frontier.Refused), frontier.Refused[0].GoalID, frontier.Refused[0].Cause)
 		case len(frontier.Blocked) > 0:
 			line += "; first blocked goal: " + frontier.Blocked[0]
 		case len(frontier.Awaiting) > 0:
