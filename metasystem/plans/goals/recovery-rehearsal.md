@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 2
-- Sequence: 22
+- Sequence: 23
 - Intent: The recovery rehearsal: prove the system comes back from death - kill everything, restore from records alone, verify no invented state (program L16; runtime-accelerators-never-carry law: correctness survives on records alone)
 - Origin: human
 - Next step: INTENT: retain a bounded failure/recovery proof from records alone for the headless-fleet effort. CONSTRAINTS: use an isolated adopted repository/fleet and approved run budget, not live development processes. Independently interrupt a delegate, host/mission runner and steward/supervision owner mid-work; after supported restart, prove claim/obligation/run reconstruction or an explicit bounded refusal, preserved evidence and no duplicated accepted effect. Prove full human stop from active and partially failed states leaves no owned worker running and prevents resurrection until authorized restart. Reuse the actual host-runtime-setup and metasystem-stop-verb surfaces as they land; recovery-to-good-state owns partial-state repairs. Earlier probes may expose defects before every repair is done; this goal has no blanket blocker on its repair owners. Conclude only with retained evidence on the integrated final revisions. Fleet message replay and brain absence stay with headless-fleet-coordination-proof. FREEDOMS: fault injection and evidence harness; fixes go to existing or separate bounded goals.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 6
+- Revision: 7
 - Labels: headless-fleet, headless-proof
 - Budget: elapsedLimit=3d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -20,4 +20,5 @@ History:
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=recovery-rehearsal
 - 2026-09-08T15:58:31Z ZDRKCDRCK3EY4GXBHCA6XGEJ1R-m1-7cd0bd60 set-priority actor=human:Wido targets=recovery-rehearsal reason=priority-order subject=recovery-rehearsal from=unranked to=2:23 requested-sequence=23
 - 2026-09-08T16:24:03Z 72ERBGBZNWN6FH95PQQA5BTAQ4-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=chain-landing-after-base-move-recertifies,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:23 to=2:22
-Integrity: sha256=bb574642c7a40cf6d2f65ad2f30fc61f3151910b88153f8ac527ad16a582eae0
+- 2026-09-09T06:01:35Z QW24FXYF0B3B0TPXMQ8711EJPH-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order subject=enrollment-proves-a-human-not-a-terminal from=2:22 to=2:23 requested-sequence=1
+Integrity: sha256=91f7d86ecb65d462b773b99f961229fbc2b38ec7ded9bb1213fd71d20f053488

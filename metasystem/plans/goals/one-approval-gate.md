@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 2
+- Sequence: 3
 - Intent: ONE human approval, not two (Wido's finding 2026-09-03 during the first headless run): today a piece of work passes TWO human gates with TWO budgets - the ledger's goal approve (the approved tuple: elapsed/attempts/minutes/active) and the mission contract's signature (its own fences: wall-clock, cycles, jobs, concurrency, job-cap, plus a priced exposure). One should suffice: the mission contract's limits must DERIVE from the goal's approved ledger tuple, and the contract signature must BE the goal approval (or reference it by revision) so the human signs once and the runner reads the ledger. DONE means: sealing a mission contract for an approved goal takes its fences from the approved tuple (no second hand-typed budget), the Approval line is replaced by or bound to the goal approval record, a mismatch refuses at seal, and the first headless run's contract (mission birth-token) is the specimen.
 - Origin: main
 - Next step: INTENT: one human word governs both the backlog item and the unattended run of it. CONSTRAINTS: the goal ledger is the source of truth for budget; the contract may only NARROW it, never widen; exposure (money) stays explicit at approval as part of the tuple or its box; keep the runner's per-run fences (cycles, wall-clock) as DERIVED numbers with a recorded derivation rule. FREEDOMS: whether the contract carries the goal revision it was approved under, or the approve verb emits the sealed contract; whether the Approval line survives as a byte attestation of the derived contract. Tier 3 (design-bearing, touches the approval feature and the contract package). Budget Wido's word at approval.
 - OpenedAt: 2026-09-03T15:47:08Z
-- Revision: 3
+- Revision: 4
 - Labels: headless-execution, headless-fleet
 - BudgetExceptions: 0
 
@@ -15,4 +15,5 @@ History:
 - 2026-09-03T15:47:08Z 5ZH6MSW3W3PKXQRH48E1NP56T8-m0-c5dbf036 open actor=human:Wido targets=one-approval-gate
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=one-approval-gate
 - 2026-09-08T15:57:15Z Y8G5H7Z18QBYCW5ZTC6X8PY55E-m1-7cd0bd60 set-priority actor=human:Wido targets=one-approval-gate reason=priority-order subject=one-approval-gate from=unranked to=2:2 requested-sequence=2
-Integrity: sha256=aa957c1b52962459bb35e89dc9ce38694ff0fe906deefdb8d4edaa7fec469bca
+- 2026-09-09T06:01:35Z QW24FXYF0B3B0TPXMQ8711EJPH-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order subject=enrollment-proves-a-human-not-a-terminal from=2:2 to=2:3 requested-sequence=1
+Integrity: sha256=2671266975df86b46d1eeaa67e6cca963ddafec55fc06df30279aaf9fe187004

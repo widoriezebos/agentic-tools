@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 8
+- Sequence: 9
 - Intent: The merge stage of validate conformance (internal/validate/conformance.go, the code-critic chain checks) accepts a landing only when a code-critic chain root carries chainClosed, but a critic root dispatched at DESIGN-BEARING reach can never close: its own hazard closure (internal/dispatch/hazard.go, validateIndependentCritiqueReference) demands a distinct independent critique of the critique, while the implementer's closure demands a DESIGN-BEARING critic (maximal effort). So --stage merge refuses every real chain with "is not closed", and the landing evaluator, which never needed the critic closed, is the only working gate. Make the two agree: hazard closure applies to work chains (implementer roots) and not to critic, warden or verifier roots, so a critic chain closes on its terminal completed round, and the merge stage binds to the closing critic named by independentCritiqueJobRef instead of scanning every critic chain for a clean one.
 - Origin: main
 - Next step: TIER 2 per R-54-m1 (mechanical logic inside two existing owners): build plus one code review, no design round. Specimen: the path-class manifest's first part on 2026-09-03; four closing-review chains, none closable, merge stage refused all four while the landing evaluator accepted the certified tree. Fixture legs: a DESIGN-BEARING critic root closes without a reference; an implementer root still refuses without one; merge stage passes on the closing critic and ignores earlier critic chains of the same implementer; a stale closing critic still refuses. Waits for human approval for execution.
 - OpenedAt: 2026-09-03T11:22:04Z
-- Revision: 4
+- Revision: 5
 - Arc: headless-fleet
 - BudgetExceptions: 0
 
@@ -16,4 +16,5 @@ History:
 - 2026-09-03T12:17:20Z DEP9KXQ3568Z9V73VPKJ45MMY1-m1-7bb1546e edit actor=m1+main-1788333680-2840-7f79f4 targets=merge-stage-critic-close
 - 2026-09-03T12:20:51Z 8800B7G7H57XBNW7EJZE9JH1FS-m1-7bb1546e set-arc actor=m1+main-1788333680-2840-7f79f4 targets=merge-stage-critic-close
 - 2026-09-08T15:57:37Z DMQX88R7S3JQ41CPMFAM2D8VX6-m1-7cd0bd60 set-priority actor=human:Wido targets=merge-stage-critic-close reason=priority-order subject=merge-stage-critic-close from=unranked to=2:8 requested-sequence=8
-Integrity: sha256=210065084e8cdd5256c886840201209181caf773c46b501cb6822aaf8ee3d80b
+- 2026-09-09T06:01:35Z QW24FXYF0B3B0TPXMQ8711EJPH-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order subject=enrollment-proves-a-human-not-a-terminal from=2:8 to=2:9 requested-sequence=1
+Integrity: sha256=6bce0530b2107de23f3e79b24cdddcf3d190914ed6d27ef7bf593bceb372e1e5

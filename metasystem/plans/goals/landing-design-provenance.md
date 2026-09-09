@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 9
+- Sequence: 10
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="A wrong acceptance gate can admit unreviewed changes across every node; it extends existing evidence binding but crosses dispatch and landing."
 - Tier: 3
 - Intent: A design-bearing landing is refused unless its implementation names the certified design revision and independent design critique admitted before the build, with evidence bound to the candidate being landed.
 - Origin: human
 - Next step: INTENT: deliver the deferred design-provenance slice of two-bars-for-changes as one independently verifiable gate. CONSTRAINTS: consume the designChain and critic identity produced by design-gate-at-dispatch; keep one existing landing owner; missing, stale or substituted evidence refuses; a design change invalidates the old binding; preserve the existing mechanical design exemption and any explicitly authorized waiver without weakening critique-always. Activation follows the existing observed-then-authorized promotion rule. FREEDOMS: record shape and placement within the existing landing evaluator. PROOF: omitted design, changed design blob, wrong critic, and post-review candidate change refuse; a matching certified chain passes. This goal owns this slice alone; caller classification, witness and growth-fuse work remain with two-bars-for-changes. ROSTER: current configured development builder and independent critics; no fixed model copied from historical handoffs.
 - OpenedAt: 2026-09-07T21:10:16Z
-- Revision: 3
+- Revision: 4
 - BlockedBy: design-gate-at-dispatch, path-class-manifest
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -19,4 +19,5 @@ History:
 - 2026-09-07T21:10:16Z VRAAJCC9NXEXBP708G8AWM8JQN-m1-76f67331 open actor=human:Wido targets=landing-design-provenance
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=landing-design-provenance
 - 2026-09-08T15:57:40Z DVA3RH85GEHAGDFGWEWCTRX68M-m1-7cd0bd60 set-priority actor=human:Wido targets=landing-design-provenance reason=priority-order subject=landing-design-provenance from=unranked to=2:9 requested-sequence=9
-Integrity: sha256=cbcfd7dc2d15bfd9f5b8e2f5627d2ce3afac1926c04c5a1ac54e47da91c482f8
+- 2026-09-09T06:01:35Z QW24FXYF0B3B0TPXMQ8711EJPH-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order subject=enrollment-proves-a-human-not-a-terminal from=2:9 to=2:10 requested-sequence=1
+Integrity: sha256=871dbf44b5b05eac7070d42d5feee4546ef754c83e0a608102ae62e88ab60b7c
