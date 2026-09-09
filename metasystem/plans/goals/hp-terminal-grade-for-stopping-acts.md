@@ -1,20 +1,18 @@
 # hp-terminal-grade-for-stopping-acts
 
-- State: claimed
+- State: approved
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong terminal grade lets an unenrolled human stop or park work, which halts and never grants; the agent exclusion stays; novelty 2: a second walk variant beside Prove; exposure 3: every seat's stop, park and release; accumulation 1: each act judged on its own"
 - Tier: 3
 - Intent: A human at any live terminal of the host, with no agent in the ancestry, can stop, park, release or unpark-without-approval, and session-stop, without an enrolled terminal: a second proof grade (the enrollment walk without the write), placed on those acts only, so no seat is ever wedged by a dead enrolled terminal. Design plans/human-proof-fits-the-act-design.md revision 2, sections "The two proofs" and the stopping rows of section 1.
 - Origin: main
 - Next step: Sol builds ProveTerminal beside Prove in internal/humanauthority, the grade field on the proof and the request, and the terminal-grade rows for session stop, park, release, unpark onto a queued state and the stopping process verbs; fixtures drive an agent shell refused for a stop and a human shell at an unenrolled terminal allowed to stop and refused for an approve. One Sol round, one Opus review, land. Shared design: plans/human-proof-fits-the-act-design.md revision 2 (the parent human-proof-fits-the-act, concluded as decomposed).
 - OpenedAt: 2026-09-09T14:35:03Z
-- Revision: 10
+- Revision: 17
 - Labels: comfort
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T14:36:28Z revision=2 opid=76XV3QEKM1Y759NSDZ4GYEH9R3-m1-c6925449 authority=proven digest=bdc6d051905b5142f0d5196ed9feb58ee5f4b6295de62bfc033c101f09e65924
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-09T14:37:00Z
-- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-09T18:29:58Z revision=10 accountingRevision=10
-- StopCapability: generation=10 revision=10 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-09T14:35:03Z 9BG7PRF2TDXGKXFEE6CG7FVVZ1-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
@@ -27,4 +25,11 @@ History:
 - 2026-09-09T18:11:50Z FYW845RKJHEVQ7DPTRSDPK64K2-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-09T18:14:48Z ZAQCZX7TR1QWSX4HR4HA4GV7S7-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-09T18:29:58Z HDBDB44FPATRXMA213NKY044MP-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
-Integrity: sha256=c8d902bb61fafb671d3c56dd201d6347e8c37c7cbb9a12dd2ea002148359e59d
+- 2026-09-09T20:37:38Z FF640RQE1REFM5XQE7PT0A59DJ-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-09T21:02:12Z SAJ4G7CFSFB6N4SW7WER765KZN-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-09T21:14:13Z 4040T6141NE6MNA85TADCJ0GK4-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-09T21:16:19Z VANT6T7A20GCB1E3A3GMX87VVG-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-09T21:24:35Z CE8PT33SVDA6C0JRQG56Z0XHFG-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-09T21:25:52Z 9G0M3212SN2AB9ZWCTGXDWVTA5-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-09T21:29:52Z QE2JYT2JVC4RQVE52717FGB0KR-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+Integrity: sha256=75df44136a9197e7cd806f5296a1601dbf9d8551587abc4b79efd0df2fdf7dc2
