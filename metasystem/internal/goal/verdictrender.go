@@ -58,10 +58,9 @@ func renderTurnVerdict(verdict Verdict, brainLines []string, runs runDisplayLine
 		actionable = append(actionable, runs.actionable...)
 	}
 
-	remainder := append([]string{}, brainLines...)
-	remainder = append(remainder, summarizeRunWarnings(runs)...)
+	remainder := summarizeRunWarnings(runs)
 	remainder = append(remainder, summarizeGreens(greens)...)
-	return boundedVerdictLines(verdictLine, actionable, remainder, fileLine)
+	return boundedVerdictLines(brainLines, verdictLine, actionable, remainder, fileLine)
 }
 
 func nonemptyLines(text string) []string {
@@ -134,9 +133,10 @@ func summarizeGreens(greens []string) []string {
 	return lines
 }
 
-func boundedVerdictLines(verdictLine string, actionable, remainder []string, fileLine string) string {
+func boundedVerdictLines(brainLines []string, verdictLine string, actionable, remainder []string, fileLine string) string {
 	compose := func(actions, rest []string, notice string) string {
-		lines := []string{verdictLine}
+		lines := append([]string{}, brainLines...)
+		lines = append(lines, verdictLine)
 		lines = append(lines, actions...)
 		if notice != "" {
 			lines = append(lines, notice)

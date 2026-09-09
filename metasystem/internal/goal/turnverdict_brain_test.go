@@ -50,11 +50,8 @@ func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T)
 		t.Fatal(err)
 	}
 	lines := strings.Split(first.Display, "\n")
-	if len(lines) < 5 || lines[0] != "OPEN WORK (1)" || lines[1] != "OPEN-WORK open-plan: finish it" || !strings.HasPrefix(lines[2], "BRAIN SEAT: nodes hold 2 claims (held, remote); 1 approved goals await a node; 1 asks await Wido (ask-one); 1 drafts await approval (draft-one)") {
+	if len(lines) < 5 || !strings.HasPrefix(lines[0], "BRAIN SEAT: nodes hold 2 claims (held, remote); 1 approved goals await a node; 1 asks await Wido (ask-one); 1 drafts await approval (draft-one)") || lines[1] != "HELD HERE: held; release them to a node" || lines[2] != "OPEN WORK (1)" || lines[3] != "OPEN-WORK open-plan: finish it" {
 		t.Fatalf("verdict and brain summary order is wrong: %q", first.Display)
-	}
-	if lines[3] != "HELD HERE: held; release them to a node" {
-		t.Fatalf("held claim was not the next brain line: %q", first.Display)
 	}
 	if !first.ShouldBlock || first.BlockSource == nil || *first.BlockSource != "open-work" || first.IdleRefusal {
 		t.Fatalf("the first ordinary open-work block changed: %+v", first)
@@ -94,7 +91,7 @@ func TestCorruptBrainTurnVerdictKeepsItsRemedyAfterTheBrainSummary(t *testing.T)
 		t.Fatal(err)
 	}
 	lines := strings.Split(verdict.Display, "\n")
-	if len(lines) < 3 || !strings.HasPrefix(lines[0], "NOTHING LEFT TO WORK ON") || !strings.HasPrefix(lines[1], "BRAIN SEAT:") || !strings.HasPrefix(lines[2], "this checkout's brain declaration is unreadable") {
+	if len(lines) < 3 || !strings.HasPrefix(lines[0], "BRAIN SEAT:") || !strings.HasPrefix(lines[1], "this checkout's brain declaration is unreadable") || !strings.HasPrefix(lines[2], "NOTHING LEFT TO WORK ON") {
 		t.Fatalf("corrupt brain prefix order wrong: %q", verdict.Display)
 	}
 	if verdict.ShouldBlock || verdict.IdleRefusal {
