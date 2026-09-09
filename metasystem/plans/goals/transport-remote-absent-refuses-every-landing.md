@@ -1,16 +1,19 @@
 # transport-remote-absent-refuses-every-landing
 
 - State: queued
+- Priority: 2
+- Sequence: 1
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it misreports a landing that reached origin as a failed landing, and leaves the VM mirror the validation rule depends on unwritten; novelty 1: a remote configuration plus an honest refusal line, on machinery that already carries a skip flag; exposure 3: the step is required on every landing from this Mac; accumulation 2: every landing pays it and every report has to be read past it"
 - Tier: 3
 - Intent: scripts/agents/land.sh runs sync-transport.sh as a REQUIRED final step, which pushes origin's branch head to a remote named transport. No checkout on this Mac has that remote: neither agentic-tools-m1b nor agentic-tools-m1c lists it in git remote -v. So every landing from this machine pushes to origin, then fails its last step with git exit 128 and the truncated message 'and the repository exists.', and reports a failed landing for work that is actually on origin/main. Tonight that happened on 48d8bc39. The standing rule that the VM validates both transport and main means the mirror is wanted, not that the step should be dropped; land.sh also already carries --skip-transport, which is the wrong default to reach for because it hides the gap. DONE means either the transport remote is configured wherever the rule expects it and the step passes, or the step states plainly that transport is unconfigured and says which remedy applies, and either way a landing that reached origin is never reported as failed.
 - Origin: main
 - Next step: Reproduce with bash scripts/agents/sync-transport.sh main, which fails with git exit 128 because no remote named transport exists; confirm with git remote -v in both agentic-tools-m1b and agentic-tools-m1c. Then settle the question the rule leaves open, which is where the transport mirror lives now, because the standing rule that the VM validates transport and main assumes a remote that no checkout on this Mac has. That is Wido's answer to give, not a URL to invent. Once it is known, either configure it as part of checkout setup, which belongs with host-runtime-setup's territory, or make the step report the absence in one plain line naming the remedy. Either way land.sh must stop reporting a landing that already reached origin/main as a failure, and the fixture is a landing whose transport step cannot run.
 - OpenedAt: 2026-09-09T07:04:53Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-09T07:04:53Z ZEPGVJX7EACT4X8WJV852K5PWV-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=transport-remote-absent-refuses-every-landing
-Integrity: sha256=206fb9aa3128cf3d6f9301ddf8305c0ee6ad52c6f6939af8b39a0c9430675286
+- 2026-09-09T07:32:48Z SEGWH3575FR5TXSSHS4JFGHC46-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance-carried,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,transport-remote-absent-refuses-every-landing,two-bars-for-changes reason=priority-order subject=transport-remote-absent-refuses-every-landing from=unranked to=2:1 requested-sequence=1
+Integrity: sha256=a61fb587d816e3de412ac29b13ccbda78fb75fc8ca98d4592a2c643a7fd6bf6f
