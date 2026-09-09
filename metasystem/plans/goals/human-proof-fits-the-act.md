@@ -1,6 +1,6 @@
 # human-proof-fits-the-act
 
-- State: approved
+- State: claimed
 - Priority: 3
 - Sequence: 8
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: the change moves the authority boundary itself, and a wrong grading would admit an agent to an act that grants authority, which is the one thing the walk exists to prevent; novelty 2: a grading table over proof classes that already exist (enrolled terminal, temporary word, channel word, fixture) plus a second enrolled terminal, no new mechanism; exposure 3: every human act on every machine and every seat's graceful stop; accumulation 1: each act is judged on its own and nothing compounds"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: DESIGN-BEARING, small. Slice 1: a one-page design naming the grading table verb by verb (which acts take the weak proof, which take the full walk, and why each sits where it does), the enrollment shape (several terminals, or one plus the stated recovery), and the refusal text for each outcome code in internal/refusal/register.go that the authority layer owns; one design critique. Slice 2: the build behind fixtures that drive an agent shell refused for both an approve and a stop, a human shell at an unenrolled terminal allowed to stop and refused for an approve with the enroll command printed, that printed command running and then the approve succeeding, and a dead enrolled terminal recovered by one enroll from a fresh terminal. Receipt: the go gate plus the human-authority package and the goal CLI fixtures. Related: human-goal-verbs-forgiving carries the same refusal rule for the goal verbs and is parked one line from done; enroll-terminal-refuses-macos-terminal (done) fixed the walk for Terminal.app. FOURTH DEFECT, SEEN 2026-09-07 on m1d, about the relay rather than the human's own terminal: Wido was present in an agent session and told it, in his own words, to add a durable-stop requirement to the metasystem-stop-verb intent, and the session could record nothing. 'goal edit --intent' refused with 'the human approved this intent; unapprove the goal, edit it, then approve the new intent'; unapprove and approve are human-only, and passing --by refused TERMINAL_NOT_REACHED. The human's instruction, given directly to the machine, could only be handed back to him as a three-command script to type at his terminal. The one mechanism built for this, --temporary-human-word with --review-by, is retired in fact: since 2026-09-07 the horizon rule and the not-in-the-past rule are mutually unsatisfiable, so no relayed word binds at all (goal fixture-review-by-date-rolls-over carries that decision). The design should say what happens to a human word spoken to a seat: either a graded relay that records the word with its provenance stated and unverified, or an explicit statement that no such path exists and the human always types it, so the seat stops trying. Recording a word is not granting authority, and today it is graded as if it were. STATE 2026-09-09 11:48Z (m1): design revision 1 written by the Fable lane (chain human-proof-design1b-20260909, claude-fable-5-1 xhigh) and landed at b7fb35a2d as plans/human-proof-fits-the-act-design.md with its brief. Five gaps in the return, to disposition before the critique: (1) sequencing with breach-stop-wedges-seat (m1d, chain bsws-build1b-20260909) which owns the stopped-claim quota predicate, land the wedge chain first; (2) the relay-class deletion is sizeable, cut it into its own slice if wanted; (3) set-priority and set-pin placed on the terminal grade as a recommendation; (4) the refusal grammar depends on human-goal-verbs-forgiving slice 2, whichever lands first creates cmd/metasystem/goal_refusal.go; (5) the claim that an exported lineage lets --by pass with no proof on steal, foreign release, classify-sweep, set-pin and reconcile was read from code, not run: prove it in a scratch ledger, never on the live one. NEXT: design critique on the design-critic lane (codex gpt-5.6-sol, --design plans/human-proof-fits-the-act-design.md, --outputs manifest), dispositions, then slice 2 builds. Claim released by m1 at 11:48Z to take the reopened stop-refusal-fits-on-one-screen first (Wido's priority: the wall of text); m1 re-claims this after that lands.
 - OpenedAt: 2026-09-07T06:05:09Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-07T06:09:40Z revision=2 opid=RGFKXJMH1X80K0FRYTY03D6P9C-m1d-927ecfdd authority=proven digest=fb77fdf5afe8e474674146e8535c3b108627dab3493f3799746f9e34e8a80527
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-09T11:18:53Z
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-09T12:53:39Z revision=11 accountingRevision=11
+- StopCapability: generation=11 revision=11 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-07T06:05:09Z 934DAMDGZF64T36E4GQ6CFPCPX-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=human-proof-fits-the-act
@@ -26,4 +28,5 @@ History:
 - 2026-09-09T11:48:26Z N8TZXAJ4T8PKZ4H7XVFYA5DHG9-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=human-proof-fits-the-act
 - 2026-09-09T11:50:08Z 2SKQ6KEQEQ9NMNFQE6H18APQ0E-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=human-proof-fits-the-act
 - 2026-09-09T11:56:24Z RKW9DGVS91VYYMEF0394GJ5M8Q-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=human-proof-fits-the-act
-Integrity: sha256=11a219e84484d834f6b12afba1307b959adef47fcf9d389bae03263fee5c8248
+- 2026-09-09T12:53:39Z BQ135TBN3HR02F60QNAE1TPTT4-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=human-proof-fits-the-act
+Integrity: sha256=3eab4855fddd2c27f88f85b0bc545a6e1c6d3a14e59f230879c136fc91807d3e
