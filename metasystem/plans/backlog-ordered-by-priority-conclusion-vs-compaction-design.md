@@ -1,6 +1,8 @@
 # Backlog ordered by priority: a survivor's `done` event, and the goal the claim gate refuses
 
-Revision: 1. Date: 2026-09-09. Design authoring job: `bolboc-design3`.
+Revision: 2. Date: 2026-09-09. Design authoring jobs: `bolboc-design3`
+(revision 1), `bolboc-design4` (revision 2). The revision record is the last
+section.
 
 Parent specification: `metasystem/plans/backlog-ordered-by-priority-design.md`
 revision 2, whose critique ladder is closed. This page answers the two findings
@@ -18,8 +20,9 @@ Both are the same shape: a reader states something untrue about a goal.
 Neither can wedge the queue, refuse a human act or corrupt the ledger. This
 page specifies the build; it implements nothing. Independent critique,
 dispositions, certification and receipts belong to the orchestrator. Paths are
-relative to the repository root. Line numbers name the revision read for this
-page, tree `a960af0c`.
+relative to the repository root. Line numbers name the tree read for this
+revision, `1ecefc39`; revision 1 read `a960af0c`, and every line it cited was
+re-checked here.
 
 What stays fixed, from the brief: the rank is the human's judgement and
 nothing here sets, infers or reorders a priority or sequence; `goal next`
@@ -33,24 +36,28 @@ Source observations, not runtime proof.
 
 | Responsibility | File and symbol | Observed behaviour and the consequence for this page |
 | --- | --- | --- |
-| Compaction on `done` | `metasystem/internal/goal/verbs.go:1106`, `doneRequest`; `:1154`, state set; `:1162`, `compactDepartedPriorities`; `:1163-1167`, event targets; `:1172-1176`, survivor events | The departed goal's own `done` event receives the whole compaction target set (departed plus shifted survivors) at 1163-1166 before `touchDisplaced` writes it at 1167. Each shifted survivor then gets an event through `mergePriorityEvent` with the same operation id, timestamp, verb and actor. Only the survivor's `Reason` differs. |
-| Compaction event writer | `metasystem/internal/goal/order.go:188`, `compactDepartedPriorities`; `:226`, `mergePriorityEvent`; `metasystem/internal/goal/verbs.go:249`, `touch` | 228-233: when the survivor's last event already carries this operation id, targets are unioned into it; otherwise `touch` appends a fresh event stamped with the request's time and id. 234-239: the reason `priority-order from=<pair> to=<pair>` is set, or appended after `; ` when a reason already exists. |
-| Compaction on split and reconcile | `metasystem/internal/goal/split.go:301-315`; `metasystem/internal/goal/reconcilepub.go:124-140` | Split rewrites the parent's and every touched survivor's targets to the union at 307-312, then merges with verb `split`. Reconcile unions the compaction targets into each departed goal's own last event at 125-131 and merges survivors with verb `done` at 132-139. The departed record therefore never has a lone target when a rank was involved. |
+| Compaction on `done` | `metasystem/internal/goal/verbs.go:1106`, `doneRequest`; `:1154`, state set; `:1160-1161`, moved to `Done`; `:1162`, `compactDepartedPriorities`; `:1163-1167`, event targets; `:1172-1176`, survivor events | The departed goal's own `done` event receives the whole compaction target set (departed plus shifted survivors) at 1163-1166 before `touchDisplaced` writes it at 1167. Each shifted survivor then gets an event through `mergePriorityEvent` with the same operation id, timestamp, verb and actor. Only the survivor's `Reason` differs. |
+| Compaction event writer | `metasystem/internal/goal/order.go:188`, `compactDepartedPriorities`; `:201-204`, the walk; `:226`, `mergePriorityEvent`; `metasystem/internal/goal/verbs.go:249`, `touch` | The walk at 201-204 numbers the goals of the map it is handed, and every caller hands it `t.Live` after the departed record has left that map. 228-233: when the survivor's last event already carries this operation id, targets are unioned into it; otherwise `touch` appends a fresh event stamped with the request's time and id. 234-239: the reason `priority-order from=<pair> to=<pair>` is set, or appended after `; ` when a reason already exists. |
+| Compaction on split and reconcile | `metasystem/internal/goal/split.go:301-328`; `metasystem/internal/goal/reconcilepub.go:124-140` | Split compacts at 301, rewrites the parent's own last line and every touched live line to the union of targets at 307-312, then merges survivors at 315 with verb `split`. Reconcile unions the compaction targets into each departed goal's own last event at 125-131 and merges survivors with verb `done` at 132-139. A compaction line therefore carries the departing act's verb, `done` or `split`, and the departed record never has a lone target when a rank was involved. |
+| Archive writers | `metasystem/internal/goal/verbs.go:1154-1167` (`doneRequest`); `metasystem/internal/goal/reconcilepub.go:344-357` (the `done` row) with `metasystem/internal/goal/reconcilemap.go:276-280`; `metasystem/internal/goal/split.go:288-299` (the parent); `metasystem/internal/goal/migrate.go:306-318`, `:365-374`, `:438-444` (`synthesize`) | Four writers put a record in the archive. `doneRequest` and the reconcile `done` row set `State` done, move the record to `Done`, and append a `done` line in the same act; the hand-edit mapper turns an edited `State: done` into that row. Split sets `State` done at 288, appends a `split` line at 296, moves the record at 297 and writes no `done` line. Migration turns a legacy done entry into an archived record whose whole history is one `migrate` line at the migration stamp (316); a manifest `amend-goal` can make a record parked or queued but never done (414-429), and `add-goal` opens queued (388). The parser places a record by path (`validate.go:113-124`) and `ValidateTree` refuses `State` done outside the archive and any other state inside it (`validate.go:153-167`), so on every parsed tree placement and `State` agree. |
+| Writers that touch an archived record | every `t.Done[` access in the non-test goal package, listed by the orchestrator's search: `verbs.go:374,556,1118,1160,1188,1353,1839,1866,1903`; `validate.go:122,160,202,216,223,290,358`; `split.go:229,297,342,401,425`; `reconcilepub.go:122,126,150,239,352,371` | After the archive act, two writers append to an archived record. The reconcile `edit` row composing on a goal that the same reconcile archived (`reconcilepub.go:368-376`, `:433`, path `:435-437`) appends a line with verb `edit`, the same operation id and the same stamp as the `done` row. `reopen` (`verbs.go:1337-1428`) appends `reopen` at 1405, sets `State` queued at 1381 (or parked into an all-parked arc at 1396), and moves the record to `Live` at 1409-1410. Prune (`verbs.go:1864-1876`) deletes whole archived files and copies relayed-authority lines to the root; it rewrites no surviving record. The reconcile compaction (`:127-130`) and split (`:312`) change the targets of an existing line in place. Every other access reads, refuses, or re-renders. |
+| The only way back to live | `metasystem/internal/goal/verbs.go:556-557` (`open`); `metasystem/internal/goal/reconcilepub.go:239-240` (reconcile `open` row); `metasystem/internal/goal/reconcilemap.go:264-283`; `metasystem/internal/goal/migrate.go:250-252`; `metasystem/internal/goal/verbs.go:1357-1359` | `open` and the reconcile `open` row refuse an archived id and name reopen as the exception. The hand-edit mapper maps only queued, approved or claimed to parked, parked to queued or approved, and any state to done; every other state change refuses at 281-282, so a hand edit cannot leave `done`. Migration refuses a tip that already carries the goals prefix, so it cannot rewrite an adopted ledger. A decomposed parent never reopens (1357-1359): a split parent's archive is final. |
 | History grammar | `metasystem/internal/goal/file.go:287`, `HistoryLine`; `:1303`, `ParseHistoryLine`; `:1318-1322`, reason; `:1340-1422`, key switch; `:1421`, unknown-key refusal | The key set is closed and an unknown key refuses the line. `reason=` consumes the rest of the line. The verb is a free token; nothing validates it against a vocabulary. |
 | Record state and placement | `metasystem/internal/goal/file.go:355-361`, states; `metasystem/internal/goal/validate.go:29-32`, `TreeGoals.Live` and `Done` | State is a closed field. `doneRequest` sets `done` and moves the record to `Done` in the same commit that compacts survivors, whose state is untouched. |
 | The misreading reader | `metasystem/internal/metrics/compute.go:511`, `concludingEpoch`; `:543`, `computeWaiting` | Scans history backwards for the first `done` verb, takes its timestamp as the conclusion, counts `claim` and `steal` events before it as epochs, and never consults `State`. `computeWaiting` calls it at 550 for every selected goal. |
-| Sibling readers of the same verb | `metasystem/internal/metrics/compute.go:144`, `historyTime`; `:157`, `goalBounds`; `:166`, `selectedGoals`; `:191`, `computeOverhead`; `metasystem/internal/metrics/report.go:203`, `ConcludedInWindow` | `historyTime(file, "done")` is the same backward scan in generic form. `selectedGoals` filters on `State == done` at 181 for the whole-period path but returns any record for `--goal <id>` at 167-171. `computeOverhead` re-checks state at 201. `ConcludedInWindow` has no state check and no caller in the tree. |
+| Sibling readers of the same verb | `metasystem/internal/metrics/compute.go:144`, `historyTime`; `:157`, `goalBounds`; `:166`, `selectedGoals`; `:191`, `computeOverhead`; `metasystem/internal/metrics/report.go:203`, `ConcludedInWindow` | `historyTime(file, "done")` is the same backward scan in generic form, and its only three callers are `goalBounds` at 162, `selectedGoals` at 184 and `ConcludedInWindow` at `report.go:204`, all passing `"done"`. `selectedGoals` filters on `State == done` at 181 for the whole-period path but returns any record for `--goal <id>` at 167-171. `computeOverhead` re-checks state at 201. `ConcludedInWindow` has no state check and no caller in the tree. |
 | Metrics goal loader | `metasystem/internal/metrics/data.go:815`, `loadGoals` | Parses every goal path on the accepted tip except `backlog.md`, so live survivors sit in `w.Goals` beside archived records. |
-| Counselor event classes | `metasystem/internal/counselor/sources.go:515-533`, `addHistory`; `:578`, `goalVerbClass`; `metasystem/internal/counselor/compute.go:113-131` | Classifies by verb per operation id across root, live and done records. A second line with the same id, timestamp and verb is skipped at 524-527; a differing verb marks a conflict and excludes the id. Counts are per window, never per goal. |
-| Other history-verb readers | `metasystem/internal/report/scan.go:132-136`; `metasystem/internal/metrics/compute.go:725,737`; `metasystem/internal/goal/file.go:316-323,348-352,593`; `metasystem/internal/goal/verbs.go:82,87`; `metasystem/internal/goal/norm.go:73-81` | Read `open`, `steal` and displacement, the relayed-authority verbs, `answer`, and a human operation's reason for a strict approval token. None reads `done`. No shell script parses a `History:` block; the two matches under `metasystem/scripts/agents/` are fixture writers. |
-| Frontier | `metasystem/internal/goal/project.go:493-500`, `NextVerdict`; `:520`, `SelectNext`; `:533`, `Next`; `:571-575`, admission branch | Four categories: Claimed, Ready, Blocked, Awaiting. At 571 the approved arm calls the claim gate; success appends to Ready, a non-refusal error fails the whole frontier, and a goal-level refusal falls through both branches and is recorded nowhere. |
-| Admission gate | `metasystem/internal/goal/approval.go:345`, `requireApprovedForClaimWithContext`; `:270-283`, `goalAdmissionRefusal`; `:298-321`, one configuration load per frontier; `metasystem/internal/goal/norm.go:95`, `refuseGoalNorm`; `metasystem/internal/goal/approval.go:261`, `approvalRequired` | Goal-level refusals are `APPROVAL_REQUIRED` (no approval or no budget, or an invalid approval record) and `GOAL_NORM_REFUSED` (budget above the tier box without norm coverage). `APPROVAL_EXPIRED` exists at 359-362 but `Next` filters expiry at 552 before calling the gate. Each carries the remedy in its text. |
+| Counselor event classes | `metasystem/internal/counselor/sources.go:515-533`, `addHistory`; `:578-592`, `goalVerbClass`; `metasystem/internal/counselor/compute.go:113-131` | Classifies by verb per operation id across root, live and done records. A second line with the same id, timestamp and verb is skipped at 524-527; a differing verb marks a conflict and excludes the id. `split` is not a mapped verb, so a split operation counts once as unmapped. Counts are per window, never per goal. |
+| Other history-verb readers | `metasystem/internal/report/scan.go:132-136`; `metasystem/internal/metrics/compute.go:725,737`; `metasystem/internal/goal/file.go:316-323,348-352,593`; `metasystem/internal/goal/verbs.go:82,87`; `metasystem/internal/goal/norm.go:73-81`; `metasystem/internal/goal/recover.go:170,313,417` | Read `open`, `steal` and displacement, the relayed-authority verbs, `answer`, and a human operation's reason for a strict approval token. Recovery reads `split` from the intent record, never from a goal's history. None reads `done` or `split` on a goal record. No shell script parses a `History:` block; the two matches under `metasystem/scripts/agents/` are fixture writers. |
+| Static gate | `metasystem/scripts/agents/go-gate.sh:431-437` | The fast gate runs staticcheck. An unexported function left without callers fails it, which decides the fate of `historyTime` in section 1.4. |
+| Frontier | `metasystem/internal/goal/project.go:493-500`, `NextVerdict`; `:520`, `SelectNext`; `:533`, `Next`; `:552`, expiry; `:571-575`, admission branch | Four categories: Claimed, Ready, Blocked, Awaiting. At 571 the approved arm calls the claim gate; success appends to Ready, a non-refusal error fails the whole frontier, and a goal-level refusal falls through both branches and is recorded nowhere. |
+| Admission gate | `metasystem/internal/goal/approval.go:345`, `requireApprovedForClaimWithContext`; `:346-351`, the `APPROVAL_REQUIRED` arms; `:357`, the norm refusal; `:359-362`, expiry; `:270-283`, `goalAdmissionRefusal`; `:298-321`, one configuration load per frontier; `metasystem/internal/goal/norm.go:95`, `refuseGoalNorm`; `metasystem/internal/goal/file.go:495-504` and `:618-631`, parse-time approval checks; `metasystem/internal/goal/verbs.go:235-244`, `loadTree` | The gate has three goal-level refusals. `APPROVAL_REQUIRED` (no approval record, no budget, or an approval record that fails `ValidateApprovalRecord`) cannot fire from the frontier on a parsed tree: the parser runs the same `ValidateApprovalRecord` on every record carrying an approval (495-499), refuses an approved state without a record (500-501), that check refuses a missing budget or a mismatched digest (618-631), and `loadTree` fails the whole read on any problem before `Next` runs. `APPROVAL_EXPIRED` is filtered into Awaiting at `project.go:552` before the gate is called. `GOAL_NORM_REFUSED` (budget above the tier box without norm coverage) is the one cause that reaches the frontier in production. Each carries the remedy in its text. |
 | Claim verb | `metasystem/internal/goal/verbs.go:587-598`, `Claim`; `:648`, gate call | The brain fence and the human-actor refusal run before any record is read; they are facts about the checkout, not the goal. The gate at 648 is the same predicate the frontier calls. |
 | Seat readers | `metasystem/internal/goal/project.go:193-200`, `ClaimableBudgetedWork`; `:283-332`, `readClaimableBudgetedWork`; `metasystem/internal/goal/turnverdict.go:410`, `enforceIdleBacklog`; `:473`, `idleBacklogNames`; `:483`, `idleBacklogDigest`; `:940`, `queuedFrontier`; `metasystem/internal/steward/revive.go:177`, `claimSeatIdleGoal`; `:259-289`, seat-idle recheck; `metasystem/internal/steward/ledgerattention.go:147`, `snapshotLedger` | Claimable is the frontier's Ready slice; Queued is the Awaiting count. An empty Claimable resets the idle counter and returns at 442-446. The digest hashes Claimable, Claimed and non-terminal jobs. The steward's continuation re-reads Claimed or Claimable and claims through the real verb. The attention snapshot keeps Ready, Pinned and Queue. |
 | Command surface | `metasystem/cmd/metasystem/goal.go:463`, `nextSynced`; `:509-519`, the `none` explanation; `:339`, `listSynced` | The `none` line appends, in order: first blocked goal, awaiting count and first, empty backlog, or `no matching eligible work`. `listSynced` computes no frontier and no admission. |
 | Channel status | `metasystem/internal/channel/report.go:76-81`; `:137-167`, `backlogStatusLines` | The `Next for <machine>` line prints the selection or `none claimable`. The frontier is already in hand at 137. |
 | Guidance owners | `metasystem/docs/backlog-mechanism.md:120-125`; `metasystem/AGENTS.md:34`; `metasystem/scripts/agents/roles/steward-continuation.md:10-14` | The mechanism page owns the frontier paragraph. The goal record states that `AGENTS.md` is at its audited word ceiling, so this page adds nothing there. |
-| Existing fixtures | `metasystem/internal/goal/order_test.go:133-157`, `over-norm`; `:445-479`, `done-reopen`, with the survivor event asserted at 462-465; `:756`, `rankedGoalBed`; `metasystem/internal/metrics/obligations_test.go:351-386`, world-struct shape; `:418`, `detailsContain`; `metasystem/cmd/metasystem/goal_priority_test.go:109-142`, `:264-296`; `metasystem/internal/channel/channel_test.go:325-340`, `:771`, `reportGoal`; `metasystem/internal/goal/turnverdict_idle_test.go:17`, `budgetedQueuedGoal`; `:103-157`; `metasystem/internal/goal/servingprojection_test.go:12`, `servingBed`; `metasystem/scripts/agents/goal-cli-fixtures.sh:798-813` | The `over-norm` subtest already builds an approved goal whose 2400 reserved minutes exceed the default tier-3 box and asserts only the selection. `done-reopen` pins the survivor's last event: verb `done`, targets `b,c`, reason containing `from=1:3 to=1:2`. `reportGoal` builds tier-1 goals with a 30-minute budget. The shell bed asserts two exact `none` lines word for word. |
+| Existing fixtures | `metasystem/internal/goal/order_test.go:133-157`, `over-norm`; `:445-479`, `TestPriorityLifecycle/done-reopen`, with the survivor event asserted at 462-465; `:481-516`, `TestPriorityLifecycle/split`, with the dependent's merged `split` event asserted at 512-515; `:756`, `rankedGoalBed`; `metasystem/internal/goal/split_test.go:12-21`, `testMembers` and `mainRatification`; `metasystem/internal/metrics/obligations_test.go:351-386`, world-struct shape; `:418`, `detailsContain`; `metasystem/cmd/metasystem/goal_priority_test.go:109-142`, `:264-296`; `metasystem/internal/channel/channel_test.go:325-340`, `:771`, `reportGoal`; `metasystem/internal/goal/turnverdict_idle_test.go:17`, `budgetedQueuedGoal`; `:103-157`; `metasystem/internal/goal/servingprojection_test.go:12`, `servingBed`; `metasystem/scripts/agents/goal-cli-fixtures.sh:798-813` | The `over-norm` subtest already builds an approved goal whose 2400 reserved minutes exceed the default tier-3 box and asserts only the selection. `done-reopen` pins the survivor's last event: verb `done`, targets `b,c`, reason containing `from=1:3 to=1:2`. `split` splits a ranked parent beside ranked survivors and pins the dependent's merged `split` event, but asserts nothing about the parent's archived history or the plain survivor `c`. `reportGoal` builds tier-1 goals with a 30-minute budget. The shell bed asserts two exact `none` lines word for word. |
 | Tier boxes | `metasystem/metasystem.conf:14-16` | `elapsed/attempts/minutes/active-jobs/review-rounds`: tier 1 is 360 minutes and 0 rounds, tier 2 720 and 2, tier 3 1200 and 3. Fixture roots that declare `metasystem.runtimes=fake` resolve the same defaults without a file (`order_test.go:16-18`, `split_test.go:23-28`). |
 
 ## 1. A survivor's `done` event is not its conclusion (BOC-01)
@@ -67,12 +74,19 @@ lines are identical except for the reason. The record of this very goal shows
 the survivor form: its `done` line of 2026-09-08 names thirty targets and
 `from=1:3 to=1:2`, and its state is `claimed`.
 
+Split writes the same shape with its own verb. When a ranked parent splits,
+the parent moves to the archive with state `done` and one `split` line, and
+no `done` line at all; each shifted survivor receives a `split` line with the
+same id, stamp, actor and targets, plus the compaction reason. A compaction
+line carries the verb of whatever act removed its neighbour.
+
 This is the design working as specified. A history line's verb names the
 operation that touched the record, not a transition of the record it sits
 in. That was already true before ranks existed: a `set-priority` line lands
 on every displaced peer, a `split` line lands on a dependent whose blockers
-changed, and an `ack` line lands on a displaced claimant. `done` joining that
-list made an old reader assumption observable, it did not create it.
+changed and on every member the split opens, and an `ack` line lands on a
+displaced claimant. `done` joining that list made an old reader assumption
+observable, it did not create it.
 
 ### 1.2 Reader census: the "only place" claim, confirmed in effect and refuted in letter
 
@@ -88,34 +102,95 @@ the `done` verb, all in `metasystem/internal/metrics`:
 | `compute.go:166`, `selectedGoals` | at 181, whole-period path only | No. The `--goal` path returns the record unfiltered, and `computeWaiting` then misreads it as above. |
 | `report.go:203`, `ConcludedInWindow` | none | Not today: exported, no caller in the tree. Its name promises a conclusion, so it is a latent misreader. |
 
-The counselor at `sources.go:522` reads the verb too, but per operation: the
-survivor's line has the same id, timestamp and verb as the departed goal's, so
-it is skipped as a duplicate and the operation counts once as `GoalDone`. A
-reconcile batch that mixes verbs under one id was already excluded as a
-conflict before ranks existed; compaction adds no new conflict, because a
+No reader outside tests keys on the verb `split` from a goal's history;
+recovery reads it from the intent record. The counselor at `sources.go:522`
+reads the verb too, but per operation: the survivor's line has the same id,
+timestamp and verb as the departed goal's, so it is skipped as a duplicate and
+the operation counts once, as `GoalDone` for a conclusion and as unmapped for
+a split. A reconcile batch that mixes verbs under one id was already excluded
+as a conflict before ranks existed; compaction adds no new conflict, because a
 survivor only carries a non-`done` verb when its own row already did.
 Everything else that reads a history verb reads `open`, `steal`, the
 authority verbs or `answer`.
 
-So the reading-side repair stays local: it is one package, and the equivalent
-`split` compaction event stays harmless for the same reason the critic gave.
-The census also settles the blast radius the other way: no reader outside
-metrics needs a change, and no writer does.
+So the reading-side repair stays local: it is one package. The census also
+settles the blast radius the other way: no reader outside metrics needs a
+change, and no writer does.
 
-### 1.3 The discriminator is the record's own State
+### 1.3 The discriminator is the record's State, and then the archive act's own line
 
-Three discriminators were offered. The reader uses the third.
+Three discriminators were offered. The reader uses the third, in two steps.
 
-**The record's State.** A survivor's state is `approved`, `claimed`, `parked`
-or `queued`; a concluded goal's is `done`, and it lives in `Done`. This is the
-ledger's closed truth, written by the same transaction that writes the event,
-and every validator already reads it. Under `State == done`, the last `done`
-verb in history is always the goal's own conclusion: an archived record never
-receives a compaction line, because every compaction loop walks `t.Live`
-(`order.go:201`, `split.go:307`, `reconcilepub.go:132`) and the parent page
-forbids a live write for an archived id; `reopen` returns the record to the
-live set, where its state is no longer `done`; and a later conclusion appends
-a later `done`. The reader therefore needs one new test and no new data.
+**Step one, the record's State.** A survivor's state is `approved`,
+`claimed`, `parked` or `queued`; a concluded goal's is `done`, and it lives in
+`Done`. This is the ledger's closed truth, written by the same transaction
+that writes the event, and every validator already reads it. An archived
+record is the only kind that can be concluded. A tree with `State` done
+outside the archive is refused by `ValidateTree` (`validate.go:153-158`),
+which every verb runs on its commit, so it cannot be an accepted tip.
+
+**Step two, which line.** Revision 1 said that under `State` done the last
+`done` verb in history is always the goal's own conclusion. That is false. A
+ranked live goal that survives a neighbour's conclusion carries a `done`
+compaction line at T1; if it later splits, the split archives it at T2 with a
+`split` line and no `done` line. Its state is done, and its last `done` line
+is the neighbour's. Both the revision 1 helper and the guarded scan it left in
+`concludingEpoch` would have dated this parent's conclusion to T1.
+
+The verb `done` alone therefore names nothing. What does name the conclusion
+is the archive act, and the archive acts are a closed set, enumerated in the
+grounding table. Three of the four writers append a line in the act that
+moves the record: `doneRequest` and the reconcile `done` row write `done`,
+split writes `split`. The fourth, migration, writes a `migrate` line and no
+archive verb; it is handled below. The rule is:
+
+> On an archived record, the conclusion instant is the timestamp of the last
+> history line whose verb is `done` or `split`.
+
+This is correct because the last such line is the archive act, which rests on
+three properties of the writers, each grounded above:
+
+1. **A compaction line never lands on an archived record.** The walk in
+   `compactDepartedPriorities` numbers the map it is handed (`order.go:201-204`),
+   and its three callers hand it `t.Live` after the departed record has left
+   that map: `verbs.go:1160-1162`, `split.go:297-301`, and
+   `reconcilepub.go:124` after the `done` row moved the record at 351-352. The
+   parent page forbids a live write for an archived id; the code does not
+   offer one.
+2. **After the archive act, nothing appends an archive verb.** The only two
+   writers that append to an archived record are the reconcile `edit` row
+   composing on a goal the same reconcile archived, which writes `edit` under
+   the same operation id and stamp as the `done` row, and `reopen`, which
+   writes `reopen` and ends the archived state. `done` on an archived id
+   returns `AlreadyApplied` or `LostToCompetitor` (`verbs.go:1118-1123`), split
+   on one is an error (`split.go:229-234`), and the reconcile `done` row
+   conflicts on a record that is not live (`reconcilepub.go:328-331`). Prune
+   deletes files; it rewrites no surviving line.
+3. **Reopen is the only way back, and it changes State.** `open`, the
+   reconcile `open` row and the hand-edit mapper all refuse to bring an
+   archived id back; migration cannot touch an adopted ledger. `reopen` sets
+   `State` queued or parked and moves the record to `Live`, where step one
+   says it is not concluded. A record that is archived again gets a later
+   `done` or `split` line from one of the enumerated writers, and that later
+   line is then the last one. A decomposed parent never reopens, so a split
+   parent's `split` line is final.
+
+So a survivor of a conclusion that later splits reads its `split` line; a
+survivor of a split that later concludes reads its `done` line; a goal
+concluded, reopened and concluded again reads its second `done`. The archive
+act is not always the last line of the record, because of the reconcile
+`edit` compose, but it is always the last archive-verb line and shares the
+stamp with whatever the compose appended.
+
+**The migrated record.** A legacy done goal becomes an archived record with
+`State` done and one `migrate` line, whose stamp is the migration instant,
+not a conclusion; the legacy ledger carried none. The reader reports no
+conclusion instant for it: the waiting row says `lifecycle incomplete` with
+`epochs=0`, the overhead row says unavailable, and the whole-period selection
+skips it. That is exactly what the current tree reports, because
+`historyTime(file, "done")` finds no line either, so no report moves. Once
+such a record is reopened and archived again it carries an archive verb and
+is read like any other. `migrate` is deliberately not an archive verb.
 
 **Why `reason=priority-order` is weaker.** The parent page defines the reason
 payload as evidence, never authority or replay input. Reconcile appends it to
@@ -124,9 +199,9 @@ word-count reader elsewhere). A reader keyed on it would match prose to decide
 lifecycle, and would elevate a diagnostic string into semantics that the page
 says it does not carry.
 
-**Why `targets` cannot work at all.** The brief's second discriminator says a
-real conclusion's targets name the concluded goal alone. That is true only for
-an unranked goal, which has no compaction; the observed line
+**Why `targets` cannot work at all.** The brief for revision 1 said a real
+conclusion's targets name the concluded goal alone. That is true only for an
+unranked goal, which has no compaction; the observed line
 `done ... targets=claude-critic-shell-network-deny` is one. For a ranked goal,
 `doneRequest` writes the compaction target set onto the departed goal's own
 event at `verbs.go:1163-1167`, reconcile unions it in at
@@ -136,108 +211,182 @@ discriminate nothing for exactly the records in question, and a reader built
 on them would have marked every ranked conclusion as a compaction.
 
 **No marker, no grammar change.** The three discriminators are not
-insufficient; one of them is sufficient and already exists. A marker on the
-compaction line would be a second spelling of the fact that `State` spells
-once, which is the lesson this goal already paid for twice in the frontier.
-It would also extend the closed key set at `file.go:1421`, so every deployed
-reader would have to land before any writer could write, the same fleet
-constraint the rank fields carried. And a marker changes nothing until a
-reader consults it, so the reader changes either way. Therefore `file.go`,
-`validate.go`, and every writer in `verbs.go`, `split.go` and
-`reconcilepub.go` are untouched, and the archived-record rules need no
-account because no record byte changes.
+insufficient; one of them, read in two steps, is sufficient and already
+exists. A marker on the compaction line would be a second spelling of the
+fact that `State` and the archive act spell once, which is the lesson this
+goal already paid for twice in the frontier. It would also extend the closed
+key set at `file.go:1421`, so every deployed reader would have to land before
+any writer could write, the same fleet constraint the rank fields carried. And
+a marker changes nothing until a reader consults it, so the reader changes
+either way. Therefore `file.go`, `validate.go`, and every writer in
+`verbs.go`, `split.go`, `reconcilepub.go` and `migrate.go` are untouched, and
+the archived-record rules need no account because no record byte changes.
+The reader can be made sound without a writer change; no scope widening is
+raised.
 
 ### 1.4 The mechanism
 
-All changes are in `metasystem/internal/metrics`.
+All changes are in `metasystem/internal/metrics`. Four readers, one helper,
+no private scan left anywhere.
 
-1. Add an unexported helper in `compute.go`, beside `historyTime`:
+1. Replace `historyTime` in `compute.go` with the helper below. `historyTime`
+   has no caller other than the three `"done"` readers this page rewrites,
+   and the fast gate's staticcheck fails an unexported function without
+   callers, so it is deleted rather than left behind.
 
    ```go
-   // concludedAt is the one reader of a goal's conclusion time. A done verb
-   // in history is not a conclusion by itself: a ranked survivor receives the
-   // departing act's verb when a neighbour concludes. The record's State says
-   // whether this goal concluded; the last done verb then says when.
-   func concludedAt(file *goal.GoalFile) (time.Time, bool) {
+   // archiveVerbs names the acts that move a record into the archive: goal
+   // done, whether by the verb or a reconciled hand edit, and goal split for
+   // the parent. A ranked survivor receives the same verb on a compaction
+   // line, so the verb alone never names a conclusion.
+   var archiveVerbs = map[string]bool{"done": true, "split": true}
+
+   // concludedAt is the one reader of a goal's conclusion. Only an archived
+   // record can be concluded, and on one the last archive-verb line is the
+   // act that archived it: a compaction line lands only on live records,
+   // and nothing appends an archive verb after the act except a later
+   // archive that follows a reopen. The index lets the epoch count stop at
+   // the act.
+   func concludedAt(file *goal.GoalFile) (int, time.Time, bool) {
        if file == nil || file.State != goal.StateDone {
-           return time.Time{}, false
+           return -1, time.Time{}, false
        }
-       return historyTime(file, "done")
+       for index := len(file.History) - 1; index >= 0; index-- {
+           if !archiveVerbs[file.History[index].Verb] {
+               continue
+           }
+           stamp, err := time.Parse(time.RFC3339, file.History[index].At)
+           if err != nil {
+               return -1, time.Time{}, false
+           }
+           return index, stamp.UTC(), true
+       }
+       return -1, time.Time{}, false
    }
    ```
 
-2. `concludingEpoch` gains the same test as its first statement and returns
-   `time.Time{}, time.Time{}, 0, false` for a record whose state is not
-   `done`. The backward scan, the epoch count and the claim lookup are
-   unchanged after it. Because the early return precedes the epoch count, an
-   open survivor reports `epochs=0`, which matches what a goal with no `done`
-   line reports today (`TestO10LifecycleEdgesStayIncompleteOrNameEpochs`, the
-   `no-done` record at `obligations_test.go:369-382`).
+   A malformed stamp on the archive line makes the record report no
+   conclusion. `historyTime` fell through to an earlier line of the same
+   verb; the helper does not, because an earlier archive-verb line is a
+   compaction line or an earlier lifecycle, never this conclusion. No metrics
+   fixture in the tree carries a malformed `done` stamp, so no assertion
+   moves.
 
-3. `goalBounds` at `:162` and `selectedGoals` at `:184` call `concludedAt`
-   instead of `historyTime(record.File, "done")`. The state filter at `:181`
-   stays; the helper makes the reader safe on its own rather than by caller
-   discipline.
+2. `concludingEpoch` opens with `doneIndex, done, ok := concludedAt(file)`
+   and returns `time.Time{}, time.Time{}, 0, false` when `ok` is false. Its
+   own backward scan at 512-525 is deleted. The epoch count over lines before
+   `doneIndex` and the claim lookup at 526-540 are unchanged. Because the
+   early return precedes the epoch count, an open survivor reports `epochs=0`,
+   which matches what a goal with no `done` line reports today
+   (`TestO10LifecycleEdgesStayIncompleteOrNameEpochs`, the `no-done` record at
+   `obligations_test.go:369-382`). There is no second State check and no
+   second scan: the helper is the only reader.
 
-4. `ConcludedInWindow` in `report.go:203` calls `concludedAt`. It keeps its
-   name and signature; whether an exported predicate with no callers should be
-   deleted is not decided here.
+3. `goalBounds` at `:162` and `selectedGoals` at `:184` call `concludedAt`,
+   discarding the index. The state filter at `:181` stays; the helper makes
+   the reader safe on its own rather than by caller discipline, and the
+   filter is the cheaper first test on the whole-period path.
 
-5. After this change `historyTime` has no `"done"` caller outside
-   `concludedAt`. A new call site passing `"done"` to `historyTime` is a
-   defect under this page.
+4. `ConcludedInWindow` in `report.go:203` calls `concludedAt`, discarding the
+   index. It keeps its name and signature; whether an exported predicate with
+   no callers should be deleted is not decided here.
+
+5. After this change no function in `metasystem/internal/metrics` scans
+   history for `done` or `split` except `concludedAt`. A new backward scan for
+   either verb outside it is a defect under this page.
 
 Report text is unchanged. For an open survivor the waiting row prints
 `unavailable` with the existing detail `lifecycle incomplete: goal=<id>
-epochs=0`, and the overhead row keeps its existing unavailable text. No new
-wording is introduced, so no existing assertion on report text moves.
+epochs=0`, and the overhead row keeps its existing unavailable text. For a
+split parent the waiting row prints the same value shape it prints for any
+concluded goal, with the split as the conclusion instant. No new wording is
+introduced, so no existing assertion on report text moves.
 
 Recorded without action: the overhead row's unavailable text says `not
-concluded with a done history row`, and a survivor does have a `done` row. The
-verdict is right and the words are slightly off. Changing them is a string
-edit other tests may pin, and it is not what the finding is about.
+concluded with a done history row`, and a survivor does have a `done` row
+while a split parent has none. The verdict is right and the words are
+slightly off. Changing them is a string edit other tests may pin, and it is
+not what the finding is about.
 
 ### 1.5 Fixtures and the canary
 
 Every command runs from the repository root with a two-minute ceiling. The
-canary is written first and run on the untouched tree; it must fail there
-with the text named below before `compute.go` is edited.
+canaries are written first and run on the untouched tree; each must fail
+there with the text named below before `compute.go` is edited.
 
 New file `metasystem/internal/metrics/conclusion_test.go`, test
-`TestSurvivorOfANeighboursConclusionIsNotConcluded`, built on the world-struct
-shape of `obligations_test.go:351-386`. Timestamps: T0 `2026-09-01T00:00:00Z`,
-T1 `2026-09-01T01:00:00Z`, T2 `2026-09-02T00:00:00Z`, T3
-`2026-09-03T00:00:00Z`. Period instant T3 plus one day. Every history line
-carries an actor and `Keep: -1` as the writer would produce.
+`TestConclusionIsTheArchiveAct`, built on the world-struct shape of
+`obligations_test.go:351-386`. One world holds every record below; each
+subtest selects by goal id, and the records need not form one consistent
+ledger, because each copies a shape the writer's own test pins in the goal
+package (see the premise pins after the table). Timestamps: T0
+`2026-09-01T00:00:00Z`, T1 `2026-09-01T01:00:00Z`, T2 `2026-09-02T00:00:00Z`,
+T3 `2026-09-03T00:00:00Z`, and E `2026-08-31T00:00:00Z` for the split
+parent's opening. Period for the `--goal` calls: instant T3 plus one day.
+Every history line carries an actor and `Keep: -1` as the writer would
+produce.
 
 | Subtest | Record | Assertion | Before the repair |
 | --- | --- | --- | --- |
 | `waiting-row` (canary) | `c`: state `claimed`, priority 1, sequence 2, `Claimed{mac-a, lin-1, T2}`; history `open` T0, `approve` T1 by `human:wido`, `claim` T2, `done` T3 by `human:wido` with targets `b,c` and reason `priority-order from=1:3 to=1:2`. One landing attributed to `c` at T2 plus twelve hours. | `computeWaiting(w, period, "c", limits)` has `Value == "unavailable"` and a details element whose text equals, exactly, `lifecycle incomplete: goal=c epochs=0`. Use equality on the element, not `detailsContain`, so a `no attributable landing` variant cannot satisfy it. | Value is `c building_hours=12.000 proving_hours=12.000 waiting_share=0.500 epochs=1`: a finished lifecycle for an open goal, dated to `b`'s conclusion. The subtest fails on `Value`. |
 | `reopened-then-survived` (canary) | `d`: state `approved`; history `open` T0, `claim` T1, `done` T2 with targets `d`, `reopen` T2 plus one hour, `done` T3 with targets `b,d` and the compaction reason. One landing attributed to `d` between T1 and T2. | Same two assertions with `goal=d`. | Value reports a lifecycle from T1 to T3, because the last `done` is the compaction and the reopen is invisible to the scan. |
 | `concluded-in-window` (canary) | The `c` record above. | `ConcludedInWindow(c, T3 minus one hour, T3 plus one hour)` is false. | It is true. |
+| `split-parent` (canary, BCC-01) | `e`: state `done`, priority 1, sequence 2, `OpenedAt` E, `Conclude` `decomposed into arc e: e-one, e-two`; history `open` E by `mac-a+lin-1`, `claim` T0 by `mac-a+lin-1`, `done` T2 by `human:wido` with targets `b,e` and reason `priority-order from=1:3 to=1:2`, `split` T3 by `mac-a+lin-1` with targets `e,e-one,e-two,g` and no reason. One landing attributed to `e` at T0 plus twelve hours. This is the shape `TestPriorityLifecycle/done-then-split` pins: a survivor's `done` compaction line followed by its own `split` archive line. | `computeWaiting(w, period, "e", limits)` has `Value` equal, exactly, to `e building_hours=12.000 proving_hours=36.000 waiting_share=0.750 epochs=1`: claim at T0, landing twelve hours later, conclusion at the split, T3. | Value is `e building_hours=12.000 proving_hours=12.000 waiting_share=0.500 epochs=1`: the lifecycle is dated to `b`'s conclusion at T2, the neighbour's, exactly the finding. The subtest fails on `Value`. |
+| `split-parent-in-window` (canary, BCC-01) | The `e` record above. | `ConcludedInWindow(e, T2 minus one hour, T2 plus one hour)` is false and `ConcludedInWindow(e, T3 minus one hour, T3 plus one hour)` is true. | The first is true and the second is false. |
+| `split-parent-selected-by-its-split` (canary, BCC-01) | The whole world, aggregate path: `computeWaiting(w, Period{Start: T3 minus one hour, End: T3 plus one hour, Instant: T3 plus one day}, "", limits)`. | `Value` contains `e building_hours=12.000 proving_hours=36.000 waiting_share=0.750 epochs=1`. This exercises `selectedGoals` through the helper. | `e` is not selected, because its last `done` line at T2 lies outside the window; `Value` names only `b`. Fails on the text. |
+| `survivor-of-a-split` (guard) | `g`: state `queued`, priority 1, sequence 2; history `open` T0, `split` T3 by `mac-a+lin-1` with targets `e,e-one,e-two,g` and reason `priority-order from=1:3 to=1:2`. No landing. | `computeWaiting(w, period, "g", limits)` has `Value == "unavailable"` and a details element equal to `lifecycle incomplete: goal=g epochs=0`. | Passes before and after. It guards the verb set: a reader that took the last archive-verb line without step one would date this live survivor to `e`'s split. |
 | `departed-neighbour-still-concludes` (guard) | `b`: state `done`; history `open` T0, `claim` T2, `done` T3 with targets `b,c` (its own conclusion carries the compaction targets, as the writer produces). One landing attributed to `b` at T2 plus twelve hours. | Value is `b building_hours=12.000 proving_hours=12.000 waiting_share=0.500 epochs=1`. | Passes before and after. It proves the state discriminator did not need targets, and it would have failed under a targets-based rule. |
 
-Command for the canary, then each subtest by name:
+Command for the first canary, then each subtest by name:
 
 ```sh
-cd metasystem && go test ./internal/metrics -run '^TestSurvivorOfANeighboursConclusionIsNotConcluded$/^waiting-row$' -count=1 -timeout=2m
+cd metasystem && go test ./internal/metrics -run '^TestConclusionIsTheArchiveAct$/^split-parent$' -count=1 -timeout=2m
 ```
+
+The required fail-before output on the untouched tree is the `Value` line
+naming `proving_hours=12.000 waiting_share=0.500`, the lifecycle dated to the
+neighbour's conclusion. A failure for any other reason is a defect in the
+canary and stops the build.
 
 Widen only to the package: `cd metasystem && go test ./internal/metrics
 -count=1 -timeout=2m`. `TestO10LifecycleEdgesStayIncompleteOrNameEpochs`,
 `TestWaitingZeroDurationLifecycleIsLabelledWithoutJudgment` and the
-attribution tests all use `State: done` records and must not move.
+attribution tests all use `State: done` records with a `done` line and must
+not move.
 
-**Pin the premise the fixture copies.** The metrics fixture hand-writes the
-survivor's history, so it must mirror a shape the writer's own test pins.
-Extend `TestPriorityLifecycle/done-reopen` in
-`metasystem/internal/goal/order_test.go` after line 465 with three
-assertions: `tree.Live["c"].State != StateDone`; the survivor's last event and
-`tree.Done["b"]`'s last event have equal `Opid`, `At`, `Verb`, `Actor` and
-`Targets`; and `tree.Done["b"]`'s last event has an empty `Reason`. Run:
+**Pin the premises the fixtures copy.** The metrics fixtures hand-write
+history, so each shape must mirror one the writer's own test pins, in
+`TestPriorityLifecycle` at `metasystem/internal/goal/order_test.go:445`.
+These are writer facts: every one of them must pass on the untouched tree,
+and one that fails there means this page misread the writer and stops the
+build.
+
+- Extend `done-reopen` after line 465 with three assertions:
+  `tree.Live["c"].State != StateDone`; the survivor's last event and
+  `tree.Done["b"]`'s last event have equal `Opid`, `At`, `Verb`, `Actor` and
+  `Targets`; and `tree.Done["b"]`'s last event has an empty `Reason`.
+- Extend `split` after line 515 with four assertions: `tree.Done["parent"]`
+  has `State` done, its last event has verb `split`, and no event in its
+  history has verb `done`; `tree.Live["c"]`'s last event has verb `split`,
+  a `Reason` containing `from=1:3 to=1:2`, and `Opid`, `At`, `Verb`, `Actor`
+  and `Targets` equal to the parent's last event; and
+  `tree.Live["c"].State != StateDone`.
+- Add subtest `done-then-split`, the failing path itself. Build
+  `rankedGoalBed` with `a` 1:1, `b` 1:2, `c` 1:3. `Done` `b` with
+  `verbReq(root, "01J5X000000000000000000S40", "mac-a")`. Then `Split` `c`
+  with `testMembers("c")`, `mainRatification("c", members)` and a nil proof,
+  under `verbReq(root, "01J5X000000000000000000S50", "mac-a")`; both must
+  confirm. Load the tree at the split's tip and assert:
+  `assertPriorityOrder(t, tree, []string{"a", "c-one", "c-two"})`;
+  `tree.Done["c"].State == StateDone`; the last event of `tree.Done["c"]` has
+  verb `split` and the split request's opid; the event before it has verb
+  `done`, the done request's opid, and a `Reason` containing
+  `from=1:3 to=1:2`; and exactly one event in that history has verb `done`.
+  This pins that a split parent's history ends in `split` after a `done`
+  compaction line, the shape `split-parent` copies.
 
 ```sh
-cd metasystem && go test ./internal/goal -run '^TestPriorityLifecycle$/^done-reopen$' -count=1 -timeout=2m
+cd metasystem && go test ./internal/goal -run '^TestPriorityLifecycle$' -count=1 -timeout=2m
 ```
 
 **Independent observation, orchestrator only.** The delegate sandbox cannot
@@ -248,7 +397,11 @@ claim, conclude the middle goal, then run `metasystem metrics report --goal
 repair the waiting metric carries `detail=lifecycle incomplete:
 goal=<survivor> epochs=1 no attributable landing` (the reader believed the goal
 concluded and went looking for landings). After it the detail is
-`lifecycle incomplete: goal=<survivor> epochs=0` with no suffix.
+`lifecycle incomplete: goal=<survivor> epochs=0` with no suffix. The split
+path can be observed the same way when the survivor's claimant splits it
+after landing one commit for it: before the repair the waiting value's
+proving hours end at the neighbour's conclusion, after it they end at the
+split. The unit canary is the required proof; this observation is optional.
 
 ## 2. The goal the claim gate refuses (BOQ-02)
 
@@ -293,13 +446,24 @@ What resolves a refusal is a human act, named by the gate's own text:
 seat act resolves it. So seats are not blocked on it, are never handed it, and
 are told the cause once so they do not look for work that is not there.
 
-The refusal causes that can reach the frontier are `APPROVAL_REQUIRED`
-(approved without a budget, or an approval record that fails
-`ValidateApprovalRecord`) and `GOAL_NORM_REFUSED`. `APPROVAL_EXPIRED` is
-filtered into Awaiting before the gate is called. The brain fence and the
-human-actor refusal in `Claim` are facts about the checkout and stay outside
-the frontier; that is BOQ-01, still parked on the goal record, and it is not a
-category of goal.
+The gate has three goal-level refusals, and in production exactly one of
+them reaches the frontier. `GOAL_NORM_REFUSED`, a budget above the tier box
+without norm coverage, is that one, and it is the Refused category's
+production cause set. `APPROVAL_REQUIRED` (no approval record, no budget, or
+an approval record that fails `ValidateApprovalRecord`) cannot reach `Next`
+on a parsed tree: the parser runs the same check on every record carrying an
+approval and refuses an approved state without one (`file.go:495-504`), that
+check refuses a missing budget or a mismatched digest (`file.go:618-631`),
+and `loadTree` fails the whole read on any problem before the frontier is
+computed (`verbs.go:235-244`). `APPROVAL_EXPIRED` is filtered into Awaiting
+at `project.go:552` before the gate is called. The typed branch in `Next`
+still catches any goal-level refusal, because the predicate is shared with
+`Claim` and an in-package projection can be built without the parser; but
+nothing on this page states, and no fixture in section 2.5 is premised on,
+`APPROVAL_REQUIRED` reaching the frontier. Every Refused fixture refuses on
+the norm. The brain fence and the human-actor refusal in `Claim` are facts
+about the checkout and stay outside the frontier; that is BOQ-01, still
+parked on the goal record, and it is not a category of goal.
 
 ### 2.3 The mechanism, and what each reader does
 
@@ -413,7 +577,9 @@ approval, the budget or the claim gate.
 
 The unit fixtures compile only once the new field exists, so the fail-before
 proof for this question is carried by the command and channel canaries, which
-assert on output text that the current tree produces differently.
+assert on output text that the current tree produces differently. Every
+refusal below is `GOAL_NORM_REFUSED`, the one cause the frontier can meet in
+production.
 
 | Fixture | Smallest proving run | Required observation | Before the repair |
 | --- | --- | --- | --- |
@@ -437,29 +603,40 @@ assert on output text that the current tree produces differently.
   shows, which is honest rather than wrong.
 - Whether `goal list --pretty` should carry the refusal is left to Wido, for
   the reason in section 2.3.
+- Whether the `APPROVAL_REQUIRED` arms of the gate should be reachable from
+  the frontier at all, or whether the gate should collapse them, is a gate
+  question outside this page; the frontier keeps the typed branch as it is.
 
 ## 3. Build boundary and gate
 
-The build changes: `metasystem/internal/metrics/compute.go` and `report.go`;
-new `metasystem/internal/metrics/conclusion_test.go`;
-`metasystem/internal/goal/project.go`, `turnverdict.go`, `order_test.go` and
+The build changes: `metasystem/internal/metrics/compute.go` (the helper
+replaces `historyTime`; `concludingEpoch`, `goalBounds` and `selectedGoals`
+call it) and `report.go`; new `metasystem/internal/metrics/conclusion_test.go`;
+`metasystem/internal/goal/project.go`, `turnverdict.go`, `order_test.go`
+(the two `TestPriorityLifecycle` extensions, the new `done-then-split`
+subtest, and the `TestNextPriority` work of section 2.5) and
 `turnverdict_idle_test.go`; `metasystem/cmd/metasystem/goal.go` and
 `goal_priority_test.go`; `metasystem/internal/channel/report.go` and
 `channel_test.go`; and one sentence in `metasystem/docs/backlog-mechanism.md`.
 
 It does not change: `metasystem/internal/goal/file.go`, `validate.go`,
-`verbs.go`, `split.go`, `reconcilepub.go`, `order.go`, `approval.go` or
-`norm.go`; any goal record under `plans/goals/` or `records/goals/`;
-`metasystem/AGENTS.md`; or the steward's continuation, revival and attention
-code. No rank is set, inferred or moved; `goal next` remains a read; admission
-remains one predicate with one more branch recording its answer.
+`verbs.go`, `split.go`, `reconcilepub.go`, `reconcilemap.go`, `migrate.go`,
+`order.go`, `approval.go` or `norm.go`; any goal record under `plans/goals/`
+or `records/goals/`; `metasystem/AGENTS.md`; or the steward's continuation,
+revival and attention code. No rank is set, inferred or moved; `goal next`
+remains a read; admission remains one predicate with one more branch
+recording its answer.
 
-Order of work: write the question 1 canary and run it red on the untouched
-tree; repair `compute.go` and `report.go`; run the canary green and the metrics
-package; extend `done-reopen`; then the question 2 frontier field, its
-readers, the command and channel canaries red then green, and the seat test.
-A canary that passes before its repair is a defect in the canary, not
+Order of work: write the question 1 canaries and run `split-parent` and
+`waiting-row` red on the untouched tree, each for the reason its table row
+names; run the three `TestPriorityLifecycle` premise pins green on the
+untouched tree; replace `historyTime` and repair the four readers; run the
+canaries green and the metrics package; then the question 2 frontier field,
+its readers, the command and channel canaries red then green, and the seat
+test. A canary that passes before its repair is a defect in the canary, not
 evidence of health, and stops the build until it fails for the right reason.
+A premise pin that fails before the repair is a defect in this page's reading
+of the writer, and stops the build until the page is corrected.
 
 The requested gate, from the repository root:
 
@@ -469,3 +646,53 @@ cd metasystem && scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fix
 
 Process-owning beds run outside the delegate sandbox by the orchestrator, as
 the parent page records. This design-only artifact claims no runtime gate.
+
+## Revision record
+
+**Revision 2, 2026-09-09, job `bolboc-design4`**, folding the first read,
+`metasystem/records/misc/backlog-ordered-by-priority-conclusion-vs-compaction-critique-r1.md`,
+all three findings accepted by the orchestrator.
+
+- BCC-01 (material): revision 1 said that under `State` done the last `done`
+  line is the goal's own conclusion. A ranked survivor of a conclusion that
+  later becomes a split parent refutes it: split archives with a `split` line
+  and no `done` line, so the last `done` line is the neighbour's. Section 1.3
+  now keeps the State-first test and replaces the second step with the
+  archive act's own line: the last line whose verb is `done` or `split`,
+  decided from the enumerated archive writers (`doneRequest`, the reconcile
+  `done` row, split, migration) rather than from the verb `done`. It proves
+  the property the rule rests on: compaction lines land only on `t.Live`, the
+  only appenders to an archived record are the reconcile `edit` compose (same
+  stamp) and `reopen` (which ends the archived state), and reopen is the only
+  way back. The migrated record's single `migrate` line is accounted for and
+  reads as it does today. Section 1.4 defines `archiveVerbs` and a
+  `concludedAt` that returns the archive line's index. Section 1.5 adds the
+  `split-parent`, `split-parent-in-window` and
+  `split-parent-selected-by-its-split` canaries, which fail on the untouched
+  tree by dating the parent to its neighbour's conclusion, the
+  `survivor-of-a-split` guard, and two writer-side premise pins in
+  `TestPriorityLifecycle`: an extension of `split` and the new
+  `done-then-split` subtest that produces the failing path in the goal
+  package. The test file's top-level name changed to
+  `TestConclusionIsTheArchiveAct` because it now asserts a conclusion as well
+  as its absence. The grounding table gains rows for the archive writers, the
+  writers that touch an archived record, the only way back to live, and the
+  static gate. No writer changes; section 3's untouched list grows by
+  `reconcilemap.go` and `migrate.go` to say so.
+- BCC-02 (wording and fixture premise): the grounding row for the admission
+  gate and section 2.2 now say that `APPROVAL_REQUIRED` cannot reach the
+  frontier on a parsed tree, because the parser and `loadTree` refuse the
+  record first, and that `GOAL_NORM_REFUSED` is the Refused category's
+  production cause set. The typed branch stays. Section 2.5 states that every
+  refusal fixture refuses on the norm, which was already true of each row.
+  Section 2.6 records the gate-side question this leaves open.
+- BCC-03 (wording): revision 1 left `concludingEpoch` its own backward scan
+  behind a duplicated State check while routing the other three readers
+  through the helper. Section 1.4 now routes all four through `concludedAt`,
+  which returns the archive line's index so the epoch count can stop there;
+  the private scan is deleted, and `historyTime` with it, because it would
+  have no callers and the fast gate's staticcheck refuses an unused function.
+
+Not changed by this revision: the Refused category decision, the section 2.3
+mechanism and its readers, the section 3 writer boundary, the rank, the read
+nature of `goal next`, the single admission owner, and the record grammar.
