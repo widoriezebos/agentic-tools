@@ -1,18 +1,16 @@
 # actionable-metrics
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 25
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
 - Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=18 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=17028a9296208cd4471baa6c8a9d3ebfcf90a24e6dc3cf28ca7afd7019bbc8e2
-- Claimed: machine=m1 lineage=main-1788594343-3833-fb64b9 at=2026-09-09T09:10:07Z revision=27 accountingRevision=27
-- StopCapability: generation=27 revision=27 machine=m1 claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-08-25T20:18:07Z CE1KNSABESNHJ68SZ8957XZ4V0-m2-bc1be9cb open actor=human:wido targets=actionable-metrics
@@ -42,4 +40,5 @@ History:
 - 2026-09-09T07:32:44Z MXJ2MBB9CW7M5FQMAK5B22KTC7-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-receipt-survives-records-drift from=1:23 to=1:24 requested-sequence=3
 - 2026-09-09T08:00:25Z V2M0Q3X78CX7AH3FZ85HSSYD7T-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=goal-abandoned-with-a-reason from=1:24 to=1:25 requested-sequence=4
 - 2026-09-09T09:10:07Z 539HB6MK9HNGGTYA0Z6XCSCPYD-m1-c6925449 resume actor=human:Wido targets=actionable-metrics
-Integrity: sha256=bb3078590f8d49317f91de2bf87dbe355e60861ef33b1cd6f51fd9653ed244c6
+- 2026-09-09T09:10:11Z Q1BETQ9RTHJAKSAR7WZDHDJR7Z-m1-c6925449 release actor=human:Wido targets=actionable-metrics displaced=m1+main-1788594343-3833-fb64b9@2026-09-09T09:10:07Z
+Integrity: sha256=84944e25d3db11f004a139b7e09808843b397b6fadb580ab58224973adb8e5a4
