@@ -9,13 +9,13 @@
 - Origin: human
 - Next step: Wido explicitly approved expanding this feature on 2026-09-08 in the Codex session: include a common machine-checked test interface for MetaSystem and adopted apps; canary, standard and risk-selected deep modes; low-risk fix-forward delivery without mandatory full battery; test runtime reduction; and separately tracked pruning of duplicate or non-beneficial tests (test-suite-pruning). Author the grounded design on Codex gpt-6-astra xhigh, reconcile the existing proof and landing owners, retain final-review findings F-8 and F-9, then implement, prove with focused canaries, run only the agreed final risk-appropriate verification and land on remote. Existing revision-5 budget and historical review evidence remain in force; this progress entry records session authorization, not a new native budget approval.
 - OpenedAt: 2026-09-08T05:24:18Z
-- Revision: 7
-- Budget: elapsedLimit=2d attemptLimit=16 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 8
+- Budget: elapsedLimit=1h30m attemptLimit=4 reservedJobMinutesLimit=75 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-08T15:17:31Z revision=5 opid=JR00C2V49BMQ3GC97P5QHAP693-m1c-7cd0bd60 authority=proven digest=fcb6d0a288e773cc5a23baa3ac02aa5fafc070d6042bf767092e03394b79447b
+- Approved: by=human:Wido at=2026-09-09T06:15:30Z revision=8 opid=RBRM30REHXGX2QDCNHPRKC0S3F-m1c-c6925449 authority=proven digest=29f886b29ad7603d8ebf96dec42a48bc8a293f8e9cac77cc1cf0768e328f5533
 - Sliced: machine=m1c lineage=main-1788759014-39092-24fa5c revision=3 at=2026-09-08T05:51:20Z
-- Claimed: machine=m1c lineage=main-1788759014-39092-24fa5c at=2026-09-08T15:17:31Z revision=5 accountingRevision=5
-- StopCapability: generation=5 revision=5 machine=m1c claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1c lineage=main-1788759014-39092-24fa5c at=2026-09-09T06:15:30Z revision=8 accountingRevision=8
+- StopCapability: generation=8 revision=8 machine=m1c claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-08T05:24:18Z CCPXF4Z60MFM3TR8HMWPSM2K8S-m1c-1274caf4 open actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention
@@ -25,4 +25,5 @@ History:
 - 2026-09-08T15:17:31Z JR00C2V49BMQ3GC97P5QHAP693-m1c-7cd0bd60 set-budget actor=human:Wido targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-08T05:30:36Z
 - 2026-09-08T15:55:21Z YXQAGS82F28234NQ5SN3VZ6XAJ-m1-7cd0bd60 set-priority actor=human:Wido targets=coordinator-loop-prevention reason=priority-order subject=coordinator-loop-prevention from=unranked to=1:1 requested-sequence=1
 - 2026-09-08T16:16:15Z 9NPH7QNW8WWDCG8VWVJXK41CDP-m1c-1274caf4 edit actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention
-Integrity: sha256=82f22ce74b38a9e7944907989e191ddafa7aa576f74a1328e84e824b39801cc3
+- 2026-09-09T06:15:30Z RBRM30REHXGX2QDCNHPRKC0S3F-m1c-c6925449 set-budget actor=human:Wido targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-08T15:17:31Z
+Integrity: sha256=c01617bd49877f38cab1fc5b31507ce153548fdaf9959298a3d24e8ebe3f63c2
