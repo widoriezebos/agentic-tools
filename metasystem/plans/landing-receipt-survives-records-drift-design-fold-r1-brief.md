@@ -28,7 +28,7 @@ are what this fold revises.
 
 Withdraw `git rebase --autostash`. Two facts, both verified: every worktree
 of this repository and every agent session on this machine resolve
-`refs/stash` to the same common path, so a failed autostash re-apply lands
+the stash ref to the same common path, so a failed autostash re-apply lands
 on a list other sessions push to and pop from; and an append that happens
 after git snapshots the autostash and before its reset is in neither the
 stash nor HEAD. The critic watched `records/narrator-digest.log` go from
