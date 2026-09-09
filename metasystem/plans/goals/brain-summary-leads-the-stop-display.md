@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: In internal/goal/verdictrender.go, renderTurnVerdict puts brainLines into the remainder after the actionable lines (line 61); on a brain seat the summary is the head of the display, as the two scenarios and the brain design expect: emit brainLines first, then the verdict line, the actionable lines, the run summaries, the greens and the file line, still within the bound. Update the renderer's own tests for the brain case, run scripts/agents/goal-cli-fixtures.sh seat-side (the bed that catches it), then supervision-hook-fixtures.sh. One Sol round, one Opus review, land. Owner: stop-refusal-fits-on-one-screen is parked behind m1c's hook chain; this fix touches no hook file, so it does not wait. CONFIRMED on main HEAD 17e916d05 with engine d533caf17 (2026-09-09 15:55Z): goal-cli-fixtures.sh 13 passed, 2 failed, exactly brain-stop-seeded and brain-stop-corrupt. Build brief written: plans/brain-summary-leads-the-stop-display-build-brief.md. Any seat with a free slot may take it; m1 takes it after hp-terminal-grade-for-stopping-acts lands if nobody has.
 - OpenedAt: 2026-09-09T15:48:13Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T16:25:12Z revision=3 opid=V3W1VFRK2XCC5FBN74P68AEA5P-m1-c6925449 authority=proven digest=fd95d0fa581d41dbac32776a6465c4a88e595226a98f21fc49e5584592edd8ef
+- Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=4 at=2026-09-09T16:38:08Z
 - Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-09T16:38:02Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1 claimEpoch=6 fenceEpoch=0
 
@@ -19,4 +20,5 @@ History:
 - 2026-09-09T15:49:37Z SV7EA5Q4PVQCSKM2VFBK6NG16E-m1-1701c13c edit actor=m1+main-1788940932-18533-7fa6c2 targets=brain-summary-leads-the-stop-display
 - 2026-09-09T16:25:12Z V3W1VFRK2XCC5FBN74P68AEA5P-m1-c6925449 approve actor=human:Wido targets=brain-summary-leads-the-stop-display
 - 2026-09-09T16:38:02Z QDSB8ZCT4ZD76HS9SYNF7WJ152-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=brain-summary-leads-the-stop-display
-Integrity: sha256=9e8a6f70c02f7dd79e20012f7516335cd6266102f0aaf020d01735449f8d84d2
+- 2026-09-09T16:38:08Z R78PWSFHB60N068MBDYWGRX3NC-m1-1701c13c slice-start actor=m1+main-1788940932-18533-7fa6c2 targets=brain-summary-leads-the-stop-display
+Integrity: sha256=1d3a906d02f9a3172bde4ed24e69b660a11251d7c6cfd042b1a7ca6a72e5a58e
