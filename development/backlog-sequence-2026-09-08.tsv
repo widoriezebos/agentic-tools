@@ -1,0 +1,183 @@
+report_order	priority	sequence	goal_id	title	ledger_state	disposition	machine_pin	recorded_prerequisites	additional_report_precedence	snapshot
+1	1	1	coordinator-loop-prevention	Prevent repeated proof and repair cycles	claimed					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+2	1	2	metasystem-stop-verb	Reliable stop, status and restart	claimed					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+3	1	3	host-runtime-setup	Host setup for Claude, Codex and Devin	approved	Landed; closure pending				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+4	1	4	backlog-ordered-by-priority	Human-controlled priority and sequence	approved		m1b			ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+5	1	5	dispatch-cap-necessity	Charge completed work for time actually used	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+6	1	6	breach-clock-and-budget-honesty	Keep elapsed-budget accounting honest	approved	Hold/approval conflict				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+7	1	7	governed-exhaustion-reprojection	Recompute exhaustion when a run finishes	approved				dispatch-cap-necessity	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+8	1	8	breach-stop-wedges-seat	Free a machine after a budget stop	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+9	1	9	review-round-limit-counts-per-chain	Bound reviews across the intended scope	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+10	1	10	human-goal-verbs-forgiving	Make human budget commands forgiving	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+11	1	11	account-provenance	Record which account paid for work	claimed	Claim/handoff conflict; budget decision noted				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+12	1	12	severity-tiered-rigor-p2	Finish risk-based stop and close rules	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+13	1	13	severity-tiered-rigor	Match process depth to risk	approved				severity-tiered-rigor-p2	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+14	1	14	small-change-lane	Make small reviewed changes inexpensive	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+15	1	15	steward-revives-a-done-goal	Prevent duplicate or obsolete revival	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+16	1	16	live-job-on-a-done-goal-unnoticed	Detect workers attached to finished work	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+17	1	17	job-record-birth-token	Identify each worker record incarnation	approved	Pause/history conflict				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+18	1	18	failed-job-attention	Keep failed workers visible until resolved	approved				job-record-birth-token	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+19	1	19	burn-without-delivery-tripwire	Detect effort without delivered results	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+20	1	20	watch-verb	Watch work and act on stalls	queued	Action trials and activation required				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+21	1	21	turn-verdict-hardening	Make end-of-turn decisions trustworthy	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+22	1	22	steward-catchup-livelock	Let a returning steward finish catching up	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+23	1	23	watcher-repair-request-never-names-current	Recover from stale watcher repair requests	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+24	1	24	delegate-job-liveness	Keep worker status and custody truthful	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+25	1	25	actionable-metrics	Turn measurements into corrective action	claimed	Claim/handoff conflict; remaining work			delegate-job-liveness	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+26	1	26	lease-sweep-death-evidence	Record death only after proving it	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+27	1	27	winddown-census-handoff-leak	Retain custody when shutdown cannot finish	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+28	1	28	suite-custody	Keep entire validation process trees owned	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+29	1	29	proof-harness-process-custody	Own test load generators reliably	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+30	1	30	fixture-stewards-outlive-their-suite	Stop fixture supervisors when their suite ends	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+31	1	31	machine-concurrency-governor	Share machine capacity without overload	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+32	1	32	token-spend-fence	Enforce token and money ceilings	approved	Enforcement activation required				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+33	2	1	human-approval-for-execution	Only humans authorize execution	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+34	2	2	one-approval-gate	One approval for a goal and its mission	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+35	2	3	hook-enrollment-per-checkout	Ensure every checkout has its guards	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+36	2	4	adoption-inventory-from-install-set	Derive ownership from what adoption installed	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+37	2	5	design-gate-at-dispatch	Require reviewed design before building	approved			design-chain-has-no-lawful-close		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+38	2	6	manifest-floor-at-dispatch	Prevent false mechanical classification	approved			path-class-manifest		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+39	2	7	critique-always	Independent critique for every build	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+40	2	8	merge-stage-critic-close	Allow lawful independent critic closure	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+41	2	9	landing-design-provenance	Carry certified design evidence into landing	queued			design-gate-at-dispatch,path-class-manifest		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+42	2	10	commit-goal-binding	Bind each landing to its claimed goal	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+43	2	11	chain-landing-carries-the-reviewed-diff	Land the implementation that was reviewed	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+44	2	12	chain-landing-carries-unrelated-staged-plans	Exclude unrelated staged files from a landing	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+45	2	13	chain-landing-after-base-move-recertifies	Re-certify reviewed work after main changes	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+46	2	14	repo-root-paths-ride-agent-commits-unjudged	Judge changes outside the installation directory	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+47	2	15	gate-governance-records	Govern new refusal checks	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+48	2	16	two-bars-for-changes	Distinguish mechanical and design changes safely	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+49	2	17	role-context-composition	Give each role the right context	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+50	2	18	role-lane-packets	Enforce the configured development roles	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+51	2	19	idle-every-runtime-enforcement	Restart idle work across every runtime	queued			watch-verb		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+52	2	20	role-liveness-watchdog	Observe and recover every background role	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+53	2	21	recovery-to-good-state	Recover cleanly from partial failure	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+54	2	22	metasystem-stop-escalation-proofs	Complete stop escalation tests	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+55	2	23	recovery-rehearsal	Prove recovery and durable stop	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+56	2	24	mission-birth-baseline-from-dirty-worktree	Give missions a stable birth baseline	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+57	2	25	fleet-pull	Automatically take the next eligible goal	queued			one-approval-gate	backlog-ordered-by-priority	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+58	2	26	fleet-channel-gateway	One reliable human channel for all nodes	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+59	2	27	seat-mutual-awareness	Let nodes see and question each other	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+60	2	28	fleet-join-bootstrap	Join a fresh node without manual reconstruction	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+61	2	29	first-headless-run	First real unattended feature	approved		m1			ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+62	2	30	host-implementer-wall	Enforce separation between host and implementer	parked	Suspended; no automatic resumption		wall-o13-acceptance-write,wall-o14-sealed-dirty-composition,wall-o15-head-accounting,wall-o16-host-repo-fence,wall-o19-recovery-ladder,wall-o8-verbatim-interim,wall-o9-extractor-floor,wall-o10-evidence-durability,wall-o11-legacy-state-refusal		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+63	2	31	headless-continuous-delivery-proof	Prove sustained delivery on one node	queued			chain-landing-after-base-move-recertifies,chain-landing-carries-the-reviewed-diff,critique-always,design-gate-at-dispatch,first-headless-run,fleet-pull,host-runtime-setup,landing-design-provenance,manifest-floor-at-dispatch,metasystem-stop-verb,one-approval-gate		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+64	2	32	headless-fleet-coordination-proof	Prove two nodes and the brain together	queued			fleet-channel-gateway,fleet-coordinator-brain,fleet-join-bootstrap,headless-continuous-delivery-proof,seat-mutual-awareness		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+65	2	33	never-idle-ironclad	Overall headless readiness	approved			headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-runtime-setup,idle-every-runtime-enforcement,metasystem-stop-verb,recovery-rehearsal,recovery-to-good-state,turn-verdict-hardening		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+66	3	1	goal-scope-bounds	Split large goals into bounded members	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+67	3	2	goal-edit-next-append	Add handoff notes without erasing newer work	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+68	3	3	goal-by-flag-doubles-human-prefix	Accept a human name consistently	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+69	3	4	goal-done-flags-do-not-match-the-verb-table	Make completion commands match their help	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+70	3	5	edit-tier-remedy-names-a-refused-command	Print a working risk-change remedy	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+71	3	6	norm-approval-reads-a-file-the-ledger-does-not-carry	Find budget authority from shared evidence	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+72	3	7	resume-reclaims-on-handover	Resume work on the intended machine	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+73	3	8	human-proof-fits-the-act	Match human identity checks to the action	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+74	3	9	verbs-match-intent	Commands that express what people want	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+75	3	10	repair-accept-remote-verb	Provide the advertised ledger repair command	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+76	3	11	defect-analysis-gate	Challenge a diagnosis before fixing a defect	approved		m1b			ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+77	3	12	steward-owned-execution	Make the steward own background execution	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+78	3	13	arming-dead-owner-takeover	Recover automatically from a dead supervisor	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+79	3	14	same-process-succession	Preserve identity for the same live process	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+80	3	15	vm-epoch-identity-drift	Tolerate proven process identity timing drift	approved	Design decision noted				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+81	3	16	host-health-role	Notice machine resource exhaustion	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+82	3	17	metasystem-stop-fleet-form	Stop or inspect every enrolled checkout	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+83	3	18	shutdown-claims-more-than-it-stops	Make the internal shutdown message truthful	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+84	3	19	stop-message-truth	Report actual work at the end of a turn	approved			backlog-git-sync,idle-watchdog		ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+85	3	20	stop-refusal-fits-on-one-screen	Keep stop refusals readable	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+86	3	21	stop-hook-arming-failure-drops-the-cause	Explain why supervision could not start	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+87	3	22	human-digest-reads-under-the-toplevel	Read the human digest from the correct root	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+88	3	23	plan-fields-outside-fences	Ignore example metadata in code blocks	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+89	3	24	hook-demands-what-landing-forbids	Resolve contradictory plan-repair instructions	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+90	3	25	ki-23-acknowledged-process	Acknowledge an exact harmless process	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+91	3	26	answer-archive	Preserve every human answer	queued				fleet-channel-gateway	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+92	3	27	channel-tells-me-when-something-lands	Notify when a slice or goal finishes	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+93	3	28	narrator-digests	Summarize what changed and what mattered	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+94	3	29	transport-sync-law	Keep repository transport consistent	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+95	3	30	native-spend-cap-retirement	Retire the harmful default worker dollar cap	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+96	3	31	budget-death-on-return	Preserve completed work when a budget ends	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+97	3	32	runtime-limit-is-not-a-protocol-error	Treat provider limits as capacity waits	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+98	3	33	brief-authority-preflight	Verify a brief's cited material before dispatch	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+99	3	34	empty-brief-admitted	Refuse a brief with no task	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+100	3	35	follow-up-brief-cannot-cite-fresh-trunk-files	Deliver newly landed context to follow-ups	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+101	3	36	follow-up-brief-cannot-cite-round-created-files	Let follow-ups cite their own new files	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+102	3	37	follow-up-rebase-drop-failure-names-hash	Make leftover-stash recovery actionable	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+103	3	38	gap-rule-deletes-built-work	Keep partial work when a boundary is reached	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+104	3	39	malformed-return-field-loses-the-round	Recover useful output from a malformed return	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+105	3	40	critic-return-identity-loses-the-round	Stamp critic identity mechanically	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+106	3	41	boundary-declaration-repair	Repair an earlier malformed file boundary	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+107	3	42	critique-stamp-follow-up	Bind a follow-up review to the current work	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+108	3	43	delegate-exec-channel	Let restricted delegates build and verify	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+109	3	44	delegate-sandbox-cannot-run-the-beds	Let delegates run owned process tests safely	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+110	3	45	uncapped-delegate-fanout	Prevent unowned nested workers	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+111	3	46	claude-denywrite-list-is-a-snapshot	Protect files created after sandbox setup	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+112	3	47	claude-network-allow-does-not-allow	Make network permissions match reality	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+113	3	48	claude-delegate-effort-is-recorded-not-sent	Send the reasoning effort that records claim	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+114	3	49	fable-effort-high	Apply the requested model effort setting	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+115	3	50	fable-5-1-model-rollover	Complete the recorded model rollover	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+116	3	51	claude-delegate-scratch-cleanup	Clean up each worker's temporary directory	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+117	3	52	codex-capacity-outage-2026-08-31	Review the recorded provider outage	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+118	3	53	seam-declaration-convergence	Keep runtime capability declarations consistent	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+119	3	54	seam-eventstream-error-surface	Distinguish stream completion from read failure	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+120	3	55	conformance-round-immutability	Keep recorded review evidence immutable	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+121	3	56	conformance-runtime-state-litter	Separate harmless runtime files from tampering	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+122	3	57	dispatch-bases-chains-on-the-remote-tip	Start work from current shared source	approved		m1b			ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+123	3	58	design-pages-land-without-the-battery	Match design-document proof to changed files	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+124	3	59	land-retry-rediscards-valid-receipt	Reuse proof when a landing retry changes nothing	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+125	3	60	landing-refusal-names-the-record-rule	Explain which record-ownership rule refused	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+126	3	61	digest-landing-race	Stop live log writes racing with landings	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+127	3	62	digest-union-merge	Merge append-only shared logs automatically	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+128	3	63	human-carried-landing	Record the human fast-track audit	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+129	3	64	human-carried-landing-carry	Implement the authorized human fast track	approved				fleet-channel-gateway	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+130	3	65	land-verb-pruning	Move landing decisions into the engine	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+131	3	66	rounds-prove-with-the-smallest-run	Use focused proof during iterative work	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+132	3	67	standing-validation	Carry recurring full-system validation	approved	Standing recurrence; verify renewed authority			winddown-census-handoff-leak	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+133	3	68	validation-harvest-mode	Collect all failures in one validation run	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+134	3	69	nested-gate-witness-reuse	Reuse valid proof inside adoption checks	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+135	3	70	battery-adoption-red	Resolve the residual adoption validation failure	approved	Only with related feature work or milestone				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+136	3	71	adopt-bed-authority-probe-passes-tier	Update adoption's obsolete intake flags	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+137	3	72	adopt-bed-gate-unreachable-under-load	Let adoption tests reach their actual scenarios	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+138	3	73	dispatch-fixture-refused-by-goal-norm	Bring the dispatch fixture within budget law	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+139	3	74	dispatch-fixture-recollection-pass-budget	Give recollection the required test passes	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+140	3	75	fixture-default-branch-assumption	Make test repository branches explicit	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+141	3	76	fixture-review-by-date-rolls-over	Remove calendar-expiring fixture authority	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+142	3	77	fixture-enrollment-notes	Finish fixture enrollment review residuals	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+143	3	78	fixture-scripts-call-python3-outside-declared-sites	Keep fixture dependencies within the inventory	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+144	3	79	goal-suite-sits-on-the-default-test-timeout	Give goal tests reliable execution margin	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+145	3	80	missionrunner-terminate-flake	Make termination tests reliable under load	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+146	3	81	missionrunner-tests-count-attempts	Base runner tests on observable progress	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+147	3	82	suite-flake-supervision-watch	Diagnose intermittent run-watch termination	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+148	3	83	steward-tick-stop-on-failure	Clean up the test runner after assertions fail	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+149	3	84	supervise-start-gate-linux-red	Preserve the startup gate test on Linux	approved	Review closure				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+150	3	85	supervision-fixture-child-custody-join	Repair the fixture's child-custody join	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+151	3	86	supervision-fixture-self-check-announcement-scan	Make fixture isolation checks accurate	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+152	3	87	watchdog-kill-observation-gap	Record real assumptions after a test kill	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+153	3	88	hook-root-resolver-design	Resolve the correct installation from hooks	approved	Budget decision noted; overlap to check				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+154	3	89	repo-flag-resolves-one-root	Make repository flags mean one thing	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+155	3	90	runtime-install-execution	Make installation resumable and crash-safe	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+156	3	91	registry-design-names-selection-rows	Document and observe registry selection rules	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+157	3	92	python3-kit-port	Retire the last Python fixture dependency	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+158	3	93	os-dependency-reduction	Reduce external tool dependencies	approved				python3-kit-port	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+159	3	94	go-toolchain-pinned-in-go-mod	Superseded toolchain-pinning proposal	queued	Superseded; do not execute				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+160	3	95	channel-totp-verified-at-poll-time	Duplicate delayed-answer verification issue	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+161	3	96	codex-handshake-budget	Duplicate slow-start issue	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+162	3	97	codex-handshake-budget-load-fragile	Handle slow but healthy Codex startup	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+163	3	98	effort-by-complexity-per-model	Configure effort per runtime, model and change class	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+164	3	99	mission-completion-protocol	Finish mission completion semantics	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+165	3	100	open-work-scanner-blindspots	Detect work outside this checkout's job list	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+166	4	1	continuous-self-improvement	Turn observed process problems into improvements	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+167	4	2	suite-outcomes-as-steward-incidents	Treat failed or vanished suites as incidents	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+168	4	3	incident-proposal-drafting	Turn incidents into proposals for discussion	approved				suite-outcomes-as-steward-incidents	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+169	4	4	counselor	Advise on gaps between the app and its protections	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+170	4	5	precedent-index	Make past rulings usable as precedent	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+171	4	6	reconciliation-guards	Compare independent records that should agree	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+172	4	7	paid-proof-authorization	Budget expensive proof runs explicitly	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+173	4	8	metasystem-way-patterns	Teach reusable engineering practices	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+174	4	9	cross-repo-guardrails	Enforce constraints stored in another repository	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+175	4	10	app-guardrail-custody	Protect the application's own test constraints	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+176	4	11	app-doctrine	Evolve the application's own engineering guidance	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+177	4	12	app-guardrail-program	Prove safe autonomous work on a new application	approved				app-guardrail-custody,app-doctrine	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+178	4	13	integration-branch	Support a designated integration branch	approved				app-guardrail-program	ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+179	4	14	disk-hygiene	Give generated files a lifecycle	parked	Suspended; no automatic resumption				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+180	4	15	paper-prose	Finish the MetaSystem concept paper	approved					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+181	4	16	alert-escalation-channel	Deliver urgent alerts and batched digests	approved	Scope decision noted				ece31b549a4446d4b11bb1b76f54e3c8df83d2f4
+182	4	17	ledger-authentication	Reject forged human-authority history	queued					ece31b549a4446d4b11bb1b76f54e3c8df83d2f4

@@ -1,0 +1,186 @@
+priority	sequence	goal_id	title	ledger_state	previous_report_number
+1	1	coordinator-loop-prevention	Prevent repeated proof and repair cycles	claimed	1.01
+1	2	host-runtime-setup	Host setup for Claude, Codex and Devin	approved	1.03
+1	3	backlog-ordered-by-priority	Human-controlled priority and sequence	approved	1.04
+1	4	dispatch-cap-necessity	Charge completed work for time actually used	approved	1.05
+1	5	breach-clock-and-budget-honesty	Keep elapsed-budget accounting honest	approved	1.06
+1	6	governed-exhaustion-reprojection	Recompute exhaustion when a run finishes	approved	1.07
+1	7	breach-stop-wedges-seat	Free a machine after a budget stop	approved	1.08
+1	8	review-round-limit-counts-per-chain	Bound reviews across the intended scope	approved	1.09
+1	9	human-goal-verbs-forgiving	Make human budget commands forgiving	approved	1.10
+1	10	account-provenance	Record which account paid for work	claimed	1.11
+1	11	severity-tiered-rigor-p2	Finish risk-based stop and close rules	approved	1.12
+1	12	severity-tiered-rigor	Match process depth to risk	approved	1.13
+1	13	small-change-lane	Make small reviewed changes inexpensive	approved	1.14
+1	14	steward-revives-a-done-goal	Prevent duplicate or obsolete revival	queued	1.15
+1	15	live-job-on-a-done-goal-unnoticed	Detect workers attached to finished work	queued	1.16
+1	16	job-record-birth-token	Identify each worker record incarnation	approved	1.17
+1	17	failed-job-attention	Keep failed workers visible until resolved	approved	1.18
+1	18	burn-without-delivery-tripwire	Detect effort without delivered results	approved	1.19
+1	19	watch-verb	Watch work and act on stalls	queued	1.20
+1	20	turn-verdict-hardening	Make end-of-turn decisions trustworthy	approved	1.21
+1	21	steward-catchup-livelock	Let a returning steward finish catching up	queued	1.22
+1	22	watcher-repair-request-never-names-current	Recover from stale watcher repair requests	queued	1.23
+1	23	delegate-job-liveness	Keep worker status and custody truthful	approved	1.24
+1	24	actionable-metrics	Turn measurements into corrective action	claimed	1.25
+1	25	lease-sweep-death-evidence	Record death only after proving it	approved	1.26
+1	26	winddown-census-handoff-leak	Retain custody when shutdown cannot finish	approved	1.27
+1	27	suite-custody	Keep entire validation process trees owned	approved	1.28
+1	28	proof-harness-process-custody	Own test load generators reliably	approved	1.29
+1	29	fixture-stewards-outlive-their-suite	Stop fixture supervisors when their suite ends	queued	1.30
+1	30	machine-concurrency-governor	Share machine capacity without overload	approved	1.31
+1	31	token-spend-fence	Enforce token and money ceilings	approved	1.32
+2	1	human-approval-for-execution	Only humans authorize execution	approved	2.01
+2	2	one-approval-gate	One approval for a goal and its mission	queued	2.02
+2	3	hook-enrollment-per-checkout	Ensure every checkout has its guards	approved	2.03
+2	4	adoption-inventory-from-install-set	Derive ownership from what adoption installed	queued	2.04
+2	5	design-gate-at-dispatch	Require reviewed design before building	approved	2.05
+2	6	manifest-floor-at-dispatch	Prevent false mechanical classification	approved	2.06
+2	7	critique-always	Independent critique for every build	approved	2.07
+2	8	merge-stage-critic-close	Allow lawful independent critic closure	queued	2.08
+2	9	landing-design-provenance	Carry certified design evidence into landing	queued	2.09
+2	10	commit-goal-binding	Bind each landing to its claimed goal	approved	2.10
+2	11	chain-landing-carries-the-reviewed-diff	Land the implementation that was reviewed	queued	2.11
+2	12	chain-landing-carries-unrelated-staged-plans	Exclude unrelated staged files from a landing	queued	2.12
+2	13	chain-landing-after-base-move-recertifies	Re-certify reviewed work after main changes	claimed	2.13
+2	14	repo-root-paths-ride-agent-commits-unjudged	Judge changes outside the installation directory	approved	2.14
+2	15	gate-governance-records	Govern new refusal checks	approved	2.15
+2	16	two-bars-for-changes	Distinguish mechanical and design changes safely	approved	2.16
+2	17	role-context-composition	Give each role the right context	approved	2.17
+2	18	role-lane-packets	Enforce the configured development roles	approved	2.18
+2	19	idle-every-runtime-enforcement	Restart idle work across every runtime	queued	2.19
+2	20	role-liveness-watchdog	Observe and recover every background role	approved	2.20
+2	21	recovery-to-good-state	Recover cleanly from partial failure	approved	2.21
+2	22	metasystem-stop-escalation-proofs	Complete stop escalation tests	queued	2.22
+2	23	recovery-rehearsal	Prove recovery and durable stop	approved	2.23
+2	24	mission-birth-baseline-from-dirty-worktree	Give missions a stable birth baseline	queued	2.24
+2	25	fleet-pull	Automatically take the next eligible goal	queued	2.25
+2	26	fleet-channel-gateway	One reliable human channel for all nodes	approved	2.26
+2	27	seat-mutual-awareness	Let nodes see and question each other	approved	2.27
+2	28	fleet-join-bootstrap	Join a fresh node without manual reconstruction	approved	2.28
+2	29	first-headless-run	First real unattended feature	approved	2.29
+2	30	host-implementer-wall	Enforce separation between host and implementer	parked	2.30
+2	31	headless-continuous-delivery-proof	Prove sustained delivery on one node	queued	2.31
+2	32	headless-fleet-coordination-proof	Prove two nodes and the brain together	queued	2.32
+2	33	never-idle-ironclad	Overall headless readiness	approved	2.33
+3	1	goal-scope-bounds	Split large goals into bounded members	queued	3.01
+3	2	goal-edit-next-append	Add handoff notes without erasing newer work	approved	3.02
+3	3	goal-by-flag-doubles-human-prefix	Accept a human name consistently	queued	3.03
+3	4	goal-done-flags-do-not-match-the-verb-table	Make completion commands match their help	queued	3.04
+3	5	edit-tier-remedy-names-a-refused-command	Print a working risk-change remedy	queued	3.05
+3	6	norm-approval-reads-a-file-the-ledger-does-not-carry	Find budget authority from shared evidence	queued	3.06
+3	7	resume-reclaims-on-handover	Resume work on the intended machine	approved	3.07
+3	8	human-proof-fits-the-act	Match human identity checks to the action	approved	3.08
+3	9	verbs-match-intent	Commands that express what people want	approved	3.09
+3	10	repair-accept-remote-verb	Provide the advertised ledger repair command	approved	3.10
+3	11	defect-analysis-gate	Challenge a diagnosis before fixing a defect	approved	3.11
+3	12	steward-owned-execution	Make the steward own background execution	approved	3.12
+3	13	arming-dead-owner-takeover	Recover automatically from a dead supervisor	approved	3.13
+3	14	same-process-succession	Preserve identity for the same live process	approved	3.14
+3	15	vm-epoch-identity-drift	Tolerate proven process identity timing drift	approved	3.15
+3	16	host-health-role	Notice machine resource exhaustion	approved	3.16
+3	17	metasystem-stop-fleet-form	Stop or inspect every enrolled checkout	queued	3.17
+3	18	shutdown-claims-more-than-it-stops	Make the internal shutdown message truthful	queued	3.18
+3	19	stop-message-truth	Report actual work at the end of a turn	approved	3.19
+3	20	stop-refusal-fits-on-one-screen	Keep stop refusals readable	approved	3.20
+3	21	stop-hook-arming-failure-drops-the-cause	Explain why supervision could not start	queued	3.21
+3	22	human-digest-reads-under-the-toplevel	Read the human digest from the correct root	queued	3.22
+3	23	plan-fields-outside-fences	Ignore example metadata in code blocks	queued	3.23
+3	24	hook-demands-what-landing-forbids	Resolve contradictory plan-repair instructions	queued	3.24
+3	25	ki-23-acknowledged-process	Acknowledge an exact harmless process	approved	3.25
+3	26	answer-archive	Preserve every human answer	queued	3.26
+3	27	channel-tells-me-when-something-lands	Notify when a slice or goal finishes	approved	3.27
+3	28	narrator-digests	Summarize what changed and what mattered	approved	3.28
+3	29	transport-sync-law	Keep repository transport consistent	approved	3.29
+3	30	native-spend-cap-retirement	Retire the harmful default worker dollar cap	approved	3.30
+3	31	budget-death-on-return	Preserve completed work when a budget ends	approved	3.31
+3	32	runtime-limit-is-not-a-protocol-error	Treat provider limits as capacity waits	queued	3.32
+3	33	brief-authority-preflight	Verify a brief's cited material before dispatch	approved	3.33
+3	34	empty-brief-admitted	Refuse a brief with no task	queued	3.34
+3	35	follow-up-brief-cannot-cite-fresh-trunk-files	Deliver newly landed context to follow-ups	queued	3.35
+3	36	follow-up-brief-cannot-cite-round-created-files	Let follow-ups cite their own new files	queued	3.36
+3	37	follow-up-rebase-drop-failure-names-hash	Make leftover-stash recovery actionable	queued	3.37
+3	38	gap-rule-deletes-built-work	Keep partial work when a boundary is reached	queued	3.38
+3	39	malformed-return-field-loses-the-round	Recover useful output from a malformed return	queued	3.39
+3	40	critic-return-identity-loses-the-round	Stamp critic identity mechanically	approved	3.40
+3	41	boundary-declaration-repair	Repair an earlier malformed file boundary	approved	3.41
+3	42	critique-stamp-follow-up	Bind a follow-up review to the current work	approved	3.42
+3	43	delegate-exec-channel	Let restricted delegates build and verify	approved	3.43
+3	44	delegate-sandbox-cannot-run-the-beds	Let delegates run owned process tests safely	queued	3.44
+3	45	uncapped-delegate-fanout	Prevent unowned nested workers	approved	3.45
+3	46	claude-denywrite-list-is-a-snapshot	Protect files created after sandbox setup	queued	3.46
+3	47	claude-network-allow-does-not-allow	Make network permissions match reality	queued	3.47
+3	48	claude-delegate-effort-is-recorded-not-sent	Send the reasoning effort that records claim	queued	3.48
+3	49	fable-effort-high	Apply the requested model effort setting	approved	3.49
+3	50	fable-5-1-model-rollover	Complete the recorded model rollover	approved	3.50
+3	51	claude-delegate-scratch-cleanup	Clean up each worker's temporary directory	approved	3.51
+3	52	codex-capacity-outage-2026-08-31	Review the recorded provider outage	approved	3.52
+3	53	seam-declaration-convergence	Keep runtime capability declarations consistent	approved	3.53
+3	54	seam-eventstream-error-surface	Distinguish stream completion from read failure	approved	3.54
+3	55	conformance-round-immutability	Keep recorded review evidence immutable	approved	3.55
+3	56	conformance-runtime-state-litter	Separate harmless runtime files from tampering	queued	3.56
+3	57	dispatch-bases-chains-on-the-remote-tip	Start work from current shared source	approved	3.57
+3	58	design-pages-land-without-the-battery	Match design-document proof to changed files	queued	3.58
+3	59	land-retry-rediscards-valid-receipt	Reuse proof when a landing retry changes nothing	queued	3.59
+3	60	landing-refusal-names-the-record-rule	Explain which record-ownership rule refused	queued	3.60
+3	61	digest-landing-race	Stop live log writes racing with landings	approved	3.61
+3	62	digest-union-merge	Merge append-only shared logs automatically	approved	3.62
+3	63	human-carried-landing	Record the human fast-track audit	approved	3.63
+3	64	human-carried-landing-carry	Implement the authorized human fast track	approved	3.64
+3	65	land-verb-pruning	Move landing decisions into the engine	approved	3.65
+3	66	rounds-prove-with-the-smallest-run	Use focused proof during iterative work	queued	3.66
+3	67	standing-validation	Carry recurring full-system validation	approved	3.67
+3	68	validation-harvest-mode	Collect all failures in one validation run	approved	3.68
+3	69	nested-gate-witness-reuse	Reuse valid proof inside adoption checks	approved	3.69
+3	70	battery-adoption-red	Resolve the residual adoption validation failure	approved	3.70
+3	71	adopt-bed-authority-probe-passes-tier	Update adoption's obsolete intake flags	approved	3.71
+3	72	adopt-bed-gate-unreachable-under-load	Let adoption tests reach their actual scenarios	approved	3.72
+3	73	dispatch-fixture-refused-by-goal-norm	Bring the dispatch fixture within budget law	queued	3.73
+3	74	dispatch-fixture-recollection-pass-budget	Give recollection the required test passes	approved	3.74
+3	75	fixture-default-branch-assumption	Make test repository branches explicit	approved	3.75
+3	76	fixture-review-by-date-rolls-over	Remove calendar-expiring fixture authority	approved	3.76
+3	77	fixture-enrollment-notes	Finish fixture enrollment review residuals	queued	3.77
+3	78	fixture-scripts-call-python3-outside-declared-sites	Keep fixture dependencies within the inventory	queued	3.78
+3	79	goal-suite-sits-on-the-default-test-timeout	Give goal tests reliable execution margin	queued	3.79
+3	80	missionrunner-terminate-flake	Make termination tests reliable under load	approved	3.80
+3	81	missionrunner-tests-count-attempts	Base runner tests on observable progress	approved	3.81
+3	82	suite-flake-supervision-watch	Diagnose intermittent run-watch termination	approved	3.82
+3	83	steward-tick-stop-on-failure	Clean up the test runner after assertions fail	approved	3.83
+3	84	supervise-start-gate-linux-red	Preserve the startup gate test on Linux	approved	3.84
+3	85	supervision-fixture-child-custody-join	Repair the fixture's child-custody join	approved	3.85
+3	86	supervision-fixture-self-check-announcement-scan	Make fixture isolation checks accurate	approved	3.86
+3	87	watchdog-kill-observation-gap	Record real assumptions after a test kill	approved	3.87
+3	88	hook-root-resolver-design	Resolve the correct installation from hooks	approved	3.88
+3	89	repo-flag-resolves-one-root	Make repository flags mean one thing	approved	3.89
+3	90	runtime-install-execution	Make installation resumable and crash-safe	approved	3.90
+3	91	registry-design-names-selection-rows	Document and observe registry selection rules	approved	3.91
+3	92	python3-kit-port	Retire the last Python fixture dependency	approved	3.92
+3	93	os-dependency-reduction	Reduce external tool dependencies	approved	3.93
+3	94	go-toolchain-pinned-in-go-mod	Superseded toolchain-pinning proposal	queued	3.94
+3	95	channel-totp-verified-at-poll-time	Duplicate delayed-answer verification issue	parked	3.95
+3	96	codex-handshake-budget	Duplicate slow-start issue	parked	3.96
+3	97	codex-handshake-budget-load-fragile	Handle slow but healthy Codex startup	parked	3.97
+3	98	effort-by-complexity-per-model	Configure effort per runtime, model and change class	parked	3.98
+3	99	mission-completion-protocol	Finish mission completion semantics	parked	3.99
+3	100	open-work-scanner-blindspots	Detect work outside this checkout's job list	parked	3.100
+3	101	continuous-self-improvement	Turn observed process problems into improvements	approved	4.01
+3	102	suite-outcomes-as-steward-incidents	Treat failed or vanished suites as incidents	approved	4.02
+3	103	incident-proposal-drafting	Turn incidents into proposals for discussion	approved	4.03
+3	104	counselor	Advise on gaps between the app and its protections	queued	4.04
+3	105	precedent-index	Make past rulings usable as precedent	approved	4.05
+3	106	reconciliation-guards	Compare independent records that should agree	approved	4.06
+3	107	paid-proof-authorization	Budget expensive proof runs explicitly	approved	4.07
+3	108	metasystem-way-patterns	Teach reusable engineering practices	approved	4.08
+3	109	cross-repo-guardrails	Enforce constraints stored in another repository	approved	4.09
+3	110	app-guardrail-custody	Protect the application's own test constraints	approved	4.10
+3	111	app-doctrine	Evolve the application's own engineering guidance	approved	4.11
+3	112	app-guardrail-program	Prove safe autonomous work on a new application	approved	4.12
+3	113	integration-branch	Support a designated integration branch	approved	4.13
+3	114	disk-hygiene	Give generated files a lifecycle	parked	4.14
+3	115	paper-prose	Finish the MetaSystem concept paper	approved	4.15
+3	116	alert-escalation-channel	Deliver urgent alerts and batched digests	approved	4.16
+3	117	ledger-authentication	Reject forged human-authority history	queued	4.17
+3	118	design-prohibition-is-role-scoped	Allow design authoring in the design role	queued	new
+3	119	enrollment-proves-a-human-not-a-terminal	Require human proof when enrolling a terminal	queued	new
+3	120	closing-read-follows-the-change-not-the-label	Base the closing review on the actual change	queued	new
+3	121	capped-round-continues-instead-of-restarting	Continue partial work after a capped round	queued	new
