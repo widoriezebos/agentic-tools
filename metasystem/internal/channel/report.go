@@ -48,6 +48,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 		}
 	}
 	needs, next := []string{}, []string{}
+	var backlog []string
 	var delivered []string
 	approvalGoal := ""
 	features := map[string]string{}
@@ -61,19 +62,28 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 		needs = append(needs, "Needs you: "+featureName(q.Goal)+" — "+questionRequest(q))
 	}
 	ep, err := goal.ResolveEndpoint(c.RepoRoot)
-	if err == nil {
-		if p, e := goal.Project(ep, false, c.Now); e == nil {
-			for id := range p.Tree.Live {
-				features[id] = featureName(id)
-			}
-			for id := range p.Tree.Done {
-				features[id] = featureName(id)
-			}
-			frontier := goal.Next(p, c.Machine)
-			if id := markedNextGoal(p, c.Machine); id != "" && !questionGoals[id] {
-				needs = append(needs, approvalRequestLine(id))
-				approvalGoal = id
-			}
+	if err != nil {
+		backlog = []string{"Backlog order: unavailable — " + statusLineText(err.Error())}
+	} else if p, projectErr := goal.Project(ep, false, c.Now); projectErr != nil {
+		backlog = []string{"Backlog order: unavailable — " + statusLineText(projectErr.Error())}
+	} else {
+		for id := range p.Tree.Live {
+			features[id] = featureName(id)
+		}
+		for id := range p.Tree.Done {
+			features[id] = featureName(id)
+		}
+		frontier, frontierErr := goal.Next(p, c.Machine)
+		if frontierErr != nil {
+			backlog = []string{"Backlog order: unavailable — " + statusLineText(frontierErr.Error())}
+		} else {
+			backlog = backlogStatusLines(p, c.Machine, frontier)
+		}
+		if id := markedNextGoal(p, c.Machine); id != "" && !questionGoals[id] {
+			needs = append(needs, approvalRequestLine(id))
+			approvalGoal = id
+		}
+		if frontierErr == nil {
 			for _, id := range frontier.Claimed {
 				next = append(next, "Next up: "+featureName(id))
 				if len(next) == 2 {
@@ -92,6 +102,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	if c.Undelivered > 0 {
 		lineLimit--
 	}
+	lineLimit -= len(backlog)
 	lines := []string{}
 	brainState := brain.Read(c.RepoRoot, goal.ExistingLedgerIdentity(c.RepoRoot))
 	if brainState.State == brain.Declared {
@@ -108,6 +119,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 			lines = append(lines, line)
 		}
 	}
+	lines = append(lines, backlog...)
 	if c.Undelivered > 0 {
 		age := int(c.Now.Sub(c.OldestUndelivered).Minutes())
 		if age < 0 {
@@ -120,6 +132,56 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 		approvalGoal = ""
 	}
 	return text, approvalGoal, nil
+}
+
+func backlogStatusLines(projection goal.Projection, machine string, frontier goal.NextVerdict) []string {
+	ordered := goal.OrderedOpenGoalIDs(projection.Tree.Live)
+	first := "Backlog first: empty"
+	if len(ordered) > 0 {
+		file := projection.Tree.Live[ordered[0]]
+		first = "Backlog first: " + featureName(file.Id) + " — " + backlogRank(file) + ", " + file.State + ", " + backlogPin(file)
+	}
+	if len(projection.Banners) > 0 {
+		notices := make([]string, 0, len(projection.Banners))
+		for _, notice := range projection.Banners {
+			if strings.HasPrefix(notice, "the accepted tree is ") && strings.HasSuffix(notice, " old; goal list --fetch validates and advances it") {
+				notice = "the accepted tree is old; goal list --fetch validates and advances it"
+			}
+			notices = append(notices, statusLineText(notice))
+		}
+		first += " — notice: " + strings.Join(notices, "; ")
+	}
+
+	local := "Next for " + machine + ": "
+	selection := goal.SelectNext(frontier)
+	switch selection.Kind {
+	case goal.NextSelectionContinue:
+		local += "continue " + featureName(selection.GoalID)
+	case goal.NextSelectionReady:
+		file := projection.Tree.Live[selection.GoalID]
+		local += featureName(file.Id) + " — " + backlogRank(file) + ", " + backlogPin(file)
+	default:
+		local += "none claimable"
+	}
+	return []string{first, local}
+}
+
+func backlogRank(file *goal.GoalFile) string {
+	if file.Priority == 0 && file.Sequence == 0 {
+		return "priority unset, sequence unset"
+	}
+	return fmt.Sprintf("priority %d, sequence %d", file.Priority, file.Sequence)
+}
+
+func backlogPin(file *goal.GoalFile) string {
+	if file.Pinned == "" {
+		return "unpinned"
+	}
+	return "pin " + file.Pinned
+}
+
+func statusLineText(text string) string {
+	return strings.Join(strings.Fields(text), " ")
 }
 
 func markedNextGoal(p goal.Projection, machine string) string {

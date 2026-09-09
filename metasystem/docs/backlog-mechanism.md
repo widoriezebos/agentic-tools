@@ -117,9 +117,12 @@ human act (`--by`), and re-pinning a goal another machine currently
 claims refuses: release it first — or clear the pin, steal, and
 re-pin — so ownership never silently contradicts the pin. One reserved word: "-" is the clear form, so a
 machine enrolled under that literal name can never be a pin target.
-A machine's own frontier (goal next) skips goals pinned elsewhere —
-they are not claimable there, and reporting them ready would hide
-genuinely claimable work.
+A machine's own frontier (`goal next --machine <nick> --fetch`) traverses the
+global priority-then-sequence order and skips goals pinned elsewhere. A local
+pin makes a goal eligible but never moves it ahead of an earlier unpinned
+goal. A free seat claims only the returned goal; if another seat wins that
+read-to-claim race, it fetches and selects again. The read is not a
+reservation, and records are read to understand work rather than choose it.
 
 ## Ordering the backlog
 

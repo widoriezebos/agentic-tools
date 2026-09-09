@@ -2,11 +2,222 @@ package goal
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
+
+func TestNextPriority(t *testing.T) {
+	root := t.TempDir()
+	seedGoalNormConfig(t, root)
+
+	t.Run("pins", func(t *testing.T) {
+		a := nextPriorityGoal("a", 1, 1, "m1")
+		b := nextPriorityGoal("b", 1, 2, "")
+		c := nextPriorityGoal("c", 1, 3, "m2")
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			a.Id: a, b.Id: b, c.Id: c,
+		}, Done: map[string]*GoalFile{}}}
+
+		for _, test := range []struct {
+			machine string
+			want    string
+		}{
+			{machine: "m1", want: "a"},
+			{machine: "m2", want: "b"},
+			{machine: "m3", want: "b"},
+		} {
+			frontier, err := Next(projection, test.machine)
+			if err != nil {
+				t.Fatalf("machine %s frontier: %v", test.machine, err)
+			}
+			selection := SelectNext(frontier)
+			if selection.Kind != NextSelectionReady || selection.GoalID != test.want {
+				t.Fatalf("machine %s selection = %+v, want ready %s; frontier=%+v", test.machine, selection, test.want, frontier)
+			}
+		}
+	})
+
+	t.Run("held", func(t *testing.T) {
+		heldA := vGoal("held-a", StateClaimed)
+		heldA.Priority, heldA.Sequence, heldA.Arc = 1, 1, "held-arc"
+		heldA.Labels = []string{"hidden-by-filter"}
+		heldB := vGoal("held-b", StateClaimed)
+		heldB.Priority, heldB.Sequence, heldB.Arc = 1, 2, "held-arc"
+		heldB.Labels = []string{"hidden-by-filter"}
+		ready := nextPriorityGoal("ready", 1, 3, "")
+		ready.Labels = []string{"wanted"}
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			heldA.Id: heldA, heldB.Id: heldB, ready.Id: ready,
+		}, Done: map[string]*GoalFile{}}}
+
+		frontier, err := Next(projection, "mac-a", "wanted")
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection := SelectNext(frontier)
+		if got := strings.Join(frontier.Claimed, ","); got != "held-a,held-b" ||
+			strings.Join(frontier.Ready, ",") != "ready" || selection.Kind != NextSelectionContinue || selection.GoalID != "held-a" {
+			t.Fatalf("one held arc did not outrank the retained ready frontier: selection=%+v frontier=%+v", selection, frontier)
+		}
+	})
+
+	t.Run("blocked-expired", func(t *testing.T) {
+		blocked := nextPriorityGoal("blocked", 1, 1, "")
+		blocked.Blocked = []string{"dependency"}
+		expired := nextPriorityGoal("expired", 1, 2, "")
+		expired.Approved.Authority = ApprovalAuthorityRelayed
+		expired.Approved.ReviewBy = "2026-09-01"
+		ready := nextPriorityGoal("ready", 1, 3, "")
+		dependency := vGoal("dependency", StateQueued)
+		projection := Projection{
+			Root: root,
+			Tree: &TreeGoals{Live: map[string]*GoalFile{
+				blocked.Id: blocked, expired.Id: expired, ready.Id: ready, dependency.Id: dependency,
+			}, Done: map[string]*GoalFile{}},
+			Horizon: ApprovalHorizon{Now: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)},
+		}
+
+		frontier, err := Next(projection, "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection := SelectNext(frontier)
+		if strings.Join(frontier.Blocked, ",") != "blocked" || strings.Join(frontier.Awaiting, ",") != "expired,dependency" ||
+			selection.Kind != NextSelectionReady || selection.GoalID != "ready" {
+			t.Fatalf("blocked or expired work displaced the eligible ranked goal: selection=%+v frontier=%+v", selection, frontier)
+		}
+	})
+
+	t.Run("none", func(t *testing.T) {
+		foreign := nextPriorityGoal("foreign", 1, 1, "other-machine")
+		parked := vGoal("parked", StateParked)
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			foreign.Id: foreign, parked.Id: parked,
+		}, Done: map[string]*GoalFile{}}}
+
+		frontier, err := Next(projection, "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selection := SelectNext(frontier); selection.Kind != NextSelectionNone || selection.GoalID != "" {
+			t.Fatalf("an ineligible frontier returned a candidate: selection=%+v frontier=%+v", selection, frontier)
+		}
+	})
+
+	t.Run("labels", func(t *testing.T) {
+		higher := nextPriorityGoal("higher", 1, 1, "")
+		higher.Labels = []string{"other"}
+		lower := nextPriorityGoal("lower", 1, 2, "")
+		lower.Labels = []string{"wanted"}
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			higher.Id: higher, lower.Id: lower,
+		}, Done: map[string]*GoalFile{}}}
+
+		frontier, err := Next(projection, "m1", "wanted")
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection := SelectNext(frontier)
+		if selection.Kind != NextSelectionReady || selection.GoalID != "lower" || strings.Join(frontier.Ready, ",") != "lower" {
+			t.Fatalf("the label filter did not retain ranked traversal: selection=%+v frontier=%+v", selection, frontier)
+		}
+	})
+
+	t.Run("over-norm", func(t *testing.T) {
+		overNormBudget := testBudget()
+		overNormBudget.ReservedJobMinutesLimit = 2400
+		overNorm := approvedGoalFixture(vGoal("over-norm", StateQueued), overNormBudget)
+		overNorm.Priority, overNorm.Sequence = 1, 1
+		claimable := nextPriorityGoal("claimable", 1, 2, "")
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			overNorm.Id: overNorm, claimable.Id: claimable,
+		}, Done: map[string]*GoalFile{}}}
+		if _, err := requireApprovedForClaim(root, projection.Tree, overNorm, projection.Horizon.Now, "claim"); err == nil || !strings.Contains(err.Error(), "GOAL_NORM_REFUSED") {
+			t.Fatalf("over-norm fixture did not isolate the norm refusal: %v", err)
+		}
+		if _, err := requireApprovedForClaim(root, projection.Tree, claimable, projection.Horizon.Now, "claim"); err != nil {
+			t.Fatalf("lower-ranked fixture was not otherwise claimable: %v", err)
+		}
+
+		frontier, err := Next(projection, "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection := SelectNext(frontier)
+		if selection.Kind != NextSelectionReady || selection.GoalID != "claimable" {
+			t.Fatalf("over-norm head blocked claimable ranked work: selection=%+v frontier=%+v", selection, frontier)
+		}
+	})
+
+	t.Run("configuration-failure-keeps-idle-refusal", func(t *testing.T) {
+		candidate := nextPriorityGoal("candidate", 1, 1, "")
+		root := servingBed(t, "bed-m1", map[string]*GoalFile{candidate.Id: candidate})
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier3BudgetKey+"=malformed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		projection, err := Project(Endpoint{Root: root, Remote: "local", Branch: LocalLedgerBranch}, false, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		frontier, frontierErr := Next(projection, "bed-m1")
+		if frontierErr == nil || !strings.Contains(frontierErr.Error(), config.Tier3BudgetKey) || len(frontier.Ready) != 0 {
+			t.Fatalf("configuration uncertainty became a frontier: frontier=%+v err=%v", frontier, frontierErr)
+		}
+
+		work, workErr := ReadClaimableBudgetedWork(root, time.Now())
+		if workErr == nil || !strings.Contains(workErr.Error(), config.Tier3BudgetKey) {
+			t.Fatalf("claimable-work read swallowed configuration uncertainty: work=%+v err=%v", work, workErr)
+		}
+		verdict := Verdict{}
+		session := &sessionState{}
+		(&Store{}).enforceIdleBacklog(&verdict, &work, workErr, session, "session", "main", TurnVerdictOptions{})
+		if !verdict.ShouldBlock || !verdict.IdleRefusal || session.IdleBlocks != 1 || !strings.Contains(verdict.Display, "IDLE WITH BACKLOG cannot be ruled out") {
+			t.Fatalf("indeterminate backlog disabled idle refusal: verdict=%+v session=%+v", verdict, session)
+		}
+	})
+
+	t.Run("configuration-loads-once", func(t *testing.T) {
+		previous := loadClaimAdmissionTierBoxes
+		loads := 0
+		loadClaimAdmissionTierBoxes = func(path string) (*config.TierBoxSet, error) {
+			loads++
+			return previous(path)
+		}
+		defer func() { loadClaimAdmissionTierBoxes = previous }()
+
+		root := t.TempDir()
+		seedGoalNormConfig(t, root)
+		one := nextPriorityGoal("one", 1, 1, "")
+		twoFile := vGoal("two", StateQueued)
+		twoFile.Tier = 2
+		two := approvedGoalFixture(twoFile, testBudget())
+		two.Priority, two.Sequence = 1, 2
+		threeFile := vGoal("three", StateQueued)
+		threeFile.Tier = 1
+		three := approvedGoalFixture(threeFile, testBudget())
+		three.Priority, three.Sequence = 1, 3
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			one.Id: one, two.Id: two, three.Id: three,
+		}, Done: map[string]*GoalFile{}}}
+		frontier, err := Next(projection, "m1")
+		if err != nil || strings.Join(frontier.Ready, ",") != "one,two,three" || loads != 1 {
+			t.Fatalf("multi-goal frontier loaded configuration %d times: frontier=%+v err=%v", loads, frontier, err)
+		}
+	})
+}
+
+func nextPriorityGoal(id string, priority uint8, sequence uint64, pin string) *GoalFile {
+	file := approvedGoalFixture(vGoal(id, StateQueued), testBudget())
+	file.Priority, file.Sequence, file.Pinned = priority, sequence, pin
+	return file
+}
 
 func TestPriorityUnranked(t *testing.T) {
 	t.Run("sort-last", func(t *testing.T) {
@@ -587,7 +798,7 @@ func assertPriorityOrder(t *testing.T, tree *TreeGoals, want []string) {
 func assertPair(t *testing.T, file *GoalFile, priority uint8, sequence uint64) {
 	t.Helper()
 	if file == nil || file.Priority != priority || file.Sequence != sequence {
-		t.Fatalf("goal pair = %d:%d, want %d:%d", file.Priority, file.Sequence, priority, sequence)
+		t.Fatalf("goal pair = %+v, want %d:%d", file, priority, sequence)
 	}
 }
 

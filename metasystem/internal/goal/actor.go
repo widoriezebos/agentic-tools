@@ -10,6 +10,7 @@ package goal
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // ResolveMachine reads the durable machine nickname. There is no
@@ -25,6 +26,21 @@ func ResolveMachine(root string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no machine nickname is enrolled and hostnames are never published: run  git config metasystem.goal.machine <nickname>  once on this machine")
+}
+
+// ValidateMachineNickname checks the shared read-and-claim vocabulary. The
+// literal "-" is a valid machine name; only set-pin reserves it as its clear
+// token.
+func ValidateMachineNickname(nickname string) error {
+	if nickname == "" {
+		return fmt.Errorf("machine nickname must be one nonempty word with no whitespace")
+	}
+	for _, r := range nickname {
+		if unicode.IsSpace(r) {
+			return fmt.Errorf("machine nickname %q must be one nonempty word with no whitespace", nickname)
+		}
+	}
+	return nil
 }
 
 // NewWorld reports whether this repository has migrated: the

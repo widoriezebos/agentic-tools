@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
-	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
@@ -2361,15 +2360,7 @@ func SetPin(r VerbRequest, id, pin string) (PublishResult, error) {
 // is set-pin's clear form, so a machine enrolled under that name can
 // claim but can never be a pin target; enroll a real name.
 func validPinnedNickname(pin string) bool {
-	if pin == "" || pin == "-" {
-		return false
-	}
-	for _, r := range pin {
-		if unicode.IsSpace(r) {
-			return false
-		}
-	}
-	return true
+	return pin != "-" && ValidateMachineNickname(pin) == nil
 }
 
 // setPinRequest builds the verb's complete transaction request — the

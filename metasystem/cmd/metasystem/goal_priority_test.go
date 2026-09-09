@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
@@ -105,6 +106,126 @@ func TestGoalPriorityListing(t *testing.T) {
 	})
 }
 
+func TestGoalPrioritySelection(t *testing.T) {
+	t.Run("machine", func(t *testing.T) {
+		root := prioritySelectionFixture(t,
+			commandApprovedPriorityGoal("a", 1, 1, "m1"),
+			commandApprovedPriorityGoal("b", 1, 2, ""),
+			commandApprovedPriorityGoal("c", 1, 3, "m2"),
+		)
+		for _, test := range []struct {
+			machine string
+			want    string
+		}{
+			{machine: "m1", want: "a"},
+			{machine: "m2", want: "b"},
+			{machine: "m3", want: "b"},
+			{machine: "-", want: "b"},
+		} {
+			stdout, code := captureStdout(t, func() int {
+				return runGoalNext([]string{"--root", root, "--machine", test.machine})
+			})
+			if code != 0 || !strings.Contains(stdout, "next ready goal: "+test.want) {
+				t.Fatalf("machine %q selection: code=%d output=%q, want %s", test.machine, code, stdout, test.want)
+			}
+		}
+		implicit, implicitCode := captureStdout(t, func() int { return runGoalNext([]string{"--root", root}) })
+		if implicitCode != 0 || !strings.Contains(implicit, "continue your claimed goal: standing-validation") {
+			t.Fatalf("implicit machine did not use the same selector: code=%d output=%q", implicitCode, implicit)
+		}
+		stderr, code := captureStderr(t, func() int {
+			return runGoalNext([]string{"--root", root, "--machine", "two words"})
+		})
+		if code == 0 || !strings.Contains(stderr, "one nonempty word with no whitespace") {
+			t.Fatalf("invalid explicit machine was accepted: code=%d stderr=%q", code, stderr)
+		}
+	})
+
+	t.Run("fetch-failure", func(t *testing.T) {
+		root := prioritySelectionFixture(t, commandApprovedPriorityGoal("fetch-candidate", 1, 1, ""))
+		goalSyncMutationGit(t, root, "config", "goal.sync-remote", "missing-remote")
+		var stdout string
+		stderr, code := captureStderr(t, func() int {
+			var inner int
+			stdout, inner = captureStdout(t, func() int {
+				return runGoalNext([]string{"--root", root, "--machine", "m1", "--fetch"})
+			})
+			return inner
+		})
+		if code == 0 || !strings.Contains(stderr, "git fetch") || strings.Contains(stdout, "no claimable goal") {
+			t.Fatalf("failed fresh fetch became an empty selection: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+	})
+
+	t.Run("configuration-failure", func(t *testing.T) {
+		root := prioritySelectionFixture(t, commandApprovedPriorityGoal("config-candidate", 1, 1, ""))
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier3BudgetKey+"=malformed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var stdout string
+		stderr, code := captureStderr(t, func() int {
+			var inner int
+			stdout, inner = captureStdout(t, func() int {
+				return runGoalNext([]string{"--root", root, "--machine", "m1"})
+			})
+			return inner
+		})
+		if code == 0 || !strings.Contains(stderr, "goal next could not answer") || !strings.Contains(stderr, config.Tier3BudgetKey) || strings.Contains(stdout, "no claimable goal") {
+			t.Fatalf("configuration uncertainty became an empty answer: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+	})
+
+	t.Run("claim-race", func(t *testing.T) {
+		root := prioritySelectionFixture(t,
+			commandApprovedPriorityGoal("a", 1, 1, ""),
+			commandApprovedPriorityGoal("b", 1, 2, ""),
+		)
+		first, code := captureStdout(t, func() int {
+			return runGoalNext([]string{"--root", root, "--machine", "m1", "--fetch"})
+		})
+		if code != 0 || !strings.Contains(first, "next ready goal: a") {
+			t.Fatalf("initial selection did not observe a: code=%d output=%q", code, first)
+		}
+		endpoint, err := goal.ResolveEndpoint(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed, err := goal.Claim(goal.VerbRequest{
+			Endpoint: endpoint,
+			Actor:    goal.Actor{Machine: "m2", Lineage: "claim-race-winner"},
+			Ulid:     "01ARZ3NDEKTSV4RRFFQ69G5FC0",
+			Now:      time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC), ClaimEpoch: 1,
+		}, "a")
+		if err != nil || claimed.Outcome != goal.OutcomeConfirmed {
+			t.Fatalf("competing claim did not publish: result=%+v err=%v", claimed, err)
+		}
+		second, secondCode := captureStdout(t, func() int {
+			return runGoalNext([]string{"--root", root, "--machine", "m1", "--fetch"})
+		})
+		if secondCode != 0 || !strings.Contains(second, "next ready goal: b") || strings.Contains(second, "next ready goal: a") {
+			t.Fatalf("selection after the lost claim did not re-read the frontier: code=%d output=%q", secondCode, second)
+		}
+	})
+
+	t.Run("empty-messages", func(t *testing.T) {
+		foreign := commandApprovedPriorityGoal("foreign", 1, 1, "m2")
+		foreign.Labels = []string{"machine-only"}
+		root := prioritySelectionFixture(t, foreign)
+		labelEmpty, labelCode := captureStdout(t, func() int {
+			return runGoalNext([]string{"--root", root, "--machine", "m1", "--label", "absent"})
+		})
+		if labelCode != 0 || !strings.HasSuffix(labelEmpty, "no goal matches --label absent\n") {
+			t.Fatalf("label-filtered empty answer: code=%d output=%q", labelCode, labelEmpty)
+		}
+		machineEmpty, machineCode := captureStdout(t, func() int {
+			return runGoalNext([]string{"--root", root, "--machine", "m1", "--label", "machine-only"})
+		})
+		if machineCode != 0 || !strings.HasSuffix(machineEmpty, "no claimable goal for machine m1; no matching eligible work\n") {
+			t.Fatalf("machine-scoped empty answer: code=%d output=%q", machineCode, machineEmpty)
+		}
+	})
+}
+
 func priorityListingFixture(t *testing.T) string {
 	t.Helper()
 	root := syncedClaimedGoalFixture(t)
@@ -138,6 +259,40 @@ func priorityListingFixture(t *testing.T) string {
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	return root
+}
+
+func prioritySelectionFixture(t *testing.T, files ...*goal.GoalFile) string {
+	t.Helper()
+	root := syncedClaimedGoalFixture(t)
+	for _, file := range files {
+		path := filepath.Join(root, "plans", "goals", file.Id+".md")
+		if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	goalSyncMutationGit(t, root, "add", "plans/goals")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "priority selection fixture")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	return root
+}
+
+func commandApprovedPriorityGoal(id string, priority uint8, sequence uint64, pin string) *goal.GoalFile {
+	file := commandPriorityGoal(id, goal.StateApproved)
+	file.Priority, file.Sequence, file.Pinned = priority, sequence, pin
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1}
+	file.Budget = budget
+	file.Revision = 2
+	approvedAt := "2026-09-08T10:00:00Z"
+	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FB1", "human", id)
+	file.History = append(file.History, goal.HistoryLine{
+		At: approvedAt, Opid: opid, Verb: "approve", Actor: "human:Wido", Targets: []string{id}, Keep: -1,
+	})
+	file.Approved = &goal.ApprovalRecord{
+		By: "human:Wido", At: approvedAt, Revision: 2, Opid: opid,
+		Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(file.Intent, file.Tier, *budget),
+	}
+	return file
 }
 
 func commandPriorityGoal(id, state string) *goal.GoalFile {

@@ -54,7 +54,7 @@ func ProjectAt(root, tip string, at ...time.Time) (Projection, error) {
 	if len(at) > 0 {
 		now = at[0]
 	}
-	return Projection{Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}, nil
+	return Projection{Root: root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}, nil
 }
 
 // LedgerChanges returns the proven consecutive first-parent states from

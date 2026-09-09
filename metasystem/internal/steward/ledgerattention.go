@@ -144,18 +144,18 @@ type ledgerSnapshot struct {
 	Queue  []string
 }
 
-func snapshotLedger(projection goal.Projection, machine string) ledgerSnapshot {
-	verdict := goal.Next(projection, machine)
+func snapshotLedger(projection goal.Projection, machine string) (ledgerSnapshot, error) {
+	verdict, err := goal.Next(projection, machine)
+	if err != nil {
+		return ledgerSnapshot{}, err
+	}
 	snapshot := ledgerSnapshot{Ready: append([]string(nil), verdict.Ready...)}
 	awaiting := make(map[string]bool, len(verdict.Awaiting))
 	for _, id := range verdict.Awaiting {
 		awaiting[id] = true
 	}
-	type queueRow struct {
-		id, opened string
-	}
-	var rows []queueRow
-	for id, file := range projection.Tree.Live {
+	for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
+		file := projection.Tree.Live[id]
 		if file.State != goal.StateQueued && file.State != goal.StateApproved {
 			continue
 		}
@@ -163,20 +163,10 @@ func snapshotLedger(projection goal.Projection, machine string) ledgerSnapshot {
 			snapshot.Pinned = append(snapshot.Pinned, id)
 		}
 		if awaiting[id] {
-			rows = append(rows, queueRow{id: id, opened: file.OpenedAt})
+			snapshot.Queue = append(snapshot.Queue, id)
 		}
 	}
-	sort.Strings(snapshot.Pinned)
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].opened != rows[j].opened {
-			return rows[i].opened < rows[j].opened
-		}
-		return rows[i].id < rows[j].id
-	})
-	for _, row := range rows {
-		snapshot.Queue = append(snapshot.Queue, row.id)
-	}
-	return snapshot
+	return snapshot, nil
 }
 
 func addedStrings(before, after []string) []string {
@@ -232,7 +222,10 @@ func buildLedgerAttentionStage(repoRoot, machine, before, after string, epoch ui
 	if err != nil {
 		return ledgerAttentionStage{}, err
 	}
-	previous := snapshotLedger(previousProjection, machine)
+	previous, err := snapshotLedger(previousProjection, machine)
+	if err != nil {
+		return ledgerAttentionStage{}, err
+	}
 	changes, err := goal.LedgerChanges(repoRoot, before, after)
 	if err != nil {
 		return ledgerAttentionStage{}, err
@@ -249,7 +242,10 @@ func buildLedgerAttentionStage(repoRoot, machine, before, after string, epoch ui
 		if err != nil {
 			return ledgerAttentionStage{}, err
 		}
-		current := snapshotLedger(projection, machine)
+		current, err := snapshotLedger(projection, machine)
+		if err != nil {
+			return ledgerAttentionStage{}, err
+		}
 		event := LedgerAttentionEvent{
 			SourceID:  eventSourceID(change.Tip, stage.TopologyEpoch),
 			Tip:       change.Tip,
@@ -485,7 +481,10 @@ func RunLedgerAttention(repoRoot string, now time.Time) LedgerAttentionReport {
 		if err != nil {
 			return failedLedgerAttention(repoRoot, state, now, err)
 		}
-		baseline := snapshotLedger(projection, machine)
+		baseline, err := snapshotLedger(projection, machine)
+		if err != nil {
+			return failedLedgerAttention(repoRoot, state, now, err)
+		}
 		state.DiffedTip, state.ExaminedTip = accepted, accepted
 		state.Ready, state.Pinned, state.Queue = baseline.Ready, baseline.Pinned, baseline.Queue
 		if err := saveLedgerAttentionState(repoRoot, state); err != nil {

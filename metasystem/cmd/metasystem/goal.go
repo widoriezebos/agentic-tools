@@ -459,14 +459,9 @@ func runGoalShow(args []string) int {
 	return 0
 }
 
-// nextSynced prints the frontier line for this machine.
-func nextSynced(root string, requiredLabels ...string) int {
+// nextSynced prints the ordered frontier line for one machine.
+func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string) int {
 	e, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	machine, err := goal.ResolveMachine(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -476,7 +471,7 @@ func nextSynced(root string, requiredLabels ...string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	p, err := goal.Project(e, false, now)
+	p, err := goal.Project(e, fetchFirst, now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -486,20 +481,43 @@ func nextSynced(root string, requiredLabels ...string) int {
 	for _, banner := range p.Banners {
 		fmt.Println(banner)
 	}
-	v := goal.Next(p, machine, requiredLabels...)
-	switch {
-	case len(v.Claimed) > 0:
-		fmt.Println("continue your claimed goal: " + v.Claimed[0])
-	case len(v.Ready) > 0:
-		fmt.Println("next ready goal: " + v.Ready[0])
-	case len(v.Blocked) > 0:
-		fmt.Println("all approved goals are blocked; the first is " + v.Blocked[0])
-	case len(v.Awaiting) > 0:
-		fmt.Printf("no claimable goal; %d await the human's approval (first: %s)\n", len(v.Awaiting), v.Awaiting[0])
-	case len(requiredLabels) > 0:
-		fmt.Println("no goal matches --label " + strings.Join(requiredLabels, " --label "))
+	frontier, frontierErr := goal.Next(p, machine, requiredLabels...)
+	if frontierErr != nil {
+		fmt.Fprintln(os.Stderr, "goal next could not answer: "+frontierErr.Error())
+		return 1
+	}
+	selection := goal.SelectNext(frontier)
+	switch selection.Kind {
+	case goal.NextSelectionContinue:
+		fmt.Println("continue your claimed goal: " + selection.GoalID)
+	case goal.NextSelectionReady:
+		fmt.Println("next ready goal: " + selection.GoalID)
 	default:
-		fmt.Println("the backlog is empty; open a goal or rest")
+		if len(requiredLabels) > 0 {
+			matched := false
+			for _, file := range p.Tree.Live {
+				if goal.MatchesLabels(file.Labels, requiredLabels) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				fmt.Println("no goal matches --label " + strings.Join(requiredLabels, " --label "))
+				return 0
+			}
+		}
+		line := "no claimable goal for machine " + machine
+		switch {
+		case len(frontier.Blocked) > 0:
+			line += "; first blocked goal: " + frontier.Blocked[0]
+		case len(frontier.Awaiting) > 0:
+			line += fmt.Sprintf("; %d await the human's approval (first: %s)", len(frontier.Awaiting), frontier.Awaiting[0])
+		case len(p.Tree.Live) == 0:
+			line += "; the backlog is empty"
+		default:
+			line += "; no matching eligible work"
+		}
+		fmt.Println(line)
 	}
 	return 0
 }
@@ -509,20 +527,46 @@ func nextSynced(root string, requiredLabels ...string) int {
 func runGoalNext(args []string) int {
 	flags := flag.NewFlagSet("goal next", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
+	machineFlag := flags.String("machine", "", "machine nickname whose ordered frontier to inspect")
+	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before selecting")
 	var labels repeatedStrings
 	flags.Var(&labels, "label", "label token required on recommendation candidates (repeatable)")
 	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "goal next accepts flags only")
 		return 2
 	}
 	if err := goal.ValidateLabels(labels); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	machineProvided := false
+	flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == "machine" {
+			machineProvided = true
+		}
+	})
 	if converted(*root) {
-		return nextSynced(*root, labels...)
+		machine := *machineFlag
+		if machineProvided {
+			if err := goal.ValidateMachineNickname(machine); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+		} else {
+			var err error
+			machine, err = goal.ResolveMachine(*root)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+		}
+		return nextSynced(*root, machine, *fetch, labels...)
 	}
-	if len(labels) > 0 {
-		fmt.Fprintln(os.Stderr, "goal next --label reads the synced backlog; this checkout still carries the legacy ledger")
+	if len(labels) > 0 || machineProvided || *fetch {
+		fmt.Fprintln(os.Stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
 		return 1
 	}
 	store := &goal.Store{Root: *root}

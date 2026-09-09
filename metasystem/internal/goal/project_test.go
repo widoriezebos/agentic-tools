@@ -38,13 +38,18 @@ func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 		t.Fatal("the fetching projection advances onto the validated tip")
 	}
 	// The frontier read: both queued goals are ready.
-	v := Next(p2, "mac-a")
+	v, err := Next(p2, "mac-a")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(v.Awaiting) != 2 || len(v.Ready) != 0 || len(v.Claimed) != 0 {
 		t.Fatalf("the frontier names unapproved work as awaiting: %+v", v)
 	}
 }
 
 func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
+	root := t.TempDir()
+	seedGoalNormConfig(t, root)
 	held := vGoal("held", StateClaimed)
 	held.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: "2026-08-20T10:05:00Z"}
 	held.Labels = []string{"other"}
@@ -52,34 +57,48 @@ func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
 	one.Labels = []string{"alpha", "shared"}
 	two := approvedGoalFixture(vGoal("two", StateQueued), testBudget())
 	two.Labels = []string{"beta", "shared"}
-	p := Projection{Tree: &TreeGoals{Live: map[string]*GoalFile{
+	p := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
 		"held": held, "one": one, "two": two,
 	}, Done: map[string]*GoalFile{}}}
 
-	v := Next(p, "mac-a", "alpha")
+	v, err := Next(p, "mac-a", "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(v.Claimed) != 1 || v.Claimed[0] != "held" || len(v.Ready) != 1 || v.Ready[0] != "one" {
 		t.Fatalf("the held claim remains first while the candidate set narrows: %+v", v)
 	}
-	v = Next(p, "other-machine", "shared", "beta")
+	v, err = Next(p, "other-machine", "shared", "beta")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(v.Claimed) != 0 || len(v.Ready) != 1 || v.Ready[0] != "two" {
 		t.Fatalf("repeated labels combine with AND: %+v", v)
 	}
-	v = Next(p, "other-machine", "absent")
+	v, err = Next(p, "other-machine", "absent")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(v.Claimed) != 0 || len(v.Ready) != 0 || len(v.Blocked) != 0 {
 		t.Fatalf("an empty filtered candidate set is distinguishable: %+v", v)
 	}
 }
 
 func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
+	root := t.TempDir()
+	seedGoalNormConfig(t, root)
 	foreign := approvedGoalFixture(vGoal("foreign-pinned", StateQueued), testBudget())
 	foreign.Arc = "shared-arc"
 	foreign.Pinned = "mac-b"
 	local := approvedGoalFixture(vGoal("local-member", StateQueued), testBudget())
 	local.Arc = "shared-arc"
-	p := Projection{Tree: &TreeGoals{Live: map[string]*GoalFile{
+	p := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
 		foreign.Id: foreign, local.Id: local,
 	}, Done: map[string]*GoalFile{}}}
-	verdict := Next(p, "mac-a")
+	verdict, err := Next(p, "mac-a")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Join(verdict.Ready, ",") != "local-member" {
 		t.Fatalf("a sibling's foreign pin hid an independently claimable member: %+v", verdict)
 	}
@@ -103,7 +122,10 @@ func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 		t.Fatalf("local mode banners the promotion goal: %v", p.Banners)
 	}
 	// The frontier reads the solo goal ready.
-	v := Next(p, "mac-solo")
+	v, err := Next(p, "mac-solo")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(v.Ready) != 1 || v.Ready[0] != "solo-goal" {
 		t.Fatalf("the solo frontier: %+v", v)
 	}

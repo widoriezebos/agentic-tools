@@ -37,8 +37,8 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 	}
 }
 
-// A converted queue without valid structured budgets is visible but is not
-// the claimable backlog this invariant blocks on.
+// A converted queue without valid structured budgets is visible in backlog
+// order but is not the claimable backlog this invariant blocks on.
 func TestTurnVerdictConvertedBudgetlessQueueIsQuiet(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"older": {
@@ -55,8 +55,8 @@ func TestTurnVerdictConvertedBudgetlessQueueIsQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.ShouldBlock || !strings.Contains(v.Display, "older") {
-		t.Fatalf("the oldest budgetless goal must stay visible without blocking: %+v", v)
+	if v.ShouldBlock || !strings.Contains(v.Display, "newer") {
+		t.Fatalf("the ordered budgetless head must stay visible without blocking: %+v", v)
 	}
 }
 

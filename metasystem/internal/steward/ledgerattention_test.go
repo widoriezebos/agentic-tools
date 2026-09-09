@@ -266,15 +266,24 @@ func bedTime() time.Time {
 }
 
 func TestSnapshotLedgerSeparatesApprovedReadyAwaitingAndPins(t *testing.T) {
-	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	approved := func(id, opened, authority, reviewBy, pin string) *goal.GoalFile {
-		return &goal.GoalFile{
-			Id: id, State: goal.StateApproved, Intent: "Work on " + id, Origin: goal.OriginMain,
-			NextStep: "Continue.", OpenedAt: opened, Budget: &budget, Pinned: pin,
-			Approved: &goal.ApprovalRecord{Authority: authority, ReviewBy: reviewBy},
+		file := approvedStewardGoal(id, "Work on "+id, "Continue.", opened)
+		file.Pinned = pin
+		if authority == goal.ApprovalAuthorityRelayed {
+			file.Approved.Authority = authority
+			file.Approved.ReviewBy = reviewBy
+			event := &file.History[file.Approved.Revision-1]
+			event.AuthorityOutcome = goal.AuthorityOutcomeTemporaryHumanWord
+			event.AuthorityReviewBy = reviewBy
 		}
+		return file
 	}
 	projection := goal.Projection{
+		Root: root,
 		Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{
 			"ready":   approved("ready", "2026-09-01T00:00:02Z", goal.ApprovalAuthorityProven, "", "mac-a"),
 			"expired": approved("expired", "2026-09-01T00:00:00Z", goal.ApprovalAuthorityRelayed, "2026-09-01", "mac-a"),
@@ -286,15 +295,56 @@ func TestSnapshotLedgerSeparatesApprovedReadyAwaitingAndPins(t *testing.T) {
 		}},
 		Horizon: goal.ApprovalHorizon{Now: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)},
 	}
-	snapshot := snapshotLedger(projection, "mac-a")
+	snapshot, err := snapshotLedger(projection, "mac-a")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := strings.Join(snapshot.Ready, ","); got != "ready" {
 		t.Fatalf("approved ready frontier=%q, want ready", got)
 	}
 	if got := strings.Join(snapshot.Queue, ","); got != "expired,queued" {
-		t.Fatalf("awaiting queue=%q, want expired,queued in opened-at order", got)
+		t.Fatalf("awaiting queue=%q, want the unranked identifier order expired,queued", got)
 	}
 	if got := strings.Join(snapshot.Pinned, ","); got != "expired,queued,ready" {
 		t.Fatalf("local queued-or-approved pins=%q, want expired,queued,ready", got)
+	}
+}
+
+func TestPriorityLedgerSnapshot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	queued := func(id, opened string, priority uint8, sequence uint64) *goal.GoalFile {
+		return &goal.GoalFile{
+			Id: id, State: goal.StateQueued, Intent: "Wait for " + id, Origin: goal.OriginMain,
+			NextStep: "Wait.", OpenedAt: opened, Pinned: "mac-a", Priority: priority, Sequence: sequence,
+		}
+	}
+	approved := func(id, opened string, priority uint8, sequence uint64) *goal.GoalFile {
+		file := approvedStewardGoal(id, "Work on "+id, "Continue.", opened)
+		file.Pinned, file.Priority, file.Sequence = "mac-a", priority, sequence
+		return file
+	}
+	projection := goal.Projection{Root: root, Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{
+		"z-queue-first": queued("z-queue-first", "2026-09-01T00:00:04Z", 1, 1),
+		"z-ready-first": approved("z-ready-first", "2026-09-01T00:00:03Z", 1, 2),
+		"a-queue-later": queued("a-queue-later", "2026-09-01T00:00:02Z", 2, 1),
+		"a-ready-later": approved("a-ready-later", "2026-09-01T00:00:01Z", 2, 2),
+	}}}
+
+	snapshot, err := snapshotLedger(projection, "mac-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(snapshot.Ready, ","); got != "z-ready-first,a-ready-later" {
+		t.Fatalf("ready projection sorted by age or identifier instead of rank: %q", got)
+	}
+	if got := strings.Join(snapshot.Queue, ","); got != "z-queue-first,a-queue-later" {
+		t.Fatalf("waiting projection sorted by age or identifier instead of rank: %q", got)
+	}
+	if got := strings.Join(snapshot.Pinned, ","); got != "z-queue-first,z-ready-first,a-queue-later,a-ready-later" {
+		t.Fatalf("pinned diagnostic did not filter the ordered traversal: %q", got)
 	}
 }
 

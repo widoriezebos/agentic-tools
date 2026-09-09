@@ -3,6 +3,7 @@ package goal
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -266,12 +267,62 @@ func approvalRequired(f *GoalFile, verb string) error {
 	return fmt.Errorf("APPROVAL_REQUIRED: goal %s is %s and not approved for execution; only the human approves it with goal approve -- this %s is refused", id, state, verb)
 }
 
-func budgetHasNormCoverage(repoRoot string, f *GoalFile, budget Budget) (box Budget, covered bool, err error) {
-	tier := f.Tier
+// goalAdmissionRefusal marks a judgement about one goal. Configuration and
+// repository-read failures remain unwrapped so frontier readers can fail the
+// whole question instead of silently attributing uncertainty to a candidate.
+type goalAdmissionRefusal struct{ cause error }
+
+func (r *goalAdmissionRefusal) Error() string { return r.cause.Error() }
+func (r *goalAdmissionRefusal) Unwrap() error { return r.cause }
+
+func refuseGoalAdmission(cause error) error { return &goalAdmissionRefusal{cause: cause} }
+
+func isGoalAdmissionRefusal(err error) bool {
+	var refusal *goalAdmissionRefusal
+	return errors.As(err, &refusal)
+}
+
+type claimAdmissionBoxResult struct {
+	box Budget
+	err error
+}
+
+type claimAdmissionContext struct {
+	repoRoot string
+	loaded   bool
+	set      *config.TierBoxSet
+	loadErr  error
+	resolved map[uint8]claimAdmissionBoxResult
+}
+
+var loadClaimAdmissionTierBoxes = config.LoadTierBoxSet
+
+func newClaimAdmissionContext(repoRoot string) *claimAdmissionContext {
+	return &claimAdmissionContext{repoRoot: repoRoot, resolved: map[uint8]claimAdmissionBoxResult{}}
+}
+
+func (c *claimAdmissionContext) tierBox(tier uint8) (Budget, error) {
 	if tier == 0 {
 		tier = 3
 	}
-	box, err = config.TierBox(filepath.Join(repoRoot, "metasystem.conf"), tier)
+	if result, exists := c.resolved[tier]; exists {
+		return result.box, result.err
+	}
+	if !c.loaded {
+		c.set, c.loadErr = loadClaimAdmissionTierBoxes(filepath.Join(c.repoRoot, "metasystem.conf"))
+		c.loaded = true
+	}
+	if c.loadErr != nil {
+		return Budget{}, c.loadErr
+	}
+	box, err := c.set.TierBox(tier)
+	c.resolved[tier] = claimAdmissionBoxResult{box: box, err: err}
+	return box, err
+}
+
+func budgetHasNormCoverageWithContext(context *claimAdmissionContext, f *GoalFile, budget Budget) (box Budget, covered bool, err error) {
+	tier := f.Tier
+	box, err = context.tierBox(tier)
 	if err != nil {
 		return Budget{}, false, err
 	}
@@ -281,25 +332,33 @@ func budgetHasNormCoverage(repoRoot string, f *GoalFile, budget Budget) (box Bud
 	return box, f.NormApproval != nil && f.NormApproval.Minutes >= budget.ReservedJobMinutesLimit && f.NormApproval.ReviewRounds >= budget.ReviewRoundLimit, nil
 }
 
+func budgetHasNormCoverage(repoRoot string, f *GoalFile, budget Budget) (box Budget, covered bool, err error) {
+	return budgetHasNormCoverageWithContext(newClaimAdmissionContext(repoRoot), f, budget)
+}
+
 // requireApprovedForClaim is the single admission gate for every path that
 // creates a claimed revision.
 func requireApprovedForClaim(repoRoot string, t *TreeGoals, f *GoalFile, now time.Time, verb string) (Budget, error) {
+	return requireApprovedForClaimWithContext(newClaimAdmissionContext(repoRoot), t, f, now, verb)
+}
+
+func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeGoals, f *GoalFile, now time.Time, verb string) (Budget, error) {
 	if f == nil || f.Approved == nil || f.Budget == nil {
-		return Budget{}, approvalRequired(f, verb)
+		return Budget{}, refuseGoalAdmission(approvalRequired(f, verb))
 	}
 	if err := f.ValidateApprovalRecord(); err != nil {
-		return Budget{}, fmt.Errorf("APPROVAL_REQUIRED: goal %s has an invalid approval: %v", f.Id, err)
+		return Budget{}, refuseGoalAdmission(fmt.Errorf("APPROVAL_REQUIRED: goal %s has an invalid approval: %v", f.Id, err))
 	}
-	box, covered, err := budgetHasNormCoverage(repoRoot, f, *f.Budget)
+	box, covered, err := budgetHasNormCoverageWithContext(context, f, *f.Budget)
 	if err != nil {
 		return Budget{}, err
 	}
 	if !covered {
-		return Budget{}, refuseGoalNorm(f.Id, *f.Budget, box)
+		return Budget{}, refuseGoalAdmission(refuseGoalNorm(f.Id, *f.Budget, box))
 	}
 	if expired, why := f.ApprovalExpired(approvalHorizon(t, now)); expired {
-		return Budget{}, fmt.Errorf("APPROVAL_EXPIRED: goal %s was approved by a relayed word (review by %s, approved %s); that approval no longer admits new work because %s; a fresh approval is required at the enrolled terminal",
-			f.Id, f.Approved.ReviewBy, f.Approved.At, why)
+		return Budget{}, refuseGoalAdmission(fmt.Errorf("APPROVAL_EXPIRED: goal %s was approved by a relayed word (review by %s, approved %s); that approval no longer admits new work because %s; a fresh approval is required at the enrolled terminal",
+			f.Id, f.Approved.ReviewBy, f.Approved.At, why))
 	}
 	return *f.Budget, nil
 }

@@ -466,7 +466,7 @@ func families() []family {
 				{"detach", "take a goal out of its arc (releases a riding claim)", runGoalDetach},
 				{"list", "print the parsed ledger as JSON (read-only; --pretty for eyes)", runGoalList},
 				{"show", "print ONE goal whole: fields, claim, park, history (read-only)", runGoalShow},
-				{"next", "print the one orientation line (read-only, the universal fallback)", runGoalNext},
+				{"next", "select ordered claimable work for one machine (read-only)", runGoalNext},
 				{"reconcile", "adopt, restore, or authority-replay bytes the verbs did not write", runGoalReconcile},
 				{"migrate", "the cutover: one commit turns the legacy ledger into the multi-machine tree (human act, reviewed bytes)", runGoalMigrate},
 				{"fetch", "the read-side advance: validate the canonical tip and move the accepted ref", runGoalFetch},

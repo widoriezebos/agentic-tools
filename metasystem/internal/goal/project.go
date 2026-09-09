@@ -25,6 +25,7 @@ import (
 
 // Projection is one read of the accepted world.
 type Projection struct {
+	Root    string
 	Tip     string
 	Tree    *TreeGoals
 	Banners []string
@@ -62,7 +63,7 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 	if err != nil {
 		return Projection{}, err
 	}
-	p := Projection{Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}
+	p := Projection{Root: e.Root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}
 
 	// The durable sync-mode identity: the root record's word against
 	// the clone's config. A local-mode ledger with a remote config is
@@ -184,16 +185,14 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string) (string, error) {
 
 // ClaimableBudgetedWork is the shared backlog-and-activity predicate consumed
 // by both TurnVerdict and the steward. Claimable is goal.Next's ready frontier
-// with a valid structured budget in the converted world, and every queued
-// legacy goal before migration. Pinned maps claimable converted goals to their
-// non-empty machine nickname and remains nil for legacy work. InFlight contains
-// only claims and jobs joined to a process that is alive at its recorded birth
-// identity. NonTerminalJobs contains every job id whose record has not reached
-// a terminal status, independent of whether its process is live.
+// in the converted world, and every queued legacy goal before migration.
+// InFlight contains only claims and jobs joined to a process that is alive at
+// its recorded birth identity. NonTerminalJobs contains every job id whose
+// record has not reached a terminal status, independent of whether its process
+// is live.
 type ClaimableBudgetedWork struct {
 	Claimed         []string
 	Claimable       []string
-	Pinned          map[string]string
 	InFlight        []string
 	NonTerminalJobs []string
 	Queued          int
@@ -309,7 +308,10 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 	if projection.Tree == nil {
 		return ClaimableBudgetedWork{}, fmt.Errorf("the accepted goal tree is unreadable")
 	}
-	frontier := Next(projection, machine)
+	frontier, err := Next(projection, machine)
+	if err != nil {
+		return ClaimableBudgetedWork{}, err
+	}
 	work := ClaimableBudgetedWork{
 		Claimed:  append([]string(nil), frontier.Claimed...),
 		GoalFree: projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
@@ -321,18 +323,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 		}
 	}
 	work.Queued = len(frontier.Awaiting)
-	for _, id := range frontier.Ready {
-		file := projection.Tree.Live[id]
-		if file != nil && file.Budget != nil && file.Budget.Validate() == nil {
-			work.Claimable = append(work.Claimable, id)
-			if file.Pinned != "" {
-				if work.Pinned == nil {
-					work.Pinned = make(map[string]string)
-				}
-				work.Pinned[id] = file.Pinned
-			}
-		}
-	}
+	work.Claimable = append(work.Claimable, frontier.Ready...)
 	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, claimLineages, false, prober)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
@@ -499,20 +490,51 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 	return activity, nonTerminal, nil
 }
 
-// NextVerdict is the frontier read the dispatcher and the steward
-// consume: claimed-first, then the queued frontier, then blocked.
+// NextVerdict is the complete ordered frontier read by backlog health,
+// dispatch, and steward decisions.
 type NextVerdict struct {
-	Claimed  []string // this machine's claimed goals, sorted
+	Claimed  []string // this machine's claimed goals in backlog order
 	Ready    []string // approved and unexpired with every blocker done
 	Blocked  []string // approved and unexpired behind an open blocker
 	Awaiting []string // queued or carrying an expired relayed approval
 }
 
-// Next computes the frontier for one machine from a projection.
-func Next(p Projection, machine string, requiredLabels ...string) NextVerdict {
+type NextSelectionKind string
+
+const (
+	NextSelectionContinue NextSelectionKind = "continue"
+	NextSelectionReady    NextSelectionKind = "ready"
+	NextSelectionNone     NextSelectionKind = "none"
+)
+
+// NextSelection is the one orientation outcome for a machine. A held claim
+// always wins over waiting work so a read never directs a machine into a
+// second claim.
+type NextSelection struct {
+	Kind   NextSelectionKind
+	GoalID string
+}
+
+// SelectNext reduces the complete frontier to one machine action while
+// leaving NextVerdict.Ready intact for backlog-health consumers.
+func SelectNext(frontier NextVerdict) NextSelection {
+	if len(frontier.Claimed) > 0 {
+		return NextSelection{Kind: NextSelectionContinue, GoalID: frontier.Claimed[0]}
+	}
+	if len(frontier.Ready) > 0 {
+		return NextSelection{Kind: NextSelectionReady, GoalID: frontier.Ready[0]}
+	}
+	return NextSelection{Kind: NextSelectionNone}
+}
+
+// Next computes the frontier for one machine from a projection. A judgement
+// about one goal leaves that goal behaving as before; uncertainty about the
+// repository's admission law makes the whole frontier indeterminate.
+func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, error) {
 	v := NextVerdict{}
 	t := p.Tree
-	for _, id := range sortedGoalIds(t.Live) {
+	admission := newClaimAdmissionContext(p.Root)
+	for _, id := range OrderedOpenGoalIDs(t.Live) {
 		f := t.Live[id]
 		switch f.State {
 		case StateClaimed:
@@ -544,11 +566,17 @@ func Next(p Projection, machine string, requiredLabels ...string) NextVerdict {
 				}
 			}
 			if ready {
-				v.Ready = append(v.Ready, id)
+				// A ranked head that claim would refuse must not mask later
+				// work, so claim admission owns this final readiness check.
+				if _, err := requireApprovedForClaimWithContext(admission, t, f, p.Horizon.Now, "claim"); err == nil {
+					v.Ready = append(v.Ready, id)
+				} else if !isGoalAdmissionRefusal(err) {
+					return NextVerdict{}, fmt.Errorf("cannot answer claimable backlog: %w", err)
+				}
 			} else {
 				v.Blocked = append(v.Blocked, id)
 			}
 		}
 	}
-	return v
+	return v, nil
 }

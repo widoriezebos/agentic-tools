@@ -1147,13 +1147,19 @@ func TestMachinePinning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frontierA := Next(Projection{Tree: frontierTree}, "mac-a")
+	frontierA, err := Next(Projection{Root: a, Tree: frontierTree}, "mac-a")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, id := range frontierA.Ready {
 		if id == "gpu-work" {
 			t.Fatal("a foreign-pinned goal must not be mac-a's ready work")
 		}
 	}
-	frontierB := Next(Projection{Tree: frontierTree}, "mac-b")
+	frontierB, err := Next(Projection{Root: a, Tree: frontierTree}, "mac-b")
+	if err != nil {
+		t.Fatal(err)
+	}
 	readyOnB := false
 	for _, id := range frontierB.Ready {
 		if id == "gpu-work" {

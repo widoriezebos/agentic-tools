@@ -467,32 +467,12 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 the steward claims if needed and continues the seat's goal", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
 		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
-		len(work.Claimable), idleBacklogNames(*work, options.SeatActor.Machine), countText, options.StopHookActive))
+		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive))
 }
 
-func idleBacklogNames(work ClaimableBudgetedWork, machine string) string {
-	names := make([]string, 0, min(5, len(work.Claimable)))
-	if machine != "" {
-		for _, id := range work.Claimable {
-			if work.Pinned[id] == machine {
-				names = append(names, id)
-				if len(names) == 5 {
-					break
-				}
-			}
-		}
-	}
-	if len(names) < 5 {
-		for _, id := range work.Claimable {
-			if machine != "" && work.Pinned[id] == machine {
-				continue
-			}
-			names = append(names, id)
-			if len(names) == 5 {
-				break
-			}
-		}
-	}
+func idleBacklogNames(work ClaimableBudgetedWork) string {
+	limit := min(5, len(work.Claimable))
+	names := append([]string(nil), work.Claimable[:limit]...)
 	display := strings.Join(names, ", ")
 	if remaining := len(work.Claimable) - len(names); remaining > 0 {
 		display += fmt.Sprintf(" and %d more (metasystem goal list names them all)", remaining)
@@ -968,25 +948,19 @@ func (s *Store) queuedFrontier() (first, digest string) {
 			return "", ""
 		}
 		type row struct {
-			id     string
-			rev    uint64
-			opened string
+			id  string
+			rev uint64
 		}
 		var rows []row
-		for id, f := range proj.Tree.Live {
+		for _, id := range OrderedOpenGoalIDs(proj.Tree.Live) {
+			f := proj.Tree.Live[id]
 			if f.State == StateQueued || f.State == StateApproved {
-				rows = append(rows, row{id, f.Revision, f.OpenedAt})
+				rows = append(rows, row{id, f.Revision})
 			}
 		}
 		if len(rows) == 0 {
 			return "", sha256Hex(nil)
 		}
-		sort.Slice(rows, func(i, j int) bool {
-			if rows[i].opened != rows[j].opened {
-				return rows[i].opened < rows[j].opened
-			}
-			return rows[i].id < rows[j].id
-		})
 		var lines []string
 		for _, r := range rows {
 			lines = append(lines, fmt.Sprintf("%s@%d", r.id, r.rev))

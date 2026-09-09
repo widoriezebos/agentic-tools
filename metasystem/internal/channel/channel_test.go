@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -196,19 +197,20 @@ func TestAskDedupsOpenQuestion(t *testing.T) {
 }
 func TestReportOmitsEmptyParts(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	unavailable := "Backlog order: unavailable — no accepted tree; the first fetch or the migration bootstraps it"
 	tests := []struct {
 		name string
 		text string
 		want string
 	}{
-		{name: "empty fleet", text: mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: time.UTC}), want: "m status 2026-09-04 12:00 +0000"},
+		{name: "empty fleet", text: mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: time.UTC}), want: "m status 2026-09-04 12:00 +0000\n" + unavailable},
 		{name: "needs you only", text: func() string {
 			root := t.TempDir()
 			if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "choose-colour", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
 				t.Fatal(err)
 			}
 			return mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: now, Location: time.UTC})
-		}(), want: "m status 2026-09-04 12:00 +0000\nNeeds you: choose colour — Choose the launch colour."},
+		}(), want: "m status 2026-09-04 12:00 +0000\nNeeds you: choose colour — Choose the launch colour.\n" + unavailable},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -228,7 +230,7 @@ func TestReportHeadlineUsesConfiguredLocalTimeAndOffset(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	location := time.FixedZone("machine-local", 5*60*60+30*60)
 	text := mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: location})
-	if text != "m status 2026-09-04 17:30 +0530" {
+	if text != "m status 2026-09-04 17:30 +0530\nBacklog order: unavailable — no accepted tree; the first fetch or the migration bootstraps it" {
 		t.Fatalf("got %q, want configured wall-clock time and offset", text)
 	}
 	if strings.Contains(text, "12:00") {
@@ -312,10 +314,138 @@ func TestReportShowsOneQuestionTwoLandingsAndOnlyTwoNextItems(t *testing.T) {
 		"Delivered: delivery two — Ship delivery two",
 		"Next up: alpha next",
 		"Next up: beta next",
+		"Backlog first: alpha next — priority unset, sequence unset, claimed, pin fleet-one — notice: single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal",
+		"Next for fleet-one: continue alpha next",
 	}, "\n")
 	if text != want || strings.Contains(text, "gamma next") {
 		t.Fatalf("report mismatch\n--- got ---\n%s\n--- want ---\n%s", text, want)
 	}
+}
+
+func TestReportPriority(t *testing.T) {
+	t.Run("no-delivery", func(t *testing.T) {
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		global := reportGoal("global-head", "Global head.", goal.StateApproved, "m2", now)
+		global.Priority, global.Sequence = 1, 1
+		local := reportGoal("local-candidate", "Local candidate.", goal.StateApproved, "", now)
+		local.Priority, local.Sequence = 2, 1
+		root := reportLedger(t, global, local)
+
+		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		globalLine := "Backlog first: global head — priority 1, sequence 1, approved, pin m2"
+		localLine := "Next for m1: local candidate — priority 2, sequence 1, unpinned"
+		if !strings.Contains(text, globalLine) || !strings.Contains(text, localLine) || strings.Contains(text, "Next up:") {
+			t.Fatalf("status did not distinguish the global head from this machine's candidate without a delivery:\n%s", text)
+		}
+	})
+
+	t.Run("line-cap", func(t *testing.T) {
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		global := reportGoal("global-head", "Global head.", goal.StateApproved, "m2", now)
+		global.Priority, global.Sequence = 1, 1
+		local := reportGoal("local-candidate", "Local candidate.", goal.StateApproved, "", now)
+		local.Priority, local.Sequence = 2, 1
+		root := reportLedger(t, global, local)
+		for i := 0; i < 20; i++ {
+			id := fmt.Sprintf("priority-question-%02d", i)
+			if err := writeJSON(questionPath(root, id), Question{ID: id, Goal: id, State: "open", Facts: []string{"Choose safely"}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC, Undelivered: 2})
+		lines := strings.Split(text, "\n")
+		if len(lines) != 12 || !strings.Contains(text, "Backlog first: global head") || !strings.Contains(text, "Next for m1: local candidate") ||
+			!strings.HasPrefix(lines[len(lines)-1], "Undelivered: 2 channel messages") {
+			t.Fatalf("the twelve-line cap did not reserve the backlog head and final undelivered summary:\n%s", text)
+		}
+	})
+
+	t.Run("unavailable", func(t *testing.T) {
+		text := mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m1", Now: time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC), Location: time.UTC})
+		if !strings.Contains(text, "Backlog order: unavailable — no accepted tree") || strings.Contains(text, "Next for m1:") {
+			t.Fatalf("an unreadable projection implied an empty or selectable backlog:\n%s", text)
+		}
+		for _, line := range strings.Split(text, "\n") {
+			if strings.HasPrefix(line, "Backlog order:") && strings.ContainsAny(line, "\r\t") {
+				t.Fatalf("the unavailable cause occupied more than one physical status line: %q", line)
+			}
+		}
+		if got := statusLineText("one\n two\tthree"); got != "one two three" {
+			t.Fatalf("embedded whitespace was not folded for a reserved status entry: %q", got)
+		}
+	})
+
+	t.Run("configuration-failure", func(t *testing.T) {
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		candidate := reportGoal("config-candidate", "Configuration candidate.", goal.StateApproved, "", now)
+		root := reportLedger(t, candidate)
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier1BudgetKey+"=malformed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		if !strings.Contains(text, "Backlog order: unavailable — cannot answer claimable backlog") || !strings.Contains(text, config.Tier1BudgetKey) || strings.Contains(text, "none claimable") || strings.Contains(text, "Next for m1:") {
+			t.Fatalf("configuration uncertainty became an empty status answer:\n%s", text)
+		}
+	})
+
+	t.Run("stale", func(t *testing.T) {
+		now := time.Now().UTC().Add(2 * time.Hour)
+		first := reportGoal("stale-head", "Stale head.", goal.StateApproved, "", now)
+		first.Priority, first.Sequence = 1, 1
+		root := reportLedger(t, first)
+		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		var backlogLine string
+		for _, line := range strings.Split(text, "\n") {
+			if strings.HasPrefix(line, "Backlog first:") {
+				backlogLine = line
+			}
+		}
+		if !strings.Contains(backlogLine, "old") || !strings.Contains(backlogLine, "single-machine mode") {
+			t.Fatalf("projection limitations were not incorporated into the backlog line:\n%s", text)
+		}
+	})
+
+	t.Run("stale-age-does-not-repost", func(t *testing.T) {
+		firstNow := time.Now().UTC().Add(2 * time.Hour)
+		firstGoal := reportGoal("quiet-head", "Quiet head.", goal.StateApproved, "", firstNow)
+		firstGoal.Priority, firstGoal.Sequence = 1, 1
+		root := reportLedger(t, firstGoal)
+		windowStart := firstNow.Add(-4 * time.Hour)
+		first := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: firstNow, WindowStart: windowStart, Location: time.UTC})
+
+		secondNow := firstNow.Add(time.Hour)
+		second := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: secondNow, WindowStart: windowStart, Location: time.UTC})
+		if !strings.Contains(first, "accepted tree") || !strings.Contains(second, "accepted tree") {
+			t.Fatalf("staleness notice was not visible at both ages:\nfirst:\n%s\nsecond:\n%s", first, second)
+		}
+		state := StatusState{LastPost: firstNow, ContentDigest: Digest(first)}
+		if ShouldPost(state, secondNow, time.Hour, second, false) {
+			t.Fatalf("a change only in tree age triggered another post:\nfirst:\n%s\nsecond:\n%s", first, second)
+		}
+	})
+
+	t.Run("approval-binding", func(t *testing.T) {
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		marked := reportGoal("zz-marked", "Marked work.", goal.StateQueued, "m1", now)
+		marked.Priority, marked.Sequence = 1, 1
+		marked.Labels = []string{"next"}
+		root := reportLedger(t, marked)
+		text, goalID, err := ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		if err != nil || goalID != marked.Id || !strings.Contains(text, approvalRequestLine(marked.Id)) {
+			t.Fatalf("a visible approval line lost its binding: goal=%q err=%v\n%s", goalID, err, text)
+		}
+		for i := 0; i < 20; i++ {
+			id := fmt.Sprintf("binding-question-%02d", i)
+			if err := writeJSON(questionPath(root, id), Question{ID: id, Goal: id, State: "open", Facts: []string{"Choose safely"}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		text, goalID, err = ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		if err != nil || goalID != "" || strings.Contains(text, approvalRequestLine(marked.Id)) || !strings.Contains(text, "Backlog first: zz marked") {
+			t.Fatalf("a trimmed approval line retained its binding or displaced the reserved backlog line: goal=%q err=%v\n%s", goalID, err, text)
+		}
+	})
 }
 
 func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
@@ -524,7 +654,11 @@ func TestReportOmitsApprovalForElevenUnmarkedQueuedGoals(t *testing.T) {
 	}
 	root := reportLedger(t, goals...)
 	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
-	want := "fleet-one status 2026-09-04 12:00 +0000"
+	want := strings.Join([]string{
+		"fleet-one status 2026-09-04 12:00 +0000",
+		"Backlog first: feature 01 — priority unset, sequence unset, queued, unpinned — notice: single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal",
+		"Next for fleet-one: none claimable",
+	}, "\n")
 	if text != want || strings.Contains(text, "Needs you:") {
 		t.Fatalf("unmarked queued goals produced an approval decision\n--- got ---\n%s\n--- want ---\n%s", text, want)
 	}

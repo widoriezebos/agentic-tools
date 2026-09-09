@@ -199,6 +199,31 @@ func TestTierBoxesAndReviewCeiling(t *testing.T) {
 	}
 }
 
+func TestTierBoxSetReadsEachConfigurationFileOnce(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	directory := t.TempDir()
+	conf := filepath.Join(directory, "metasystem.conf")
+	putFile(t, conf, "metasystem.runtimes=fake\n"+Tier1BudgetKey+"=1h/3/360m/1/0\n"+Tier2BudgetKey+"=4h/6/720m/1/2\n")
+	putFile(t, conf+".local", Tier3BudgetKey+"=8h/10/1200m/1/3\n")
+
+	reads := map[string]int{}
+	set, err := loadTierBoxSet(conf, func(path string) ([]byte, error) {
+		reads[path]++
+		return os.ReadFile(path)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tier := range []uint8{1, 2, 3, 1, 2, 3} {
+		if _, err := set.TierBox(tier); err != nil {
+			t.Fatalf("tier %d from one configuration snapshot: %v", tier, err)
+		}
+	}
+	if reads[conf] != 1 || reads[conf+".local"] != 1 || len(reads) != 2 {
+		t.Fatalf("configuration source reads = %v, want each existing source exactly once", reads)
+	}
+}
+
 func TestTierBoxUsesDefaultsWhenConfigurationFileIsAbsent(t *testing.T) {
 	clearBudgetLawEnvironment(t)
 	conf := filepath.Join(t.TempDir(), "missing-metasystem.conf")

@@ -804,6 +804,13 @@ grep -q '^continue your claimed goal: ship-widget$' <<<"$held_next" \
 empty_next=$("$ms" goal next --root "$clone" --label absent)
 [[ "$empty_next" == "no goal matches --label absent" ]] \
   || { echo "the empty filtered candidate message is not distinct: $empty_next" >&2; exit 1; }
+"$ms" goal open --root "$clone" --id machine-only \
+	--intent "Parked matching work is not claimable." --next "Wait for it to be unparked." \
+	--risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "machine-scoped empty fixture" --label machine-only >/dev/null
+"$ms" goal park --root "$clone" --id machine-only --because "Keep the matching goal unavailable." >/dev/null
+machine_empty=$("$ms" goal next --root "$clone" --machine fixture-machine --label machine-only)
+[[ "$machine_empty" == "no claimable goal for machine fixture-machine; no matching eligible work" ]] \
+  || { echo "the machine-scoped empty candidate message is not distinct: $machine_empty" >&2; exit 1; }
 fi
 
 if [[ "$fixture_scenario" == structured-budget ]]; then

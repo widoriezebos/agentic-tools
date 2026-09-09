@@ -55,7 +55,7 @@ func installIdleLiveClaim(t *testing.T, root, lineage string) identity.Prober {
 	return idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 }
 
-func TestIdleBacklogDisplayLimitsAndPrioritizesGoalNames(t *testing.T) {
+func TestIdleBacklogDisplayLimitsAndPreservesGoalOrder(t *testing.T) {
 	tests := []struct {
 		name    string
 		work    ClaimableBudgetedWork
@@ -64,25 +64,21 @@ func TestIdleBacklogDisplayLimitsAndPrioritizesGoalNames(t *testing.T) {
 		notWant string
 	}{
 		{
-			name: "more than five promotes only this machine's pins",
+			name: "more than five preserves the supplied order",
 			work: ClaimableBudgetedWork{
 				Claimable: []string{"queue-one", "local-one", "foreign", "queue-two", "local-two", "queue-three", "queue-four"},
-				Pinned: map[string]string{
-					"local-one": "bed-m1", "foreign": "bed-m2", "local-two": "bed-m1",
-				},
 			},
 			machine: "bed-m1",
-			want:    "IDLE WITH BACKLOG: 7 claimable goals await a live claim or job: local-one, local-two, queue-one, foreign, queue-two and 2 more (metasystem goal list names them all);",
+			want:    "IDLE WITH BACKLOG: 7 claimable goals await a live claim or job: queue-one, local-one, foreign, queue-two, local-two and 2 more (metasystem goal list names them all);",
 			notWant: "local-one, local-two, foreign",
 		},
 		{
 			name: "five or fewer names every goal",
 			work: ClaimableBudgetedWork{
 				Claimable: []string{"queue-one", "local-one", "queue-two"},
-				Pinned:    map[string]string{"local-one": "bed-m1"},
 			},
 			machine: "bed-m1",
-			want:    "IDLE WITH BACKLOG: 3 claimable goals await a live claim or job: local-one, queue-one, queue-two;",
+			want:    "IDLE WITH BACKLOG: 3 claimable goals await a live claim or job: queue-one, local-one, queue-two;",
 			notWant: " more (metasystem goal list names them all)",
 		},
 	}
@@ -101,6 +97,62 @@ func TestIdleBacklogDisplayLimitsAndPrioritizesGoalNames(t *testing.T) {
 				t.Fatalf("idle backlog display unexpectedly contained %q: %s", tt.notWant, verdict.Display)
 			}
 		})
+	}
+}
+
+func TestPriorityIdleProjection(t *testing.T) {
+	ranked := budgetedQueuedGoal("z-ranked-first", "2026-08-23T00:00:02Z")
+	ranked.Priority, ranked.Sequence = 1, 1
+	pinned := budgetedQueuedGoal("a-local-pin-second", "2026-08-23T00:00:01Z")
+	pinned.Priority, pinned.Sequence, pinned.Pinned = 1, 2, "bed-m1"
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		ranked.Id: ranked,
+		pinned.Id: pinned,
+	})
+	if info, err := os.Stat(filepath.Join(root, ".git")); err != nil || !info.IsDir() {
+		t.Fatalf("priority idle fixture repository disappeared: root=%q info=%v err=%v", root, info, err)
+	}
+	if _, err := gitIn(root, "rev-parse", "--verify", AcceptedRef); err != nil {
+		t.Fatalf("priority idle fixture lacks its accepted tree: %v", err)
+	}
+
+	work, err := ReadClaimableBudgetedWork(root, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(work.Claimable, ","); got != "z-ranked-first,a-local-pin-second" {
+		t.Fatalf("the idle frontier did not preserve priority order: %q", got)
+	}
+	if got := idleBacklogNames(work); !strings.HasPrefix(got, "z-ranked-first, a-local-pin-second") {
+		t.Fatalf("the idle diagnostic promoted the local pin: %q", got)
+	}
+	if first, digest := (&Store{Root: root}).queuedFrontier(); first != "z-ranked-first" || digest == "" {
+		t.Fatalf("the queued diagnostic did not filter the ordered traversal: first=%q digest=%q", first, digest)
+	}
+	reordered := work
+	reordered.Claimable = []string{"a-local-pin-second", "z-ranked-first"}
+	if idleBacklogDigest(work) != idleBacklogDigest(reordered) {
+		t.Fatal("changing only priority order reset the idle-enforcement digest")
+	}
+
+	var prepared IdleEscalationEvent
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
+			prepared = event
+			return "intent-priority-head", nil
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-priority-head", nil },
+	}
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	for stop := 1; stop <= 3; stop++ {
+		verdict, verdictErr := store.TurnVerdict(ScanResult{}, "priority-idle", "", "main-1", options)
+		if verdictErr != nil || (stop < 3 && !verdict.ShouldBlock) {
+			t.Fatalf("priority idle stop %d: verdict=%+v err=%v", stop, verdict, verdictErr)
+		}
+	}
+	if prepared.GoalID != "z-ranked-first" || !prepared.ClaimNeeded {
+		t.Fatalf("the idle continuation did not choose the ranked Ready head: %+v", prepared)
 	}
 }
 
