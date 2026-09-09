@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"golang.org/x/sys/unix"
 )
 
@@ -138,5 +139,42 @@ func TestStopBlockEmptyDetail(t *testing.T) {
 	b := StopBlock("")
 	if b["reason"] != stopBlockReason {
 		t.Fatalf("with no detail the reason is the guidance without a leading separator: %q", b["reason"])
+	}
+}
+
+func TestBoundSystemMessageKeepsFirstLineAndAddsTrimNotice(t *testing.T) {
+	first := "SUPERVISION NEEDS ATTENTION"
+	message := first + "\n" + strings.Repeat("detail\n", 1000)
+	bounded := BoundSystemMessage(message)
+	if !strings.HasPrefix(bounded, first+"\n") {
+		t.Fatalf("first line changed: %q", bounded)
+	}
+	if !strings.Contains(bounded, systemMessageTrimNotice) {
+		t.Fatalf("trim notice is missing: %q", bounded)
+	}
+	if len([]rune(bounded)) > goal.TurnVerdictDisplayRuneLimit {
+		t.Fatalf("system message has %d runes, limit is %d", len([]rune(bounded)), goal.TurnVerdictDisplayRuneLimit)
+	}
+}
+
+func TestBoundSystemMessageTrimsAnOversizedFirstLineWithNotice(t *testing.T) {
+	bounded := BoundSystemMessage(strings.Repeat("x", goal.TurnVerdictDisplayRuneLimit+100))
+	if len([]rune(bounded)) != goal.TurnVerdictDisplayRuneLimit || !strings.HasSuffix(bounded, systemMessageTrimNotice) {
+		t.Fatalf("oversized first line was not bounded with a notice: runes=%d", len([]rune(bounded)))
+	}
+}
+
+func TestBoundSystemMessageClampsNearLimitFirstLines(t *testing.T) {
+	for length := 3949; length <= 3953; length++ {
+		t.Run(fmt.Sprintf("%d runes", length), func(t *testing.T) {
+			message := strings.Repeat("x", length) + "\n" + strings.Repeat("detail", 20)
+			bounded := BoundSystemMessage(message)
+			if len([]rune(bounded)) > goal.TurnVerdictDisplayRuneLimit {
+				t.Fatalf("bounded message has %d runes", len([]rune(bounded)))
+			}
+			if strings.ContainsRune(bounded, '\x00') {
+				t.Fatalf("bounded message contains a NUL rune: %q", bounded)
+			}
+		})
 	}
 }

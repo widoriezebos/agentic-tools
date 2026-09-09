@@ -141,6 +141,20 @@ func TestGoalPrioritySelection(t *testing.T) {
 		}
 	})
 
+	t.Run("refused", func(t *testing.T) {
+		overNorm := commandApprovedPriorityGoal("over-norm", 1, 1, "")
+		overNorm.Budget.ReservedJobMinutesLimit = 2400
+		overNorm.Approved.Digest = goal.ApprovalDigest(overNorm.Intent, overNorm.Tier, *overNorm.Budget)
+		root := prioritySelectionFixture(t, overNorm)
+		stdout, code := captureStdout(t, func() int {
+			return runGoalNext([]string{"--root", root, "--machine", "m1"})
+		})
+		want := "no claimable goal for machine m1; claim would refuse 1 (first: over-norm): GOAL_NORM_REFUSED"
+		if code != 0 || !strings.Contains(stdout, want) || strings.Contains(stdout, "no matching eligible work") {
+			t.Fatalf("refused selection: code=%d output=%q, want %q", code, stdout, want)
+		}
+	})
+
 	t.Run("fetch-failure", func(t *testing.T) {
 		root := prioritySelectionFixture(t, commandApprovedPriorityGoal("fetch-candidate", 1, 1, ""))
 		goalSyncMutationGit(t, root, "config", "goal.sync-remote", "missing-remote")

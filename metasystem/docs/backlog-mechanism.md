@@ -123,6 +123,9 @@ pin makes a goal eligible but never moves it ahead of an earlier unpinned
 goal. A free seat claims only the returned goal; if another seat wins that
 read-to-claim race, it fetches and selects again. The read is not a
 reservation, and records are read to understand work rather than choose it.
+A goal the claim gate would refuse is reported by `goal next` and the channel
+status with the gate's own cause, is never handed to a seat, and is repaired
+by the human act the cause names.
 
 ## Ordering the backlog
 

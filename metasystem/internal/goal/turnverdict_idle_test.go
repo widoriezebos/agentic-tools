@@ -156,6 +156,60 @@ func TestPriorityIdleProjection(t *testing.T) {
 	}
 }
 
+func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
+	refused := budgetedQueuedGoal("refused-backlog", "2026-08-23T00:00:00Z")
+	refused.Budget.ReservedJobMinutesLimit = 2400
+	refused.Priority, refused.Sequence = 1, 1
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{refused.Id: refused})
+
+	work, err := ReadClaimableBudgetedWork(root, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(work.Claimable) != 0 || len(work.Refused) != 1 || work.Refused[0].GoalID != refused.Id ||
+		!strings.Contains(work.Refused[0].Cause, "GOAL_NORM_REFUSED") {
+		t.Fatalf("claimable work did not retain the admission refusal: %+v", work)
+	}
+	verdict := Verdict{}
+	session := &sessionState{}
+	(&Store{}).enforceIdleBacklog(&verdict, &work, nil, session, "refused-session", "main-1", TurnVerdictOptions{})
+	if verdict.ShouldBlock || verdict.IdleRefusal || session.IdleBlocks != 0 ||
+		!strings.Contains(verdict.Display, "CLAIM WOULD REFUSE: "+refused.Id+": GOAL_NORM_REFUSED") {
+		t.Fatalf("refused work changed the idle block state or was not reported: verdict=%+v session=%+v", verdict, session)
+	}
+	withoutRefused := work
+	withoutRefused.Refused = nil
+	if idleBacklogDigest(work) != idleBacklogDigest(withoutRefused) {
+		t.Fatal("changing only refused work reset the idle-enforcement digest")
+	}
+
+	prepared, recorded := 0, 0
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
+			prepared++
+			return "unexpected-refused-intent", nil
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) {
+			recorded++
+			return "unexpected-refused-incident", nil
+		},
+	}
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	for stop := 1; stop <= 3; stop++ {
+		turn, turnErr := store.TurnVerdict(ScanResult{}, "refused-session", "", "main-1", options)
+		if turnErr != nil {
+			t.Fatalf("refused stop %d: %v", stop, turnErr)
+		}
+		if turn.IdleRefusal || (turn.BlockSource != nil && *turn.BlockSource == "idle-backlog") {
+			t.Fatalf("refused stop %d entered the idle blocking path: %+v", stop, turn)
+		}
+	}
+	if prepared != 0 || recorded != 0 {
+		t.Fatalf("refused work prepared %d continuations and recorded %d incidents", prepared, recorded)
+	}
+}
+
 func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),

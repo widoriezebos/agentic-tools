@@ -141,17 +141,33 @@ func formatHours(duration time.Duration) string {
 	return formatFloat(duration.Hours())
 }
 
-func historyTime(file *goal.GoalFile, verb string) (time.Time, bool) {
+// archiveVerbs names the acts that move a record into the archive: goal
+// done, whether by the verb or a reconciled hand edit, and goal split for
+// the parent. A ranked survivor receives the same verb on a compaction
+// line, so the verb alone never names a conclusion.
+var archiveVerbs = map[string]bool{"done": true, "split": true}
+
+// concludedAt is the one reader of a goal's conclusion. Only an archived
+// record can be concluded, and on one the last archive-verb line is the
+// act that archived it: a compaction line lands only on live records,
+// and nothing appends an archive verb after the act except a later
+// archive that follows a reopen. The index lets the epoch count stop at
+// the act.
+func concludedAt(file *goal.GoalFile) (int, time.Time, bool) {
+	if file == nil || file.State != goal.StateDone {
+		return -1, time.Time{}, false
+	}
 	for index := len(file.History) - 1; index >= 0; index-- {
-		if file.History[index].Verb != verb {
+		if !archiveVerbs[file.History[index].Verb] {
 			continue
 		}
 		stamp, err := time.Parse(time.RFC3339, file.History[index].At)
-		if err == nil {
-			return stamp.UTC(), true
+		if err != nil {
+			return -1, time.Time{}, false
 		}
+		return index, stamp.UTC(), true
 	}
-	return time.Time{}, false
+	return -1, time.Time{}, false
 }
 
 func goalBounds(record goalRecord) (time.Time, time.Time, bool) {
@@ -159,7 +175,7 @@ func goalBounds(record goalRecord) (time.Time, time.Time, bool) {
 	if err != nil {
 		return time.Time{}, time.Time{}, false
 	}
-	done, ok := historyTime(record.File, "done")
+	_, done, ok := concludedAt(record.File)
 	return opened.UTC(), done, ok
 }
 
@@ -181,7 +197,7 @@ func selectedGoals(w world, period Period, goalID string) []goalRecord {
 		if record.File.State != goal.StateDone {
 			continue
 		}
-		if done, ok := historyTime(record.File, "done"); ok && period.contains(done) {
+		if _, done, ok := concludedAt(record.File); ok && period.contains(done) {
 			selected = append(selected, record)
 		}
 	}
@@ -509,18 +525,8 @@ func computeFriction(w world, period Period, goalID string) metricRow {
 }
 
 func concludingEpoch(file *goal.GoalFile) (claim time.Time, done time.Time, epochs int, ok bool) {
-	doneIndex := -1
-	for index := len(file.History) - 1; index >= 0; index-- {
-		if file.History[index].Verb == "done" {
-			doneIndex = index
-			break
-		}
-	}
-	if doneIndex < 0 {
-		return time.Time{}, time.Time{}, 0, false
-	}
-	done, err := time.Parse(time.RFC3339, file.History[doneIndex].At)
-	if err != nil {
+	doneIndex, done, ok := concludedAt(file)
+	if !ok {
 		return time.Time{}, time.Time{}, 0, false
 	}
 	claimIndex := -1
@@ -533,7 +539,7 @@ func concludingEpoch(file *goal.GoalFile) (claim time.Time, done time.Time, epoc
 	if claimIndex < 0 {
 		return time.Time{}, done.UTC(), epochs, false
 	}
-	claim, err = time.Parse(time.RFC3339, file.History[claimIndex].At)
+	claim, err := time.Parse(time.RFC3339, file.History[claimIndex].At)
 	if err != nil {
 		return time.Time{}, done.UTC(), epochs, false
 	}

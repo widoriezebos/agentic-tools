@@ -163,6 +163,10 @@ func backlogStatusLines(projection goal.Projection, machine string, frontier goa
 	default:
 		local += "none claimable"
 	}
+	if len(frontier.Refused) > 0 {
+		cause, _, _ := strings.Cut(frontier.Refused[0].Cause, ";")
+		local += "; skipped " + featureName(frontier.Refused[0].GoalID) + ": " + statusLineText(cause)
+	}
 	return []string{first, local}
 }
 

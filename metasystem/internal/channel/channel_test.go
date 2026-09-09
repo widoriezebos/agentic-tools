@@ -339,6 +339,39 @@ func TestReportPriority(t *testing.T) {
 		}
 	})
 
+	t.Run("refused-head", func(t *testing.T) {
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		global := reportGoal("global-head", "Global head.", goal.StateApproved, "", now)
+		global.Priority, global.Sequence = 1, 1
+		global.Budget.ReservedJobMinutesLimit = 2400
+		global.Approved.Digest = goal.ApprovalDigest(global.Intent, global.Tier, *global.Budget)
+		local := reportGoal("local-candidate", "Local candidate.", goal.StateApproved, "", now)
+		local.Priority, local.Sequence = 2, 1
+		root := reportLedger(t, global, local)
+
+		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		globalLine := "Backlog first: global head — priority 1, sequence 1, approved, unpinned"
+		localLine := "Next for m1: local candidate — priority 2, sequence 1, unpinned; skipped global head: GOAL_NORM_REFUSED"
+		if !strings.Contains(text, globalLine) || !strings.Contains(text, localLine) {
+			t.Fatalf("status did not report the refused global head beside the local candidate:\n%s", text)
+		}
+	})
+
+	t.Run("refused-only", func(t *testing.T) {
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		global := reportGoal("global-head", "Global head.", goal.StateApproved, "", now)
+		global.Priority, global.Sequence = 1, 1
+		global.Budget.ReservedJobMinutesLimit = 2400
+		global.Approved.Digest = goal.ApprovalDigest(global.Intent, global.Tier, *global.Budget)
+		root := reportLedger(t, global)
+
+		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		want := "Next for m1: none claimable; skipped global head: GOAL_NORM_REFUSED"
+		if !strings.Contains(text, want) || len(strings.Split(text, "\n")) != 3 {
+			t.Fatalf("status did not report the only refused goal without adding a line:\n%s", text)
+		}
+	})
+
 	t.Run("line-cap", func(t *testing.T) {
 		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 		global := reportGoal("global-head", "Global head.", goal.StateApproved, "m2", now)

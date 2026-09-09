@@ -507,6 +507,20 @@ template_open_display=$("$ms" json get --value "$template_open_verdict" --field 
   && [[ $template_open_display != *'OPEN-WORK plans/open.md'* ]] \
   || { echo "the plan placeholder was not classified as template-unfilled" >&2; echo "$template_open_verdict" >&2; exit 1; }
 
+mkdir -p "$line_root/artifacts/agents/runs"
+printf '%s\n' '- Next step: Complete the bounded refusal fixture' '- Waiting on the human: none' \
+  '- In flight right now: none' >"$line_root/plans/bounded.md"
+for run_number in $(seq 1 200); do
+	run_offset=$((run_number - 1))
+	start_minute=$((run_offset / 60))
+	start_second=$((run_offset % 60))
+	end_offset=$((run_offset + 300))
+	end_minute=$((end_offset / 60))
+	end_second=$((end_offset % 60))
+	printf '{"schemaVersion":1,"runId":"bounded-run-%03d","kind":"suite","display":"bounded refusal fixture","custody":"wrapped","generation":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"efefefefefefefefefefefefefefefef","log":"/tmp/bounded-refusal.log","startedAt":"2026-08-01T10:%02d:%02dZ","sessionId":"bounded-fixture","goalId":"","staleAfterMin":30,"windDownMin":10,"endedAt":"2026-08-01T10:%02d:%02dZ","terminalSeq":%d,"evidence":{"mode":"exit-sidecar"},"expect":{"green":"","red":"inspect the full verdict","hung":"","unknown":""},"status":"red","acked":false}\n' \
+		"$run_number" "$start_minute" "$start_second" "$end_minute" "$end_second" "$run_number" >"$line_root/artifacts/agents/runs/bounded-run-$(printf '%03d' "$run_number").json"
+done
+
 mkdir -p "$line_root/records"
 printf '%s\n' '2026-08-29T10:00:00Z HIGHLIGHT — A landing moved the repository storyline to commit abc123. (source: commit abc123)' \
   >"$line_root/records/narrator-digest.log"
@@ -533,6 +547,17 @@ grep -Fq 'NARRATOR DIGEST since last check-in' "$tmp/line.out" \
   || { echo "supervision hook chat-line fixture omitted the pending narrator digest" >&2; exit 1; }
 grep -Fq 'A landing moved the repository storyline to commit abc123' "$tmp/line.out" \
   || { echo "supervision hook chat-line fixture omitted the digest event" >&2; exit 1; }
+line_reason=$("$ms" json get --value "$(tail -1 "$tmp/line.out")" --field reason)
+line_reason_runes=$(printf '%s' "$line_reason" | wc -m | tr -d ' ')
+(( line_reason_runes <= 4000 )) \
+  || { echo "supervision hook reason has $line_reason_runes characters, above the 4000-rune bound" >&2; exit 1; }
+[[ $line_reason == *"stop-verdicts/line-fixture.txt"* ]] \
+  && [[ -f "$line_root/artifacts/agents/supervision/stop-verdicts/line-fixture.txt" ]] \
+  || { echo "bounded hook reason did not name its full stop-verdicts artifact" >&2; cat "$tmp/line.out" >&2; exit 1; }
+[[ $line_reason == *"200 runs went red, oldest bounded-run-001"* ]] \
+  || { echo "bounded hook reason omitted the two-hundred-run red summary" >&2; cat "$tmp/line.out" >&2; exit 1; }
+grep -Fq 'bounded-run-200' "$line_root/artifacts/agents/supervision/stop-verdicts/line-fixture.txt" \
+  || { echo "full stop-verdicts artifact omitted bounded-run-200" >&2; exit 1; }
 if grep -Fq 'hook-freshness=dead' "$tmp/line.out"; then
   echo "supervision hook chat-line fixture judged its own current attempt dead" >&2
   exit 1

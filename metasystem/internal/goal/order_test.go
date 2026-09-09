@@ -151,8 +151,32 @@ func TestNextPriority(t *testing.T) {
 			t.Fatal(err)
 		}
 		selection := SelectNext(frontier)
-		if selection.Kind != NextSelectionReady || selection.GoalID != "claimable" {
+		if selection.Kind != NextSelectionReady || selection.GoalID != "claimable" || strings.Join(frontier.Ready, ",") != "claimable" {
 			t.Fatalf("over-norm head blocked claimable ranked work: selection=%+v frontier=%+v", selection, frontier)
+		}
+		if len(frontier.Refused) != 1 || frontier.Refused[0].GoalID != "over-norm" || !strings.Contains(frontier.Refused[0].Cause, "GOAL_NORM_REFUSED") {
+			t.Fatalf("over-norm head was not retained as refused: frontier=%+v", frontier)
+		}
+	})
+
+	t.Run("refused-only", func(t *testing.T) {
+		overNormBudget := testBudget()
+		overNormBudget.ReservedJobMinutesLimit = 2400
+		overNorm := approvedGoalFixture(vGoal("over-norm", StateQueued), overNormBudget)
+		overNorm.Priority, overNorm.Sequence = 1, 1
+		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
+			overNorm.Id: overNorm,
+		}, Done: map[string]*GoalFile{}}}
+
+		frontier, err := Next(projection, "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection := SelectNext(frontier)
+		if selection.Kind != NextSelectionNone || selection.GoalID != "" || len(frontier.Refused) != 1 ||
+			frontier.Refused[0].GoalID != "over-norm" || !strings.Contains(frontier.Refused[0].Cause, "GOAL_NORM_REFUSED") ||
+			len(frontier.Ready) != 0 || len(frontier.Blocked) != 0 || len(frontier.Awaiting) != 0 {
+			t.Fatalf("refused-only frontier drifted: selection=%+v frontier=%+v", selection, frontier)
 		}
 	})
 
@@ -463,6 +487,17 @@ func TestPriorityLifecycle(t *testing.T) {
 		if compacted.Verb != "done" || !reflect.DeepEqual(compacted.Targets, []string{"b", "c"}) || !strings.Contains(compacted.Reason, "from=1:3 to=1:2") {
 			t.Fatalf("survivor lacks the done compaction event: %+v", compacted)
 		}
+		departed := tree.Done["b"].History[len(tree.Done["b"].History)-1]
+		if tree.Live["c"].State == StateDone {
+			t.Fatalf("done compaction concluded the survivor: %+v", tree.Live["c"])
+		}
+		if compacted.Opid != departed.Opid || compacted.At != departed.At || compacted.Verb != departed.Verb ||
+			compacted.Actor != departed.Actor || !reflect.DeepEqual(compacted.Targets, departed.Targets) {
+			t.Fatalf("survivor and departed events describe different acts: survivor=%+v departed=%+v", compacted, departed)
+		}
+		if departed.Reason != "" {
+			t.Fatalf("departed event carries a compaction reason: %+v", departed)
+		}
 
 		reopenRequest := verbReq(root, "01J5X000000000000000000S20", "mac-a")
 		reopened, err := Reopen(reopenRequest, "b")
@@ -512,6 +547,65 @@ func TestPriorityLifecycle(t *testing.T) {
 		last := dependent.History[len(dependent.History)-1]
 		if last.Verb != "split" || !strings.Contains(last.Reason, "from=1:4 to=1:3") {
 			t.Fatalf("dependent's split event lacks its merged compaction: %+v", last)
+		}
+		parent := tree.Done["parent"]
+		parentLast := parent.History[len(parent.History)-1]
+		if parent.State != StateDone || parentLast.Verb != "split" {
+			t.Fatalf("split did not archive the parent with its split event: %+v", parent)
+		}
+		for _, event := range parent.History {
+			if event.Verb == "done" {
+				t.Fatalf("split parent carries a done event: %+v", parent.History)
+			}
+		}
+		survivor := tree.Live["c"]
+		survivorLast := survivor.History[len(survivor.History)-1]
+		if survivorLast.Verb != "split" || !strings.Contains(survivorLast.Reason, "from=1:3 to=1:2") {
+			t.Fatalf("survivor lacks the split compaction event: %+v", survivorLast)
+		}
+		if survivorLast.Opid != parentLast.Opid || survivorLast.At != parentLast.At || survivorLast.Verb != parentLast.Verb ||
+			survivorLast.Actor != parentLast.Actor || !reflect.DeepEqual(survivorLast.Targets, parentLast.Targets) {
+			t.Fatalf("survivor and parent events describe different acts: survivor=%+v parent=%+v", survivorLast, parentLast)
+		}
+		if survivor.State == StateDone {
+			t.Fatalf("split compaction concluded the survivor: %+v", survivor)
+		}
+	})
+
+	t.Run("done-then-split", func(t *testing.T) {
+		root := rankedGoalBed(t, map[string][2]uint64{
+			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
+		})
+		doneRequest := verbReq(root, "01J5X000000000000000000S40", "mac-a")
+		done, err := Done(doneRequest, "b", "Finished the middle goal.")
+		if err != nil || done.Outcome != OutcomeConfirmed {
+			t.Fatalf("done ranked middle: %+v %v", done, err)
+		}
+		members := testMembers("c")
+		splitRequest := verbReq(root, "01J5X000000000000000000S50", "mac-a")
+		split, err := Split(splitRequest, "c", members, mainRatification("c", members), nil)
+		if err != nil || split.Outcome != OutcomeConfirmed {
+			t.Fatalf("split survivor: %+v %v", split, err)
+		}
+		tree, _ := loadTree(root, split.Tip)
+		assertPriorityOrder(t, tree, []string{"a", "c-one", "c-two"})
+		parent := tree.Done["c"]
+		last := parent.History[len(parent.History)-1]
+		beforeLast := parent.History[len(parent.History)-2]
+		if parent.State != StateDone || last.Verb != "split" || last.Opid != splitRequest.opid() {
+			t.Fatalf("split did not archive the survivor at the final event: %+v", parent)
+		}
+		if beforeLast.Verb != "done" || beforeLast.Opid != doneRequest.opid() || !strings.Contains(beforeLast.Reason, "from=1:3 to=1:2") {
+			t.Fatalf("split parent lacks the earlier done compaction event: %+v", parent.History)
+		}
+		doneEvents := 0
+		for _, event := range parent.History {
+			if event.Verb == "done" {
+				doneEvents++
+			}
+		}
+		if doneEvents != 1 {
+			t.Fatalf("split parent done event count = %d, want 1: %+v", doneEvents, parent.History)
 		}
 	})
 }
