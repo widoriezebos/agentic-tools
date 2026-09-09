@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 18
+- Sequence: 19
 - Intent: The watch verb: one command shows everything running with liveness verdicts and ACTS on stalls within Ruling L (heal-first escalation) - folds never-idle enforcement and Ruling M (delegated work is watched); the steward seam's operator surface (program L14). PRIORITY ESCALATED BY WIDO 2026-09-01 (verbatim: 'I hope you will do more than alerting if that happens: the system should act! Figure out what went wrong and act accordingly (recover process if it died, at actual budget overrun escalate etc etc)') - the acting layer above the landed claimed-goal-delivery detection: consume its dead verdicts, diagnose the class (died delegate round with intact product -> mechanize the budget-death adoption recovery, six specimens recorded; actual budget overrun -> the existing breach-stop route; wedged supervision -> the lawful shutdown+re-arm heal), act heal-first, escalate only what healing cannot fix. Design-bearing: the intervention ladder gets the full lane loop before any kill or auto-recovery authority exists.
 - Origin: human
 - Next step: READ SURFACE LANDED AND HARDENED (m0, account Wido@M0): the verb live with all five terminal lows closed. REMAINING: marking-mode observation slice, then per-class action promotion through trials and Law 2 records - the acting side per the revision-3 design; W-HEAL and unauthorized classes wait for Wido. m0 releases.
 - OpenedAt: 2026-08-30T15:15:43Z
-- Revision: 17
+- Revision: 18
 - Labels: headless-fleet, headless-recovery
 - Budget: elapsedLimit=6d attemptLimit=12 reservedJobMinutesLimit=1440 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -31,4 +31,5 @@ History:
 - 2026-09-07T21:12:01Z RPKM7WBBCDYH5MC47RN3ZCNKX0-m1-76f67331 edit actor=human:Wido targets=watch-verb
 - 2026-09-08T15:56:25Z V4DVNXR0QT35RJCVQ1YRMBSZPH-m1-7cd0bd60 set-priority actor=human:Wido targets=watch-verb reason=priority-order subject=watch-verb from=unranked to=1:19 requested-sequence=19
 - 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:19 to=1:18
-Integrity: sha256=ee92a8860eab6f01ab7ef50ed229e642640035de410207ea7914dcb2511c7c34
+- 2026-09-09T06:01:27Z WBARN8TBQKTC4BW0AQZRW614PS-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=stop-batch-strands-a-resumable-goal from=1:18 to=1:19 requested-sequence=7
+Integrity: sha256=c74b9886c49e4915cce1880b66211adb6b4d454f44bfb4fc977bee08f9b776af

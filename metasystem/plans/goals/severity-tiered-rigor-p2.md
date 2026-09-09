@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 10
+- Sequence: 11
 - Intent: Part two of the tiering machinery, on Wido's word 2026-09-03: the tier is derived from four recorded risk answers (severity, novelty, exposure, accumulated change), never the shape of the change; then the material stop and the close (design revision 3 part two) and the docs. Built by m3 in parallel with m2's part one and three, 16 hours max.
 - Origin: main
 - Next step: Slice 2a, the risk basis, LANDED 2026-09-04: b4ae9395 (code, six rounds on str-p2-build-2a, two closing reviews, carried by member goal severity-tiered-rigor-p2-2a-carry on Wido's granted raise) and d46e18ee (the docs re-touch on its own reviewed chain). Remaining: slice 2b (material stop and close, design revision 3 part two; two Sol rounds str-p2-build-2b r1/r2 built nothing on field-grain gaps, the brief needs the grain clause before a third), then goal done. Budget at 630 of 660 minutes and 17 of 18 attempts with the one relayed raise spent: 2b needs a fresh box, opened as a member goal on Wido's word like 2a, or this goal concluded with 2b as its own goal.
 - OpenedAt: 2026-09-03T19:45:21Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=2d attemptLimit=18 reservedJobMinutesLimit=660 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=10 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ea720d86c735f270823a755fa863d8ec66f7211f13ff0c15b120baa851cad37c
@@ -26,4 +26,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=severity-tiered-rigor-p2 reason=sweep
 - 2026-09-08T15:55:57Z S98JVH71WWF7J8CPK27VHEKFEK-m1-7cd0bd60 set-priority actor=human:Wido targets=severity-tiered-rigor-p2 reason=priority-order subject=severity-tiered-rigor-p2 from=unranked to=1:11 requested-sequence=11
 - 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:11 to=1:10
-Integrity: sha256=a31678dbe2be9742a3984e887abe9f3c827d23605294a96260f3e2825709ec82
+- 2026-09-09T06:01:27Z WBARN8TBQKTC4BW0AQZRW614PS-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=stop-batch-strands-a-resumable-goal from=1:10 to=1:11 requested-sequence=7
+Integrity: sha256=131aa89154f9c5b89c52c925a8f285eb413ee999dd49cbddfff449ee52e0c7fa

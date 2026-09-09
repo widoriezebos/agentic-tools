@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 12
+- Sequence: 13
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: PULLED FORWARD (Wido 2026-08-27 evening, with severity-tiered-rigor, ahead of remaining feature items): design when picked up — a micro-dispatch shape (single delegate round, certification folded into the build return, seat oracle-proof (custodial mechanics) instead of a separate critic round) for single-slice mechanical items, so process-to-payload stays sane on small work. Third leg of the proof-pricing overhaul beside the staged-batch witness and severity-tiered rigor.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=5 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ce78111a14c81468a494d5bb4235f81b054a41696cc40003f8b906dee0e8aa27
@@ -20,4 +20,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=small-change-lane reason=sweep
 - 2026-09-08T15:56:04Z 2DKFZDCR593TQZN1V098QSAWBH-m1-7cd0bd60 set-priority actor=human:Wido targets=small-change-lane reason=priority-order subject=small-change-lane from=unranked to=1:13 requested-sequence=13
 - 2026-09-08T17:03:35Z YZH9GDDZJGK4DB0ENK5CGSXADW-m1b-c6925449 done actor=human:Wido targets=account-provenance,actionable-metrics,backlog-ordered-by-priority,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,host-runtime-setup,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:13 to=1:12
-Integrity: sha256=516aa69e4146cd65731f28c0cc57cdfc1569728dec6d5e7a766c5f1f531520bf
+- 2026-09-09T06:01:27Z WBARN8TBQKTC4BW0AQZRW614PS-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=stop-batch-strands-a-resumable-goal from=1:12 to=1:13 requested-sequence=7
+Integrity: sha256=73ece7b9022df9e57aa23faa36b020234a852110d0e4233597487afe42a55424
