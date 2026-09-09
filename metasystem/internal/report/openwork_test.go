@@ -58,6 +58,41 @@ func TestOpenWorkReportsUnblockedNextStep(t *testing.T) {
 	}
 }
 
+func TestOpenWorkIgnoresNextStepInsideFence(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "example.md", "# Example\n\n```text\n- Next step: Do not report this example\n```\n")
+	if lines := OpenWork(root); hasLine(lines, "example.md") {
+		t.Fatalf("a fenced example became open work: %v", lines)
+	}
+}
+
+func TestOpenWorkUsesRealNextStepBesideFencedExample(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "real.md", "```text\n- Next step: Ignore this example\n```\n\n- Next step: Ship the real change\n- In flight right now: none\n")
+	lines := OpenWork(root)
+	if !hasLine(lines, "OPEN-WORK plans/real.md: Ship the real change") || hasLine(lines, "Ignore this example") {
+		t.Fatalf("the real field was not selected outside the fence: %v", lines)
+	}
+}
+
+func TestOpenWorkFallsBackWhenFenceIsUnclosed(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "unclosed.md", "```text\nexample without a closing fence\n- Next step: Ship the real change after the broken example\n- In flight right now: none\n")
+	lines := OpenWork(root)
+	if !hasLine(lines, "OPEN-WORK plans/unclosed.md: Ship the real change after the broken example") {
+		t.Fatalf("an unclosed fence swallowed the real field: %v", lines)
+	}
+}
+
+func TestOpenWorkKeepsClosedFenceExcludedBeforeUnclosedFence(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "trap.md", "```text\n- Next step: FAKE example from a closed fence\n```\n\n```text\n- Next step: REAL work to do\n- In flight right now: none\n")
+	lines := OpenWork(root)
+	if !hasLine(lines, "OPEN-WORK plans/trap.md: REAL work to do") || hasLine(lines, "FAKE example from a closed fence") {
+		t.Fatalf("the unpaired fence exposed a field from a closed fence: %v", lines)
+	}
+}
+
 func TestOpenWorkSilentWhenSettledOrWaiting(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "settled.md", "- Next step: none\n- In flight right now: none\n")

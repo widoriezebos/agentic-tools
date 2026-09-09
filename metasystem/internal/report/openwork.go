@@ -77,14 +77,38 @@ func resolveRepo(root string) string {
 	return root
 }
 
-// planField returns the value of a mandated "- <label>:" line, if present.
+var markdownFence = regexp.MustCompile("^```(?:[^`].*)?$")
+
+// planField returns the value of a mandated "- <label>:" line outside fenced examples, if present.
 func planField(text, label string) (string, bool) {
-	re := regexp.MustCompile(`(?m)^-\s*` + regexp.QuoteMeta(label) + `\s*:\s*(.*)$`)
-	m := re.FindStringSubmatch(text)
-	if m == nil {
-		return "", false
+	re := regexp.MustCompile(`^-\s*` + regexp.QuoteMeta(label) + `\s*:\s*(.*)$`)
+	lines := strings.Split(text, "\n")
+	fenceCount := 0
+	for _, line := range lines {
+		if markdownFence.MatchString(strings.TrimSuffix(line, "\r")) {
+			fenceCount++
+		}
 	}
-	return strings.TrimSpace(m[1]), true
+	pairedFenceCount := fenceCount - fenceCount%2
+	seenFences := 0
+	inFence := false
+	for _, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
+		if markdownFence.MatchString(line) {
+			seenFences++
+			if seenFences <= pairedFenceCount {
+				inFence = !inFence
+			}
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if match := re.FindStringSubmatch(line); match != nil {
+			return strings.TrimSpace(match[1]), true
+		}
+	}
+	return "", false
 }
 
 func readJobRecords(root string) []map[string]any {

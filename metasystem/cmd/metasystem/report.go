@@ -32,6 +32,7 @@ func runReportStopBlock(args []string) int {
 			*systemMessage += warning
 		}
 	}
+	*systemMessage = report.BoundSystemMessage(*systemMessage)
 	detail := ""
 	if flags.NArg() > 0 {
 		detail = flags.Arg(0)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -272,8 +273,8 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		session := state.touch(sessionId, s.nowISO())
 
-		prefix := s.brainSummary(scan, brainState)
-		prefix = append(prefix, s.decideRuns(&verdict, scan, session, mainId)...)
+		brainLines := s.brainSummary(scan, brainState)
+		runLines := s.decideRuns(&verdict, scan, session, mainId)
 		s.decide(&verdict, scan, session, &work, brainSeat)
 		if markerDetail != "" {
 			verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
@@ -283,7 +284,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			s.enforceIdleBacklog(&verdict, &work, workErr, session, sessionId, mainId, options)
 		}
 		greens := s.decideGreens(scan, session)
-		verdict.Display = composeDisplay(prefix, verdict.Display, greens)
+		fullDisplay := composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
 		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
 		if brainState.State == brain.Declared {
 			verdict.BrainStatusDue = brain.StatusDue(s.Root, s.now())
@@ -309,12 +310,27 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			if consumeDetail != "" {
 				verdict.Diagnostics = append(verdict.Diagnostics, consumeDetail)
 				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + consumeDetail)
+				fullDisplay = strings.TrimSpace(fullDisplay + "\n" + consumeDetail)
 			}
 			verdict.ShouldBlock = false
 			verdict.BlockSource = nil
-			verdict.Display = strings.TrimSpace(verdict.Display + "\nSESSION STOP authorized once by " + marker.By +
-				fmt.Sprintf(" for holder %s at lease epoch %d", marker.HolderMainId, marker.ClaimEpoch))
+			sessionStopLine := "SESSION STOP authorized once by " + marker.By +
+				fmt.Sprintf(" for holder %s at lease epoch %d", marker.HolderMainId, marker.ClaimEpoch)
+			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + sessionStopLine)
+			fullDisplay = strings.TrimSpace(fullDisplay + "\n" + sessionStopLine)
 		}
+		artifactPath := turnVerdictArtifactPath(s.Root, sessionId)
+		fileLine := "Full turn verdict: " + artifactPath
+		if durable, writeErr := atomicfile.WriteText(artifactPath, fullDisplay, s.Root); writeErr != nil {
+			detail := "full turn verdict could not be written: " + writeErr.Error()
+			verdict.Diagnostics = append(verdict.Diagnostics, detail)
+			fileLine = "Full turn verdict could not be written to " + artifactPath
+		} else if !durable {
+			detail := "full turn verdict was written but its crash durability is unknown"
+			verdict.Diagnostics = append(verdict.Diagnostics, detail)
+			fileLine = "Full turn verdict was written to " + artifactPath + ", but its crash durability is unknown"
+		}
+		verdict.Display = renderTurnVerdict(verdict, brainLines, runLines, greens, fileLine)
 		return Result{}, nil
 	})
 	_ = result
@@ -600,10 +616,12 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 // run warnings always surface, and unwatched work blocks once — BEFORE
 // Busy can suppress anything (a watched active run is Busy; an unwatched
 // one blocks despite being busy, which is the point).
-func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string) []string {
-	var warnings []string
-	warn := func(format string, args ...any) {
-		warnings = append(warnings, fmt.Sprintf(format, args...))
+func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string) runDisplayLines {
+	var warnings runDisplayLines
+	warn := func(class runWarningClass, id, format string, args ...any) {
+		line := fmt.Sprintf(format, args...)
+		warnings.lines = append(warnings.lines, line)
+		warnings.warnings = append(warnings.warnings, runWarning{class: class, id: id, line: line})
 	}
 	continuation := func(text string) string {
 		if text == "" {
@@ -614,18 +632,19 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 	for _, runFact := range scan.Runs {
 		switch {
 		case runFact.Status == "red" && !runFact.Acked:
-			warn("run %s went red; the run record says: %s", runFact.Id, continuation(runFact.ExpectRed))
+			warn(runWentRed, runFact.Id, "run %s went red; the run record says: %s", runFact.Id, continuation(runFact.ExpectRed))
 		case (runFact.Status == "ended-unknown" || runFact.Status == "launch-failed") && !runFact.Acked:
-			warn("run %s ended %s; the run record says: %s", runFact.Id, runFact.Status, continuation(runFact.ExpectUnknown))
+			warn(runEndedUnknown, runFact.Id, "run %s ended %s; the run record says: %s", runFact.Id, runFact.Status, continuation(runFact.ExpectUnknown))
 		case runFact.Hung:
-			warn("run %s looks hung; the run record says: %s", runFact.Id, continuation(runFact.ExpectHung))
+			warn(runLooksHung, runFact.Id, "run %s looks hung; the run record says: %s", runFact.Id, continuation(runFact.ExpectHung))
 		case runFact.ProbeState == "unknown":
-			warn("run %s liveness unknown", runFact.Id)
+			warn(runLivenessUnknown, runFact.Id, "run %s liveness unknown", runFact.Id)
 		case (runFact.Status == "launching" || runFact.Status == "running" || runFact.Status == "draining") && !runFact.Supervised:
-			warn("supervision is not scanning run %s", runFact.Id)
+			warn(runUnsupervised, runFact.Id, "supervision is not scanning run %s", runFact.Id)
 		}
 	}
-	warnings = append(warnings, scan.RunUnreadable...)
+	warnings.lines = append(warnings.lines, scan.RunUnreadable...)
+	warnings.unreadable = append(warnings.unreadable, scan.RunUnreadable...)
 	verdict.Diagnostics = append(verdict.Diagnostics, scan.RunUnreadable...)
 
 	// The unwatched-work block: lifecycle-tagged keys.
@@ -656,9 +675,10 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 			verdict.ShouldBlock = true
 			source := "unwatched-work"
 			verdict.BlockSource = &source
-			warnings = append(warnings, fmt.Sprintf(
+			warnings.actionable = append(warnings.actionable, fmt.Sprintf(
 				"work you launched is unwatched: %s; arm the printed watch command or conclude the runs",
 				strings.Join(unwatchedIds, ", ")))
+			warnings.lines = append(warnings.lines, warnings.actionable[len(warnings.actionable)-1])
 		}
 	}
 	return warnings

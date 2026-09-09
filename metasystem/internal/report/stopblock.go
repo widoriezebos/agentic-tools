@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 // stopBlockReason is the fixed guidance a block carries. The refusal is
@@ -24,6 +26,34 @@ import (
 const stopBlockReason = "Work named in a plan is unblocked and nothing is in flight. Do it now, " +
 	"or record in the plan why it is blocked or waiting on the human. " +
 	"This refusal does not repeat for the same work."
+
+const systemMessageTrimNotice = "[system message trimmed to fit the Stop refusal]"
+
+// BoundSystemMessage keeps the first line and uses the turn-verdict display bound.
+func BoundSystemMessage(message string) string {
+	if len([]rune(message)) <= goal.TurnVerdictDisplayRuneLimit {
+		return message
+	}
+	lines := strings.Split(message, "\n")
+	first := lines[0]
+	available := goal.TurnVerdictDisplayRuneLimit - len([]rune(first)) - len([]rune(systemMessageTrimNotice)) - 2
+	if available <= 0 {
+		kept := goal.TurnVerdictDisplayRuneLimit - len([]rune(systemMessageTrimNotice)) - 1
+		firstRunes := []rune(first)
+		if kept > len(firstRunes) {
+			kept = len(firstRunes)
+		}
+		return string(firstRunes[:kept]) + "\n" + systemMessageTrimNotice
+	}
+	rest := []rune(strings.Join(lines[1:], "\n"))
+	if len(rest) > available {
+		rest = rest[:available]
+	}
+	if len(rest) == 0 {
+		return first + "\n" + systemMessageTrimNotice
+	}
+	return first + "\n" + string(rest) + "\n" + systemMessageTrimNotice
+}
 
 // StopBlock builds the stop-hook block decision with any caller detail first.
 func StopBlock(detail string) map[string]any {
@@ -106,7 +136,7 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, now
 	if !repeated {
 		response := StopBlock(detail)
 		if systemMessage != "" {
-			response["systemMessage"] = systemMessage
+			response["systemMessage"] = BoundSystemMessage(systemMessage)
 		}
 		return response, nil
 	}
@@ -114,7 +144,7 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, now
 	if systemMessage != "" {
 		message += "\n" + systemMessage
 	}
-	return map[string]any{"systemMessage": message}, nil
+	return map[string]any{"systemMessage": BoundSystemMessage(message)}, nil
 }
 
 type stopRefusalRecord struct {

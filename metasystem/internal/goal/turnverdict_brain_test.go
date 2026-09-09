@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 )
 
-func TestBrainTurnVerdictLeadsDisplayAndNeverEnforcesIdleBacklog(t *testing.T) {
+func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T) {
 	approved := budgetedQueuedGoal("approved", "2026-09-07T00:00:00Z")
 	held := &GoalFile{Id: "held", State: StateClaimed, Intent: "Held work", Origin: OriginMain,
 		NextStep: "Release it.", OpenedAt: "2026-09-07T00:01:00Z", Revision: 2,
@@ -50,10 +50,10 @@ func TestBrainTurnVerdictLeadsDisplayAndNeverEnforcesIdleBacklog(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(first.Display, "\n")
-	if len(lines) < 3 || !strings.HasPrefix(lines[0], "BRAIN SEAT: nodes hold 2 claims (held, remote); 1 approved goals await a node; 1 asks await Wido (ask-one); 1 drafts await approval (draft-one)") {
-		t.Fatalf("brain summary was not the first display line: %q", first.Display)
+	if len(lines) < 5 || lines[0] != "OPEN WORK (1)" || lines[1] != "OPEN-WORK open-plan: finish it" || !strings.HasPrefix(lines[2], "BRAIN SEAT: nodes hold 2 claims (held, remote); 1 approved goals await a node; 1 asks await Wido (ask-one); 1 drafts await approval (draft-one)") {
+		t.Fatalf("verdict and brain summary order is wrong: %q", first.Display)
 	}
-	if lines[1] != "HELD HERE: held; release them to a node" {
+	if lines[3] != "HELD HERE: held; release them to a node" {
 		t.Fatalf("held claim was not the next brain line: %q", first.Display)
 	}
 	if !first.ShouldBlock || first.BlockSource == nil || *first.BlockSource != "open-work" || first.IdleRefusal {
@@ -81,7 +81,7 @@ func TestBrainTurnVerdictLeadsDisplayAndNeverEnforcesIdleBacklog(t *testing.T) {
 	}
 }
 
-func TestCorruptBrainTurnVerdictKeepsItsRemedySecond(t *testing.T) {
+func TestCorruptBrainTurnVerdictKeepsItsRemedyAfterTheBrainSummary(t *testing.T) {
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{})
 	if err := os.MkdirAll(filepath.Dir(brain.Path(root)), 0o755); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestCorruptBrainTurnVerdictKeepsItsRemedySecond(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(verdict.Display, "\n")
-	if len(lines) < 2 || !strings.HasPrefix(lines[0], "BRAIN SEAT:") || !strings.HasPrefix(lines[1], "this checkout's brain declaration is unreadable") {
+	if len(lines) < 3 || !strings.HasPrefix(lines[0], "NOTHING LEFT TO WORK ON") || !strings.HasPrefix(lines[1], "BRAIN SEAT:") || !strings.HasPrefix(lines[2], "this checkout's brain declaration is unreadable") {
 		t.Fatalf("corrupt brain prefix order wrong: %q", verdict.Display)
 	}
 	if verdict.ShouldBlock || verdict.IdleRefusal {
