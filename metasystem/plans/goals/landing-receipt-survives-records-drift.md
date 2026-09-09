@@ -1,6 +1,6 @@
 # landing-receipt-survives-records-drift
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it refuses proven landings and discards batteries, but loses no work and every recovery is mechanical; novelty 1: the exclusion mechanism already exists as gittree.FilterTree and this applies it to the receipt's posture reads; exposure 3: every landing on every machine reads that posture twice; accumulation 2: it cost seven refusals and one twenty-minute battery in a single evening, and every future landing pays the same manual recovery"
@@ -9,13 +9,12 @@
 - Origin: main
 - Next step: CHAIN lrsrd-build1 FULLY PROVEN, LANDING BLOCKED UPSTREAM. Round 2: closing read lrsrd-crit3 (Opus) zero material; all five Go packages green on its tree. Round 3 (the two-line fixture extraction fix): land-fixtures.sh on its tree exit 0 at 15:10Z, the full-width-chain leg PASSED, which is the first execution of the three new shell canaries: the refusal canary reaching its refusal through the drift verb's tab line, the passing landing with both registers dirty, a sentinel stash entry and a live concurrent receipts-log writer through the real land.sh and the advance verb, and the contended refusal with its register-carriage repair route. Beds on round 2's tree: dispatch-fixtures.sh exit 0; goal-cli-fixtures.sh exit 1 on brain-stop-seeded, and the same bed FAILS the same scenario on untouched main (1c0950a6), so it is pre-existing: commit d533caf1's one-screen renderer, landed without the bed; goal one-screen-renderer-breaks-brain-stop-seeded carries the evidence. Because that bed is in the full battery every receipt-bound landing must pass, this chain cannot land until that conflict is resolved on main; it touches no path this chain certified, so no recertification follows. THE LANDING SEQUENCE once main is green: fresh read of round 3 (the chain-close law binds the final round; attempts 9/10, so Wido's set-budget to 12 attempts and 1440 minutes first, recommended), stage the candidate, receipt battery and crossover landing under METASYSTEM_BIN at a proof build of the candidate, rebuild and re-arm. The read can run before the upstream fix; nothing is dispatched until Wido's word.
 - OpenedAt: 2026-09-09T07:04:37Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T08:00:19Z revision=3 opid=QEP3894W4SK63E6SB4EAXN3908-m1b-c6925449 authority=proven digest=4a834db3b63326aca22f31df86163f3fa2b4efd09fa1eb44460eebf2aa04abde
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=5 at=2026-09-09T11:13:15Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-09T11:09:23Z revision=5 accountingRevision=5
-- StopCapability: generation=5 revision=5 machine=m1b claimEpoch=1 fenceEpoch=0
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-09T15:12:51Z because=Parked 2026-09-09 15:15Z with the chain fully proven (round 2 read clean, Go packages green, the three shell canaries passing on round 3's tree) and the landing blocked from outside: goal-cli-fixtures.sh fails brain-stop-seeded on main since d533caf1 (goal one-screen-renderer-breaks-brain-stop-seeded), and that bed is in the full battery every receipt-bound landing must pass. Resume when that is green on main and Wido has given his word on the round-3 read (attempts 9/10; his set-budget to 12 attempts and 1440 minutes recommended first). Parked rather than left claimed so a steward continuation cannot spend the last attempt or a battery on it.
 
 History:
 - 2026-09-09T07:04:37Z JB3MDBKSRAXWJ33SFQGCW5V96K-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
@@ -36,4 +35,5 @@ History:
 - 2026-09-09T14:53:43Z PV02S15CYBNQ3NWZXV466NRY65-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
 - 2026-09-09T14:56:38Z 1AV0JWJP41QV04KVRYNYGZ2SNX-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
 - 2026-09-09T15:11:37Z 749E4TR1T7PS5DQY4N0T97J32P-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
-Integrity: sha256=0e88d56c4cdc49886ef43ee3d81bdbabed764f314d58e7325b2175d60bbfed70
+- 2026-09-09T15:12:51Z XA12E680FRT4D6AGMMXB7TDFK5-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift reason=Parked 2026-09-09 15:15Z with the chain fully proven (round 2 read clean, Go packages green, the three shell canaries passing on round 3's tree) and the landing blocked from outside: goal-cli-fixtures.sh fails brain-stop-seeded on main since d533caf1 (goal one-screen-renderer-breaks-brain-stop-seeded), and that bed is in the full battery every receipt-bound landing must pass. Resume when that is green on main and Wido has given his word on the round-3 read (attempts 9/10; his set-budget to 12 attempts and 1440 minutes recommended first). Parked rather than left claimed so a steward continuation cannot spend the last attempt or a battery on it.
+Integrity: sha256=4895a8cc6e60db06d5ad2daf595438de551055566afef9dcfd780c22ac240a16
