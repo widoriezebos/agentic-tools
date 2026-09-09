@@ -350,7 +350,10 @@ change into a receipted landing unseen, which widens carriage.
 beside `observe`, `park`, and `test-receipt`, implemented by
 `landing.WorktreeDrift(root string, requireEmptyIndex bool) ([]DriftEntry, []string, error)`
 in a new `internal/landing/drift.go`; the second result is the tolerated
-register paths.
+register paths. `DriftEntry` is the output line as a value: `Kind string`
+(one of `untracked`, `staged`, `register-not-append`, `unstaged`), `Index`
+and `Worktree` (the two porcelain columns, each one byte), and `Path`
+(toplevel-relative, as git printed it).
 
 Mechanics: one `git status --porcelain=v1 -z --no-renames
 --untracked-files=normal` at the repository toplevel
@@ -852,7 +855,8 @@ Shell canaries in `scripts/agents/land-fixtures.sh`, scenario
 `full-width-chain`, after the matching-receipt landing at `:741-769`.
 Proving run: `bash scripts/agents/land-fixtures.sh` (the scenario harness
 at `fixture-bed-scenarios.sh:32-79` runs each leg as its own child, so the
-whole bed is the runnable unit; its per-leg cap is the ceiling). The bed
+whole bed is the runnable unit; the runner waits on each leg without a
+bound, so a leg that starts a process bounds and reaps it itself). The bed
 uses the real engine (`land-fixtures.sh:50`) and a reduced commit.sh that
 performs the real `landing observe` with `--test-receipt` (`:109-123`), so
 the receipt's landing-time read is exercised. The reduced commit.sh takes
@@ -881,14 +885,18 @@ lock file, which the seed's `.gitignore` keeps out of every status.
   below. Before the change this leg reaches the refusal through the old
   `git diff --quiet` at `:324`; the tab line tells the two apart.
 - **Passing canary: one landing, common path, both registers dirty,
-  sentinel stash, concurrent writer.** From `leg_peer`, append
+  sentinel stash, concurrent writer.** In `leg_peer`, first
+  `git pull --ff-only origin main` (the peer is a plain clone and is behind
+  origin after the matching-receipt landing), then append
   `payload=peer\n` to `payload.txt`, commit, push to origin. In
   `leg_local`: append `digest=drift\n` to the digest; push a sentinel
   stash by dirtying and stashing a scratch tracked path (`git stash push
   -m sentinel -- plans/existing.md`) and record `git rev-parse stash@{0}`;
   start a background appender by recorded PID that appends
   `receipt=bg-<n>\n` lines to `memory/receipts.log` every 10 ms and mirrors
-  each line into `$leg_root/bg.log`. Land `--chain full-chain-2
+  each line into `$leg_root/bg.log`; it exits by itself after at most 60
+  seconds, and the leg installs `trap 'kill "$appender_pid" 2>/dev/null'
+  EXIT` before starting it, so a failed leg leaves no process behind. Land `--chain full-chain-2
   --test-receipt … --staged-only --skip-transport` (fetch, advance, and
   push still run, `:570-591`; only `sync-transport.sh` is skipped). Stop
   the appender by its PID. Expect: exit 0; origin main equals local HEAD;
@@ -904,8 +912,9 @@ lock file, which the seed's `.gitignore` keeps out of every status.
   `require_clean_after_commit` tolerance, the private rebase against a
   moved origin, the common path under a live lockless writer, and the
   untouched stash.
-- **Contended canary and its repair.** From `leg_peer`, append
-  `digest=peer\n` to the digest, commit, push. In `leg_local`, with the
+- **Contended canary and its repair.** In `leg_peer`, `git pull --ff-only
+  origin main` first, then append `digest=peer\n` to the digest, commit,
+  push. In `leg_local`, with the
   digest still dirty from the passing canary, land `-m <message>
   --direct-fix register-carriage --skip-transport -- memory/receipts.log`
   (the receipts log is carried; the digest is not staged). Expect: a
@@ -971,6 +980,15 @@ finds neither), so the type comment in `receipt.go`, the doc comment on
   that site regardless.
 
 ## Revision record
+
+Revision 3.4, 2026-09-09, coordinator's dispositions of the build's four
+gaps (chain lrsrd-build1 round 1 stopped on them, having observed the
+passing canary red for the required reason): `DriftEntry`'s fields are
+declared from the output grammar; each peer leg fast-forwards its clone
+before committing; the false claim that the scenario runner gives a leg a
+deadline is corrected and the appender is bounded and reaped by the leg;
+the rule that only `advance.go`'s git calls must go through gittree is
+unchanged on the page (the build brief had misstated it as package-wide).
 
 Revision 3.1, 2026-09-09, coordinator's disposition: the holder note the
 fold added to the shared lease lock primitive is struck; the lock refusal
