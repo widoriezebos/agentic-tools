@@ -9,13 +9,13 @@
 - Origin: main
 - Next step: BUILD SLICE 1 (gawr-build1, Sol): round 1 stopped after the parser, validator and third map (4 files, 398 lines) on three named seams; the coordinator answered them in plans/goal-abandoned-with-a-reason-build1-followup1-brief.md (another checkout's engine build comes from its published supervision state through a new DiskCheckout.EngineBuild reader, the page's 'supervise status' sentence being inaccurate; the race fixture uses the BeforePush seam through an unexported package variable; section 8 has eleven rules). Round 2 dispatched as a follow-up after a rebuild and re-arm (engine had drifted behind 536c74bd); watch armed. Then the closing code read (Fable lane), landing (full-width: needs the battery, blocked by one-screen-renderer-breaks-brain-stop-seeded), slices 2-4, rollout.
 - OpenedAt: 2026-09-09T07:35:51Z
-- Revision: 19
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-09T08:00:15Z revision=2 opid=CDJFSFGMQDP964NKZ899EPD6VE-m1b-c6925449 authority=proven digest=610536793c48075865b32f65876f760a24363ac5cb7c54e1932ed799d578af4a
+- Revision: 20
+- Budget: elapsedLimit=3d attemptLimit=25 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-09T20:16:56Z revision=20 opid=SVP8737N5CYBZD4WF48CPJEMQE-m1b-c6925449 authority=proven digest=bf8e76e1624c3976d7838e2e849f77cc157286db4db0b6eb7fd29005cadffbd0
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=5 at=2026-09-09T15:15:59Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-09T15:14:21Z revision=5 accountingRevision=5
-- StopCapability: generation=5 revision=5 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-09T20:16:56Z revision=20 accountingRevision=20
+- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-09T07:35:51Z CD1FD0A7Q0S3NMWB4C52P9Q39V-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
@@ -37,4 +37,5 @@ History:
 - 2026-09-09T18:22:04Z 8JMCH4HTT1AD9E4F7PYE443WXW-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
 - 2026-09-09T18:40:44Z 7635Z7VPXBJETFA0R1NJG1898K-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
 - 2026-09-09T20:16:52Z 58PB14TJ4ARNET1QS5G1D8CBKB-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=one-screen-renderer-breaks-brain-stop-seeded from=1:3 to=1:4 requested-sequence=1
-Integrity: sha256=f946d6536a57d85818b09dc68c77e96220ac348c7c2f8f39588f722e5e79ef40
+- 2026-09-09T20:16:56Z SVP8737N5CYBZD4WF48CPJEMQE-m1b-c6925449 set-budget actor=human:Wido targets=goal-abandoned-with-a-reason
+Integrity: sha256=c2b82ed78e42845641955190c2e9fbd51dd5ad7830846bd52ff500646eb5bbc9
