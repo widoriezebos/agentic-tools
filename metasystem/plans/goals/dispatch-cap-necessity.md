@@ -1,6 +1,6 @@
 # dispatch-cap-necessity
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a wrong reservation charge starves lean goals of budget they never spent and can refuse admission wrongly, but grants nothing and destroys nothing; novelty 1: the settlement mirrors the governed-run path's existing terminal settlement; exposure 3: every dispatch on every seat projects the reserved pool; accumulation 2: each unsettled record keeps charging its cap until the goal's revision changes, so the error compounds across a chain's rounds"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: HIGHEST PRIORITY (Wido's word R-49-m1b, 2026-09-02). Appetite 4h, full ladder. HAZARD: internal/dispatch/budget.go:342-373 adds capMinutes to projection.ReservedJobMinutes for EVERY job record bound to the goal revision, terminal or not; the governed-run path beside it already settles to ObservedCostMinutes at terminalization (budget.go:483-487, terminalStateContradiction) - the delegated-job path never got the same settlement. MECHANISM: for a terminal job record (completed, failed, cancelled, timeout) the projection charges its observed minutes - endedAt minus startedAt rounded UP to the next whole minute, never less than 1 for a job that started, 0 for a job refused before it started - and for a pending or running job it keeps charging the cap (the ceiling it may still consume); a job killed at its cap therefore settles to the cap. The BUDGET_REFUSED message names both parts: 'observed=<n> open-caps=<m> limit=<L>'. The four structured limits (R-13) and the cap's fail-stop role (R-17) are unchanged; no new config key. REFUSAL SHAPE: admission refuses exactly when observed + open caps + the proposed cap exceeds the limit. TESTS (internal/dispatch budget tests, fixture-driven): a completed 10-minute job with cap 120 charges 10; a running job charges its cap; a failed handshake (ended seconds after start) charges 1; a timeout at the cap charges the cap; a record with unreadable startedAt or endedAt is unknownBudget (fail closed, the file's existing shape); the projection over today's eight two-bars-for-changes records yields 50 observed minutes at revision 26 and 20 at revision 28, not 720 and 240. BUILDER STARTS FROM budget.go:300-373 (the record loop), :483-487 and terminalStateContradiction (the settled pattern to mirror), admission.go:160 (the message), the budget fixtures beside them. Sequenced before every other item on this seat; m1b claims now. DESIGN LANDED (plans/dispatch-cap-settlement-design.md, job cap-settle-design): charge rule, settlement from the record's own timestamps, two projection fields whose sum is the total, one breach builder, ten named tests including the eight-record specimen; Sol critique next. STATE AT RELEASE (m1b 2026-09-03, R-61-m1 moves m1b to token-spend-fence): design revision 4 landed (plans/dispatch-cap-settlement-design.md); the critique loop is CLOSED at round 4 by the stop criterion (plans/dispatch-cap-settlement-dispositions-r4.md); the scope cut risen to Wido (plans/dispatch-cap-settlement-scope-cut.md); the two neighbouring defects are goals governed-exhaustion-reprojection and lease-sweep-death-evidence; the BUILD BRIEF is ready (plans/dispatch-cap-settlement-build-brief.md, Sol implementer, DESIGN-BEARING, cap 80): a seat claims, dispatches the build, runs conformance, one Fable code review, closes, lands with --chain. TIER 3 per R-54-m1; review budget spent; R-60-m1 governs any remaining dispute as named test obligations.
 - OpenedAt: 2026-09-01T13:49:31Z
-- Revision: 24
+- Revision: 25
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=480 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T20:39:20Z revision=20 opid=Q4EW6RPG2FQD5QVP0ATZVNPQP5-m1-1701c13c authority=raise=Q4EW6RPG2FQD5QVP0ATZVNPQP5-m1-1701c13c digest=6e7847dce495307741495cb4c49f4e58a3f8d6e52afd087909f89dac97b86e05
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-02T17:08:46Z
-- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-09T21:24:40Z revision=24 accountingRevision=24
-- StopCapability: generation=24 revision=24 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-01T13:49:31Z 43EKD9F0H470RXJZ1BDKFH564B-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=dispatch-cap-necessity
@@ -42,4 +40,5 @@ History:
 - 2026-09-09T21:14:18Z Z573V5BNGCN7EMGXDE23AETXNA-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
 - 2026-09-09T21:16:15Z 744WGAAA6957Z4BDQJY6M2MT2T-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
 - 2026-09-09T21:24:40Z AHH73FRSBXV4B0Y3G8D4FWD03V-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
-Integrity: sha256=52c3eab5954b0dbfe50d8568ce14b6a65f725c8316c68f983f74a6c4c5c5a8d1
+- 2026-09-09T21:25:48Z RDKCJWDDB2G70RVZBX5ZR17EYB-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
+Integrity: sha256=3f0ce24e10b154f9ff6d70a83b92da1d795fd7da805a5381a855e55c479ad479
